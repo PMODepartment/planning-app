@@ -102,6 +102,113 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (u) — Two buttons drawing one glyph, a Towers row listing floors, and a label torn off its control
+
+Owner, from the live app with two screenshots: *“1. These two icons are the same. let's fix
+2. Vertical stacking UI looks messy, let's fix”*, then *“make sure that the UI is easily
+understandable, no functions are compromised, and everything looks clean and no clipping”*, then a
+third screenshot: *“Ui still needs some work”*. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 1 · The duplicate pair, and the precedent it follows
+`#ps-progressbtn` and `#ps-flowbtn` both drew **`trendingUp`**, and both are **icon-only**, so the
+glyph was the only thing separating them — the same defect class as 2026-09-14 (c)'s
+`#ps-lsmbtn`/`#ps-outlinebtn`. Activity Progress takes **`barChart`** (three bars on a baseline,
+unmistakable against a polyline); Flowline keeps `trendingUp`, because a flowline **is** a rising
+trend line — diagonal bands whose slope is the production rate.
+⚠ **An EXISTING glyph, deliberately** — `barChart` is already in `icons.js` and used **0 times** in
+this file, so nothing is added to a shared asset 21 pages carry for a two-button problem.
+⚠ The live scan also found `ps-actionsbtn`/`ps-vstackbtn` sharing `box` and `ps-analyzebtn`/`ps-crit`
+sharing `risk`. **Both left alone on purpose** — those carry text labels (*Actions ▾*, *Analyze ▾*)
+or are a menu item echoing its own parent menu's icon, so the glyph is not the only separator.
+
+### ⚠⚠ 2 · THE TOWERS ROW WAS LISTING FLOORS, AND THE WRITER'S OWN FALLBACK WAS UNREACHABLE
+The chip row read **“All towers / F1 / F2 / F3”** while every one of DEMO01's 66 rows carries
+`location.tower = “Tower 1”`. The push stamps the tower under the reserved `tower` key **always**,
+and under a level id **only when `locLevelFor('tower')` resolves one** — its own comment calls the
+literal *“a fallback the stacking still reads”*. But `_vsTowerOf` read `LOC_LEVELS[0]` **first**, and
+`_vsTowerLevelId()` falls back to `LOC_LEVELS[0]` when no level is named tower/building/block — which
+on a **Floor › Zone** breakdown is the **FLOOR**. So the fallback was never reached, every row
+answered its own floor, and picking a “tower” filtered to a storey.
+- New **`_vsTowerLevelNamedId()`** separates *“which level IS the tower”* from *“which level does the
+  band axis use”*. ⚠ The two cannot be one function: `_vsTowerLevelId` must always name **some**
+  level (it drives the band axis, which cannot be empty), and that fallback is right for a
+  `Tower › Level › Zone` project whose first level is called something else.
+- ⚠ **A named tower level still wins**, so a real `Tower › Level › Zone` project is unchanged — and
+  there the push writes both values from the **same `towerLabel()` call**, so they cannot disagree.
+- ⚠ **`LOC_LEVELS[0]` is still the last resort**, so an import that never carried the literal key is
+  byte-identical. ⚠ **Read-time only** — no row is written, matching the `locTowerToken` precedent
+  directly above it.
+- **It also removes a row of clutter**, which is item 2's own complaint: with one real tower the chip
+  row is correctly hidden.
+
+### ⚠⚠ 3 · “Show” SAT ON ONE ROW AND ITS OWN Finish|Start CONTROL ON THE NEXT
+Found in the owner's third screenshot and then reproduced by measurement at **1280px**: the label
+`Show` at `top:244` with the segment it names at `top:277`. `.ps-vs-bar` is `flex-wrap:wrap`, which
+packs items **one at a time**, so a label and its control are two independent items and a wrap can
+fall between them — leaving a label naming nothing above a control named by nothing.
+Each (label + control) pair is now one **`.ps-vs-grp`** nowrap box, so it counts as a single item to
+the outer row: the pair can still be pushed to its own line **as a whole**, it can no longer be split
+down the middle. ⚠ **Exactly the `.il-timepair` fix (2026-09-12), same cause** — *“a nowrap box with
+min-width:0 children cannot itself be split by an ancestor's wrap”*.
+- ⚠⚠ **TWO DIRECT-CHILD SELECTORS HAD TO BE WIDENED OR THIS WOULD HAVE BROKEN A FEATURE SILENTLY.**
+  `body.ps-reporting .ps-vs-bar > .ps-vs-note` (reporting view hides the field labels) and
+  `.ps-vs-bar > .ps-vs-note { min-width:0 }` both addressed these notes as **direct** children;
+  nesting them one level deeper makes both stop matching. Changed to descendant, same behaviour.
+  ⚠ `.ps-vs-twchips > .ps-vs-note` is untouched — that label is in the tower chip row, not the bar.
+- ⚠ The group's internal `gap` is **8px, matching `.ps-vs-bar`'s own**, so the grouping changes what
+  can **wrap** and nothing about how the bar is spaced. ⚠ `flex:0 0 auto`, because a group squeezed
+  narrower than its contents is how a segmented control gets clipped.
+
+### Measured, not eyeballed — the Vertical Stacking control stack, before
+| width | Towers | Trades | bar | header total | clipped children | page scrolls X |
+|---|---|---|---|---|---|---|
+| 1440 / 1280 | 25 | 25 | 72 (2 rows) | **122px** | **0** | **no** |
+| 846 | 38 | 38 | 162 (4 rows) | **238px** | **0** | **no** |
+
+⚠ **Nothing clips at any width measured**, so the “messy” reading is density and raggedness, not
+overflow. ⚠ And the bar's **“rows” were partly my own measurement artefact**: clustering children on
+a 6px tolerance split each segmented control from its 18px label and reported **8** rows where there
+are **4**. Re-clustered on vertical centres it is 4 at 846px and 2 at desktop. ⚠ The five short
+`.ps-vs-note` elements are control **labels** (*Detail, Zone, Dates, Show, Zoom*), not prose — the
+only real prose is the legend and the activity count. **15 controls, and not one was removed.**
+
+### Verified
+- **28 assertions** from a new checker that resolves every `.ps-icobtn`'s `data-ico` through the
+  **shipped `icons.js`** and groups by the geometry actually **drawn** (two different names could map
+  to identical paths). ⚠⚠ **The negative build bites and names the reported pair**: against the
+  pre-fix file it fails with *“these share a drawing: ps-progressbtn (trendingUp) + ps-flowbtn
+  (trendingUp)”*. ⚠ It also caught a button whose `data-ico` is built by a **JS expression** rather
+  than static markup — now skipped and counted, rather than reported as a missing glyph.
+- **`_vsTowerOf` / `_vsTowerLevelId` / `_vsTowerLevelNamedId` sliced out of the shipped file and
+  executed** over four shapes, with the pre-fix copy as the control: it differs on **exactly one** —
+  DEMO01 answers `“F1”` before and `“Tower 1”` after — and is **identical** on a real tower level, on an
+  import with no literal key, and on a row with no location.
+- `node --check` **PARSE OK** on the 3.28M-character inline script; **2,052 → 2,053 functions, 0
+  lost**; **0 NUL bytes**; 4 `.ps-vs-grp` opened and 4 closed.
+- ⚠ **Three of my own checks were wrong first**, each recorded rather than quietly fixed: python's
+  `/tmp` is not bash's `/tmp` on this machine; **`grep -c $'\x00'` degenerates to an empty pattern**
+  and reported all **50,355** lines as holding a NUL; and two content anchors matched 2 and 5 times
+  (`.ps-vs-note` is declared twice, and `>+</button>` appears on five buttons) — the patch script
+  **aborts before writing** on a bad anchor count, so nothing was half-applied.
+- ⚠ **Rebased onto two incoming commits** that also touch this file (a shared `db.js`/`ui.js` `?v=`
+  bump); the hunks are ~10,000 lines apart, merged cleanly, both sides verified present afterwards.
+
+`MODULE_V` → `20260914v`. ⚠⚠ **Re-derived TWICE, and the second time is the instructive one.**
+The live site was already serving `20260914t` from a concurrent session while this tree sat at `s`,
+so the token was taken from **what `curl` actually returns** rather than from the local file — `u`.
+The push was then rejected, and the rebase revealed that the concurrent session had **independently
+chosen `20260914u` as well**. ⚠ **That rebase merged CLEANLY**, because both sides set the *identical*
+string and git had nothing to conflict on — which is the dangerous shape: my changes would have
+shipped under a version a browser had already cached **without them**. Bumped past both to `v`.
+
+⚠ **Reported, NOT shipped — the rest of item 2 is a design decision.** At 846px the bar is still 4
+rows. The lever with precedent is folding the low-frequency controls behind the existing
+**Display ▾** pattern (2026-09-10 collapsed 21 controls that way). That changes **where a planner
+finds a control**, so it is the owner's call rather than my judgement — the measurements above are
+the evidence for it.
+
+
 ### Pormac gets a Portfolio scope: a checkbox that grounds it in every project, not one (2026-09-14)
 
 Owner: *"in portfolio, pormac should be able to answer based on data from all projects on the

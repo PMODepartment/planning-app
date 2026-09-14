@@ -1,3 +1,88 @@
+## 2026-09-14 (u) — The duplicate toolbar glyph, `_vsTowerOf` answering a floor, and a label torn off its control
+
+Owner: *“1. These two icons are the same. let's fix  2. Vertical stacking UI looks messy, let's
+fix”*, then *“make sure that the UI is easily understandable, no functions are compromised, and
+everything looks clean and no clipping”*, then *“Ui still needs some work”* with a third screenshot.
+
+### 1 · `#ps-progressbtn` and `#ps-flowbtn` both drew `trendingUp`
+Both are **icon-only** (`.ps-icobtn`, no text), so the glyph was the only thing telling them apart —
+the 2026-09-14 (c) defect exactly. Activity Progress → **`barChart`**; Flowline keeps `trendingUp`,
+since a flowline is literally a rising trend line.
+⚠ **An existing glyph** — `barChart` is in `icons.js` already and used 0 times here, so `icons.js`
+(21 pages) is untouched. ⚠ The live DOM scan also found `ps-actionsbtn`/`ps-vstackbtn` sharing `box`
+and `ps-analyzebtn`/`ps-crit` sharing `risk`; **both left alone on purpose** — those carry text
+labels (*Actions ▾*, *Analyze ▾*) or are a menu item echoing its own parent menu's icon, so the
+glyph is not the only separator and the defect class does not apply.
+
+### ⚠⚠ 2 · THE TOWER WAS BEING READ OFF THE FLOOR LEVEL
+```js
+var id  = _vsTowerLevelId();            // no tower level -> falls back to LOC_LEVELS[0] = Floor
+var v   = id ? r.location[id] : '';     // -> “F1”
+var raw = String(v || r.location[VS_LOC_TOWER] || '').trim();   // the literal key never reached
+```
+Measured live on DEMO01: `LOC_LEVELS` is **Floor, Zone** — no tower level — while every row's
+`location` carries `“tower”: “Tower 1”`. So the picker offered **“All towers / F1 / F2 / F3”**, and
+selecting a “tower” filtered to a floor.
+- New **`_vsTowerLevelNamedId()`** — the name-matched level id, or `''`. ⚠ It cannot be folded into
+  `_vsTowerLevelId`, which must always name some level because it drives the band axis; that
+  fallback is correct there and wrong as an answer to *“is there a tower level at all?”*
+- ⚠ Precedence is now **named level → reserved `tower` key → `LOC_LEVELS[0]`**. A project with a
+  real tower level is unchanged (and there the push writes both from one `towerLabel()` call, so
+  they agree by construction); an import with no literal key is byte-identical.
+- ⚠ **Read-time only** — no row is written, matching the `locTowerToken` precedent directly above it.
+
+### ⚠⚠ 3 · A WRAP FELL BETWEEN A LABEL AND THE CONTROL IT NAMES
+Reproduced at **1280px**: `Show` at `top:244`, its `Finish|Start` segment at `top:277`. `.ps-vs-bar`
+is `flex-wrap:wrap` and packs items one at a time, so the label and its control are two independent
+items and the wrap can land between them. Each pair is now one **`.ps-vs-grp`** (`inline-flex`,
+`flex-wrap:nowrap`, `flex:0 0 auto`) — the pair moves as a unit or not at all. The `.il-timepair`
+fix, same cause.
+- ⚠⚠ **Two direct-child selectors had to be widened or a feature would have broken silently:**
+  `body.ps-reporting .ps-vs-bar > .ps-vs-note` (reporting view hides the field labels) and
+  `.ps-vs-bar > .ps-vs-note { min-width:0 }`. Nesting the notes one level deeper makes `>` stop
+  matching. Both changed to descendant — same set, same behaviour.
+  ⚠ `.ps-vs-twchips > .ps-vs-note` is deliberately untouched: that label lives in the tower chip
+  row, not in the bar, and is not nested by this change.
+- ⚠ Internal `gap:8px` matches the bar's own, so this changes what can **wrap** and nothing about
+  spacing. ⚠ Four groups: Detail (+ the axis name it describes), Dates, Show, Zoom.
+
+### Measured before touching anything
+| width | Towers | Trades | `.ps-vs-bar` | header total | clipped children | page scrolls X |
+|---|---|---|---|---|---|---|
+| 1440 | 25 | 25 | 72 (2 rows) | 122px | **0** | **no** |
+| 1280 | 25 | 25 | 72 (2 rows) | 122px | **0** | **no** |
+| 846 | 38 | 38 | 162 (4 rows) | 238px | **0** | **no** |
+
+⚠ **Nothing clips anywhere**, so the complaint is density and raggedness rather than overflow.
+⚠ **My first row count was my own artefact** — clustering the bar's children on a 6px tolerance
+separated each segmented control from its 18px label and reported **8** rows where there are **4**;
+re-clustered on vertical centres it is 4 at 846px and 2 at desktop. ⚠ The five short `.ps-vs-note`
+elements are control **labels** (*Detail, Zone, Dates, Show, Zoom*), not prose. **15 controls, none
+removed.**
+
+### Verified
+- **28 assertions**: every `.ps-icobtn`'s `data-ico` resolved through the shipped `icons.js` and
+  grouped by the **drawn geometry**, plus a check that each name resolves at all (a typo renders an
+  empty box, silently) and that each button really is icon-only. ⚠⚠ **The negative build bites**,
+  naming the pair: *ps-progressbtn (trendingUp) + ps-flowbtn (trendingUp)*.
+- **Slice-and-execute on `_vsTowerOf`** over four shapes with the pre-fix copy as the control:
+  DEMO01 `“F1” → “Tower 1”`, and **identical** on the other three.
+- `node --check` PARSE OK (3.28M chars, one inline block); **2,052 → 2,053 functions, 0 lost**; 0 NUL
+  bytes; 4 groups opened and 4 closed.
+- ⚠ **Three of my own checks were wrong first:** python's `/tmp` is not bash's on this machine;
+  `grep -c $'\x00'` reported **50,355** lines (the empty-pattern trap — counted in python instead);
+  and two content anchors matched 2 and 5 times, because `.ps-vs-note` is **declared twice** in this
+  stylesheet and `>+</button>` appears on **five** buttons. The patch script aborts before writing on
+  a bad anchor count, so nothing was half-applied.
+- ⚠ **Not re-verified signed in on a multi-tower project.** DEMO01 has one tower, so the branch this
+  fix most changes — several real towers under a `Floor › Zone` breakdown — is proved by execution
+  against fixtures, not observed live.
+
+`MODULE_V` → `20260914v`. ⚠⚠ Re-derived **twice**: past the `20260914t` a concurrent session had
+already deployed, and then past `20260914u` — which that session had **independently picked too**.
+The rebase merged cleanly precisely *because* both sides wrote the same string, so nothing flagged
+it; caught by `curl`-ing the deployed page rather than trusting the local file.
+
 ## 2026-09-14 (t) — The end-to-end run redone with Auto-trace actually pressed
 
 Owner: *“Let's redo the whole process from scratch. Make sure that the zone and trade sequence is

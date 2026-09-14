@@ -353,7 +353,7 @@
     /* Reporting view trims the last of it: the two remaining conveniences and the stacking bar's
        own field labels, which name controls a reader is not going to touch. */
     body.ps-reporting #ps-help-btn,
-    body.ps-reporting .ps-vs-bar > .ps-vs-note { display:none !important; }
+    body.ps-reporting .ps-vs-bar .ps-vs-note { display:none !important; }
     /* No edit affordances — nothing should invite a click that would change data. */
     body.ps-reporting .ps-editable { cursor:default; }
     body.ps-reporting .ps-grid-pane .ps-cell.ps-editable:hover { background:transparent; }
@@ -1871,6 +1871,16 @@
     body.ps-tl-drag { cursor:grabbing; user-select:none; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    /* ⚠⚠ A LABEL AND THE CONTROL IT NAMES MOVE TOGETHER, OR NEITHER MOVES. .ps-vs-bar is
+       flex-wrap:wrap, which packs items ONE AT A TIME -- so at 1280px it put "Show" at the end of
+       one row and its own Finish|Start segment at the start of the next, leaving a label naming
+       nothing above a control named by nothing. Wrapping the pair in a nowrap box makes it ONE item
+       to the outer row: the pair can still be pushed to its own line as a whole, it can no longer
+       be split down the middle. Exactly the .il-timepair fix (2026-09-12), same cause.
+       ⚠ gap is 8px to match .ps-vs-bar's own, so the grouping changes what can WRAP and nothing
+       about how the bar is spaced. ⚠ flex:0 0 auto -- a group must never be squeezed narrower than
+       its contents, which is how a segmented control gets clipped. */
+    .ps-vs-grp { display:inline-flex; align-items:center; gap:8px; flex-wrap:nowrap; flex:0 0 auto; }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     /* The tower checklist. ⚠️ Its own row ABOVE the trades and carrying a label, because the two
        rows now look alike and a reader has to be able to tell which one they are ticking. */
@@ -1891,7 +1901,7 @@
     /* ⚠️ A flex item will NOT shrink below its own text (min-width defaults to auto), so a long
        note overflowed the toolbar row and its tail was clipped — flex-wrap on the parent cannot
        save an item that refuses to shrink. Every note in this bar may shrink and wrap. */
-    .ps-vs-bar > .ps-vs-note { min-width:0; }
+    .ps-vs-bar .ps-vs-note { min-width:0; }
     /* The bar must never be stretched wider than the panel by anything beside it. */
     .ps-vs-bar { max-width:100%; }
     /* No !important needed: the inline display/align this used to carry was removed with the markup,
@@ -19882,25 +19892,25 @@
         '<button data-vs3d="0"' + (!_vs3D ? ' class="on"' : '') + ' title="The section: storeys as rows, zones across">2D</button>' +
         '<button data-vs3d="1"' + (_vs3D ? ' class="on"' : '') + ' title="The same storeys and zones as a solid model you can orbit, with the four elevations named">3D</button>' +
       '</span>' +
-      '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
+      '<span class="ps-vs-grp"><span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
       '<span class="ps-vs-note"' + (_vsMixTrades ? ' title="' + esc(VS_MIX_NOTE) + '"' : '') + '>' +
         esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) +
-        (_vsMixTrades ? ' — levels only (trades combined)' : '') + '</span>' +
+        (_vsMixTrades ? ' — levels only (trades combined)' : '') + '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note">Dates</span><span class="ps-vs-seg">' +
+      '<span class="ps-vs-grp"><span class="ps-vs-note">Dates</span><span class="ps-vs-seg">' +
         [['actual', 'Actual', 'Actual where recorded, forecast where not — the dates the grid shows'],
          ['planned', 'Planned', 'The baseline (BL Start / BL Finish)'],
          ['compare', 'Planned vs Actual', 'Both, with the slip in days. Cells are coloured by slip, not by progress']]
           .map(function (o) { return '<button data-vsbasis="' + o[0] + '"' + (_vsBasis === o[0] ? ' class="on"' : '') + ' title="' + esc(o[2]) + '">' + o[1] + '</button>'; }).join('') +
-      '</span>' +
+      '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
+      '<span class="ps-vs-grp"><span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
         '<button data-vsdt="finish"' + (_vsDateMode === 'finish' ? ' class="on"' : '') + ' title="Each cell shows when it COMPLETES (its last activity\'s finish)">Finish</button>' +
         '<button data-vsdt="start"' + (_vsDateMode === 'start' ? ' class="on"' : '') + ' title="Each cell shows when it BEGINS (its first activity\'s start)">Start</button>' +
-      '</span>' +
+      '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
-      '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
+      '<span class="ps-vs-grp"><span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
+      '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button></span>' +
       // \u26a0\ufe0f The PDF is built from the buildings ALREADY ON SCREEN (their svg is cloned), not re-derived.
       // Re-deriving would be a second renderer to keep in step with this one, and the first divergence
       // would be a report that disagrees with the screen it was exported from.
