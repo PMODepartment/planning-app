@@ -198,7 +198,18 @@
     .ps-toolbar .pd-btn { padding:0 9px; }
     /* Activity Network View (PERT) */
     .ps-network { overflow:auto; height:62vh; min-height:420px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:var(--pd-card); }
-    #ps-view-schedule.ps-net-mode .ps-split, #ps-view-schedule.ps-net-mode .ps-grid-foot, #ps-view-schedule.ps-net-mode .ps-legend { display:none; }
+    /* ⚠⚠ `.ps-actlegend`, NOT `.ps-legend`. Owner 2026-09-14, on the stacking view:
+       *"Is this supposed to be shown when vertical stacking is opened?"* -- no, and four rules said
+       so. `.ps-legend` was the wrapper around the bar-mark key; it was DELETED on 2026-08-17 when
+       the marks were folded into the activity legend, and the note at `.ps-actlegend .lg` records
+       exactly that for a rule which was retargeted then. These hide rules were not, so since August
+       every full-width panel view (network, flowline, progress, stacking) has left the Gantt's
+       colour legend sitting under a pane that has no Gantt in it.
+       ⚠ The @media print rule and the <=700px rule still name `.ps-legend` and are equally
+         dead -- left alone ON PURPOSE, because each of those still has a Gantt on screen, and a coloured
+         chart printed without its key is a worse page than one with it. Retarget them only with a
+         decision about print, not as tidying. */
+    #ps-view-schedule.ps-net-mode .ps-split, #ps-view-schedule.ps-net-mode .ps-grid-foot, #ps-view-schedule.ps-net-mode .ps-actlegend { display:none; }
     /* ⚠️⚠️ A COLUMN WHOSE *CANVAS* SCROLLS, not a scrolling box with a sticky header.
        The head used to scroll with the diagram and be pinned back by `position:sticky`, which works
        until a second fixed strip is added above the drawing — the "what the columns mean" key would
@@ -353,7 +364,16 @@
     /* Reporting view trims the last of it: the two remaining conveniences and the stacking bar's
        own field labels, which name controls a reader is not going to touch. */
     body.ps-reporting #ps-help-btn,
+    /* ⚠ `.ps-vs-seglab` ADDED: this rule's stated target is "the stacking bar's own field
+       labels", and on 2026-09-14 those labels were welded INSIDE their segments and became
+       `.ps-vs-seglab`. From that commit until this one the rule named a class the labels no longer
+       carried and hid the legend instead -- the opposite of what it says. */
+    body.ps-reporting .ps-vs-seglab,
     body.ps-reporting .ps-vs-bar .ps-vs-note { display:none !important; }
+    /* ⚠⚠ THE CAPTION IS NOT HIDDEN IN REPORTING, and that is a change of behaviour taken
+       deliberately. Reporting view is the one people are SHOWN; a chart of hatched fills and
+       coloured DONE pills without its key is the one place the key cannot be spared. It reads as a
+       caption, not a control, which is why it survives a rule that strips controls. */
     /* No edit affordances — nothing should invite a click that would change data. */
     body.ps-reporting .ps-editable { cursor:default; }
     body.ps-reporting .ps-grid-pane .ps-cell.ps-editable:hover { background:transparent; }
@@ -1060,11 +1080,16 @@
        Same "panel replaces the split" behaviour as Activity Progress and Vertical Stacking. */
     #ps-view-schedule.ps-flowline-mode .ps-split,
     #ps-view-schedule.ps-flowline-mode .ps-network,
-    #ps-view-schedule.ps-flowline-mode .ps-legend,
+    #ps-view-schedule.ps-flowline-mode .ps-actlegend,
     #ps-view-schedule.ps-flowline-mode .ps-progress,
     #ps-view-schedule.ps-flowline-mode .ps-vstack,
     #ps-view-schedule.ps-flowline-mode .ps-grid-foot { display:none !important; }
-    .ps-flowline { padding:12px 14px 20px; }
+    /* ⚠ The same rule the stacking pane carries (see `.ps-vstack`), for the same reason and in
+       the same numbers: these panes REPLACE the split, so without a line the module toolbar and the
+       pane's own toolbar read as one run of controls. `.ps-network` is the exception -- it already
+       draws a full border of its own. Owner 2026-09-14: *"Let's check for other views for
+       consistency."* */
+    .ps-flowline { border-top:1px solid var(--pd-line); margin-top:4px; padding:10px 14px 20px; }
     .ps-fl-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; margin-bottom:8px; }
     .ps-fl-title { font-size:var(--pd-fs-md); font-weight:800; color:var(--pd-ink); }
     .ps-fl-sub { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
@@ -1876,7 +1901,7 @@
     .ps-vs-modal .ps-table tbody tr:hover td { background:var(--pd-bg); }
     #ps-view-schedule.ps-vstack-mode .ps-split,
     #ps-view-schedule.ps-vstack-mode .ps-network,
-    #ps-view-schedule.ps-vstack-mode .ps-legend,
+    #ps-view-schedule.ps-vstack-mode .ps-actlegend,
     #ps-view-schedule.ps-vstack-mode .ps-progress,
     #ps-view-schedule.ps-vstack-mode .ps-grid-foot { display:none !important; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
@@ -1896,7 +1921,18 @@
        ⚠ DECLARED HERE, AFTER the older duplicate of `.ps-vstack` at ~1529 -- see the duplication
          note on that block. A new property added to the earlier copy would work today only because
          the later copy happens not to set it, which is not a thing to rely on. */
-    .ps-vstack { border-top:1px solid var(--pd-line); margin-top:4px; padding-top:14px; }
+    .ps-vstack { border-top:1px solid var(--pd-line); margin-top:4px; padding-top:10px; }
+    /* ⚠⚠ THE ROWS INSIDE THIS PANE ALL GET THE SAME GAP. Owner 2026-09-14: *"There is a
+       bigger space between the toolbar and trades toolbar and a smaller gap between the trades
+       toolbar and model toolbar."* MEASURED before the fix: 15px above the trades row and **0px**
+       below it -- `.ps-vs-chips` carried no bottom margin at all, so the trade filter and the
+       control bar were touching while a 15px gap sat above them. Both are 10px now, so the header
+       reads as peer rows in one block rather than one row that has drifted.
+       ⚠ The gap ABOVE the rule (12px: the toolbar's own 8px margin plus this pane's 4px) is
+         deliberately left larger. That one separates the MODULE's toolbar from the pane, which is a
+         section break, not a sibling gap -- equalising it would erase the distinction the rule was
+         added on 2026-09-14 to draw. */
+    .ps-vs-chips { margin-bottom:10px; }
 
     /* ---- The TIME BAR under the stack ------------------------------------------------------
        Owner 2026-08-26: drag the line and the stacking re-reads at that date, so the building
@@ -1955,7 +1991,10 @@
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     /* The tower checklist. ⚠️ Its own row ABOVE the trades and carrying a label, because the two
        rows now look alike and a reader has to be able to tell which one they are ticking. */
-    .ps-vs-twchips { align-items:center; margin-bottom:6px; }
+    /* ⚠ No bottom margin of its own any more -- it inherits the 10px every chip row now takes,
+       so Towers -> Trades and Trades -> the control bar are one gap. It had 6px, which read as an
+       accident once the other two were evened up. */
+    .ps-vs-twchips { align-items:center; }
     /* The site card's own Show control. ⚠️ Inside the card, above the viewpoint bar, because it
        changes what the model IS rather than where the camera is. */
     .ps-vs-sitemode { display:flex; align-items:center; gap:8px; padding:8px 14px 0; }
@@ -1991,6 +2030,24 @@
     .ps-vs-fz-3dbar { flex:0 0 auto; padding:8px 14px 0; }
     .ps-vs-fz-3dbar .ps-vs3-bar { margin-bottom:0; }
     .ps-vs-legendtxt { min-width:0; white-space:normal; overflow-wrap:break-word; }
+    /* ⚠⚠ A CAPTION IS NOT A TOOLBAR, AND THE LEGEND WAS IN THE WRONG ONE. Owner
+       2026-09-14: *"If we can also relocate the legend and tooltip to a proper location than the
+       toolbar itself."* The split is by KIND, not by length: a toolbar holds what you press, a
+       caption holds what you read. So the fill/DONE key, the compare slip colours and the activity
+       count sit here, under the bar and above the buildings they describe -- and the planned-marker
+       COLOUR PICKER stays in the bar, because demoting a live input to a caption is the same
+       mistake pointing the other way.
+       ⚠ `border-top` deliberately absent: the pane's own rule already draws one 10px above and
+         a second hairline would turn a two-row header into a stack of boxes. The caption is set
+         apart by being smaller and quieter, not by another line.
+       ⚠ `align-items:center` and the same 8px/10px rhythm as `.ps-vs-bar`, so a caption that
+         wraps to two lines still reads as one strip. */
+    .ps-vs-caption { display:flex; align-items:center; flex-wrap:wrap; gap:6px 16px;
+      margin:-2px 0 10px; font-size:var(--pd-fs-sm); color:var(--pd-muted); max-width:100%; }
+    .ps-vs-caption .ps-vs-note { min-width:0; }
+    /* In the caption the legend is no longer competing with controls for the row, so it may take
+       the width it needs -- the `flex:0 1 auto` above was a concession to sharing a toolbar. */
+    .ps-vs-caption .ps-vs-legendnote { flex:0 1 auto; }
     /* ⚠️ FLEX with a 0-basis, not an `auto-fit … 1fr` grid. A `1fr` track STRETCHES a tower to fill
        the row, so a short building (one zone wide) sat in a card ~660px of which ~590px was dead
        space — owner-reported. A flex item at `0 0 auto` is exactly as wide as the drawing inside it,
@@ -2338,14 +2395,19 @@
     .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:var(--pd-fs-base); text-align:center; }
     #ps-view-schedule.ps-vstack-mode .ps-split,
     #ps-view-schedule.ps-vstack-mode .ps-network,
-    #ps-view-schedule.ps-vstack-mode .ps-legend,
+    #ps-view-schedule.ps-vstack-mode .ps-actlegend,
     #ps-view-schedule.ps-vstack-mode .ps-progress,
     #ps-view-schedule.ps-vstack-mode .ps-grid-foot { display:none !important; }
     #ps-view-schedule.ps-progress-mode .ps-split,
     #ps-view-schedule.ps-progress-mode .ps-network,
-    #ps-view-schedule.ps-progress-mode .ps-legend,
+    #ps-view-schedule.ps-progress-mode .ps-actlegend,
     #ps-view-schedule.ps-progress-mode .ps-grid-foot { display:none !important; }
-    .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 8px 12px; }
+    /* ⚠ Divider as `.ps-vstack` and `.ps-flowline` -- see the note on the flowline rule.
+       ⚠ The padding stays 4px/8px, NOT the stacking pane's 10px/14px: this pane is the scroller
+         itself (`overflow:auto`), so its padding is inside the scrolled area and a bigger top pad
+         becomes dead space that scrolls away. The border and margin are what had to match. */
+    .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 8px 12px;
+      border-top:1px solid var(--pd-line); margin-top:4px; }
     @keyframes ps-viewin { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
     .ps-progress.ps-anim, .ps-split.ps-anim, .ps-network.ps-anim, .ps-vstack.ps-anim { animation: ps-viewin .28s cubic-bezier(.22,.61,.36,1); }
     .ps-prog-table { border-collapse:collapse; font-size:var(--pd-fs-sm); table-layout:fixed; }
@@ -19978,6 +20040,15 @@
           ' towers shown side by side</span>' : '') + '</div>'
       : '';
 
+    /* The four colours a compare cell's DONE pill can take. A legend, so it lives in the caption --
+       but it is BUILT here, beside the basis test that decides whether the pill is drawn at all. */
+    var slipLegend = _vsBasis === 'compare'
+      ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
+          [[VS_SLIP_EARLY, 'early'], [VS_SLIP_ONTIME, 'on time'], [VS_SLIP_LATE, 'late'], [VS_SLIP_NONE, 'no baseline']]
+            .map(function (o) { return '<span style="display:inline-flex;align-items:center;gap:4px;"><span class="ps-vs-dot" style="background:' + o[0] + '"></span>' + o[1] + '</span>'; }).join('') +
+        '</span>'
+      : '';
+
     var bar = '<div class="ps-vs-bar">' +
       '<span class="ps-vs-seg"><span class="ps-vs-seglab">Model</span><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
@@ -20035,13 +20106,11 @@
       // would be a report that disagrees with the screen it was exported from.
       '<span class="ps-vs-seg"><button class="ps-vs-icolab" id="ps-vs-pdf" title="Export what is on screen as a clean one-page-per-building report \u2014 opens the print dialog, choose Save as PDF"><span data-ico="printer" data-ico-size="14"></span>PDF</button></span>' +
       '<span style="flex:1 1 auto;"></span>' +
+      /* ⚠⚠ WHAT STAYS HERE IS THE CONTROL; THE KEY MOVED TO `.ps-vs-caption` BELOW. The
+         slip colours are a legend and are built into `slipLegend` above; the planned-marker colour
+         picker is an INPUT and belongs in a bar. See the caption's CSS note for the rule. */
       (_vsBasis === 'compare'
-        ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
-            [[VS_SLIP_EARLY, 'early'], [VS_SLIP_ONTIME, 'on time'], [VS_SLIP_LATE, 'late'], [VS_SLIP_NONE, 'no baseline']]
-              .map(function (o) { return '<span style="display:inline-flex;align-items:center;gap:4px;"><span class="ps-vs-dot" style="background:' + o[0] + '"></span>' + o[1] + '</span>'; }).join('') +
-          '</span>' +
-          // The planned marker is only drawn in this basis, so the control that colours it lives here.
-          '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:6px;" title="Colour of the line drawn across each zone at its PLANNED progress. The line is haloed, so any colour stays readable over the trade colour.">' +
+        ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:6px;" title="Colour of the line drawn across each zone at its PLANNED progress. The line is haloed, so any colour stays readable over the trade colour.">' +
             '<svg width="26" height="14" style="vertical-align:middle;" aria-hidden="true"><rect x="0" y="1" width="26" height="12" rx="3" fill="var(--pd-muted)" opacity="0.22"></rect>' +
             '<line x1="15" y1="1" x2="15" y2="13" stroke="rgba(0,0,0,.55)" stroke-width="3.6" stroke-linecap="round"></line>' +
             '<line x1="15" y1="1" x2="15" y2="13" stroke="' + _vsPlanLine + '" stroke-width="2" stroke-linecap="round"></line></svg>' +
@@ -20049,7 +20118,14 @@
             (_vsPlanLine.toUpperCase() === VS_PLAN_LINE_DEF ? '' : '<button class="pd-btn ps-vs-chip" id="ps-vs-planclrx" title="Back to the default colour">Reset</button>') +
           '</span>'
         : '') +
-      // ---- The legend, now a strip and not a paragraph -----------------------------------------
+      '</div>';
+
+    /* ⚠ THE CAPTION. Everything below used to be the trailing half of `.ps-vs-bar`; it is the
+       same markup, re-parented. Keep the three items in this order -- what the fills mean, then
+       what the slip colours mean, then how much is on screen -- so the reader meets the key before
+       the number it qualifies. */
+    var caption = '<div class="ps-vs-caption">' +
+      // ---- The legend, a strip and not a paragraph ---------------------------------------------
       // Owner 2026-09-10: *"cleanup the UI just below the header. i think it is too much."* This
       // item used to carry three full sentences and, because `.ps-vs-legendnote` was `flex:1 1 100%`,
       // it CLAIMED ITS OWN ROW and wrapped onto two lines — a paragraph of instructions sitting in a
@@ -20082,11 +20158,12 @@
             '<span style="color:' + VS_SLIP_LATE + ';font-weight:700;">late</span>' +
           '</span></span>';
       })() +
-      // ⚠️ No divider before the count any more. The legend no longer takes a row of its own, so the
-      // two notes now sit side by side at the trailing end, and a rule between two greyed captions
-      // was one more vertical line in a bar that still carries five.
+      // ⚠️ No divider between these items. They are all greyed captions on one line; a rule
+      // between two of them would be a vertical stroke in a strip whose whole job is to be quiet.
+      slipLegend +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
-        (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
+        (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span>' +
+      '</div>';
     var noTradeList = acts.filter(function (r) { return !workOf(r); });
     var noLevList = acts.filter(function (r) { return !_vsHasLevel(r); });
     var noLevTrades = [];
@@ -20353,7 +20430,7 @@
     // ⚠️ Towers above trades: the tower is the coarser cut (which BUILDINGS), the trade the finer
     // one (which work inside them), and reading them the other way round is reading the filter
     // backwards.
-    host.innerHTML = twChips + chips + bar + warn + _vsHatchDefs() +
+    host.innerHTML = twChips + chips + bar + caption + warn + _vsHatchDefs() +
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
@@ -47279,8 +47356,16 @@
      silently freeze the label at boot again, and it would look correct on a project with no
      pinned date. */
   function marksLegendHTML() {
-    return
-      '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
+    /* ⚠⚠ THE FIRST STRING MUST STAY ON THE `return` LINE. A bare `return` followed by a
+       newline is terminated by AUTOMATIC SEMICOLON INSERTION, so this function returned `undefined`
+       and the concatenation at its call site printed the literal word "undefined" into the legend
+       -- owner-reported, 2026-09-14, with the screenshot showing it beside the Activity chip.
+       Introduced by bf7c846, which turned `var MARKS_LEGEND_HTML =\n  '<span...` into
+       `return\n  '<span...`: legal as an assignment, fatal as a return. The four entries below
+       (WBS summary, planned-dates rail, Milestone, Data date) had been missing from the legend
+       since that commit, and nothing caught it because the orphaned expression still PARSES --
+       `node --check` is green on this function either way. */
+    return '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
       // ⚠️ .lg-lsmoff AGAIN, deliberately — and this is a fold, not a removal. It used to show in
       // both views, but in the coloured view the bar sample below ALREADY draws the rail and names
       // it, so the two chips described the same mark twice and read as a clash. Plain view: this is

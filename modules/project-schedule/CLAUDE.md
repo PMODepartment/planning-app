@@ -1,3 +1,136 @@
+## 2026-09-14 (z) — An even rhythm, a caption instead of a toolbar, and a legend four views thought they were hiding
+
+Owner: *"The Toolbar, Trades, and Model toolbars UI needs more work. There is a bigger space between
+the toolbar and trades toolbar and a smaller gap between the trades toolbar and model toolbar. If we
+can also relocate the legend and tooltip to a proper location than the toolbar itself. Let's check
+for other views for consistency"*, and then, on a screenshot of the stacking view: *"Is this supposed
+to be shown when vertical stacking is opened?"*
+
+### ⚠️⚠️ THE ANSWER TO THAT QUESTION IS NO, AND FOUR RULES ALREADY SAID SO — TO A CLASS THAT NO LONGER EXISTS
+
+The Gantt's colour legend (`#ps-actlegend`) was showing under the stacking pane, which has no Gantt
+in it. Every full-width panel view carries a rule that reads *"hide the legend"*:
+
+```
+#ps-view-schedule.ps-net-mode      .ps-legend { display:none; }
+#ps-view-schedule.ps-flowline-mode .ps-legend,
+#ps-view-schedule.ps-vstack-mode   .ps-legend,     (twice — the file has two copies)
+#ps-view-schedule.ps-progress-mode .ps-legend { display:none !important; }
+```
+
+**`.ps-legend` is not in the markup and has not been since 2026-08-17**, when the bar-mark key was
+folded into the activity legend and its wrapper was deleted. The note on `.ps-actlegend .lg` records
+that exact deletion — *"this rule stopped matching anything"* — because that rule **was** retargeted
+at the time. These five lines were not. So for four weeks every panel view (network, flowline,
+progress, stacking) left the colour legend sitting under a pane it describes nothing in.
+
+Retargeted to `.ps-actlegend`. **Measured in a browser, both themes:** `display:none` under all four
+modes, `block` with no mode on — asserted **both ways**, because a rule that hides it everywhere
+would pass a one-sided test and break the Gantt.
+
+⚠️ **The `@media print` rule and the ≤700px rule still name `.ps-legend` and are equally dead — left
+alone on purpose.** Both of those still have a Gantt on screen, and a coloured chart printed without
+its key is a worse page than one with it. Retarget them with a decision about print, not as tidying.
+
+### ⚠️⚠️ `marksLegendHTML()` HAS RETURNED `undefined` SINCE bf7c846 — A BARE `return`
+
+The owner's screenshot shows the literal word **"undefined"** in the legend strip. Cause:
+
+```js
+function marksLegendHTML() {
+  return                                          // ← ASI terminates the statement HERE
+    '<span class="lg lg-lsmoff">…' + …            // ← an orphaned expression, never returned
+}
+```
+
+`bf7c846` turned `var MARKS_LEGEND_HTML =\n  '<span…` into `return\n  '<span…`. Legal as an
+assignment, fatal as a return: automatic semicolon insertion ends the statement at the newline, the
+function returns `undefined`, and `'…' + undefined` prints the word. **Four legend entries — WBS
+summary, the BL0 planned-dates rail, Milestone and Data date — have been missing from the legend
+since that commit.**
+
+⚠️ **Nothing caught it because the orphan still PARSES.** `node --check` is green on that function
+either way; a syntax gate cannot see this. Proven by slicing the function out of the shipped file and
+executing it, before and after — the base pinned to a **SHA**, not `HEAD:`, which becomes
+self-comparison the moment this work commits:
+
+| | `typeof` | length | WBS summary | BL0 rail | Milestone | Data date |
+|---|---|---|---|---|---|---|
+| d403f7f | `undefined` | — | ✗ | ✗ | ✗ | ✗ |
+| now | `string` | 491 | ✓ | ✓ | ✓ | ✓ |
+
+A new static gate fails on any `return` left alone on a line with a continuation under it.
+
+### The rhythm: 15px above the trades row, 0px below it
+
+Measured before changing anything. `.ps-vs-chips` carried **no bottom margin at all**, so the trade
+filter and the control bar were touching while a 15px gap sat above them — the asymmetry the owner
+reported, in both directions at once. Both are **10px** now, and `.ps-vs-twchips`' private 6px is
+gone so the Towers row takes the same gap as its sibling.
+
+⚠️ **The gap above the rule is deliberately left larger** (12px: the toolbar's 8px margin plus the
+pane's 4px). That one separates the *module's* toolbar from the pane — a section break, not a sibling
+gap — and equalising it would erase the very distinction the rule was added to draw this morning.
+
+**Measured, both themes, 1024px and 1440px, at 4 / 7 / 11 trades, with and without the Towers row and
+the compare basis — 10 combinations:** Towers→Trades **10px**, Trades→bar **10px**, bar→caption
+**8px**, caption→stage **10px**, in every one. No bar overflow, no caption overflow, no page
+horizontal scroll. The bar takes two lines at 1024px, as it did before; the caption never takes more
+than one.
+
+### A caption is not a toolbar, and the legend was in the wrong one
+
+Owner: *"relocate the legend and tooltip to a proper location than the toolbar itself."* New
+`.ps-vs-caption` sits under the bar and over the buildings. **The split is by kind, not by length:** a
+toolbar holds what you press, a caption holds what you read.
+
+- **Moved:** the fill / ✓ DONE key (with its tooltip), the compare slip colours, the activity count.
+- **Kept in the bar:** the **Planned marker colour picker**. It is an input; demoting a live control
+  to a caption strip is the same mistake pointing the other way.
+
+⚠️ No border on the caption. The pane's own rule already draws one 10px above it, and a second
+hairline turns a two-row header into a stack of boxes — it is set apart by being quieter, not by
+another line.
+
+⚠️ **A change of behaviour, taken deliberately and easy to veto:** the caption is **not** hidden in
+Reporting view. That view is the one people are *shown*, and a chart of hatched fills and coloured
+DONE pills without its key is the one place the key cannot be spared.
+
+⚠️ **And that same reporting rule was missing its own target.** It reads
+`body.ps-reporting .ps-vs-bar .ps-vs-note`, and its comment says it hides *"the stacking bar's own
+field labels"* — but this morning's weld moved those labels **inside** their segments as
+`.ps-vs-seglab`. From that commit until this one it hid the legend instead, which is the opposite of
+what it says. `.ps-vs-seglab` added.
+
+### The other views, for consistency
+
+`.ps-flowline` and `.ps-progress` now carry the same `1px solid var(--pd-line)` top divider and 4px
+margin as `.ps-vstack` — they replace the split the same way, and without a line the module toolbar
+and the pane's own toolbar read as one run of controls. `.ps-network` is the exception and keeps its
+own full border. Verified: all three report `1px solid rgb(220,219,219) / margin-top 4px`.
+
+⚠️ **The progress pane keeps its 4px/8px padding**, not the stacking pane's 10px/14px: it *is* the
+scroller (`overflow:auto`), so its padding sits inside the scrolled area and a bigger top pad becomes
+dead space that scrolls away. The border and the margin were what had to match.
+
+### Verified
+
+Harness CSS is the shipped `<style>` block **extracted verbatim** (375,690 bytes), asserted to carry
+every rule under test before a single measurement is taken. All static gates green: the inline script
+parses (3.29 MB), CSS braces balance comments-stripped, no duplicate static ids, no orphaned
+`return`, the bar and the caption each close their own `<div>`.
+
+⚠️ **Not verified signed in.** The layout was measured on its real CSS with reproduced markup, and
+`marksLegendHTML` was executed from the shipped source — but no live project was opened.
+
+⚠️ **One symptom in the owner's report is not explained yet:** *"when i tick/untick colour activities
+by the legend pane disappears."* The handler is `renderActLegend(); renderGantt();`, and neither sets
+`display:none` on a project with rows — so this is not accounted for by anything above. It stops
+mattering in the stacking view now that the pane is hidden there at all; if it also happens in the
+ordinary Gantt view it is a separate defect and still open.
+
+`MODULE_V` → `20260914zvs3`, sort-checked against `20260914zvs2`.
+
 ## 2026-09-14 (w) — The two things that really were clipping, and the five toolbars that were not
 
 Owner: *“Side panel clips as well when page is scrolled”*, *“The buttons are still clipping let's

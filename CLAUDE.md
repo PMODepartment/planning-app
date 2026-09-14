@@ -102,6 +102,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (z) — Project Schedule: a dead selector four views were hiding nothing with, and a `return` that returned nothing
+
+Owner, on the stacking view: *"Is this supposed to be shown when vertical stacking is opened?"*, plus
+a toolbar spacing and legend-placement pass. Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+Two findings worth carrying past this module:
+
+- ⚠️⚠️ **A deleted class leaves its hide-rules behind, and they fail silently.** `.ps-legend` was
+  removed from the markup on 2026-08-17. One rule that named it was retargeted at the time; **five
+  more were not**, so four different views each carried a rule saying "hide the legend" and hid
+  nothing for four weeks. A selector that matches zero elements is indistinguishable from a rule that
+  works, in every tool. When you delete a wrapper, grep the whole file for its class — not just the
+  rules near the change.
+- ⚠️⚠️ **`return` alone on a line returns `undefined`, and the code under it still parses.**
+  Converting `var X =\n  'html…'` into `return\n  'html…'` is a one-word edit that is legal as an
+  assignment and fatal as a return: automatic semicolon insertion ends the statement at the newline.
+  The orphaned expression is a valid statement, so **`node --check` stays green** and a syntax gate
+  cannot see it. The symptom reaches the user as the literal word `undefined` in the page. There is
+  now a static gate for it; the general lesson is that "it parses" is not "it runs".
+
+`MODULE_V` → `20260914zvs3`, sort-checked against `20260914zvs2`. ⚠️ The token must sort **after** the
+current one as a plain string — `…vsbar` sorts *before* `…x`, which is how a previous session moved it
+backwards.
+
 ### 2026-09-14 (zvs2) — The red moved from the fill to the text; now it is neither
 
 Owner, on the colour pass that shipped hours earlier: *"still needs work"*, then *"Placement of the
