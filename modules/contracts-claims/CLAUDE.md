@@ -1,5 +1,80 @@
 # Module: contracts-claims
 
+## 2026-09-14 (q) — #6 answered: `trade_map` IS read, and the answer disappears the moment a BOQ is issued
+
+Owner: *“Let's do #6 first”* — the open audit item, *does anything actually read `trade_map`*. Measured
+against the **live database, signed in**, not read off the source. **No shipped file changed:** this is
+an audit, one correction to this file's own record, and one latent defect reported rather than fixed.
+
+### The chain, end to end — it works
+**Exactly one read exists in the whole app** (`boq.js:662`), and it is wired through to exactly one
+consumer: `load()` → `TRADEMAP` → the trade chip's `title` in `tradesHTML()`.
+
+| measured live | result |
+|---|---|
+| `trade_map` read, exactly as `boq.js` issues it | **9 rows, no error** — RLS and grants are fine |
+| distinct `class_codes.trade` (702 codes) | `General Requirement` 126 · `MEPF Works` 320 · `Architectural Works` 109 · `Others` 94 · `Site Works` 24 · `Structural Works` 21 · `Allied Services Works` 8 |
+| `trade_map.finance_trade` keys | the same six, **string-for-string** |
+| `Others` | unmapped **on purpose** (94 codes, Finance's catch-all) |
+
+⚠️ **And that corrects a suspicion of my own.** I went in expecting the join to miss, because my own
+DEMO01 notes recorded sheet names reading *Allied*, *Architectural*, *MEPF*. Those were **my
+abbreviations in a summary**, not the data — the real values are the full names and they match
+exactly. The lesson is the one this file keeps recording: read the column, do not trust a note about it.
+
+**The tooltip was then read out of the live DOM on DEMO01**, all seven chips:
+*“MEPF Works — 0.00 · Let under: Electrical and Auxiliary Works, Fire Protection Works, Mechanical
+Works, Plumbing Works”*, and *“Others — 0.00 · No procurement trade maps to this.”* It fires, it is
+right, and it names all four MEPF subcontracts.
+
+### ⚠️⚠️ THE ONE REAL FINDING: the gate is `isManualDraft()`, and it should be origin alone
+`tradesHTML` gates on `status === 'draft' && origin === 'manual'`. But `sheet` is written **from the
+Finance trade** by `addAuthoredLines` (*“SHEET = TRADE, not division”*), and `issueRev` writes only
+`{status:'issued', is_current}` — **`origin` stays `'manual'` for ever**. So the instant a hand-built
+bill is issued, its sections are still genuinely trades and yet:
+
+- the tooltip stops naming procurement trades,
+- *“By trade”* becomes *“By sheet”*, and *“All trades”* becomes *“All sheets”*.
+
+The gate conflates two different questions: *“is this chip a Finance trade?”* (origin) and *“is this
+bill still editable?”* (status). Only the first governs whether the lookup means anything — and the
+mapping is arguably **more** useful once issued, which is when subcontracts are let.
+
+⚠️ **Latent, not live: nothing is broken today.** Measured — **all 6 revisions in the database are
+`draft`/`manual`; no BOQ has ever been issued** on any project. Reported rather than shipped, because
+it changes what a screen says in a state no project is in yet, and this repo's rule is that a design
+decision gets evidence and the owner's call. **The fix is narrow** — a new `isManualBill()` (origin
+only) for the two label sites and the tooltip.
+⚠️ **`isManualDraft()` itself must NOT change**, and the third and fourth call sites are why:
+`subsFor()` hides the Billing and Class Codes tabs because a draft cannot bill, and `nocodes` explains
+a fault differently because the Class Codes tab is not on screen. Both are correctly about **draft**.
+
+### Two things measured and deliberately NOT reported as defects
+- **Every trade total reads `0.00`.** Honest: of DEMO01's 903 lines (205 headings + 698 lines),
+  **0 carry an amount, a quantity or a rate** — the bill was built from the class-code library and
+  never priced. The 50 allocations from the end-to-end run are `qty = 0` links, which is what
+  2026-09-07 (h) defines as *matched, not yet quantified*.
+- **The chip label reads `Structural Works21` in `textContent`.** Measured: the count sits **6px**
+  clear of the last glyph. Only `textContent` lacks a separator; the render is correct. Reporting it
+  would have been crying wolf — and this file has the *“Use 0 activit ies”* entry to show the
+  difference between the two.
+
+### ⚠️ Reported in passing, not chased here
+**`is_current` is `false` on all six revisions**, which is the draft-not-current trigger working as
+designed — but `computeProjectTotal` requires `is_current && document_id`, so **every project's
+contract value reads zero until a BOQ is issued.** Correct by construction, and worth knowing before
+somebody reads it as a data loss.
+
+### ⚠️ My own probes were wrong three times, and each is the same lesson
+A bare `.select()` returned **exactly 1000 rows** (the PostgREST cap) and I nearly reported the
+per-revision counts it produced; `boq.js` is safe because it reads ITEMS through `PDb.selectAll`,
+which pages. Then a probe selecting `rate_material`/`rate_labour` — **columns that do not exist**
+(they are `mat_rate`/`lab_rate`) — errored, and I had not checked `.error`, so it reported
+**0 items on a revision that holds 903**. An un-checked error reads exactly like an empty table.
+
+**Verified:** all of the above measured signed in on the deployed build (`boq.js?v=20260914p`);
+`test-boq.js` 41/0 unchanged; no shipped file changed, so no `?v=` or `MODULE_V` bump.
+
 ## 2026-09-14 (p) — The module gets its first committed suite, and it could not see 9 of its own assertions
 
 Owner, after the DEMO01 end-to-end run: *“Continue with boq.js instead”* — a committed test suite for
@@ -734,8 +809,8 @@ original build.
 ### Still open after this
 - **Design decision #6** (billing periods 26th→25th against monthly Cash Flow) — still needs the
   owner, still the one open item that changes a reported figure.
-- **`trade_map`'s migration has not been run**, so the trade tooltip has still never named a
-  procurement trade.
+- ~~**`trade_map`'s migration has not been run**~~ — **CLOSED 2026-09-14 (q).** It is applied,
+  the read works signed in (9 rows), and the tooltip names a procurement trade on every chip.
 - **`contracts_claims.status` has no fixed vocabulary**, so the module tile still claims no attention
   count.
 - The class-code chain's three missing hand-offs (audited in (a), not built).
@@ -926,9 +1001,11 @@ Read off this file and `ROADMAP.md` §B rather than invented. Ordered by what bl
   per-record editor to tick off "Recommending Approval". Per-stage aging surfaces the exposure the
   chain would explain, which is why this was deferred rather than dropped.
 - **Promoting a PMI to a `contracts_claims` claim is manual** — `claim_id` is stored but set by hand.
-- **`trade_map` is unread in anger.** The migration has not been run, so no row has been read and
-  the tooltip has never named a procurement trade. It also fires **only on a hand-built bill**: on
-  an import the chip is the client's own sheet name (`'BILLING BREAKDOWN '`, trailing space and all).
+- ~~**`trade_map` is unread in anger.**~~ **CLOSED 2026-09-14 (q), measured on the live database:**
+  the migration IS applied, the read returns its 9 rows signed in, and all seven chips on DEMO01
+  carry the right counterpart. It still fires **only on a hand-built bill** — on an import the chip
+  is the client's own sheet name (`'BILLING BREAKDOWN '`, trailing space and all).
+  ⚠️ **But it also stops at ISSUE, which is a latent defect — see (q).**
 
 **Consistency gaps that will bite**
 - ⚠️ **`openNewRev()` still writes `document_id` from `DOCID`, and it is the FALLBACK path** used

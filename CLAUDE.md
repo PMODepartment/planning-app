@@ -102,6 +102,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (q) — #6 answered: `trade_map` IS read, and the answer disappears the moment a BOQ is issued
+
+Owner: *“Let's do #6 first”*. Measured on the **live, signed-in database**, not read off the source.
+**No shipped file changed** — an audit, one correction to the module's own record, one latent defect
+reported. Detail: [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- **It works end to end.** One read exists in the whole app, wired to one consumer: the trade chip's
+  tooltip. Live: the read returns its **9 rows** with no error, and `class_codes.trade`'s seven real
+  values match `trade_map`'s keys **string-for-string** — six mapped, `Others` (94 codes) unmapped on
+  purpose. Read out of the live DOM on DEMO01, all seven chips are right, MEPF naming all four
+  subcontracts.
+- ⚠️⚠️ **A CORRECTION TO THIS LOG.** The module's own file has claimed since 2026-09-07 that *“the
+  migration has not been run… the tooltip has never named a procurement trade.”* **Both false.** Also
+  corrected: I went in expecting the join to miss because my own DEMO01 notes recorded *Allied* /
+  *Architectural* / *MEPF* — those were **my abbreviations in a summary**, not the data.
+- ⚠️⚠️ **The one real finding, reported not shipped:** the tooltip is gated on `isManualDraft()`, but
+  `sheet` is written **from the Finance trade** and `issueRev` never touches `origin` — so the instant
+  a hand-built bill is **issued**, its sections are still trades and the tooltip stops answering, while
+  *“By trade”* becomes *“By sheet”*. The gate conflates *“is this chip a Finance trade?”* (origin) with
+  *“is this bill still editable?”* (status). ⚠️ **Latent — measured, all 6 revisions are `draft`, no BOQ
+  has ever been issued.** The fix is a new origin-only predicate for the two labels and the tooltip;
+  ⚠️ `isManualDraft()` itself must not change — its other two callers are correctly about draft.
+- ⚠️ **Reported in passing:** `is_current` is false on all six revisions (the draft-not-current trigger,
+  by design), and `computeProjectTotal` requires it — so **every project's contract value reads zero
+  until a BOQ is issued.**
+- **Two things measured and deliberately NOT called defects:** the `0.00` trade totals are honest
+  (0 of DEMO01's 698 lines carry an amount, quantity or rate), and the chip's count sits a real **6px**
+  clear of its label — only `textContent` lacks a separator.
+- ⚠️ **Three of my own probes were wrong first:** a bare `.select()` hit the **1000-row cap** and I
+  nearly reported its truncated counts, and a probe naming columns that do not exist
+  (`rate_material` for `mat_rate`) errored unchecked and reported **0 items on a revision holding 903**.
+  An un-checked error reads exactly like an empty table.
+
+`test-boq.js` 41/0 unchanged; no `?v=` or `MODULE_V` bump.
+
 ### 2026-09-14 (p) — Contracts & Claims gets its first committed suite, and it could not see 9 of its own assertions
 
 Owner: *“Continue with boq.js instead”*. Detail:
