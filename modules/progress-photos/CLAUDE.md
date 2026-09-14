@@ -2,6 +2,47 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## "Add 360° photo": the Take/Upload buttons move above the fields (2026-09-14, later still again)
+
+Owner, off a screenshot of the "Add 360° photo" modal: *"please fix also issue in photo. the upload
+and take buttons should be in the upper parts."* The screenshot showed a date field, View Name, a
+large Key Plan section (a full site photo plus a paragraph of pin/camera-angle instructions), then
+the three source buttons (Take video / Upload video / Upload 360° photo), then Cancel at the very
+bottom — so reaching the one thing most people open this modal to click meant scrolling past an
+image and several sentences of instructions first.
+
+⚠️⚠️ **This is a pure reorder of `openPano360SourcePicker()`'s markup, not a new field or a new
+wiring path.** The three source buttons (`#pp360src-step`) now render immediately after the intro
+hint, **before** the `.pp-form2` metadata block (Description/Capture date/Works/Location/Key Plan
+pin). Nothing about what the buttons DO changed: `startVideoDraft`/`havePhoto` still call
+`captureSrcMeta(draft)` — which reads the `pp360src-*` fields into `draft.meta` — before `m.close()`/
+`openPano360Review(draft)` runs, exactly as before; the fields still carry over into the review
+modal opened afterward whether they were filled in before or after picking a source. A second short
+hint line ("Fill in the details below now, or after picking a source — they carry over either way")
+was added directly above the fields, since with the buttons now first, filling in the fields reads
+as optional-before-picking rather than a form to complete top-to-bottom.
+
+⚠️ The offline fallback (`#pp360src-offline`, shown when `haveVideo()` detects `navigator.onLine ===
+false`) moved along with the button row it belongs to — it still sits directly below
+`#pp360src-step` and is still toggled the same way (`show('pp360src-step', false); show
+('pp360src-offline', true);`).
+
+**Verified**: `node --check` clean; the existing 2026-09-14 assertion pinning `.pp-form2` before
+`#pp360src-step` was updated to assert the reverse (buttons now render first), plus a new dedicated
+assertion recording the reversal and why. Full suite: **958 passed, 3 failed** — the same 3
+pre-existing, unrelated failures this file's own history already documents (a PDF page-break
+assertion + 2 `capture.js` mic/audio-flash assertions), confirmed unchanged by name.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. The reorder is proven by asserting the shipped HTML string's element
+order and by the unchanged `captureSrcMeta`/`startVideoDraft`/`havePhoto` wiring, not by a real
+click-through.
+
+`module.js?v=` → `20260914j`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914j` to match, since this module's `index.html` itself changed
+(its own `module.js?v=` line). `pano360.js`/`module.css` are unchanged this round and keep their
+existing tokens.
+
 ## 360° stitching optimization: feature detection cached per frame, verified against real OpenCV.js in an isolated headless-Chromium harness (2026-09-14, review pass)
 
 Owner: *"review 360 processing code to improve and optimize."* A genuine review-and-optimize pass

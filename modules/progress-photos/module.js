@@ -6119,22 +6119,12 @@ window.ProgressPhotos = (function () {
       '<div class="pd-modal-header"><h3>Add 360° photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form" id="pp360src-body">' +
-        '<p class="pp-hint">Fill in the details below, then pick a source. Stand in one spot and slowly turn all ' +
-          'the way around (or through the angle you want), or upload a video already recorded the same way -- it ' +
-          'will be processed into a single 360° panorama in the background, so you can keep working while it ' +
-          'stitches. Already have a finished 360° photo (equirectangular or similar, ready to view as-is)? Upload ' +
-          'it directly -- it skips processing entirely.</p>' +
-        '<div class="pp-form2">' +
-          '<div class="pd-field"><label>Description</label>' +
-            '<input class="pd-input" id="pp360src-desc" placeholder="e.g. Model Unit" /></div>' +
-          '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
-            '<input class="pd-input" type="date" id="pp360src-date" value="' + Fmt.esc(new Date().toISOString().slice(0, 10)) + '" required /></div>' +
-          worksMultiFieldHTML('pp360src', []) +
-          locationFieldHTML('pp360src', {}, '') +
-          (window.BIM ? BIM.pinFieldHTML('pp360src', null) : '') +
-        '</div>' +
-        '<div id="pp360src-step" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
-          '<button type="button" class="pd-btn" id="pp360src-take">Take video</button>' +
+        '<p class="pp-hint">Stand in one spot and slowly turn all the way around (or through the angle you want), ' +
+          'or upload a video already recorded the same way -- it will be processed into a single 360° panorama in ' +
+          'the background, so you can keep working while it stitches. Already have a finished 360° photo ' +
+          '(equirectangular or similar, ready to view as-is)? Upload it directly -- it skips processing entirely.</p>' +
+        '<div id="pp360src-step" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px;">' +
+          '<button type="button" class="pd-btn pd-btn-primary" id="pp360src-take">Take video</button>' +
           '<button type="button" class="pd-btn" id="pp360src-choose">Upload video</button>' +
           '<button type="button" class="pd-btn" id="pp360src-choosephoto">Upload 360° photo</button>' +
           '<input class="pd-input" type="file" id="pp360src-file" hidden accept="video/*" />' +
@@ -6145,6 +6135,16 @@ window.ProgressPhotos = (function () {
             'Save it to your device\'s gallery and add it as a 360° photo once you are back online.</p>' +
           '<a id="pp360src-savelocal" class="pd-btn pd-btn-primary" download="360-capture.webm">Save video to gallery</a> ' +
           '<button type="button" class="pd-btn" id="pp360src-offlineclose">Close</button>' +
+        '</div>' +
+        '<p class="pp-hint">Fill in the details below now, or after picking a source -- they carry over either way.</p>' +
+        '<div class="pp-form2">' +
+          '<div class="pd-field"><label>Description</label>' +
+            '<input class="pd-input" id="pp360src-desc" placeholder="e.g. Model Unit" /></div>' +
+          '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+            '<input class="pd-input" type="date" id="pp360src-date" value="' + Fmt.esc(new Date().toISOString().slice(0, 10)) + '" required /></div>' +
+          worksMultiFieldHTML('pp360src', []) +
+          locationFieldHTML('pp360src', {}, '') +
+          (window.BIM ? BIM.pinFieldHTML('pp360src', null) : '') +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +

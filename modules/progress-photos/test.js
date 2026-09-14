@@ -4422,11 +4422,13 @@ console.log('\n[misc] insert().select() returns the new row id');
     var form2Idx = body.indexOf('class="pp-form2"');
     var stepIdx = body.indexOf('id="pp360src-step"');
     ok('openPano360SourcePicker: the metadata fields (.pp-form2 — Description/Capture date/Works/Location/Pin) now render on THIS FIRST screen, before any source is picked — not only in the review modal reached afterward',
-       form2Idx > -1 && stepIdx > -1 && form2Idx < stepIdx &&
+       form2Idx > -1 && stepIdx > -1 &&
        /id="pp360src-desc"/.test(body) && /id="pp360src-date"/.test(body) &&
        /worksMultiFieldHTML\('pp360src', \[\]\)/.test(body) &&
        /locationFieldHTML\('pp360src', \{\}, ''\)/.test(body) &&
        /BIM\.pinFieldHTML\('pp360src', null\)/.test(body));
+    ok('2026-09-14 (later still again): the Take video / Upload video / Upload 360° photo buttons (#pp360src-step) now render ABOVE the fields (.pp-form2) — the owner reported having to scroll past the Key Plan image and a paragraph of instructions to reach them; reversed from the ordering asserted just above at the point this fix shipped',
+       stepIdx > -1 && form2Idx > -1 && stepIdx < form2Idx);
     ok('…and the fields are genuinely wired (wireLocationField/wireWorksMultiField/BIM.wirePinField + hydrate), the same way every other field-carrying modal in this module wires itself',
        /wireLocationField\('pp360src'\);/.test(body) &&
        /wireWorksMultiField\('pp360src'\);/.test(body) &&
