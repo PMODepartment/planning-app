@@ -2,6 +2,106 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## A 360° draft's IndexedDB persistence could permanently break after one transient failure — fixed, and hardened with logging, a warning toast, and a beforeunload guard (2026-09-14, later still again)
+
+Owner: *"the 360 draft still gets removed once a new session open. please fix. please retain for a
+user since the processing takes time."* — referring to the *existing* "a 360° draft survives a
+session timeout" feature (the entry below this one, IndexedDB-backed `Pano360DraftStore`, already
+shipped and live on `main`). The report says that persistence isn't actually holding up.
+
+### The investigation, and what it ruled out before finding the real bug
+
+⚠️⚠️ **The core mechanism was proven to work, which is what made this bug hard to find.** A real
+cross-session Playwright test (`chromium.launchPersistentContext`, so IndexedDB genuinely survives
+between two separate `page` loads against the same on-disk profile — not two tabs in one page)
+confirmed a persisted draft correctly rehydrates on a fresh page load. So "the whole feature is
+broken" wasn't the answer, and neither was a stale/unmerged deploy — `git log -S
+"Pano360DraftStore"` confirms the feature is in `main`'s history. A large-blob/storage-quota theory
+(an 80MB write) was tried too and didn't reproduce here (this sandboxed Chromium reports a ~162GB
+quota, not representative of a real phone under storage pressure) — flagged as a real, still-
+plausible risk on an actual device, just not something provable from this environment.
+
+### ⚠️⚠️ The real bug: `Pano360DraftStore.open()` cached a REJECTED promise, permanently
+
+```js
+function open() {
+  if (dbp) return dbp;                 // <-- returns the SAME promise forever, success or failure
+  dbp = new Promise(function (resolve, reject) {
+    var req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = ...;
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };   // <-- dbp is STILL the rejected promise
+  });
+  return dbp;
+}
+```
+
+`dbp` is memoized unconditionally on the very first call — including when `indexedDB.open()` itself
+fails (a transient storage-pressure error, a blocked version-upgrade from another open tab, a
+private-mode quirk). Once that happens, `dbp` is a **permanently rejected promise**, and every
+future call to `open()` for the rest of that page's life returns the *same* dead promise — so
+`persistPano360Draft`/`rehydratePano360Drafts` silently, permanently stop working for that entire
+browser session, with **nothing logged anywhere**: the failure was swallowed by a bare
+`.catch(function () {})`. This is the single most plausible explanation for "the draft still gets
+removed" — one bad IndexedDB open at some point in the session (which needs nothing more exotic
+than momentary storage pressure on a real phone) silently disables persistence for every capture
+after it, and the planner sees exactly what a from-scratch, never-persisted draft looks like: gone
+the moment the tab closes.
+
+**Fixed**: a failed `open()` now resets `dbp = null` (in both the synchronous-throw catch and the
+async `onerror`/`onblocked` handlers) before rejecting, so the very next call genuinely retries
+against a fresh `indexedDB.open()` instead of replaying the same dead promise. A new
+`_resetConnectionForTest()` test-only hook lets the suite force this same reset deterministically.
+
+### Two further hardenings, since a persistence failure being *silent* was itself part of the problem
+
+- **`persistPano360Draft`'s failure is now logged** (`console.warn`, naming the draft id) instead of
+  a bare empty `.catch`, and **the planner is warned once per page load** via a toast — *"This
+  device could not save your 360° capture locally — keep this tab open until it finishes, or it may
+  be lost if you close it."* — the first time a persist attempt fails. A `pano360PersistFailWarned`
+  flag (with its own `_resetPano360PersistFailWarned()` test hook) keeps this to one toast, not one
+  per failed write in a bad stretch.
+- **`rehydratePano360Drafts`'s read failure is logged too** (`console.warn`) — it already degraded
+  silently to "no drafts to restore," which is the correct behaviour on a first-ever visit (no
+  IndexedDB data yet) but was indistinguishable from a genuine read error with nothing to say which.
+- **A `beforeunload` guard** now warns before closing/reloading the tab while any draft is still
+  `status === 'processing'` (`e.preventDefault(); e.returnValue = '';`) — the standard browser
+  mechanism for exactly this: a stitch genuinely takes real time, and closing the tab mid-stitch is
+  the single easiest way to lose one regardless of how well the persistence layer holds up.
+
+⚠️ **None of this touches the actual safety gate.** `uploadFile()`/`tolerantWrite()` are still
+called from exactly one place — Confirm & Save, guarded on `draft.status === 'ready' &&
+draft.stitchResult && draft.repBlob` — never from any of the functions touched here. This entry is
+entirely about the **local** IndexedDB layer standing in for what used to be a bare in-memory
+array; it neither writes to nor weakens the path to the shared database.
+
+### Verified
+
+**19 new checks, all green** (944 → 963; the same 3 pre-existing, unrelated failures — a PDF
+page-break assertion + 2 `capture.js` mic/audio-flash assertions — confirmed unchanged by name): a
+hand-built flaky-`indexedDB.open()` fake (rejects for the first N calls, then succeeds) proves the
+failure is logged by name, the toast fires with the exact warning text, a *second* persist attempt
+after the flaky window succeeds (proving `open()` doesn't poison itself for the rest of the
+session), and the toast fires **at most once** across repeated failures — not once per failure.
+⚠️ **A real bug in the test itself, caught before it shipped**: the first draft of the flaky-store
+scenario reported the persist *not* failing at all, because an earlier, unrelated test section had
+already resolved `dbp` against its own successful fake IndexedDB, and that cached promise was still
+live when the flaky scenario started — the exact shape of bug this entry is about, reproduced
+inside the test harness itself. Fixed by calling the new `_resetConnectionForTest()` hook
+immediately before running the flaky scenario. `init()`'s new `beforeunload` registration is
+confirmed present via a structural source assertion.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing caveat
+for every entry in this file. What's proven is that a simulated `indexedDB.open()` failure no longer
+permanently disables persistence and is now visible (console + toast) instead of silent; nobody has
+watched a real device hit real storage pressure mid-stitch and confirmed the draft survives a
+subsequent close.
+
+`module.js?v=` → `20260914u`; `assets/js/modules-grid.js` (and the `dashboard.html`/
+`modules.html` script tags that load it) → `20260914u` to match, since this module's `index.html`
+itself changed (its own `module.js?v=` line). `pano360.js` is unchanged this round and keeps its
+existing token.
+
 ## "Add 360° photo": the Take/Upload buttons move above the fields (2026-09-14, later still again)
 
 Owner, off a screenshot of the "Add 360° photo" modal: *"please fix also issue in photo. the upload
