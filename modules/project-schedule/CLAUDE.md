@@ -1,3 +1,53 @@
+## 2026-09-14 (w) — The two things that really were clipping, and the five toolbars that were not
+
+Owner: *“Side panel clips as well when page is scrolled”*, *“The buttons are still clipping let's
+make sure that the UI for the toolbars are professional looking”*, *“UI still clips i refreshed the
+in-app browser”*.
+
+### ⚠⚠ THE TOOLBARS DO NOT CLIP — MEASURED BEFORE CHANGING ANYTHING
+`.pd-topbar` (9 controls), `.pd-modulebar` (33), `.ps-toolbar` (65), `.ps-vs-bar` (19) and
+`.ps-vs-chips` (5): **0 elements whose content overflows their own box, 0 past their bar's right
+edge, 0 bars scrolling horizontally, and no horizontal page scroll.** Redesigning five working bars
+would have been a large change aimed at the wrong thing.
+
+### ⚠⚠ 1 · THE 3D CANVAS WAS 1117px WIDE IN A 698px BOX WITH `overflow:hidden`
+419px of every building, cut off. `_vs3Build` returns `resize()` as a **capability on purpose** —
+*“a WebGL canvas does not reflow … the owner (or the modal) knows when the box changed”*. The focus
+window calls it; **the inline cards had nobody to call it**, so a canvas built at one pane width kept
+that drawing buffer for ever.
+- New `_vs3WatchSize()` — a **`ResizeObserver` on `#ps-vstack`**. ⚠ Not a window `resize` listener:
+  the pane also narrows when the **sidebar collapses**, which fires no window resize.
+- ⚠⚠ **Width only.** `resize()` computes the canvas height *from* the width, so acting on a height
+  change would be the observer reacting to its own effect — an endless loop.
+- ⚠ 120ms debounce (every pass reallocates a drawing buffer), one observer for the page's life,
+  registered when the first card is pushed to `_vs3Scenes`, and never disconnected — it reads
+  `_vs3Scenes`, which a repaint empties, so with no cards it costs one comparison.
+
+### ⚠⚠ 2 · `.ps-longdoc` WAS SET FROM THE TAB, AND THREE MODES ALSO SCROLL THE PAGE
+With Vertical Stacking on the page was **1,327px inside a `.pd-app` of 900px**, and a sticky box
+cannot travel outside its containing block — so the sidebar scrolled away and its top was cut off.
+Vertical Stacking, Activity Progress and Flowline each replace the split with a long document;
+`switchTab` only knew about the Setup and Cost Loading **tabs**. Same cause as 2026-09-11 (a7).
+- ⚠⚠ **One writer** (`_psSyncLongDoc`), because four things decide the class and a second writer
+  would undo the first. ⚠ The tab is read back off the element `switchTab` stamped it on, never
+  held in a parallel variable.
+
+### Verified
+- `_psSyncLongDoc` sliced and executed over **8 states: 8/8 correct**; ⚠⚠ the negative build with
+  the `panel ||` term removed **fails exactly the 3 panel cases** and passes the other 5.
+- The resize watcher driven against a fake `ResizeObserver`: **7 assertions**, the load-bearing one
+  being that a height-only change schedules **nothing**.
+- ⚠ A harness bug of my own, recorded: `new Function` runs its body in **global scope**, so the
+  test's own closure variable was invisible inside it.
+- `node --check` PARSE OK; **2,054 → 2,056 functions, 0 lost**.
+- **Re-verified on the deployed build** after a cache-busting reload: 1 `barChart` / 1 `trendingUp`,
+  no Towers row, 4 groups / 0 orphaned labels, 0 clipped elements, header **122px → 97px** at 1280.
+  ⚠ The owner's first screenshots were a **cached page** — the module page is loaded at its own URL,
+  so `MODULE_V` busts the link from the dashboard grid and not a direct reload.
+
+`MODULE_V` → `20260914x` — the third collision of the session, caught the same way: by `curl`,
+not by git, since both sides writing one string conflicts on nothing.
+
 ## 2026-09-14 (u) — The duplicate toolbar glyph, `_vsTowerOf` answering a floor, and a label torn off its control
 
 Owner: *“1. These two icons are the same. let's fix  2. Vertical stacking UI looks messy, let's

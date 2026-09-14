@@ -14853,6 +14853,7 @@
   function setProgressMode(on) {
     progressMode = on;
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-progress-mode', on);
+    _psSyncLongDoc();
     var btn = document.getElementById('ps-progressbtn'); if (btn) btn.classList.toggle('active', on);
     _paintViewBtn();
     var host = document.getElementById('ps-progress'); if (host) host.style.display = on ? 'block' : 'none';
@@ -16576,6 +16577,40 @@
     _vs3Scenes.forEach(function (s) { try { s.dispose(); } catch (e) {} });
     _vs3Scenes = [];
   }
+  /* ⚠⚠ A WebGL CANVAS DOES NOT REFLOW, AND THE CARDS ON THE PAGE HAD NOBODY TO TELL THEM.
+     `_vs3Build` exposes `resize()` as a CAPABILITY on purpose — its own note says *“the owner (or
+     the modal) knows when the box changed; this is how it says so”*. The focus window says so; the
+     inline cards never did, so a canvas built at one pane width kept that drawing buffer for ever.
+     Measured live at 846px: the canvas was **1117px wide inside a 698px `.ps-vs-tower` whose
+     overflow is hidden** — 419px of every building silently cut off. Owner: *“UI still clips”*.
+     ⚠ A ResizeObserver, not a window resize listener: the pane also changes width when the SIDEBAR
+     collapses, which fires no window resize at all.
+     ⚠⚠ WIDTH ONLY. `resize()` derives the canvas HEIGHT from the width, so reacting to a height
+     change would re-enter for ever — the observer would be watching its own effect.
+     ⚠ Debounced: a drag-resize fires continuously and every call reallocates a drawing buffer.
+     ⚠ One observer for the life of the page, and it is never disconnected — it reads `_vs3Scenes`,
+     which a repaint empties, so with no cards it costs a comparison. */
+  var _vs3RzT = null, _vs3RO = null, _vs3LastW = 0;
+  function _vs3ResizeAll() {
+    _vs3Scenes.forEach(function (s) {
+      if (!s || typeof s.resize !== 'function') return;
+      try { s.resize(); } catch (e) {}
+    });
+  }
+  function _vs3WatchSize() {
+    if (_vs3RO || typeof ResizeObserver === 'undefined') return;
+    var host = document.getElementById('ps-vstack'); if (!host) return;
+    _vs3LastW = Math.round(host.clientWidth || 0);
+    _vs3RO = new ResizeObserver(function (ents) {
+      var w = Math.round((ents && ents[0] && ents[0].contentRect.width) || host.clientWidth || 0);
+      if (w === _vs3LastW) return;
+      _vs3LastW = w;
+      if (!_vs3Scenes.length) return;
+      clearTimeout(_vs3RzT);
+      _vs3RzT = setTimeout(_vs3ResizeAll, 120);
+    });
+    try { _vs3RO.observe(host); } catch (e) { _vs3RO = null; }
+  }
   /* ==== THE FOOTPRINT, REDUCED TO THE POINTS A SILHOUETTE CAN USE ========================
      Owner 2026-09-14: *"the labels are closer to the towers itself."*
      A floor label stands at the SCREEN-leftmost point of the tower it names, which means
@@ -17865,6 +17900,7 @@
           // the memory inside the build would make a genuinely new card open at a stale angle.
           if (_vs3Cam[j.key] && s.setCam) { try { s.setCam(_vs3Cam[j.key], true); } catch (e2) {} }
           _vs3Scenes.push(s);
+          _vs3WatchSize();
           // The viewpoint buttons belong to THIS card, so they are found within its own card box.
           var card = el.closest ? el.closest('.ps-vs-tower') : el.parentNode;
           (card || el.parentNode).querySelectorAll('[data-vs3view]').forEach(function (b) {
@@ -20439,6 +20475,7 @@
     vstackMode = on;
     if (on && progressMode) setProgressMode(false);   // one full-width panel at a time
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-vstack-mode', on);
+    _psSyncLongDoc();
     var btn = document.getElementById('ps-vstackbtn'); if (btn) btn.classList.toggle('active', on);
     _paintViewBtn();
     document.body.classList.toggle('ps-vstack-on', !!on);
@@ -44817,12 +44854,36 @@
     _tbFit();
   }
 
+  /* ⚠⚠ ONE WRITER FOR .ps-longdoc, BECAUSE FOUR THINGS NOW DECIDE IT. The class says "this
+     screen scrolls the PAGE, so drop the 100vh that makes the Schedule scroll its own panes".
+     switchTab set it from the TAB alone — correct for Setup and Cost Loading, and blind to the
+     three panel modes that replace the Schedule's split with a long document of their own
+     (Vertical Stacking, Activity Progress, Flowline). With Vertical Stacking on, the page really
+     was 1,327px tall inside a .pd-app pinned to 900px, and ⚠ A STICKY BOX CANNOT TRAVEL OUTSIDE
+     ITS CONTAINING BLOCK — so the sidebar scrolled away with the page and its top was cut off.
+     Owner: *"Side panel clips as well when page is scrolled"*. Same cause as 2026-09-11 (a7),
+     which fixed it for the two TABS and could not know about the modes.
+     ⚠ A second writer would undo the first: switchTab fires on every tab change and the mode
+     setters on every toggle, so each must ask the same question rather than assert its own half.
+     ⚠ The tab is read back off the element switchTab wrote it to, not kept in a parallel variable
+     that could disagree with the DOM. */
+  function _psSyncLongDoc() {
+    var app = document.querySelector('.pd-app'); if (!app) return;
+    var tab = app.dataset.psTab || 'schedule';
+    var v = document.getElementById('ps-view-schedule');
+    var panel = !!(v && (v.classList.contains('ps-vstack-mode') ||
+                         v.classList.contains('ps-progress-mode') ||
+                         v.classList.contains('ps-flowline-mode')));
+    app.classList.toggle('ps-longdoc', panel || tab === 'builder' || tab === 'costload');
+  }
+
   function switchTab(tab) {
     activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     var vcl = document.getElementById('ps-view-costload'); if (vcl) vcl.style.display = tab === 'costload' ? '' : 'none';
     // ⚠️ #ps-view-wbs is DELIBERATELY not switched: it is the hidden park slot for the WBS tree now,
+    // (see _psSyncLongDoc below for the page-scroll class)
     // not a view. Showing it would put a second copy of the tree's toolbar on screen.
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
 
@@ -44832,7 +44893,8 @@
     /* ⚠️ Setup and Cost Loading scroll the PAGE; the Schedule scrolls its own panes. The class says
        which, so the 100vh above can stay where it is needed and get out of the way where it is not. */
     var _app = document.querySelector('.pd-app');
-    if (_app) _app.classList.toggle('ps-longdoc', tab === 'builder' || tab === 'costload');
+    if (_app) _app.dataset.psTab = tab;
+    _psSyncLongDoc();
     // (#ps-view-calendars is a hidden host now, not a view — Working Calendars is a Setup step.)
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Setup or Cost table.
@@ -46857,6 +46919,7 @@
     }
     var v = document.getElementById('ps-view-schedule');
     if (v) v.classList.toggle('ps-flowline-mode', flowlineMode);
+    _psSyncLongDoc();
     var btn = document.getElementById('ps-flowbtn');
     if (btn) btn.classList.toggle('active', flowlineMode);
     var host = document.getElementById('ps-flowline');

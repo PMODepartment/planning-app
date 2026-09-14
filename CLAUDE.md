@@ -121,6 +121,89 @@ splits. ⚠️ Not verified signed in.
 Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914w`;
 `assets/js/modules-grid.js` → `?v=20260914w` (2 pages, MODULE_V fallback too; re-derived past
 main's own concurrent `20260914v` after rebasing this branch onto it).
+### 2026-09-14 (w) — Two real clipping defects: a sticky sidebar with nowhere to stick, and 419px of every building cut off
+
+Owner, continuing the same session: *“Side panel clips as well when page is scrolled”*, then
+*“The buttons are still clipping let's make sure that the UI for the toolbars are professional
+looking”*, then *“UI still clips i refreshed the in-app browser”*. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### ⚠⚠ 1 · THE TOOLBARS WERE NOT CLIPPING, AND MEASURING IS WHY THAT MATTERED
+Every bar on the page was measured for real clipping — an element whose `scrollWidth` exceeds its
+own `clientWidth`, or which sits past its bar's right edge:
+
+| bar | controls | content overflowing its box | past the edge | bar scrolls X |
+|---|---|---|---|---|
+| `.pd-topbar` | 9 | **0** | **0** | no |
+| `.pd-modulebar` | 33 | **0** | **0** | no |
+| `.ps-toolbar` | 65 | **0** | **0** | no |
+| `.ps-vs-bar` | 19 | **0** | **0** | no |
+| `.ps-vs-chips` | 5 | **0** | **0** | no |
+
+**Nothing in any toolbar clips**, and the page does not scroll sideways. Chasing the toolbars would
+have been a redesign of five working bars while the actual defects sat elsewhere — which is the
+whole reason for measuring before changing. The two things that really were cut off are below.
+
+### ⚠⚠ 2 · 419px OF EVERY BUILDING WAS BEING CUT OFF
+Measured live at a 846px viewport: the 3D canvas was **1117px wide inside a 698px `.ps-vs-tower`
+whose `overflow` is `hidden`**. The model was not badly centred — more than a third of it was
+outside its own card.
+`_vs3Build` exposes **`resize()` as a capability, deliberately** — its own note reads *“a WebGL
+canvas does not reflow: its drawing buffer and the camera's aspect are numbers set once … the owner
+(or the modal) knows when the box changed; this is how it says so”*. The **focus window** says so.
+The **cards on the page never did**, so a canvas built at one pane width kept that drawing buffer
+for ever, and any narrowing after the build clipped it.
+- A **`ResizeObserver` on `#ps-vstack`**, not a window `resize` listener — the pane also changes
+  width when the **sidebar collapses**, which fires no window resize at all.
+- ⚠⚠ **WIDTH ONLY.** `resize()` derives the canvas **height** from the width, so reacting to a
+  height change would make the observer watch its own effect and re-enter for ever.
+- ⚠ Debounced at 120ms (a drag-resize fires continuously and each pass reallocates a drawing
+  buffer), one observer for the life of the page, and a scene with no `resize()` is skipped rather
+  than throwing.
+
+### ⚠⚠ 3 · A STICKY SIDEBAR CANNOT TRAVEL OUTSIDE ITS CONTAINING BLOCK
+With Vertical Stacking on, the page was **1,327px tall inside a `.pd-app` pinned to 900px**, so
+once you scrolled, the sidebar's containing block had gone and the rail went with it — its top cut
+off, exactly the screenshot. `.ps-longdoc` (which drops the `100vh` that makes the Schedule scroll
+its own panes) was set from the **TAB alone**: right for Setup and Cost Loading, and blind to the
+three panel modes that replace the Schedule's split with a long document of their own — Vertical
+Stacking, Activity Progress and Flowline. **Same cause as 2026-09-11 (a7)**, which fixed it for the
+two tabs and could not have known about the modes.
+- ⚠⚠ **ONE WRITER.** Four things now decide the class, and a second writer would undo the first:
+  `switchTab` fires on every tab change and the three mode setters on every toggle. They all call
+  one `_psSyncLongDoc()` that asks the whole question, rather than each asserting its own half.
+- ⚠ The tab is read back off the element `switchTab` wrote it to, not kept in a parallel variable
+  that could drift from the DOM.
+
+### Verified
+- **`_psSyncLongDoc` sliced out of the shipped file and executed over all 8 states** — schedule
+  alone, schedule + each of the three panel modes, builder, costload, builder + a mode, and the
+  “no tab recorded yet” cold open: **8/8 correct**. ⚠⚠ **The negative build bites**: removing just
+  the `panel ||` term fails exactly the three panel cases and still passes the other five.
+- **The resize watcher executed against a fake `ResizeObserver`** — **7 assertions**, including the
+  one most likely to be wrong: a **height-only** change (the same width reported back) schedules
+  **nothing**, so it cannot re-enter; a width change schedules exactly one debounced pass that
+  resizes every live scene; `watch()` is idempotent.
+- ⚠ **My own harness was wrong first** and is recorded rather than quietly fixed: `new Function`'s
+  body runs in **global scope**, so the fake observer's callback — a closure variable in the test —
+  was not visible from inside it and the probe threw `cb is not defined`.
+- `node --check` **PARSE OK**; **2,054 → 2,056 functions, 0 lost**.
+
+### Re-verified live, on the deployed build
+After a cache-busting reload of the real page: **1 `barChart` and 1 `trendingUp`** (the duplicate
+pair gone), the bogus **Towers row absent**, **4 label groups with 0 orphaned labels**, **0 clipped
+elements**, **0 children past the bar's edge**, no horizontal page scroll — and the stacking header
+down from **122px to 97px** at 1280.
+⚠ **The owner's first two screenshots were a CACHED page**, which is worth recording: the module
+page is fetched directly at its own URL, so `MODULE_V` only cache-busts the link *from the dashboard
+grid* — a direct reload can still serve stale bytes. `curl` against the deployed file confirmed all
+three fixes were on the server while the browser was still showing the old UI.
+
+`MODULE_V` → `20260914x`. ⚠⚠ **The THIRD version collision of this session** — the concurrent
+session independently took `20260914w` as well. Each time it was caught by `curl`-ing the deployed
+page rather than trusting the local file, and each time the rebase merged **cleanly**, because both
+sides wrote the *identical* string and git had nothing to flag.
+
 
 ### 2026-09-14 (u) — Two buttons drawing one glyph, a Towers row listing floors, and a label torn off its control
 
