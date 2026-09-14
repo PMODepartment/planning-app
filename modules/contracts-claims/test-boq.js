@@ -311,6 +311,60 @@ block('7 method provenance', function () {
      'and matches on the column as well as the code, so it cannot swallow another check');
 });
 
+/* ===== 8 · THE TRADE ANSWER SURVIVES ISSUE (2026-09-14 s) ==================================== */
+block('8 manual-bill vs manual-draft', function () {
+  ok(typeof I.isManualBill === 'function', 'isManualBill is exported');
+  ok(typeof I.isManualDraft === 'function', 'isManualDraft is exported');
+  if (typeof I.isManualBill !== 'function' || typeof I._set !== 'function') return;
+
+  /* ⚠️⚠️ EXECUTED, not grepped: `_set` injects REVS/REVID and both predicates read
+     curRev(), so the distinction can be driven over the whole matrix. The two were ONE function,
+     which is how the procurement-trade tooltip came to vanish the moment a bill was issued. */
+  const at = (rev) => { I._set({ REVS: [Object.assign({ id: 'R' }, rev)], REVID: 'R' });
+                        return { bill: I.isManualBill(), draft: I.isManualDraft() }; };
+
+  let r = at({ origin: 'manual', status: 'draft' });
+  eq(r.bill, true,  'manual + draft  -> it is a manual bill');
+  eq(r.draft, true, 'manual + draft  -> and it is still editable');
+
+  /* ⚠️⚠️ THE BUG. `sheet` is written FROM the Finance trade and never rewritten, and
+     issueRev writes only {status, is_current} - so origin stays 'manual' and the sections are
+     still trades. Before this split, BOTH answers went false here and the tooltip stopped
+     naming a procurement trade on a bill whose sections had not changed at all. */
+  r = at({ origin: 'manual', status: 'issued' });
+  eq(r.bill, true,   'manual + ISSUED -> the sections are STILL trades');
+  eq(r.draft, false, 'manual + ISSUED -> but it is no longer editable');
+
+  /* ⚠️ An import's sections are the client's own workbook tabs, so a trade lookup would
+     miss every time - the reason the gate exists at all. Both answers must stay false. */
+  r = at({ origin: 'import', status: 'draft' });
+  eq(r.bill, false,  'import + draft  -> not a trade bill');
+  r = at({ origin: 'import', status: 'issued' });
+  eq(r.bill, false,  'import + issued -> not a trade bill');
+
+  /* ⚠️ Un-migrated database: no `origin` column at all. Must read as "not a manual
+     bill" rather than throwing or guessing - the same degrade revStatus makes for `status`. */
+  eq(at({ status: 'issued' }).bill, false, 'absent origin -> false, not a guess');
+  I._set({ REVS: [], REVID: null });
+  eq(I.isManualBill(), false, 'no current revision -> false, and no throw');
+
+  /* ⚠️⚠️ AND THE CALL SITES, because the assertions above do not cover them and a
+     negative build proved it: reverting the trade bar to isManualDraft() left this suite
+     GREEN. Proving the two predicates differ says nothing about which one the render reads,
+     and the render is where the bug lived. Structural, and labelled as such — tradesHTML is a
+     render function `_internals` does not reach. */
+  ok(/var word = isManualBill\(\) \? 'trade' : 'sheet'/.test(SRC),
+     'the trade bar (and so the tooltip, which gates on `word`) reads ORIGIN');
+  ok(/\(isManualBill\(\) \? 'All trades' : 'All sheets'\)/.test(SRC),
+     'and the filter label agrees with it');
+  /* ⚠️ The two EDITABILITY sites must NOT have moved: subsFor hides tabs a draft cannot
+     use, and `nocodes` explains a fault differently while the Class Codes tab is off screen. */
+  ok(/if \(!isManualDraft\(\)\) return SUBS;/.test(SRC),
+     'subsFor still gates on DRAFT — it is about editability, not about trades');
+  ok(/nocodes:    isManualDraft\(\)/.test(SRC),
+     'and so does the nocodes explanation');
+});
+
 /* ------------------------------------------------------------------ runner + report ------------
    ⚠⚠ THE REPORT MUST BE AWAITED PAST EVERY BLOCK. Measured on the first cut of this suite:
    block 1 is async, the report was top-level and synchronous, so 9 of 41 assertions — every one

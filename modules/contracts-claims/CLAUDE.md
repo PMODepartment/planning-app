@@ -1,5 +1,39 @@
 # Module: contracts-claims
 
+## 2026-09-14 (s) — #6: the procurement-trade answer stops vanishing when a bill is issued
+
+Owner: *“Let's do #6”* — the latent gate reported in (q).
+
+- ⚠️⚠️ **One predicate was answering two different questions.** The trade chip's tooltip, its
+  *“By trade”* label and the filter's *“All trades”* all gated on `isManualDraft()` —
+  `status === 'draft' && origin === 'manual'`. But `sheet` is written **from the Finance trade** by
+  `addAuthoredLines` and is never rewritten, and `issueRev` writes only `{status, is_current}`, so
+  **`origin` stays `'manual'` for ever.** The instant a hand-built bill was issued, its sections were
+  still trades and the app stopped saying so.
+- **New `isManualBill()` — origin only.** *What the sections are* is a question about origin;
+  *whether the bill is still editable* is a question about status. ⚠️ The two **editability** call
+  sites are deliberately untouched and asserted to stay that way: `subsFor` hides the Billing and
+  Class Codes tabs because a draft cannot bill, and `nocodes` explains a fault differently while the
+  Class Codes tab is off screen. Both are correctly about draft.
+- ⚠️ It degrades the same way `revStatus` does: on an import, or on a database without
+  `2026-09-07-boq-manual.sql`, `origin` is absent and the answer is false — the chip is then the
+  client's own workbook tab (`'BILLING BREAKDOWN '`, trailing space and all) and a trade lookup would
+  miss every time. That is the reason the gate exists at all, and it is preserved.
+- **Executed, not grepped.** `_set` injects `REVS`/`REVID` and both predicates read `curRev()`, so
+  the whole matrix is driven: manual+draft, **manual+ISSUED** (the bug — `bill` true, `draft` false),
+  import+draft, import+issued, absent origin, and no current revision.
+- ⚠️⚠️ **A gap in my own suite, found by a negative build and then closed.** Reverting the trade bar
+  to `isManualDraft()` left the suite **GREEN**: block 8 proved the two predicates *differ* and
+  asserted nothing about **which one the render reads** — and the render is where the bug lived.
+  Four call-site assertions added; that build now fails.
+
+**66 assertions, 0 failing; three negative builds bite (1 / 1 / 4).** `node --check` clean,
+**195 → 196 functions, 0 lost**, wiring-check 126/0, dead-hooks 9 known.
+`boq.js` → `?v=20260914s`; `MODULE_V` → `20260914s`.
+⚠️ **Latent when found and latent when fixed** — measured: all revisions are still `draft`, so nothing
+on screen changes today. What changes is what happens the first time somebody issues a bill.
+
+
 ## 2026-09-14 (r) — #5: a link that nobody picked stopped claiming a human picked it
 
 **Run `migrations/2026-09-14-boq-alloc-method-link.sql`.** Owner: *“Let's do #5”* — the Method column

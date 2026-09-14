@@ -905,6 +905,17 @@ window.BOQ = (function () {
     var r = curRev() || {};
     return revStatus(r) === 'draft' && r.origin === 'manual';
   }
+  /* ⚠️⚠️ WHETHER THE SECTIONS ARE TRADES IS A QUESTION ABOUT ORIGIN, NOT STATUS, and
+     conflating the two made a correct answer disappear at issue. `sheet` is written FROM the
+     Finance trade by addAuthoredLines ("SHEET = TRADE, not division") and is never rewritten;
+     `issueRev` writes only {status, is_current}, so `origin` stays 'manual' for ever. A bill
+     built here therefore has trades for sections whether it is a draft or issued — and the
+     procurement mapping is arguably MORE use once issued, which is when subcontracts are let.
+     ⚠️ Use `isManualDraft` for anything about EDITABILITY (which tabs exist, how a fault is
+     explained) and this for anything about WHAT THE SECTIONS ARE. On an import, or on a
+     database without 2026-09-07-boq-manual.sql, `origin` is absent and this is false — the
+     chip is then the client's own workbook tab and a trade lookup would miss every time. */
+  function isManualBill() { return (curRev() || {}).origin === 'manual'; }
   function subsFor() {
     if (!isManualDraft()) return SUBS;
     return [
@@ -1259,7 +1270,7 @@ window.BOQ = (function () {
       if (r.line_kind === 'heading') return;
       counts[r.sheet] = (counts[r.sheet] || 0) + 1;
     });
-    var word = isManualDraft() ? 'trade' : 'sheet';
+    var word = isManualBill() ? 'trade' : 'sheet';   // ⚠️ origin, not status — see isManualBill
     return '<div class="boq-trades">' +
       '<span class="boq-trades-lbl">By ' + word + '</span>' +
       '<button class="boq-trade' + (filt.sheet ? '' : ' on') + '" data-trade="">' +
@@ -1350,7 +1361,7 @@ window.BOQ = (function () {
       /* Same word as the trade bar above, for the same reason - "sheet" is the client's
          workbook tab and means nothing on a bill somebody typed. */
       '<select class="pd-select" id="boq-f-sheet"><option value="">' +
-        (isManualDraft() ? 'All trades' : 'All sheets') + '</option>' +
+        (isManualBill() ? 'All trades' : 'All sheets') + '</option>' +
         sheetList().map(function (s) { return '<option' + (filt.sheet === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') + '</select>' +
       '<select class="pd-select" id="boq-f-kind"><option value="">All line kinds</option>' +
         ['measured', 'lump_sum', 'provisional', 'excluded', 'heading'].map(function (k) {
@@ -6315,6 +6326,11 @@ window.BOQ = (function () {
          not by a test, because nothing here could reach the function. It can now.
          ⚠️ Both names exist above; a name here that does NOT is the z6 outage exactly. */
       applyTagPlan: applyTagPlan, reportTagged: reportTagged, tagRpc: tagRpc,
+      /* ⚠️⚠️ BOTH predicates, so a suite can prove they are DIFFERENT. They were one
+         function, and that is precisely how the procurement-trade answer came to vanish the
+         moment a bill was issued. Exported together because the bug is the relationship
+         between them, not either one alone. */
+      isManualDraft: isManualDraft, isManualBill: isManualBill,
       planCodeMap: planCodeMap, planTags: planTags, planAllocs: planAllocs,
       lineLinkState: lineLinkState, tradeActivityCounts: tradeActivityCounts,
       clearTradeActs: clearTradeActs, mergePickedParts: mergePickedParts,
