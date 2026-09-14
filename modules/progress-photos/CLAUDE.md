@@ -2,6 +2,115 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 360° upload becomes a session-only draft: stitching runs in the background, nothing is pushed to the database until the planner confirms (2026-09-13, later still)
+
+Owner: *"I still have open items regarding the add 360 photo of the progress photos. at 48 frames
+per video, the processing is still slow. since this portion takes long, allow uploading 360 as
+draft during the session to work the stitching in the background. however, no push to database is
+allowed until user confirms the 360 photo. keep it in the session only as draft."*
+
+⚠️⚠️ **Even at the fixed 48-frame sampling shipped two entries above, the stitch is still real,
+sequential, per-pair OpenCV work — this entry does not try to make it faster again.** It changes
+what the planner has to do while it runs: start a capture, walk away, and come back once it's
+ready, instead of the modal blocking the whole time.
+
+### The old design, and why it couldn't do this
+
+`open360Upload()` used to be one modal holding all the state itself — the picked video, the
+in-flight stitch, the metadata fields — in plain function-scoped variables. Closing that modal (or
+navigating away) had nowhere for the in-progress work to live; the only way to "keep processing"
+was to keep the modal open, which is the opposite of what was asked.
+
+### The fix: a `PANO360_DRAFTS` array, decoupled from any one modal
+
+A **draft** (`newPano360Draft`) is a plain object — `{id, pid, status, videoBlob, stitchResult,
+repBlob, meta:{...}, pendingAdjust}` — pushed onto a module-scope `PANO360_DRAFTS` array. Starting a
+capture creates a draft and kicks off `runStitchForDraft`/`runPhotoForDraft` (async, unawaited by
+the caller) which keep running and mutating the draft's own `status`/`stitchResult` fields **however
+many times the review modal that started them gets closed and reopened** — they operate purely on
+the draft object, never assuming a live DOM or open modal (`touchPano360Draft`'s `d.onUpdate` call
+is a null-safe live-repaint hook, not a requirement).
+
+- **`openPano360SourcePicker()`** — the thin entry point ("+ Add media" → 360°): Take video /
+  Upload video / Upload 360° photo, same three options as before. Picking one creates a draft and
+  opens the review modal on it.
+- **`openPano360DraftsList()`** — a list of every in-flight/ready draft for the *current* project
+  (processing % or "Ready to review", each reopenable). Reached from a new topbar badge,
+  `#pp360-drafts`, styled and gated exactly like the existing `#pp-sync` offline-queue pill (native
+  `hidden`, not a class — the same convention that pill already established) — hidden when there are
+  no drafts for the project currently open, so it never sits there doing nothing.
+- **`openPano360Review(draft)`** — the modal a draft is actually reviewed and confirmed from. Its
+  metadata fields (Description / Capture date / Works / Location / Pin) render immediately, same as
+  the ordinary photo/video Add Media form, never gated behind the stitch finishing. The panorama
+  preview and "Confirm & Save" only make sense once `draft.status === 'ready'`; **Close and Discard
+  are available at every stage** — closing mid-stitch leaves the draft running in the background
+  (findable again via the drafts badge), Discard abandons it outright.
+- ⚠️⚠️ **The safety gate is exactly ONE call site.** `uploadFile()`/`tolerantWrite()` are called only
+  inside Confirm & Save's own handler, guarded on `draft.status === 'ready' && draft.stitchResult &&
+  draft.repBlob` — never from `runStitchForDraft`, `runPhotoForDraft`, `finishDraftStitch`, or
+  `openPano360SourcePicker`. Stated as a header comment above `PANO360_DRAFTS`'s own declaration so
+  it's auditable in one place rather than scattered across five functions.
+- ⚠️⚠️ **"Keep it in the session only as draft" means literally in-memory, never persisted.**
+  `PANO360_DRAFTS` is a plain array; nothing about a draft is ever written to `sessionStorage`,
+  `localStorage`, or IndexedDB. Closing or reloading the tab loses any unconfirmed draft — by
+  design, not an oversight. The module's own existing offline-sync outbox (`indexedDB.open`, an
+  unrelated feature for *confirmed* metadata edits going through `PDSync`) is untouched and never
+  touches a draft.
+- The badge is repainted from `notifyProject()`, so switching projects always shows the CURRENT
+  project's drafts while another project's drafts keep processing untouched in the background —
+  `pano360DraftsForProject()` filters `PANO360_DRAFTS` by `pid`, never by which project happened to
+  be open when the capture started.
+
+### What did NOT change
+
+`Pano360.stitchFromVideo`'s 4-stage progress reporting, the fixed 48-frame sampling, `mountPannellumViewer`,
+`captureViewerThumbnail` vs. `captureImageThumbnail`, and the Location Breakdown / Works / Pin
+fields themselves are all unchanged — this is a restructuring of *when* the DB write happens and
+*whether the modal has to stay open*, not a change to the stitching pipeline or the saved row shape.
+
+### Verified
+
+**913 checks green, 3 pre-existing failures unchanged** (a PDF page-break assertion + 2
+`capture.js` mic/audio-flash assertions — the same 3 this file's own standing baseline already
+names; confirmed by name, not just by count, before and after this round's own test edits).
+The rewrite retired the old single-modal `open360Upload()`'s internal shape — 5 pre-existing
+assertions that sliced and asserted against it were **rewritten in place, not silently deleted**,
+to slice `openPano360Review(draft)` instead and assert the new `pp360rv-*` ids/`draft.*`-based
+variable names (the modal's metadata fields rendering unconditionally; the footer never gated
+behind processing; the Pannellum preview mounted the same way the saved-photo lightbox uses; the
+old frame-scrubber gone entirely; "Use this view as thumbnail" writing straight onto the draft, not
+DOM-only state a modal close would lose). **Two new assertions were added specifically to encode
+the safety requirement**: that `uploadFile()`/`tolerantWrite()` are reachable only from inside the
+gated Confirm & Save handler and never from the three background-processing functions or the
+source picker; and that no real `sessionStorage.setItem`/`localStorage.setItem`/`indexedDB.open`
+call exists anywhere in the draft feature's own code region (comments mentioning storage in prose
+are stripped first, so an explanatory comment can't itself trip the check).
+⚠️ **Two harness bugs of my own, caught before landing**: a regex expected `Confirm &amp;amp; Save`
+where the shipped HTML reads `Confirm &amp; Save` (one `&amp;`, not two) — fixed to match the real
+string; and a first "no sessionStorage/localStorage near pano360" check scanned the WHOLE file,
+which would always fail regardless of the drafts feature, since this module has plenty of
+legitimate, unrelated storage use elsewhere (view/collapse-state prefs, the current project id,
+the existing offline outbox) — narrowed to the exact code region the drafts feature lives in.
+Also confirmed a stray `view_name` payload-shape assertion (checking Add + Edit + the old 360
+upload, 3 occurrences of one literal pattern) needed updating to 2 (Add + Edit, read live off the
+DOM) plus a new assertion for the draft's own shape (`view_name: draft.meta.viewName || null` —
+read from the captured draft, not a DOM element the background stitch could outlive).
+`node --check` clean on `module.js`/`test.js`; 0 NUL bytes; 0 duplicate DOM ids in `index.html`;
+every retired old-modal `pp360-*` id (`pp360-desc`, `pp360-viewname`, `pp360-take`, `pp360-choose`,
+`pp360-choosephoto`, `pp360-remove`, `pp360-save`, `pp360-progress`, `pp360-step-source`,
+`pp360-qualitywarn`, `pp360-viewerwarn`, `pp360-panowrap`, `pp360-thumbfield`,
+`pp360-thumbpreview`, and more) swept and confirmed **zero remaining references** anywhere in the
+module.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file. No live
+click-through of starting a capture, closing the review modal, reopening it from the drafts badge
+while the stitch is still running, and confirming a save once ready. The background-processing
+mechanism (a draft object outliving its modal) is proven structurally and by the safety-gate
+assertion above, not by watching a real stitch actually keep running with the modal closed.
+
+`module.js`/`index.html?v=` → `20260913j` (already the token both files carry — no further bump
+needed this round); `MODULE_V` stays `20260913j` to match.
+
 ## Frame sampling capped at a fixed 48 frames per video, regardless of duration (2026-09-13, later)
 
 Owner: *"also, since it's taking too long to process and stitch an image, divide video to a fixed

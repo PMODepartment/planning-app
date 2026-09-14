@@ -435,8 +435,10 @@ ok('location is derived purely from the breakdown breadcrumb on save (Add, Edit 
 // and untouched. Widened to fit that real, intentional field.
 ok('the insert/update payload now carries the UNION of every chosen Works value\'s derived trades + all chosen works in the array columns',
    /trades: tradeList,[\s\S]{0,120}works_multi: worksList,[\s\S]{0,120}trade: tradeList\[0\] \|\| null,[\s\S]{0,60}works: worksList\[0\] \|\| null,/.test(mjs));
-ok('the payload also carries view_name from the (now-mandatory) field, on Add, Edit AND the 360 upload',
-   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 3);
+ok('the payload also carries view_name from the (now-mandatory) field, on Add and Edit — read live off the DOM field at save time',
+   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 2);
+ok('…and the 360 draft review carries it too, but from draft.meta.viewName — captured into the draft when the review modal is left, not read live off a DOM field the background stitch may outlive',
+   /view_name: draft\.meta\.viewName \|\| null,/.test(mjs));
 ok('tolerantWrite gained a strip-rule for view_name, naming the migration file if it is missing',
    /'view_name' in job\.patch/.test(mjs) && /migrations\/2026-08-30-photos-round2\.sql/.test(mjs));
 ok('tolerantWrite also retries without trades/works_multi if that migration has not run yet',
@@ -4297,36 +4299,67 @@ console.log('\n[misc] insert().select() returns the new row id');
      /\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-red\); \}/.test(css) &&
      !/\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-ok\); \}/.test(css));
 
-  // Item 5: the 360°-upload modal shows its metadata fields from the
-  // moment it opens, not only once processing finishes — structural,
-  // since this is a DOM/layout claim (whether .pp-form2 sits inside the
-  // #pp360-result block that stays `hidden` until the stitch completes).
+  // ⚠️⚠️ 2026-09-13: rewritten in place, not deleted — "healthy churn from
+  // an intentional change" per this file's own convention. The single
+  // open360Upload() modal these assertions used to slice is now a thin
+  // entry point (openPano360SourcePicker()); every DOM/structure claim
+  // below moved to openPano360Review(draft) — the review modal a 360°
+  // draft is confirmed/saved from, which stays reachable (and reopenable)
+  // while its stitch keeps running in the background. See the new draft
+  // architecture's own header comment in module.js: no upload/DB write may
+  // happen until this modal's own gated "Confirm & Save" is clicked.
   (function () {
-    var i = mjs.indexOf("function open360Upload()");
+    var i = mjs.indexOf("function openPano360Review(draft)");
     var j = mjs.indexOf("\n  function ", i + 10);
-    var body = mjs.slice(i, j > i ? j : i + 14000);
-    var resultStart = body.indexOf('id="pp360-result"');
+    var body = mjs.slice(i, j > i ? j : i + 16000);
+    var resultStart = body.indexOf('id="pp360rv-result"');
     var form2Idx = body.indexOf('class="pp-form2"');
-    ok('open360Upload: the metadata fields (.pp-form2 — Description/Date/Works/Location/Pin) render OUTSIDE #pp360-result, so they are visible immediately, matching the ordinary photo/video Add Media form',
-       resultStart > -1 && form2Idx > resultStart && !/id="pp360-result"[\s\S]{0,50}class="pp-form2"/.test(body.slice(resultStart, resultStart + 60)));
-    ok('open360Upload: the footer (Cancel/Save) is no longer gated behind processing — no id="pp360-footer", no hidden attribute on it',
-       !/pp360-footer/.test(mjs) &&
-       /<div class="pd-modal-footer">'\s*\+\s*'<button class="pd-btn" data-close>Cancel<\/button>'\s*\+\s*'<button class="pd-btn pd-btn-primary" id="pp360-save">Save 360° photo/.test(body));
-    // ⚠️ 2026-09-11, THIRD round: items 5/6 replace this preview's own
-    // drag-to-pan <img> strip with a real Pannellum viewer, AND remove the
-    // separate video-frame thumbnail scrubber entirely — "use the 360
-    // viewer as both a preview and to select the thumbnail frame ... no
-    // need to have a separate preview and thumbnail selector". Both
-    // rewritten in place rather than left asserting the retired shape.
-    ok('open360Upload: the preview is a real Pannellum viewer, mounted into #pp360-pano-viewer via the SAME mountPannellumViewer() the saved-photo lightbox uses — "navigable ... not just a panoramic still photo"',
-       /class="pp-lb-panowrap" id="pp360-panowrap"/.test(body) && /id="pp360-pano-viewer" class="pp-lb-panoviewer"/.test(body) &&
-       /pp360Viewer = mountPannellumViewer\(viewerEl, stitchUrl, hOverW\);/.test(mjs));
-    ok('open360Upload: the separate video-frame thumbnail scrubber is GONE — no #pp360-repslider, no #pp360-repframe, no Pano360.extractFrameAt call in this function',
-       !/pp360-repslider/.test(mjs) && !/pp360-repframe/.test(mjs) && !/Pano360\.extractFrameAt\(videoBlob/.test(body));
-    ok('open360Upload: "Use this view as thumbnail" captures whatever the viewer is CURRENTLY showing via the shared captureViewerThumbnail(), and a default is captured automatically the first time the panorama actually renders (viewer.on(\'load\', ...)) so Save is never blocked on remembering to press it',
-       /id="pp360-usethumb">Use this view as thumbnail/.test(body) &&
-       /captureViewerThumbnail\(viewerEl, setThumbFromBlob\)/.test(mjs) &&
-       /pp360Viewer\.on\('load', function \(\) \{ captureViewerThumbnail/.test(mjs));
+    ok('openPano360Review: the metadata fields (.pp-form2 — Description/Date/Works/Location/Pin) render OUTSIDE #pp360rv-result, so they are visible immediately, matching the ordinary photo/video Add Media form',
+       resultStart > -1 && form2Idx > resultStart && !/id="pp360rv-result"[\s\S]{0,50}class="pp-form2"/.test(body.slice(resultStart, resultStart + 60)));
+    ok('openPano360Review: the footer (Close/Discard/Confirm & Save) is never gated behind processing — no id="pp360rv-footer", no hidden attribute on it, so a draft can be discarded or the modal closed at any stage',
+       !/pp360rv-footer/.test(body) &&
+       /<div class="pd-modal-footer">'\s*\+\s*'<button class="pd-btn" data-close>Close<\/button>'\s*\+\s*'<button class="pd-btn pd-btn-danger" id="pp360rv-discard">Discard<\/button>'\s*\+\s*'<button class="pd-btn pd-btn-primary" id="pp360rv-save">Confirm &amp; Save/.test(body));
+    ok('openPano360Review: the preview is a real Pannellum viewer, mounted into #pp360rv-pano-viewer via the SAME mountPannellumViewer() the saved-photo lightbox uses — "navigable ... not just a panoramic still photo"',
+       /class="pp-lb-panowrap" id="pp360rv-panowrap"/.test(body) && /id="pp360rv-pano-viewer" class="pp-lb-panoviewer"/.test(body) &&
+       /pp360Viewer = mountPannellumViewer\(viewerEl, draft\.stitchUrl, hOverW\);/.test(mjs));
+    ok('open360 flow: the separate video-frame thumbnail scrubber is GONE — no #pp360-repslider, no #pp360-repframe, no Pano360.extractFrameAt call anywhere in the module',
+       !/pp360-repslider/.test(mjs) && !/pp360-repframe/.test(mjs) && !/Pano360\.extractFrameAt\(/.test(mjs));
+    ok('openPano360Review: "Use this view as thumbnail" captures whatever the viewer is CURRENTLY showing via the shared captureViewerThumbnail(), writing straight onto the DRAFT (draft.repBlob/draft.repUrl) — never onto DOM-only state that a modal close would lose — and a default is captured automatically the first time the panorama actually renders (viewer.on(\'load\', ...)) so Confirm & Save is never blocked on remembering to press it',
+       /id="pp360rv-usethumb">Use this view as thumbnail/.test(body) &&
+       /captureViewerThumbnail\(viewerEl, function \(blob\) \{/.test(mjs) &&
+       /draft\.repBlob = blob; draft\.repUrl = URL\.createObjectURL\(blob\);/.test(mjs) &&
+       /pp360Viewer\.on\('load', function \(\) \{/.test(mjs));
+    // ⚠️⚠️ 2026-09-13: the whole point of the draft architecture — this is
+    // the ONE place in the entire 360° flow allowed to touch Storage/the
+    // database, and it must be gated on the draft (not on any local modal
+    // variable, which the background stitch has no way to set).
+    ok('openPano360Review: uploadFile()/tolerantWrite() are called ONLY inside the Confirm & Save handler, guarded on draft.status === \'ready\' — never from the background stitch (runStitchForDraft/runPhotoForDraft/finishDraftStitch) and never from the source picker',
+       /if \(draft\.status !== 'ready' \|\| !draft\.stitchResult \|\| !draft\.repBlob\) \{/.test(body) &&
+       (function () {
+         var runStitchBody = mjs.slice(mjs.indexOf('async function runStitchForDraft'), mjs.indexOf('async function runPhotoForDraft'));
+         var runPhotoBody = mjs.slice(mjs.indexOf('async function runPhotoForDraft'), mjs.indexOf('function open360Upload()'));
+         var finishBody = mjs.slice(mjs.indexOf('function finishDraftStitch'), mjs.indexOf('async function runStitchForDraft'));
+         var sourcePickerBody = mjs.slice(mjs.indexOf('function openPano360SourcePicker()'), mjs.indexOf('function openPano360DraftsList()'));
+         return !/uploadFile\(|tolerantWrite\(/.test(runStitchBody) &&
+                !/uploadFile\(|tolerantWrite\(/.test(runPhotoBody) &&
+                !/uploadFile\(|tolerantWrite\(/.test(finishBody) &&
+                !/uploadFile\(|tolerantWrite\(/.test(sourcePickerBody);
+       })());
+    // ⚠️ The module has plenty of LEGITIMATE, unrelated localStorage/
+    // sessionStorage/indexedDB use elsewhere (view/collapse-state prefs, the
+    // current project id, the existing PDSync offline outbox) — a whole-file
+    // ban would always fail regardless of the drafts feature. Scoped instead
+    // to the exact region the draft feature lives in: from its own state
+    // declaration through the end of openPano360Review (the one place a
+    // draft is ever confirmed/saved), so only code that could plausibly
+    // persist a DRAFT is checked, not the rest of the module.
+    var draftsRegionStart = mjs.indexOf('var PANO360_DRAFTS = [];');
+    var draftsRegionEnd = mjs.indexOf('async function uploadFile(file) {', draftsRegionStart);
+    var draftsRegion = mjs.slice(draftsRegionStart, draftsRegionEnd > draftsRegionStart ? draftsRegionEnd : draftsRegionStart + 12000)
+      .replace(/^\s*\/\/.*$/gm, ''); // strip // comments — a bare mention in prose (e.g. "never persist a draft to sessionStorage") must not count, only real code
+    ok('a 360° draft never touches sessionStorage/localStorage/IndexedDB — it is kept in the PANO360_DRAFTS array in memory only, per the explicit "keep it in the session only as draft" requirement',
+       draftsRegionStart > -1 && draftsRegionEnd > draftsRegionStart &&
+       !/sessionStorage\.(setItem|getItem)|localStorage\.(setItem|getItem)|indexedDB\.open/i.test(draftsRegion));
   })();
 
   // Genuine execution: captureViewerThumbnail() — proves the 4:3-landscape
