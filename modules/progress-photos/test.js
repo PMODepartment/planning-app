@@ -4385,6 +4385,46 @@ console.log('\n[misc] insert().select() returns the new row id');
        !/sessionStorage\.(setItem|getItem)|localStorage\.(setItem|getItem)|indexedDB\.open/i.test(draftsRegion));
   })();
 
+  // 2026-09-14 (later still): "the other input fields are still not
+  // showing" — a real, confirmed gap in the fix above. openPano360Review's
+  // fields render immediately, but that is the SECOND modal, reached only
+  // after a source has already been picked in openPano360SourcePicker() —
+  // the FIRST modal, which the owner's own screenshot showed carrying only
+  // the three source buttons and Cancel, no fields at all. Fixed by moving
+  // the SAME Description/Capture date/Works/Location/Pin block onto the
+  // source-picker screen too, and carrying whatever was typed there into
+  // the draft's own meta (captureSrcMeta) before the review modal — which
+  // still shows the same fields, now pre-filled from what was already
+  // typed — ever opens.
+  (function () {
+    var i = mjs.indexOf('function openPano360SourcePicker()');
+    var j = mjs.indexOf('\n  function openPano360DraftsList()');
+    var body = mjs.slice(i, j > i ? j : i + 12000);
+    var form2Idx = body.indexOf('class="pp-form2"');
+    var stepIdx = body.indexOf('id="pp360src-step"');
+    ok('openPano360SourcePicker: the metadata fields (.pp-form2 — Description/Capture date/Works/Location/Pin) now render on THIS FIRST screen, before any source is picked — not only in the review modal reached afterward',
+       form2Idx > -1 && stepIdx > -1 && form2Idx < stepIdx &&
+       /id="pp360src-desc"/.test(body) && /id="pp360src-date"/.test(body) &&
+       /worksMultiFieldHTML\('pp360src', \[\]\)/.test(body) &&
+       /locationFieldHTML\('pp360src', \{\}, ''\)/.test(body) &&
+       /BIM\.pinFieldHTML\('pp360src', null\)/.test(body));
+    ok('…and the fields are genuinely wired (wireLocationField/wireWorksMultiField/BIM.wirePinField + hydrate), the same way every other field-carrying modal in this module wires itself',
+       /wireLocationField\('pp360src'\);/.test(body) &&
+       /wireWorksMultiField\('pp360src'\);/.test(body) &&
+       /BIM\.wirePinField\('pp360src'\)/.test(body) &&
+       /hydrate\(m\.el\);/.test(body));
+    ok('captureSrcMeta() is called for BOTH the video path (startVideoDraft) and the pre-processed-photo path (havePhoto), and in each case BEFORE the modal closes / the review modal opens — so nothing typed on the first screen is lost',
+       /function captureSrcMeta\(draft\)/.test(body) &&
+       /function startVideoDraft\(blob\) \{[\s\S]{0,200}captureSrcMeta\(draft\);[\s\S]{0,80}m\.close\(\);[\s\S]{0,40}openPano360Review\(draft\);/.test(body) &&
+       /function havePhoto\(file\) \{[\s\S]{0,120}captureSrcMeta\(draft\);[\s\S]{0,80}m\.close\(\);[\s\S]{0,40}openPano360Review\(draft\);/.test(body));
+    ok('captureSrcMeta reads exactly the same fields the review modal itself reads back — desc/date/works/locVals/viewName/tags/pinData — onto draft.meta, so the review modal opens already pre-filled instead of asking twice',
+       /draft\.meta\.desc = descEl\.value\.trim\(\);/.test(body) &&
+       /draft\.meta\.works = readWorksMulti\('pp360src'\);/.test(body) &&
+       /draft\.meta\.locVals = currentLocValues\('pp360src'\);/.test(body) &&
+       /draft\.meta\.tags = readCodeTags\('pp360src'\);/.test(body) &&
+       /draft\.meta\.pinData = BIM\.readPinField\('pp360src'\);/.test(body));
+  })();
+
   // Genuine execution: captureViewerThumbnail() — proves the 4:3-landscape
   // crop (see the function's own comment on why "3:4 landscape" is read as
   // 4:3) and the graceful null when the viewer hasn't rendered a canvas

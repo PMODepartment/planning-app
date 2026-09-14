@@ -2,6 +2,70 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## "The other input fields are still not showing" — the metadata fields were only ever added to the SECOND 360° modal (2026-09-14, later still)
+
+Owner, off a screenshot of the live "Add 360° photo" modal showing only the three source buttons
+("Take video" / "Upload video" / "Upload 360° photo") and Cancel, no fields anywhere: *"the other
+input fields are still not showing."*
+
+⚠️⚠️ **This is a real, confirmed gap the earlier same-day fix (below, "The drafts badge is scoped
+to Gallery…") got wrong.** That entry verified item 1 ("show already all the input fields from
+description to key plan") by re-reading `openPano360Review(draft)` — the modal's `.pp-form2` block
+does render unconditionally there, outside the `#pp360rv-result` gate — and concluded no code
+change was needed. That conclusion only holds for the **second** modal. The screenshot is the
+**first** one, `openPano360SourcePicker()` — reached the moment "+ Add media → 360°" is clicked,
+before any source has been picked — and that screen genuinely had **zero** metadata fields: just
+the intro hint, the three source buttons, and Cancel. `openPano360Review` only opens *after* one of
+those three buttons is clicked, so "show already all the input fields" was never actually satisfied
+for the screen a planner sees first.
+
+**Fixed by rendering the SAME Description / Capture date / Works / Location / Pin block on the
+source-picker screen itself**, using the identical `worksMultiFieldHTML('pp360src', [])` /
+`locationFieldHTML('pp360src', {}, '')` / `BIM.pinFieldHTML('pp360src', null)` calls (a fresh idPrefix,
+`pp360src`, mirroring `pp360rv`'s), wired the same way every other field-carrying modal in this
+module wires itself (`wireLocationField`/`wireWorksMultiField`/`BIM.wirePinField` + `hydrate(m.el)`).
+
+⚠️ **Whatever is typed on this first screen is carried into the draft, not asked for twice.** A new
+`captureSrcMeta(draft)` reads the `pp360src-*` fields (desc/date/works/locVals/viewName/tags/
+pinData) into `draft.meta` — called from both `startVideoDraft` (the recorded/uploaded-video path)
+and `havePhoto` (the pre-processed-photo path), in both cases **before** `m.close()`/
+`openPano360Review(draft)` runs. `openPano360Review` already renders its own copy of the same
+fields pre-filled from `draft.meta` (that part was correct in the earlier entry), so the review
+modal now opens already showing what was typed on the source-picker screen, rather than presenting
+a second, blank copy of the same form.
+
+⚠️ Nothing about `openPano360Review` itself changed — its fields, its gating (outside
+`#pp360rv-result`), and the "no upload/DB write until Confirm & Save" safety rule are all untouched.
+This is additive: a second place the same fields are shown and captured, feeding into the one place
+they were already read from.
+
+### Verified
+
+**4 new assertions, all genuinely proven to bite**: each was run once against the fix (all 4 pass)
+and once against the pre-fix commit via `git stash` (all 4 fail, confirming they test the real gap
+rather than passing vacuously) — confirms the `.pp-form2` block now renders on the source-picker
+screen before any source button, that it's wired via the same four calls every other field-carrying
+modal in this module uses, that `captureSrcMeta()` is called from both `startVideoDraft` and
+`havePhoto` before the modal closes, and that it reads the exact same seven fields
+(`desc`/`date`/`works`/`locVals`/`tags`/`pinData`, plus `viewName`) the review modal's own
+`captureMeta()` reads back. Full suite: **936 passed, 3 failed** — the same 3 pre-existing,
+unrelated failures every other entry in this file already documents (a PDF page-break assertion +
+2 `capture.js` mic/audio-flash assertions), confirmed unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. The fields are proven to render, wire and carry values into the draft
+by genuine source-level execution of the exact shipped functions, not by a real click-through.
+
+`module.js?v=` → `20260914f`; `pano360.js`/`module.css` are unchanged this round and keep their
+existing tokens. `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html` script tags
+that load it) → `20260914f` to match, since this module's `index.html` itself changed (its own
+`module.js?v=` line).
+⚠️ **Not `20260914e` — this branch was restarted from a fresh `main` after PR #113 (the previous
+entry below) had already merged**, and by the time this landed `main` had independently advanced
+past that merge (a concurrent project-schedule commit, unrelated to this module) and had already
+taken `20260914e` for its own `index.html` change. Re-derived past it to `f` rather than reused,
+per this repo's own standing rule for exactly this collision shape.
+
 ## A completion notification when a 360° draft finishes processing — and the background-stall bug that would have made it nearly useless (2026-09-14, later)
 
 Owner: *"once the 360 is done processing, provide push notifications."*

@@ -5932,10 +5932,20 @@ window.ProgressPhotos = (function () {
       '<div class="pd-modal-header"><h3>Add 360° photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form" id="pp360src-body">' +
-        '<p class="pp-hint">Stand in one spot and slowly turn all the way around (or through the angle you want), ' +
-          'or upload a video already recorded the same way -- it will be processed into a single 360° panorama ' +
-          'in the background, so you can keep working while it stitches. Already have a finished 360° photo ' +
-          '(equirectangular or similar, ready to view as-is)? Upload it directly -- it skips processing entirely.</p>' +
+        '<p class="pp-hint">Fill in the details below, then pick a source. Stand in one spot and slowly turn all ' +
+          'the way around (or through the angle you want), or upload a video already recorded the same way -- it ' +
+          'will be processed into a single 360° panorama in the background, so you can keep working while it ' +
+          'stitches. Already have a finished 360° photo (equirectangular or similar, ready to view as-is)? Upload ' +
+          'it directly -- it skips processing entirely.</p>' +
+        '<div class="pp-form2">' +
+          '<div class="pd-field"><label>Description</label>' +
+            '<input class="pd-input" id="pp360src-desc" placeholder="e.g. Model Unit" /></div>' +
+          '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+            '<input class="pd-input" type="date" id="pp360src-date" value="' + Fmt.esc(new Date().toISOString().slice(0, 10)) + '" required /></div>' +
+          worksMultiFieldHTML('pp360src', []) +
+          locationFieldHTML('pp360src', {}, '') +
+          (window.BIM ? BIM.pinFieldHTML('pp360src', null) : '') +
+        '</div>' +
         '<div id="pp360src-step" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
           '<button type="button" class="pd-btn" id="pp360src-take">Take video</button>' +
           '<button type="button" class="pd-btn" id="pp360src-choose">Upload video</button>' +
@@ -5953,14 +5963,33 @@ window.ProgressPhotos = (function () {
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" data-close>Cancel</button></div>';
 
-    var m = openModal(html, 520, close);
+    var m = openModal(html, 640, close);
+    wireLocationField('pp360src');
+    wireWorksMultiField('pp360src');
+    if (window.BIM) BIM.wirePinField('pp360src');
+    hydrate(m.el);
 
     function show(id, on) { var el = $(id); if (el) el.hidden = !on; }
+
+    // Carries whatever was typed on THIS screen into the draft's own meta,
+    // before the review modal (which reads draft.meta to pre-fill its own
+    // copies of these same fields) ever opens -- so the fields are genuinely
+    // filled in once, not typed twice.
+    function captureSrcMeta(draft) {
+      var descEl = $('pp360src-desc'); if (descEl) draft.meta.desc = descEl.value.trim();
+      var dateEl = $('pp360src-date'); if (dateEl && dateEl.value) draft.meta.date = dateEl.value;
+      draft.meta.works = readWorksMulti('pp360src');
+      draft.meta.locVals = currentLocValues('pp360src');
+      draft.meta.viewName = ($('pp360src-viewname') ? $('pp360src-viewname').value.trim() : '') || draft.meta.viewName;
+      draft.meta.tags = readCodeTags('pp360src');
+      if (window.BIM) draft.meta.pinData = BIM.readPinField('pp360src');
+    }
 
     function startVideoDraft(blob) {
       var draft = newPano360Draft('video');
       draft.video = blob;
       draft.videoUrl = URL.createObjectURL(blob);
+      captureSrcMeta(draft);
       m.close();
       openPano360Review(draft);
       runStitchForDraft(draft);
@@ -5987,6 +6016,7 @@ window.ProgressPhotos = (function () {
 
     function havePhoto(file) {
       var draft = newPano360Draft('photo');
+      captureSrcMeta(draft);
       m.close();
       openPano360Review(draft);
       runPhotoForDraft(draft, file);
