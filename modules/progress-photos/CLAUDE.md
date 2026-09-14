@@ -2,6 +2,66 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## "When I close the browser app, the video I uploaded for 360 processing is gone" — a real browser-eviction risk closed with `navigator.storage.persist()`, and silent recovery made visible with a toast (2026-09-14, later still yet again again again)
+
+Owner: *"when I close the browser app, the video i uploaded for 360 processing is gone. please
+retain progress of processing since processing takes some time."* — the same class of report the
+entry directly below this one already investigated and fixed once (the `Pano360DraftStore.open()`
+promise-caching bug). Re-checked that fix first rather than assuming it had regressed:
+`persistPano360Draft()`/`rehydratePano360Drafts()` are both structurally sound and match what PR
+#118 shipped — this is not a repeat of that bug.
+
+### What was actually still missing
+
+⚠️⚠️ **IndexedDB is not exempt from eviction just because a write to it succeeded.** A browser can
+still clear a non-persistent origin's storage under disk pressure — this is a real, standard risk
+(most acute on mobile), and this app had never once called the Storage API's own mitigation for
+it. `navigator.storage.persist()` asks the browser to exempt this origin from automatic eviction;
+confirmed via a repo-wide grep that it was used **nowhere** in this codebase before this change.
+
+- **New `ensurePersistentStorage()`**, called (deliberately unawaited — best-effort, must never
+  delay `init()`) from `init()` right after `restoreUI()`. Fully feature-detected: a no-op when
+  `navigator.storage`/`.persist` don't exist, checks `navigator.storage.persisted()` first so an
+  already-persistent origin never re-asks, and logs (never throws) whether the browser granted or
+  refused the request.
+- **Recovery is now VISIBLE, not just mechanically correct.** `rehydratePano360Drafts()` restarts a
+  still-processing draft from its saved source blob and restores a finished one as-is — both
+  worked, but gave the planner **no on-screen confirmation anything survived**, which is
+  indistinguishable from data loss from where they're sitting. It now counts what it recovers and
+  fires one `UI.toast()` naming it — *"Recovered from before you closed this app: 1 360° capture
+  resuming (restarting from your saved recording), 1 finished 360° capture waiting for review."*
+- ⚠️ **"Resuming" still means restarting from zero, not resuming mid-stitch** — there is no way to
+  serialize an in-flight OpenCV stitch across a reload, and the toast's own wording says
+  "restarting" rather than implying continuity that isn't real.
+
+### Verified
+
+**11 new checks, all genuinely executing the shipped functions** (963 → 974; the same 3
+pre-existing, unrelated failures — a PDF page-break assertion + 2 `capture.js` mic/audio-flash
+assertions — confirmed unchanged by name): a hand-built controllable `navigator.storage` stand-in
+proves `ensurePersistentStorage()` degrades safely with the API absent/partial, checks
+`persisted()` before ever calling `persist()`, and logs granted vs. refused honestly rather than
+claiming success either way; the recovery-toast tests build one `'processing'` draft (with a
+persisted source blob) and one `'ready'` draft for the same user, clear in-memory state, and
+confirm the toast names both counts correctly, fires **exactly once** regardless of how many
+drafts were recovered, and fires **not at all** on a second rehydrate against already-in-memory
+drafts or for a brand-new user with nothing persisted.
+
+`node --check` clean on both files; full suite **974 passed, 3 failed** — the same 3 pre-existing
+failures this file's own history already documents.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing caveat
+for every entry in this file. What's proven is that `navigator.storage.persist()` is requested
+correctly and that recovery is now announced rather than silent; nobody has watched a real device
+under real storage pressure confirm a draft survives a browser close.
+
+`module.js?v=` → `20260914zvs5`; `assets/js/modules-grid.js` (and the `dashboard.html`/
+`modules.html` script tags that load it) → `20260914zvs5` to match, since this module's
+`index.html` itself changed (its own `module.js?v=` line) — re-derived past `origin/main`'s own
+concurrently-advanced `20260914zvs4` fallback after rebasing this branch onto it, per this repo's
+own standing rule for exactly this collision shape. `pano360.js` is unchanged this round and keeps
+its existing token.
+
 ## A 360° draft's IndexedDB persistence could permanently break after one transient failure — fixed, and hardened with logging, a warning toast, and a beforeunload guard (2026-09-14, later still again)
 
 Owner: *"the 360 draft still gets removed once a new session open. please fix. please retain for a
