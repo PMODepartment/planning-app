@@ -1036,8 +1036,17 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 
 /* ---- Mobile & tablet ------------------------------------------------------ */
 @media (max-width: 700px) {
-  .il-mom-browsebar { flex-wrap: wrap; }
-  .il-mom-browsebar > * { flex: 1 1 100%; min-width: 0; }
+  /* ⚠️⚠️ `.il-mom-browsebar > * { flex: 1 1 100%; }` USED to stretch every child of
+     this row to the full row width on a phone — written back when the row still held
+     a search box worth stretching. Items 2-3 (2026-09-03, round 2) moved everything
+     but the List/Calendar toggle out into the static top bar, so `.il-viewtoggle` has
+     been the row's ONLY child since — and stretching it to 100% width fills its own
+     bordered box (`.il-viewtoggle` carries a real `border`) with a visible blank strip
+     to the right of the two icon buttons: the reported "whitespace" in the tab that
+     switches list/calendar. The toggle already declares `flex: none` (its intrinsic,
+     two-button width) and `.il-mom-browsebar` already right-aligns it
+     (`justify-content: flex-end`) at every width — nothing here needs to override that
+     any more, on a phone or otherwise. */
   .il-mom-listtable { min-width: 0; }
   .il-mom-schedbody { flex-direction: column; }
   .il-mom-schedbody.has-sel .il-mom-schedlist { flex: 1 1 auto; }
