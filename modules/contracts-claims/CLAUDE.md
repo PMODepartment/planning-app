@@ -1,5 +1,37 @@
 # Module: contracts-claims
 
+## 2026-09-15 (o) — The load stops painting a register it has not loaded yet
+
+Owner: *"Loading contracts & claims module loads 3 different views for split seconds then loads
+properly."*
+
+- ⚠️⚠️ **The first diagnosis was a harness artefact.** `#cc-filters` looked like the culprit — a full
+  filter bar in static markup, collapsed only when `wireFilterToggle` adds `.pd-filtergroup` after
+  auth — and a harness measured it visible at 284px. The harness sat at the server root, so
+  `module.css` (a **relative** href) 404'd. Rebuilt in `modules/contracts-claims/`, both sheets load
+  (422 + 563 rules) and `#cc-filters` is **`display:none` from the first byte**, because
+  `.cc-filters { display:none }` is declared right here in this module's own CSS. Same for
+  `rr-filters` and `sm-filters`. Nothing to fix there.
+- **The real cause:** `ensureLinks().then(render)` was gated on nothing and raced the four other
+  round trips `load()` makes. `cc_affected_activities` is small, so it usually won and repainted
+  while `rows` was still empty (first open) or still the previous project's (a switch).
+- ⚠️ **`load()` is also called un-awaited** from the project-switch handler, so two loads could
+  overlap and the *last to finish* committed `rows`, `PKGS` and `ALL_PROJECTS`.
+- **`_loadGen`** (project-schedule's own device): every await re-checks it, one `paint()` no-ops on a
+  superseded load, and ⚠️ `PKGS` / `ALL_PROJECTS` are assigned **after** the check — module state
+  from a stale load is a wrong screen, not just an early one.
+- ⚠️ The links repaint survives, gated on `_painted === gen`: if the links land first the cache is
+  already full and the main paint draws the chips anyway (`affChip` never fetches).
+
+**Verified** by slicing `load()` out and executing it with controlled timings, against `afb3bf3`:
+the control paints **`0 rows` → `1 rows`** (the flash, reproduced) and the fix paints **once**.
+**7 assertions, 0 failing** — including that a *late* links read still repaints, and that two
+overlapping loads produce 1 paint rather than 2. wiring-check 129/129.
+⚠️ Not verified signed in. ⚠️ The BOQ still mounts in afterwards, deliberately — that lazy mount is a
+documented decision, not part of this defect.
+
+`module.js` → `?v=20260915f`; `MODULE_V` → `20260915m`.
+
 ## 2026-09-15 (m) — The attachment engine moves to `assets/js/attach.js`, and this module delegates
 
 Not a feature for this module — the Project Schedule needs attachments on activities, and the

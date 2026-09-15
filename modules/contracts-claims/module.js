@@ -76,6 +76,21 @@ window.ContractsClaims = (function () {
   var canWrite = false, isAdmin = false, sel = {};
   var filters = { q: '', type: '', status: '', dateField: '', from: '', to: '', pkg: '' };
   var filterToggle = null;   // UI.wireFilterToggle() handle for #cc-filters
+  /* ⚠️⚠️ MONOTONIC LOAD TOKEN — owner 2026-09-15: *"Loading contracts & claims module loads 3
+     different views for split seconds then loads properly."*
+     `load()` is async and makes FIVE round trips (records → packages → projects → attachments, plus
+     the affected-links read fired alongside), and it is called UN-AWAITED from the project-switch
+     handler. So two things could paint out of order:
+       1. the affected-links repaint landed while `rows` still held the PREVIOUS project's records
+          (or nothing at all on a first open), painting a register that was empty or belonged to
+          another project before the real one arrived — the flashes being reported; and
+       2. two overlapping loads committed whichever finished LAST, not whichever was asked for.
+     `_loadGen` settles both: every await re-checks it, and a paint from a superseded load is
+     dropped. `_painted` is the generation whose own render has already run — the links repaint is
+     only useful AFTER that, because before it the final render will include the chips anyway
+     (`affChip` reads the cache `ensureLinks` fills and never fetches).
+     ⚠️ Same device, and the same reason, as project-schedule's own `_loadGen`. */
+  var _loadGen = 0, _painted = 0;
   /* A3's tail. Loaded tolerantly — `packages` arrives with
      2026-08-19-packages.sql, and until it is run the picker is simply absent. */
   var PKGS = [];
@@ -1480,7 +1495,15 @@ window.ContractsClaims = (function () {
   }
 
   async function load() {
-    if (!pid) { rows = []; render(); return; }
+    var gen = ++_loadGen;
+    /* Every paint this load makes goes through here, so a superseded load cannot write to the
+       screen and `_painted` cannot be set by one. */
+    function paint() {
+      if (gen !== _loadGen) return;
+      _painted = gen;
+      render();
+    }
+    if (!pid) { rows = []; paint(); return; }
     document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3><span class="cc-spin"></span>Loading…</h3></div>';
     // ⚠️ Keyset-paginated (see PDb.selectAll) — a plain .select() truncates at 1000 rows server-side
     // with no error, and a truncated register would silently understate the roll-up banner totals,
@@ -1489,30 +1512,51 @@ window.ContractsClaims = (function () {
     var res;
     try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
     catch (err) { res = { error: err }; }
+    if (gen !== _loadGen) return;
     /* ⚠️ NOT AWAITED INTO THE CRITICAL PATH, and not allowed to fail this load. The register must
        render whether or not 2026-09-09-cc-affected-activities.sql has been run; the counts are an
        annotation on it. Fired here rather than lazily because render() may not fetch (see
-       affChip), so something has to fill the cache once. A repaint follows when it lands. */
+       affChip), so something has to fill the cache once.
+       ⚠️⚠️ AND THE REPAINT IS GATED ON THIS LOAD HAVING ALREADY PAINTED. It used to repaint the
+       moment the links landed — which, on a small table racing four other round trips, was almost
+       always BEFORE `rows` existed, so it drew an empty register (first open) or the previous
+       project's one (a switch) and then replaced it. Nothing is lost by waiting: if the links land
+       first, the cache is already full and `paint()` below draws the chips anyway. */
     if (window.CCAffected) {
       CCAffected.setProject(pid);
       CCAffected.ensureLinks().then(function () {
+        if (gen !== _loadGen || _painted !== gen) return;
         if (document.getElementById('cc-view')) render();
       }).catch(function () {});
     }
     if (res.error) {
-      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
+      if (window.PDSync) {
+        var c = await PDSync.cacheGet(PID_PFX + ':' + pid);
+        if (gen !== _loadGen) return;
+        if (c && c.rows) { rows = c.rows.slice(); fillFilters(); paint(); return; }
+      }
+      if (gen !== _loadGen) return;
       var missing = /column|schema cache|PGRST204|does not exist/i.test(res.error.message || '');
       document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3>Could not load the register</h3><p>' +
         esc(res.error.message) + '</p>' + (missing
           ? '<p class="cc-mut">Run <code>migrations/2026-07-20-contracts-claims-full.sql</code> in the Supabase SQL editor, then reload.</p>' : '') + '</div>';
       return;
     }
-    try { PKGS = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
-    catch (e) { PKGS = []; }
+    var _pkgs;
+    try { _pkgs = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
+    catch (e) { _pkgs = []; }
+    /* ⚠️ Assigned only AFTER the staleness check, never before it. `PKGS` is module state that the
+       renderer and the wizard both read, so a superseded load writing to it would hand the current
+       project another project's packages — a wrong screen rather than merely an early one. */
+    if (gen !== _loadGen) return;
+    PKGS = _pkgs;
     // Cheap (a few dozen rows) and read once per project switch, so the wizard's
     // per-keystroke conflict check never touches the network.
-    try { ALL_PROJECTS = await PDb.getProjects(); }
-    catch (e) { ALL_PROJECTS = []; }
+    var _projs;
+    try { _projs = await PDb.getProjects(); }
+    catch (e) { _projs = []; }
+    if (gen !== _loadGen) return;
+    ALL_PROJECTS = _projs;
     rows = res.data || [];
     rows.sort(function (a, b) {
       var d = (a.sort_order || 0) - (b.sort_order || 0); if (d) return d;
@@ -1523,8 +1567,9 @@ window.ContractsClaims = (function () {
        dozen, the attachment rows fewer, and a per-open fetch would put a round trip between
        clicking Edit and seeing the form. Tolerant by construction — see loadAttachments. */
     await loadAttachments(rows.map(function (r) { return r.id; }).filter(Boolean));
+    if (gen !== _loadGen) return;
     fillFilters();
-    render();
+    paint();
   }
 
   function switchTab(v) {

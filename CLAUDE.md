@@ -102,6 +102,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (o) — Contracts & Claims stops painting a register it has not loaded yet
+
+Owner: *"Loading contracts & claims module loads 3 different views for split seconds then loads
+properly."*
+
+### ⚠️⚠️ AND THE FIRST MEASUREMENT WAS WRONG, WHICH IS THE PART WORTH KEEPING
+
+The obvious suspect was `#cc-filters` — a full filter bar sitting in static markup, collapsed only
+once `UI.wireFilterToggle()` adds `.pd-filtergroup` after auth. A harness measured it **visible,
+284px tall, 7 controls**, and that would have been a tidy story. It was **my harness**: the file sat
+at the server root, so `module.css` — a *relative* href — 404'd and I measured an unstyled page.
+Rebuilt beside the module, both stylesheets load (422 + 563 rules) and `#cc-filters` computes
+**`display:none`** from the first byte, because all three modules that use this pattern already
+declare `.cc-filters { display:none }` in their own CSS. The tab strip is likewise already covered
+by `pd-tabsrc`. **The pre-auth frame is a single empty state, not a flash.** Assert a COLOUR *and*
+prove the module stylesheet is in the cascade before believing any of it.
+
+### The real cause: a repaint racing the load that feeds it
+
+`load()` makes five round trips, and fired the affected-links read **alongside** them with
+`ensureLinks().then(render)` gated on nothing. `cc_affected_activities` is a small table, so it
+routinely won that race and repainted while `rows` still held **nothing** (a first open) or **the
+previous project's records** (a switch) — a genuinely different register, replaced a moment later.
+`load()` is also called **un-awaited** from the project-switch handler, so two loads could overlap
+and whichever finished *last* committed `rows`, `PKGS` and `ALL_PROJECTS`.
+
+A monotonic `_loadGen`, the same device project-schedule already uses, settles both: every await
+re-checks it, every paint goes through one `paint()` that no-ops on a superseded load, and each of
+`PKGS` / `ALL_PROJECTS` is assigned **after** its check rather than before — module state written by
+a stale load is a wrong screen, not merely an early one.
+
+⚠️ **The links repaint is kept, gated on `_painted === gen`.** Nothing is lost by making it wait: if
+the links land first the cache is already full and the main paint draws the chips anyway (`affChip`
+reads that cache and never fetches). It only has work to do when it lands *after*.
+
+### Verified
+
+`load()` **sliced out of the shipped file and executed** with the timing controlled, against
+`afb3bf3` as the control:
+
+| | paints |
+|---|---|
+| **before** (control) | `0 rows` → `1 rows` — **the reported flash, reproduced** |
+| **after** | `1 rows` |
+
+**7 assertions, 0 failing**, and the two that stop this being a blunt fix: a **late** links read still
+triggers its repaint (2 paints), and two overlapping loads produce **1 paint, not 2**.
+`node tools/wiring-check.js` 129/129; `node --check` clean.
+
+⚠️ **Not verified signed in** — the race is driven with stubbed timings, not watched on a real login.
+⚠️ **The BOQ section still mounts in after the register, and that is deliberate** — a BOQ is 1,200+
+lines and six round trips, and its lazy mount is a documented decision, not part of this defect.
+⚠️ A superseded load's `loadAttachments` can still write the attachment cache before its check;
+self-correcting, since the current load overwrites it, and named rather than papered over.
+
+`module.js` → `?v=20260915f`; `MODULE_V` → `20260915m`, both sort-checked.
+
 ### 2026-09-15 (n) — An activity can carry its paperwork, and a missing export was hiding behind a catch
 
 **Run `migrations/2026-09-15-schedule-attachments.sql`.** Owner: *"attachments on activities in the
