@@ -33,12 +33,21 @@
        so this adopts that idiom rather than being nudged to `right:0`.
        ⚠️ It also drops the z-index and the shadow with the absolute positioning: an
        inline panel is in flow and has nothing to lift above. */
-    .po-projfilter { min-width:0; }
+    /* ⚠️⚠️ A POPOVER AGAIN, ANCHORED RIGHT — and this is NOT a revert of the 2026-09-10 (u3)
+       inline fix, it is what that fix was reaching for. The menu clipped then because it was
+       `position:absolute; left:0; width:260px` hanging off a RIGHT-ALIGNED button, so it
+       opened rightwards off the page. Going inline cured the clipping and bought a
+       full-width wall: 21 projects in six ragged columns, pushing the page down ~350px.
+       Anchored to the RIGHT edge it opens leftwards, into the page, and can do neither.
+       ⚠️ Safe because `.pd-modulebar` is `overflow: visible` and its own note in
+       dashboard.css forbids making it a scroll container. Do not make it one. */
+    .po-projfilter { position:relative; min-width:0; }
     .po-projfilter-menu { display:none; }
     .po-projfilter-menu.open {
-      display:block; flex:1 1 100%; margin-top:8px; width:100%;
+      display:flex; flex-direction:column; position:absolute; top:calc(100% + 6px); right:0;
+      z-index:40; width:min(560px, calc(100vw - 32px)); max-height:min(60vh, 460px);
       background:var(--pd-card); border:1px solid var(--pd-line);
-      border-radius:var(--pd-radius); overflow:hidden;
+      border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg); overflow:hidden;
     }
     .po-projfilter-search { padding:8px; border-bottom:1px solid var(--pd-line); }
     .po-projfilter-search input { width:100%; }
@@ -49,8 +58,10 @@
        single 260px column of 40 projects was most of the reason it wanted to be a
        floating menu. ⚠️ `overflow-y` only: a horizontal scroller here would clip nothing
        now, but the column rule keeps long project names ellipsised instead. */
-    .po-projfilter-list { max-height:300px; overflow-y:auto; padding:4px 0;
-      display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); }
+    /* ⚠️ The LIST scrolls, not the popover — the search box and Select all / Clear must stay
+       reachable with 21 projects on screen, which is exactly when they are needed. */
+    .po-projfilter-list { flex:1 1 auto; min-height:0; overflow-y:auto; padding:4px 0;
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); }
     .po-projfilter-list label { display:flex; align-items:center; gap:8px; padding:7px 12px;
       font-size:var(--pd-fs-base); cursor:pointer; color:var(--pd-ink); }
     .po-projfilter-list label:hover { background:var(--pd-red-light); }
@@ -62,6 +73,17 @@
     .po-projfilter-list label.po-pf-prog:first-child { border-top:0; }
     .po-projfilter-list .po-pf-count { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); white-space:nowrap; }
     .po-projfilter-list label.po-pf-child { padding-left:30px; }
+    /* ⚠️⚠️ ON A PHONE THE POPOVER IS PINNED TO THE VIEWPORT, NOT THE BUTTON — measured, not
+       assumed: at 390px the right-anchored panel put its own left edge at −78px, so a third
+       of the project list sat off-screen and unreachable (the page does not scroll sideways,
+       so nothing on screen would have said so). Anchoring to the button is right where there
+       is room beside it and wrong when the panel is wider than the gap. */
+    @media (max-width: 700px) {
+      .po-projfilter-menu.open {
+        position:fixed; left:12px; right:12px; width:auto;
+        top:auto; max-height:70vh;
+      }
+    }
     .po-projfilter-list label.po-pf-child code { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     /* charts */
     .po-charts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:16px; margin:16px 0; }
@@ -165,15 +187,31 @@
        — there is no longer a tab row for a rule to underline. */
     /* ⚠️ A COLUMN, so the inline panel can be full width under a right-aligned button.
        As a row, the panel was constrained to the button's own width. */
-    .po-scopebar { display:flex; flex-direction:column; align-items:flex-end; margin-bottom:14px; }
-    .po-scopebar .po-projfilter { width:100%; display:flex; flex-direction:column; align-items:flex-end; }
+    /* ⚠️ `.po-scopebar` IS GONE, rules and all. A deleted class leaves its rules behind and
+       they fail silently — this module's own history records five rules hiding a `.ps-legend`
+       that had not existed for four weeks. The scope picker lives in the module bar now. */
+    .po-topbar-tools { display:flex; align-items:center; gap:8px; margin-left:auto; }
+    /* ⚠️⚠️ WITHOUT THIS, `hidden` DOES NOTHING TO THE FUNNEL. `.pd-filttoggle` is
+       `display:inline-flex` at specificity (0,1,0) — exactly tying the user agent's own
+       `[hidden] { display:none }`, and an author rule beats the UA default at equal
+       specificity. dashboard.css carries the identical fix for `.pd-btn` (line ~634) and
+       says so at length; `.pd-filttoggle` never got one.
+       ⚠️ REPORTED, and fixed LOCALLY on purpose: the real repair belongs in the shared
+       stylesheet, which 31 pages load, and that is its own change with its own bump. This
+       page is simply the first to need `hidden` on a filter toggle. */
+    .po-topbar-tools .pd-filttoggle[hidden] { display:none; }
+    .po-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
+    /* Never seen: UI.tabsToDropdown replaces this strip with one trigger, and
+       `html.pd-js .pd-tabsrc` hides it before the first paint. Styled only so a
+       JS-less fallback is a usable row rather than a pile of bare buttons. */
+    .po-tabs { display:flex; flex-wrap:wrap; gap:4px; }
+    .po-tab { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
+      border-radius:var(--pd-radius); padding:5px 10px; font-size:var(--pd-fs-sm); cursor:pointer; }
+    .po-tab.active { border-color:var(--pd-red); color:var(--pd-red); font-weight:700; }
     /* Inside a view's own filter panel the scope is just another field in the row, and
        its list breaks onto its own line. */
     .po-toolbar-fields .po-projfilter { display:contents; }
     /* cross-project S-Curve / Cash Flow views */
-    .po-kpis2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
-    .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:14px 16px; }
-    .po-kpi2-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
     /* ---- Contracts & Claims: aging bars + the all-records disclosure (2026-09-15) ----
        ⚠ Tokens only, and the TEXT tones are --pd-*-text rather than --pd-warn / --pd-bad
          themselves, which are surface colours (--pd-warn measures 3.46:1 and is not a text
@@ -203,7 +241,6 @@
       .po-age-l { flex:1 1 auto; }
       .po-age-bar { flex:1 1 100%; order:3; }
     }
-    .po-kpi2-v { font-size:var(--pd-fs-stat); font-weight:700; }
     .po-svg { width:100%; height:auto; display:block; }
     .po-grid2 { stroke:var(--pd-line); stroke-width:1; }
     .po-ylab2 { fill:var(--pd-muted); font-size:10.5px; text-anchor:end; }
@@ -213,14 +250,17 @@
     .sw2 { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
     .sw2-line { width:18px; height:0; border-top:2px solid; margin-right:6px; }
     /* Per-project overlay: which series are drawn, and why some are off by default. */
-    .po-sc-series { display:flex; flex-wrap:wrap; gap:14px; margin-top:10px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
-    .po-sc-series label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
-    .po-sc-series input { width:auto; min-height:0; }
+    /* ⚠️ The series switch is the app's OWN multi-select segmented control now
+       (`.pd-seg.pd-seg-multi`), not three loose checkboxes — a fourth idiom for
+       "pick any of these" on a page that already had too many. dashboard.css's own
+       note explains why a multi choice is tint + underline rather than the solid
+       red of a single choice: painting three of three solid red says nothing. */
+    .po-sc-series { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }
     .po-sc-note { margin-top:8px; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
     /* A series the drawn data cannot carry. Dimmed and not-allowed rather than hidden —
        a toggle that vanishes reads as a missing feature, one that is visibly off reads
        as "not available for this data", which is the true statement. */
-    .po-sc-series label.po-sc-off { opacity:.55; cursor:not-allowed; }
+    .po-sc-series .pd-seg > button[disabled] { opacity:.55; cursor:not-allowed; }
     /* The project legend can be long, so it wraps and sits under the style legend. */
     .po-legend-proj { margin-top:6px; }
     /* ---- Stakeholder directory (portfolio-level authoring) ---- */
@@ -458,10 +498,8 @@
           border-right:1px solid var(--pd-line); border-radius:var(--pd-radius) 0 0 var(--pd-radius); }
       }
       @media (max-width: 900px) {
-        .po-scopebar { align-items: stretch; }
         #po-projfilter-wrap { flex: 1 1 100%; }
         #po-projfilter-wrap > button { width: 100%; min-height: 44px; }
-        .po-scopebar .po-projfilter { align-items: stretch; }
       }
     
     /* ---- Portfolio milestone calendar ---------------------------------------
@@ -479,10 +517,6 @@
       --po-ms-good-bg: rgba(127,214,162,.15); --po-ms-warn-bg: rgba(240,196,105,.16);
       --po-ms-bad-bg: rgba(241,154,154,.16);  --po-ms-info-bg: rgba(142,194,240,.15);
     }
-    .po-kpi2-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:3px; }
-    .po-kpi2.good .po-kpi2-v { color:var(--po-ms-good); }
-    .po-kpi2.warn .po-kpi2-v { color:var(--po-ms-warn); }
-    .po-kpi2.bad  .po-kpi2-v { color:var(--po-ms-bad); }
 
     .po-cal { padding:0; overflow:hidden; }
     .po-cal-head, .po-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
@@ -586,8 +620,54 @@
   <div class="pd-content">
     <div class="pd-topbar">
       <div id="ctx-switcher"></div>
-      <h1>Portfolio Dashboard</h1>
-      <div id="po-presence" title="People viewing the portfolio" style="margin-left:auto;"></div>
+      <h1><span class="po-title-ico" data-ico="layout" data-ico-size="20"></span><span class="po-title-txt">Portfolio Dashboard</span></h1>
+
+      <!-- ⚠️⚠️ THIS PAGE HAD NO MODULE-BAR CONTROLS AT ALL, and that is why Refresh ended up
+           as an inline button inside a sentence and Export inside the Overview's own table
+           toolbar. UI.initModuleTopbar() (ui.js, DOMContentLoaded) sweeps everything that is
+           not one of the four fixed chrome controls into a `.pd-modulebar` below — so simply
+           declaring the switcher and the tool cluster HERE lands them exactly where every
+           other module puts them. Nothing new is invented.
+           ⚠️ A DELIBERATE, NAMED REVERSAL of the 2026-09-09 removal of `.po-tabs` — and not
+           the same object. What went then was a THIRTEEN-BUTTON STRIP that duplicated the
+           sidebar. This is one compact trigger naming the view you are on, which the sidebar
+           cannot do and every other module has. The buttons below are never seen: they are
+           `pd-tabsrc` (hidden before JS runs) and UI.tabsToDropdown() replaces them with the
+           single dropdown. -->
+      <div class="po-tabs pd-tabsrc">
+          <button class="po-tab active" data-view="overview">Overview</button>
+          <button class="po-tab" data-view="scurve">S-Curve</button>
+          <button class="po-tab" data-view="cashflow">Cash Flow</button>
+          <button class="po-tab" data-view="resources">Resources</button>
+          <button class="po-tab" data-view="equipment">Equipment</button>
+          <button class="po-tab" data-view="milestones">Milestones</button>
+          <button class="po-tab" data-view="risk">Risk Register</button>
+          <button class="po-tab" data-view="stakeholders">Stakeholder Map</button>
+          <button class="po-tab" data-view="issues">Issues &amp; Concerns</button>
+          <button class="po-tab" data-view="meetings">Meetings</button>
+          <button class="po-tab" data-view="contracts">Contracts &amp; Claims</button>
+          <button class="po-tab" data-view="photos">Progress Photos</button>
+          <button class="po-tab" data-view="productivity">Productivity Rates</button>
+      </div>
+
+      <!-- ⚠️ ONE cluster, one order, on every view: scope · filter · refresh · export. -->
+      <div class="po-topbar-tools">
+        <div class="po-projfilter" id="po-projfilter-wrap">
+          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Which projects every view is scoped to">
+            <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
+          </button>
+          <div class="po-projfilter-menu" id="po-projfilter-menu">
+            <div class="po-projfilter-search"><input class="pd-input pd-input-sm" id="po-projfilter-search" placeholder="Search projects…" /></div>
+            <div class="po-projfilter-actions"><button type="button" data-act="all">Select all</button><button type="button" data-act="none">Clear</button></div>
+            <div class="po-projfilter-list" id="po-projfilter-list"></div>
+          </div>
+        </div>
+        <button class="pd-filttoggle" id="po-filter" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="po-refresh" title="Reload this view"><span data-ico="refresh" data-ico-size="15"></span></button>
+        <button class="pd-btn" id="po-export" title="Export to Excel"><span data-ico="download" data-ico-size="15"></span></button>
+      </div>
+
+      <div id="po-presence" title="People viewing the portfolio"></div>
       <div id="user-bar"></div>
     </div>
 
@@ -604,24 +684,11 @@
              Overview toolbar (where the other twelve views could not reach it), and that bar
              must never become an overflow-x container: the menu is position:absolute and
              would be clipped. -->
-      <div class="po-scopebar">
-        <div class="po-projfilter" id="po-projfilter-wrap">
-          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter which projects appear in every view">
-            <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
-          </button>
-          <div class="po-projfilter-menu" id="po-projfilter-menu">
-            <div class="po-projfilter-search"><input class="pd-input pd-input-sm" id="po-projfilter-search" placeholder="Search projects…" /></div>
-            <div class="po-projfilter-actions"><button type="button" data-act="all">Select all</button><button type="button" data-act="none">Clear</button></div>
-            <div class="po-projfilter-list" id="po-projfilter-list"></div>
-          </div>
-        </div>
-      </div>
 
       <div id="po-view-overview">
         <div class="po-toolbar">
           <!-- Filters (incl. the search box) live in a single toggleable group
                instead of sitting permanently open — UI.wireFilterToggle, ui.js. -->
-          <button class="pd-filttoggle" id="po-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
           <div class="po-toolbar-fields" id="po-toolbar-fields">
             <label class="po-chk" style="gap:6px;">Group by
               <!-- "Parent project" consolidates the contract packages of one development
@@ -646,7 +713,6 @@
             <span class="po-spacer"></span>
             <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-q" placeholder="Search project…" /></div>
           </div>
-          <button class="pd-btn" id="po-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
         </div>
 
         <div class="pd-info-grid" id="po-kpis"></div>
@@ -662,8 +728,7 @@
       </div>
 
       <div id="po-view-scurve" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sc-scope">all projects</span>). <button class="pd-btn" id="po-sc-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
-        <div class="po-kpis2" id="po-sc-kpis"></div>
+        <div class="pd-kpis" id="po-sc-kpis"></div>
         <div class="po-card">
           <h3 style="text-transform:none;font-size:15px;">Portfolio S-Curve — Planned vs Actual (duration-weighted, across selected projects)</h3>
           <div id="po-sc-chart"></div>
@@ -671,8 +736,7 @@
       </div>
 
       <div id="po-view-cashflow" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-cf-scope">all projects</span>). <button class="pd-btn" id="po-cf-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
-        <div class="po-kpis2" id="po-cf-kpis"></div>
+        <div class="pd-kpis" id="po-cf-kpis"></div>
         <div class="po-card">
           <h3 style="text-transform:none;font-size:15px;">Consolidated Cash Flow — Cash In / Out per month + Net funding curve</h3>
           <div id="po-cf-chart"></div>
@@ -683,10 +747,9 @@
       </div>
 
       <div id="po-view-equipment" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Where every piece of equipment is committed, and when it comes free — across the <strong>project filter</strong> above (<span id="po-eq-scope">all projects</span>). <button class="pd-btn" id="po-eq-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
-        <div class="po-kpis2" id="po-eq-kpis"></div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Where every piece of equipment is committed, and when it comes free.</p>
+        <div class="pd-kpis" id="po-eq-kpis"></div>
         <div class="po-eq-bar">
-          <button class="pd-filttoggle" id="po-eq-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
           <div class="po-toolbar-fields" id="po-eq-fields">
             <select class="pd-select" id="po-eq-cat"><option value="">All categories</option></select>
             <span class="po-eq-seg" id="po-eq-avail">
@@ -725,16 +788,14 @@
           </select>
           <label class="po-chk"><input type="checkbox" id="po-ms-prog"> Program milestones only</label>
           <span class="po-spacer"></span>
-          <span class="po-scope" id="po-ms-scope"></span>
-          <button class="pd-btn" id="po-ms-refresh" title="Reload"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
-        <div id="po-ms-kpis" class="po-kpis2"></div>
+        <div id="po-ms-kpis" class="pd-kpis"></div>
         <div id="po-ms-body"></div>
       </div>
 
       <div id="po-view-resources" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-rs-scope">all projects</span>). Aggregated server-side (safe at 27k+ assignments/project). <button class="pd-btn" id="po-rs-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
-        <div class="po-kpis2" id="po-rs-kpis"></div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Aggregated server-side (safe at 27k+ assignments/project).</p>
+        <div class="pd-kpis" id="po-rs-kpis"></div>
         <div class="po-card">
           <h3 style="text-transform:none;font-size:15px;">Top resources by budgeted cost</h3>
           <div id="po-rs-chart"></div>
@@ -746,7 +807,6 @@
 
       <div id="po-view-risk" style="display:none;">
         <div class="po-toolbar">
-          <button class="pd-filttoggle" id="po-rk-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
           <div class="po-toolbar-fields" id="po-rk-fields">
             <select class="pd-select" id="po-rk-status" style="max-width:160px;">
               <option value="">All statuses</option><option>Open</option><option>In Progress</option><option>Closed</option>
@@ -754,10 +814,9 @@
             <span class="po-spacer"></span>
             <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-rk-q" placeholder="Search risk, category…" /></div>
           </div>
-          <button class="pd-btn" id="po-rk-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-rk-scope">all projects</span>). Priority is the same 5×5 lookup the Risk Register itself uses.</p>
-        <div class="po-kpis2" id="po-rk-kpis"></div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Priority is the same 5×5 lookup the Risk Register itself uses.</p>
+        <div class="pd-kpis" id="po-rk-kpis"></div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-rk-table"></table></div>
         </div>
@@ -765,7 +824,6 @@
 
       <div id="po-view-stakeholders" style="display:none;">
         <div class="po-toolbar">
-          <button class="pd-filttoggle" id="po-sh-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
           <div class="po-toolbar-fields" id="po-sh-fields">
             <span class="po-spacer"></span>
             <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-sh-q" placeholder="Search name, organization…" /></div>
@@ -786,14 +844,12 @@
             <button type="button" class="pd-seg-ico" data-lay="list" title="List"><span data-ico="listView" data-ico-size="15"></span></button>
           </div>
           <button class="pd-btn pd-btn-primary" id="po-sh-add" style="height:36px;">+ Add person</button>
-          <button class="pd-btn" id="po-sh-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
         <!-- ⚠ The scope note belongs to the BY-PROJECT view only. The Directory is the
              portfolio-level master list: "on N projects" is a fact about the person, not
              about the current filter, so narrowing it would make one person read 3 here
              and 1 there. Hidden while the Directory is showing. -->
-        <p id="po-sh-scopenote" style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sh-scope">all projects</span>).</p>
-        <div class="po-kpis2" id="po-sh-kpis"></div>
+        <div class="pd-kpis" id="po-sh-kpis"></div>
         <!-- The card "Universe". Its own container rather than the table's, because the
              two layouts have nothing in common structurally and swapping innerHTML on one
              node would make each render pay for the other's markup. -->
@@ -806,7 +862,6 @@
 
       <div id="po-view-issues" style="display:none;">
         <div class="po-toolbar">
-          <button class="pd-filttoggle" id="po-is-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
           <div class="po-toolbar-fields" id="po-is-fields">
             <select class="pd-select" id="po-is-status" style="max-width:160px;">
               <option value="">All statuses</option><option>Open</option><option>On Hold</option><option>Closed</option>
@@ -814,26 +869,23 @@
             <span class="po-spacer"></span>
             <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-is-q" placeholder="Search issue, department…" /></div>
           </div>
-          <button class="pd-btn" id="po-is-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-is-scope">all projects</span>).</p>
-        <div class="po-kpis2" id="po-is-kpis"></div>
+        <div class="pd-kpis" id="po-is-kpis"></div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-is-table"></table></div>
         </div>
       </div>
 
       <div id="po-view-meetings" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Open action items across the <strong>project filter</strong> above (<span id="po-mm-scope">all projects</span>) — Closed items are left out, this is a worklist. <button class="pd-btn" id="po-mm-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
-        <div class="po-kpis2" id="po-mm-kpis"></div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Open action items — Closed items are left out, this is a worklist.</p>
+        <div class="pd-kpis" id="po-mm-kpis"></div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-mm-table"></table></div>
         </div>
       </div>
 
       <div id="po-view-contracts" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-ct-scope">all projects</span>). <button class="pd-btn" id="po-ct-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
-        <div class="po-kpis2" id="po-ct-kpis"></div>
+        <div class="pd-kpis" id="po-ct-kpis"></div>
         <!-- ⚠⚠ RANKED BY UNRECOVERED EXPOSURE, NOT ALPHABETICALLY (2026-09-15). The question this
              page exists to answer for management is "which project is bleeding", and a list sorted
              by project name actively hides that — the worst project is wherever the alphabet put
@@ -859,8 +911,8 @@
       </div>
 
       <div id="po-view-photos" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Only photos marked as a favorite (starred in a project's Gallery) are shown here. Scoped to the <strong>project filter</strong> above (<span id="po-ph-scope">all projects</span>). <button class="pd-btn" id="po-ph-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
-        <div class="po-kpis2" id="po-ph-kpis"></div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Only photos marked as a favorite (starred in a project's Gallery) are shown here.</p>
+        <div class="pd-kpis" id="po-ph-kpis"></div>
         <div class="po-card">
           <h3 style="text-transform:none;font-size:15px;">Most recently favorited</h3>
           <div class="po-photo-grid" id="po-ph-grid"></div>
@@ -871,8 +923,8 @@
       </div>
 
       <div id="po-view-productivity" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-pr-scope">all projects</span>). Rate = output ÷ (crew or equipment × working days). <button class="pd-btn" id="po-pr-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
-        <div class="po-kpis2" id="po-pr-kpis"></div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Rate = output ÷ (crew or equipment × working days).</p>
+        <div class="pd-kpis" id="po-pr-kpis"></div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-pr-table"></table></div>
         </div>
@@ -883,14 +935,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
+<script src="../../assets/js/auth.js?v=20260914e"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260911uc"></script>
   <!-- ⚠ The shared S-curve engine. This page used to carry a hand-copied duplicate of
        its maths (scCompute), the exact drift the 2026-09-01 extraction existed to stop. -->
   <script src="../../assets/js/scurve.js?v=20260901a"></script>
-<script src="../../assets/js/ui.js?v=20260915f"></script>
+<script src="../../assets/js/ui.js?v=20260915g"></script>
 <script src="../../assets/js/claims.js?v=20260915a"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <!-- Shared stakeholder directory: identity matching + find-or-create, used by
@@ -1347,6 +1399,39 @@
     }, 250);
   }
 
+  /* ⚠️⚠️ ONE FUNNEL FOR THIRTEEN VIEWS. There used to be two filter surfaces on screen at
+     once: the scope picker in its own bar, and immediately below it the Overview's toolbar
+     with a SECOND funnel and a SECOND search box, with nothing stating the relationship.
+     Five views carry a filter panel; the button is hidden on the other eight rather than
+     sitting there doing nothing.
+     ⚠️ `UI.wireFilterToggle` re-binds the button's onclick each call, which is exactly what
+     lets one button serve N panels — and it re-syncs the has-active dot for the panel it is
+     now pointed at, so the "something is filtered" signal follows the view. */
+  var FILTER_PANEL = { overview: 'po-toolbar-fields', equipment: 'po-eq-fields',
+                       risk: 'po-rk-fields', stakeholders: 'po-sh-fields', issues: 'po-is-fields' };
+  var _filt = {};
+  function syncFilterBtn(v) {
+    var btn = document.getElementById('po-filter');
+    if (!btn) return;
+    /* ⚠️ Close every OTHER view's panel first. One button cannot un-toggle a panel it is no
+       longer pointed at, so a panel left open would still be open the next time that view
+       came round — with the funnel showing no sign of it. */
+    Object.keys(_filt).forEach(function (k) { if (k !== v && _filt[k]) _filt[k].close(); });
+    var id = FILTER_PANEL[v], panel = id ? document.getElementById(id) : null;
+    btn.hidden = !panel;
+    if (panel) _filt[v] = UI.wireFilterToggle(btn, panel);
+  }
+
+  /* ⚠️ Refresh is IMMEDIATE, never debounced. renderCurrent()'s 250ms wait exists so that
+     ticking five projects costs one fetch; a planner who presses Refresh has asked for it
+     now, and making them wait a further quarter second for no reason reads as a dead button. */
+  function refreshCurrent() {
+    if (_viewLoadT) { clearTimeout(_viewLoadT); _viewLoadT = null; }
+    renderAll();
+    var f = viewLoaders()[view];
+    if (f) f(true);
+  }
+
   /* ⚠️ ONE list of "which loader belongs to which view", read by BOTH switchView() and
      renderCurrent(). Two copies is how a view gets added to one and forgotten in the other.
      A function (not a var) so hoisting makes it safe to call from anywhere in this IIFE. */
@@ -1540,14 +1625,15 @@
       '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;"></span>Actual</span>' +
       '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;border-style:dotted;"></span>Forecast</span>';
     var toggles =
-      '<div class="po-sc-series">' +
+      '<div class="po-sc-series"><div class="pd-seg pd-seg-multi" role="group" aria-label="Series">' +
         ['bl', 'ac', 'fc'].map(function (kk, i) {
           var lbl = ['Baseline', 'Actual', 'Forecast'][i];
           var off = (kk === 'fc' && !anyFc);
-          return '<label' + (off ? ' class="po-sc-off" title="The combined portfolio roll-up carries no forecast — narrow the filter to ' + SC_FULL_MAX + ' projects or fewer for per-project curves."' : '') +
-            '><input type="checkbox" data-sc="' + kk + '"' + (sel[kk] && !off ? ' checked' : '') + (off ? ' disabled' : '') + '> ' + lbl + '</label>';
+          return '<button type="button" data-sc="' + kk + '"' +
+            (off ? ' disabled title="The combined portfolio roll-up carries no forecast — narrow the filter to ' + SC_FULL_MAX + ' projects or fewer for per-project curves."' : '') +
+            (sel[kk] && !off ? ' class="on"' : '') + '>' + lbl + '</button>';
         }).join('') +
-      '</div>';
+      '</div></div>';
     // ⚠️ When the default has quietly dropped two series, SAY SO. A chart that silently
     //    shows a third of what was asked for reads as missing data.
     /* ⚠️ A chart showing ONE line across 21 projects must say that is what it is. The
@@ -1560,7 +1646,7 @@
         SC_FULL_MAX + ' projects or fewer</b> to compare each project\'s own curve.</div>'
       : (!scSeriesSel && per.length > SC_FULL_MAX)
       ? '<div class="po-sc-note">Showing <b>Actual</b> only — ' + per.length +
-        ' projects × 3 series is too many lines to read. Tick Baseline or Forecast to add them back, ' +
+        ' projects × 3 series is too many lines to read. Turn Baseline or Forecast back on to add them, ' +
         'or narrow the project filter.</div>'
       : '';
 
@@ -1570,10 +1656,12 @@
       '<div class="po-legend2">' + styleLegend + '</div>' +
       '<div class="po-legend2 po-legend-proj">' + projLegend + '</div>';
 
-    host.querySelectorAll('input[data-sc]').forEach(function (cb) {
-      cb.onchange = function () {
+    /* ⚠️ A disabled rung fires no click, so Forecast cannot be turned on when nothing
+       drawn carries one — the refusal is the control's own, not a guard bolted beside it. */
+    host.querySelectorAll('button[data-sc]').forEach(function (b) {
+      b.onclick = function () {
         scSeriesSel = scSeriesSel || { bl: sel.bl, ac: sel.ac, fc: sel.fc };
-        scSeriesSel[cb.dataset.sc] = cb.checked;
+        scSeriesSel[b.dataset.sc] = !b.classList.contains('on');
         scRenderChart();
       };
     });
@@ -1600,7 +1688,23 @@
     var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0, overallPct = TOT ? overallDone / TOT * 100 : 0;
     return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: a.nAct || 0 };
   }
-  function kpi2(l, v, cls) { return '<div class="po-kpi2"><div class="po-kpi2-l">' + l + '</div><div class="po-kpi2-v"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + v + '</div></div>'; }
+  /* ⚠️⚠️ THIS PAGE CARRIED TWO PRIVATE KPI CARDS AND IGNORED THE SHARED ONE. `.po-kpi2` was
+     value weight 700 against the shared 800, radius `md` against `lg`, padding 14/16 against
+     16/18 — so the S-Curve, Milestones and Cash Flow strips did not match the Overview's, and
+     neither matched the rest of the app. The 2026-09-10 (w2) pass converged five modules onto
+     `.pd-kpi` and this page was not among them.
+     ⚠️ The SIGNATURE is unchanged, which is the whole point: all 40 call sites converge without
+     being touched, so there is no chance of catching some and missing others.
+     ⚠️ The token maps to the shared SEMANTIC VARIANT rather than an inline colour — the variant
+     tints the accent bar as well as the value, and `dashboard.css` has measured those three for
+     contrast at this type size. An unrecognised token still falls back to an inline colour, so
+     no caller can silently lose its meaning. */
+  var KPI_VARIANT = { '--pd-ok': 'pd-kpi-ok', '--pd-warn': 'pd-kpi-warn', '--pd-bad': 'pd-kpi-bad' };
+  function kpi2(l, v, cls) {
+    var variant = cls ? KPI_VARIANT[cls] : '';
+    var val = (variant || !cls) ? v : '<span style="color:var(' + cls + ');">' + v + '</span>';
+    return UI.kpi(l, val, variant ? { cls: variant } : {});
+  }
   // Shared by the seven register-style tabs below (Risk / Stakeholders / Issues / Meetings /
   // Contracts / Photos / Productivity) — one clipped-text and one status-pill helper instead of
   // seven near-identical copies.
@@ -1641,8 +1745,6 @@
     var ids = scopedProjectIds();
     if (!force && scLoadedIds && scLoadedIds.join(',') === ids.join(',')) return;
     var gen = ++_scGen;
-    var scopeEl = document.getElementById('po-sc-scope');
-    if (scopeEl) scopeEl.textContent = scopeLabel(ids);
     var kpiHost = document.getElementById('po-sc-kpis'), chartHost = document.getElementById('po-sc-chart');
     if (!ids.length) {
       kpiHost.innerHTML = '';
@@ -2498,7 +2600,6 @@
   async function loadCashflow(force) {
     var ids = scopedProjectIds();
     if (!force && cfLoadedIds && cfLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-cf-scope').textContent = scopeLabel(ids);
     if (!ids.length) { document.getElementById('po-cf-kpis').innerHTML = ''; document.getElementById('po-cf-chart').innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; document.getElementById('po-cf-table').innerHTML = ''; return; }
     document.getElementById('po-cf-chart').innerHTML = '<div class="po-empty">Loading…</div>';
     document.getElementById('po-cf-kpis').innerHTML = '';
@@ -2514,7 +2615,6 @@
   async function loadResources(force) {
     var ids = scopedProjectIds();
     if (!force && rsLoadedIds && rsLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-rs-scope').textContent = scopeLabel(ids);
     var chart = document.getElementById('po-rs-chart'), tbl = document.getElementById('po-rs-table'), kpis = document.getElementById('po-rs-kpis');
     if (!ids.length) { kpis.innerHTML = ''; chart.innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; tbl.innerHTML = ''; return; }
     chart.innerHTML = '<div class="po-empty">Aggregating resource demand across ' + ids.length + ' project(s)…</div>'; kpis.innerHTML = '';
@@ -2601,7 +2701,6 @@
   async function loadEquipment(force) {
     var ids = scopedProjectIds();
     if (!force && eqLoadedIds && eqLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-eq-scope').textContent = scopeLabel(ids);
     var grid = document.getElementById('po-eq-grid'), tbl = document.getElementById('po-eq-table'), kpis = document.getElementById('po-eq-kpis');
     if (!ids.length) { kpis.innerHTML = ''; grid.innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; tbl.innerHTML = ''; return; }
     grid.innerHTML = '<div class="po-empty">Reading the equipment registers of ' + ids.length + ' project(s)…</div>';
@@ -2933,7 +3032,6 @@
   async function loadMilestones(force) {
     var ids = scopedProjectIds();
     if (!force && msLoadedIds && msLoadedIds.join(',') === ids.join(',')) { renderMilestones(); return; }
-    document.getElementById('po-ms-scope').textContent = scopeLabel(ids);
     var body = document.getElementById('po-ms-body');
     if (!ids.length) { document.getElementById('po-ms-kpis').innerHTML = ''; body.innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; return; }
     body.innerHTML = '<div class="po-empty">Loading milestones across ' + ids.length + ' project(s)…</div>';
@@ -3100,9 +3198,12 @@
       '<span class="po-cal-chip-p">' + esc(projShort(r.project_id)) + '</span>' +
       esc(r.activity_name || r.activity_id || '(unnamed)') + '</button>';
   }
+  /* The milestone strip's own card, onto the same shared component. ⚠️ Its `good|warn|bad`
+     vocabulary maps to the shared variants rather than keeping a second palette
+     (`--po-ms-*`) that says the same three things. */
+  var MS_VARIANT = { good: 'pd-kpi-ok', warn: 'pd-kpi-warn', bad: 'pd-kpi-bad' };
   function msKpi(l, v, sub, cls) {
-    return '<div class="po-kpi2 ' + (cls || '') + '"><div class="po-kpi2-l">' + esc(l) + '</div>' +
-      '<div class="po-kpi2-v">' + v + '</div><div class="po-kpi2-s">' + esc(sub || '') + '</div></div>';
+    return UI.kpi(l, v, { sub: sub || '', cls: MS_VARIANT[cls] || '' });
   }
   function projNameOf(id) {
     var p = (PROJ || []).find(function (x) { return String(x.id) === String(id); });
@@ -3151,7 +3252,6 @@
     };
     document.getElementById('po-ms-state').onchange = function (e) { msState = e.target.value; renderMilestones(); };
     document.getElementById('po-ms-prog').onchange = function (e) { msProgOnly = e.target.checked; renderMilestones(); };
-    document.getElementById('po-ms-refresh').onclick = function () { loadMilestones(true); };
   }
 
   // ⚠⚠ THE ROLE GATE MOVED IN HERE FROM THE TAB STRIP, AND IT IS STRICTLY STRONGER.
@@ -3165,6 +3265,13 @@
   function switchView(v) {
     if (PO_SUPERADMIN_VIEWS.indexOf(v) !== -1 && window.__role !== 'super_admin') v = 'overview';
     view = v;
+    /* ⚠️ Flip `.active` on the hidden source button and the dropdown's trigger re-labels
+       itself — UI.tabsToDropdown watches these with a MutationObserver. Writing the
+       trigger's text directly would be a second place that has to know the view names. */
+    var strip = document.querySelector('.po-tabs');
+    if (strip) strip.querySelectorAll('button[data-view]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.view === v);
+    });
     wireMilestones();
     document.getElementById('po-view-overview').style.display = v === 'overview' ? '' : 'none';
     document.getElementById('po-view-scurve').style.display = v === 'scurve' ? '' : 'none';
@@ -3183,32 +3290,16 @@
     //    be wired for arrival and forgotten when the project filter changes (or vice versa).
     var f = viewLoaders()[v];
     if (f) f(false);
-    placeScope(v);
+    syncFilterBtn(v);
   }
 
-  // ⚠️⚠️ ONE NODE, MOVED — never a second copy. The owner asked for the project filter
-  //    and the view's own funnel to be one control. Four of the thirteen views have an
-  //    expanding filter panel; in those the scope moves INTO it, so there is genuinely
-  //    one filter button. The other nine have no panel, and the scope still has to be
-  //    reachable from every view, so it falls back to its own bar.
-  // ⚠️ Moving the element keeps its wiring, its state and its selection: it is the same
-  //    DOM node, so nothing is re-bound and nothing can drift between views. Rendering a
-  //    copy per view is what would need the two kept in step.
-  var SCOPE_PANEL = { stakeholders: 'po-sh-fields', risk: 'po-rk-fields',
-                      issues: 'po-is-fields', equipment: 'po-eq-fields' };
-  function placeScope(v) {
-    var wrap = document.getElementById('po-projfilter-wrap');
-    if (!wrap) return;
-    var bar = document.querySelector('.po-scopebar');
-    var panel = SCOPE_PANEL[v] ? document.getElementById(SCOPE_PANEL[v]) : null;
-    var host = panel || bar;
-    if (host && wrap.parentNode !== host) {
-      // first in the panel: it scopes everything the other fields then filter within
-      if (panel) host.insertBefore(wrap, host.firstChild); else host.appendChild(wrap);
-    }
-    // ⚠️ The bar would otherwise keep its 14px bottom margin as an empty strip.
-    if (bar) bar.style.display = panel ? 'none' : '';
-  }
+  /* ⚠️⚠️ `placeScope` / `SCOPE_PANEL` ARE GONE, AND THAT IS THE POINT. They moved the one
+     scope node between a bar of its own and four views' filter panels, so the control that
+     scopes EVERY view sat somewhere different depending on where you were standing — which
+     is the inconsistency the owner reported, not a cure for it. It now lives permanently in
+     the module bar beside Refresh and Export, in the same place on all thirteen views.
+     ⚠️ It is still ONE node with its wiring, state and selection intact; what changed is
+     that nothing moves it any more. */
 
   function exportExcel() {
     if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
@@ -3247,7 +3338,6 @@
   async function loadRisks(force) {
     var ids = scopedProjectIds();
     if (!force && rkLoadedIds && rkLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-rk-scope').textContent = scopeLabel(ids);
     var tbl = document.getElementById('po-rk-table'), kpis = document.getElementById('po-rk-kpis');
     if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
     tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the risk registers of ' + ids.length + ' project(s)…</td></tr></tbody>';
@@ -3316,7 +3406,6 @@
   async function loadStakeholders(force) {
     // ⚠ The Directory does not depend on the project filter, so it is loaded and
     //   rendered on its own path rather than being squeezed through the scoped one.
-    document.getElementById('po-sh-scopenote').style.display = shView === 'directory' ? 'none' : '';
     document.getElementById('po-sh-add').hidden = shView !== 'directory';
     document.getElementById('po-sh-group').hidden = shView !== 'directory';
     document.getElementById('po-sh-layout').style.display = shView === 'directory' ? '' : 'none';
@@ -3350,7 +3439,6 @@
     }
     var ids = scopedProjectIds();
     if (!force && shLoadedIds && shLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-sh-scope').textContent = scopeLabel(ids);
     var tbl = document.getElementById('po-sh-table'), kpis = document.getElementById('po-sh-kpis');
     if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
     tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the stakeholder maps of ' + ids.length + ' project(s)…</td></tr></tbody>';
@@ -3406,7 +3494,6 @@
   async function loadIssues(force) {
     var ids = scopedProjectIds();
     if (!force && isLoadedIds && isLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-is-scope').textContent = scopeLabel(ids);
     var tbl = document.getElementById('po-is-table'), kpis = document.getElementById('po-is-kpis');
     if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
     tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the issues registers of ' + ids.length + ' project(s)…</td></tr></tbody>';
@@ -3462,7 +3549,6 @@
   async function loadMeetings(force) {
     var ids = scopedProjectIds();
     if (!force && mmLoadedIds && mmLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-mm-scope').textContent = scopeLabel(ids);
     var tbl = document.getElementById('po-mm-table'), kpis = document.getElementById('po-mm-kpis');
     if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
     tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading minutes across ' + ids.length + ' project(s)…</td></tr></tbody>';
@@ -3515,7 +3601,6 @@
   async function loadContracts(force) {
     var ids = scopedProjectIds();
     if (!force && ctLoadedIds && ctLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-ct-scope').textContent = scopeLabel(ids);
     var tbl = document.getElementById('po-ct-table'), kpis = document.getElementById('po-ct-kpis');
     if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
     tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading contracts &amp; claims across ' + ids.length + ' project(s)…</td></tr></tbody>';
@@ -3703,7 +3788,6 @@
   async function loadPhotos(force) {
     var ids = scopedProjectIds();
     if (!force && phLoadedIds && phLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-ph-scope').textContent = scopeLabel(ids);
     var kpis = document.getElementById('po-ph-kpis'), grid = document.getElementById('po-ph-grid'), tbl = document.getElementById('po-ph-table');
     if (!ids.length) { kpis.innerHTML = ''; grid.innerHTML = ''; tbl.innerHTML = ''; return; }
     grid.innerHTML = '<div class="po-empty">Reading the favorited photos of ' + ids.length + ' project(s)…</div>';
@@ -3771,7 +3855,6 @@
   async function loadProductivity(force) {
     var ids = scopedProjectIds();
     if (!force && prLoadedIds && prLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-pr-scope').textContent = scopeLabel(ids);
     var tbl = document.getElementById('po-pr-table'), kpis = document.getElementById('po-pr-kpis');
     if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
     tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading productivity monitoring across ' + ids.length + ' project(s)…</td></tr></tbody>';
@@ -3838,7 +3921,6 @@
     document.getElementById('po-export').onclick = exportExcel;
     // Each tab's own filter row (incl. its search box) hides behind one
     // funnel toggle instead of sitting permanently open.
-    UI.wireFilterToggle(document.getElementById('po-filttoggle'), document.getElementById('po-toolbar-fields'));
     // Browser-history integration — see UI.bindHistoryState in ui.js. Without this,
     // switching Overview/S-Curve/Cash Flow/Resources/Equipment/Milestones never
     // touches the URL, so the browser's native Back button jumps straight past
@@ -3848,13 +3930,31 @@
       get: function () { return { v: view }; },
       apply: function (s) { switchView(s.v); }
     });
-    document.getElementById('po-sc-refresh').onclick = function () { loadScurve(true); };
-    document.getElementById('po-rs-refresh').onclick = function () { loadResources(true); };
-    document.getElementById('po-eq-refresh').onclick = function () { loadEquipment(true); };
+
+    /* ⚠️⚠️ THE SWITCHER IS BUILT AFTER AUTH, DELIBERATELY. Five views are super-admin-only
+       and `window.__role` is not known until requireLogin resolves — building earlier would
+       offer a planner five views they cannot open, and tabsToDropdown caches its button list
+       at build time, so removing them afterwards would leave them sitting in the menu.
+       ⚠️ No flash is introduced: `.pd-tabsrc` is hidden from the first frame by the shared
+       `html.pd-js .pd-tabsrc` rule, so the raw strip is never on screen either way.
+       ⚠️ `opts.icon` is NOT passed — this page keeps its own <h1>, and the 2026-09-04 rule is
+       that only a module whose title is hidden outright supplies the icon to the dropdown. */
+    (function () {
+      var strip = document.querySelector('.po-tabs');
+      if (!strip) return;
+      strip.querySelectorAll('button[data-view]').forEach(function (b) {
+        if (PO_SUPERADMIN_VIEWS.indexOf(b.dataset.view) !== -1 && window.__role !== 'super_admin') {
+          b.parentNode.removeChild(b); return;
+        }
+        b.onclick = function () { switchView(b.dataset.view); histView.push(); };
+      });
+      if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.po-tabs');
+    })();
+
+    document.getElementById('po-refresh').onclick = refreshCurrent;
     document.getElementById('po-eq-cat').onchange = function (e) { eqCat = e.target.value; eqRender(); };
     document.getElementById('po-eq-q').oninput = function (e) { eqQuery = e.target.value; eqRender(); };
     document.getElementById('po-eq-export').onclick = eqExport;
-    UI.wireFilterToggle(document.getElementById('po-eq-filttoggle'), document.getElementById('po-eq-fields'));
     document.querySelectorAll('#po-eq-avail button').forEach(function (b) {
       b.onclick = function () {
         eqAvail = b.dataset.av || '';
@@ -3862,12 +3962,8 @@
         eqRender();
       };
     });
-    document.getElementById('po-cf-refresh').onclick = function () { loadCashflow(true); };
-    document.getElementById('po-rk-refresh').onclick = function () { loadRisks(true); };
     document.getElementById('po-rk-status').onchange = function (e) { rkStatus = e.target.value; rkRender(); };
     document.getElementById('po-rk-q').oninput = function (e) { rkQuery = e.target.value; rkRender(); };
-    UI.wireFilterToggle(document.getElementById('po-rk-filttoggle'), document.getElementById('po-rk-fields'));
-    document.getElementById('po-sh-refresh').onclick = function () { loadStakeholders(true); };
     // ⚠ One search box drives both views, so it must dispatch on the current view
     //   rather than always calling the mirror renderer.
     document.getElementById('po-sh-q').oninput = function (e) {
@@ -3902,15 +3998,8 @@
         loadStakeholders(false);
       };
     });
-    UI.wireFilterToggle(document.getElementById('po-sh-filttoggle'), document.getElementById('po-sh-fields'));
-    document.getElementById('po-is-refresh').onclick = function () { loadIssues(true); };
     document.getElementById('po-is-status').onchange = function (e) { isStatus = e.target.value; isRender(); };
     document.getElementById('po-is-q').oninput = function (e) { isQuery = e.target.value; isRender(); };
-    UI.wireFilterToggle(document.getElementById('po-is-filttoggle'), document.getElementById('po-is-fields'));
-    document.getElementById('po-mm-refresh').onclick = function () { loadMeetings(true); };
-    document.getElementById('po-ct-refresh').onclick = function () { loadContracts(true); };
-    document.getElementById('po-ph-refresh').onclick = function () { loadPhotos(true); };
-    document.getElementById('po-pr-refresh').onclick = function () { loadProductivity(true); };
     try {
       var res = await Promise.all([PDb.getProjects(), PDb.getGroupHeads()]);
       PROJ = res[0]; GH = res[1];

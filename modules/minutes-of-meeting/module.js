@@ -793,13 +793,28 @@ window.MinutesOfMeeting = (function () {
   // loads with the project the same way the Issues & Concerns register loads its
   // own table.
   async function load() {
-    if (!pid) { MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = []; _momLoaded = true; render(); return; }
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = []; _momLoaded = true; render(); return; }
     // ⚠️ Keyset-paginated (PDb.selectAll): a plain .select() truncates at 1000 rows
     // server-side with no error, and both of these accumulate for the life of the
     // project — one row per meeting, and one per action item on every meeting.
     try {
-      MOMS = await PDb.selectAll('meeting_minutes', function (q) { return q.eq('project_id', pid); });
-      MOM_ITEMS = await PDb.selectAll('mom_items', function (q) { return q.eq('project_id', pid); });
+      if (portfolio) {
+        // ⚠️ Every project this planner can see (UI.allProjectIds() is already
+        // RLS-scoped), not just the ones with a meeting recorded so far — an
+        // empty list here means "0 accessible projects", never "no meetings
+        // anywhere".
+        var ids = await UI.allProjectIds();
+        if (ids.length) {
+          MOMS = await PDb.selectAll('meeting_minutes', function (q) { return q.in('project_id', ids); });
+          MOM_ITEMS = await PDb.selectAll('mom_items', function (q) { return q.in('project_id', ids); });
+        } else {
+          MOMS = []; MOM_ITEMS = [];
+        }
+      } else {
+        MOMS = await PDb.selectAll('meeting_minutes', function (q) { return q.eq('project_id', pid); });
+        MOM_ITEMS = await PDb.selectAll('mom_items', function (q) { return q.eq('project_id', pid); });
+      }
       _momErr = '';
     } catch (e) {
       MOMS = []; MOM_ITEMS = [];
@@ -821,6 +836,13 @@ window.MinutesOfMeeting = (function () {
     // ⚠️ Light reads of the sibling module's tables (see the header comment) —
     // tolerant of either being unmigrated (no rows, not a failed load): the
     // status pill and the "Get from issue" panel just have nothing to offer yet.
+    // ⚠️ SECONDARY reads, deliberately NOT consolidated across projects in
+    // Portfolio scope: these are single-project cross-module links (the "From
+    // MOM" tag, "Get from issue", the "N lessons" badge, recurring schedules),
+    // not the primary register this scope exists to answer. Left empty in
+    // Portfolio scope rather than run with a null `pid` — the primary meetings
+    // list/KPIs above are the thing this scope consolidates.
+    if (portfolio) { ISSUES = []; LESSONS = []; SCHEDULES = []; _momLoaded = true; render(); return; }
     try { ISSUES = await PDb.selectAll('issues_lessons', function (q) { return q.eq('project_id', pid); }); }
     catch (e) { ISSUES = []; }
     try { LESSONS = await PDb.selectAll('lessons_learned', function (q) { return q.eq('project_id', pid); }); }
@@ -1098,14 +1120,24 @@ window.MinutesOfMeeting = (function () {
         render();
       }
     });
-    if (pid) load();
+    if (pid || (window.AppAuth && AppAuth.isPortfolioScope())) load();
     joinCollab();
   }
 
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = $('il-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT. Arriving here via
+    // the Portfolio sidebar (`#pd_scope=portfolio`, read once by AppAuth), `pid`
+    // stays null on purpose — the alternative is silently substituting the
+    // first project alphabetically and showing ITS real name as if it were
+    // correctly scoped. `pid === null` is also what `load()` reads below to
+    // switch the module from one project to every project this planner can
+    // see, and what `render()`/`openAddMeetingModal()` already gate write
+    // paths off (see there) — same pattern as risk-register/stakeholder-map.
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     var cur = projects.find(function (p) { return p.id === pid; });
     projName = cur ? (cur.name || cur.id) : '';
     sel.innerHTML = '<option value="">Select project…</option>' +
@@ -1257,7 +1289,10 @@ window.MinutesOfMeeting = (function () {
   }
   function render() {
     syncTopbarTools();
-    if (!pid) { _paintEmpty('Select a project to see its minutes.'); return; }
+    // ⚠️ Portfolio scope keeps `pid` null on purpose (see loadProjects()) — the
+    // module consolidates across every project instead of one, so `!pid` alone
+    // must not read as "nothing selected" there.
+    if (!pid && !(window.AppAuth && AppAuth.isPortfolioScope())) { _paintEmpty('Select a project to see its minutes.'); return; }
     if (!_momLoaded) { _paintEmpty('Loading minutes…'); return; }
     syncTopTabs();
     if (_momTab === 'dashboard') renderMomDashboard();
@@ -2637,6 +2672,11 @@ window.MinutesOfMeeting = (function () {
   // throughout" true by construction rather than by eyeballing pixel offsets.
   function amGhostLabel() { return '<label aria-hidden="true">&nbsp;</label>'; }
   function openAddMeetingModal() {
+    if (!pid) {
+      UI.toast((window.AppAuth && AppAuth.isPortfolioScope())
+        ? 'Portfolio is read-only — switch to a project to add or edit.' : 'Select a project first', 'warn');
+      return;
+    }
     var m = UI.modal(
       '<div class="pd-modal-header"><h3 style="margin:0;">+ Add meeting</h3>' +
         '<button class="pd-modal-close" id="il-am-x">&times;</button></div>' +

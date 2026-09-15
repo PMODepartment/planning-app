@@ -526,7 +526,11 @@ window.IssuesLessons = (function () {
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = $('il-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()). load()/loadLessons()
+    // below consolidate the register across every accessible project instead of substituting one.
+    var portfolioScope = window.AppAuth && AppAuth.isPortfolioScope();
+    pid = portfolioScope ? null : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     var cur = projects.find(function (p) { return p.id === pid; });
     projName = cur ? (cur.name || cur.id) : '';
     sel.innerHTML = '<option value="">Select project…</option>' +
@@ -948,7 +952,11 @@ window.IssuesLessons = (function () {
     var _lw = $('il-issues-listwrap'), _kw = $('il-issues-kanban');
     if (_lw) _lw.hidden = false;
     if (_kw) _kw.hidden = true;
-    if (!pid) {
+    // Portfolio scope: no single project is selected, but every project the planner can see
+    // is in scope — consolidate the register across all of them instead of refusing for lack
+    // of one project id. See AppAuth.isPortfolioScope().
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) {
       rows = [];
       $('il-table').innerHTML =
         '<tr><td style="padding:24px;color:var(--pd-muted);">Select a project to see its issues.</td></tr>';
@@ -964,10 +972,21 @@ window.IssuesLessons = (function () {
     // with no error, and this log accumulates for the life of the project. Shaped as {data}/{error}
     // so the offline-cache branch is untouched; the display sort is re-applied in memory.
     var res;
-    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
+    try {
+      var portfolioIds = null;
+      if (portfolio) {
+        portfolioIds = await (window.UI && UI.allProjectIds ? UI.allProjectIds() : Promise.resolve([]));
+        if (!portfolioIds.length) { rows = []; populateFilterOptions(); render(); return; }
+      }
+      res = {
+        data: await PDb.selectAll(TABLE, function (q) {
+          return portfolio ? q.in('project_id', portfolioIds) : q.eq('project_id', pid);
+        })
+      };
+    }
     catch (err) { res = { error: err }; }
     if (res.error) {
-      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); populateFilterOptions(); render(); return; } }
+      if (!portfolio && window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); populateFilterOptions(); render(); return; } }
       UI.toast(res.error.message, 'error'); return;
     }
     rows = res.data || [];
@@ -986,7 +1005,7 @@ window.IssuesLessons = (function () {
       } else { MOM_BY_ID = {}; }
     } catch (e) { MOM_BY_ID = {}; }
     rows.sort(issueOrderCmp);   // manual sort_order first (item 2), else date_presented desc
-    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
+    if (!portfolio && window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     // ⚠️ Lessons load WITH the register, not lazily like the minutes. An issue's detail
     // pane states the lessons captured on it, so a lazily-loaded library would make the
     // issue screen say "no lessons yet" about an issue that has some — the worst possible
@@ -3000,11 +3019,20 @@ window.IssuesLessons = (function () {
 
   async function loadLessons() {
     _lessLoaded = true; _lessErr = ''; _lessLegacy = false;
-    if (!pid) { LESSONS = []; return; }
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { LESSONS = []; return; }
     try {
       // ⚠️ Keyset-paginated (PDb.selectAll) — a plain .select() truncates at 1000 rows
       // server-side with no error, and a library accumulates for the life of the project.
-      LESSONS = await PDb.selectAll(LESSON_TABLE, function (q) { return q.eq('project_id', pid); });
+      // In portfolio scope, consolidate across every accessible project (see load() above).
+      if (portfolio) {
+        var portfolioIds = await (window.UI && UI.allProjectIds ? UI.allProjectIds() : Promise.resolve([]));
+        LESSONS = portfolioIds.length
+          ? await PDb.selectAll(LESSON_TABLE, function (q) { return q.in('project_id', portfolioIds); })
+          : [];
+      } else {
+        LESSONS = await PDb.selectAll(LESSON_TABLE, function (q) { return q.eq('project_id', pid); });
+      }
     } catch (e) {
       LESSONS = legacyLessons();
       _lessLegacy = true;

@@ -1,5 +1,223 @@
 # Module: portfolio-overview
 
+## 2026-09-15 (v) — Phase B finished: one funnel, one KPI card, and the series switch stops being a fourth idiom
+
+Continuing the owner's *"the UI needs complete rework… make sure the UI is consistent and
+professional looking"*. (u) put the controls in the module bar; this is the rest.
+
+### ⚠️⚠️ TWO FILTER SURFACES WERE ON SCREEN AT ONCE, AND FIVE FUNNELS EXISTED
+
+The scope picker sat in its own bar and the Overview's toolbar carried a **second** funnel and a
+**second** search box immediately below it, with nothing stating the relationship — and four other
+views each had a funnel of their own. **Five `.pd-filttoggle` buttons, five `wireFilterToggle`
+calls.** There is now **one**, in the tool cluster, pointed at whichever view has a panel.
+
+- ⚠️ **`UI.wireFilterToggle` re-binds the button's onclick on every call**, which is exactly what
+  lets one button serve N panels — and it re-syncs the has-active dot for the panel it is now
+  pointed at, so the "something is filtered" signal follows the view instead of going stale.
+- ⚠️ **Every other view's panel is closed on a switch.** One button cannot un-toggle a panel it is
+  no longer pointed at, so a panel left open would still be open the next time that view came round,
+  with the funnel showing no sign of it.
+- ⚠️ Eight views have no panel; the button is **hidden** there rather than sitting inert.
+
+### ⚠️⚠️ AND `hidden` DID NOTHING TO IT — THE SAME TIE, ON A DIFFERENT COMPONENT
+
+`.pd-filttoggle` is `display:inline-flex` at specificity **(0,1,0)**, which **exactly ties** the user
+agent's own `[hidden] { display:none }` — and an author rule beats the UA default at equal
+specificity. `dashboard.css` carries the identical fix for `.pd-btn` (line ~634) and explains it at
+length; `.pd-filttoggle` never got one.
+
+**Measured, and the negative build is the proof:** with the rule, `hidden` computes `display:none`;
+**with the rule deleted from the live stylesheet it computes `flex`** — the button stays on screen.
+⚠️ **Fixed LOCALLY and reported rather than shipped app-wide:** the real repair belongs in
+`dashboard.css`, which **31 pages** load, and that is its own change with its own bump. This page is
+simply the first to need `hidden` on a filter toggle.
+
+### ⚠️⚠️ THREE KPI TREATMENTS BECOME ONE — AND THE BEST ONE WAS UNUSED
+
+`.po-kpi2` was **value weight 700** against the shared **800**, radius `md` against `lg`, padding
+14/16 against 16/18. So the S-Curve, Milestones and Cash Flow strips did not match the Overview's,
+and none matched the rest of the app — while `.pd-kpi`, with its accent bar, its semantic variants
+and its AA-measured contrast, was used **nowhere on this page**. The 2026-09-10 (w2) pass converged
+five modules onto it and this page was not among them.
+
+⚠️ **The two producers changed; their SIGNATURES did not.** All **40 `kpi2` call sites** and 6
+`msKpi` sites converge without being touched, so there is no chance of catching some and missing
+others. ⚠️ The token maps to the shared **semantic variant**, not an inline colour, so the accent bar
+is tinted too — and an **unrecognised** token still falls back to an inline colour, because silently
+dropping a caller's meaning is the "silent nothing" this repo keeps paying for.
+⚠️ The six private rules are **deleted**, not left beside the shared ones — a dead near-duplicate is
+what the next editor changes by mistake. ⚠️ `--po-ms-*` **stays**: checked, and it still colours the
+calendar chips, state pills and slip figures.
+
+### The series switch is the app's own control
+
+Three loose checkboxes become `.pd-seg.pd-seg-multi` — the shared multi-select segment, whose note in
+`dashboard.css` explains why a multi choice is tint + underline rather than the solid red of a single
+choice. ⚠️ A **disabled rung fires no click**, so Forecast cannot be turned on when nothing drawn
+carries one: the refusal is the control's own rather than a guard bolted beside it. ⚠️ The note's
+wording changed with the control ("Tick" → "Turn back on") — copy that describes a control it no
+longer matches is worse than none.
+
+### Verified — 96 assertions, and measured in a browser
+
+**The KPI cards are executed through the REAL `UI.kpi`**, loaded the way `tools/wiring-check.js`
+loads a browser script, so this proves the shipped page emits the shared card rather than that a stub
+does. Both producers, every variant, the unknown-token fallback, and the empty sub-line.
+
+Measured against the real stylesheets at 1400 and 390px, markup **produced by the shipped code**:
+
+| | measured |
+|---|---|
+| KPI radius / padding / value | **12px · 16px 18px · 20px/800** (was 8px · 14/16 · 700) |
+| accent bar | **4px**, `rgb(238,49,36)` — the shared card's signature, which `.po-kpi2` never had |
+| semantic variant | bad value `rgb(239,83,80)`, distinct from the plain `rgb(240,239,239)` |
+| segment, on | tint `rgb(61,26,25)` + ink `rgb(255,138,128)` + **2px inset red underline** |
+| segment, disabled | opacity .55, `not-allowed` |
+| funnels in the document | **1**, in `.pd-modulebar`, at both widths |
+| sideways page scroll | **none** |
+
+⚠️ **Three of the seven first-run failures were MY assertions, not the code** — they tested the
+inline `<script>` for markup and CSS that live in the HTML outside it. Re-pointed at the document.
+⚠️ The harness was **deleted before committing**, after confirming git could not see it.
+
+`test-portfolio.js` **96/96**, `wiring-check` 136/136, `dead-hooks` **0 findings in this module**,
+CSS braces 273/273, inline `<script>` parses.
+
+⚠️ **Not verified signed in.**
+⚠️ **Reported, not fixed:** `.pd-filttoggle[hidden]` belongs in `dashboard.css` for every module,
+not just this page.
+⚠️ **Phase B is now complete.** Next is the Overview rebuild — the four decision blocks, the
+attention ranking, and the removals.
+
+`MODULE_V` → `20260915v`, sort-checked against the `20260915u` the live site is serving.
+
+## 2026-09-15 (u) — The chrome: one tool cluster, one scope control, and a filter panel that stops being a wall
+
+Owner: *"the UI needs complete rework: refresh button is out of place let's just follow the
+consistency of other modules first"*, then *"the filter and project select needs UI revamp and
+proper placement including the export button."*
+
+### ⚠️⚠️ THE PAGE HAD A MODULE BAR ALL ALONG. IT WAS EMPTY.
+
+`UI.initModuleTopbar()` runs automatically on every page that loads `ui.js`, splitting `.pd-topbar`
+into the fixed chrome row and a `.pd-modulebar` below carrying everything else. This page's topbar
+held `#ctx-switcher`, an `<h1>`, the presence dot and `#user-bar` — the four fixed controls and
+nothing else — so its module bar got a heading and a presence dot. **With nowhere to put a tool,
+Refresh became an inline button inside a sentence and Export was buried in the Overview's own table
+toolbar.** Nothing had to be invented: declaring the controls in the topbar markup lands them in the
+module bar exactly where every other module puts them.
+
+- **One cluster, one order, on all thirteen views: scope · filter · refresh · export.**
+- ⚠️ **One Refresh replaces twelve.** Every view had its own, in three different shapes. It acts on
+  the current view through the same `viewLoaders()` list (t) introduced. **The handlers went with
+  the buttons** — a handler bound to an id nothing renders is the `#pk-boq` shape this repo has
+  shipped once.
+- ⚠️ **Refresh is IMMEDIATE, not debounced.** `renderCurrent()`'s 250ms wait exists so ticking five
+  projects costs one fetch; a planner who presses Refresh has asked for it now, and a further
+  quarter-second reads as a dead button.
+
+### ⚠️⚠️ `placeScope` / `SCOPE_PANEL` ARE GONE, AND THAT IS THE POINT
+
+They moved the one scope node between a bar of its own and four views' filter panels — so the
+control that scopes **every** view sat somewhere different depending on where you were standing.
+That is the inconsistency, not a cure for it. It lives in the module bar permanently now. ⚠️ Still
+one node with its wiring, state and selection intact; what changed is that nothing moves it.
+
+### ⚠️⚠️ THE SCOPE PANEL IS A POPOVER AGAIN — AND THIS IS NOT A REVERT
+
+The 2026-09-10 (u3) pass made it expand inline because the absolute version **clipped**. It did:
+it was `position:absolute; left:0; width:260px` hanging off a **right-aligned** button, so it opened
+rightwards off the page. Inline cured that and bought a **full-width wall** — 21 projects in six
+ragged columns, pushing the page down ~350px. Anchored to the **right** edge it opens leftwards,
+into the page, and can do neither. ⚠️ Safe because `.pd-modulebar` is `overflow: visible` and its
+own note in `dashboard.css` forbids making it a scroll container. The **list** scrolls, not the
+panel, so the search and Select all / Clear stay reachable with 21 projects on screen — which is
+exactly when they are needed.
+
+### ⚠️⚠️ AND MEASURING FOUND A DEFECT THE DESKTOP VIEW COULD NOT SHOW
+
+At **390px the right-anchored panel put its own left edge at −78px** — a third of the project list
+off-screen and unreachable, with **no sideways page scroll to reveal it**, so nothing would have
+said so. Below 700px it is pinned to the viewport (`position:fixed; left:12px; right:12px`) instead
+of to the button. Anchoring to the button is right where there is room beside it and wrong when the
+panel is wider than the gap.
+
+### The view switcher returns — a named reversal, and not the same object
+
+⚠️⚠️ The 2026-09-09 removal took out a **thirteen-button strip that duplicated the sidebar**. This
+is **one compact trigger naming the view you are on**, which the sidebar cannot do and which every
+other module has. The buttons behind it are never seen: `pd-tabsrc` hides them before the first
+paint and `UI.tabsToDropdown` replaces them.
+- ⚠️ **Built AFTER auth, deliberately.** Five views are super-admin-only and `window.__role` is not
+  known until `requireLogin` resolves; building earlier would list five views a planner cannot open,
+  and `tabsToDropdown` caches its button list at build time, so removing them afterwards would leave
+  them in the menu. **Measured as a planner: 8 items, not 13.**
+- ⚠️ `switchView` flips `.active` on the hidden source button and the trigger re-labels itself —
+  `tabsToDropdown` watches with a MutationObserver. Writing the trigger's text directly would be a
+  second place that has to know the view names.
+- ⚠️ `opts.icon` is **not** passed: this page keeps its own `<h1>`, and the 2026-09-04 rule is that
+  only a module whose title is hidden outright supplies the icon to the dropdown.
+
+### The thirteen scope sentences go — but six paragraphs survive
+
+⚠️⚠️ **Only the CLAUSE was removed, not the paragraph.** Six of them carry real content either side
+of it — *"Closed items are left out, this is a worklist"*, *"Rate = output ÷ (crew or equipment ×
+working days)"*, *"Aggregated server-side (safe at 27k+ assignments/project)"*, *"Priority is the
+same 5×5 lookup the Risk Register itself uses"*. Deleting the paragraph would have deleted a fact a
+planner acts on, which is the opposite of removing a restatement.
+
+### ⚠️⚠️ TWO THINGS THE COUNT GUARD CAUGHT BEFORE ANYTHING WAS WRITTEN
+
+Every anchor in the patch is counted and the whole patch **refuses to write** if one is off. It
+refused twice, and both would have been real damage:
+
+1. A regex for "paragraphs my edits left empty" matched **six**, not five — the sixth was
+   `<p class="po-ct-note" id="po-ct-ranknote">`, the **Contracts ranking note JS fills at runtime**,
+   and the one thing stopping that ranked table being an unexplained ordering.
+2. `po-sh-scopenote` is **shown and hidden per sub-view** by `module.js`. Deleting the markup alone
+   would have thrown on the next Stakeholders render and taken that whole view down. Writer and
+   reader went together.
+
+### Verified — measured in a browser, not read
+
+A throwaway harness with the topbar and Overview toolbar **lifted verbatim** out of the shipped file
+(never retyped), served over HTTP so the real `dashboard.css` / `ui.js` / `icons.js` are in the
+cascade, measured **inside an iframe** at 1400 / 820 / 390px:
+
+| | 1400 | 820 | 390 |
+|---|---|---|---|
+| Refresh / Export / funnel in the document | **1 / 1 / 1** | — | 1 / 1 / 1 |
+| all three inside `.pd-modulebar` | yes | yes | yes |
+| scope panel | absolute, 560×460 | absolute, 560 | **fixed**, 366 wide |
+| panel inside the viewport | yes | yes | **yes** (was −78px) |
+| list scrolls, search + actions reachable | yes | yes | yes |
+| page scrolls sideways | **no** | no | **no** |
+
+⚠️ The module bar background is asserted as a **colour** (`rgb(43,44,43)` dark / `rgb(255,255,255)`
+light) so the stylesheet is provably in the cascade — a harness that 404s its CSS reports perfect
+geometry on unstyled elements, which this repo has been caught by.
+⚠️ **Five of six sampled properties differ between themes**, so they resolve through tokens rather
+than stuck literals; the sixth is the title icon at `--pd-red`, correctly fixed as a brand colour.
+⚠️ At 282px the cluster still fits (scope 156 + refresh 41 + export 41 within 266) and every control
+measures **44px** tall — the touch-target minimum.
+⚠️ **The first attempt measured nothing and said so:** opened as a `file://` URL it rendered as a
+`data:` snapshot, so every relative asset 404'd — `jsRan: false`, background transparent — and the
+tab was `hidden` with `innerWidth: 0`. Both are recorded traps; the numbers above are from a real
+server with the tab fronted.
+⚠️ The harness was **deleted before committing** (name matched `.gitignore`'s `**/*harness*`, and
+confirmed invisible to git first). This repo has shipped harness files to production twice.
+
+`test-portfolio.js` 73/73, `wiring-check` 136/136, `dead-hooks` **0 findings in this module**, CSS
+braces 281/281, inline `<script>` parses, 0 NUL bytes.
+
+⚠️ **Not verified signed in.**
+⚠️ **Deliberately still to come:** the per-view filter panels are not yet unified behind the one
+funnel (the Overview's own toolbar still carries Group by / status / behind-only / search), and
+`.po-kpi2` has not yet been retired in favour of the shared `.pd-kpi`. Both are the rest of Phase B.
+
+`MODULE_V` → `20260915u`, sort-checked against the `20260915t` the live site is serving.
+
 ## 2026-09-15 (t) — The portfolio never finished loading, and the filter offered to narrow it could not
 
 Owner, with two screenshots: *"Right now it always fails loading the schedules across 21 projects"*,
