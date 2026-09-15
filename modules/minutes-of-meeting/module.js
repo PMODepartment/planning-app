@@ -1531,6 +1531,21 @@ window.MinutesOfMeeting = (function () {
         total: its.length,
       };
     });
+    // ⚠️⚠️ "Minutes by meeting" USED to pass a flat `width: 760` to hbarSVG —
+    // fine on a wide desktop card, but hbarSVG renders at its own TRUE pixel
+    // size (see its own header comment: never `width:"100%"`, that is what
+    // shrank labels to ~5px before), so on a phone that fixed 760 was simply
+    // wider than the card and `.il-dash-cardbody-scroll` fell back to a
+    // horizontal scrollbar — the reported "reduce the bar width a bit instead
+    // of making it scrollable". `host` (this function's own root, already in
+    // scope) is measured INSTEAD of guessed from the viewport or the sidebar
+    // state: it is a plain block child of `.pd-main`, so its `clientWidth`
+    // already reflects the real available width — collapsed sidebar, mobile
+    // drawer, tablet, whatever — with no assumption to get wrong. `- 40`
+    // covers the wide card's own `16px` side padding (32) plus a small
+    // buffer; clamped so a very narrow phone still gets a readable chart and
+    // a very wide desktop keeps the same 760 ceiling it always had.
+    var meetingChartW = Math.max(300, Math.min(760, (host.clientWidth || 900) - 40));
     // ⚠️ ONE legend shape for every chart on this dashboard, always centered
     // BELOW the chart it belongs to (2026-09-03: "titles on top of the chart,
     // legend only at the middle-bottom"). The donut's own legend already
@@ -1571,7 +1586,7 @@ window.MinutesOfMeeting = (function () {
         '<div class="pd-card il-dash-card il-dash-wide">' +
           '<div class="il-dash-cardhead"><h4>Minutes by Meeting</h4></div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
-            (byMeetingList.length ? hbarSVG(byMeetingList, { aria: 'Open vs total minutes by meeting', width: 760 })
+            (byMeetingList.length ? hbarSVG(byMeetingList, { aria: 'Open vs total minutes by meeting', width: meetingChartW })
               : '<div class="il-empty" style="padding:16px;">No meeting matches this filter.</div>') +
           '</div>' +
           (byMeetingList.length ? barLegendBottom : '') +
