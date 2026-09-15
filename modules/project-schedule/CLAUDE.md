@@ -1,3 +1,74 @@
+## 2026-09-15 (e) — The site draws every floor from its own plan, and the labels were mirrored under it — ethanrobles10
+
+Owner, with the per-tower card and the site view side by side: *"how come in this view, the per
+floor configuration is defined. However in the site view, there is no defined configuration or
+defined floor plans per floor and look at the labels."*
+
+Two faults in one screenshot, and they are unrelated to each other.
+
+### ⚠️⚠️ ONE: THE SITE WAS DRAWING EVERY FLOOR FROM THE TOWER'S SITE OUTLINE
+The floor-by-floor site model emits one cell per (tower, floor) and every one of them carries the
+same `c.label` — the tower. So `_vsZpPolysOf(sitePlan, label)` answered with the tower's single
+traced site shape thirteen times over, and the building came out an extruded prism. **The floors
+were never consulted at all**, even though their plans were sitting in the same map the per-tower
+card reads, which is exactly why the owner could see them in one view and not the other.
+
+⚠️ The floor's own plan is now **fitted into the tower's place** (`_vsZpFitPolys`): the plan's
+bounding box is centred inside the tower's — its traced site footprint where it has one, its wrap
+slot where it does not. Two facts have to survive that, and both do: WHERE the building stands (the
+site trace) and WHAT SHAPE the floor is (the floor trace).
+⚠️ **CONTAIN, NEVER STRETCH.** The two are different drawings at different scales, and stretching a
+floor plan to fill a site footprint would invent a floor nobody drew — the one thing this view
+exists not to do. A plan proportionally deeper than its footprint sits narrower than it instead.
+⚠️ Each sheet's own `ar` divides the depth before anything is compared, or a floor drawn on a wide
+sheet and one drawn on a tall sheet stop being the same building.
+⚠️ **After the colour decision, deliberately**: `fill` is already settled from the tower's site
+polygon, so a floor plan cannot repaint a tower and delete the channel that says which building this
+is. And a project with no floor plans traced keeps exactly the prisms it has today.
+
+### ⚠️⚠️ TWO: THE LABEL'S RING WAS THE TOWER'S MIRROR IMAGE
+Yesterday's fix gave each floor name its tower's footprint ring and projected it per frame. The ring
+was read straight out of the plan: `[(u - 0.5) * plateW, (v - 0.5) * plateD]`. But `_vs3PolyMesh`
+lays a traced ring down with `rotation.x = -PI/2`, which sends the shape's **+Y to world −Z** — so
+the mesh stands at the mirror of those coordinates in depth. The names were being anchored to where
+the tower **would** be if the site were flipped: right side of the property, wrong place on it, and
+under perspective that lands a name low and squashed rather than obviously somewhere else. A tower
+traced near the middle of the sheet barely moved; the one traced off-centre was **42 px** out.
+⚠️ **A label's ring must be the coordinates the MESH is built in, not the coordinates the plan is
+stored in.** One minus sign, with the reason written beside it.
+
+### ⚠️⚠️ AND THE HARNESS COULD NOT HAVE CAUGHT IT, WHICH IS THE REAL LESSON
+Yesterday's test worked out where a tower stands by **repeating the builder's own plate-to-world
+formula** — the same formula that had the sign error — so it made the identical mistake and agreed
+with itself: 51 assertions, 0 failures, over a view that was visibly wrong. A test that recomputes
+what the code computes only proves the code is self-consistent.
+⚠️ So the fakes now **record geometry**: `Shape` keeps its ring, `ExtrudeGeometry` its shapes and
+depth, `BoxGeometry` its dimensions, and every `Mesh` is remembered with its `userData.key`. Every
+position the test checks is read back off the mesh the builder actually made — shape points, its own
+rotation, its own position — and nothing is derived twice.
+
+### Verified
+- **52 assertions in node, 0 failed**, executing the shipped `_vs3Build` on a site of three towers
+  (two traced, one untraced with no levelled work) and five floor plans:
+  - floor 2's L-shaped plan is drawn as **six corners**, floor 1's rectangle as four, and B1 — which
+    has no plan traced — keeps the tower's site footprint;
+  - the fitted floor stays **inside its own tower's** traced footprint, and Tower B's copy of floor 2
+    is drawn at Tower B rather than on top of Tower A's;
+  - the plan's proportions survive the move (contain, not stretch) to within 2%;
+  - every floor name lands within **1 px** of the leftmost projection of **its own floor's mesh** at
+    that floor's own mid-height, over **15 camera angles** — measured at 0.00 px across and down.
+- ⚠️ **GATE**: the previous commit fails 15 of those same assertions, off by up to **42 px across
+  and 26 px down**.
+- **Real three.js r128, in a browser**, measured against the meshes' own vertex buffers and world
+  matrices: every name is within **0.36 px** of its floor's leftmost drawn vertex at eight azimuths
+  (previous commit: **42 px inside** the building at 90°, **39 px outside** it at 270°), and the
+  rendered frame shows each tower stepping floor by floor instead of standing as one prism.
+- The single-building path is untouched and proven so in the same run; `test-lsm` **702/702** and
+  `wiring-check` **126/126** pass unchanged. MODULE_V → `20260915f`.
+- ⚠️ **Not verified signed in.** The plan store is stood in for by a fixture in the harness; what is
+  proven is that the builder asks the floor for its plan, places it on the right tower, and names it
+  where it stands.
+
 ## 2026-09-15 (d) — The pane stops being capped to the viewport; the time bar sticks instead
 
 Owner: *"the main screen can't even be seen without having to select the expand button"*, then
@@ -1061,77 +1132,6 @@ back after the loop fails **2**, a hardcoded "(today)" fails **2**, the load-tim
 the negative build. ⚠️ **One of my own assertions crashed instead of failing** (a `[^)]*` that
 cannot cross the `)` inside `' (pinned)'`, then dereferenced a null match) — third time in this
 suite; guarded and the pattern fixed. ⚠️ **Not verified signed in** — no session available.
-
-### The site draws every floor from its own plan, and the depth axis was mirrored under the labels (2026-09-15) — ethanrobles10
-
-Owner, with the per-tower card and the site view side by side: *"how come in this view, the per
-floor configuration is defined. However in the site view, there is no defined configuration or
-defined floor plans per floor and look at the labels."*
-
-Two faults in one screenshot, and they are unrelated to each other.
-
-### ⚠️⚠️ ONE: THE SITE WAS DRAWING EVERY FLOOR FROM THE TOWER'S SITE OUTLINE
-The floor-by-floor site model emits one cell per (tower, floor) and every one of them carries the
-same `c.label` — the tower. So `_vsZpPolysOf(sitePlan, label)` answered with the tower's single
-traced site shape thirteen times over, and the building came out an extruded prism. **The floors
-were never consulted at all**, even though their plans were sitting in the same map the per-tower
-card reads, which is exactly why the owner could see them in one view and not the other.
-
-⚠️ The floor's own plan is now **fitted into the tower's place** (`_vsZpFitPolys`): the plan's
-bounding box is centred inside the tower's — its traced site footprint where it has one, its wrap
-slot where it does not. Two facts have to survive that, and both do: WHERE the building stands (the
-site trace) and WHAT SHAPE the floor is (the floor trace).
-⚠️ **CONTAIN, NEVER STRETCH.** The two are different drawings at different scales, and stretching a
-floor plan to fill a site footprint would invent a floor nobody drew — the one thing this view
-exists not to do. A plan proportionally deeper than its footprint sits narrower than it instead.
-⚠️ Each sheet's own `ar` divides the depth before anything is compared, or a floor drawn on a wide
-sheet and one drawn on a tall sheet stop being the same building.
-⚠️ **After the colour decision, deliberately**: `fill` is already settled from the tower's site
-polygon, so a floor plan cannot repaint a tower and delete the channel that says which building this
-is. And a project with no floor plans traced keeps exactly the prisms it has today.
-
-### ⚠️⚠️ TWO: THE LABEL'S RING WAS THE TOWER'S MIRROR IMAGE
-Yesterday's fix gave each floor name its tower's footprint ring and projected it per frame. The ring
-was read straight out of the plan: `[(u - 0.5) * plateW, (v - 0.5) * plateD]`. But `_vs3PolyMesh`
-lays a traced ring down with `rotation.x = -PI/2`, which sends the shape's **+Y to world −Z** — so
-the mesh stands at the mirror of those coordinates in depth. The names were being anchored to where
-the tower **would** be if the site were flipped: right side of the property, wrong place on it, and
-under perspective that lands a name low and squashed rather than obviously somewhere else. A tower
-traced near the middle of the sheet barely moved; the one traced off-centre was **42 px** out.
-⚠️ **A label's ring must be the coordinates the MESH is built in, not the coordinates the plan is
-stored in.** One minus sign, with the reason written beside it.
-
-### ⚠️⚠️ AND THE HARNESS COULD NOT HAVE CAUGHT IT, WHICH IS THE REAL LESSON
-Yesterday's test worked out where a tower stands by **repeating the builder's own plate-to-world
-formula** — the same formula that had the sign error — so it made the identical mistake and agreed
-with itself: 51 assertions, 0 failures, over a view that was visibly wrong. A test that recomputes
-what the code computes only proves the code is self-consistent.
-⚠️ So the fakes now **record geometry**: `Shape` keeps its ring, `ExtrudeGeometry` its shapes and
-depth, `BoxGeometry` its dimensions, and every `Mesh` is remembered with its `userData.key`. Every
-position the test checks is read back off the mesh the builder actually made — shape points, its own
-rotation, its own position — and nothing is derived twice.
-
-### Verified
-- **52 assertions in node, 0 failed**, executing the shipped `_vs3Build` on a site of three towers
-  (two traced, one untraced with no levelled work) and five floor plans:
-  - floor 2's L-shaped plan is drawn as **six corners**, floor 1's rectangle as four, and B1 — which
-    has no plan traced — keeps the tower's site footprint;
-  - the fitted floor stays **inside its own tower's** traced footprint, and Tower B's copy of floor 2
-    is drawn at Tower B rather than on top of Tower A's;
-  - the plan's proportions survive the move (contain, not stretch) to within 2%;
-  - every floor name lands within **1 px** of the leftmost projection of **its own floor's mesh** at
-    that floor's own mid-height, over **15 camera angles** — measured at 0.00 px across and down.
-- ⚠️ **GATE**: the previous commit fails 15 of those same assertions, off by up to **42 px across
-  and 26 px down**.
-- **Real three.js r128, in a browser**, measured against the meshes' own vertex buffers and world
-  matrices: every name is within **0.36 px** of its floor's leftmost drawn vertex at eight azimuths
-  (previous commit: **42 px inside** the building at 90°, **39 px outside** it at 270°), and the
-  rendered frame shows each tower stepping floor by floor instead of standing as one prism.
-- The single-building path is untouched and proven so in the same run; `test-lsm` **702/702** and
-  `wiring-check` **126/126** pass unchanged. MODULE_V → `20260915f`.
-- ⚠️ **Not verified signed in.** The plan store is stood in for by a fixture in the harness; what is
-  proven is that the builder asks the floor for its plan, places it on the right tower, and names it
-  where it stands.
 
 ### A floor name stands on its tower's own silhouette, not on a world-space guess (2026-09-14 c) — ethanrobles10
 
