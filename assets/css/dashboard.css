@@ -2213,11 +2213,28 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 .pd-nb.open .pd-nb-fab { border-color: var(--pd-red); }
 .pd-nb-fab-ico { font-size: var(--pd-fs-md); line-height: 1; }
 
+/* ⚠️⚠️ THE PANEL'S VISIBILITY IS DRIVEN BY `.pd-nb.open`, AND `display` DEFERS TO
+   `[hidden]` — because the first cut set `panel.hidden = true` and NOTHING HAPPENED.
+   `.pd-nb-panel { display:flex }` is specificity (0,1,0), exactly equal to the user
+   agent's own `[hidden] { display:none }`, and an author rule beats the UA default at
+   equal specificity. So the notebook could be opened and never closed.
+   ⚠️ This file already records that exact defect for `.il-icondd-menu` and `.pd-btn`
+   (see the note above `[hidden]` handling, and the 2026-09-09 u2 entry that fixed it
+   app-wide) — and this is the same mistake made again, one stylesheet later. Both
+   guards are kept deliberately: the CLASS is what opens it, the `:not([hidden])` is
+   what stops the rule ever out-ranking the attribute again. */
+.pd-nb-panel { display: none; }
+.pd-nb.open .pd-nb-panel:not([hidden]) { display: flex; }
 .pd-nb-panel { width: 380px; max-width: calc(100vw - 36px);
   /* ⚠️ min() against vh so a short window cannot push the FAB off screen — the
      control that closes the panel must always be reachable. */
   height: min(60vh, 520px);
-  display: flex; flex-direction: column;
+  /* ⚠️⚠️ NO `display` HERE. It used to say `display:flex`, and because this block sits
+     AFTER the two rules above at the SAME specificity (0,1,0) it won on source order and the
+     panel could never close — the open/closed rules above were correct and simply outranked.
+     Adding a rule is not the same as removing the one that fights it. `flex-direction` is
+     harmless on a `display:none` box and applies the moment `.open` turns it into a flex row. */
+  flex-direction: column;
   background: var(--pd-card); border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius-lg); box-shadow: var(--pd-shadow-lg);
   overflow: hidden; }

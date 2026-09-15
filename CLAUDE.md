@@ -102,6 +102,131 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (r) — The notebook could be opened and never closed, and `+ New` lost the note it made
+
+Owner, twice: *"The notebook is not collapsible let's fix. I want the notes button can be clickable
+to open and close the notebook. Let's remove the close button since the notebook can be opened and
+closed via [it] already which will make it redundant."* Then: *"The notes +new button doesn't work as
+well it doesn't let me save the current page and create a new one."*
+
+### ⚠️⚠️ THE FIRST ONE IS A DEFECT THIS FILE ALREADY DOCUMENTS, MADE AGAIN
+
+`panel.hidden = true` did nothing, because `.pd-nb-panel { display:flex }` is specificity **(0,1,0)
+— exactly equal to the user agent's own `[hidden] { display:none }`** — and an author rule beats the
+UA default at equal specificity. `dashboard.css` carries a note about precisely this for
+`.il-icondd-menu`, and the 2026-09-09 (u2) entry fixed it app-wide for `.pd-btn`. One stylesheet
+later, I wrote it again.
+
+⚠️⚠️ **And the first fix was not enough, which is the more useful half.** Adding
+`.pd-nb-panel { display:none }` *above* the existing block left the original `display:flex` in place
+**after** it at the same specificity, so it still won on source order and the panel still would not
+close. **Adding a rule is not the same as removing the one that fights it.** The `display` is now
+gone from that block entirely; the `.open` class opens it and a `:not([hidden])` stops any future
+rule out-ranking the attribute again.
+
+⚠️ The **×** button is gone, as asked — the FAB is a toggle and a second control doing the same thing
+in the same corner is one more thing to read. Escape still closes it from the keyboard.
+
+### ⚠️⚠️ THE SECOND ONE WAS TWO BUGS BEHIND ONE SYMPTOM
+
+1. **A stale read error was never cleared.** `err` was set once by a failed `load()` and `listHTML`
+   rendered that failure **for ever** — so a note created afterwards went into `notes` and could not
+   be seen. That is "+ New does nothing", exactly.
+2. ⚠️⚠️ **A load in flight clobbered a write that landed while it was out.** `load()` assigns `notes`
+   WHOLESALE, so a note created between the read being issued and it returning was silently
+   discarded when the stale list arrived — **measured in the harness: the row was in the database
+   and the panel still read "No notes yet".** Every writer now bumps a `loadGen` token and a load
+   whose token has moved on throws its result away. Same device, and the same failure, as the
+   contracts-claims load race fixed earlier today.
+
+⚠️ **And the most likely thing anyone actually saw first: the migration.** *"Could not read your
+notes"* was the same vague sentence for a missing table as for a failed read. A missing table now
+says **the notebook is not set up yet** and names `2026-09-15-user-notes.sql`; reopening **retries**
+the read, so running the migration with the page open no longer needs a reload to take effect.
+
+### Verified
+
+Driven in a real browser against the shipped files: **12 assertions on the healthy path** (opens,
+**closes**, toggles back, `+ New` saves the current note before making a new one, both listed, the
+title derived) and **6 on the un-migrated path** (names the migration file, does not read as
+working-but-empty, `+ New` reports the cause and writes nothing, reopening retries once the table
+exists, and **a create issued during an in-flight load survives it**).
+
+⚠️ **My own test found the collapse still broken twice before it was fixed** — once because the
+browser was serving a cached `dashboard.css` I had edited without bumping its `?v=` (this repo's
+single most-recorded deploy failure, hit inside a test of my own), and once because of the
+source-order problem above. Neither would have been visible by reading.
+
+`dashboard.css` → `?v=20260915d`, `notebook.js` → `?v=20260915c`, both across all 34 referencing
+pages, both sort-checked.
+
+### 2026-09-15 (s) — The Project Schedule gets a Summary view
+
+Owner: *"a dashboard summary view for the module for reporting purposes."* A fourth entry in the
+title menu, after Schedule Setup / Project Schedule / Cost Loading.
+
+⚠️⚠️ **NOT CALLED "DASHBOARD", AND NOT "REPORTING VIEW" — BOTH NAMES WERE ALREADY TAKEN.**
+"Dashboard" is the project-level page, which already carries a Project Schedule panel; two things
+one word apart and one level apart is the duplicate the sidebar just had fixed. "Reporting view" is
+a **layout mode in this very module** that strips the chrome off the Gantt for presenting it.
+⚠️ It also revives an idea that was deliberately removed — the Planner Cockpit went on 2026-09-02 as
+*"a monitoring surface, not schedule development"*. That reasoning was about a monitoring view
+sitting among the schedule-**building** views and it still holds; what is different is that this one
+**derives** everything and offers no second place to act.
+
+### It computes nothing of its own, and that is the design constraint
+
+Every figure comes from the functions the grid and the Gantt already use — `computeHealth`,
+`ensureCPM`, `dispStart`/`dispFin`, `blPrimaryLabel`, `isWbs`/`isMile`/`isChangeOrder`, `today()`.
+Not stylistic: this module has shipped a 3D view that disagreed with the 2D view of the same data
+(`_vsTowerModel` exists because of it), and the S-curve maths drifted after being hand-copied. A
+summary that recomputed progress its own way would be a second opinion presented as a report.
+
+- **Progress is duration-weighted**, and the page says so — a plain mean of `percent_complete` makes
+  a 1-day activity worth as much as a 200-day one. On the test programme the honest figure is
+  **14.7%** where a mean says 25%.
+- **Variance is against the primary baseline's finish**, never the current plan: comparing a forecast
+  to the plan it came from measures nothing, and re-baselining would make a six-month slip read as
+  on time. Rows carrying **no** baseline are counted and reported, not quietly excluded.
+- **Undated milestones are counted**, not dropped — "no milestone due" and "nobody has dated this
+  milestone" are opposite facts and only the second is a reason to go and look.
+- **The look-ahead runs from the data date**, not the wall clock, or it would disagree with the bars.
+- **An activity with no trade gets a named bucket**; a trade whose activities have no dates reports
+  **null, not 0%**.
+- ⚠️⚠️ **The data-date warning is the point of the page.** The data date lives in `localStorage` per
+  BROWSER and drives 62 call sites including the CPM — flagged on 2026-09-14 (h) and still not fixed
+  — so two planners can read different figures with nothing saying so. Tolerable on a working grid;
+  a liability on the one screen built to be shown to someone. It is stated on screen when pinned.
+
+### ⚠️⚠️ A CLASS COLLISION THAT ONLY RENDERING COULD FIND
+
+`.ps-sum` is **already the WBS summary BAR in the Gantt**, and it is `position:absolute`. My panel
+inherited that, fell out of flow, and rendered as a 56px sliver over an empty page — while the DOM
+was complete and every count assertion passed. Renamed to `ps-smy-*`; the `ps-sum*` set is asserted
+back to **exactly** HEAD's nine names.
+
+### Verified
+
+**34 assertions**, `summaryData()` sliced out by name and executed over a programme whose answers
+were computed by hand — the weighting, the ahead/on-time/behind split, the worst-slip ordering, the
+project finish against the latest **baseline** finish, milestone ordering and overdue, all three
+look-ahead windows, the trade buckets, and the pinned/unpinned data-date flag.
+⚠️ **Three of those assertions were MINE being wrong, not the code's** — I mis-counted the
+no-baseline rows, built a tie that made "worst slip" prove nothing, and used a forecast date where
+the baseline belonged. That last one is exactly the mistake the figure exists to prevent, and I made
+it in the test before the code could make it anywhere.
+
+Rendered against the real stylesheets at 1280px and 390px: 6 KPI cards, 5 trade bars, 15 rows, **no
+horizontal page scroll** at either width, two columns collapsing to one and the trade bars wrapping
+on a phone. `wiring-check` 136/136.
+
+⚠️ **Not verified signed in** — no real schedule has been summarised, so this is the shipped
+derivation over a fixture. ⚠️ The view renders **on entry only**, deliberately: recomputing it on
+every grid edit would cost a CPM pass per keystroke for a view nobody is looking at — so leave and
+re-enter after editing.
+
+`MODULE_V` → `20260915p`, sort-checked.
+
 ### 2026-09-15 (q) — Contracts & Claims gets the time it was missing, and the portfolio stops being a register
 
 Owner: *"Let's develop a dashboard in the contracts & claims register… In terms of portfolio-level

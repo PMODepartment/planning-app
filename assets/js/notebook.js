@@ -31,6 +31,14 @@ window.PDNotes = (function () {
   var SAVE_MS = 700;
 
   var notes = [], selId = null, loaded = false, err = null, busy = false;
+  /* ⚠️⚠️ A LOAD IN FLIGHT MUST NOT CLOBBER A WRITE THAT LANDED WHILE IT WAS OUT.
+     `load()` assigns `notes` WHOLESALE, so a note created (or edited, or deleted) between the
+     read being issued and it coming back was silently discarded when the stale list arrived —
+     measured: "+ New" succeeded, the row was in the database, and the panel still read "No notes
+     yet". Every writer bumps this token; a load whose token has moved on throws its result away.
+     Same device, and the same failure, as the contracts-claims load race fixed the same day. */
+  var loadGen = 0;
+  function invalidateLoad() { loadGen++; }
   var root = null, saveTimer = null, dirty = null;
 
   function sb() { return (window.AppAuth && AppAuth.getSB) ? AppAuth.getSB() : null; }
@@ -61,8 +69,10 @@ window.PDNotes = (function () {
 
   // ---- data ----------------------------------------------------------------
   async function load() {
+    var gen = ++loadGen;
     err = null;
     var c = sb(); if (!c) { err = 'not signed in'; return; }
+    var fetched = [];
     try {
       /* ⚠️ No `.eq('created_by', …)` — the RLS policy IS the filter, and adding a
          client-side one would silently mask a policy that had stopped working.
@@ -70,14 +80,17 @@ window.PDNotes = (function () {
          and silent, and a notebook that quietly stopped showing older notes
          would look like data loss. */
       if (window.PDb && PDb.selectAll) {
-        notes = await PDb.selectAll(TABLE, function (q) { return q.order('updated_at', { ascending: false }); });
+        fetched = await PDb.selectAll(TABLE, function (q) { return q.order('updated_at', { ascending: false }); });
       } else {
         var r = await c.from(TABLE).select('*').order('updated_at', { ascending: false });
         if (r.error) throw r.error;
-        notes = r.data || [];
+        fetched = r.data || [];
       }
+      if (gen !== loadGen) return;   // a write landed while this read was out — keep theirs
+      notes = fetched;
       loaded = true;
     } catch (e) {
+      if (gen !== loadGen) return;
       notes = []; loaded = true;
       err = (e && e.message) || String(e);
     }
@@ -92,6 +105,11 @@ window.PDNotes = (function () {
     try {
       var r = await c.from(TABLE).insert(row).select().single();
       if (r.error) throw r.error;
+      /* ⚠️⚠️ CLEAR THE STALE READ ERROR. `err` was set once by a failed `load()` and never
+         cleared, so `listHTML` kept rendering the failure FOREVER — a note created afterwards
+         went into `notes` and could not be seen, which is exactly "+ New does nothing". */
+      err = null; loaded = true;
+      invalidateLoad();
       notes.unshift(r.data);
       return r.data;
     } catch (e) {
@@ -119,6 +137,7 @@ window.PDNotes = (function () {
          Reporting "saved" over a write that changed nothing is the silent
          success this repo has recorded since boq_tag_activities. */
       if (!r.data || !r.data.length) throw new Error('the note was not saved — it may belong to another account');
+      invalidateLoad();
       setStatus('Saved');
     } catch (e) { toastErr(e); setStatus('Not saved'); }
   }
@@ -132,6 +151,7 @@ window.PDNotes = (function () {
     try {
       var r = await c.from(TABLE).delete().eq('id', id).select('id');
       if (r.error) throw r.error;
+      invalidateLoad();
       notes = notes.filter(function (x) { return x.id !== id; });
       if (selId === id) selId = notes.length ? notes[0].id : null;
       paint();
@@ -153,9 +173,24 @@ window.PDNotes = (function () {
   // ---- render --------------------------------------------------------------
   function isOpen() { return lsGet(K_OPEN) === '1'; }
 
+  /* ⚠️⚠️ "THE TABLE IS NOT THERE" AND "THE READ FAILED" ARE DIFFERENT PROBLEMS WITH
+     DIFFERENT OWNERS, and the first cut said the same vague thing for both. A planner whose
+     migration has not been run needs the FILENAME and nothing else; the generic
+     "Could not read your notes" sent them looking for a bug instead. This is the state the
+     notebook is in on every deployment until `2026-09-15-user-notes.sql` has been run — which
+     is to say, the most likely thing anyone sees first. */
+  function isMissingTable(m) {
+    return /relation|does not exist|schema cache|PGRST205|PGRST20[0-9]/i.test(String(m || ''));
+  }
   function listHTML() {
+    if (err && isMissingTable(err)) {
+      return '<p class="pd-nb-msg"><b>The notebook is not set up yet.</b><br>' +
+        '<span class="pd-nb-mut">Run <code>' + esc(MIGRATION) + '</code> in the Supabase SQL ' +
+        'editor, then reload this page. Nothing is lost — there is nothing stored yet.</span></p>';
+    }
     if (err) {
-      return '<p class="pd-nb-msg">Could not read your notes.<br><span class="pd-nb-mut">' + esc(err) + '</span></p>';
+      return '<p class="pd-nb-msg">Could not read your notes.<br><span class="pd-nb-mut">' + esc(err) +
+        '</span><br><button type="button" class="pd-btn pd-btn-sm pd-nb-retry">Try again</button></p>';
     }
     if (!notes.length) {
       return '<p class="pd-nb-msg">No notes yet.<br><span class="pd-nb-mut">' +
@@ -196,6 +231,8 @@ window.PDNotes = (function () {
   }
 
   function wireList() {
+    var retry = root.querySelector('.pd-nb-retry');
+    if (retry) retry.onclick = function () { loaded = false; err = null; open(); };
     root.querySelectorAll('.pd-nb-item').forEach(function (li) {
       li.onclick = async function () {
         if (li.dataset.id === String(selId)) return;
@@ -211,7 +248,10 @@ window.PDNotes = (function () {
   async function open() {
     lsSet(K_OPEN, '1');
     paint();                       // show the shell immediately
-    if (!loaded && !busy) {
+    /* ⚠️ Retry when the last attempt ERRORED, not only when nothing has loaded — otherwise
+       running the migration while the page is open leaves the notebook broken until a reload,
+       and the planner has no way to know a reload is what it needs. */
+    if ((!loaded || err) && !busy) {
       busy = true;
       setStatus('Loading…');
       await load();
@@ -242,8 +282,11 @@ window.PDNotes = (function () {
           '<b>Notebook</b>' +
           '<span class="pd-nb-status" aria-live="polite"></span>' +
           '<button type="button" class="pd-btn pd-btn-sm pd-nb-new" title="New note">+ New</button>' +
+          /* ⚠️ NO × BUTTON. Owner 2026-09-15: *"remove the close button since the notebook can
+             be opened and closed via [the Notes button] already which will make it redundant."*
+             Right — the FAB is a toggle, and a second control doing the same thing in the same
+             corner is one more thing to read. Escape still closes it from the keyboard. */
           '<button type="button" class="pd-btn pd-btn-sm pd-nb-del" title="Delete this note">Delete</button>' +
-          '<button type="button" class="pd-btn pd-btn-sm pd-nb-x" title="Close" aria-label="Close notebook">&times;</button>' +
         '</div>' +
         '<div class="pd-nb-body">' +
           '<div class="pd-nb-side"></div>' +
@@ -257,7 +300,6 @@ window.PDNotes = (function () {
     document.body.appendChild(root);
 
     root.querySelector('.pd-nb-fab').onclick = function () { isOpen() ? close() : open(); };
-    root.querySelector('.pd-nb-x').onclick = function () { close(); };
     root.querySelector('.pd-nb-new').onclick = async function () {
       await flush();
       var n = await create();

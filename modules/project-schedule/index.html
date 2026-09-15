@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915d" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -756,6 +756,76 @@
     .ps-att-add .pd-select { flex:0 0 auto; }
     .ps-att-st { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     .ps-hint { margin:4px 0 0; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    /* ---- Summary view (renderSummary) -----------------------------------------------------
+       ⚠️ Tokens only. This module is read in both themes and the Summary is the one screen
+         someone will project onto a wall, so a stuck literal would be most visible exactly here.
+       ⚠️ Text tones are --pd-*-text, never --pd-bad / --pd-warn themselves, which are SURFACE
+         colours (--pd-warn measures 3.46:1 and is not a text colour). */
+    .ps-smy { padding:16px 18px 40px; max-width:1180px; }
+    .ps-smy-empty { padding:40px 18px; color:var(--pd-muted); font-size:var(--pd-fs-base); }
+    .ps-smy-head h2 { margin:0 0 4px; font-size:var(--pd-fs-lg); font-weight:800; letter-spacing:-.01em; }
+    .ps-smy-mini { font-size:var(--pd-fs-xs); font-weight:500; color:var(--pd-muted); }
+    .ps-smy-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+      font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-bottom:10px; }
+    .ps-smy-meta b { color:var(--pd-ink); font-weight:700; }
+    .ps-smy-warn { margin:0 0 12px; padding:8px 10px; font-size:var(--pd-fs-xs);
+      border:1px solid var(--pd-warn-line); background:var(--pd-warn-bg);
+      color:var(--pd-warn-text); border-radius:var(--pd-radius); }
+    .ps-smy-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+      gap:10px; margin-bottom:16px; }
+    .ps-smy-kpi { position:relative; background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); padding:12px 14px; overflow:hidden; }
+    .ps-smy-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+      background:var(--pd-red); }
+    .ps-smy-kpi.good::before { background:var(--pd-ok); }
+    .ps-smy-kpi.warn::before { background:var(--pd-warn); }
+    .ps-smy-kpi.bad::before  { background:var(--pd-bad); }
+    .ps-smy-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); }
+    .ps-smy-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; margin-top:3px; line-height:1.15; }
+    .ps-smy-kpi.good .ps-smy-kpi-v { color:var(--pd-ok-text); }
+    .ps-smy-kpi.warn .ps-smy-kpi-v { color:var(--pd-warn-text); }
+    .ps-smy-kpi.bad  .ps-smy-kpi-v { color:var(--pd-bad-text); }
+    .ps-smy-kpi-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:2px; }
+    .ps-smy-cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:0 22px; }
+    .ps-smy-h { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); margin:14px 0 6px; }
+    .ps-smy-list { list-style:none; margin:0; padding:0; }
+    .ps-smy-row { display:flex; align-items:baseline; gap:10px; padding:6px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
+    .ps-smy-row:last-child { border-bottom:0; }
+    .ps-smy-row[data-goto] { cursor:pointer; }
+    .ps-smy-row[data-goto]:hover { background:var(--pd-card); }
+    .ps-smy-t { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-smy-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--pd-ink); }
+    .ps-smy-v i { font-style:normal; color:var(--pd-muted); }
+    .ps-smy-bad { color:var(--pd-bad-text); }
+    .ps-smy-warn2 { color:var(--pd-warn-text); }
+    .ps-smy-none { color:var(--pd-muted); font-style:italic; }
+    .ps-smy-bars { list-style:none; margin:0; padding:0; }
+    .ps-smy-bar { display:flex; align-items:center; gap:10px; padding:5px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
+    .ps-smy-bar:last-child { border-bottom:0; }
+    .ps-smy-bl { flex:0 0 190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-smy-track { flex:1 1 auto; height:8px; min-width:40px; border-radius:99px;
+      background:var(--pd-line); overflow:hidden; }
+    .ps-smy-track > i { display:block; height:100%; background:var(--pd-red); }
+    .ps-smy-bv { flex:0 0 auto; font-variant-numeric:tabular-nums; }
+    .ps-smy-bv i { font-style:normal; color:var(--pd-muted); }
+    .ps-smy-note { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin:12px 0 0; max-width:70ch; }
+    @media (max-width:700px) {
+      .ps-smy { padding:12px 12px 32px; }
+      .ps-smy-bl { flex:1 1 auto; }
+      .ps-smy-track { flex:1 1 100%; order:3; }
+      .ps-smy-bar { flex-wrap:wrap; }
+    }
+    /* The Summary is meant to be printed. Drop the app chrome and let it flow. */
+    @media print {
+      body.ps-smyprint .pd-sidebar, body.ps-smyprint .pd-topbar,
+      body.ps-smyprint .pd-modulebar, body.ps-smyprint .ps-toolbar { display:none !important; }
+      .ps-smy-row[data-goto] { cursor:default; }
+      .ps-smy-kpi { break-inside:avoid; }
+    }
     .ps-cctag { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); }
     .ps-cctag.unknown { color:var(--pd-red); }
     /* ⚠️ A GROUP-level code is valid, not a warning — so it is toned, never coloured like `.unknown`.
@@ -4301,8 +4371,11 @@
                    Procurement mirrors moved there in this pass). Its markup survives ONLY as the
                    hidden park slot those borrowed nodes return to — see sbWbsPark. -->
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Setup</button>
-          <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
+          <button data-tab="schedule"><span data-ico="ganttChart" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="costload"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
+          <!-- ⚠️ LAST in the menu deliberately: the order is the process (set up → schedule → load
+               cost), and a summary is what you read once the other three have been done. -->
+          <button data-tab="summary"><span data-ico="barChart" data-ico-size="14"></span> Summary</button>
         </div>
       </div>
       <!-- Project context sits next to the title, left-aligned. Uses the app-wide shared
@@ -4713,6 +4786,19 @@
       </div>
 
       <!-- COST LOADING (the wizard: enlist → assign → distribute → review) -->
+      <!-- ⚠️⚠️ SUMMARY, NOT "DASHBOARD" AND NOT "REPORTING VIEW", AND BOTH NAMES WERE ALREADY TAKEN.
+           "Dashboard" is the project-level page (dashboard.html), which already carries a Project
+           Schedule panel — two things under one word, one level apart, is exactly the duplicate this
+           app just fixed in the sidebar. "Reporting view" is a LAYOUT MODE in this very module
+           (body.ps-reporting) that strips the chrome off the Gantt for presenting it. This is a
+           third thing: a derived read of the schedule, for a meeting.
+           ⚠️ It also revives an idea that was deliberately removed — the Planner Cockpit went on
+           2026-09-02 as *"a monitoring surface, not schedule development"*. That reasoning was about
+           a monitoring view sitting among the schedule-BUILDING views, and it still holds; what is
+           different here is that the owner asked for a reporting surface by name, and this one
+           DERIVES everything rather than offering a second place to act. -->
+      <div id="ps-view-summary" style="display:none;"></div>
+
       <div id="ps-view-costload" style="display:none;">
         <div class="ps-ck-bar">
           <span style="font-size:12px;color:var(--pd-muted);">Assign cost to the execution-phase activities, distribute it across the sub-WBS each occurs in, then review it as a vertical stack — the figures <b>Apply</b> writes as Planned IBB.</span>
@@ -5118,7 +5204,7 @@
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260915a"></script>
-<script src="../../assets/js/notebook.js?v=20260915a"></script>
+<script src="../../assets/js/notebook.js?v=20260915c"></script>
 <script src="../../assets/js/icons.js?v=20260913a"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -45512,7 +45598,10 @@
     var panel = !!(v && (v.classList.contains('ps-vstack-mode') ||
                          v.classList.contains('ps-progress-mode') ||
                          v.classList.contains('ps-flowline-mode')));
-    app.classList.toggle('ps-longdoc', panel || tab === 'builder' || tab === 'costload');
+    /* ⚠️ Summary joins Setup and Cost Loading here: it is a long DOCUMENT that scrolls the page,
+       not a split that scrolls its own panes. Leaving it out pins it to 100vh and the lower half
+       is simply unreachable — the exact defect 2026-09-14 (w) fixed for the three panel modes. */
+    app.classList.toggle('ps-longdoc', panel || tab === 'builder' || tab === 'costload' || tab === 'summary');
   }
 
   function switchTab(tab) {
@@ -45524,6 +45613,7 @@
     // (see _psSyncLongDoc below for the page-scroll class)
     // not a view. Showing it would put a second copy of the tree's toolbar on screen.
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
+    var vs = document.getElementById('ps-view-summary'); if (vs) vs.style.display = tab === 'summary' ? '' : 'none';
 
     // ⚠️ Leaving the setup returns the borrowed WBS tree to its park slot. Without this it would sit
     // inside a hidden view, and the next thing to repaint that panel would take it out of the document.
@@ -45539,7 +45629,8 @@
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'builder' ? 'Schedule Setup' : 'Project Schedule');
+    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'builder' ? 'Schedule Setup'
+      : (tab === 'summary' ? 'Schedule Summary' : 'Project Schedule'));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
@@ -45550,6 +45641,9 @@
     if (tab === 'schedule') renderGantt();
     else if (tab === 'costload') CostLoading.open(pid, UID);
     else if (tab === 'builder') ScheduleBuilder.open(pid, UID);
+    /* ⚠️ Rendered on ENTRY, never kept live. It is a derived read — recomputing it on every grid
+       edit would cost a CPM pass per keystroke for a view nobody is looking at. */
+    else if (tab === 'summary') renderSummary();
     // ⚠️ A stale deep link or a remembered tab can still say 'calendars'. Send it to the step that
     // owns the calendars now rather than showing a blank view.
     else if (tab === 'calendars') { switchTab('builder'); try { ScheduleBuilder.gotoStep('Working calendars'); } catch (e) {} }
@@ -46403,6 +46497,275 @@
       it.onclick = function (e) { e.stopPropagation(); gotoActivity(it.dataset.goto); };
     });
   }
+  /* ==========================================================================================
+     SUMMARY VIEW — a derived read of the schedule, for a meeting.
+     Owner: *"a dashboard summary view for the module for reporting purposes."*
+
+     ⚠️⚠️ IT DERIVES EVERYTHING AND COMPUTES NOTHING NEW. Every figure comes from the functions
+       the grid and the Gantt already use — `computeHealth`, `ensureCPM`, `dispStart`/`dispFin`,
+       `blPrimaryLabel`, `isWbs`/`isMile`/`isChangeOrder`, `today()`. That is the whole design
+       constraint, and it is not stylistic: this module has already shipped a 3D view that disagreed
+       with the 2D view of the same data (`_vsTowerModel` exists because of it), and the S-curve
+       maths was hand-copied into portfolio-overview and drifted. A summary that recomputed progress
+       its own way would be a second opinion presented as a report.
+     ⚠️ `summaryData()` is PURE over `rows` + `today()` so it can be sliced out and executed; the
+       renderer below only formats what it returns.
+     ========================================================================================== */
+  function summaryData() {
+    ensureCPM();
+    var t0 = today(), tISO = dstr(t0);
+    var tasks = rows.filter(function (r) { return !isWbs(r); });
+    var acts = tasks.filter(function (r) { return !isMile(r); });
+    var miles = tasks.filter(isMile);
+
+    /* ---- progress -----------------------------------------------------------------------
+       ⚠️⚠️ DURATION-WEIGHTED, and the screen says so. A plain mean of percent_complete treats a
+       1-day activity and a 200-day activity as equal, which on any real programme is simply a
+       different number — the same trap the portfolio rollup records for project progress
+       ("a 2-WP package at 100% and a 200-WP package at 10% is not 55%"). Activities with no
+       dates carry no weight rather than being counted at weight 1. */
+    var wsum = 0, wdone = 0, noDates = 0;
+    var notStarted = 0, inProgress = 0, done = 0;
+    acts.forEach(function (r) {
+      var s = pd(dispStart(r)), f = pd(dispFin(r));
+      var p = r.percent_complete != null ? Math.max(0, Math.min(100, +r.percent_complete)) : 0;
+      if (p >= 100 || r.actual_finish) done++;
+      else if (p > 0 || r.actual_start) inProgress++;
+      else notStarted++;
+      if (!s || !f) { noDates++; return; }
+      var w = Math.max(1, dayDiff(s, f) + 1);
+      wsum += w; wdone += w * (p / 100);
+    });
+    var pctComplete = wsum ? (wdone / wsum * 100) : null;
+
+    /* ---- baseline variance ---------------------------------------------------------------
+       ⚠️ Against the PRIMARY baseline's finish, never against the current plan: comparing a
+       forecast to the plan it came from measures nothing, and a re-baselined date would make a
+       six-month slip read as on time. Only rows that carry `bl_finish` are eligible, and the
+       count of those that do not is reported rather than hidden. */
+    var ahead = 0, onTime = 0, behind = 0, noBL = 0, slips = [];
+    tasks.forEach(function (r) {
+      var b = pd(r.bl_finish), f = pd(dispFin(r));
+      if (!b || !f) { noBL++; return; }
+      var d = dayDiff(b, f);
+      if (d > 0) { behind++; slips.push({ r: r, days: d }); }
+      else if (d < 0) ahead++;
+      else onTime++;
+    });
+    slips.sort(function (a, b) { return b.days - a.days; });
+
+    /* ---- critical path + float ----------------------------------------------------------- */
+    var crit = tasks.filter(function (r) { return r._critical; });
+    var negFloat = tasks.filter(function (r) { return r._float != null && r._float < 0; });
+    var finishes = tasks.map(function (r) { return pd(dispFin(r)); }).filter(Boolean);
+    var blFins = tasks.map(function (r) { return pd(r.bl_finish); }).filter(Boolean);
+    var projFin = finishes.length ? new Date(Math.max.apply(null, finishes.map(function (d) { return d.getTime(); }))) : null;
+    var projBLFin = blFins.length ? new Date(Math.max.apply(null, blFins.map(function (d) { return d.getTime(); }))) : null;
+    var starts = tasks.map(function (r) { return pd(dispStart(r)); }).filter(Boolean);
+    var projStart = starts.length ? new Date(Math.min.apply(null, starts.map(function (d) { return d.getTime(); }))) : null;
+
+    /* ---- milestones ----------------------------------------------------------------------
+       ⚠️ Achieved is `actual_finish`, and a milestone with no date at all is COUNTED, not
+       dropped — "no milestone due" and "nobody has dated this milestone" are opposite facts, and
+       only the second is a reason to go and look. Same rule the portfolio calendar settled on. */
+    var msUndated = 0;
+    var ms = miles.map(function (r) {
+      var f = pd(dispFin(r)), b = pd(r.bl_finish);
+      if (!f) { msUndated++; return null; }
+      return { r: r, date: f, bl: b, slip: b ? dayDiff(b, f) : null,
+               achieved: !!r.actual_finish, overdue: !r.actual_finish && f < t0 };
+    }).filter(Boolean);
+    ms.sort(function (a, b) { return a.date - b.date; });
+    var msNext = ms.filter(function (m) { return !m.achieved; }).slice(0, 6);
+    var msOverdue = ms.filter(function (m) { return m.overdue; }).length;
+    var msAchieved = ms.filter(function (m) { return m.achieved; }).length;
+
+    /* ---- look-ahead ---------------------------------------------------------------------
+       ⚠️ From the DATA DATE, not from the wall clock — `today()` is the effective data date, and
+       a look-ahead measured from a different "now" than the rest of the page would disagree with
+       the bars beside it. */
+    function windowOf(days) {
+      var end = addDays(t0, days);
+      var st = 0, fi = 0;
+      acts.forEach(function (r) {
+        var s = pd(dispStart(r)), f = pd(dispFin(r));
+        if (s && s >= t0 && s <= end && !r.actual_start) st++;
+        if (f && f >= t0 && f <= end && !r.actual_finish) fi++;
+      });
+      return { days: days, starts: st, finishes: fi };
+    }
+
+    /* ---- by trade ------------------------------------------------------------------------
+       ⚠️ `work_type` is the shell's own convention for this table (the project dashboard's
+       programme panel groups by it too), and an activity carrying none is gathered under a named
+       bucket rather than dropped — an unreported trade is the thing a reader should notice. */
+    var byTrade = {};
+    acts.forEach(function (r) {
+      var k = (r.work_type || '').trim() || '— not set —';
+      var s = pd(dispStart(r)), f = pd(dispFin(r));
+      var p = r.percent_complete != null ? Math.max(0, Math.min(100, +r.percent_complete)) : 0;
+      var g = byTrade[k] || (byTrade[k] = { trade: k, n: 0, w: 0, wd: 0 });
+      g.n++;
+      if (s && f) { var w = Math.max(1, dayDiff(s, f) + 1); g.w += w; g.wd += w * (p / 100); }
+    });
+    var trades = Object.keys(byTrade).map(function (k) {
+      var g = byTrade[k];
+      return { trade: k, n: g.n, pct: g.w ? (g.wd / g.w * 100) : null };
+    }).sort(function (a, b) { return b.n - a.n; });
+
+    /* ---- variations ---------------------------------------------------------------------- */
+    var cos = tasks.filter(isChangeOrder);
+    var coRefs = {};
+    cos.forEach(function (r) { var k = (r.change_order_ref || '').trim(); if (k) coRefs[k] = 1; });
+
+    return {
+      asOf: tISO, pinned: !!dataDate, baseline: blPrimaryLabel(),
+      counts: { total: rows.length, tasks: tasks.length, acts: acts.length, miles: miles.length,
+                notStarted: notStarted, inProgress: inProgress, done: done, noDates: noDates },
+      pctComplete: pctComplete,
+      bl: { ahead: ahead, onTime: onTime, behind: behind, noBL: noBL,
+            worst: slips.slice(0, 6) },
+      cpm: { critical: crit.length, negFloat: negFloat.length,
+             start: projStart, finish: projFin, blFinish: projBLFin,
+             slip: (projFin && projBLFin) ? dayDiff(projBLFin, projFin) : null },
+      ms: { next: msNext, overdue: msOverdue, achieved: msAchieved,
+            total: miles.length, undated: msUndated },
+      look: [windowOf(14), windowOf(28), windowOf(42)],
+      trades: trades,
+      co: { activities: cos.length, refs: Object.keys(coRefs).length },
+      health: computeHealth()
+    };
+  }
+
+  function renderSummary() {
+    var host = document.getElementById('ps-view-summary');
+    if (!host) return;
+    if (!pid) { host.innerHTML = '<div class="ps-smy-empty">Select a project to see its summary.</div>'; return; }
+    if (!rows.length) { host.innerHTML = '<div class="ps-smy-empty">This project has no activities yet.</div>'; return; }
+
+    var d = summaryData();
+    var pctTxt = function (v) { return v == null ? '—' : (Math.round(v * 10) / 10) + '%'; };
+    var dt = function (x) { return x ? fmtOPCDate(dstr(x)) : '—'; };
+    function card(label, value, sub, tone) {
+      return '<div class="ps-smy-kpi' + (tone ? ' ' + tone : '') + '"><div class="ps-smy-kpi-l">' + esc(label) + '</div>' +
+        '<div class="ps-smy-kpi-v">' + value + '</div>' +
+        '<div class="ps-smy-kpi-s">' + esc(sub || '') + '</div></div>';
+    }
+    function sect(title, note) {
+      return '<div class="ps-smy-h">' + esc(title) +
+        (note ? ' <span class="ps-smy-mini">' + esc(note) + '</span>' : '') + '</div>';
+    }
+
+    var slipRows = d.bl.worst.map(function (s) {
+      return '<li class="ps-smy-row" data-goto="' + esc(s.r.id) + '">' +
+        '<span class="ps-smy-t"><b>' + esc(s.r.activity_id || '') + '</b> ' + esc(s.r.activity_name || '') + '</span>' +
+        '<span class="ps-smy-v ps-smy-bad">+' + s.days + 'd</span></li>';
+    }).join('') || '<li class="ps-smy-row ps-smy-none">Nothing is finishing later than its baseline.</li>';
+
+    var msRows = d.ms.next.map(function (m) {
+      var tone = m.overdue ? ' ps-smy-bad' : (m.slip != null && m.slip > 0 ? ' ps-smy-warn' : '');
+      return '<li class="ps-smy-row" data-goto="' + esc(m.r.id) + '">' +
+        '<span class="ps-smy-t"><b>' + esc(m.r.activity_id || '') + '</b> ' + esc(m.r.activity_name || '') + '</span>' +
+        '<span class="ps-smy-v' + tone + '">' + dt(m.date) +
+        (m.slip != null && m.slip !== 0 ? ' <i>' + (m.slip > 0 ? '+' : '') + m.slip + 'd</i>' : '') +
+        '</span></li>';
+    }).join('') || '<li class="ps-smy-row ps-smy-none">No milestone is still outstanding.</li>';
+
+    var lookRows = d.look.map(function (w) {
+      return '<li class="ps-smy-row"><span class="ps-smy-t">Next ' + w.days + ' days</span>' +
+        '<span class="ps-smy-v">' + w.starts + ' starting · ' + w.finishes + ' finishing</span></li>';
+    }).join('');
+
+    var tradeRows = d.trades.slice(0, 10).map(function (t) {
+      var w = t.pct == null ? 0 : Math.max(t.pct > 0 ? 2 : 0, Math.round(t.pct));
+      return '<li class="ps-smy-bar"><span class="ps-smy-bl">' + esc(t.trade) + '</span>' +
+        '<span class="ps-smy-track"><i style="width:' + w + '%"></i></span>' +
+        '<span class="ps-smy-bv">' + pctTxt(t.pct) + ' <i>' + t.n + '</i></span></li>';
+    }).join('');
+
+    /* ⚠️ The health panel's own metrics, worst first, and only the ones with a real denominator —
+       a metric measured over 0 eligible activities is not a clean score, it is no score. */
+    var worstHealth = d.health.metrics.filter(function (m) { return m.denom > 0 && m.count > 0; })
+      .sort(function (a, b) { return b.pct - a.pct; }).slice(0, 5)
+      .map(function (m) {
+        return '<li class="ps-smy-row"><span class="ps-smy-t">' + esc(m.label) + '</span>' +
+          '<span class="ps-smy-v">' + m.count + ' of ' + m.denom + ' <i>' + m.pct + '%</i></span></li>';
+      }).join('') || '<li class="ps-smy-row ps-smy-none">No findings.</li>';
+
+    host.innerHTML =
+      '<div class="ps-smy">' +
+        '<div class="ps-smy-head">' +
+          '<h2>Schedule summary <span class="ps-smy-mini">' + esc(projName()) + '</span></h2>' +
+          '<div class="ps-smy-meta">As of <b>' + dt(t_(d.asOf)) + '</b> · baseline <b>' + esc(d.baseline) + '</b> · ' +
+            d.counts.tasks + ' activities, ' + d.counts.miles + ' milestones' +
+            '<button class="pd-btn pd-btn-sm" id="ps-smy-print" title="Print or save as PDF">Print</button></div>' +
+          /* ⚠️⚠️ THE DATA DATE IS PER BROWSER, AND THIS IS THE ONE SCREEN WHERE THAT MATTERS.
+             It lives in localStorage (`ps_datadate_<pid>`) and drives 62 call sites including the
+             CPM — so two planners on one project can hold different data dates and every figure
+             below differs, with nothing on screen saying so. That is tolerable on a working grid
+             and a liability on a page whose purpose is to be SHOWN to someone, so it is stated
+             here rather than left to be discovered. Flagged 2026-09-14 (h); still not fixed. */
+          (d.pinned
+            ? '<p class="ps-smy-warn">⚠ The data date is pinned on <b>this browser only</b> — it is not ' +
+              'shared with the project, so another planner may be reading these figures as of a different day.</p>'
+            : '') +
+        '</div>' +
+
+        '<div class="ps-smy-kpis">' +
+          card('Complete', pctTxt(d.pctComplete), 'duration-weighted') +
+          card('In progress', String(d.counts.inProgress), d.counts.notStarted + ' not started') +
+          card('Behind baseline', String(d.bl.behind), d.bl.ahead + ' ahead · ' + d.bl.onTime + ' on time',
+               d.bl.behind ? 'bad' : '') +
+          card('Critical', String(d.cpm.critical), d.cpm.negFloat + ' with negative float',
+               d.cpm.negFloat ? 'bad' : '') +
+          card('Finish', dt(d.cpm.finish),
+               d.cpm.slip == null ? 'no baseline to compare' :
+                 (d.cpm.slip > 0 ? d.cpm.slip + 'd later than baseline'
+                                 : (d.cpm.slip < 0 ? (-d.cpm.slip) + 'd earlier' : 'on the baseline')),
+               d.cpm.slip > 0 ? 'bad' : (d.cpm.slip < 0 ? 'good' : '')) +
+          card('Health', d.health.score + '%', 'schedule quality checks',
+               d.health.score >= 80 ? 'good' : (d.health.score < 50 ? 'bad' : 'warn')) +
+        '</div>' +
+
+        '<div class="ps-smy-cols">' +
+          '<div class="ps-smy-col">' +
+            sect('Biggest slips against ' + d.baseline, d.bl.noBL ? d.bl.noBL + ' activities carry no baseline' : '') +
+            '<ul class="ps-smy-list">' + slipRows + '</ul>' +
+            sect('Next milestones', d.ms.overdue ? d.ms.overdue + ' overdue' : (d.ms.undated ? d.ms.undated + ' undated' : '')) +
+            '<ul class="ps-smy-list">' + msRows + '</ul>' +
+          '</div>' +
+          '<div class="ps-smy-col">' +
+            sect('Look-ahead', 'from the data date') +
+            '<ul class="ps-smy-list">' + lookRows + '</ul>' +
+            sect('Schedule health', d.health.score + '% over ' + d.health.total + ' activities') +
+            '<ul class="ps-smy-list">' + worstHealth + '</ul>' +
+          '</div>' +
+        '</div>' +
+
+        sect('Progress by trade', d.counts.noDates ? d.counts.noDates + ' activities have no dates and carry no weight' : '') +
+        '<ul class="ps-smy-bars">' + tradeRows + '</ul>' +
+
+        (d.co.activities
+          ? '<p class="ps-smy-note"><b>' + d.co.activities + '</b> change-order activit' +
+            (d.co.activities === 1 ? 'y' : 'ies') +
+            (d.co.refs ? ' across <b>' + d.co.refs + '</b> variation' + (d.co.refs === 1 ? '' : 's') : '') +
+            ' are in this programme.</p>'
+          : '') +
+        '<p class="ps-smy-note">Percentages are <b>duration-weighted</b> — a 200-day activity counts ' +
+          'for more than a 1-day one. Variance is measured against <b>' + esc(d.baseline) + '</b>, not ' +
+          'against the current plan. Everything here is derived from the schedule as it stands; ' +
+          'nothing on this page changes it.</p>' +
+      '</div>';
+
+    host.querySelectorAll('[data-goto]').forEach(function (el) {
+      el.onclick = function () { gotoActivity(el.dataset.goto); };
+    });
+    var pb = document.getElementById('ps-smy-print');
+    if (pb) pb.onclick = function () { window.print(); };
+  }
+  /* A tiny helper so the header can format the ISO the data returns without re-parsing it twice. */
+  function t_(iso) { return pd(iso); }
+
   function gotoActivity(id) {
     var r = rows.find(function (x) { return x.id === id; });
     if (!r) return;

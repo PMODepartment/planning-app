@@ -1,3 +1,44 @@
+## 2026-09-15 (h) — A Summary view, derived from the engines that already exist
+
+Owner: *"a dashboard summary view for the module for reporting purposes."* A fourth entry in the
+title menu: **Summary**.
+
+- ⚠️⚠️ **NOT "Dashboard" and NOT "Reporting view"** — the first is the project-level page (which
+  already carries a Project Schedule panel), the second is a LAYOUT MODE in this module that strips
+  the chrome off the Gantt. A third thing needs a third name.
+- ⚠️ It revives what the **Planner Cockpit** was removed for on 2026-09-02 (*"a monitoring surface,
+  not schedule development"*). That reasoning holds for a monitoring view among the BUILDING views;
+  this one derives everything and offers nowhere to act.
+- ⚠️⚠️ **It computes nothing of its own** — `computeHealth`, `ensureCPM`, `dispStart`/`dispFin`,
+  `blPrimaryLabel`, `isWbs`/`isMile`/`isChangeOrder`, `today()`. This module has already shipped a 3D
+  view that disagreed with the 2D view of the same data; a summary with its own arithmetic would be
+  a second opinion presented as a report. `summaryData()` is pure over `rows` + `today()` so it can
+  be sliced and executed; the renderer only formats what it returns.
+- **Duration-weighted progress** (a mean makes a 1-day activity worth a 200-day one — 14.7% vs 25%
+  on the fixture), **variance against the primary baseline's finish** with the no-baseline rows
+  counted, **undated milestones counted not dropped**, the **look-ahead from the data date**, a
+  **named bucket** for activities with no trade, and `null` rather than `0%` for a trade with no dates.
+- ⚠️⚠️ **The data-date warning is the point.** It is per-BROWSER localStorage driving 62 call
+  sites including the CPM (flagged 2026-09-14 h, still unfixed), so two planners can read different
+  figures with nothing saying so. Stated on screen when pinned.
+- ⚠️ `ps-longdoc` is set for this tab, or `.pd-content { height:100vh }` pins it and the lower half
+  is unreachable — the 2026-09-14 (w) defect.
+- ⚠️ Rendered **on entry only**: recomputing on every grid edit would cost a CPM pass per keystroke
+  for a view nobody is looking at.
+
+### ⚠️⚠️ A class collision only rendering could find
+
+**`.ps-sum` is already the WBS summary BAR**, and it is `position:absolute`. The panel inherited it,
+fell out of flow and rendered as a 56px sliver over an empty page — while the DOM was complete and
+every count assertion passed. Renamed `ps-smy-*`; the `ps-sum*` set is asserted back to **exactly**
+HEAD's nine names.
+
+**34 assertions**, `summaryData()` sliced out by name and executed over a hand-computed programme.
+⚠️ Three were MINE being wrong — a mis-count, a tie that made "worst slip" prove nothing, and a
+forecast date used where the baseline belonged, which is the very mistake the figure exists to
+prevent. Rendered at 1280px and 390px: 6 KPIs, 5 bars, 15 rows, no horizontal scroll either width.
+⚠️ Not verified signed in. `MODULE_V` → `20260915p`.
+
 ## 2026-09-15 (g) — Activity attachments, in the form's Notes section
 
 **Run `migrations/2026-09-15-schedule-attachments.sql`.** Owner: *"attachments on activities in the
