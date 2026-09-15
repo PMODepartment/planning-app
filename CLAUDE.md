@@ -102,6 +102,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (k) — The project dashboard's three registers are reordered
+
+Owner: *"In the project level dashboard let's move the contracts & claims section after issues &
+concerns and move up progress photos before issues & concerns."*
+
+The band was `contracts → issues → photos` and is now **`photos → issues → contracts`**. Markup only:
+three sibling `<div>`s inside `#stat-band` swapped, and `renderViz`'s three `try` calls put into the
+same order to match.
+
+⚠️ **The render order is cosmetic and is said so in the code.** Each renderer writes into its own
+host by id, so re-ordering the calls changes nothing on screen — it is there so the next reader is
+not misled into thinking the markup order is something else. What actually moves the panels is the
+markup.
+
+⚠️ **The inline `style="margin-top:12px"` on `#viz-photos` was DROPPED, not carried along.**
+`.pd-viz` already declares exactly `margin-top:12px` (dashboard.html:284), so the inline copy only
+ever restated the class — measured after the move: all five panels report `margin-top: 12px`,
+`#viz-photos` included. Carrying a redundant override to the top of the band would have implied it
+was doing something.
+
+⚠️ **The comment above the band was corrected, not left standing.** It read *"Issues is full width
+now, and the new Contracts & Claims summary sits above it"* — true when written on 2026-09-15 (e),
+false the moment this change landed. A comment that confidently describes the opposite of the code
+is worse than none (the same correction 2026-09-11 (ze) had to make).
+
+### Checked before moving anything
+
+- **No positional CSS**: no `:first-child` / `:last-child` / `:nth-*` / `+` / `~` rule anywhere
+  targets `.pd-viz`, in either `dashboard.css` or the page's own `<style>`.
+- **No order-dependent JS**: `dashboard.html` contains zero `insertBefore` /
+  `nextElementSibling` / `previousElementSibling` / `firstElementChild` / indexed-`children` reads.
+  The only `#stat-band` reference is `loadStatus`'s hide-the-whole-band branch.
+
+### Verified
+
+Measured in a browser against the **real** stylesheets — `assets/css/dashboard.css` linked (cache-
+busted) plus the page's own `<style>` block, with the `#stat-band` section lifted verbatim out of
+`dashboard.html` rather than retyped:
+
+| | 344px | 1280px |
+|---|---|---|
+| order (by measured `top`) | scurve · program · **photos · issues · contracts** | identical |
+| `margin-top`, all five | 12px | 12px |
+| panel width | 324 | 1232 |
+| page scrolls sideways | — | **no** |
+
+⚠️ **The measurement was gated before it was trusted** — `visibilityState: "visible"` and a non-zero
+`clientWidth`, because a hidden tab voids all geometry; and the panel background was asserted as a
+**colour** (`rgb(255,255,255)`, not transparent), which is what proves the stylesheet actually
+loaded rather than the harness reporting perfect numbers on unstyled elements.
+
+Inline `<script>` parses (1 block, 0 failures). ⚠️ **Not verified signed in** — `requireLogin`
+redirects here, so this is the shipped markup under the shipped CSS, not a live project's panels.
+
+⚠️ **No `?v=` or `MODULE_V` bump**, deliberately: `dashboard.html` is fetched at its own URL and is
+not a module page, and no shared asset changed — bumping would invalidate 29 pages' caches for a
+file none of them load.
+
+⚠️ The harness was written as `_scratch-harness.html` (matching **two** `.gitignore` patterns,
+confirmed ignored by `git status --untracked-files=all` before use) and **deleted before
+committing** — this repo has shipped harness files to production twice.
+
 ### 2026-09-15 (j) — Form controls go back onto the scale the scale itself designates
 
 Owner, on the Edit Activity modal: *"Let's also check the font size in the edit activity pop-up window

@@ -68,11 +68,16 @@
                  It had been placed below the registers on 2026-09-01 for a reading order that
                  ended on "what falls due next"; the owner no longer wants that ending.
                ⚠ `.pd-viz-2col` went with them. It held MoM beside Issues, and a two-column wrapper
-                 with one child is a half-width panel next to a gap. Issues is full width now, and
-                 the new Contracts & Claims summary sits above it. -->
-          <div class="pd-viz" id="viz-contracts"></div>
+                 with one child is a half-width panel next to a gap. Issues is full width now.
+               ⚠ ORDER, owner 2026-09-15: *"move the contracts & claims section after issues &
+                 concerns and move up progress photos before issues & concerns."* So the band reads
+                 what the project LOOKS like (photos), then what is wrong with it (issues), then
+                 what it is worth (contracts). The `style="margin-top:12px"` that rode on
+                 `#viz-photos` is dropped with the move — `.pd-viz` already declares exactly that
+                 margin, so the inline copy only ever restated the class. -->
+          <div class="pd-viz" id="viz-photos"></div>
           <div class="pd-viz" id="viz-issues"></div>
-          <div class="pd-viz" id="viz-photos" style="margin-top:12px;"></div>
+          <div class="pd-viz" id="viz-contracts"></div>
         </section>
 
 
@@ -1394,9 +1399,12 @@
       try { renderPerf(); } catch (e) { var pg = document.getElementById('perf-grid'); if (pg) pg.innerHTML = '<div class="pd-viz-empty">Could not draw the performance row.</div>'; }
       try { renderScurve(); } catch (e) { vizEmpty('viz-scurve', 'S-Curve', 'Could not draw this panel.'); }
       try { renderProgram(); } catch (e) { vizEmpty('viz-program', 'Project Schedule & Milestones', 'Could not draw this panel.'); }
-      try { renderContracts(); } catch (e) { vizEmpty('viz-contracts', 'Contracts &amp; Claims', 'Could not draw this panel.'); }
-      try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
+      // ⚠ Kept in the band's own reading order (photos → issues → contracts). Each renderer writes
+      //   into its own host, so this order changes nothing on screen — it exists so the next reader
+      //   is not led to believe the markup order is something else.
       try { renderPhotos(); } catch (e) { vizEmpty('viz-photos', 'Progress Photos', 'Could not draw this panel.'); }
+      try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
+      try { renderContracts(); } catch (e) { vizEmpty('viz-contracts', 'Contracts &amp; Claims', 'Could not draw this panel.'); }
     }
 
     // Load every module's declared metrics in parallel, then draw once. A module that fails or
