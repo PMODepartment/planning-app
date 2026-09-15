@@ -355,8 +355,22 @@ window.MinutesOfMeeting = (function () {
       return rowSvg;
     }).join('');
     var h = items.length ? (y - gap + padTop) : (padTop * 2 + barH);
-    return '<svg viewBox="0 0 ' + w + ' ' + h.toFixed(1) + '" width="100%" height="' + h.toFixed(1) + '" role="img" ' +
-      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMinYMin meet" overflow="visible">' + svg + '</svg>';
+    // ⚠️⚠️ width IS `w`, NEVER "100%". `width="100%"` with a `viewBox` whose
+    // own width is a DIFFERENT number (esp. the 760 the "Minutes by meeting"
+    // card passes) forces the browser to uniformly SCALE the whole viewBox to
+    // fit the actual rendered width — bars, gaps AND every `font-size="11"`
+    // text node included. On a ~340px phone that is scale≈0.45: labels render
+    // at ~5px, unreadable, and because the `height` attribute stays the
+    // UNSCALED `h` while the visible content shrinks with it, the box is left
+    // with blank space below the (now smaller) bars before the legend below
+    // it — the reported "white space between bars and legend". Rendering at
+    // the chart's own true pixel size instead (matched 1:1 to `viewBox`)
+    // means text is always exactly `fs`px and the box height always exactly
+    // matches its content, whatever container it lands in. A chart wider than
+    // its card scrolls horizontally — `.il-dash-cardbody-scroll` — rather
+    // than being silently shrunk into illegibility.
+    return '<svg viewBox="0 0 ' + w + ' ' + h.toFixed(1) + '" width="' + w + '" height="' + h.toFixed(1) + '" role="img" ' +
+      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" overflow="visible">' + svg + '</svg>';
   }
 
   // ==========================================================================
@@ -779,13 +793,28 @@ window.MinutesOfMeeting = (function () {
   // loads with the project the same way the Issues & Concerns register loads its
   // own table.
   async function load() {
-    if (!pid) { MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = []; _momLoaded = true; render(); return; }
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = []; _momLoaded = true; render(); return; }
     // ⚠️ Keyset-paginated (PDb.selectAll): a plain .select() truncates at 1000 rows
     // server-side with no error, and both of these accumulate for the life of the
     // project — one row per meeting, and one per action item on every meeting.
     try {
-      MOMS = await PDb.selectAll('meeting_minutes', function (q) { return q.eq('project_id', pid); });
-      MOM_ITEMS = await PDb.selectAll('mom_items', function (q) { return q.eq('project_id', pid); });
+      if (portfolio) {
+        // ⚠️ Every project this planner can see (UI.allProjectIds() is already
+        // RLS-scoped), not just the ones with a meeting recorded so far — an
+        // empty list here means "0 accessible projects", never "no meetings
+        // anywhere".
+        var ids = await UI.allProjectIds();
+        if (ids.length) {
+          MOMS = await PDb.selectAll('meeting_minutes', function (q) { return q.in('project_id', ids); });
+          MOM_ITEMS = await PDb.selectAll('mom_items', function (q) { return q.in('project_id', ids); });
+        } else {
+          MOMS = []; MOM_ITEMS = [];
+        }
+      } else {
+        MOMS = await PDb.selectAll('meeting_minutes', function (q) { return q.eq('project_id', pid); });
+        MOM_ITEMS = await PDb.selectAll('mom_items', function (q) { return q.eq('project_id', pid); });
+      }
       _momErr = '';
     } catch (e) {
       MOMS = []; MOM_ITEMS = [];
@@ -807,6 +836,13 @@ window.MinutesOfMeeting = (function () {
     // ⚠️ Light reads of the sibling module's tables (see the header comment) —
     // tolerant of either being unmigrated (no rows, not a failed load): the
     // status pill and the "Get from issue" panel just have nothing to offer yet.
+    // ⚠️ SECONDARY reads, deliberately NOT consolidated across projects in
+    // Portfolio scope: these are single-project cross-module links (the "From
+    // MOM" tag, "Get from issue", the "N lessons" badge, recurring schedules),
+    // not the primary register this scope exists to answer. Left empty in
+    // Portfolio scope rather than run with a null `pid` — the primary meetings
+    // list/KPIs above are the thing this scope consolidates.
+    if (portfolio) { ISSUES = []; LESSONS = []; SCHEDULES = []; _momLoaded = true; render(); return; }
     try { ISSUES = await PDb.selectAll('issues_lessons', function (q) { return q.eq('project_id', pid); }); }
     catch (e) { ISSUES = []; }
     try { LESSONS = await PDb.selectAll('lessons_learned', function (q) { return q.eq('project_id', pid); }); }
@@ -1084,14 +1120,24 @@ window.MinutesOfMeeting = (function () {
         render();
       }
     });
-    if (pid) load();
+    if (pid || (window.AppAuth && AppAuth.isPortfolioScope())) load();
     joinCollab();
   }
 
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = $('il-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT. Arriving here via
+    // the Portfolio sidebar (`#pd_scope=portfolio`, read once by AppAuth), `pid`
+    // stays null on purpose — the alternative is silently substituting the
+    // first project alphabetically and showing ITS real name as if it were
+    // correctly scoped. `pid === null` is also what `load()` reads below to
+    // switch the module from one project to every project this planner can
+    // see, and what `render()`/`openAddMeetingModal()` already gate write
+    // paths off (see there) — same pattern as risk-register/stakeholder-map.
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     var cur = projects.find(function (p) { return p.id === pid; });
     projName = cur ? (cur.name || cur.id) : '';
     sel.innerHTML = '<option value="">Select project…</option>' +
@@ -1243,7 +1289,10 @@ window.MinutesOfMeeting = (function () {
   }
   function render() {
     syncTopbarTools();
-    if (!pid) { _paintEmpty('Select a project to see its minutes.'); return; }
+    // ⚠️ Portfolio scope keeps `pid` null on purpose (see loadProjects()) — the
+    // module consolidates across every project instead of one, so `!pid` alone
+    // must not read as "nothing selected" there.
+    if (!pid && !(window.AppAuth && AppAuth.isPortfolioScope())) { _paintEmpty('Select a project to see its minutes.'); return; }
     if (!_momLoaded) { _paintEmpty('Loading minutes…'); return; }
     syncTopTabs();
     if (_momTab === 'dashboard') renderMomDashboard();
@@ -1482,6 +1531,21 @@ window.MinutesOfMeeting = (function () {
         total: its.length,
       };
     });
+    // ⚠️⚠️ "Minutes by meeting" USED to pass a flat `width: 760` to hbarSVG —
+    // fine on a wide desktop card, but hbarSVG renders at its own TRUE pixel
+    // size (see its own header comment: never `width:"100%"`, that is what
+    // shrank labels to ~5px before), so on a phone that fixed 760 was simply
+    // wider than the card and `.il-dash-cardbody-scroll` fell back to a
+    // horizontal scrollbar — the reported "reduce the bar width a bit instead
+    // of making it scrollable". `host` (this function's own root, already in
+    // scope) is measured INSTEAD of guessed from the viewport or the sidebar
+    // state: it is a plain block child of `.pd-main`, so its `clientWidth`
+    // already reflects the real available width — collapsed sidebar, mobile
+    // drawer, tablet, whatever — with no assumption to get wrong. `- 40`
+    // covers the wide card's own `16px` side padding (32) plus a small
+    // buffer; clamped so a very narrow phone still gets a readable chart and
+    // a very wide desktop keeps the same 760 ceiling it always had.
+    var meetingChartW = Math.max(300, Math.min(760, (host.clientWidth || 900) - 40));
     // ⚠️ ONE legend shape for every chart on this dashboard, always centered
     // BELOW the chart it belongs to (2026-09-03: "titles on top of the chart,
     // legend only at the middle-bottom"). The donut's own legend already
@@ -1522,7 +1586,7 @@ window.MinutesOfMeeting = (function () {
         '<div class="pd-card il-dash-card il-dash-wide">' +
           '<div class="il-dash-cardhead"><h4>Minutes by Meeting</h4></div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
-            (byMeetingList.length ? hbarSVG(byMeetingList, { aria: 'Open vs total minutes by meeting', width: 760 })
+            (byMeetingList.length ? hbarSVG(byMeetingList, { aria: 'Open vs total minutes by meeting', width: meetingChartW })
               : '<div class="il-empty" style="padding:16px;">No meeting matches this filter.</div>') +
           '</div>' +
           (byMeetingList.length ? barLegendBottom : '') +
@@ -2623,6 +2687,11 @@ window.MinutesOfMeeting = (function () {
   // throughout" true by construction rather than by eyeballing pixel offsets.
   function amGhostLabel() { return '<label aria-hidden="true">&nbsp;</label>'; }
   function openAddMeetingModal() {
+    if (!pid) {
+      UI.toast((window.AppAuth && AppAuth.isPortfolioScope())
+        ? 'Portfolio is read-only — switch to a project to add or edit.' : 'Select a project first', 'warn');
+      return;
+    }
     var m = UI.modal(
       '<div class="pd-modal-header"><h3 style="margin:0;">+ Add meeting</h3>' +
         '<button class="pd-modal-close" id="il-am-x">&times;</button></div>' +

@@ -29,7 +29,9 @@
 // ============================================================================
 
 window.Pormac = (function () {
-  var pid = null;                 // selected project id (sessionStorage 'pd_project')
+  var pid = null;                 // selected project id (sessionStorage 'pd_project'), or null
+  var portfolioAll = false;       // true when "Portfolio (all projects)" is checked
+  var PROJECTS = [];              // cached project list — reused for portfolio-wide grounding
   var profile = null;
   var conversationId = null;      // pormac_conversations.id, once persisted
   var chatHistory = [];           // [{role:'user'|'assistant', content}] — sent to the model
@@ -68,6 +70,12 @@ window.Pormac = (function () {
       this.style.height = 'auto';
       this.style.height = Math.min(160, this.scrollHeight) + 'px';
     });
+    // ⚠️ Wired here, not inside the `loadProjects()` try block below, for the
+    // same reason the composer handlers are: it needs `pid`/`portfolioAll`
+    // and `profile`, none of which depend on the project list ever loading,
+    // so a failed fetch must not also take away the one way to clear a stuck
+    // or unwanted thread.
+    $('pmc-clear').onclick = clearHistory;
 
     try {
       await loadProjects();
@@ -102,6 +110,7 @@ window.Pormac = (function () {
 
   async function loadProjects() {
     var projects = await PDb.getProjects();
+    PROJECTS = projects;   // reused by portfolio-wide grounding — no second fetch
     var sel = $('pmc-project');
     pid = sessionStorage.getItem('pd_project') || null;
     sel.innerHTML = '<option value="">General (no project selected)</option>' +
@@ -110,6 +119,35 @@ window.Pormac = (function () {
           Fmt.esc(p.name) + '</option>';
       }).join('');
     UI.enhanceProjectSelect(sel);
+
+    // ⚠️⚠️ SCOPE IS DERIVED SOLELY FROM HOW THE PLANNER ARRIVED, NOT A
+    // CONTROL THEY SET. `ui.js`'s `renderNav('portfolio', …)` puts
+    // `#pd_scope=portfolio` on EVERY module's own link (2026-09-14,
+    // generalized from this module's own one-off `#pmc_scope=portfolio`),
+    // read once by `AppAuth` (auth.js) into a per-tab sessionStorage flag
+    // every module now shares — this is the ONE signal distinguishing
+    // "opened from the Portfolio nav" from "opened from a project's own
+    // module grid" (a module page always renders under `mode:'project'` in
+    // `UI.renderNav` regardless of which nav family linked to it, so
+    // `pd_project` sessionStorage cannot tell the two apart on its own).
+    // A checkbox here used to let a planner flip that scope mid-session —
+    // removed 2026-09-14 (owner: "no need for the portfolio checkbox")
+    // because the whole point is that the answer's basis should follow
+    // WHERE Pormac was opened from, not a toggle somebody could leave in
+    // the wrong position and not notice.
+    if (window.AppAuth && AppAuth.isPortfolioScope()) setPortfolioAll(true);
+  }
+
+  // One writer for the portfolio-scope flag and the project select it hides,
+  // so the two cannot drift out of sync the way two separate call sites would
+  // risk. ⚠️ Hidden, not merely disabled — with no toggle left to turn
+  // Portfolio back off, a visible-but-unusable select would just be a control
+  // that does nothing, where the earlier checkbox-driven design at least gave
+  // a reason to keep it in view (disabled, so it still answered "why can't I
+  // pick a project right now").
+  function setPortfolioAll(on) {
+    portfolioAll = !!on;
+    $('pmc-project').style.display = portfolioAll ? 'none' : '';
   }
 
   // ==========================================================================
@@ -144,12 +182,18 @@ window.Pormac = (function () {
     var token = ++convToken;   // a project switch mid-fetch must win over this load
     conversationId = null;
     chatHistory = [];
-    renderMessages('Loading this project’s conversation…');
+    renderMessages('Loading ' + (portfolioAll ? 'the portfolio-wide' : 'this project’s') + ' conversation…');
     try {
       var q = sb().from('pormac_conversations').select('id')
         .eq('created_by', profile.id)
         .order('updated_at', { ascending: false });
-      q = pid ? q.eq('project_id', pid) : q.is('project_id', null);
+      // ⚠️ Portfolio scope shares the same NULL-project bucket as General
+      // (no project selected) rather than getting a column value of its own
+      // — `pormac_conversations.project_id` references `projects(id)`, so a
+      // sentinel string there would be a foreign-key violation on the very
+      // first save. Nothing in the schema distinguishes "asked generally"
+      // from "asked across the portfolio"; both are simply not one project.
+      q = (pid && !portfolioAll) ? q.eq('project_id', pid) : q.is('project_id', null);
       var { data: convs, error } = await q;
       if (error) throw error;
       if (token !== convToken) return;
@@ -187,6 +231,50 @@ window.Pormac = (function () {
     }
   }
 
+
+  // Owner, 2026-09-14: "provide also option to clear history." Deletes every
+  // `pormac_conversations` row for the CURRENT scope (this project, General,
+  // or Portfolio — General and Portfolio share the same NULL-project bucket,
+  // same as everywhere else this module reads/writes that scope) rather than
+  // only the canonical row `loadConversation()` picked.
+  //
+  // ⚠️⚠️ DELETING ONLY `conversationId` WOULD LEAVE THE THREAD COMING BACK.
+  // `loadConversation()` merges EVERY conversation row for this scope, not
+  // just the canonical one — a leftover from before this module converged on
+  // "one conversation per project" (2026-09-12). Deleting the single
+  // canonical row and reopening the module would silently resurrect whatever
+  // older row was next in line, which reads as "clear history did nothing."
+  // The delete uses the identical scope predicate `loadConversation()` reads
+  // with, so the two can never disagree about what "this conversation" means.
+  //
+  // ⚠️ `pormac_messages.conversation_id` is `references … on delete cascade`
+  // (migrations/2026-09-12-pormac.sql), and a foreign-key cascade runs at the
+  // constraint level rather than through the deleting role's own RLS — so
+  // deleting the conversation rows here is enough; no separate messages
+  // delete or policy is needed.
+  //
+  // ⚠️ `.eq('created_by', profile.id)` is not redundant with the table's own
+  // delete policy (`created_by = auth.uid() OR is_admin()`) — without it an
+  // admin's "clear history" would delete every planner's conversation for
+  // this scope, not just their own.
+  async function clearHistory() {
+    var scopeLabel = portfolioAll ? 'the portfolio-wide conversation'
+      : pid ? 'this project’s conversation' : 'the general conversation';
+    if (!confirm('Clear ' + scopeLabel + '? This deletes it for everyone who can see this project — it cannot be undone.')) return;
+    try {
+      var q = sb().from('pormac_conversations').delete().eq('created_by', profile.id);
+      q = (pid && !portfolioAll) ? q.eq('project_id', pid) : q.is('project_id', null);
+      var { error } = await q;
+      if (error) throw error;
+      convToken++;              // drop any in-flight loadConversation() for the old state
+      conversationId = null;
+      chatHistory = [];
+      renderMessages();
+      UI.toast('Cleared ' + scopeLabel + '.', 'ok');
+    } catch (e) {
+      UI.toast('Could not clear history (' + ((e && e.message) || e) + ').', 'warn');
+    }
+  }
 
   // ==========================================================================
   // Capability detection + tiered model selection
@@ -548,6 +636,15 @@ window.Pormac = (function () {
   // offered as context; that's the shell's own existing honesty rule ("no
   // dash is fine — the tile then says no summary is published"), not a gap
   // Pormac invents a shortcut around.
+  // All project ids the planner can currently see, drawn from the same list
+  // the project <select> is built from — never a second fetch, and never
+  // wider than what RLS would already hand back to `moduleMetrics` itself.
+  function allProjectIds() { return PROJECTS.map(function (p) { return p.id; }); }
+  function projectNameOf(id) {
+    var p = PROJECTS.filter(function (x) { return x.id === id; })[0];
+    return p ? p.name : id;
+  }
+
   function moduleProviders() {
     var out = [];
     (APP_CONFIG.MODULES || []).forEach(function (m) {
@@ -558,19 +655,31 @@ window.Pormac = (function () {
         label: m.name,
         keywords: new RegExp(kw.split(/[\s,-]+/).filter(function (w) { return w.length > 2; }).join('|'), 'i'),
         needsProject: true,
+        // ⚠️⚠️ PORTFOLIO SCOPE PASSES `moduleMetrics` EVERY PROJECT ID AT ONCE,
+        // NOT ONE MODULE PROVIDER PER PROJECT. `moduleMetrics` now accepts an
+        // array (`assets/js/db.js`) and reads the whole named table under an
+        // `.in(project_col, ids)` filter — one round trip and one aggregate
+        // over the portfolio, exactly the arithmetic the Project Dashboard
+        // tile already runs per project, just over a wider row set. Fetching
+        // per-project and merging client-side would be N round trips for a
+        // question that only needs one number.
         fetch: async function () {
-          var out2 = await PDb.moduleMetrics(m.dash, pid);
-          return summarizeDash(m, out2);
+          var out2 = await PDb.moduleMetrics(m.dash, portfolioAll ? allProjectIds() : pid);
+          return summarizeDash(m, out2, portfolioAll);
         },
       });
     });
     return out;
   }
 
-  function summarizeDash(m, out) {
+  function summarizeDash(m, out, portfolio) {
     if (!out || out.__error) return null;
     var lines = [];
-    if (out.__rows != null) lines.push(out.__rows + ' ' + (m.dash.unit || 'records') + ' recorded.');
+    // ⚠️ Says "across every project", or a planner reading "342 activities
+    // recorded" would reasonably assume that is one project's count, not the
+    // whole portfolio's — the same figure reads as two very different facts.
+    if (out.__rows != null) lines.push(out.__rows + ' ' + (m.dash.unit || 'records') +
+      (portfolio ? ' recorded across every project you can see.' : ' recorded.'));
     Object.keys(out).forEach(function (k) {
       if (k.indexOf('__') === 0 || k === 'lists' || k === 'recent' || k === 'sub') return;
       var v = out[k];
@@ -616,7 +725,11 @@ window.Pormac = (function () {
           // Best-effort: try an exact id match (many projects share the same
           // code across both apps); if nothing matches, fall back to a
           // portfolio-wide summary and SAY SO, rather than silently guessing.
-          var scoped = pid ? await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', pid); },
+          // ⚠️ `!portfolioAll` gates the scoped attempt — with Portfolio
+          // checked the planner asked for every project, so trying (and
+          // failing) a single-project match first would just be a wasted
+          // round trip in front of the answer they wanted.
+          var scoped = (pid && !portfolioAll) ? await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', pid); },
             'wp_no,description,approved_budget_bcb,awarded_cost,award_status,procurement_status,delivery_status') : [];
           var rows = scoped.length ? scoped : await PDb.selectAll('wpm_work_packages', null,
             'wp_no,description,approved_budget_bcb,awarded_cost,award_status,procurement_status,delivery_status');
@@ -624,7 +737,8 @@ window.Pormac = (function () {
           var awarded = rows.filter(function (r) { return r.award_status && /award/i.test(r.award_status); }).length;
           var totalBudget = rows.reduce(function (n, r) { return n + (Number(r.approved_budget_bcb) || 0); }, 0);
           var totalAwarded = rows.reduce(function (n, r) { return n + (Number(r.awarded_cost) || 0); }, 0);
-          var scope = scoped.length ? 'for this project' : 'PORTFOLIO-WIDE — could not confirm which rows belong to this project';
+          var scope = scoped.length ? 'for this project'
+            : (portfolioAll ? 'PORTFOLIO-WIDE, as asked' : 'PORTFOLIO-WIDE — could not confirm which rows belong to this project');
           return 'Procurement (' + scope + ', mirrored from WPM, may lag the live app): ' + rows.length +
             ' work package(s), ' + awarded + ' awarded, approved budget ' + Fmt.money(totalBudget) +
             ', awarded cost ' + Fmt.money(totalAwarded) + '.';
@@ -647,18 +761,43 @@ window.Pormac = (function () {
         keywords: /engineering|drawing|submittal|design\s*(dev|progress)|for\s*construction|schematic/i,
         needsProject: true,
         fetch: async function () {
-          if (!pid) return null;
+          if (!pid && !(portfolioAll && allProjectIds().length)) return null;
           // project_id carries THIS app's id here (see the mirror's own
-          // comment) so this is a clean, real project-scoped filter.
-          var rows = await PDb.selectAll('eng_design_progress', function (q) { return q.eq('project_id', pid); },
-            'source,top_level,basis,percent_complete,units_total,units_done,synced_at');
+          // comment) so this is a clean, real project-scoped — or, under
+          // Portfolio, `.in(...)` over every project's id — filter.
+          var rows = await PDb.selectAll('eng_design_progress',
+            function (q) { return portfolioAll ? q.in('project_id', allProjectIds()) : q.eq('project_id', pid); },
+            'project_id,source,top_level,basis,percent_complete,units_total,units_done,synced_at');
           if (!rows.length) return null;
-          var lines = rows.map(function (r) {
-            return r.top_level + ' (' + r.source + '): ' + (r.percent_complete != null ? r.percent_complete + '%' : '—') +
-              (r.units_total ? ' (' + (r.units_done || 0) + '/' + r.units_total + ')' : '');
-          });
           var asOf = rows[0] && rows[0].synced_at ? Fmt.date(rows[0].synced_at) : null;
-          return 'Engineering design progress (mirrored from the Engineering App' + (asOf ? ', as of ' + asOf : '') + '): ' + lines.join('; ');
+          if (!portfolioAll) {
+            var lines = rows.map(function (r) {
+              return r.top_level + ' (' + r.source + '): ' + (r.percent_complete != null ? r.percent_complete + '%' : '—') +
+                (r.units_total ? ' (' + (r.units_done || 0) + '/' + r.units_total + ')' : '');
+            });
+            return 'Engineering design progress (mirrored from the Engineering App' + (asOf ? ', as of ' + asOf : '') + '): ' + lines.join('; ');
+          }
+          // ⚠️⚠️ PORTFOLIO SCOPE GROUPS BY PROJECT INSTEAD OF LISTING EVERY
+          // ROW. Every tower of every project, one line each, would be the
+          // largest single block gatherContext produces and could crowd out
+          // every other module's context on a portfolio with a handful of
+          // projects. One line per project — its own average percent
+          // complete over its own rows — keeps this bounded the same way
+          // `summarizeDash`'s "top N" lists already are, and a planner
+          // asking a portfolio-wide question wants "which projects are
+          // behind on design", not every drawing set's own tower.
+          var byProj = {};
+          rows.forEach(function (r) {
+            var g = byProj[r.project_id] || (byProj[r.project_id] = { sum: 0, n: 0 });
+            if (r.percent_complete != null) { g.sum += Number(r.percent_complete) || 0; g.n++; }
+          });
+          var perProj = Object.keys(byProj).map(function (id) {
+            var g = byProj[id];
+            return projectNameOf(id) + ' ' + (g.n ? Math.round(g.sum / g.n) + '%' : '—');
+          });
+          return 'Engineering design progress (mirrored from the Engineering App' + (asOf ? ', as of ' + asOf : '') +
+            ', portfolio-wide, own average % complete per project): ' + perProj.slice(0, 12).join('; ') +
+            (perProj.length > 12 ? ' (+' + (perProj.length - 12) + ' more project(s))' : '') + '.';
         },
       },
     ];
@@ -672,7 +811,13 @@ window.Pormac = (function () {
   // for a 1–3B local model's context window.
   // The project the planner has selected, named the way the picker names it —
   // read off the live <select> so it cannot disagree with what is on screen.
+  // ⚠️ Portfolio scope wins over whatever the (hidden) select still shows —
+  // it is left holding its last real value rather than reset to blank (see
+  // `setPortfolioAll`), so reading it here without checking `portfolioAll`
+  // first would report a stale single project while every context provider
+  // had already switched to answering across all of them.
   function projectLabel() {
+    if (portfolioAll) return 'Portfolio — every project you can see (' + PROJECTS.length + ' projects)';
     var sel = $('pmc-project');
     var opt = sel && sel.options[sel.selectedIndex];
     return (pid && opt && opt.text) || '';
@@ -696,7 +841,11 @@ window.Pormac = (function () {
     // keeps the isolation the sequential loop had — one failing provider must
     // not take the others with it — while costing one latency instead of N.
     var results = await Promise.all(matched.map(function (p) {
-      if (p.needsProject && !pid) return Promise.resolve(null);
+      // ⚠️ Portfolio scope satisfies `needsProject` too — it is a project
+      // scope (every project at once), not the absence of one; a provider
+      // gated on "there must be SOME project context" should run, and each
+      // provider's own `fetch` is what decides single-project vs. `.in(...)`.
+      if (p.needsProject && !pid && !portfolioAll) return Promise.resolve(null);
       return Promise.resolve().then(p.fetch).then(
         function (text) { return text ? { label: p.label, text: text } : null; },
         function () { return null; }
@@ -704,11 +853,13 @@ window.Pormac = (function () {
     }));
 
     var used = [], blocks = [];
-    // ⚠️ Name the project first. Without it the model is reading a pile of
-    // figures with nothing saying what they describe, and answers generically
-    // about "the project" because that is genuinely all it was told.
+    // ⚠️ Name the project (or the scope) first. Without it the model is
+    // reading a pile of figures with nothing saying what they describe, and
+    // answers generically about "the project" because that is genuinely all
+    // it was told. Portfolio scope needs its own label rather than
+    // "Project: Portfolio — every…" — it is not a project.
     var proj = projectLabel();
-    if (proj) blocks.push('Project: ' + proj);
+    if (proj) blocks.push((portfolioAll ? 'Scope: ' : 'Project: ') + proj);
     results.forEach(function (r) {
       if (!r) return;
       blocks.push(r.text);
@@ -831,8 +982,11 @@ window.Pormac = (function () {
   async function persistTurn(userText, replyText, used) {
     try {
       if (!conversationId) {
+        // ⚠️ `project_id` is a FK to `projects(id)` — Portfolio scope stores
+        // NULL, same as General, never `pid` (which could still hold a stale
+        // project id from before Portfolio was checked; see `projectLabel`).
         var { data, error } = await sb().from('pormac_conversations')
-          .insert({ project_id: pid, title: userText.slice(0, 60), created_by: profile.id })
+          .insert({ project_id: portfolioAll ? null : pid, title: userText.slice(0, 60), created_by: profile.id })
           .select('id').single();
         if (error) throw error;
         conversationId = data.id;
@@ -889,7 +1043,9 @@ window.Pormac = (function () {
     thread.innerHTML = '';
     if (note) { pushMessage('system', note); return; }
     if (!chatHistory.length) {
-      pushMessage('system', pid
+      pushMessage('system', portfolioAll
+        ? 'Ask me anything across the portfolio — I’ll answer using data from every project you can see. Everything you ask here stays in one running conversation — scroll back any time.'
+        : pid
         ? 'Ask me anything about this project. Everything you ask here stays in one running conversation — scroll back any time.'
         : 'Pick a project above for grounded answers, or ask a general question.');
       return;

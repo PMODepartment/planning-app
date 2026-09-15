@@ -125,6 +125,78 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-age.warn { color:var(--pd-warn-text); }
 .cc-age.bad  { color:var(--pd-bad-text); }
 
+/* ---- Attachments on a record (2026-09-15) ------------------------------------------------------
+   ⚠ A list, not a grid: a record carries two or three files, not twenty, and the useful facts are
+     the name and what kind of document it is. */
+.cc-atts { list-style:none; margin:0 0 8px; padding:0; }
+.cc-att { display:flex; align-items:center; gap:10px; padding:7px 0;
+  border-bottom:1px solid var(--pd-line); font-size:13px; }
+.cc-att:last-child { border-bottom:0; }
+.cc-att-n { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cc-att-n > i { display:block; font-style:normal; font-size:11px; color:var(--pd-muted); }
+.cc-att .pd-btn { flex:none; height:28px; padding:0 9px; font-size:12px; }
+/* ⚠ A staged file is visibly NOT yet uploaded. Its row says so in words as well — colour alone
+   would leave a reader who cannot see it with no signal at all. */
+.cc-att-pend { opacity:.72; }
+.cc-att-add { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.cc-att-add .pd-select { height:32px; }
+.cc-att-st { font-size:12px; color:var(--pd-muted); }
+
+/* ---- The register's own dashboard, at the top of the Contract tab (2026-09-15) ----------------
+   ⚠ Built from the module's OWN idioms (`.cc-kpis` / `.cc-kpi`), not the project dashboard's
+     `.pd-mini-*`. The two screens report the same figures in the same order, but each should look
+     like the page it is on rather than importing the other's furniture. */
+.cc-dash { margin-bottom: 14px; }
+.cc-dash-h { display:flex; align-items:baseline; gap:8px; margin:14px 0 6px;
+  font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--pd-muted); }
+.cc-dash > .cc-dash-h:first-child { margin-top:0; }
+/* How much of the contract value the packages account for. */
+.cc-dash-bar { height:6px; border-radius:99px; background:var(--pd-line); overflow:hidden; margin-bottom:8px; }
+.cc-dash-bar > i { display:block; height:100%; background:var(--pd-red); }
+.cc-dash-pks { list-style:none; margin:0 0 4px; padding:0; }
+.cc-dash-pk { display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+  padding:7px 0; border-bottom:1px solid var(--pd-line); font-size:13px; }
+.cc-dash-pk:last-child { border-bottom:0; }
+
+/* ---- Aging bars (ccTimeHTML) -------------------------------------------------
+   ⚠ Same idiom as .cc-dash-pk above rather than a new one: a label, a measure and
+     a figure on one row. The bar is scaled to the LARGEST bucket, not the total —
+     scaled to the total, a healthy register draws three invisible slivers.
+   ⚠ Tones are tokens, never literals: --pd-warn-* / --pd-bad-* are the paired
+     light/dark surfaces, so this reads correctly in both themes without an
+     html.pd-dark override. And the TEXT tone is *-text, never --pd-warn itself,
+     which measures 3.46:1 and is a surface colour. */
+.cc-ages { list-style:none; margin:0 0 4px; padding:0; }
+.cc-age { display:flex; align-items:center; gap:10px; padding:5px 0;
+  border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
+.cc-age:last-child { border-bottom:0; }
+.cc-age-l { flex:0 0 108px; color:var(--pd-muted); }
+.cc-age-bar { flex:1 1 auto; height:8px; min-width:40px; border-radius:99px;
+  background:var(--pd-line); overflow:hidden; }
+.cc-age-bar > i { display:block; height:100%; background:var(--pd-red); }
+.cc-age-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--pd-ink); }
+.cc-age-warn .cc-age-bar > i { background:var(--pd-warn); }
+.cc-age-warn .cc-age-v { color:var(--pd-warn-text); }
+.cc-age-bad  .cc-age-bar > i { background:var(--pd-bad); }
+.cc-age-bad  .cc-age-v { color:var(--pd-bad-text); }
+/* Nothing is drawn for "not submitted" — it has no age, so a bar would imply one. */
+.cc-age-unsent .cc-age-bar { background:transparent; }
+.cc-age-unsent .cc-age-l, .cc-age-unsent .cc-age-v { color:var(--pd-muted); font-style:italic; }
+
+@media (max-width:700px) {
+  /* A 108px label beside a bar beside a figure does not fit a phone; the figure
+     takes its own line rather than squeezing the bar to nothing. */
+  .cc-age { flex-wrap:wrap; }
+  .cc-age-l { flex:1 1 auto; }
+  .cc-age-bar { flex:1 1 100%; order:3; }
+}
+.cc-dash-pk > span { min-width:0; }
+.cc-dash-pk > span > i { display:block; font-style:normal; font-size:11px; color:var(--pd-muted); }
+.cc-dash-pk > b { flex:none; font-variant-numeric:tabular-nums; }
+/* The unallocated remainder is a real figure, not an error — warn, not bad. */
+.cc-dash-rest > b { color:var(--pd-warn-text); }
+
 /* ---- KPI strip ---------------------------------------------------------- */
 .cc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
 .cc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
@@ -225,7 +297,7 @@ html.pd-dark {
 .boq-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
 .boq-spacer { flex:1 1 auto; }
 .boq-inline { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
-.boq-inline .pd-select { height:32px; font-size:var(--pd-fs-sm); max-width:280px; width:auto; }
+.boq-inline .pd-select { height:32px; max-width:280px; width:auto; }
 
 .boq-subtabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; }
 .boq-subtab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px; font-weight:700;
@@ -448,7 +520,7 @@ html.pd-dark {
 .pmi-jump { height:28px; padding:0 9px; font-size:var(--pd-fs-sm); font-family:var(--pd-mono); }
 
 .pmi-up { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0; }
-.pmi-up .pd-select { width:auto; min-width:170px; height:32px; font-size:var(--pd-fs-sm); }
+.pmi-up .pd-select { width:auto; min-width:170px; height:32px; }
 .pmi-view { height:26px; padding:0 8px; font-size:var(--pd-fs-sm); max-width:320px; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
 
@@ -457,7 +529,7 @@ html.pd-dark {
   color:var(--pd-red); width:26px; }
 .pmi-card tr.pmi-total > td { font-weight:800; border-top:2px solid var(--pd-line);
   background:var(--pd-bg); }
-.pmi-card .pd-input, .pmi-card .pd-select { height:30px; font-size:var(--pd-fs-sm); width:100%; }
+.pmi-card .pd-input, .pmi-card .pd-select { height:30px; width:100%; }
 
 .pmi-prof { padding:14px 16px; margin-bottom:12px; }
 .pmi-prof-h { display:flex; align-items:flex-start; justify-content:space-between; gap:12px;

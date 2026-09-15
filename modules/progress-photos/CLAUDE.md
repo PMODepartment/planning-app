@@ -2,120 +2,726 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
-## 360° upload can now be saved as a draft, with the stitch running in the background (2026-09-13, later still)
+## "When I close the browser app, the video I uploaded for 360 processing is gone" — a real browser-eviction risk closed with `navigator.storage.persist()`, and silent recovery made visible with a toast (2026-09-14, later still yet again again again)
 
-**Run `migrations/2026-09-13-progress-photos-360-draft-status.sql`.**
+Owner: *"when I close the browser app, the video i uploaded for 360 processing is gone. please
+retain progress of processing since processing takes some time."* — the same class of report the
+entry directly below this one already investigated and fixed once (the `Pano360DraftStore.open()`
+promise-caching bug). Re-checked that fix first rather than assuming it had regressed:
+`persistPano360Draft()`/`rehydratePano360Drafts()` are both structurally sound and match what PR
+#118 shipped — this is not a repeat of that bug.
 
-Owner: *"since this portion takes long, allow uploading 360 as draft during the session to work the
-stitching in the background."* — the direct follow-up to the fixed-48-frame fix above, which made the
-extraction+stitching phase faster but did not remove the fact that it's real, sequential work (up to
-48 real video seeks, each followed by its own ORB/BFMatcher/RANSAC join attempt) that used to hold the
-entire "Add 360° photo" modal open until it finished.
+### What was actually still missing
 
-### The fix
+⚠️⚠️ **IndexedDB is not exempt from eviction just because a write to it succeeded.** A browser can
+still clear a non-persistent origin's storage under disk pressure — this is a real, standard risk
+(most acute on mobile), and this app had never once called the Storage API's own mitigation for
+it. `navigator.storage.persist()` asks the browser to exempt this origin from automatic eviction;
+confirmed via a repo-wide grep that it was used **nowhere** in this codebase before this change.
 
-**`open360Upload()` gains a second, non-blocking save path.** While a stitch is running (the
-`#pp360-progress` block is visible — the exact same block the previous entry's per-frame status text
-already lives in), a new **"Save as draft — keep working"** button lets the planner save what's
-already filled in and close the modal immediately, without waiting for the stitch to finish:
-
-- **`saveAsBackgroundDraft()`** validates the same required fields every other capture in this module
-  already requires (`requiredFieldsMissing('pp360')`), then inserts a REAL `progress_photos` row —
-  `media_type:'360'`, `stitch_status:'processing'`, `photo_url`/`thumb_url` both `null` — through the
-  same `tolerantWrite()` every other insert in this file goes through, closes the modal
-  (`revokeAll()`, unchanged), and refreshes the gallery so the draft shows immediately.
-- ⚠️⚠️ **The already-running `Pano360.stitchFromVideo(videoBlob, …)` call is never restarted or
-  duplicated — it's REDIRECTED.** `haveVideo()` already kicks `runStitch()` off the moment a video is
-  picked, well before the planner has a chance to click anything; the new button doesn't start a
-  second stitch, it just flips one closure flag (`bgDraftId`, set to the draft row's real id) that
-  `runStitch()`'s own success/failure branches check *before* touching anything the now-closed modal
-  used to own:
-  ```js
-  if (bgDraftId) { await finalizeBackgroundDraft(bgDraftId, res); return; }
-  showStitchResult(res);
-  ```
-  and the identical shape in the `catch` block, routing to `markBackgroundDraftFailed` instead of the
-  interactive error toast. The progress callback itself also bails out (`if (bgDraftId || !prog)
-  return;`) once backgrounded — there's no modal left to report percentages into, and `prog` still
-  points at the (now detached) DOM node rather than `null`, so continuing to write to it would be
-  harmless but pointless.
-- ⚠️ **This works because `videoBlob` is a plain JS `Blob` reference held in `open360Upload()`'s own
-  closure, not tied to the modal's DOM or its preview object URL (`videoUrl`).** Closing the modal
-  runs `revokeAll()`, which revokes `videoUrl`/`stitchUrl`/`repUrl` and destroys `pp360Viewer` (all
-  `null`/unused at this point) — none of that touches `videoBlob` itself, and `extractFrames()`
-  (pano360.js) creates its *own* internal object URL straight from the Blob, so the already-in-flight
-  extraction is completely unaffected by the modal closing underneath it.
-- **`finalizeBackgroundDraft(photoId, res)`** — once the redirected stitch resolves, uploads the
-  stitched image (`uploadFile`) and generates its thumbnail via the exact same client-side downscale
-  helper (`uploadThumbnailFor`) every ordinary photo upload already uses, then `tolerantWrite`s an
-  UPDATE clearing `stitch_status` back to `null` and setting `photo_url`/`thumb_url`. ⚠️ Deliberately
-  **not** the interactive flow's viewer-framed "Use this view as thumbnail" gesture — there is no
-  Pannellum viewer to frame anything in once the modal is gone, and the stitched panorama is a real
-  image file the same generic thumbnailer already knows how to handle.
-- **`markBackgroundDraftFailed(photoId, err)`** — a failed extraction/stitch/upload marks the row
-  `stitch_status:'failed'` (never deletes it) and toasts the real reason. ⚠️ There is no raw video
-  stored for this draft (only the stitched *output* is ever uploaded, and that's exactly what
-  failed), so a stuck `'failed'` row cannot be retried in place — the honest recovery is to delete it
-  (the module's existing single-row/batch delete already covers that) and re-add the 360° capture
-  from scratch. Stated in the toast, not hidden behind a dead-end "Retry" button that would have
-  nothing to retry from.
-- **Gallery tiles read the new status.** `thumb()`'s `media_type === '360'` branch now checks
-  `stitch_status` before falling through to the generic "Preview unavailable" placeholder: a
-  `'processing'` row shows a distinct "Processing…" tile, a `'failed'` one shows "Failed" — both
-  carrying **no `data-act="open"`**, matching every other no-preview tile in this file, so a click on
-  either can never try to mount a viewer against a `photo_url` that isn't set yet.
-
-### Scope, stated rather than silently assumed
-
-⚠️⚠️ **This is deliberately SESSION-scoped, not persisted across a reload.** `videoBlob` is only ever
-a JS reference; there is no IndexedDB queue backing this (unlike the module's existing
-`OfflineQueue`/`saveCapture` mechanism for ordinary photo/video uploads, which queues the file *blob*
-itself for exactly this reason). Closing the tab or navigating away mid-stitch loses the in-flight
-promise and leaves the draft row stuck at `stitch_status:'processing'` forever, with no way to detect
-"abandoned" versus "still genuinely running" from outside the browser tab that started it. This
-matches the owner's own wording ("during the session") and the module's already-established
-convention of stating a scope reduction plainly rather than quietly shipping less than it sounds
-like — extending this to survive a reload would mean storing the raw video blob (a real, ongoing
-storage cost for every draft, successful or not) and re-deriving frame extraction from scratch on
-reconnect, which is a materially bigger piece of work than "let the planner keep using the app while
-one video finishes stitching."
-
-⚠️ **Not built:** any indication elsewhere in the app (Plan view, Stack view, PPR slide picker) that a
-360 photo is mid-draft — those surfaces already treat a photo with no signable `photo_url` as absent
-from their own listings (they build their candidate sets from rows that already resolve a URL), which
-is an acceptable degrade rather than a defect: a draft simply isn't offered anywhere that a photo needs
-to already exist to be picked, and it surfaces normally once `finalizeBackgroundDraft` clears
-`stitch_status`.
+- **New `ensurePersistentStorage()`**, called (deliberately unawaited — best-effort, must never
+  delay `init()`) from `init()` right after `restoreUI()`. Fully feature-detected: a no-op when
+  `navigator.storage`/`.persist` don't exist, checks `navigator.storage.persisted()` first so an
+  already-persistent origin never re-asks, and logs (never throws) whether the browser granted or
+  refused the request.
+- **Recovery is now VISIBLE, not just mechanically correct.** `rehydratePano360Drafts()` restarts a
+  still-processing draft from its saved source blob and restores a finished one as-is — both
+  worked, but gave the planner **no on-screen confirmation anything survived**, which is
+  indistinguishable from data loss from where they're sitting. It now counts what it recovers and
+  fires one `UI.toast()` naming it — *"Recovered from before you closed this app: 1 360° capture
+  resuming (restarting from your saved recording), 1 finished 360° capture waiting for review."*
+- ⚠️ **"Resuming" still means restarting from zero, not resuming mid-stitch** — there is no way to
+  serialize an in-flight OpenCV stitch across a reload, and the toast's own wording says
+  "restarting" rather than implying continuity that isn't real.
 
 ### Verified
 
-**928 checks green** (was 910 — 18 new, 3 existing occurrence-count assertions updated in place from
-"3" to "4" now that `saveAsBackgroundDraft` builds a fourth `works_activity_ids`/`location`/
-`view_name` payload alongside Add/Edit/the ordinary 360 upload — "healthy churn from an intentional
-change" per this file's own convention, not a weakened check). Structural, matching this module's own
-established limit for anything this DOM/state-heavy: driving `open360Upload()` end-to-end would need
-the full modal + a real `Pano360.stitchFromVideo` call, which the existing interactive-flow tests
-already don't attempt either. Confirms: the button exists inside `#pp360-progress` and is wired
-exactly once; `runStitch()`'s progress callback, success path and catch path all check `bgDraftId`
-before touching modal-specific state; `saveAsBackgroundDraft` validates required fields, inserts with
-`photo_url`/`thumb_url` null and `stitch_status:'processing'`, and only sets `bgDraftId`/closes the
-modal on a *successful* insert (a failed one re-enables the button and touches nothing else);
-`finalizeBackgroundDraft` uploads through the shared `uploadFile`/`uploadThumbnailFor` helpers and
-clears `stitch_status`; both `finalizeBackgroundDraft` and `markBackgroundDraftFailed` route a
-failure the same way (marking `'failed'`, never deleting); the two new gallery-tile branches exist,
-carry no `data-act="open"`, and have real (non-orphaned) CSS. The same **3** pre-existing, unrelated
-failures from the entry above are confirmed unchanged (re-run against the commit before this change
-via `git stash`). `node --check` clean on `module.js`/`test.js`; `tools/wiring-check.js` **126
-passed, 0 failed**, confirming no version split across the three bumped assets.
+**11 new checks, all genuinely executing the shipped functions** (963 → 974; the same 3
+pre-existing, unrelated failures — a PDF page-break assertion + 2 `capture.js` mic/audio-flash
+assertions — confirmed unchanged by name): a hand-built controllable `navigator.storage` stand-in
+proves `ensurePersistentStorage()` degrades safely with the API absent/partial, checks
+`persisted()` before ever calling `persist()`, and logs granted vs. refused honestly rather than
+claiming success either way; the recovery-toast tests build one `'processing'` draft (with a
+persisted source blob) and one `'ready'` draft for the same user, clear in-memory state, and
+confirm the toast names both counts correctly, fires **exactly once** regardless of how many
+drafts were recovered, and fires **not at all** on a second rehydrate against already-in-memory
+drafts or for a brand-new user with nothing persisted.
 
-⚠️ **Not verified signed in** — same standing caveat as every entry in this file. In particular: no
-real background stitch has actually run to completion in a live browser while the planner navigated
-elsewhere in the app; that end-to-end "did the tile really update on its own" experience is the first
-thing worth confirming live.
+`node --check` clean on both files; full suite **974 passed, 3 failed** — the same 3 pre-existing
+failures this file's own history already documents.
 
-`module.js`/`module.css`/`index.html?v=` → `20260913j`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
-`dashboard.html`/`modules.html`, plus its own fallback literal) → `20260913j`. `pano360.js` is
-unchanged this round and stays `20260913i`.
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing caveat
+for every entry in this file. What's proven is that `navigator.storage.persist()` is requested
+correctly and that recovery is now announced rather than silent; nobody has watched a real device
+under real storage pressure confirm a draft survives a browser close.
+
+`module.js?v=` → `20260914zvs5`; `assets/js/modules-grid.js` (and the `dashboard.html`/
+`modules.html` script tags that load it) → `20260914zvs5` to match, since this module's
+`index.html` itself changed (its own `module.js?v=` line) — re-derived past `origin/main`'s own
+concurrently-advanced `20260914zvs4` fallback after rebasing this branch onto it, per this repo's
+own standing rule for exactly this collision shape. `pano360.js` is unchanged this round and keeps
+its existing token.
+
+## A 360° draft's IndexedDB persistence could permanently break after one transient failure — fixed, and hardened with logging, a warning toast, and a beforeunload guard (2026-09-14, later still again)
+
+Owner: *"the 360 draft still gets removed once a new session open. please fix. please retain for a
+user since the processing takes time."* — referring to the *existing* "a 360° draft survives a
+session timeout" feature (the entry below this one, IndexedDB-backed `Pano360DraftStore`, already
+shipped and live on `main`). The report says that persistence isn't actually holding up.
+
+### The investigation, and what it ruled out before finding the real bug
+
+⚠️⚠️ **The core mechanism was proven to work, which is what made this bug hard to find.** A real
+cross-session Playwright test (`chromium.launchPersistentContext`, so IndexedDB genuinely survives
+between two separate `page` loads against the same on-disk profile — not two tabs in one page)
+confirmed a persisted draft correctly rehydrates on a fresh page load. So "the whole feature is
+broken" wasn't the answer, and neither was a stale/unmerged deploy — `git log -S
+"Pano360DraftStore"` confirms the feature is in `main`'s history. A large-blob/storage-quota theory
+(an 80MB write) was tried too and didn't reproduce here (this sandboxed Chromium reports a ~162GB
+quota, not representative of a real phone under storage pressure) — flagged as a real, still-
+plausible risk on an actual device, just not something provable from this environment.
+
+### ⚠️⚠️ The real bug: `Pano360DraftStore.open()` cached a REJECTED promise, permanently
+
+```js
+function open() {
+  if (dbp) return dbp;                 // <-- returns the SAME promise forever, success or failure
+  dbp = new Promise(function (resolve, reject) {
+    var req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = ...;
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };   // <-- dbp is STILL the rejected promise
+  });
+  return dbp;
+}
+```
+
+`dbp` is memoized unconditionally on the very first call — including when `indexedDB.open()` itself
+fails (a transient storage-pressure error, a blocked version-upgrade from another open tab, a
+private-mode quirk). Once that happens, `dbp` is a **permanently rejected promise**, and every
+future call to `open()` for the rest of that page's life returns the *same* dead promise — so
+`persistPano360Draft`/`rehydratePano360Drafts` silently, permanently stop working for that entire
+browser session, with **nothing logged anywhere**: the failure was swallowed by a bare
+`.catch(function () {})`. This is the single most plausible explanation for "the draft still gets
+removed" — one bad IndexedDB open at some point in the session (which needs nothing more exotic
+than momentary storage pressure on a real phone) silently disables persistence for every capture
+after it, and the planner sees exactly what a from-scratch, never-persisted draft looks like: gone
+the moment the tab closes.
+
+**Fixed**: a failed `open()` now resets `dbp = null` (in both the synchronous-throw catch and the
+async `onerror`/`onblocked` handlers) before rejecting, so the very next call genuinely retries
+against a fresh `indexedDB.open()` instead of replaying the same dead promise. A new
+`_resetConnectionForTest()` test-only hook lets the suite force this same reset deterministically.
+
+### Two further hardenings, since a persistence failure being *silent* was itself part of the problem
+
+- **`persistPano360Draft`'s failure is now logged** (`console.warn`, naming the draft id) instead of
+  a bare empty `.catch`, and **the planner is warned once per page load** via a toast — *"This
+  device could not save your 360° capture locally — keep this tab open until it finishes, or it may
+  be lost if you close it."* — the first time a persist attempt fails. A `pano360PersistFailWarned`
+  flag (with its own `_resetPano360PersistFailWarned()` test hook) keeps this to one toast, not one
+  per failed write in a bad stretch.
+- **`rehydratePano360Drafts`'s read failure is logged too** (`console.warn`) — it already degraded
+  silently to "no drafts to restore," which is the correct behaviour on a first-ever visit (no
+  IndexedDB data yet) but was indistinguishable from a genuine read error with nothing to say which.
+- **A `beforeunload` guard** now warns before closing/reloading the tab while any draft is still
+  `status === 'processing'` (`e.preventDefault(); e.returnValue = '';`) — the standard browser
+  mechanism for exactly this: a stitch genuinely takes real time, and closing the tab mid-stitch is
+  the single easiest way to lose one regardless of how well the persistence layer holds up.
+
+⚠️ **None of this touches the actual safety gate.** `uploadFile()`/`tolerantWrite()` are still
+called from exactly one place — Confirm & Save, guarded on `draft.status === 'ready' &&
+draft.stitchResult && draft.repBlob` — never from any of the functions touched here. This entry is
+entirely about the **local** IndexedDB layer standing in for what used to be a bare in-memory
+array; it neither writes to nor weakens the path to the shared database.
+
+### Verified
+
+**19 new checks, all green** (944 → 963; the same 3 pre-existing, unrelated failures — a PDF
+page-break assertion + 2 `capture.js` mic/audio-flash assertions — confirmed unchanged by name): a
+hand-built flaky-`indexedDB.open()` fake (rejects for the first N calls, then succeeds) proves the
+failure is logged by name, the toast fires with the exact warning text, a *second* persist attempt
+after the flaky window succeeds (proving `open()` doesn't poison itself for the rest of the
+session), and the toast fires **at most once** across repeated failures — not once per failure.
+⚠️ **A real bug in the test itself, caught before it shipped**: the first draft of the flaky-store
+scenario reported the persist *not* failing at all, because an earlier, unrelated test section had
+already resolved `dbp` against its own successful fake IndexedDB, and that cached promise was still
+live when the flaky scenario started — the exact shape of bug this entry is about, reproduced
+inside the test harness itself. Fixed by calling the new `_resetConnectionForTest()` hook
+immediately before running the flaky scenario. `init()`'s new `beforeunload` registration is
+confirmed present via a structural source assertion.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing caveat
+for every entry in this file. What's proven is that a simulated `indexedDB.open()` failure no longer
+permanently disables persistence and is now visible (console + toast) instead of silent; nobody has
+watched a real device hit real storage pressure mid-stitch and confirmed the draft survives a
+subsequent close.
+
+`module.js?v=` → `20260914u`; `assets/js/modules-grid.js` (and the `dashboard.html`/
+`modules.html` script tags that load it) → `20260914u` to match, since this module's `index.html`
+itself changed (its own `module.js?v=` line). `pano360.js` is unchanged this round and keeps its
+existing token.
+
+## "Add 360° photo": the Take/Upload buttons move above the fields (2026-09-14, later still again)
+
+Owner, off a screenshot of the "Add 360° photo" modal: *"please fix also issue in photo. the upload
+and take buttons should be in the upper parts."* The screenshot showed a date field, View Name, a
+large Key Plan section (a full site photo plus a paragraph of pin/camera-angle instructions), then
+the three source buttons (Take video / Upload video / Upload 360° photo), then Cancel at the very
+bottom — so reaching the one thing most people open this modal to click meant scrolling past an
+image and several sentences of instructions first.
+
+⚠️⚠️ **This is a pure reorder of `openPano360SourcePicker()`'s markup, not a new field or a new
+wiring path.** The three source buttons (`#pp360src-step`) now render immediately after the intro
+hint, **before** the `.pp-form2` metadata block (Description/Capture date/Works/Location/Key Plan
+pin). Nothing about what the buttons DO changed: `startVideoDraft`/`havePhoto` still call
+`captureSrcMeta(draft)` — which reads the `pp360src-*` fields into `draft.meta` — before `m.close()`/
+`openPano360Review(draft)` runs, exactly as before; the fields still carry over into the review
+modal opened afterward whether they were filled in before or after picking a source. A second short
+hint line ("Fill in the details below now, or after picking a source — they carry over either way")
+was added directly above the fields, since with the buttons now first, filling in the fields reads
+as optional-before-picking rather than a form to complete top-to-bottom.
+
+⚠️ The offline fallback (`#pp360src-offline`, shown when `haveVideo()` detects `navigator.onLine ===
+false`) moved along with the button row it belongs to — it still sits directly below
+`#pp360src-step` and is still toggled the same way (`show('pp360src-step', false); show
+('pp360src-offline', true);`).
+
+**Verified**: `node --check` clean; the existing 2026-09-14 assertion pinning `.pp-form2` before
+`#pp360src-step` was updated to assert the reverse (buttons now render first), plus a new dedicated
+assertion recording the reversal and why. Full suite: **958 passed, 3 failed** — the same 3
+pre-existing, unrelated failures this file's own history already documents (a PDF page-break
+assertion + 2 `capture.js` mic/audio-flash assertions), confirmed unchanged by name.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. The reorder is proven by asserting the shipped HTML string's element
+order and by the unchanged `captureSrcMeta`/`startVideoDraft`/`havePhoto` wiring, not by a real
+click-through.
+
+`module.js?v=` → `20260914j`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914j` to match, since this module's `index.html` itself changed
+(its own `module.js?v=` line). `pano360.js`/`module.css` are unchanged this round and keep their
+existing tokens.
+
+## 360° stitching optimization: feature detection cached per frame, verified against real OpenCV.js in an isolated headless-Chromium harness (2026-09-14, review pass)
+
+Owner: *"review 360 processing code to improve and optimize."* A genuine review-and-optimize pass
+over `pano360.js`'s stitching pipeline, not a cosmetic or documentation-only change — this repo's
+own standing convention for this exact pipeline is to verify against the *real* OpenCV.js in a real
+browser wherever possible (see every prior `pano360.js` entry above), never a code-review-only claim
+for performance-sensitive WASM/OpenCV code with no way to check correctness.
+
+### The optimization: split feature detection from matching, cache per frame index
+
+⚠️⚠️ **`homographyBetween(prevMat, curMat)` recomputed BOTH frames' ORB features on every single
+call — including the anchor frame, over and over, once per lookahead candidate.** The
+join-search loop in `stitchFrames` (`JOIN_LOOKAHEAD`, up to 5 candidates per anchor-selection step)
+called `homographyBetween(rawMats[anchor], rawMats[c])` for each candidate `c` — so the *same*
+anchor frame's grayscale conversion + ORB `detectAndCompute` ran again for every candidate tried
+against it, and ran a second time once that candidate itself became the next anchor.
+
+Split into three functions:
+- **`computeFeatures(mat)`** — the frame-local half only: grayscale conversion + ORB detection,
+  returning `{kp, desc}` with ownership transferred to the caller (not deleted internally).
+- **`matchAndHomography(prevFeat, curFeat)`** — the per-pair half only: BFMatcher/ratio-test/
+  RANSAC/plausibility-gating, taking two already-computed feature sets.
+- **`homographyBetween(prevMat, curMat)`** — kept as a thin backward-compatible wrapper
+  (`computeFeatures` twice + `matchAndHomography`, cleaning up both feature sets in `finally`) —
+  `stitchFrames` no longer calls it directly, but nothing else needed to change shape.
+
+`stitchFrames` gained a per-stitch-call feature cache, `featuresFor(idx)`, computing each frame's
+features exactly once no matter how many times it's compared (once as a candidate, once as the
+next anchor, and every failed lookahead attempt in between) — cached kp/desc Mats are deleted in
+the function's existing cleanup `finally` block alongside `rawMats`.
+
+⚠️ **Also merged two previously-separate, non-yielding loops** (`cylFrames = frames.map(...)` then
+`rawMats = cylFrames.map(f => cv.imread(f))`) into one `for` loop with `await yieldToUI()` between
+iterations — same number of yield points as before, just one loop building both arrays together
+instead of two passes over the frame list.
+
+### A further optimization was tried, measured, and explicitly rejected
+
+Also tried having `cylindricalWarpFrame` return `{canvas, mat}` and reuse that Mat directly as
+`rawMats[i]`, avoiding a second `cv.imread()` per frame. **Measured against real OpenCV.js in a
+real browser, this produced a genuine, deterministic 1-pixel divergence** in the final mosaic's
+height (608px vs. the original/caching-only variant's 607px) — confirmed non-random by running the
+identical code twice in the same page load (both the original and each variant are internally
+deterministic, never noisy), and isolated specifically to the Mat-reuse trick (not the caching
+change) via a controlled A/B: reverting only the Mat-reuse back to a fresh `cv.imread()` from the
+canvas, while keeping the ORB-caching optimization, reproduced height=607 exactly. The root cause
+was not conclusively identified (most likely candidate: alpha-channel handling through
+`cv.imshow`/`cv.imread`'s canvas round-trip, given the fully-transparent `BORDER_CONSTANT` fill the
+remap uses) and the extra speed benefit over caching-alone was marginal (~2%, measured
+~4.4–4.6s vs. ~4.3–4.4s on the same 48-frame synthetic scene). **Not shipped** — an unexplained
+pixel-level difference in a memory-sensitive, hard-to-debug pipeline is not worth a 2% gain.
+`cylindricalWarpFrame` is unchanged from its original behaviour (deletes its own `dst` Mat, returns
+a bare canvas); the investigation and rejection are documented in its own doc comment so a future
+session doesn't retry the identical thing without knowing it was already measured and rejected.
+
+### Verified against real OpenCV.js, real Chromium, a real synthetic stitch — not a stub
+
+⚠️⚠️ **This sandbox has no network path to the OpenCV.js CDN** (`cdn.jsdelivr.net` is blocked by the
+agent proxy), but `registry.npmjs.org` is reachable, so the exact pinned production version —
+`@techstark/opencv-js@4.10.0-release.1` — was installed from npm instead (same bytes, different
+distribution channel) and driven with this environment's pre-installed Chromium via
+`playwright-core`, using a plain Node static file server — the same isolated-harness methodology
+this file's own history already established for verifying this exact pipeline against a real
+library when the CDN can't be reached. ⚠️ The full `chrome-linux/chrome` binary refuses
+`--headless=old` ("Old Headless mode has been removed"); launched `headless_shell` instead.
+
+A 48-frame synthetic rotating-scene test (textured landmarks, real pinhole-camera-projected frames,
+recorded through a real `MediaRecorder`) was run against the shipped, optimized `pano360.js`
+end-to-end (`Pano360._stitchFrames`) and compared to the pre-optimization code on the identical
+input: **byte-for-byte identical mosaic dimensions (843×607), identical quality ("ok"), identical
+pairsTotal/pairsFallback (47/0)** — confirming the refactor changed nothing about the algorithm's
+output — at roughly **23–30% faster wall-clock time** for the stitching phase. The throwaway
+harness (npm-installed opencv.js, the test scene generator, the Playwright drivers) was fully
+deleted after verification, per this repo's own standing rule against leaving scratch harness
+files behind.
+
+`node --check` clean on `pano360.js`/`test.js`. `test.js` gained 8 new genuinely-passing assertions
+(section covering `computeFeatures`/`matchAndHomography`'s split responsibilities, that
+`stitchFrames`' lookahead loop now calls `matchAndHomography(featuresFor(...))` and never
+`homographyBetween` directly, that every cached feature set is deleted in cleanup, and a dedicated
+assertion recording that the Mat-reuse variant was tried, measured, and deliberately not kept) plus
+one pre-existing structural assertion updated in place to match the refactored call shape. Full
+suite: **957 passed, 3 failed** — the same 3 pre-existing, unrelated failures this file's own
+history already documents (a PDF page-break assertion + 2 `capture.js` mic/audio-flash assertions),
+confirmed unchanged by name before and after this change.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the optimized pipeline. What's verified is that the shipped,
+optimized code produces byte-identical output to the pre-optimization code on a real OpenCV.js
+build against a real (synthetic) recorded video, at a real measured speedup.
+
+`pano360.js?v=` → `20260914i`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914i` to match, since this module's `index.html` itself changed
+(the `pano360.js?v=` line). `module.js` is unchanged this round and keeps its existing token.
+
+## A 360° draft now survives a session timeout — persisted per-user in IndexedDB, restarted rather than resumed on reload (2026-09-14, later still again)
+
+Owner: *"since the processing of 360 takes long, the session already times out before completion.
+draft should extend beyond the session though this should only be per person."*
+
+⚠️⚠️ **This directly reverses the "keep it in the session only as draft" architecture decision
+from earlier the same day (2026-09-13, "360° upload becomes a session-only draft"), and the
+reversal is deliberate, not an oversight.** That entry's own header comment stated plainly:
+*"'Keep it in the session only as draft' means literally in-memory, never persisted. Closing or
+reloading the tab loses any unconfirmed draft — by design."* A real stitch at this pipeline's
+current 48-frame-fixed sampling density is genuinely several minutes of sequential per-pair OpenCV
+work on a real phone (per the 2026-09-13/14 entries above), and a browser tab timing out — or a
+planner simply closing the tab to do something else while it churns — before that finishes was
+always going to happen. The fix is to let the draft's own bytes survive that, not just its
+in-memory processing state.
+
+⚠️⚠️ **The one thing that does NOT change: no write to the shared database/Storage happens before
+Confirm & Save.** `uploadFile()`/`tolerantWrite()` are still called from exactly one place — the
+gated Confirm & Save handler inside `openPano360Review`, checked on `draft.status === 'ready' &&
+draft.stitchResult && draft.repBlob` — never from `persistPano360Draft`, `rehydratePano360Drafts`,
+or either background-processing function. This entry is entirely about **local** persistence (an
+IndexedDB store, private to this browser) standing in for what used to be a bare in-memory array;
+it does not touch, weaken, or bypass the safety gate the earlier entry built.
+
+### `Pano360DraftStore` — a small IndexedDB wrapper, same shape as the existing `OfflineQueue`
+
+New `Pano360DraftStore` IIFE (`DB_NAME = 'pp_pano360_drafts_v1'`, `STORE = 'drafts'`) is built as a
+close cousin of the offline-sync outbox's own `OfflineQueue` (`open`/`add`/`all`/`remove`) already
+in this file — the same convention, not a new one invented for this feature. `put(record)`/
+`remove(id)`/`all()`/`allForUser(userId)` (the last one filters `all()`'s result by `r.uid ===
+userId`, client-side — IndexedDB has no query language of its own to push that filter down into).
+
+`persistPano360Draft(draft)` snapshots a draft (metadata, the typed fields, the stitched result and
+thumbnail blobs once they exist, and — **only while `status === 'processing'`** — the original
+source video/photo blob via a new `draft._persistSourceBlob` field) and writes it, tagged with the
+CURRENT signed-in `uid`. Called from every point a draft's state meaningfully changes: on the
+source-picker screen (`captureSrcMeta`), on every metadata edit in the review modal
+(`captureMeta`, the adjust-editor callback, "Use this view as thumbnail"), and — the two points
+that matter most for surviving a timeout — the moment a stitch finishes (`finishDraftStitch`,
+which also clears `_persistSourceBlob` back to `null` since a finished draft no longer needs its
+raw source) and the moment one fails (the `catch` blocks of `runStitchForDraft`/`runPhotoForDraft`).
+
+`rehydratePano360Drafts()` runs once, from `init()`, **not awaited** (it's independent background
+work with nothing else in `init()` waiting on it) — reads `Pano360DraftStore.allForUser(uid)`,
+skips anything already present in the live `PANO360_DRAFTS` array (a draft created earlier in the
+*same* session, never re-added), and rebuilds each persisted record into a live draft object.
+
+### Restart, not resume, for a draft interrupted mid-stitch
+
+⚠️⚠️ **A draft that was `'processing'` when the tab closed cannot pick its computation back up —
+there is no way to serialize an in-flight WASM/OpenCV stitch across a reload — so it is fully
+re-run from the persisted source blob instead.** `rehydratePano360Drafts()` checks: if
+`rec.sourceBlob` exists, it rebuilds the draft's `video`/`videoUrl` (video source) or calls
+`runPhotoForDraft` directly (photo source) — genuinely restarting the stitch from scratch, not
+pretending to continue it. If **no** source blob was persisted (the record predates this feature,
+or was itself interrupted before the source was ever attached), the draft is marked `status:
+'error'` with a plain message — *"Processing was interrupted and could not be resumed — please
+record or upload again"* — rather than silently vanishing or hanging forever in an unfixable
+`'processing'` state. A draft that had already reached `'ready'` or `'error'` **before** the
+interruption is restored exactly as it was, with zero reprocessing — its stitch result, thumbnail
+and typed metadata all come back from the persisted record as-is.
+
+### "Per person" is enforced by filtering on READ, not by storage isolation
+
+⚠️⚠️ **IndexedDB is scoped per-ORIGIN, not per-user — this store is genuinely shared across
+whichever accounts sign into the same browser, and this entry does not pretend otherwise.** What
+makes it "per person" is that every persisted record carries the `uid` of whoever created it, and
+`rehydratePano360Drafts()` only ever loads records matching whoever is **currently** signed in
+(`allForUser(uid)`). A different person signing into the same browser/device will never see, load,
+or get notified about another person's unconfirmed draft — but the raw bytes do sit in that
+browser's IndexedDB regardless of who's looking. This is a visibility guarantee, not physical
+storage isolation, and is stated in the header comment above `PANO360_DRAFTS` in the same terms.
+
+### Verified
+
+**949 checks green** (was 936 — 13 new): all genuinely executing the shipped code against a
+hand-built, event/queue-based fake IndexedDB (`setTimeout(...,0)`-deferred callbacks, real cursor
+iteration over a `Map`-backed store — never an immediate-resolving stub, per this repo's own "a
+test that cannot fail is not evidence" standard). Confirms: `persistPano360Draft` writes a real
+record carrying the current `uid` and, only while `status === 'processing'`, the source blob; the
+source blob is dropped once a draft reaches `'ready'`; `allForUser` correctly isolates two
+different users' drafts written to the same store; persisting with no signed-in `uid` is a no-op;
+rehydrating restores a `'ready'` draft's stitch result and thumbnail intact, for the matching user
+only; rehydrating a stuck `'processing'` record with no persisted source blob converts it to an
+honest `'error'` and re-persists that corrected state; and `removePano360Draft` (Discard, and the
+cleanup after a successful Confirm & Save) deletes the IndexedDB record too, not just the in-memory
+entry. Three pre-existing byte-adjacency regex assertions (checking that `finishDraftStitch`/
+`runStitchForDraft`/`runPhotoForDraft` call `notifyPano360Draft` immediately after the status/error
+assignment) were updated to allow the new `draft._persistSourceBlob = null;` line landing between
+them — healthy churn from an intentional change, not a weakened check. Full suite: **949 passed, 3
+failed** — the same 3 pre-existing, unrelated failures this file already documents (a PDF
+page-break assertion + 2 `capture.js` mic/audio-flash assertions), confirmed unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. In particular, nobody has actually let a real stitch run past a real
+browser tab timeout and watched it resume correctly on reopen — the rehydrate path is proven by
+genuine execution against a real (if fake) IndexedDB, not by observing a real interrupted session.
+
+`module.js?v=` → `20260914g`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914g` to match, since this module's `index.html` itself changed
+(its own `module.js?v=` line). Re-derived past both this branch's own prior `20260914f` and
+`origin/main`'s own concurrently-advanced `20260914e` fallback, neither of which carries this
+change.
+
+## "The other input fields are still not showing" — the metadata fields were only ever added to the SECOND 360° modal (2026-09-14, later still)
+
+Owner, off a screenshot of the live "Add 360° photo" modal showing only the three source buttons
+("Take video" / "Upload video" / "Upload 360° photo") and Cancel, no fields anywhere: *"the other
+input fields are still not showing."*
+
+⚠️⚠️ **This is a real, confirmed gap the earlier same-day fix (below, "The drafts badge is scoped
+to Gallery…") got wrong.** That entry verified item 1 ("show already all the input fields from
+description to key plan") by re-reading `openPano360Review(draft)` — the modal's `.pp-form2` block
+does render unconditionally there, outside the `#pp360rv-result` gate — and concluded no code
+change was needed. That conclusion only holds for the **second** modal. The screenshot is the
+**first** one, `openPano360SourcePicker()` — reached the moment "+ Add media → 360°" is clicked,
+before any source has been picked — and that screen genuinely had **zero** metadata fields: just
+the intro hint, the three source buttons, and Cancel. `openPano360Review` only opens *after* one of
+those three buttons is clicked, so "show already all the input fields" was never actually satisfied
+for the screen a planner sees first.
+
+**Fixed by rendering the SAME Description / Capture date / Works / Location / Pin block on the
+source-picker screen itself**, using the identical `worksMultiFieldHTML('pp360src', [])` /
+`locationFieldHTML('pp360src', {}, '')` / `BIM.pinFieldHTML('pp360src', null)` calls (a fresh idPrefix,
+`pp360src`, mirroring `pp360rv`'s), wired the same way every other field-carrying modal in this
+module wires itself (`wireLocationField`/`wireWorksMultiField`/`BIM.wirePinField` + `hydrate(m.el)`).
+
+⚠️ **Whatever is typed on this first screen is carried into the draft, not asked for twice.** A new
+`captureSrcMeta(draft)` reads the `pp360src-*` fields (desc/date/works/locVals/viewName/tags/
+pinData) into `draft.meta` — called from both `startVideoDraft` (the recorded/uploaded-video path)
+and `havePhoto` (the pre-processed-photo path), in both cases **before** `m.close()`/
+`openPano360Review(draft)` runs. `openPano360Review` already renders its own copy of the same
+fields pre-filled from `draft.meta` (that part was correct in the earlier entry), so the review
+modal now opens already showing what was typed on the source-picker screen, rather than presenting
+a second, blank copy of the same form.
+
+⚠️ Nothing about `openPano360Review` itself changed — its fields, its gating (outside
+`#pp360rv-result`), and the "no upload/DB write until Confirm & Save" safety rule are all untouched.
+This is additive: a second place the same fields are shown and captured, feeding into the one place
+they were already read from.
+
+### Verified
+
+**4 new assertions, all genuinely proven to bite**: each was run once against the fix (all 4 pass)
+and once against the pre-fix commit via `git stash` (all 4 fail, confirming they test the real gap
+rather than passing vacuously) — confirms the `.pp-form2` block now renders on the source-picker
+screen before any source button, that it's wired via the same four calls every other field-carrying
+modal in this module uses, that `captureSrcMeta()` is called from both `startVideoDraft` and
+`havePhoto` before the modal closes, and that it reads the exact same seven fields
+(`desc`/`date`/`works`/`locVals`/`tags`/`pinData`, plus `viewName`) the review modal's own
+`captureMeta()` reads back. Full suite: **936 passed, 3 failed** — the same 3 pre-existing,
+unrelated failures every other entry in this file already documents (a PDF page-break assertion +
+2 `capture.js` mic/audio-flash assertions), confirmed unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. The fields are proven to render, wire and carry values into the draft
+by genuine source-level execution of the exact shipped functions, not by a real click-through.
+
+`module.js?v=` → `20260914f`; `pano360.js`/`module.css` are unchanged this round and keep their
+existing tokens. `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html` script tags
+that load it) → `20260914f` to match, since this module's `index.html` itself changed (its own
+`module.js?v=` line).
+⚠️ **Not `20260914e` — this branch was restarted from a fresh `main` after PR #113 (the previous
+entry below) had already merged**, and by the time this landed `main` had independently advanced
+past that merge (a concurrent project-schedule commit, unrelated to this module) and had already
+taken `20260914e` for its own `index.html` change. Re-derived past it to `f` rather than reused,
+per this repo's own standing rule for exactly this collision shape.
+
+## A completion notification when a 360° draft finishes processing — and the background-stall bug that would have made it nearly useless (2026-09-14, later)
+
+Owner: *"once the 360 is done processing, provide push notifications."*
+
+⚠️⚠️ **Nothing in this app runs a push server** — no service-worker `push` event handler in
+`sw.js`, no push subscription, no VAPID keys — confirmed by reading `sw.js` end to end before
+writing anything (it is a pure offline-caching worker, nothing notification-related). So this is
+a **local** notification, fired directly from this tab via the plain browser `Notification` API
+the moment a draft's status settles, not a true background push that could reach the planner
+once the tab itself is closed — the draft is already lost the moment the tab closes anyway (the
+session-only draft architecture, shipped earlier the same day), so that limit changes nothing
+about what was actually asked for.
+
+- **`ensurePano360NotifyPermission()`** asks for permission exactly once, from inside
+  `newPano360Draft()` — called synchronously by the click/`onchange` handler that starts a
+  capture (Take video / Upload video / Upload 360° photo), never proactively on page load. Only
+  fires `Notification.requestPermission()` while permission is still genuinely undecided
+  (`'default'`); an already-granted or already-denied answer is left alone.
+- **`notifyPano360Draft(draft, ok)`** fires from the three places a draft's processing actually
+  *settles*, never from the many intermediate progress ticks `touchPano360Draft()` also drives:
+  `finishDraftStitch()` (success, right after `draft.status = 'ready'`) and the `catch` blocks of
+  both `runStitchForDraft()` and `runPhotoForDraft()` (failure). Naming the draft's own
+  description in the body, tagged with the draft's own id (`tag: draft.id` — a second notification
+  for the *same* draft replaces the first rather than stacking a pile of them).
+- ⚠️ **Falls back to a toast only in the one case that would otherwise go completely silent**:
+  permission not granted (or the API not present at all) **and** no review modal currently
+  watching this draft (`!draft.onUpdate`). If a modal *is* open, `paint()` already updates the
+  screen the planner is looking at — piling a toast on top of that would just be noise. If a real
+  OS notification fires, no toast rides along with it either — one signal, not two.
+
+### ⚠️⚠️ The real find: `yieldToUI()` would have frozen the whole pipeline the instant the tab lost focus — exactly when this notification matters most
+
+Read `pano360.js`'s per-frame loops (the homography/RANSAC pass and the per-frame warp pass —
+both `await yieldToUI()` per iteration, the 2026-09-01 fix that breaks the stitch into separate
+browser tasks so a slow phone stays responsive) before assuming the background processing this
+notification reports on actually keeps running once a planner switches away. It didn't:
+
+```js
+function yieldToUI() {
+  return new Promise(function (resolve) {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function () { resolve(); });
+    else setTimeout(resolve, 0);
+  });
+}
+```
+
+`requestAnimationFrame` callbacks are **suspended entirely** in a hidden/backgrounded browser tab
+— no paint, no tick, per every browser's own documented behaviour — and every real browser
+defines `requestAnimationFrame`, so the `setTimeout` branch was dead code that could never
+actually run. The planner asking for "notify me once it's done" is, almost by definition, the
+planner who is about to switch away from this tab to do something else while it stitches — and
+switching away is exactly the moment this would have silently frozen the whole pipeline until
+they came back and looked at it again, at which point the notification finishing would have felt
+instant and pointless rather than the point of the feature.
+
+**Fixed by switching to `setTimeout` unconditionally.** `setTimeout` is *throttled* in a hidden
+tab (down to roughly once a second in most browsers), never suspended — slower, but never
+stalled, so a stitch (and the notification at the end of it) keeps making real progress while the
+tab sits in the background. ⚠️ Scoped narrowly: the other three `requestAnimationFrame` call sites
+in this module family (the Pannellum pano viewer's render loop, the markup editor's redraw
+coalescing, the capture flash animation) are all genuinely tied to visible on-screen rendering and
+correctly keep using rAF — this fix touches only the one yield point that exists purely to keep a
+CPU-bound loop from blocking the main thread, with no frame to actually paint.
+
+### Verified
+
+**19 new checks, all genuinely executing the shipped functions** (932 passed total, the same 3
+pre-existing, unrelated failures as before — a PDF page-break assertion + 2 `capture.js` mic/
+audio-flash assertions, confirmed unchanged by name): `ensurePano360NotifyPermission()` against a
+new controllable `Notification` stand-in in the test harness across all four states (default →
+requests; granted/denied → does not; the API absent entirely → a no-op, never a throw);
+`notifyPano360Draft()` across success/failure, granted/denied/absent, and modal-open/modal-closed
+— confirming the real title/body/tag a granted notification is given, that a toast fires only in
+the one case with no other feedback, and that it never fires alongside a real notification or a
+still-open modal; the three wiring call sites (`finishDraftStitch` and both catch blocks) each
+confirmed to call `notifyPano360Draft` at the exact line the status settles; and a source
+assertion that `yieldToUI()` no longer references `requestAnimationFrame` at all. ⚠️ **The
+success-path wiring assertion was proven to bite, not just written to pass**: temporarily removing
+the `notifyPano360Draft(draft, true)` call from `finishDraftStitch` and re-running the suite makes
+that one assertion fail (and only that one) — restored afterward, byte-identical to before the
+negative test (diffed to confirm).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the Notification
+API's real permission-prompt UX, and whether a real stitch genuinely keeps making progress in a
+backgrounded real browser tab (versus the documented rAF-suspension/setTimeout-throttling
+behaviour this fix is reasoned from), have not been observed on a real device.
+
+`module.js`/`pano360.js`/`index.html?v=` → `20260914b`.
+⚠️ **`MODULE_V` is `20260914d`, not `b` — re-derived twice across a rebase onto a concurrently
+merged PR.** This branch's own two commits (this one and the badge/label fix just before it) each
+picked the next unused letter in sequence (`c`, then `b` was reused as this commit's own local
+module.js/pano360.js token, separate from MODULE_V) — but PR #111 had already merged by the time
+this landed, and rebasing these two follow-up commits onto the then-current `main` found a THIRD,
+concurrently-merged PR had independently bumped `MODULE_V` to `20260914c` in the meantime. `c`
+sorts after this commit's own first attempt (`a`) and after the badge fix's rebased value; `d` is
+what a fresh derivation past all three actually resolves to. `assets/js/modules-grid.js?v=` on
+`dashboard.html`/`modules.html`, and its own fallback literal, all read `20260914d`.
+
+## The drafts badge is scoped to Gallery, gets a shorter label, and the Description-through-Key-Plan fields were already confirmed to render immediately (2026-09-14)
+
+Owner, off a screenshot of the topbar with the badge label clipped at the viewport edge:
+1. *"when adding the 360 media, show already all the input fields from description to key plan."*
+2. *"the 360 drafts button should also appear only in progress photos, not in presentation and floor plan."*
+3. *"instead of 360 drafts, leave only as drafts label. make sure label also does not overflow like in photo attached."*
+
+**Item 1 — already true, checked rather than re-built.** `openPano360Review(draft)`'s
+`.pp-form2` block (Description / Capture date / Works / Location / the BIM pin/key-plan
+field) sits **outside** `#pp360rv-result`, the only part of the modal gated on
+`draft.status`, and is opened immediately after picking a source — before the background
+stitch has produced anything (`startVideoDraft`/`havePhoto` call `openPano360Review(draft)`
+synchronously, then kick off `runStitchForDraft`/`runPhotoForDraft` unawaited). This is the
+same shape `test.js`'s own `[openPano360Review: the metadata fields … render OUTSIDE
+#pp360rv-result …]` assertion already pins down. Re-read end to end and confirmed nothing
+regressed it; no code change was needed for this item.
+
+**Item 2 — the badge was never screen-scoped at all.** `#pp360-drafts`' visibility was driven
+by exactly one thing, `renderPano360DraftsBadge()`'s `hidden` attribute (draft count), with a
+comment explaining it was **deliberately** left out of `PHOTO_TOOLS` — reasoning that held
+back when the module had only Gallery and drafts didn't exist yet, but means a draft captured
+on Gallery went on showing the badge on Presentations and Plans too, since neither of those
+screens ever touched it. `pp360-drafts` is now IN `PHOTO_TOOLS`, so `setScreen()`'s
+`show(PHOTO_TOOLS, isPhotos)` forces `style.display:none` on the other two screens regardless
+of draft count, and clears that inline style back to nothing on Gallery — where the `hidden`
+attribute (still driven purely by the draft count) is the only thing left deciding it. The two
+mechanisms don't fight: `dashboard.css`'s `.pd-btn[hidden]{display:none}` rule means an empty
+`style.display` on Gallery still correctly hides a zero-draft badge.
+
+**Item 3 — the label shortens to "Drafts"; the tooltip (`title`, and the dynamic
+`renderPano360DraftsBadge()` count message) keeps saying "360° draft(s)"** so the context isn't
+lost, just the on-screen text that was overflowing its container. Shortening the label is the
+actual overflow fix here — the button's own CSS (`.pp-syncbtn`, shared with the offline-sync
+pill) sets no width constraint of its own; the topbar row is what runs out of room, and the
+previous "360° drafts" text was the widest thing riding in it next to the sync pill, the
+presence avatars and the user menu.
+
+**Verified**: inline `<script>` in `index.html` still parses (checked with a fresh `new
+Function()` pass over every non-`src` script block); the button/`PHOTO_TOOLS` change is plain
+markup + one array entry, no duplicate ids introduced. ⚠️ **Not verified signed in** — no live
+login is possible in this environment; the screen-gating is the same `show()`/`hidden`-attribute
+mechanism already exercised by every other `PHOTO_TOOLS` entry, not newly invented here.
+
+`modules-grid.js?v=` (and the `dashboard.html`/`modules.html` `<script>` tags that load it) →
+`20260914a`, since this module's `index.html` itself changed structurally; `module.js`/
+`module.css` are untouched this round and keep their existing tokens.
+⚠️ **This landed after PR #111 had already merged** — restarted from a fresh `main` and rebased
+this commit onto it, which is when `20260914a` collided with a concurrently-merged PR's own bump;
+see the next entry's own note for the re-derivation this forced (final value `20260914d`).
+
+## 360° upload becomes a session-only draft: stitching runs in the background, nothing is pushed to the database until the planner confirms (2026-09-13, later still)
+
+Owner: *"I still have open items regarding the add 360 photo of the progress photos. at 48 frames
+per video, the processing is still slow. since this portion takes long, allow uploading 360 as
+draft during the session to work the stitching in the background. however, no push to database is
+allowed until user confirms the 360 photo. keep it in the session only as draft."*
+
+⚠️⚠️ **Even at the fixed 48-frame sampling shipped two entries above, the stitch is still real,
+sequential, per-pair OpenCV work — this entry does not try to make it faster again.** It changes
+what the planner has to do while it runs: start a capture, walk away, and come back once it's
+ready, instead of the modal blocking the whole time.
+
+### The old design, and why it couldn't do this
+
+`open360Upload()` used to be one modal holding all the state itself — the picked video, the
+in-flight stitch, the metadata fields — in plain function-scoped variables. Closing that modal (or
+navigating away) had nowhere for the in-progress work to live; the only way to "keep processing"
+was to keep the modal open, which is the opposite of what was asked.
+
+### The fix: a `PANO360_DRAFTS` array, decoupled from any one modal
+
+A **draft** (`newPano360Draft`) is a plain object — `{id, pid, status, videoBlob, stitchResult,
+repBlob, meta:{...}, pendingAdjust}` — pushed onto a module-scope `PANO360_DRAFTS` array. Starting a
+capture creates a draft and kicks off `runStitchForDraft`/`runPhotoForDraft` (async, unawaited by
+the caller) which keep running and mutating the draft's own `status`/`stitchResult` fields **however
+many times the review modal that started them gets closed and reopened** — they operate purely on
+the draft object, never assuming a live DOM or open modal (`touchPano360Draft`'s `d.onUpdate` call
+is a null-safe live-repaint hook, not a requirement).
+
+- **`openPano360SourcePicker()`** — the thin entry point ("+ Add media" → 360°): Take video /
+  Upload video / Upload 360° photo, same three options as before. Picking one creates a draft and
+  opens the review modal on it.
+- **`openPano360DraftsList()`** — a list of every in-flight/ready draft for the *current* project
+  (processing % or "Ready to review", each reopenable). Reached from a new topbar badge,
+  `#pp360-drafts`, styled and gated exactly like the existing `#pp-sync` offline-queue pill (native
+  `hidden`, not a class — the same convention that pill already established) — hidden when there are
+  no drafts for the project currently open, so it never sits there doing nothing.
+- **`openPano360Review(draft)`** — the modal a draft is actually reviewed and confirmed from. Its
+  metadata fields (Description / Capture date / Works / Location / Pin) render immediately, same as
+  the ordinary photo/video Add Media form, never gated behind the stitch finishing. The panorama
+  preview and "Confirm & Save" only make sense once `draft.status === 'ready'`; **Close and Discard
+  are available at every stage** — closing mid-stitch leaves the draft running in the background
+  (findable again via the drafts badge), Discard abandons it outright.
+- ⚠️⚠️ **The safety gate is exactly ONE call site.** `uploadFile()`/`tolerantWrite()` are called only
+  inside Confirm & Save's own handler, guarded on `draft.status === 'ready' && draft.stitchResult &&
+  draft.repBlob` — never from `runStitchForDraft`, `runPhotoForDraft`, `finishDraftStitch`, or
+  `openPano360SourcePicker`. Stated as a header comment above `PANO360_DRAFTS`'s own declaration so
+  it's auditable in one place rather than scattered across five functions.
+- ⚠️⚠️ **"Keep it in the session only as draft" means literally in-memory, never persisted.**
+  `PANO360_DRAFTS` is a plain array; nothing about a draft is ever written to `sessionStorage`,
+  `localStorage`, or IndexedDB. Closing or reloading the tab loses any unconfirmed draft — by
+  design, not an oversight. The module's own existing offline-sync outbox (`indexedDB.open`, an
+  unrelated feature for *confirmed* metadata edits going through `PDSync`) is untouched and never
+  touches a draft.
+- The badge is repainted from `notifyProject()`, so switching projects always shows the CURRENT
+  project's drafts while another project's drafts keep processing untouched in the background —
+  `pano360DraftsForProject()` filters `PANO360_DRAFTS` by `pid`, never by which project happened to
+  be open when the capture started.
+
+### What did NOT change
+
+`Pano360.stitchFromVideo`'s 4-stage progress reporting, the fixed 48-frame sampling, `mountPannellumViewer`,
+`captureViewerThumbnail` vs. `captureImageThumbnail`, and the Location Breakdown / Works / Pin
+fields themselves are all unchanged — this is a restructuring of *when* the DB write happens and
+*whether the modal has to stay open*, not a change to the stitching pipeline or the saved row shape.
+
+### Verified
+
+**913 checks green, 3 pre-existing failures unchanged** (a PDF page-break assertion + 2
+`capture.js` mic/audio-flash assertions — the same 3 this file's own standing baseline already
+names; confirmed by name, not just by count, before and after this round's own test edits).
+The rewrite retired the old single-modal `open360Upload()`'s internal shape — 5 pre-existing
+assertions that sliced and asserted against it were **rewritten in place, not silently deleted**,
+to slice `openPano360Review(draft)` instead and assert the new `pp360rv-*` ids/`draft.*`-based
+variable names (the modal's metadata fields rendering unconditionally; the footer never gated
+behind processing; the Pannellum preview mounted the same way the saved-photo lightbox uses; the
+old frame-scrubber gone entirely; "Use this view as thumbnail" writing straight onto the draft, not
+DOM-only state a modal close would lose). **Two new assertions were added specifically to encode
+the safety requirement**: that `uploadFile()`/`tolerantWrite()` are reachable only from inside the
+gated Confirm & Save handler and never from the three background-processing functions or the
+source picker; and that no real `sessionStorage.setItem`/`localStorage.setItem`/`indexedDB.open`
+call exists anywhere in the draft feature's own code region (comments mentioning storage in prose
+are stripped first, so an explanatory comment can't itself trip the check).
+⚠️ **Two harness bugs of my own, caught before landing**: a regex expected `Confirm &amp;amp; Save`
+where the shipped HTML reads `Confirm &amp; Save` (one `&amp;`, not two) — fixed to match the real
+string; and a first "no sessionStorage/localStorage near pano360" check scanned the WHOLE file,
+which would always fail regardless of the drafts feature, since this module has plenty of
+legitimate, unrelated storage use elsewhere (view/collapse-state prefs, the current project id,
+the existing offline outbox) — narrowed to the exact code region the drafts feature lives in.
+Also confirmed a stray `view_name` payload-shape assertion (checking Add + Edit + the old 360
+upload, 3 occurrences of one literal pattern) needed updating to 2 (Add + Edit, read live off the
+DOM) plus a new assertion for the draft's own shape (`view_name: draft.meta.viewName || null` —
+read from the captured draft, not a DOM element the background stitch could outlive).
+`node --check` clean on `module.js`/`test.js`; 0 NUL bytes; 0 duplicate DOM ids in `index.html`;
+every retired old-modal `pp360-*` id (`pp360-desc`, `pp360-viewname`, `pp360-take`, `pp360-choose`,
+`pp360-choosephoto`, `pp360-remove`, `pp360-save`, `pp360-progress`, `pp360-step-source`,
+`pp360-qualitywarn`, `pp360-viewerwarn`, `pp360-panowrap`, `pp360-thumbfield`,
+`pp360-thumbpreview`, and more) swept and confirmed **zero remaining references** anywhere in the
+module.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file. No live
+click-through of starting a capture, closing the review modal, reopening it from the drafts badge
+while the stitch is still running, and confirming a save once ready. The background-processing
+mechanism (a draft object outliving its modal) is proven structurally and by the safety-gate
+assertion above, not by watching a real stitch actually keep running with the modal closed.
+
+`module.js`/`index.html?v=` → `20260913j` (already the token both files carry — no further bump
+needed this round); `MODULE_V` stays `20260913j` to match.
 
 ## Frame sampling capped at a fixed 48 frames per video, regardless of duration (2026-09-13, later)
 

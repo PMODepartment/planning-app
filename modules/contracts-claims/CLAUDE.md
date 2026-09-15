@@ -1,5 +1,398 @@
 # Module: contracts-claims
 
+## 2026-09-15 (q) — The dashboard gains the time half it was missing
+
+Owner: *"Let's develop a dashboard in the contracts & claims register."* The money half shipped that
+morning; it could say what was claimed and what came back, and could not answer the question a
+commercial meeting opens with — **how long has the client been holding this?**
+
+New `ccTimeHTML()`: pending value and pending time, oldest pending, recovery rate, an aging
+breakdown (0–30 / 31–60 / 61–90 / 90+) and hand-off velocity (submitted → evaluated → decided).
+
+- ⚠️⚠️ **Every figure comes from columns that already existed.** `date_submitted`,
+  `date_evaluated` and `date_approved` have been on this table since 2026-07-20 and nothing but the
+  per-row aging ever read them. No migration.
+- ⚠️⚠️ **The rules moved to `PDClaims` (assets/js/claims.js), unchanged** — `ccBlock` now
+  delegates too. They were already duplicated in dashboard.html and the portfolio view was about to
+  be a third copy.
+- ⚠️ **Not submitted is its own line**, never folded into 0–30: *"we have not sent it"* and
+  *"they have not answered"* are different problems with different owners.
+- ⚠️ **Bars scale to the largest bucket, not the total** — scaled to the total a healthy register
+  draws three invisible slivers and the one bucket that matters cannot be compared.
+- ⚠️ A leg with no decided records reads **no data**, never `0d`: zero claims the client turns
+  these round same-day, which is the opposite of *"we cannot tell yet"*.
+
+### ⚠️⚠️ Two defects the tests caught, one of them in this block after I had passed it
+
+- **The header undercounted.** `agingBuckets().n` counts records with an AGE, so a record Pending but
+  never submitted was missing from *"N pending"* while appearing on its own row two lines below.
+- **The bars were measured on a different basis from the figure beside them** — `sub_amount` while
+  *"Pending value"* prefers `eval_amount`, so the bars totalled ₱100,000 under a headline reading
+  ₱99,000. The PORTFOLIO test caught it; this block's own test had asserted the wrong figure as
+  correct. Both now pass the same key list through one shared `valueOf`.
+
+**15 assertions, 0 failing**, executing `ccTimeHTML` sliced out by name — including a register holding
+only a contract rendering **nothing** rather than a wall of dashes.
+⚠️ Not verified signed in. `module.js`/`module.css` → `?v=20260915g`; `MODULE_V` → `20260915o`.
+
+## 2026-09-15 (o) — The load stops painting a register it has not loaded yet
+
+Owner: *"Loading contracts & claims module loads 3 different views for split seconds then loads
+properly."*
+
+- ⚠️⚠️ **The first diagnosis was a harness artefact.** `#cc-filters` looked like the culprit — a full
+  filter bar in static markup, collapsed only when `wireFilterToggle` adds `.pd-filtergroup` after
+  auth — and a harness measured it visible at 284px. The harness sat at the server root, so
+  `module.css` (a **relative** href) 404'd. Rebuilt in `modules/contracts-claims/`, both sheets load
+  (422 + 563 rules) and `#cc-filters` is **`display:none` from the first byte**, because
+  `.cc-filters { display:none }` is declared right here in this module's own CSS. Same for
+  `rr-filters` and `sm-filters`. Nothing to fix there.
+- **The real cause:** `ensureLinks().then(render)` was gated on nothing and raced the four other
+  round trips `load()` makes. `cc_affected_activities` is small, so it usually won and repainted
+  while `rows` was still empty (first open) or still the previous project's (a switch).
+- ⚠️ **`load()` is also called un-awaited** from the project-switch handler, so two loads could
+  overlap and the *last to finish* committed `rows`, `PKGS` and `ALL_PROJECTS`.
+- **`_loadGen`** (project-schedule's own device): every await re-checks it, one `paint()` no-ops on a
+  superseded load, and ⚠️ `PKGS` / `ALL_PROJECTS` are assigned **after** the check — module state
+  from a stale load is a wrong screen, not just an early one.
+- ⚠️ The links repaint survives, gated on `_painted === gen`: if the links land first the cache is
+  already full and the main paint draws the chips anyway (`affChip` never fetches).
+
+**Verified** by slicing `load()` out and executing it with controlled timings, against `afb3bf3`:
+the control paints **`0 rows` → `1 rows`** (the flash, reproduced) and the fix paints **once**.
+**7 assertions, 0 failing** — including that a *late* links read still repaints, and that two
+overlapping loads produce 1 paint rather than 2. wiring-check 129/129.
+⚠️ Not verified signed in. ⚠️ The BOQ still mounts in afterwards, deliberately — that lazy mount is a
+documented decision, not part of this defect.
+
+`module.js` → `?v=20260915f`; `MODULE_V` → `20260915m`.
+
+## 2026-09-15 (m) — The attachment engine moves to `assets/js/attach.js`, and this module delegates
+
+Not a feature for this module — the Project Schedule needs attachments on activities, and the
+valuable part of what shipped here on 2026-09-15 (h) is not the upload. It is the three **ordering
+rules**: the object is written before the row, the object is rolled back if the row write fails, and
+on removal the row goes first. A second copy of those is a second set of ways to get them wrong.
+
+- **New `assets/js/attach.js` (`PDAttach`)**, parameterised by table, bucket, owner column, doc-type
+  vocabulary and CSS prefix. This module's `att*` functions are now thin delegates over an instance.
+- ⚠️ **The local names are kept** (`loadAttachments`, `attPanelHTML`, `attPanelWire`, `attFlush`), so
+  the three call sites, the `D.att*` exports and `wizard.js` are untouched and the diff stays
+  checkable. Same approach `affected.js` took when `PDLoc` was extracted.
+- ⚠️ **The `cls` prefix is why no CSS changed.** The engine emits `cc-att*` exactly as before, so this
+  module's stylesheet keeps working unmodified. Neutral shared classes would have meant retargeting
+  working CSS in the same commit that moved the JS — two risks where one will do.
+- ⚠️ **`parentWord` exists so the two shipped sentences are unchanged** — *"…when you save the
+  record"* and *"The record was saved, but…"*. Extracting a function must not quietly reword a screen
+  that was signed off.
+- ⚠️ **Six delegates were written and then DELETED as dead.** `attLabel`, `attSize`, `attOf`,
+  `attUpload`, `attOpen` and `attRemove` had their only callers inside the panel, which now lives in
+  the shared file. Grepped `module.js` and `wizard.js` for each: **zero call sites**. A delegate that
+  matches nothing reads as a feature that exists.
+
+### Verified — the extraction is a MOVE, proven rather than asserted
+
+HEAD's `attPanelHTML` was sliced out **by name** and executed beside the shipped
+`PDAttach.panelHTML` over the same inputs, comparing the HTML **byte for byte**:
+
+| case | result |
+|---|---|
+| existing record, 3 files, writer | **identical** (1357 chars) |
+| existing record, 3 files, viewer | **identical** (558) |
+| new record, 2 staged, writer | **identical** (1067) |
+| new record, nothing at all | **identical** (705) |
+| record with no files, viewer | **identical** (70) |
+| existing files + staged together | **identical** (1764) |
+| the "table not migrated" branch | **identical** |
+
+**7 identical, 0 differing.** A refactor that cannot show this is a rewrite with extra steps.
+`node tools/wiring-check.js` **129/129, 0 failed**, with `PDAttach` now among the providers that load
+and assign — the check that would catch the z6 shape.
+⚠️ **Not verified signed in** — no upload has run through the extracted engine.
+
+`module.js` → `?v=20260915e`; new `attach.js` → `?v=20260915a`; `MODULE_V` → `20260915k`.
+
+## 2026-09-14 (s) — #6: the procurement-trade answer stops vanishing when a bill is issued
+
+Owner: *“Let's do #6”* — the latent gate reported in (q).
+
+- ⚠️⚠️ **One predicate was answering two different questions.** The trade chip's tooltip, its
+  *“By trade”* label and the filter's *“All trades”* all gated on `isManualDraft()` —
+  `status === 'draft' && origin === 'manual'`. But `sheet` is written **from the Finance trade** by
+  `addAuthoredLines` and is never rewritten, and `issueRev` writes only `{status, is_current}`, so
+  **`origin` stays `'manual'` for ever.** The instant a hand-built bill was issued, its sections were
+  still trades and the app stopped saying so.
+- **New `isManualBill()` — origin only.** *What the sections are* is a question about origin;
+  *whether the bill is still editable* is a question about status. ⚠️ The two **editability** call
+  sites are deliberately untouched and asserted to stay that way: `subsFor` hides the Billing and
+  Class Codes tabs because a draft cannot bill, and `nocodes` explains a fault differently while the
+  Class Codes tab is off screen. Both are correctly about draft.
+- ⚠️ It degrades the same way `revStatus` does: on an import, or on a database without
+  `2026-09-07-boq-manual.sql`, `origin` is absent and the answer is false — the chip is then the
+  client's own workbook tab (`'BILLING BREAKDOWN '`, trailing space and all) and a trade lookup would
+  miss every time. That is the reason the gate exists at all, and it is preserved.
+- **Executed, not grepped.** `_set` injects `REVS`/`REVID` and both predicates read `curRev()`, so
+  the whole matrix is driven: manual+draft, **manual+ISSUED** (the bug — `bill` true, `draft` false),
+  import+draft, import+issued, absent origin, and no current revision.
+- ⚠️⚠️ **A gap in my own suite, found by a negative build and then closed.** Reverting the trade bar
+  to `isManualDraft()` left the suite **GREEN**: block 8 proved the two predicates *differ* and
+  asserted nothing about **which one the render reads** — and the render is where the bug lived.
+  Four call-site assertions added; that build now fails.
+
+**66 assertions, 0 failing; three negative builds bite (1 / 1 / 4).** `node --check` clean,
+**195 → 196 functions, 0 lost**, wiring-check 126/0, dead-hooks 9 known.
+`boq.js` → `?v=20260914s`; `MODULE_V` → `20260914s`.
+⚠️ **Latent when found and latent when fixed** — measured: all revisions are still `draft`, so nothing
+on screen changes today. What changes is what happens the first time somebody issues a bill.
+
+
+## 2026-09-14 (r) — #5: a link that nobody picked stopped claiming a human picked it
+
+**Run `migrations/2026-09-14-boq-alloc-method-link.sql`.** Owner: *“Let's do #5”* — the Method column
+reading `manual` on an accepted automatic proposal. 
+
+- ⚠️⚠️ **Measured on the live database before touching anything — 37 of DEMO01's 50 allocations
+  asserted a hand decision that never happened.** `method=manual` with `matched_by=code` on 14 rows
+  and `matched_by=name` on 23, each carrying a real match score. Only 13 were genuinely by hand.
+- ⚠️⚠️ **The cause is a coercion meeting a constraint, and the code already said so in two places.**
+  `proposeSplit` returns `method: null` at qty 0 on purpose — *“nothing has been split, and labelling
+  this 'prorata' would claim an arithmetic that did not happen”* — and the write then did
+  `prop.method || 'manual'`. It had to: the column is `not null` with
+  `check (method in ('location','prorata','manual'))`, so **the vocabulary had no value for “matched,
+  not yet quantified”**, the state 2026-09-07 (h) deliberately created. `scheduleSeedPlan`'s own
+  comment names the same trap.
+- **`'link'` is that missing value.** The migration widens the CHECK and back-fills, ⚠️ **narrowly —
+  `qty = 0` only**: a row with a quantity really was split and its method is a true statement.
+  ⚠️ It moves the hand-picked links too, and loses nothing — `method` describes the split, and at
+  qty 0 there wasn't one; **who** chose it is recorded in `matched_by`, which is the column that
+  answers that question.
+- ⚠️⚠️ **The degrade is the risky half, and it is proven against the live error text.** `method` is
+  NOT NULL with a CHECK, so on a database without this migration a `'link'` row is refused and **the
+  whole batch fails**. `upsertAllocs` — the one writer — gains a third fallback beside the two it
+  already had, mapping `link → manual` once per session and naming the migration. Probed live
+  (read-only, nothing written): `23514 … violates check constraint "boq_allocations_method_check"`,
+  which the matcher recognises. ⚠️ It matches on **the column name as well as the code**, never 23514
+  alone — this table carries other checks, and swallowing one as *“not migrated”* would hide a real
+  refusal.
+- ⚠️ **Seed-from-schedule had its own bare upsert and therefore NONE of the three degrades.** It now
+  writes through `upsertAllocs`, keeping its chunk loop and progress line (same `onConflict`, so a
+  300-slice is a drop-in), and records `matched_by: 'code'` — those links exist **because** the
+  activity carries the line's class code, which `scheduleSeedPlan` groups on and nothing else.
+- ⚠️ A latent `NOT NULL` violation closed in passing: `applyAllocPlans` wrote `method: x.p.method`
+  with no fallback. Safe today only because `planAllocs` filters on `qtyLine`; widening that to
+  `linkLine` — as the worklist already was — would have put a null in and failed the entire batch.
+
+**52 assertions, 0 failing; four negative builds bite (1 / 1 / 2 / 1).** `node --check` clean,
+**195 functions unchanged**, wiring-check 126/0. `boq.js` → `?v=20260914q`; `MODULE_V` → `20260914q`.
+⚠️ **Until the migration is run the app still writes `'manual'`** — correctly, via the degrade, with
+a toast naming the file.
+
+
+## 2026-09-14 (q) — #6 answered: `trade_map` IS read, and the answer disappears the moment a BOQ is issued
+
+Owner: *“Let's do #6 first”* — the open audit item, *does anything actually read `trade_map`*. Measured
+against the **live database, signed in**, not read off the source. **No shipped file changed:** this is
+an audit, one correction to this file's own record, and one latent defect reported rather than fixed.
+
+### The chain, end to end — it works
+**Exactly one read exists in the whole app** (`boq.js:662`), and it is wired through to exactly one
+consumer: `load()` → `TRADEMAP` → the trade chip's `title` in `tradesHTML()`.
+
+| measured live | result |
+|---|---|
+| `trade_map` read, exactly as `boq.js` issues it | **9 rows, no error** — RLS and grants are fine |
+| distinct `class_codes.trade` (702 codes) | `General Requirement` 126 · `MEPF Works` 320 · `Architectural Works` 109 · `Others` 94 · `Site Works` 24 · `Structural Works` 21 · `Allied Services Works` 8 |
+| `trade_map.finance_trade` keys | the same six, **string-for-string** |
+| `Others` | unmapped **on purpose** (94 codes, Finance's catch-all) |
+
+⚠️ **And that corrects a suspicion of my own.** I went in expecting the join to miss, because my own
+DEMO01 notes recorded sheet names reading *Allied*, *Architectural*, *MEPF*. Those were **my
+abbreviations in a summary**, not the data — the real values are the full names and they match
+exactly. The lesson is the one this file keeps recording: read the column, do not trust a note about it.
+
+**The tooltip was then read out of the live DOM on DEMO01**, all seven chips:
+*“MEPF Works — 0.00 · Let under: Electrical and Auxiliary Works, Fire Protection Works, Mechanical
+Works, Plumbing Works”*, and *“Others — 0.00 · No procurement trade maps to this.”* It fires, it is
+right, and it names all four MEPF subcontracts.
+
+### ⚠️⚠️ THE ONE REAL FINDING: the gate is `isManualDraft()`, and it should be origin alone
+`tradesHTML` gates on `status === 'draft' && origin === 'manual'`. But `sheet` is written **from the
+Finance trade** by `addAuthoredLines` (*“SHEET = TRADE, not division”*), and `issueRev` writes only
+`{status:'issued', is_current}` — **`origin` stays `'manual'` for ever**. So the instant a hand-built
+bill is issued, its sections are still genuinely trades and yet:
+
+- the tooltip stops naming procurement trades,
+- *“By trade”* becomes *“By sheet”*, and *“All trades”* becomes *“All sheets”*.
+
+The gate conflates two different questions: *“is this chip a Finance trade?”* (origin) and *“is this
+bill still editable?”* (status). Only the first governs whether the lookup means anything — and the
+mapping is arguably **more** useful once issued, which is when subcontracts are let.
+
+⚠️ **Latent, not live: nothing is broken today.** Measured — **all 6 revisions in the database are
+`draft`/`manual`; no BOQ has ever been issued** on any project. Reported rather than shipped, because
+it changes what a screen says in a state no project is in yet, and this repo's rule is that a design
+decision gets evidence and the owner's call. **The fix is narrow** — a new `isManualBill()` (origin
+only) for the two label sites and the tooltip.
+⚠️ **`isManualDraft()` itself must NOT change**, and the third and fourth call sites are why:
+`subsFor()` hides the Billing and Class Codes tabs because a draft cannot bill, and `nocodes` explains
+a fault differently because the Class Codes tab is not on screen. Both are correctly about **draft**.
+
+### Two things measured and deliberately NOT reported as defects
+- **Every trade total reads `0.00`.** Honest: of DEMO01's 903 lines (205 headings + 698 lines),
+  **0 carry an amount, a quantity or a rate** — the bill was built from the class-code library and
+  never priced. The 50 allocations from the end-to-end run are `qty = 0` links, which is what
+  2026-09-07 (h) defines as *matched, not yet quantified*.
+- **The chip label reads `Structural Works21` in `textContent`.** Measured: the count sits **6px**
+  clear of the last glyph. Only `textContent` lacks a separator; the render is correct. Reporting it
+  would have been crying wolf — and this file has the *“Use 0 activit ies”* entry to show the
+  difference between the two.
+
+### ⚠️ Reported in passing, not chased here
+**`is_current` is `false` on all six revisions**, which is the draft-not-current trigger working as
+designed — but `computeProjectTotal` requires `is_current && document_id`, so **every project's
+contract value reads zero until a BOQ is issued.** Correct by construction, and worth knowing before
+somebody reads it as a data loss.
+
+### ⚠️ My own probes were wrong three times, and each is the same lesson
+A bare `.select()` returned **exactly 1000 rows** (the PostgREST cap) and I nearly reported the
+per-revision counts it produced; `boq.js` is safe because it reads ITEMS through `PDb.selectAll`,
+which pages. Then a probe selecting `rate_material`/`rate_labour` — **columns that do not exist**
+(they are `mat_rate`/`lab_rate`) — errored, and I had not checked `.error`, so it reported
+**0 items on a revision that holds 903**. An un-checked error reads exactly like an empty table.
+
+**Verified:** all of the above measured signed in on the deployed build (`boq.js?v=20260914p`);
+`test-boq.js` 41/0 unchanged; no shipped file changed, so no `?v=` or `MODULE_V` bump.
+
+## 2026-09-14 (p) — The module gets its first committed suite, and it could not see 9 of its own assertions
+
+Owner, after the DEMO01 end-to-end run: *“Continue with boq.js instead”* — a committed test suite for
+this module rather than the next fix. It had **none**: the `suite-namematch` / `suite-retag` runs cited
+in entries since 2026-09-11 were scratch files and are not in the repo, which is why (k) and (m) were
+both found by driving the live app instead of by a test.
+
+New `modules/contracts-claims/test-boq.js` — **41 assertions, 0 failing; three negative builds bite
+(1 / 2 / 2).** Run it with `node modules/contracts-claims/test-boq.js`.
+
+### ⚠️⚠️ THE SUITE REPORTED “PASS: 32” WHILE NINE RESULTS WERE STILL PENDING
+Block 1 — the overwrite flag, **the entire bug this file exists for** — is `async`, and the report was
+top-level and synchronous. So every assertion after its first `await` resolved in a microtask *after*
+the summary had printed: `pass` read **32** at report time and **41** a tick later. They happened to
+pass. Had all nine failed, the run would still have said PASS, and the one defect the suite was written
+to pin would have been the one it could not see.
+
+Measured rather than reasoned: the same file with a `setTimeout` probe prints `PASS: 32` and then
+`AFTER MICROTASKS: pass=41`. Fixed by shape, not by patching the symptom — `block()` is a **registrar**,
+and one runner awaits every block in order before `report()` is called. A block that throws now fails
+with its name rather than aborting the run, which is the trap this repo has recorded twice (a raw-dot
+read of a nested shape; a null regex match) and which a suite this async would have hit next.
+
+### ⚠️⚠️ AND ONE ASSERTION PASSED FOR THE WRONG REASON
+`matchAct(a, c)` takes an **activity object and a code object** and returns `{score, why}` or null. I
+wrote it as two strings compared to a number. Two of the three assertions failed outright — and the
+third, `eq(matchAct('Rebar', 'Rebar Works'), null)`, **passed**: a string has no `.activity_name`, so
+`normKey('')` is `''` and the empty-name guard returns null long before the `an.length > 6` rung it
+claimed to pin is ever reached. **A null for the wrong cause is indistinguishable from a null for the
+right one.** Rewritten against the real shapes, with a 7-character control beside the 5-character case
+so the assertion is provably measuring the length guard and not something else about those strings.
+
+### What the suite pins, and why each one
+- **The overwrite flag reaches the RPC** — default `false`, `true` only when asked, the code and the id
+  array carried, and **no call at all** for a plan entry with no hits. Negative build: reverting
+  `tagRpc(p.code, ids, !!overwrite)` to the hardcoded `false` fails 1.
+- **The shortfall message names the already-coded cause.** Negative build: restoring the RLS-only blame
+  fails 2.
+- **The allocation cap states what it hides.** Negative build: un-naming `ALLOC_ROW_CAP` fails 2.
+- **`normKey` keeps spaces** — asserted *before* anything that depends on it, because 2026-09-11 (ue)
+  records a harness that injected `PDLoc.normKey` (which strips every separator) and so reported that
+  the screen built for this case finds nothing.
+- ⚠️ **It self-tests by reproducing the z6 outage first** — an `_internals` key naming a deleted
+  function, injected into the real `boq.js` in memory — and aborts unless it catches it. A checker that
+  has never failed proves nothing.
+
+### The one shipped change
+`_internals` gains `applyTagPlan`, `reportTagged` and `tagRpc`. ⚠️ Both names in each pair exist above
+that literal — a name here that does **not** is the z6 outage exactly, which is why `wiring-check`
+(126/0) is the gate that matters on this edit rather than `node --check`.
+
+**Verified:** `node --check` clean on both files; **195 functions before and after, 0 lost**;
+`wiring-check` 126/126, 0 version splits; `dead-hooks` 9 known; 0 NUL bytes, pure LF.
+⚠️ **Structural assertions are labelled as such in the file** — the cap notice is emitted inside a
+render function `_internals` does not reach, so those four read the source and say so rather than
+claiming to have executed it. `boq.js` → `?v=20260914p`; `MODULE_V` → `20260914p`.
+
+## 2026-09-14 (m) — The Match-to-schedule worklist hid two thirds of the bill, silently
+
+Same DEMO01 end-to-end run. With the bill grown to **903 lines** across all seven trades, the
+table rendered **exactly 300 rows and stopped**. No pager, no notice, nothing.
+
+### ⚠️⚠️ IT WAS NOT A SCROLL PROBLEM — WHOLE TRADES WERE ABSENT
+Counted in the live DOM: Allied 7, Architectural 104, General Requirement 120, MEPF 68, Others 1.
+**Structural Works and Site Works rendered ZERO rows.** A line (`255531 Smoke Sensor`) whose
+activity was sitting there waiting to be linked was reachable only by guessing to type in the
+search box — nothing on screen said so, or said the table was incomplete at all.
+
+- The cap **stays at 300**: the sort puts unallocated lines first, so the 300 shown genuinely ARE
+  the worklist, and rendering 903 rows of a bill is not the fix.
+- What was missing is the signal. The last row now reads *“Showing the first 300 of 903 lines —
+  **603 more not shown**. Unallocated lines are listed first; use the search above to reach any
+  line by code or description.”*
+- ⚠️ Emitted INSIDE the body so it cannot read as a line of the bill, muted, spanning every
+  column — the same `colspan="8"` the table's own empty state already uses.
+
+This is the rule the activity picker reached on 2026-09-10 (za2), where the note reads *“a cap
+whose entire signal is a `+` is one a planner cannot act on”*. This table had no signal at all.
+
+### Verified
+`node --check` clean; `wiring-check` 126/0; `dead-hooks` 9 known. Live re-verification follows
+the deploy, on the 903-line DEMO01 bill that produced the finding.
+
+## 2026-09-14 (k) — Match names wrote nothing, because the write said "do not overwrite"
+
+Found by building a project end to end on DEMO01 — Schedule Setup from scratch, a hand-built BOQ,
+then linking the two. The reconciliation screen offered **20 activities**, reported
+**"Only 0 of 20 tagged"**, and blamed RLS.
+
+### ⚠️⚠️ `applyTagPlan` HARDCODED `overwrite = false`
+`boq_tag_activities` skips a row that already carries a class code unless `p_overwrite` is true.
+`applyTagPlan` passed a literal `false`, so the Match-names screen could never write to the one
+population it exists for — 2026-09-11 (b1) widened it so *"an activity qualifies when it carries
+no code **or a code this bill does not use**"*, but only the SELECTION was widened; the write was
+not. The two halves have disagreed ever since.
+
+**Measured live on DEMO01, against the real RPC:** `p_overwrite:false` → **0**;
+`p_overwrite:true` on the same row → **1**, and the code actually changed. So the function was
+fine and the caller was not.
+
+- The flag is now a **parameter that still defaults to false**, so every other caller keeps the
+  safer behaviour. Only `openNameMatch` passes `true`.
+- ⚠️ **That screen had already earned the right to overwrite**: it prints the code each row
+  carries today (`boq-nm-had`, *"now FORM"*), offers **Skip** as the decline, and makes the planner
+  pick a line per name. That IS the decision to replace it.
+- ⚠️ **And it now says so before it runs.** The footer reads *"Tag 20 activities (13 replace a
+  code)"*. Moving a code moves money; the count of replacements should be visible before the press,
+  not discovered afterwards.
+
+### ⚠️⚠️ THE MESSAGE BLAMED THE WRONG THING, AND ITS COMMENT SAID "EXACTLY TWO CAUSES"
+There are three, and the invisible one was the common case: already-coded-and-not-overwriting.
+The toast named the second (RLS) while every one of the 20 was skipped for the third. Corrected in
+both the copy and the comment.
+
+### ⚠️ Two of my own diagnoses here were WRONG before they were right
+I first reported `boq_tag_activities` as a **missing function** (`PGRST202`) and `trade_map` as a
+**missing table** (`42703`). Both were my probes using names I GUESSED rather than read — the RPC
+takes `p_project_id/p_class_code/p_activity_ids`, not `p_project/p_code/p_ids`, and PostgREST
+echoes the signature you asked for; `trade_map`'s columns are `finance_trade`/`procurement_trade`,
+not `trade`. Both are fully applied. **Probe a name you have read, not one you expect** — the same
+shape as the `selectAll` key trap already on file.
+
+### Verified
+`node --check` clean; **195 functions before and after, 0 lost, 0 added** (comments stripped — the
+raw grep reported a phantom `function unable` from this entry's own prose, which is the
+checker-measuring-the-changelog trap this repo already records). `wiring-check` 126/0 — the check
+that would catch `window.BOQ` failing to assign. `dead-hooks` 9 known.
+⚠️ **No committed suite covers this module** — the `suite-namematch` runs cited in earlier entries
+were scratch files and are not in the repo. Live re-verification follows the deploy.
+
 ## 2026-09-10 (z1) — BOQ→schedule matching gets four rungs, and the location key was wrong twice
 
 **Run `migrations/2026-09-10-boq-match-rung.sql`.** Owner: *"How should we match the BOQ to the
@@ -604,8 +997,8 @@ original build.
 ### Still open after this
 - **Design decision #6** (billing periods 26th→25th against monthly Cash Flow) — still needs the
   owner, still the one open item that changes a reported figure.
-- **`trade_map`'s migration has not been run**, so the trade tooltip has still never named a
-  procurement trade.
+- ~~**`trade_map`'s migration has not been run**~~ — **CLOSED 2026-09-14 (q).** It is applied,
+  the read works signed in (9 rows), and the tooltip names a procurement trade on every chip.
 - **`contracts_claims.status` has no fixed vocabulary**, so the module tile still claims no attention
   count.
 - The class-code chain's three missing hand-offs (audited in (a), not built).
@@ -796,9 +1189,11 @@ Read off this file and `ROADMAP.md` §B rather than invented. Ordered by what bl
   per-record editor to tick off "Recommending Approval". Per-stage aging surfaces the exposure the
   chain would explain, which is why this was deferred rather than dropped.
 - **Promoting a PMI to a `contracts_claims` claim is manual** — `claim_id` is stored but set by hand.
-- **`trade_map` is unread in anger.** The migration has not been run, so no row has been read and
-  the tooltip has never named a procurement trade. It also fires **only on a hand-built bill**: on
-  an import the chip is the client's own sheet name (`'BILLING BREAKDOWN '`, trailing space and all).
+- ~~**`trade_map` is unread in anger.**~~ **CLOSED 2026-09-14 (q), measured on the live database:**
+  the migration IS applied, the read returns its 9 rows signed in, and all seven chips on DEMO01
+  carry the right counterpart. It still fires **only on a hand-built bill** — on an import the chip
+  is the client's own sheet name (`'BILLING BREAKDOWN '`, trailing space and all).
+  ⚠️ **But it also stops at ISSUE, which is a latent defect — see (q).**
 
 **Consistency gaps that will bite**
 - ⚠️ **`openNewRev()` still writes `document_id` from `DOCID`, and it is the FALLBACK path** used

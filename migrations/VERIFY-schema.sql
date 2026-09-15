@@ -486,8 +486,10 @@ with expected(migration, kind, obj, col) as (values
     ('2026-09-10-stakeholder-profile-fields.sql','column','stakeholders','sub_sector'),
     ('2026-09-11-mom-list-reorder.sql','column','meeting_minutes','sort_order'),
     ('2026-09-11-mom-list-reorder.sql','column','mom_schedules','sort_order'),
-    ('2026-09-13-progress-photos-360-draft-status.sql','column','progress_photos','stitch_status'),
-    ('2026-09-15-progress-photos-360-background-jobs.sql','table','progress_photos_360_jobs','')
+    ('2026-09-15-cc-attachments.sql','table','cc_attachments',''),
+    ('2026-09-15-schedule-attachments.sql','table','activity_attachments',''),
+    ('2026-09-15-user-module-access.sql','column','users','module_access'),
+    ('2026-09-15-user-notes.sql','table','user_notes','')
 ),
 missing as (
   select e.* from expected e

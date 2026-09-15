@@ -1503,10 +1503,155 @@ function grpRow(name, anc, acts, idx, field) {
   eq(Object.keys(R.ord[serKey]).length, 3, 'and the ordinals cover every storey');
 })();
 
+/* ====== THE TYPICAL SET CARRIES REAL CHART CODES, AND A STRANGE CODE IS FLAGGED (2026-09-14) === */
+(function () {
+  /* \u26a0\u26a0 The seed used to stage MOB/EXC/REBAR/FORM/POUR/... and NOT ONE of the eleven resolved
+     against Finance's chart. boq_allocations gates on class_code, so a programme built from the
+     typical set could never be linked to a BOQ. Measured end to end on DEMO01. */
+  const seed = src.match(/\[\['[^']+','Mobilization','GR',3,3\][\s\S]{0,600}?\]\]/);
+  ok(!!seed, 'the typical-set seed is present');
+  if (!seed) { ok(false, 'cannot read the seed'); return; }
+  const codes = [...seed[0].matchAll(/\['([^']+)','([^']+)','([A-Z]{2})'/g)].map(m => ({ code: m[1], name: m[2], grp: m[3] }));
+  eq(codes.length, 11, 'eleven seeded activities');
+  const mnemonic = codes.filter(c => !/^[0-9]{5,6}$/.test(c.code));
+  eq(mnemonic.length, 0, 'every seeded code is a numeric chart code, not a mnemonic');
+  /* The names are deliberately unchanged - they are what the planner reads. */
+  ok(codes.some(c => c.name === 'Rebar' && c.code === '03051'), 'Rebar carries 03051 Rebar Works');
+  ok(codes.some(c => c.name === 'Formworks' && c.code === '04051'), 'Formworks carries 04051');
+  ok(codes.some(c => c.name === 'Concreting' && c.code === '05051'), 'Concreting carries 05051');
+  /* \u26a0 Each code's chart trade must agree with the row's builder group, checked live when this
+     shipped: 01051 General Requirement/GR, 02051 Site Works/SW, 03051 Structural/ST,
+     10101 Architectural/AR. Asserted here as the pairing the seed encodes. */
+  const byName = {}; codes.forEach(c => byName[c.name] = c);
+  eq(byName['Mobilization'].grp, 'GR', 'Mobilization is General Requirements');
+  eq(byName['Excavation'].grp, 'SW', 'Excavation is Site Works');
+  eq(byName['Tiling'].grp, 'AR', 'Tiling is Architectural');
+
+  /* ---- the flag, executed ---------------------------------------------------------------- */
+  const fnSrc = sliceFn('_seedCodeUnknown', 6) || '';
+  ok(fnSrc !== '', '_seedCodeUnknown is sliceable');
+  if (!fnSrc) { ok(false, 'cannot execute the flag'); return; }
+  const make = (chart) => new Function('CLASS_CODES', 'ccByCode',
+    fnSrc + '; return _seedCodeUnknown;')(chart, function (k) { return chart.indexOf(k) >= 0 ? { code: k } : null; });
+
+  const loaded = make(['03051', '04051']);
+  eq(loaded('03051'), false, 'a code the chart knows is not flagged');
+  eq(loaded('REBAR'), true, 'a code the chart does not know IS flagged');
+  eq(loaded(''), false, 'a BLANK code is not flagged - not chosen yet is not the same as wrong');
+  eq(loaded(null), false, 'and neither is a null');
+  /* \u26a0\u26a0 THE GUARD. With the chart not yet loaded ccByCode answers null for EVERYTHING, and an
+     unguarded test would mark a perfectly good programme as entirely unmatchable. A false
+     accusation is worse than no warning. */
+  const notLoaded = make([]);
+  eq(notLoaded('03051'), false, 'chart not loaded -> says nothing about a good code');
+  eq(notLoaded('REBAR'), false, 'chart not loaded -> says nothing about a bad one either');
+})();
+
+/* ====== THE DATA-DATE LEGEND STOPS SAYING "today" WHEN A DATE IS PINNED (2026-09-14) ========== */
+(function () {
+  /* The chip is emitted by marksLegendHTML() - a FUNCTION, because a const froze it at load. */
+  const leg = sliceFn('marksLegendHTML') || '';
+  ok(leg !== '', 'marksLegendHTML is sliceable');
+  /* \u26a0\ufe0f THE SHIPPED EXPRESSION, LIFTED AND RUN - not re-typed. */
+  /* \u26a0\u26a0 The ternary is LIFTED and executed. An earlier cut of this used [^)]*, which cannot
+     cross the ')' inside "' (pinned)'", so the match was null and the next line CRASHED instead of
+     failing -- the third time a check here has done that. Guarded, and the pattern fixed. */
+  const m = leg.match(/\(dataDate \? '[^']*' : '[^']*'\)/);
+  ok(!!m, 'the label is built from dataDate rather than hardcoded');
+  if (!m) { ok(false, 'cannot execute the label expression'); return; }
+  const label = function (dd) {
+    return 'Data date' + new Function('dataDate', 'return ' + m[0])(dd);
+  };
+  eq(label(null), 'Data date (today)', 'no data date pinned -> it really is today');
+  eq(label(new Date(2027, 1, 1)), 'Data date (pinned)',
+     'a pinned data date is NOT called today');
+  ok(!/Data date \(today\)<\/span>/.test(leg),
+     'the hardcoded "(today)" is gone from the legend');
+})();
+
+/* ====== THE TOOLBAR OVERFLOW BUTTON IS COUNTED BEFORE SHEDDING (2026-09-14) =================== */
+(function () {
+  const fit = sliceFn('_tbFit') || '';
+  ok(fit !== '', '_tbFit is sliceable');
+  const iHide = fit.indexOf('moreBtn.hidden = true;');
+  const iShow = fit.indexOf('moreBtn.hidden = false;');
+  const iShed = fit.indexOf('more.appendChild(el);');
+  ok(iHide > -1, 'it measures with the button hidden first');
+  ok(iShow > -1, 'and reveals it explicitly');
+  ok(iHide < iShed, 'the hide happens BEFORE any shedding');
+  /* \u26a0\u26a0 THE ONE THAT MATTERS: the reveal must precede the shed loop, or the loop stops as
+     soon as the row fits WITHOUT the button and revealing it afterwards overflows the row again -
+     the overflow control becoming the overflow. Measured on the shipped markup at 1366/1410/1512:
+     78px (two rows) before, 36px (one row) after. */
+  ok(iShow < iShed, 'and the REVEAL precedes the shed loop, so its width is counted');
+  /* The reveal is inside the not-fitting guard, so a wide window still sheds nothing. */
+  ok(/if \(row\.offsetHeight > unit \+ 8\) \{\s*\n\s*moreBtn\.hidden = false;/.test(fit),
+     'the reveal is gated on the row actually not fitting');
+})();
+
+/* ====== THE TOOLBAR FACE NAMES THE ACTIVE PRESET (owner, 2026-09-14) ========================== */
+(function () {
+  const gpSrc = sliceFn('groupPresets') || '';
+  ok(gpSrc !== '', 'groupPresets is sliceable');
+
+  /* The REAL preset builder, executed against a two-level breakdown. */
+  function presetsWith(levels) {
+    const f = new Function('LOC_LEVELS', 'ScheduleBuilder',
+      gpSrc.replace(/^\s*function groupPresets\s*\(\)\s*\{/, '') .replace(/\}\s*$/, ''));
+    return f(levels, undefined);
+  }
+  const LV = [{ id: 'tower' }, { id: 'level' }];
+  const P = presetsWith(LV);
+  const byName = {};
+  P.forEach(function (p) { byName[p.name] = p; });
+  ok(!!byName['LSM'], 'the LSM preset is built');
+  eq(JSON.stringify(byName['LSM'].dims), JSON.stringify(['loc:tower', 'loc:level']),
+     'and it is location-led');
+  ok(byName['LSM'].lsm === true, 'and flagged as a mode');
+  ok(!!byName['WBS tree (default)'], 'the WBS preset is built');
+
+  /* ⚠️ THE SHIPPED FACE BLOCK, CUT OUT AND RUN. */
+  const pgs = sliceFn('populateGroupSelect') || '';
+  ok(pgs !== '', 'populateGroupSelect is sliceable');
+  const i = pgs.indexOf('var _pname = null;');
+  const j = pgs.indexOf('if (_pname) _face = _pname;');
+  ok(i > -1 && j > i, 'the face block is present in the shipped function');
+  const faceSrc = pgs.slice(i, j + 'if (_pname) _face = _pname;'.length);
+  ok(/_gp\[_pi\]\.lsm && !_lsmRows/.test(faceSrc),
+     'the LSM preset is gated on the LAYOUT actually being on');
+
+  function faceFor(groupBys, lsmOn, fallback) {
+    const f = new Function('groupPresets', 'groupBys', '_lsmRows', '_face',
+      faceSrc + '; return _face;');
+    return f(function () { return presetsWith(LV); }, groupBys, lsmOn, fallback);
+  }
+  const PATH = 'Tower \u203a Level';
+  eq(faceFor(['loc:tower', 'loc:level'], true, PATH), 'LSM',
+     'LSM picked + layout on  ->  the face reads LSM');
+  /* ⚠️⚠️ THE SAME DIMS WITH THE MODE OFF ARE NOT LSM. Calling that LSM would be a lie: it is an
+     ordinary location-led grouping, and the layout is what the name refers to. */
+  eq(faceFor(['loc:tower', 'loc:level'], false, PATH), PATH,
+     'same dims, layout OFF  ->  the face keeps the dimension path');
+  eq(faceFor(['act', 'loc:tower', 'loc:level'], false, PATH), 'Activity \u203a Location',
+     'the renamed preset is named too');
+  eq(faceFor(['wbs'], false, PATH), 'WBS tree (default)', 'and so is the default');
+  eq(faceFor(['status', 'loc:tower'], false, PATH), PATH,
+     'a grouping that is NOT a preset keeps its path');
+})();
+
 /* ============== THE GROUP PRESET IS THE TOGGLE (owner's call, 2026-09-11) ====================== */
 (function () {
-  const menu = sliceFn('renderGroupMenu') || '';
-  ok(menu !== '', 'renderGroupMenu is present');
+  const menu0 = sliceFn('renderGroupMenu') || '';
+  ok(menu0 !== '', 'renderGroupMenu is present');
+  /* ⚠️⚠️ THE PRESETS MOVED INTO groupPresets() so the toolbar FACE can name the active
+     one (owner, 2026-09-14). These assertions described where they lived, so they failed
+     -- retargeted, and made stricter: the menu must READ that one source rather than
+     carrying a second copy, which is the drift the extraction exists to prevent. */
+  const gp = sliceFn('groupPresets') || '';
+  ok(gp !== '', 'groupPresets() is the one place the presets are defined');
+  ok(/var presets = groupPresets\(\);/.test(menu0),
+     'and renderGroupMenu reads it rather than redefining them');
+  const menu = gp + menu0;
   /* The preset is the LAYOUT's grouping now, not the activity-led transpose. */
   ok(/\{ name: 'LSM', dims: locDims, lsm: true \}/.test(menu),
      'the LSM preset is LOCATION-LED and flagged as a mode');

@@ -49,6 +49,12 @@ create table if not exists users (
   status      text default 'pending'
                 check (status in ('pending','approved','rejected')),
   projects    text[] default '{}',              -- assigned project ids
+  -- Per-user override of config.js MODULES[].superAdminOnly's role-based
+  -- default. NULL = no override (the historical behavior); a (possibly
+  -- empty) array = the exact module keys this user may see. See
+  -- migrations/2026-09-15-user-module-access.sql for the full reasoning —
+  -- this column is added to existing deployments via that migration.
+  module_access text[],
   last_login  timestamptz,
   created_at  timestamptz default now()
 );
@@ -94,8 +100,6 @@ create table if not exists progress_photos (
                                        -- owner-or-admin UPDATE policy — see migrations/2026-09-07-*.sql
   media_type  text default 'photo',  -- 'photo' | 'video' (18-item list item 4) — never related to 360/3D/Gaussian Splatting
   markup      jsonb default '[]'::jsonb,  -- vector annotation layer (18-item list item 13), hidden on Gallery tiles
-  stitch_status text,                 -- null | 'processing' | 'failed' — a 360 draft saved via "Save as draft, keep
-                                       -- working" while its stitch runs in the background (migrations/2026-09-13-*.sql)
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
@@ -105,49 +109,6 @@ create table if not exists progress_photos (
 -- project's own favorited count. Partial — most rows are never favorited.
 create index if not exists progress_photos_favorite_idx
   on progress_photos (project_id) where favorite;
-
--- 1a-2) Progress Photos: 360 background stitch jobs (2026-09-15) ------------
--- Temporary: one row per in-flight background 360 stitch, holding the
--- Storage path of the RAW recorded video so the draft can survive the
--- browser being closed, not just navigation within one tab (the 2026-09-13
--- draft feature made the ROW durable but not the video it stitches from).
--- See migrations/2026-09-15-progress-photos-360-background-jobs.sql for the
--- full mechanism and module.js's resumePending360Jobs()/
--- persistDraftVideoForResume() for how it is written and read.
-create table if not exists progress_photos_360_jobs (
-  id            uuid primary key default gen_random_uuid(),
-  project_id    text references projects(id),
-  photo_id      uuid references progress_photos(id) on delete cascade,
-  video_url     text not null,
-  status        text not null default 'queued'
-                  check (status in ('queued', 'processing', 'failed')),
-  attempts      integer not null default 0,
-  error_message text,
-  claimed_by    uuid references users(id),
-  claimed_at    timestamptz,
-  created_by    uuid references users(id),
-  created_at    timestamptz default now(),
-  updated_at    timestamptz default now()
-);
-create index if not exists progress_photos_360_jobs_project_idx
-  on progress_photos_360_jobs (project_id, status);
-alter table progress_photos_360_jobs enable row level security;
-drop policy if exists progress_photos_360_jobs_read on progress_photos_360_jobs;
-create policy progress_photos_360_jobs_read on progress_photos_360_jobs
-  for select using (can_access_project(project_id));
-drop policy if exists progress_photos_360_jobs_ins on progress_photos_360_jobs;
-create policy progress_photos_360_jobs_ins on progress_photos_360_jobs
-  for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id));
--- No owner restriction on UPDATE, deliberately: any writer on the project may
--- claim and finish a job someone else's tab started — see the standalone
--- migration's own comment for why that is the whole point of this table.
-drop policy if exists progress_photos_360_jobs_upd on progress_photos_360_jobs;
-create policy progress_photos_360_jobs_upd on progress_photos_360_jobs
-  for update using (is_writer() and can_access_project(project_id))
-  with check (is_writer() and can_access_project(project_id));
-drop policy if exists progress_photos_360_jobs_del on progress_photos_360_jobs;
-create policy progress_photos_360_jobs_del on progress_photos_360_jobs
-  for delete using (is_writer() and can_access_project(project_id));
 
 -- 1b) PPR Presentations (progress-photos module) -----------------------------
 -- A PPR = one monthly Project Performance Review presentation; each slide is a

@@ -13,9 +13,9 @@
 // is kept and is one click away (Pormac's Quality control) for offline use and
 // for when this function is not configured — it is the fallback now.
 //
-// ⚠️ Because this is the primary path, the daily cap below is a quota guard
-// rather than a rationing device, and is env-tunable. Set it back down if the
-// org's free Groq allowance turns out to be the binding constraint.
+// ⚠️ Because this is the primary path, the daily caps below (one per role) are
+// a quota guard rather than a rationing device, and are env-tunable. Turn them
+// down if the org's free Groq allowance turns out to be the binding constraint.
 //
 // SECURITY MODEL
 //  - The caller's OWN JWT is used to check pormac_can_use() (a security-definer
@@ -66,11 +66,14 @@ const json = (body: unknown, status = 200) =>
 // admin, which is what makes the pormac_can_use() check trustworthy.
 const DEFAULT_ANON_KEY = "sb_publishable_5NTpDRZcROZYrV-tZ5wXLg_f88eqUzs";
 
-// Per-user, per-day calls into the shared free quota. ⚠️ Was 30 while this was
-// a last-resort fallback for a handful of old phones; as the primary path for
-// every planner, 30 messages is half a morning. Env-tunable so the owner can
-// retune it against the real Groq allowance without a redeploy of this file.
-const DAILY_REMOTE_CAP = Number(Deno.env.get("PORMAC_DAILY_CAP") || 200);
+// Per-user, per-day calls into the shared free quota. ⚠️ Was a single flat 200
+// for every role; the owner asked for a role-based split instead — admin and
+// super_admin get a higher allowance, everyone else a tighter one, since every
+// role draws on the SAME underlying Groq account (see the header comment).
+// Both are env-tunable so the owner can retune them against the real Groq
+// allowance without a redeploy of this file.
+const DAILY_REMOTE_CAP_ADMIN = Number(Deno.env.get("PORMAC_DAILY_CAP_ADMIN") || 100);
+const DAILY_REMOTE_CAP_USER = Number(Deno.env.get("PORMAC_DAILY_CAP") || 50);
 // Prompt-size guard. ⚠️ Was 24,000 characters (~6k tokens) against a model that
 // accepts 131k of context — so it was throwing away most of the grounding that
 // makes an answer good, to protect a quota measured in REQUESTS, not tokens.
@@ -160,20 +163,32 @@ Deno.serve(async (req) => {
   // ---- Per-user daily cap (service role — the only writer of this table) ---
   const admin = createClient(PL_URL, PL_SERVICE, { auth: { persistSession: false } });
   const today = new Date().toISOString().slice(0, 10);
-  // ⚠️ The access check and the usage read are INDEPENDENT — the usage row is
-  // keyed on the uid parsed above, not on anything the RPC returns. Sequenced,
-  // they put two Postgres round trips end to end in front of every probe, which
-  // is what the planner's first message blocks on.
-  const [{ data: canUse, error: cuErr }, { data: usageRow }] = await Promise.all([
-    asUser.rpc("pormac_can_use"),
-    admin.from("pormac_usage").select("remote_calls").eq("user_id", uid).eq("day", today).maybeSingle(),
-  ]);
+  // ⚠️ All three run in ONE round trip. The access check, the usage read and the
+  // role check are independent of each other — the usage row is keyed on the uid
+  // parsed above, not on anything an RPC returns — so batching them is free and
+  // sequencing them would put three Postgres round trips end to end in front of
+  // every probe, which is what the planner's first message blocks on.
+  // is_admin() is the same security-definer helper every RLS policy in this repo
+  // already trusts for the admin/super_admin boundary, called AS the caller
+  // (never guessed client-side) so this can't disagree with the DB about who is
+  // an admin.
+  const [{ data: canUse, error: cuErr }, { data: usageRow }, { data: isAdminRaw, error: adminErr }] =
+    await Promise.all([
+      asUser.rpc("pormac_can_use"),
+      admin.from("pormac_usage").select("remote_calls").eq("user_id", uid).eq("day", today).maybeSingle(),
+      asUser.rpc("is_admin"),
+    ]);
   if (cuErr) return json({ error: "Access check failed: " + cuErr.message }, 500);
   if (!canUse) return json({ error: "Pormac is not enabled for your account yet." }, 403);
+  // ⚠️ A failed role check fails CLOSED to the tighter, non-admin cap — this is a
+  // rate limit, not an authorization gate, so the safe default on an error is
+  // "assume the smaller allowance", never "assume admin".
+  const isAdmin = !adminErr && isAdminRaw === true;
+  const dailyCap = isAdmin ? DAILY_REMOTE_CAP_ADMIN : DAILY_REMOTE_CAP_USER;
   const used = usageRow?.remote_calls || 0;
-  if (used >= DAILY_REMOTE_CAP) return json({
+  if (used >= dailyCap) return json({
     code: "quota",
-    error: `You've used today's ${DAILY_REMOTE_CAP} cloud messages. Pormac shares one free quota across ` +
+    error: `You've used today's ${dailyCap} cloud messages. Pormac shares one free quota across ` +
            `everyone — switch Quality to "On this device" to keep going with no limit (a smaller model, ` +
            `running in your browser), or come back tomorrow.`,
   }, 429);
@@ -197,7 +212,7 @@ Deno.serve(async (req) => {
     // `used_today` and `cap` as well — none of which any client ever read, and
     // `model` was a guess anyway (it named the head of the chain, not whichever
     // model would actually end up answering).
-    return json({ ok: true, remaining_today: Math.max(0, DAILY_REMOTE_CAP - used) });
+    return json({ ok: true, remaining_today: Math.max(0, dailyCap - used) });
   }
 
   const messages = Array.isArray(body?.messages) ? body.messages : null;
@@ -243,5 +258,5 @@ Deno.serve(async (req) => {
   // for — after a chain fallback those are different, and the planner's tier
   // bar naming a model that is no longer serving them is a lie the UI cannot
   // detect on its own.
-  return json({ reply, tier: "remote", model: usedModel, remaining_today: Math.max(0, DAILY_REMOTE_CAP - used - 1) });
+  return json({ reply, tier: "remote", model: usedModel, remaining_today: Math.max(0, dailyCap - used - 1) });
 });

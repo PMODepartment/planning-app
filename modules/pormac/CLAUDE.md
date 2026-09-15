@@ -6,6 +6,346 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-14 (c) — The Portfolio checkbox is gone: scope now follows how the module was opened, with nothing to flip
+
+Owner: *"remove the portfolio checkbox. when pormac is in project, discuss only based on project
+data. when pormac is in portfolio, answer based on all projects. no need for the portfolio
+checkbox."*
+
+⚠️⚠️ **The checkbox was never the only signal — it was a REDUNDANT, reversible one sitting on top
+of a signal that already existed and was already correct.** The 2026-09-14 (a) entry below built
+`#pmc_scope=portfolio` on Pormac's own Portfolio-sidebar link (`ui.js`'s `pormacRow`) specifically
+*because* `pd_project` sessionStorage is shared app-wide and cannot by itself say whether a
+planner opened Pormac from a project's own module grid or from the cross-project Portfolio nav.
+That hash was always the real answer to "which context is this"; the checkbox only ever set its
+*default* state on load, and it happened to also let a planner turn Portfolio scope back off
+mid-session — which the owner is now saying should not be possible at all. If Pormac is opened
+from the Portfolio side, the answer should be portfolio-wide, full stop; there being a control
+that could quietly leave it unchecked (or checked from a stale click) is the very failure mode
+"no need for the checkbox" is naming.
+
+- **`#pmc-portfolio` is deleted** from `index.html`, `module.js` and `module.css` — markup,
+  `onchange` wiring, and the `.pmc-portfolio-toggle` styling all removed rather than left dead.
+- **`loadProjects()` reads the hash once, on load, and calls `setPortfolioAll(true)` directly** —
+  no checkbox left to check or read state from. There is no code path left that can set
+  `portfolioAll` back to `false` once it is `true`; the only way to get project scope is to open
+  Pormac from a project's own module grid in the first place, which is exactly the owner's rule.
+- ⚠️ **`setPortfolioAll` now HIDES `#pmc-project` outright (`display:none`) rather than disabling
+  it.** Disabling it was the checkbox-era answer — a visible-but-inert control still explained
+  itself (*"why can't I pick a project? because Portfolio is ticked"*) to a planner who could
+  un-tick it. With no toggle left to act on that explanation, a disabled select is just a dead
+  control taking up the topbar; hiding it says the same thing (nothing to pick, because
+  everything is in scope) without inviting a click that goes nowhere.
+- **The empty-state hint** (`renderMessages`, no-project case) drops its *"tick Portfolio (all
+  projects) for a portfolio-wide answer"* clause — nothing on screen can be ticked any more, and
+  a planner reaching that empty state has already, by construction, opened Pormac from the
+  project side (the portfolio branch of that same conditional is unreachable with the checkbox
+  gone: `portfolioAll` is decided before the thread ever renders empty).
+- ⚠️ **Everything downstream of `portfolioAll` is untouched, deliberately.** `loadConversation`,
+  `clearHistory`, `moduleProviders`/`mirrorProviders`, `gatherContext`, `projectLabel` and
+  `persistTurn` all already branched correctly on the flag; none of them cared HOW it got set.
+  Removing the checkbox is entirely a UI change to the one place that set it, not a change to
+  what the flag means anywhere it is read.
+- ⚠️ **The 2026-09-14 (a) entry's own case for a checkbox over a sentinel `<select>` option is now
+  moot rather than wrong** — that reasoning (a sentinel value being unreachable once a real
+  project is picked, inside `UI.enhanceProjectSelect()`'s popover) explained why a *reversible*
+  toggle needed its own control. With scope no longer reversible at all, there is nothing left
+  needing either shape of control.
+
+**Verified:** `node --check` on `module.js`; CSS brace balance holds (unchanged shape, minus the
+removed rules); 0 NUL bytes; `node tools/wiring-check.js` **126/126, 0 failed**, 0 version splits
+across 3,566 cross-module references. `grep` confirms zero remaining references to `#pmc-portfolio`
+or `.pmc-portfolio-toggle` in any file.
+⚠️ **Not verified signed in** — no live login is possible in this environment, so the hash-driven
+scope has not been exercised against a real Portfolio-sidebar click; the hash detection itself
+is unchanged from (a), which was already the load-bearing mechanism.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914zx`;
+`assets/js/modules-grid.js` → `?v=20260914zx` (2 pages, MODULE_V fallback too; re-derived past
+main's own concurrent `20260914zvs4` after rebasing this branch onto it).
+
+## 2026-09-14 (b) — Clear history: a trash button, and it deletes every row this scope's thread merges
+
+Owner: *"provide also option to clear history."*
+
+A **🗑 trash** icon button in the topbar, beside the project select and the Portfolio checkbox,
+that clears the CURRENT scope's conversation — this project, General, or Portfolio (General and
+Portfolio still share the one NULL-`project_id` bucket, as everywhere else in this module).
+Confirm-gated (`confirm()`, this app's standing convention for a destructive action with no
+undo — risk-register and issues-lessons both use it the same way), then deletes and resets the
+thread to the same empty-state message a brand-new project shows.
+
+⚠️⚠️ **Deleting only `conversationId` would have left the thread coming back.** Since 2026-09-12
+`loadConversation()` reads and merges **every** `pormac_conversations` row for this scope — a
+leftover from before this module converged on "one conversation per project," kept so that
+threads made by the old, removed "New chat" button still surface. Deleting just the row
+`loadConversation()` currently treats as canonical and reopening the module would have silently
+resurrected whichever older row was next by `updated_at`, which reads as "clear history did
+nothing." `clearHistory()` therefore deletes with the **identical scope predicate**
+`loadConversation()` reads with (`project_id = pid`, or `is null` for General/Portfolio) — the two
+can never disagree about what "this conversation" means, because they are the same clause.
+
+⚠️ **`pormac_messages` needs no delete call of its own.** Its FK is
+`references pormac_conversations(id) on delete cascade`
+(`migrations/2026-09-12-pormac.sql`), and a foreign-key cascade runs at the constraint level
+rather than through the deleting role's own RLS — so removing the conversation rows here is
+sufficient, and there is correctly no delete policy on `pormac_messages` for a client to need.
+
+⚠️ **`.eq('created_by', profile.id)` is not redundant with the table's own delete policy**
+(`created_by = auth.uid() OR is_admin()`) — without it, an admin's own "clear history" click
+would delete every planner's conversation for that scope, not only their own. It is the same
+guard `loadConversation()`'s read already carries, for the same reason.
+
+⚠️ **Wired OUTSIDE the `loadProjects()` try block, beside the composer handlers, not beside the
+project-select/Portfolio-checkbox handlers it sits next to on screen.** Those two *need* the
+project list to have loaded; Clear needs only `pid`/`portfolioAll`/`profile`, none of which
+depend on that fetch succeeding — this module's own log has now recorded twice that gating a
+handler behind an `await` that can fail is how a control goes silently dead, and a failed
+project fetch must not also take away the one way to clear a stuck or unwanted thread.
+
+⚠️ A `.pmc-clearbtn` module-local rule repeats the exact fix `dashboard.css`'s own
+`.pd-toolbar-right .pd-icon-btn` states for itself: an icon button with no explicit height
+collapses to its bare glyph and rides high in a row of 34px controls. `.pmc-clearbtn` sits
+outside that toolbar class, so it needs the same `height:34px` restated locally rather than
+inheriting it.
+
+**Verified:** `node --check` on `module.js`; CSS braces balanced (39/39) on `module.css`; 0 NUL
+bytes; `node tools/wiring-check.js` — 126/126, 0 version splits; the delete's scope predicate
+read side-by-side against `loadConversation()`'s and confirmed to be the identical clause,
+statement for statement.
+⚠️ **Not verified signed in** — no live login is possible in this environment, so no real
+conversation has actually been cleared; the cascade-delete behaviour is argued from the FK
+declaration in the migration, not observed.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914w`; `assets/js/modules-grid.js`
+→ `?v=20260914w` (2 pages, MODULE_V fallback too — Pormac's `index.html` changed structurally).
+
+---
+
+## 2026-09-14 — Portfolio scope: Pormac can answer across every project, not just one
+
+Owner: *"in portfolio, pormac should be able to answer based on data from all projects on the
+list."*
+
+### ⚠️⚠️ "NO PROJECT SELECTED" WAS THE ONLY STATE PORTFOLIO NAVIGATION COULD REACH, AND IT MEANT "NO GROUNDING"
+Pormac's link renders first in **both** sidebars (2026-09-12) — but `ui.js`'s portfolio-mode branch
+has no `PORTFOLIO_TAB` entry for `pormac`, so clicking it just opens the same module page project
+mode does, with whatever `pd_project` sessionStorage happens to hold (a shared, app-wide key — often
+still the last project the planner was looking at before switching to the Portfolio nav, sometimes
+empty). Every context provider gates on `needsProject && !pid`, so a planner asking a portfolio
+question from the Portfolio side of the app got either a stale single project's figures or nothing
+grounded at all — never the portfolio.
+
+### A checkbox, not a third `<select>` value
+**New `#pmc-portfolio`** beside the project select — checking it sets `portfolioAll = true` and
+disables the select (mutual exclusivity enforced by the browser, not by extra code).
+
+⚠️⚠️ **Deliberately NOT a sentinel option inside `#pmc-project`.** That select goes through the
+shared, app-wide `UI.enhanceProjectSelect()` — the same convention every other module's project
+filter uses — which hides the native `<select>` (`display:none !important`) and replaces it with a
+popover whose row list (`renderNavListInto`) is built from **real projects only**, plus a fixed
+"Portfolio" row that **navigates away** to `portfolio-overview/index.html`. A sentinel value with no
+matching project would render correctly as the button's *starting* label (exactly how "General (no
+project selected)" already behaves today) but be **unreachable again once any real project had been
+picked** — there is no row in the popover that could select it back. A plain checkbox beside the
+select has none of that trap: always visible, always clickable, native keyboard/tap semantics, no
+change to the widely-shared `enhanceProjectSelect`/`renderNavListInto` that fourteen other modules
+also rely on.
+
+### Arriving from the Portfolio sidebar defaults to Portfolio scope
+`ui.js`'s `renderNav('portfolio', …)` now gives Pormac's own row a dedicated `pormacRow()` builder
+(rather than the generic `pmodRow()` every other module's row goes through) that appends
+`#pmc_scope=portfolio` to its href. `Pormac.init()` reads that hash once, at load, and pre-checks the
+box — so the literal ask ("in portfolio…") is the *default* reached with zero clicks, not a control
+the planner has to go find, while still leaving it a real toggle they can turn off.
+
+⚠️ The hash is read **only** because nothing else distinguishes "arrived via the Portfolio sidebar"
+from "arrived via a project's own module grid" — `pd_project` sessionStorage is shared and mutable,
+and the shared sidebar renderer (`UI.renderNav`) always renders a MODULE page under `mode:'project'`
+regardless of which nav family linked to it (MODULE_CONTRACT.md's own convention), so the page itself
+carries no other signal.
+
+### `PDb.moduleMetrics` accepts an array of project ids
+`assets/js/db.js` — `projectId` may now be a single id (unchanged, every existing caller) **or** an
+array, read via `.in(col, ids)` instead of `.eq(col, id)`. This is the one place that needed to change
+to make portfolio-wide grounding possible at all: Pormac's context providers are built entirely from
+`APP_CONFIG.MODULES`' own `dash` specs through `PDb.moduleMetrics`, so aggregating across the
+portfolio is one array argument, not a second aggregation engine — the same `wavg`/`sum`/`groupSpan`
+arithmetic runs over a wider row set, under the caller's own RLS (which already limits `.in(...)` to
+projects the planner can see).
+
+⚠️ A single-element array behaves byte-identically to the old bare-id call (`ids.length === 1 ?
+q.eq(...) : q.in(...)`), so `dashboard.html`'s own tile — the only other caller — is untouched.
+
+### Portfolio mode across every provider
+- **`moduleProviders()`** (the `dash`-spec-derived providers — schedule, risk, contracts, cash flow,
+  etc.): `portfolioAll ? allProjectIds() : pid`, and `summarizeDash` says *"recorded across every
+  project you can see"* rather than a bare count that could be mistaken for one project's.
+- **Procurement (WPM mirror)**: `needsProject:false` already, so it always ran; the single-project
+  match attempt is now skipped outright when Portfolio is checked (asking for a match it was never
+  going to want first is a wasted round trip), and the fallback wording distinguishes "portfolio-wide
+  because nothing could be confirmed" from "portfolio-wide, as asked."
+- **Engineering design progress**: the one provider that needed real thought. ⚠️⚠️ **Listing every
+  row** (every tower of every project) would have been the single largest context block Pormac
+  produces, on a portfolio with more than a couple of projects, crowding out every other module's
+  context out of the same `ctxCap` budget. It groups by `project_id` instead — one line per project,
+  that project's own average `percent_complete` — capped at 12 projects with a "+N more" tail, the
+  same "top N" discipline `summarizeDash`'s own lists already use.
+- **`gatherContext`'s `needsProject` gate**: Portfolio satisfies it too (`!pid && !portfolioAll`,
+  not `!pid` alone) — Portfolio *is* a project scope (every project at once), not the absence of one.
+- **`projectLabel()`**: checked first, before reading the (now disabled, and left showing whatever it
+  last did) select — otherwise the context block's opening line would read a stale single project's
+  name while every provider had already switched to answering across all of them. Prints `Scope:
+  Portfolio — every project you can see (N projects)` rather than `Project: …`.
+
+### Conversations: Portfolio shares the "no project" bucket, not a project_id of its own
+`pormac_conversations.project_id` is a foreign key to `projects(id)` — there is no schema slot for
+"this thread was asked across the portfolio," and adding one is a migration nobody asked for here.
+Both `loadConversation()`'s read (`pid && !portfolioAll`) and `persistTurn()`'s write
+(`portfolioAll ? null : pid`) treat Portfolio identically to General (no project selected): `pid`
+could still be holding a stale real id while Portfolio is checked (the select is disabled, not reset —
+see below), so every read of it for scoping purposes checks `portfolioAll` first, never `pid`'s own
+truthiness alone.
+
+⚠️ **The select is disabled, not reset to blank, when Portfolio is checked.** Turning Portfolio back
+off returns the planner to whichever project they had chosen before, with nothing to re-pick. The
+visible cost: while Portfolio is checked, the (greyed-out) select still shows that old project's name
+rather than "General" — cosmetic only, since every functional read of scope already checks
+`portfolioAll` ahead of `pid`.
+
+### Verified
+- `node --check` on `module.js`, `db.js`, `ui.js`, `modules-grid.js` — all parse.
+- Brace/paren balance holds on every touched file; 0 NUL bytes.
+- Traced every remaining `pid` reference in the file after the change (grep, by hand) and confirmed
+  each site that scopes a query checks `portfolioAll` before falling back to `pid` — the one bug shape
+  this change could plausibly introduce (a stale `pid` leaking through while Portfolio is checked) and
+  the one deliberately guarded against everywhere.
+- `PDb.moduleMetrics`'s array-vs-single-id branch reasoned through by hand for the one other caller
+  (`dashboard.html`'s Project Dashboard tile, always a bare id — unaffected) and for an empty-array
+  edge case (zero visible projects: `ids.length` guard returns `{}`, same as "no spec").
+- `db.js`/`ui.js`/`modules-grid.js` version-audited: **one `?v=` each across every referencing page**
+  (25 / 23 / 2), 0 splits, confirmed both before and after the bump.
+
+⚠️⚠️ **Not verified signed in, and this is the change that most needs it.** No live login is possible
+from here, so nothing above has been driven against a real portfolio: the `.in(project_id, ids)`
+queries have never executed against a real database, the checkbox has never been clicked in a real
+browser, and the `#pmc_scope=portfolio` hash has never been followed from a real Portfolio sidebar
+click. The first real test: open Pormac from the Portfolio nav, confirm the checkbox is already
+ticked and the select disabled, ask a schedule question, and check the reply's context chips and the
+"Scope: Portfolio — every project you can see (N projects)" line both name more than one project's
+worth of data.
+
+⚠️ **Deliberately not built:** a per-project breakdown for every `dash`-spec provider (only the
+engineering mirror groups by project; the rest report one portfolio-wide aggregate, matching how
+`moduleMetrics` has always answered — one number, not a table); and resetting the project `<select>`'s
+displayed value when Portfolio is checked (kept as-is so unchecking it needs no re-pick — see above).
+
+`assets/js/db.js` → `?v=20260914d` (25 pages); `assets/js/ui.js` → `?v=20260914d` (23 pages);
+`assets/js/modules-grid.js` → `?v=20260914d` (2 pages, MODULE_V fallback too); Pormac's own
+`module.js`/`module.css`/`index.html` → `?v=20260914d`.
+
+---
+
+## 2026-09-13 (d) — The daily cloud-message cap is role-based, not flat
+
+Owner: *"instead of 200 messages per user, limit this to 100 for admin and super-admin, while 50 for
+others."* Follow-up to the flat 200/day cap from earlier this week (2026-09-12 — *"the better the
+laptop, the worse the model"*), which was one number for every role sharing the one Groq account.
+
+`DAILY_REMOTE_CAP` splits into **`DAILY_REMOTE_CAP_ADMIN`** (100, env `PORMAC_DAILY_CAP_ADMIN`) and
+**`DAILY_REMOTE_CAP_USER`** (50, keeping the existing `PORMAC_DAILY_CAP` env name so nobody's already-set
+override silently stops applying).
+
+- ⚠️ **The role check goes through `is_admin()`, never a client-guessed or re-implemented rule.**
+  `is_admin()` is the same `security definer` SQL helper every RLS policy in this repo already trusts
+  for the admin/super_admin boundary (`u.role in ('admin','super_admin')`), called via
+  `asUser.rpc('is_admin')` — **as the caller**, exactly how `pormac_can_use()` is already called two
+  lines above it. Re-deriving the admin test inside the Edge Function would be a second copy of the
+  rule that could disagree with the database about who is an admin.
+- ⚠️ **Batched into the SAME `Promise.all` as the access check and the usage read** — `pormac_can_use`,
+  `is_admin` and the `pormac_usage` row are all independent of each other, so this is still one round
+  trip in front of the planner's first message, not three sequenced ones.
+- ⚠️⚠️ **A failed role check fails CLOSED to the smaller cap, not the larger one.** This is a rate limit,
+  not an authorization gate — the safe default when the role can't be determined is "assume the tighter
+  allowance," never "assume admin and hand out the bigger one." `isAdmin = !adminErr && isAdminRaw ===
+  true`, so an RPC error or a non-`true` value both land on `DAILY_REMOTE_CAP_USER`.
+- Every place that read the flat cap — the quota-exceeded message, the `probe` response, and the
+  success response's `remaining_today` — now reads the resolved `dailyCap` instead, so a viewer of the
+  tier bar sees the number that actually applied to them, not a stale flat figure.
+
+⚠️ **Still one shared Groq account underneath both tiers** — the split changes who gets how much of the
+one pool, not the size of the pool itself. The math from the earlier per-role-cap discussion still
+holds directionally: enough admins and users maxing out their own cap on the same day can still exceed
+Groq's own account-level daily ceiling on `llama-3.3-70b-versatile`, at which point the model chain does
+**not** paper over it (a 429/5xx from Groq does not advance to the next model, deliberately — see the
+`MODEL_DEAD` comment). Nothing in this change addresses that; it only makes the per-user share smaller
+and role-aware, which is what was asked.
+
+**Verified:** brace/paren/bracket balance holds (128/128, 55/55, 9/9), 0 NUL bytes; grepped the client
+module (`modules/pormac/module.js`) to confirm nothing there hardcodes the old flat 200 — it only ever
+reads `remaining_today` off the response, so no client change was needed.
+⚠️ **Not verified against a real deploy or a real request.** No `deno` binary is reachable from this
+environment to type-check the file, and there is no live Supabase session to confirm `is_admin()` is
+actually callable via PostgREST RPC for an `authenticated` caller — the repo's schema shows no `revoke`
+on it (Postgres grants `EXECUTE` to `PUBLIC` by default, and `pormac_can_use()` is called the identical
+way from the same file), so this is inferred from the schema rather than observed. The real test: once
+deployed, an admin account and a non-admin account should report 100 and 50 respectively in the tier
+bar's "N cloud messages left today," and the quota-exceeded message should name the right number for
+each.
+
+No migration — this is a code-only change to `pormac-chat`. Re-deploy the function
+(`supabase functions deploy pormac-chat --project-ref bgupuqnkqhixpuctyder`, or the new Deploy Edge
+Functions GitHub Action once merged) for it to take effect; the existing `pormac_usage` rows are
+untouched, since the cap is compared against `remote_calls`, not stored per row.
+
+---
+
+## 2026-09-13 (c) — The deploy workflow this module's own log has flagged all week, actually built
+
+Follow-up to the (b) entry's own closing line: *"the workflow has to reach `main` before it can run —
+`workflow_dispatch` doesn't appear in the Actions tab while the file is only on a branch."* That file
+never reached `main` — a prior session's `840577e` is unreachable from this checkout's history, and
+`.github/workflows/` did not exist at all here. Rebuilt from scratch on a branch created for exactly
+this (`claude/edge-functions-deploy-workflow-d89r3h`).
+
+`.github/workflows/deploy-edge-functions.yml` — two ways in: **Actions → Deploy Edge Functions → Run
+workflow** (a function name or `all`), or a merge to `main` touching `supabase/functions/**`, which
+deploys only the functions that changed in that push.
+
+- ⚠️⚠️ **The known-function list is read off the checkout's own `supabase/functions/` directory,
+  never hardcoded.** A prior write-up of this same workflow named the eight functions in prose; a
+  ninth function added later would have had no way to ask for `all` and include it. `find … -maxdepth
+  1 -type d` is the single source, so the list can't drift from the repo.
+- ⚠️⚠️ **Every `${{ }}` expression reaches the shell through `env:`, never interpolated into `run:`
+  text.** GitHub substitutes an expression *before* bash sees the line, so a function name containing
+  a quote would close the string and run whatever follows it — the standard Actions script-injection
+  hole. Verified by feeding the step `x'; echo PWNED; '` as the function name: refused as an unknown
+  name, and `PWNED` is never printed, over three separate runs of the extracted step script.
+- ⚠️⚠️ **`--no-verify-jwt` is scoped to exactly one function, `reconstruction-webhook`, not a global
+  flag.** Every other function in this repo deploys with the platform's default JWT check ON — several
+  of them (`pormac-chat` included) trust the caller's `sub` claim *because* that check already ran.
+  `reconstruction-webhook`'s own header explains why it's the one exception: it's called by RunPod,
+  which has no Supabase session. Getting this backwards either rejects RunPod's callback or silently
+  turns off a check a function is relying on.
+- Seven cases run against the extracted step logic before shipping: one function, `all` (8), a typo
+  (exit 1, naming what exists), a push diffed over two real commits from this repo's own history
+  (`7a0a476..4426a9f`, correctly resolving to the one function that PR actually touched), a push
+  touching none, an unreachable base commit, and the injection string above. The deploy loop itself
+  ran against a stub `supabase` CLI: a missing token aborts after the first function (`set -e`),
+  never half-deploying the rest.
+
+⚠️ **Two owner actions still gate the hosted path, and neither can be done from here:** a
+`SUPABASE_ACCESS_TOKEN` repo secret (Settings → Secrets and variables → Actions; generate at
+supabase.com/dashboard/account/tokens) and `GROQ_API_KEY` in Supabase's own Edge Function secrets
+(free at console.groq.com). The workflow deliberately does not touch the Groq key — it ships code, and
+a provider key living in two places is a key that goes stale in one of them.
+
+⚠️ **Not verified against a real Actions run** — no GitHub Actions runner is reachable from this
+environment, so what's proven is the extracted step logic against real inputs (above) and that the
+YAML parses; the workflow has not fired for real, and the two secrets above have not been set.
+
+---
+
 ## 2026-09-13 (b) — "Simplify what you edited": one tier table, and two bugs that fell out of it
 
 Owner, on the two changes above: *"can you simplify what you edited."* A quality pass over the same

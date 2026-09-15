@@ -131,11 +131,33 @@
       });
       if (error) throw error;
     },
-    // Hard delete. The RPC refuses if ANY module row still references the
-    // project and names what's blocking — surface error.message to the admin.
+    // ⚠️⚠️ HARD DELETE, AND SINCE 2026-09-16 IT NO LONGER REFUSES — IT PURGES.
+    // This comment used to read "the RPC refuses if ANY module row still
+    // references the project and names what's blocking", which was true and is
+    // now false: admin_delete_project() deletes every project-scoped row it can
+    // find and then the project. A comment that confidently describes the
+    // opposite of the code is worse than none, so it is corrected here rather
+    // than left for the next reader to trust.
+    //
+    // ⚠️ It can still throw, and the message is still worth surfacing verbatim:
+    // 'Not authorized', 'Project % not found', or — the one that matters — a
+    // purge that could not finish, which NAMES the tables and guarantees
+    // nothing was deleted (the whole function body is one transaction).
     async deleteProject(id) {
       var { error } = await sb().rpc('admin_delete_project', { target: id });
       if (error) throw error;
+    },
+    // What deleteProject() is about to do, read BEFORE the button is armed.
+    // ⚠️ The RPC already existed, was already granted, and had ZERO callers — its
+    // own comment said "the projects.html modal can call this to preview before
+    // it arms the button." It never did. This is that caller, not new SQL.
+    // Rows come back as { table_name, row_count, class } where class is
+    // 'delete' (the rows go) or 'unlink' (the rows stay, their project_id is
+    // cleared — user_notes and packages.planners_project_id today).
+    async previewProjectDelete(id) {
+      var { data, error } = await sb().rpc('admin_project_delete_preview', { target: id });
+      if (error) throw error;
+      return data || [];
     },
 
     // ---- Group Heads (the flat tag that replaced the workspace tree) ----
@@ -214,8 +236,13 @@
     //     { key:'finish', agg:'max', column:'end_date' },
     //     { key:'poc',    agg:'wavg', column:'percent_complete', weight:'duration_days' } ] }
     //
+    // ⚠️ `projectId` may be a single id (the normal, single-project case — dashboard.html's
+    // tile) OR an array of ids (a portfolio-wide read across every project the caller can
+    // see, e.g. Pormac's "Portfolio (all projects)" scope). A single-element array reads
+    // identically to a bare id, so no existing caller's behaviour changes.
     async moduleMetrics(spec, projectId) {
-      if (!spec || !spec.table || !projectId || (!(spec.metrics && spec.metrics.length) && !spec.recent)) return {};
+      var ids = Array.isArray(projectId) ? projectId.filter(Boolean) : (projectId ? [projectId] : []);
+      if (!spec || !spec.table || !ids.length || (!(spec.metrics && spec.metrics.length) && !spec.recent)) return {};
       var col = spec.projectCol || 'project_id';
       // Only what the spec asked for — plus id, which selectAll paginates on.
       var want = { id: 1 };
@@ -247,7 +274,7 @@
       }
       var rows;
       try {
-        rows = await PDb.selectAll(spec.table, function (q) { return q.eq(col, projectId); },
+        rows = await PDb.selectAll(spec.table, function (q) { return ids.length === 1 ? q.eq(col, ids[0]) : q.in(col, ids); },
           Object.keys(want).join(','));
       } catch (e) {
         // A metric spec naming a column the project's database does not have yet is a spec/migration

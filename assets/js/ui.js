@@ -229,6 +229,17 @@
   // (modules/<key>/index.html), every shell page at the root itself.
   function appBase() { return location.pathname.indexOf('/modules/') !== -1 ? '../../' : ''; }
 
+  // ---- Portfolio scope: every project id this planner can see ---------------
+  // The one thing every module needs to consolidate its own data across the
+  // portfolio: `PDb.getProjects()` is already RLS-scoped (an admin sees every
+  // project, everyone else only their assignments), so "every project id" IS
+  // "every project this call returns" — no second access rule to write.
+  // Cached alongside the project-selector's own cache (same underlying read).
+  async function allProjectIds() {
+    if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
+    return (_pdProjCache || []).map(function (p) { return p.id; });
+  }
+
   // ---- Project selector (shared group-head browser) ------------------------
   // Upgrades a native project <select> into a button that opens the shared
   // nav tree above (Portfolio + Group-Head-grouped projects). The <select>
@@ -282,6 +293,19 @@
       return [row.location, gh ? gh.name : ''].filter(Boolean).join(' · ');
     }
     function syncBtn() {
+      // ⚠️⚠️ PORTFOLIO ALWAYS WINS OVER `sel.value`. A module opened from the
+      // Portfolio sidebar carries `#pd_scope=portfolio`, but `pd_project`
+      // sessionStorage is a SEPARATE, app-wide key that usually still holds
+      // whatever project the planner was last looking at — so reading
+      // `sel.value` here would silently show that stale project's real name
+      // instead of "Portfolio", which is the reported bug this exists to fix.
+      if (window.AppAuth && AppAuth.isPortfolioScope()) {
+        btn.innerHTML = '<span class="pd-psel-txt pd-psel-portfolio"><strong>Portfolio</strong>' +
+          '<small>every project you can see</small></span>' +
+          '<span class="pd-psel-caret" data-ico="chevronDown" data-ico-size="14"></span>';
+        if (window.Icons) Icons.hydrate(btn);
+        return;
+      }
       var t = labelFor(sel.value), ph = !t;
       // The project id IS its code (the PK) — "CODE — Name" needs no async
       // lookup, sel.value already carries it synchronously.
@@ -303,9 +327,17 @@
     }
     function paintPop() {
       renderNavListInto(pop, currentProjects(), ghs, {
-        isSelected: function (p) { return p.id === sel.value; },
+        portfolioActive: window.AppAuth && AppAuth.isPortfolioScope(),
+        isSelected: function (p) { return !((window.AppAuth && AppAuth.isPortfolioScope())) && p.id === sel.value; },
         onPortfolio: function () { location.href = appBase() + 'modules/portfolio-overview/index.html'; },
-        onProject: function (p) { choose(p.id); }
+        onProject: function (p) {
+          // Picking a REAL project out of the popover is the one place
+          // Portfolio scope is left again — clear it before the module's own
+          // sel.onchange handler (unchanged) writes the new pd_project and
+          // re-renders, so that re-render already sees itself out of scope.
+          if (window.AppAuth && AppAuth.isPortfolioScope()) AppAuth.setPortfolioScope(false);
+          choose(p.id);
+        }
       });
     }
     async function ensureData() {
@@ -348,47 +380,41 @@
   // two page families you are on, so it can never desync from what the page
   // actually shows. 'portfolio' = projects.html / admin.html / my-work.html /
   // portfolio-overview. 'project' = dashboard.html / modules.html.
-  // Which portfolio-overview TAB a given module's cross-project data lives on, keyed by
-  // config.js MODULES `key`. A module absent here has no cross-project consolidation of its
-  // own inside portfolio-overview — either it hosts its OWN "Portfolio" view (manpower-loading
-  // does; its sidebar link goes straight to the module) or it genuinely has none yet, in which
-  // case the link falls back to the plain module page, same as it does in Project mode.
-  var PORTFOLIO_TAB = {
-    'minutes-of-meeting': 'meetings',
-    'risk-register': 'risk',
-    'stakeholder-map': 'stakeholders',
-    'project-schedule': 'scurve',    // no dedicated cross-project Schedule tab — S-Curve is the
-    's-curve': 'scurve',             // closest thing to one, and both modules feed it below
-    'resource-loading': 'resources',
-    'equipment-loading': 'equipment',
-    'productivity-rates': 'productivity',
-    'issues-lessons': 'issues',
-    'progress-photos': 'photos',
-    'contracts-claims': 'contracts',
-    'cash-flow': 'cashflow'
-  };
   function renderNav(navEl, mode, ctx) {
     if (!navEl) return;
     ctx = ctx || {};
     var base = ctx.base || '';
     var active = ctx.active || '';
     function cls(key) { return active === key ? ' class="active"' : ''; }
-    // ⚠️ Read straight off the global `requireLogin` already set, rather than a ctx flag every
+    // ⚠️ Read straight off the globals `requireLogin` already set, rather than a ctx flag every
     // one of the 15+ call sites would otherwise have to be taught to pass — see config.js's
     // `superAdminOnly` comment. `!!` guards a page that renders nav before auth resolves (none do
     // today, but a false positive here would show every super-admin-only link to a stranger).
     var superAdmin = !!window.__role && window.__role === 'super_admin';
-    function visible(m) { return !m.superAdminOnly || superAdmin; }
+    // ⚠️ `AppAuth.moduleVisible` (2026-09-15) is the ONE gate — role default plus the per-user
+    // override from admin.html's Modules editor — shared with ModulesGrid.visible() so the
+    // sidebar and the launcher/dashboard tile grid cannot disagree about a module.
+    function visible(m) {
+      return window.AppAuth ? AppAuth.moduleVisible(m, window.__profile) : (!m.superAdminOnly || superAdmin);
+    }
     var html;
     if (mode === 'portfolio') {
       // Three scopes, per the owner's own structure: PORTFOLIO (every project's data,
       // consolidated — Projects, the Portfolio Dashboard, then every module a project can
-      // carry, each opening its cross-project view where one exists), PERSONAL (this
+      // carry, each opening READ-ONLY, consolidated across every project), PERSONAL (this
       // signed-in user's own work, not scoped to any one project), SYSTEM (Admin, gated).
       // (No "Home" link here — home.html is the landing/picker screen itself, not a
       // destination to navigate back to from inside the app.)
-      var poBase = base + 'modules/portfolio-overview/index.html';
-      function poHref(tab) { return poBase + '#po_view=' + encodeURIComponent(JSON.stringify({ v: tab })); }
+      /* ⚠️⚠️ CACHE-BUSTED, WHICH IT HAS NEVER BEEN. `portfolio-overview` is not in
+         `APP_CONFIG.MODULES` — it is a standalone page — so `pmodRow`'s `ModulesGrid.href(m)`
+         never reached it, and every sidebar link here was a bare `index.html`. A browser caches
+         a page by its full URL, so each of this page's rebuilds has needed a hard refresh, which
+         that module's own log has had to record as a caveat more than once. `MODULE_V` is
+         exported for exactly this; it is the same token every module page is stamped with, so
+         one deploy busts them together. ⚠️ Falls back to the bare path when `modules-grid.js`
+         is absent, rather than linking to a version string that does not exist. */
+      var poBase = base + 'modules/portfolio-overview/index.html' +
+        (window.ModulesGrid && ModulesGrid.MODULE_V ? '?v=' + encodeURIComponent(ModulesGrid.MODULE_V) : '');
       // ctx.modules is optional — every project-mode page already passes it (it built the
       // module grid), but the five portfolio-mode pages never needed to before now. Default
       // to the shared registry rather than requiring five call sites to be updated.
@@ -397,41 +423,96 @@
       // owner's call (2026-09-12), same reason as the project-mode branch below.
       var pPormac = pmods.filter(function (m) { return m.key === 'pormac'; })[0];
       pmods = pmods.filter(function (m) { return m.key !== 'pormac'; });
+      // ⚠️⚠️ EVERY MODULE'S OWN PAGE NOW OPENS FROM HERE — `PORTFOLIO_TAB`'s
+      // redirect to a portfolio-overview TAB is gone (2026-09-14). It used to
+      // send 11 of 12 modules to a hand-built, separately-styled dashboard
+      // duplicating that module's own aggregation logic per table, which read
+      // as "click Risk Register, land on a different screen called Portfolio
+      // Dashboard" — confusing, and a maintenance burden of its own (each
+      // table's `.in('project_id', ids)` re-implemented by hand a second
+      // time). `#pd_scope=portfolio` is read once by `AppAuth` (auth.js) into
+      // a per-tab sessionStorage flag; every module now reads
+      // `AppAuth.isPortfolioScope()` itself and both (a) shows "Portfolio" in
+      // its own project selector (UI.enhanceProjectSelect, automatic) and
+      // (b) queries across every project it can see instead of one, with
+      // writes refused at the shared Supabase-client chokepoint (see
+      // auth.js). `portfolio-overview` itself is unaffected — its own
+      // "Dashboard" row below still opens it directly, as a destination in
+      // its own right, not as a stand-in for every other module.
       function pmodRow(m) {
-        var tab = PORTFOLIO_TAB[m.key];
-        var href = tab ? poHref(tab) : (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path);
-        return '<a href="' + href + '" title="' + esc(m.name) + (tab ? ' — portfolio-wide' : '') + '">' +
+        var href = (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path) + '#pd_scope=portfolio';
+        return '<a href="' + href + '" title="' + esc(m.name) + ' — portfolio-wide, read-only">' +
           '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
       }
       html = '<div class="pd-navsec">Portfolio</div>' +
         '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
         (pPormac ? pmodRow(pPormac) : '') +
+        /* ⚠️⚠️ NOT `barChart`, AND NOT BECAUSE IT READS BADLY — because Productivity Rates, eight
+           rows below, is `barChart` too. Measured by rendering this nav and grouping the rows by
+           the geometry each icon actually DRAWS: three pairs collided (Dashboard/Productivity
+           Rates, Milestones/Meetings, Issues/My Work). ⚠️ In a COLLAPSED rail the label is
+           `font-size:0`, so the glyph is the only thing left and two rows become
+           indistinguishable — the defect class this repo has already paid for twice in the
+           Project Schedule's toolbar (ps-lsmbtn/ps-outlinebtn, ps-progressbtn/ps-flowbtn).
+           ⚠️ The three rows changed are the three that exist ONLY here. A module's icon is its
+           identity in the project sidebar and the module grid as well, so moving one to settle a
+           collision in this nav would change two other screens to fix neither. */
         '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
-          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Dashboard</span></a>' +
-        // ⚠️⚠️ MILESTONES HAS NO MODULE, so `pmods` below cannot produce it — it is a
-        //    portfolio-only view that existed ONLY as an in-page tab. When the owner had
-        //    that tab strip removed (2026-09-09) it would have become unreachable: the
-        //    strip was its single entry point, and PORTFOLIO_TAB maps module keys, not
-        //    views. Listed explicitly here for that reason. `overview` needs no row —
-        //    the plain `poBase` "Dashboard" link above already lands on it.
-        '<a href="' + poHref('milestones') + '" title="Milestones — portfolio-wide">' +
-          '<span class="pd-navico" data-ico="calendar"></span><span class="pd-navtxt">Milestones</span></a>' +
+          '<span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Dashboard</span></a>' +
+        // ⚠️ MILESTONES WAS A ROW HERE AND IS GONE — owner, 2026-09-16: *"There is a
+        //    milestones tab in the side panel for portfolio view. Let's remove this since
+        //    milestones are already seen within the schedule."*
+        // ⚠️⚠️ THIS IS A NAMED REVERSAL OF 2026-09-09 (p3), AND THE REASON THAT ROW EXISTED
+        //    NO LONGER HOLDS. It was added because Milestones has no module — `pmods` below
+        //    cannot produce it — so when the in-page tab strip was removed it would have been
+        //    left with NO entry point at all. The strip came back on 2026-09-15 (u) as the
+        //    view switcher (`.po-tabs` → UI.tabsToDropdown), and `data-view="milestones"` is
+        //    one of its buttons — checked, not assumed. So the view is still reachable from
+        //    the Portfolio Dashboard itself; only the duplicate sidebar row is gone.
+        // ⚠️ `poHref()` went with it: this was its only caller, and a helper left behind with
+        //    no reader is the dead-export shape `tools/dead-exports.js` exists to catch.
+        //    `poBase` stays — the Dashboard row above still uses it.
         pmods.map(pmodRow).join('') +
         // ⚠️ Personal (My Work / Tasks) is super-admin-only "for now" too (2026-09-03,
         // same owner ask as the module hiding above) — gated the same way, off the global
         // role rather than a new ctx flag.
         (superAdmin
           ? '<div class="pd-navsec">Personal</div>' +
-            '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
-              '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Dashboard</span></a>' +
+            /* ⚠️⚠️ "My Work", NOT "Dashboard" — owner 2026-09-15: *"Personal 'Dashboard' shouldn't
+               be called dashboard."* The sharper problem was that this sidebar rendered TWO rows
+               both reading "Dashboard" (Portfolio → Dashboard, ten lines above, and this one), so
+               the label did not distinguish the two things it was on screen to distinguish.
+               ⚠️ "My Work" is not a new word: the avatar menu has linked this page as "My Work"
+                  since it was built (see renderUserBar), the file is `my-work.html`, the module is
+                  `MyWork` and the script is `my-work.js`. The app already called it this
+                  everywhere except the one place the planner reads.
+               ⚠️ THE KEY `personal-dashboard` IS DELIBERATELY UNCHANGED. It is an identifier passed
+                  by my-work.html to `cls()`, not text anyone sees, and renaming an identifier to
+                  match a label is how a two-place change becomes a silent mismatch. Same call the
+                  Manpower/Equipment rename made when `data-view="loading"` stayed put while the
+                  tab became "Overview". */
+            /* ⚠️ `user`, not `clipboard` — Issues and Concerns carries the clipboard, and this row
+               is about ONE person's own work, which is exactly what separates `user` (one figure)
+               from Manpower Loading's `users` (a group). */
+            '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="My Work">' +
+              '<span class="pd-navico" data-ico="user"></span><span class="pd-navtxt">My Work</span></a>' +
             '<a href="' + base + 'my-tasks.html"' + cls('my-tasks') + ' title="Tasks">' +
               '<span class="pd-navico" data-ico="check"></span><span class="pd-navtxt">Tasks</span></a>'
           : '') +
         (ctx.isAdmin
           ? '<div class="pd-navsec">System</div>' +
-            '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Admin">' +
-              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>'
+            /* ⚠️ "Users", NOT "Admin" — owner 2026-09-15: *"for admin keep only user
+               management and rename to Users."* admin.html dropped its Projects tab the
+               same change (projects.html already owns that, group heads included), so
+               the page is user management now and the label says so.
+               ⚠️ THE KEY `admin` IS DELIBERATELY UNCHANGED — same call as the My Work
+               row's `personal-dashboard` key just above: `cls('admin')` here and the
+               `active: 'admin'` admin.html itself passes to renderNav must keep matching
+               each other, and the filename/href stays `admin.html` so nothing that
+               already links here breaks. Only the visible word moved. */
+            '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Users">' +
+              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Users</span></a>'
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled && visible(m); });
@@ -1025,6 +1106,6 @@
                 acceptSuggestOnTab: acceptSuggestOnTab, bindHistoryState: bindHistoryState,
                 renderNav: renderNav, renderSwitcher: renderSwitcher,
                 renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
-                wireFilterToggle: wireFilterToggle,
+                wireFilterToggle: wireFilterToggle, allProjectIds: allProjectIds,
                 kpi: kpi, kpis: kpis };
 })();
