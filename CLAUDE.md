@@ -102,7 +102,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-15 (z) — Admin: what a role's project list actually means, and Group Heads move onto this page
+### 2026-09-15 (za) — Admin: what a role's project list actually means, and Group Heads move onto this page
 
 Owner: *"in Users, provide information about difference in user assignments. provide also super admin
 with access to all modules. in projects, please add also way to add and assign group heads."*
@@ -152,6 +152,208 @@ shipped `PDb`/`AppAuth`/`config.js` shapes rather than guessed.
 
 No shared asset changed, so no `?v=` bump and no `MODULE_V` bump — `admin.html` is fetched at its own
 URL and is not a module page.
+
+⚠️ **Re-lettered `(z)` → `(za)` when this branch merged.** A concurrent session had already taken
+`2026-09-15 (z)` on `main` for the Portfolio Dashboard's Phase B entry, so both sides prepended a
+different entry under one letter. Every letter `a`–`z` is spent for this date; `za` is the next,
+matching how 2026-09-07 and 2026-09-10 continued past `z`. The collision changes nothing about the
+work — it is a changelog label, and no `?v=` or `MODULE_V` token was involved, which is why it
+conflicted quietly rather than failing anything.
+## 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
+
+Owner, with the Portfolio Dashboard's view dropdown open: *"there is a dashboard module, and there is
+a dropdown that links to each module. that is wrong. The idea of each dashboard (e.g. s-curve, risk
+register etc.), the design of those dashboards must be pushed to each module established on the
+left."* Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+### ⚠️⚠️ THE DROPDOWN WAS A SECOND SIDEBAR
+
+Since 2026-09-14 the sidebar already opens every module's **own page** in portfolio scope
+(`#pd_scope=portfolio`, read once by `AppAuth` into a per-tab flag). So "Risk Register" existed
+twice: once as the module, and once as a view of a page called Portfolio Dashboard. Two screens over
+the same rows, two renderers to keep in step — the duplication this repo has paid for with the
+S-curve maths, the location normaliser and the change-order insert.
+
+**New `assets/js/portfolio-dash.js`** holds the six moved dashboards — Risk Register, Issues &
+Concerns, Meetings, Contracts & Claims, Progress Photos, Productivity Rates — and each module mounts
+its own when it is opened portfolio-wide. **New `assets/css/portfolio-dash.css`** is the Portfolio
+Dashboard's `<style>` block, moved out whole: a module cannot reach a `<style>` inside another page,
+and splitting out "just the classes the six need" has to be re-judged every time a renderer gains a
+class.
+
+⚠️ **MOVED, NOT COPIED.** `portfolio-overview` no longer carries those six panes, loaders, tab
+buttons or filter panels, and the test asserts each `load*` is gone. A second copy is how the two
+screens drift apart again, which is the fault this change exists to end.
+
+### ⚠️ Three decisions that shaped it
+
+- **The module's own `init()` is SKIPPED in portfolio scope.** It would read the same register a
+  second time — a cross-project fetch over every project the planner can see — into a UI hidden
+  underneath the dashboard. ⚠️ So `takeOver()` wires the topbar project selector itself: skipping
+  `init()` skips the code that fills it, and without it there is no way to leave portfolio scope from
+  the page you are standing on.
+- **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to those
+  nodes; tearing them out would turn every one into a null dereference.
+- ⚠️⚠️ **The Stakeholder Map did NOT move.** Its portfolio view carries an authoring directory (+ Add
+  person, assign, merge) and **writes are refused at the shared Supabase chokepoint while the
+  portfolio flag is set**. Moving it would have silently broken the one thing it does. It stays on
+  the Dashboard with the Overview, Milestones (no module at all), S-Curve, Cash Flow, Resources and
+  Equipment.
+
+⚠️ **A deep link must not die with the tab.** `#po_view=risk` and its five siblings still resolve —
+`switchView` redirects to the module that owns the view now, **after** the super-admin gate, with
+`location.replace` so a tab that no longer exists does not sit in the Back history.
+
+### ⚠️⚠️ TWO REAL FAULTS, BOTH FOUND BY RUNNING THE CODE RATHER THAN READING IT
+
+1. **The Meetings dashboard's date helpers were left behind.** It asks `pd(due) < today()` to decide
+   what is overdue, and both lived in the Portfolio Dashboard's closure three thousand lines from the
+   renderer they drive. The harness threw `pd is not defined`; a lint would have seen nothing.
+2. **`Icons.paint` does not exist** — the API is `Icons.hydrate`. My own scaffolding, in four places,
+   caught by `tools/wiring-check.js`, which exists for exactly this and was worth its own commit.
+
+### Verified
+
+- **89 assertions** executing the shared layer against a narrow fake DOM, with the **real
+  `claims.js` and `mcc-rcm.js`** loaded rather than stubbed — two of these dashboards derive their
+  numbers through those helpers, and a stub of a rule is a second copy of that rule. Every view
+  renders from fixtures: the risk KPIs count two risks and rank 1st Priority first through the real
+  5×5 lookup; the meetings worklist lists the open action item and **leaves the closed one out**;
+  `takeOver` hides the module's own UI and the module bar and mounts the dashboard in `.pd-main`.
+- ⚠️ **GATE:** the same harness reads `origin/main`'s own copies and asserts the opposite — the six
+  *were* panes of the Portfolio Dashboard, their loaders ran there, the dropdown carried all six, and
+  **no module mounted a dashboard of its own**.
+- Every module page asserted to load the layer, load the styles, mount its own key and gate on
+  portfolio scope.
+- `test-portfolio.js` **86/86** (updated to the new contract), `wiring-check` **139/139**,
+  `test-lsm` **702/702**, every touched page's inline script parses.
+
+⚠️ **Not verified signed in** — no dashboard has been mounted against a live project, and the
+selector's escape route has never been clicked. That is the first thing to try: open Risk Register
+from the Portfolio sidebar.
+⚠️ **Still to come:** S-Curve, Cash Flow, Resources and Equipment — the four heaviest renderers, each
+with its own chart or server-side aggregate. They move on their own.
+
+New `assets/js/portfolio-dash.js` + `assets/css/portfolio-dash.css` at `?v=20260915x`;
+`MODULE_V` → `20260915x`.
+
+
+### 2026-09-15 (w) — A 3D card framed for a shape its canvas no longer had
+
+Owner: *“The presets view also do not view properly and I cannot see the ground”*, with the
+Vertical Stacking on `Right` showing a slab at the bottom of a mostly empty card. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### ⚠⚠ THE FRAMING DISTANCE HAD NO ASPECT TERM AT ALL
+`Math.max(span * 2.6, tall * 1.9) + 1.5` decides how far the camera stands off, and it was written
+against the card's own shape — **698 × 503, aspect ~1.39** — then applied at every shape. Measured
+live at a 1900px viewport the canvas is **1752 × 503, aspect 3.48**, and the building filled about
+**19% of the frame**. `PerspectiveCamera`'s `fov` is the **vertical** one, so a wider canvas already
+sees more at the same distance; standing the same distance off wastes all of it.
+- One `fitDist(aspect)` now answers it, and **`place()`, the default radius `r0` and `resize()` all
+  ask the same function** — three copies of a framing rule is three chances for the viewpoint
+  buttons, the initial view and a resized card to disagree about where the camera belongs.
+- ⚠ **The vertical term stays aspect-independent** (`tall * 1.9`), because the vertical field does
+  not change with width. Only the horizontal term scales, and it scales **inversely**.
+- ⚠⚠ **At the reference aspect it returns today's value to the bit**, so a card at the shape this
+  was tuned for is framed byte-for-byte as before and only other shapes move.
+- ⚠ **`resize()` re-derives it.** Updating `camera.aspect` alone left the model framed for the
+  canvas's OLD shape — most of why a card that had been resized drew a small building in a large
+  box. The planner's own zoom is **scaled by the same ratio, never reset**: `rot.r` is where they
+  left the camera, and snapping it back on every resize would throw that away each time the sidebar
+  collapsed.
+
+### Verified by execution — `fitDist` sliced out and run, with the shipped formula as the control
+| model | aspect | fills before | fills after |
+|---|---|---|---|
+| 1 storey, 2 zones | **1.39** (reference) | 37% | **37% — identical** |
+| 1 storey, 2 zones | **3.48** (measured live at 1900px) | **19%** | **41%** |
+| 1 storey, 2 zones | 2.30 (a 1280px viewport) | 22% | **35%** |
+| 3 storeys, 2 zones | 3.48 | 56% | **68%** |
+| either | 0.80 (narrow card) | 64% | 38% — **pulls back so it still fits** |
+
+Every case asserted to fit **both** axes (never clipped), the reference aspect asserted **identical**
+to the shipped value, and the wide cases asserted strictly larger than before. `node --check`
+PARSE OK; **2,074 → 2,075 functions, 0 lost**; 0 NUL bytes.
+
+### ⚠⚠ NOT VERIFIED SIGNED IN, AND THAT IS A REAL GAP HERE
+The browser session signed out mid-task and signing in is not something I do, so **no rendered
+frame has been seen**. What is proven is the arithmetic. The honest thing to check first is simply
+whether the building now fills the card at a wide window.
+⚠ **“I cannot see the ground” is NOT addressed and is not the same bug.** The grade plate belongs
+to the **site** model (`_vsSiteFloorModel`, 2026-09-14); a per-trade tower card has never drawn one.
+Whether it should is a design question, not a framing fault, so it is reported rather than guessed
+at.
+
+### The rest of this toolbar was fixed by a concurrent session, not by me
+Owner's *“the trades button still clips”*, *“no delineation from the main toolbar”* and *“let's
+revamp and make it proper”* are **already live**, shipped in parallel by the session working
+`claude/portfolio-module-fixes-e4cu09`: `.ps-vstack` gained
+`border-top:1px solid var(--pd-line)` (the delineation), and the group labels moved **inside** the
+segments as `.ps-vs-seglab` with `.ps-vs-rowlab` for the chip rows — a uniform treatment, and a
+better one than the `.ps-vs-grp` labels I had drafted. My draft was **discarded rather than
+shipped**: a second labelling idiom over the same bar would have been the drift this module keeps
+recording. ⚠ Measured before deciding: **nothing in that toolbar was clipping** — every chip read
+`scrollWidth === clientWidth` and no control sat past its bar's edge; what was missing was a
+boundary, which is what they added.
+
+`MODULE_V` → `20260915w`, re-derived from what `curl` shows the live site serving.
+
+
+### 2026-09-15 (z) — Phase B finished: one funnel where there were five, and one KPI card where there were three
+
+Owner: *"make sure the UI is consistent and professional looking."* Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+⚠️⚠️ **Two filter surfaces were on screen at once and FIVE funnels existed** — the scope picker in
+its own bar, the Overview's toolbar carrying a second funnel and a second search box below it, and
+four other views each with their own. There is **one** now, in the tool cluster, pointed at whichever
+view has a panel. `UI.wireFilterToggle` re-binds its onclick on every call, which is what lets one
+button serve N panels and keeps the has-active dot following the view rather than going stale; every
+other view's panel is closed on a switch, because a button cannot un-toggle a panel it is no longer
+pointed at.
+
+### ⚠️⚠️ AND `hidden` DID NOTHING TO IT — THE SAME SPECIFICITY TIE, ON A DIFFERENT COMPONENT
+
+`.pd-filttoggle` is `display:inline-flex` at **(0,1,0)**, exactly tying the user agent's
+`[hidden] { display:none }`, and an author rule wins that tie. `dashboard.css` carries the identical
+fix for `.pd-btn` and explains it at length; `.pd-filttoggle` never got one. **Measured, with the
+negative build as proof: with the rule `hidden` computes `none`; with the rule deleted from the live
+stylesheet it computes `flex`** and the button stays on screen.
+⚠️ **Fixed locally and REPORTED rather than shipped app-wide** — the real repair belongs in
+`dashboard.css`, which 31 pages load, and that is its own change with its own bump.
+
+### ⚠️⚠️ THREE KPI TREATMENTS, AND THE BEST ONE WAS UNUSED
+
+`.po-kpi2` was value weight **700** against the shared **800**, radius `md` against `lg`, padding
+14/16 against 16/18 — so three views disagreed with the Overview and none matched the app, while
+`.pd-kpi` (accent bar, semantic variants, AA-measured) was used **nowhere on this page**. The
+2026-09-10 (w2) convergence missed it.
+
+⚠️ **The producers changed; their signatures did not**, so all **40 call sites** converge untouched.
+The token maps to the shared **semantic variant** rather than an inline colour, so the accent tints
+too — and an unrecognised token still falls back to a colour, because silently dropping a caller's
+meaning is the failure this repo keeps paying for. The six private rules are **deleted**, not left
+beside the shared ones.
+
+The S-Curve's three loose checkboxes become `.pd-seg.pd-seg-multi`, the app's own multi-select
+segment. ⚠️ A disabled rung fires no click, so Forecast cannot be turned on when nothing drawn
+carries one — the refusal is the control's own.
+
+### Verified
+
+**96 assertions, 0 failing.** ⚠️ The KPI cards are executed through the **real `UI.kpi`**, loaded the
+way `wiring-check` loads a browser script, so this proves the shipped page emits the shared card
+rather than that a stub does. Measured in a browser at 1400/390px from markup the shipped code
+produced: radius **12px**, padding **16/18**, value **20px/800**, a **4px** accent bar `.po-kpi2`
+never had; the segment's on-state tint + ink + **2px inset underline**; **1 funnel** in the module
+bar; no sideways scroll.
+⚠️ **Three of seven first-run failures were MY assertions** — testing the inline `<script>` for
+markup and CSS that live in the HTML outside it.
+
+`wiring-check` 136/136, `dead-hooks` 0 findings in this module. Harness deleted before committing.
+⚠️ **Not verified signed in.** `MODULE_V` → `20260915v`, sort-checked.
 
 ### 2026-09-15 (y) — The measurement query returned section 5 and nothing else, seven times over
 
@@ -1971,6 +2173,97 @@ rows. The lever with precedent is folding the low-frequency controls behind the 
 **Display ▾** pattern (2026-09-10 collapsed 21 controls that way). That changes **where a planner
 finds a control**, so it is the owner's call rather than my judgement — the measurements above are
 the evidence for it.
+
+### Portfolio mode, generalized: every module gets a read-only cross-project view (2026-09-14)
+
+Owner: *"portfolio is not working, let's fix it."* Two requirements: opening a module from the
+**Portfolio** sidebar (rather than a specific project) must show the project selector as
+**"Portfolio"** rather than a stale or wrong project name, and every module must **consolidate
+across every project the planner can see** while **write access is disabled**.
+
+⚠️⚠️ **THIS GENERALIZES THE ONE-OFF CONVENTION PORMAC SHIPPED FOR ITSELF (2026-09-14,
+`#pmc_scope=portfolio`) INTO SOMETHING EVERY MODULE CAN READ THE SAME WAY.** A `#pd_scope=portfolio`
+URL hash — read once by `AppAuth` at load, matched against `/(^|[#&])pd_scope=portfolio(&|$)/`, and
+written into `sessionStorage['pd_portfolio']` so it survives `UI.bindHistoryState`'s later hash
+rewrites (a bare hash read is not enough — this module's own history binding overwrites the hash on
+almost every render). `AppAuth.isPortfolioScope()` reads that key; `AppAuth.setPortfolioScope(on)`
+sets or clears it, and `UI.enhanceProjectSelect()`'s `choose()` already calls
+`setPortfolioScope(false)` the moment a planner picks a real project out of the shared popover — so
+no per-module exit logic was needed anywhere.
+
+**Writes are blocked centrally, not per module.** A `wrapWritesForPortfolio()` IIFE in `auth.js`
+(guarded by `window.__sb.__pdPortfolioWrapped`, so it wraps exactly once) replaces
+`window.__sb.from(table)` so that, in portfolio scope, calling `.insert/.update/.upsert/.delete` on
+the returned query builder swaps that one method for a version which toasts *"Portfolio is
+read-only — switch to a project to make changes."* and resolves to a well-formed "blocked" result
+(`{data:null, error:{message:'Portfolio view is read-only.', code:'PD_PORTFOLIO_READONLY'}}`) rather
+than throwing — the chainable methods a caller might invoke before awaiting (`select`, `eq`, `in`,
+`order`, `limit`, …) are stubbed to return the same blocked object so code that chains before the
+write cannot throw either. ⚠️ **`.rpc(...)` is deliberately NOT wrapped** — several modules read
+through security-definer RPCs (`is_admin()` and friends), and blocking every RPC would break
+legitimate reads; write-shaped RPCs stay gated server-side by their own `created_by = auth.uid()` /
+role checks. Because every module's data layer resolves to `AppAuth.getSB()` — the wrapped client —
+**write-blocking needed zero per-module code**.
+
+**`UI.allProjectIds()`** is the one new shared read helper — cached, backed by `PDb.getProjects()` —
+that every module's consolidation branch calls to get the id list for an `.in('project_id', ids)`
+query.
+
+**The per-module pattern, applied across the app:**
+- Project-select guard, everywhere: `pid = AppAuth.isPortfolioScope() ? null : (sessionStorage…
+  || projects[0]?.id || null)` — portfolio scope never falls back to a real project, which is what
+  makes the selector read "Portfolio" rather than a stale id.
+- Read consolidation, where it makes sense: guard `if (!pid && !portfolio) return/refuse;`, fetch
+  `portfolioIds = await UI.allProjectIds()` (short-circuit on empty), then branch the query between
+  `.in('project_id', portfolioIds)` and `.eq('project_id', pid)`.
+- Inherently single-project sub-features are explicitly **skipped in portfolio scope**, with a
+  comment saying why, rather than force-consolidated: equipment-loading's Site Plan tab, contracts-
+  claims' `CCAffected`/packages/wizard project-conflict cache, meeting-minutes' deep-link picker,
+  schedule links — all read one project's own drawings/links/state and have no honest cross-project
+  meaning. `PDSync.cachePut`/`cacheGet` (the offline read-cache) is likewise skipped in portfolio
+  scope, since its key is per-project.
+- Architecturally complex, financially-sensitive single-project engines get an **honest placeholder**
+  rather than a risky cross-project aggregation:
+  - **s-curve** — true cross-project curve aggregation was assessed and rejected: `compute()` is
+    entangled with `mode` (auto/manual), `basis` (duration/cost), `anyTradeFilter()`, the RPC fast
+    path, `scopedRows()` and forecast logic, all tied to one project's own schedule engine. Portfolio
+    scope now shows *"S-Curve is a per-project schedule curve — there is no single combined curve
+    across every project. Pick a project…"* rather than drawing a stale or nonsensical curve.
+  - **cash-flow** — same shape, same conservative treatment, per its own pre-existing precedent.
+  - **project-schedule** — treated most conservatively of all: `pid` stays `null` in portfolio scope
+    and nothing else changes (`load()` only ever runs `if (pid)`), so no Gantt/WBS/Vertical Stacking
+    consolidation across projects is attempted. Deliberately minimal, matching this module's own
+    repeated caution about cross-project reads.
+- Full read-consolidation was built where it is straightforward and safe: **issues-lessons** now
+  consolidates both `issues_lessons` and `lessons_learned` across every accessible project (with
+  `loadMoms()` — the meeting-minutes deep-link picker — left as a natural no-op degradation, since
+  `pid` stays null and it already guards on that). Risk Register, Stakeholder Map (+`person.html`),
+  Minutes of Meeting, Progress Photos, Equipment Loading, Manpower Loading, Productivity Rates and
+  Cash Flow's read paths were fixed the same session, per the pattern above.
+
+⚠️ **Cache-busting gap found and closed.** `MODULE_V`'s value is read by every module page from
+`document.currentScript.src`'s own `?v=` query string, not from `modules-grid.js`'s internal fallback
+constant alone — bumping only the constant changes nothing a returning browser can see, since the
+browser caches the script by its full URL. Fixed by bumping the `<script src="…modules-grid.js?v=">`
+tag in **both** `dashboard.html` and `modules.html` (and the fallback constant, for consistency) to
+`20260914u`. Separately, `contracts-claims/index.html`'s and `issues-lessons/index.html`'s own
+`module.js?v=` tags had been left on stale tokens (`20260911uc`, `20260911d`) despite their
+`module.js` content having been edited — both bumped to `20260914u` so the fix actually reaches a
+browser. A repo-wide version-split audit (every `src=`/`href=` reference to a `.js`/`.css` asset,
+resolved and grouped by real path) confirms **0 splits across 67 distinct shared/module assets**.
+
+⚠️⚠️ **Not verified signed in.** No live login is possible in this environment for any part of this
+work — every check performed was `node --check` / Node script-extraction syntax verification on the
+touched files, not a live browser/database test. The mechanism (`isPortfolioScope`, the write
+wrapper, per-module reads) has not been exercised against a real signed-in session or real project
+data; the first real test is opening a module from the Portfolio sidebar and confirming the selector
+reads "Portfolio", the list consolidates, and an edit attempt is refused with the read-only toast.
+
+`assets/js/auth.js` / `assets/js/ui.js` (shared, `?v=20260914e`, 21–29 referencing pages);
+`assets/js/modules-grid.js` + `dashboard.html` + `modules.html` (`MODULE_V` → `20260914u`);
+`modules/issues-lessons/module.js` + `index.html`; `modules/contracts-claims/index.html`
+(`module.js?v=` bump only — content was edited pre-session); `modules/project-schedule/index.html`;
+`modules/s-curve/index.html` — all module-local edits at the same session.
 
 ### Pormac gets a Portfolio scope: a checkbox that grounds it in every project, not one (2026-09-14)
 

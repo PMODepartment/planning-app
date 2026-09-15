@@ -98,9 +98,8 @@ function dispatchSandbox(viewName) {
 
 const VIEW_LOADER = {
   scurve: 'loadScurve', cashflow: 'loadCashflow', resources: 'loadResources',
-  equipment: 'loadEquipment', milestones: 'loadMilestones', risk: 'loadRisks',
-  stakeholders: 'loadStakeholders', issues: 'loadIssues', meetings: 'loadMeetings',
-  contracts: 'loadContracts', photos: 'loadPhotos', productivity: 'loadProductivity'
+  equipment: 'loadEquipment', milestones: 'loadMilestones',
+  stakeholders: 'loadStakeholders'
 };
 
 Object.keys(VIEW_LOADER).forEach(function (v) {
@@ -142,7 +141,19 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
   const keys = Object.keys(new Function(sliceFn(JS, 'viewLoaders') +
     '\nreturn viewLoaders.toString();')().match(/\{[\s\S]*\}/)[0]
     .split('\n').join(' ').match(/(\w+):/g).reduce(function (a, k) { a[k.slice(0, -1)] = 1; return a; }, {}));
-  eq(keys.length, 12, 'viewLoaders names all twelve lazy views');
+  eq(keys.length, 6, 'viewLoaders names the six lazy views this page still hosts');
+  /* ⚠️⚠️ AND NOT THE SIX THAT MOVED. Owner 2026-09-15: the dropdown was a second home for six
+     modules, and their dashboards now live in the modules themselves
+     (assets/js/portfolio-dash.js). A loader left behind here would be a second copy of a
+     renderer that is no longer on this page — the drift the move exists to end. */
+  ['risk', 'issues', 'meetings', 'contracts', 'photos', 'productivity'].forEach(function (k) {
+    ok(keys.indexOf(k) < 0, 'viewLoaders no longer names "' + k + '" — it moved to its module');
+  });
+  /* ⚠️ A deep link to one of them must still resolve, to the module that owns it now. */
+  const MOVED = new Function('return ' + /var PO_MOVED_VIEWS = (\{[\s\S]*?\});/.exec(JS)[1])();
+  eq(Object.keys(MOVED).length, 6, 'all six moved views still resolve from an old #po_view= link');
+  eq(MOVED.risk, 'risk-register', 'and they name the module that hosts them');
+  ok(/location\.replace\(/.test(sw), 'switchView redirects rather than pushing a dead tab onto Back');
 }
 
 /* -- the contrast: on the pinned base the same gesture reaches NO loader ---- */
@@ -338,6 +349,7 @@ async function raceSuite() {
 }
 
 function report() {
+  const CODE = scan.clean('x.js', JS);   // comments blanked, string bodies kept
   /* ======================================================= 3 · the error text
      A5: a timeout, a missing migration and an RLS refusal must not read alike. */
   const se = new Function(sliceFn(JS, 'scErrText') + '\nreturn scErrText;')();
@@ -355,13 +367,78 @@ function report() {
   ok(/57014/.test(se({ message: 'canceling statement due to statement timeout' })),
      'err: recognised from the message alone when no code is given');
 
+  /* ================================================ 3b · the chrome (Phase B)
+     B8: one KPI component. The two private producers are executed through the REAL
+     UI.kpi — loaded the way tools/wiring-check.js loads a browser script — so this
+     proves the shipped page emits the shared card, not that a stub does. */
+  const uiSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'js', 'ui.js'), 'utf8');
+  const win = { document: { addEventListener() {}, readyState: 'complete',
+                            querySelector: () => null, querySelectorAll: () => [] },
+                addEventListener() {}, location: { hash: '' }, history: {}, matchMedia: () => ({}) };
+  win.window = win;
+  new Function('window', 'document', 'location', 'history', 'matchMedia', 'navigator', uiSrc)
+    (win, win.document, win.location, win.history, win.matchMedia, {});
+  const UI = win.UI;
+  ok(UI && typeof UI.kpi === 'function', 'kpi: the real UI.kpi loaded');
+
+  const kpiFns = new Function('UI', 'esc',
+    sliceFn(JS, 'kpi2') + '\n' + sliceFn(JS, 'msKpi') +
+    '\nvar KPI_VARIANT = { "--pd-ok": "pd-kpi-ok", "--pd-warn": "pd-kpi-warn", "--pd-bad": "pd-kpi-bad" };' +
+    '\nvar MS_VARIANT = { good: "pd-kpi-ok", warn: "pd-kpi-warn", bad: "pd-kpi-bad" };' +
+    '\nreturn { kpi2: kpi2, msKpi: msKpi };')(UI, s => String(s));
+
+  const plain = kpiFns.kpi2('Planned to date', '42%');
+  ok(/class="pd-kpi"/.test(plain), 'kpi2 emits the SHARED card');
+  ok(!/po-kpi2/.test(plain), 'kpi2 emits no private class');
+  ok(/pd-kpi-label/.test(plain) && /pd-kpi-value/.test(plain), 'kpi2 keeps label and value');
+
+  const bad = kpiFns.kpi2('Schedule Variance', '-8 pp', '--pd-bad');
+  ok(/pd-kpi-bad/.test(bad), 'kpi2 maps --pd-bad to the shared semantic variant');
+  ok(!/style="color:var\(--pd-bad\)/.test(bad),
+     'kpi2 uses the variant, not an inline colour, so the accent bar is tinted too');
+  ok(/pd-kpi-ok/.test(kpiFns.kpi2('x', '1', '--pd-ok')), 'kpi2 maps --pd-ok');
+  ok(/pd-kpi-warn/.test(kpiFns.kpi2('x', '1', '--pd-warn')), 'kpi2 maps --pd-warn');
+
+  /* ⚠️ An UNRECOGNISED token must still colour the value. Silently dropping it would
+     make a caller's meaning disappear with no error — the failure this repo calls a
+     silent nothing. */
+  const odd = kpiFns.kpi2('x', '1', '--po-ms-info');
+  ok(/var\(--po-ms-info\)/.test(odd), 'kpi2 falls back to an inline colour for an unknown token');
+
+  const ms = kpiFns.msKpi('Overdue', '3', 'across 4 projects', 'bad');
+  ok(/class="pd-kpi pd-kpi-bad"/.test(ms), 'msKpi maps its own good/warn/bad vocabulary');
+  ok(/pd-kpi-sub/.test(ms), 'msKpi keeps its sub-line');
+  ok(!/pd-kpi-sub/.test(kpiFns.msKpi('x', '1', '', '')),
+     'msKpi emits no empty sub-line when there is nothing to say');
+
+  /* B6: one funnel for thirteen views, and every panel it names must exist. */
+  const FP = JSON.parse(JSON.stringify(
+    new Function('return ' + /var FILTER_PANEL = (\{[\s\S]*?\});/.exec(CODE)[1])()));
+  eq(Object.keys(FP).length, 3, 'filter: three views declare a panel — risk and issues took theirs with them');
+  Object.keys(FP).forEach(k =>
+    ok(new RegExp('id="' + FP[k] + '"').test(html), 'filter: panel ' + FP[k] + ' exists in the markup'));
+  eq((html.match(/class="pd-filttoggle"/g) || []).length, 1, 'filter: exactly ONE funnel in the markup');
+  /* ⚠️⚠️ READ FROM THE STYLESHEET, NOT THE PAGE. The whole <style> block moved to
+     assets/css/portfolio-dash.css on 2026-09-15, because the six dashboards that now live in their
+     own modules are drawn with these classes and a module cannot reach a <style> block inside
+     another page. Asserting against the HTML here would have passed only until somebody looked. */
+  const PODCSS = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'css', 'portfolio-dash.css'), 'utf8');
+  ok(/\.po-topbar-tools \.pd-filttoggle\[hidden\]/.test(PODCSS),
+     'filter: the [hidden] specificity tie is handled (inline-flex ties the UA rule)');
+  ok(/portfolio-dash\.css/.test(html), 'and the page links the stylesheet those rules moved into');
+
+  /* B9: the series switch is the app's own multi-select segment, not loose checkboxes. */
+  const chart = sliceFn(JS, 'scRenderChart');
+  ok(/pd-seg pd-seg-multi/.test(chart), 'series: uses the shared multi-select segment');
+  ok(!/type="checkbox" data-sc/.test(chart), 'series: no loose checkboxes left');
+  ok(/button\[data-sc\]/.test(chart), 'series: wired to the buttons it renders');
+
   /* ===================================================== 4 · source invariants
      ⚠️⚠️ COMMENTS ARE STRIPPED FIRST, AND BOTH OF THESE FAILED UNTIL THEY WERE.
      The only `count:'exact'` left on the page is inside the comment explaining that the
      pre-read was REMOVED, and two of the three "Load failed." are comments quoting the
      message this change deleted. A checker that reads its own explanation and reports it as
      a finding is the `cellcount.py` trap, third occurrence in this repo. */
-  const CODE = scan.clean('x.js', JS);
   ok(!/count:\s*'exact'/.test(CODE), 'no count:exact remains in CODE (comments stripped)');
   ok(/\.eq\('project_id', pid\)/.test(CODE), 'the pager binds one project at a time');
   ok(/_scGen/.test(CODE), 'the S-curve load carries a generation token');

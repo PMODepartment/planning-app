@@ -1,3 +1,43 @@
+## 2026-09-15 (w) — `fitDist`: one framing rule, and it finally knows the canvas's shape
+
+Owner: *“The presets view also do not view properly and I cannot see the ground”*.
+
+### ⚠⚠ THE CAMERA STOOD THE SAME DISTANCE OFF WHATEVER SHAPE THE CANVAS WAS
+`var d = Math.max(span * 2.6, tall * 1.9) + 1.5` — no aspect term. Tuned at the card's own
+698 × 503 (aspect ~1.39); measured live at a 1900px viewport the canvas is **1752 × 503, aspect
+3.48**, and the model filled **19% of the frame**. A `PerspectiveCamera`'s `fov` is **vertical**, so
+a wider canvas sees more at the same distance — keeping the distance throws the extra width away.
+- **`fitDist(aspect)`**, asked by `place()`, by `r0` and by `resize()`. ⚠ Three copies of a framing
+  rule is three chances for the viewpoint buttons, the opening view and a resized card to disagree.
+- ⚠ Vertical term aspect-**independent**; horizontal term scales **inversely** with aspect.
+- ⚠⚠ Returns today's value **exactly** at `VS3_REF_ASPECT`, so nothing moves at the shape it was
+  tuned for.
+- ⚠ `resize()` re-derives `r0` and **scales `rot.r` by the same ratio** rather than resetting it —
+  `rot.r` is where the planner left the camera.
+
+### Verified by execution (the shipped formula run as the control)
+Reference aspect **identical** (37%→37%, 56%→56%); at the measured 3.48 the 1-storey card goes
+**19% → 41%** and the 3-storey **56% → 68%**; a narrow 0.80 card **pulls back** (17.1 → 28.6) so it
+still fits. Every case asserted to fit both axes. `node --check` PARSE OK; **2,074 → 2,075
+functions, 0 lost**; 0 NUL bytes.
+
+### ⚠⚠ Not verified signed in
+The browser session signed out mid-task, so **no rendered frame was seen** — the arithmetic is
+proven, the picture is not.
+⚠ **“I cannot see the ground” is a different question and is deliberately not answered here:** the
+grade plate belongs to the **site** model, and a per-trade tower card has never drawn one. Whether
+it should is a design decision.
+
+### ⚠ The toolbar asks were shipped by a concurrent session
+`.ps-vstack` now carries `border-top:1px solid var(--pd-line)` (the delineation the owner asked for
+twice), and labels moved inside the segments as `.ps-vs-seglab` / `.ps-vs-rowlab`. I had drafted a
+`.ps-vs-grp`-based labelling and **discarded it unshipped** — a second labelling idiom over one bar
+is exactly the drift this file keeps recording. ⚠ And measuring first is what kept it small:
+**nothing in that toolbar clipped** (every chip `scrollWidth === clientWidth`, nothing past a bar's
+edge); the defect was a missing boundary.
+
+`MODULE_V` → `20260915w`.
+
 ## 2026-09-15 (j) — The Summary told a project with no baseline that nothing had slipped
 
 Owner, with the Summary open on OPW101 and six numbered points. One of them is a defect and the

@@ -8,7 +8,8 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Minutes of Meeting · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915f" />
-  <link rel="stylesheet" href="module.css?v=20260913a" />
+  <link rel="stylesheet" href="module.css?v=20260915b" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260915x" />
 </head>
 <body>
   <div class="pd-app">
@@ -110,16 +111,17 @@
        library/version already loaded by progress-photos' PPR export). -->
   <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
   <script src="../../assets/js/config.js?v=20260915a"></script>
-  <script src="../../assets/js/auth.js?v=20260901b"></script>
+  <script src="../../assets/js/auth.js?v=20260914e"></script>
   <script src="../../assets/js/db.js?v=20260914d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260915f"></script>
+  <script src="../../assets/js/ui.js?v=20260915g"></script>
   <script src="../../assets/js/notebook.js?v=20260915d"></script>
   <script src="../../assets/js/icons.js?v=20260915f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260913a"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260915x"></script>
+  <script src="module.js?v=20260915j"></script>
   <script>
     // "Meetings" ▾ / "Meetings Dashboard" ▾ as a Project-Schedule-style
     // dropdown instead of two plain tab buttons — module.js's wire() calls
@@ -147,6 +149,25 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'minutes-of-meeting', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
+
+      /* ==== PORTFOLIO SCOPE IS THIS MODULE’S DASHBOARD =======================================
+         Owner 2026-09-15, looking at the Portfolio Dashboard’s view dropdown: *"there is a
+         dropdown that links to each module. that is wrong … the design of those dashboards must
+         be pushed to each module established on the left."* It was a second home for this module:
+         the sidebar already opens this page portfolio-wide, and the same rows were also a view of
+         a page called Portfolio Dashboard. That view now lives here — see portfolio-dash.js.
+         ⚠️ THE MODULE’S OWN init() IS SKIPPED, deliberately. It would read this register a second
+         time, into a UI that is hidden underneath the dashboard — a duplicate cross-project fetch
+         on every project the planner can see, for nothing anybody can look at.
+         ⚠️ The project selector is wired by takeOver() for exactly that reason: skipping init()
+         skips the code that fills it, and without it there is no way to leave portfolio scope from
+         the page you are standing on. */
+      if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('meetings')) {
+        PortfolioDash.takeOver('meetings', { select: '#il-project' }).catch(function (e) {
+          if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+        });
+        return;
+      }
       MinutesOfMeeting.init(user, profile);
     });
   </script>

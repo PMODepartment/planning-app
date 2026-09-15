@@ -120,19 +120,22 @@ window.Pormac = (function () {
       }).join('');
     UI.enhanceProjectSelect(sel);
 
-    // ⚠️⚠️ SCOPE IS NOW DERIVED SOLELY FROM HOW THE PLANNER ARRIVED, NOT A
-    // CONTROL THEY SET. `ui.js`'s `renderNav('portfolio', …)` puts this hash
-    // on Pormac's own Portfolio-sidebar link, and — per MODULE_CONTRACT.md —
-    // that is the ONE signal distinguishing "opened from the Portfolio nav"
-    // from "opened from a project's own module grid" (a module page always
-    // renders under `mode:'project'` in `UI.renderNav` regardless of which
-    // nav family linked to it, so `pd_project` sessionStorage cannot tell the
-    // two apart on its own). A checkbox here used to let a planner flip that
-    // scope mid-session — removed 2026-09-14 (owner: "no need for the
-    // portfolio checkbox") because the whole point is that the answer's basis
-    // should follow WHERE Pormac was opened from, not a toggle somebody could
-    // leave in the wrong position and not notice.
-    if (/(^|[#&])pmc_scope=portfolio(&|$)/.test(location.hash)) setPortfolioAll(true);
+    // ⚠️⚠️ SCOPE IS DERIVED SOLELY FROM HOW THE PLANNER ARRIVED, NOT A
+    // CONTROL THEY SET. `ui.js`'s `renderNav('portfolio', …)` puts
+    // `#pd_scope=portfolio` on EVERY module's own link (2026-09-14,
+    // generalized from this module's own one-off `#pmc_scope=portfolio`),
+    // read once by `AppAuth` (auth.js) into a per-tab sessionStorage flag
+    // every module now shares — this is the ONE signal distinguishing
+    // "opened from the Portfolio nav" from "opened from a project's own
+    // module grid" (a module page always renders under `mode:'project'` in
+    // `UI.renderNav` regardless of which nav family linked to it, so
+    // `pd_project` sessionStorage cannot tell the two apart on its own).
+    // A checkbox here used to let a planner flip that scope mid-session —
+    // removed 2026-09-14 (owner: "no need for the portfolio checkbox")
+    // because the whole point is that the answer's basis should follow
+    // WHERE Pormac was opened from, not a toggle somebody could leave in
+    // the wrong position and not notice.
+    if (window.AppAuth && AppAuth.isPortfolioScope()) setPortfolioAll(true);
   }
 
   // One writer for the portfolio-scope flag and the project select it hides,
