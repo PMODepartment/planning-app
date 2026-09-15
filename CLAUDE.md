@@ -102,6 +102,99 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (e) — Project dashboard: two panels out, a dead classification out, a Contracts & Claims summary in
+
+Owner, four comments on the project-level dashboard: *"No need to have the minutes"*; *"Issues &
+Concerns: how are items classified as critical or high? if this is a dead end let's remove"*;
+*"approaching deadlines of activities no need"*; and *"add summary ng contracts claims"* with the
+four blocks spelled out.
+
+### ⚠️⚠️ THE ANSWER TO THE CLASSIFICATION QUESTION IS "NOTHING CLASSIFIES THEM"
+
+`issues_lessons.severity` **exists in the schema** (`Low | Medium | High | Critical`), inherited from
+the Power Apps import this register was built from. The module that owns the register **writes it
+nowhere**: `severity` appears **0 times** in `modules/issues-lessons/module.js` and `index.html` — no
+field on the form, no column in the table, no filter. So the only rows that could ever count were
+ones that arrived carrying a severity from an import; anything raised in the app is permanently
+uncounted. The dashboard was showing two cells that read 0 forever and could not be acted on.
+
+Both cells are gone, and so are their metrics. **`On hold` takes their place** — the one open-register
+distinction this module does record.
+
+⚠️ **The database column is left alone.** It holds real imported values on the Power Apps projects,
+and dropping it would destroy them. What was removed is the dashboard's claim to report on it.
+
+⚠️ **A gate caught a half-removal.** The cells went, but the per-row severity **tag** in the open-items
+list and the `severity` entry in two column fetch-lists survived. Half a removal is worse than none:
+it leaves the register looking as though it classifies issues, on a field nothing can set. All gone,
+and the column is no longer fetched.
+
+### Minutes of Meeting and Approaching Deadlines
+
+Both panels removed — renderer, host and call. ⚠️ **The Minutes module and its launcher tile are
+untouched**; only the dashboard panel went. `.pd-viz-2col` went with them: it held MoM beside Issues,
+and a two-column wrapper with one child is a half-width panel next to a gap.
+
+### The Contracts & Claims summary
+
+Four blocks, as asked: **Contract** (packages, value), **Change orders**, **Cost claims**, **Extension
+of time** — the last in days, the others in money.
+
+⚠️⚠️ **The four-stage pipeline is COLUMNS, not statuses**, and getting that backwards is the easy
+mistake. A claim moves Estimated → Submitted → Evaluated → Client Approved, and each stage is its own
+column (`est_/sub_/eval_/approved_`, suffixed `_amount` or `_days`). `status` is a separate axis with
+its own vocabulary — Pending | Approved | Disapproved | Cancelled. **There is no "Submitted" status
+and no "Disputed" one.**
+
+So "disputed" is reported as **two** figures, at the owner's choice, because one number cannot carry
+both meanings:
+
+- **Disapproved** — the submitted value of rows the client formally rejected. Reads 0 when a claim was
+  approved at less than it asked for, which is the common case.
+- **Shortfall** — submitted minus approved, the module's own "In dispute" wording in BOQ.
+
+⚠️ The shortfall counts **decided rows only** (Approved + Disapproved). That is the rule the module's
+own Recovery-rate KPI already uses, and its reason is written there: a still-Pending claim is not a
+failure, and dividing by everything submitted reads as a catastrophic ~0% on a young register. The
+dashboard must not disagree with the module about this.
+
+⚠️ **Packages come from the `packages` table via the companion-table mechanism**, not from a
+`record_type` — `contracts_claims.package_id` points at them. The contract **value** is the register's
+own Contract rows, the same figure the module's "Total contract value" KPI shows, because two screens
+quoting different contract values is worse than one screen quoting fewer. When the packages' own total
+disagrees, a third cell says so rather than silently picking a winner.
+
+⚠️ **Shortfall is clamped at 0.** An approval above what was submitted is a data-entry question, not a
+negative dispute, and a "−₱2.1M disputed" cell would read as a credit.
+
+### Verified
+
+**`ccRow` sliced out of `dashboard.html` and executed** against four registers — never a
+reimplementation:
+
+| case | Submitted | Evaluated | Approved | Disapproved | Shortfall |
+|---|---|---|---|---|---|
+| approved below ask | 100 | 90 | 70 | — | **30** |
+| formally rejected | 100 | 90 | 0 | **100** | 100 |
+| nothing decided | 100 | 90 | — | — | **0** |
+| approved above ask | 100 | 100 | 120 | — | **0** (clamped) |
+
+⚠️⚠️ **A cross-file gate, because this is where a typo hides:** every metric the panel reads as
+`m.<key>` is asserted to be declared as `key: '<key>'` in `config.js` — **18 prefixed combinations
+plus the direct reads** — and every column those metrics name is asserted to exist in
+`supabase-build.sql`. Neither parser can see a mismatch; it surfaces as a blank cell.
+
+Rendered in a browser under the dashboard's own CSS with the real `renderContracts`: four blocks, each
+on **one line** at 1280px and at 900px, light and dark, no panel overflow, no page h-scroll, and the
+empty state drawing correctly.
+
+⚠️ **Not verified signed in** — no live project was loaded, so the figures above are from stubs and
+the metric engine's own aggregation was not exercised end to end.
+
+⚠️ **`assets/js/config.js?v=` bumped to `20260915a` in all 29 pages that load it**, root and module
+alike. The first pass only caught the 13 at root; a module page left on the old token would serve a
+stale config declaring metrics this change removed.
+
 ### 2026-09-15 (d) — Project Schedule: the stacking pane stops being capped to the viewport
 
 Owner: *"the main screen can't even be seen without having to select the expand button"*, then *"let's
