@@ -102,6 +102,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (f) — Project dashboard: the packages become a breakdown of the contract value
+
+Owner, on the panel live: *"The packages shouldn't be a separate KPI card. This is a breakdown of
+the whole contract value. Let's show it that way."*
+
+- ⚠⚠ **A `Packages: 3` cell answered "how many", which nobody asked.** What a reader wants from a
+  package list is *which part of the money each one is*. The contract value is now the headline and
+  the packages are rows beneath it — largest first, each with its amount and its share — over an
+  allocation bar.
+- ⚠⚠ **When the packages do not add up to the contract, the gap is a ROW, not a footnote.**
+  Packages summing to less means work not allocated to any package, and that remainder is the most
+  useful thing this block can say, so it is drawn as *Not allocated to a package* with its own share.
+  Summing to MORE is a data error and says so in words — a negative remainder drawn as a bar would
+  read as a credit.
+- ⚠ The contract VALUE is still the register's own Contract rows, not the sum of
+  `packages.contract_amount`: the module's "Total contract value" KPI reads that same figure, and two
+  screens quoting different contract values is worse than one quoting fewer. What changed is how the
+  packages are shown against it, not which number is the contract.
+- ⚠ The share denominator falls back to the packages' own total when there is no Contract record
+  yet, so the bars still mean something on a project that has packages and no contract row.
+
+**Verified** with the real `renderContracts` under the dashboard's own CSS, both themes at 1280px:
+packages present (bar, three rows, archived flagged, an 8% unallocated remainder in warn colour);
+and the owner's own live case — a contract value with **no** packages — which draws the headline and
+a note naming where packages are set up, with no orphan bar and no empty list. Not verified signed in.
+
 ### 2026-09-15 (e) — Project dashboard: two panels out, a dead classification out, a Contracts & Claims summary in
 
 Owner, four comments on the project-level dashboard: *"No need to have the minutes"*; *"Issues &
