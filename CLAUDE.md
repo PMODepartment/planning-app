@@ -102,6 +102,72 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (n) — An activity can carry its paperwork, and a missing export was hiding behind a catch
+
+**Run `migrations/2026-09-15-schedule-attachments.sql`.** Owner: *"attachments on activities in the
+Schedule module, in the Notes section."* The engine landed in (m); this is the table, the bucket and
+the panel.
+
+- **Where:** the **Notes** section of the Edit Activity form, under Remarks. ⚠️ Deliberately not a
+  tenth `.ps-form-sec` — the section-nav rail is built from those, and a method statement or a permit
+  is the evidence behind the remark rather than a separate subject.
+- ⚠️⚠️ **Keyed on `activity_id`, the planner's own id, never `project_schedule.id`.** An import
+  DELETES AND REINSERTS EVERY ROW, so a uuid link would be destroyed by the next import and take
+  every attachment on the project with it. Same rule the Drawing Register already uses to link here.
+- ⚠️⚠️ **And that trade has a known cost, so `activity_name` is stored beside it.** A *regenerated*
+  schedule reissues the same generated id space to different work — measured on 2026-09-14 (t),
+  where 24 of 50 stale allocations silently re-attached to activities nobody had allocated them to.
+  A broken link is visible; that one is not. The panel compares the stored name to the current one
+  and **says so**, in warn colours, without re-pointing anything: only a person can tell a reissued
+  id from a renamed activity.
+- ⚠️⚠️ **Renaming the Activity ID moves the files with it.** The link *is* the id, so editing it
+  from `SB300004` to `SB300099` would otherwise leave every file filed under an id nothing carries
+  any more — in the bucket, invisible on every screen. Scoped to `project_id` AND the old id, run
+  only when the id actually changed, and the toast says how many moved.
+- ⚠️ **A dedicated `project-schedule` bucket, not the `contracts-claims` one.** Reuse would have cost
+  nothing (those policies key on `bucket_id`), and would leave a bucket named `contracts-claims`
+  holding permits — so any later decision about the commercial bucket silently applies to the
+  schedule too.
+- ⚠️ **No grid indicator in this pass, and no unused helper waiting for one.** A paperclip column
+  would be useful, but saved column sort and order are POSITIONAL, so inserting a column silently
+  re-points every planner's stored layout. Its own change, appended rather than inserted.
+
+### ⚠️⚠️ TWO BUGS CAUGHT BY EXECUTING THE WIRING, NEITHER VISIBLE TO `node --check`
+
+1. **`canWrite()` — it is a VARIABLE in this module, not a function.** It parses cleanly and throws
+   *"canWrite is not a function"* on the first paint. Fourth time this repo has recorded that exact
+   shape (`below is not defined`, stakeholder-map's own `canWrite`, boq.js's `locKey`).
+2. **`loadProject` was added to `attach.js` and NEVER EXPORTED — and (m) shipped it that way.** The
+   schedule's caller wraps the read in a try/catch so an un-migrated database still opens the module,
+   so *"e.loadProject is not a function"* was **swallowed** and the panel rendered empty for ever,
+   looking entirely correct. This is the z6 shape with the arrow reversed, and only running it found
+   it.
+
+### Verified
+
+**21 assertions, 0 failing**, executing the new functions sliced out of the shipped file by name
+against the module's real neighbours, with `PDAttach` loaded for real: the panel renders an attached
+file under `ps-` classes (never `cc-`); a writer gets the upload control and a **viewer gets none but
+still sees the file**; all four states of the stale tell-tale (same name silent · renamed names both ·
+**no stored name silent, not accused** · activity gone says so); the owner key taken from the field
+and not the row, including the null that puts it into staged mode; the re-point firing on a rename,
+scoped to project + old id, and **writing nothing** on an unchanged id or a new activity; and an
+un-migrated database neither throwing nor blanking the panel, naming the migration by filename.
+
+⚠️ **The contrast bases are pinned to SHAs, not `HEAD`.** Both suites from earlier today went green
+on **both** sides the moment their commits landed — `git show HEAD:` had become self-comparison, the
+trap this repo already records. Re-pinned: the class-code control (`2e200bc`) fails 2 of 4 again, and
+the extraction equivalence (`2a9489c`) still reports **7 identical, 0 differing**.
+
+`node tools/wiring-check.js` **129/129**; inline script parses; the real `<style>` block's brace delta
+is **+12/+12** (⚠️ the whole-file count is off by one in HEAD too — two of the three `<style>` matches
+are JS strings, so only the genuine block can be counted).
+⚠️ **Not verified signed in, and the migration has not been run** — no file has been uploaded, no
+signed URL opened and no re-point executed against a real project.
+
+`attach.js` → `?v=20260915b` **on both referencing pages** (its contents changed after (m) shipped);
+`MODULE_V` → `20260915l`, sort-checked.
+
 ### 2026-09-15 (m) — The attachment engine becomes shared, before a second module copies it
 
 Groundwork for the owner's ask: *"attachments on activities in the Schedule module, in the Notes

@@ -290,7 +290,13 @@ window.PDAttach = (function () {
     }
 
     return {
-      load: load, of: of, count: count, error: error, label: label,
+      /* ⚠️ `loadProject` was added and NOT exported in the first cut, and the schedule's caller
+         wraps it in a try/catch so the module still opens on an un-migrated database — so the
+         resulting "e.loadProject is not a function" was SWALLOWED and the panel simply rendered
+         empty for ever. `node --check` cannot see a missing export, and the panel looked correct.
+         Caught by executing the wiring rather than reading it; this is the z6 shape (an export
+         naming something that is not there) with the arrow pointing the other way. */
+      load: load, loadProject: loadProject, of: of, count: count, error: error, label: label,
       upload: upload, open: open, remove: remove,
       panelHTML: panelHTML, panelWire: panelWire, flush: flush,
       types: function () { return TYPES.slice(); }

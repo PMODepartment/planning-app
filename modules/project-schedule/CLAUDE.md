@@ -1,3 +1,38 @@
+## 2026-09-15 (g) — Activity attachments, in the form's Notes section
+
+**Run `migrations/2026-09-15-schedule-attachments.sql`.** Owner: *"attachments on activities in the
+Schedule module, in the Notes section."*
+
+⚠️ **A correction to what the ask assumed:** the "Notes section" here is the last section of the Edit
+Activity modal and it held exactly one thing, a Remarks textarea. The **Notebook / Files tabs were
+never built** — `renderDetails()` handles ten tabs and none is notes; all that survived were two
+orphan comment headers and `migrations/add_notebook_files.sql`, whose `notebook` and `files` jsonb
+columns **nothing in this module reads** (checked: all four `.files` hits are DOM `FileList`). Those
+two comment headers are now replaced by the real thing; the dead columns are reported, not dropped.
+
+- **`PDAttach` (assets/js/attach.js), an instance — not a copy.** The three ordering rules live once.
+- ⚠️⚠️ **`activity_id`, never the row uuid** — an import reinserts every row. And `activity_name` is
+  stored beside it as a tell-tale, because a *regenerated* schedule reissues the same id space to
+  different work (2026-09-14 t). `attStale()` reports a mismatch and re-points nothing.
+- ⚠️⚠️ **Renaming the Activity ID carries the files across**, scoped to `project_id` + the old id.
+- ⚠️ **One project-scoped read** (`PDAttach.loadProject`), never `.in(activity_id, …)` — 16,000
+  activities do not fit in a URL — and through `PDb.selectAll`, because the 1000-row cap is silent.
+- ⚠️ `_attStaged` is reset on **every** form open, or files chosen for a cancelled save would be
+  flushed onto the next activity opened.
+- ⚠️ No grid indicator and no unused `attCount` helper: saved column order is positional, so a new
+  column is its own change.
+
+### ⚠️⚠️ Two bugs `node --check` could not see, both found by running it
+
+- **`canWrite()`** — a variable, not a function. Throws on the first paint. Fourth instance here.
+- **`loadProject` was never exported from `attach.js`**, and the caller's try/catch **swallowed** it,
+  so the panel rendered empty for ever and looked right.
+
+**21 assertions, 0 failing**, executing the sliced functions against the module's real neighbours.
+⚠️ Contrast bases pinned to SHAs — both of today's suites went green on both sides the moment their
+commits landed. ⚠️ Not verified signed in; the migration has not been run.
+`MODULE_V` → `20260915l`; `attach.js` → `?v=20260915b`.
+
 ## 2026-09-15 (f) — The Class Code cell prints a code and nothing else
 
 Owner, off an OPW101 screenshot: *"Some class codes are correct with only having a number within

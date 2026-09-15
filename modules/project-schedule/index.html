@@ -732,6 +732,30 @@
     .ps-coref-bad { color:var(--pd-red); border-color:var(--pd-red); }
     /* Inherited from a WBS branch rather than set on the row -- shown, but visibly not owned. */
     .ps-coref-inh { opacity:.62; font-style:italic; }
+    /* ---- Activity attachments (PDAttach renders these under the `ps` prefix) -----------------
+       ⚠️ Every colour is a --pd-* token, never a literal: this module is read in both themes and a
+          hardcoded light grey is the defect the 2026-09-11 (zc) pass had to go back and fix. */
+    .ps-atts { list-style:none; margin:0 0 6px; padding:0; display:flex; flex-direction:column; gap:4px; }
+    .ps-att { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); background:var(--pd-card); }
+    .ps-att-n { flex:1 1 auto; min-width:0; font-size:var(--pd-fs-sm); overflow:hidden;
+      text-overflow:ellipsis; white-space:nowrap; }
+    /* ⚠️ The type/size line is a BLOCK so it cannot be pulled onto the filename's line and then
+       have its leading space stripped — the flex anonymous-item trap this file fixed in the Class
+       Code cell the same day. */
+    .ps-att-n i { display:block; font-style:normal; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .ps-att .pd-btn { flex:0 0 auto; }
+    /* A staged file is visibly not yet real — dashed, so "not uploaded yet" is legible at a glance
+       and not only in the small print beside it. */
+    .ps-att-pend { border-style:dashed; background:transparent; }
+    /* ⚠️ A mis-pointed link is a CAUTION, not an error: the file is fine and the activity is fine;
+       what is in doubt is whether they still belong together. Warn tokens, never --pd-bad. */
+    .ps-att-stale { border-color:var(--pd-warn-line); background:var(--pd-warn-bg); }
+    .ps-att-stale .ps-att-n i { color:var(--pd-warn-text); }
+    .ps-att-add { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:6px; }
+    .ps-att-add .pd-select { flex:0 0 auto; }
+    .ps-att-st { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .ps-hint { margin:4px 0 0; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .ps-cctag { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); }
     .ps-cctag.unknown { color:var(--pd-red); }
     /* ⚠️ A GROUP-level code is valid, not a warning — so it is toned, never coloured like `.unknown`.
@@ -5019,6 +5043,12 @@
         <div class="ps-form-full" id="ps-f-udf-wrap" style="display:none;"><label class="pd-label">User-Defined Fields</label><div id="ps-f-udf-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full ps-form-sec">Notes</div>
         <div class="ps-form-full"><label class="pd-label">Remarks</label><textarea class="pd-input" id="ps-f-remarks" rows="2" style="resize:vertical;"></textarea></div>
+        <!-- Attachments. ⚠️ Inside the Notes section deliberately — a method statement, a permit or
+             an inspection report is the evidence behind the remark, not a separate subject, and the
+             section-nav rail is built from `.ps-form-sec` so a tenth section would lengthen a rail
+             that already carries nine. -->
+        <div class="ps-form-full"><label class="pd-label">Attachments <small>(files on this activity)</small></label>
+          <div id="ps-f-atts"></div></div>
       </form>
     </div>
     <div class="pd-modal-footer">
@@ -5093,6 +5123,10 @@
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="../../assets/js/co-insert.js?v=20260909r"></script>
+<!-- ⚠ PDAttach — the attachment engine, extracted out of contracts-claims on 2026-09-15 so the
+     ordering rules (object before row · roll the object back if the row fails · row before object
+     on delete) exist in ONE place rather than being copied here. -->
+<script src="../../assets/js/attach.js?v=20260915b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -9420,6 +9454,12 @@
     // project, and on a cold load (or an unphased project) nothing has changed and none is needed.
     var _scopeBefore = catScopeIsExec();
     await loadResourcesAssignments();   // loads WBS_NODES
+    if (gen !== _loadGen) return;
+    /* Attachments for the whole project, one read. ⚠️ HERE rather than earlier: the grid is already
+       on screen, and nothing above this point needs them — the form reads them on open. ⚠️ And
+       re-checked against `_loadGen` afterwards like every other await in load(), or a project
+       switched mid-load would show the previous project's attachments. */
+    await loadActAttachments();
     if (gen !== _loadGen) return;
     if (catScopeIsExec() !== _scopeBefore) { renderActLegend(); scheduleRender(); }
     // ⚠️ AND PERSIST IT, or the hint is never written. The `_cachePut` in the paint path above runs
@@ -22427,8 +22467,141 @@
       r[field] = value; return true;
     } catch (e) { UI.toast('Could not save.', 'error'); return false; }
   }
-  // ---- Notebook (P6-style multi-topic notes) ----
-  // ---- Files (linked documents — paste a URL to a SharePoint/Drive/etc. document) ----
+  /* ==========================================================================================
+     ACTIVITY ATTACHMENTS — files hanging off one activity, in the form's Notes section.
+     Run `migrations/2026-09-15-schedule-attachments.sql`.
+
+     ⚠️⚠️ THE ENGINE IS `PDAttach` (assets/js/attach.js) AND IS NOT COPIED HERE. It was extracted
+       out of contracts-claims for this, because what matters is not the upload but the three
+       ordering rules — object before row, roll the object back if the row write fails, row before
+       object on delete. A second copy is a second set of ways to get them wrong, and this repo has
+       paid for a hand-copied duplicate three times over (the location normaliser, the S-curve
+       maths, the change-order insert).
+
+     ⚠️⚠️ KEYED ON `activity_id`, THE PLANNER'S OWN ID — NEVER `project_schedule.id`. An import
+       DELETES AND REINSERTS EVERY ROW, so a uuid link would be destroyed by the next import and
+       every attachment on the project would go with it. Same rule the Drawing Register and the
+       Material Submittal Log already use to link into this table.
+
+     ⚠️⚠️ AND THAT TRADE HAS A KNOWN COST, WHICH IS WHY `activity_name` IS STORED BESIDE IT.
+       `activity_id` survives an import, but a REGENERATED schedule reissues the same generated id
+       space to different work — measured on 2026-09-14 (t), where 24 of 50 stale BOQ allocations
+       silently re-attached to activities nobody had allocated them to. A broken link is visible;
+       that one is not. `attStale()` compares the stored name to the current one and SAYS SO. It
+       never re-points anything: only a person can tell a reissued id from a renamed activity.
+     ========================================================================================== */
+  var ATT_MIGRATION = 'migrations/2026-09-15-schedule-attachments.sql';
+  /* ⚠️ Must match the CHECK constraint in the migration — a value this list offers and the
+     constraint refuses is an insert that fails AFTER the object is already in the bucket, which is
+     the one ordering the rollback handles least cleanly. */
+  var ATT_TYPES = [
+    ['method_statement',  'Method statement'],
+    ['drawing',           'Drawing'],
+    ['permit',            'Permit / clearance'],
+    ['site_instruction',  'Site instruction'],
+    ['inspection',        'Inspection / test report'],
+    ['photo',             'Photo'],
+    ['delay_notice',      'Delay notice'],
+    ['correspondence',    'Correspondence'],
+    ['other',             'Other']
+  ];
+  var _ATT = null;
+  function attEngine() {
+    if (!_ATT) {
+      if (!window.PDAttach) return null;
+      _ATT = PDAttach.create({
+        sb: sb,
+        projectId: function () { return pid; },
+        userId: function () { return UID; },
+        table: 'activity_attachments', bucket: 'project-schedule', ownerCol: 'activity_id',
+        migration: ATT_MIGRATION, types: ATT_TYPES,
+        cls: 'ps', pathSeg: 'activities', parentWord: 'activity',
+        // Stamp the name as it is NOW, so a later mismatch is detectable.
+        extraOf: function (aid) {
+          var r = rows.find(function (x) { return String(x.activity_id || '') === String(aid); });
+          return { activity_name: (r && r.activity_name) || null };
+        },
+        staleOf: attStale
+      });
+    }
+    return _ATT;
+  }
+  /* The tell-tale. ⚠️ Silent when the stored name is absent (rows written before this column
+     existed) — "we did not record it" is not the same claim as "it has changed", and reporting the
+     first as the second would put a warning on every historical attachment. */
+  function attStale(a) {
+    if (!a || !a.activity_name) return '';
+    var r = rows.find(function (x) { return String(x.activity_id || '') === String(a[ 'activity_id' ] || ''); });
+    if (!r) return 'the activity ' + a.activity_id + ' is no longer on this schedule';
+    if (String(r.activity_name || '') === String(a.activity_name)) return '';
+    return 'attached to “' + a.activity_name + '”, now named “' + (r.activity_name || '—') + '”';
+  }
+  /* ⚠️ ONE project-scoped read, never `.in(activity_id, …)`. This schedule can hold 16,000
+     activities and PostgREST puts `in.(…)` in the URL — see PDAttach.loadProject. Tolerant: a
+     missing table leaves the panel saying so and the module opens exactly as before. */
+  async function loadActAttachments() {
+    var e = attEngine(); if (!e || !pid) return;
+    try { await e.loadProject(pid); } catch (err) {}
+  }
+  /* ⚠️ There is deliberately NO grid indicator (a paperclip + count on the row) in this pass, and
+     no `attCount` helper sitting unused waiting for one. It would be genuinely useful, but the
+     Class Code column's own note records why a new column is not free here: saved column sort and
+     order are POSITIONAL, so a column inserted mid-list silently re-points every planner's stored
+     layout at a different column. That is its own change, appended rather than inserted. A helper
+     with no caller reads as a feature that exists — this module has shipped that shape five times
+     (`setupOrderLabels` and friends), so it is not being added speculatively. */
+
+  /* ---- the form's panel ---------------------------------------------------------------------
+     ⚠️⚠️ THE OWNER KEY IS THE ACTIVITY ID IN THE FIELD, NOT THE ONE ON THE ROW. `#ps-f-actid` is
+       editable, so the planner may be renaming the id in this very dialog — painting from
+       `row.activity_id` would attach the next file to the old id while the form shows the new one.
+       Null on a NEW activity, which is what puts the engine into staged mode. */
+  var _attStaged = [];
+  var _attPrevActId = null;   // the id the open activity's files are filed under, captured on open
+  function attFormKey(row) {
+    var typed = (document.getElementById('ps-f-actid') || {}).value;
+    typed = String(typed == null ? '' : typed).trim();
+    if (typed) return typed;
+    return (row && row.activity_id) ? String(row.activity_id) : null;
+  }
+  function attPaintForm(row) {
+    var host = document.getElementById('ps-f-atts'); if (!host) return;
+    var e = attEngine();
+    if (!e) { host.innerHTML = '<p class="ps-hint">Attachments are unavailable — assets/js/attach.js did not load.</p>'; return; }
+    var key = attFormKey(row);
+    // ⚠️ `canWrite` is a VARIABLE in this module, not a function. Writing `canWrite()` parses
+    //    cleanly and throws "canWrite is not a function" on the first paint — the same shape this
+    //    repo has recorded three times (`below is not defined`, stakeholder-map's own `canWrite`,
+    //    boq.js's `locKey`), and one `node --check` cannot see.
+    host.innerHTML = e.panelHTML(key, _attStaged, canWrite);
+    e.panelWire(host, key, function () { return _attStaged; },
+      function (v) { _attStaged = v; }, function () { attPaintForm(row); });
+  }
+  /* Flush staged files and, when the planner has RENAMED the Activity ID, carry the existing
+     attachments across with it.
+     ⚠️⚠️ THE RE-POINT IS THE HALF THAT WOULD OTHERWISE LOSE DATA SILENTLY. The link is the id, so
+       editing `activity_id` from SB300004 to SB300099 leaves every file filed under an id nothing
+       on the schedule carries any more — present in the bucket, invisible on every screen. The
+       files move with the activity, and the toast says how many.
+     ⚠️ Narrow by construction: `project_id` AND the OLD id, so it can only ever touch rows this
+       activity owned. And it runs only when the id actually changed. */
+  async function attAfterSave(oldId, newId) {
+    var e = attEngine(); if (!e) return;
+    var o = String(oldId == null ? '' : oldId).trim(), n = String(newId == null ? '' : newId).trim();
+    if (o && n && o !== n) {
+      try {
+        var mv = await sb().from('activity_attachments')
+          .update({ activity_id: n }).eq('project_id', pid).eq('activity_id', o).select('id');
+        if (!mv.error && mv.data && mv.data.length) {
+          UI.toast(mv.data.length + ' attachment' + (mv.data.length === 1 ? '' : 's') +
+            ' moved to ' + n + '.', 'info');
+        }
+      } catch (err) {}
+    }
+    if (n && _attStaged.length) { await e.flush(n, _attStaged); }
+    _attStaged = [];
+    await loadActAttachments();
+  }
 
   // ----- COLUMN HEADER (static, resizable) -----
   // Column set + order mirrors OPC's Activities view (Avesta "Edit Cost Load" layout):
@@ -30770,6 +30943,12 @@
     set('ps-f-scon', row ? (row.secondary_constraint || '') : '');
     set('ps-f-scond', row && row.secondary_constraint_date ? String(row.secondary_constraint_date).slice(0,10) : '');
     set('ps-f-remarks', row ? row.remarks : '');
+    // ⚠️ Reset the staged list on EVERY open. Without this, files chosen for an activity whose save
+    //    was cancelled would be flushed onto the next activity opened — a shape this repo has hit
+    //    before (project-schedule's own `editing` flag surviving a navigation, 2026-09-10 y1).
+    _attStaged = [];
+    _attPrevActId = row ? (row.activity_id || null) : null;
+    attPaintForm(row);
     document.getElementById('ps-modal').style.display = 'flex';
     // ⚠️ AFTER the modal is displayed: both of these MEASURE, and an element inside a
     // `display:none` overlay has no box, so measuring earlier reads zero.
@@ -31624,6 +31803,12 @@
       });
       try { var rr4 = await sb().from(TABLE).update({ udf: udfVal }).eq('id', savedId); if (!rr4.error) { var rrow3 = rows.find(function (x) { return x.id === savedId; }); if (rrow3) rrow3.udf = udfVal; } } catch (e) {}
     }
+    /* Attachments, after the row exists and before the reload. ⚠️ Its own try/catch, like every
+       other tolerant write above it: a project without the attachments migration must still save
+       the activity, and a file that will not upload must never undo the row the planner came to
+       create. `_attPrevActId` is captured in openForm, because `payload.activity_id` is the NEW id
+       and the re-point needs the one the files are currently filed under. */
+    if (savedId) { try { await attAfterSave(_attPrevActId, payload.activity_id); } catch (e) {} }
     var _wasNew = !editId, _newCoId = savedId;
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal();
