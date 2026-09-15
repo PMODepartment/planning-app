@@ -4863,10 +4863,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260913a"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
+<script src="../../assets/js/auth.js?v=20260914e"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260914d"></script>
+<script src="../../assets/js/ui.js?v=20260914e"></script>
 <script src="../../assets/js/icons.js?v=20260913a"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -8774,7 +8774,12 @@
     PROJECTS = projects;
     try { GROUPHEADS = await PDb.getGroupHeads(); } catch (e) { GROUPHEADS = []; }
     var sel = document.getElementById('ps-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()). load() below is only
+    // ever called `if (pid)`, so this alone keeps the module in its safe default empty state —
+    // very conservative on purpose: no Gantt/WBS consolidation across projects is attempted here.
+    var portfolioScope = window.AppAuth && AppAuth.isPortfolioScope();
+    pid = portfolioScope ? null : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');

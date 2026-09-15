@@ -392,10 +392,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260913a"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
+<script src="../../assets/js/auth.js?v=20260914e"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260914d"></script>
+<script src="../../assets/js/ui.js?v=20260914e"></script>
 <script src="../../assets/js/icons.js?v=20260913a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -570,7 +570,15 @@
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('cf-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()). Cash Flow is a
+    // derived per-project financial projection (one contract, one schedule S-curve, one
+    // WPM mirror) — there is no honest way to sum several projects' projections into one
+    // without risking a wrong funding-need number, so loadAll() shows an explanatory
+    // placeholder instead of a real projection while nothing is selected.
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     var cur = projects.find(function (p) { return p.id === pid; });
     projName = cur ? (cur.name || cur.id) : '';
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
@@ -578,6 +586,7 @@
     }).join('');
     UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (pid) loadAll().then(joinCollab);
+    else render();
   }
 
   async function loadSettings() {
@@ -1236,7 +1245,15 @@
       bc.title = noCost ? 'Schedule has no cost loaded (Planned IBB) — cost-load the schedule to enable cost-weighting.' : '';
     }
     var host = document.getElementById('cf-body');
-    if (!pid) { host.innerHTML = '<div class="cf-empty">Select a project.</div>'; return; }
+    if (!pid) {
+      // Portfolio scope: no honest way to sum several projects' own cash-flow projections
+      // (each has its own contract, S-curve and WPM mirror) into one figure without risking
+      // a wrong funding-need number — say so plainly rather than fabricate a total.
+      host.innerHTML = (window.AppAuth && AppAuth.isPortfolioScope())
+        ? '<div class="cf-empty">Cash Flow is a per-project projection (one contract, one schedule, one WPM mirror) — there is no single combined figure to show across every project. Pick a project from the selector above to see its cash-flow projection.</div>'
+        : '<div class="cf-empty">Select a project.</div>';
+      return;
+    }
     if (!model || model.empty) {
       host.innerHTML = '<div class="cf-empty">Nothing to project yet. This module derives cash-in from the <b>Project Schedule</b> and cash-out from <b>WPM</b> work packages. Add a schedule and set the contract value under <b>Assumptions</b>.</div>';
       return;

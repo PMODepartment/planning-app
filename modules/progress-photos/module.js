@@ -614,16 +614,31 @@ window.ProgressPhotos = (function () {
     var projects = await PDb.getProjects();
     projects = projects.filter(function (p) { return AppAuth.canAccessProject(profile, p.id); });
     if (!projects.length) { sel.innerHTML = '<option value="">No projects</option>'; return; }
-    if (!pid || !projects.some(function (p) { return p.id === pid; })) pid = projects[0].id;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT. Arriving here via
+    // the Portfolio sidebar (`#pd_scope=portfolio`, read once by AppAuth), `pid`
+    // stays null on purpose -- the alternative is exactly the reported bug:
+    // silently substituting the first project alphabetically and showing ITS
+    // real name in the selector as if it were correctly scoped. `pid === null`
+    // is also what `load()` reads below to switch the gallery from one project
+    // to every project this planner can see, and what already gates
+    // `openUpload`/`open360Upload`/most write paths off (see there).
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (portfolio) {
+      pid = null;
+    } else if (!pid || !projects.some(function (p) { return p.id === pid; })) {
+      pid = projects[0].id;
+    }
     sel.innerHTML = projects.map(function (p) {
       return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' +
              Fmt.esc(p.name || p.id) + '</option>';
     }).join('');
-    UI.enhanceProjectSelect(sel);   // shared searchable project picker
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker -- shows "Portfolio" when scoped
     var cur = projects.filter(function (p) { return p.id === pid; })[0];
-    projName = cur ? (cur.name || cur.id) : pid;
-    sessionStorage.setItem('pd_project', pid);
-    sessionStorage.setItem('pd_project_name', projName);
+    projName = cur ? (cur.name || cur.id) : (portfolio ? 'Portfolio' : pid);
+    if (!portfolio) {
+      sessionStorage.setItem('pd_project', pid);
+      sessionStorage.setItem('pd_project_name', projName);
+    }
     notifyProject();
   }
 
@@ -844,14 +859,26 @@ window.ProgressPhotos = (function () {
   async function load() {
     var host = $('pp-view');
     host.innerHTML = '<div class="pp-empty">Loading photos…</div>';
-    if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project to see its photos.</div>'; return; }
+    // Portfolio scope: no single project is selected, but every project the
+    // planner can see is in scope — consolidate across all of them instead of
+    // refusing for lack of one project id. See AppAuth.isPortfolioScope().
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { host.innerHTML = '<div class="pp-empty">Select a project to see its photos.</div>'; return; }
+
+    var portfolioIds = null;
+    if (portfolio) {
+      portfolioIds = await (window.UI && UI.allProjectIds ? UI.allProjectIds() : Promise.resolve([]));
+      if (!portfolioIds.length) { host.innerHTML = '<div class="pp-empty">No projects available.</div>'; return; }
+    }
 
     // Keyset-paginate (a single select caps at 1000; a project's photo library can exceed
     // that, silently hiding photos from the grid, PPR picker and bulk actions), then restore
     // the taken_at-desc / sort_order ordering.
     var all = [], last = null;
     while (true) {
-      var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+      var q = sb().from(TABLE).select('*');
+      q = portfolio ? q.in('project_id', portfolioIds) : q.eq('project_id', pid);
+      q = q.order('id', { ascending: true }).limit(1000);
       if (last) q = q.gt('id', last);
       var res = await q;
       if (res.error) {
@@ -876,7 +903,7 @@ window.ProgressPhotos = (function () {
       return sa - sb2;
     });
     rows = all;
-    if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);   // keep the offline cache current
+    if (window.PDSync && !portfolio) PDSync.cachePut('pp:' + pid, rows);   // keep the offline cache current
 
     // ⚠️ Real perf fix, the other half of signAll()'s own comment: this used
     // to AWAIT signAll() (a Storage round-trip signing every path in the

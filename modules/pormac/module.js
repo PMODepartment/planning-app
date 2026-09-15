@@ -116,13 +116,16 @@ window.Pormac = (function () {
     UI.enhanceProjectSelect(sel);
 
     // ⚠️⚠️ ARRIVING FROM THE PORTFOLIO SIDEBAR DEFAULTS TO PORTFOLIO SCOPE.
-    // `ui.js`'s `renderNav('portfolio', …)` puts this hash on Pormac's own
-    // link for exactly this reason — `pd_project` sessionStorage is shared
-    // app-wide and, arriving here from the Portfolio nav, usually still holds
-    // whatever project the planner was last looking at, which is a worse
-    // default than "answer across everything" when the planner explicitly
-    // came from the portfolio-wide side of the app.
-    if (/(^|[#&])pmc_scope=portfolio(&|$)/.test(location.hash)) {
+    // `ui.js`'s `renderNav('portfolio', …)` puts `#pd_scope=portfolio` on
+    // EVERY module's own link (2026-09-14, generalized from this module's own
+    // one-off `#pmc_scope=portfolio`), read once by `AppAuth` (auth.js) into a
+    // per-tab sessionStorage flag every module now shares — `pd_project`
+    // sessionStorage is a SEPARATE, app-wide key that, arriving here from the
+    // Portfolio nav, usually still holds whatever project the planner was
+    // last looking at, which is a worse default than "answer across
+    // everything" when the planner explicitly came from the portfolio-wide
+    // side of the app.
+    if (window.AppAuth && AppAuth.isPortfolioScope()) {
       $('pmc-portfolio').checked = true;
       setPortfolioAll(true);
     }
@@ -131,9 +134,15 @@ window.Pormac = (function () {
   // One writer for the portfolio-scope flag and the controls it affects, so
   // the checkbox, the (disabled) project select and `portfolioAll` cannot
   // drift out of sync the way three separate call sites would risk.
+  // ⚠️ Also mirrors into the SHARED `AppAuth` flag — this checkbox is this
+  // module's own UI for the identical concept every other module now reads
+  // (their project selector's "Portfolio" label, and their own data/write
+  // gating), so toggling it here should not leave the rest of the app
+  // disagreeing about whether the tab is in Portfolio scope.
   function setPortfolioAll(on) {
     portfolioAll = !!on;
     $('pmc-project').disabled = portfolioAll;
+    if (window.AppAuth) AppAuth.setPortfolioScope(portfolioAll);
   }
 
   // ==========================================================================

@@ -102,6 +102,97 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Portfolio mode, generalized: every module gets a read-only cross-project view (2026-09-14)
+
+Owner: *"portfolio is not working, let's fix it."* Two requirements: opening a module from the
+**Portfolio** sidebar (rather than a specific project) must show the project selector as
+**"Portfolio"** rather than a stale or wrong project name, and every module must **consolidate
+across every project the planner can see** while **write access is disabled**.
+
+⚠️⚠️ **THIS GENERALIZES THE ONE-OFF CONVENTION PORMAC SHIPPED FOR ITSELF (2026-09-14,
+`#pmc_scope=portfolio`) INTO SOMETHING EVERY MODULE CAN READ THE SAME WAY.** A `#pd_scope=portfolio`
+URL hash — read once by `AppAuth` at load, matched against `/(^|[#&])pd_scope=portfolio(&|$)/`, and
+written into `sessionStorage['pd_portfolio']` so it survives `UI.bindHistoryState`'s later hash
+rewrites (a bare hash read is not enough — this module's own history binding overwrites the hash on
+almost every render). `AppAuth.isPortfolioScope()` reads that key; `AppAuth.setPortfolioScope(on)`
+sets or clears it, and `UI.enhanceProjectSelect()`'s `choose()` already calls
+`setPortfolioScope(false)` the moment a planner picks a real project out of the shared popover — so
+no per-module exit logic was needed anywhere.
+
+**Writes are blocked centrally, not per module.** A `wrapWritesForPortfolio()` IIFE in `auth.js`
+(guarded by `window.__sb.__pdPortfolioWrapped`, so it wraps exactly once) replaces
+`window.__sb.from(table)` so that, in portfolio scope, calling `.insert/.update/.upsert/.delete` on
+the returned query builder swaps that one method for a version which toasts *"Portfolio is
+read-only — switch to a project to make changes."* and resolves to a well-formed "blocked" result
+(`{data:null, error:{message:'Portfolio view is read-only.', code:'PD_PORTFOLIO_READONLY'}}`) rather
+than throwing — the chainable methods a caller might invoke before awaiting (`select`, `eq`, `in`,
+`order`, `limit`, …) are stubbed to return the same blocked object so code that chains before the
+write cannot throw either. ⚠️ **`.rpc(...)` is deliberately NOT wrapped** — several modules read
+through security-definer RPCs (`is_admin()` and friends), and blocking every RPC would break
+legitimate reads; write-shaped RPCs stay gated server-side by their own `created_by = auth.uid()` /
+role checks. Because every module's data layer resolves to `AppAuth.getSB()` — the wrapped client —
+**write-blocking needed zero per-module code**.
+
+**`UI.allProjectIds()`** is the one new shared read helper — cached, backed by `PDb.getProjects()` —
+that every module's consolidation branch calls to get the id list for an `.in('project_id', ids)`
+query.
+
+**The per-module pattern, applied across the app:**
+- Project-select guard, everywhere: `pid = AppAuth.isPortfolioScope() ? null : (sessionStorage…
+  || projects[0]?.id || null)` — portfolio scope never falls back to a real project, which is what
+  makes the selector read "Portfolio" rather than a stale id.
+- Read consolidation, where it makes sense: guard `if (!pid && !portfolio) return/refuse;`, fetch
+  `portfolioIds = await UI.allProjectIds()` (short-circuit on empty), then branch the query between
+  `.in('project_id', portfolioIds)` and `.eq('project_id', pid)`.
+- Inherently single-project sub-features are explicitly **skipped in portfolio scope**, with a
+  comment saying why, rather than force-consolidated: equipment-loading's Site Plan tab, contracts-
+  claims' `CCAffected`/packages/wizard project-conflict cache, meeting-minutes' deep-link picker,
+  schedule links — all read one project's own drawings/links/state and have no honest cross-project
+  meaning. `PDSync.cachePut`/`cacheGet` (the offline read-cache) is likewise skipped in portfolio
+  scope, since its key is per-project.
+- Architecturally complex, financially-sensitive single-project engines get an **honest placeholder**
+  rather than a risky cross-project aggregation:
+  - **s-curve** — true cross-project curve aggregation was assessed and rejected: `compute()` is
+    entangled with `mode` (auto/manual), `basis` (duration/cost), `anyTradeFilter()`, the RPC fast
+    path, `scopedRows()` and forecast logic, all tied to one project's own schedule engine. Portfolio
+    scope now shows *"S-Curve is a per-project schedule curve — there is no single combined curve
+    across every project. Pick a project…"* rather than drawing a stale or nonsensical curve.
+  - **cash-flow** — same shape, same conservative treatment, per its own pre-existing precedent.
+  - **project-schedule** — treated most conservatively of all: `pid` stays `null` in portfolio scope
+    and nothing else changes (`load()` only ever runs `if (pid)`), so no Gantt/WBS/Vertical Stacking
+    consolidation across projects is attempted. Deliberately minimal, matching this module's own
+    repeated caution about cross-project reads.
+- Full read-consolidation was built where it is straightforward and safe: **issues-lessons** now
+  consolidates both `issues_lessons` and `lessons_learned` across every accessible project (with
+  `loadMoms()` — the meeting-minutes deep-link picker — left as a natural no-op degradation, since
+  `pid` stays null and it already guards on that). Risk Register, Stakeholder Map (+`person.html`),
+  Minutes of Meeting, Progress Photos, Equipment Loading, Manpower Loading, Productivity Rates and
+  Cash Flow's read paths were fixed the same session, per the pattern above.
+
+⚠️ **Cache-busting gap found and closed.** `MODULE_V`'s value is read by every module page from
+`document.currentScript.src`'s own `?v=` query string, not from `modules-grid.js`'s internal fallback
+constant alone — bumping only the constant changes nothing a returning browser can see, since the
+browser caches the script by its full URL. Fixed by bumping the `<script src="…modules-grid.js?v=">`
+tag in **both** `dashboard.html` and `modules.html` (and the fallback constant, for consistency) to
+`20260914u`. Separately, `contracts-claims/index.html`'s and `issues-lessons/index.html`'s own
+`module.js?v=` tags had been left on stale tokens (`20260911uc`, `20260911d`) despite their
+`module.js` content having been edited — both bumped to `20260914u` so the fix actually reaches a
+browser. A repo-wide version-split audit (every `src=`/`href=` reference to a `.js`/`.css` asset,
+resolved and grouped by real path) confirms **0 splits across 67 distinct shared/module assets**.
+
+⚠️⚠️ **Not verified signed in.** No live login is possible in this environment for any part of this
+work — every check performed was `node --check` / Node script-extraction syntax verification on the
+touched files, not a live browser/database test. The mechanism (`isPortfolioScope`, the write
+wrapper, per-module reads) has not been exercised against a real signed-in session or real project
+data; the first real test is opening a module from the Portfolio sidebar and confirming the selector
+reads "Portfolio", the list consolidates, and an edit attempt is refused with the read-only toast.
+
+`assets/js/auth.js` / `assets/js/ui.js` (shared, `?v=20260914e`, 21–29 referencing pages);
+`assets/js/modules-grid.js` + `dashboard.html` + `modules.html` (`MODULE_V` → `20260914u`);
+`modules/issues-lessons/module.js` + `index.html`; `modules/contracts-claims/index.html`
+(`module.js?v=` bump only — content was edited pre-session); `modules/project-schedule/index.html`;
+`modules/s-curve/index.html` — all module-local edits at the same session.
+
 ### Pormac gets a Portfolio scope: a checkbox that grounds it in every project, not one (2026-09-14)
 
 Owner: *"in portfolio, pormac should be able to answer based on data from all projects on the

@@ -229,6 +229,17 @@
   // (modules/<key>/index.html), every shell page at the root itself.
   function appBase() { return location.pathname.indexOf('/modules/') !== -1 ? '../../' : ''; }
 
+  // ---- Portfolio scope: every project id this planner can see ---------------
+  // The one thing every module needs to consolidate its own data across the
+  // portfolio: `PDb.getProjects()` is already RLS-scoped (an admin sees every
+  // project, everyone else only their assignments), so "every project id" IS
+  // "every project this call returns" — no second access rule to write.
+  // Cached alongside the project-selector's own cache (same underlying read).
+  async function allProjectIds() {
+    if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
+    return (_pdProjCache || []).map(function (p) { return p.id; });
+  }
+
   // ---- Project selector (shared group-head browser) ------------------------
   // Upgrades a native project <select> into a button that opens the shared
   // nav tree above (Portfolio + Group-Head-grouped projects). The <select>
@@ -282,6 +293,19 @@
       return [row.location, gh ? gh.name : ''].filter(Boolean).join(' · ');
     }
     function syncBtn() {
+      // ⚠️⚠️ PORTFOLIO ALWAYS WINS OVER `sel.value`. A module opened from the
+      // Portfolio sidebar carries `#pd_scope=portfolio`, but `pd_project`
+      // sessionStorage is a SEPARATE, app-wide key that usually still holds
+      // whatever project the planner was last looking at — so reading
+      // `sel.value` here would silently show that stale project's real name
+      // instead of "Portfolio", which is the reported bug this exists to fix.
+      if (window.AppAuth && AppAuth.isPortfolioScope()) {
+        btn.innerHTML = '<span class="pd-psel-txt pd-psel-portfolio"><strong>Portfolio</strong>' +
+          '<small>every project you can see</small></span>' +
+          '<span class="pd-psel-caret" data-ico="chevronDown" data-ico-size="14"></span>';
+        if (window.Icons) Icons.hydrate(btn);
+        return;
+      }
       var t = labelFor(sel.value), ph = !t;
       // The project id IS its code (the PK) — "CODE — Name" needs no async
       // lookup, sel.value already carries it synchronously.
@@ -303,9 +327,17 @@
     }
     function paintPop() {
       renderNavListInto(pop, currentProjects(), ghs, {
-        isSelected: function (p) { return p.id === sel.value; },
+        portfolioActive: window.AppAuth && AppAuth.isPortfolioScope(),
+        isSelected: function (p) { return !((window.AppAuth && AppAuth.isPortfolioScope())) && p.id === sel.value; },
         onPortfolio: function () { location.href = appBase() + 'modules/portfolio-overview/index.html'; },
-        onProject: function (p) { choose(p.id); }
+        onProject: function (p) {
+          // Picking a REAL project out of the popover is the one place
+          // Portfolio scope is left again — clear it before the module's own
+          // sel.onchange handler (unchanged) writes the new pd_project and
+          // re-renders, so that re-render already sees itself out of scope.
+          if (window.AppAuth && AppAuth.isPortfolioScope()) AppAuth.setPortfolioScope(false);
+          choose(p.id);
+        }
       });
     }
     async function ensureData() {
@@ -348,25 +380,6 @@
   // two page families you are on, so it can never desync from what the page
   // actually shows. 'portfolio' = projects.html / admin.html / my-work.html /
   // portfolio-overview. 'project' = dashboard.html / modules.html.
-  // Which portfolio-overview TAB a given module's cross-project data lives on, keyed by
-  // config.js MODULES `key`. A module absent here has no cross-project consolidation of its
-  // own inside portfolio-overview — either it hosts its OWN "Portfolio" view (manpower-loading
-  // does; its sidebar link goes straight to the module) or it genuinely has none yet, in which
-  // case the link falls back to the plain module page, same as it does in Project mode.
-  var PORTFOLIO_TAB = {
-    'minutes-of-meeting': 'meetings',
-    'risk-register': 'risk',
-    'stakeholder-map': 'stakeholders',
-    'project-schedule': 'scurve',    // no dedicated cross-project Schedule tab — S-Curve is the
-    's-curve': 'scurve',             // closest thing to one, and both modules feed it below
-    'resource-loading': 'resources',
-    'equipment-loading': 'equipment',
-    'productivity-rates': 'productivity',
-    'issues-lessons': 'issues',
-    'progress-photos': 'photos',
-    'contracts-claims': 'contracts',
-    'cash-flow': 'cashflow'
-  };
   function renderNav(navEl, mode, ctx) {
     if (!navEl) return;
     ctx = ctx || {};
@@ -383,7 +396,7 @@
     if (mode === 'portfolio') {
       // Three scopes, per the owner's own structure: PORTFOLIO (every project's data,
       // consolidated — Projects, the Portfolio Dashboard, then every module a project can
-      // carry, each opening its cross-project view where one exists), PERSONAL (this
+      // carry, each opening READ-ONLY, consolidated across every project), PERSONAL (this
       // signed-in user's own work, not scoped to any one project), SYSTEM (Admin, gated).
       // (No "Home" link here — home.html is the landing/picker screen itself, not a
       // destination to navigate back to from inside the app.)
@@ -397,37 +410,39 @@
       // owner's call (2026-09-12), same reason as the project-mode branch below.
       var pPormac = pmods.filter(function (m) { return m.key === 'pormac'; })[0];
       pmods = pmods.filter(function (m) { return m.key !== 'pormac'; });
+      // ⚠️⚠️ EVERY MODULE'S OWN PAGE NOW OPENS FROM HERE — `PORTFOLIO_TAB`'s
+      // redirect to a portfolio-overview TAB is gone (2026-09-14). It used to
+      // send 11 of 12 modules to a hand-built, separately-styled dashboard
+      // duplicating that module's own aggregation logic per table, which read
+      // as "click Risk Register, land on a different screen called Portfolio
+      // Dashboard" — confusing, and a maintenance burden of its own (each
+      // table's `.in('project_id', ids)` re-implemented by hand a second
+      // time). `#pd_scope=portfolio` is read once by `AppAuth` (auth.js) into
+      // a per-tab sessionStorage flag; every module now reads
+      // `AppAuth.isPortfolioScope()` itself and both (a) shows "Portfolio" in
+      // its own project selector (UI.enhanceProjectSelect, automatic) and
+      // (b) queries across every project it can see instead of one, with
+      // writes refused at the shared Supabase-client chokepoint (see
+      // auth.js). `portfolio-overview` itself is unaffected — its own
+      // "Dashboard" row below still opens it directly, as a destination in
+      // its own right, not as a stand-in for every other module.
       function pmodRow(m) {
-        var tab = PORTFOLIO_TAB[m.key];
-        var href = tab ? poHref(tab) : (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path);
-        return '<a href="' + href + '" title="' + esc(m.name) + (tab ? ' — portfolio-wide' : '') + '">' +
-          '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
-      }
-      // ⚠️⚠️ Pormac has no PORTFOLIO_TAB entry — it is one module page reused
-      // in both modes, not a cross-project view of its own — so `pmodRow`
-      // would otherwise link it to the exact same URL as the project-mode
-      // sidebar does. Reached from THIS row, `pd_project` sessionStorage
-      // (shared app-wide) may still hold whatever project the planner was
-      // last looking at, which is a worse default than portfolio-wide when
-      // the click came from the Portfolio nav specifically. The hash is read
-      // once, on load, by `Pormac.init` — see modules/pormac/module.js.
-      function pormacRow(m) {
-        var href = (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path) + '#pmc_scope=portfolio';
-        return '<a href="' + href + '" title="' + esc(m.name) + ' — portfolio-wide">' +
+        var href = (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path) + '#pd_scope=portfolio';
+        return '<a href="' + href + '" title="' + esc(m.name) + ' — portfolio-wide, read-only">' +
           '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
       }
       html = '<div class="pd-navsec">Portfolio</div>' +
         '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
-        (pPormac ? pormacRow(pPormac) : '') +
+        (pPormac ? pmodRow(pPormac) : '') +
         '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Dashboard</span></a>' +
         // ⚠️⚠️ MILESTONES HAS NO MODULE, so `pmods` below cannot produce it — it is a
         //    portfolio-only view that existed ONLY as an in-page tab. When the owner had
         //    that tab strip removed (2026-09-09) it would have become unreachable: the
-        //    strip was its single entry point, and PORTFOLIO_TAB maps module keys, not
-        //    views. Listed explicitly here for that reason. `overview` needs no row —
-        //    the plain `poBase` "Dashboard" link above already lands on it.
+        //    strip was its single entry point. Listed explicitly here for that reason.
+        //    `overview` needs no row — the plain `poBase` "Dashboard" link above already
+        //    lands on it.
         '<a href="' + poHref('milestones') + '" title="Milestones — portfolio-wide">' +
           '<span class="pd-navico" data-ico="calendar"></span><span class="pd-navtxt">Milestones</span></a>' +
         pmods.map(pmodRow).join('') +
@@ -1038,6 +1053,6 @@
                 acceptSuggestOnTab: acceptSuggestOnTab, bindHistoryState: bindHistoryState,
                 renderNav: renderNav, renderSwitcher: renderSwitcher,
                 renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
-                wireFilterToggle: wireFilterToggle,
+                wireFilterToggle: wireFilterToggle, allProjectIds: allProjectIds,
                 kpi: kpi, kpis: kpis };
 })();

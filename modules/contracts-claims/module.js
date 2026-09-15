@@ -1259,45 +1259,71 @@ window.ContractsClaims = (function () {
   }
 
   async function load() {
-    if (!pid) { rows = []; render(); return; }
+    // Portfolio scope: no single project is selected, but every project the planner can
+    // see is in scope — consolidate the register across all of them instead of refusing
+    // for lack of one project id. See AppAuth.isPortfolioScope().
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { rows = []; render(); return; }
     document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3><span class="cc-spin"></span>Loading…</h3></div>';
     // ⚠️ Keyset-paginated (see PDb.selectAll) — a plain .select() truncates at 1000 rows server-side
     // with no error, and a truncated register would silently understate the roll-up banner totals,
     // which are the headline numbers of this module. Shaped as {data}/{error} so the offline-cache +
     // migration-hint branch below is untouched. No display sort here — the renderer sorts.
     var res;
-    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
+    try {
+      var portfolioIds = null;
+      if (portfolio) {
+        portfolioIds = await (window.UI && UI.allProjectIds ? UI.allProjectIds() : Promise.resolve([]));
+        if (!portfolioIds.length) { rows = []; fillFilters(); render(); return; }
+      }
+      res = {
+        data: await PDb.selectAll(TABLE, function (q) {
+          return portfolio ? q.in('project_id', portfolioIds) : q.eq('project_id', pid);
+        })
+      };
+    }
     catch (err) { res = { error: err }; }
-    /* ⚠️ NOT AWAITED INTO THE CRITICAL PATH, and not allowed to fail this load. The register must
-       render whether or not 2026-09-09-cc-affected-activities.sql has been run; the counts are an
-       annotation on it. Fired here rather than lazily because render() may not fetch (see
-       affChip), so something has to fill the cache once. A repaint follows when it lands. */
-    if (window.CCAffected) {
+    // ⚠️ Affected-work links, packages and the wizard's project-conflict cache are all
+    // single-project concepts (a change order's scope, a contract lot) — they have no
+    // honest cross-project reading, so they are skipped entirely in portfolio scope
+    // rather than being fetched against a null/undefined project id.
+    if (!portfolio && window.CCAffected) {
+      /* ⚠️ NOT AWAITED INTO THE CRITICAL PATH, and not allowed to fail this load. The register must
+         render whether or not 2026-09-09-cc-affected-activities.sql has been run; the counts are an
+         annotation on it. Fired here rather than lazily because render() may not fetch (see
+         affChip), so something has to fill the cache once. A repaint follows when it lands. */
       CCAffected.setProject(pid);
       CCAffected.ensureLinks().then(function () {
         if (document.getElementById('cc-view')) render();
       }).catch(function () {});
     }
     if (res.error) {
-      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
+      if (!portfolio && window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
       var missing = /column|schema cache|PGRST204|does not exist/i.test(res.error.message || '');
       document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3>Could not load the register</h3><p>' +
         esc(res.error.message) + '</p>' + (missing
           ? '<p class="cc-mut">Run <code>migrations/2026-07-20-contracts-claims-full.sql</code> in the Supabase SQL editor, then reload.</p>' : '') + '</div>';
       return;
     }
-    try { PKGS = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
-    catch (e) { PKGS = []; }
+    if (!portfolio) {
+      try { PKGS = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
+      catch (e) { PKGS = []; }
+    } else {
+      PKGS = [];
+    }
     // Cheap (a few dozen rows) and read once per project switch, so the wizard's
-    // per-keystroke conflict check never touches the network.
-    try { ALL_PROJECTS = await PDb.getProjects(); }
-    catch (e) { ALL_PROJECTS = []; }
+    // per-keystroke conflict check never touches the network. Skipped in portfolio scope —
+    // the wizard (raising a new record) is not reachable there anyway, since writes are blocked.
+    if (!portfolio) {
+      try { ALL_PROJECTS = await PDb.getProjects(); }
+      catch (e) { ALL_PROJECTS = []; }
+    }
     rows = res.data || [];
     rows.sort(function (a, b) {
       var d = (a.sort_order || 0) - (b.sort_order || 0); if (d) return d;
       return String(a.reference_no || '').localeCompare(String(b.reference_no || ''), undefined, { numeric: true });
     });
-    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
+    if (!portfolio && window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     fillFilters();
     render();
   }
@@ -1331,9 +1357,17 @@ window.ContractsClaims = (function () {
     try { projects = (await PDb.getProjects()) || []; } catch (e) { projects = []; }
     projects = projects.filter(function (p) { return !AppAuth.canAccessProject || AppAuth.canAccessProject(profile, p.id); });
     selEl.innerHTML = projects.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
-    var stored = sessionStorage.getItem('pd_project');
-    if (stored && projects.some(function (p) { return String(p.id) === String(stored); })) selEl.value = stored;
-    pid = selEl.value || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()). load() below
+    // consolidates the register across every accessible project instead of substituting one.
+    var portfolioScope = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!portfolioScope) {
+      var stored = sessionStorage.getItem('pd_project');
+      if (stored && projects.some(function (p) { return String(p.id) === String(stored); })) selEl.value = stored;
+      pid = selEl.value || (projects[0] && projects[0].id) || null;
+    } else {
+      pid = null;
+    }
     if (UI.enhanceProjectSelect) UI.enhanceProjectSelect(selEl);
     selEl.addEventListener('change', function () {
       pid = selEl.value; sessionStorage.setItem('pd_project', pid); sel = {};

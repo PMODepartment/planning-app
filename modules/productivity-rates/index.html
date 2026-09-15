@@ -257,10 +257,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260913a"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
+<script src="../../assets/js/auth.js?v=20260914e"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260914d"></script>
+<script src="../../assets/js/ui.js?v=20260914e"></script>
 <script src="../../assets/js/icons.js?v=20260913a"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -576,7 +576,12 @@
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('pr-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()), which is what
+    // load() reads to consolidate across every project instead of substituting one.
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
@@ -584,11 +589,21 @@
   }
 
   async function load() {
-    if (!pid) { acts = []; entriesByAct = {}; render(); return; }
+    // Portfolio scope: no single project is selected, but every project the
+    // planner can see is in scope — consolidate across all of them instead of
+    // refusing for lack of one project id. See AppAuth.isPortfolioScope().
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { acts = []; entriesByAct = {}; render(); return; }
     showLoading('Loading productivity data…');
     try {
-      var a = await sb().from('productivity_activities').select('*').eq('project_id', pid)
-        .order('sort_order', { ascending: true, nullsFirst: false }).order('name', { ascending: true });
+      var portfolioIds = null;
+      if (portfolio) {
+        portfolioIds = await (window.UI && UI.allProjectIds ? UI.allProjectIds() : Promise.resolve([]));
+        if (!portfolioIds.length) { acts = []; entriesByAct = {}; hideLoading(); render(); return; }
+      }
+      var aq = sb().from('productivity_activities').select('*');
+      aq = portfolio ? aq.in('project_id', portfolioIds) : aq.eq('project_id', pid);
+      var a = await aq.order('sort_order', { ascending: true, nullsFirst: false }).order('name', { ascending: true });
       if (a.error) throw a.error;
       acts = a.data || [];
       entriesByAct = {};
@@ -596,12 +611,18 @@
       // over a multi-year build passes PostgREST's 1000-row cap — and a truncated read would drop
       // whole months out of the rate/cumulative curves with no error to notice.
       // PDb.selectAll returns id order, so the by-period sort is re-applied per activity below.
-      var ents = await PDb.selectAll('productivity_entries', function (q) { return q.eq('project_id', pid); });
+      var ents = await PDb.selectAll('productivity_entries', function (q) {
+        return portfolio ? q.in('project_id', portfolioIds) : q.eq('project_id', pid);
+      });
       ents.forEach(function (row) { (entriesByAct[row.activity_id] = entriesByAct[row.activity_id] || []).push(row); });
       Object.keys(entriesByAct).forEach(function (k) {
         entriesByAct[k].sort(function (x, y) { return String(x.period || '').localeCompare(String(y.period || '')); });
       });
-      await loadVendorLayer();
+      // ⚠️ The vendor layer is inherently single-project (its WPM mapping comes from THIS
+      // project's own cash_flow_settings row) — skip it in portfolio scope rather than
+      // querying with a null project_id, which would either error or silently answer nothing.
+      if (!portfolio) await loadVendorLayer();
+      else { VENDORS = []; WPS = []; RECON = []; RATELIB = []; vendorErr = null; }
       cacheState();   // keep the offline read-cache current
     } catch (err) {
       hideLoading();
