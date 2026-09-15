@@ -53,7 +53,10 @@
         </div>
 
         <div class="pd-tabpane" id="pane-projects">
-          <div style="margin-bottom:14px;"><button class="pd-btn pd-btn-primary" id="btn-add-project">+ New project</button></div>
+          <div style="margin-bottom:14px;display:flex;gap:8px;">
+            <button class="pd-btn pd-btn-primary" id="btn-add-project">+ New project</button>
+            <button class="pd-btn" id="btn-manage-gh">Manage group heads…</button>
+          </div>
           <div class="pd-card" style="padding:0;overflow:auto;">
             <table class="pd-table" id="projects-table"></table>
           </div>
@@ -72,6 +75,18 @@
   <script src="assets/js/icons.js?v=20260915f"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
+    // Group heads (see assets/js/db.js "Group Heads" section — the flat tag that
+    // replaced the old workspace tree). Loaded once and refreshed alongside the
+    // Projects tab; projects.html manages the same rows through the same API.
+    var GH = [], ghById = {};
+    // {el, draw} while Manage Group Heads is open, so a save made from its own
+    // nested Edit/Delete dialogs (which only know to call loadProjects()) is
+    // reflected in the list underneath without having to close and reopen it.
+    var ghmOpen = null;
+    // ⚠️ Modules only `super_admin` can open (config.js `superAdminOnly`, see the
+    // comment there). Read off the live registry rather than hardcoded, so this
+    // list can never drift from what ui.js/modules-grid.js actually gate.
+    var RESTRICTED_MODULES = (window.APP_CONFIG && APP_CONFIG.MODULES || []).filter(function (m) { return m.superAdminOnly; });
 
     AppAuth.requireAdmin(function (user, profile) {
       ME = profile;
@@ -83,6 +98,31 @@
       loadUsers();
       loadProjects();
     });
+
+    function indexGh() { ghById = {}; GH.forEach(function (g) { ghById[g.id] = g; }); }
+    function ghNameOf(p) {
+      if (!p.group_head_id) return null;
+      var g = ghById[p.group_head_id];
+      return g ? g.name : p.group_head_id;
+    }
+    // An inactive group head still appears when it is the project's CURRENT
+    // value — otherwise the select would silently fall back to the first option
+    // and saving would reassign the project without anyone asking for it.
+    function ghOptions(cur) {
+      var seen = {};
+      var opts = GH.slice()
+        .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)); })
+        .filter(function (g) { return g.active !== false || g.id === cur; })
+        .map(function (g) {
+          seen[g.id] = 1;
+          return '<option value="'+Fmt.esc(g.id)+'"'+(cur===g.id?' selected':'')+'>'+Fmt.esc(g.name)+(g.active===false?' (inactive)':'')+'</option>';
+        });
+      if (cur && !seen[cur]) opts.unshift('<option value="'+Fmt.esc(cur)+'" selected>'+Fmt.esc(cur)+'</option>');
+      return opts.join('');
+    }
+    function countForGh(id) {
+      return ALL_PROJECTS.filter(function (p) { return p.group_head_id === id; }).length;
+    }
 
     // Extracted so it can double as UI.bindHistoryState's apply() below.
     function applyTab(tabKey) {
@@ -105,6 +145,7 @@
         apply: function (s) { applyTab(s.t); }
       });
       document.getElementById('btn-add-project').onclick = function () { editProject(null); };
+      document.getElementById('btn-manage-gh').onclick = function () { manageGroupHeadsModal(); };
     }
 
     // -------- Users --------
@@ -119,13 +160,36 @@
       var DEPARTMENTS = ['Commercial and Contracts', 'Engineering', 'Procurement', 'Finance',
                          'Human Resources', 'Quality', 'Health and Safety', 'Operations',
                          'PMO', 'COO', 'CEO'];
-      t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Actions</th></tr></thead><tbody>' +
+      // ⚠️⚠️ The Projects column used to print the raw `.projects` array for every
+      // role, and that array is meaningless for admin/super_admin: `can_access_project()`
+      // (and its client mirror `AppAuth.canAccessProject`) grant them EVERY project
+      // regardless of what is checked here — verified against both, not assumed. So an
+      // admin with an empty array read as "no project access", which is backwards; they
+      // had all of it. "Access" now states what the role actually grants, and only
+      // planner/user/viewer — the roles the array genuinely restricts — still show the
+      // literal assignment.
+      var restrictedNames = RESTRICTED_MODULES.map(function (m) { return m.name; }).join(', ');
+      t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Access</th><th>Actions</th></tr></thead><tbody>' +
         users.map(function (u) {
           var canSuper = ME.role === 'super_admin';
           var roleOpts = AppAuth.ROLES
             .filter(function (r){ return r !== 'super_admin' || canSuper; })
             .map(function (r){ return '<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+r+'</option>'; }).join('');
-          var projChips = (u.projects||[]).map(function(p){ return '<span class="pd-chip">'+Fmt.esc(p)+'</span>'; }).join('') || '<span style="color:var(--pd-muted);">—</span>';
+          var isFullAccess = (u.role === 'admin' || u.role === 'super_admin');
+          var isSuper = u.role === 'super_admin';
+          var okChip = 'style="background:var(--pd-ok-bg);color:var(--pd-ok-text);"';
+          var projCell = isFullAccess
+            ? '<span class="pd-chip" '+okChip+' title="Role-based — every project is reachable no matter what is checked in Assign projects.">All projects</span>'
+            : ((u.projects||[]).map(function(p){ return '<span class="pd-chip">'+Fmt.esc(p)+'</span>'; }).join('') || '<span style="color:var(--pd-muted);">No projects assigned</span>');
+          // The 6 (today) modules config.js marks `superAdminOnly` are invisible to
+          // EVERY other role, admin included — this is the "super_admin sees all
+          // modules" guarantee, made visible rather than left implicit in code.
+          var moduleCell = '';
+          if (RESTRICTED_MODULES.length) {
+            moduleCell = isSuper
+              ? ' <span class="pd-chip" '+okChip+' title="'+Fmt.esc(restrictedNames)+'">+ all modules</span>'
+              : ' <span class="pd-chip" title="'+Fmt.esc(restrictedNames)+' — visible to super_admin only">'+RESTRICTED_MODULES.length+' module'+(RESTRICTED_MODULES.length===1?'':'s')+' hidden</span>';
+          }
           return '<tr>' +
             '<td>'+Fmt.esc(u.name)+'</td>' +
             '<td>'+Fmt.esc(u.email)+'</td>' +
@@ -137,11 +201,14 @@
               DEPARTMENTS.map(function(d){ return '<option'+(u.department===d?' selected':'')+'>'+d+'</option>'; }).join('') +
             '</select></td>' +
             '<td class="pd-status-'+u.status+'">'+u.status+'</td>' +
-            '<td>'+projChips+'</td>' +
+            '<td>'+projCell+moduleCell+'</td>' +
             '<td style="white-space:nowrap;">' +
               (u.status!=='approved' ? '<button class="pd-btn pd-btn-primary" data-approve="'+u.id+'">Approve</button> ' : '') +
               (u.status!=='rejected' ? '<button class="pd-btn" data-reject="'+u.id+'">Reject</button> ' : '') +
-              '<button class="pd-btn" data-projects="'+u.id+'">Projects</button>' +
+              // Assigning projects to a role that already sees every one of them is a
+              // control that changes nothing — it re-appears the moment the role is
+              // dropped to planner/user/viewer, where the assignment is real again.
+              (!isFullAccess ? '<button class="pd-btn" data-projects="'+u.id+'">Projects</button>' : '') +
               (u.id!==ME.id ? ' <button class="pd-btn pd-btn-danger" data-del="'+u.id+'">Delete</button>' : '') +
             '</td>' +
           '</tr>';
@@ -195,20 +262,142 @@
 
     // -------- Projects --------
     async function loadProjects() {
-      var ps = await PDb.getProjects();
+      var res = await Promise.all([PDb.getProjects(), PDb.getGroupHeads()]);
+      var ps = res[0]; GH = res[1]; ALL_PROJECTS = ps; indexGh();
+      if (ghmOpen && document.body.contains(ghmOpen.el)) ghmOpen.draw();
       var t = document.getElementById('projects-table');
-      t.innerHTML = '<thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Status</th><th>Dates</th><th></th></tr></thead><tbody>' +
+      t.innerHTML = '<thead><tr><th>ID</th><th>Name</th><th>Group Head</th><th>Location</th><th>Status</th><th>Dates</th><th></th></tr></thead><tbody>' +
         (ps.length ? ps.map(function(p){
+          var gh = ghNameOf(p);
           return '<tr>' +
             '<td><strong>'+Fmt.esc(p.id)+'</strong></td>' +
             '<td>'+Fmt.esc(p.name)+'</td>' +
+            '<td>'+(gh ? Fmt.esc(gh) : '<span style="color:var(--pd-muted);">— Unassigned —</span>')+'</td>' +
             '<td>'+Fmt.esc(p.location)+'</td>' +
             '<td>'+Fmt.esc(p.status)+'</td>' +
             '<td>'+Fmt.date(p.start_date)+' – '+Fmt.date(p.end_date)+'</td>' +
             '<td><button class="pd-btn" data-edit="'+p.id+'">Edit</button></td>' +
           '</tr>';
-        }).join('') : '<tr><td style="padding:24px;color:var(--pd-muted);">No projects yet.</td></tr>') + '</tbody>';
+        }).join('') : '<tr><td colspan="7" style="padding:24px;color:var(--pd-muted);">No projects yet.</td></tr>') + '</tbody>';
       t.querySelectorAll('[data-edit]').forEach(function(b){ b.onclick = function(){ editProject(ps.find(function(x){return x.id===b.dataset.edit;})); }; });
+    }
+
+    // ---- Manage Group Heads ----
+    // Same table `projects.html`'s own "Manage Group Heads" screen manages — this
+    // is a second entry point onto identical rows, not a parallel concept, so an
+    // admin doing user/role work never has to leave this page to set one up.
+    function groupHeadRow(g, i, list) {
+      var n = countForGh(g.id);
+      return '<div class="pd-ghm-row">' +
+        '<div class="pd-ghm-order">' +
+          '<button class="pd-icon-btn" data-up="'+Fmt.esc(g.id)+'" title="Move up"'+(i===0?' disabled':'')+'>' +
+            '<span data-ico="chevronDown" data-ico-size="14" style="transform:rotate(180deg);"></span></button>' +
+          '<button class="pd-icon-btn" data-down="'+Fmt.esc(g.id)+'" title="Move down"'+(i===list.length-1?' disabled':'')+'>' +
+            '<span data-ico="chevronDown" data-ico-size="14"></span></button>' +
+        '</div>' +
+        '<div class="pd-ghm-name"><strong>'+Fmt.esc(g.name)+'</strong>' +
+          '<small><code>'+Fmt.esc(g.id)+'</code> &middot; '+n+' project'+(n===1?'':'s')+
+          (g.active===false?' &middot; <em>inactive</em>':'')+'</small></div>' +
+        '<button class="pd-btn pd-btn-sm" data-edit="'+Fmt.esc(g.id)+'">Edit</button>' +
+        '<button class="pd-btn pd-btn-sm pd-btn-danger" data-del="'+Fmt.esc(g.id)+'">Delete</button>' +
+      '</div>';
+    }
+    function manageGroupHeadsModal() {
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">Manage Group Heads</h2>' +
+        '<p style="color:var(--pd-muted);font-size:13px;margin-top:-6px;">Reorder, edit, retire or delete a group ' +
+        'head, then assign one to a project from its Edit dialog. Delete only succeeds while <b>no project is ' +
+        'assigned</b> to it — untick <b>Active</b> to retire one with history instead.</p>' +
+        '<div style="margin-bottom:10px;"><button class="pd-btn pd-btn-primary" id="ghm-new">+ New group head</button></div>' +
+        '<div class="pd-ghm-list" id="ghm-list"></div>' +
+        '<div style="margin-top:14px;text-align:right;"><button class="pd-btn" id="ghm-close">Close</button></div>');
+      function draw() {
+        var list = GH.slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)); });
+        var host = m.el.querySelector('#ghm-list');
+        host.innerHTML = list.length ? list.map(function (g, i) { return groupHeadRow(g, i, list); }).join('')
+          : '<div class="pd-empty" style="padding:20px;">No group heads yet.</div>';
+        if (window.Icons) Icons.hydrate(host);
+        host.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { groupHeadModal(ghById[b.dataset.edit]); }; });
+        host.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { confirmDeleteGroupHead(ghById[b.dataset.del], null); }; });
+        host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { swapGh(b.dataset.up, -1, list); }; });
+        host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { swapGh(b.dataset.down, 1, list); }; });
+      }
+      // Swaps the two rows' sort_order (assigning by position first, if neither
+      // has ever been set, so the very first reorder has something to swap).
+      async function swapGh(id, dir, list) {
+        var i = list.findIndex(function (x) { return x.id === id; });
+        var j = i + dir;
+        if (j < 0 || j >= list.length) return;
+        var a = list[i], b = list[j];
+        var ao = a.sort_order, bo = b.sort_order;
+        if (ao == null) ao = i; if (bo == null) bo = j;
+        if (ao === bo) bo = ao + dir;
+        try {
+          await Promise.all([PDb.updateGroupHead(a.id, { sort_order: bo }), PDb.updateGroupHead(b.id, { sort_order: ao })]);
+          await loadProjects();
+        } catch (e) { UI.toast(e.message,'error'); }
+      }
+      m.el.querySelector('#ghm-new').onclick = function () { groupHeadModal(null); };
+      m.el.querySelector('#ghm-close').onclick = function () { ghmOpen = null; m.close(); };
+      ghmOpen = { el: m.el, draw: draw };
+      draw();
+    }
+
+    function groupHeadModal(g) {
+      var isNew = !g; g = g || {};
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">'+(isNew?'New Group Head':'Edit Group Head')+'</h2>' +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>ID '+(isNew?'(e.g. CALIMAG)':'')+'</label>' +
+          '<input class="pd-input" id="g-id" value="'+Fmt.esc(g.id)+'"'+(isNew?'':' disabled')+'></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Sort order</label><input class="pd-input" type="number" id="g-sort" value="'+(g.sort_order!=null?g.sort_order:0)+'"></div></div>' +
+        '<div class="pd-field"><label>Name</label><input class="pd-input" id="g-name" value="'+Fmt.esc(g.name)+'"></div>' +
+        '<div class="pd-field"><label><input type="checkbox" id="g-active"'+(g.active===false?'':' checked')+'> Active <small>(uncheck to retire — existing projects keep their assignment)</small></label></div>' +
+        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
+        (isNew ? '<div style="flex:1;"></div>' : '<button class="pd-btn pd-btn-danger" id="g-del">Delete…</button><div style="flex:1;"></div>') +
+        '<button class="pd-btn" id="g-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="g-save">Save</button></div>');
+      m.el.querySelector('#g-cancel').onclick = m.close;
+      if (!isNew) m.el.querySelector('#g-del').onclick = function () { confirmDeleteGroupHead(g, m); };
+      m.el.querySelector('#g-save').onclick = async function () {
+        var data = {
+          name: m.el.querySelector('#g-name').value.trim(),
+          sort_order: Number(m.el.querySelector('#g-sort').value || 0),
+          active: m.el.querySelector('#g-active').checked,
+        };
+        if (!data.name) { UI.toast('Name required','warn'); return; }
+        try {
+          if (isNew) {
+            var id = m.el.querySelector('#g-id').value.trim().toUpperCase();
+            if (!id) { UI.toast('ID required','warn'); return; }
+            data.id = id; await PDb.createGroupHead(data);
+          } else { await PDb.updateGroupHead(g.id, data); }
+          UI.toast('Saved','ok'); m.close(); await loadProjects();
+        } catch (e) { UI.toast(e.message,'error'); }
+      };
+    }
+
+    // Hard delete, no undo — mirrors confirmDeleteProject's echo-to-confirm shape.
+    // The RPC refuses while any project still carries this group_head_id.
+    function confirmDeleteGroupHead(g, parent) {
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">Delete group head '+Fmt.esc(g.id)+'?</h2>' +
+        '<p style="color:var(--pd-muted);">This cannot be undone. It only works if <b>no project is still ' +
+        'assigned</b> to this group head. To retire one that has history, untick <b>Active</b> in Edit instead — ' +
+        'it stops appearing as a choice on new projects but keeps every existing assignment readable.</p>' +
+        '<div class="pd-field"><label>Type <b>'+Fmt.esc(g.id)+'</b> to confirm</label>' +
+        '<input class="pd-input" id="dg-echo" autocomplete="off"></div>' +
+        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="dg-cancel">Cancel</button> ' +
+        '<button class="pd-btn pd-btn-danger" id="dg-go" disabled>Delete permanently</button></div>');
+      var echo = m.el.querySelector('#dg-echo'), go = m.el.querySelector('#dg-go');
+      echo.oninput = function () { go.disabled = echo.value.trim() !== g.id; };
+      m.el.querySelector('#dg-cancel').onclick = m.close;
+      go.onclick = async function () {
+        go.disabled = true;
+        try {
+          await PDb.deleteGroupHead(g.id);
+          UI.toast('Group head deleted','ok'); m.close(); if (parent) parent.close(); await loadProjects();
+        } catch (e) { UI.toast(e.message,'error'); go.disabled = false; }
+      };
+      echo.focus();
     }
 
     // Hard delete, no undo — the id must be typed to arm the button. The DB
@@ -252,6 +441,7 @@
         '<h2 style="margin-top:0;">'+(isNew?'New project':'Edit project')+'</h2>' +
         '<div class="pd-field"><label>Project ID '+(isNew?'(e.g. AVR101)':'')+'</label><input class="pd-input" id="p-id" value="'+Fmt.esc(p.id)+'"'+(isNew?'':' disabled')+'></div>' +
         '<div class="pd-field"><label>Name</label><input class="pd-input" id="p-name" value="'+Fmt.esc(p.name)+'"></div>' +
+        '<div class="pd-field"><label>Group Head</label><select class="pd-select" id="p-gh"><option value="">— Unassigned —</option>'+ghOptions(p.group_head_id||'')+'</select></div>' +
         /* Parent project — the override, not the normal case. ⚠️ Leave it BLANK and the app
            groups by the code prefix (AVR101 -> AVR), which every id in this portfolio already
            follows. Set it only when the prefix is wrong: two developments sharing one, or one
@@ -289,6 +479,7 @@
       m.el.querySelector('#p-save').onclick = async function () {
         var data = {
           name: m.el.querySelector('#p-name').value.trim(),
+          group_head_id: m.el.querySelector('#p-gh').value || null,
           location: m.el.querySelector('#p-loc').value.trim(),
           status: m.el.querySelector('#p-status').value,
           // Empty means "use the code prefix", so it is stored as NULL rather than ''.
