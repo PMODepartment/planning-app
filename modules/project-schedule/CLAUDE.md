@@ -1,3 +1,108 @@
+## 2026-09-15 (j) — The Summary told a project with no baseline that nothing had slipped
+
+Owner, with the Summary open on OPW101 and six numbered points. One of them is a defect and the
+rest are the page saying too much, or too little.
+
+### ⚠️⚠️ 1 · "WHAT DOES THIS SECTION PROVIDE?" — NOTHING, AND WORSE THAN NOTHING
+
+Owner, of *Biggest slips against Baseline 21-Aug-26 · 2561 activities carry no baseline*. On that
+project **2,561 of 2,561 activities carry no baseline**, so the section printed **"Nothing is
+finishing later than its baseline."** — beside a **Behind baseline 0 · 0 ahead · 0 on time** card.
+
+Every one of those reads as good news. The truth is that **not one figure on the page can be
+measured against a baseline at all**, which is itself the finding and the thing to act on. A screen
+that answers *"nothing has slipped"* to *"nothing can be measured"* is worse than one that says
+nothing, because a reader acts on it.
+
+- The empty state now names the situation and where to fix it (**Actions ▾ Baselines…**).
+- The **Behind baseline** card shows an **em dash**, not a zero: three zeros read as three
+  measurements.
+- ⚠️ The test is that **nothing resolved**, not that `noBL` is merely non-zero. A programme where
+  most activities carry a baseline and a handful do not is the ordinary case, and the count in the
+  section note already reports it. Only the all-or-nothing case changes.
+
+### ⚠️ 2 · The look-ahead was counts with nothing to act on
+
+Owner: *"Look ahead seem to be useful but doesn't add much value."* Right — *"241 starting"* over a
+2,561-activity programme says nothing about **which** 241. Each window now also reports how many of
+that work is **on the critical path**, which is the one cut that changes what you do next, and it
+costs nothing: `_critical` is already on the row from `ensureCPM`.
+⚠️ Counted **once per activity**, not once per edge — a 5-day task inside a 42-day window both
+starts and finishes in it, and is one piece of critical work rather than two.
+
+### 3 · Schedule Health — unchanged, as agreed
+
+### 4 · Progress by trade: `0% 1750` was one run of digits
+
+Two different quantities printed as one. They are now two right-aligned columns of their own —
+`0%` and `1,750 acts` — with `tabular-nums` so a column of percentages lines up, and the count says
+what it counts. On a phone both drop their fixed reservation, since the track wraps below them.
+
+### 5 · The footnote loses its third sentence
+
+Owner: *"too lengthy and the last sentence doesn't provide any value."* Correct — *"Everything here
+is derived from the schedule as it stands; nothing on this page changes it"* reassures about
+something nobody suspected, and a read-only page saying it is read-only is the screen explaining
+itself rather than reporting.
+⚠️ **The other two stay, and are load-bearing:** without the first a reader takes the percentage
+for a mean; without the second they take the variance for a comparison against the *current* plan,
+which measures nothing.
+
+### 6 · The header, and the Print button
+
+*"As of 01-Feb-27 · baseline Baseline 21-Aug-26 · 2561 activities, 0 milestones"* →
+**"As of 01-Feb-27 · 2,561 activities · 0 milestones · Baseline 21-Aug-26"**.
+⚠️ `baseline Baseline 21-Aug-26` was a **stutter**, because a baseline here is user-named and the
+name usually already begins with that word. The label is printed as it stands and prefixed only
+when it does not say so itself (the `BL0` fallback). Counts gain thousands separators — 2,561 reads
+and 2561 does not.
+⚠️ **Print is gone at the owner's request, and its handler went with it.** Ctrl+P does the same
+thing, and a handler bound to an id nothing renders is the `#pk-boq` shape this repo has shipped
+once already. The `@media print` rules stay: the page still prints, it just no longer carries a
+button to do it.
+
+### ⚠️⚠️ 0 · The data-date notice is dismissible, and the key carries the date
+
+Owner: *"The yellow notification warning needs to be dismissible as well. This doesn't have to be
+shown all the time."* Fair — once read, repeating it every visit is noise.
+
+But the hazard is real and does not go away: the data date is per **browser** and drives 62 call
+sites including the CPM. So *dismissed* means **"I have acknowledged THIS pinned date"**, not
+"never tell me again" — `smyWarnKey()` includes the data date, so **re-pinning a different one
+brings the warning back**. A permanent dismissal would let a planner silently inherit somebody
+else's "now" and never be told.
+
+### Verified
+
+**30 assertions, 0 failing**, `summaryData` sliced out by name and executed over a fixture shaped
+like OPW101 — 2,561 activities, 0 milestones, **no baseline anywhere** — with **HEAD run beside it
+as the control**: HEAD's windows carry no critical figure, HEAD has no no-baseline branch, HEAD
+carries the Print button and the third sentence, and HEAD runs the percentage and the count
+together. Starts, finishes, progress, the trade split and health are all asserted **unchanged**.
+The previous suite still passes **34/34**.
+
+**Rendered at 1400px** against the module's own stylesheet — ⚠️ inside an **iframe**, because the
+pane is ~344px and the phone media query applies to it; and ⚠️ taking the **one real `<style>`
+block**, since the regex returns three here and two are JS strings that build the print stylesheets.
+Header exact, no Print button, warning background resolving to `rgba(199,119,0,0.12)` (a **colour**,
+so the sheet is provably in the cascade), dismiss **24×24** and not overlapping the text, trade
+percentages right-aligned at one x and counts at another, look-ahead rows reading
+*"241 starting · 161 finishing 30 critical"*, and **no horizontal page scroll**.
+
+**The dismiss was clicked, through the real handler:** warning gone and the key written; re-pinning
+the data date to 15-Mar-27 **brings it back**; returning to 01-Feb-27 keeps it dismissed.
+⚠️ Measured at 20×20 first — under WCAG 2.5.8 AA's 24px target — and raised.
+⚠️ A harness fault worth recording: the first render threw `t_ is not defined` because I had not
+sliced that one-line helper. A missing slice reads exactly like a missing function in the code.
+
+`wiring-check` 136/136; inline script parses (3.34MB); `ps-smy-bv` and `ps-smy-print` are gone from
+the CSS and the JS, not left dead.
+⚠️ **Not verified signed in** — the fixture is shaped like OPW101, but no live project has been
+summarised.
+
+`MODULE_V` → `20260915s`, sort-checked.
+
+
 ## 2026-09-15 (i) — A class code that lost its leading zero resolves again
 
 **Run `migrations/2026-09-15-class-code-pad.sql`.** Owner: *"let's fix the class code leading

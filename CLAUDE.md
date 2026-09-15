@@ -102,6 +102,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (v) — The Schedule Summary told a project with no baseline that nothing had slipped
+
+Owner, with the Summary open on OPW101, six numbered points plus the notice. Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+⚠️⚠️ **One of the six is a defect, not a layout question.** On that project **2,561 of 2,561
+activities carry no baseline**, so *Biggest slips* printed **"Nothing is finishing later than its
+baseline"** beside a **Behind baseline 0 · 0 ahead · 0 on time** card. All of that reads as good
+news; the truth is that not one figure on the page can be measured against a baseline, which is
+itself the finding. The empty state now says so and names **Actions ▾ Baselines…**, and the card
+shows an em dash — three zeros read as three measurements. ⚠️ The test is that **nothing**
+resolved, not that some activities lack a baseline, which is the ordinary case.
+
+⚠️⚠️ **The data-date notice is dismissible, and the key carries the DATE.** The hazard is real —
+the data date is per browser and drives 62 call sites — so *dismissed* means "I have acknowledged
+THIS pinned date", and re-pinning a different one brings the warning back. A permanent dismissal
+would let a planner silently inherit somebody else’s "now".
+
+Also: the look-ahead reports how much of each window is **critical** ("241 starting" says nothing
+about which 241); the trade bars split  into two right-aligned columns; the footnote loses
+its third sentence (a read-only page saying it is read-only) and keeps the two load-bearing ones;
+the header loses the  stutter and gains thousands separators; and **Print is
+gone with its handler** — Ctrl+P does the same thing, and a handler bound to an id nothing renders
+is the  shape this repo has shipped once.
+
+**30 assertions, 0 failing**, sliced by name and executed over a fixture shaped like OPW101, with
+**HEAD as the control** on every point; the previous suite still 34/34. Rendered at 1400px in an
+iframe against the module’s own stylesheet, and the dismiss **clicked through the real handler**.
+⚠️ Measured at 20×20 first — under WCAG’s 24px target — and raised.  136/136.
+⚠️ **Not verified signed in.**  → .
+
+
 ### 2026-09-15 (u) — Three sidebar rows drawing one glyph, a rail that lost its grouping, and a portfolio figure that was a mean
 
 Owner: *"Portfolio overview dashboard needs work let's start on this. Side panel in portfolio
