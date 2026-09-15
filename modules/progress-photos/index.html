@@ -16,6 +16,7 @@
        tag, no build step). Its stylesheet is required for the viewer's own
        controls/compass chrome to render correctly. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.min.css" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260915x" />
 </head>
 <body>
   <div class="pd-app">
@@ -404,6 +405,7 @@
        Add Media flow calls into window.Capture/window.Pano360. pano.js/
        recon.js are retired (superseded by capture.js/pano360.js) — merged in
        from origin/main's own parallel session, 2026-09-12. -->
+  <script src="../../assets/js/portfolio-dash.js?v=20260915x"></script>
   <script src="capture.js?v=20260912c"></script>
   <script src="pano360.js?v=20260914i"></script>
   <script src="module.js?v=20260915w"></script>
@@ -452,6 +454,25 @@
       // init() call means a failure in, say, BIM.init() can no longer prevent
       // PPR's or the top-level screen switch's setup from running — and it is
       // reported instead of silently vanishing into the console.
+
+      /* ==== PORTFOLIO SCOPE IS THIS MODULE’S DASHBOARD =======================================
+         Owner 2026-09-15, looking at the Portfolio Dashboard’s view dropdown: *"there is a
+         dropdown that links to each module. that is wrong … the design of those dashboards must
+         be pushed to each module established on the left."* It was a second home for this module:
+         the sidebar already opens this page portfolio-wide, and the same rows were also a view of
+         a page called Portfolio Dashboard. That view now lives here — see portfolio-dash.js.
+         ⚠️ THE MODULE’S OWN init() IS SKIPPED, deliberately. It would read this register a second
+         time, into a UI that is hidden underneath the dashboard — a duplicate cross-project fetch
+         on every project the planner can see, for nothing anybody can look at.
+         ⚠️ The project selector is wired by takeOver() for exactly that reason: skipping init()
+         skips the code that fills it, and without it there is no way to leave portfolio scope from
+         the page you are standing on. */
+      if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('photos')) {
+        PortfolioDash.takeOver('photos', { select: '#pp-project' }).catch(function (e) {
+          if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+        });
+        return;
+      }
       function safeInit(fn, label) {
         try { fn(); } catch (e) { console.error('[progress-photos] ' + label + ' init failed:', e); }
       }

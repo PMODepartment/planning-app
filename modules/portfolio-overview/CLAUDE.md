@@ -1,5 +1,68 @@
 # Module: portfolio-overview
 
+## 2026-09-15 (x) — Six of the thirteen views leave this page: a dashboard belongs to its module
+
+Owner, with the view dropdown open: *"for the dashboard, you can see there is a dashboard module,
+and there is a dropdown that links to each module. that is wrong. The idea of each dashboard (e.g.
+s-curve, risk register etc.), the design of those dashboards must be pushed to each module
+established on the left."*
+
+### ⚠️⚠️ THE DROPDOWN WAS A SECOND SIDEBAR, AND A SECOND HOME FOR TWELVE MODULES
+Since 2026-09-14 the sidebar opens every module's **own page** in portfolio scope
+(`#pd_scope=portfolio`, read by `AppAuth.isPortfolioScope`). So "Risk Register" existed twice: once
+as the module, and once as a view of a page called Portfolio Dashboard — two different screens over
+the same rows, each with its own renderer to keep in step. That is the duplication this page has
+already paid for once, when `scCompute` was a hand-copied `assets/js/scurve.js`.
+
+**Six move in this pass** — Risk Register, Issues & Concerns, Meetings, Contracts & Claims, Progress
+Photos, Productivity Rates. Their renderers are now `assets/js/portfolio-dash.js`, and the module
+mounts its own when it is opened portfolio-wide.
+
+⚠️ **MOVED, NOT COPIED.** This page no longer carries those six panes, their loaders, their tab
+buttons or their filter panels — `loadRisks`, `loadIssues`, `loadMeetings`, `loadContracts`,
+`loadPhotos` and `loadProductivity` occur **zero** times in this file now, and the test asserts it.
+A second copy is how the two screens drift apart again.
+
+### ⚠️ A DEEP LINK MUST NOT DIE WITH THE TAB
+The sidebar carried `#po_view=` links into every one of these for months; they are in bookmarks and
+in messages, and **every one of them arrives through `switchView`**. `PO_MOVED_VIEWS` resolves the
+view name to the module that owns it now and `location.replace`s there in portfolio scope.
+⚠️ **After** the super-admin gate, deliberately: a planner who cannot see Risk Register still lands
+on the Overview exactly as before, rather than being redirected to a module page instead.
+⚠️ `replace`, not `href` — a tab that no longer exists should not sit in the Back history.
+
+### ⚠️⚠️ THE STAKEHOLDER MAP DID NOT MOVE, AND THE REASON IS THE READ-ONLY SCOPE
+Its portfolio view carries an authoring **directory** — *+ Add person*, assign, merge — and writes
+are refused at the shared Supabase chokepoint while the portfolio flag is set (`auth.js`). Moving it
+into the module under `#pd_scope=portfolio` would have silently broken the one thing it does. It
+stays here, with the Overview, Milestones (which has no module at all), the S-Curve, Cash Flow,
+Resources and Equipment.
+
+### ⚠️ The whole `<style>` block moved out, and that was the cheaper choice
+The six dashboards are drawn with `po-*` classes and a module cannot reach a `<style>` block inside
+another page. Splitting out "just the classes the six need" has to be re-judged every time a renderer
+gains a class, and the first thing it misses is a rule nobody notices is missing until a table is
+unreadable. So the block is now `assets/css/portfolio-dash.css`, character for character, linked by
+this page and by the six modules.
+
+### Verified
+- `test-portfolio.js` **86/86** — updated to the new contract: `viewLoaders` names **six** lazy views,
+  the six that moved are **asserted absent**, `PO_MOVED_VIEWS` names all six modules, and the
+  `[hidden]` specificity assertion now reads the **stylesheet** rather than the page, because that is
+  where the rule went. ⚠️ Left unchanged it would have passed against the HTML only until somebody
+  looked.
+- **89 assertions** in the shared layer's own harness (see the root log), including a gate that reads
+  `origin/main`'s copies and asserts the six *were* panes here and that no module mounted anything.
+- `wiring-check` **139/139** — which is what caught `Icons.paint`, a method that does not exist, in
+  my own scaffolding.
+
+⚠️ **Not verified signed in** — no dashboard has been mounted against a live project.
+⚠️ **Still to come:** S-Curve, Cash Flow, Resources and Equipment. Their renderers are the four
+heaviest on this page and each carries its own chart or server-side aggregate; they move on their own.
+
+`MODULE_V` → `20260915x`.
+
+
 ## 2026-09-15 (v) — Phase B finished: one funnel, one KPI card, and the series switch stops being a fourth idiom
 
 Continuing the owner's *"the UI needs complete rework… make sure the UI is consistent and

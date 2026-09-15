@@ -102,6 +102,86 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+## 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
+
+Owner, with the Portfolio Dashboard's view dropdown open: *"there is a dashboard module, and there is
+a dropdown that links to each module. that is wrong. The idea of each dashboard (e.g. s-curve, risk
+register etc.), the design of those dashboards must be pushed to each module established on the
+left."* Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+### ⚠️⚠️ THE DROPDOWN WAS A SECOND SIDEBAR
+
+Since 2026-09-14 the sidebar already opens every module's **own page** in portfolio scope
+(`#pd_scope=portfolio`, read once by `AppAuth` into a per-tab flag). So "Risk Register" existed
+twice: once as the module, and once as a view of a page called Portfolio Dashboard. Two screens over
+the same rows, two renderers to keep in step — the duplication this repo has paid for with the
+S-curve maths, the location normaliser and the change-order insert.
+
+**New `assets/js/portfolio-dash.js`** holds the six moved dashboards — Risk Register, Issues &
+Concerns, Meetings, Contracts & Claims, Progress Photos, Productivity Rates — and each module mounts
+its own when it is opened portfolio-wide. **New `assets/css/portfolio-dash.css`** is the Portfolio
+Dashboard's `<style>` block, moved out whole: a module cannot reach a `<style>` inside another page,
+and splitting out "just the classes the six need" has to be re-judged every time a renderer gains a
+class.
+
+⚠️ **MOVED, NOT COPIED.** `portfolio-overview` no longer carries those six panes, loaders, tab
+buttons or filter panels, and the test asserts each `load*` is gone. A second copy is how the two
+screens drift apart again, which is the fault this change exists to end.
+
+### ⚠️ Three decisions that shaped it
+
+- **The module's own `init()` is SKIPPED in portfolio scope.** It would read the same register a
+  second time — a cross-project fetch over every project the planner can see — into a UI hidden
+  underneath the dashboard. ⚠️ So `takeOver()` wires the topbar project selector itself: skipping
+  `init()` skips the code that fills it, and without it there is no way to leave portfolio scope from
+  the page you are standing on.
+- **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to those
+  nodes; tearing them out would turn every one into a null dereference.
+- ⚠️⚠️ **The Stakeholder Map did NOT move.** Its portfolio view carries an authoring directory (+ Add
+  person, assign, merge) and **writes are refused at the shared Supabase chokepoint while the
+  portfolio flag is set**. Moving it would have silently broken the one thing it does. It stays on
+  the Dashboard with the Overview, Milestones (no module at all), S-Curve, Cash Flow, Resources and
+  Equipment.
+
+⚠️ **A deep link must not die with the tab.** `#po_view=risk` and its five siblings still resolve —
+`switchView` redirects to the module that owns the view now, **after** the super-admin gate, with
+`location.replace` so a tab that no longer exists does not sit in the Back history.
+
+### ⚠️⚠️ TWO REAL FAULTS, BOTH FOUND BY RUNNING THE CODE RATHER THAN READING IT
+
+1. **The Meetings dashboard's date helpers were left behind.** It asks `pd(due) < today()` to decide
+   what is overdue, and both lived in the Portfolio Dashboard's closure three thousand lines from the
+   renderer they drive. The harness threw `pd is not defined`; a lint would have seen nothing.
+2. **`Icons.paint` does not exist** — the API is `Icons.hydrate`. My own scaffolding, in four places,
+   caught by `tools/wiring-check.js`, which exists for exactly this and was worth its own commit.
+
+### Verified
+
+- **89 assertions** executing the shared layer against a narrow fake DOM, with the **real
+  `claims.js` and `mcc-rcm.js`** loaded rather than stubbed — two of these dashboards derive their
+  numbers through those helpers, and a stub of a rule is a second copy of that rule. Every view
+  renders from fixtures: the risk KPIs count two risks and rank 1st Priority first through the real
+  5×5 lookup; the meetings worklist lists the open action item and **leaves the closed one out**;
+  `takeOver` hides the module's own UI and the module bar and mounts the dashboard in `.pd-main`.
+- ⚠️ **GATE:** the same harness reads `origin/main`'s own copies and asserts the opposite — the six
+  *were* panes of the Portfolio Dashboard, their loaders ran there, the dropdown carried all six, and
+  **no module mounted a dashboard of its own**.
+- Every module page asserted to load the layer, load the styles, mount its own key and gate on
+  portfolio scope.
+- `test-portfolio.js` **86/86** (updated to the new contract), `wiring-check` **139/139**,
+  `test-lsm` **702/702**, every touched page's inline script parses.
+
+⚠️ **Not verified signed in** — no dashboard has been mounted against a live project, and the
+selector's escape route has never been clicked. That is the first thing to try: open Risk Register
+from the Portfolio sidebar.
+⚠️ **Still to come:** S-Curve, Cash Flow, Resources and Equipment — the four heaviest renderers, each
+with its own chart or server-side aggregate. They move on their own.
+
+New `assets/js/portfolio-dash.js` + `assets/css/portfolio-dash.css` at `?v=20260915x`;
+`MODULE_V` → `20260915x`.
+
+
 ### 2026-09-15 (w) — A 3D card framed for a shape its canvas no longer had
 
 Owner: *“The presets view also do not view properly and I cannot see the ground”*, with the
