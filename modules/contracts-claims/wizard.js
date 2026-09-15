@@ -598,14 +598,46 @@ window.CCWizard = (function () {
           : '<p class="ccw-hint"><b>Open importer</b> takes you to the file picker. Nothing is written ' +
             'until you accept the preview.</p>');
     }
-    return (false
-        ? ''
-        : '<p class="ccw-hint"><b>This step is optional — most contracts are recorded before the BOQ arrives.</b> ' +
-          'Press <b>Next</b> to skip it; nothing is lost, and the BOQ can be imported at any time from the ' +
-          '<b>BOQ tab</b>.</p>') +
-      '<p class="ccw-hint">A BOQ comes in whatever format the client uses, so the importer <b>proposes</b> a ' +
-      'column map and you accept or correct it — nothing is written until you do. It is stored as a ' +
-      '<b>revision</b>, so a re-issued or remeasured BOQ supersedes it without destroying what was tendered.</p>' +
+    /* ⚠⚠ IT ASKS NOW, INSTEAD OF ONLY EXPLAINING. Owner 2026-09-15: *"Check also the BOQ step
+       yes this is optional but if the planner opts to develop it already let's fix."* Until this
+       change a CONTRACT run's BOQ step was four paragraphs of prose and no control at all — the
+       only thing a planner could do on it was press Next. Someone who had the bill in hand had to
+       finish the wizard, find the BOQ tab and start again, which is the same "leave the wizard and
+       go find it" answer a previous round already rejected for the BOQ type (2026-08-27: *"I don't
+       understand the BOQ wizard. How will I add the BOQ then if this is the case?"*).
+       ⚠ STILL OPTIONAL, AND STILL THE DEFAULT. The owner's original point stands and is not being
+         reversed: a contract is recorded the week it is awarded and the priced BOQ arrives weeks
+         later, so "Not yet" is preselected and Next skips exactly as before. What changed is that
+         "I have it" is now expressible.
+       ⚠ IT HANDS OFF, IT DOES NOT ASK AGAIN. Neither branch duplicates the BOQ type's own fields:
+         `manual` reopens this very wizard as a BOQ run (where naming the BOQ, choosing the revision
+         and picking trades already live) and `import` opens the importer. A second name/revision
+         form here would be a third create-surface on one module, which is how they drift apart.
+       ⚠ AFTER THE CONTRACT IS SAVED, never before — see finish(). The contract may create the very
+         package the BOQ would be narrowed to, and a BOQ opened first would be scoped against
+         something that does not exist yet. */
+    var ctb = st.ctBoq || 'later';
+    return '<p class="ccw-hint"><b>Optional — most contracts are recorded before the BOQ arrives.</b> ' +
+        'Leave this on <b>Not yet</b> and nothing is lost; the BOQ can be loaded at any time from the ' +
+        '<b>BOQ tab</b>.</p>' +
+      '<div class="ccw-choice">' +
+        '<label class="ccw-opt' + (ctb === 'later' ? ' on' : '') + '">' +
+          '<input type="radio" name="ctboq" value="later"' + (ctb === 'later' ? ' checked' : '') + ' /> ' +
+          '<b>Not yet</b><span class="ccw-optsub">Record the contract now. This is the normal case on the ' +
+          'week of award.</span></label>' +
+        '<label class="ccw-opt' + (ctb === 'manual' ? ' on' : '') + '">' +
+          '<input type="radio" name="ctboq" value="manual"' + (ctb === 'manual' ? ' checked' : '') + ' /> ' +
+          '<b>Build it by hand</b><span class="ccw-optsub">From the class-code library. Each division becomes ' +
+          'its own trade section, with class codes already on every line.</span></label>' +
+        '<label class="ccw-opt' + (ctb === 'import' ? ' on' : '') + '">' +
+          '<input type="radio" name="ctboq" value="import"' + (ctb === 'import' ? ' checked' : '') + ' /> ' +
+          '<b>Import the client&#39;s workbook</b><span class="ccw-optsub">The importer <b>proposes</b> a column ' +
+          'map and you accept or correct it — nothing is written until you do.</span></label>' +
+      '</div>' +
+      (ctb === 'later' ? ''
+        : '<p class="ccw-hint">The contract is saved first, then ' +
+          (ctb === 'import' ? 'the <b>importer</b> opens.' : 'the <b>New BOQ</b> steps open, where you name it and pick its trades.') +
+          ' Stored as a <b>revision</b>, so a re-issue or remeasure supersedes it without destroying what was tendered.</p>') +
       /* ⚠️ THE QUESTION UNDER THE QUESTION, answered here because this is where it gets
          asked: *"There will be multiple progress billings in this project so what will
          happen?"* Nothing about billing depends on packages, and the old copy never said
@@ -666,6 +698,16 @@ window.CCWizard = (function () {
       h += clashHTML() +
         '<p class="ccw-hint pd-caution">Saving creates ' + mk.length + ' package(s) and the record together. ' +
         'If the package cannot be created — a duplicate code, most often — <b>nothing</b> is saved and you stay here.</p>';
+    }
+    /* ⚠ THE BOQ CHOICE BELONGS ON THE REVIEW, because Review is where a planner checks what
+       pressing Save will do — and on a Contract it may now do a second thing. A hand-off that
+       appears without warning reads as the wizard having gone wrong. Silent on 'Not yet',
+       which is the default and promises nothing. */
+    if (st.type === 'Contract' && st.ctBoq && st.ctBoq !== 'later') {
+      h += '<p class="ccw-hint">After saving, ' +
+        (st.ctBoq === 'import'
+          ? 'the <b>BOQ importer</b> opens. Nothing is written there until you accept the column map.'
+          : 'the <b>New BOQ</b> steps open, where you name it and pick its trades.') + '</p>';
     }
     if (st.type === 'BOQ') {
       h += '<p class="ccw-hint">Nothing is recorded for a BOQ-only run: go to the <b>BOQ tab</b> and import against ' +
@@ -824,6 +866,12 @@ window.CCWizard = (function () {
       return;
     }
     if (key === 'boq') {
+      /* ⚠ The Contract run's three radios. They REPAINT rather than only capture, because the
+         hint under them names what will happen next — a control whose explanation does not follow
+         it is the button-contradicts-its-own-step defect this wizard has already been fixed for. */
+      ov.querySelectorAll('input[name="ctboq"]').forEach(function (r) {
+        r.onchange = function () { st.ctBoq = r.value; paint(); };
+      });
       /* WARNING The path radios REPAINT, like the mode radios below and for the same reason: the
          fields differ per path (a new document asks for a name, a new revision does not) and the
          Trades step itself appears or disappears, so the rail has to be redrawn too. capture()
@@ -1142,6 +1190,14 @@ window.CCWizard = (function () {
       affMsg.indexOf('') >= 0 ? 'warn' : 'success');
     if (D.warnDropped) D.warnDropped(res.dropped);
     D.done(t);
+    /* ⚠⚠ THE BOQ HAND-OFF, LAST. The contract row exists, its packages exist, the register has
+       been refreshed by D.done() — so whichever screen opens now is looking at a project that
+       already has the contract this BOQ belongs to. Opening either one earlier would scope it
+       against a package that had not been created yet.
+       ⚠ close() has already run several lines above, so neither surface opens underneath this
+         overlay. That is the same ordering the BOQ type's own import path documents. */
+    if (st.type === 'Contract' && st.ctBoq === 'import' && D.openBoqImport) D.openBoqImport();
+    else if (st.type === 'Contract' && st.ctBoq === 'manual' && D.openBoqWizard) D.openBoqWizard();
   }
 
   function close() { if (ov) { ov.remove(); ov = null; } }
@@ -1176,6 +1232,10 @@ window.CCWizard = (function () {
          the staged list reset between records rather than carrying the last one's files
          into the next wizard. */
       files: [],
+      /* ⚠ Declared here for the reason the note on `pkgList` gives: a step that reads state
+         `open()` never initialised throws on first paint. 'later' is the default because the BOQ
+         step is optional and must stay that way. */
+      ctBoq: 'later',
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];

@@ -102,6 +102,73 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (i) — The wizard's BOQ step asks instead of only explaining
+
+Owner: *"Check also the BOQ step yes this is optional but if the planner opts to develop it already
+let's fix."*
+
+### ⚠️⚠️ ON A CONTRACT RUN IT HAD NO CONTROL AT ALL
+
+Four paragraphs of prose and a Next button. A planner holding the priced bill on the day of award
+had to finish the wizard, find the BOQ tab and start again — the same *"leave the wizard and go find
+it"* answer a previous round already rejected for the BOQ type itself (2026-08-27: *"I don't
+understand the BOQ wizard. How will I add the BOQ then if this is the case?"*).
+
+It now asks, with three options:
+
+| | |
+|---|---|
+| **Not yet** | preselected — records the contract, skips exactly as before |
+| **Build it by hand** | after the save, the **New BOQ** steps open |
+| **Import the client's workbook** | after the save, the **importer** opens |
+
+⚠️ **Still optional, and still the default.** The owner's original point stands and is not being
+reversed: a contract is recorded the week it is awarded and the priced BOQ arrives weeks later. What
+changed is that *"I have it"* is now expressible.
+
+⚠️⚠️ **It hands off; it does not ask again.** Neither branch duplicates the BOQ type's fields —
+`manual` reopens this very wizard as a **BOQ run**, where naming the BOQ, choosing between a new
+document and a new revision, and picking trades already live. A second name/revision form here would
+be a third create-surface on one module, which is how they drift apart.
+
+⚠️⚠️ **After the contract is saved, never before.** The contract may create the very package the BOQ
+would be narrowed to, so a BOQ opened first would be scoped against something that does not exist
+yet. The hand-off runs last, after `D.done()`, and `close()` has already run — so neither surface
+opens underneath the wizard's own overlay, which is the ordering the BOQ type's import path already
+documents.
+
+⚠️ **The Review step names it.** Review is where a planner checks what pressing Save will do, and on
+a Contract it may now do a second thing; a hand-off that appears unannounced reads as the wizard
+having gone wrong. Silent on *Not yet*, which promises nothing.
+
+### Verified
+
+`stepBoq` and `stepReview` **sliced out of `wizard.js` and executed** across all three states:
+
+| choice | radios | preselected | says saved-first | names |
+|---|---|---|---|---|
+| later | 3 | ✓ | — | — |
+| manual | 3 | ✓ | ✓ | New BOQ |
+| import | 3 | ✓ | ✓ | importer |
+
+The review is silent on *later*, names the importer on *import*, the New BOQ steps on *manual*.
+Rendered under the module's own CSS at 900px: three options, *Not yet* carrying the selected state,
+no overflow — and selecting *Import* repaints with "The contract is saved first, then the importer
+opens."
+
+Static gates: both files parse; `st.ctBoq` is initialised in `open()` (the note on `pkgList` records
+what happens to a step that reads state `open()` never set); the hand-off runs after `D.done()` and
+only on a Contract; `close()` precedes it; and — the cross-file one — **every `D.openBoq*` the
+wizard calls is exposed by `module.js`**.
+
+⚠️ **The long prose is kept, not trimmed.** The progress-billing answer and the "loaded against the
+whole project" line both survive: the first answers a question the comment records being asked
+repeatedly, and the second is what stops the step looking like it gates something it does not.
+
+⚠️ **Not verified signed in** — no contract was saved and neither hand-off was watched opening.
+
+`module.js` / `wizard.js` → `20260915c`, `MODULE_V` → `20260915h`, both sort-checked.
+
 ### 2026-09-15 (h) — Contracts & Claims: a record can carry its paperwork
 
 Owner: *"In the contracts & claims module there should also be an attach a file feature in the

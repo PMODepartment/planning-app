@@ -740,6 +740,11 @@ window.ContractsClaims = (function () {
       nextBoqRev: function () {
         return (window.BOQ && BOQ.nextRevLabel) ? BOQ.nextRevLabel() : '00';
       },
+      /* ⚠ REOPENS THIS WIZARD AS A BOQ RUN rather than duplicating its fields. Naming a BOQ,
+         choosing between a new document and a new revision, and picking trades are three decisions
+         that already have a screen; a Contract's BOQ step offering its own copy would be a third
+         create-surface on one module. Used by the Contract run's "Build it by hand". */
+      openBoqWizard: function () { openNew('BOQ'); },
       openBoqImport: function () {
         openSub('boq');
         var tries = 0;
