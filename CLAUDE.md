@@ -102,6 +102,105 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (b) — The delete is verified against the live database, and the PREVIEW gets the timeout I left off
+
+**Run `migrations/2026-09-16-preview-timeout.sql`.** Owner ran both of (a)'s migrations, then the
+rehearsal, and the results discharge the caveat (a) ended on — and expose one thing (a) got wrong.
+
+### ⚠️⚠️ THE RULE THAT MATTERED MOST NOW HOLDS AGAINST THE REAL DATABASE
+
+Entry (a) said the `user_notes` keep-and-unlink rule was *"the one most easily lost, and losing it
+silently destroys other people's private notes."* Measured, inside a transaction that was then rolled
+back:
+
+```
+preview said: 76 to DELETE, 0 to UNLINK
+after: projects=0, wbs_nodes=0, probe note SURVIVES=1, still tagged=0
+```
+
+**`SURVIVES=1` with `still tagged=0`** — the note was **kept and its `project_id` cleared**, which is
+the whole of the rule. `wbs_nodes=0` confirms the original blocker purges: the locked, self-reseeding
+WBS skeleton that made the delete impossible is gone. The purge ran end to end with no FK violation,
+no cycle error and no timeout.
+
+⚠️⚠️ **AND THE FIRST VERSION OF THAT CHECK PROVED NOTHING, WHICH IS THE PART WORTH KEEPING.** It
+counted `user_notes where project_id is null` — **globally**. On a project with no notes that answers
+**0** whether the notes were unlinked *or deleted outright*: the two outcomes are indistinguishable,
+and it reported a clean 0 for a rule that had never been exercised. The fix is to **seed a note inside
+the transaction first**, so 0 and 1 mean different things. Same shape as the empty-set false pass this
+repo keeps recording; it is not enough for an assertion to pass, it has to be *able* to fail.
+
+### ⚠️ Two SQL-editor traps hit while verifying, both already on file here
+
+- **`is_admin()` refuses the SQL editor, correctly.** It is `exists(select 1 from users where id =
+  auth.uid() …)`, and the editor connects as `postgres` with **no JWT**, so `auth.uid()` is NULL and
+  the rehearsal died at `Not authorized`. Not a defect — the guard working. The rehearsal has to
+  impersonate: `perform set_config('request.jwt.claims', '{"sub":"<uuid>"}', true)`.
+- ⚠️⚠️ **`wbs_nodes` HAS A COLUMN CALLED `code`**, and a plpgsql variable of the same name is
+  ambiguous (`42702`). Worth recording beyond the rehearsal: **`admin_delete_project` is immune to
+  this by construction** — it never names a column, only `format('delete from %I where project_id =
+  $1', t)` with the value bound, so there is no identifier for a column to shadow. The catalog-driven
+  design bought that for free.
+- ⚠️ And **the editor shows only the LAST statement's result**, so a file of separate verify queries
+  silently answers one of them. This repo recorded that on 2026-09-15 (y) and I repeated it while
+  verifying — three verification queries, two discarded. Every verify block here is now ONE statement.
+
+### The security half, confirmed
+
+One combined query, run by the owner:
+
+| section | result |
+|---|---|
+| RLS on `wbs_summary_backup_20260817` | **true** |
+| RLS on `wbs_null_code_backup_20260824` | **true** |
+| policies on either | **none** — which is the fix: RLS with zero policies denies every role but the owner and `service_role` |
+| **other public tables without RLS** | **none at all** |
+
+⚠️⚠️ **Both backup tables existed and both were unprotected, while the advisor reported ONE.** So the
+loop in (a)'s migration — written because *which* of these hand-made tables exist differs per
+environment — was not defensiveness, it was load-bearing: a bare `alter table` on the flagged name
+would have secured one and left the other, and nothing would have said so.
+
+### ⚠️⚠️ WHAT (a) GOT WRONG: THE PREVIEW INHERITS THE 8-SECOND CAP
+
+(a) raised `admin_delete_project` to 120s and **deliberately left the preview alone**. That is the
+wrong side of the trade. The preview runs `select count(*)` on **every** public table carrying a
+`project_id` — 89 today — plus one per SET NULL foreign key, and not all of those have an index on
+`project_id`, so some are sequential scans. The projects where that bites are exactly the ones
+somebody wants to delete.
+
+⚠️ **And the rehearsal could not have seen it: BAU101-TEST is 76 rows.** It proved the logic and
+proved nothing about timing, because a 76-row project cannot take eight seconds to count. A green run
+on data too small to trigger the failure is not evidence about the failure.
+
+⚠️ It fails **safe** — `projects.html` will not arm the button when the preview rejects, and says so —
+so the symptom is *"the big project is the one I cannot delete"*, which is the owner's **original
+complaint wearing a different hat** rather than a delete proceeding unseen.
+
+**60s, not 120s.** The preview is a read with a person watching a modal; if it genuinely needs longer
+than a minute the honest answer is an index on the offending table, not a bigger number. The purge's
+120s is different in kind — nobody is waiting on a spinner, and it is the write that must not be
+abandoned half way.
+
+### Verified
+
+`tools/sql-struct.js` clean (the new file declares no function body, which it reports rather than
+skips); the build regenerated to **173 migrations**, and the `alter function` asserted to land
+**after** the last `create or replace` of the preview (definitions at 4886 and 16564, the timeout at
+16717) — ordering is what matters in a file that replays history, not absence of the old text.
+⚠️ The build's diff read **233 insertions / 175 deletions** for a 57-line migration; checked rather
+than assumed, and the 175 are the generated manifest renumbering from `/172` to `/173`. Net **+58**
+lines, and a set-difference over the whole file shows **no content lost**.
+
+⚠️ **Still not verified, and now the only thing left:** whether either function completes inside its
+ceiling on a project with a 100k-activity schedule. The test is simply to open a large project in the
+app and press Delete — the dialog reports the row counts before it arms, so a preview timeout shows
+up there and nowhere else.
+⚠️ **Not verified signed in** — the dialog has still never been opened against a live project.
+
+No asset changed, so **no `?v=` and no `MODULE_V` bump** — a SQL-only change, and bumping would
+invalidate 25 pages' caches for a file none of them load.
+
 ### 2026-09-16 (a) — The project delete stops refusing and starts purging; a CRITICAL RLS hole closed; Milestones leaves the portfolio sidebar
 
 Owner, three things: *"I need to have the guard when deleting a project removed since its very
@@ -272,7 +371,14 @@ renders the owner's screenshot exactly**, thirteen rows including Milestones.
 `wiring-check` **139/139**, every JS file parses, `projects.html`'s inline script parses,
 `scan.js` self-test 10/10, every asset on one version.
 
-### ⚠️ NOT VERIFIED, and stated as limits rather than gaps
+### ⚠️ NOT VERIFIED AT THE TIME OF WRITING — SUPERSEDED, see 2026-09-16 (b)
+
+⚠️⚠️ **THE PARAGRAPH BELOW IS NO LONGER TRUE AND IS KEPT RATHER THAN REWRITTEN.** Both migrations
+were run within the hour, and the rehearsal it asks for was executed against the live database —
+including the `user_notes` rule it singles out, which **holds**. The entry below is what was honestly
+known when it was written; **2026-09-16 (b)** records what is now measured, and what is still not.
+Left standing because deleting a caveat once it is discharged hides that it ever applied.
+
 
 **No local Postgres and no SQL executor of any kind** — no `psql`, no Docker, no Supabase CLI on this
 machine — so **neither migration has been executed**. What is proven is their structure. Specifically
