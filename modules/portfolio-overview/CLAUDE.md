@@ -1,5 +1,133 @@
 # Module: portfolio-overview
 
+## 2026-09-15 (r) — Three sidebar rows drew the same glyph, the collapsed rail lost its grouping, and "Avg Schedule %" was a mean
+
+Owner: *"Portfolio overview dashboard needs work let's start on this. Side panel in portfolio
+overview needs work as well especially when collapsed. Some icons are the same let's think of how
+to solve this."*
+
+### ⚠️⚠️ THE DUPLICATE ICONS ARE A COLLAPSED-RAIL DEFECT, AND THERE WERE THREE OF THEM
+
+Measured by **rendering this nav through the shipped `UI.renderNav` and grouping the rows by the
+geometry each icon actually DRAWS** — not by comparing names, because two different names can map
+to identical paths (`grid`/`gridView` and `group`/`users` both do).
+
+| collided | |
+|---|---|
+| `barChart` | **Dashboard** and **Productivity Rates** |
+| `calendar` | **Milestones** and **Meetings** |
+| `clipboard` | **Issues and Concerns** and **My Work** |
+
+⚠️ This matters *because* the rail collapses. At 64px `.pd-navtxt` is `display:none` — asserted, not
+assumed — so the glyph is the only thing left and two rows become indistinguishable. It is the same
+defect class the Project Schedule's toolbar has already paid for twice
+(`ps-lsmbtn`/`ps-outlinebtn`, `ps-progressbtn`/`ps-flowbtn`).
+
+⚠️⚠️ **THE THREE ROWS CHANGED ARE THE THREE THAT EXIST ONLY HERE** — Dashboard → `layout`,
+Milestones → a new `milestone`, My Work → `user`. A module's icon is its identity in the project
+sidebar and the module grid as well, so moving one to settle a collision in *this* nav would change
+two other screens to fix neither.
+
+⚠️ `milestone` is the **diamond this app already draws a milestone with** (`.ps-mile` in the Gantt),
+on a baseline — a bare diamond would collide with the drawing palette's own shape tools, and a
+diamond *on a line* is a date rather than a shape. `user` is one figure against Manpower's `users`,
+which is the distinction the two rows actually carry.
+
+### The collapsed rail: the label folds, the grouping must not
+
+Nineteen rows in a 64px column with the Portfolio / Personal / System headings dropped to nothing.
+The heading is now a **rule** when collapsed — the words go, the boundary stays — with no rule above
+the first row, where it would only separate the nav from a brand block that has its own border.
+
+⚠️⚠️ **NOT `opacity: 0` any more, and that is the mechanism.** Opacity applies to the whole element,
+border included, so an opacity-hidden heading cannot carry a visible divider. The text is collapsed
+by `font-size` and `overflow` instead.
+
+⚠️⚠️ **AND THE DIVIDER IS NOT `var(--pd-line)`** — found by rendering it, not by reading it. That
+token is the **light-theme** divider (`rgb(220,219,219)`) and this rail is `#231F20` in both themes,
+so it painted a near-white rule on a near-black column. The rail's own vocabulary is white at low
+alpha (hover `.06`, scrollbar `.16`, the section label it replaces `.3`), and a divider must be
+quieter than the text it stands in for. Measured painted: `rgb(66,62,63)` on `rgb(35,31,32)`.
+
+### ⚠️⚠️ A PRE-EXISTING BUG THE SAME CHANGE EXPOSED
+
+The mobile drawer's `.pd-navsec` rule restored `display` **and nothing else**, while the collapsed
+rule above it zeroes height, padding and opacity — none of which a `display` resets. So the drawer
+has been rendering **Portfolio / Personal / System at zero height and zero opacity**: present in the
+DOM, invisible on screen. Every property is handed back now, restated from `.pd-sidebar .pd-navsec`
+itself so the drawer looks exactly like the expanded rail rather than approximately like it.
+
+### ⚠️⚠️ "Avg Schedule %" WAS A MEAN OF PROJECT PERCENTAGES
+
+Two small finished projects and one huge one barely started — ₱50M at 100%, ₱50M at 100%, ₱2B at 5%
+— read as **68% complete**. That is the figure this strip printed, on a page whose whole purpose is
+informed decisions at portfolio level. Weighted by value it is **10%**.
+
+Same fault and same fix as the Project Schedule's Summary view, which weights by duration and says
+so. ⚠️ The weight is `original_budget` — the only measure of size the project row carries, and the
+one the number is being read against. `schedule_activities` was the alternative and is worse: a row
+count says how finely somebody broke the work down, not how much of it there is.
+
+⚠️⚠️ **It degrades rather than lying.** Only projects carrying **both** a budget and a progress
+figure can be weighted; with none, it falls back to the plain mean, and the basis is reported either
+way, because a weighted and an unweighted figure look identical as a number. Projects reporting no
+progress at all are **counted and named**, never silently dropped — "62%" over three of eleven
+projects is a different statement from "62%".
+⚠️ **The label changed with the arithmetic.** "Avg" over a weighted figure would be worse than
+leaving the mean in place.
+
+### ⚠️ And this page is finally cache-busted
+
+`portfolio-overview` is not in `APP_CONFIG.MODULES` — it is a standalone page — so `pmodRow`'s
+`ModulesGrid.href(m)` never reached it and every sidebar link was a bare `index.html`. That is why
+this module's own log has had to end three entries with *"hard-refresh once"*. `poBase` now carries
+`MODULE_V`, the same token every module page is stamped with, so one deploy busts them together.
+
+### ⚠️ Checked and NOT changed: `isBehind` is right
+
+`if (sf && ff && sf > ff)` reads backwards against its own comment ("slipped vs baseline finish") and
+I was about to report it. Checking the **writers** settles it: `schedule_finish` is
+`max(end_date)` written by the schedule module — the live programme's finish — and `forecast_finish`
+is hand-entered on the project record. The live schedule running past the committed date **is**
+behind. The comment's word "baseline" is loose; the logic is not.
+⚠️ Reported, not changed: `isBehind` reads bare `forecast_finish` while the table column and
+`projects.html` both read `forecast_finish || end_date`, so a project with a contract end date and no
+typed forecast is never compared. Changing that changes what "behind" means portfolio-wide.
+
+### Verified
+
+**26 assertions** on `portfolioProgress` / `progressBasisNote`, sliced out of this page by name and
+executed, with **HEAD's own mean lifted verbatim from `renderKPIs` as the control** — it prints 68%
+where the weighted figure prints 10%, and both agree at 40% on equal budgets, which is the case
+weighting cannot change. Plus the clamp (a stored −20 does not subtract), the zero-budget divide, and
+the empty portfolio.
+⚠️ **One assertion was MINE being wrong** — I asserted 7% and the answer is 10%, because I mis-read
+2000×5. Recorded rather than quietly corrected.
+⚠️ **And the control would not build at first:** `var avg = [^;]+;` stopped at the `;` inside
+`return a + b;`, lifting a truncated statement. Same family as the `[^)]*` that could not cross a `)`
+in the Project Schedule's suite.
+
+**5 assertions** on the nav, rendered through the shipped `renderNav`: 19 rows, 19 distinct
+geometries, every name resolving to a real glyph (an unknown `data-ico` renders an empty box,
+silently), and the project sidebar's 14 rows checked as a regression guard.
+
+**Measured in a browser** at a real 1400px viewport — ⚠️ inside an **iframe**, because the pane is a
+few hundred pixels wide and a media query evaluated against *it* applies the phone rules, which is
+exactly what happened on the first run and measured the drawer instead of the rail. Rail **64px**,
+labels `display:none`, 19 icons drawn, **0 collisions**, first heading 0px with no border, the other
+two a 1px rule, no horizontal page scroll, and the sidebar background asserted as a **colour**
+(`rgb(35,31,32)`) so the stylesheet is provably in the cascade.
+
+⚠️ **Not verified signed in** — no live portfolio has been loaded, so the weighted figure has never
+been computed from real projects.
+⚠️ **The rest of "the dashboard needs work" is deliberately NOT guessed at.** What is fixed here is
+a figure that was wrong and a rail that was unreadable. Whether the Overview should also **rank
+projects by attention** (the shape the Contracts portfolio view took on 2026-09-15 q) is a design
+decision, and the owner's to make.
+
+`MODULE_V` → `20260915r`.
+
+
 ## 2026-09-15 (q) — Contracts & Claims stops being a register and becomes a decision surface
 
 Owner: *"in terms of portfolio-level contracts & claims there should be a proper dashboard as well

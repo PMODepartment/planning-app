@@ -446,7 +446,24 @@ a:hover { text-decoration: underline; }
 .pd-app.pd-collapsed .pd-nav-sibling { justify-content: center; padding: 11px 0; gap: 0; font-size: 0; }
 .pd-app.pd-collapsed .pd-navtxt { display: none; }   /* wrapped labels (with sub-captions whose own font-size ignores the font-size:0 trick) */
 .pd-app.pd-collapsed .pd-navico { margin-right: 0; }
-.pd-app.pd-collapsed .pd-navsec { opacity: 0; height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; }
+/* ⚠️⚠️ THE LABEL FOLDS AWAY; THE GROUPING MUST NOT. The Portfolio rail is NINETEEN rows, and
+   collapsing it used to drop the Portfolio / Personal / System headings to nothing — so a
+   64px column of nineteen undifferentiated icons, with the three sections it is organised by
+   invisible. The heading becomes a rule instead: the words go, the boundary stays.
+   ⚠️ NOT `opacity: 0` any more. Opacity applies to the whole element, border included, so an
+   opacity-hidden heading cannot carry a visible divider — the text is collapsed by `font-size`
+   and `overflow` instead, which is also what lets the fold animate (see the transition below). */
+.pd-app.pd-collapsed .pd-navsec { height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden;
+  font-size: 0; color: transparent; margin: 8px 8px 7px;
+  /* ⚠️ NOT `var(--pd-line)`. Found by rendering it: that token is the LIGHT-theme divider
+     (rgb(220,219,219)) and this rail is #231F20 in both themes — a near-white rule on a
+     near-black column. The rail's own vocabulary is white-at-low-alpha (its hover is .06,
+     its scrollbar .16, the section label it replaces .3), and a divider must be quieter
+     than the text it stands in for. */
+  border-top: 1px solid rgba(255,255,255,.14); }
+/* ⚠️ A rule above the FIRST row would be a stroke separating the nav from the brand block,
+   which already has its own border. The first heading folds to nothing at all. */
+.pd-app.pd-collapsed .pd-sidebar nav .pd-navsec:first-child { border-top: 0; margin: 0; }
 /* ⚠ The icon rail drops the WORDS and keeps the mark. `.pd-brand-logo` is already `none`
    globally; it is named here so the rail's intent survives if that default ever changes. */
 .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: none; }
@@ -1383,7 +1400,18 @@ body { overflow-x: clip; }
   .pd-app.pd-collapsed .pd-sidebar nav a,
   .pd-app.pd-collapsed .pd-nav-sibling { justify-content: flex-start; padding: 12px; gap: 10px; font-size: var(--pd-fs-base); }
   .pd-app.pd-collapsed .pd-navtxt { display: flex; }
-  .pd-app.pd-collapsed .pd-navsec { display: block; }
+  /* ⚠️⚠️ THIS ROW USED TO RESTORE `display` AND NOTHING ELSE, which was not enough: the desktop
+     rule above also zeroes height, padding and (now) font-size, and none of that is reset by a
+     `display`. So the mobile drawer has been rendering its Portfolio / Personal / System headings
+     at zero height and zero opacity — present in the DOM, invisible on screen. Found by changing
+     the desktop rule and checking what the drawer inherits from it. Every property the collapsed
+     rule takes away is handed back here, because on mobile `.pd-collapsed` is a FULL drawer. */
+  /* ⚠️ The values are `.pd-sidebar .pd-navsec`'s own, restated — the drawer must look exactly
+     like the expanded desktop rail, not approximately like it. */
+  .pd-app.pd-collapsed .pd-navsec { display: block; opacity: 1; height: auto; overflow: visible;
+    font-size: var(--pd-fs-micro); color: rgba(255,255,255,.3);
+    border-top: 0; margin: 0; padding: 16px 8px 4px; }
+  .pd-app.pd-collapsed .pd-sidebar nav .pd-navsec:first-child { padding-top: 0; }
   .pd-app.pd-collapsed .pd-navico { margin-right: 10px; }
   /* ⚠⚠ THE DRAWER SHOWS THE SAME LOCKUP AS THE DESKTOP RAIL, which inverts both of these
      rules. They previously restored the WORDMARK and suppressed the mark, because on mobile

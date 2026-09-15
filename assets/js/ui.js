@@ -387,7 +387,16 @@
       // signed-in user's own work, not scoped to any one project), SYSTEM (Admin, gated).
       // (No "Home" link here — home.html is the landing/picker screen itself, not a
       // destination to navigate back to from inside the app.)
-      var poBase = base + 'modules/portfolio-overview/index.html';
+      /* ⚠️⚠️ CACHE-BUSTED, WHICH IT HAS NEVER BEEN. `portfolio-overview` is not in
+         `APP_CONFIG.MODULES` — it is a standalone page — so `pmodRow`'s `ModulesGrid.href(m)`
+         never reached it, and every sidebar link here was a bare `index.html`. A browser caches
+         a page by its full URL, so each of this page's rebuilds has needed a hard refresh, which
+         that module's own log has had to record as a caveat more than once. `MODULE_V` is
+         exported for exactly this; it is the same token every module page is stamped with, so
+         one deploy busts them together. ⚠️ Falls back to the bare path when `modules-grid.js`
+         is absent, rather than linking to a version string that does not exist. */
+      var poBase = base + 'modules/portfolio-overview/index.html' +
+        (window.ModulesGrid && ModulesGrid.MODULE_V ? '?v=' + encodeURIComponent(ModulesGrid.MODULE_V) : '');
       function poHref(tab) { return poBase + '#po_view=' + encodeURIComponent(JSON.stringify({ v: tab })); }
       // ctx.modules is optional — every project-mode page already passes it (it built the
       // module grid), but the five portfolio-mode pages never needed to before now. Default
@@ -420,16 +429,27 @@
         '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
         (pPormac ? pormacRow(pPormac) : '') +
+        /* ⚠️⚠️ NOT `barChart`, AND NOT BECAUSE IT READS BADLY — because Productivity Rates, eight
+           rows below, is `barChart` too. Measured by rendering this nav and grouping the rows by
+           the geometry each icon actually DRAWS: three pairs collided (Dashboard/Productivity
+           Rates, Milestones/Meetings, Issues/My Work). ⚠️ In a COLLAPSED rail the label is
+           `font-size:0`, so the glyph is the only thing left and two rows become
+           indistinguishable — the defect class this repo has already paid for twice in the
+           Project Schedule's toolbar (ps-lsmbtn/ps-outlinebtn, ps-progressbtn/ps-flowbtn).
+           ⚠️ The three rows changed are the three that exist ONLY here. A module's icon is its
+           identity in the project sidebar and the module grid as well, so moving one to settle a
+           collision in this nav would change two other screens to fix neither. */
         '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
-          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Dashboard</span></a>' +
+          '<span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Dashboard</span></a>' +
         // ⚠️⚠️ MILESTONES HAS NO MODULE, so `pmods` below cannot produce it — it is a
         //    portfolio-only view that existed ONLY as an in-page tab. When the owner had
         //    that tab strip removed (2026-09-09) it would have become unreachable: the
         //    strip was its single entry point, and PORTFOLIO_TAB maps module keys, not
         //    views. Listed explicitly here for that reason. `overview` needs no row —
         //    the plain `poBase` "Dashboard" link above already lands on it.
+        // ⚠️ `milestone`, not `calendar` — Meetings is the row directly below and it IS a calendar.
         '<a href="' + poHref('milestones') + '" title="Milestones — portfolio-wide">' +
-          '<span class="pd-navico" data-ico="calendar"></span><span class="pd-navtxt">Milestones</span></a>' +
+          '<span class="pd-navico" data-ico="milestone"></span><span class="pd-navtxt">Milestones</span></a>' +
         pmods.map(pmodRow).join('') +
         // ⚠️ Personal (My Work / Tasks) is super-admin-only "for now" too (2026-09-03,
         // same owner ask as the module hiding above) — gated the same way, off the global
@@ -449,8 +469,11 @@
                   match a label is how a two-place change becomes a silent mismatch. Same call the
                   Manpower/Equipment rename made when `data-view="loading"` stayed put while the
                   tab became "Overview". */
+            /* ⚠️ `user`, not `clipboard` — Issues and Concerns carries the clipboard, and this row
+               is about ONE person's own work, which is exactly what separates `user` (one figure)
+               from Manpower Loading's `users` (a group). */
             '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="My Work">' +
-              '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">My Work</span></a>' +
+              '<span class="pd-navico" data-ico="user"></span><span class="pd-navtxt">My Work</span></a>' +
             '<a href="' + base + 'my-tasks.html"' + cls('my-tasks') + ' title="Tasks">' +
               '<span class="pd-navico" data-ico="check"></span><span class="pd-navtxt">Tasks</span></a>'
           : '') +

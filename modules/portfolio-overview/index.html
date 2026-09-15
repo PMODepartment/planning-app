@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915e" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915f" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -886,13 +886,13 @@
   <!-- ⚠ The shared S-curve engine. This page used to carry a hand-copied duplicate of
        its maths (scCompute), the exact drift the 2026-09-01 extraction existed to stop. -->
   <script src="../../assets/js/scurve.js?v=20260901a"></script>
-<script src="../../assets/js/ui.js?v=20260915a"></script>
+<script src="../../assets/js/ui.js?v=20260915f"></script>
 <script src="../../assets/js/claims.js?v=20260915a"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <!-- Shared stakeholder directory: identity matching + find-or-create, used by
      BOTH this page and the Stakeholder Map module. Not hand-copied into each. -->
 <script src="../../assets/js/stakeholders.js?v=20260910u7"></script>
-<script src="../../assets/js/icons.js?v=20260913a"></script>
+<script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -991,20 +991,71 @@
   }
 
   // ---- KPI cards ----
-  function card(ic, label, val, cls) { return '<div class="pd-info-card"><div class="pd-info-ic">' + Icons.svg(ic, 22) + '</div><div class="pd-info-label">' + esc(label) + '</div><div class="pd-info-val"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + esc(val) + '</div></div>'; }
+  function card(ic, label, val, cls, ttl) { return '<div class="pd-info-card"' + (ttl ? ' title="' + esc(ttl) + '"' : '') + '><div class="pd-info-ic">' + Icons.svg(ic, 22) + '</div><div class="pd-info-label">' + esc(label) + '</div><div class="pd-info-val"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + esc(val) + '</div></div>'; }
+
+  /* ==========================================================================
+     PORTFOLIO PROGRESS — weighted by value, never a mean of percentages
+     ==========================================================================
+     ⚠️⚠️ A PLAIN MEAN MAKES A ₱50M FIT-OUT COUNT AS MUCH AS A ₱2B TOWER. That is the figure
+     this strip used to print, under the label "Avg Schedule %" — arithmetically an average of
+     project percentages, and on a portfolio of wildly different project sizes it is not the
+     portfolio's progress at all. Two small finished projects and one huge one barely started
+     read as 67% complete. Same fault, same fix, as the Project Schedule's own Summary view,
+     which weights by duration and says so.
+
+     ⚠️ THE WEIGHT IS `original_budget` — the contract value, which is the only measure of size
+     the project row carries and the one management is actually reading the number against.
+     `schedule_activities` was the alternative and is a worse proxy: a count of rows says how
+     finely somebody broke the work down, not how much of it there is.
+
+     ⚠️⚠️ AND IT DEGRADES RATHER THAN LYING. A project can carry progress with no budget, or a
+     budget with no progress, and only those with BOTH can be weighted. When nothing can be
+     weighted the figure falls back to the plain mean — which is the honest answer at that
+     point — and the basis is REPORTED either way, because a weighted and an unweighted figure
+     differ and a reader has no way to tell them apart from the number alone.
+     ⚠️ Projects with no progress at all are COUNTED and named, never silently dropped: "62%"
+     over three of eleven projects is a different statement from "62%". */
+  function portfolioProgress(list) {
+    var withPct = list.filter(function (p) { return progressOf(p) != null; });
+    var weighted = withPct.filter(function (p) { return num(p.original_budget) > 0; });
+    var skipped = list.length - withPct.length;
+    if (!withPct.length) return { pct: null, basis: 'none', counted: 0, skipped: skipped, unweighted: 0 };
+    if (weighted.length) {
+      var w = weighted.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
+      var s = weighted.reduce(function (a, p) { return a + num(p.original_budget) * progressOf(p); }, 0);
+      return { pct: Math.round(s / w), basis: 'budget', counted: weighted.length,
+               skipped: skipped, unweighted: withPct.length - weighted.length };
+    }
+    var m = withPct.reduce(function (a, p) { return a + progressOf(p); }, 0) / withPct.length;
+    return { pct: Math.round(m), basis: 'mean', counted: withPct.length, skipped: skipped, unweighted: 0 };
+  }
+  function progressBasisNote(r) {
+    if (r.basis === 'none') return 'No project in scope reports a schedule progress figure.';
+    var t = r.basis === 'budget'
+      ? 'Weighted by original budget across ' + r.counted + ' project' + (r.counted === 1 ? '' : 's') +
+        ' — not a mean of percentages, so a large project counts for more than a small one.'
+      : 'A plain mean across ' + r.counted + ' project' + (r.counted === 1 ? '' : 's') +
+        ', because no project in scope carries an original budget to weight by.';
+    if (r.unweighted) t += ' ' + r.unweighted + ' project' + (r.unweighted === 1 ? ' reports' : 's report') +
+      ' progress but no budget, so ' + (r.unweighted === 1 ? 'it is' : 'they are') + ' not in the weighted figure.';
+    if (r.skipped) t += ' ' + r.skipped + ' project' + (r.skipped === 1 ? '' : 's') + ' report no progress at all.';
+    return t;
+  }
   function renderKPIs(list) {
     var active = list.filter(function (p) { return (p.status || 'active') === 'active'; }).length;
     var orig = list.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
     var est = list.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
     var vr = est - orig;
-    var pv = list.map(progressOf).filter(function (x) { return x != null; });
-    var avg = pv.length ? Math.round(pv.reduce(function (a, b) { return a + b; }, 0) / pv.length) : null;
+    var prog = portfolioProgress(list);
     var over = list.filter(function (p) { return variance(p) > 0; }).length;
     var behind = list.filter(isBehind).length;
     document.getElementById('po-kpis').innerHTML =
       card('layers', 'Projects', String(list.length)) +
       card('check', 'Active', String(active)) +
-      card('barChart', 'Avg Schedule %', avg != null ? avg + '%' : '—') +
+      /* ⚠️ The LABEL changed with the arithmetic. "Avg Schedule %" described a mean, and leaving
+         that word over a weighted figure would be worse than leaving the mean in place. */
+      card('barChart', 'Portfolio Progress' + (prog.basis === 'budget' ? ' (by value)' : ''),
+           prog.pct != null ? prog.pct + '%' : '—', null, progressBasisNote(prog)) +
       card('cash', 'Original Budget', orig ? Fmt.moneyShort(orig) : '—') +
       card('calculator', 'Estimated Cost', est ? Fmt.moneyShort(est) : '—') +
       card(vr > 0 ? 'triangleUp' : 'triangleDown', 'Budget Variance', (orig || est) ? Fmt.moneyShort(vr) : '—', vr > 0 ? '--pd-bad' : '--pd-ok') +

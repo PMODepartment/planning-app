@@ -102,6 +102,87 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (u) — Three sidebar rows drawing one glyph, a rail that lost its grouping, and a portfolio figure that was a mean
+
+Owner: *"Portfolio overview dashboard needs work let's start on this. Side panel in portfolio
+overview needs work as well especially when collapsed. Some icons are the same let's think of how to
+solve this."* Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md). What reaches beyond
+that page:
+
+### ⚠️⚠️ THE DUPLICATE ICONS ARE A COLLAPSED-RAIL DEFECT, AND THERE WERE THREE
+
+Measured by rendering the nav through the shipped `UI.renderNav` and grouping rows by the geometry
+each icon **draws** — not by name, because two names can map to identical paths (`grid`/`gridView`
+and `group`/`users` both do). `barChart` was **Dashboard and Productivity Rates**, `calendar` was
+**Milestones and Meetings**, `clipboard` was **Issues and Concerns and My Work**.
+
+⚠️ It matters because the rail collapses: at 64px `.pd-navtxt` is `display:none` — asserted — so the
+glyph is all that is left. Same defect class the Project Schedule's toolbar has paid for twice.
+⚠️⚠️ **The three rows changed are the three that exist only in that nav.** A module's icon is its
+identity in the project sidebar and the module grid too, so moving one would change two other
+screens to fix neither.
+
+`icons.js` gains **`milestone`** — the diamond this app already draws a milestone with, on a
+baseline. ⚠️ A bare diamond would collide with the drawing palette's own shape tools; a diamond on a
+line is a date rather than a shape.
+
+### The collapsed rail keeps its grouping
+
+Nineteen rows in a 64px column with the section headings dropped to nothing. A heading now folds to a
+**rule** instead — the words go, the boundary stays.
+⚠️⚠️ **Not `opacity: 0`:** opacity applies to the border too, so an opacity-hidden heading cannot
+carry a divider. ⚠️⚠️ **And not `var(--pd-line)`** — found by rendering, not reading: that token is
+the *light-theme* divider and this rail is `#231F20` in both themes, so it painted a near-white rule
+on a near-black column.
+
+⚠️⚠️ **A pre-existing bug the same change exposed:** the mobile drawer's rule restored `display` and
+nothing else, while the collapsed rule zeroes height, padding and opacity — none of which a
+`display` resets. The drawer has been rendering its Portfolio / Personal / System headings **at zero
+height and zero opacity**, present in the DOM and invisible on screen. Every property is handed back
+now, restated from the base rule so the drawer matches the expanded rail exactly.
+
+### ⚠️ The Portfolio page is finally cache-busted
+
+`portfolio-overview` is not in `APP_CONFIG.MODULES`, so `ModulesGrid.href` never reached it and every
+sidebar link was a bare `index.html` — which is why that module's log has had to end three entries
+with *"hard-refresh once"*. `poBase` now carries `MODULE_V`.
+
+### ⚠️⚠️ And the page's headline progress figure was a mean
+
+₱50M at 100%, ₱50M at 100%, ₱2B at 5% read as **68% complete**; weighted by value it is **10%**.
+Same fault and same fix as the Project Schedule's Summary view. It degrades to the mean when nothing
+can be weighted, reports which basis it used, and counts the projects reporting no progress rather
+than dropping them.
+
+### Verified
+
+**26 assertions** on the weighting, sliced by name and executed, with **HEAD's own mean lifted
+verbatim from `renderKPIs` as the control** — 68% against 10%, agreeing at 40% on equal budgets.
+**5 assertions** on the nav through the shipped `renderNav`, including the project sidebar as a
+regression guard. **Measured in a browser** at 1400px — ⚠️ inside an **iframe**, because the pane is
+a few hundred px wide and the phone media query applied to it, which is how the first run measured
+the drawer instead of the rail: rail 64px, 19 icons, **0 collisions**, dividers painting
+`rgb(66,62,63)` on `rgb(35,31,32)`, no horizontal scroll, background asserted as a **colour**.
+
+⚠️ **Two of my own mistakes, recorded rather than smoothed over:** an expectation of 7% where the
+answer is 10% (I mis-read 2000×5), and a control that would not build because `var avg = [^;]+;`
+stopped at the `;` inside `return a + b;`.
+⚠️ **Checked and NOT changed:** `isBehind`'s `sf > ff` reads backwards against its own comment, and
+is right — `schedule_finish` is the live programme's finish and `forecast_finish` is hand-entered,
+so the schedule running past the committed date **is** behind. Settled by reading the writers.
+
+`dashboard.css` → `?v=20260915f` (31 pages), `ui.js` → `?v=20260915f` (23), `icons.js` →
+`?v=20260915f` (23), `MODULE_V` → `20260915r`, all sort-checked; `wiring-check` 136/136, every asset
+on one version.
+⚠️ **Not verified signed in.**
+⚠️ **Deliberately NOT guessed at:** the rest of *"the dashboard needs work"*. What is fixed is a
+figure that was wrong and a rail that was unreadable; whether the Overview should also **rank
+projects by attention** is a design decision and the owner's to make.
+⚠️ **Queued, at the owner's own request:** *"the portfolio view of the schedule needs work as well.
+Let's queue this."* Not started.
+
+
 ### 2026-09-15 (t) — The class codes get their leading zeros back, and the notebook's list folds away
 
 **Run `migrations/2026-09-15-class-code-pad.sql`.** Owner: *"let's fix the class code leading zeroes"*
