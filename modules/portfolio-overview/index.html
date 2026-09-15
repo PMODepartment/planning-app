@@ -256,14 +256,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260914e"></script>
+<script src="../../assets/js/auth.js?v=20260915a"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260911uc"></script>
   <!-- ⚠ The shared S-curve engine. This page used to carry a hand-copied duplicate of
        its maths (scCompute), the exact drift the 2026-09-01 extraction existed to stop. -->
   <script src="../../assets/js/scurve.js?v=20260901a"></script>
-<script src="../../assets/js/ui.js?v=20260915g"></script>
+<script src="../../assets/js/ui.js?v=20260915h"></script>
 <script src="../../assets/js/claims.js?v=20260915a"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <!-- Shared stakeholder directory: identity matching + find-or-create, used by
@@ -2580,7 +2580,18 @@
   //    switchView. Gating the view itself closes the entry point the tabs never covered.
   //    ⚠ Same five as before, matching `superAdminOnly` in config.js, which is also what
   //    gates the sidebar (ui.js `visible`). UI visibility only — no RLS change, as before.
-  var PO_SUPERADMIN_VIEWS = ['risk', 'stakeholders', 'equipment', 'cashflow', 'productivity'];
+  // ⚠️ The module KEY each of those five views belongs to — needed so this gate can go
+  // through `AppAuth.moduleVisible` (2026-09-15) rather than the bare role check, which
+  // is what lets admin.html's per-user Modules override reach this page too.
+  var PO_SUPERADMIN_MODULE_KEY = {
+    risk: 'risk-register', stakeholders: 'stakeholder-map', equipment: 'equipment-loading',
+    cashflow: 'cash-flow', productivity: 'productivity-rates'
+  };
+  function poViewAllowed(v) {
+    var key = PO_SUPERADMIN_MODULE_KEY[v];
+    if (!key) return true;
+    return !window.AppAuth || AppAuth.moduleVisible({ key: key, superAdminOnly: true }, window.__profile);
+  }
 
   /* ==== THE SIX THAT MOVED OUT, AND WHERE THEY WENT =========================================
      Owner 2026-09-15: *"there is a dropdown that links to each module. that is wrong … the design
@@ -2600,7 +2611,7 @@
   };
 
   function switchView(v) {
-    if (PO_SUPERADMIN_VIEWS.indexOf(v) !== -1 && window.__role !== 'super_admin') v = 'overview';
+    if (!poViewAllowed(v)) v = 'overview';
     if (PO_MOVED_VIEWS[v]) { location.replace('../' + PO_MOVED_VIEWS[v] + '/index.html#pd_scope=portfolio'); return; }
     view = v;
     /* ⚠️ Flip `.active` on the hidden source button and the dropdown's trigger re-labels
@@ -2801,7 +2812,7 @@
       var strip = document.querySelector('.po-tabs');
       if (!strip) return;
       strip.querySelectorAll('button[data-view]').forEach(function (b) {
-        if (PO_SUPERADMIN_VIEWS.indexOf(b.dataset.view) !== -1 && window.__role !== 'super_admin') {
+        if (!poViewAllowed(b.dataset.view)) {
           b.parentNode.removeChild(b); return;
         }
         b.onclick = function () { switchView(b.dataset.view); histView.push(); };

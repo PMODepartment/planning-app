@@ -76,7 +76,7 @@ developer, plug into one shared shell.
 | `assets/css/dashboard.css` | Global styles + design tokens (`--pd-*`) |
 | `projects.html` | **Project Selector** (entry point): Workspace→Program→Project tree + project list |
 | `dashboard.html` | **Project Home** for the selected project (Project/Program/Workspace tabs + module grid) |
-| `admin.html` | User approval/roles/project-assignment + project & workspace management |
+| `admin.html` | **Users** — approval, roles, per-project and per-module access. Project & group-head CRUD moved to `projects.html` (2026-09-15) |
 | `supabase-schema.sql` / `supabase-setup.sql` | All shared + module tables, RLS, grants, helpers, bootstrap |
 | `tools/wiring-check.js` | **Run `node tools/wiring-check.js` before any commit that touches a shared asset or a cross-module call.** Loads every shipped browser script against a window stub and proves: each assigns its global, no export (incl. `_internals`) is undefined, every cross-module reference names a key its provider really exports, every referenced asset exists and is on ONE version, and every enabled module's page is real. ⚠️ It **self-tests first** by reproducing the 2026-09-10 (z6) outage in memory — a checker that has never failed proves nothing. |
 | `tools/scan.js` | The string/comment/regex-aware source scanner both checkers use. ⚠️ Self-tests on ten shapes before any caller trusts it — a line-comment regex eats every line with a double slash inside a string, which silently deleted 62 references from wiring-check's own sweep. |
@@ -101,6 +101,92 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-15 (zb) — Admin becomes Users: Projects moves out for good, and module access gets a per-user override
+
+Owner, on the very page (za) had just reworked: *"1. projects already has a separate module, no need
+to mix with admin. for admin keep only user management and rename to Users. 2. provide options to
+change module access for users with button to reset to default."*
+
+#### 1 · The Projects tab is gone, not merely hidden
+
+(za) had *just* built a second, in-admin copy of `projects.html`'s own project & Group Head CRUD —
+correctly, at the time, since the owner asked for it there. This reverses that specific call rather
+than contradicting it: `projects.html` already owns `manageGroupHeadsModal()` and
+`createProject`/`updateProject`/`deleteProject`/`archiveProject` against the identical tables, so
+admin.html's Projects tab was a second implementation of a working screen — the drift this repo has
+paid for repeatedly (three location normalisers, a hand-copied S-curve, the change-order insert) in
+miniature. Deleted rather than left dead: `GH`/`ghById`/`ghmOpen`, `indexGh`, `ghNameOf`, `ghOptions`,
+`countForGh`, `applyTab`/`wireTabs` (and the `adm_tab` `UI.bindHistoryState` key with them), `loadProjects`,
+`groupHeadRow`, `manageGroupHeadsModal`, `groupHeadModal`, `confirmDeleteGroupHead`,
+`confirmDeleteProject`, `autoParent`, `editProject` — the `.pd-tabs`/`.pd-tab`/`.pd-tabpane` CSS shell
+with them, since a single-pane page needs no tab bar. `assets/js/program.js` (only ever pulled in for
+`autoParent`'s `PDProgram.keyOf`) is dropped from the page too.
+
+⚠️ **`ALL_PROJECTS` stays, fetched inline in `loadUsers()`.** It still feeds *Assign projects* — which
+project screen to open in is a user-management question, unlike creating or deleting the project
+itself.
+
+⚠️⚠️ **THE RENAME TOUCHES ONLY THE LABEL.** `<title>`, `<h1>` and the sidebar link text all become
+"Users" (`ui.js:497`), but `active: 'admin'` (the string `UI.renderNav` matches against to highlight
+the row), the `admin.html` filename, and `requireAdmin`'s own role check are all left exactly as they
+are — the same call this repo already made for `personal-dashboard` (the key) vs "My Work" (the
+label) and `data-view="loading"` vs "Overview". Renaming the identifier to match the label is how a
+two-place change becomes a silent mismatch the next person has to rediscover.
+
+#### 2 · A per-user module-access override, with a real "no override" state
+
+**Run `migrations/2026-09-15-user-module-access.sql`.** New nullable `users.module_access text[]`.
+
+⚠️⚠️ **NULL IS NOT THE SAME AS `{}`, AND THAT DISTINCTION IS THE WHOLE DESIGN.** An empty array is a
+real, meaningful value — "this user gets no modules at all." NULL is the only value that can honestly
+mean "nobody has ever touched this; keep following the role," which is exactly what **Reset to
+default** has to write. A boolean-per-module map, or a non-nullable array defaulting to `{}`, could
+not express that difference — either would make "never customised" indistinguishable from
+"deliberately emptied."
+
+⚠️ **One shared predicate, not three copies of a rule.** `AppAuth.moduleVisible(m, profile)`
+(`auth.js`) is now the single place that decides whether a module shows up: `module_access` absent →
+the existing `superAdminOnly` role default alone, unchanged; `module_access` an array → it is the
+*exact* set, in **either direction** — it can grant a `superAdminOnly` module to an ordinary planner,
+or withhold an everyday module from anyone, role notwithstanding. `ui.js`'s `renderNav`,
+`modules-grid.js`'s `visible()` (which `dashboard.html`'s tile grid already delegated to) and
+Portfolio Overview's own hardcoded five-view gate (`switchView`, its tab-strip filter) all now call
+it, so the sidebar, the launcher, the dashboard tiles and the portfolio deep links can no longer
+disagree about what one user can see. Each site degrades to the old bare-role check if `AppAuth`
+happens not to be loaded yet — the same defensiveness `ui.js`'s existing `superAdmin` guard already
+used.
+
+⚠️ No RLS/grant change was needed: `users_admin_update` is a plain row-level policy with no column
+list, so it already covers this column the same way it already covers `role`/`status`/`projects`.
+
+Admin's Users table gets a **Modules** button per row (every role, not only the restricted ones —
+the ask was general per-user control, not only a defense against `superAdminOnly`), opening a
+checklist of every `enabled` module, pre-ticked from whatever currently applies (the role default if
+untouched, the stored list if not) so the dialog never looks like it is proposing an unmade change.
+**Reset to default** writes `module_access: null` — disabled when there is nothing to reset. The
+Access column's module chip now reports "N of M modules (custom)" once an override exists, rather
+than continuing to print the role-based sentence over a list that no longer describes the user.
+
+`supabase-schema.sql`'s `users` table declares the column directly (the base-table convention this
+schema uses for its own foundational tables, not the module-table `alter ... add column` pattern);
+`migrations/VERIFY-schema.sql` regenerated (`node migrations/gen-verify.js`) to check for it.
+⚠️ `supabase-build.sql` was **not** regenerated in this commit — a `node migrations/gen-build.js` run
+found it **2,021 lines behind** the migrations directory for reasons unrelated to this change,
+and folding that unrelated drift into this diff would have been the wrong trade; it is its own commit.
+
+**Verified:** `node tools/wiring-check.js` — 139 passed, 0 failed, 3,707 cross-module references,
+every asset on one version; `node --check` on `auth.js`/`ui.js`/`modules-grid.js`; both touched pages'
+inline `<script>` (admin.html, portfolio-overview/index.html) parse; 0 duplicate ids in admin.html;
+0 NUL bytes across every touched file.
+⚠️ **Not verified signed in** — no live login is possible in this environment. The override is
+proved by reading `AppAuth.moduleVisible`'s logic against every combination it can be in, not by
+watching a real user's sidebar change.
+
+`assets/js/auth.js?v=` → `20260915a`, `assets/js/ui.js?v=` → `20260915h` (both shared, bumped across
+every referencing page), `assets/js/modules-grid.js?v=` → `20260915y` (dashboard.html + modules.html,
+its own fallback literal with them). No `MODULE_V` bump beyond what `modules-grid.js`'s own version
+derivation already carries — no module's `index.html` changed.
 
 ### 2026-09-15 (za) — Admin: what a role's project list actually means, and Group Heads move onto this page
 
