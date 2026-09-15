@@ -16474,6 +16474,60 @@
        than the zones drawn on it can only be stated by drawing it. */
     return out.length ? out : plate.polys;
   }
+  /* ==== A FLOOR'S OWN PLAN, PUT WHERE ITS TOWER STANDS ON THE SITE ========================
+     Owner 2026-09-15, with the per-tower card beside the site view: *"how come in this view, the
+     per floor configuration is defined. However in the site view, there is no defined
+     configuration or defined floor plans per floor."*
+
+     ⚠️⚠️ THE SITE WAS DRAWING EVERY FLOOR FROM THE TOWER'S SITE FOOTPRINT. On the site plan a
+     tower is ONE traced shape, and the floor-by-floor model hands every slice of that tower the
+     same `c.label` — so `_vsZpPolysOf(sitePlan, tower)` answered with that one outline thirteen
+     times and the building came out an extruded prism. The floors were never consulted. The plans
+     the planner traced per floor were sitting in the same map the per-tower card reads.
+
+     ⚠️ So the floor's own plan is fitted INTO the tower's place. Two facts have to survive that:
+     WHERE the building stands (the site trace) and WHAT SHAPE the floor is (the floor trace).
+     Fitting the plan's bounding box into the tower's, centred, keeps both.
+     ⚠️ CONTAIN, NEVER STRETCH. The two traces are different drawings at different scales, and
+     stretching a floor plan to fill a site footprint would invent a floor that is not the shape
+     anybody drew — the one thing this view exists to avoid. A plan that is proportionally deeper
+     than its site footprint therefore sits narrower than that footprint rather than distorting.
+     ⚠️ The sheets carry their own aspect, so depth is divided by the floor sheet's `ar` before it
+     is compared with anything: a floor drawn on a wide sheet and one drawn on a tall sheet are the
+     same building, and only `ar` says so.
+     ⚠️ Points come back in the SITE plate's own 0..1 coordinates, because that is what
+     `_vs3PolyMesh` extrudes — this helper never touches world units, so the flip that function
+     applies to the depth axis stays its business and cannot be applied twice. */
+  function _vsZpFitPolys(floorPlate, box, plateW, plateD) {
+    var polys = _vsZpOutlineOf(floorPlate);
+    if (!polys || !polys.length) return null;
+    var arF = (+floorPlate.ar > 0.05 && +floorPlate.ar < 20) ? +floorPlate.ar : (1000 / 620);
+    var u0 = null, u1 = null, v0 = null, v1 = null;
+    polys.forEach(function (q) {
+      (q.pts || []).forEach(function (p) {
+        if (u0 === null || p[0] < u0) u0 = p[0];
+        if (u1 === null || p[0] > u1) u1 = p[0];
+        if (v0 === null || p[1] < v0) v0 = p[1];
+        if (v1 === null || p[1] > v1) v1 = p[1];
+      });
+    });
+    if (u0 === null) return null;
+    // The plan's own proportions: its sheet is 1 wide and 1/ar deep.
+    var fw = u1 - u0, fd = (v1 - v0) / arF;
+    var tw = (box.u1 - box.u0) * plateW, td = (box.v1 - box.v0) * plateD;
+    if (!(fw > 1e-6) || !(fd > 1e-6) || !(tw > 1e-6) || !(td > 1e-6)) return null;
+    var s = Math.min(tw / fw, td / fd);
+    var cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+    var tu = (box.u0 + box.u1) / 2, tv = (box.v0 + box.v1) / 2;
+    return polys.map(function (q) {
+      return {
+        code: q.code, color: q.color,
+        pts: (q.pts || []).map(function (p) {
+          return [tu + (p[0] - cu) * s / plateW, tv + ((p[1] - cv) / arF) * s / plateD];
+        })
+      };
+    });
+  }
   // The floor label as both sides normalise it. ⚠️ ONE function, used for the level and for the
   // trade, because the keys the builder emits are built with the same rule (zpNormCode).
   function _vsZpNorm(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' '); }
@@ -17082,6 +17136,46 @@
         }
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
+        /* ==== ON THE SITE, A FLOOR IS DRAWN FROM ITS OWN PLAN ==============================
+           Owner 2026-09-15: *"in the site view, there is no defined configuration or defined
+           floor plans per floor."* And there was not: every slice of a tower carried the tower's
+           SITE outline, because that is what `c.label` matches on the site plan. The floor's own
+           plan — the one the per-tower card draws, traced under Floors & Zones › Plan — is fitted
+           into the tower's place instead, so the site says what each floor IS as well as where it
+           stands. See _vsZpFitPolys for what "fitted" means and what it refuses to do.
+           ⚠️ THE TARGET IS THE TOWER'S OWN BOX: its traced site footprint where it has one, its
+           wrap slot where it does not. Either way the floor lands on the tower, not on the site.
+           ⚠️ AFTER the colour decision, deliberately. `fill` is already settled from the tower's
+           site polygon, so a floor plan cannot repaint a tower and delete the channel that says
+           which building this is.
+           ⚠️ Nothing found leaves `_pg` exactly as it was: a project with no floor plans traced
+           keeps the prisms it has today rather than losing its towers. */
+        if (model.siteFloors && c.floor) {
+          var _tb = null;
+          if (_pg && _pg.length) {
+            var _b = [null, null, null, null];
+            _pg.forEach(function (q3) {
+              (q3.pts || []).forEach(function (p3) {
+                if (_b[0] === null || p3[0] < _b[0]) _b[0] = p3[0];
+                if (_b[1] === null || p3[0] > _b[1]) _b[1] = p3[0];
+                if (_b[2] === null || p3[1] < _b[2]) _b[2] = p3[1];
+                if (_b[3] === null || p3[1] > _b[3]) _b[3] = p3[1];
+              });
+            });
+            if (_b[0] !== null) _tb = { u0: _b[0], u1: _b[1], v0: _b[2], v1: _b[3] };
+          }
+          /* ⚠️ The wrap slot, in the PLATE's own coordinates — and the depth axis is inverted on
+             the way in, because `_vs3PolyMesh` inverts it on the way out (rotation.x = -PI/2 sends
+             a shape's +Y to world −Z). Handing it an un-inverted box would fit the floor plan into
+             the mirror image of the slot its own block is drawn in. */
+          if (!_tb) {
+            _tb = { u0: (x - exW / 2) / plateW + 0.5, u1: (x + exW / 2) / plateW + 0.5,
+                    v0: 0.5 - (z + exD / 2) / plateD, v1: 0.5 - (z - exD / 2) / plateD };
+          }
+          var _fpl = _vsZpFor(c.floor, model.trade);
+          var _fpg = _fpl ? _vsZpFitPolys(_fpl, _tb, plateW, plateD) : null;
+          if (_fpg && _fpg.length) _pg = _fpg;
+        }
         /* ==== A FLOOR LABEL BESIDE ITS OWN TOWER =========================================
            Owner 2026-09-14: *"what's better if you just attach the labels of the ground floor, 2nd
            floor etc just beside to each tower."*
@@ -17123,7 +17217,15 @@
             var _all = [];
             _pg.forEach(function (q2) {
               (q2.pts || []).forEach(function (pt2) {
-                _all.push([(pt2[0] - 0.5) * plateW, (pt2[1] - 0.5) * plateD]);
+                /* ⚠️⚠️ MINUS ON THE DEPTH AXIS, and the label drifting off its tower in the
+                   owner's second screenshot was the missing sign. `_vs3PolyMesh` lays a traced
+                   ring down with rotation.x = -PI/2, which sends the shape's +Y to world **−Z** —
+                   so a ring read straight out of the plan is the tower's MIRROR IMAGE in depth.
+                   The anchor was being projected at that mirror: right side of the site, wrong
+                   place in it, and under perspective that lands the name low and squashed rather
+                   than obviously somewhere else. A label's ring must be the coordinates the MESH
+                   is built in, not the coordinates the plan is stored in. */
+                _all.push([(pt2[0] - 0.5) * plateW, -(pt2[1] - 0.5) * plateD]);
               });
             });
             _fp = _vs3Hull(_all);
