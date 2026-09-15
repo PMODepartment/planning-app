@@ -811,13 +811,22 @@ window.ContractsClaims = (function () {
        id, talks to the database directly. Two separate implementations of "attach a file" on one
        module is how they come to disagree about the path convention.
      ========================================================================================== */
-  /* ⚠ DECLARED HERE, not borrowed. `BUCKET` is pmi.js's constant and pmi.js is its own IIFE,
-     so referring to it from this file would have parsed cleanly and thrown `BUCKET is not
-     defined` on the first upload — the exact shape this repo has recorded three times
-     (`below is not defined`, stakeholder-map's `canWrite`, boq.js's `locKey`). Caught by
-     checking that every free identifier resolves in THIS scope, which `node --check` cannot.
-     ⚠ Same bucket string as pmi.js on purpose: one module, one bucket, and its storage
-       policies are keyed on bucket_id rather than on what the file hangs off. */
+  /* ⚠⚠ THE ENGINE MOVED TO assets/js/attach.js (PDAttach) ON 2026-09-15, AND WHAT IS LEFT HERE IS
+     A SET OF THIN DELEGATES. Nothing about this module's behaviour changed: the panel emits the
+     same `cc-att*` classes (PDAttach takes the prefix as `cls`), the same two sentences (it takes
+     `parentWord`), and the same `D.att*` names the wizard calls.
+     ⚠ WHY IT MOVED: the Project Schedule needs attachments on activities, and the valuable part of
+       this code is not the upload — it is the three ORDERING RULES (object before row; roll the
+       object back if the row fails; row before object on delete). A second copy of those is a
+       second set of ways to get them wrong, and this repo has already paid for a hand-copied
+       duplicate three times (the location normaliser, where one of three copies matched a
+       13th-floor leaf to "3rd Floor"; the S-curve maths in portfolio-overview; the change-order
+       insert). So the schedule gets an INSTANCE of this, not a copy of it.
+     ⚠ The local names are kept deliberately, exactly as affected.js did when PDLoc was extracted:
+       three call sites, the `D.att*` exports and the `loadAttachments` call in `load()` all keep
+       pointing at the same identifiers, so the diff stays checkable.
+     ⚠ Same bucket string as pmi.js on purpose: one module, one bucket, and its storage policies
+       are keyed on bucket_id rather than on what the file hangs off. */
   var BUCKET = 'contracts-claims';
   var ATT_T = 'cc_attachments';
   var ATT_MIGRATION = 'migrations/2026-09-15-cc-attachments.sql';
@@ -834,161 +843,37 @@ window.ContractsClaims = (function () {
     ['certificate',        'Certificate'],
     ['other',              'Other']
   ];
-  var ATT = {};          // record_id -> [row]
-  function attLabel(t) {
-    for (var i = 0; i < ATT_TYPES.length; i++) if (ATT_TYPES[i][0] === t) return ATT_TYPES[i][1];
-    return 'Other';
-  }
-  function attSize(b) {
-    var n2 = Number(b);
-    if (!isFinite(n2) || n2 <= 0) return '';
-    if (n2 >= 1048576) return (n2 / 1048576).toFixed(1) + ' MB';
-    if (n2 >= 1024) return Math.round(n2 / 1024) + ' KB';
-    return n2 + ' B';
-  }
-  /* ⚠️ Tolerant, exactly like PKGS. Until the migration is run the table is absent, and the
-     register must still open — the panel then says the one useful thing (run the migration)
-     instead of the module failing to load. */
-  async function loadAttachments(ids) {
-    ATT = {};
-    if (!ids || !ids.length) return;
-    try {
-      var res = await sb().from(ATT_T).select('*').in('record_id', ids);
-      if (res.error) throw res.error;
-      (res.data || []).forEach(function (a) { (ATT[a.record_id] = ATT[a.record_id] || []).push(a); });
-    } catch (e) { ATT = {}; ATT.__error = (e && e.message) || String(e); }
-  }
-  function attOf(id) { return (id && ATT[id]) || []; }
 
-  /* Upload one file against a record that EXISTS. Returns the inserted row, or throws. */
-  async function attUpload(recordId, file, docType) {
-    var safe = String(file.name || 'file').replace(/[^A-Za-z0-9._-]+/g, '_').slice(-90);
-    var path = pid + '/records/' + recordId + '/' + docType + '-' + Date.now() + '-' + safe;
-    var up = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
-    if (up.error) {
-      throw new Error(up.error.message +
-        (/bucket/i.test(up.error.message) ? ' — the contracts-claims bucket is missing.' : ''));
+  /* ⚠ Built lazily, not at module load. `pid` and `UID` are assigned by init(), and a create()
+     evaluated at parse time would capture the getters before either exists — harmless here
+     because they ARE getters, but the lazy form also means a page that never opens this module's
+     attachments never constructs the instance. */
+  var _ATT = null;
+  function att() {
+    if (!_ATT) {
+      if (!window.PDAttach) throw new Error('PDAttach is missing — assets/js/attach.js did not load.');
+      _ATT = PDAttach.create({
+        sb: sb,
+        projectId: function () { return pid; },
+        userId: function () { return UID; },
+        table: ATT_T, bucket: BUCKET, ownerCol: 'record_id',
+        migration: ATT_MIGRATION, types: ATT_TYPES,
+        cls: 'cc', pathSeg: 'records', parentWord: 'record'
+      });
     }
-    var ins = await sb().from(ATT_T).insert({
-      project_id: pid, record_id: recordId, doc_type: docType, file_path: path,
-      file_name: file.name, file_size: file.size, uploaded_by: UID
-    }).select().single();
-    if (ins.error) {
-      // roll the object back rather than leave it orphaned in the bucket
-      await sb().storage.from(BUCKET).remove([path]);
-      throw new Error(ins.error.message +
-        (/relation|does not exist/i.test(ins.error.message)
-          ? ' — run ' + ATT_MIGRATION + ' in the Supabase SQL editor.' : '') + ' (upload rolled back)');
-    }
-    (ATT[recordId] = ATT[recordId] || []).push(ins.data);
-    return ins.data;
+    return _ATT;
   }
 
-  /* The bucket is private, so the URL is minted on demand and never stored. */
-  async function attOpen(attId) {
-    var a = null;
-    Object.keys(ATT).forEach(function (k) { (ATT[k] || []).forEach(function (x) { if (x.id === attId) a = x; }); });
-    if (!a) return;
-    var s = await sb().storage.from(BUCKET).createSignedUrl(a.file_path, 60);
-    if (s.error || !s.data) { UI.toast('Could not open the file: ' + ((s.error && s.error.message) || 'no signed URL'), 'error'); return; }
-    window.open(s.data.signedUrl, '_blank', 'noopener');
-  }
-
-  async function attRemove(attId) {
-    var a = null, owner = null;
-    Object.keys(ATT).forEach(function (k) { (ATT[k] || []).forEach(function (x) { if (x.id === attId) { a = x; owner = k; } }); });
-    if (!a || !confirm('Remove "' + (a.file_name || 'this file') + '"? The file is deleted from storage.')) return false;
-    // ⚠️ Row first: a failed object delete leaves a recoverable orphan, the reverse leaves a row
-    //    whose file will not open.
-    var del = await sb().from(ATT_T).delete().eq('id', attId);
-    if (del.error) { UI.toast(del.error.message, 'error'); return false; }
-    ATT[owner] = (ATT[owner] || []).filter(function (x) { return x.id !== attId; });
-    var rm = await sb().storage.from(BUCKET).remove([a.file_path]);
-    if (rm.error) UI.toast('Row removed, but the stored file could not be deleted — it is orphaned, not lost.', 'error');
-    else UI.toast('Removed.', 'success');
-    return true;
-  }
-
-  /* ---- the panel ---------------------------------------------------------------------------
-     `recordId` may be null: that is the NEW-record case, where files are staged and flushed by
-     attFlush() once the row has an id. `staged` is the caller's own array, so the wizard and the
-     form each keep their own pending list without this module holding per-caller state. */
-  function attPanelHTML(recordId, staged, canEdit) {
-    var live = attOf(recordId);
-    var rows = live.map(function (a) {
-      return '<li class="cc-att"><span class="cc-att-n">' + esc(a.file_name || 'file') +
-        '<i>' + esc(attLabel(a.doc_type)) + (attSize(a.file_size) ? ' · ' + attSize(a.file_size) : '') + '</i></span>' +
-        '<button type="button" class="pd-btn cc-att-open" data-att="' + esc(a.id) + '">Open</button>' +
-        (canEdit ? '<button type="button" class="pd-btn cc-att-del" data-att="' + esc(a.id) + '">Remove</button>' : '') +
-        '</li>';
-    }).join('');
-    var pend = (staged || []).map(function (f, i) {
-      return '<li class="cc-att cc-att-pend"><span class="cc-att-n">' + esc(f.file.name) +
-        '<i>' + esc(attLabel(f.type)) + (attSize(f.file.size) ? ' · ' + attSize(f.file.size) : '') +
-        ' · not uploaded yet</i></span>' +
-        '<button type="button" class="pd-btn cc-att-unstage" data-i="' + i + '">Remove</button></li>';
-    }).join('');
-    return '<ul class="cc-atts">' + rows + pend + '</ul>' +
-      (!rows && !pend ? '<p class="cc-hint">No files attached yet.</p>' : '') +
-      (ATT.__error ? '<p class="cc-hint">The attachments table could not be read — run <code>' +
-        esc(ATT_MIGRATION) + '</code> in the Supabase SQL editor, then reload.</p>' : '') +
-      (canEdit
-        ? '<div class="cc-att-add">' +
-            '<select class="pd-select cc-att-type">' + ATT_TYPES.map(function (t) {
-              return '<option value="' + t[0] + '">' + esc(t[1]) + '</option>'; }).join('') + '</select>' +
-            '<input type="file" class="cc-att-file" />' +
-            '<span class="cc-att-st"></span>' +
-          '</div>' +
-          (recordId ? '' : '<p class="cc-hint">Files are uploaded when you save the record.</p>')
-        : '');
-  }
-
-  /* Wire one panel. `get`/`set` read and write the caller's staged array so this function owns no
-     state of its own. `paint` redraws whatever surface the panel is sitting on. */
-  function attPanelWire(root, recordId, get, set, paint) {
-    root.querySelectorAll('.cc-att-open').forEach(function (b) {
-      b.onclick = function () { attOpen(b.dataset.att); };
-    });
-    root.querySelectorAll('.cc-att-del').forEach(function (b) {
-      b.onclick = async function () { if (await attRemove(b.dataset.att)) paint(); };
-    });
-    root.querySelectorAll('.cc-att-unstage').forEach(function (b) {
-      b.onclick = function () { var a = get().slice(); a.splice(Number(b.dataset.i), 1); set(a); paint(); };
-    });
-    var fi = root.querySelector('.cc-att-file'), ty = root.querySelector('.cc-att-type');
-    if (!fi) return;
-    fi.onchange = async function () {
-      var f = fi.files && fi.files[0]; if (!f) return;
-      var dt = ty ? ty.value : 'other';
-      // ⚠️ A record that already exists uploads NOW; one that does not is staged. The planner sees
-      //    the difference stated on the row ("not uploaded yet"), never guesses it.
-      if (!recordId) { set(get().concat([{ file: f, type: dt }])); fi.value = ''; paint(); return; }
-      var st2 = root.querySelector('.cc-att-st');
-      if (st2) st2.textContent = 'Uploading…';
-      try { await attUpload(recordId, f, dt); UI.toast('Attached.', 'success'); }
-      catch (e) { UI.toast('Attach failed: ' + ((e && e.message) || e), 'error'); }
-      if (st2) st2.textContent = '';
-      fi.value = ''; paint();
-    };
-  }
-
-  /* Flush a staged list against a record that now exists. Failures are reported per file and do
-     NOT undo the record — the row is the commercial fact, the file is evidence for it, and losing
-     the record because a PDF would not upload is the worse trade. */
-  async function attFlush(recordId, staged) {
-    if (!recordId || !staged || !staged.length) return;
-    var bad = [];
-    for (var i = 0; i < staged.length; i++) {
-      try { await attUpload(recordId, staged[i].file, staged[i].type); }
-      catch (e) { bad.push(staged[i].file.name + ': ' + ((e && e.message) || e)); }
-    }
-    if (bad.length) {
-      UI.toast('The record was saved, but ' + bad.length + ' file' + (bad.length === 1 ? '' : 's') +
-        ' could not be attached — ' + bad[0], 'error');
-    } else {
-      UI.toast(staged.length + ' file' + (staged.length === 1 ? '' : 's') + ' attached.', 'success');
-    }
-  }
+  /* ⚠ ONLY THE FOUR WITH REAL CALLERS SURVIVE. `attLabel`, `attSize`, `attOf`, `attUpload`,
+     `attOpen` and `attRemove` were delegated too in the first cut of this extraction and every one
+     of them was DEAD: their only callers were inside the panel, and the panel is in the shared
+     file now. A delegate that matches nothing reads as a feature that exists — the same finding
+     this module already recorded when `bulkPropose` lost its button (2026-09-11 a). Grepped both
+     `module.js` and `wizard.js` for each before removing: zero call sites. */
+  async function loadAttachments(ids) { return att().load(ids); }
+  function attPanelHTML(recordId, staged, canEdit) { return att().panelHTML(recordId, staged, canEdit); }
+  function attPanelWire(root, recordId, get, set, paint) { return att().panelWire(root, recordId, get, set, paint); }
+  async function attFlush(recordId, staged) { return att().flush(recordId, staged); }
 
   function openForm(r) {
     if (!canWrite) { UI.toast('You do not have permission to edit records.', 'error'); return; }

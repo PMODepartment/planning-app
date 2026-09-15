@@ -102,6 +102,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (m) — The attachment engine becomes shared, before a second module copies it
+
+Groundwork for the owner's ask: *"attachments on activities in the Schedule module, in the Notes
+section. The engine for that already exists now … but the schedule is a different module with its own
+table, so it needs its own activity_attachments table and migration."*
+
+The table and the migration are right, and so is the reading that the engine exists. What the ask
+leaves open is **how** the schedule gets at it — and the answer must not be a copy.
+
+### ⚠️⚠️ THE VALUABLE PART IS NOT THE UPLOAD, IT IS THREE ORDERING RULES
+
+1. The **object is written before the row**, so a failed upload never leaves a row pointing at nothing.
+2. If the row write then fails, the **object is rolled back**, so a failed insert never leaves a file
+   in the bucket with nothing to explain it.
+3. On removal the **row goes first**, because a failed object delete leaves a recoverable orphan
+   whereas the reverse leaves an attachment that will not open.
+
+Those are three decisions that are only obvious once you have got them wrong, and this repo has paid
+for a hand-copied duplicate at least three times — the location normaliser (**three** copies, one of
+which matched a 13th-floor leaf to *"3rd Floor"*), the S-curve maths copied into portfolio-overview,
+and the change-order insert. So `assets/js/attach.js` (**`PDAttach`**) is the engine, parameterised by
+table, bucket, owner column, doc-type vocabulary and CSS prefix; contracts-claims now delegates to it
+and the schedule will take an instance rather than a copy.
+
+- ⚠️ **The `cls` prefix is why no CSS changed.** The engine emits `cc-att*` for contracts-claims
+  exactly as before, so that module's stylesheet is untouched. Neutral shared classes would have meant
+  retargeting working CSS in the same commit that moved the JS.
+- ⚠️ **`parentWord` keeps the two shipped sentences byte-identical.** Extracting a function should not
+  quietly reword a screen that was signed off — a copy change is a change and belongs in its own commit.
+- ⚠️ **`loadProject()` is new and the schedule is why.** `load()` uses `.in(ownerCol, ids)`, and a
+  project can carry 16,000 activities — PostgREST puts `in.(…)` in the URL and a list that long is
+  refused before it is answered. One project-scoped read replaces it, **through `PDb.selectAll`**,
+  because PostgREST caps a read at 1000 rows server-side **with no error** and a silently truncated
+  read here means files that exist and cannot be seen.
+- ⚠️ **Six delegates were written and then deleted as dead.** `attLabel`, `attSize`, `attOf`,
+  `attUpload`, `attOpen`, `attRemove` — their only callers were inside the panel, which is in the
+  shared file now. Grepped `module.js` **and** `wizard.js` for each: zero call sites.
+
+### Verified — it is a MOVE, and that is measured rather than asserted
+
+HEAD's `attPanelHTML` sliced out **by name** and executed beside the shipped `PDAttach.panelHTML` over
+the same inputs, comparing the rendered HTML **byte for byte**: existing record with 3 files as writer
+(1357 chars) and as viewer (558), a new record with 2 staged files (1067), a new record with nothing
+(705), a record with no files (70), files and staged together (1764), and the *"table not migrated"*
+branch. **7 identical, 0 differing.** A refactor that cannot show this is a rewrite with extra steps.
+
+`node tools/wiring-check.js` **129 passed, 0 failed**, and `PDAttach` now appears among the providers
+that load and assign their global — the check that exists because `boq.js` once threw on the way out
+of its own IIFE and took the entire BOQ down with it.
+
+⚠️ **Not verified signed in** — no file has been uploaded through the extracted engine.
+⚠️ **The schedule is NOT wired yet**, deliberately: `migrations/2026-09-15-schedule-attachments.sql`
+and the panel land together, so a migration cannot be run for a feature that is not there to use it.
+
+`attach.js` → `?v=20260915a` (new); contracts-claims `module.js` → `?v=20260915e`;
+`MODULE_V` → `20260915k`, sort-checked against `20260915j`.
+
 ### 2026-09-15 (l) — The Class Code column prints a code, and the missing space was a third flex trap
 
 Owner, with a screenshot of OPW101: *"Some class codes are correct with only having a number within

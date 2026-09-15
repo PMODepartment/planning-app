@@ -1,5 +1,50 @@
 # Module: contracts-claims
 
+## 2026-09-15 (m) — The attachment engine moves to `assets/js/attach.js`, and this module delegates
+
+Not a feature for this module — the Project Schedule needs attachments on activities, and the
+valuable part of what shipped here on 2026-09-15 (h) is not the upload. It is the three **ordering
+rules**: the object is written before the row, the object is rolled back if the row write fails, and
+on removal the row goes first. A second copy of those is a second set of ways to get them wrong.
+
+- **New `assets/js/attach.js` (`PDAttach`)**, parameterised by table, bucket, owner column, doc-type
+  vocabulary and CSS prefix. This module's `att*` functions are now thin delegates over an instance.
+- ⚠️ **The local names are kept** (`loadAttachments`, `attPanelHTML`, `attPanelWire`, `attFlush`), so
+  the three call sites, the `D.att*` exports and `wizard.js` are untouched and the diff stays
+  checkable. Same approach `affected.js` took when `PDLoc` was extracted.
+- ⚠️ **The `cls` prefix is why no CSS changed.** The engine emits `cc-att*` exactly as before, so this
+  module's stylesheet keeps working unmodified. Neutral shared classes would have meant retargeting
+  working CSS in the same commit that moved the JS — two risks where one will do.
+- ⚠️ **`parentWord` exists so the two shipped sentences are unchanged** — *"…when you save the
+  record"* and *"The record was saved, but…"*. Extracting a function must not quietly reword a screen
+  that was signed off.
+- ⚠️ **Six delegates were written and then DELETED as dead.** `attLabel`, `attSize`, `attOf`,
+  `attUpload`, `attOpen` and `attRemove` had their only callers inside the panel, which now lives in
+  the shared file. Grepped `module.js` and `wizard.js` for each: **zero call sites**. A delegate that
+  matches nothing reads as a feature that exists.
+
+### Verified — the extraction is a MOVE, proven rather than asserted
+
+HEAD's `attPanelHTML` was sliced out **by name** and executed beside the shipped
+`PDAttach.panelHTML` over the same inputs, comparing the HTML **byte for byte**:
+
+| case | result |
+|---|---|
+| existing record, 3 files, writer | **identical** (1357 chars) |
+| existing record, 3 files, viewer | **identical** (558) |
+| new record, 2 staged, writer | **identical** (1067) |
+| new record, nothing at all | **identical** (705) |
+| record with no files, viewer | **identical** (70) |
+| existing files + staged together | **identical** (1764) |
+| the "table not migrated" branch | **identical** |
+
+**7 identical, 0 differing.** A refactor that cannot show this is a rewrite with extra steps.
+`node tools/wiring-check.js` **129/129, 0 failed**, with `PDAttach` now among the providers that load
+and assign — the check that would catch the z6 shape.
+⚠️ **Not verified signed in** — no upload has run through the extracted engine.
+
+`module.js` → `?v=20260915e`; new `attach.js` → `?v=20260915a`; `MODULE_V` → `20260915k`.
+
 ## 2026-09-14 (s) — #6: the procurement-trade answer stops vanishing when a bill is issued
 
 Owner: *“Let's do #6”* — the latent gate reported in (q).
