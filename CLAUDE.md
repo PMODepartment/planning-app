@@ -102,6 +102,79 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (x) — The Portfolio Dashboard gets a module bar it already had
+
+Owner: *"the UI needs complete rework: refresh button is out of place let's just follow the
+consistency of other modules first"*, then *"the filter and project select needs UI revamp and
+proper placement including the export button."* Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+### ⚠️⚠️ IT HAD A MODULE BAR ALL ALONG, AND IT WAS EMPTY
+
+`UI.initModuleTopbar()` runs on every page loading `ui.js`, splitting `.pd-topbar` into the fixed
+chrome row and a `.pd-modulebar` below. This page's topbar held only the four fixed controls, so its
+module bar got a heading and a presence dot — and with nowhere to put a tool, **Refresh became an
+inline button inside a sentence and Export was buried in the Overview's table toolbar.** Declaring
+the controls in the topbar markup lands them where every other module puts them. One cluster, one
+order, on all thirteen views: **scope · filter · refresh · export**.
+
+⚠️ **One Refresh replaces twelve**, in three different shapes, acting on the current view — and the
+handlers went with the buttons, since a handler bound to an id nothing renders is the `#pk-boq`
+shape this repo has shipped once. ⚠️ It is **immediate**, not debounced: the 250ms wait exists so
+ticking five projects costs one fetch, and a planner who presses Refresh has asked for it now.
+
+⚠️⚠️ **`placeScope` / `SCOPE_PANEL` are gone.** They moved the one scope node between a bar of its
+own and four views' filter panels, so the control that scopes *every* view sat somewhere different
+depending on where you stood. That is the inconsistency, not a cure for it.
+
+### ⚠️⚠️ THE SCOPE PANEL IS A POPOVER AGAIN, AND THIS IS NOT A REVERT
+
+2026-09-10 (u3) went inline because the absolute version clipped — it did: `left:0; width:260px`
+hanging off a **right-aligned** button opened rightwards off the page. Inline cured that and bought
+a **full-width wall**, 21 projects in six ragged columns pushing the page down ~350px. Anchored
+**right** it opens into the page and can do neither; the **list** scrolls, not the panel, so search
+and Select all / Clear stay reachable at 21 projects.
+
+⚠️⚠️ **And measuring found what the desktop could not show:** at **390px the panel's left edge
+landed at −78px** — a third of the list off-screen, with no sideways scroll to reveal it. Below
+700px it is pinned to the viewport instead of to the button.
+
+### The view switcher returns — a named reversal of 2026-09-09, and not the same object
+
+What went then was a **thirteen-button strip duplicating the sidebar**. This is **one trigger naming
+the view you are on**, which the sidebar cannot do and every other module has. ⚠️ Built **after
+auth**: five views are super-admin-only and `tabsToDropdown` caches its buttons at build time, so
+building earlier would leave five unopenable views in the menu. Measured as a planner: **8 items,
+not 13.**
+
+⚠️ **The thirteen scope sentences go, but six paragraphs survive** — only the clause was removed.
+Six carry real content either side of it (*"Closed items are left out, this is a worklist"*,
+*"Rate = output ÷ (crew or equipment × working days)"*), and deleting the paragraph would have
+deleted a fact a planner acts on.
+
+### ⚠️⚠️ THE COUNT GUARD REFUSED TWICE, AND BOTH WOULD HAVE BEEN REAL DAMAGE
+
+Every anchor is counted and the patch refuses to write if one is off. It caught a regex that would
+have deleted `<p id="po-ct-ranknote">` — the **Contracts ranking note JS fills at runtime** — and
+caught that `po-sh-scopenote` is **shown/hidden per sub-view**, so deleting its markup alone would
+have thrown on the next Stakeholders render and taken that view down.
+
+### Verified
+
+Harness with the markup **lifted verbatim**, served over HTTP so the real stylesheets are in the
+cascade, measured **inside an iframe** at 1400 / 820 / 390px: **1 Refresh, 1 Export, 1 funnel**, all
+in `.pd-modulebar`; the panel inside the viewport at every width; list scrolling; **no sideways page
+scroll**; the bar background asserted as a **colour** in both themes, and five of six sampled
+properties differing per theme so they resolve through tokens. At 282px the cluster still fits and
+every control is **44px** tall.
+⚠️ **The first attempt measured nothing and said so** — opened as `file://` it rendered as a `data:`
+snapshot with every asset 404'd and the tab `hidden` at `innerWidth: 0`. Both recorded traps.
+⚠️ Harness **deleted before committing**, after confirming git could not see it.
+
+`test-portfolio.js` 73/73, `wiring-check` 136/136, `dead-hooks` 0 findings in this module.
+⚠️ **Not verified signed in.** ⚠️ Still to come: unifying the per-view filter panels behind the one
+funnel, and retiring `.po-kpi2` for the shared `.pd-kpi`. `MODULE_V` → `20260915u`, sort-checked.
+
 ### 2026-09-15 (w) — The Portfolio Dashboard never finished loading, and the filter offered to narrow it could not
 
 Owner, with two screenshots: *"Right now it always fails loading the schedules across 21 projects"*,
