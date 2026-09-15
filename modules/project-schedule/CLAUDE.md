@@ -1,3 +1,99 @@
+## 2026-09-15 (d) — The pane stops being capped to the viewport; the time bar sticks instead
+
+Owner: *"the main screen can't even be seen without having to select the expand button"*, then
+*"let's do the pane cap next."*
+
+### ⚠️⚠️ WHY THE CAP WAS THE CAUSE
+
+`_vs3Build` sizes a building from its **width** — `clamp(320, width × 0.72, 520)` — never from the
+pane. So every card is 320–520px tall whatever the pane allows. `_vsApplyPane` capped the pane at
+`innerHeight − paneTop − 16`, and **every pixel of chrome above the pane came straight out of that
+number**. On the owner's screen it left ~475px for a stack of five ~420px cards, which
+`.ps-vs-body` then scrolled internally: one card at a time, through a slot. That is the report.
+
+**Measured, 1440×900, five cards:**
+
+| | pane height | body scrolls internally | what you see |
+|---|---:|---|---|
+| capped (as shipped) | **475px** | **yes** | one card, clipped |
+| uncapped | **986px** | no | every card at full height |
+
+The page grows instead, which this view is already set up for: `.ps-longdoc` is on in vertical
+stacking (see `_psSyncLongDoc`) precisely so `.pd-content` may exceed one screen.
+
+### ⚠️⚠️ THE NOTE THAT SAID STICKY COULD NOT DO THIS WAS RIGHT — AND ITS PREMISE WAS THE CAP
+
+The rule the cap replaced carried a measured finding, verbatim:
+
+> *"Sticky is bounded by its containing block, and the time bar is the LAST child of the pane — the
+> container's bottom edge IS the bar's bottom edge, so it has zero travel and the rule silently never
+> fires. Measured: the bar scrolled away exactly as before at scrollY 0/300/600."*
+
+That was taken **while the pane was capped**. A capped pane is never taller than the screen, so its
+bottom edge is always on screen and a bottom-sticky child has nothing to stick to. The conclusion
+followed from the cap, not from sticky — so removing the cap changes the answer. It was re-measured
+rather than inherited, and the original finding is **credited in the rule's own comment**, not
+deleted: it was correct, and a later reader needs to know why it no longer applies.
+
+**Measured with the cap gone:** `position` computes to `sticky`; the bar sits at the viewport's
+bottom edge at scrollY 0, 300, 600 and 900, then rides down to its resting place at the end of the
+page. Reachable at every stop, in both themes, at 1440×900 and 1280×720 (pane 1412px there).
+
+⚠️ Fixed positioning is still wrong, for the reason the original note gives: out of flow, it would
+overlap the last building rather than ending the pane.
+⚠️ `z-index:2` and the existing card background, because the bar now passes **over** the buildings
+while stuck.
+
+### What went with the cap
+
+`_vsApplyPane` and `--ps-vs-paneh` are gone, along with all three call sites — the resize listener,
+the notice-dismiss handler, and the tail of `renderVStack`. Each existed only to re-measure a cap
+that no longer exists.
+
+⚠️ **A function left behind writing a custom property no rule reads is the exact shape of the dead
+`--ps-vs-fith` this file already documents** (the Fit button wrote it for weeks; no selector ever read
+it). Removing the writer with the reader is the whole point.
+
+⚠️ **One stale claim corrected in place:** the Fit-button note said *"What DOES fit the stack is the
+pane's own `--ps-vs-paneh` max-height, and that half is live and stays."* It does not, as of this
+commit. Left uncorrected it would have sent the next reader looking for a live mechanism that had
+been deleted — which is precisely the failure that note was written to prevent.
+
+### ⚠️⚠️ A harness fault worth more than this change: `<style>` matches THREE blocks in this file
+
+`re.findall(r'<style>([\s\S]*?)</style>')` returns **three** matches here: the real stylesheet
+(376,101 bytes) and **two JavaScript string literals** inside the inline `<script>` that build the
+print/export stylesheets. Joining them appends ~3.7 KB of JavaScript — concatenation operators, an
+unterminated string, unbalanced braces — after the CSS.
+
+**The consequence is silent and total: every rule appended after that point is dropped.** The rule
+under test in this pass came back `position: static` and looked like proof that sticky could not
+work. It had simply never been parsed. Two defences, both now in the harness generator:
+
+- **Filter on the JS tell** (`"' +" not in block`) and assert exactly one block survives.
+- **Put any candidate rule in its own `<style>` element**, which parses independently and cannot be
+  swallowed by whatever the previous block ends with.
+
+⚠️ Earlier harnesses this week joined all three blocks too. Their measurements stand — the real
+stylesheet is block 0 and parses first — but the CSS byte counts quoted in those entries are ~3.7 KB
+too high, and anything they appended after `__CSS__` was cosmetic (a guide line, an `h4`).
+
+⚠️ **And one harness bug of the same family:** `var top = …` at global scope does not shadow
+`window.top` — it *is* `window.top`, which is not writable, so the arithmetic yielded `NaN`, the cap
+was set to `NaNpx`, and the "capped" arm was indistinguishable from the uncapped one. The shipped
+`_vsApplyPane` was never affected: its `top` is a function-local.
+
+### Verified
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance on the **real block only**, no
+duplicate ids, no orphaned `return`, `_vsApplyPane` gone with every call site, no code line mentioning
+the cap variable (only the three comments that explain the history), and `.ps-vs-tl` carrying
+`position:sticky; bottom:0; z-index:2` with an opaque background.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915d`, sort-checked against `20260915c`.
+
 ## 2026-09-15 (c) — The notices become one line, and the two filter rows become one
 
 Owner, on a 3-tower / 5-trade / 609-activity project: *"UI in this situation needs a big rework. the

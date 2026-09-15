@@ -1975,20 +1975,44 @@
     /* ---- The TIME BAR under the stack ------------------------------------------------------
        Owner 2026-08-26: drag the line and the stacking re-reads at that date, so the building
        fills up as you move through the programme. */
-    /* ---- The pane holds its own scroll so the time bar is always on screen ----------------
+    /* ---- The time bar sticks to the bottom; the pane is no longer capped -------------------
        Owner 2026-08-27: *"when you scroll down the progress should always be shown."*
-       ⚠️ position:sticky CANNOT do this and was tried first. Sticky is bounded by its containing
-       block, and the time bar is the LAST child of the pane — the container's bottom edge IS the
-       bar's bottom edge, so it has zero travel and the rule silently never fires. Measured: the
-       bar scrolled away exactly as before at scrollY 0/300/600. A rule that exists and can never
-       fire is worse than no rule, because it reads as done.
-       ⚠️ Fixed positioning is the other tempting answer and is also wrong — out of flow, it would
-       overlap the last building rather than ending the pane.
-       So the BUILDINGS scroll inside the pane and the bar sits below them, permanently visible. */
-    .ps-vs-pane { display:flex; flex-direction:column; min-height:0; max-height:var(--ps-vs-paneh, none); }
+       Owner 2026-09-15, on a 3-tower / 5-trade project: *"the main screen can't even be seen
+       without having to select the expand button."*
+
+       ⚠⚠ THE ORIGINAL NOTE HERE SAID STICKY COULD NOT DO THIS, AND IT WAS RIGHT AT THE TIME.
+       Verbatim: *"Sticky is bounded by its containing block, and the time bar is the LAST child of
+       the pane — the container's bottom edge IS the bar's bottom edge, so it has zero travel and
+       the rule silently never fires. Measured: the bar scrolled away exactly as before at scrollY
+       0/300/600."* That measurement was taken while `--ps-vs-paneh` capped the pane to the viewport
+       remainder. A capped pane is never taller than the screen, so its bottom edge is always on
+       screen and a bottom-sticky child has nothing to stick to. **The conclusion followed from the
+       cap, not from sticky** — so removing the cap changes the answer, and the premise was
+       re-measured rather than inherited.
+
+       ⚠⚠ WHY THE CAP HAD TO GO. `_vs3Build` sizes a building from its WIDTH
+       (`clamp(320, width*0.72, 520)`), never from the pane, so each card is 320-520px tall whatever
+       the pane allows. The cap is `innerHeight - paneTop - 16`, and every pixel of chrome above the
+       pane comes straight out of it: on the owner's screen that left ~475px for a stack of five
+       420px cards, which `.ps-vs-body` then scrolled internally — one card at a time, through a
+       slot, which is exactly the report. MEASURED, 1440x900, five cards:
+           capped    → pane 475px, body scrolls internally, one card visible
+           uncapped  → pane 986px, no internal scroll, every card at full height
+       The page grows instead, which it is already set up to do: `.ps-longdoc` is on in this view
+       (see _psSyncLongDoc) precisely so `.pd-content` can exceed one screen.
+
+       ⚠ MEASURED AGAIN with the cap gone, same five cards: `position` computes to `sticky`, and the
+         bar sits at the viewport's bottom edge at scrollY 0, 300 and 600, then rides down to its
+         resting place at the end of the page. Reachable at every stop.
+       ⚠ Fixed positioning is still the wrong answer, for the reason the original note gives: out of
+         flow, it would overlap the last building rather than ending the pane.
+       ⚠ `z-index:2` because the bar now passes OVER the buildings while stuck, and it carries a
+         card background so they do not show through it. */
+    .ps-vs-pane { display:flex; flex-direction:column; min-height:0; }
     .ps-vs-body { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; }
     .ps-vs-tl { flex:0 0 auto; margin-top:14px; border:1px solid var(--pd-line);
-      border-radius:var(--pd-radius-lg); background:var(--pd-card); padding:10px 14px 12px; }
+      border-radius:var(--pd-radius-lg); background:var(--pd-card); padding:10px 14px 12px;
+      position:sticky; bottom:0; z-index:2; }
     .ps-vs-tlhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:9px; }
     .ps-vs-tldate { font-size:var(--pd-fs-md); font-weight:800; font-variant-numeric:tabular-nums; }
     .ps-vs-tlsub { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
@@ -14485,11 +14509,9 @@
       if (now) renderMobile();
       else if (_psWasPhone) renderAll();   // crossed phone -> desktop: build the grid/Gantt
       _psWasPhone = now;
-      // ⚠️ The stacking pane's height is MEASURED, so a resize leaves it stale — a window dragged
-      // shorter would put the time bar off screen again, which is the whole defect. Re-measure
-      // rather than re-render: renderVStack rebuilds every svg and would restart the entrance
-      // animation on every resize tick.
-      try { _vsApplyPane(document.getElementById('ps-vstack')); } catch (e) {}
+      /* ⚠ Nothing to re-measure on resize any more. The stacking pane used to be capped to the
+         viewport, so a window dragged shorter left a stale cap; it now takes its content's height
+         and the time bar sticks to the bottom of the screen, both of which the browser maintains. */
     }, 150);
   });
 
@@ -15082,30 +15104,22 @@
   // there was no `.is-fit` selector and no `var(--ps-vs-fith)` anywhere in this file. A planner who
   // clicked it saw the button light up and the drawing not move. Its own tooltip still advertised
   // "hover a zone and read it in the magnifier", a feature deleted a week earlier — which is the
-  // clue that nothing had exercised it since. What DOES fit the stack is the pane's own
-  // `--ps-vs-paneh` max-height, and that half is live and stays. Zoom −/+ remains the control over
-  // cell width, and the focus window keeps its own Fit for reading one building close up.
+  // clue that nothing had exercised it since.
+  // ⚠ THIS NOTE USED TO SAY the pane's own `--ps-vs-paneh` max-height was the live half and
+  //   would stay. It did not: that cap was removed on 2026-09-15 for squeezing the buildings
+  //   into whatever the chrome left over (see the note on `.ps-vs-pane`). Nothing fits the
+  //   stack to the window now — the pane takes its content's height and the page scrolls.
+  // Zoom −/+ remains the control over cell width, and the focus window keeps its own Fit for
+  // reading one building close up.
   try { ['ps_vsloupe', 'ps_vsloupez', 'ps_vsloupew', 'ps_vsloupeh', 'ps_vsfit'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
-  // How much height the fitted stack may claim. Measured from the pane's own top so the time bar
-  // and the toolbar are never covered — a fit that hides the control you fit with is not a fit.
-  // ⚠️ Measured from each element's own live position, never from a vh constant. This pane sits
-  // under a toolbar whose height changes with wrapping and a chip row that comes and goes with the
-  // scope, so a fixed vh would put the bottom of a tall building behind the time bar on exactly the
-  // projects that need it most.
-  function _vsApplyPane(host) {
-    if (!host) return;
-    var pane = host.querySelector('.ps-vs-pane');
-    if (pane) {
-      var top = pane.getBoundingClientRect().top;
-      // 16px of breathing room below the pane. Floored at 320 so a short window still shows a
-      // building AND its bar rather than two slivers.
-      pane.style.setProperty('--ps-vs-paneh', Math.max(320, Math.round(window.innerHeight - top - 16)) + 'px');
-    }
-    // ⚠️ The second half of this function measured a `--ps-vs-fith` cap onto `.ps-vs-grid` for the
-    // Fit button. Removed with the button (2026-09-10): no CSS rule ever read that property, so both
-    // passes — including the card-overhead correction that looks so carefully derived — were setting
-    // a variable nobody consumed. Do not restore it without a rule that reads it.
-  }
+  /* ⚠⚠ `_vsApplyPane` IS GONE (2026-09-15) AND SO IS `--ps-vs-paneh`. It measured the pane's top
+     and capped the pane to `innerHeight - top - 16`, which is what squeezed a stack of 320-520px
+     buildings into whatever the chrome left over — see the note on `.ps-vs-pane` for the numbers
+     and for why `position:sticky` on the time bar works now where it provably did not before.
+     ⚠ Its three call sites went with it: the resize listener in the module's own setup, the
+       notice-dismiss handler, and the tail of `renderVStack`. Each existed only to re-measure a
+       cap that no longer exists; a function left behind writing a custom property no rule reads is
+       the exact shape of the dead `--ps-vs-fith` this file already documents. */
   // Which trades are shown. Owner 2026-08-27: *"can't there be a filter to show which trades to be
   // shown. In addition, i want a view wherein all selected trades can be shown side by side."*
   // ⚠️ EMPTY MEANS ALL, and that is the whole reason this is a list rather than a set of booleans.
@@ -20694,14 +20708,13 @@
         e.stopPropagation();
         _vsWarnDismiss(x.dataset.vswx);
         var box = x.closest('.ps-vs-warn'); if (box) box.remove();
-        // ⚠️ Re-measure rather than re-render: the pane just got taller, and a full renderVStack
-        // would rebuild every svg and restart the entrance animation for a dismissal.
-        _vsApplyPane(host);
+        /* ⚠ No re-measure needed: dismissing a notice moves the pane UP, and the pane no longer
+           has a height that depends on where it starts. Still no re-render — a full renderVStack
+           would rebuild every svg and restart the entrance animation for a dismissal. */
       };
     });
     var pdfB = host.querySelector('#ps-vs-pdf');
     if (pdfB) pdfB.onclick = function () { _vsExportPDF(host); };
-    _vsApplyPane(host);
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
     // Magnifier: the toggle repaints silently (the towers only narrow to make room - replaying an

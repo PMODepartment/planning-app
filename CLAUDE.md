@@ -102,6 +102,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (d) — Project Schedule: the stacking pane stops being capped to the viewport
+
+Owner: *"the main screen can't even be seen without having to select the expand button"*, then *"let's
+do the pane cap next."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **A measured finding can go stale when its premise changes, and it will still read as settled.**
+  The rule here carried *"position:sticky CANNOT do this … Measured: the bar scrolled away at scrollY
+  0/300/600."* True — **while the pane was capped to the viewport**, because a capped pane's bottom is
+  always on screen and a bottom-sticky child has nothing to stick to. The conclusion followed from the
+  cap, not from sticky. Re-measure a recorded finding when you change the thing it depended on, and
+  **credit it in place** rather than deleting it: it was right, and the next reader needs to know why
+  it stopped being right.
+- ⚠️⚠️ **`<style>` matches more than the stylesheet in a single-file module.** In
+  `project-schedule/index.html` the regex returns **three** blocks: the real one, plus two JS string
+  literals that build the print/export stylesheets. Joining them appends JavaScript to the CSS and
+  **silently drops every rule appended after it** — a harness rule under test came back
+  `position: static` and looked like proof the approach could not work. Filter on the JS tell
+  (`' +`), assert one block survives, and put any candidate rule in **its own `<style>` element**.
+- ⚠️ **`var top` at global scope is `window.top`.** Not a shadow — the Window itself, unwritable, so
+  arithmetic on it yields `NaN`. A harness silently lost the very cap it was supposed to reproduce.
+  Function-local `top` is fine, which is why the shipped code was unaffected.
+- ⚠️ **Delete the writer with the reader.** Removing a CSS cap means removing the JS that measured it
+  and every call site, or you are left with a function writing a custom property nothing reads —
+  which this module has already documented once (`--ps-vs-fith`, written for weeks, never read).
+
+`MODULE_V` → `20260915d`, sort-checked against `20260915c`.
+
 ### 2026-09-15 (c) — Project Schedule: a notice that was 103px, and two filter rows that are now one
 
 Owner: *"the main screen can't even be seen"*, *"The notification … its too lengthy and the text
