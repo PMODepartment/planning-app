@@ -102,6 +102,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (l) — The Class Code column prints a code, and the missing space was a third flex trap
+
+Owner, with a screenshot of OPW101: *"Some class codes are correct with only having a number within
+them and others have a number and series of characters. It should only be the number that is
+reflected in the class codes."*
+
+`ccodeCellHtml` appended the Finance description after the code tag on **both** resolving branches,
+so a column headed CLASS CODE printed `10050Homogenous Tiles`. It now prints the code alone. The
+description is not lost — `title` already carried the full path (`10050 — Tiling Works ›
+Homogenous Tiles`), and this makes the task row agree with `sumCcodeHtml` directly beneath it, which
+has always printed the code by itself.
+
+### ⚠️⚠️ THE MISSING SPACE WAS NOT A TYPO — IT IS THE FLEX ANONYMOUS-ITEM TRAP, FOR THE THIRD TIME
+
+The source genuinely contained the space: `'</span> ' + esc(c.desc_l3)`. But `.ps-cell` is
+`display:flex`, so a bare text node beside an element becomes an **anonymous flex item** and the
+browser strips its leading whitespace. The space was real and unrenderable. This repo has now paid
+for that mechanism three times — the sidebar brand gap (2026-09-09 x, measured 18px where the rule
+said 9), the `Use 0 activit ies` button (2026-09-10 za1), and this. Printing the code alone removes
+the second element, so the trap cannot apply here again.
+
+### ⚠️⚠️ AND THE SCREENSHOT'S "CORRECT" CODES WERE THE BROKEN ONES
+
+Worth stating plainly, because it inverts what the screen looks like it is saying. Reproducing the
+report against HEAD shows which rows took which branch:
+
+| what the owner saw | branch | what it actually means |
+|---|---|---|
+| `3050`, `4050` … `9050` — bare number, **red** | `unknown` | **not in the chart at either level** |
+| `10050Homogenous Tiles` … — number **+ text** | `group` | resolves fine, at L2 |
+
+So the rows that looked right were the ones failing to resolve, and the rows that looked wrong were
+the healthy ones. ⚠️ **Reported, NOT fixed:** the pattern is that OPW101's 4-digit codes are missing
+a leading zero (the chart holds `03050`, the activity carries `3050`) while its 5-digit codes need
+none — which is why the break falls exactly between row 13 and row 14. Padding at read time is the
+obvious fix and **it is not safe**: `2026-08-21-class-codes.sql` records that de-zeroing collides
+genuinely different items (`015051` Earthmoving with `15051` Railings), so the padded and unpadded
+forms can both be real codes. That needs the chart checked against the project's stored values, not
+a guess in a render function. Hovering any red code names the cause today.
+
+### Verified
+
+`ccodeCellHtml` **sliced out of the shipped file by name and executed** — never retyped — over all
+four outcomes, with **HEAD run beside it as the control**:
+
+| case | fix | HEAD (control) |
+|---|---|---|
+| item `03050` | `03050` | **`03050 Rebar`** |
+| group `10050` | `10050` | **`10050 Tiling Works`** |
+| unknown `3050` | `3050` | `3050` |
+| blank | `—` | `—` |
+
+**4 pass / 0 fail on the fix; 2 of 4 fail on the control**, and the two that fail are exactly the two
+the owner photographed — so the test bites rather than passing on both files. Each case also asserts
+the cell contains **no letters at all**, which is the owner's actual requirement rather than a proxy
+for it, and that the tooltip still leads with the code.
+
+`node tools/wiring-check.js` 129/129, 0 failed. ⚠️ **Not verified signed in** — the cell is proven by
+execution against the chart fixtures, not by reloading OPW101.
+
+`MODULE_V` → `20260915j`, sort-checked against `20260915i`.
+
 ### 2026-09-15 (k) — The project dashboard's three registers are reordered
 
 Owner: *"In the project level dashboard let's move the contracts & claims section after issues &

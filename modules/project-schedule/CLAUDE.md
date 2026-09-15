@@ -1,3 +1,34 @@
+## 2026-09-15 (f) — The Class Code cell prints a code and nothing else
+
+Owner, off an OPW101 screenshot: *"Some class codes are correct with only having a number within
+them and others have a number and series of characters. It should only be the number that is
+reflected in the class codes."*
+
+`ccodeCellHtml` appended the Finance description after the tag on both resolving branches —
+`'<span class="ps-cctag">' + code + '</span> ' + desc`. The cell now emits the tag alone.
+
+- ⚠️⚠️ **THE MISSING SPACE WAS THE FLEX ANONYMOUS-ITEM TRAP, third occurrence in this repo.**
+  `.ps-cell` is `display:flex`, so the trailing text node became an anonymous flex item and the
+  browser stripped its leading space — the source really did contain it and the screen really could
+  not show it. Same mechanism as the sidebar brand gap and `Use 0 activit ies`. Emitting one element
+  instead of two means the trap cannot recur here.
+- ⚠️ **Nothing is lost.** `ttl` already carried `code — L1 › L2 › L3`, and the task row now matches
+  `sumCcodeHtml` beneath it, which has always printed the code alone. At `--c-ccode: 190px` the
+  description was being ellipsised on most rows regardless.
+- ⚠️⚠️ **The rows that LOOKED right were the broken ones.** Reproduced against HEAD: the bare-number
+  rows (`3050`…`9050`) were taking the **`unknown`** branch — not in the chart at either level, which
+  is why they render red — while `10050`+ took the **`group`** branch and resolved correctly. The
+  break falls between the 4-digit and 5-digit codes, i.e. OPW101's stored codes are missing a leading
+  zero the chart has (`03050`).
+  ⚠️ **Not fixed, and not safely fixable in a render function:** `2026-08-21-class-codes.sql` records
+  that de-zeroing collides genuinely different items (`015051` Earthmoving with `15051` Railings), so
+  both forms can be real codes. It needs the chart compared against the project's stored values.
+- **Verified** by slicing `ccodeCellHtml` out of the shipped file **by name** and executing it over
+  all four outcomes with **HEAD as the control**: 4/4 pass on the fix, **2/4 fail on HEAD** — exactly
+  the item and group cases the owner photographed. Each case asserts the cell contains **no letters**,
+  which is the literal requirement, and that the tooltip still leads with the code.
+  ⚠️ Not verified signed in. `MODULE_V` → `20260915j`, sort-checked.
+
 ## 2026-09-15 (e) — The site draws every floor from its own plan, and the labels were mirrored under it — ethanrobles10
 
 Owner, with the per-tower card and the site view side by side: *"how come in this view, the per

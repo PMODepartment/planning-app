@@ -23520,11 +23520,25 @@
        activity), or as neither. Collapsing the first two would lose which level the row is filed
        at; collapsing group into "unknown" is what this cell used to do, and it flagged every
        activity the builder has ever pushed. */
+    /* ⚠️⚠️ THE CELL PRINTS THE CODE AND NOTHING ELSE. Owner 2026-09-15, off a screenshot of
+       OPW101: *"Some class codes are correct with only having a number within them and others have
+       a number and series of characters. It should only be the number that is reflected in the
+       class codes."* Both branches used to append the description after the tag, which is what put
+       `10050Homogenous Tiles` in a column headed CLASS CODE.
+       ⚠️⚠️ AND THE MISSING SPACE WAS NOT A TYPO — IT IS THE FLEX ANONYMOUS-ITEM TRAP, for the
+         THIRD time in this repo. `.ps-cell` is `display:flex`, so `'</span> ' + desc` makes the
+         description an anonymous flex item and the browser STRIPS its leading whitespace: the
+         source genuinely contains the space and the screen genuinely cannot show it. The sidebar
+         brand gap (2026-09-09 x) and the `Use 0 activit ies` button (2026-09-10 za1) were the same
+         mechanism. Printing the code alone removes the second element, so the trap cannot apply.
+       ⚠️ NOTHING IS LOST: `ttl` already carries the full Finance path, and this makes the task row
+         agree with `sumCcodeHtml` directly below, which has always printed the code alone. The
+         column is 190px, so the description was being ellipsised on most rows anyway. */
     var g = c ? null : ccGroupByCode(raw);
     if (!raw) { inner = '<span style="color:var(--pd-muted);">—</span>'; ttl = 'No class code'; }
-    else if (c) { inner = '<span class="ps-cctag">' + esc(c.code) + '</span> ' + esc(c.desc_l3 || ''); ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3; }
+    else if (c) { inner = '<span class="ps-cctag">' + esc(c.code) + '</span>'; ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3; }
     else if (g) {
-      inner = '<span class="ps-cctag grp">' + esc(g.code_l2) + '</span> ' + esc(g.desc_l2 || '');
+      inner = '<span class="ps-cctag grp">' + esc(g.code_l2) + '</span>';
       ttl = g.code_l2 + ' — ' + g.desc_l1 + ' › ' + g.desc_l2 +
             '\nA GROUP-level code: this activity covers the whole group rather than one bill item.';
     }
