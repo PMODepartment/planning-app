@@ -722,7 +722,10 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
    request repeated the same day — --pd-fs-micro (10px), the smallest rung this app's
    own scale defines. Label and input stay EQUAL to each other on desktop; `.pd-label`
    (below) moves with it for the same reason. */
-.pd-field label { display: block; font-size: var(--pd-fs-micro); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
+/* ⚠ Moves with `.pd-label` — they are the same idiom and the rule above says so in its own note.
+   Letting one of the two follow the scale and not the other is how a form comes to carry two label
+   sizes that nobody chose. */
+.pd-field label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
   text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
   /* ⚠️⚠️ WAS 7px WHILE `.pd-btn` IS 8px, so a Filter button and the search box beside it in
@@ -730,11 +733,26 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
      the BUTTON down to 7px to match, which is the same observation reached from the other
      end — someone had already decided these should agree. Both are --pd-radius-md now. */
   width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
-  /* ⚠️ Matches `.pd-field label`/`.pd-label` at --pd-fs-micro (10px) — desktop only; the
-     phone `!important` floor below still pins the INPUT at --pd-fs-tap (16px) so iOS
-     never zooms on focus, and the mobile label rule below no longer matches it (see the
-     note there for why that decoupling is deliberate, not a regression). */
-  font-size: var(--pd-fs-micro); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
+  /* ⚠⚠ --pd-fs-sm, WHICH IS WHAT THE SCALE ITSELF DESIGNATES FOR A CONTROL. The token's own
+     comment reads `--pd-fs-sm: 12.5px  /* button, input, select, secondary body *​/` — so an input
+     at --pd-fs-micro (10px, defined as "UPPERCASE label, caption, count badge") was a departure
+     from the scale, not an expression of it.
+     ⚠⚠ AND THE CODEBASE HAD ALREADY VOTED. Owner 2026-09-15: *"the font size ... is too small for
+     the window size"*. Measured before changing anything: **42 rules across 14 files** already
+     override this declaration upward — 22 to --pd-fs-sm and 20 to --pd-fs-base — in cash-flow,
+     contracts-claims, equipment-loading, issues-lessons, manpower-loading, portfolio-overview,
+     productivity-rates, progress-photos, project-schedule, resource-loading, risk-register,
+     s-curve, stakeholder-map and this file. A default that every second form has to undo is not a
+     default; the modules were patching around it one at a time.
+     ⚠ The phone `!important` floor below still pins the INPUT at --pd-fs-tap (16px) so iOS never
+     zooms on focus — that is unaffected and must stay.
+     ⚠⚠ THIS DECLARATION IS THE DEFAULT, NOT AN OVERRIDE, and a cleanup pass deleted it once for
+     exactly that reason: the sweep that removed the 22 now-redundant `font-size:var(--pd-fs-sm)`
+     overrides could not tell the rule that DEFINES the size from the rules that were merely
+     repeating it, so it took this one too and every input in the app fell back to the browser's
+     13.33px default. Caught by measuring after the sweep rather than trusting it. Do not let a
+     future cleanup treat this line as redundant. */
+  font-size: var(--pd-fs-sm); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
 /* ⚠️⚠️ AN INPUT, A DATE INPUT AND A SELECT WITH IDENTICAL PADDING AND FONT-SIZE STILL
    COME OUT AT THREE DIFFERENT HEIGHTS, because each control type adds its own intrinsic
@@ -982,7 +1000,16 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 /* Form label used outside .pd-field (cash-flow's tabbed Assumptions, resource-loading).
    ⚠️ Same values as `.pd-field label` on purpose -- two label styles that drift apart is
       how one dialog ends up looking like a different product. */
-.pd-label { display: block; font-size: var(--pd-fs-micro); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
+/* ⚠⚠ --pd-fs-xs, NOT micro. `--pd-fs-micro` is defined as "UPPERCASE label, caption, count badge"
+   — and `.pd-label` is overwhelmingly used for SENTENCE-CASE field names ("Activity ID", "Activity
+   Name *", "Class Code (Finance)"). Measured in the Edit Activity modal, 47 labels, every one of
+   them sentence case and rendering at 10px. Uppercase micro-labels are a different idiom and keep
+   their own rules (`.pd-sec-head`, `.ps-form-sec`, `.pd-mini-l` …), which are untouched here. */
+.pd-label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
+/* ⚠ The helper text inside a label was the worst of it: `<small>` with no size of its own takes
+   the browser's 0.83em, which on a 10px label MEASURED 8.3px — below every token in the scale.
+   Pinned to micro so it is at least on it, and still a step below the label it qualifies. */
+.pd-label small, .pd-field label small { font-size: var(--pd-fs-micro); }
 
 /* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
 .pd-autosave { font-size: var(--pd-fs-xs); font-weight: 500; padding: 3px 9px; border-radius: var(--pd-radius-pill);

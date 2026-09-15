@@ -102,6 +102,85 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (j) — Form controls go back onto the scale the scale itself designates
+
+Owner, on the Edit Activity modal: *"Let's also check the font size in the edit activity pop-up window
+it might be wrong since the font size based on the screenshot is too small for the window size."*
+
+### ⚠️⚠️ IT WAS NOT THAT MODAL. EVERY INPUT IN THE APP WAS 10px
+
+`.pd-input, .pd-select, .pd-textarea { font-size: var(--pd-fs-micro) }` — 10px, app-wide, set
+deliberately on 2026-09-10 with a note saying it matched `.pd-label`. Measured in the Edit Activity
+form before changing anything:
+
+| element | was | now | token |
+|---|---:|---:|---|
+| field label (`.pd-label`) | 10px | **11px** | `--pd-fs-xs` |
+| helper `<small>` inside a label | **8.3px** | **10px** | `--pd-fs-micro` |
+| input | 10px | **12.5px** | `--pd-fs-sm` |
+| select | 10px | **12.5px** | `--pd-fs-sm` |
+
+⚠️⚠️ **The scale's own documentation settles it.** `--pd-fs-sm: 12.5px /* button, input, select,
+secondary body */` — the token that exists *for* controls. `--pd-fs-micro` is defined as *"UPPERCASE
+label, caption, count badge"*, and `.pd-label` is overwhelmingly used for **sentence-case** field
+names: 47 of them in this one form, every one sentence case. The 10px was a departure from the scale,
+not an expression of it.
+
+⚠️⚠️ **And the codebase had already voted.** 42 rules across 14 files were overriding that default
+upward — 22 to `sm`, 20 to `base` — in cash-flow, contracts-claims, equipment-loading, issues-lessons,
+manpower-loading, portfolio-overview, productivity-rates, progress-photos, project-schedule,
+resource-loading, risk-register, s-curve, stakeholder-map and `dashboard.css` itself. **A default that
+every second form has to undo is not a default.**
+
+The 8.3px helper text was the worst of it: a `<small>` with no size of its own takes the browser's
+0.83em, which on a 10px label lands below every token in the scale.
+
+### The cleanup
+
+The 22 now-redundant `font-size: var(--pd-fs-sm)` overrides are removed. ⚠️ **Conservatively:** a
+declaration went only when **every** selector in its rule targets a control. One rule was skipped and
+named — `.ps-cset-row input[type=text], .ps-cset-row .pd-input` — because dropping it there would
+also have resized a bare `input`, which has no `.pd-input` default to fall back to. The 20 overrides
+to `base` are left alone: 13px is still a deliberate step above the new 12.5px default.
+
+### ⚠️⚠️ THE CLEANUP DELETED THE DEFAULT IT WAS CLEANING UP AFTER
+
+The sweep could not tell the rule that **defines** the size from the rules that were merely repeating
+it — so it removed the declaration this change had just added, and every input in the app fell back
+to the browser's 13.33px. Caught by **measuring after the sweep instead of trusting it**: the harness
+reported 13.3333px and `matchingFontSizeRules: []`, which is the signature of no rule applying at all
+rather than of a rule applying wrongly. The declaration is restored with a note telling the next
+cleanup to leave it alone.
+
+### Verified
+
+Measured in a browser against the **local** stylesheet — not the deployed one, which would have shown
+the old values and read as "no change". Five modules whose overrides were removed, all reporting
+identically:
+
+```
+contracts-claims   input 12.5  select 12.5  label 11  small 10
+progress-photos    input 12.5  select 12.5  label 11  small 10
+cash-flow          input 12.5  select 12.5  label 11  small 10
+equipment-loading  input 12.5  select 12.5  label 11  small 10
+project-schedule   input 12.5  select 12.5  label 11  small 10
+```
+
+CSS braces balance, comments-stripped, in all six touched files.
+
+⚠️ **The phone `!important` floor is untouched**: `select, textarea { font-size: var(--pd-fs-tap)
+!important }` still pins inputs at 16px under the mobile breakpoint so iOS never zooms on focus.
+
+⚠️ **Coverage is honest, not total.** Five modules were measured; the other nine were not opened. The
+change is a single declaration in a shared stylesheet plus removals that are no-ops by value, so the
+risk is low — but a form in an unmeasured module could still hold a rule that now wins differently.
+
+⚠️ **`dashboard.css?v=` bumped to `20260915a` across all 31 pages that load it** — a shared asset
+change with a stale token on any page is the cache trap this repo has already recorded.
+
+`progress-photos/module.css` → `20260915a`, `contracts-claims/module.css` → `20260915d`,
+`MODULE_V` → `20260915i`, all sort-checked.
+
 ### 2026-09-15 (i) — The wizard's BOQ step asks instead of only explaining
 
 Owner: *"Check also the BOQ step yes this is optional but if the planner opts to develop it already
