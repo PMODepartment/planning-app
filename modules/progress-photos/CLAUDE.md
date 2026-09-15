@@ -2,6 +2,121 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 360° upload can now be saved as a draft, with the stitch running in the background (2026-09-13, later still)
+
+**Run `migrations/2026-09-13-progress-photos-360-draft-status.sql`.**
+
+Owner: *"since this portion takes long, allow uploading 360 as draft during the session to work the
+stitching in the background."* — the direct follow-up to the fixed-48-frame fix above, which made the
+extraction+stitching phase faster but did not remove the fact that it's real, sequential work (up to
+48 real video seeks, each followed by its own ORB/BFMatcher/RANSAC join attempt) that used to hold the
+entire "Add 360° photo" modal open until it finished.
+
+### The fix
+
+**`open360Upload()` gains a second, non-blocking save path.** While a stitch is running (the
+`#pp360-progress` block is visible — the exact same block the previous entry's per-frame status text
+already lives in), a new **"Save as draft — keep working"** button lets the planner save what's
+already filled in and close the modal immediately, without waiting for the stitch to finish:
+
+- **`saveAsBackgroundDraft()`** validates the same required fields every other capture in this module
+  already requires (`requiredFieldsMissing('pp360')`), then inserts a REAL `progress_photos` row —
+  `media_type:'360'`, `stitch_status:'processing'`, `photo_url`/`thumb_url` both `null` — through the
+  same `tolerantWrite()` every other insert in this file goes through, closes the modal
+  (`revokeAll()`, unchanged), and refreshes the gallery so the draft shows immediately.
+- ⚠️⚠️ **The already-running `Pano360.stitchFromVideo(videoBlob, …)` call is never restarted or
+  duplicated — it's REDIRECTED.** `haveVideo()` already kicks `runStitch()` off the moment a video is
+  picked, well before the planner has a chance to click anything; the new button doesn't start a
+  second stitch, it just flips one closure flag (`bgDraftId`, set to the draft row's real id) that
+  `runStitch()`'s own success/failure branches check *before* touching anything the now-closed modal
+  used to own:
+  ```js
+  if (bgDraftId) { await finalizeBackgroundDraft(bgDraftId, res); return; }
+  showStitchResult(res);
+  ```
+  and the identical shape in the `catch` block, routing to `markBackgroundDraftFailed` instead of the
+  interactive error toast. The progress callback itself also bails out (`if (bgDraftId || !prog)
+  return;`) once backgrounded — there's no modal left to report percentages into, and `prog` still
+  points at the (now detached) DOM node rather than `null`, so continuing to write to it would be
+  harmless but pointless.
+- ⚠️ **This works because `videoBlob` is a plain JS `Blob` reference held in `open360Upload()`'s own
+  closure, not tied to the modal's DOM or its preview object URL (`videoUrl`).** Closing the modal
+  runs `revokeAll()`, which revokes `videoUrl`/`stitchUrl`/`repUrl` and destroys `pp360Viewer` (all
+  `null`/unused at this point) — none of that touches `videoBlob` itself, and `extractFrames()`
+  (pano360.js) creates its *own* internal object URL straight from the Blob, so the already-in-flight
+  extraction is completely unaffected by the modal closing underneath it.
+- **`finalizeBackgroundDraft(photoId, res)`** — once the redirected stitch resolves, uploads the
+  stitched image (`uploadFile`) and generates its thumbnail via the exact same client-side downscale
+  helper (`uploadThumbnailFor`) every ordinary photo upload already uses, then `tolerantWrite`s an
+  UPDATE clearing `stitch_status` back to `null` and setting `photo_url`/`thumb_url`. ⚠️ Deliberately
+  **not** the interactive flow's viewer-framed "Use this view as thumbnail" gesture — there is no
+  Pannellum viewer to frame anything in once the modal is gone, and the stitched panorama is a real
+  image file the same generic thumbnailer already knows how to handle.
+- **`markBackgroundDraftFailed(photoId, err)`** — a failed extraction/stitch/upload marks the row
+  `stitch_status:'failed'` (never deletes it) and toasts the real reason. ⚠️ There is no raw video
+  stored for this draft (only the stitched *output* is ever uploaded, and that's exactly what
+  failed), so a stuck `'failed'` row cannot be retried in place — the honest recovery is to delete it
+  (the module's existing single-row/batch delete already covers that) and re-add the 360° capture
+  from scratch. Stated in the toast, not hidden behind a dead-end "Retry" button that would have
+  nothing to retry from.
+- **Gallery tiles read the new status.** `thumb()`'s `media_type === '360'` branch now checks
+  `stitch_status` before falling through to the generic "Preview unavailable" placeholder: a
+  `'processing'` row shows a distinct "Processing…" tile, a `'failed'` one shows "Failed" — both
+  carrying **no `data-act="open"`**, matching every other no-preview tile in this file, so a click on
+  either can never try to mount a viewer against a `photo_url` that isn't set yet.
+
+### Scope, stated rather than silently assumed
+
+⚠️⚠️ **This is deliberately SESSION-scoped, not persisted across a reload.** `videoBlob` is only ever
+a JS reference; there is no IndexedDB queue backing this (unlike the module's existing
+`OfflineQueue`/`saveCapture` mechanism for ordinary photo/video uploads, which queues the file *blob*
+itself for exactly this reason). Closing the tab or navigating away mid-stitch loses the in-flight
+promise and leaves the draft row stuck at `stitch_status:'processing'` forever, with no way to detect
+"abandoned" versus "still genuinely running" from outside the browser tab that started it. This
+matches the owner's own wording ("during the session") and the module's already-established
+convention of stating a scope reduction plainly rather than quietly shipping less than it sounds
+like — extending this to survive a reload would mean storing the raw video blob (a real, ongoing
+storage cost for every draft, successful or not) and re-deriving frame extraction from scratch on
+reconnect, which is a materially bigger piece of work than "let the planner keep using the app while
+one video finishes stitching."
+
+⚠️ **Not built:** any indication elsewhere in the app (Plan view, Stack view, PPR slide picker) that a
+360 photo is mid-draft — those surfaces already treat a photo with no signable `photo_url` as absent
+from their own listings (they build their candidate sets from rows that already resolve a URL), which
+is an acceptable degrade rather than a defect: a draft simply isn't offered anywhere that a photo needs
+to already exist to be picked, and it surfaces normally once `finalizeBackgroundDraft` clears
+`stitch_status`.
+
+### Verified
+
+**928 checks green** (was 910 — 18 new, 3 existing occurrence-count assertions updated in place from
+"3" to "4" now that `saveAsBackgroundDraft` builds a fourth `works_activity_ids`/`location`/
+`view_name` payload alongside Add/Edit/the ordinary 360 upload — "healthy churn from an intentional
+change" per this file's own convention, not a weakened check). Structural, matching this module's own
+established limit for anything this DOM/state-heavy: driving `open360Upload()` end-to-end would need
+the full modal + a real `Pano360.stitchFromVideo` call, which the existing interactive-flow tests
+already don't attempt either. Confirms: the button exists inside `#pp360-progress` and is wired
+exactly once; `runStitch()`'s progress callback, success path and catch path all check `bgDraftId`
+before touching modal-specific state; `saveAsBackgroundDraft` validates required fields, inserts with
+`photo_url`/`thumb_url` null and `stitch_status:'processing'`, and only sets `bgDraftId`/closes the
+modal on a *successful* insert (a failed one re-enables the button and touches nothing else);
+`finalizeBackgroundDraft` uploads through the shared `uploadFile`/`uploadThumbnailFor` helpers and
+clears `stitch_status`; both `finalizeBackgroundDraft` and `markBackgroundDraftFailed` route a
+failure the same way (marking `'failed'`, never deleting); the two new gallery-tile branches exist,
+carry no `data-act="open"`, and have real (non-orphaned) CSS. The same **3** pre-existing, unrelated
+failures from the entry above are confirmed unchanged (re-run against the commit before this change
+via `git stash`). `node --check` clean on `module.js`/`test.js`; `tools/wiring-check.js` **126
+passed, 0 failed**, confirming no version split across the three bumped assets.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file. In particular: no
+real background stitch has actually run to completion in a live browser while the planner navigated
+elsewhere in the app; that end-to-end "did the tile really update on its own" experience is the first
+thing worth confirming live.
+
+`module.js`/`module.css`/`index.html?v=` → `20260913j`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`, plus its own fallback literal) → `20260913j`. `pano360.js` is
+unchanged this round and stays `20260913i`.
+
 ## Frame sampling capped at a fixed 48 frames per video, regardless of duration (2026-09-13, later)
 
 Owner: *"also, since it's taking too long to process and stitch an image, divide video to a fixed

@@ -349,6 +349,13 @@
   font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 2px 6px;
   border-radius: 999px; pointer-events: none;
 }
+/* 2026-09-13: a 360 draft still stitching in the background (or one whose
+   background stitch failed) — flex-column so the icon and label stack,
+   never data-act="open" so it can't be clicked into a viewer with nothing
+   to show yet. */
+.pp-360processing, .pp-360failed { flex-direction: column; gap: 6px; }
+.pp-360proclabel { font-size: var(--pd-fs-xs); }
+.pp-360failed { color: var(--pd-bad, #c0392b); }
 /* Fifth round item 1: "+ Add media" as a dropdown choosing the media type up
    front (Photo/Video), instead of deciding it inside the modal after files
    may already be staged. */

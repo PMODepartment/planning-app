@@ -471,7 +471,23 @@ with expected(migration, kind, obj, col) as (values
     ('2026-09-07-progress-photos-favorites.sql','function','set_photo_favorite',''),
     ('2026-09-07-progress-photos-works-activity-ids.sql','column','progress_photos','works_activity_ids'),
     ('2026-09-07-trade-map.sql','table','trade_map',''),
-    ('2026-09-09-cc-affected-activities.sql','table','cc_affected_activities','')
+    ('2026-09-08-stakeholder-directory.sql','column','stakeholder_map','stakeholder_id'),
+    ('2026-09-08-stakeholder-directory.sql','table','stakeholders',''),
+    ('2026-09-09-cc-affected-activities.sql','table','cc_affected_activities',''),
+    ('2026-09-10-boq-match-rung.sql','column','boq_allocations','match_score'),
+    ('2026-09-10-boq-match-rung.sql','column','boq_allocations','matched_by'),
+    ('2026-09-10-boq-project-scope.sql','column','boq_allocations','scope'),
+    ('2026-09-10-boq-project-scope.sql','function','boq_alloc_scope_guard',''),
+    ('2026-09-10-drop-gift-tier.sql','table','_archive_gift_tier_20260910',''),
+    ('2026-09-10-stakeholder-profile-fields.sql','column','stakeholders','is_favorite'),
+    ('2026-09-10-stakeholder-profile-fields.sql','column','stakeholders','middle_initial'),
+    ('2026-09-10-stakeholder-profile-fields.sql','column','stakeholders','secondary_position'),
+    ('2026-09-10-stakeholder-profile-fields.sql','column','stakeholders','status'),
+    ('2026-09-10-stakeholder-profile-fields.sql','column','stakeholders','sub_sector'),
+    ('2026-09-11-mom-list-reorder.sql','column','meeting_minutes','sort_order'),
+    ('2026-09-11-mom-list-reorder.sql','column','mom_schedules','sort_order'),
+    ('2026-09-13-progress-photos-360-draft-status.sql','column','progress_photos','stitch_status'),
+    ('2026-09-15-progress-photos-360-background-jobs.sql','table','progress_photos_360_jobs','')
 ),
 missing as (
   select e.* from expected e

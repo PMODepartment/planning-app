@@ -130,6 +130,38 @@ is confirmed to read from `APP_CONFIG.VERSION` by source inspection, not observe
 
 `assets/js/config.js?v=` → `20260913a` (29 referencing pages, shared asset).
 
+### Progress Photos: 360° upload can be saved as a draft while the stitch runs in the background (2026-09-13, later still)
+
+Owner: *"since this portion takes long, allow uploading 360 as draft during the session to work the
+stitching in the background."* — a direct follow-up to the same-day fixed-48-frame fix, which sped
+extraction up but did not remove the fact that it is real, sequential work.
+
+A new **"Save as draft — keep working"** button appears while a 360° video is processing. Clicking it
+inserts the already-filled-in metadata as a real `progress_photos` row right now
+(`stitch_status:'processing'`, no photo yet) and closes the modal — the already-running
+`Pano360.stitchFromVideo` call is **redirected**, not restarted or duplicated, into finishing the
+draft off once it resolves (uploading the stitched image + a client-generated thumbnail, same helper
+every ordinary photo upload already uses) rather than trying to paint a result into a modal that no
+longer exists. A failed background stitch marks the row `'failed'` rather than losing it silently; the
+gallery shows a distinct, non-clickable "Processing…"/"Failed" tile in either case rather than falling
+through to the generic broken-preview placeholder.
+
+⚠️⚠️ **Deliberately session-scoped, not persisted across a reload** — the video blob lives only in a
+JS closure, with no IndexedDB queue behind it (unlike this module's existing offline photo/video
+upload queue). Closing the tab mid-stitch loses the job and leaves the draft stuck at `'processing'`
+forever, with no raw video stored to retry from; the recovery is to delete the stuck draft and re-add
+the capture. Stated plainly rather than oversold, per the owner's own "during the session" wording.
+
+**Run `migrations/2026-09-13-progress-photos-360-draft-status.sql`.**
+
+Verified: 928 checks green (18 new, 3 pre-existing occurrence-count assertions updated in place for
+the new fourth save-payload site); the same 3 pre-existing, unrelated failures confirmed unchanged;
+`tools/wiring-check.js` 126/0. ⚠️ Not verified signed in — no real background stitch has been watched
+finish while navigating elsewhere in the app. Detail:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
+`MODULE_V` → `20260913j`.
+
 ### The site's floors are slices inside each tower, not rows across the property (2026-09-13) — ethanrobles10
 
 Owner, with two screenshots: *"nothing happened, still the same problem!!! The 2nd pic view is

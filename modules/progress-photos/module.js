@@ -16,6 +16,25 @@ window.ProgressPhotos = (function () {
   var TABLE  = 'progress_photos';
   var BUCKET = 'progress-photos';
   var SIGN_TTL = 3600;               // signed-URL lifetime (s); refreshed on reload
+  // 2026-09-15: "when browser app is closed, progress of 360 processing
+  // should still be retained" -- see resumePending360Jobs()'s own header
+  // comment, further down, for the full mechanism. JOBS_TABLE is a small,
+  // TEMPORARY table (migrations/2026-09-15-progress-photos-360-background-
+  // jobs.sql): one row per in-flight background 360 stitch, holding the
+  // Storage path of the raw uploaded video so the stitch can be re-run from
+  // a fresh page load rather than depending on a JS Blob reference that
+  // dies the moment its tab closes.
+  var JOBS_TABLE = 'progress_photos_360_jobs';
+  var PENDING_360_STALE_MS = 10 * 60 * 1000;  // a job claimed longer ago than this is treated as
+                                               // abandoned (its tab crashed/closed) and can be
+                                               // reclaimed by another tab/session -- long enough
+                                               // that a real, still-running stitch (this pipeline's
+                                               // fixed-48-frame sampling is tens of seconds to a few
+                                               // minutes, never longer) is never reclaimed out from
+                                               // under it.
+  var PENDING_360_MAX_ATTEMPTS = 3;           // stop auto-retrying a job that keeps failing -- a
+                                               // genuinely broken recording is not fixed by trying
+                                               // it again, and nothing here should retry forever.
 
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
@@ -278,6 +297,8 @@ window.ProgressPhotos = (function () {
     applyTileScale();
     syncChrome();
     await load();
+    resumePending360Jobs().catch(function (e) { console.error(e); });   // fire-and-forget --
+                            // never blocks init() on a video download + full re-stitch
     await loadSchedule();   // notifyScheduleReady() now fires from INSIDE loadSchedule(), as soon as
                             // LOC_LEVELS/SCHED_ACTS are ready — see its own comment there for why.
     try { fillFilterOptions(); } catch (e) { console.error(e); }
@@ -676,6 +697,7 @@ window.ProgressPhotos = (function () {
       sessionStorage.setItem('pd_project_name', projName);
       restoreUI(); applyTileScale(); syncChrome(); notifyProject();
       await load();
+      resumePending360Jobs().catch(function (e) { console.error(e); });
       await loadSchedule();   // notifyScheduleReady() fires from inside loadSchedule() itself
       try { fillFilterOptions(); } catch (e) { console.error(e); }
       await refreshQueueBadge();
@@ -2019,6 +2041,17 @@ window.ProgressPhotos = (function () {
     // glance; a missing frame degrades to the same placeholder a photo
     // with no preview gets.
     if (r.media_type === '360') {
+      // 2026-09-13: a draft saved via "Save as draft -- keep working" has
+      // no photo_url/thumb_url YET (stitch_status:'processing') -- without
+      // this it would fall straight through to the generic "Preview
+      // unavailable" tile below, which reads as broken rather than "still
+      // working". Deliberately carries no data-act="open" (same as every
+      // other no-preview tile here) -- nothing to open yet, and a click
+      // must not try to mount a viewer against a photo_url that isn't set.
+      if (r.stitch_status === 'processing') return '<div class="' + cls + ' pp-noimg pp-360processing" title="Still processing in the background">' +
+                     '<span data-ico="compass" data-ico-size="18"></span><span class="pp-360proclabel">Processing…</span></div>';
+      if (r.stitch_status === 'failed') return '<div class="' + cls + ' pp-noimg pp-360failed" title="Background processing failed -- delete and try again">' +
+                     '<span data-ico="compass" data-ico-size="18"></span><span class="pp-360proclabel">Failed</span></div>';
       if (!u) return '<div class="' + cls + ' pp-noimg" title="Preview unavailable">' +
                      '<span data-ico="compass" data-ico-size="18"></span></div>';
       var filt360 = adjustmentsAreDefault(r.adjustments) ? '' : ' style="filter:' + Fmt.esc(cssFilterFor(adjustmentsOf(r))) + '"';
@@ -5707,6 +5740,11 @@ window.ProgressPhotos = (function () {
     var repBlob = null, repUrl = null;           // thumbnail frame, captured from the viewer -- becomes thumb_url
     var pendingAdjust = {};                       // item 5: Adjust applies to 360 too, keyed 0 (a single item)
     var pp360Viewer = null;                       // item 5/6: the live Pannellum preview, mounted once stitching finishes
+    // 2026-09-13: set once "Save as draft" is clicked -- the id of the real
+    // progress_photos row already inserted (stitch_status:'processing').
+    // runStitch()'s in-flight promise checks this BEFORE touching any modal
+    // DOM, since the modal is closed the moment this is set.
+    var bgDraftId = null;
 
     function revokeAll() {
       [videoUrl, stitchUrl, repUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
@@ -5746,7 +5784,26 @@ window.ProgressPhotos = (function () {
           '<a id="pp360-savelocal" class="pd-btn pd-btn-primary" download="360-capture.webm">Save video to gallery</a> ' +
           '<button type="button" class="pd-btn" id="pp360-offlineclose">Close</button>' +
         '</div>' +
-        '<div id="pp360-progress" hidden><div class="pp-progress" id="pp360-prog"></div></div>' +
+        // ⚠️⚠️ 2026-09-13: extraction+stitching can genuinely take a while
+        // (up to several hundred frame-to-frame joins at the fixed-48
+        // sampling density), and holding the WHOLE modal open for that
+        // entire duration blocked the planner from doing anything else in
+        // the app meanwhile -- "since this portion takes long, allow
+        // uploading 360 as draft during the session to work the stitching
+        // in the background." #pp360-bgsave saves the metadata already
+        // filled in below as a real progress_photos row RIGHT NOW
+        // (stitch_status:'processing', no photo yet) and closes this
+        // modal -- the in-flight Pano360.stitchFromVideo(videoBlob, ...)
+        // call keeps running against the SAME videoBlob (a plain JS
+        // reference, not tied to any modal DOM), and runStitch() itself
+        // finishes the draft off once it resolves. See finalizeBackgroundDraft
+        // / markBackgroundDraftFailed below.
+        '<div id="pp360-progress" hidden>' +
+          '<div class="pp-progress" id="pp360-prog"></div>' +
+          '<button type="button" class="pd-btn" id="pp360-bgsave">Save as draft — keep working</button>' +
+          '<p class="pp-hint">This keeps processing in the background while you use the rest of the app. ' +
+            'It will appear in the gallery once it is done.</p>' +
+        '</div>' +
         // Item 5 (2026-09-11, second round): "show already all the input
         // fields as with adding photos or videos" -- the previous version
         // nested Description/Date/Works/Location/Pin inside #pp360-result,
@@ -5983,7 +6040,11 @@ window.ProgressPhotos = (function () {
       var prog = $('pp360-prog'); if (prog) prog.textContent = 'Reading video…';
       try {
         var res = await Pano360.stitchFromVideo(videoBlob, function (stage, a, b) {
-          if (!prog) return;
+          // 2026-09-13: once backgrounded there is no modal left to report
+          // progress into -- prog still POINTS at a (now detached) element,
+          // so writing to it is harmless, but there's nothing to show it to
+          // and no reason to keep computing the message.
+          if (bgDraftId || !prog) return;
           if (stage === 'duration') {
             prog.textContent = 'Reading video…';
           } else if (stage === 'framecount') {
@@ -5994,8 +6055,13 @@ window.ProgressPhotos = (function () {
             prog.textContent = 'Stitching panorama — ' + Math.round(a * 100) + '%';
           }
         });
+        // 2026-09-13: a draft was already inserted and the modal already
+        // closed -- finish it off directly rather than trying to paint a
+        // result into a DOM that no longer exists.
+        if (bgDraftId) { await finalizeBackgroundDraft(bgDraftId, res); return; }
         showStitchResult(res);
       } catch (err) {
+        if (bgDraftId) { await markBackgroundDraftFailed(bgDraftId, err); return; }
         show('pp360-progress', false);
         // ⚠️⚠️ 2026-09-12: name what actually failed rather than a bare,
         // undifferentiated "Could not build the panorama" -- `err.message`
@@ -6008,6 +6074,67 @@ window.ProgressPhotos = (function () {
         UI.toast('Could not build the 360° panorama: ' + reason, 'error');
         show('pp360-step-source', true);
       }
+    }
+
+    // 2026-09-13: the metadata form is validated and saved as a REAL row
+    // right now (stitch_status:'processing', no photo yet) -- the modal
+    // closes immediately afterward, and the in-flight runStitch() call
+    // (already running against videoBlob since haveVideo() kicked it off)
+    // redirects its own completion into finalizeBackgroundDraft/
+    // markBackgroundDraftFailed instead of the interactive showStitchResult
+    // path once it sees bgDraftId set.
+    //
+    // 2026-09-15: ALSO persists the raw video itself (persistDraftVideoForResume,
+    // module-level, below) so this draft can survive the browser closing
+    // entirely -- not just this tab staying open. That persistence is
+    // deliberately best-effort and never blocks or fails the draft save: the
+    // in-flight Pano360.stitchFromVideo(videoBlob, ...) call is already
+    // running against the real in-memory Blob regardless of whether it
+    // succeeds, so a failure here only costs RESUMABILITY, never this
+    // session's own result.
+    async function saveAsBackgroundDraft() {
+      if (bgDraftId) return;   // already backgrounded -- a stray second click
+      var reqErr = requiredFieldsMissing('pp360');
+      if (reqErr) { UI.toast(reqErr, 'warn'); return; }
+      var btn = $('pp360-bgsave');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving draft…'; }
+      var locVals = currentLocValues('pp360');
+      var act = resolveActivity(locVals);
+      var worksList = readWorksMulti('pp360');
+      var tradeList = deriveTradesForWorksList(worksList);
+      var pinData = window.BIM ? BIM.readPinField('pp360') : null;
+      var viewNameEl = $('pp360-viewname');
+      var row = {
+        project_id: pid, created_by: uid, title: '360° photo (processing…)',
+        photo_url: null, thumb_url: null, media_type: '360', stitch_status: 'processing',
+        description: $('pp360-desc').value.trim(),
+        taken_at: $('pp360-date').value || null,
+        trades: tradeList, works_multi: worksList,
+        works_activity_ids: worksActivityIdsFor(worksList),
+        trade: tradeList[0] || null, works: worksList[0] || null,
+        location: locBreadcrumb(locVals) || null, location_values: locVals,
+        view_name: viewNameEl ? viewNameEl.value.trim() : null,
+        activity_id: act ? act.id : null, activity_name: act ? act.name : null,
+        tags: readCodeTags('pp360')
+      };
+      var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
+      if (!w.ok) {
+        UI.toast(w.error && w.error.message || 'Could not save the draft', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Save as draft — keep working'; }
+        return;
+      }
+      bgDraftId = w.id;
+      var persisted = false;
+      try { persisted = await persistDraftVideoForResume(w.id, videoBlob); } catch (e) {}
+      if (pinData && window.BIM && BIM.savePinForItem && w.id) {
+        await BIM.savePinForItem('photo', w.id, pinData);
+      }
+      m.close();
+      UI.toast(persisted
+        ? 'Saved as a draft — it will keep processing even if you close this app; reopening it will pick up right where it left off.'
+        : 'Saved as a draft — keep this tab open until it finishes (its video could not be saved for later, so closing now would lose it).',
+        persisted ? 'ok' : 'warn');
+      await load();
     }
 
     // A pre-processed 360° photo (already equirectangular/cylindrical --
@@ -6061,6 +6188,7 @@ window.ProgressPhotos = (function () {
     };
     if ($('pp360-offlineclose')) $('pp360-offlineclose').onclick = function () { m.close(); };
     if ($('pp360-remove')) $('pp360-remove').onclick = function () { resetPano360(); };
+    if ($('pp360-bgsave')) $('pp360-bgsave').onclick = saveAsBackgroundDraft;
     // Item 6: captures whatever the viewer is CURRENTLY showing, replacing
     // the old separate rep-frame scrubber.
     if ($('pp360-usethumb')) $('pp360-usethumb').onclick = function () {
@@ -6142,6 +6270,210 @@ window.ProgressPhotos = (function () {
     var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
     if (res.error) throw res.error;
     return path;
+  }
+
+  // ============================================================================
+  // 2026-09-15: "draft should be retained for user within or outside session.
+  // when browser app is closed, progress of 360 processing should still be
+  // retained for the user." The 2026-09-13 background-draft feature made the
+  // DRAFT ROW durable (a real progress_photos row, stitch_status:'processing')
+  // but the actual INPUT to the stitch -- the raw recorded video -- lived only
+  // as a JS Blob reference in that one tab's memory. Closing the tab lost the
+  // video forever, leaving the row stuck at 'processing' with nothing left to
+  // resume from (that entry's own "Deliberately SESSION-scoped" note said so
+  // plainly).
+  //
+  // ⚠️⚠️ "Processing continues while the browser is closed" is not literally
+  // achievable here and never will be for a static, no-server-compute app
+  // (this app's own locked architecture decision, CLAUDE.md "2026-06-18") --
+  // nothing runs while every tab is closed. What CAN survive is the WORK: the
+  // uploaded video (progress_photos_360_jobs.video_url, a real Storage
+  // object) and a job record saying it is still owed a stitch. So the stitch
+  // RESTARTS from that stored video the next time any tab opens this project
+  // -- not "resumes mid-frame" -- which is the honest mechanism, stated here
+  // rather than oversold in the UI copy.
+  // ============================================================================
+
+  // Uploads the raw video and records a resumable job for it. Best-effort and
+  // NEVER throws -- called from saveAsBackgroundDraft() after the draft ROW
+  // is already safely saved, so a failure here degrades to the pre-2026-09-15
+  // session-only behaviour (the draft still finishes normally as long as this
+  // tab stays open) rather than losing the draft outright. Returns true only
+  // once BOTH the video and its job record are durably saved.
+  async function persistDraftVideoForResume(photoId, videoBlob) {
+    var videoPath;
+    try {
+      videoPath = await uploadFile(blobToFile(videoBlob, 'video'));
+    } catch (e) {
+      return false;   // couldn't even upload the video -- stays session-only, as before this feature
+    }
+    try {
+      var jres = await sb().from(JOBS_TABLE).insert({
+        project_id: pid, photo_id: photoId, video_url: videoPath,
+        status: 'processing', attempts: 1,
+        claimed_by: uid, claimed_at: new Date().toISOString(),
+        created_by: uid
+      }).select();
+      if (jres.error) { try { await sb().storage.from(BUCKET).remove([videoPath]); } catch (e2) {} return false; }
+      return true;
+    } catch (e) {
+      // Almost always the table not existing yet (migration not run) --
+      // clean up the now-orphaned video rather than leaving it in Storage
+      // with no record of it anywhere.
+      try { await sb().storage.from(BUCKET).remove([videoPath]); } catch (e2) {}
+      return false;
+    }
+  }
+
+  // Deletes the temporary job row + its stored video once a draft no longer
+  // needs either -- a genuine success (nothing left to resume), or a job
+  // that has exhausted every automatic retry (see markBackgroundDraftFailed).
+  // Best-effort: a leftover job row after this is harmless clutter, never a
+  // correctness problem, since resumePending360Jobs() always re-checks the
+  // photo's own stitch_status before trusting a job is still real work.
+  async function cleanupJobForPhoto(photoId) {
+    try {
+      var jr = await sb().from(JOBS_TABLE).select('id, video_url').eq('photo_id', photoId).limit(1);
+      var job = jr && jr.data && jr.data[0];
+      if (!job) return;
+      if (job.video_url) { try { await sb().storage.from(BUCKET).remove([job.video_url]); } catch (e) {} }
+      await sb().from(JOBS_TABLE).delete().eq('id', job.id);
+    } catch (e) {}
+  }
+
+  // ⚠️⚠️ Reuses uploadThumbnailFor() -- the SAME client-side downscale this
+  // module already generates for every ordinary photo upload -- as the
+  // automatic thumbnail here, rather than the interactive flow's "frame the
+  // Pannellum viewer, then press Use this view" gesture: there is no modal/
+  // viewer left to frame anything in once this runs, and the stitched
+  // panorama IS a real image file, so the exact same downscale helper
+  // applies to it unchanged. Called both by the interactive/session flow
+  // (open360Upload's runStitch) and by a resumed job (resumeOneJob, below)
+  // -- one function, so the two paths can never disagree about what
+  // "finished" means.
+  async function finalizeBackgroundDraft(photoId, res) {
+    try {
+      var stitchFile = blobToFile(res.blob, 'photo');
+      var mainPath = await uploadFile(stitchFile);
+      var thumbPath = await uploadThumbnailFor(stitchFile, mainPath);
+      var patch = { photo_url: mainPath, stitch_status: null, title: stitchFile.name };
+      if (thumbPath) patch.thumb_url = thumbPath;
+      var w = await tolerantWrite({ table: TABLE, op: 'update', id: photoId, patch: patch });
+      if (!w.ok) { await markBackgroundDraftFailed(photoId, w.error || new Error('Could not save the finished panorama')); return; }
+      await cleanupJobForPhoto(photoId);
+      await load();
+      UI.toast('360° photo finished processing' + (res.quality === 'poor' ? ' (low confidence stitch)' : ''), 'ok');
+    } catch (err) {
+      await markBackgroundDraftFailed(photoId, err);
+    }
+  }
+
+  // A failed draft's photo row is always marked 'failed', never deleted --
+  // the documented recovery (delete + re-add) is still the way out once every
+  // automatic retry is spent. What changed 2026-09-15: if a resumable job
+  // record still exists for this photo, its own attempts count decides
+  // whether it is kept (for resumePending360Jobs() to retry again on a
+  // future load) or cleaned up for good (PENDING_360_MAX_ATTEMPTS reached --
+  // no further retry will ever read that stored video, so its Storage
+  // object is freed rather than left there forever).
+  async function markBackgroundDraftFailed(photoId, err) {
+    var reason = (err && err.message) ? err.message : 'an unknown error';
+    try { await tolerantWrite({ table: TABLE, op: 'update', id: photoId, patch: { stitch_status: 'failed' } }); } catch (e) {}
+    try {
+      var jr = await sb().from(JOBS_TABLE).select('id, attempts, video_url').eq('photo_id', photoId).limit(1);
+      var job = jr && jr.data && jr.data[0];
+      if (job) {
+        if ((job.attempts || 0) >= PENDING_360_MAX_ATTEMPTS) {
+          if (job.video_url) { try { await sb().storage.from(BUCKET).remove([job.video_url]); } catch (e2) {} }
+          try { await sb().from(JOBS_TABLE).delete().eq('id', job.id); } catch (e2) {}
+        } else {
+          try { await sb().from(JOBS_TABLE).update({ status: 'failed', error_message: String(reason).slice(0, 500) }).eq('id', job.id); } catch (e2) {}
+        }
+      }
+    } catch (e) {}
+    await load();
+    UI.toast('Could not finish processing a 360° draft (' + reason + ') — delete it and try again.', 'error');
+  }
+
+  // Fetches the raw video bytes for a resumable job, the same signed-URL
+  // convention every other file read in this module already uses (never
+  // Storage's own .download() -- this file has no precedent for it).
+  async function fetchStorageBlob(path) {
+    var signed = await sb().storage.from(BUCKET).createSignedUrl(path, SIGN_TTL);
+    if (signed.error || !signed.data) throw (signed.error || new Error('Could not sign the stored video'));
+    var resp = await fetch(signed.data.signedUrl);
+    if (!resp.ok) throw new Error('Could not download the stored video (HTTP ' + resp.status + ')');
+    return await resp.blob();
+  }
+
+  // Re-runs the stitch for one already-claimed job, entirely outside the
+  // Add-360°-photo modal (there is none open during a resume) -- so it routes
+  // straight into the SAME finalize/fail functions the interactive flow uses,
+  // with no progress UI beyond the gallery tile's own existing "Processing…"
+  // placeholder (thumb(), see the 2026-09-13 entry) and the one-time toast in
+  // resumePending360Jobs() below.
+  async function resumeOneJob(job) {
+    try {
+      var videoBlob = await fetchStorageBlob(job.video_url);
+      var res = await Pano360.stitchFromVideo(videoBlob, function () {});
+      await finalizeBackgroundDraft(job.photo_id, res);
+    } catch (err) {
+      await markBackgroundDraftFailed(job.photo_id, err);
+    }
+  }
+
+  // Three plain queries, not one `.or()` filter string -- matches this same
+  // file's own established rule for exactly this trade-off (findPresentationUsage,
+  // above): a hand-built `or()` string is fiddly to get right for no real
+  // benefit here. Each query is independently simple to read and to test.
+  async function fetchResumableJobs() {
+    var branches = [
+      function (q) { return q.eq('status', 'queued'); },
+      function (q) { return q.eq('status', 'failed'); },
+      function (q) { return q.eq('status', 'processing').lt('claimed_at', new Date(Date.now() - PENDING_360_STALE_MS).toISOString()); }
+    ];
+    var all = [];
+    for (var i = 0; i < branches.length; i++) {
+      var q = branches[i](sb().from(JOBS_TABLE).select('*').eq('project_id', pid).lt('attempts', PENDING_360_MAX_ATTEMPTS));
+      var res = await q;
+      if (res.error) throw res.error;   // table missing (pre-migration), or a real network error --
+                                          // caller degrades silently either way
+      if (res.data) all = all.concat(res.data);
+    }
+    return all;
+  }
+
+  var _resuming360 = false;
+  // Called once per project load/switch (init() and the project <select>'s
+  // onchange, both below). Claims every eligible job with an explicit
+  // conditional UPDATE ("`.eq('status', job.status)`, then check a row
+  // actually came back") -- the same 0-rows-means-someone-else-got-there-
+  // first pattern this app already relies on elsewhere (boq_tag_activities,
+  // retractRequest) -- so two tabs/devices open on the same project can
+  // never both re-stitch the same job.
+  async function resumePending360Jobs() {
+    if (_resuming360 || !pid) return;
+    _resuming360 = true;
+    try {
+      var candidates;
+      try { candidates = await fetchResumableJobs(); } catch (e) { return; }
+      if (!candidates.length) return;
+      var claimed = [];
+      for (var i = 0; i < candidates.length; i++) {
+        var job = candidates[i];
+        var cres = await sb().from(JOBS_TABLE).update({
+          status: 'processing', claimed_by: uid, claimed_at: new Date().toISOString(),
+          attempts: (job.attempts || 0) + 1
+        }).eq('id', job.id).eq('status', job.status).select();
+        if (!cres.error && cres.data && cres.data.length) claimed.push(job);
+      }
+      if (!claimed.length) return;
+      UI.toast('Resuming ' + claimed.length + ' background 360° photo' + (claimed.length === 1 ? '' : 's') +
+        ' from where you left off…', 'ok');
+      for (var j = 0; j < claimed.length; j++) { await resumeOneJob(claimed[j]); }
+    } finally {
+      _resuming360 = false;
+    }
   }
 
   // Item 1 (2026-08-30, fourth feedback round): "photo loading is still quite
@@ -7100,6 +7432,19 @@ window.ProgressPhotos = (function () {
     // other hook above.
     _mountPannellumViewer: function (container, url, hOverW) { return mountPannellumViewer(container, url, hOverW); },
     _captureViewerThumbnail: function (containerEl, cb) { return captureViewerThumbnail(containerEl, cb); },
-    _startPanoYawPoll: function (viewer, onYawChange) { return startPanoYawPoll(viewer, onYawChange); }
+    _startPanoYawPoll: function (viewer, onYawChange) { return startPanoYawPoll(viewer, onYawChange); },
+    // Test-only hooks (2026-09-15 — 360 background drafts survive the browser
+    // closing) — genuinely EXECUTE the real, shipped functions against the
+    // fake store, never a re-description of them. _setPidUid mirrors the
+    // established _setCanWrite hook: this module's own test harness never
+    // calls init()/load(), so pid/uid have no other way to be set for a test.
+    _setPidUid: function (p, u) { pid = p; uid = u; },
+    _persistDraftVideoForResume: function (photoId, videoBlob) { return persistDraftVideoForResume(photoId, videoBlob); },
+    _cleanupJobForPhoto: function (photoId) { return cleanupJobForPhoto(photoId); },
+    _finalizeBackgroundDraft: function (photoId, res) { return finalizeBackgroundDraft(photoId, res); },
+    _markBackgroundDraftFailed: function (photoId, err) { return markBackgroundDraftFailed(photoId, err); },
+    _fetchResumableJobs: function () { return fetchResumableJobs(); },
+    _resumePending360Jobs: function () { return resumePending360Jobs(); },
+    _resumeOneJob: function (job) { return resumeOneJob(job); }
   };
 })();

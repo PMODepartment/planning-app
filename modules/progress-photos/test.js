@@ -24,6 +24,7 @@ function eq(name, a, b) { ok(name, JSON.stringify(a) === JSON.stringify(b), 'got
 // ---------------------------------------------------------------- fake store --
 const store = {
   progress_photos: [],
+  progress_photos_360_jobs: [],
   ppr_presentations: [],
   ppr_slides: [],
   location_levels: [],
@@ -44,6 +45,9 @@ function makeQuery(table) {
     neq() { return q; },
     in() { return q; },
     gt(col, val) { filters.push(['__gt', [col, val]]); return q; },
+    // 2026-09-15: needed by fetchResumableJobs()/its attempts cap and by the
+    // stale-processing-job reclaim window — real Supabase-js `.lt()`.
+    lt(col, val) { filters.push(['__lt', [col, val]]); return q; },
     order() { return q; },
     limit() { return q; },
     insert(patch) {
@@ -61,6 +65,7 @@ function makeQuery(table) {
     return list.filter((r) =>
       filters.every(([c, v]) => {
         if (c === '__gt') return String(r[v[0]]) > String(v[1]);
+        if (c === '__lt') return String(r[v[0]]) < String(v[1]);
         return r[c] === v;
       })
     );
@@ -68,8 +73,17 @@ function makeQuery(table) {
   function run() {
     if (q.__inserted) return { data: q.__inserted, error: null };
     if (q.__update) {
-      apply(store[table]).forEach((r) => Object.assign(r, q.__update));
-      return { data: null, error: null };
+      const matched = apply(store[table]);
+      matched.forEach((r) => Object.assign(r, q.__update));
+      // 2026-09-15: real Supabase-js `.update(...).select()` returns the
+      // rows the UPDATE actually matched (post-update) — resumePending360Jobs()'s
+      // whole claim-race protection depends on being able to tell "my
+      // conditional UPDATE matched 0 rows" (someone else claimed it first)
+      // apart from "it matched and I now own it". Without this the harness
+      // could never tell those two outcomes apart, which is exactly the
+      // false-positive-proof-of-nothing trap this repo's own history warns
+      // about repeatedly.
+      return { data: q.__select ? matched : null, error: null };
     }
     if (q.__delete) {
       const del = apply(store[table]);
@@ -78,6 +92,14 @@ function makeQuery(table) {
       if (table === 'ppr_presentations') {
         const ids = del.map((d) => d.id);
         store.ppr_slides = store.ppr_slides.filter((s) => !ids.includes(s.ppr_id));
+      }
+      // 2026-09-15: progress_photos_360_jobs.photo_id references
+      // progress_photos(id) on delete cascade — deleting a draft's photo row
+      // (the module's own existing batch/row delete) must not leave its job
+      // record (and the video it points at) orphaned forever.
+      if (table === 'progress_photos' && store.progress_photos_360_jobs) {
+        const ids = del.map((d) => d.id);
+        store.progress_photos_360_jobs = store.progress_photos_360_jobs.filter((j) => !ids.includes(j.photo_id));
       }
       // Real Supabase-js .delete().select() returns the rows it actually
       // deleted — several delete paths in this module (e.g. openBatchDeleteConfirm)
@@ -92,6 +114,14 @@ function makeQuery(table) {
 }
 
 const signed = {};
+// 2026-09-15: tracks every Storage path `.remove()` is called with, across the
+// WHOLE test run — used to prove the temporary-video-cleanup paths
+// (persistDraftVideoForResume's rollback, cleanupJobForPhoto,
+// markBackgroundDraftFailed's exhaustion cleanup) actually free the object
+// rather than leaving it in Storage forever. Assertions diff its LENGTH
+// before/after their own scenario rather than assuming it starts empty, since
+// it is shared across every section in this file.
+const removedPaths = [];
 const sbStub = {
   from: (t) => makeQuery(t),
   // Models set_photo_favorite() (migrations/2026-09-07-progress-photos-
@@ -114,7 +144,7 @@ const sbStub = {
       }),
       createSignedUrl: async (p) => ({ data: { signedUrl: 'signed://' + p }, error: null }),
       upload: async (path) => { signed[path] = 1; return { data: { path }, error: null }; },
-      remove: async () => ({ error: null }),
+      remove: async (paths) => { removedPaths.push(...(Array.isArray(paths) ? paths : [paths])); return { error: null }; },
     }),
   },
 };
@@ -387,8 +417,10 @@ ok('a chosen Works value is resolved back to its schedule activity_id for tracea
    /function worksActivityIdFor\(name\) \{[\s\S]{0,300}return \(act && act\.activity_id\) \|\| null;/.test(mjs));
 // Overnight batch item 3: open360Upload's save handler builds a THIRD
 // `row` literal with the same shape (Add/Edit/360), so the count goes 2 -> 3.
-eq('Add, Edit AND the 360 upload each store the index-aligned works_activity_ids array alongside works_multi',
-   (mjs.match(/works_activity_ids: worksActivityIdsFor\(worksList\)/g) || []).length, 3);
+// 2026-09-13: saveAsBackgroundDraft() builds a FOURTH — the draft row a
+// background 360 stitch saves before the panorama even exists — so 3 -> 4.
+eq('Add, Edit, the 360 upload AND the 360 background draft each store the index-aligned works_activity_ids array alongside works_multi',
+   (mjs.match(/works_activity_ids: worksActivityIdsFor\(worksList\)/g) || []).length, 4);
 ok('tolerantWrite degrades gracefully (strips works_activity_ids and warns) when that migration has not run yet',
    /job\.patch && \('works_activity_ids' in job\.patch\)\)/.test(mjs));
 
@@ -426,8 +458,8 @@ ok('the "Location label" free-text input is gone (item 2 — "redundant")', !/-l
 ok('locationFieldHTML now ALSO takes a required view-name field, seeded from the existing value', /function locationFieldHTML\(idPrefix, existingValues, existingViewName\)/.test(mjs));
 ok('the view-name input is REQUIRED and pre-filled from the existing value on Edit', /id="' \+ idPrefix \+ '-viewname" value="' \+ Fmt\.esc\(existingViewName \|\| ''\) \+ '" required \/>/.test(mjs));
 ok('Edit passes the photo\'s own view_name through to locationFieldHTML', /locationFieldHTML\('pp-e', r\.location_values \|\| \{\}, r\.view_name\)/.test(mjs));
-ok('location is derived purely from the breakdown breadcrumb on save (Add, Edit AND the 360 upload)',
-   (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 3);
+ok('location is derived purely from the breakdown breadcrumb on save (Add, Edit, the 360 upload AND the 360 background draft)',
+   (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 4);
 // ⚠️ The gap between works_multi and trade widened when works_activity_ids
 // (2026-09-07, Project Schedule integration) was inserted between them —
 // the old {0,60} bound was too tight to span it (69 chars), which made
@@ -435,8 +467,8 @@ ok('location is derived purely from the breakdown breadcrumb on save (Add, Edit 
 // and untouched. Widened to fit that real, intentional field.
 ok('the insert/update payload now carries the UNION of every chosen Works value\'s derived trades + all chosen works in the array columns',
    /trades: tradeList,[\s\S]{0,120}works_multi: worksList,[\s\S]{0,120}trade: tradeList\[0\] \|\| null,[\s\S]{0,60}works: worksList\[0\] \|\| null,/.test(mjs));
-ok('the payload also carries view_name from the (now-mandatory) field, on Add, Edit AND the 360 upload',
-   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 3);
+ok('the payload also carries view_name from the (now-mandatory) field, on Add, Edit, the 360 upload AND the 360 background draft',
+   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 4);
 ok('tolerantWrite gained a strip-rule for view_name, naming the migration file if it is missing',
    /'view_name' in job\.patch/.test(mjs) && /migrations\/2026-08-30-photos-round2\.sql/.test(mjs));
 ok('tolerantWrite also retries without trades/works_multi if that migration has not run yet',
@@ -4550,6 +4582,355 @@ console.log('\n[misc] insert().select() returns the new row id');
        JSON.stringify(P360._featherStops(10, 0.9)), JSON.stringify({ marginPx: 5, stopFrac: 0.5 }));
     eq('featherStops: a tiny frame still gets at least a 4px margin (never zero, which would make the gradient a no-op)',
        P360._featherStops(20, 0.01).marginPx, 4);
+  })();
+
+  console.log('\n[58] 2026-09-13: "allow uploading 360 as draft during the session to work the stitching in the background" — a background stitch job, detached from the modal');
+
+  (function () {
+    const draftMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-09-13-progress-photos-360-draft-status.sql');
+    const draftSql = fs.readFileSync(draftMigrationFile, 'utf8');
+    ok('migration adds progress_photos.stitch_status, idempotently',
+       /alter table progress_photos add column if not exists stitch_status text/.test(draftSql));
+    ok('folded into supabase-schema.sql',
+       /stitch_status text/.test(fs.readFileSync(schemaFile, 'utf8')));
+
+    // The button exists, is inside the (session-only) progress block, and
+    // is wired to saveAsBackgroundDraft — never a second, competing click
+    // handler.
+    ok('"Save as draft" button is rendered inside #pp360-progress, beside the progress text',
+       /id="pp360-progress" hidden>' \+\s*\n\s*'<div class="pp-progress" id="pp360-prog"><\/div>' \+\s*\n\s*'<button type="button" class="pd-btn" id="pp360-bgsave">Save as draft/.test(mjs));
+    ok('the button is wired to saveAsBackgroundDraft (exactly once)',
+       (mjs.match(/\$\('pp360-bgsave'\)\.onclick = saveAsBackgroundDraft;/g) || []).length === 1);
+
+    // bgDraftId is the ONE flag that decides whether runStitch()'s already
+    // in-flight promise finishes into the interactive modal (showStitchResult)
+    // or into the two background-only paths — asserted structurally, since
+    // genuinely driving this needs the full modal DOM + a real Pano360 call,
+    // which this harness does not build for the (already-verified-elsewhere)
+    // interactive 360 flow either.
+    ok('runStitch\'s progress callback stops touching the (possibly torn-down) modal DOM once bgDraftId is set',
+       /if \(bgDraftId \|\| !prog\) return;/.test(mjs));
+    ok('a successful stitch redirects to finalizeBackgroundDraft instead of showStitchResult when backgrounded',
+       /if \(bgDraftId\) \{ await finalizeBackgroundDraft\(bgDraftId, res\); return; \}\s*\n\s*showStitchResult\(res\);/.test(mjs));
+    ok('a failed stitch redirects to markBackgroundDraftFailed instead of the interactive error toast when backgrounded',
+       /if \(bgDraftId\) \{ await markBackgroundDraftFailed\(bgDraftId, err\); return; \}/.test(mjs));
+
+    // saveAsBackgroundDraft: same required-field gate as the ordinary save
+    // path (requiredFieldsMissing('pp360')), inserts with stitch_status
+    // 'processing' and no photo yet, then closes the modal and refreshes —
+    // it must never proceed past a validation failure or a failed insert.
+    ok('saveAsBackgroundDraft validates required fields before inserting anything',
+       /async function saveAsBackgroundDraft\(\) \{\s*\n\s*if \(bgDraftId\) return;.*\n\s*var reqErr = requiredFieldsMissing\('pp360'\);\s*\n\s*if \(reqErr\) \{ UI\.toast\(reqErr, 'warn'\); return; \}/.test(mjs));
+    ok('the draft row is inserted with photo_url/thumb_url null and stitch_status \'processing\'',
+       /photo_url: null, thumb_url: null, media_type: '360', stitch_status: 'processing',/.test(mjs));
+    // ⚠️ 2026-09-15: the button also resets its own label back on a failed
+    // insert now (it was set to "Saving draft…" the moment the click
+    // started) — the regex was widened to allow that extra statement rather
+    // than the exact old `if (btn) btn.disabled = false;` line, since the
+    // property under test (re-enable, never close, never set bgDraftId) is
+    // unchanged.
+    ok('a failed insert re-enables the button and returns WITHOUT setting bgDraftId or closing the modal',
+       /if \(!w\.ok\) \{\s*\n\s*UI\.toast\(w\.error && w\.error\.message \|\| 'Could not save the draft', 'error'\);\s*\n\s*if \(btn\) \{ btn\.disabled = false;[^\n]*\}\s*\n\s*return;\s*\n\s*\}/.test(mjs));
+    ok('only on a successful insert does bgDraftId get set and the modal close',
+       /bgDraftId = w\.id;[\s\S]{0,400}m\.close\(\);/.test(mjs));
+
+    // finalizeBackgroundDraft reuses the SAME client-side thumbnail helper
+    // every ordinary photo upload already uses (uploadThumbnailFor) — never
+    // a second thumbnailing mechanism, and never the interactive flow's
+    // viewer-framed "Use this view" gesture, which has nothing to frame
+    // once the modal is gone.
+    ok('finalizeBackgroundDraft uploads the stitched image, generates its thumbnail via the shared uploadThumbnailFor(), and clears stitch_status back to normal',
+       /async function finalizeBackgroundDraft\(photoId, res\) \{[\s\S]*?var mainPath = await uploadFile\(stitchFile\);[\s\S]*?var thumbPath = await uploadThumbnailFor\(stitchFile, mainPath\);[\s\S]*?stitch_status: null/.test(mjs));
+    ok('a finalize failure (thrown OR a failed write) routes to markBackgroundDraftFailed rather than silently leaving the row stuck at \'processing\'',
+       /if \(!w\.ok\) \{ await markBackgroundDraftFailed\(photoId, w\.error \|\| new Error\('Could not save the finished panorama'\)\); return; \}/.test(mjs) &&
+       /\} catch \(err\) \{\s*\n\s*await markBackgroundDraftFailed\(photoId, err\);\s*\n\s*\}\s*\n\s*\}/.test(mjs));
+    ok('markBackgroundDraftFailed marks the row failed (never deletes it) and names the real reason in the toast',
+       /async function markBackgroundDraftFailed\(photoId, err\) \{[\s\S]*?patch: \{ stitch_status: 'failed' \}/.test(mjs));
+
+    // Gallery tile rendering: a processing/failed 360 row must read as
+    // "still working"/"failed" rather than the generic "Preview unavailable"
+    // placeholder, and must never carry data-act="open" (nothing to open).
+    ok('a processing 360 draft renders a distinct, non-clickable "Processing…" tile',
+       /if \(r\.stitch_status === 'processing'\) return '<div class="' \+ cls \+ ' pp-noimg pp-360processing"/.test(mjs) &&
+       !/pp-360processing"[^']*data-act="open"/.test(mjs));
+    ok('a failed background stitch renders a distinct, non-clickable "Failed" tile, still checked in this same 360 branch (so it can never fall through to the generic no-preview placeholder)',
+       /if \(r\.stitch_status === 'failed'\) return '<div class="' \+ cls \+ ' pp-noimg pp-360failed"/.test(mjs));
+
+    ok('the two new tile classes have real CSS (not orphaned)',
+       /\.pp-360processing, \.pp-360failed \{/.test(css) && /\.pp-360proclabel \{/.test(css));
+
+    // Reused-not-reinvented: the draft goes through the exact same
+    // tolerantWrite()/uploadFile()/uploadThumbnailFor() every other capture
+    // in this module already uses — no second upload or write path.
+    ok('the draft insert AND its later update both go through tolerantWrite(), never a bare sb() call',
+       /var w = await tolerantWrite\(\{ table: TABLE, op: 'insert', patch: row \}\);\s*\n\s*if \(!w\.ok\) \{\s*\n\s*UI\.toast\(w\.error && w\.error\.message \|\| 'Could not save the draft'/.test(mjs) &&
+       /var w = await tolerantWrite\(\{ table: TABLE, op: 'update', id: photoId, patch: patch \}\);/.test(mjs));
+  })();
+
+  console.log('\n[59] 2026-09-15: "draft should be retained ... within or outside session ... when browser app is closed, progress of 360 processing should still be retained" — a real, resumable video, not just a session-scoped Blob');
+
+  await (async function () {
+    const jobsMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-09-15-progress-photos-360-background-jobs.sql');
+    const jobsSql = fs.readFileSync(jobsMigrationFile, 'utf8');
+    ok('migration creates progress_photos_360_jobs, idempotently',
+       /create table if not exists progress_photos_360_jobs/.test(jobsSql));
+    ok('photo_id references progress_photos ON DELETE CASCADE — deleting a draft photo cannot orphan its job',
+       /photo_id\s+uuid references progress_photos\(id\) on delete cascade/.test(jobsSql));
+    ok('status is constrained to the three real states',
+       /check \(status in \('queued', 'processing', 'failed'\)\)/.test(jobsSql));
+    ok('RLS enabled, every policy dropped-before-created (idempotent re-run)',
+       /alter table progress_photos_360_jobs enable row level security/.test(jobsSql) &&
+       (jobsSql.match(/drop policy if exists progress_photos_360_jobs_/g) || []).length === 4);
+    // ⚠️⚠️ The one deliberate deviation from this app's generic module-table
+    // RLS shape (created_by = auth.uid() or is_admin()) — UPDATE must be
+    // claimable by ANY project writer, not just the row's own creator, or a
+    // second tab/device could never finish a draft the first one abandoned.
+    ok('UPDATE carries NO owner restriction — any project writer may claim/finish a job someone else started',
+       /create policy progress_photos_360_jobs_upd on progress_photos_360_jobs\s*\n\s*for update using \(is_writer\(\) and can_access_project\(project_id\)\)\s*\n\s*with check \(is_writer\(\) and can_access_project\(project_id\)\)/.test(jobsSql) &&
+       !/progress_photos_360_jobs_upd[\s\S]{0,200}created_by/.test(jobsSql));
+    ok('grants authenticated select/insert/update/delete (standalone migration, unlike the folded-in schema copy which relies on the blanket grant)',
+       /grant select, insert, update, delete on progress_photos_360_jobs to authenticated/.test(jobsSql));
+    ok('folded into supabase-schema.sql',
+       /create table if not exists progress_photos_360_jobs/.test(fs.readFileSync(schemaFile, 'utf8')));
+    ok('regenerated into supabase-build.sql and migrations/VERIFY-schema.sql (the two derived files this repo keeps in sync with every migration)',
+       /progress_photos_360_jobs/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'supabase-build.sql'), 'utf8')) &&
+       /progress_photos_360_jobs/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', 'VERIFY-schema.sql'), 'utf8')));
+
+    // ---------------------------------------------------------- wiring -------
+    ok('saveAsBackgroundDraft persists the video for resume AFTER the draft row exists, and never lets that persistence block or fail the draft save',
+       /bgDraftId = w\.id;\s*\n\s*var persisted = false;\s*\n\s*try \{ persisted = await persistDraftVideoForResume\(w\.id, videoBlob\); \} catch \(e\) \{\}/.test(mjs));
+    ok('the closing toast honestly names which outcome happened (survives closing the app, vs. keep this tab open)',
+       /UI\.toast\(persisted\s*\n\s*\? 'Saved as a draft — it will keep processing even if you close this app[\s\S]{0,120}\n\s*: 'Saved as a draft — keep this tab open/.test(mjs));
+    ok('resumePending360Jobs() is called from BOTH init() and the project <select> onchange handler — a project switch must resume that project\'s own pending jobs too, not only the very first load',
+       (mjs.match(/resumePending360Jobs\(\)\.catch\(function \(e\) \{ console\.error\(e\); \}\);/g) || []).length === 2);
+    ok('finalizeBackgroundDraft cleans up the temporary job/video on a genuine success — nothing left to resume once the photo itself is done',
+       /await cleanupJobForPhoto\(photoId\);\s*\n\s*await load\(\);/.test(mjs));
+    ok('markBackgroundDraftFailed keeps the job (for a future automatic retry) while attempts remain, and only deletes it (freeing its Storage video) once PENDING_360_MAX_ATTEMPTS is reached',
+       /if \(\(job\.attempts \|\| 0\) >= PENDING_360_MAX_ATTEMPTS\) \{[\s\S]*?await sb\(\)\.from\(JOBS_TABLE\)\.delete\(\)\.eq\('id', job\.id\);/.test(mjs) &&
+       /\} else \{\s*\n\s*try \{ await sb\(\)\.from\(JOBS_TABLE\)\.update\(\{ status: 'failed'/.test(mjs));
+    ok('fetchResumableJobs is three plain queries, not one .or() filter string (this file\'s own established rule — see findPresentationUsage)',
+       /async function fetchResumableJobs\(\) \{[\s\S]*?function \(q\) \{ return q\.eq\('status', 'queued'\); \},[\s\S]*?function \(q\) \{ return q\.eq\('status', 'failed'\); \},[\s\S]*?function \(q\) \{ return q\.eq\('status', 'processing'\)\.lt\('claimed_at',/.test(mjs) &&
+       !/fetchResumableJobs[\s\S]{0,600}\.or\(/.test(mjs));
+    ok('every branch of fetchResumableJobs excludes a job that has exhausted its retries (.lt(\'attempts\', PENDING_360_MAX_ATTEMPTS))',
+       /sb\(\)\.from\(JOBS_TABLE\)\.select\('\*'\)\.eq\('project_id', pid\)\.lt\('attempts', PENDING_360_MAX_ATTEMPTS\)/.test(mjs));
+    ok('resumePending360Jobs claims with a CONDITIONAL update keyed on the job\'s own status at read time, then checks a row actually came back — the same 0-rows-means-someone-else-got-there-first pattern this app already relies on elsewhere',
+       /\.eq\('id', job\.id\)\.eq\('status', job\.status\)\.select\(\);\s*\n\s*if \(!cres\.error && cres\.data && cres\.data\.length\) claimed\.push\(job\);/.test(mjs));
+    ok('a resumed job reuses fetchStorageBlob (the same signed-URL convention every other file read in this module already uses) and the SAME Pano360.stitchFromVideo the interactive flow calls — never a second stitch implementation',
+       /async function resumeOneJob\(job\) \{[\s\S]*?var videoBlob = await fetchStorageBlob\(job\.video_url\);[\s\S]*?var res = await Pano360\.stitchFromVideo\(videoBlob, function \(\) \{\}\);/.test(mjs));
+    ok('resumePending360Jobs toasts how many jobs it is resuming, but only once at least one was actually claimed',
+       /if \(!claimed\.length\) return;\s*\n\s*UI\.toast\('Resuming '/.test(mjs));
+
+    // ----------------------------------------------- genuine execution -------
+    // "run multiple tests to check like a senior software engineer" — every
+    // scenario below drives the REAL, shipped functions against the fake
+    // store, not a re-description of them.
+
+    PP._setPidUid('DEMO01', 'user-1');
+
+    function seedPhoto(status) {
+      const id = nid('progress_photos');
+      store.progress_photos.push({
+        id, project_id: 'DEMO01', title: '360° photo (processing…)',
+        photo_url: null, thumb_url: null, media_type: '360', stitch_status: status || 'processing',
+        created_by: 'user-1',
+      });
+      return id;
+    }
+    function seedJob(photoId, over) {
+      const id = nid('progress_photos_360_jobs');
+      store.progress_photos_360_jobs.push(Object.assign({
+        id, project_id: 'DEMO01', photo_id: photoId, video_url: 'DEMO01/vid_' + id + '.webm',
+        status: 'queued', attempts: 0, claimed_by: null, claimed_at: null, created_by: 'user-1',
+      }, over || {}));
+      return id;
+    }
+
+    // Scenario (a): the draft video is uploaded and a job durably recorded —
+    // this is what makes a draft survive the browser closing at all.
+    await (async function () {
+      const photoId = seedPhoto();
+      const before = store.progress_photos_360_jobs.length;
+      const ok1 = await PP._persistDraftVideoForResume(photoId, { type: 'video/webm', name: 'x' });
+      ok('scenario a — persistDraftVideoForResume returns true on a clean upload + insert',
+         ok1 === true);
+      ok('scenario a — exactly one job row now exists for this photo, status processing, attempts 1, claimed by this session',
+         store.progress_photos_360_jobs.length === before + 1);
+      const job = store.progress_photos_360_jobs.find((j) => j.photo_id === photoId);
+      ok('scenario a — job fields are correct',
+         !!job && job.status === 'processing' && job.attempts === 1 && job.claimed_by === 'user-1' && !!job.video_url);
+    })();
+
+    // Scenario (b): the video upload itself fails (offline, quota, …) — the
+    // draft must degrade to session-only, not throw, and must not leave a
+    // half-created job row behind.
+    await (async function () {
+      const photoId = seedPhoto();
+      const realFrom = sbStub.storage.from;
+      sbStub.storage.from = () => ({
+        createSignedUrls: async () => ({ data: [], error: null }),
+        createSignedUrl: async () => ({ data: null, error: { message: 'unreachable' } }),
+        upload: async () => ({ data: null, error: { message: 'network unreachable' } }),
+        remove: async () => ({ error: null }),
+      });
+      try {
+        const before = store.progress_photos_360_jobs.length;
+        const result = await PP._persistDraftVideoForResume(photoId, { type: 'video/webm' });
+        ok('scenario b — a failed video upload degrades to false (session-only), never throws',
+           result === false);
+        ok('scenario b — no job row was created for a video that never made it to Storage',
+           store.progress_photos_360_jobs.length === before);
+      } finally { sbStub.storage.from = realFrom; }
+    })();
+
+    // Scenario (c) — "it is possible to write add new database... for
+    // temporary storage" not having been RUN yet (a real, expected state on
+    // a fresh deploy): the whole table is missing. persistDraftVideoForResume
+    // must still degrade to false and clean up the now-orphaned video rather
+    // than leaving it in Storage with no record of it anywhere.
+    await (async function () {
+      const photoId = seedPhoto();
+      const removedBefore = removedPaths.length;
+      const saved = store.progress_photos_360_jobs;
+      store.progress_photos_360_jobs = undefined;
+      try {
+        const result = await PP._persistDraftVideoForResume(photoId, { type: 'video/webm' });
+        ok('scenario c — migration not run (table missing) degrades to false, exactly like the pre-2026-09-15 session-only behaviour',
+           result === false);
+        ok('scenario c — the orphaned video upload is cleaned up rather than left in Storage forever',
+           removedPaths.length === removedBefore + 1);
+      } finally { store.progress_photos_360_jobs = saved; }
+    })();
+
+    // Scenario (d) — the FK cascade: deleting a draft's photo row (the
+    // module's own ordinary batch/row delete) must not orphan its job.
+    await (async function () {
+      const photoId = seedPhoto();
+      seedJob(photoId);
+      ok('scenario d (setup) — job exists before the photo is deleted',
+         store.progress_photos_360_jobs.some((j) => j.photo_id === photoId));
+      await sbStub.from('progress_photos').delete().eq('id', photoId);
+      ok('scenario d — deleting the photo row cascades and removes its job row too (on delete cascade)',
+         !store.progress_photos_360_jobs.some((j) => j.photo_id === photoId));
+    })();
+
+    // Scenario (e) — the actual race this whole claim mechanism exists to
+    // prevent: two tabs/devices reading the SAME queued job and both trying
+    // to claim it. Only one may ever win.
+    await (async function () {
+      const photoId = seedPhoto();
+      const jobId = seedJob(photoId);
+      const snapshot = { status: 'queued' };   // what BOTH tabs read before either claims
+      const claimA = await sbStub.from('progress_photos_360_jobs')
+        .update({ status: 'processing', claimed_by: 'user-1', claimed_at: new Date().toISOString(), attempts: 1 })
+        .eq('id', jobId).eq('status', snapshot.status).select();
+      ok('scenario e — the FIRST claim, keyed on the status it actually read, succeeds and returns the row',
+         claimA.data && claimA.data.length === 1);
+      const claimB = await sbStub.from('progress_photos_360_jobs')
+        .update({ status: 'processing', claimed_by: 'user-2', claimed_at: new Date().toISOString(), attempts: 1 })
+        .eq('id', jobId).eq('status', snapshot.status).select();
+      ok('scenario e — the SECOND claim, from the SAME stale snapshot, matches ZERO rows — the real row has already moved on, so it cannot win the race',
+         claimB.data && claimB.data.length === 0);
+      const job = store.progress_photos_360_jobs.find((j) => j.id === jobId);
+      ok('scenario e — the job is owned by whoever actually won (user-1), never silently reassigned to the loser',
+         job && job.claimed_by === 'user-1');
+    })();
+
+    // Scenario (f) — fetchResumableJobs picks exactly the right jobs: queued,
+    // failed-with-retries-left, and stale-processing (a crashed tab) — and
+    // excludes a fresh in-flight job AND one that has exhausted every retry.
+    await (async function () {
+      const pQueued = seedPhoto(), pFailed = seedPhoto(), pStale = seedPhoto(), pFresh = seedPhoto(), pExhausted = seedPhoto();
+      seedJob(pQueued, { status: 'queued' });
+      seedJob(pFailed, { status: 'failed', attempts: 1 });
+      seedJob(pStale, { status: 'processing', attempts: 1, claimed_at: new Date(Date.now() - 20 * 60 * 1000).toISOString() });
+      seedJob(pFresh, { status: 'processing', attempts: 1, claimed_at: new Date().toISOString() });
+      seedJob(pExhausted, { status: 'failed', attempts: 3 });
+      const found = await PP._fetchResumableJobs();
+      const foundPhotoIds = found.map((j) => j.photo_id).sort();
+      eq('scenario f — fetchResumableJobs returns exactly {queued, failed-with-retries-left, stale-processing} and excludes {fresh-processing, exhausted}',
+         foundPhotoIds, [pFailed, pQueued, pStale].sort());
+      // Clean up: these are exactly the shapes a LATER resumePending360Jobs()
+      // scan (scenario g, immediately below) would otherwise also pick up —
+      // this scenario's own job is only to prove fetchResumableJobs' FILTER,
+      // not to leave real work behind for a later scenario to unknowingly
+      // inherit and inflate its own claimed-count assertions.
+      const seededHere = [pQueued, pFailed, pStale, pFresh, pExhausted];
+      store.progress_photos_360_jobs = store.progress_photos_360_jobs.filter((j) => !seededHere.includes(j.photo_id));
+    })();
+
+    // Scenario (g) — the full resume flow, end to end, driven exactly the way
+    // a real reopened app would drive it: one job that finishes successfully,
+    // one that fails (and still has retries left, so its job is KEPT).
+    await (async function () {
+      const realStitch = P360.stitchFromVideo;
+      const realFetch = ctx.fetch;
+      const pOk = seedPhoto(), pBad = seedPhoto();
+      const jOk = seedJob(pOk, { status: 'queued' });
+      const jBad = seedJob(pBad, { status: 'queued' });
+      // ⚠️ The real Pano360.stitchFromVideo(blob, onProgress) signature carries
+      // no job identity at all — the ONLY way this stub can tell which job's
+      // video it was handed is by threading the real fetched URL through the
+      // blob itself (ctx.fetch is overridden to do exactly that). Checking
+      // module/store STATE instead (e.g. "which job is currently 'processing'")
+      // is a real trap here: resumePending360Jobs() claims BOTH jobs (flips
+      // both to 'processing') BEFORE calling resumeOneJob on either one, so at
+      // the moment either stitch call runs, every claimed job already reads
+      // 'processing' — a state-based guess would misidentify the very first
+      // call regardless of which job it actually belongs to.
+      ctx.fetch = async (url) => ({ ok: true, blob: async () => ({ __url: url }) });
+      P360.stitchFromVideo = async function (blob) {
+        if (blob && blob.__url && blob.__url.indexOf(jBad) !== -1) throw new Error('synthetic stitch failure');
+        return { blob: { type: 'image/jpeg' }, quality: 'ok', width: 1000, height: 500 };
+      };
+      const toastsBefore = (ctx.__toasts || []).length;
+      try {
+        await PP._resumePending360Jobs();
+      } finally { P360.stitchFromVideo = realStitch; ctx.fetch = realFetch; }
+      const toasts = (ctx.__toasts || []).slice(toastsBefore);
+      ok('scenario g — a "Resuming 2 background 360° photos…" toast fired once, naming the real count',
+         toasts.some((t) => /Resuming 2 background 360° photos/.test(t[1])));
+      const rowOk = store.progress_photos.find((r) => r.id === pOk);
+      const rowBad = store.progress_photos.find((r) => r.id === pBad);
+      ok('scenario g — the successful job finished: photo_url set, stitch_status cleared',
+         rowOk && rowOk.photo_url && rowOk.stitch_status === null);
+      ok('scenario g — its job row is gone (cleaned up on success, per scenario a\'s own mirror)',
+         !store.progress_photos_360_jobs.some((j) => j.id === jOk));
+      ok('scenario g — the failing job\'s photo is marked failed, exactly as the interactive flow already does',
+         rowBad && rowBad.stitch_status === 'failed');
+      const jobBadNow = store.progress_photos_360_jobs.find((j) => j.id === jBad);
+      ok('scenario g — its job row is KEPT (attempts=1, under the max) so a future reopen can retry it again',
+         !!jobBadNow && jobBadNow.status === 'failed' && jobBadNow.attempts === 1);
+    })();
+
+    // Scenario (h) — a job that keeps failing forever must eventually stop
+    // being retried: once PENDING_360_MAX_ATTEMPTS is reached, it is deleted
+    // (and its Storage video freed) rather than retried forever or left as
+    // permanent clutter nobody will ever look at again.
+    await (async function () {
+      const photoId = seedPhoto();
+      const jobId = seedJob(photoId, { status: 'processing', attempts: 3 });   // this attempt IS the 3rd
+      const removedBefore = removedPaths.length;
+      await PP._markBackgroundDraftFailed(photoId, new Error('still broken'));
+      ok('scenario h — a job that has reached PENDING_360_MAX_ATTEMPTS is deleted outright, not left to retry forever',
+         !store.progress_photos_360_jobs.some((j) => j.id === jobId));
+      ok('scenario h — its Storage video is freed, since nothing will ever read it again',
+         removedPaths.length === removedBefore + 1);
+      const row = store.progress_photos.find((r) => r.id === photoId);
+      ok('scenario h — the PHOTO itself still just reads \'failed\' — the documented delete-and-re-add recovery is unchanged',
+         row && row.stitch_status === 'failed');
+    })();
+
+    // Scenario (i) — resumePending360Jobs() itself is a safe, silent no-op
+    // when the table has never been created (this exact migration not yet
+    // run) — it must never throw and break init()/a project switch.
+    await (async function () {
+      const saved = store.progress_photos_360_jobs;
+      store.progress_photos_360_jobs = undefined;
+      let threw = false;
+      try { await PP._resumePending360Jobs(); } catch (e) { threw = true; } finally { store.progress_photos_360_jobs = saved; }
+      ok('scenario i — resumePending360Jobs() never throws when the table does not exist yet — init()/project-switch must not break for a project that has never used this feature',
+         threw === false);
+    })();
   })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
