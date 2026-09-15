@@ -118,20 +118,30 @@ resolved, not that some activities lack a baseline, which is the ordinary case.
 ⚠️⚠️ **The data-date notice is dismissible, and the key carries the DATE.** The hazard is real —
 the data date is per browser and drives 62 call sites — so *dismissed* means "I have acknowledged
 THIS pinned date", and re-pinning a different one brings the warning back. A permanent dismissal
-would let a planner silently inherit somebody else’s "now".
+would let a planner silently inherit somebody else's "now".
 
 Also: the look-ahead reports how much of each window is **critical** ("241 starting" says nothing
-about which 241); the trade bars split  into two right-aligned columns; the footnote loses
-its third sentence (a read-only page saying it is read-only) and keeps the two load-bearing ones;
-the header loses the  stutter and gains thousands separators; and **Print is
-gone with its handler** — Ctrl+P does the same thing, and a handler bound to an id nothing renders
-is the  shape this repo has shipped once.
+about which 241), counted once per activity rather than once per edge; the trade bars split
+`0% 1750` into two right-aligned columns; the footnote loses its third sentence (a read-only page
+saying it is read-only) and keeps the two load-bearing ones; the header loses the
+`baseline Baseline …` stutter and gains thousands separators; and **Print is gone with its
+handler** — Ctrl+P does the same thing, and a handler bound to an id nothing renders is the
+`#pk-boq` shape this repo has shipped once.
 
 **30 assertions, 0 failing**, sliced by name and executed over a fixture shaped like OPW101, with
 **HEAD as the control** on every point; the previous suite still 34/34. Rendered at 1400px in an
-iframe against the module’s own stylesheet, and the dismiss **clicked through the real handler**.
-⚠️ Measured at 20×20 first — under WCAG’s 24px target — and raised.  136/136.
-⚠️ **Not verified signed in.**  → .
+iframe against the module's own stylesheet, and the dismiss **clicked through the real handler**.
+⚠️ Measured at 20×20 first — under WCAG's 24px target — and raised. `wiring-check` 136/136.
+⚠️ **Not verified signed in.** `MODULE_V` → `20260915s`.
+
+⚠️⚠️ **AND THIS ENTRY HAD TO BE WRITTEN TWICE, FOR THE REASON THE 2026-09-15 (g) ENTRY ALREADY
+RECORDS.** The first version went in through `node -e "…"` from bash, and **every backticked term
+was command-substituted away before node ever saw the string** — five silent holes where
+`0% 1750`, `baseline Baseline …`, `#pk-boq`, `wiring-check` and `MODULE_V` had been, and bash
+printing `0%: command not found` as the only clue. That log already says, in as many words:
+*"Changelog prose goes through a file written with the editor, not through a double-quoted shell
+argument."* **Write the prose to a file and splice the file.** The damage is invisible in a
+rendered diff, because a missing code span reads as an ordinary sentence.
 
 
 ### 2026-09-15 (u) — Three sidebar rows drawing one glyph, a rail that lost its grouping, and a portfolio figure that was a mean
