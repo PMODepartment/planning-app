@@ -158,6 +158,39 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-dash-pk { display:flex; align-items:baseline; justify-content:space-between; gap:12px;
   padding:7px 0; border-bottom:1px solid var(--pd-line); font-size:13px; }
 .cc-dash-pk:last-child { border-bottom:0; }
+
+/* ---- Aging bars (ccTimeHTML) -------------------------------------------------
+   ⚠ Same idiom as .cc-dash-pk above rather than a new one: a label, a measure and
+     a figure on one row. The bar is scaled to the LARGEST bucket, not the total —
+     scaled to the total, a healthy register draws three invisible slivers.
+   ⚠ Tones are tokens, never literals: --pd-warn-* / --pd-bad-* are the paired
+     light/dark surfaces, so this reads correctly in both themes without an
+     html.pd-dark override. And the TEXT tone is *-text, never --pd-warn itself,
+     which measures 3.46:1 and is a surface colour. */
+.cc-ages { list-style:none; margin:0 0 4px; padding:0; }
+.cc-age { display:flex; align-items:center; gap:10px; padding:5px 0;
+  border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
+.cc-age:last-child { border-bottom:0; }
+.cc-age-l { flex:0 0 108px; color:var(--pd-muted); }
+.cc-age-bar { flex:1 1 auto; height:8px; min-width:40px; border-radius:99px;
+  background:var(--pd-line); overflow:hidden; }
+.cc-age-bar > i { display:block; height:100%; background:var(--pd-red); }
+.cc-age-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--pd-ink); }
+.cc-age-warn .cc-age-bar > i { background:var(--pd-warn); }
+.cc-age-warn .cc-age-v { color:var(--pd-warn-text); }
+.cc-age-bad  .cc-age-bar > i { background:var(--pd-bad); }
+.cc-age-bad  .cc-age-v { color:var(--pd-bad-text); }
+/* Nothing is drawn for "not submitted" — it has no age, so a bar would imply one. */
+.cc-age-unsent .cc-age-bar { background:transparent; }
+.cc-age-unsent .cc-age-l, .cc-age-unsent .cc-age-v { color:var(--pd-muted); font-style:italic; }
+
+@media (max-width:700px) {
+  /* A 108px label beside a bar beside a figure does not fit a phone; the figure
+     takes its own line rather than squeezing the bar to nothing. */
+  .cc-age { flex-wrap:wrap; }
+  .cc-age-l { flex:1 1 auto; }
+  .cc-age-bar { flex:1 1 100%; order:3; }
+}
 .cc-dash-pk > span { min-width:0; }
 .cc-dash-pk > span > i { display:block; font-style:normal; font-size:11px; color:var(--pd-muted); }
 .cc-dash-pk > b { flex:none; font-variant-numeric:tabular-nums; }

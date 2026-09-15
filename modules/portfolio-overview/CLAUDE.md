@@ -1,5 +1,44 @@
 # Module: portfolio-overview
 
+## 2026-09-15 (q) — Contracts & Claims stops being a register and becomes a decision surface
+
+Owner: *"in terms of portfolio-level contracts & claims there should be a proper dashboard as well
+but should provide portfolio level information that can provide informed decisions for higher
+management. UI in the portfolio-level needs work as well."*
+
+What was here: four KPI tiles and **every row of every project's register in one flat table sorted by
+project NAME**. That is a register, not a decision surface — the project that most needs attention was
+wherever the alphabet happened to put it.
+
+- **An exposure strip**: contract value · pending with client · shortfall · recovery · EOT pending ·
+  oldest pending.
+- **Projects ranked by unrecovered exposure** (pending + shortfall). ⚠️ Ties break on the **oldest
+  pending**, not the name: two projects with the same exposure are not equally urgent if one has been
+  waiting four months.
+- ⚠️ **Projects with nothing outstanding are still listed, at the bottom.** A management view that
+  hides the healthy projects cannot be used to say "these four are fine", which is half its job. They
+  show **dashes, never zeros**.
+- **A portfolio aging breakdown**, same buckets and same scaling rule as the register's own band.
+- ⚠️ **The full register is KEPT**, behind a `<details>` that states its own count. The page is also
+  used to find one specific row; deleting that to make room would trade one job for another. Shut by
+  default — a summary that opens on 900 rows is not a summary.
+- ⚠️⚠️ **Every rule comes from `PDClaims`**, never re-derived here. This page has already paid for
+  a hand-copied duplicate once (`scCompute` vs `assets/js/scurve.js`).
+- ⚠️ **Money and days stay apart.** EOT is its own column and is never added to the cash figures.
+
+**22 assertions, 0 failing**, executing `ctRender` / `ctRenderRank` / `ctRenderAging` sliced out of
+the page — over three projects built so the **alphabetical and exposure orders disagree**, otherwise
+the ranking could be right by accident. It ranks Charlie · Bravo · Alpha where the alphabet says the
+reverse. ⚠️ The suite also caught a defect in the *register's* band: its aging bars were measured on
+`sub_amount` while its headline preferred `eval_amount`.
+
+Rendered at 1280px and 390px against the real stylesheets: no horizontal page scroll, aging rows
+wrapping on a phone, the ranked table scrolling inside its own box, tones resolving to real values.
+
+⚠️ Not verified signed in.
+⚠️⚠️ **This module's `index.html` is still NOT cache-busted** — plain sidebar href, `MODULE_V` does
+not reach it. **Hard-refresh once** after the deploy.
+
 ## 2026-09-10 (u3) — The project filter stops clipping, and A–Z becomes a sticky rail
 
 Owner, items 1 and 2 of six: *"The filter all projects can be combined with the other filter button

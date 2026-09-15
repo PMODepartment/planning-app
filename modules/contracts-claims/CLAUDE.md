@@ -1,5 +1,40 @@
 # Module: contracts-claims
 
+## 2026-09-15 (q) — The dashboard gains the time half it was missing
+
+Owner: *"Let's develop a dashboard in the contracts & claims register."* The money half shipped that
+morning; it could say what was claimed and what came back, and could not answer the question a
+commercial meeting opens with — **how long has the client been holding this?**
+
+New `ccTimeHTML()`: pending value and pending time, oldest pending, recovery rate, an aging
+breakdown (0–30 / 31–60 / 61–90 / 90+) and hand-off velocity (submitted → evaluated → decided).
+
+- ⚠️⚠️ **Every figure comes from columns that already existed.** `date_submitted`,
+  `date_evaluated` and `date_approved` have been on this table since 2026-07-20 and nothing but the
+  per-row aging ever read them. No migration.
+- ⚠️⚠️ **The rules moved to `PDClaims` (assets/js/claims.js), unchanged** — `ccBlock` now
+  delegates too. They were already duplicated in dashboard.html and the portfolio view was about to
+  be a third copy.
+- ⚠️ **Not submitted is its own line**, never folded into 0–30: *"we have not sent it"* and
+  *"they have not answered"* are different problems with different owners.
+- ⚠️ **Bars scale to the largest bucket, not the total** — scaled to the total a healthy register
+  draws three invisible slivers and the one bucket that matters cannot be compared.
+- ⚠️ A leg with no decided records reads **no data**, never `0d`: zero claims the client turns
+  these round same-day, which is the opposite of *"we cannot tell yet"*.
+
+### ⚠️⚠️ Two defects the tests caught, one of them in this block after I had passed it
+
+- **The header undercounted.** `agingBuckets().n` counts records with an AGE, so a record Pending but
+  never submitted was missing from *"N pending"* while appearing on its own row two lines below.
+- **The bars were measured on a different basis from the figure beside them** — `sub_amount` while
+  *"Pending value"* prefers `eval_amount`, so the bars totalled ₱100,000 under a headline reading
+  ₱99,000. The PORTFOLIO test caught it; this block's own test had asserted the wrong figure as
+  correct. Both now pass the same key list through one shared `valueOf`.
+
+**15 assertions, 0 failing**, executing `ccTimeHTML` sliced out by name — including a register holding
+only a contract rendering **nothing** rather than a wall of dashes.
+⚠️ Not verified signed in. `module.js`/`module.css` → `?v=20260915g`; `MODULE_V` → `20260915o`.
+
 ## 2026-09-15 (o) — The load stops painting a register it has not loaded yet
 
 Owner: *"Loading contracts & claims module loads 3 different views for split seconds then loads

@@ -415,16 +415,15 @@ window.ContractsClaims = (function () {
        count line under the toolbar already says what the filter is showing.
      ========================================================================================== */
   function ccBlock(label, nRec, list, subK, evK, apK, fmt) {
-    var sum = function (arr, k) {
-      return arr.reduce(function (a, r) { var v = Number(r[k]); return a + (isFinite(v) ? v : 0); }, 0);
-    };
-    /* Decided = Approved + Disapproved. The rule the Recovery-rate KPI in this same file already
-       uses, and for the reason written there: a still-Pending claim is not a failure, and counting
-       it as one reads as a catastrophic ~0%% on a young register. Cancelled never adjudicated. */
-    var decided = list.filter(function (r) { var s = statusOf(r); return s === 'Approved' || s === 'Disapproved'; });
-    var disapRows = list.filter(function (r) { return statusOf(r) === 'Disapproved'; });
-    // ⚠ Clamped at 0: an approval ABOVE what was asked is a data-entry question, not a credit.
-    var short = Math.max(0, sum(decided, subK) - sum(decided, apK));
+    /* ⚠️⚠️ THE RULES MOVED TO PDClaims (assets/js/claims.js) ON 2026-09-15, UNCHANGED. Decided =
+       Approved + Disapproved (Cancelled was never adjudicated); shortfall clamped at 0. They are
+       there because the project dashboard's panel and the portfolio view apply exactly the same
+       rules to the same register, and three copies is how three screens come to describe it
+       differently — which is the one thing this band was written not to do. */
+    var sum = PDClaims.sum;
+    var decided = PDClaims.decided(list);
+    var disapRows = list.filter(PDClaims.isDisapproved);
+    var short = PDClaims.shortfallOf(list, subK, apK);
     /* ⚠ A COMPUTED ZERO IS A ZERO; ONLY AN EMPTY BLOCK IS A DASH. `sum` over an empty list
        returns 0, so formatting every falsy value as '—' printed a dash where the project
        dashboard prints '0d' — two screens describing the same register differently, which is
@@ -483,11 +482,104 @@ window.ContractsClaims = (function () {
       ccBlock('Change orders', of('Change Order').length, of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money) +
       ccBlock('Cost claims', of('Claim').length, of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money) +
       ccBlock('Extension of time', of('EOT').length, of('EOT'), 'sub_days', 'eval_days', 'approved_days', days) +
+      ccTimeHTML() +
       '<p class="cc-hint">Submitted, evaluated and approved are the pipeline columns on each record. ' +
         '<b>Disapproved</b> is what the client rejected outright; <b>shortfall</b> is submitted minus approved ' +
         'across decided records — claimed, not certified. Records still pending a decision count in neither. ' +
         'This summary covers the whole register and does not move with the filters.</p>' +
       '</div>';
+  }
+
+  /* ==========================================================================================
+     THE TIME HALF OF THE DASHBOARD — added 2026-09-15.
+     Owner: *"let's develop a dashboard in the contracts & claims register."* The money half
+     already existed (`ccDashHTML` above, shipped that morning); what it could not answer is the
+     question a commercial meeting actually opens with — **how long has the client been sitting on
+     this, and how long do they normally take?**
+
+     ⚠️⚠️ EVERY FIGURE HERE COMES FROM COLUMNS THAT ALREADY EXIST. `date_submitted`,
+       `date_evaluated` and `date_approved` have been on this table since 2026-07-20 and nothing
+       read them except the register's own per-row aging. No migration, no new field to maintain.
+     ⚠️ Money for claims and change orders, DAYS for EOT, never one total — `PDClaims` takes the
+       key pair from here rather than guessing, which is what makes that impossible to get wrong.
+     ⚠️ Unfiltered, like the band above it: a summary that moved when someone typed in the search
+       box would be reporting the filter rather than the register.
+     ========================================================================================== */
+  function ccTimeHTML() {
+    var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
+    var claimish = PDClaims.claimsOnly(rows);
+    if (!claimish.length) return '';
+
+    var cash = claimish.filter(function (r) { return PDClaims.typeOf(r) !== 'EOT'; });
+    var eots = PDClaims.ofType(claimish, 'EOT');
+    var today = PDClaims.todayISO();
+
+    /* ---- what is with the client, and for how long ---- */
+    /* ⚠️⚠️ THE SAME KEY LIST `pendingValue` GETS, and the first cut did not do this: the bars
+       measured `sub_amount` while the “Pending value” KPI two lines above preferred `eval_amount`,
+       so the bars did not add up to the headline beside them. Caught by a test on the portfolio
+       view, which shares this rule — the bug was here too and its own test had asserted the wrong
+       figure as correct. */
+    var AMT = ['eval_amount', 'sub_amount'], DAYS = ['eval_days', 'sub_days'];
+    var ag = PDClaims.agingBuckets(cash, AMT, today);
+    var eotAg = PDClaims.agingBuckets(eots, DAYS, today);
+    var pendVal = PDClaims.pendingValue(cash, 'eval_amount', 'sub_amount');
+    var pendDays = PDClaims.pendingValue(eots, 'eval_days', 'sub_days');
+    var rec = PDClaims.recoveryOf(cash, 'sub_amount', 'approved_amount');
+
+    var bars = '';
+    var worst = Math.max.apply(null, ag.buckets.map(function (b) { return b.value; }).concat([1]));
+    ag.buckets.forEach(function (b) {
+      /* ⚠️ The bar is scaled to the LARGEST BUCKET, not to the total. Scaled to the total, a
+         healthy register (almost everything in 0–30) draws three invisible slivers and the one
+         bucket that matters cannot be compared against them. */
+      var w = Math.max(b.value ? 2 : 0, Math.round(b.value / worst * 100));
+      var tone = b.key === '90+' ? ' cc-age-bad' : (b.key === '61-90' ? ' cc-age-warn' : '');
+      bars += '<li class="cc-age' + tone + '"><span class="cc-age-l">' + esc(b.label) + '</span>' +
+        '<span class="cc-age-bar"><i style="width:' + w + '%"></i></span>' +
+        '<span class="cc-age-v">' + (b.n ? money(b.value) + ' · ' + b.n : '—') + '</span></li>';
+    });
+
+    /* ---- how long each hand-off takes ---- */
+    var st = PDClaims.stageDays(claimish);
+    var legs = ['toEvaluate', 'toApprove', 'endToEnd'].map(function (k) {
+      var l = st[k];
+      /* ⚠️ A leg with no completed records reads "no data", never 0 days. Zero says the client
+         turns these round the same day, which is the opposite of "we cannot tell yet". */
+      return kpi(l.label, l.days == null ? '—' : l.days + 'd',
+                 l.days == null ? 'no decided records yet' : 'average over ' + l.n);
+    }).join('');
+
+    /* ⚠️⚠️ THE HEADER COUNTS THE UNSENT ONES TOO, AND THE FIRST CUT DID NOT. `agingBuckets().n`
+       is the count of records with an AGE, so a record that is Pending but never submitted was
+       missing from this total while appearing on its own row two lines below — a header that
+       disagrees with the list under it. Caught by a test asserting the count, not by reading. */
+    var pendN = ag.n + ag.unsent + eotAg.n + eotAg.unsent;
+    return '<div class="cc-dash-h">With the client ' +
+        '<span class="cc-mini">' + pendN + ' pending' +
+        (ag.oldest != null ? ' · oldest ' + ag.oldest + ' days' : '') + '</span></div>' +
+      '<div class="cc-kpis">' +
+        kpi('Pending value', money(pendVal), 'claims & change orders', pendVal ? 'warn' : '') +
+        kpi('Pending time', pendDays ? num(pendDays) + 'd' : '—', 'extension of time claimed') +
+        kpi('Oldest pending', ag.oldest != null ? ag.oldest + 'd' : '—',
+            ag.oldest != null ? 'since it was submitted' : 'nothing submitted and waiting',
+            (ag.oldest != null && ag.oldest > 90) ? 'bad' : (ag.oldest != null && ag.oldest > 60 ? 'warn' : '')) +
+        /* ⚠️ Recovery is null, not 0, until something has been decided — see PDClaims rule 2. */
+        kpi('Recovery rate', rec == null ? '—' : Math.round(rec) + '%',
+            rec == null ? 'nothing decided yet' : 'approved ÷ submitted, decided only',
+            rec == null ? '' : (rec >= 80 ? 'good' : (rec < 50 ? 'bad' : 'warn'))) +
+      '</div>' +
+      '<ul class="cc-ages">' + bars +
+        /* ⚠️ Never-submitted is its own line, never folded into 0–30. "We have not sent it" and
+           "they have not answered" are different problems with different owners. */
+        (ag.unsent ? '<li class="cc-age cc-age-unsent"><span class="cc-age-l">Not submitted</span>' +
+          '<span class="cc-age-bar"></span><span class="cc-age-v">' + money(ag.unsentValue) +
+          ' · ' + ag.unsent + '</span></li>' : '') +
+      '</ul>' +
+      '<div class="cc-kpis">' + legs + '</div>' +
+      '<p class="cc-hint">Aging counts from <b>date submitted</b> and only while a record is ' +
+        'Pending. A record with no submitted date is listed separately — it is waiting on us, not ' +
+        'on the client. Hand-off times average the records that carry both dates.</p>';
   }
 
   function kpiHTML(list, t) {

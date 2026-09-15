@@ -102,6 +102,92 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (q) — Contracts & Claims gets the time it was missing, and the portfolio stops being a register
+
+Owner: *"Let's develop a dashboard in the contracts & claims register… In terms of portfolio-level
+contracts & claims there should be a proper dashboard as well but should provide portfolio level
+information that can provide informed decisions for higher management. UI in the portfolio-level
+needs work as well."*
+
+### ⚠️⚠️ FIRST, `assets/js/claims.js` (`PDClaims`) — BEFORE A THIRD COPY WAS WRITTEN
+
+Four rules were already written **twice** — `ccRow` in dashboard.html and `ccBlock` in
+contracts-claims — and the portfolio rebuild was about to be the third. Every previous time this
+repo let that happen the copies drifted, and the one that drifted was the one nobody was looking at
+(three location normalisers, one of which matched a 13th-floor leaf to *"3rd Floor"*; the S-curve
+maths copied into portfolio-overview; the change-order insert).
+
+The rules, unchanged, now in one place: **decided = Approved + Disapproved** (Cancelled was never
+adjudicated); **recovery over decided only** (dividing by everything submitted reads as a
+catastrophic ~0% on a young register); **shortfall clamped at 0** (an approval above the ask is a
+data-entry question, not a credit); **aging derived, never stored**, null once decided, null if never
+submitted, never negative.
+⚠️ It exposes a **scalar** and a **row** form of each, because the two existing callers read
+different shapes — the project dashboard holds server-side aggregates, the register holds rows — and
+making one reshape its data to suit the other would be the tail wagging the dog.
+⚠️ **Money and days never meet.** Every function takes the key pair from its caller, so an EOT is
+measured in days because the caller passed day keys, not because a function guessed.
+
+### The Contract tab: the money half had no time half
+
+It could say what was claimed and what came back. It could not answer the question a commercial
+meeting opens with — **how long has the client been sitting on this, and how long do they normally
+take?** Added, from columns that have existed since 2026-07-20 and which nothing but the per-row
+aging ever read: **pending value and pending time**, **oldest pending**, **recovery rate**, an
+**aging breakdown** (0–30 / 31–60 / 61–90 / 90+), and **hand-off velocity** (submitted → evaluated →
+decided).
+
+### The portfolio: four tiles and a flat dump become a decision surface
+
+It was `kpi2 × 4` and every row of every project's register in one table **sorted by project name** —
+so the project that most needs attention was wherever the alphabet put it. Now: an **exposure strip**,
+**projects ranked by unrecovered exposure** (pending + shortfall, ties broken on the oldest pending),
+a **portfolio aging breakdown**, and the full register **kept behind a disclosure that states its own
+count** — the page is also used to find one row, and deleting that to make room would trade one job
+for another.
+⚠️ **Projects with nothing outstanding are still listed, at the bottom.** A management view that hides
+the healthy projects cannot be used to say "these four are fine", which is half of what it is for.
+
+### ⚠️⚠️ TWO REAL DEFECTS, AND ONE OF THEM WAS IN CODE I HAD ALREADY PASSED
+
+1. **The Contract tab's header undercounted.** `agingBuckets().n` counts records that have an AGE, so
+   a record Pending but never submitted was missing from *"N pending"* while appearing on its own row
+   two lines below — a header disagreeing with the list under it.
+2. ⚠️⚠️ **The aging bars were measured on a different basis from the figure printed beside them.**
+   The bars used `sub_amount` while *"Pending value"* prefers `eval_amount` — so the bars totalled
+   ₱100,000 under a headline reading ₱99,000. **The portfolio test caught it; the Contract tab's own
+   test had asserted the wrong number as correct.** Both now take the same key list, through one
+   shared `valueOf`, so a bucket total cannot be measured differently from its own headline again.
+
+### Verified
+
+**68 assertions across three suites, 0 failing**, every renderer sliced out of the shipped file by
+name and executed — never retyped:
+
+- **31 on the rules**, including the ones that hide a defect: recovery **35%** over decided rather
+  than 7.8% of everything submitted; a future submitted date yielding **null**, not a negative age;
+  a backwards date span **dropped rather than clamped to 0**, which would quietly pull an average
+  down and hide it; and asking for amount keys on an EOT giving **0, not a silent mix**.
+- **15 on the Contract tab**, including a register holding only a contract rendering **nothing**
+  rather than a wall of dashes.
+- **22 on the portfolio**, over three projects built so the **alphabetical and exposure orders
+  disagree** — otherwise the ranking could be right by accident. It ranks Charlie · Bravo · Alpha
+  where the alphabet says the reverse.
+
+Rendered in a browser against the real stylesheets at 1280px and 390px: both sheets loaded (447 +
+255 rules), **no horizontal page scroll at either width**, aging rows wrapping on a phone and the
+ranked table scrolling **inside its own box**, and the tones resolving to real values
+(`rgb(239,83,80)` / `rgb(224,160,8)`) rather than stuck literals. `wiring-check` **136/136**.
+
+⚠️ **Not verified signed in** — no live register has been read, so these are the shipped renderers
+over fixtures.
+⚠️⚠️ **`portfolio-overview/index.html` IS NOT CACHE-BUSTED** — it is reached by a plain sidebar href
+and `MODULE_V` does not cover it, as that module's own log records. **Hard-refresh the Portfolio
+Dashboard once** or the rebuilt view will not appear.
+
+New `claims.js` → `?v=20260915a`; contracts-claims `module.js`/`module.css` → `?v=20260915g`;
+`MODULE_V` → `20260915o`, sort-checked.
+
 ### 2026-09-15 (p) — "Personal Dashboard" becomes My Work, and the app gets a notebook
 
 **Run `migrations/2026-09-15-user-notes.sql`.** Owner: *"Personal 'Dashboard' shouldn't be called

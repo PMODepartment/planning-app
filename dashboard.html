@@ -440,9 +440,12 @@
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260901a"></script>
   <script src="assets/js/ui.js?v=20260915a"></script>
+  <!-- PDClaims — the shortfall/decided/recovery rules this page's Contracts & Claims panel
+       shares with the register's own band and the portfolio view. -->
+  <script src="assets/js/claims.js?v=20260915a"></script>
   <script src="assets/js/notebook.js?v=20260915a"></script>
   <script src="assets/js/icons.js?v=20260913a"></script>
-  <script src="assets/js/modules-grid.js?v=20260915n"></script>
+  <script src="assets/js/modules-grid.js?v=20260915o"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -1078,9 +1081,13 @@
       var sub = _n(m[p + 'Sub']), ev = _n(m[p + 'Eval']), ap = _n(m[p + 'Appr']);
       var disap = _n(m[p + 'Disap']);
       var decSub = _n(m[p + 'DecSub']) || 0, decAppr = _n(m[p + 'DecAppr']) || 0;
-      // ⚠ Clamped at 0. An approval ABOVE what was submitted is not a negative dispute; it is a
-      //   data-entry question, and a "-₱2.1M disputed" cell would be read as a credit.
-      var short = Math.max(0, decSub - decAppr);
+      /* ⚠️ The clamp moved to PDClaims (assets/js/claims.js) on 2026-09-15, unchanged — an
+         approval ABOVE what was submitted is a data-entry question, not a negative dispute, and a
+         "−₱2.1M disputed" cell reads as a credit. It lives there because the register's own band
+         and the portfolio view apply the identical rule, and three copies of it is how the three
+         screens come to disagree about the same register. Scalar form, because this panel holds
+         server-side aggregates (config.js `dash.metrics`) rather than rows. */
+      var short = PDClaims.shortfall(decSub, decAppr);
       return '<div class="pd-list-h">' + Fmt.esc(label) +
           (nRecords ? ' &mdash; ' + nRecords + ' record' + (nRecords === 1 ? '' : 's') : '') + '</div>' +
         '<div class="pd-mini-band">' +

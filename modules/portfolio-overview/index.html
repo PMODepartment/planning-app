@@ -174,6 +174,35 @@
     .po-kpis2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
     .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:14px 16px; }
     .po-kpi2-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    /* ---- Contracts & Claims: aging bars + the all-records disclosure (2026-09-15) ----
+       ⚠ Tokens only, and the TEXT tones are --pd-*-text rather than --pd-warn / --pd-bad
+         themselves, which are surface colours (--pd-warn measures 3.46:1 and is not a text
+         colour — recorded at length in the 2026-09-15 uic pass). */
+    .po-ages { list-style:none; margin:0 0 4px; padding:0; }
+    .po-age { display:flex; align-items:center; gap:10px; padding:6px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
+    .po-age:last-child { border-bottom:0; }
+    .po-age-l { flex:0 0 116px; color:var(--pd-muted); }
+    .po-age-bar { flex:1 1 auto; height:8px; min-width:40px; border-radius:99px;
+      background:var(--pd-line); overflow:hidden; }
+    .po-age-bar > i { display:block; height:100%; background:var(--pd-red); }
+    .po-age-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--pd-ink); }
+    .po-age-warn .po-age-bar > i { background:var(--pd-warn); }
+    .po-age-warn .po-age-v { color:var(--pd-warn-text); }
+    .po-age-bad  .po-age-bar > i { background:var(--pd-bad); }
+    .po-age-bad  .po-age-v { color:var(--pd-bad-text); }
+    /* No bar for "not submitted" — it has no age, so drawing one would imply it had. */
+    .po-age-unsent .po-age-bar { background:transparent; }
+    .po-age-unsent .po-age-l, .po-age-unsent .po-age-v { color:var(--pd-muted); font-style:italic; }
+    .po-ct-note { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin:10px 0 0; }
+    .po-ct-all > summary { cursor:pointer; font-size:var(--pd-fs-xs); font-weight:700;
+      text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); }
+    .po-ct-all[open] > summary { margin-bottom:2px; }
+    @media (max-width:700px) {
+      .po-age { flex-wrap:wrap; }
+      .po-age-l { flex:1 1 auto; }
+      .po-age-bar { flex:1 1 100%; order:3; }
+    }
     .po-kpi2-v { font-size:var(--pd-fs-stat); font-weight:700; }
     .po-svg { width:100%; height:auto; display:block; }
     .po-grid2 { stroke:var(--pd-line); stroke-width:1; }
@@ -801,9 +830,28 @@
       <div id="po-view-contracts" style="display:none;">
         <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-ct-scope">all projects</span>). <button class="pd-btn" id="po-ct-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
         <div class="po-kpis2" id="po-ct-kpis"></div>
-        <div class="po-card" style="padding:0;overflow:hidden;">
-          <div style="overflow-x:auto;"><table class="po-table" id="po-ct-table"></table></div>
+        <!-- ⚠⚠ RANKED BY UNRECOVERED EXPOSURE, NOT ALPHABETICALLY (2026-09-15). The question this
+             page exists to answer for management is "which project is bleeding", and a list sorted
+             by project name actively hides that — the worst project is wherever the alphabet put
+             it. The old flat table is kept below, because the page is also used to find one row. -->
+        <div class="po-card" id="po-ct-rankcard">
+          <h3 style="text-transform:none;font-size:15px;">Projects by unrecovered exposure</h3>
+          <div style="overflow-x:auto;"><table class="po-table" id="po-ct-rank"></table></div>
+          <p class="po-ct-note" id="po-ct-ranknote"></p>
         </div>
+        <div class="po-card" id="po-ct-agecard">
+          <h3 style="text-transform:none;font-size:15px;">How long the client has been holding it</h3>
+          <ul class="po-ages" id="po-ct-age"></ul>
+          <p class="po-ct-note">Counted from <b>date submitted</b>, and only while a record is Pending.
+            A record with no submitted date is listed separately — it is waiting on us, not the client.</p>
+        </div>
+        <!-- ⚠ The full register is KEPT, behind a disclosure. It is the only way to find a specific
+             row on this page, and deleting it to make room for the summary would trade one job for
+             another. Shut by default: a summary that opens on 900 rows is not a summary. -->
+        <details class="po-card po-ct-all" id="po-ct-allwrap">
+          <summary id="po-ct-allsum">All records</summary>
+          <div style="overflow-x:auto;margin-top:10px;"><table class="po-table" id="po-ct-table"></table></div>
+        </details>
       </div>
 
       <div id="po-view-photos" style="display:none;">
@@ -839,6 +887,7 @@
        its maths (scCompute), the exact drift the 2026-09-01 extraction existed to stop. -->
   <script src="../../assets/js/scurve.js?v=20260901a"></script>
 <script src="../../assets/js/ui.js?v=20260915a"></script>
+<script src="../../assets/js/claims.js?v=20260915a"></script>
 <script src="../../assets/js/notebook.js?v=20260915a"></script>
 <!-- Shared stakeholder directory: identity matching + find-or-create, used by
      BOTH this page and the Stakeholder Map module. Not hand-copied into each. -->
@@ -3313,17 +3362,62 @@
     ctLoadedIds = ids;
     ctRender();
   }
+  /* ==========================================================================================
+     PORTFOLIO CONTRACTS & CLAIMS — rebuilt 2026-09-15.
+     Owner: *"in terms of portfolio-level contracts & claims there should be a proper dashboard as
+     well but should provide portfolio level information that can provide informed decisions for
+     higher management. UI in the portfolio-level needs work as well."*
+
+     What was here was four KPI tiles and every row of every project's register in one flat table
+     sorted by project NAME. That is a register, not a decision surface — the project that most
+     needs attention was wherever the alphabet happened to put it.
+
+     ⚠️⚠️ EVERY RULE COMES FROM `PDClaims`, NEVER RE-DERIVED HERE. Decided = Approved +
+       Disapproved, shortfall clamped at 0, recovery over decided only, aging derived from
+       date_submitted while Pending. Those exist in the project dashboard's panel and the
+       register's own band too, and three screens each computing them would be the drift this repo
+       keeps paying for.
+     ⚠️ MONEY AND DAYS ARE REPORTED SEPARATELY. EOT is time, not cash — `PDClaims` is given the
+       day keys for it and the amount keys for the rest, and the two are never added.
+     ========================================================================================== */
   function ctRender() {
     var list = ctRows || [];
-    var contracts = list.filter(function (r) { return r.record_type === 'Contract'; });
-    var contractVal = contracts.reduce(function (a, r) { return a + num(r.amount); }, 0);
-    var pending = list.filter(function (r) { return r.record_type !== 'Contract' && (r.status || '') === 'Pending'; });
-    var pendVal = pending.reduce(function (a, r) { return a + num(r.approved_amount != null ? r.approved_amount : (r.eval_amount != null ? r.eval_amount : r.sub_amount)); }, 0);
-    var projSet = {}; list.forEach(function (r) { projSet[r.project_id] = 1; });
-    document.getElementById('po-ct-kpis').innerHTML =
-      kpi2('Total contract value', Fmt.moneyShort(contractVal)) + kpi2('Pending claims / CO / EOT', String(pending.length)) +
-      kpi2('Pending value', Fmt.moneyShort(pendVal)) + kpi2('Projects', String(Object.keys(projSet).length));
     var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var today = PDClaims.todayISO();
+
+    /* Cash-bearing claims (Claim + Change Order) and EOT are two different currencies. */
+    var claimish = PDClaims.claimsOnly(list);
+    var cash = claimish.filter(function (r) { return PDClaims.typeOf(r) !== 'EOT'; });
+    var eots = PDClaims.ofType(claimish, 'EOT');
+
+    var contractVal = PDClaims.contractValue(list);
+    var decCash = PDClaims.decided(cash);
+    var claimed = PDClaims.sum(decCash, 'sub_amount');
+    var certified = PDClaims.sum(decCash, 'approved_amount');
+    var shortfall = PDClaims.shortfallOf(cash, 'sub_amount', 'approved_amount');
+    var pendVal = PDClaims.pendingValue(cash, 'eval_amount', 'sub_amount');
+    var pendDays = PDClaims.pendingValue(eots, 'eval_days', 'sub_days');
+    var rec = PDClaims.recoveryOf(cash, 'sub_amount', 'approved_amount');
+    /* ⚠️ The SAME key list `pendingValue` above gets, or the bars do not add up to the
+       “Pending with client” figure printed beside them. */
+    var ag = PDClaims.agingBuckets(cash, ['eval_amount', 'sub_amount'], today);
+
+    /* ⚠️ "Exposure" is pending + shortfall: money asked for and not yet certified, plus money
+       asked for and refused. Both are unrecovered; only one of them is still arguable. They are
+       shown as separate figures AND summed for the ranking, never silently merged into one. */
+    document.getElementById('po-ct-kpis').innerHTML =
+      kpi2('Contract value', Fmt.moneyShort(contractVal)) +
+      kpi2('Pending with client', Fmt.moneyShort(pendVal), pendVal ? '--pd-warn-text' : '') +
+      kpi2('Shortfall', Fmt.moneyShort(shortfall), shortfall ? '--pd-bad-text' : '') +
+      kpi2('Recovery rate', rec == null ? '—' : Math.round(rec) + '%',
+           rec == null ? '' : (rec >= 80 ? '--pd-ok-text' : (rec < 50 ? '--pd-bad-text' : '--pd-warn-text'))) +
+      kpi2('EOT pending', pendDays ? Math.round(pendDays) + 'd' : '—') +
+      kpi2('Oldest pending', ag.oldest != null ? ag.oldest + 'd' : '—',
+           (ag.oldest != null && ag.oldest > 90) ? '--pd-bad-text' : '');
+
+    ctRenderRank(cash, eots, nameById, today);
+    ctRenderAging(ag, cash, today);
+
     var sorted = list.slice().sort(function (a, b) {
       return (nameById[a.project_id] || '').localeCompare(nameById[b.project_id] || '') || (a.record_type || '').localeCompare(b.record_type || '');
     });
@@ -3339,6 +3433,90 @@
         '<td>' + (st ? statePill(st, st === 'Approved' ? 'ok' : st === 'Pending' ? 'warn' : st === 'Disapproved' ? 'bad' : 'muted') : '—') + '</td></tr>';
     }).join('') : '<tr><td colspan="6" class="po-empty">No contract or claim records match the current filter.</td></tr>';
     document.getElementById('po-ct-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+    /* ⚠️ The disclosure states its own count. A `<summary>` reading only "All records" gives no
+       reason to open it and no sense of what is behind it. */
+    var sum = document.getElementById('po-ct-allsum');
+    if (sum) sum.textContent = 'All records (' + list.length + ')';
+  }
+
+  /* One row per project, ranked by what is unrecovered. ⚠️ Projects with NOTHING outstanding are
+     still listed, at the bottom — a management view that hides the healthy projects cannot be used
+     to say "these four are fine", which is half of what it is for. */
+  function ctRenderRank(cash, eots, nameById, today) {
+    var by = {};
+    function slot(pid) {
+      if (!by[pid]) by[pid] = { pid: pid, cash: [], eots: [] };
+      return by[pid];
+    }
+    cash.forEach(function (r) { slot(r.project_id).cash.push(r); });
+    eots.forEach(function (r) { slot(r.project_id).eots.push(r); });
+
+    var rowsOut = Object.keys(by).map(function (pid) {
+      var g = by[pid];
+      var pend = PDClaims.pendingValue(g.cash, 'eval_amount', 'sub_amount');
+      var shortf = PDClaims.shortfallOf(g.cash, 'sub_amount', 'approved_amount');
+      var recv = PDClaims.recoveryOf(g.cash, 'sub_amount', 'approved_amount');
+      var agg = PDClaims.agingBuckets(g.cash, ['eval_amount', 'sub_amount'], today);
+      var eotPend = PDClaims.pendingValue(g.eots, 'eval_days', 'sub_days');
+      return { pid: pid, name: nameById[pid] || pid, pend: pend, shortf: shortf,
+               recv: recv, oldest: agg.oldest, eotPend: eotPend,
+               nPend: PDClaims.pending(g.cash).length + PDClaims.pending(g.eots).length,
+               exposure: pend + shortf };
+    });
+    /* ⚠️ Ties break on the OLDEST pending, not on the name: two projects with the same exposure
+       are not equally urgent if one has been waiting four months. */
+    rowsOut.sort(function (a, b) {
+      return (b.exposure - a.exposure) || ((b.oldest || 0) - (a.oldest || 0)) ||
+             a.name.localeCompare(b.name);
+    });
+
+    var head = '<thead><tr><th>Project</th><th class="num">Pending</th><th class="num">Shortfall</th>' +
+      '<th class="num">Unrecovered</th><th class="num">EOT</th><th class="num">Oldest</th>' +
+      '<th class="num">Recovery</th></tr></thead>';
+    var body = rowsOut.length ? rowsOut.map(function (r) {
+      var tone = r.oldest == null ? '' : (r.oldest > 90 ? ' style="color:var(--pd-bad-text);"'
+                                       : (r.oldest > 60 ? ' style="color:var(--pd-warn-text);"' : ''));
+      var rtone = r.recv == null ? '' : (r.recv >= 80 ? ' style="color:var(--pd-ok-text);"'
+                                      : (r.recv < 50 ? ' style="color:var(--pd-bad-text);"' : ''));
+      return '<tr><td>' + esc(r.name) + '</td>' +
+        '<td class="num">' + (r.pend ? Fmt.moneyShort(r.pend) : '—') + '</td>' +
+        '<td class="num">' + (r.shortf ? Fmt.moneyShort(r.shortf) : '—') + '</td>' +
+        '<td class="num"><b>' + (r.exposure ? Fmt.moneyShort(r.exposure) : '—') + '</b></td>' +
+        '<td class="num">' + (r.eotPend ? Math.round(r.eotPend) + 'd' : '—') + '</td>' +
+        '<td class="num"' + tone + '>' + (r.oldest != null ? r.oldest + 'd' : '—') + '</td>' +
+        /* ⚠️ An em dash, never 0%. Nothing decided yet is not a 0% recovery rate — it is the
+           absence of a rate, and printing 0 would read as total refusal. */
+        '<td class="num"' + rtone + '>' + (r.recv == null ? '—' : Math.round(r.recv) + '%') + '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="po-empty">No claims, change orders or extensions of time on these projects.</td></tr>';
+    document.getElementById('po-ct-rank').innerHTML = head + '<tbody>' + body + '</tbody>';
+
+    var note = document.getElementById('po-ct-ranknote');
+    if (note) {
+      note.innerHTML = '<b>Unrecovered</b> is pending plus shortfall — money asked for and not yet ' +
+        'certified, plus money asked for and refused. Both are outstanding; only the first is still ' +
+        'arguable. <b>EOT</b> is time, kept apart from the cash columns and never added to them.';
+    }
+  }
+
+  function ctRenderAging(ag, cash, today) {
+    var host = document.getElementById('po-ct-age');
+    if (!host) return;
+    /* Scaled to the largest bucket, not the total — see the same note in contracts-claims'
+       own band. Scaled to the total, a healthy portfolio draws three invisible slivers. */
+    var worst = Math.max.apply(null, ag.buckets.map(function (b) { return b.value; }).concat([1]));
+    var li = ag.buckets.map(function (b) {
+      var w = Math.max(b.value ? 2 : 0, Math.round(b.value / worst * 100));
+      var tone = b.key === '90+' ? ' po-age-bad' : (b.key === '61-90' ? ' po-age-warn' : '');
+      return '<li class="po-age' + tone + '"><span class="po-age-l">' + esc(b.label) + '</span>' +
+        '<span class="po-age-bar"><i style="width:' + w + '%"></i></span>' +
+        '<span class="po-age-v">' + (b.n ? Fmt.moneyShort(b.value) + ' · ' + b.n : '—') + '</span></li>';
+    }).join('');
+    if (ag.unsent) {
+      li += '<li class="po-age po-age-unsent"><span class="po-age-l">Not submitted</span>' +
+        '<span class="po-age-bar"></span><span class="po-age-v">' +
+        Fmt.moneyShort(ag.unsentValue) + ' · ' + ag.unsent + '</span></li>';
+    }
+    host.innerHTML = li || '<li class="po-age"><span class="po-age-l">Nothing pending.</span></li>';
   }
 
   // ================= Portfolio Progress Photos (cross-project) =================
