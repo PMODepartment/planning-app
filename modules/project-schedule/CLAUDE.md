@@ -1,3 +1,96 @@
+## 2026-09-15 (c) — The notices become one line, and the two filter rows become one
+
+Owner, on a 3-tower / 5-trade / 609-activity project: *"UI in this situation needs a big rework. the
+main screen can't even be seen without having to select the expand button."* Then: *"The notification
+needs a big rework as well its too lengthy and the text itself is not professional."* Then: *"The
+Towers toolbar and trades toolbar can be in the same level."*
+
+### ⚠️⚠️ THE THREE ARE ONE PROBLEM: THE CHROME HAD EATEN THE DRAWING
+
+Measured in a browser at 1440×900, on the owner's project shape, against the shipped build:
+
+| block | before | after |
+|---|---:|---:|
+| module toolbar | 36 | 36 |
+| filter rows | **50** (2 rows) | **26** (1 row) |
+| model bar | 32 | 32 |
+| **the notice** | **103** | **31** |
+| card header + meter | 46 | 46 |
+| per-card view bar | 32 | 32 |
+| caption | 29 | 29 |
+| timeline card | 107 | 107 |
+| **chrome total** | **435** | **339** |
+| **left for the drawing** | **427** | **523** |
+
+**−96px of chrome, and the drawing gains all of it.** On the owner's own screenshot the notice was
+taller still (~157px: their project also trips the *branch is a grouping* cause, which adds a fourth
+bullet), so the saving there is larger than the 72px measured here.
+
+### The notice: one line, with the diagnosis behind a disclosure
+
+`_vsWarnWrap(key, html)` is now `_vsWarnWrap(key, summary, detail)`. The summary is one line; the
+detail sits in a `<details>` that is **shut by default**. Measured: **31px shut, 135px open.**
+
+⚠️⚠️ **Collapsed, not cut.** Every line of that detail was written from a real diagnosis on a real
+project — 4PH Strevi, 692 of 15,834 rows unplaced, 76 of them from a single missing `RD` alias — and
+deleting it would cost the next planner that investigation again. It is one click away.
+
+⚠️ **`<details>`/`<summary>`, not a button and a handler.** The disclosure is native: no wiring, no
+state to lose across the repaint that `renderVStack` performs on every control, and keyboard-operable
+without any code of ours. The dismiss `×` stays a sibling of the `<details>`, so it is not part of the
+summary's hit area — hit-tested to confirm.
+
+⚠️ **The register changed, not just the length.** Out: *"is the usual culprit"*, *"so either:"*,
+*"or leave them here"*, *"That is deliberate"*, *"which is exactly what a floor doing all its zones at
+once would look like"*. In: the count and the fact, then the causes as a numbered list, then the exact
+path to the fix. Where a sentence explained **why a design decision was taken**, it moved into the
+code comments — which is where it belongs and where it now stays.
+
+⚠️ **The assign control stays in the summary on the `alltower` notice.** It is the fix; a fix shut
+behind a disclosure is a fix nobody applies. Only the explanation folds away.
+
+### Towers and Trades share one row
+
+Both are now fragments emitted into a single `.ps-vs-chips`, separated by a `.ps-tb-div` — the same
+way `.ps-tb-row` has always kept unrelated groups apart in one line. Each keeps its label.
+
+⚠️ **They wrap as one list, not as two locked groups.** A group that could not be split would jump to
+the next line whole and leave a half-empty row above it. The two labels and the rule are what say
+where one filter ends.
+
+⚠️ The divider is emitted only with a left neighbour: on a single-tower project `towerChips` is empty
+and the row is the trades filter alone, exactly as before. `.ps-vs-twchips` now matches no element and
+says so in its own rule.
+
+### Verified
+
+CSS and the module toolbar extracted from the shipped file verbatim; the toolbar sliced by div-depth
+matching. Both themes at 1440×900 and 1900×1000. Notice 31px shut / 135px open in both themes, the
+`color-mix` hairline resolving to 25% alpha on the dark ground; one filter row carrying both labels
+and the divider; no horizontal scroll; the dismiss button hit-tests to itself.
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance, no duplicate ids, no orphaned
+`return`, the disclosure opens and closes exactly once, all four notices go through the wrapper, the
+`nolevel` list and its four items close, and neither chip fragment opens a `<div>` it does not close.
+
+⚠️ **Two gates of my own were wrong before they were right, and both are the same shape as bugs this
+file already records:** the register check searched all 3.3 MB and failed on *"That is deliberate"* in
+a code comment 600 lines away about a save dialog; and a source-size cap failed because this change
+**added** code comments while shortening the delivered text. Source bytes are the wrong proxy for a
+rendered height. Both are now scoped or replaced, with the reason written next to them.
+
+### ⚠️ What is still spending the budget, and is untouched here
+
+The drawing has 523px at 1440×900 — better, not solved. The remaining blocks, largest first: the
+**timeline card at 107px**, the **card header + meter at 46px**, the **per-card view bar at 32px**.
+And structurally, `_vsApplyPane` caps the pane at `innerHeight − paneTop − 16`, so every pixel of
+chrome above it still comes straight out of the buildings. Letting the pane exceed the viewport (the
+page already grows — see `.ps-longdoc`) is the lever that does not require trimming anything else.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915c`, sort-checked against `20260915b`.
+
 ## 2026-09-15 (b) — One left edge and one right edge for the whole module
 
 Owner: *"I think we can still improve the UI. The sides are not aligned with each other."*

@@ -102,6 +102,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (c) — Project Schedule: a notice that was 103px, and two filter rows that are now one
+
+Owner: *"the main screen can't even be seen"*, *"The notification … its too lengthy and the text
+itself is not professional"*, *"The Towers toolbar and trades toolbar can be in the same level"*.
+Module detail in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **Measure the chrome as a budget before redesigning any of it.** Block by block at 1440×900:
+  toolbar 36, filter rows 50, model bar 32, notice 103, card header 46, per-card view bar 32, caption
+  29, timeline card 107 — 435px of chrome, and the drawing got what was left. The two blocks worth
+  attacking were obvious only once they were numbers. Now 339px, and every pixel saved goes to the
+  content.
+- ⚠️⚠️ **A long diagnostic notice should collapse, not shrink.** The detail in this one was written
+  from a real field investigation; deleting it would cost the next planner that work again.
+  `<details>`/`<summary>` gives the disclosure natively — no handler, no state to lose across a
+  re-render, keyboard-operable for free. 103px → 31px shut.
+- ⚠️ **"Unprofessional" was about register, not length.** Asides (*"is the usual culprit"*), narration
+  of what the reader will see, and sentences justifying a design decision all came out; the count, the
+  fact, the causes as a list, and the exact path to the fix went in. The justifications moved into the
+  code comments, which is where they belong.
+- ⚠️ **Two of my own gates were wrong first.** One searched the whole 3.3 MB file for prose and failed
+  on a code comment 600 lines away; one capped source bytes, which this change *increased* while
+  shortening the delivered text. **Source size is the wrong proxy for a rendered height** — measure the
+  rendering. Both are the same shape as the quoted `id="…"` that fooled the duplicate-id gate.
+
+`MODULE_V` → `20260915c`, sort-checked against `20260915b`.
+
 ### 2026-09-15 (b) — Project Schedule: the toolbar defines the module's edge, and four panes each had their own
 
 Owner: *"The sides are not aligned with each other."* Module detail in

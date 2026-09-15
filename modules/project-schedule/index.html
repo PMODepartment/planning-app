@@ -1699,6 +1699,26 @@
     /* ⚠️ 30px of right padding, not a float: the text must wrap CLEAR of the ×. A floated or
        absolutely-positioned button over unpadded text overlaps the last line on a narrow pane. */
     .ps-vs-warn { position:relative; font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border-radius:var(--pd-radius-md); padding:6px 30px 6px 9px; }
+    /* ⚠⚠ THE SUMMARY IS ONE LINE AND STAYS ONE LINE. `white-space:nowrap` with an ellipsis was
+       considered and rejected: a notice whose own count is cut off is worse than one that wraps.
+       It wraps, but there is little to wrap -- the diagnosis is in `.ps-vs-warn-b`, shut. */
+    .ps-vs-warn-sum { line-height:1.45; }
+    .ps-vs-warn-d > summary.ps-vs-warn-sum { cursor:pointer; list-style:none; }
+    /* The stock triangle differs per engine and sits at a different baseline in each; one drawn
+       marker reads the same everywhere and lines up with the text. */
+    .ps-vs-warn-d > summary::-webkit-details-marker { display:none; }
+    .ps-vs-warn-d > summary::after { content:'Details'; display:inline-block; margin-left:8px;
+      font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+      opacity:.75; border-bottom:1px solid currentColor; }
+    .ps-vs-warn-d[open] > summary::after { content:'Less'; }
+    .ps-vs-warn-b { margin-top:6px; padding-top:6px; border-top:1px solid var(--pd-warn-text);
+      line-height:1.5; }
+    /* ⚠ The rule above would be a solid bar at full strength -- it is the TEXT colour, used as a
+       hairline on the notice's own tinted ground, so it is held back to a hint of itself. */
+    .ps-vs-warn-b { border-top-color:color-mix(in srgb, var(--pd-warn-text) 25%, transparent); }
+    .ps-vs-warn-l { margin:6px 0 0; padding-left:20px; }
+    .ps-vs-warn-l > li { margin-bottom:5px; }
+    .ps-vs-warn-l > li:last-child { margin-bottom:0; }
     .ps-vs-warnx { position:absolute; top:3px; right:4px; width:22px; height:22px; line-height:1;
       border:0; background:transparent; color:inherit; font-size:var(--pd-fs-lg); cursor:pointer; border-radius:5px; opacity:.7; }
     .ps-vs-warnx:hover, .ps-vs-warnx:focus-visible { opacity:1; background:rgba(0,0,0,.08); }
@@ -2012,6 +2032,9 @@
     /* ⚠ No bottom margin of its own any more -- it inherits the 10px every chip row now takes,
        so Towers -> Trades and Trades -> the control bar are one gap. It had 6px, which read as an
        accident once the other two were evened up. */
+    /* ⚠ `.ps-vs-twchips` NO LONGER EXISTS IN THE MARKUP (2026-09-15: the towers and trades
+       filters were merged into one `.ps-vs-chips`). Kept as a rule only so a reader searching for
+       it finds this note rather than nothing; it matches no element today. */
     .ps-vs-twchips { align-items:center; }
     /* The site card's own Show control. ⚠️ Inside the card, above the viewpoint bar, because it
        changes what the model IS rather than where the camera is. */
@@ -15197,11 +15220,30 @@
   }
   // ⚠️ The × is a real <button> with an aria-label, not a styled span: it is the only control in the
   // banner and a reader that cannot reach it cannot reclaim the space.
-  function _vsWarnWrap(key, html) {
+  /* ⚠⚠ ONE LINE, WITH THE DIAGNOSIS BEHIND A DISCLOSURE. Owner 2026-09-15: *"The notification
+     needs a big rework as well its too lengthy and the text itself is not professional"* — said in
+     the same breath as *"the main screen can't even be seen"*, and the two are the same problem.
+     Measured on the owner's screenshot: the `nolevel` notice alone was **157px** of a ~1010px pane,
+     on a screen where the building itself had about 100px left.
+     ⚠⚠ COLLAPSED, NOT CUT. Every line of the detail was written from a real diagnosis on a real
+       project (4PH Strevi: 692 of 15,834 rows, 76 of them one missing `RD` alias) and throwing it
+       away would cost the next planner that investigation again. It moves behind `Details`, which
+       is shut by default.
+     ⚠ `<details>`/`<summary>`, not a button and a handler: the disclosure is native, it needs no
+       wiring, it survives a repaint because `renderVStack` rebuilds this markup from scratch either
+       way, and it is keyboard-operable without any code of ours.
+     ⚠ `detail` is OPTIONAL. A notice that has nothing more to say renders as a bare line rather
+       than a `Details` control that opens onto a repeat of the summary. */
+  function _vsWarnWrap(key, summary, detail) {
     if (_vsWarnHidden[key]) return '';
-    return '<div class="ps-vs-warn" data-vsw="' + esc(key) + '">' +
-      '<button class="ps-vs-warnx" data-vswx="' + esc(key) + '" title="Dismiss — it comes back if the count changes" aria-label="Dismiss this notice">&times;</button>' +
-      html + '</div>';
+    var x = '<button class="ps-vs-warnx" data-vswx="' + esc(key) + '" title="Dismiss — it comes back if the count changes" aria-label="Dismiss this notice">&times;</button>';
+    if (!detail) {
+      return '<div class="ps-vs-warn" data-vsw="' + esc(key) + '">' + x +
+        '<div class="ps-vs-warn-sum">' + summary + '</div></div>';
+    }
+    return '<div class="ps-vs-warn" data-vsw="' + esc(key) + '">' + x +
+      '<details class="ps-vs-warn-d"><summary class="ps-vs-warn-sum">' + summary + '</summary>' +
+      '<div class="ps-vs-warn-b">' + detail + '</div></details></div>';
   }
   function _vsMaxDetail() { return Math.max(1, _vsAxis().length); }
   /* ==========================================================================================
@@ -20014,7 +20056,12 @@
        Towers row, has carried a label since 2026-09-13 for exactly this reason ("the two rows now
        look alike and a reader has to be able to tell which one they are ticking"); the trades row
        never got one. Same treatment for both now. */
-    var chips = '<div class="ps-vs-chips"><span class="ps-vs-rowlab">Trades</span><button class="ps-vs-chip' + (!_vsTradeSel.length ? ' on' : '') +
+    /* ⚠⚠ A FRAGMENT, NOT A ROW. Owner 2026-09-15: *"The Towers toolbar and trades toolbar can
+       be in the same level"* — asked while the buildings had about 100px of the pane and the two
+       chip rows were taking ~96px of it. Both filters now share one `.ps-vs-chips`; see the
+       assembly at `host.innerHTML`. Each keeps its own label, and a `.ps-tb-div` separates them,
+       which is how `.ps-tb-row` has always kept unrelated groups apart in one line. */
+    var tradeChips = '<span class="ps-vs-rowlab">Trades</span><button class="ps-vs-chip' + (!_vsTradeSel.length ? ' on' : '') +
       '" data-vstr="ALL" aria-pressed="' + (!_vsTradeSel.length) + '" title="Show every trade">All trades</button>' +
       trades.map(function (t) {
         var on = _vsTradeSel.indexOf(t) >= 0;
@@ -20024,7 +20071,7 @@
           '<span class="ps-vs-dot" style="background:' + _vsColor(t) + '"></span>' + esc(t) + '</button>';
       }).join('') +
       (_vsTradeSel.length ? '<span class="ps-vs-note">' + tradesShown.length + ' of ' + trades.length +
-        ' trades shown side by side</span>' : '') + '</div>';
+        ' trades shown side by side</span>' : '');
     // ---- Which tower am I looking at? -----------------------------------------------------------
     // Owner 2026-08-26: *"there should be a dropdown to determine what tower to look at (if multiple
     // towers). there should also be a consolidated option meaning it views all towers, and the towers
@@ -20078,8 +20125,8 @@
        control lighter, which is the other half of the owner's *"simpler UI"*.
        ⚠️ Emitted only when there is more than one thing to choose between: on a single-tower project
        a row reading "All towers · Tower 1" is two controls for a question with one answer. */
-    var twChips = (_twOpts.length > 1)
-      ? '<div class="ps-vs-chips ps-vs-twchips"><span class="ps-vs-rowlab">Towers</span>' +
+    var towerChips = (_twOpts.length > 1)
+      ? '<span class="ps-vs-rowlab">Towers</span>' +
         '<button class="ps-vs-chip' + (!_vsTowerSel.length ? ' on' : '') + '" data-vstw="ALL"' +
           ' aria-pressed="' + (!_vsTowerSel.length) + '" title="Show every tower, side by side">All towers</button>' +
         _twOpts.filter(function (o) { return o.v !== 'ALL'; }).map(function (o) {
@@ -20089,7 +20136,7 @@
             (on ? ' — click to hide it' : ' — click to add it beside the others') + '">' + esc(o.t) + '</button>';
         }).join('') +
         (_vsTowerSel.length ? '<span class="ps-vs-note">' + towerNames.length + ' of ' + _twAll.length +
-          ' towers shown side by side</span>' : '') + '</div>'
+          ' towers shown side by side</span>' : '')
       : '';
 
     /* The four colours a compare cell's DONE pill can take. A legend, so it lives in the caption --
@@ -20309,11 +20356,14 @@
       var proj = (PROJECTS.find(function (x) { return x.id === pid; }) || {});
       var defTw = String(proj.name || proj.id || 'Tower 1').trim();
       var _twName = _twLvl.name || 'Tower';
-      warn = _vsWarnWrap(_vsWarnKey('alltower', acts.length), '<strong>None of this project’s ' + acts.length + ' activities carry a ' +
-        esc(_twName) + '</strong>, but ' + locatedN + ' of them do carry a ' + esc(lvl0Name) +
-        ' — so the work IS located and only the ' + esc(_twName) + ' was never stamped. That is what a ' +
-        'single-' + esc(_twName.toLowerCase()) + ' push leaves behind. The stack is unaffected (it bands by ' +
-        esc(lvl0Name) + '), but the ' + esc(_twName) + ' picker has nothing to switch between.' +
+      /* ⚠ The ASSIGN CONTROL stays in the summary, not in the detail. It is the fix, and a fix
+         shut behind a disclosure is a fix nobody applies. Only the explanation folds away. */
+      warn = _vsWarnWrap(_vsWarnKey('alltower', acts.length),
+        '<strong>No ' + esc(_twName) + ' on any of ' + acts.length + ' activities.</strong> ' +
+        locatedN + ' carry a ' + esc(lvl0Name) + ', so the ' + esc(_twName) + ' picker has nothing to switch between.',
+        'The work is located: ' + locatedN + ' activities carry a ' + esc(lvl0Name) + ' and only the ' +
+        esc(_twName) + ' was never stamped, which is what a single-' + esc(_twName.toLowerCase()) +
+        ' push leaves behind. The stack itself is unaffected — it bands by ' + esc(lvl0Name) + '.' +
         (canWrite && !window.__viewOnly && !window.__archived
           ? '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
             '<label class="ps-vs-note" for="ps-vs-fixtw">Assign them all to ' + esc(_twName) + '</label>' +
@@ -20338,22 +20388,25 @@
       // Builder route last for a schedule that really was pushed. ⚠️ It does NOT guess which kind of
       // project this is: provenance is not recorded, and a confident wrong instruction is what this
       // is replacing.
-      warn += _vsWarnWrap(_vsWarnKey('nolevel', noLevList.length), '<strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
-        ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(lvl0Name) + '</strong> — shown in the dashed <em>No level</em> band, ' +
-        'from ' + esc(noLevTrades.join(', ')) + '. A ' + esc(lvl0Name) + ' is read from the WBS branch names, so either:' +
-        (noLevGrpVals.length ? ('<br>• <strong>the branch is a grouping, not a place</strong> — ' +
+      warn += _vsWarnWrap(_vsWarnKey('nolevel', noLevList.length),
+        '<strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y has' : 'ies have') +
+        ' no ' + esc(lvl0Name) + '.</strong> Shown in the <em>No level</em> band. ' +
+        esc(noLevTrades.length === 1 ? noLevTrades[0] : noLevTrades.length + ' trades affected') + '.',
+        'A ' + esc(lvl0Name) + ' is read from the WBS branch names. Four causes, in order of how often they apply:' +
+        '<ol class="ps-vs-warn-l">' +
+        (noLevGrpVals.length ? ('<li><strong>The branch is a grouping, not a place.</strong> ' +
           esc(noLevGrpVals.slice(0, 6).join(', ')) + (noLevGrpVals.length > 6 ? ' and ' + (noLevGrpVals.length - 6) + ' more' : '') +
-          ' ' + (noLevGrpVals.length === 1 ? 'is a phase / trade' : 'are phases / trades') + ', not ' + esc(lvl0Name) + 's, so the stacking will not band by ' +
-          (noLevGrpVals.length === 1 ? 'it' : 'them') + '. That is deliberate: a stacking band is a physical part of the building. ' +
-          'Give this work its real ' + esc(lvl0Name) + ' in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>, or leave it here;') : '') +
-        '<br>• <strong>a branch name is not matched</strong> — open the band and read the ' +
-        '<em>WBS branch</em> column: if you can see a ' + esc(lvl0Name) + ' in it (an abbreviation such ' +
-        'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>;' +
-        '<br>• <strong>the work genuinely has no ' + esc(lvl0Name) + '</strong> — substructure, footings and ' +
-        'site works sit below or outside the storeys. Give them their own ' + esc(lvl0Name) + ' value if you ' +
-        'want them banded, or leave them here;' +
-        '<br>• or, on a schedule pushed from <em>Schedule Setup</em>, the trade was given no floors in ' +
-        'step 2 and went in as whole-trade work — give it floors there and re-push.');
+          ' ' + (noLevGrpVals.length === 1 ? 'is a phase or trade' : 'are phases or trades') + ', not ' + esc(lvl0Name) +
+          's. A stacking band is a physical part of the building, so these are not banded. Set the real ' +
+          esc(lvl0Name) + ' in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations</em>.</li>') : '') +
+        '<li><strong>A branch name is not matched.</strong> The match table compares the branch name exactly, ' +
+        'so an abbreviation (<em>RD</em> for Roofdeck) does not resolve. Add the alias in ' +
+        '<em>Schedule Setup › Floors &amp; Zones → Match WBS to locations</em>.</li>' +
+        '<li><strong>The work has no ' + esc(lvl0Name) + '.</strong> Substructure, footings and site works sit ' +
+        'below or outside the storeys. Assign a ' + esc(lvl0Name) + ' to band them, or leave them in the band.</li>' +
+        '<li><strong>The trade was pushed without floors.</strong> On a schedule from <em>Schedule Setup</em>, ' +
+        'a trade given no floors in step 2 enters as whole-trade work. Assign floors and re-push.</li>' +
+        '</ol>');
     }
     /* ==========================================================================================
        ⚠️⚠️ THE ZONE COLUMN IS EMPTY — say it, because the symptom points somewhere else entirely.
@@ -20375,22 +20428,25 @@
     var _emptyAx = _vsEmptyAxisNames();
     if (_emptyAx.length && acts.length) {
       warn += _vsWarnWrap(_vsWarnKey('nozone', _emptyAx.join('|')),
-        '<strong>Progress cannot be read per ' + esc(_emptyAx[0]) + ' yet</strong> — this project defines ' +
+        '<strong>No ' + esc(_emptyAx[0]) + ' recorded on any activity.</strong> Each storey draws as one ' +
+        'block at the whole floor\'s progress.',
+        'This project defines ' +
         (_emptyAx.length === 1 ? 'a <strong>' + esc(_emptyAx[0]) + '</strong> level' :
           'the levels <strong>' + esc(_emptyAx.join(' › ')) + '</strong>') +
-        ', but not one of the ' + acts.length.toLocaleString() + ' activities on screen carries a value there. ' +
-        'So every storey is one block whose fill is the WHOLE FLOOR\'s progress, and walking the ' +
-        'timeline moves that one figure — which is exactly what a floor doing all its zones at once ' +
-        'would look like. Each zone already fills on its own schedule the moment it HAS a zone: give ' +
-        'the activities a ' + esc(_emptyAx[0]) + ' in <strong>Schedule Setup › Floors &amp; Zones</strong> (or ' +
-        '<strong>Actions › Match WBS to locations…</strong> if the zone is already in the WBS branch names), ' +
-        'then Detail ' + ((_vsFilledDepth || 1) + 1) + ' draws it zone by zone.');
+        ', but none of the ' + acts.length.toLocaleString() + ' activities on screen carries a value there. ' +
+        'The progress figures are correct; they are the floor\'s, not the ' + esc(_emptyAx[0]) + '\'s. ' +
+        'Each ' + esc(_emptyAx[0]).toLowerCase() + ' fills on its own schedule as soon as it has one.' +
+        '<br><strong>To fix:</strong> set a ' + esc(_emptyAx[0]) + ' in <em>Schedule Setup › Floors &amp; Zones</em>, ' +
+        'or <em>Actions › Match WBS to locations</em> if it already appears in the WBS branch names. ' +
+        'Detail ' + ((_vsFilledDepth || 1) + 1) + ' then draws it ' + esc(_emptyAx[0]).toLowerCase() + ' by ' +
+        esc(_emptyAx[0]).toLowerCase() + '.');
     }
     // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
     // the row has no WBS node at all — a different problem, and worth naming rather than bucketing.
-    if (noTradeList.length) warn += _vsWarnWrap(_vsWarnKey('notrade', noTradeList.length), '<strong>' + noTradeList.length + ' activit' +
-      (noTradeList.length === 1 ? 'y has' : 'ies have') + ' no Trade and no WBS branch to infer one from</strong> — set their Trade, ' +
-      'or file them under a WBS branch. Actions → Diagnose data… lists them.');
+    if (noTradeList.length) warn += _vsWarnWrap(_vsWarnKey('notrade', noTradeList.length),
+      '<strong>' + noTradeList.length + ' activit' + (noTradeList.length === 1 ? 'y has' : 'ies have') +
+      ' no Trade.</strong> Set a Trade, or file them under a WBS branch. ' +
+      '<em>Actions › Diagnose data</em> lists them.');
 
     _vsCells = {}; _vsHatchSeen = {}; _vsFocusCards = [];
     _vsZpClear();   // ⚠️ the setup can be edited between repaints; see _vsZpAll
@@ -20519,7 +20575,15 @@
        reader coming down the pane still met controls, controls, then a line of prose before any
        content, so the header was three bands deep and the key still read as part of it.
        ⚠ `caption` is now emitted INSIDE `.ps-vs-pane`, after `.ps-vs-body` -- see below. */
-    host.innerHTML = twChips + chips + bar + warn + _vsHatchDefs() +
+    /* ⚠ ONE filter row. The divider is emitted only with a left neighbour to divide from — on a
+       single-tower project `towerChips` is empty and the row is the trades filter alone, exactly as
+       it was.
+       ⚠ They wrap as one list rather than as two locked groups. A group that cannot be split would
+         jump to the next line whole and leave a half-empty row above it; letting the chips reflow
+         keeps the row dense, and the two labels plus the rule are what say where one filter ends. */
+    var filterRow = '<div class="ps-vs-chips">' + towerChips +
+      (towerChips ? '<span class="ps-tb-div"></span>' : '') + tradeChips + '</div>';
+    host.innerHTML = filterRow + bar + warn + _vsHatchDefs() +
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
