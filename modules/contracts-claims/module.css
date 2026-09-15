@@ -125,6 +125,23 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-age.warn { color:var(--pd-warn-text); }
 .cc-age.bad  { color:var(--pd-bad-text); }
 
+/* ---- Attachments on a record (2026-09-15) ------------------------------------------------------
+   ⚠ A list, not a grid: a record carries two or three files, not twenty, and the useful facts are
+     the name and what kind of document it is. */
+.cc-atts { list-style:none; margin:0 0 8px; padding:0; }
+.cc-att { display:flex; align-items:center; gap:10px; padding:7px 0;
+  border-bottom:1px solid var(--pd-line); font-size:13px; }
+.cc-att:last-child { border-bottom:0; }
+.cc-att-n { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cc-att-n > i { display:block; font-style:normal; font-size:11px; color:var(--pd-muted); }
+.cc-att .pd-btn { flex:none; height:28px; padding:0 9px; font-size:12px; }
+/* ⚠ A staged file is visibly NOT yet uploaded. Its row says so in words as well — colour alone
+   would leave a reader who cannot see it with no signal at all. */
+.cc-att-pend { opacity:.72; }
+.cc-att-add { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.cc-att-add .pd-select { height:32px; }
+.cc-att-st { font-size:12px; color:var(--pd-muted); }
+
 /* ---- The register's own dashboard, at the top of the Contract tab (2026-09-15) ----------------
    ⚠ Built from the module's OWN idioms (`.cc-kpis` / `.cc-kpi`), not the project dashboard's
      `.pd-mini-*`. The two screens report the same figures in the same order, but each should look

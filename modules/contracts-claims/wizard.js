@@ -111,6 +111,19 @@ window.CCWizard = (function () {
           a step that silently is not there. */
     { key: 'affected', label: 'Affected work', sub: 'Which activities this touches',
       when: function () { return raisedAgainst(); } },
+    /* ⚠⚠ FILES. Owner 2026-09-15, looking at this very wizard: *"Where in the wizard can the
+       planner add attachments? Yes there is an existing bucket but it can't be accessed / there is
+       no path for planners to upload them."* There was none — the `contracts-claims` bucket has
+       existed since 2026-08-25 and its storage policies were already bucket-wide, but nothing in
+       this module ever offered a record an upload.
+       ⚠ ALL FOUR RECORD TYPES, and not for Package or BOQ: a package is a lot definition and a
+         BOQ run writes no record at all, so neither has anything for a file to hang off.
+       ⚠ BEFORE Review, because Review is a summary and a step after it reads as an afterthought.
+       ⚠ NOTHING IS UPLOADED HERE. The record has no id until finish() saves it, so the files are
+         staged and flushed afterwards — the panel says so on every staged row. That also keeps the
+         wizard's own promise: *"NOTHING IS WRITTEN UNTIL THE LAST STEP."* */
+    { key: 'files',   label: 'Files',    sub: 'Attach the paperwork — optional',
+      when: function () { return st.type !== 'BOQ' && st.type !== 'Package'; } },
     { key: 'review',  label: 'Review',   sub: 'Check, then save',
       when: function () { return st.type !== 'BOQ'; } }
   ];
@@ -610,6 +623,17 @@ window.CCWizard = (function () {
           ') — the normal case, and what the billing reads. A package would only <b>narrow</b> it.</p>');
   }
 
+  /* The panel is module.js's, handed over through `D` — see the note on `attPanelHTML` there.
+     ⚠️ `st.files` is the staged list and lives on the wizard's own state, so closing the wizard
+        discards it exactly as it discards every other unsaved answer. */
+  function stepFiles() {
+    return '<p class="ccw-hint">Optional. Attach what this record is evidenced by — the signed ' +
+      'contract, a client instruction, the cost back-up, a programme-impact report. ' +
+      '<b>Nothing is uploaded until you save</b>, and files can be added or removed later from the ' +
+      'record itself.</p>' +
+      '<div id="ccw-atts"></div>';
+  }
+
   function stepReview() {
     function row(k, v2) { return '<tr><td>' + esc(k) + '</td><td><b>' + (v2 || '<span class="ccw-mut">—</span>') + '</b></td></tr>'; }
     var mk = pkgToCreate();
@@ -684,7 +708,8 @@ window.CCWizard = (function () {
         : '<p class="ccw-hint">The activity picker is unavailable in this build.</p>');
   }
   var RENDER = { type: stepType, package: stepPackage, details: stepDetails, dates: stepDates,
-                 boq: stepBoq, codes: stepCodes, affected: stepAffected, review: stepReview };
+                 boq: stepBoq, codes: stepCodes, affected: stepAffected, files: stepFiles,
+                 review: stepReview };
 
   // ---- shell -----------------------------------------------------------------
   function paint() {
@@ -732,6 +757,23 @@ window.CCWizard = (function () {
   }
 
   function wireStep(key) {
+    /* ⚠ Mounted after paint() for the same reason the affected-work picker is: paint() replaces
+       #ccw-body wholesale, so the panel has to be drawn into a container that is already in the
+       document. `st.files` survives stepping Back and forward because it lives on the wizard's
+       state, not on the DOM. */
+    if (key === 'files') {
+      var box = ov.querySelector('#ccw-atts');
+      if (!box || !D.attPanelHTML) return;
+      st.files = st.files || [];
+      (function paintF() {
+        box.innerHTML = D.attPanelHTML(null, st.files);
+        D.attPanelWire(box, null,
+          function () { return st.files; },
+          function (a) { st.files = a; },
+          paintF);
+      })();
+      return;
+    }
     if (key === 'affected') {
       /* ⚠️ Mounted after paint() for the same reason the ladder is: the picker needs its container
          in the document, and paint() replaces #ccw-body wholesale on every step change. The live
@@ -1088,6 +1130,12 @@ window.CCWizard = (function () {
       affMsg = ' The ' + affIds.length + ' affected activities could not be linked — the saved ' +
         'record returned no id. Re-pick them on the record.';
     }
+    /* ⚠ THE STAGED FILES, AFTER the record and never allowed to fail it — the same rule the
+       affected-work write above follows, and for the same reason: the row is the commercial
+       fact the planner came to save. attFlush reports per file and leaves the record standing;
+       anything that would not upload can be re-attached from the record itself.
+       ⚠ Uses `newId`, the same id the link write uses — not a second read of res.row. */
+    if (st.files && st.files.length && D.attFlush && newId) await D.attFlush(newId, st.files);
     close();
     UI.toast((madeIds.length
       ? 'Contract saved, and ' + madeIds.length + ' package(s) created.' : 'Record added.') + affMsg,
@@ -1121,6 +1169,13 @@ window.CCWizard = (function () {
       /* The affected-activity selection. `affIds` is the state; `affPicker` is only the live
          handle, which dies with the DOM on every step change -- see wireStep('affected'). */
       affPicker: null, affIds: [],
+      /* ⚠ DECLARED HERE, not left to the step. The note on `pkgList` above records what
+         happens when a step reads state `open()` never initialised: a TypeError on first
+         paint, and a step that renders nothing. `wireStep('files')` guards with `|| []` as
+         well, but the guard is the belt and this is the braces — and it is also what makes
+         the staged list reset between records rather than carrying the last one's files
+         into the next wizard. */
+      files: [],
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];

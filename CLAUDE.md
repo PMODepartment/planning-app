@@ -102,6 +102,81 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (h) — Contracts & Claims: a record can carry its paperwork
+
+Owner: *"In the contracts & claims module there should also be an attach a file feature in the
+contracts, claims, eot, and change order"*, and then, shown the wizard: *"Where in the wizard can the
+planner add attachments? Yes there is an existing bucket but it can't be accessed / there is no path
+for planners to upload them."*
+
+Both true. The `contracts-claims` bucket has existed since `2026-08-25-pmi.sql` and — the part that
+matters — **its three storage policies are keyed on `bucket_id`, not on PMI**. So nothing about
+storage needed changing. What was missing was a table for a record's files, and any screen at all
+that offered an upload.
+
+⚠️ **Run `migrations/2026-09-15-cc-attachments.sql`.** Until then the panel says so by name rather
+than failing the module: the read is tolerant exactly like `PKGS`.
+
+### What was built
+
+- **`cc_attachments`** — a separate table from `pmi_attachments`, not a widened one. One attachment
+  table serving both would need a nullable `pmi_id` *and* a nullable `record_id` with a check
+  constraint holding the invariant — i.e. the database no longer able to say what an attachment
+  belongs to. Two narrow tables with real foreign keys cost one more `CREATE` and answer that by
+  construction.
+- **One panel, two modes**, because there are two ways to create a record. A record has no id until
+  it is saved, so files chosen beforehand are **staged in memory and flushed once the row exists**;
+  given an id the same panel talks to the database directly. Two implementations of "attach a file"
+  on one module is how they come to disagree about the path convention.
+- **A `Files` step in the wizard**, before Review — offered on Contract, Claim, Change Order and EOT,
+  and not on Package or BOQ, neither of which has a row for a file to hang off. It keeps the wizard's
+  own promise that *"NOTHING IS WRITTEN UNTIL THE LAST STEP"*.
+- **A `Files` section in the compact edit form**, because the wizard is new-records-only by design
+  and most attaching happens to a record that already exists.
+
+### ⚠️⚠️ Two bugs caught by checking things a parser cannot see
+
+- **`BUCKET` was undefined.** The upload code was lifted from `pmi.js`, and `BUCKET` is *pmi.js's*
+  constant — a different IIFE. It parsed cleanly and would have thrown `BUCKET is not defined` on the
+  first upload. That is the fourth time this repo has recorded that exact shape (`below is not
+  defined`, stakeholder-map's `canWrite`, boq.js's `locKey`). Caught by asserting every free
+  identifier resolves in **this file's** scope; `node --check` sees none of it.
+- **`st.files` was read by a step but not initialised by `open()`.** The note directly above
+  `pkgList` in that same initialiser records what happened last time: a TypeError on first paint and
+  a step that rendered nothing. Now declared where the rest of the wizard's state is.
+
+### The ordering rules are the feature, and they are `pmi.js`'s
+
+Upload runs **before** the row write, so a failed upload never leaves a row pointing at nothing. The
+object is **rolled back** if the row write then fails. On removal the **row goes first**, because a
+failed object delete leaves a recoverable orphan whereas the reverse leaves an attachment that will
+not open. Each is asserted by a gate that reads the source order, not by intention.
+
+⚠️ **A failed upload can never fail the record.** `attFlush` reports per file and leaves the row
+standing — the record is the commercial fact the planner came to save, and the file can be
+re-attached in one click. Same rule the affected-work write already follows.
+
+### Verified
+
+27 static gates, the two cross-file ones being the point:
+
+- **Every `D.att*` the wizard calls is exposed by module.js** — `attFlush`, `attPanelHTML`,
+  `attPanelWire`. A mismatch here is invisible to both parsers.
+- **The UI's `doc_type` vocabulary is exactly the migration's `CHECK` set.** A value the UI offers
+  and the constraint refuses is an insert that fails *after* the object is in the bucket — the one
+  ordering the rollback handles least cleanly.
+
+⚠️⚠️ **NOT verified against a live database.** The migration has not been run, so no upload, signed
+URL or delete has actually executed — only the code paths' shape and their contracts were checked.
+The first real test is attaching a file after running the migration.
+
+⚠️ **Still outstanding from the same message:** *"Check also the BOQ step yes this is optional but if
+the planner opts to develop it already let's fix."* Confirmed as a real gap — on a **Contract** run
+that step is four paragraphs of prose and no control at all, so a planner who has the BOQ in hand
+must finish the wizard and start again from the BOQ tab. Not fixed in this commit.
+
+`module.js` / `module.css` / `wizard.js` → `20260915b`, `MODULE_V` → `20260915g`, all sort-checked. ⚠ `20260915f` was skipped: a concurrent session chose the SAME token for its own change, so git rebased both sides cleanly and left one cache token covering two different builds — a browser holding theirs would never have fetched this. A token collision does not conflict; it has to be looked for.
+
 ### 2026-09-15 (g) — Contracts & Claims: the Contract tab opens on the register's own dashboard
 
 Owner: *"Let's rework the front page of the contracts & claims module to have an own dashboard within
