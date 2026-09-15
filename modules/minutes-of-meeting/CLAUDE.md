@@ -1,5 +1,50 @@
 # Module: minutes-of-meeting
 
+## 2026-09-15 — The dashboard's "Minutes by meeting" bar chart was scaling text to ~5px, and leaving the blank space behind
+
+Owner, off a phone screenshot of the Meetings Dashboard: *"minutes by meeting tile labels are not
+readable. there is also white space between bars and legend."*
+
+⚠️⚠️ **BOTH SYMPTOMS ARE ONE CAUSE.** `hbarSVG`'s returned `<svg>` set `width="100%"` (fluid, fills
+its container) against a `viewBox` whose own width is a fixed number — `380` for the Department/
+Responsible cards, **`760`** for "Minutes by meeting" specifically, so its bars would have more room
+on a wide desktop dashboard. A mismatch between the rendered width and the viewBox width forces the
+browser to scale the WHOLE viewBox uniformly to fit — bars, gaps and every `font-size="11"` text node
+alike — while the `height` **attribute** stayed the un-scaled value. On a ~340px phone the "Minutes by
+meeting" card's scale factor is 340/760 ≈ **0.447**: labels render at **~4.9px**, and because the SVG's
+own box height never shrank to match, the now-tinier content leaves roughly **70px of blank space**
+inside that box before the legend that follows it — measured by executing the shipped function
+(`git show HEAD`) against a fixture shaped like the screenshot (4 meetings). The Department/Responsible
+cards carry the identical defect, just milder, since their default width (380) is much closer to a
+typical phone's container width.
+
+**Fixed by rendering the chart at its own true pixel size, always.** `width`/`height` attributes now
+match `viewBox` 1:1 (`width="' + w + '"`, not `"100%"`), so a scale mismatch can never occur — text is
+always exactly `fs`px, on any screen, and the box height always exactly equals its real content height,
+so there is never blank space left over. ⚠️ **A chart now needing more room than its card scrolls
+horizontally instead** — `.il-dash-cardbody-scroll` gains `overflow-x: auto`, and `.il-dash-card` (a
+CSS grid item) gains `min-width: 0` so a wide, non-shrinking SVG can't force the whole grid track
+wider and push the page into horizontal scroll — the same `grid-item min-width:auto` trap this app's
+own history has recorded for `.pp-form2` images.
+
+**Verified:** the shipped `hbarSVG` sliced out of the file and executed against a before/after
+contrast — BEFORE (git HEAD): `width="100%"`, scale 0.447 on a 340px container, rendered font ≈4.9px,
+≈70px of dead space inside the box; AFTER: `width="760"` (or `"380"` for the sibling cards), scale
+always 1, font always 11px, box height always equals content height. `node --check` clean;
+`module.css` brace balance holds (366/366); 0 NUL bytes across all three touched files;
+`node tools/wiring-check.js` — 126/126, 0 version splits; `node tools/dead-hooks.js` unchanged against
+its documented 9-finding baseline.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the scale/geometry
+claims are proved by executing the real shipped function against a fixture, not observed rendered on
+a device. This module's own three dashboard bar charts (Department, Responsible, Meeting) share one
+`hbarSVG`, so all three are fixed together; `issues-lessons/module.js` carries its own, separately
+maintained copy of the same function (this app's convention — no shared chart runtime across modules)
+and is untouched, since it was not reported and was never passed a width wider than its default.
+
+`module.css`/`module.js?v=` → `20260915a`. No `MODULE_V` bump — `index.html`'s structure is
+unchanged, only the two module-local asset versions moved.
+
 ## 2026-09-13 — Recurring becomes a tinted cycle-icon toggle, matching the star; the Meetings List drops its "Recurring" label for the same icon
 
 Owner, off the "+ Add meeting" screenshot: *"the recurring button is still off. to fix, beside the
