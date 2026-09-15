@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915d" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915e" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -832,6 +832,10 @@
        It is the level the Schedule Builder's library works at, which is the right granularity for an
        activity; the red is reserved for a code that resolves at neither level. */
     .ps-cctag.grp { color:var(--pd-muted); }
+    /* ⚠️ A code resolved only by restoring its leading zero. NOT a colour: the code shown IS correct,
+       and red is reserved for one the chart does not know at either level. The underline says the
+       DATABASE still holds the de-zeroed value — see ccodeCellHtml and the repair migration. */
+    .ps-cctag.padded { text-decoration:underline dotted; text-underline-offset:2px; }
     /* A package tag is neutral by design: unlike CO/MC it carries no judgement,
        it just names which contract lot the work belongs to. */
     .ps-pkgtag { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -5204,7 +5208,7 @@
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260915a"></script>
-<script src="../../assets/js/notebook.js?v=20260915c"></script>
+<script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260913a"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -7748,7 +7752,7 @@
     (CLASS_CODES || []).forEach(function (c) { if (c.code) _ccMap[String(c.code).trim()] = c; });
     return _ccMap;
   }
-  function ccByCode(code) { var k = String(code == null ? '' : code).trim(); return k ? (_ccIndex()[k] || null) : null; }
+  function ccByCode(code) { var k = ccKeyOf(code); return k ? (_ccIndex()[k] || null) : null; }
   function ccOf(r) { return ccByCode(r && r.class_code); }
 
   /* ==========================================================================
@@ -7777,11 +7781,70 @@
     });
     return _ccGrpMap;
   }
-  function ccGroupByCode(code) { var k = String(code == null ? '' : code).trim(); return k ? (_ccGrpIndex()[k] || null) : null; }
+  function ccGroupByCode(code) { var k = ccKeyOf(code); return k ? (_ccGrpIndex()[k] || null) : null; }
+
+  /* ==========================================================================
+     A STORED CODE THAT LOST ITS LEADING ZERO — padded back, but ONLY ON A MISS
+     ==========================================================================
+     ⚠️⚠️ THE MIGRATION SAYS NEVER TO DE-ZERO A CODE, AND THAT RULE IS NOT BEING BROKEN HERE.
+     `2026-08-21-class-codes.sql` records that de-zeroing COLLIDES genuinely different items —
+     `015051` (General Requirement › Earthmoving) with `15051` (Metal Works › Railings), and
+     `017151` with `17151`. Both members of each pair are real codes. So the danger is a rule that
+     de-zeroes, or that pads a value which is ALREADY a valid code. This does neither: the raw
+     value is looked up FIRST at both levels, and the padded form is consulted only when the raw
+     resolves to nothing at all — i.e. only for a value that is already broken. `15051` resolves,
+     so `15051` is never touched.
+
+     ⚠️⚠️ AND IT IS PROVABLY UNAMBIGUOUS AGAINST THIS CHART, not merely argued. Measured over the
+     702 seeded codes and 205 groups: every code at either level is 5 or 6 characters — there is
+     no 4-character code anywhere — and of the 221 de-zeroed forms that are not themselves real
+     codes, 221 pad to EXACTLY ONE real code and 0 are ambiguous. A collision is still refused
+     rather than guessed: two real codes de-zeroing to the same string store '' and resolve to
+     nothing, so the cell keeps saying the code is unrecognised.
+
+     ⚠️ WHERE THE BROKEN VALUES CAME FROM, AND WHY NOTHING NEW WRITES THEM. `CLASS_CODE_DB` — the
+     Schedule Builder's `+ Library` list — held Finance's Level-2 group chart WITH THE LEADING
+     ZEROS STRIPPED until 2026-09-10 (z4) padded all 43 of them. Anything pushed from the library
+     before that date carries the de-zeroed code; the library itself is correct now, so this is a
+     read-time repair for existing rows, not a licence for new ones.
+
+     ⚠️⚠️ THIS FIXES THE SCREEN, NOT THE DATA, AND THAT DISTINCTION MATTERS. Other consumers read
+     `project_schedule.class_code` directly — `boq_allocations` gates on it, and the BOQ allocator
+     matches an activity's code against a bill line's. Those still see `3050` and still miss. The
+     real fix is `migrations/2026-09-15-class-code-pad.sql`; the cell marks a padded code so the
+     repair is visible rather than papered over. */
+  var _ccPadMap = null, _ccPadSrc = null;
+  function _ccPadIndex() {
+    if (_ccPadMap && _ccPadSrc === CLASS_CODES) return _ccPadMap;
+    _ccPadMap = {}; _ccPadSrc = CLASS_CODES;
+    var items = _ccIndex(), groups = _ccGrpIndex();
+    var claim = function (key) {
+      var d = key.replace(/^0+/, '');
+      if (!d || d === key) return;                 // nothing was stripped — no de-zeroed form exists
+      if (items[d] || groups[d]) return;           // ⚠️ the de-zeroed form is ITSELF a real code
+      if (_ccPadMap[d] && _ccPadMap[d] !== key) { _ccPadMap[d] = ''; return; }  // '' = ambiguous
+      _ccPadMap[d] = key;
+    };
+    Object.keys(items).forEach(claim);
+    Object.keys(groups).forEach(claim);
+    return _ccPadMap;
+  }
+  /* The chart key a stored value resolves to: itself when the chart knows it, its padded form when
+     the chart knows only that, otherwise itself unchanged (so an unknown code still prints itself). */
+  function ccKeyOf(code) {
+    var k = String(code == null ? '' : code).trim(); if (!k) return '';
+    if (_ccIndex()[k] || _ccGrpIndex()[k]) return k;
+    return _ccPadIndex()[k] || k;
+  }
+  // True when the stored value had to be padded to resolve — i.e. the row needs the repair migration.
+  function ccWasPadded(code) {
+    var k = String(code == null ? '' : code).trim();
+    return !!k && ccKeyOf(k) !== k;
+  }
   /* Which level a stored code resolves at: 'item' | 'group' | null. One function, so the label, the
      unknown flag and anything downstream cannot disagree about what a code is. */
   function ccLevelOf(code) {
-    var k = String(code == null ? '' : code).trim(); if (!k) return null;
+    var k = ccKeyOf(code); if (!k) return null;
     if (_ccIndex()[k]) return 'item';
     if (_ccGrpIndex()[k]) return 'group';
     return null;
@@ -7790,7 +7853,7 @@
      group code itself. This is what lets a BOQ line (an item) be compared against an activity (a
      group) without either side pretending to be the other. */
   function ccGroupOf(code) {
-    var k = String(code == null ? '' : code).trim(); if (!k) return null;
+    var k = ccKeyOf(code); if (!k) return null;
     var it = _ccIndex()[k];
     if (it) return String(it.code_l2 || '').trim() || null;
     return _ccGrpIndex()[k] ? k : null;
@@ -23795,12 +23858,22 @@
          agree with `sumCcodeHtml` directly below, which has always printed the code alone. The
          column is 190px, so the description was being ellipsised on most rows anyway. */
     var g = c ? null : ccGroupByCode(raw);
+    /* ⚠️ A FOURTH OUTCOME, and it is deliberately not a colour. A code that only resolves once its
+       leading zero is restored IS the right code and reads as one — but the database still holds the
+       de-zeroed value, so `boq_allocations` and the BOQ allocator still miss it. A dotted underline
+       plus the stored value in the tooltip says "this row still needs the repair" without turning a
+       correct code red, which is the confusion the owner already had to ask about. */
+    var padded = (c || g) ? ccWasPadded(raw) : false;
+    var padCls = padded ? ' padded' : '';
+    var padTtl = padded ? ('\n⚠ Stored as ' + raw + ' — the leading zero is missing in the database. ' +
+      'Shown resolved here; a BOQ line still cannot match it until ' +
+      'migrations/2026-09-15-class-code-pad.sql is run.') : '';
     if (!raw) { inner = '<span style="color:var(--pd-muted);">—</span>'; ttl = 'No class code'; }
-    else if (c) { inner = '<span class="ps-cctag">' + esc(c.code) + '</span>'; ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3; }
+    else if (c) { inner = '<span class="ps-cctag' + padCls + '">' + esc(c.code) + '</span>'; ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3 + padTtl; }
     else if (g) {
-      inner = '<span class="ps-cctag grp">' + esc(g.code_l2) + '</span>';
+      inner = '<span class="ps-cctag grp' + padCls + '">' + esc(g.code_l2) + '</span>';
       ttl = g.code_l2 + ' — ' + g.desc_l1 + ' › ' + g.desc_l2 +
-            '\nA GROUP-level code: this activity covers the whole group rather than one bill item.';
+            '\nA GROUP-level code: this activity covers the whole group rather than one bill item.' + padTtl;
     }
     else { inner = '<span class="ps-cctag unknown pd-caution-inline">' + esc(raw) + '</span>'; ttl = raw + ' is not in the class-code chart, at either level'; }
     return '<div class="ps-cell c-ccode ps-editable" data-id="' + r.id + '" data-field="class_code" data-type="enum" data-enum="ccode" title="' + esc(ttl) + '">' + inner + '</div>';

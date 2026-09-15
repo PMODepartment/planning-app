@@ -102,6 +102,88 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (t) — The class codes get their leading zeros back, and the notebook's list folds away
+
+**Run `migrations/2026-09-15-class-code-pad.sql`.** Owner: *"let's fix the class code leading zeroes"*
+and *"I want the side panel within the notebook to be collapsible as well."*
+
+### ⚠️⚠️ THE CLASS-CODE CAUSE IS ALREADY FIXED — WHAT IS LEFT IS THE ROWS IT WROTE
+
+On 2026-09-15 (l) I reported this as *"not fixed, and not safely fixable in a render function"*,
+because `2026-08-21-class-codes.sql` records that de-zeroing **collides genuinely different items**
+(`015051` Earthmoving with `15051` Railings). That warning is about **stripping** a zero, or padding
+a value that is **already a real code**. Measured against the seeded chart rather than argued:
+
+| | |
+|---|---|
+| codes at either level that are 4 characters long | **0** — every one is 5 or 6 |
+| de-zeroed forms that are not themselves real codes | 221 |
+| …of those, ones that pad to **exactly one** real code | **221** |
+| …ambiguous | **0** |
+| real codes that also pad to another real code (the migration's collision) | 6, and **all six resolve on their own**, so the pad index is never consulted for them |
+
+So **pad only on a miss** is provably safe here: `15051` resolves, therefore `15051` is never touched.
+
+⚠️⚠️ **And the origin turned out to be a fault this repo already closed.** `CLASS_CODE_DB` — the
+Schedule Builder's `+ Library` list — held Finance's Level-2 group chart **with the leading zeros
+stripped** until **2026-09-10 (z4)** padded all 43 of them. Anything pushed from the library before
+that date carries the de-zeroed code. The library is correct now, so this is a bounded repair of
+existing rows, not an ongoing leak. Nothing new writes one.
+
+⚠️ **The read-time fix repairs the SCREEN, and the migration repairs the DATA — and they are not the
+same job.** `boq_allocations` gates on `project_schedule.class_code` and the BOQ allocator matches an
+activity's stored code against a bill line's, so until the migration runs those still see `3050` and
+still miss. The cell therefore marks a padded code with a **dotted underline** and names the stored
+value in its tooltip — deliberately **not** a colour, because the code shown *is* correct and red is
+reserved for one the chart does not know at either level, which is the confusion the owner already
+had to ask about once.
+
+### Verified — 45 assertions, and the control bites
+
+The resolver sliced out of the shipped file **by name** and executed over the real 702-row chart,
+with **HEAD run beside it**: all four codes from the screenshot resolve to their padded group and
+name the right work (`3050` → `03050` Rebar), while **HEAD resolves none of them at either level** —
+the red tag, reproduced. Plus: both collision pairs stay distinct and unpadded; **901 real codes
+resolve exactly as they did on HEAD** and none is flagged; every de-zeroed form in the chart is
+unique; an unknown code is still unknown; and ⚠️ **a chart that has not loaded yet accuses nobody**
+(the `[]`-is-truthy family of false alarm this module has shipped before).
+
+### The notebook's note list folds
+
+⚠️ **Two states, two localStorage keys, deliberately.** Folding the list means *"give the writing
+more room"*; shutting the drawer means *"I am done"*. One key would make each gesture undo the other.
+⚠️⚠️ **And the head now names the current note while the list is folded** — the list was the only
+thing on screen saying *which* note you are typing into, and folding it without replacing that is how
+somebody writes a paragraph into yesterday's note. The empty-state placeholder changes too: telling
+you to "select a note" from a list you cannot see reads as a broken screen.
+⚠️ `.pd-nb.sidehid .pd-nb-side` is (0,2,0) against a base rule that declares **no `display`** — so
+there is nothing for it to tie with. That is the whole lesson of the panel two rules above, and the
+comment says so in place.
+
+### ⚠️⚠️ AND THE OTHER THREE REPORTS IN THE SAME MESSAGE WERE A STALE PAGE, NOT DEFECTS
+
+*"There is still a x button"*, *"clicking on the notes doesn't close and open"*, *"I don't see the
+dashboard view of the contracts & claims"*, *"Schedule module doesn't have the dashboard view"* —
+checked against the deployed site rather than assumed: the live `modules/project-schedule/index.html`
+already requests `notebook.js?v=20260915c`, the × is absent from the source, the FAB handler is
+`isOpen() ? close() : open()`, `ccDashHTML()` is the **first thing the Contract tab renders**, and
+`data-tab="summary"` is in the title menu. The owner's own URL bar carries **no `?v=`** at all, so
+that tab bypassed `MODULE_V` entirely — a bookmark or a tab open since before the deploy.
+⚠️ `sw.js` already forces `cache:'reload'` on every HTML navigation, so a genuine reload gets fresh
+bytes; what it cannot fix is a tab nobody has reloaded. **Hard-refresh once.**
+
+⚠️ **The `MODULE_V` fallback literal had drifted seven letters behind** (`20260915i` against the
+pages' `20260915p`) and is brought current. It is only read by a page that omits the query string —
+harmless today, and exactly the drift the 2026-09-03 (r) entry had to correct once already.
+
+`wiring-check` **136/136**; `notebook.js` and the schedule's 3.3MB inline script both parse;
+`dashboard.css` braces 566/566; every asset on one version, 0 splits.
+`dashboard.css` → `?v=20260915e` (31 pages), `notebook.js` → `?v=20260915d` (23 pages),
+`MODULE_V` → `20260915q`, all sort-checked.
+⚠️ **Not verified signed in** — the resolver is proved by execution against the real chart, and the
+migration has **not been run**, so no stored code has actually been repaired.
+
+
 ### 2026-09-15 (r) — The notebook could be opened and never closed, and `+ New` lost the note it made
 
 Owner, twice: *"The notebook is not collapsible let's fix. I want the notes button can be clickable

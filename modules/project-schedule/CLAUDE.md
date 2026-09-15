@@ -1,3 +1,50 @@
+## 2026-09-15 (i) — A class code that lost its leading zero resolves again
+
+**Run `migrations/2026-09-15-class-code-pad.sql`.** Owner: *"let's fix the class code leading
+zeroes."* The item 2026-09-15 (f) reported and refused to guess at.
+
+### ⚠️⚠️ THE MIGRATION'S RULE IS NOT BEING BROKEN — IT IS BEING INVERTED
+
+`2026-08-21-class-codes.sql` forbids **de-zeroing**, because the de-zeroed space is not unique:
+`015051` (Gen Req › Earthmoving) collides with `15051` (Metal Works › Railings), and `017151` with
+`17151`. That is a rule about **stripping** a zero, or about padding a value that is **already a real
+code**. `ccKeyOf` does neither: the raw value is looked up first at **both** levels, and the padded
+form is consulted only when the raw resolves to nothing — i.e. only for a value that is already
+broken. `15051` resolves, so `15051` is never touched.
+
+⚠️ **Measured against the seeded chart, not argued:** every code at either level is 5 or 6 characters
+— **there is no 4-character code anywhere** — and of the 221 de-zeroed forms that are not themselves
+real, **221 pad to exactly one real code and 0 are ambiguous**. A collision still stores `''` and
+resolves to nothing rather than guessing.
+
+### ⚠️⚠️ AND THE WRITER WAS FIXED FIVE DAYS AGO
+
+`CLASS_CODE_DB` — `+ Library` in the Schedule Builder — held Finance's L2 group chart **with the
+leading zeros stripped** until **2026-09-10 (z4)** padded all 43 entries. Everything pushed from the
+library before that date carries the de-zeroed code; the library is correct now. So this is a bounded
+read-time repair of existing rows, not a licence for new ones, and the push is deliberately untouched.
+
+### ⚠️ It fixes the SCREEN. The migration fixes the DATA.
+
+`boq_allocations` gates on `project_schedule.class_code`, and the BOQ allocator matches an activity's
+**stored** code against a bill line's — so a padded code still misses there until the migration runs.
+`ccodeCellHtml` therefore marks it: a **dotted underline** and the stored value in the tooltip.
+⚠️ **Not a colour.** The code shown *is* the right code; red means *not in the chart at either
+level*, and blurring those two is the confusion the owner had to ask about on 2026-09-15 (f).
+
+### Verified
+
+**45 assertions, 0 failing**, the resolver sliced out by name and executed over the real chart with
+**HEAD as the control**: `3050 → 03050 Rebar`, `4050 → 04050 Formworks`, `5050 → 05050 Concrete`,
+`6050 → 06050 Precast Works`, and **HEAD resolves none of the four at either level** — the red tags
+from the screenshot, reproduced. Both collision pairs stay distinct and unpadded; **901 real codes
+resolve exactly as on HEAD** with none flagged; `ccGroupOf` still answers for the allocator; and
+⚠️ **an unloaded chart pads nothing and calls nothing unknown**. Inline script parses (3.3MB).
+⚠️ **Not verified signed in**, and the migration has not been run.
+
+`MODULE_V` → `20260915q`, sort-checked.
+
+
 ## 2026-09-15 (h) — A Summary view, derived from the engines that already exist
 
 Owner: *"a dashboard summary view for the module for reporting purposes."* A fourth entry in the

@@ -2241,13 +2241,27 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 
 .pd-nb-head { display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
   padding: 9px 10px; border-bottom: 1px solid var(--pd-line); }
-.pd-nb-head b { font-size: var(--pd-fs-base); margin-right: auto; }
+.pd-nb-head b { font-size: var(--pd-fs-base); }
+/* ⚠️ The `margin-right:auto` that pushes the buttons right lives HERE, not on the <b>, because
+   this element sits between them and is the one that may grow. It is empty (and so zero-width)
+   whenever the note list is on screen — the list names the note in that case. */
+.pd-nb-cur { flex: 1 1 auto; min-width: 0; margin-right: auto; font-size: var(--pd-fs-xs);
+  color: var(--pd-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-nb-status { font-size: var(--pd-fs-micro); color: var(--pd-muted); margin-right: 4px; }
-.pd-nb-x { line-height: 1; }
+/* The note-list fold. A quiet chevron, not a .pd-btn: it is chrome for the panel it sits in,
+   and a third button-shaped control beside + New and Delete would read as a third action. */
+.pd-nb-sidet { background: none; border: 0; padding: 0 3px; cursor: pointer; line-height: 1;
+  font-size: var(--pd-fs-md); color: var(--pd-muted); }
+.pd-nb-sidet:hover { color: var(--pd-ink); }
 
 .pd-nb-body { flex: 1 1 auto; min-height: 0; display: flex; }
 .pd-nb-side { flex: 0 0 132px; min-width: 0; overflow-y: auto;
   border-right: 1px solid var(--pd-line); background: var(--pd-bg); }
+/* ⚠️⚠️ (0,2,0) against `.pd-nb-side`'s (0,1,0), and the base rule declares NO `display` of its
+   own — so there is nothing here for this to tie with. That is the whole lesson of the panel
+   two rules above, where an author `display:flex` beat the UA's `[hidden]{display:none}` at
+   equal specificity and the drawer would not close. Do not add a `display` to `.pd-nb-side`. */
+.pd-nb.sidehid .pd-nb-side { display: none; }
 .pd-nb-list { list-style: none; margin: 0; padding: 0; }
 .pd-nb-item { display: flex; flex-direction: column; gap: 2px; cursor: pointer;
   padding: 7px 9px; border-bottom: 1px solid var(--pd-line); }

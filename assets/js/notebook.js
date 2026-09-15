@@ -27,7 +27,7 @@ window.PDNotes = (function () {
 
   var TABLE = 'user_notes';
   var MIGRATION = 'migrations/2026-09-15-user-notes.sql';
-  var K_OPEN = 'pd_notes_open', K_SEL = 'pd_notes_sel';
+  var K_OPEN = 'pd_notes_open', K_SEL = 'pd_notes_sel', K_SIDE = 'pd_notes_side';
   var SAVE_MS = 700;
 
   var notes = [], selId = null, loaded = false, err = null, busy = false;
@@ -173,6 +173,19 @@ window.PDNotes = (function () {
   // ---- render --------------------------------------------------------------
   function isOpen() { return lsGet(K_OPEN) === '1'; }
 
+  /* The note LIST inside the drawer folds away, independently of the drawer itself.
+     Owner: *"I want the side panel within the notebook to be collapsible as well."*
+
+     ⚠️ TWO SEPARATE STATES, TWO SEPARATE KEYS, deliberately. Folding the list is "give the
+     writing more room", and shutting the drawer is "I am done" — a planner who writes with the
+     list folded must not have it spring back every time they reopen the notebook, and a single
+     key would make one gesture undo the other.
+     ⚠️⚠️ AND THE HEAD HAS TO NAME THE CURRENT NOTE ONCE THE LIST IS GONE. The list was the only
+     thing on screen saying WHICH note is being typed into; folding it without replacing that is
+     how somebody writes a paragraph into yesterday's note. `.pd-nb-cur` carries it. */
+  function sideHidden() { return lsGet(K_SIDE) === '1'; }
+  function setSideHidden(v) { lsSet(K_SIDE, v ? '1' : '0'); paint(); }
+
   /* ⚠️⚠️ "THE TABLE IS NOT THERE" AND "THE READ FAILED" ARE DIFFERENT PROBLEMS WITH
      DIFFERENT OWNERS, and the first cut said the same vague thing for both. A planner whose
      migration has not been run needs the FILENAME and nothing else; the generic
@@ -211,9 +224,22 @@ window.PDNotes = (function () {
     if (fab) fab.setAttribute('aria-expanded', open ? 'true' : 'false');
     var panel = root.querySelector('.pd-nb-panel');
     if (panel) panel.hidden = !open;
+
+    var sideOff = sideHidden();
+    root.classList.toggle('sidehid', sideOff);
+    var st = root.querySelector('.pd-nb-sidet');
+    if (st) {
+      st.setAttribute('aria-expanded', sideOff ? 'false' : 'true');
+      st.title = sideOff ? 'Show the note list' : 'Hide the note list';
+      st.firstChild.textContent = sideOff ? '›' : '‹';
+    }
     if (!open) return;
 
     var cur = notes.find(function (n) { return n.id === selId; }) || null;
+    /* ⚠️ Only while the list is folded. With the list on screen it already names every note and
+       marks the current one, so printing the title twice would just crowd the head. */
+    var curEl = root.querySelector('.pd-nb-cur');
+    if (curEl) curEl.textContent = (sideOff && cur) ? (cur.title || 'Untitled') : '';
     root.querySelector('.pd-nb-side').innerHTML = listHTML();
     var ed = root.querySelector('.pd-nb-ed');
     /* ⚠️ The textarea is only rebuilt when the NOTE changes, never on every
@@ -224,7 +250,12 @@ window.PDNotes = (function () {
       ed.value = cur ? (cur.body || '') : '';
     }
     ed.disabled = !cur;
-    ed.placeholder = cur ? 'Write anything…' : 'Select a note, or press + to start one.';
+    /* ⚠️ The empty-state instruction has to match what is actually on screen. With the list folded
+       there is nothing to "select", and telling somebody to pick from a list they cannot see is
+       the kind of advice that reads as a broken screen. */
+    ed.placeholder = cur ? 'Write anything…'
+      : (sideOff ? 'No note open — press › to show the list, or + New.'
+                 : 'Select a note, or press + to start one.');
     var del = root.querySelector('.pd-nb-del');
     if (del) del.disabled = !cur;
     wireList();
@@ -279,7 +310,13 @@ window.PDNotes = (function () {
     root.innerHTML =
       '<div class="pd-nb-panel" hidden>' +
         '<div class="pd-nb-head">' +
+          /* ⚠️ A real <button>, first in the head, so the fold is reachable by keyboard and is
+             never hidden by the thing it folds — a control that disappears with the panel it
+             collapses is one nobody can undo. */
+          '<button type="button" class="pd-nb-sidet" aria-expanded="true" title="Hide the note list">' +
+            '<span aria-hidden="true">‹</span></button>' +
           '<b>Notebook</b>' +
+          '<span class="pd-nb-cur"></span>' +
           '<span class="pd-nb-status" aria-live="polite"></span>' +
           '<button type="button" class="pd-btn pd-btn-sm pd-nb-new" title="New note">+ New</button>' +
           /* ⚠️ NO × BUTTON. Owner 2026-09-15: *"remove the close button since the notebook can
@@ -300,6 +337,7 @@ window.PDNotes = (function () {
     document.body.appendChild(root);
 
     root.querySelector('.pd-nb-fab').onclick = function () { isOpen() ? close() : open(); };
+    root.querySelector('.pd-nb-sidet').onclick = function () { setSideHidden(!sideHidden()); };
     root.querySelector('.pd-nb-new').onclick = async function () {
       await flush();
       var n = await create();
@@ -355,6 +393,7 @@ window.PDNotes = (function () {
   return {
     mount: mount, open: open, close: close,
     _internals: { titleOf: titleOf, when: when, listHTML: listHTML,
+      sideHidden: sideHidden, setSideHidden: setSideHidden,
       _set: function (o) {
         if (o.notes) { notes = o.notes; loaded = true; }
         if ('selId' in o) selId = o.selId;
