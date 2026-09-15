@@ -102,6 +102,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (w) — A 3D card framed for a shape its canvas no longer had
+
+Owner: *“The presets view also do not view properly and I cannot see the ground”*, with the
+Vertical Stacking on `Right` showing a slab at the bottom of a mostly empty card. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### ⚠⚠ THE FRAMING DISTANCE HAD NO ASPECT TERM AT ALL
+`Math.max(span * 2.6, tall * 1.9) + 1.5` decides how far the camera stands off, and it was written
+against the card's own shape — **698 × 503, aspect ~1.39** — then applied at every shape. Measured
+live at a 1900px viewport the canvas is **1752 × 503, aspect 3.48**, and the building filled about
+**19% of the frame**. `PerspectiveCamera`'s `fov` is the **vertical** one, so a wider canvas already
+sees more at the same distance; standing the same distance off wastes all of it.
+- One `fitDist(aspect)` now answers it, and **`place()`, the default radius `r0` and `resize()` all
+  ask the same function** — three copies of a framing rule is three chances for the viewpoint
+  buttons, the initial view and a resized card to disagree about where the camera belongs.
+- ⚠ **The vertical term stays aspect-independent** (`tall * 1.9`), because the vertical field does
+  not change with width. Only the horizontal term scales, and it scales **inversely**.
+- ⚠⚠ **At the reference aspect it returns today's value to the bit**, so a card at the shape this
+  was tuned for is framed byte-for-byte as before and only other shapes move.
+- ⚠ **`resize()` re-derives it.** Updating `camera.aspect` alone left the model framed for the
+  canvas's OLD shape — most of why a card that had been resized drew a small building in a large
+  box. The planner's own zoom is **scaled by the same ratio, never reset**: `rot.r` is where they
+  left the camera, and snapping it back on every resize would throw that away each time the sidebar
+  collapsed.
+
+### Verified by execution — `fitDist` sliced out and run, with the shipped formula as the control
+| model | aspect | fills before | fills after |
+|---|---|---|---|
+| 1 storey, 2 zones | **1.39** (reference) | 37% | **37% — identical** |
+| 1 storey, 2 zones | **3.48** (measured live at 1900px) | **19%** | **41%** |
+| 1 storey, 2 zones | 2.30 (a 1280px viewport) | 22% | **35%** |
+| 3 storeys, 2 zones | 3.48 | 56% | **68%** |
+| either | 0.80 (narrow card) | 64% | 38% — **pulls back so it still fits** |
+
+Every case asserted to fit **both** axes (never clipped), the reference aspect asserted **identical**
+to the shipped value, and the wide cases asserted strictly larger than before. `node --check`
+PARSE OK; **2,074 → 2,075 functions, 0 lost**; 0 NUL bytes.
+
+### ⚠⚠ NOT VERIFIED SIGNED IN, AND THAT IS A REAL GAP HERE
+The browser session signed out mid-task and signing in is not something I do, so **no rendered
+frame has been seen**. What is proven is the arithmetic. The honest thing to check first is simply
+whether the building now fills the card at a wide window.
+⚠ **“I cannot see the ground” is NOT addressed and is not the same bug.** The grade plate belongs
+to the **site** model (`_vsSiteFloorModel`, 2026-09-14); a per-trade tower card has never drawn one.
+Whether it should is a design question, not a framing fault, so it is reported rather than guessed
+at.
+
+### The rest of this toolbar was fixed by a concurrent session, not by me
+Owner's *“the trades button still clips”*, *“no delineation from the main toolbar”* and *“let's
+revamp and make it proper”* are **already live**, shipped in parallel by the session working
+`claude/portfolio-module-fixes-e4cu09`: `.ps-vstack` gained
+`border-top:1px solid var(--pd-line)` (the delineation), and the group labels moved **inside** the
+segments as `.ps-vs-seglab` with `.ps-vs-rowlab` for the chip rows — a uniform treatment, and a
+better one than the `.ps-vs-grp` labels I had drafted. My draft was **discarded rather than
+shipped**: a second labelling idiom over the same bar would have been the drift this module keeps
+recording. ⚠ Measured before deciding: **nothing in that toolbar was clipping** — every chip read
+`scrollWidth === clientWidth` and no control sat past its bar's edge; what was missing was a
+boundary, which is what they added.
+
+`MODULE_V` → `20260915w`, re-derived from what `curl` shows the live site serving.
+
+
 ### 2026-09-15 (z) — Phase B finished: one funnel where there were five, and one KPI card where there were three
 
 Owner: *"make sure the UI is consistent and professional looking."* Module detail in

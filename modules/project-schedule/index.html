@@ -17671,13 +17671,30 @@
     var dl = new T.DirectionalLight(0xffffff, 0.48); dl.position.set(3, 6, 4); scene.add(dl);
 
     var span = Math.max(maxCols, maxRows) * CELL, tall = storeys * (SH + GAPY);
+    /* ⚠⚠ THE FRAMING DISTANCE HAD NO ASPECT TERM, SO A WIDE CARD DREW A TINY BUILDING.
+       `Math.max(span * 2.6, tall * 1.9)` was tuned at the card's own shape (698 × 503, aspect ~1.39)
+       and applied at every shape. Measured live at a 1900px viewport: the canvas is **1752 × 503,
+       aspect 3.48**, and the building occupied about **17% of the width** with the elevations
+       framed off the bottom. Owner: *“The presets view also do not view properly and I cannot see
+       the ground”*.
+       ⚠ `PerspectiveCamera`'s fov is the VERTICAL one, so the height a model needs is the same
+       however wide the canvas gets — the vertical term is deliberately aspect-independent.
+       ⚠⚠ The horizontal term scales INVERSELY with aspect: a wider canvas already sees more at the
+       same distance, so it needs less of it. At VS3_REF_ASPECT this returns exactly
+       `max(span*2.6, tall*1.9) + 1.5` — today's value to the bit — so a card at the shape this was
+       tuned for is framed byte-for-byte as before, and only other shapes move. */
+    var VS3_REF_ASPECT = 1.39;
+    function fitDist(aspect) {
+      var a = Math.max(0.2, aspect || VS3_REF_ASPECT);
+      return Math.max(tall * 1.9, span * 2.6 * (VS3_REF_ASPECT / a)) + 1.5;
+    }
     var camera = new T.PerspectiveCamera(38, W / H, 0.1, 500);
     var target = new T.Vector3(0, tall / 2, 0);
     /* ⚠️ THE VIEWPOINTS ARE THE OWNER'S FOUR ELEVATIONS, and they are computed from `_vsFront` —
        so "Front" means the side the planner nominated, in every project, rather than whichever way
        the maths happened to point. Top is the plan; Iso is the reading view. */
     function place(which) {
-      var d = Math.max(span * 2.6, tall * 1.9) + 1.5;
+      var d = fitDist(camera.aspect);
       if (which === 'top') { camera.position.set(0.001, tall + d * 0.9, 0.001); camera.lookAt(target); return; }
       if (which === 'iso') { camera.position.set(d * 0.62, tall * 0.85 + d * 0.42, d * 0.62); camera.lookAt(target); return; }
       /* ⚠️ Turn 0 is +Z, which is the BOTTOM of the plan (South). The nominated front shifts
@@ -17829,7 +17846,7 @@
        planner's zoom across a rebuild as a RATIO rather than as an absolute. A stored r of 9.4
        means "twice as far out as this building's default" on the model it was taken from; applied
        raw to a taller building it is a different framing entirely. See setCam. */
-    var r0 = Math.max(span * 2.6, tall * 1.9) + 1.5;
+    var r0 = fitDist(W / H);
     /* ⚠️ ONE clamp for the wheel, the zoom buttons and a restored camera. The pair of limits was
        written out twice already; a third copy is a third chance for the buttons to offer a
        distance the wheel cannot reach, or to stop short of one it can. */
@@ -18086,6 +18103,15 @@
         renderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
+        /* ⚠⚠ THE FRAMING DEPENDS ON THE ASPECT (see fitDist), so updating the aspect alone left
+           the model framed for the canvas's OLD shape — which is most of why a card that had been
+           resized drew a building a fraction of the width it had room for.
+           ⚠ The planner's own zoom is SCALED by the same ratio, never reset: `rot.r` is where they
+           left the camera, and snapping it back to the default on every resize would throw that
+           away each time the sidebar collapsed. */
+        var _nr0 = fitDist(camera.aspect);
+        if (r0 > 0 && _nr0 > 0) rot.r = clampR(rot.r * (_nr0 / r0));
+        r0 = _nr0;
         applyRot();      // which re-places the labels against the new canvas box
       },
       dispose: function () {
