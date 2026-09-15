@@ -1,5 +1,117 @@
 # Module: contracts-claims
 
+## 2026-09-15 (q) — The dashboard gains the time half it was missing
+
+Owner: *"Let's develop a dashboard in the contracts & claims register."* The money half shipped that
+morning; it could say what was claimed and what came back, and could not answer the question a
+commercial meeting opens with — **how long has the client been holding this?**
+
+New `ccTimeHTML()`: pending value and pending time, oldest pending, recovery rate, an aging
+breakdown (0–30 / 31–60 / 61–90 / 90+) and hand-off velocity (submitted → evaluated → decided).
+
+- ⚠️⚠️ **Every figure comes from columns that already existed.** `date_submitted`,
+  `date_evaluated` and `date_approved` have been on this table since 2026-07-20 and nothing but the
+  per-row aging ever read them. No migration.
+- ⚠️⚠️ **The rules moved to `PDClaims` (assets/js/claims.js), unchanged** — `ccBlock` now
+  delegates too. They were already duplicated in dashboard.html and the portfolio view was about to
+  be a third copy.
+- ⚠️ **Not submitted is its own line**, never folded into 0–30: *"we have not sent it"* and
+  *"they have not answered"* are different problems with different owners.
+- ⚠️ **Bars scale to the largest bucket, not the total** — scaled to the total a healthy register
+  draws three invisible slivers and the one bucket that matters cannot be compared.
+- ⚠️ A leg with no decided records reads **no data**, never `0d`: zero claims the client turns
+  these round same-day, which is the opposite of *"we cannot tell yet"*.
+
+### ⚠️⚠️ Two defects the tests caught, one of them in this block after I had passed it
+
+- **The header undercounted.** `agingBuckets().n` counts records with an AGE, so a record Pending but
+  never submitted was missing from *"N pending"* while appearing on its own row two lines below.
+- **The bars were measured on a different basis from the figure beside them** — `sub_amount` while
+  *"Pending value"* prefers `eval_amount`, so the bars totalled ₱100,000 under a headline reading
+  ₱99,000. The PORTFOLIO test caught it; this block's own test had asserted the wrong figure as
+  correct. Both now pass the same key list through one shared `valueOf`.
+
+**15 assertions, 0 failing**, executing `ccTimeHTML` sliced out by name — including a register holding
+only a contract rendering **nothing** rather than a wall of dashes.
+⚠️ Not verified signed in. `module.js`/`module.css` → `?v=20260915g`; `MODULE_V` → `20260915o`.
+
+## 2026-09-15 (o) — The load stops painting a register it has not loaded yet
+
+Owner: *"Loading contracts & claims module loads 3 different views for split seconds then loads
+properly."*
+
+- ⚠️⚠️ **The first diagnosis was a harness artefact.** `#cc-filters` looked like the culprit — a full
+  filter bar in static markup, collapsed only when `wireFilterToggle` adds `.pd-filtergroup` after
+  auth — and a harness measured it visible at 284px. The harness sat at the server root, so
+  `module.css` (a **relative** href) 404'd. Rebuilt in `modules/contracts-claims/`, both sheets load
+  (422 + 563 rules) and `#cc-filters` is **`display:none` from the first byte**, because
+  `.cc-filters { display:none }` is declared right here in this module's own CSS. Same for
+  `rr-filters` and `sm-filters`. Nothing to fix there.
+- **The real cause:** `ensureLinks().then(render)` was gated on nothing and raced the four other
+  round trips `load()` makes. `cc_affected_activities` is small, so it usually won and repainted
+  while `rows` was still empty (first open) or still the previous project's (a switch).
+- ⚠️ **`load()` is also called un-awaited** from the project-switch handler, so two loads could
+  overlap and the *last to finish* committed `rows`, `PKGS` and `ALL_PROJECTS`.
+- **`_loadGen`** (project-schedule's own device): every await re-checks it, one `paint()` no-ops on a
+  superseded load, and ⚠️ `PKGS` / `ALL_PROJECTS` are assigned **after** the check — module state
+  from a stale load is a wrong screen, not just an early one.
+- ⚠️ The links repaint survives, gated on `_painted === gen`: if the links land first the cache is
+  already full and the main paint draws the chips anyway (`affChip` never fetches).
+
+**Verified** by slicing `load()` out and executing it with controlled timings, against `afb3bf3`:
+the control paints **`0 rows` → `1 rows`** (the flash, reproduced) and the fix paints **once**.
+**7 assertions, 0 failing** — including that a *late* links read still repaints, and that two
+overlapping loads produce 1 paint rather than 2. wiring-check 129/129.
+⚠️ Not verified signed in. ⚠️ The BOQ still mounts in afterwards, deliberately — that lazy mount is a
+documented decision, not part of this defect.
+
+`module.js` → `?v=20260915f`; `MODULE_V` → `20260915m`.
+
+## 2026-09-15 (m) — The attachment engine moves to `assets/js/attach.js`, and this module delegates
+
+Not a feature for this module — the Project Schedule needs attachments on activities, and the
+valuable part of what shipped here on 2026-09-15 (h) is not the upload. It is the three **ordering
+rules**: the object is written before the row, the object is rolled back if the row write fails, and
+on removal the row goes first. A second copy of those is a second set of ways to get them wrong.
+
+- **New `assets/js/attach.js` (`PDAttach`)**, parameterised by table, bucket, owner column, doc-type
+  vocabulary and CSS prefix. This module's `att*` functions are now thin delegates over an instance.
+- ⚠️ **The local names are kept** (`loadAttachments`, `attPanelHTML`, `attPanelWire`, `attFlush`), so
+  the three call sites, the `D.att*` exports and `wizard.js` are untouched and the diff stays
+  checkable. Same approach `affected.js` took when `PDLoc` was extracted.
+- ⚠️ **The `cls` prefix is why no CSS changed.** The engine emits `cc-att*` exactly as before, so this
+  module's stylesheet keeps working unmodified. Neutral shared classes would have meant retargeting
+  working CSS in the same commit that moved the JS — two risks where one will do.
+- ⚠️ **`parentWord` exists so the two shipped sentences are unchanged** — *"…when you save the
+  record"* and *"The record was saved, but…"*. Extracting a function must not quietly reword a screen
+  that was signed off.
+- ⚠️ **Six delegates were written and then DELETED as dead.** `attLabel`, `attSize`, `attOf`,
+  `attUpload`, `attOpen` and `attRemove` had their only callers inside the panel, which now lives in
+  the shared file. Grepped `module.js` and `wizard.js` for each: **zero call sites**. A delegate that
+  matches nothing reads as a feature that exists.
+
+### Verified — the extraction is a MOVE, proven rather than asserted
+
+HEAD's `attPanelHTML` was sliced out **by name** and executed beside the shipped
+`PDAttach.panelHTML` over the same inputs, comparing the HTML **byte for byte**:
+
+| case | result |
+|---|---|
+| existing record, 3 files, writer | **identical** (1357 chars) |
+| existing record, 3 files, viewer | **identical** (558) |
+| new record, 2 staged, writer | **identical** (1067) |
+| new record, nothing at all | **identical** (705) |
+| record with no files, viewer | **identical** (70) |
+| existing files + staged together | **identical** (1764) |
+| the "table not migrated" branch | **identical** |
+
+**7 identical, 0 differing.** A refactor that cannot show this is a rewrite with extra steps.
+`node tools/wiring-check.js` **129/129, 0 failed**, with `PDAttach` now among the providers that load
+and assign — the check that would catch the z6 shape.
+⚠️ **Not verified signed in** — no upload has run through the extracted engine.
+
+`module.js` → `?v=20260915e`; new `attach.js` → `?v=20260915a`; `MODULE_V` → `20260915k`.
+
 ## 2026-09-14 (s) — #6: the procurement-trade answer stops vanishing when a bill is issued
 
 Owner: *“Let's do #6”* — the latent gate reported in (q).

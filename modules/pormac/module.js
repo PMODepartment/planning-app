@@ -70,6 +70,12 @@ window.Pormac = (function () {
       this.style.height = 'auto';
       this.style.height = Math.min(160, this.scrollHeight) + 'px';
     });
+    // ⚠️ Wired here, not inside the `loadProjects()` try block below, for the
+    // same reason the composer handlers are: it needs `pid`/`portfolioAll`
+    // and `profile`, none of which depend on the project list ever loading,
+    // so a failed fetch must not also take away the one way to clear a stuck
+    // or unwanted thread.
+    $('pmc-clear').onclick = clearHistory;
 
     try {
       await loadProjects();
@@ -78,7 +84,6 @@ window.Pormac = (function () {
         sessionStorage.setItem('pd_project', pid || '');
         loadConversation();
       };
-      $('pmc-portfolio').onchange = function (e) { setPortfolioAll(e.target.checked); loadConversation(); };
     } catch (e) {
       // A planner can still chat without a project selected — this only
       // costs project-scoped grounding, never the chat itself.
@@ -115,34 +120,34 @@ window.Pormac = (function () {
       }).join('');
     UI.enhanceProjectSelect(sel);
 
-    // ⚠️⚠️ ARRIVING FROM THE PORTFOLIO SIDEBAR DEFAULTS TO PORTFOLIO SCOPE.
-    // `ui.js`'s `renderNav('portfolio', …)` puts `#pd_scope=portfolio` on
-    // EVERY module's own link (2026-09-14, generalized from this module's own
-    // one-off `#pmc_scope=portfolio`), read once by `AppAuth` (auth.js) into a
-    // per-tab sessionStorage flag every module now shares — `pd_project`
-    // sessionStorage is a SEPARATE, app-wide key that, arriving here from the
-    // Portfolio nav, usually still holds whatever project the planner was
-    // last looking at, which is a worse default than "answer across
-    // everything" when the planner explicitly came from the portfolio-wide
-    // side of the app.
-    if (window.AppAuth && AppAuth.isPortfolioScope()) {
-      $('pmc-portfolio').checked = true;
-      setPortfolioAll(true);
-    }
+    // ⚠️⚠️ SCOPE IS DERIVED SOLELY FROM HOW THE PLANNER ARRIVED, NOT A
+    // CONTROL THEY SET. `ui.js`'s `renderNav('portfolio', …)` puts
+    // `#pd_scope=portfolio` on EVERY module's own link (2026-09-14,
+    // generalized from this module's own one-off `#pmc_scope=portfolio`),
+    // read once by `AppAuth` (auth.js) into a per-tab sessionStorage flag
+    // every module now shares — this is the ONE signal distinguishing
+    // "opened from the Portfolio nav" from "opened from a project's own
+    // module grid" (a module page always renders under `mode:'project'` in
+    // `UI.renderNav` regardless of which nav family linked to it, so
+    // `pd_project` sessionStorage cannot tell the two apart on its own).
+    // A checkbox here used to let a planner flip that scope mid-session —
+    // removed 2026-09-14 (owner: "no need for the portfolio checkbox")
+    // because the whole point is that the answer's basis should follow
+    // WHERE Pormac was opened from, not a toggle somebody could leave in
+    // the wrong position and not notice.
+    if (window.AppAuth && AppAuth.isPortfolioScope()) setPortfolioAll(true);
   }
 
-  // One writer for the portfolio-scope flag and the controls it affects, so
-  // the checkbox, the (disabled) project select and `portfolioAll` cannot
-  // drift out of sync the way three separate call sites would risk.
-  // ⚠️ Also mirrors into the SHARED `AppAuth` flag — this checkbox is this
-  // module's own UI for the identical concept every other module now reads
-  // (their project selector's "Portfolio" label, and their own data/write
-  // gating), so toggling it here should not leave the rest of the app
-  // disagreeing about whether the tab is in Portfolio scope.
+  // One writer for the portfolio-scope flag and the project select it hides,
+  // so the two cannot drift out of sync the way two separate call sites would
+  // risk. ⚠️ Hidden, not merely disabled — with no toggle left to turn
+  // Portfolio back off, a visible-but-unusable select would just be a control
+  // that does nothing, where the earlier checkbox-driven design at least gave
+  // a reason to keep it in view (disabled, so it still answered "why can't I
+  // pick a project right now").
   function setPortfolioAll(on) {
     portfolioAll = !!on;
-    $('pmc-project').disabled = portfolioAll;
-    if (window.AppAuth) AppAuth.setPortfolioScope(portfolioAll);
+    $('pmc-project').style.display = portfolioAll ? 'none' : '';
   }
 
   // ==========================================================================
@@ -226,6 +231,50 @@ window.Pormac = (function () {
     }
   }
 
+
+  // Owner, 2026-09-14: "provide also option to clear history." Deletes every
+  // `pormac_conversations` row for the CURRENT scope (this project, General,
+  // or Portfolio — General and Portfolio share the same NULL-project bucket,
+  // same as everywhere else this module reads/writes that scope) rather than
+  // only the canonical row `loadConversation()` picked.
+  //
+  // ⚠️⚠️ DELETING ONLY `conversationId` WOULD LEAVE THE THREAD COMING BACK.
+  // `loadConversation()` merges EVERY conversation row for this scope, not
+  // just the canonical one — a leftover from before this module converged on
+  // "one conversation per project" (2026-09-12). Deleting the single
+  // canonical row and reopening the module would silently resurrect whatever
+  // older row was next in line, which reads as "clear history did nothing."
+  // The delete uses the identical scope predicate `loadConversation()` reads
+  // with, so the two can never disagree about what "this conversation" means.
+  //
+  // ⚠️ `pormac_messages.conversation_id` is `references … on delete cascade`
+  // (migrations/2026-09-12-pormac.sql), and a foreign-key cascade runs at the
+  // constraint level rather than through the deleting role's own RLS — so
+  // deleting the conversation rows here is enough; no separate messages
+  // delete or policy is needed.
+  //
+  // ⚠️ `.eq('created_by', profile.id)` is not redundant with the table's own
+  // delete policy (`created_by = auth.uid() OR is_admin()`) — without it an
+  // admin's "clear history" would delete every planner's conversation for
+  // this scope, not just their own.
+  async function clearHistory() {
+    var scopeLabel = portfolioAll ? 'the portfolio-wide conversation'
+      : pid ? 'this project’s conversation' : 'the general conversation';
+    if (!confirm('Clear ' + scopeLabel + '? This deletes it for everyone who can see this project — it cannot be undone.')) return;
+    try {
+      var q = sb().from('pormac_conversations').delete().eq('created_by', profile.id);
+      q = (pid && !portfolioAll) ? q.eq('project_id', pid) : q.is('project_id', null);
+      var { error } = await q;
+      if (error) throw error;
+      convToken++;              // drop any in-flight loadConversation() for the old state
+      conversationId = null;
+      chatHistory = [];
+      renderMessages();
+      UI.toast('Cleared ' + scopeLabel + '.', 'ok');
+    } catch (e) {
+      UI.toast('Could not clear history (' + ((e && e.message) || e) + ').', 'warn');
+    }
+  }
 
   // ==========================================================================
   // Capability detection + tiered model selection
@@ -762,12 +811,11 @@ window.Pormac = (function () {
   // for a 1–3B local model's context window.
   // The project the planner has selected, named the way the picker names it —
   // read off the live <select> so it cannot disagree with what is on screen.
-  // ⚠️ Portfolio checked wins over whatever the (disabled) select still shows
-  // — the select is deliberately left holding its last real value rather than
-  // reset to blank when Portfolio is ticked (see `setPortfolioAll`), so
-  // reading it here without checking `portfolioAll` first would report a
-  // stale single project while every context provider had already switched
-  // to answering across all of them.
+  // ⚠️ Portfolio scope wins over whatever the (hidden) select still shows —
+  // it is left holding its last real value rather than reset to blank (see
+  // `setPortfolioAll`), so reading it here without checking `portfolioAll`
+  // first would report a stale single project while every context provider
+  // had already switched to answering across all of them.
   function projectLabel() {
     if (portfolioAll) return 'Portfolio — every project you can see (' + PROJECTS.length + ' projects)';
     var sel = $('pmc-project');
@@ -999,7 +1047,7 @@ window.Pormac = (function () {
         ? 'Ask me anything across the portfolio — I’ll answer using data from every project you can see. Everything you ask here stays in one running conversation — scroll back any time.'
         : pid
         ? 'Ask me anything about this project. Everything you ask here stays in one running conversation — scroll back any time.'
-        : 'Pick a project above for grounded answers, tick Portfolio (all projects) for a portfolio-wide answer, or ask a general question.');
+        : 'Pick a project above for grounded answers, or ask a general question.');
       return;
     }
     if (truncated) pushMessage('system', 'Showing the most recent ' + MSG_CAP + ' messages of this conversation.');

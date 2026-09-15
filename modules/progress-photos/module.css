@@ -120,7 +120,7 @@
 .pp-filters-body { display: contents; }
 .pp-filttoggle { display: none; }
 .pp-filt-ico { color: var(--pd-muted); flex: none; }
-.pp-filters .pd-input, .pp-filters .pd-select { height: 30px; font-size: var(--pd-fs-sm); }
+.pp-filters .pd-input, .pp-filters .pd-select { height: 30px; }
 .pp-filters .pp-search { flex: 1 1 260px; min-width: 160px; }
 .pp-filters .pd-select { flex: 0 0 auto; max-width: 130px; }
 /* Date range: a muted caption + input reading as one control */

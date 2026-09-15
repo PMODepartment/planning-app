@@ -48,23 +48,23 @@
 .pmc-quality { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .pmc-quality .pd-select { width: auto; min-width: 132px; }
 
-/* ⚠️ A CHECKBOX, NOT A THIRD `<select>` OPTION — deliberately not folded into
-   `#pmc-project`. That select goes through the shared, app-wide
-   `UI.enhanceProjectSelect()` (MODULE_CONTRACT.md convention, used by every
-   other module's own project filter), which hides the native control and
-   replaces it with a popover listing only REAL projects — a sentinel value
-   with no matching project would be visible only as the button's starting
-   label and, once a real project was picked, unreachable again from the UI.
-   A plain checkbox beside it has no such trap: always visible, always
-   clickable, and it is what module.js disables the select on rather than the
-   other way round. */
+/* ⚠️ Scope (project vs. portfolio-wide) is no longer a control on this bar —
+   removed 2026-09-14 (owner: "no need for the portfolio checkbox"). It is
+   derived once, on load, from how the module was opened (see module.js's
+   `loadProjects`/`setPortfolioAll`), and `#pmc-project` is hidden outright in
+   portfolio scope rather than left visible-but-disabled: there is nothing
+   left in the UI that could turn Portfolio back off, so a disabled select
+   would just be inert clutter. */
 .pmc-projctx { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.pmc-portfolio-toggle {
-  display: inline-flex; align-items: center; gap: 5px; flex: none;
-  font-size: var(--pd-fs-xs, 11px); color: var(--pd-muted); white-space: nowrap; cursor: pointer;
-}
-.pmc-portfolio-toggle input { margin: 0; }
-.pmc-project:disabled { opacity: .55; cursor: not-allowed; }
+/* ⚠️ `margin-left: auto` pins it to the row's trailing edge — a destructive
+   control belongs at arm's length from the project picker it sits beside,
+   not adjacent enough to be a mis-click while switching projects.
+   ⚠️ `height` is explicit for the same reason `.pd-toolbar-right .pd-icon-btn`
+   states its own: an icon button with no height collapses to its bare glyph
+   and rides high in a row of 34px controls — `.pmc-clearbtn` sits outside
+   that toolbar class, so it needs the same fix repeated here. */
+.pmc-clearbtn { flex: none; margin-left: auto; width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; }
 
 @media (max-width: 700px) {
   /* On a phone the bar is already wrapping; a control pinned right ends up

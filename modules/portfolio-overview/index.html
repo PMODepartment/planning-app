@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260912q" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915f" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -174,6 +174,35 @@
     .po-kpis2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
     .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:14px 16px; }
     .po-kpi2-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    /* ---- Contracts & Claims: aging bars + the all-records disclosure (2026-09-15) ----
+       ⚠ Tokens only, and the TEXT tones are --pd-*-text rather than --pd-warn / --pd-bad
+         themselves, which are surface colours (--pd-warn measures 3.46:1 and is not a text
+         colour — recorded at length in the 2026-09-15 uic pass). */
+    .po-ages { list-style:none; margin:0 0 4px; padding:0; }
+    .po-age { display:flex; align-items:center; gap:10px; padding:6px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
+    .po-age:last-child { border-bottom:0; }
+    .po-age-l { flex:0 0 116px; color:var(--pd-muted); }
+    .po-age-bar { flex:1 1 auto; height:8px; min-width:40px; border-radius:99px;
+      background:var(--pd-line); overflow:hidden; }
+    .po-age-bar > i { display:block; height:100%; background:var(--pd-red); }
+    .po-age-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--pd-ink); }
+    .po-age-warn .po-age-bar > i { background:var(--pd-warn); }
+    .po-age-warn .po-age-v { color:var(--pd-warn-text); }
+    .po-age-bad  .po-age-bar > i { background:var(--pd-bad); }
+    .po-age-bad  .po-age-v { color:var(--pd-bad-text); }
+    /* No bar for "not submitted" — it has no age, so drawing one would imply it had. */
+    .po-age-unsent .po-age-bar { background:transparent; }
+    .po-age-unsent .po-age-l, .po-age-unsent .po-age-v { color:var(--pd-muted); font-style:italic; }
+    .po-ct-note { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin:10px 0 0; }
+    .po-ct-all > summary { cursor:pointer; font-size:var(--pd-fs-xs); font-weight:700;
+      text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); }
+    .po-ct-all[open] > summary { margin-bottom:2px; }
+    @media (max-width:700px) {
+      .po-age { flex-wrap:wrap; }
+      .po-age-l { flex:1 1 auto; }
+      .po-age-bar { flex:1 1 100%; order:3; }
+    }
     .po-kpi2-v { font-size:var(--pd-fs-stat); font-weight:700; }
     .po-svg { width:100%; height:auto; display:block; }
     .po-grid2 { stroke:var(--pd-line); stroke-width:1; }
@@ -188,6 +217,10 @@
     .po-sc-series label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
     .po-sc-series input { width:auto; min-height:0; }
     .po-sc-note { margin-top:8px; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
+    /* A series the drawn data cannot carry. Dimmed and not-allowed rather than hidden —
+       a toggle that vanishes reads as a missing feature, one that is visibly off reads
+       as "not available for this data", which is the true statement. */
+    .po-sc-series label.po-sc-off { opacity:.55; cursor:not-allowed; }
     /* The project legend can be long, so it wraps and sits under the style legend. */
     .po-legend-proj { margin-top:6px; }
     /* ---- Stakeholder directory (portfolio-level authoring) ---- */
@@ -801,9 +834,28 @@
       <div id="po-view-contracts" style="display:none;">
         <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-ct-scope">all projects</span>). <button class="pd-btn" id="po-ct-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
         <div class="po-kpis2" id="po-ct-kpis"></div>
-        <div class="po-card" style="padding:0;overflow:hidden;">
-          <div style="overflow-x:auto;"><table class="po-table" id="po-ct-table"></table></div>
+        <!-- ⚠⚠ RANKED BY UNRECOVERED EXPOSURE, NOT ALPHABETICALLY (2026-09-15). The question this
+             page exists to answer for management is "which project is bleeding", and a list sorted
+             by project name actively hides that — the worst project is wherever the alphabet put
+             it. The old flat table is kept below, because the page is also used to find one row. -->
+        <div class="po-card" id="po-ct-rankcard">
+          <h3 style="text-transform:none;font-size:15px;">Projects by unrecovered exposure</h3>
+          <div style="overflow-x:auto;"><table class="po-table" id="po-ct-rank"></table></div>
+          <p class="po-ct-note" id="po-ct-ranknote"></p>
         </div>
+        <div class="po-card" id="po-ct-agecard">
+          <h3 style="text-transform:none;font-size:15px;">How long the client has been holding it</h3>
+          <ul class="po-ages" id="po-ct-age"></ul>
+          <p class="po-ct-note">Counted from <b>date submitted</b>, and only while a record is Pending.
+            A record with no submitted date is listed separately — it is waiting on us, not the client.</p>
+        </div>
+        <!-- ⚠ The full register is KEPT, behind a disclosure. It is the only way to find a specific
+             row on this page, and deleting it to make room for the summary would trade one job for
+             another. Shut by default: a summary that opens on 900 rows is not a summary. -->
+        <details class="po-card po-ct-all" id="po-ct-allwrap">
+          <summary id="po-ct-allsum">All records</summary>
+          <div style="overflow-x:auto;margin-top:10px;"><table class="po-table" id="po-ct-table"></table></div>
+        </details>
       </div>
 
       <div id="po-view-photos" style="display:none;">
@@ -830,7 +882,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260913a"></script>
+<script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260914e"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
@@ -838,11 +890,13 @@
   <!-- ⚠ The shared S-curve engine. This page used to carry a hand-copied duplicate of
        its maths (scCompute), the exact drift the 2026-09-01 extraction existed to stop. -->
   <script src="../../assets/js/scurve.js?v=20260901a"></script>
-<script src="../../assets/js/ui.js?v=20260914e"></script>
+<script src="../../assets/js/ui.js?v=20260915g"></script>
+<script src="../../assets/js/claims.js?v=20260915a"></script>
+<script src="../../assets/js/notebook.js?v=20260915d"></script>
 <!-- Shared stakeholder directory: identity matching + find-or-create, used by
      BOTH this page and the Stakeholder Map module. Not hand-copied into each. -->
 <script src="../../assets/js/stakeholders.js?v=20260910u7"></script>
-<script src="../../assets/js/icons.js?v=20260913a"></script>
+<script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -941,20 +995,71 @@
   }
 
   // ---- KPI cards ----
-  function card(ic, label, val, cls) { return '<div class="pd-info-card"><div class="pd-info-ic">' + Icons.svg(ic, 22) + '</div><div class="pd-info-label">' + esc(label) + '</div><div class="pd-info-val"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + esc(val) + '</div></div>'; }
+  function card(ic, label, val, cls, ttl) { return '<div class="pd-info-card"' + (ttl ? ' title="' + esc(ttl) + '"' : '') + '><div class="pd-info-ic">' + Icons.svg(ic, 22) + '</div><div class="pd-info-label">' + esc(label) + '</div><div class="pd-info-val"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + esc(val) + '</div></div>'; }
+
+  /* ==========================================================================
+     PORTFOLIO PROGRESS — weighted by value, never a mean of percentages
+     ==========================================================================
+     ⚠️⚠️ A PLAIN MEAN MAKES A ₱50M FIT-OUT COUNT AS MUCH AS A ₱2B TOWER. That is the figure
+     this strip used to print, under the label "Avg Schedule %" — arithmetically an average of
+     project percentages, and on a portfolio of wildly different project sizes it is not the
+     portfolio's progress at all. Two small finished projects and one huge one barely started
+     read as 67% complete. Same fault, same fix, as the Project Schedule's own Summary view,
+     which weights by duration and says so.
+
+     ⚠️ THE WEIGHT IS `original_budget` — the contract value, which is the only measure of size
+     the project row carries and the one management is actually reading the number against.
+     `schedule_activities` was the alternative and is a worse proxy: a count of rows says how
+     finely somebody broke the work down, not how much of it there is.
+
+     ⚠️⚠️ AND IT DEGRADES RATHER THAN LYING. A project can carry progress with no budget, or a
+     budget with no progress, and only those with BOTH can be weighted. When nothing can be
+     weighted the figure falls back to the plain mean — which is the honest answer at that
+     point — and the basis is REPORTED either way, because a weighted and an unweighted figure
+     differ and a reader has no way to tell them apart from the number alone.
+     ⚠️ Projects with no progress at all are COUNTED and named, never silently dropped: "62%"
+     over three of eleven projects is a different statement from "62%". */
+  function portfolioProgress(list) {
+    var withPct = list.filter(function (p) { return progressOf(p) != null; });
+    var weighted = withPct.filter(function (p) { return num(p.original_budget) > 0; });
+    var skipped = list.length - withPct.length;
+    if (!withPct.length) return { pct: null, basis: 'none', counted: 0, skipped: skipped, unweighted: 0 };
+    if (weighted.length) {
+      var w = weighted.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
+      var s = weighted.reduce(function (a, p) { return a + num(p.original_budget) * progressOf(p); }, 0);
+      return { pct: Math.round(s / w), basis: 'budget', counted: weighted.length,
+               skipped: skipped, unweighted: withPct.length - weighted.length };
+    }
+    var m = withPct.reduce(function (a, p) { return a + progressOf(p); }, 0) / withPct.length;
+    return { pct: Math.round(m), basis: 'mean', counted: withPct.length, skipped: skipped, unweighted: 0 };
+  }
+  function progressBasisNote(r) {
+    if (r.basis === 'none') return 'No project in scope reports a schedule progress figure.';
+    var t = r.basis === 'budget'
+      ? 'Weighted by original budget across ' + r.counted + ' project' + (r.counted === 1 ? '' : 's') +
+        ' — not a mean of percentages, so a large project counts for more than a small one.'
+      : 'A plain mean across ' + r.counted + ' project' + (r.counted === 1 ? '' : 's') +
+        ', because no project in scope carries an original budget to weight by.';
+    if (r.unweighted) t += ' ' + r.unweighted + ' project' + (r.unweighted === 1 ? ' reports' : 's report') +
+      ' progress but no budget, so ' + (r.unweighted === 1 ? 'it is' : 'they are') + ' not in the weighted figure.';
+    if (r.skipped) t += ' ' + r.skipped + ' project' + (r.skipped === 1 ? '' : 's') + ' report no progress at all.';
+    return t;
+  }
   function renderKPIs(list) {
     var active = list.filter(function (p) { return (p.status || 'active') === 'active'; }).length;
     var orig = list.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
     var est = list.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
     var vr = est - orig;
-    var pv = list.map(progressOf).filter(function (x) { return x != null; });
-    var avg = pv.length ? Math.round(pv.reduce(function (a, b) { return a + b; }, 0) / pv.length) : null;
+    var prog = portfolioProgress(list);
     var over = list.filter(function (p) { return variance(p) > 0; }).length;
     var behind = list.filter(isBehind).length;
     document.getElementById('po-kpis').innerHTML =
       card('layers', 'Projects', String(list.length)) +
       card('check', 'Active', String(active)) +
-      card('barChart', 'Avg Schedule %', avg != null ? avg + '%' : '—') +
+      /* ⚠️ The LABEL changed with the arithmetic. "Avg Schedule %" described a mean, and leaving
+         that word over a weighted figure would be worse than leaving the mean in place. */
+      card('barChart', 'Portfolio Progress' + (prog.basis === 'budget' ? ' (by value)' : ''),
+           prog.pct != null ? prog.pct + '%' : '—', null, progressBasisNote(prog)) +
       card('cash', 'Original Budget', orig ? Fmt.moneyShort(orig) : '—') +
       card('calculator', 'Estimated Cost', est ? Fmt.moneyShort(est) : '—') +
       card(vr > 0 ? 'triangleUp' : 'triangleDown', 'Budget Variance', (orig || est) ? Fmt.moneyShort(vr) : '—', vr > 0 ? '--pd-bad' : '--pd-ok') +
@@ -1183,7 +1288,7 @@
     var after = function () {
       document.getElementById('po-projfilter-label').textContent = projFilterLabel();
       renderProjFilterList();   // repaint so a parent's tick state follows its packages
-      renderAll();
+      renderCurrent();
     };
     host.querySelectorAll('input[data-pf]').forEach(function (cb) {
       cb.onchange = function () {
@@ -1211,17 +1316,46 @@
     menu.querySelector('[data-act="all"]').onclick = function () {
       PROJ.forEach(function (p) { projSel[p.id] = true; });
       document.getElementById('po-projfilter-label').textContent = projFilterLabel();
-      renderProjFilterList(); renderAll();
+      renderProjFilterList(); renderCurrent();
     };
     menu.querySelector('[data-act="none"]').onclick = function () {
       projSel = {};
       document.getElementById('po-projfilter-label').textContent = projFilterLabel();
-      renderProjFilterList(); renderAll();
+      renderProjFilterList(); renderCurrent();
     };
     document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) menu.classList.remove('open'); });
   }
 
   function renderAll() { var list = filtered(); renderKPIs(list); renderDonut(list); renderBars(list); renderTable(list); }
+
+  /* ⚠️⚠️ ANYTHING THAT CHANGES `filtered()` MUST COME THROUGH HERE, NOT `renderAll()`.
+     renderAll() paints the OVERVIEW pane only. The scope control's own note below says it
+     "scopes EVERY view" — it never did: the twelve other views each have their own
+     load<View>() and none was called, so narrowing the filter while standing on the
+     S-Curve updated the button label, repainted a hidden pane, and left the previous
+     load's "across 21 project(s)" on screen. That is the defect the owner reported.
+     ⚠️ The Overview repaints IMMEDIATELY (it is free — it reads PROJ from memory); only the
+     network-bound view load is debounced, so ticking five projects is one fetch, not five. */
+  var _viewLoadT = null;
+  function renderCurrent() {
+    renderAll();
+    if (_viewLoadT) clearTimeout(_viewLoadT);
+    _viewLoadT = setTimeout(function () {
+      _viewLoadT = null;
+      var f = viewLoaders()[view];
+      if (f) f(true);
+    }, 250);
+  }
+
+  /* ⚠️ ONE list of "which loader belongs to which view", read by BOTH switchView() and
+     renderCurrent(). Two copies is how a view gets added to one and forgotten in the other.
+     A function (not a var) so hoisting makes it safe to call from anywhere in this IIFE. */
+  function viewLoaders() {
+    return { scurve: loadScurve, cashflow: loadCashflow, resources: loadResources,
+             equipment: loadEquipment, milestones: loadMilestones, risk: loadRisks,
+             stakeholders: loadStakeholders, issues: loadIssues, meetings: loadMeetings,
+             contracts: loadContracts, photos: loadPhotos, productivity: loadProductivity };
+  }
 
   // ================= Portfolio S-Curve (cross-project) =================
   // Scoped to whatever the Overview tab's project filter currently resolves to (filtered()).
@@ -1232,33 +1366,45 @@
   function scopedProjectIds() { return filtered().map(function (p) { return p.id; }); }
   function scopeLabel(ids) { return ids.length === PROJ.length ? 'all ' + PROJ.length + ' projects' : ids.length + ' of ' + PROJ.length + ' projects'; }
   function isWbsRow(r) { return r.activity_type === 'WBS Summary'; }
-  async function fetchScheduleForIds(ids) {
-    if (!ids.length) return [];
-    var all = [];
-    var cnt = await sb().from('project_schedule').select('*', { count: 'exact', head: true }).in('project_id', ids);
-    if (cnt.error) throw cnt.error;
-    var total = cnt.count || 0;
-    if (!total) return [];
-    if (total > 20000) UI.toast('Loading ' + total + ' activities across ' + ids.length + ' project(s) — this may take a moment. Narrow the project filter for a faster view.', 'warn');
-    // Keyset pagination with an explicit order (indexed PK range scan) instead of parallel
-    // OFFSET .range(): OFFSET re-scans every preceding row (deep pages timed out on 42k-row
-    // projects) and, with NO .order(), OFFSET pages can duplicate/skip rows → wrong totals.
-    // Lean columns only (the fields scCompute reads) — not select('*') across tens of thousands.
-    // ⚠⚠ `project_id` IS LOAD-BEARING and was deliberately absent before: every row
-    //    arrived anonymous, which is exactly why a per-project overlay could not be drawn.
-    // ⚠ The rest of the list mirrors PDScurve.COLS so the fetch and the engine cannot
-    //    drift about which columns the maths needs.
+  /* ⚠️⚠️ PAGED PER PROJECT, NOT `.in('project_id', ids)` — AND THAT IS THE FIX.
+     The index this read lives or dies by is `project_schedule_proj_id_idx (project_id, id)`,
+     and migrations/2026-07-20-schedule-scurve-agg.sql:92 says what it is for in as many
+     words: "(where project_id = ? and id > ? order by id) — an indexed range scan per page."
+     ONE project. Across 21 ids there is no single range to scan, the plan degenerates, and a
+     page can run past the ~8s statement_timeout — which reached the owner as a bare
+     "Load failed." on every portfolio-wide open.
+     ⚠️ THE `count:'exact'` PRE-READ IS GONE. It counted every activity in the selection to
+        decide whether to show a warning toast, and it was the most timeout-prone statement
+        on the page — paid on every load, for a toast.
+     ⚠️ One project failing no longer fails the view: it is collected and NAMED, and the rest
+        still draw. A partial portfolio that says which project is missing beats an empty one
+        that says nothing. */
+  async function fetchScheduleForIds(ids, onProgress) {
+    if (!ids.length) return { rows: [], failed: [] };
+    // Lean columns only — never select('*') across tens of thousands of rows.
+    // ⚠⚠ `project_id` IS LOAD-BEARING and was deliberately absent once: every row arrived
+    //    anonymous, which is exactly why a per-project overlay could not be drawn.
+    // ⚠ The rest mirrors PDScurve.COLS so the fetch and the engine cannot drift about which
+    //    columns the maths needs.
     var LEAN = 'project_id,' + (window.PDScurve ? PDScurve.COLS.join(',')
       : 'id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish');
-    var last = null;
-    while (true) {
-      var q = sb().from('project_schedule').select(LEAN).in('project_id', ids).order('id', { ascending: true }).limit(1000);
-      if (last) q = q.gt('id', last);
-      var r = await q; if (r.error) throw r.error;
-      var b = r.data || []; all = all.concat(b);
-      if (b.length < 1000) break; last = b[b.length - 1].id;
+    var all = [], failed = [];
+    for (var i = 0; i < ids.length; i++) {
+      var pid = ids[i];
+      if (onProgress) onProgress(i, ids.length);
+      try {
+        var last = null;
+        while (true) {
+          var q = sb().from('project_schedule').select(LEAN).eq('project_id', pid)
+                    .order('id', { ascending: true }).limit(1000);
+          if (last) q = q.gt('id', last);
+          var r = await q; if (r.error) throw r.error;
+          var b = r.data || []; all = all.concat(b);
+          if (b.length < 1000) break; last = b[b.length - 1].id;
+        }
+      } catch (e) { failed.push({ id: pid, err: e }); }
     }
-    return all;
+    return { rows: all, failed: failed };
   }
   // ⚠️⚠️ scCompute() USED TO BE A HAND-COPIED DUPLICATE of assets/js/scurve.js's maths and
   //    is now a thin wrapper over the shared engine. The duplicate is exactly the drift the
@@ -1317,6 +1463,11 @@
     }
     var per = scData.per;
     var sel = scSeriesSel || { bl: per.length <= SC_FULL_MAX, ac: true, fc: per.length <= SC_FULL_MAX };
+    /* ⚠️ The combined roll-up comes from the server-side monthly aggregate, which carries no
+       SPI-stretched forecast — only the row-derived per-project curves do. Without this the
+       Forecast box would sit TICKED over a chart that draws no forecast line, which is the
+       silent-nothing this page has been bitten by before. */
+    var anyFc = per.some(function (p) { return !!(p.d && p.d.forecastC); });
 
     // shared month axis: the union across every drawn project
     var lo = Infinity, hi = -Infinity;
@@ -1392,12 +1543,22 @@
       '<div class="po-sc-series">' +
         ['bl', 'ac', 'fc'].map(function (kk, i) {
           var lbl = ['Baseline', 'Actual', 'Forecast'][i];
-          return '<label><input type="checkbox" data-sc="' + kk + '"' + (sel[kk] ? ' checked' : '') + '> ' + lbl + '</label>';
+          var off = (kk === 'fc' && !anyFc);
+          return '<label' + (off ? ' class="po-sc-off" title="The combined portfolio roll-up carries no forecast — narrow the filter to ' + SC_FULL_MAX + ' projects or fewer for per-project curves."' : '') +
+            '><input type="checkbox" data-sc="' + kk + '"' + (sel[kk] && !off ? ' checked' : '') + (off ? ' disabled' : '') + '> ' + lbl + '</label>';
         }).join('') +
       '</div>';
     // ⚠️ When the default has quietly dropped two series, SAY SO. A chart that silently
     //    shows a third of what was asked for reads as missing data.
-    var note = (!scSeriesSel && per.length > SC_FULL_MAX)
+    /* ⚠️ A chart showing ONE line across 21 projects must say that is what it is. The
+       roll-up is the honest portfolio curve; per-project curves are a different question
+       and are read from rows, which is why they are offered only at a scope small enough
+       to read them. Neither case silently drops a project. */
+    var note = scData.rollupOnly
+      ? '<div class="po-sc-note">One <b>combined</b> curve across <b>' + (scData.nProjects || per.length) +
+        '</b> projects, computed on the database rather than read row by row. Narrow the project filter to <b>' +
+        SC_FULL_MAX + ' projects or fewer</b> to compare each project\'s own curve.</div>'
+      : (!scSeriesSel && per.length > SC_FULL_MAX)
       ? '<div class="po-sc-note">Showing <b>Actual</b> only — ' + per.length +
         ' projects × 3 series is too many lines to read. Tick Baseline or Forecast to add them back, ' +
         'or narrow the project filter.</div>'
@@ -1455,50 +1616,115 @@
       kpi2('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? '--pd-ok' : '--pd-bad');
   }
   var scLoadedIds = null;
+  /* ⚠️ A monotonic load token. Two overlapping loads used to BOTH paint, and whichever
+     finished LAST committed scData / scLoadedIds — which is how a superseded 21-project
+     load left its "Loading schedules across 21 project(s)…" on screen while the filter
+     button already read "2 projects". Same device as contracts-claims and notebook.js. */
+  var _scGen = 0;
+
+  /* ⚠️ NAMES THE CAUSE. "Load failed." covered a statement timeout, an un-run migration and
+     an RLS refusal alike — three different problems, none of them actionable from one
+     sentence. Codes this repo already recognises elsewhere. */
+  function scErrText(e) {
+    var code = (e && (e.code || e.status)) || '';
+    var msg = (e && (e.message || e.msg)) || String(e || '');
+    if (code === '57014' || /statement timeout|canceling statement/i.test(msg))
+      return 'the database cancelled the read on a timeout (57014) — narrow the project filter and try again';
+    if (code === 'PGRST202' || /Could not find the function/i.test(msg))
+      return 'the roll-up function is not deployed — run migrations/2026-07-20-schedule-scurve-agg.sql';
+    if (code === '42501' || /permission denied/i.test(msg))
+      return 'permission denied on the schedule read';
+    return msg || 'unknown error';
+  }
+
   async function loadScurve(force) {
     var ids = scopedProjectIds();
     if (!force && scLoadedIds && scLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-sc-scope').textContent = scopeLabel(ids);
+    var gen = ++_scGen;
+    var scopeEl = document.getElementById('po-sc-scope');
+    if (scopeEl) scopeEl.textContent = scopeLabel(ids);
     var kpiHost = document.getElementById('po-sc-kpis'), chartHost = document.getElementById('po-sc-chart');
     if (!ids.length) {
       kpiHost.innerHTML = '';
       chartHost.innerHTML = '<div class="po-empty">No projects match the current filter.</div>';
-      scData = null; return;
+      scData = null; scLoadedIds = ids; return;
     }
-    chartHost.innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
     kpiHost.innerHTML = '';
+    chartHost.innerHTML = '<div class="po-empty">Reading the portfolio roll-up…</div>';
+
+    /* ⚠️⚠️ THE ROLL-UP IS THE DEFAULT RENDER, AND IT IS ONE SERVER-SIDE CALL.
+       This page used to fetch every activity of every project — ~100k rows over 21
+       projects — to draw a chart it then REFUSED to draw: above SC_FULL_MAX the overlay
+       falls back to Actual-only anyway, and 21 curves are unreadable regardless. So the
+       combined curve is what loads, and rows are read only when there are few enough
+       projects for per-project curves to mean something. */
+    var roll = null, rollErr = null;
     try {
-      // ⚠️ THE FAST PATH IS KEPT, FOR THE KPI STRIP ONLY. `schedule_scurve_agg_multi`
-      //    returns ONE combined monthly aggregate for the whole selection — it cannot
-      //    produce per-project series, so the overlay has to come from rows. Rendering
-      //    the roll-up KPIs off the RPC first means the strip appears immediately instead
-      //    of waiting on a 40k-row fetch, which is what it always did.
-      var roll = null;
+      var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
+      if (gen !== _scGen) return;                       // superseded — do not paint
+      if (r.error) rollErr = r.error;
+      else if (r.data && r.data.months) roll = scComputeFromAgg(r.data);
+    } catch (e) { if (gen !== _scGen) return; rollErr = e; }
+    if (gen !== _scGen) return;
+
+    var nameOf = {};
+    PROJ.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
+
+    /* Per-project curves only where they can be read. ⚠️ A DEFAULT, NOT A LIMIT — and no
+       project is ever silently dropped: the note under the chart says the combined curve is
+       what is drawn and how to get the per-project ones. */
+    var wantPer = ids.length <= SC_FULL_MAX;
+    var per = [], failed = [];
+    if (wantPer) {
+      chartHost.innerHTML = '<div class="po-empty">Reading ' + ids.length + ' project schedule(s)…</div>';
+      var res;
       try {
-        var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
-        if (!r.error && r.data && r.data.months) { roll = scComputeFromAgg(r.data); scRenderKpis(roll); }
-      } catch (e) { roll = null; }
-
-      var rows = await fetchScheduleForIds(ids);
-      if (!roll || roll.empty) { roll = scCompute(rows); scRenderKpis(roll); }
-
-      // ⚠️ Grouped by `project_id`, which fetchScheduleForIds now selects. It was
-      //    deliberately absent from the LEAN column list before — which is precisely WHY
-      //    a per-project overlay was impossible: every row arrived anonymous and the
-      //    combined maths never needed to know which project it came from.
+        res = await fetchScheduleForIds(ids, function (i, n) {
+          if (gen !== _scGen) return;
+          chartHost.innerHTML = '<div class="po-empty">Reading project ' + (i + 1) + ' of ' + n + '…</div>';
+        });
+      } catch (e) { if (gen !== _scGen) return; res = { rows: [], failed: [{ id: '(all)', err: e }] }; }
+      if (gen !== _scGen) return;
+      failed = res.failed || [];
       var byP = {};
-      rows.forEach(function (x) { (byP[x.project_id] = byP[x.project_id] || []).push(x); });
-      var nameOf = {};
-      PROJ.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
-      var per = ids.map(function (id) { return { id: id, name: nameOf[id] || id, d: scCompute(byP[id] || []) }; })
-                   .filter(function (p) { return p.d && !p.d.empty; });
+      (res.rows || []).forEach(function (x) { (byP[x.project_id] = byP[x.project_id] || []).push(x); });
+      per = ids.map(function (id) { return { id: id, name: nameOf[id] || id, d: scCompute(byP[id] || []) }; })
+               .filter(function (p) { return p.d && !p.d.empty; });
+      if (!roll || roll.empty) { var merged = scCompute(res.rows || []); if (!merged.empty) roll = merged; }
+    }
 
-      scData = { rollup: roll, per: per };
-      scLoadedIds = ids;
-      scRenderChart();
-    } catch (e) {
-      UI.toast('Could not load schedules: ' + (e.message || e), 'error');
-      chartHost.innerHTML = '<div class="po-empty">Load failed.</div>';
+    if (gen !== _scGen) return;
+
+    /* ⚠️ THE COMBINED CURVE IS FED IN AS A SINGLE SERIES rather than given a second
+       renderer — scRenderChart already draws N named series, and one of them being "the
+       portfolio" costs nothing. A parallel renderer is how two pictures of one dataset
+       start disagreeing, which this page has already paid for once with scCompute. */
+    var rollupOnly = !per.length;
+    if (rollupOnly && roll && !roll.empty) {
+      per = [{ id: '__portfolio__', name: 'Portfolio — ' + ids.length + ' project' + (ids.length === 1 ? '' : 's'), d: roll }];
+    }
+
+    if (roll && !roll.empty) scRenderKpis(roll);
+    else kpiHost.innerHTML = '';
+
+    scData = { rollup: roll, per: per, rollupOnly: rollupOnly, nProjects: ids.length, failed: failed };
+    scLoadedIds = ids;
+
+    if (!per.length) {
+      var why = rollErr ? scErrText(rollErr)
+        : (failed.length ? failed.length + ' project(s) could not be read — ' + scErrText(failed[0].err)
+                         : 'no project in scope has any dated activity');
+      chartHost.innerHTML = '<div class="po-empty">Could not draw the portfolio S-curve: ' + esc(why) + '</div>';
+      if (rollErr || failed.length) UI.toast('S-curve: ' + why, 'error');
+      return;
+    }
+    scRenderChart();
+    // ⚠️ Reported even when the chart drew: a curve missing two projects is not the
+    //    portfolio's curve, and nothing else on screen would say so.
+    if (failed.length) {
+      UI.toast(failed.length + ' project(s) could not be read (' +
+        failed.map(function (f) { return nameOf[f.id] || f.id; }).join(', ') + ') — ' +
+        scErrText(failed[0].err), 'warn');
     }
   }
 
@@ -2953,18 +3179,10 @@
     document.getElementById('po-view-contracts').style.display = v === 'contracts' ? '' : 'none';
     document.getElementById('po-view-photos').style.display = v === 'photos' ? '' : 'none';
     document.getElementById('po-view-productivity').style.display = v === 'productivity' ? '' : 'none';
-    if (v === 'scurve') loadScurve(false);
-    if (v === 'cashflow') loadCashflow(false);
-    if (v === 'resources') loadResources(false);
-    if (v === 'equipment') loadEquipment(false);
-    if (v === 'milestones') loadMilestones(false);
-    if (v === 'risk') loadRisks(false);
-    if (v === 'stakeholders') loadStakeholders(false);
-    if (v === 'issues') loadIssues(false);
-    if (v === 'meetings') loadMeetings(false);
-    if (v === 'contracts') loadContracts(false);
-    if (v === 'photos') loadPhotos(false);
-    if (v === 'productivity') loadProductivity(false);
+    // ⚠️ Through viewLoaders() — the same list renderCurrent() reads, so a new view cannot
+    //    be wired for arrival and forgotten when the project filter changes (or vice versa).
+    var f = viewLoaders()[v];
+    if (f) f(false);
     placeScope(v);
   }
 
@@ -3312,17 +3530,62 @@
     ctLoadedIds = ids;
     ctRender();
   }
+  /* ==========================================================================================
+     PORTFOLIO CONTRACTS & CLAIMS — rebuilt 2026-09-15.
+     Owner: *"in terms of portfolio-level contracts & claims there should be a proper dashboard as
+     well but should provide portfolio level information that can provide informed decisions for
+     higher management. UI in the portfolio-level needs work as well."*
+
+     What was here was four KPI tiles and every row of every project's register in one flat table
+     sorted by project NAME. That is a register, not a decision surface — the project that most
+     needs attention was wherever the alphabet happened to put it.
+
+     ⚠️⚠️ EVERY RULE COMES FROM `PDClaims`, NEVER RE-DERIVED HERE. Decided = Approved +
+       Disapproved, shortfall clamped at 0, recovery over decided only, aging derived from
+       date_submitted while Pending. Those exist in the project dashboard's panel and the
+       register's own band too, and three screens each computing them would be the drift this repo
+       keeps paying for.
+     ⚠️ MONEY AND DAYS ARE REPORTED SEPARATELY. EOT is time, not cash — `PDClaims` is given the
+       day keys for it and the amount keys for the rest, and the two are never added.
+     ========================================================================================== */
   function ctRender() {
     var list = ctRows || [];
-    var contracts = list.filter(function (r) { return r.record_type === 'Contract'; });
-    var contractVal = contracts.reduce(function (a, r) { return a + num(r.amount); }, 0);
-    var pending = list.filter(function (r) { return r.record_type !== 'Contract' && (r.status || '') === 'Pending'; });
-    var pendVal = pending.reduce(function (a, r) { return a + num(r.approved_amount != null ? r.approved_amount : (r.eval_amount != null ? r.eval_amount : r.sub_amount)); }, 0);
-    var projSet = {}; list.forEach(function (r) { projSet[r.project_id] = 1; });
-    document.getElementById('po-ct-kpis').innerHTML =
-      kpi2('Total contract value', Fmt.moneyShort(contractVal)) + kpi2('Pending claims / CO / EOT', String(pending.length)) +
-      kpi2('Pending value', Fmt.moneyShort(pendVal)) + kpi2('Projects', String(Object.keys(projSet).length));
     var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var today = PDClaims.todayISO();
+
+    /* Cash-bearing claims (Claim + Change Order) and EOT are two different currencies. */
+    var claimish = PDClaims.claimsOnly(list);
+    var cash = claimish.filter(function (r) { return PDClaims.typeOf(r) !== 'EOT'; });
+    var eots = PDClaims.ofType(claimish, 'EOT');
+
+    var contractVal = PDClaims.contractValue(list);
+    var decCash = PDClaims.decided(cash);
+    var claimed = PDClaims.sum(decCash, 'sub_amount');
+    var certified = PDClaims.sum(decCash, 'approved_amount');
+    var shortfall = PDClaims.shortfallOf(cash, 'sub_amount', 'approved_amount');
+    var pendVal = PDClaims.pendingValue(cash, 'eval_amount', 'sub_amount');
+    var pendDays = PDClaims.pendingValue(eots, 'eval_days', 'sub_days');
+    var rec = PDClaims.recoveryOf(cash, 'sub_amount', 'approved_amount');
+    /* ⚠️ The SAME key list `pendingValue` above gets, or the bars do not add up to the
+       “Pending with client” figure printed beside them. */
+    var ag = PDClaims.agingBuckets(cash, ['eval_amount', 'sub_amount'], today);
+
+    /* ⚠️ "Exposure" is pending + shortfall: money asked for and not yet certified, plus money
+       asked for and refused. Both are unrecovered; only one of them is still arguable. They are
+       shown as separate figures AND summed for the ranking, never silently merged into one. */
+    document.getElementById('po-ct-kpis').innerHTML =
+      kpi2('Contract value', Fmt.moneyShort(contractVal)) +
+      kpi2('Pending with client', Fmt.moneyShort(pendVal), pendVal ? '--pd-warn-text' : '') +
+      kpi2('Shortfall', Fmt.moneyShort(shortfall), shortfall ? '--pd-bad-text' : '') +
+      kpi2('Recovery rate', rec == null ? '—' : Math.round(rec) + '%',
+           rec == null ? '' : (rec >= 80 ? '--pd-ok-text' : (rec < 50 ? '--pd-bad-text' : '--pd-warn-text'))) +
+      kpi2('EOT pending', pendDays ? Math.round(pendDays) + 'd' : '—') +
+      kpi2('Oldest pending', ag.oldest != null ? ag.oldest + 'd' : '—',
+           (ag.oldest != null && ag.oldest > 90) ? '--pd-bad-text' : '');
+
+    ctRenderRank(cash, eots, nameById, today);
+    ctRenderAging(ag, cash, today);
+
     var sorted = list.slice().sort(function (a, b) {
       return (nameById[a.project_id] || '').localeCompare(nameById[b.project_id] || '') || (a.record_type || '').localeCompare(b.record_type || '');
     });
@@ -3338,6 +3601,90 @@
         '<td>' + (st ? statePill(st, st === 'Approved' ? 'ok' : st === 'Pending' ? 'warn' : st === 'Disapproved' ? 'bad' : 'muted') : '—') + '</td></tr>';
     }).join('') : '<tr><td colspan="6" class="po-empty">No contract or claim records match the current filter.</td></tr>';
     document.getElementById('po-ct-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+    /* ⚠️ The disclosure states its own count. A `<summary>` reading only "All records" gives no
+       reason to open it and no sense of what is behind it. */
+    var sum = document.getElementById('po-ct-allsum');
+    if (sum) sum.textContent = 'All records (' + list.length + ')';
+  }
+
+  /* One row per project, ranked by what is unrecovered. ⚠️ Projects with NOTHING outstanding are
+     still listed, at the bottom — a management view that hides the healthy projects cannot be used
+     to say "these four are fine", which is half of what it is for. */
+  function ctRenderRank(cash, eots, nameById, today) {
+    var by = {};
+    function slot(pid) {
+      if (!by[pid]) by[pid] = { pid: pid, cash: [], eots: [] };
+      return by[pid];
+    }
+    cash.forEach(function (r) { slot(r.project_id).cash.push(r); });
+    eots.forEach(function (r) { slot(r.project_id).eots.push(r); });
+
+    var rowsOut = Object.keys(by).map(function (pid) {
+      var g = by[pid];
+      var pend = PDClaims.pendingValue(g.cash, 'eval_amount', 'sub_amount');
+      var shortf = PDClaims.shortfallOf(g.cash, 'sub_amount', 'approved_amount');
+      var recv = PDClaims.recoveryOf(g.cash, 'sub_amount', 'approved_amount');
+      var agg = PDClaims.agingBuckets(g.cash, ['eval_amount', 'sub_amount'], today);
+      var eotPend = PDClaims.pendingValue(g.eots, 'eval_days', 'sub_days');
+      return { pid: pid, name: nameById[pid] || pid, pend: pend, shortf: shortf,
+               recv: recv, oldest: agg.oldest, eotPend: eotPend,
+               nPend: PDClaims.pending(g.cash).length + PDClaims.pending(g.eots).length,
+               exposure: pend + shortf };
+    });
+    /* ⚠️ Ties break on the OLDEST pending, not on the name: two projects with the same exposure
+       are not equally urgent if one has been waiting four months. */
+    rowsOut.sort(function (a, b) {
+      return (b.exposure - a.exposure) || ((b.oldest || 0) - (a.oldest || 0)) ||
+             a.name.localeCompare(b.name);
+    });
+
+    var head = '<thead><tr><th>Project</th><th class="num">Pending</th><th class="num">Shortfall</th>' +
+      '<th class="num">Unrecovered</th><th class="num">EOT</th><th class="num">Oldest</th>' +
+      '<th class="num">Recovery</th></tr></thead>';
+    var body = rowsOut.length ? rowsOut.map(function (r) {
+      var tone = r.oldest == null ? '' : (r.oldest > 90 ? ' style="color:var(--pd-bad-text);"'
+                                       : (r.oldest > 60 ? ' style="color:var(--pd-warn-text);"' : ''));
+      var rtone = r.recv == null ? '' : (r.recv >= 80 ? ' style="color:var(--pd-ok-text);"'
+                                      : (r.recv < 50 ? ' style="color:var(--pd-bad-text);"' : ''));
+      return '<tr><td>' + esc(r.name) + '</td>' +
+        '<td class="num">' + (r.pend ? Fmt.moneyShort(r.pend) : '—') + '</td>' +
+        '<td class="num">' + (r.shortf ? Fmt.moneyShort(r.shortf) : '—') + '</td>' +
+        '<td class="num"><b>' + (r.exposure ? Fmt.moneyShort(r.exposure) : '—') + '</b></td>' +
+        '<td class="num">' + (r.eotPend ? Math.round(r.eotPend) + 'd' : '—') + '</td>' +
+        '<td class="num"' + tone + '>' + (r.oldest != null ? r.oldest + 'd' : '—') + '</td>' +
+        /* ⚠️ An em dash, never 0%. Nothing decided yet is not a 0% recovery rate — it is the
+           absence of a rate, and printing 0 would read as total refusal. */
+        '<td class="num"' + rtone + '>' + (r.recv == null ? '—' : Math.round(r.recv) + '%') + '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="po-empty">No claims, change orders or extensions of time on these projects.</td></tr>';
+    document.getElementById('po-ct-rank').innerHTML = head + '<tbody>' + body + '</tbody>';
+
+    var note = document.getElementById('po-ct-ranknote');
+    if (note) {
+      note.innerHTML = '<b>Unrecovered</b> is pending plus shortfall — money asked for and not yet ' +
+        'certified, plus money asked for and refused. Both are outstanding; only the first is still ' +
+        'arguable. <b>EOT</b> is time, kept apart from the cash columns and never added to them.';
+    }
+  }
+
+  function ctRenderAging(ag, cash, today) {
+    var host = document.getElementById('po-ct-age');
+    if (!host) return;
+    /* Scaled to the largest bucket, not the total — see the same note in contracts-claims'
+       own band. Scaled to the total, a healthy portfolio draws three invisible slivers. */
+    var worst = Math.max.apply(null, ag.buckets.map(function (b) { return b.value; }).concat([1]));
+    var li = ag.buckets.map(function (b) {
+      var w = Math.max(b.value ? 2 : 0, Math.round(b.value / worst * 100));
+      var tone = b.key === '90+' ? ' po-age-bad' : (b.key === '61-90' ? ' po-age-warn' : '');
+      return '<li class="po-age' + tone + '"><span class="po-age-l">' + esc(b.label) + '</span>' +
+        '<span class="po-age-bar"><i style="width:' + w + '%"></i></span>' +
+        '<span class="po-age-v">' + (b.n ? Fmt.moneyShort(b.value) + ' · ' + b.n : '—') + '</span></li>';
+    }).join('');
+    if (ag.unsent) {
+      li += '<li class="po-age po-age-unsent"><span class="po-age-l">Not submitted</span>' +
+        '<span class="po-age-bar"></span><span class="po-age-v">' +
+        Fmt.moneyShort(ag.unsentValue) + ' · ' + ag.unsent + '</span></li>';
+    }
+    host.innerHTML = li || '<li class="po-age"><span class="po-age-l">Nothing pending.</span></li>';
   }
 
   // ================= Portfolio Progress Photos (cross-project) =================
@@ -3483,11 +3830,11 @@
     // unhidden app-wide now, so its tab stays too. `resources`/`s-curve`/`milestones`/
     // `issues`/`meetings`/`photos`/`overview` stay — none of those seven modules are
     // superAdminOnly.
-    document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
+    document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderCurrent(); };
     wireProjFilter();
-    document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };
-    document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderAll(); };
-    document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderAll(); };
+    document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderCurrent(); };
+    document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderCurrent(); };
+    document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderCurrent(); };
     document.getElementById('po-export').onclick = exportExcel;
     // Each tab's own filter row (incl. its search box) hides behind one
     // funnel toggle instead of sitting permanently open.

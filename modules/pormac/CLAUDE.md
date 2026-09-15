@@ -6,6 +6,122 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-14 (c) — The Portfolio checkbox is gone: scope now follows how the module was opened, with nothing to flip
+
+Owner: *"remove the portfolio checkbox. when pormac is in project, discuss only based on project
+data. when pormac is in portfolio, answer based on all projects. no need for the portfolio
+checkbox."*
+
+⚠️⚠️ **The checkbox was never the only signal — it was a REDUNDANT, reversible one sitting on top
+of a signal that already existed and was already correct.** The 2026-09-14 (a) entry below built
+`#pmc_scope=portfolio` on Pormac's own Portfolio-sidebar link (`ui.js`'s `pormacRow`) specifically
+*because* `pd_project` sessionStorage is shared app-wide and cannot by itself say whether a
+planner opened Pormac from a project's own module grid or from the cross-project Portfolio nav.
+That hash was always the real answer to "which context is this"; the checkbox only ever set its
+*default* state on load, and it happened to also let a planner turn Portfolio scope back off
+mid-session — which the owner is now saying should not be possible at all. If Pormac is opened
+from the Portfolio side, the answer should be portfolio-wide, full stop; there being a control
+that could quietly leave it unchecked (or checked from a stale click) is the very failure mode
+"no need for the checkbox" is naming.
+
+- **`#pmc-portfolio` is deleted** from `index.html`, `module.js` and `module.css` — markup,
+  `onchange` wiring, and the `.pmc-portfolio-toggle` styling all removed rather than left dead.
+- **`loadProjects()` reads the hash once, on load, and calls `setPortfolioAll(true)` directly** —
+  no checkbox left to check or read state from. There is no code path left that can set
+  `portfolioAll` back to `false` once it is `true`; the only way to get project scope is to open
+  Pormac from a project's own module grid in the first place, which is exactly the owner's rule.
+- ⚠️ **`setPortfolioAll` now HIDES `#pmc-project` outright (`display:none`) rather than disabling
+  it.** Disabling it was the checkbox-era answer — a visible-but-inert control still explained
+  itself (*"why can't I pick a project? because Portfolio is ticked"*) to a planner who could
+  un-tick it. With no toggle left to act on that explanation, a disabled select is just a dead
+  control taking up the topbar; hiding it says the same thing (nothing to pick, because
+  everything is in scope) without inviting a click that goes nowhere.
+- **The empty-state hint** (`renderMessages`, no-project case) drops its *"tick Portfolio (all
+  projects) for a portfolio-wide answer"* clause — nothing on screen can be ticked any more, and
+  a planner reaching that empty state has already, by construction, opened Pormac from the
+  project side (the portfolio branch of that same conditional is unreachable with the checkbox
+  gone: `portfolioAll` is decided before the thread ever renders empty).
+- ⚠️ **Everything downstream of `portfolioAll` is untouched, deliberately.** `loadConversation`,
+  `clearHistory`, `moduleProviders`/`mirrorProviders`, `gatherContext`, `projectLabel` and
+  `persistTurn` all already branched correctly on the flag; none of them cared HOW it got set.
+  Removing the checkbox is entirely a UI change to the one place that set it, not a change to
+  what the flag means anywhere it is read.
+- ⚠️ **The 2026-09-14 (a) entry's own case for a checkbox over a sentinel `<select>` option is now
+  moot rather than wrong** — that reasoning (a sentinel value being unreachable once a real
+  project is picked, inside `UI.enhanceProjectSelect()`'s popover) explained why a *reversible*
+  toggle needed its own control. With scope no longer reversible at all, there is nothing left
+  needing either shape of control.
+
+**Verified:** `node --check` on `module.js`; CSS brace balance holds (unchanged shape, minus the
+removed rules); 0 NUL bytes; `node tools/wiring-check.js` **126/126, 0 failed**, 0 version splits
+across 3,566 cross-module references. `grep` confirms zero remaining references to `#pmc-portfolio`
+or `.pmc-portfolio-toggle` in any file.
+⚠️ **Not verified signed in** — no live login is possible in this environment, so the hash-driven
+scope has not been exercised against a real Portfolio-sidebar click; the hash detection itself
+is unchanged from (a), which was already the load-bearing mechanism.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914zx`;
+`assets/js/modules-grid.js` → `?v=20260914zx` (2 pages, MODULE_V fallback too; re-derived past
+main's own concurrent `20260914zvs4` after rebasing this branch onto it).
+
+## 2026-09-14 (b) — Clear history: a trash button, and it deletes every row this scope's thread merges
+
+Owner: *"provide also option to clear history."*
+
+A **🗑 trash** icon button in the topbar, beside the project select and the Portfolio checkbox,
+that clears the CURRENT scope's conversation — this project, General, or Portfolio (General and
+Portfolio still share the one NULL-`project_id` bucket, as everywhere else in this module).
+Confirm-gated (`confirm()`, this app's standing convention for a destructive action with no
+undo — risk-register and issues-lessons both use it the same way), then deletes and resets the
+thread to the same empty-state message a brand-new project shows.
+
+⚠️⚠️ **Deleting only `conversationId` would have left the thread coming back.** Since 2026-09-12
+`loadConversation()` reads and merges **every** `pormac_conversations` row for this scope — a
+leftover from before this module converged on "one conversation per project," kept so that
+threads made by the old, removed "New chat" button still surface. Deleting just the row
+`loadConversation()` currently treats as canonical and reopening the module would have silently
+resurrected whichever older row was next by `updated_at`, which reads as "clear history did
+nothing." `clearHistory()` therefore deletes with the **identical scope predicate**
+`loadConversation()` reads with (`project_id = pid`, or `is null` for General/Portfolio) — the two
+can never disagree about what "this conversation" means, because they are the same clause.
+
+⚠️ **`pormac_messages` needs no delete call of its own.** Its FK is
+`references pormac_conversations(id) on delete cascade`
+(`migrations/2026-09-12-pormac.sql`), and a foreign-key cascade runs at the constraint level
+rather than through the deleting role's own RLS — so removing the conversation rows here is
+sufficient, and there is correctly no delete policy on `pormac_messages` for a client to need.
+
+⚠️ **`.eq('created_by', profile.id)` is not redundant with the table's own delete policy**
+(`created_by = auth.uid() OR is_admin()`) — without it, an admin's own "clear history" click
+would delete every planner's conversation for that scope, not only their own. It is the same
+guard `loadConversation()`'s read already carries, for the same reason.
+
+⚠️ **Wired OUTSIDE the `loadProjects()` try block, beside the composer handlers, not beside the
+project-select/Portfolio-checkbox handlers it sits next to on screen.** Those two *need* the
+project list to have loaded; Clear needs only `pid`/`portfolioAll`/`profile`, none of which
+depend on that fetch succeeding — this module's own log has now recorded twice that gating a
+handler behind an `await` that can fail is how a control goes silently dead, and a failed
+project fetch must not also take away the one way to clear a stuck or unwanted thread.
+
+⚠️ A `.pmc-clearbtn` module-local rule repeats the exact fix `dashboard.css`'s own
+`.pd-toolbar-right .pd-icon-btn` states for itself: an icon button with no explicit height
+collapses to its bare glyph and rides high in a row of 34px controls. `.pmc-clearbtn` sits
+outside that toolbar class, so it needs the same `height:34px` restated locally rather than
+inheriting it.
+
+**Verified:** `node --check` on `module.js`; CSS braces balanced (39/39) on `module.css`; 0 NUL
+bytes; `node tools/wiring-check.js` — 126/126, 0 version splits; the delete's scope predicate
+read side-by-side against `loadConversation()`'s and confirmed to be the identical clause,
+statement for statement.
+⚠️ **Not verified signed in** — no live login is possible in this environment, so no real
+conversation has actually been cleared; the cascade-delete behaviour is argued from the FK
+declaration in the migration, not observed.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914w`; `assets/js/modules-grid.js`
+→ `?v=20260914w` (2 pages, MODULE_V fallback too — Pormac's `index.html` changed structurally).
+
+---
+
 ## 2026-09-14 — Portfolio scope: Pormac can answer across every project, not just one
 
 Owner: *"in portfolio, pormac should be able to answer based on data from all projects on the

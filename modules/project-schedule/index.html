@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260912q" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915f" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -198,7 +198,18 @@
     .ps-toolbar .pd-btn { padding:0 9px; }
     /* Activity Network View (PERT) */
     .ps-network { overflow:auto; height:62vh; min-height:420px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:var(--pd-card); }
-    #ps-view-schedule.ps-net-mode .ps-split, #ps-view-schedule.ps-net-mode .ps-grid-foot, #ps-view-schedule.ps-net-mode .ps-legend { display:none; }
+    /* ⚠⚠ `.ps-actlegend`, NOT `.ps-legend`. Owner 2026-09-14, on the stacking view:
+       *"Is this supposed to be shown when vertical stacking is opened?"* -- no, and four rules said
+       so. `.ps-legend` was the wrapper around the bar-mark key; it was DELETED on 2026-08-17 when
+       the marks were folded into the activity legend, and the note at `.ps-actlegend .lg` records
+       exactly that for a rule which was retargeted then. These hide rules were not, so since August
+       every full-width panel view (network, flowline, progress, stacking) has left the Gantt's
+       colour legend sitting under a pane that has no Gantt in it.
+       ⚠ The @media print rule and the <=700px rule still name `.ps-legend` and are equally
+         dead -- left alone ON PURPOSE, because each of those still has a Gantt on screen, and a coloured
+         chart printed without its key is a worse page than one with it. Retarget them only with a
+         decision about print, not as tidying. */
+    #ps-view-schedule.ps-net-mode .ps-split, #ps-view-schedule.ps-net-mode .ps-grid-foot, #ps-view-schedule.ps-net-mode .ps-actlegend { display:none; }
     /* ⚠️⚠️ A COLUMN WHOSE *CANVAS* SCROLLS, not a scrolling box with a sticky header.
        The head used to scroll with the diagram and be pinned back by `position:sticky`, which works
        until a second fixed strip is added above the drawing — the "what the columns mean" key would
@@ -251,7 +262,7 @@
        draw — off the right edge on a laptop. Same lesson as the toolbar row. */
     .ps-net-head { flex-wrap:wrap; row-gap:8px; }
     .ps-net-loc { font-size:var(--pd-fs-sm); color:var(--pd-muted); gap:5px; }
-    .ps-net-loc .pd-select { min-height:30px; height:30px; padding:0 24px 0 8px; font-size:var(--pd-fs-sm); max-width:180px; }
+    .ps-net-loc .pd-select { min-height:30px; height:30px; padding:0 24px 0 8px; max-width:180px; }
     /* Column chooser menu */
     .ps-cols-menu { min-width:220px; max-height:340px; overflow:auto; padding:6px 4px; }
     .ps-cols-menu label { display:flex; align-items:center; gap:8px; padding:5px 12px; font-size:var(--pd-fs-base); cursor:pointer; color:var(--pd-ink); }
@@ -353,7 +364,16 @@
     /* Reporting view trims the last of it: the two remaining conveniences and the stacking bar's
        own field labels, which name controls a reader is not going to touch. */
     body.ps-reporting #ps-help-btn,
-    body.ps-reporting .ps-vs-bar > .ps-vs-note { display:none !important; }
+    /* ⚠ `.ps-vs-seglab` ADDED: this rule's stated target is "the stacking bar's own field
+       labels", and on 2026-09-14 those labels were welded INSIDE their segments and became
+       `.ps-vs-seglab`. From that commit until this one the rule named a class the labels no longer
+       carried and hid the legend instead -- the opposite of what it says. */
+    body.ps-reporting .ps-vs-seglab,
+    body.ps-reporting .ps-vs-bar .ps-vs-note { display:none !important; }
+    /* ⚠⚠ THE CAPTION IS NOT HIDDEN IN REPORTING, and that is a change of behaviour taken
+       deliberately. Reporting view is the one people are SHOWN; a chart of hatched fills and
+       coloured DONE pills without its key is the one place the key cannot be spared. It reads as a
+       caption, not a control, which is why it survives a rule that strips controls. */
     /* No edit affordances — nothing should invite a click that would change data. */
     body.ps-reporting .ps-editable { cursor:default; }
     body.ps-reporting .ps-grid-pane .ps-cell.ps-editable:hover { background:transparent; }
@@ -653,7 +673,7 @@
     .calwiz-stat { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin:10px 0 0; }
     .calwiz-season { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; margin-top:8px; background:var(--pd-bg); }
     .calwiz-season-h { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .calwiz-season-h .pd-input { height:30px; font-size:var(--pd-fs-sm); }
+    .calwiz-season-h .pd-input { height:30px; }
     .calwiz-review { margin:0 0 12px 18px; font-size:var(--pd-fs-sm); line-height:1.8; }
     /* The import's connect canvas. ⚠️ Almost nothing new: the bars, the arrows, the pend/focus and
        the green/orange pred/succ states are the build path's own `.sbld-schedbar` / `.sbld-link`
@@ -712,12 +732,129 @@
     .ps-coref-bad { color:var(--pd-red); border-color:var(--pd-red); }
     /* Inherited from a WBS branch rather than set on the row -- shown, but visibly not owned. */
     .ps-coref-inh { opacity:.62; font-style:italic; }
+    /* ---- Activity attachments (PDAttach renders these under the `ps` prefix) -----------------
+       ⚠️ Every colour is a --pd-* token, never a literal: this module is read in both themes and a
+          hardcoded light grey is the defect the 2026-09-11 (zc) pass had to go back and fix. */
+    .ps-atts { list-style:none; margin:0 0 6px; padding:0; display:flex; flex-direction:column; gap:4px; }
+    .ps-att { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); background:var(--pd-card); }
+    .ps-att-n { flex:1 1 auto; min-width:0; font-size:var(--pd-fs-sm); overflow:hidden;
+      text-overflow:ellipsis; white-space:nowrap; }
+    /* ⚠️ The type/size line is a BLOCK so it cannot be pulled onto the filename's line and then
+       have its leading space stripped — the flex anonymous-item trap this file fixed in the Class
+       Code cell the same day. */
+    .ps-att-n i { display:block; font-style:normal; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .ps-att .pd-btn { flex:0 0 auto; }
+    /* A staged file is visibly not yet real — dashed, so "not uploaded yet" is legible at a glance
+       and not only in the small print beside it. */
+    .ps-att-pend { border-style:dashed; background:transparent; }
+    /* ⚠️ A mis-pointed link is a CAUTION, not an error: the file is fine and the activity is fine;
+       what is in doubt is whether they still belong together. Warn tokens, never --pd-bad. */
+    .ps-att-stale { border-color:var(--pd-warn-line); background:var(--pd-warn-bg); }
+    .ps-att-stale .ps-att-n i { color:var(--pd-warn-text); }
+    .ps-att-add { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:6px; }
+    .ps-att-add .pd-select { flex:0 0 auto; }
+    .ps-att-st { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .ps-hint { margin:4px 0 0; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    /* ---- Summary view (renderSummary) -----------------------------------------------------
+       ⚠️ Tokens only. This module is read in both themes and the Summary is the one screen
+         someone will project onto a wall, so a stuck literal would be most visible exactly here.
+       ⚠️ Text tones are --pd-*-text, never --pd-bad / --pd-warn themselves, which are SURFACE
+         colours (--pd-warn measures 3.46:1 and is not a text colour). */
+    .ps-smy { padding:16px 18px 40px; max-width:1180px; }
+    .ps-smy-empty { padding:40px 18px; color:var(--pd-muted); font-size:var(--pd-fs-base); }
+    .ps-smy-head h2 { margin:0 0 4px; font-size:var(--pd-fs-lg); font-weight:800; letter-spacing:-.01em; }
+    .ps-smy-mini { font-size:var(--pd-fs-xs); font-weight:500; color:var(--pd-muted); }
+    .ps-smy-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+      font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-bottom:10px; }
+    .ps-smy-meta b { color:var(--pd-ink); font-weight:700; }
+    .ps-smy-warn { position:relative; margin:0 0 12px; padding:8px 30px 8px 10px;
+      font-size:var(--pd-fs-xs);
+      border:1px solid var(--pd-warn-line); background:var(--pd-warn-bg);
+      color:var(--pd-warn-text); border-radius:var(--pd-radius); }
+    /* ⚠️ Inside the notice's own right padding, so the × can never sit on the text. It inherits
+       the warn ink rather than taking a colour of its own — a dismiss control is chrome for the
+       message it closes, not a second thing to read. */
+    /* ⚠️ 24px, not the 20 it was first drawn at — measured at 20×20, which is under WCAG 2.5.8
+       AA's 24px minimum target. It still fits inside the notice's own 30px right padding. */
+    .ps-smy-warnx { position:absolute; top:3px; right:3px; width:24px; height:24px;
+      display:flex; align-items:center; justify-content:center;
+      background:none; border:0; cursor:pointer; line-height:1;
+      font-size:var(--pd-fs-md); color:inherit; opacity:.65; border-radius:var(--pd-radius); }
+    .ps-smy-warnx:hover { opacity:1; background:rgba(0,0,0,.08); }
+    .ps-smy-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+      gap:10px; margin-bottom:16px; }
+    .ps-smy-kpi { position:relative; background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); padding:12px 14px; overflow:hidden; }
+    .ps-smy-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+      background:var(--pd-red); }
+    .ps-smy-kpi.good::before { background:var(--pd-ok); }
+    .ps-smy-kpi.warn::before { background:var(--pd-warn); }
+    .ps-smy-kpi.bad::before  { background:var(--pd-bad); }
+    .ps-smy-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); }
+    .ps-smy-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; margin-top:3px; line-height:1.15; }
+    .ps-smy-kpi.good .ps-smy-kpi-v { color:var(--pd-ok-text); }
+    .ps-smy-kpi.warn .ps-smy-kpi-v { color:var(--pd-warn-text); }
+    .ps-smy-kpi.bad  .ps-smy-kpi-v { color:var(--pd-bad-text); }
+    .ps-smy-kpi-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:2px; }
+    .ps-smy-cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:0 22px; }
+    .ps-smy-h { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); margin:14px 0 6px; }
+    .ps-smy-list { list-style:none; margin:0; padding:0; }
+    .ps-smy-row { display:flex; align-items:baseline; gap:10px; padding:6px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
+    .ps-smy-row:last-child { border-bottom:0; }
+    .ps-smy-row[data-goto] { cursor:pointer; }
+    .ps-smy-row[data-goto]:hover { background:var(--pd-card); }
+    .ps-smy-t { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-smy-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--pd-ink); }
+    .ps-smy-v i { font-style:normal; color:var(--pd-muted); }
+    .ps-smy-bad { color:var(--pd-bad-text); }
+    .ps-smy-warn2 { color:var(--pd-warn-text); }
+    .ps-smy-none { color:var(--pd-muted); font-style:italic; }
+    .ps-smy-bars { list-style:none; margin:0; padding:0; }
+    .ps-smy-bar { display:flex; align-items:center; gap:10px; padding:5px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
+    .ps-smy-bar:last-child { border-bottom:0; }
+    .ps-smy-bl { flex:0 0 190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-smy-track { flex:1 1 auto; height:8px; min-width:40px; border-radius:99px;
+      background:var(--pd-line); overflow:hidden; }
+    .ps-smy-track > i { display:block; height:100%; background:var(--pd-red); }
+    /* ⚠️ Two fixed, right-aligned columns rather than one auto-width cell. `0% 1750` ran the
+       percentage and the activity count together as one number, and with the tracks full width
+       the figures ended up a long way from the labels they belong to. `tabular-nums` is what
+       makes a column of percentages line up on the decimal. */
+    .ps-smy-bp { flex:0 0 58px; text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+    .ps-smy-bn { flex:0 0 86px; text-align:right; font-variant-numeric:tabular-nums;
+      color:var(--pd-muted); font-size:var(--pd-fs-xs); }
+    .ps-smy-note { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin:12px 0 0; max-width:70ch; }
+    @media (max-width:700px) {
+      .ps-smy { padding:12px 12px 32px; }
+      .ps-smy-bl { flex:1 1 auto; }
+      .ps-smy-track { flex:1 1 100%; order:3; }
+      .ps-smy-bar { flex-wrap:wrap; }
+      /* On a phone the two figures ride beside the label on the first line and the track drops
+         below it (order:3), so they must not keep a 58/86px reservation each. */
+      .ps-smy-bp, .ps-smy-bn { flex:0 0 auto; }
+    }
+    /* The Summary is meant to be printed. Drop the app chrome and let it flow. */
+    @media print {
+      body.ps-smyprint .pd-sidebar, body.ps-smyprint .pd-topbar,
+      body.ps-smyprint .pd-modulebar, body.ps-smyprint .ps-toolbar { display:none !important; }
+      .ps-smy-row[data-goto] { cursor:default; }
+      .ps-smy-kpi { break-inside:avoid; }
+    }
     .ps-cctag { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); }
     .ps-cctag.unknown { color:var(--pd-red); }
     /* ⚠️ A GROUP-level code is valid, not a warning — so it is toned, never coloured like `.unknown`.
        It is the level the Schedule Builder's library works at, which is the right granularity for an
        activity; the red is reserved for a code that resolves at neither level. */
     .ps-cctag.grp { color:var(--pd-muted); }
+    /* ⚠️ A code resolved only by restoring its leading zero. NOT a colour: the code shown IS correct,
+       and red is reserved for one the chart does not know at either level. The underline says the
+       DATABASE still holds the de-zeroed value — see ccodeCellHtml and the repair migration. */
+    .ps-cctag.padded { text-decoration:underline dotted; text-underline-offset:2px; }
     /* A package tag is neutral by design: unlike CO/MC it carries no judgement,
        it just names which contract lot the work belongs to. */
     .ps-pkgtag { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -1060,11 +1197,16 @@
        Same "panel replaces the split" behaviour as Activity Progress and Vertical Stacking. */
     #ps-view-schedule.ps-flowline-mode .ps-split,
     #ps-view-schedule.ps-flowline-mode .ps-network,
-    #ps-view-schedule.ps-flowline-mode .ps-legend,
+    #ps-view-schedule.ps-flowline-mode .ps-actlegend,
     #ps-view-schedule.ps-flowline-mode .ps-progress,
     #ps-view-schedule.ps-flowline-mode .ps-vstack,
     #ps-view-schedule.ps-flowline-mode .ps-grid-foot { display:none !important; }
-    .ps-flowline { padding:12px 14px 20px; }
+    /* ⚠ The same rule the stacking pane carries (see `.ps-vstack`), for the same reason and in
+       the same numbers: these panes REPLACE the split, so without a line the module toolbar and the
+       pane's own toolbar read as one run of controls. `.ps-network` is the exception -- it already
+       draws a full border of its own. Owner 2026-09-14: *"Let's check for other views for
+       consistency."* */
+    .ps-flowline { border-top:1px solid var(--pd-line); margin-top:4px; padding:10px 0 20px; }
     .ps-fl-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; margin-bottom:8px; }
     .ps-fl-title { font-size:var(--pd-fs-md); font-weight:800; color:var(--pd-ink); }
     .ps-fl-sub { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
@@ -1300,7 +1442,7 @@
       font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     /* ⚠️ Same defect as the legend select: a FIXED height clips the option text's descenders.
        Height is a minimum here and the box grows with its content. */
-    .ps-stk-ctrls .pd-select { min-height:32px; height:auto; font-size:var(--pd-fs-sm); line-height:1.35;
+    .ps-stk-ctrls .pd-select { min-height:32px; height:auto; line-height:1.35;
       padding:4px 26px 4px 9px; width:auto; min-width:130px; max-width:220px; flex:none; }
     .ps-stk-ctrls label { display:inline-flex; align-items:center; gap:6px; }
     /* ⚠️ Fixed columns on BOTH sides, not `auto` — with an auto column every row's band ended at a
@@ -1526,7 +1668,16 @@
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
-    .ps-vstack { padding:12px 14px 20px; }
+    /* ⚠⚠ NO HORIZONTAL PADDING: THE MODULE HAS ONE LEFT EDGE AND ONE RIGHT EDGE. Owner
+       2026-09-15: *"The sides are not aligned with each other."* `.ps-toolbar` and its `.ps-tb-row`
+       carry NO horizontal padding, so `.pd-main`'s 12px IS the module's edge and the toolbar sits on
+       it. Each full-width panel pane was adding an inset of its own on top of that -- measured at
+       1440px against the toolbar row: this pane and the flowline +14px on each side, the caption
+       +16, the progress pane -4 (it used 8px where the others used 14). Four different edges in one
+       module, none of them the toolbar's.
+       ⚠ The VERTICAL padding is untouched. Only the sides were the complaint, and the top padding
+         is what spaces the pane from its own divider. */
+    .ps-vstack { padding:12px 0 20px; }
     /* ---- Cost Loading (4-step wizard) ------------------------------------------------------
        ⚠️ Deliberately built ON the Schedule Setup's own classes (.sbld-wrap / .sbld-rail /
        .sbld-step / .sbld-panel / .sbld-kpi / .sbld-tablewrap / .sbld-foot) rather than beside them.
@@ -1642,6 +1793,17 @@
     .pscl-mo > i { display:block; width:100%; background:var(--pd-red); border-radius:3px 3px 0 0; min-height:0; }
     .pscl-mo > span { margin-top:4px; font-size:var(--pd-fs-micro); color:var(--pd-muted); white-space:nowrap;
       transform:rotate(-45deg); transform-origin:center; width:26px; text-align:center; }
+    /* ⚠⚠ SEVERAL RULES IN THIS BLOCK ARE DECLARED A SECOND TIME FURTHER DOWN (~1829-2262), and
+       the later copy is the one that wins. Measured 2026-09-14: 14 rule lines are byte-identical
+       across the two regions -- `.ps-vstack`, `.ps-vs-bar`, `.ps-vs-note`, `.ps-vs-chips`,
+       `.ps-vs-chip`, `.ps-vs-chip.on`, `.ps-vs-dot`, `.ps-vs-towerh` and friends. They are
+       identical TODAY, so nothing renders wrong; the hazard is entirely for the next editor, who
+       can change one of them here, see no effect, and conclude the CSS is not loading.
+       ⚠ Not deduplicated in this pass: the two regions are interleaved rather than one pasted
+         block (the later one also carries rules the earlier one never had), so reconciling them is
+         its own careful diff and not something to do inside a toolbar change.
+       ⚠ UNTIL THEN: edit the LAST occurrence of any rule named above. Rules that appear only once
+         -- `.ps-vs-seg`, `.ps-vs-seg > button`, `.ps-vs-sel`, `.ps-vs-warn` -- are safe here. */
     .pscl-phase .pscl-note { padding:0 12px 10px; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
@@ -1654,6 +1816,26 @@
     /* ⚠️ 30px of right padding, not a float: the text must wrap CLEAR of the ×. A floated or
        absolutely-positioned button over unpadded text overlaps the last line on a narrow pane. */
     .ps-vs-warn { position:relative; font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border-radius:var(--pd-radius-md); padding:6px 30px 6px 9px; }
+    /* ⚠⚠ THE SUMMARY IS ONE LINE AND STAYS ONE LINE. `white-space:nowrap` with an ellipsis was
+       considered and rejected: a notice whose own count is cut off is worse than one that wraps.
+       It wraps, but there is little to wrap -- the diagnosis is in `.ps-vs-warn-b`, shut. */
+    .ps-vs-warn-sum { line-height:1.45; }
+    .ps-vs-warn-d > summary.ps-vs-warn-sum { cursor:pointer; list-style:none; }
+    /* The stock triangle differs per engine and sits at a different baseline in each; one drawn
+       marker reads the same everywhere and lines up with the text. */
+    .ps-vs-warn-d > summary::-webkit-details-marker { display:none; }
+    .ps-vs-warn-d > summary::after { content:'Details'; display:inline-block; margin-left:8px;
+      font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+      opacity:.75; border-bottom:1px solid currentColor; }
+    .ps-vs-warn-d[open] > summary::after { content:'Less'; }
+    .ps-vs-warn-b { margin-top:6px; padding-top:6px; border-top:1px solid var(--pd-warn-text);
+      line-height:1.5; }
+    /* ⚠ The rule above would be a solid bar at full strength -- it is the TEXT colour, used as a
+       hairline on the notice's own tinted ground, so it is held back to a hint of itself. */
+    .ps-vs-warn-b { border-top-color:color-mix(in srgb, var(--pd-warn-text) 25%, transparent); }
+    .ps-vs-warn-l { margin:6px 0 0; padding-left:20px; }
+    .ps-vs-warn-l > li { margin-bottom:5px; }
+    .ps-vs-warn-l > li:last-child { margin-bottom:0; }
     .ps-vs-warnx { position:absolute; top:3px; right:4px; width:22px; height:22px; line-height:1;
       border:0; background:transparent; color:inherit; font-size:var(--pd-fs-lg); cursor:pointer; border-radius:5px; opacity:.7; }
     .ps-vs-warnx:hover, .ps-vs-warnx:focus-visible { opacity:1; background:rgba(0,0,0,.08); }
@@ -1661,7 +1843,52 @@
     .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm);
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
     .ps-vs-seg > button:last-child { border-right:0; }
-    .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    /* ⚠⚠ THE ACTIVE RUNG IS A TINT AND AN UNDERLINE, NOT A SOLID RED BLOCK -- and this is the
+       whole of the owner's *"toolbar UI needs to be properly reworked"* (2026-09-14).
+       This bar carries FIVE segmented controls that are each always showing one active button
+       (scope, 2D/3D, Detail, Dates, Show), so `background:var(--pd-red); color:#fff` put FIVE
+       solid brand-red blocks in one row at once. Nothing was wrong with any one of them; the
+       problem was that with five maximum-emphasis marks competing, none of them is emphasis and
+       the eye has no entry point -- which is exactly what reads as "a wall of controls".
+       ⚠⚠ INK ON THE TINT, AND THE RED IS NOT THE TEXT -- which corrects this rule's own first
+         cut (2026-09-14, same day). That cut borrowed `.pd-seg-multi > button.on` from the shared
+         dashboard.css, which sets `color:var(--pd-red-dark)`. It removed the five solid fills but
+         replaced them with five red TEXTS, so the COUNT of red marks in the row never changed and
+         the owner's answer was "still needs work" -- correctly.
+       ⚠ AND `.pd-seg-multi` WAS THE WRONG SIBLING TO COPY. That pattern is for MULTI-select
+         groups; every segment in this bar is single-select. The right precedent was one row above,
+         in this very pane: `.ps-vs-chip.on`, whose own note reads *"INK on the red tint, not brand
+         red as text ... the red stays as the border and the tint, which carry the state without
+         being the text"*. The chips had settled this already and the segments disagreed with them.
+       ⚠ MEASURED: ink on the tint is 14.25:1 light and 13.45:1 dark, against 5.11 / 6.76 for the
+         red text it replaces. No dark-mode ink override is needed -- `--pd-ink` is itself
+         theme-remapped (#231F20 / #F0EFEF), which is why the `html.pd-dark` rule that used to sit
+         here is gone rather than merely unused.
+       ⚠ `--pd-red-light` IS theme-remapped (#FDECEA light / #3D1A19 dark), so the tint follows the
+         theme. A fixed light tint here would be the `.ps-fmt` "why is there light colors?" bug.
+       ⚠ The 2px red underline is now the ONLY red in an active rung, which is the whole point:
+         one accent per control instead of one shout per control. */
+    .ps-vs-seg > button.on { background:var(--pd-red-light); color:var(--pd-ink);
+      box-shadow:inset 0 -2px 0 var(--pd-red); font-weight:700; }
+
+    /* ⚠⚠ A LABEL WELDED INSIDE THE CONTROL IT NAMES. Owner 2026-09-14: *"toolbar UI needs to be
+       properly reworked"*, after the colour pass alone was not enough. Four grey words -- Detail,
+       Dates, Show, Zoom -- floated beside their segments as free-standing text, so the row read as
+       eleven loose things rather than five named controls, and `.ps-vs-grp` existed purely to stop
+       a label being wrapped away from its own control (see its note).
+       ⚠ The shape is the shared `.pd-seg-lab` (dashboard.css), which risk-register and
+         stakeholder-map already use: inside the border, on the quiet surface, uppercase micro. Not
+         reusing the class itself because it is sized for `.pd-seg`'s 34px rung and this bar's
+         segments are shorter; the VALUES are the same so the two read as one idiom. */
+    .ps-vs-seglab { display:inline-flex; align-items:center; flex:none; padding:0 9px;
+      background:var(--pd-bg); color:var(--pd-muted); font-size:var(--pd-fs-micro); font-weight:700;
+      letter-spacing:.06em; text-transform:uppercase; border-right:1px solid var(--pd-line);
+      white-space:nowrap; }
+    /* The same label, for a row of CHIPS rather than a segment -- it has no border to sit inside,
+       so it carries its own quiet weight instead. */
+    .ps-vs-rowlab { display:inline-flex; align-items:center; flex:none; color:var(--pd-muted);
+      font-size:var(--pd-fs-micro); font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+      white-space:nowrap; margin-right:2px; }
     /* HOLLOW, not merely inert. Owner 2026-09-07: *"if the per tower or consolidate option is
        chosen, can you at least hollow the options for the other levels of details."* Right - the
        `disabled` attribute stops the click but leaves the button looking live, and a control that
@@ -1820,30 +2047,89 @@
     .ps-vs-modal .ps-table tbody tr:hover td { background:var(--pd-bg); }
     #ps-view-schedule.ps-vstack-mode .ps-split,
     #ps-view-schedule.ps-vstack-mode .ps-network,
-    #ps-view-schedule.ps-vstack-mode .ps-legend,
+    #ps-view-schedule.ps-vstack-mode .ps-actlegend,
     #ps-view-schedule.ps-vstack-mode .ps-progress,
     #ps-view-schedule.ps-vstack-mode .ps-grid-foot { display:none !important; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
-    .ps-vstack { padding:12px 14px 20px; }
+    /* ⚠⚠ NO HORIZONTAL PADDING: THE MODULE HAS ONE LEFT EDGE AND ONE RIGHT EDGE. Owner
+       2026-09-15: *"The sides are not aligned with each other."* `.ps-toolbar` and its `.ps-tb-row`
+       carry NO horizontal padding, so `.pd-main`'s 12px IS the module's edge and the toolbar sits on
+       it. Each full-width panel pane was adding an inset of its own on top of that -- measured at
+       1440px against the toolbar row: this pane and the flowline +14px on each side, the caption
+       +16, the progress pane -4 (it used 8px where the others used 14). Four different edges in one
+       module, none of them the toolbar's.
+       ⚠ The VERTICAL padding is untouched. Only the sides were the complaint, and the top padding
+         is what spaces the pane from its own divider. */
+    .ps-vstack { padding:12px 0 20px; }
+    /* ⚠⚠ THE RULE BETWEEN THE MODULE TOOLBAR AND THIS PANE. Owner 2026-09-14: *"Main toolbar
+       does not [have] a divider with the vertical stacking toolbar."* Correct -- `.ps-vstack` was
+       padding and nothing else, so the pane's own trade chips began 12px under the module's
+       toolbar with no edge between them, and the two toolbars read as one 3-row control block.
+       ⚠ ON THE PANE, NOT UNDER THE TOOLBAR. `.ps-toolbar` is shared by every view in this module
+         (grid, network, progress, flow line); a bottom border there would draw a rule under the
+         toolbar in views that do not have a second bar to be divided FROM. The pane that
+         introduces its own toolbar is the thing that owes the reader an edge.
+       ⚠ The margin is what makes it a divider rather than a box edge: without it the rule sits
+         tight against the chips and reads as the top of a card.
+       ⚠ DECLARED HERE, AFTER the older duplicate of `.ps-vstack` at ~1529 -- see the duplication
+         note on that block. A new property added to the earlier copy would work today only because
+         the later copy happens not to set it, which is not a thing to rely on. */
+    .ps-vstack { border-top:1px solid var(--pd-line); margin-top:4px; padding-top:10px; }
+    /* ⚠⚠ THE ROWS INSIDE THIS PANE ALL GET THE SAME GAP. Owner 2026-09-14: *"There is a
+       bigger space between the toolbar and trades toolbar and a smaller gap between the trades
+       toolbar and model toolbar."* MEASURED before the fix: 15px above the trades row and **0px**
+       below it -- `.ps-vs-chips` carried no bottom margin at all, so the trade filter and the
+       control bar were touching while a 15px gap sat above them. Both are 10px now, so the header
+       reads as peer rows in one block rather than one row that has drifted.
+       ⚠ The gap ABOVE the rule (12px: the toolbar's own 8px margin plus this pane's 4px) is
+         deliberately left larger. That one separates the MODULE's toolbar from the pane, which is a
+         section break, not a sibling gap -- equalising it would erase the distinction the rule was
+         added on 2026-09-14 to draw. */
+    .ps-vs-chips { margin-bottom:10px; }
+
     /* ---- The TIME BAR under the stack ------------------------------------------------------
        Owner 2026-08-26: drag the line and the stacking re-reads at that date, so the building
        fills up as you move through the programme. */
-    /* ---- The pane holds its own scroll so the time bar is always on screen ----------------
+    /* ---- The time bar sticks to the bottom; the pane is no longer capped -------------------
        Owner 2026-08-27: *"when you scroll down the progress should always be shown."*
-       ⚠️ position:sticky CANNOT do this and was tried first. Sticky is bounded by its containing
-       block, and the time bar is the LAST child of the pane — the container's bottom edge IS the
-       bar's bottom edge, so it has zero travel and the rule silently never fires. Measured: the
-       bar scrolled away exactly as before at scrollY 0/300/600. A rule that exists and can never
-       fire is worse than no rule, because it reads as done.
-       ⚠️ Fixed positioning is the other tempting answer and is also wrong — out of flow, it would
-       overlap the last building rather than ending the pane.
-       So the BUILDINGS scroll inside the pane and the bar sits below them, permanently visible. */
-    .ps-vs-pane { display:flex; flex-direction:column; min-height:0; max-height:var(--ps-vs-paneh, none); }
+       Owner 2026-09-15, on a 3-tower / 5-trade project: *"the main screen can't even be seen
+       without having to select the expand button."*
+
+       ⚠⚠ THE ORIGINAL NOTE HERE SAID STICKY COULD NOT DO THIS, AND IT WAS RIGHT AT THE TIME.
+       Verbatim: *"Sticky is bounded by its containing block, and the time bar is the LAST child of
+       the pane — the container's bottom edge IS the bar's bottom edge, so it has zero travel and
+       the rule silently never fires. Measured: the bar scrolled away exactly as before at scrollY
+       0/300/600."* That measurement was taken while `--ps-vs-paneh` capped the pane to the viewport
+       remainder. A capped pane is never taller than the screen, so its bottom edge is always on
+       screen and a bottom-sticky child has nothing to stick to. **The conclusion followed from the
+       cap, not from sticky** — so removing the cap changes the answer, and the premise was
+       re-measured rather than inherited.
+
+       ⚠⚠ WHY THE CAP HAD TO GO. `_vs3Build` sizes a building from its WIDTH
+       (`clamp(320, width*0.72, 520)`), never from the pane, so each card is 320-520px tall whatever
+       the pane allows. The cap is `innerHeight - paneTop - 16`, and every pixel of chrome above the
+       pane comes straight out of it: on the owner's screen that left ~475px for a stack of five
+       420px cards, which `.ps-vs-body` then scrolled internally — one card at a time, through a
+       slot, which is exactly the report. MEASURED, 1440x900, five cards:
+           capped    → pane 475px, body scrolls internally, one card visible
+           uncapped  → pane 986px, no internal scroll, every card at full height
+       The page grows instead, which it is already set up to do: `.ps-longdoc` is on in this view
+       (see _psSyncLongDoc) precisely so `.pd-content` can exceed one screen.
+
+       ⚠ MEASURED AGAIN with the cap gone, same five cards: `position` computes to `sticky`, and the
+         bar sits at the viewport's bottom edge at scrollY 0, 300 and 600, then rides down to its
+         resting place at the end of the page. Reachable at every stop.
+       ⚠ Fixed positioning is still the wrong answer, for the reason the original note gives: out of
+         flow, it would overlap the last building rather than ending the pane.
+       ⚠ `z-index:2` because the bar now passes OVER the buildings while stuck, and it carries a
+         card background so they do not show through it. */
+    .ps-vs-pane { display:flex; flex-direction:column; min-height:0; }
     .ps-vs-body { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; }
     .ps-vs-tl { flex:0 0 auto; margin-top:14px; border:1px solid var(--pd-line);
-      border-radius:var(--pd-radius-lg); background:var(--pd-card); padding:10px 14px 12px; }
+      border-radius:var(--pd-radius-lg); background:var(--pd-card); padding:10px 14px 12px;
+      position:sticky; bottom:0; z-index:2; }
     .ps-vs-tlhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:9px; }
     .ps-vs-tldate { font-size:var(--pd-fs-md); font-weight:800; font-variant-numeric:tabular-nums; }
     .ps-vs-tlsub { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
@@ -1871,10 +2157,26 @@
     body.ps-tl-drag { cursor:grabbing; user-select:none; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    /* ⚠⚠ A LABEL AND THE CONTROL IT NAMES MOVE TOGETHER, OR NEITHER MOVES. .ps-vs-bar is
+       flex-wrap:wrap, which packs items ONE AT A TIME -- so at 1280px it put "Show" at the end of
+       one row and its own Finish|Start segment at the start of the next, leaving a label naming
+       nothing above a control named by nothing. Wrapping the pair in a nowrap box makes it ONE item
+       to the outer row: the pair can still be pushed to its own line as a whole, it can no longer
+       be split down the middle. Exactly the .il-timepair fix (2026-09-12), same cause.
+       ⚠ gap is 8px to match .ps-vs-bar's own, so the grouping changes what can WRAP and nothing
+       about how the bar is spaced. ⚠ flex:0 0 auto -- a group must never be squeezed narrower than
+       its contents, which is how a segmented control gets clipped. */
+    .ps-vs-grp { display:inline-flex; align-items:center; gap:8px; flex-wrap:nowrap; flex:0 0 auto; }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     /* The tower checklist. ⚠️ Its own row ABOVE the trades and carrying a label, because the two
        rows now look alike and a reader has to be able to tell which one they are ticking. */
-    .ps-vs-twchips { align-items:center; margin-bottom:6px; }
+    /* ⚠ No bottom margin of its own any more -- it inherits the 10px every chip row now takes,
+       so Towers -> Trades and Trades -> the control bar are one gap. It had 6px, which read as an
+       accident once the other two were evened up. */
+    /* ⚠ `.ps-vs-twchips` NO LONGER EXISTS IN THE MARKUP (2026-09-15: the towers and trades
+       filters were merged into one `.ps-vs-chips`). Kept as a rule only so a reader searching for
+       it finds this note rather than nothing; it matches no element today. */
+    .ps-vs-twchips { align-items:center; }
     /* The site card's own Show control. ⚠️ Inside the card, above the viewpoint bar, because it
        changes what the model IS rather than where the camera is. */
     .ps-vs-sitemode { display:flex; align-items:center; gap:8px; padding:8px 14px 0; }
@@ -1891,7 +2193,7 @@
     /* ⚠️ A flex item will NOT shrink below its own text (min-width defaults to auto), so a long
        note overflowed the toolbar row and its tail was clipped — flex-wrap on the parent cannot
        save an item that refuses to shrink. Every note in this bar may shrink and wrap. */
-    .ps-vs-bar > .ps-vs-note { min-width:0; }
+    .ps-vs-bar .ps-vs-note { min-width:0; }
     /* The bar must never be stretched wider than the panel by anything beside it. */
     .ps-vs-bar { max-width:100%; }
     /* No !important needed: the inline display/align this used to carry was removed with the markup,
@@ -1910,6 +2212,29 @@
     .ps-vs-fz-3dbar { flex:0 0 auto; padding:8px 14px 0; }
     .ps-vs-fz-3dbar .ps-vs3-bar { margin-bottom:0; }
     .ps-vs-legendtxt { min-width:0; white-space:normal; overflow-wrap:break-word; }
+    /* ⚠⚠ A CAPTION IS NOT A TOOLBAR, AND IT IS NOT A HEADER EITHER. Owner 2026-09-14, in
+       two passes: first *"relocate the legend ... to a proper location than the toolbar itself"*,
+       then, when it landed one row below the bar, *"This should be relocated so that the toolbars
+       are grouped. Legend should be relocated to another location."* So it is a FOOTER: it sits at
+       the bottom of `.ps-vs-pane`, under the buildings it describes and above the timeline card.
+       The split is by KIND -- a toolbar holds what you press, a caption holds what you read -- so
+       the fill/DONE key, the compare slip colours and the activity count live here, while the
+       planned-marker COLOUR PICKER stays in the bar, because demoting a live input to a caption is
+       the same mistake pointing the other way.
+       ⚠ `border-top` NOW, where the header version deliberately had none. As a header strip it
+         sat 10px under the pane's own rule and a second hairline read as a stack of boxes; as a
+         footer it is the only thing separating a quiet grey line from the drawing above it.
+       ⚠ `flex:0 0 auto` because `.ps-vs-pane` is a flex COLUMN whose body takes `1 1 auto` --
+         without it this strip would share the leftover height and the key would stretch.
+       ⚠ `align-items:center` and the same 16px column gap as `.ps-vs-bar`, so a caption that
+         wraps to two lines still reads as one strip. */
+    .ps-vs-caption { display:flex; flex:0 0 auto; align-items:center; flex-wrap:wrap; gap:6px 16px;
+      margin:0; padding:8px 0 2px; border-top:1px solid var(--pd-line);
+      font-size:var(--pd-fs-sm); color:var(--pd-muted); max-width:100%; }
+    .ps-vs-caption .ps-vs-note { min-width:0; }
+    /* In the caption the legend is no longer competing with controls for the row, so it may take
+       the width it needs -- the `flex:0 1 auto` above was a concession to sharing a toolbar. */
+    .ps-vs-caption .ps-vs-legendnote { flex:0 1 auto; }
     /* ⚠️ FLEX with a 0-basis, not an `auto-fit … 1fr` grid. A `1fr` track STRETCHES a tower to fill
        the row, so a short building (one zone wide) sat in a card ~660px of which ~590px was dead
        space — owner-reported. A flex item at `0 0 auto` is exactly as wide as the drawing inside it,
@@ -2086,6 +2411,11 @@
        playback speed rather than a second date filter. */
     .ps-vs-fz-speed { width:auto; min-width:104px; max-width:140px; height:auto; min-height:28px;
       font-size:var(--pd-fs-xs); padding:4px 7px; flex:0 0 auto; }
+    /* ⚠ SOLID RED IS KEPT HERE, DELIBERATELY, and it is the one exception to the tint treatment
+       the bar above now uses. This segment sits on the focus window's SCRIM over the 3D stage, not
+       on a card: `--pd-red-light` is a tint designed to read against `--pd-card`, and over a dark
+       scrim it all but disappears. The rule is also more specific than `.ps-vs-seg > button.on`,
+       so it wins without !important. Do not "finish the job" by flattening this one too. */
     .ps-vs-fz-scrub .ps-vs-seg button.on { background:var(--pd-red); color:#fff; }
     /* The play/pause glyph is drawn, not typed: ▶/⏸ render at wildly different sizes across the
        fonts this app ships with, and one of them is a colour emoji on Windows. */
@@ -2223,7 +2553,10 @@
       /* ⚠️ The magnifier is DISABLED, not merely hidden: on a touch screen there is no hover to
          drive it, and a docked panel would eat half the screen to show nothing. Tapping a zone
          still opens its activity list, which is the phone equivalent. */
-      .ps-vstack { padding:8px 8px 18px; }
+      /* ⚠ Sides stay at 0 here too: the phone breakpoint narrows `.pd-main`'s own padding, so
+         re-adding an inset would reintroduce the misalignment at exactly the width where the screen
+         can least afford it. Only the vertical padding tightens. */
+      .ps-vstack { padding:8px 0 18px; }
       .ps-vs-chip, .ps-vs-seg button, .ps-vs-bar .pd-btn, .ps-vs-bar .pd-select { min-height:44px; }
       .ps-vs-chips { gap:8px 6px; }
       /* The building itself keeps its drawn size and scrolls — shrinking the svg to 375px makes
@@ -2252,14 +2585,19 @@
     .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:var(--pd-fs-base); text-align:center; }
     #ps-view-schedule.ps-vstack-mode .ps-split,
     #ps-view-schedule.ps-vstack-mode .ps-network,
-    #ps-view-schedule.ps-vstack-mode .ps-legend,
+    #ps-view-schedule.ps-vstack-mode .ps-actlegend,
     #ps-view-schedule.ps-vstack-mode .ps-progress,
     #ps-view-schedule.ps-vstack-mode .ps-grid-foot { display:none !important; }
     #ps-view-schedule.ps-progress-mode .ps-split,
     #ps-view-schedule.ps-progress-mode .ps-network,
-    #ps-view-schedule.ps-progress-mode .ps-legend,
+    #ps-view-schedule.ps-progress-mode .ps-actlegend,
     #ps-view-schedule.ps-progress-mode .ps-grid-foot { display:none !important; }
-    .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 8px 12px; }
+    /* ⚠ Divider as `.ps-vstack` and `.ps-flowline` -- see the note on the flowline rule.
+       ⚠ The padding stays 4px/8px, NOT the stacking pane's 10px/14px: this pane is the scroller
+         itself (`overflow:auto`), so its padding is inside the scrolled area and a bigger top pad
+         becomes dead space that scrolls away. The border and margin are what had to match. */
+    .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 0 12px;
+      border-top:1px solid var(--pd-line); margin-top:4px; }
     @keyframes ps-viewin { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
     .ps-progress.ps-anim, .ps-split.ps-anim, .ps-network.ps-anim, .ps-vstack.ps-anim { animation: ps-viewin .28s cubic-bezier(.22,.61,.36,1); }
     .ps-prog-table { border-collapse:collapse; font-size:var(--pd-fs-sm); table-layout:fixed; }
@@ -2314,7 +2652,7 @@
     .ps-chart-ws { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; padding:4px 2px 40px; }
     .ps-chart-card { position:relative; border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); box-shadow:var(--pd-shadow); display:flex; flex-direction:column; overflow:hidden; }
     .ps-chart-tb { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px 10px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg,transparent); }
-    .ps-chart-tb .pd-select { font-size:var(--pd-fs-sm); padding:3px 6px; }
+    .ps-chart-tb .pd-select { padding:3px 6px; }
     .ps-chart-datatog { font-size:var(--pd-fs-xs); padding:3px 8px; }
     .ps-chart-del { margin-left:auto; font-size:var(--pd-fs-sm); padding:3px 8px; color:var(--pd-red); }
     .ps-chart-body { padding:8px 10px; min-height:0; overflow:hidden; cursor:grab; }
@@ -2660,7 +2998,7 @@
     /* ---- Project Usage (OPC-style time-phased charts) ---- */
     .ps-usage { display:flex; flex-direction:column; gap:8px; height:100%; min-height:0; }
     .ps-usage-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; flex:none; }
-    .ps-usage-head .pd-select { height:30px; font-size:var(--pd-fs-sm); width:auto; }
+    .ps-usage-head .pd-select { height:30px; width:auto; }
     .ps-usage-note { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .ps-fte-toggle { display:inline-flex; align-items:center; gap:5px; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-ink); cursor:pointer; user-select:none; }
     .ps-fte-toggle input { cursor:pointer; }
@@ -3693,7 +4031,7 @@
     .sbld-relgrid-h, .sbld-relrow { display:grid; grid-template-columns:150px minmax(0,1fr) 84px 78px 34px; gap:7px; align-items:center; }
     .sbld-relgrid-h { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); padding:0 2px 4px; }
     .sbld-relgrid { display:flex; flex-direction:column; gap:5px; max-height:40vh; overflow:auto; }
-    .sbld-relrow .pd-input, .sbld-relrow .pd-select { height:30px; font-size:var(--pd-fs-sm); width:100%; }
+    .sbld-relrow .pd-input, .sbld-relrow .pd-select { height:30px; width:100%; }
     .sbld-relnm { font-size:var(--pd-fs-xs); color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* A predecessor that is not in the import is not an error — it is a fact about importing one
        package out of a programme — but it must be visible, because it is what the middle bulk mode
@@ -3711,7 +4049,7 @@
     .sbld-improw-nm { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--pd-fs-sm); }
     .sbld-improw-nm b { font-weight:700; }
     .sbld-improw-meta { color:var(--pd-muted); font-size:var(--pd-fs-xs); }
-    .sbld-improw .pd-select { height:30px; font-size:var(--pd-fs-sm); width:100%; }
+    .sbld-improw .pd-select { height:30px; width:100%; }
     .sbld-improw-x { display:inline-flex; align-items:center; gap:5px; font-size:var(--pd-fs-xs); color:var(--pd-muted); white-space:nowrap; }
     /* A phase already inherited from the branch above reads as a quiet chip, not as a chosen value —
        so "follow the parent" and "I picked this" are visibly different states. */
@@ -3725,7 +4063,7 @@
     .sbld-phgrip { cursor:grab; color:var(--pd-muted); font-size:var(--pd-fs-xs); line-height:1; letter-spacing:-2px;
       user-select:none; text-align:center; }
     .sbld-phgrip:active { cursor:grabbing; }
-    .sbld-phrow .pd-input { height:31px; font-size:var(--pd-fs-sm); }
+    .sbld-phrow .pd-input { height:31px; }
     .sbld-phd { text-align:right; font-variant-numeric:tabular-nums; }
     .sbld-phwin { font-size:var(--pd-fs-xs); color:var(--pd-muted); font-variant-numeric:tabular-nums; white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; }
@@ -3951,8 +4289,8 @@
     /* The Tower-links form. See the note in stTowerLinks: these are labelled, auto-width
        controls laid out as a sentence, never `.sbld-mini`. */
     .sbld-tlform { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:10px 0 2px; }
-    .sbld-tlform .pd-select { width:auto; max-width:220px; height:32px; font-size:var(--pd-fs-sm); padding:0 26px 0 8px; }
-    .sbld-tlform .pd-input { width:64px; height:32px; font-size:var(--pd-fs-sm); }
+    .sbld-tlform .pd-select { width:auto; max-width:220px; height:32px; padding:0 26px 0 8px; }
+    .sbld-tlform .pd-input { width:64px; height:32px; }
     .sbld-tlform label { display:inline-flex; align-items:center; gap:5px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .sbld-tlsep { color:var(--pd-muted); font-weight:700; }
     .sbld-tllist { display:flex; flex-direction:column; gap:6px; margin:6px 0 12px; }
@@ -4056,8 +4394,11 @@
                    Procurement mirrors moved there in this pass). Its markup survives ONLY as the
                    hidden park slot those borrowed nodes return to — see sbWbsPark. -->
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Setup</button>
-          <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
+          <button data-tab="schedule"><span data-ico="ganttChart" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="costload"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
+          <!-- ⚠️ LAST in the menu deliberately: the order is the process (set up → schedule → load
+               cost), and a summary is what you read once the other three have been done. -->
+          <button data-tab="summary"><span data-ico="barChart" data-ico-size="14"></span> Summary</button>
         </div>
       </div>
       <!-- Project context sits next to the title, left-aligned. Uses the app-wide shared
@@ -4210,7 +4551,7 @@
                ⚠️ `.ps-icobtn` is the toolbar's existing convention and already carries the lit
                `.active` state, which is what stops an unlabelled control being unreadable: Progress
                and Stacking light red while you are in them. -->
-          <button class="pd-btn ps-icobtn" id="ps-progressbtn" aria-label="Activity Progress" title="Activity Progress — physical vs planned, as a table"><span data-ico="trendingUp" data-ico-size="15"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-progressbtn" aria-label="Activity Progress" title="Activity Progress — physical vs planned, as a table"><span data-ico="barChart" data-ico-size="15"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-vstackbtn" aria-label="Vertical Stacking" title="Vertical Stacking — the building model, one cell per zone"><span data-ico="box" data-ico-size="15"></span></button>
           <!-- ⚠️⚠️ THE LSM LAYOUT'S DOOR. It was only reachable through a checkbox in
                the Legend, which is itself hidden until "Colour activities by" is ticked and can be
@@ -4468,6 +4809,19 @@
       </div>
 
       <!-- COST LOADING (the wizard: enlist → assign → distribute → review) -->
+      <!-- ⚠️⚠️ SUMMARY, NOT "DASHBOARD" AND NOT "REPORTING VIEW", AND BOTH NAMES WERE ALREADY TAKEN.
+           "Dashboard" is the project-level page (dashboard.html), which already carries a Project
+           Schedule panel — two things under one word, one level apart, is exactly the duplicate this
+           app just fixed in the sidebar. "Reporting view" is a LAYOUT MODE in this very module
+           (body.ps-reporting) that strips the chrome off the Gantt for presenting it. This is a
+           third thing: a derived read of the schedule, for a meeting.
+           ⚠️ It also revives an idea that was deliberately removed — the Planner Cockpit went on
+           2026-09-02 as *"a monitoring surface, not schedule development"*. That reasoning was about
+           a monitoring view sitting among the schedule-BUILDING views, and it still holds; what is
+           different here is that the owner asked for a reporting surface by name, and this one
+           DERIVES everything rather than offering a second place to act. -->
+      <div id="ps-view-summary" style="display:none;"></div>
+
       <div id="ps-view-costload" style="display:none;">
         <div class="ps-ck-bar">
           <span style="font-size:12px;color:var(--pd-muted);">Assign cost to the execution-phase activities, distribute it across the sub-WBS each occurs in, then review it as a vertical stack — the figures <b>Apply</b> writes as Planned IBB.</span>
@@ -4798,6 +5152,12 @@
         <div class="ps-form-full" id="ps-f-udf-wrap" style="display:none;"><label class="pd-label">User-Defined Fields</label><div id="ps-f-udf-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full ps-form-sec">Notes</div>
         <div class="ps-form-full"><label class="pd-label">Remarks</label><textarea class="pd-input" id="ps-f-remarks" rows="2" style="resize:vertical;"></textarea></div>
+        <!-- Attachments. ⚠️ Inside the Notes section deliberately — a method statement, a permit or
+             an inspection report is the evidence behind the remark, not a separate subject, and the
+             section-nav rail is built from `.ps-form-sec` so a tenth section would lengthen a rail
+             that already carries nine. -->
+        <div class="ps-form-full"><label class="pd-label">Attachments <small>(files on this activity)</small></label>
+          <div id="ps-f-atts"></div></div>
       </form>
     </div>
     <div class="pd-modal-footer">
@@ -4862,16 +5222,21 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260913a"></script>
+<script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260914e"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260914e"></script>
-<script src="../../assets/js/icons.js?v=20260913a"></script>
+<script src="../../assets/js/ui.js?v=20260915g"></script>
+<script src="../../assets/js/notebook.js?v=20260915d"></script>
+<script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="../../assets/js/co-insert.js?v=20260909r"></script>
+<!-- ⚠ PDAttach — the attachment engine, extracted out of contracts-claims on 2026-09-15 so the
+     ordering rules (object before row · roll the object back if the row fails · row before object
+     on delete) exist in ONE place rather than being copied here. -->
+<script src="../../assets/js/attach.js?v=20260915b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -7406,7 +7771,7 @@
     (CLASS_CODES || []).forEach(function (c) { if (c.code) _ccMap[String(c.code).trim()] = c; });
     return _ccMap;
   }
-  function ccByCode(code) { var k = String(code == null ? '' : code).trim(); return k ? (_ccIndex()[k] || null) : null; }
+  function ccByCode(code) { var k = ccKeyOf(code); return k ? (_ccIndex()[k] || null) : null; }
   function ccOf(r) { return ccByCode(r && r.class_code); }
 
   /* ==========================================================================
@@ -7435,11 +7800,70 @@
     });
     return _ccGrpMap;
   }
-  function ccGroupByCode(code) { var k = String(code == null ? '' : code).trim(); return k ? (_ccGrpIndex()[k] || null) : null; }
+  function ccGroupByCode(code) { var k = ccKeyOf(code); return k ? (_ccGrpIndex()[k] || null) : null; }
+
+  /* ==========================================================================
+     A STORED CODE THAT LOST ITS LEADING ZERO — padded back, but ONLY ON A MISS
+     ==========================================================================
+     ⚠️⚠️ THE MIGRATION SAYS NEVER TO DE-ZERO A CODE, AND THAT RULE IS NOT BEING BROKEN HERE.
+     `2026-08-21-class-codes.sql` records that de-zeroing COLLIDES genuinely different items —
+     `015051` (General Requirement › Earthmoving) with `15051` (Metal Works › Railings), and
+     `017151` with `17151`. Both members of each pair are real codes. So the danger is a rule that
+     de-zeroes, or that pads a value which is ALREADY a valid code. This does neither: the raw
+     value is looked up FIRST at both levels, and the padded form is consulted only when the raw
+     resolves to nothing at all — i.e. only for a value that is already broken. `15051` resolves,
+     so `15051` is never touched.
+
+     ⚠️⚠️ AND IT IS PROVABLY UNAMBIGUOUS AGAINST THIS CHART, not merely argued. Measured over the
+     702 seeded codes and 205 groups: every code at either level is 5 or 6 characters — there is
+     no 4-character code anywhere — and of the 221 de-zeroed forms that are not themselves real
+     codes, 221 pad to EXACTLY ONE real code and 0 are ambiguous. A collision is still refused
+     rather than guessed: two real codes de-zeroing to the same string store '' and resolve to
+     nothing, so the cell keeps saying the code is unrecognised.
+
+     ⚠️ WHERE THE BROKEN VALUES CAME FROM, AND WHY NOTHING NEW WRITES THEM. `CLASS_CODE_DB` — the
+     Schedule Builder's `+ Library` list — held Finance's Level-2 group chart WITH THE LEADING
+     ZEROS STRIPPED until 2026-09-10 (z4) padded all 43 of them. Anything pushed from the library
+     before that date carries the de-zeroed code; the library itself is correct now, so this is a
+     read-time repair for existing rows, not a licence for new ones.
+
+     ⚠️⚠️ THIS FIXES THE SCREEN, NOT THE DATA, AND THAT DISTINCTION MATTERS. Other consumers read
+     `project_schedule.class_code` directly — `boq_allocations` gates on it, and the BOQ allocator
+     matches an activity's code against a bill line's. Those still see `3050` and still miss. The
+     real fix is `migrations/2026-09-15-class-code-pad.sql`; the cell marks a padded code so the
+     repair is visible rather than papered over. */
+  var _ccPadMap = null, _ccPadSrc = null;
+  function _ccPadIndex() {
+    if (_ccPadMap && _ccPadSrc === CLASS_CODES) return _ccPadMap;
+    _ccPadMap = {}; _ccPadSrc = CLASS_CODES;
+    var items = _ccIndex(), groups = _ccGrpIndex();
+    var claim = function (key) {
+      var d = key.replace(/^0+/, '');
+      if (!d || d === key) return;                 // nothing was stripped — no de-zeroed form exists
+      if (items[d] || groups[d]) return;           // ⚠️ the de-zeroed form is ITSELF a real code
+      if (_ccPadMap[d] && _ccPadMap[d] !== key) { _ccPadMap[d] = ''; return; }  // '' = ambiguous
+      _ccPadMap[d] = key;
+    };
+    Object.keys(items).forEach(claim);
+    Object.keys(groups).forEach(claim);
+    return _ccPadMap;
+  }
+  /* The chart key a stored value resolves to: itself when the chart knows it, its padded form when
+     the chart knows only that, otherwise itself unchanged (so an unknown code still prints itself). */
+  function ccKeyOf(code) {
+    var k = String(code == null ? '' : code).trim(); if (!k) return '';
+    if (_ccIndex()[k] || _ccGrpIndex()[k]) return k;
+    return _ccPadIndex()[k] || k;
+  }
+  // True when the stored value had to be padded to resolve — i.e. the row needs the repair migration.
+  function ccWasPadded(code) {
+    var k = String(code == null ? '' : code).trim();
+    return !!k && ccKeyOf(k) !== k;
+  }
   /* Which level a stored code resolves at: 'item' | 'group' | null. One function, so the label, the
      unknown flag and anything downstream cannot disagree about what a code is. */
   function ccLevelOf(code) {
-    var k = String(code == null ? '' : code).trim(); if (!k) return null;
+    var k = ccKeyOf(code); if (!k) return null;
     if (_ccIndex()[k]) return 'item';
     if (_ccGrpIndex()[k]) return 'group';
     return null;
@@ -7448,7 +7872,7 @@
      group code itself. This is what lets a BOQ line (an item) be compared against an activity (a
      group) without either side pretending to be the other. */
   function ccGroupOf(code) {
-    var k = String(code == null ? '' : code).trim(); if (!k) return null;
+    var k = ccKeyOf(code); if (!k) return null;
     var it = _ccIndex()[k];
     if (it) return String(it.code_l2 || '').trim() || null;
     return _ccGrpIndex()[k] ? k : null;
@@ -9204,6 +9628,12 @@
     // project, and on a cold load (or an unphased project) nothing has changed and none is needed.
     var _scopeBefore = catScopeIsExec();
     await loadResourcesAssignments();   // loads WBS_NODES
+    if (gen !== _loadGen) return;
+    /* Attachments for the whole project, one read. ⚠️ HERE rather than earlier: the grid is already
+       on screen, and nothing above this point needs them — the form reads them on open. ⚠️ And
+       re-checked against `_loadGen` afterwards like every other await in load(), or a project
+       switched mid-load would show the previous project's attachments. */
+    await loadActAttachments();
     if (gen !== _loadGen) return;
     if (catScopeIsExec() !== _scopeBefore) { renderActLegend(); scheduleRender(); }
     // ⚠️ AND PERSIST IT, or the hint is never written. The `_cachePut` in the paint path above runs
@@ -14293,11 +14723,9 @@
       if (now) renderMobile();
       else if (_psWasPhone) renderAll();   // crossed phone -> desktop: build the grid/Gantt
       _psWasPhone = now;
-      // ⚠️ The stacking pane's height is MEASURED, so a resize leaves it stale — a window dragged
-      // shorter would put the time bar off screen again, which is the whole defect. Re-measure
-      // rather than re-render: renderVStack rebuilds every svg and would restart the entrance
-      // animation on every resize tick.
-      try { _vsApplyPane(document.getElementById('ps-vstack')); } catch (e) {}
+      /* ⚠ Nothing to re-measure on resize any more. The stacking pane used to be capped to the
+         viewport, so a window dragged shorter left a stale cap; it now takes its content's height
+         and the time bar sticks to the bottom of the screen, both of which the browser maintains. */
     }, 150);
   });
 
@@ -14848,6 +15276,7 @@
   function setProgressMode(on) {
     progressMode = on;
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-progress-mode', on);
+    _psSyncLongDoc();
     var btn = document.getElementById('ps-progressbtn'); if (btn) btn.classList.toggle('active', on);
     _paintViewBtn();
     var host = document.getElementById('ps-progress'); if (host) host.style.display = on ? 'block' : 'none';
@@ -14871,7 +15300,10 @@
   // so the filter menu, per-column filters, the advanced filter and the search box all narrow the
   // stacking too. Deliberate: a second filter UI here would be one more thing to drift out of step.
   var vstackMode = false;
-  var _vsScope = 'trade';       // 'trade' = one tower per trade · 'all' = one consolidated tower
+  // 'trade' = one card per trade · 'tower' = one card per tower · 'site' = the site plan.
+  // ⚠ Session state, never persisted -- so it resets to 'trade' on every load, which is what made
+  //   removing the 'all' scope safe without a migration.
+  var _vsScope = 'trade';
   var _vsDetail = 2;            // 1 = per level · 2 = per zone · 3 = per unit (capped at LOC_LEVELS)
   var _vsZoom = 1;
   // ⚠️ The magnifier was REMOVED (owner 2026-09-02: *"remove the magnifier since there is a zoom in
@@ -14886,30 +15318,22 @@
   // there was no `.is-fit` selector and no `var(--ps-vs-fith)` anywhere in this file. A planner who
   // clicked it saw the button light up and the drawing not move. Its own tooltip still advertised
   // "hover a zone and read it in the magnifier", a feature deleted a week earlier — which is the
-  // clue that nothing had exercised it since. What DOES fit the stack is the pane's own
-  // `--ps-vs-paneh` max-height, and that half is live and stays. Zoom −/+ remains the control over
-  // cell width, and the focus window keeps its own Fit for reading one building close up.
+  // clue that nothing had exercised it since.
+  // ⚠ THIS NOTE USED TO SAY the pane's own `--ps-vs-paneh` max-height was the live half and
+  //   would stay. It did not: that cap was removed on 2026-09-15 for squeezing the buildings
+  //   into whatever the chrome left over (see the note on `.ps-vs-pane`). Nothing fits the
+  //   stack to the window now — the pane takes its content's height and the page scrolls.
+  // Zoom −/+ remains the control over cell width, and the focus window keeps its own Fit for
+  // reading one building close up.
   try { ['ps_vsloupe', 'ps_vsloupez', 'ps_vsloupew', 'ps_vsloupeh', 'ps_vsfit'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
-  // How much height the fitted stack may claim. Measured from the pane's own top so the time bar
-  // and the toolbar are never covered — a fit that hides the control you fit with is not a fit.
-  // ⚠️ Measured from each element's own live position, never from a vh constant. This pane sits
-  // under a toolbar whose height changes with wrapping and a chip row that comes and goes with the
-  // scope, so a fixed vh would put the bottom of a tall building behind the time bar on exactly the
-  // projects that need it most.
-  function _vsApplyPane(host) {
-    if (!host) return;
-    var pane = host.querySelector('.ps-vs-pane');
-    if (pane) {
-      var top = pane.getBoundingClientRect().top;
-      // 16px of breathing room below the pane. Floored at 320 so a short window still shows a
-      // building AND its bar rather than two slivers.
-      pane.style.setProperty('--ps-vs-paneh', Math.max(320, Math.round(window.innerHeight - top - 16)) + 'px');
-    }
-    // ⚠️ The second half of this function measured a `--ps-vs-fith` cap onto `.ps-vs-grid` for the
-    // Fit button. Removed with the button (2026-09-10): no CSS rule ever read that property, so both
-    // passes — including the card-overhead correction that looks so carefully derived — were setting
-    // a variable nobody consumed. Do not restore it without a rule that reads it.
-  }
+  /* ⚠⚠ `_vsApplyPane` IS GONE (2026-09-15) AND SO IS `--ps-vs-paneh`. It measured the pane's top
+     and capped the pane to `innerHeight - top - 16`, which is what squeezed a stack of 320-520px
+     buildings into whatever the chrome left over — see the note on `.ps-vs-pane` for the numbers
+     and for why `position:sticky` on the time bar works now where it provably did not before.
+     ⚠ Its three call sites went with it: the resize listener in the module's own setup, the
+       notice-dismiss handler, and the tail of `renderVStack`. Each existed only to re-measure a
+       cap that no longer exists; a function left behind writing a custom property no rule reads is
+       the exact shape of the dead `--ps-vs-fith` this file already documents. */
   // Which trades are shown. Owner 2026-08-27: *"can't there be a filter to show which trades to be
   // shown. In addition, i want a view wherein all selected trades can be shown side by side."*
   // ⚠️ EMPTY MEANS ALL, and that is the whole reason this is a list rather than a set of booleans.
@@ -15024,11 +15448,30 @@
   }
   // ⚠️ The × is a real <button> with an aria-label, not a styled span: it is the only control in the
   // banner and a reader that cannot reach it cannot reclaim the space.
-  function _vsWarnWrap(key, html) {
+  /* ⚠⚠ ONE LINE, WITH THE DIAGNOSIS BEHIND A DISCLOSURE. Owner 2026-09-15: *"The notification
+     needs a big rework as well its too lengthy and the text itself is not professional"* — said in
+     the same breath as *"the main screen can't even be seen"*, and the two are the same problem.
+     Measured on the owner's screenshot: the `nolevel` notice alone was **157px** of a ~1010px pane,
+     on a screen where the building itself had about 100px left.
+     ⚠⚠ COLLAPSED, NOT CUT. Every line of the detail was written from a real diagnosis on a real
+       project (4PH Strevi: 692 of 15,834 rows, 76 of them one missing `RD` alias) and throwing it
+       away would cost the next planner that investigation again. It moves behind `Details`, which
+       is shut by default.
+     ⚠ `<details>`/`<summary>`, not a button and a handler: the disclosure is native, it needs no
+       wiring, it survives a repaint because `renderVStack` rebuilds this markup from scratch either
+       way, and it is keyboard-operable without any code of ours.
+     ⚠ `detail` is OPTIONAL. A notice that has nothing more to say renders as a bare line rather
+       than a `Details` control that opens onto a repeat of the summary. */
+  function _vsWarnWrap(key, summary, detail) {
     if (_vsWarnHidden[key]) return '';
-    return '<div class="ps-vs-warn" data-vsw="' + esc(key) + '">' +
-      '<button class="ps-vs-warnx" data-vswx="' + esc(key) + '" title="Dismiss — it comes back if the count changes" aria-label="Dismiss this notice">&times;</button>' +
-      html + '</div>';
+    var x = '<button class="ps-vs-warnx" data-vswx="' + esc(key) + '" title="Dismiss — it comes back if the count changes" aria-label="Dismiss this notice">&times;</button>';
+    if (!detail) {
+      return '<div class="ps-vs-warn" data-vsw="' + esc(key) + '">' + x +
+        '<div class="ps-vs-warn-sum">' + summary + '</div></div>';
+    }
+    return '<div class="ps-vs-warn" data-vsw="' + esc(key) + '">' + x +
+      '<details class="ps-vs-warn-d"><summary class="ps-vs-warn-sum">' + summary + '</summary>' +
+      '<div class="ps-vs-warn-b">' + detail + '</div></details></div>';
   }
   function _vsMaxDetail() { return Math.max(1, _vsAxis().length); }
   /* ==========================================================================================
@@ -15155,8 +15598,18 @@
     // and `sort_order` is what LOC_LEVELS is loaded by. A name test is only a tie-breaker for a
     // project that ordered its levels differently; it must never be the primary rule, because a
     // level legitimately called "Building" or "Block" is still the tower axis.
+    var named = _vsTowerLevelNamedId();
+    return named || LOC_LEVELS[0].id;
+  }
+  /* ⚠⚠ THE LEVEL THAT REALLY IS THE TOWER AXIS, or '' when no level is one. Separate from
+     _vsTowerLevelId because the two answer different questions and conflating them mislabelled a
+     whole project: _vsTowerLevelId must always name SOME level (it drives the band axis, which
+     cannot be empty), so it falls back to LOC_LEVELS[0]. That fallback is right for a breakdown
+     ordered Tower › Level › Zone whose first level is called something else, and WRONG as an
+     answer to "is there a tower level at all?" — on a Floor › Zone project it names the FLOOR. */
+  function _vsTowerLevelNamedId() {
     var named = LOC_LEVELS.find(function (l) { return /tower|building|block/i.test(l.name || ''); });
-    return (named || LOC_LEVELS[0]).id;
+    return named ? named.id : '';
   }
   // ⚠️⚠️ THE STACK'S OWN AXIS — the location levels this view bands and cells by, and it is NOT
   // `LOC_LEVELS`. The TOWER is already expressed twice over: one CARD per tower (the per-tower
@@ -15197,9 +15650,21 @@
      passed through untouched — those projects are byte-identical to before. */
   function _vsTowerOf(r) {
     if (!r || !r.location) return '';
+    /* ⚠⚠ THE RESERVED `tower` KEY IS PREFERRED OVER LOC_LEVELS[0], and that ordering is the
+       whole of this fix. The push (see the `out.tower` note in the location writer) stamps the
+       tower under the literal key ALWAYS and under a level id ONLY when locLevelFor('tower')
+       resolves one — its own comment calls the literal "a fallback the stacking still reads".
+       Reading `LOC_LEVELS[0]` first meant that fallback was never reached on a project with no
+       tower level: DEMO01 is Floor › Zone, so every row answered its FLOOR here and the picker
+       offered "All towers / F1 / F2 / F3" while `location.tower` said "Tower 1" on all 66.
+       ⚠ A level that genuinely IS the tower still wins, so a Tower › Level › Zone project is
+       unchanged — and there the push writes both from the SAME towerLabel() call, so they agree.
+       ⚠ LOC_LEVELS[0] is still the last resort, so an IMPORT that never carried the literal key
+       is byte-identical to before. */
     var id = _vsTowerLevelId();
-    var v = id ? r.location[id] : '';
-    var raw = String(v || r.location[VS_LOC_TOWER] || '').trim();
+    var namedId = _vsTowerLevelNamedId();
+    var v = namedId ? r.location[namedId] : '';
+    var raw = String(v || r.location[VS_LOC_TOWER] || (id ? r.location[id] : '') || '').trim();
     if (!raw) return '';
     return locTowerToken(raw) || raw;
   }
@@ -15813,6 +16278,18 @@
     order.sort(function (a, b) { return cmpGroupName(a.label, b.label); });
     return order;
   }
+  /* ⚠⚠⚠ UNREACHABLE, AND KEPT ON PURPOSE. No call site has ever passed `tradeSplit` to
+     `_vsTowerBody` / `_vsTowerSVG` / `_vsTowerModel`, so this function has never drawn a pixel --
+     recorded in this module's CLAUDE.md on 2026-09-04 (*"the Consolidated trade split has never
+     rendered ... worth a decision"*). The decision came on 2026-09-15: the owner removed the
+     Consolidated button rather than wire it, BECAUSE the view was indistinguishable without it.
+     ⚠ NOT deleted, because the scope it was written for is not the only one it fits. `tower` and
+       `site` combine trades too (see `_vsMixTrades`), and they are the reason `Detail` clamps to
+       level 1 on those views -- this split is the implemented answer to that clamp. Deleting it
+       would throw away the only implementation of a feature two live scopes could still use.
+     ⚠ To wire it: pass the canonical trade order as the 4th argument from the scope branch in
+       renderVStack. Everything below, `_vsTowerSVG`'s `rowCells`, and the banded-height handling in
+       the plan code are already written for it. */
   // Consolidated's cells: one per TRADE, in canonical construction order, each carrying its own
   // colour. Owner: *"when clicking consolidated, the trades should be stacked all together (e.g.
   // site works, structural, archi, mepf), however users should have options to pick the trades that
@@ -15877,8 +16354,11 @@
     });
     return true;
   }
-  // `tradeSplit` (Consolidated only) = the canonical trade order; when present each level row is
-  // split by trade instead of by the location sub-path, and each cell paints its own trade colour.
+  // `tradeSplit` = the canonical trade order; when present each level row is split by trade instead
+  // of by the location sub-path, and each cell paints its own trade colour.
+  // ⚠ NO CALL SITE PASSES IT -- see the note on `_vsRowTradeCells`. It was written for the
+  //   Consolidated scope, which was removed on 2026-09-15; `tower` and `site` are the scopes it
+  //   would fit now.
   /* ==========================================================================================
      THE PLAN, THE ORIENTATION, AND THE 3D VIEW OF THE VERTICAL STACKING.
      Owner 2026-09-09: *"i was thinking of establishing a 3D view of the 2D vertical stacking that
@@ -16208,6 +16688,60 @@
        than the zones drawn on it can only be stated by drawing it. */
     return out.length ? out : plate.polys;
   }
+  /* ==== A FLOOR'S OWN PLAN, PUT WHERE ITS TOWER STANDS ON THE SITE ========================
+     Owner 2026-09-15, with the per-tower card beside the site view: *"how come in this view, the
+     per floor configuration is defined. However in the site view, there is no defined
+     configuration or defined floor plans per floor."*
+
+     ⚠️⚠️ THE SITE WAS DRAWING EVERY FLOOR FROM THE TOWER'S SITE FOOTPRINT. On the site plan a
+     tower is ONE traced shape, and the floor-by-floor model hands every slice of that tower the
+     same `c.label` — so `_vsZpPolysOf(sitePlan, tower)` answered with that one outline thirteen
+     times and the building came out an extruded prism. The floors were never consulted. The plans
+     the planner traced per floor were sitting in the same map the per-tower card reads.
+
+     ⚠️ So the floor's own plan is fitted INTO the tower's place. Two facts have to survive that:
+     WHERE the building stands (the site trace) and WHAT SHAPE the floor is (the floor trace).
+     Fitting the plan's bounding box into the tower's, centred, keeps both.
+     ⚠️ CONTAIN, NEVER STRETCH. The two traces are different drawings at different scales, and
+     stretching a floor plan to fill a site footprint would invent a floor that is not the shape
+     anybody drew — the one thing this view exists to avoid. A plan that is proportionally deeper
+     than its site footprint therefore sits narrower than that footprint rather than distorting.
+     ⚠️ The sheets carry their own aspect, so depth is divided by the floor sheet's `ar` before it
+     is compared with anything: a floor drawn on a wide sheet and one drawn on a tall sheet are the
+     same building, and only `ar` says so.
+     ⚠️ Points come back in the SITE plate's own 0..1 coordinates, because that is what
+     `_vs3PolyMesh` extrudes — this helper never touches world units, so the flip that function
+     applies to the depth axis stays its business and cannot be applied twice. */
+  function _vsZpFitPolys(floorPlate, box, plateW, plateD) {
+    var polys = _vsZpOutlineOf(floorPlate);
+    if (!polys || !polys.length) return null;
+    var arF = (+floorPlate.ar > 0.05 && +floorPlate.ar < 20) ? +floorPlate.ar : (1000 / 620);
+    var u0 = null, u1 = null, v0 = null, v1 = null;
+    polys.forEach(function (q) {
+      (q.pts || []).forEach(function (p) {
+        if (u0 === null || p[0] < u0) u0 = p[0];
+        if (u1 === null || p[0] > u1) u1 = p[0];
+        if (v0 === null || p[1] < v0) v0 = p[1];
+        if (v1 === null || p[1] > v1) v1 = p[1];
+      });
+    });
+    if (u0 === null) return null;
+    // The plan's own proportions: its sheet is 1 wide and 1/ar deep.
+    var fw = u1 - u0, fd = (v1 - v0) / arF;
+    var tw = (box.u1 - box.u0) * plateW, td = (box.v1 - box.v0) * plateD;
+    if (!(fw > 1e-6) || !(fd > 1e-6) || !(tw > 1e-6) || !(td > 1e-6)) return null;
+    var s = Math.min(tw / fw, td / fd);
+    var cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+    var tu = (box.u0 + box.u1) / 2, tv = (box.v0 + box.v1) / 2;
+    return polys.map(function (q) {
+      return {
+        code: q.code, color: q.color,
+        pts: (q.pts || []).map(function (p) {
+          return [tu + (p[0] - cu) * s / plateW, tv + ((p[1] - cv) / arF) * s / plateD];
+        })
+      };
+    });
+  }
   // The floor label as both sides normalise it. ⚠️ ONE function, used for the level and for the
   // trade, because the keys the builder emits are built with the same rule (zpNormCode).
   function _vsZpNorm(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' '); }
@@ -16225,7 +16759,7 @@
   }
   /* ⚠️⚠️ THE TRADE IS PART OF THE QUESTION. Zoning is per trade, so "the plan for Level 3" is
      not a question with one answer — the Architectural card must be given Architectural's Level 3.
-     A card that spans trades (per tower, consolidated) passes none and falls back to the bare key,
+     A card that spans trades (per tower, site) passes none and falls back to the bare key,
      which the builder only emits when every trade that named that floor agrees about it. */
   function _vsZpFor(levelValue, trade) {
     var all = _vsZpAll();
@@ -16549,6 +17083,40 @@
     _vs3Scenes.forEach(function (s) { try { s.dispose(); } catch (e) {} });
     _vs3Scenes = [];
   }
+  /* ⚠⚠ A WebGL CANVAS DOES NOT REFLOW, AND THE CARDS ON THE PAGE HAD NOBODY TO TELL THEM.
+     `_vs3Build` exposes `resize()` as a CAPABILITY on purpose — its own note says *“the owner (or
+     the modal) knows when the box changed; this is how it says so”*. The focus window says so; the
+     inline cards never did, so a canvas built at one pane width kept that drawing buffer for ever.
+     Measured live at 846px: the canvas was **1117px wide inside a 698px `.ps-vs-tower` whose
+     overflow is hidden** — 419px of every building silently cut off. Owner: *“UI still clips”*.
+     ⚠ A ResizeObserver, not a window resize listener: the pane also changes width when the SIDEBAR
+     collapses, which fires no window resize at all.
+     ⚠⚠ WIDTH ONLY. `resize()` derives the canvas HEIGHT from the width, so reacting to a height
+     change would re-enter for ever — the observer would be watching its own effect.
+     ⚠ Debounced: a drag-resize fires continuously and every call reallocates a drawing buffer.
+     ⚠ One observer for the life of the page, and it is never disconnected — it reads `_vs3Scenes`,
+     which a repaint empties, so with no cards it costs a comparison. */
+  var _vs3RzT = null, _vs3RO = null, _vs3LastW = 0;
+  function _vs3ResizeAll() {
+    _vs3Scenes.forEach(function (s) {
+      if (!s || typeof s.resize !== 'function') return;
+      try { s.resize(); } catch (e) {}
+    });
+  }
+  function _vs3WatchSize() {
+    if (_vs3RO || typeof ResizeObserver === 'undefined') return;
+    var host = document.getElementById('ps-vstack'); if (!host) return;
+    _vs3LastW = Math.round(host.clientWidth || 0);
+    _vs3RO = new ResizeObserver(function (ents) {
+      var w = Math.round((ents && ents[0] && ents[0].contentRect.width) || host.clientWidth || 0);
+      if (w === _vs3LastW) return;
+      _vs3LastW = w;
+      if (!_vs3Scenes.length) return;
+      clearTimeout(_vs3RzT);
+      _vs3RzT = setTimeout(_vs3ResizeAll, 120);
+    });
+    try { _vs3RO.observe(host); } catch (e) { _vs3RO = null; }
+  }
   /* ==== THE FOOTPRINT, REDUCED TO THE POINTS A SILHOUETTE CAN USE ========================
      Owner 2026-09-14: *"the labels are closer to the towers itself."*
      A floor label stands at the SCREEN-leftmost point of the tower it names, which means
@@ -16782,6 +17350,46 @@
         }
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
+        /* ==== ON THE SITE, A FLOOR IS DRAWN FROM ITS OWN PLAN ==============================
+           Owner 2026-09-15: *"in the site view, there is no defined configuration or defined
+           floor plans per floor."* And there was not: every slice of a tower carried the tower's
+           SITE outline, because that is what `c.label` matches on the site plan. The floor's own
+           plan — the one the per-tower card draws, traced under Floors & Zones › Plan — is fitted
+           into the tower's place instead, so the site says what each floor IS as well as where it
+           stands. See _vsZpFitPolys for what "fitted" means and what it refuses to do.
+           ⚠️ THE TARGET IS THE TOWER'S OWN BOX: its traced site footprint where it has one, its
+           wrap slot where it does not. Either way the floor lands on the tower, not on the site.
+           ⚠️ AFTER the colour decision, deliberately. `fill` is already settled from the tower's
+           site polygon, so a floor plan cannot repaint a tower and delete the channel that says
+           which building this is.
+           ⚠️ Nothing found leaves `_pg` exactly as it was: a project with no floor plans traced
+           keeps the prisms it has today rather than losing its towers. */
+        if (model.siteFloors && c.floor) {
+          var _tb = null;
+          if (_pg && _pg.length) {
+            var _b = [null, null, null, null];
+            _pg.forEach(function (q3) {
+              (q3.pts || []).forEach(function (p3) {
+                if (_b[0] === null || p3[0] < _b[0]) _b[0] = p3[0];
+                if (_b[1] === null || p3[0] > _b[1]) _b[1] = p3[0];
+                if (_b[2] === null || p3[1] < _b[2]) _b[2] = p3[1];
+                if (_b[3] === null || p3[1] > _b[3]) _b[3] = p3[1];
+              });
+            });
+            if (_b[0] !== null) _tb = { u0: _b[0], u1: _b[1], v0: _b[2], v1: _b[3] };
+          }
+          /* ⚠️ The wrap slot, in the PLATE's own coordinates — and the depth axis is inverted on
+             the way in, because `_vs3PolyMesh` inverts it on the way out (rotation.x = -PI/2 sends
+             a shape's +Y to world −Z). Handing it an un-inverted box would fit the floor plan into
+             the mirror image of the slot its own block is drawn in. */
+          if (!_tb) {
+            _tb = { u0: (x - exW / 2) / plateW + 0.5, u1: (x + exW / 2) / plateW + 0.5,
+                    v0: 0.5 - (z + exD / 2) / plateD, v1: 0.5 - (z - exD / 2) / plateD };
+          }
+          var _fpl = _vsZpFor(c.floor, model.trade);
+          var _fpg = _fpl ? _vsZpFitPolys(_fpl, _tb, plateW, plateD) : null;
+          if (_fpg && _fpg.length) _pg = _fpg;
+        }
         /* ==== A FLOOR LABEL BESIDE ITS OWN TOWER =========================================
            Owner 2026-09-14: *"what's better if you just attach the labels of the ground floor, 2nd
            floor etc just beside to each tower."*
@@ -16823,7 +17431,15 @@
             var _all = [];
             _pg.forEach(function (q2) {
               (q2.pts || []).forEach(function (pt2) {
-                _all.push([(pt2[0] - 0.5) * plateW, (pt2[1] - 0.5) * plateD]);
+                /* ⚠️⚠️ MINUS ON THE DEPTH AXIS, and the label drifting off its tower in the
+                   owner's second screenshot was the missing sign. `_vs3PolyMesh` lays a traced
+                   ring down with rotation.x = -PI/2, which sends the shape's +Y to world **−Z** —
+                   so a ring read straight out of the plan is the tower's MIRROR IMAGE in depth.
+                   The anchor was being projected at that mirror: right side of the site, wrong
+                   place in it, and under perspective that lands the name low and squashed rather
+                   than obviously somewhere else. A label's ring must be the coordinates the MESH
+                   is built in, not the coordinates the plan is stored in. */
+                _all.push([(pt2[0] - 0.5) * plateW, -(pt2[1] - 0.5) * plateD]);
               });
             });
             _fp = _vs3Hull(_all);
@@ -17708,8 +18324,8 @@
        arrangement is a guess or a statement. Claiming the planner's layout when none is defined
        would be the worse error, so the default is the cautious one. */
     var _fit = _vsPlanFit(model);
-    /* ⚠️⚠️ A CARD THAT SPANS TRADES SAYS WHOSE PLAN IT IS DRAWING. Consolidated and per-tower
-       cards read the bare floor key, and when several trades traced the same floor that key now
+    /* ⚠️⚠️ A CARD THAT SPANS TRADES SAYS WHOSE PLAN IT IS DRAWING. Per-tower and site cards
+       read the bare floor key, and when several trades traced the same floor that key now
        answers with the LARGEST of their plans rather than refusing (see zpBareShape). That is a
        real footprint, but it is not "the plan for this card" — it is one trade's plan standing for
        all of them, and a planner comparing it against a trade whose plan is smaller has to be able
@@ -17838,6 +18454,7 @@
           // the memory inside the build would make a genuinely new card open at a stale angle.
           if (_vs3Cam[j.key] && s.setCam) { try { s.setCam(_vs3Cam[j.key], true); } catch (e2) {} }
           _vs3Scenes.push(s);
+          _vs3WatchSize();
           // The viewpoint buttons belong to THIS card, so they are found within its own card box.
           var card = el.closest ? el.closest('.ps-vs-tower') : el.parentNode;
           (card || el.parentNode).querySelectorAll('[data-vs3view]').forEach(function (b) {
@@ -18099,7 +18716,7 @@
        to come back out — see the harness check that now enumerates exactly that. */
     /* ⚠️⚠️ WHOSE PLAN THIS CARD READS, derived here rather than passed in by four call sites.
        A card whose activities are all one trade IS that trade — true of the per-trade cards by
-       construction, and of a per-tower or consolidated card that happens to hold one trade,
+       construction, and of a per-tower or site card that happens to hold one trade,
        which should read that trade's plan too. A mixed card has no single answer and gets null,
        which sends the lookup to the bare key. */
     var _tr = null, _trOne = true;
@@ -19481,7 +20098,14 @@
     var w = window.open('', '_blank');
     if (!w) { UI.toast('Allow pop-ups to export the stacking as PDF.', 'error'); return; }
 
-    var scopeWord = _vsScope === 'tower' ? 'One building per tower' : (_vsScope === 'all' ? 'Consolidated — one building' : 'One building per trade');
+    /* ⚠⚠ 'site' HAD NO ARM AND FELL THROUGH TO "One building per trade" -- a printed sheet
+       naming a view it is not showing. Found while removing the 'all' arm on 2026-09-15; it is the
+       same fault the note directly below names for the tower caption ("a document that misstates
+       its own subject, and it is the copy that leaves the building"), so it is fixed here rather
+       than left one line from its own warning. */
+    var scopeWord = _vsScope === 'tower' ? 'One building per tower'
+                  : _vsScope === 'site' ? 'The site development plan'
+                  : 'One building per trade';
     /* ⚠️⚠️ THE EXPORT MUST NOT SAY "All towers" WHEN TWO ARE SHOWN. `_vsTower` reads 'ALL' whenever
        the selection is not exactly one (see renderVStack), which is right for filtering and wrong
        for a caption: a PDF headed "All towers" over a drawing of Tower 1 and Tower 2 is a document
@@ -19731,7 +20355,7 @@
     // mixed when the scope COMBINES trades and the selection holds more than one of them:
     // narrowing the chips to a single trade un-mixes it and the zones come straight back.
     // Per trade never mixes - each card there is one trade.
-    _vsMixTrades = (_vsScope === 'tower' || _vsScope === 'all' || _vsScope === 'site') && tradesShown.length > 1;
+    _vsMixTrades = (_vsScope === 'tower' || _vsScope === 'site') && tradesShown.length > 1;
     detail = _vsDetailNow();
 
     var detailBtns = '';
@@ -19756,7 +20380,18 @@
     // ⚠️ Multi-select. Clicking a trade TOGGLES it, so several can be shown side by side; "All
     // trades" clears the selection rather than ticking every box (see the note on _vsTradeSel).
     // Each chip carries aria-pressed so the state is not colour-only.
-    var chips = '<div class="ps-vs-chips"><button class="ps-vs-chip' + (!_vsTradeSel.length ? ' on' : '') +
+    /* ⚠ THE TRADE ROW NAMES ITSELF. Owner 2026-09-14: *"Placement of the trades buttons need
+       work."* It sat at the top of the pane as an unlabelled row of pills, directly above a dense
+       control bar -- so nothing said it was a FILTER rather than more toolbar. Its sibling, the
+       Towers row, has carried a label since 2026-09-13 for exactly this reason ("the two rows now
+       look alike and a reader has to be able to tell which one they are ticking"); the trades row
+       never got one. Same treatment for both now. */
+    /* ⚠⚠ A FRAGMENT, NOT A ROW. Owner 2026-09-15: *"The Towers toolbar and trades toolbar can
+       be in the same level"* — asked while the buildings had about 100px of the pane and the two
+       chip rows were taking ~96px of it. Both filters now share one `.ps-vs-chips`; see the
+       assembly at `host.innerHTML`. Each keeps its own label, and a `.ps-tb-div` separates them,
+       which is how `.ps-tb-row` has always kept unrelated groups apart in one line. */
+    var tradeChips = '<span class="ps-vs-rowlab">Trades</span><button class="ps-vs-chip' + (!_vsTradeSel.length ? ' on' : '') +
       '" data-vstr="ALL" aria-pressed="' + (!_vsTradeSel.length) + '" title="Show every trade">All trades</button>' +
       trades.map(function (t) {
         var on = _vsTradeSel.indexOf(t) >= 0;
@@ -19766,7 +20401,7 @@
           '<span class="ps-vs-dot" style="background:' + _vsColor(t) + '"></span>' + esc(t) + '</button>';
       }).join('') +
       (_vsTradeSel.length ? '<span class="ps-vs-note">' + tradesShown.length + ' of ' + trades.length +
-        ' trades shown side by side</span>' : '') + '</div>';
+        ' trades shown side by side</span>' : '');
     // ---- Which tower am I looking at? -----------------------------------------------------------
     // Owner 2026-08-26: *"there should be a dropdown to determine what tower to look at (if multiple
     // towers). there should also be a consolidated option meaning it views all towers, and the towers
@@ -19778,9 +20413,10 @@
     // ⚠️ 'All towers' ALSO sets the per-tower scope, because side-by-side is what the owner asked the
     // option to mean and it is the only scope that draws one model per tower. Leaving the scope alone
     // would let the option say 'side by side' while the trade scope merged every tower into one model.
-    // ⚠️ It does NOT touch the toolbar's own 'Consolidated' button, which means the opposite — ONE
-    // merged model for the whole project. Two controls, two meanings; collapsing them would silently
-    // redefine a button planners already use.
+    // ⚠️ It used to be kept distinct from the toolbar's 'Consolidated' button, which meant the
+    // opposite — ONE merged model for the whole project. That button was removed on 2026-09-15, so
+    // there is no longer a second meaning to collide with; the per-tower scope is now the only thing
+    // "side by side" can set.
     /* ⚠️⚠️ BUILT FROM `_twAll`, NEVER FROM THE FILTERED `towerNames`. This list IS the chip row, and
        building it from the towers currently shown would delete the chips for the towers currently
        hidden — leaving a planner who ticked Tower 1 and Tower 2 with no way back to the other six,
@@ -19819,8 +20455,8 @@
        control lighter, which is the other half of the owner's *"simpler UI"*.
        ⚠️ Emitted only when there is more than one thing to choose between: on a single-tower project
        a row reading "All towers · Tower 1" is two controls for a question with one answer. */
-    var twChips = (_twOpts.length > 1)
-      ? '<div class="ps-vs-chips ps-vs-twchips"><span class="ps-vs-note">Towers</span>' +
+    var towerChips = (_twOpts.length > 1)
+      ? '<span class="ps-vs-rowlab">Towers</span>' +
         '<button class="ps-vs-chip' + (!_vsTowerSel.length ? ' on' : '') + '" data-vstw="ALL"' +
           ' aria-pressed="' + (!_vsTowerSel.length) + '" title="Show every tower, side by side">All towers</button>' +
         _twOpts.filter(function (o) { return o.v !== 'ALL'; }).map(function (o) {
@@ -19830,13 +20466,40 @@
             (on ? ' — click to hide it' : ' — click to add it beside the others') + '">' + esc(o.t) + '</button>';
         }).join('') +
         (_vsTowerSel.length ? '<span class="ps-vs-note">' + towerNames.length + ' of ' + _twAll.length +
-          ' towers shown side by side</span>' : '') + '</div>'
+          ' towers shown side by side</span>' : '')
       : '';
 
-    var bar = '<div class="ps-vs-bar">' +
-      '<span class="ps-vs-seg"><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
+    /* The four colours a compare cell's DONE pill can take. A legend, so it lives in the caption --
+       but it is BUILT here, beside the basis test that decides whether the pill is drawn at all. */
+    var slipLegend = _vsBasis === 'compare'
+      ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
+          [[VS_SLIP_EARLY, 'early'], [VS_SLIP_ONTIME, 'on time'], [VS_SLIP_LATE, 'late'], [VS_SLIP_NONE, 'no baseline']]
+            .map(function (o) { return '<span style="display:inline-flex;align-items:center;gap:4px;"><span class="ps-vs-dot" style="background:' + o[0] + '"></span>' + o[1] + '</span>'; }).join('') +
+        '</span>'
+      : '';
+
+    /* ⚠⚠ CONSOLIDATED IS GONE. Owner 2026-09-15: *"The consolidated button in the vertical
+       stacking seem to be no longer needed since its function has been the same with the other
+       buttons as well."* Measured before removing anything, and the owner is right about the
+       screen: the card's ONE distinguishing feature -- splitting each level into a cell per trade
+       -- has never rendered. `_vsRowTradeCells` and `_vsTowerSVG`'s `tradeSplit` parameter are
+       fully implemented and no call site has ever passed them (flagged in this module's CLAUDE.md
+       on 2026-09-04 as *"worth a decision"*). So what it actually drew was one brand-red building
+       with a single cell per level, pinned to Detail 1 by `_vsMixTrades` -- a picture carrying
+       nothing the per-trade cards do not carry better.
+       ⚠ The owner chose REMOVE over wiring the split, asked directly, 2026-09-15.
+       ⚠ WHAT GOES WITH IT: on a single-tower project this was the second of two options, so the
+         Model segment would be left naming a question with one answer -- the same thing the Towers
+         chip row refuses to do ("a row reading 'All towers · Tower 1' is two controls for a
+         question with one answer"). The segment is therefore emitted only when more than one scope
+         is on offer.
+       ⚠ NOT the disabled-select treatment the one-tower case got. That control had something to
+         say -- a reader could not tell from the drawing whether one building was one tower or every
+         tower merged. Here each card is titled with its trade and carries its trade's colour dot,
+         so the view names itself and a control saying "Per trade" adds nothing. */
+    var _scopeBtns =
+      '<button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
-      '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button>' +
       /* ⚠️⚠️ THE SITE BUTTON ONLY EXISTS WHEN THERE IS A SITE PLAN TO DRAW, and that is not
          timidity — a Site view with no traced plan is every tower at the same place on a guessed
          grid, which is a picture that says something false about where the buildings stand. A
@@ -19847,7 +20510,14 @@
       ((towerNames.length > 1 && _vsSitePlan())
         ? '<button data-vssc="site"' + (_vsScope === 'site' ? ' class="on"' : '') +
           ' title="The master site development plan — every tower where it actually stands, each as tall as its own storey count and shaded by its own progress. Drawn in Schedule Setup › Floors &amp; Zones › Site plan.">Site</button>'
-        : '') + '</span>' +
+        : '');
+    /* ⚠ COUNTED, not inferred from the string. The three conditions above are the authority on
+       which buttons exist; re-testing them here would be a second copy able to disagree with the
+       first, which is how a segment ends up hidden with two options inside it. */
+    var _scopeN = (_scopeBtns.match(/data-vssc=/g) || []).length;
+
+    var bar = '<div class="ps-vs-bar">' +
+      (_scopeN > 1 ? '<span class="ps-vs-seg"><span class="ps-vs-seglab">Model</span>' + _scopeBtns + '</span>' : '') +
       /* ⚠️⚠️ AND WHEN THERE IS NO PLAN, A WAY TO GO AND DRAW ONE. Owner 2026-09-13: *"how can i see
          the 2 towers based on their arrangement?"* — on a multi-tower project with nothing traced,
          the Site button is absent (it would draw a false picture), and until now the screen said
@@ -19860,42 +20530,44 @@
           esc('Arrange the ' + towerNames.length + ' towers on a site plan, and this view can show where each one stands. Opens Schedule Setup › Floors & Zones.') +
           '"><span data-ico="compass" data-ico-size="14"></span> Draw the site plan…</button>'
         : '') +
-      '<span class="ps-tb-div"></span>' +
+      /* ⚠ The divider goes with whatever is to its LEFT. With Consolidated removed, a
+         single-tower project emits neither the Model segment nor the site call-to-action, and an
+         unconditional rule here would open the bar on a vertical stroke separating nothing. */
+      (_scopeN > 1 || (towerNames.length > 1 && !_vsSitePlan()) ? '<span class="ps-tb-div"></span>' : '') +
       '<span class="ps-vs-seg">' +
         '<button data-vs3d="0"' + (!_vs3D ? ' class="on"' : '') + ' title="The section: storeys as rows, zones across">2D</button>' +
         '<button data-vs3d="1"' + (_vs3D ? ' class="on"' : '') + ' title="The same storeys and zones as a solid model you can orbit, with the four elevations named">3D</button>' +
       '</span>' +
-      '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
+      '<span class="ps-vs-grp"><span class="ps-vs-seg"><span class="ps-vs-seglab">Detail</span>' + detailBtns + '</span>' +
       '<span class="ps-vs-note"' + (_vsMixTrades ? ' title="' + esc(VS_MIX_NOTE) + '"' : '') + '>' +
         esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) +
-        (_vsMixTrades ? ' — levels only (trades combined)' : '') + '</span>' +
+        (_vsMixTrades ? ' — levels only (trades combined)' : '') + '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note">Dates</span><span class="ps-vs-seg">' +
+      '<span class="ps-vs-grp"><span class="ps-vs-seg"><span class="ps-vs-seglab">Dates</span>' +
         [['actual', 'Actual', 'Actual where recorded, forecast where not — the dates the grid shows'],
          ['planned', 'Planned', 'The baseline (BL Start / BL Finish)'],
          ['compare', 'Planned vs Actual', 'Both, with the slip in days. Cells are coloured by slip, not by progress']]
           .map(function (o) { return '<button data-vsbasis="' + o[0] + '"' + (_vsBasis === o[0] ? ' class="on"' : '') + ' title="' + esc(o[2]) + '">' + o[1] + '</button>'; }).join('') +
-      '</span>' +
+      '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
+      '<span class="ps-vs-grp"><span class="ps-vs-seg"><span class="ps-vs-seglab">Show</span>' +
         '<button data-vsdt="finish"' + (_vsDateMode === 'finish' ? ' class="on"' : '') + ' title="Each cell shows when it COMPLETES (its last activity\'s finish)">Finish</button>' +
         '<button data-vsdt="start"' + (_vsDateMode === 'start' ? ' class="on"' : '') + ' title="Each cell shows when it BEGINS (its first activity\'s start)">Start</button>' +
-      '</span>' +
+      '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
-      '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
+      '<span class="ps-vs-seg"><span class="ps-vs-seglab">Zoom</span>' +
+        '<button id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
+        '<button id="ps-vs-zin" title="Wider cells — more room for the dates">+</button></span>' +
       // \u26a0\ufe0f The PDF is built from the buildings ALREADY ON SCREEN (their svg is cloned), not re-derived.
       // Re-deriving would be a second renderer to keep in step with this one, and the first divergence
       // would be a report that disagrees with the screen it was exported from.
       '<span class="ps-vs-seg"><button class="ps-vs-icolab" id="ps-vs-pdf" title="Export what is on screen as a clean one-page-per-building report \u2014 opens the print dialog, choose Save as PDF"><span data-ico="printer" data-ico-size="14"></span>PDF</button></span>' +
       '<span style="flex:1 1 auto;"></span>' +
+      /* ⚠⚠ WHAT STAYS HERE IS THE CONTROL; THE KEY MOVED TO `.ps-vs-caption` BELOW. The
+         slip colours are a legend and are built into `slipLegend` above; the planned-marker colour
+         picker is an INPUT and belongs in a bar. See the caption's CSS note for the rule. */
       (_vsBasis === 'compare'
-        ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
-            [[VS_SLIP_EARLY, 'early'], [VS_SLIP_ONTIME, 'on time'], [VS_SLIP_LATE, 'late'], [VS_SLIP_NONE, 'no baseline']]
-              .map(function (o) { return '<span style="display:inline-flex;align-items:center;gap:4px;"><span class="ps-vs-dot" style="background:' + o[0] + '"></span>' + o[1] + '</span>'; }).join('') +
-          '</span>' +
-          // The planned marker is only drawn in this basis, so the control that colours it lives here.
-          '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:6px;" title="Colour of the line drawn across each zone at its PLANNED progress. The line is haloed, so any colour stays readable over the trade colour.">' +
+        ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:6px;" title="Colour of the line drawn across each zone at its PLANNED progress. The line is haloed, so any colour stays readable over the trade colour.">' +
             '<svg width="26" height="14" style="vertical-align:middle;" aria-hidden="true"><rect x="0" y="1" width="26" height="12" rx="3" fill="var(--pd-muted)" opacity="0.22"></rect>' +
             '<line x1="15" y1="1" x2="15" y2="13" stroke="rgba(0,0,0,.55)" stroke-width="3.6" stroke-linecap="round"></line>' +
             '<line x1="15" y1="1" x2="15" y2="13" stroke="' + _vsPlanLine + '" stroke-width="2" stroke-linecap="round"></line></svg>' +
@@ -19903,7 +20575,14 @@
             (_vsPlanLine.toUpperCase() === VS_PLAN_LINE_DEF ? '' : '<button class="pd-btn ps-vs-chip" id="ps-vs-planclrx" title="Back to the default colour">Reset</button>') +
           '</span>'
         : '') +
-      // ---- The legend, now a strip and not a paragraph -----------------------------------------
+      '</div>';
+
+    /* ⚠ THE CAPTION. Everything below used to be the trailing half of `.ps-vs-bar`; it is the
+       same markup, re-parented. Keep the three items in this order -- what the fills mean, then
+       what the slip colours mean, then how much is on screen -- so the reader meets the key before
+       the number it qualifies. */
+    var caption = '<div class="ps-vs-caption">' +
+      // ---- The legend, a strip and not a paragraph ---------------------------------------------
       // Owner 2026-09-10: *"cleanup the UI just below the header. i think it is too much."* This
       // item used to carry three full sentences and, because `.ps-vs-legendnote` was `flex:1 1 100%`,
       // it CLAIMED ITS OWN ROW and wrapped onto two lines — a paragraph of instructions sitting in a
@@ -19936,11 +20615,12 @@
             '<span style="color:' + VS_SLIP_LATE + ';font-weight:700;">late</span>' +
           '</span></span>';
       })() +
-      // ⚠️ No divider before the count any more. The legend no longer takes a row of its own, so the
-      // two notes now sit side by side at the trailing end, and a rule between two greyed captions
-      // was one more vertical line in a bar that still carries five.
+      // ⚠️ No divider between these items. They are all greyed captions on one line; a rule
+      // between two of them would be a vertical stroke in a strip whose whole job is to be quiet.
+      slipLegend +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
-        (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
+        (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span>' +
+      '</div>';
     var noTradeList = acts.filter(function (r) { return !workOf(r); });
     var noLevList = acts.filter(function (r) { return !_vsHasLevel(r); });
     var noLevTrades = [];
@@ -20006,11 +20686,14 @@
       var proj = (PROJECTS.find(function (x) { return x.id === pid; }) || {});
       var defTw = String(proj.name || proj.id || 'Tower 1').trim();
       var _twName = _twLvl.name || 'Tower';
-      warn = _vsWarnWrap(_vsWarnKey('alltower', acts.length), '<strong>None of this project’s ' + acts.length + ' activities carry a ' +
-        esc(_twName) + '</strong>, but ' + locatedN + ' of them do carry a ' + esc(lvl0Name) +
-        ' — so the work IS located and only the ' + esc(_twName) + ' was never stamped. That is what a ' +
-        'single-' + esc(_twName.toLowerCase()) + ' push leaves behind. The stack is unaffected (it bands by ' +
-        esc(lvl0Name) + '), but the ' + esc(_twName) + ' picker has nothing to switch between.' +
+      /* ⚠ The ASSIGN CONTROL stays in the summary, not in the detail. It is the fix, and a fix
+         shut behind a disclosure is a fix nobody applies. Only the explanation folds away. */
+      warn = _vsWarnWrap(_vsWarnKey('alltower', acts.length),
+        '<strong>No ' + esc(_twName) + ' on any of ' + acts.length + ' activities.</strong> ' +
+        locatedN + ' carry a ' + esc(lvl0Name) + ', so the ' + esc(_twName) + ' picker has nothing to switch between.',
+        'The work is located: ' + locatedN + ' activities carry a ' + esc(lvl0Name) + ' and only the ' +
+        esc(_twName) + ' was never stamped, which is what a single-' + esc(_twName.toLowerCase()) +
+        ' push leaves behind. The stack itself is unaffected — it bands by ' + esc(lvl0Name) + '.' +
         (canWrite && !window.__viewOnly && !window.__archived
           ? '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
             '<label class="ps-vs-note" for="ps-vs-fixtw">Assign them all to ' + esc(_twName) + '</label>' +
@@ -20035,22 +20718,25 @@
       // Builder route last for a schedule that really was pushed. ⚠️ It does NOT guess which kind of
       // project this is: provenance is not recorded, and a confident wrong instruction is what this
       // is replacing.
-      warn += _vsWarnWrap(_vsWarnKey('nolevel', noLevList.length), '<strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
-        ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(lvl0Name) + '</strong> — shown in the dashed <em>No level</em> band, ' +
-        'from ' + esc(noLevTrades.join(', ')) + '. A ' + esc(lvl0Name) + ' is read from the WBS branch names, so either:' +
-        (noLevGrpVals.length ? ('<br>• <strong>the branch is a grouping, not a place</strong> — ' +
+      warn += _vsWarnWrap(_vsWarnKey('nolevel', noLevList.length),
+        '<strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y has' : 'ies have') +
+        ' no ' + esc(lvl0Name) + '.</strong> Shown in the <em>No level</em> band. ' +
+        esc(noLevTrades.length === 1 ? noLevTrades[0] : noLevTrades.length + ' trades affected') + '.',
+        'A ' + esc(lvl0Name) + ' is read from the WBS branch names. Four causes, in order of how often they apply:' +
+        '<ol class="ps-vs-warn-l">' +
+        (noLevGrpVals.length ? ('<li><strong>The branch is a grouping, not a place.</strong> ' +
           esc(noLevGrpVals.slice(0, 6).join(', ')) + (noLevGrpVals.length > 6 ? ' and ' + (noLevGrpVals.length - 6) + ' more' : '') +
-          ' ' + (noLevGrpVals.length === 1 ? 'is a phase / trade' : 'are phases / trades') + ', not ' + esc(lvl0Name) + 's, so the stacking will not band by ' +
-          (noLevGrpVals.length === 1 ? 'it' : 'them') + '. That is deliberate: a stacking band is a physical part of the building. ' +
-          'Give this work its real ' + esc(lvl0Name) + ' in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>, or leave it here;') : '') +
-        '<br>• <strong>a branch name is not matched</strong> — open the band and read the ' +
-        '<em>WBS branch</em> column: if you can see a ' + esc(lvl0Name) + ' in it (an abbreviation such ' +
-        'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>;' +
-        '<br>• <strong>the work genuinely has no ' + esc(lvl0Name) + '</strong> — substructure, footings and ' +
-        'site works sit below or outside the storeys. Give them their own ' + esc(lvl0Name) + ' value if you ' +
-        'want them banded, or leave them here;' +
-        '<br>• or, on a schedule pushed from <em>Schedule Setup</em>, the trade was given no floors in ' +
-        'step 2 and went in as whole-trade work — give it floors there and re-push.');
+          ' ' + (noLevGrpVals.length === 1 ? 'is a phase or trade' : 'are phases or trades') + ', not ' + esc(lvl0Name) +
+          's. A stacking band is a physical part of the building, so these are not banded. Set the real ' +
+          esc(lvl0Name) + ' in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations</em>.</li>') : '') +
+        '<li><strong>A branch name is not matched.</strong> The match table compares the branch name exactly, ' +
+        'so an abbreviation (<em>RD</em> for Roofdeck) does not resolve. Add the alias in ' +
+        '<em>Schedule Setup › Floors &amp; Zones → Match WBS to locations</em>.</li>' +
+        '<li><strong>The work has no ' + esc(lvl0Name) + '.</strong> Substructure, footings and site works sit ' +
+        'below or outside the storeys. Assign a ' + esc(lvl0Name) + ' to band them, or leave them in the band.</li>' +
+        '<li><strong>The trade was pushed without floors.</strong> On a schedule from <em>Schedule Setup</em>, ' +
+        'a trade given no floors in step 2 enters as whole-trade work. Assign floors and re-push.</li>' +
+        '</ol>');
     }
     /* ==========================================================================================
        ⚠️⚠️ THE ZONE COLUMN IS EMPTY — say it, because the symptom points somewhere else entirely.
@@ -20072,22 +20758,25 @@
     var _emptyAx = _vsEmptyAxisNames();
     if (_emptyAx.length && acts.length) {
       warn += _vsWarnWrap(_vsWarnKey('nozone', _emptyAx.join('|')),
-        '<strong>Progress cannot be read per ' + esc(_emptyAx[0]) + ' yet</strong> — this project defines ' +
+        '<strong>No ' + esc(_emptyAx[0]) + ' recorded on any activity.</strong> Each storey draws as one ' +
+        'block at the whole floor\'s progress.',
+        'This project defines ' +
         (_emptyAx.length === 1 ? 'a <strong>' + esc(_emptyAx[0]) + '</strong> level' :
           'the levels <strong>' + esc(_emptyAx.join(' › ')) + '</strong>') +
-        ', but not one of the ' + acts.length.toLocaleString() + ' activities on screen carries a value there. ' +
-        'So every storey is one block whose fill is the WHOLE FLOOR\'s progress, and walking the ' +
-        'timeline moves that one figure — which is exactly what a floor doing all its zones at once ' +
-        'would look like. Each zone already fills on its own schedule the moment it HAS a zone: give ' +
-        'the activities a ' + esc(_emptyAx[0]) + ' in <strong>Schedule Setup › Floors &amp; Zones</strong> (or ' +
-        '<strong>Actions › Match WBS to locations…</strong> if the zone is already in the WBS branch names), ' +
-        'then Detail ' + ((_vsFilledDepth || 1) + 1) + ' draws it zone by zone.');
+        ', but none of the ' + acts.length.toLocaleString() + ' activities on screen carries a value there. ' +
+        'The progress figures are correct; they are the floor\'s, not the ' + esc(_emptyAx[0]) + '\'s. ' +
+        'Each ' + esc(_emptyAx[0]).toLowerCase() + ' fills on its own schedule as soon as it has one.' +
+        '<br><strong>To fix:</strong> set a ' + esc(_emptyAx[0]) + ' in <em>Schedule Setup › Floors &amp; Zones</em>, ' +
+        'or <em>Actions › Match WBS to locations</em> if it already appears in the WBS branch names. ' +
+        'Detail ' + ((_vsFilledDepth || 1) + 1) + ' then draws it ' + esc(_emptyAx[0]).toLowerCase() + ' by ' +
+        esc(_emptyAx[0]).toLowerCase() + '.');
     }
     // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
     // the row has no WBS node at all — a different problem, and worth naming rather than bucketing.
-    if (noTradeList.length) warn += _vsWarnWrap(_vsWarnKey('notrade', noTradeList.length), '<strong>' + noTradeList.length + ' activit' +
-      (noTradeList.length === 1 ? 'y has' : 'ies have') + ' no Trade and no WBS branch to infer one from</strong> — set their Trade, ' +
-      'or file them under a WBS branch. Actions → Diagnose data… lists them.');
+    if (noTradeList.length) warn += _vsWarnWrap(_vsWarnKey('notrade', noTradeList.length),
+      '<strong>' + noTradeList.length + ' activit' + (noTradeList.length === 1 ? 'y has' : 'ies have') +
+      ' no Trade.</strong> Set a Trade, or file them under a WBS branch. ' +
+      '<em>Actions › Diagnose data</em> lists them.');
 
     _vsCells = {}; _vsHatchSeen = {}; _vsFocusCards = [];
     _vsZpClear();   // ⚠️ the setup can be edited between repaints; see _vsZpAll
@@ -20165,7 +20854,10 @@
              levels — borrowing it would have given one control two meanings depending on a scope
              three controls away. This one is only on screen where it applies, and it says what it
              does in words rather than in a number. */
-          '<div class="ps-vs-sitemode"><span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
+          /* ⚠ Welded like the main bar's four, so the same control does not read two ways in one
+             pane. This one is the SITE CARD's own Show -- it changes what the model IS, not where
+             the camera is, which is why it sits in the card rather than in the toolbar. */
+          '<div class="ps-vs-sitemode"><span class="ps-vs-seg"><span class="ps-vs-seglab">Show</span>' +
             '<button data-vssm="0"' + (!_vsSiteFloors ? ' class="on"' : '') +
               ' title="Each tower as one solid, as tall as its own storey count — where the buildings stand, and how far each has got overall">Whole towers</button>' +
             '<button data-vssm="1"' + (_vsSiteFloors ? ' class="on"' : '') +
@@ -20175,13 +20867,15 @@
           '<div class="ps-vs3-load">Loading the site view…</div></div>' +
           _vsSiteFoot(_sm, _sfit) + '</div>';
       }
-    } else if (_vsScope === 'all') {
-      towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; ' +
-        (_vsTradeSel.length ? esc(tradesShown.join(', ')) : 'all trades') +
-        (_vsTower === 'ALL' ? '' : ' &middot; ' + esc(_vsTower)) + '</span>' +
-        '<span class="ct">' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span>' + _vsFocusReg('Consolidated', 'var(--pd-red)', acts, 'ALL') + '</div>' + _vsCardMeter(acts) +
-        _vsTowerBody(acts, 'var(--pd-red)', 'ALL') + '</div>';
     } else {
+      /* ⚠ The consolidated-scope branch that stood here -- one brand-red card for the whole
+         project -- was removed on 2026-09-15 with its button. Nothing can set that scope any more:
+         it was never persisted (a plain module var reset to 'trade' on every load) and it was only
+         ever assigned from `b.dataset.vssc`, so removing the only button carrying that value
+         removes the only way in. No fallback guard is written for a value nothing can produce.
+         ⚠ Deliberately NOT spelling the removed comparison out here: a gate scans this file for
+           any code still testing it, and a comment quoting the expression is indistinguishable
+           from the real thing -- exactly how a quoted id once fooled the duplicate-id gate. */
       towers = tradesShown.map(function (t) {
         var list = acts.filter(function (r) { return _vsTradeOf(r) === t; });
         var col = _vsColor(t);
@@ -20204,14 +20898,36 @@
     // ⚠️ Towers above trades: the tower is the coarser cut (which BUILDINGS), the trade the finer
     // one (which work inside them), and reading them the other way round is reading the filter
     // backwards.
-    host.innerHTML = twChips + chips + bar + warn + _vsHatchDefs() +
+    /* ⚠⚠ THE TWO TOOLBARS ARE ADJACENT AND NOTHING SITS BETWEEN THEM AND THE BUILDINGS.
+       Owner 2026-09-14, on the caption one row under the bar: *"This should be relocated so that the
+       toolbars are grouped. Legend should be relocated to another location."* The first move took
+       the key out of `.ps-vs-bar` and put it directly beneath -- which fixed the wrong half. A
+       reader coming down the pane still met controls, controls, then a line of prose before any
+       content, so the header was three bands deep and the key still read as part of it.
+       ⚠ `caption` is now emitted INSIDE `.ps-vs-pane`, after `.ps-vs-body` -- see below. */
+    /* ⚠ ONE filter row. The divider is emitted only with a left neighbour to divide from — on a
+       single-tower project `towerChips` is empty and the row is the trades filter alone, exactly as
+       it was.
+       ⚠ They wrap as one list rather than as two locked groups. A group that cannot be split would
+         jump to the next line whole and leave a half-empty row above it; letting the chips reflow
+         keeps the row dense, and the two labels plus the rule are what say where one filter ends. */
+    var filterRow = '<div class="ps-vs-chips">' + towerChips +
+      (towerChips ? '<span class="ps-tb-div"></span>' : '') + tradeChips + '</div>';
+    host.innerHTML = filterRow + bar + warn + _vsHatchDefs() +
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
       '<div class="ps-vs-stage"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
       // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
       // rather than being covered by it.
-      '</div></div>' + _vsTimelineHTML(acts) + '</div>';
+      /* ⚠⚠ THE KEY GOES WHERE A FIGURE'S CAPTION GOES: UNDER THE FIGURE. `.ps-vs-pane` is a
+         flex column of [body, caption, timeline], so this strip is pinned at the foot of the stage
+         and the buildings scroll past it rather than taking it with them -- the same reasoning the
+         note above gives for keeping the toolbars outside the scroller, applied to the other end.
+         ⚠ Above the timeline card, not below it. The card is a CONTROL (drag the handle to walk
+           the programme); putting a legend under it would separate the key from the thing it keys
+           by a control, which is the arrangement this move exists to undo. */
+      '</div></div>' + caption + _vsTimelineHTML(acts) + '</div>';
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
     // project still settles in well under half a second instead of trickling in.
     if (_vsAnim === 'in') {
@@ -20308,14 +21024,13 @@
         e.stopPropagation();
         _vsWarnDismiss(x.dataset.vswx);
         var box = x.closest('.ps-vs-warn'); if (box) box.remove();
-        // ⚠️ Re-measure rather than re-render: the pane just got taller, and a full renderVStack
-        // would rebuild every svg and restart the entrance animation for a dismissal.
-        _vsApplyPane(host);
+        /* ⚠ No re-measure needed: dismissing a notice moves the pane UP, and the pane no longer
+           has a height that depends on where it starts. Still no re-render — a full renderVStack
+           would rebuild every svg and restart the entrance animation for a dismissal. */
       };
     });
     var pdfB = host.querySelector('#ps-vs-pdf');
     if (pdfB) pdfB.onclick = function () { _vsExportPDF(host); };
-    _vsApplyPane(host);
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
     // Magnifier: the toggle repaints silently (the towers only narrow to make room - replaying an
@@ -20412,6 +21127,7 @@
     vstackMode = on;
     if (on && progressMode) setProgressMode(false);   // one full-width panel at a time
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-vstack-mode', on);
+    _psSyncLongDoc();
     var btn = document.getElementById('ps-vstackbtn'); if (btn) btn.classList.toggle('active', on);
     _paintViewBtn();
     document.body.classList.toggle('ps-vstack-on', !!on);
@@ -21925,8 +22641,141 @@
       r[field] = value; return true;
     } catch (e) { UI.toast('Could not save.', 'error'); return false; }
   }
-  // ---- Notebook (P6-style multi-topic notes) ----
-  // ---- Files (linked documents — paste a URL to a SharePoint/Drive/etc. document) ----
+  /* ==========================================================================================
+     ACTIVITY ATTACHMENTS — files hanging off one activity, in the form's Notes section.
+     Run `migrations/2026-09-15-schedule-attachments.sql`.
+
+     ⚠️⚠️ THE ENGINE IS `PDAttach` (assets/js/attach.js) AND IS NOT COPIED HERE. It was extracted
+       out of contracts-claims for this, because what matters is not the upload but the three
+       ordering rules — object before row, roll the object back if the row write fails, row before
+       object on delete. A second copy is a second set of ways to get them wrong, and this repo has
+       paid for a hand-copied duplicate three times over (the location normaliser, the S-curve
+       maths, the change-order insert).
+
+     ⚠️⚠️ KEYED ON `activity_id`, THE PLANNER'S OWN ID — NEVER `project_schedule.id`. An import
+       DELETES AND REINSERTS EVERY ROW, so a uuid link would be destroyed by the next import and
+       every attachment on the project would go with it. Same rule the Drawing Register and the
+       Material Submittal Log already use to link into this table.
+
+     ⚠️⚠️ AND THAT TRADE HAS A KNOWN COST, WHICH IS WHY `activity_name` IS STORED BESIDE IT.
+       `activity_id` survives an import, but a REGENERATED schedule reissues the same generated id
+       space to different work — measured on 2026-09-14 (t), where 24 of 50 stale BOQ allocations
+       silently re-attached to activities nobody had allocated them to. A broken link is visible;
+       that one is not. `attStale()` compares the stored name to the current one and SAYS SO. It
+       never re-points anything: only a person can tell a reissued id from a renamed activity.
+     ========================================================================================== */
+  var ATT_MIGRATION = 'migrations/2026-09-15-schedule-attachments.sql';
+  /* ⚠️ Must match the CHECK constraint in the migration — a value this list offers and the
+     constraint refuses is an insert that fails AFTER the object is already in the bucket, which is
+     the one ordering the rollback handles least cleanly. */
+  var ATT_TYPES = [
+    ['method_statement',  'Method statement'],
+    ['drawing',           'Drawing'],
+    ['permit',            'Permit / clearance'],
+    ['site_instruction',  'Site instruction'],
+    ['inspection',        'Inspection / test report'],
+    ['photo',             'Photo'],
+    ['delay_notice',      'Delay notice'],
+    ['correspondence',    'Correspondence'],
+    ['other',             'Other']
+  ];
+  var _ATT = null;
+  function attEngine() {
+    if (!_ATT) {
+      if (!window.PDAttach) return null;
+      _ATT = PDAttach.create({
+        sb: sb,
+        projectId: function () { return pid; },
+        userId: function () { return UID; },
+        table: 'activity_attachments', bucket: 'project-schedule', ownerCol: 'activity_id',
+        migration: ATT_MIGRATION, types: ATT_TYPES,
+        cls: 'ps', pathSeg: 'activities', parentWord: 'activity',
+        // Stamp the name as it is NOW, so a later mismatch is detectable.
+        extraOf: function (aid) {
+          var r = rows.find(function (x) { return String(x.activity_id || '') === String(aid); });
+          return { activity_name: (r && r.activity_name) || null };
+        },
+        staleOf: attStale
+      });
+    }
+    return _ATT;
+  }
+  /* The tell-tale. ⚠️ Silent when the stored name is absent (rows written before this column
+     existed) — "we did not record it" is not the same claim as "it has changed", and reporting the
+     first as the second would put a warning on every historical attachment. */
+  function attStale(a) {
+    if (!a || !a.activity_name) return '';
+    var r = rows.find(function (x) { return String(x.activity_id || '') === String(a[ 'activity_id' ] || ''); });
+    if (!r) return 'the activity ' + a.activity_id + ' is no longer on this schedule';
+    if (String(r.activity_name || '') === String(a.activity_name)) return '';
+    return 'attached to “' + a.activity_name + '”, now named “' + (r.activity_name || '—') + '”';
+  }
+  /* ⚠️ ONE project-scoped read, never `.in(activity_id, …)`. This schedule can hold 16,000
+     activities and PostgREST puts `in.(…)` in the URL — see PDAttach.loadProject. Tolerant: a
+     missing table leaves the panel saying so and the module opens exactly as before. */
+  async function loadActAttachments() {
+    var e = attEngine(); if (!e || !pid) return;
+    try { await e.loadProject(pid); } catch (err) {}
+  }
+  /* ⚠️ There is deliberately NO grid indicator (a paperclip + count on the row) in this pass, and
+     no `attCount` helper sitting unused waiting for one. It would be genuinely useful, but the
+     Class Code column's own note records why a new column is not free here: saved column sort and
+     order are POSITIONAL, so a column inserted mid-list silently re-points every planner's stored
+     layout at a different column. That is its own change, appended rather than inserted. A helper
+     with no caller reads as a feature that exists — this module has shipped that shape five times
+     (`setupOrderLabels` and friends), so it is not being added speculatively. */
+
+  /* ---- the form's panel ---------------------------------------------------------------------
+     ⚠️⚠️ THE OWNER KEY IS THE ACTIVITY ID IN THE FIELD, NOT THE ONE ON THE ROW. `#ps-f-actid` is
+       editable, so the planner may be renaming the id in this very dialog — painting from
+       `row.activity_id` would attach the next file to the old id while the form shows the new one.
+       Null on a NEW activity, which is what puts the engine into staged mode. */
+  var _attStaged = [];
+  var _attPrevActId = null;   // the id the open activity's files are filed under, captured on open
+  function attFormKey(row) {
+    var typed = (document.getElementById('ps-f-actid') || {}).value;
+    typed = String(typed == null ? '' : typed).trim();
+    if (typed) return typed;
+    return (row && row.activity_id) ? String(row.activity_id) : null;
+  }
+  function attPaintForm(row) {
+    var host = document.getElementById('ps-f-atts'); if (!host) return;
+    var e = attEngine();
+    if (!e) { host.innerHTML = '<p class="ps-hint">Attachments are unavailable — assets/js/attach.js did not load.</p>'; return; }
+    var key = attFormKey(row);
+    // ⚠️ `canWrite` is a VARIABLE in this module, not a function. Writing `canWrite()` parses
+    //    cleanly and throws "canWrite is not a function" on the first paint — the same shape this
+    //    repo has recorded three times (`below is not defined`, stakeholder-map's own `canWrite`,
+    //    boq.js's `locKey`), and one `node --check` cannot see.
+    host.innerHTML = e.panelHTML(key, _attStaged, canWrite);
+    e.panelWire(host, key, function () { return _attStaged; },
+      function (v) { _attStaged = v; }, function () { attPaintForm(row); });
+  }
+  /* Flush staged files and, when the planner has RENAMED the Activity ID, carry the existing
+     attachments across with it.
+     ⚠️⚠️ THE RE-POINT IS THE HALF THAT WOULD OTHERWISE LOSE DATA SILENTLY. The link is the id, so
+       editing `activity_id` from SB300004 to SB300099 leaves every file filed under an id nothing
+       on the schedule carries any more — present in the bucket, invisible on every screen. The
+       files move with the activity, and the toast says how many.
+     ⚠️ Narrow by construction: `project_id` AND the OLD id, so it can only ever touch rows this
+       activity owned. And it runs only when the id actually changed. */
+  async function attAfterSave(oldId, newId) {
+    var e = attEngine(); if (!e) return;
+    var o = String(oldId == null ? '' : oldId).trim(), n = String(newId == null ? '' : newId).trim();
+    if (o && n && o !== n) {
+      try {
+        var mv = await sb().from('activity_attachments')
+          .update({ activity_id: n }).eq('project_id', pid).eq('activity_id', o).select('id');
+        if (!mv.error && mv.data && mv.data.length) {
+          UI.toast(mv.data.length + ' attachment' + (mv.data.length === 1 ? '' : 's') +
+            ' moved to ' + n + '.', 'info');
+        }
+      } catch (err) {}
+    }
+    if (n && _attStaged.length) { await e.flush(n, _attStaged); }
+    _attStaged = [];
+    await loadActAttachments();
+  }
 
   // ----- COLUMN HEADER (static, resizable) -----
   // Column set + order mirrors OPC's Activities view (Avesta "Edit Cost Load" layout):
@@ -23018,13 +23867,37 @@
        activity), or as neither. Collapsing the first two would lose which level the row is filed
        at; collapsing group into "unknown" is what this cell used to do, and it flagged every
        activity the builder has ever pushed. */
+    /* ⚠️⚠️ THE CELL PRINTS THE CODE AND NOTHING ELSE. Owner 2026-09-15, off a screenshot of
+       OPW101: *"Some class codes are correct with only having a number within them and others have
+       a number and series of characters. It should only be the number that is reflected in the
+       class codes."* Both branches used to append the description after the tag, which is what put
+       `10050Homogenous Tiles` in a column headed CLASS CODE.
+       ⚠️⚠️ AND THE MISSING SPACE WAS NOT A TYPO — IT IS THE FLEX ANONYMOUS-ITEM TRAP, for the
+         THIRD time in this repo. `.ps-cell` is `display:flex`, so `'</span> ' + desc` makes the
+         description an anonymous flex item and the browser STRIPS its leading whitespace: the
+         source genuinely contains the space and the screen genuinely cannot show it. The sidebar
+         brand gap (2026-09-09 x) and the `Use 0 activit ies` button (2026-09-10 za1) were the same
+         mechanism. Printing the code alone removes the second element, so the trap cannot apply.
+       ⚠️ NOTHING IS LOST: `ttl` already carries the full Finance path, and this makes the task row
+         agree with `sumCcodeHtml` directly below, which has always printed the code alone. The
+         column is 190px, so the description was being ellipsised on most rows anyway. */
     var g = c ? null : ccGroupByCode(raw);
+    /* ⚠️ A FOURTH OUTCOME, and it is deliberately not a colour. A code that only resolves once its
+       leading zero is restored IS the right code and reads as one — but the database still holds the
+       de-zeroed value, so `boq_allocations` and the BOQ allocator still miss it. A dotted underline
+       plus the stored value in the tooltip says "this row still needs the repair" without turning a
+       correct code red, which is the confusion the owner already had to ask about. */
+    var padded = (c || g) ? ccWasPadded(raw) : false;
+    var padCls = padded ? ' padded' : '';
+    var padTtl = padded ? ('\n⚠ Stored as ' + raw + ' — the leading zero is missing in the database. ' +
+      'Shown resolved here; a BOQ line still cannot match it until ' +
+      'migrations/2026-09-15-class-code-pad.sql is run.') : '';
     if (!raw) { inner = '<span style="color:var(--pd-muted);">—</span>'; ttl = 'No class code'; }
-    else if (c) { inner = '<span class="ps-cctag">' + esc(c.code) + '</span> ' + esc(c.desc_l3 || ''); ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3; }
+    else if (c) { inner = '<span class="ps-cctag' + padCls + '">' + esc(c.code) + '</span>'; ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3 + padTtl; }
     else if (g) {
-      inner = '<span class="ps-cctag grp">' + esc(g.code_l2) + '</span> ' + esc(g.desc_l2 || '');
+      inner = '<span class="ps-cctag grp' + padCls + '">' + esc(g.code_l2) + '</span>';
       ttl = g.code_l2 + ' — ' + g.desc_l1 + ' › ' + g.desc_l2 +
-            '\nA GROUP-level code: this activity covers the whole group rather than one bill item.';
+            '\nA GROUP-level code: this activity covers the whole group rather than one bill item.' + padTtl;
     }
     else { inner = '<span class="ps-cctag unknown pd-caution-inline">' + esc(raw) + '</span>'; ttl = raw + ' is not in the class-code chart, at either level'; }
     return '<div class="ps-cell c-ccode ps-editable" data-id="' + r.id + '" data-field="class_code" data-type="enum" data-enum="ccode" title="' + esc(ttl) + '">' + inner + '</div>';
@@ -30254,6 +31127,12 @@
     set('ps-f-scon', row ? (row.secondary_constraint || '') : '');
     set('ps-f-scond', row && row.secondary_constraint_date ? String(row.secondary_constraint_date).slice(0,10) : '');
     set('ps-f-remarks', row ? row.remarks : '');
+    // ⚠️ Reset the staged list on EVERY open. Without this, files chosen for an activity whose save
+    //    was cancelled would be flushed onto the next activity opened — a shape this repo has hit
+    //    before (project-schedule's own `editing` flag surviving a navigation, 2026-09-10 y1).
+    _attStaged = [];
+    _attPrevActId = row ? (row.activity_id || null) : null;
+    attPaintForm(row);
     document.getElementById('ps-modal').style.display = 'flex';
     // ⚠️ AFTER the modal is displayed: both of these MEASURE, and an element inside a
     // `display:none` overlay has no box, so measuring earlier reads zero.
@@ -31108,6 +31987,12 @@
       });
       try { var rr4 = await sb().from(TABLE).update({ udf: udfVal }).eq('id', savedId); if (!rr4.error) { var rrow3 = rows.find(function (x) { return x.id === savedId; }); if (rrow3) rrow3.udf = udfVal; } } catch (e) {}
     }
+    /* Attachments, after the row exists and before the reload. ⚠️ Its own try/catch, like every
+       other tolerant write above it: a project without the attachments migration must still save
+       the activity, and a file that will not upload must never undo the row the planner came to
+       create. `_attPrevActId` is captured in openForm, because `payload.activity_id` is the NEW id
+       and the re-point needs the one the files are currently filed under. */
+    if (savedId) { try { await attAfterSave(_attPrevActId, payload.activity_id); } catch (e) {} }
     var _wasNew = !editId, _newCoId = savedId;
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal();
@@ -36908,7 +37793,7 @@
          it — which is the join that already went wrong once here.
          ⚠️ The bare floor name is STILL emitted, but only when every trade that has a plan for
          that floor points at the SAME plate. It is what a card spanning several trades (per
-         tower, consolidated) reads, and when the trades disagree there is no honest answer, so
+         tower, site) reads, and when the trades disagree there is no honest answer, so
          it emits nothing and the card falls back to the wrap. */
       function zpTradeKeys(g) {
         var out2 = [], seen = {};
@@ -44790,14 +45675,42 @@
     _tbFit();
   }
 
+  /* ⚠⚠ ONE WRITER FOR .ps-longdoc, BECAUSE FOUR THINGS NOW DECIDE IT. The class says "this
+     screen scrolls the PAGE, so drop the 100vh that makes the Schedule scroll its own panes".
+     switchTab set it from the TAB alone — correct for Setup and Cost Loading, and blind to the
+     three panel modes that replace the Schedule's split with a long document of their own
+     (Vertical Stacking, Activity Progress, Flowline). With Vertical Stacking on, the page really
+     was 1,327px tall inside a .pd-app pinned to 900px, and ⚠ A STICKY BOX CANNOT TRAVEL OUTSIDE
+     ITS CONTAINING BLOCK — so the sidebar scrolled away with the page and its top was cut off.
+     Owner: *"Side panel clips as well when page is scrolled"*. Same cause as 2026-09-11 (a7),
+     which fixed it for the two TABS and could not know about the modes.
+     ⚠ A second writer would undo the first: switchTab fires on every tab change and the mode
+     setters on every toggle, so each must ask the same question rather than assert its own half.
+     ⚠ The tab is read back off the element switchTab wrote it to, not kept in a parallel variable
+     that could disagree with the DOM. */
+  function _psSyncLongDoc() {
+    var app = document.querySelector('.pd-app'); if (!app) return;
+    var tab = app.dataset.psTab || 'schedule';
+    var v = document.getElementById('ps-view-schedule');
+    var panel = !!(v && (v.classList.contains('ps-vstack-mode') ||
+                         v.classList.contains('ps-progress-mode') ||
+                         v.classList.contains('ps-flowline-mode')));
+    /* ⚠️ Summary joins Setup and Cost Loading here: it is a long DOCUMENT that scrolls the page,
+       not a split that scrolls its own panes. Leaving it out pins it to 100vh and the lower half
+       is simply unreachable — the exact defect 2026-09-14 (w) fixed for the three panel modes. */
+    app.classList.toggle('ps-longdoc', panel || tab === 'builder' || tab === 'costload' || tab === 'summary');
+  }
+
   function switchTab(tab) {
     activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     var vcl = document.getElementById('ps-view-costload'); if (vcl) vcl.style.display = tab === 'costload' ? '' : 'none';
     // ⚠️ #ps-view-wbs is DELIBERATELY not switched: it is the hidden park slot for the WBS tree now,
+    // (see _psSyncLongDoc below for the page-scroll class)
     // not a view. Showing it would put a second copy of the tree's toolbar on screen.
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
+    var vs = document.getElementById('ps-view-summary'); if (vs) vs.style.display = tab === 'summary' ? '' : 'none';
 
     // ⚠️ Leaving the setup returns the borrowed WBS tree to its park slot. Without this it would sit
     // inside a hidden view, and the next thing to repaint that panel would take it out of the document.
@@ -44805,14 +45718,16 @@
     /* ⚠️ Setup and Cost Loading scroll the PAGE; the Schedule scrolls its own panes. The class says
        which, so the 100vh above can stay where it is needed and get out of the way where it is not. */
     var _app = document.querySelector('.pd-app');
-    if (_app) _app.classList.toggle('ps-longdoc', tab === 'builder' || tab === 'costload');
+    if (_app) _app.dataset.psTab = tab;
+    _psSyncLongDoc();
     // (#ps-view-calendars is a hidden host now, not a view — Working Calendars is a Setup step.)
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Setup or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'builder' ? 'Schedule Setup' : 'Project Schedule');
+    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'builder' ? 'Schedule Setup'
+      : (tab === 'summary' ? 'Schedule Summary' : 'Project Schedule'));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
@@ -44823,6 +45738,9 @@
     if (tab === 'schedule') renderGantt();
     else if (tab === 'costload') CostLoading.open(pid, UID);
     else if (tab === 'builder') ScheduleBuilder.open(pid, UID);
+    /* ⚠️ Rendered on ENTRY, never kept live. It is a derived read — recomputing it on every grid
+       edit would cost a CPM pass per keystroke for a view nobody is looking at. */
+    else if (tab === 'summary') renderSummary();
     // ⚠️ A stale deep link or a remembered tab can still say 'calendars'. Send it to the step that
     // owns the calendars now rather than showing a blank view.
     else if (tab === 'calendars') { switchTab('builder'); try { ScheduleBuilder.gotoStep('Working calendars'); } catch (e) {} }
@@ -45676,6 +46594,352 @@
       it.onclick = function (e) { e.stopPropagation(); gotoActivity(it.dataset.goto); };
     });
   }
+  /* ==========================================================================================
+     SUMMARY VIEW — a derived read of the schedule, for a meeting.
+     Owner: *"a dashboard summary view for the module for reporting purposes."*
+
+     ⚠️⚠️ IT DERIVES EVERYTHING AND COMPUTES NOTHING NEW. Every figure comes from the functions
+       the grid and the Gantt already use — `computeHealth`, `ensureCPM`, `dispStart`/`dispFin`,
+       `blPrimaryLabel`, `isWbs`/`isMile`/`isChangeOrder`, `today()`. That is the whole design
+       constraint, and it is not stylistic: this module has already shipped a 3D view that disagreed
+       with the 2D view of the same data (`_vsTowerModel` exists because of it), and the S-curve
+       maths was hand-copied into portfolio-overview and drifted. A summary that recomputed progress
+       its own way would be a second opinion presented as a report.
+     ⚠️ `summaryData()` is PURE over `rows` + `today()` so it can be sliced out and executed; the
+       renderer below only formats what it returns.
+     ========================================================================================== */
+  function summaryData() {
+    ensureCPM();
+    var t0 = today(), tISO = dstr(t0);
+    var tasks = rows.filter(function (r) { return !isWbs(r); });
+    var acts = tasks.filter(function (r) { return !isMile(r); });
+    var miles = tasks.filter(isMile);
+
+    /* ---- progress -----------------------------------------------------------------------
+       ⚠️⚠️ DURATION-WEIGHTED, and the screen says so. A plain mean of percent_complete treats a
+       1-day activity and a 200-day activity as equal, which on any real programme is simply a
+       different number — the same trap the portfolio rollup records for project progress
+       ("a 2-WP package at 100% and a 200-WP package at 10% is not 55%"). Activities with no
+       dates carry no weight rather than being counted at weight 1. */
+    var wsum = 0, wdone = 0, noDates = 0;
+    var notStarted = 0, inProgress = 0, done = 0;
+    acts.forEach(function (r) {
+      var s = pd(dispStart(r)), f = pd(dispFin(r));
+      var p = r.percent_complete != null ? Math.max(0, Math.min(100, +r.percent_complete)) : 0;
+      if (p >= 100 || r.actual_finish) done++;
+      else if (p > 0 || r.actual_start) inProgress++;
+      else notStarted++;
+      if (!s || !f) { noDates++; return; }
+      var w = Math.max(1, dayDiff(s, f) + 1);
+      wsum += w; wdone += w * (p / 100);
+    });
+    var pctComplete = wsum ? (wdone / wsum * 100) : null;
+
+    /* ---- baseline variance ---------------------------------------------------------------
+       ⚠️ Against the PRIMARY baseline's finish, never against the current plan: comparing a
+       forecast to the plan it came from measures nothing, and a re-baselined date would make a
+       six-month slip read as on time. Only rows that carry `bl_finish` are eligible, and the
+       count of those that do not is reported rather than hidden. */
+    var ahead = 0, onTime = 0, behind = 0, noBL = 0, slips = [];
+    tasks.forEach(function (r) {
+      var b = pd(r.bl_finish), f = pd(dispFin(r));
+      if (!b || !f) { noBL++; return; }
+      var d = dayDiff(b, f);
+      if (d > 0) { behind++; slips.push({ r: r, days: d }); }
+      else if (d < 0) ahead++;
+      else onTime++;
+    });
+    slips.sort(function (a, b) { return b.days - a.days; });
+
+    /* ---- critical path + float ----------------------------------------------------------- */
+    var crit = tasks.filter(function (r) { return r._critical; });
+    var negFloat = tasks.filter(function (r) { return r._float != null && r._float < 0; });
+    var finishes = tasks.map(function (r) { return pd(dispFin(r)); }).filter(Boolean);
+    var blFins = tasks.map(function (r) { return pd(r.bl_finish); }).filter(Boolean);
+    var projFin = finishes.length ? new Date(Math.max.apply(null, finishes.map(function (d) { return d.getTime(); }))) : null;
+    var projBLFin = blFins.length ? new Date(Math.max.apply(null, blFins.map(function (d) { return d.getTime(); }))) : null;
+    var starts = tasks.map(function (r) { return pd(dispStart(r)); }).filter(Boolean);
+    var projStart = starts.length ? new Date(Math.min.apply(null, starts.map(function (d) { return d.getTime(); }))) : null;
+
+    /* ---- milestones ----------------------------------------------------------------------
+       ⚠️ Achieved is `actual_finish`, and a milestone with no date at all is COUNTED, not
+       dropped — "no milestone due" and "nobody has dated this milestone" are opposite facts, and
+       only the second is a reason to go and look. Same rule the portfolio calendar settled on. */
+    var msUndated = 0;
+    var ms = miles.map(function (r) {
+      var f = pd(dispFin(r)), b = pd(r.bl_finish);
+      if (!f) { msUndated++; return null; }
+      return { r: r, date: f, bl: b, slip: b ? dayDiff(b, f) : null,
+               achieved: !!r.actual_finish, overdue: !r.actual_finish && f < t0 };
+    }).filter(Boolean);
+    ms.sort(function (a, b) { return a.date - b.date; });
+    var msNext = ms.filter(function (m) { return !m.achieved; }).slice(0, 6);
+    var msOverdue = ms.filter(function (m) { return m.overdue; }).length;
+    var msAchieved = ms.filter(function (m) { return m.achieved; }).length;
+
+    /* ---- look-ahead ---------------------------------------------------------------------
+       ⚠️ From the DATA DATE, not from the wall clock — `today()` is the effective data date, and
+       a look-ahead measured from a different "now" than the rest of the page would disagree with
+       the bars beside it. */
+    /* ⚠️ THE CRITICAL COUNT IS WHAT MAKES THIS ACTIONABLE. Owner, on the first cut: *"Look ahead
+       seem to be useful but doesn't add much value."* Right — "16 starting" over a 2,561-activity
+       programme is a number nobody can do anything with, because it says nothing about which 16.
+       How many of them are ON THE CRITICAL PATH is the one cut that changes what you do next, and
+       it costs nothing: `_critical` is already on the row from `ensureCPM`. */
+    function windowOf(days) {
+      var end = addDays(t0, days);
+      var st = 0, fi = 0, crit = 0;
+      acts.forEach(function (r) {
+        var s = pd(dispStart(r)), f = pd(dispFin(r));
+        var inS = !!(s && s >= t0 && s <= end && !r.actual_start);
+        var inF = !!(f && f >= t0 && f <= end && !r.actual_finish);
+        if (inS) st++;
+        if (inF) fi++;
+        // ⚠️ Counted ONCE per activity, not once per edge — an activity that both starts and
+        // finishes inside a 42-day window is one piece of critical work, not two.
+        if ((inS || inF) && r._critical) crit++;
+      });
+      return { days: days, starts: st, finishes: fi, critical: crit };
+    }
+
+    /* ---- by trade ------------------------------------------------------------------------
+       ⚠️ `work_type` is the shell's own convention for this table (the project dashboard's
+       programme panel groups by it too), and an activity carrying none is gathered under a named
+       bucket rather than dropped — an unreported trade is the thing a reader should notice. */
+    var byTrade = {};
+    acts.forEach(function (r) {
+      var k = (r.work_type || '').trim() || '— not set —';
+      var s = pd(dispStart(r)), f = pd(dispFin(r));
+      var p = r.percent_complete != null ? Math.max(0, Math.min(100, +r.percent_complete)) : 0;
+      var g = byTrade[k] || (byTrade[k] = { trade: k, n: 0, w: 0, wd: 0 });
+      g.n++;
+      if (s && f) { var w = Math.max(1, dayDiff(s, f) + 1); g.w += w; g.wd += w * (p / 100); }
+    });
+    var trades = Object.keys(byTrade).map(function (k) {
+      var g = byTrade[k];
+      return { trade: k, n: g.n, pct: g.w ? (g.wd / g.w * 100) : null };
+    }).sort(function (a, b) { return b.n - a.n; });
+
+    /* ---- variations ---------------------------------------------------------------------- */
+    var cos = tasks.filter(isChangeOrder);
+    var coRefs = {};
+    cos.forEach(function (r) { var k = (r.change_order_ref || '').trim(); if (k) coRefs[k] = 1; });
+
+    return {
+      asOf: tISO, pinned: !!dataDate, baseline: blPrimaryLabel(),
+      counts: { total: rows.length, tasks: tasks.length, acts: acts.length, miles: miles.length,
+                notStarted: notStarted, inProgress: inProgress, done: done, noDates: noDates },
+      pctComplete: pctComplete,
+      bl: { ahead: ahead, onTime: onTime, behind: behind, noBL: noBL,
+            worst: slips.slice(0, 6) },
+      cpm: { critical: crit.length, negFloat: negFloat.length,
+             start: projStart, finish: projFin, blFinish: projBLFin,
+             slip: (projFin && projBLFin) ? dayDiff(projBLFin, projFin) : null },
+      ms: { next: msNext, overdue: msOverdue, achieved: msAchieved,
+            total: miles.length, undated: msUndated },
+      look: [windowOf(14), windowOf(28), windowOf(42)],
+      trades: trades,
+      co: { activities: cos.length, refs: Object.keys(coRefs).length },
+      health: computeHealth()
+    };
+  }
+
+  function renderSummary() {
+    var host = document.getElementById('ps-view-summary');
+    if (!host) return;
+    if (!pid) { host.innerHTML = '<div class="ps-smy-empty">Select a project to see its summary.</div>'; return; }
+    if (!rows.length) { host.innerHTML = '<div class="ps-smy-empty">This project has no activities yet.</div>'; return; }
+
+    var d = summaryData();
+    var pctTxt = function (v) { return v == null ? '—' : (Math.round(v * 10) / 10) + '%'; };
+    var dt = function (x) { return x ? fmtOPCDate(dstr(x)) : '—'; };
+    function card(label, value, sub, tone) {
+      return '<div class="ps-smy-kpi' + (tone ? ' ' + tone : '') + '"><div class="ps-smy-kpi-l">' + esc(label) + '</div>' +
+        '<div class="ps-smy-kpi-v">' + value + '</div>' +
+        '<div class="ps-smy-kpi-s">' + esc(sub || '') + '</div></div>';
+    }
+    function sect(title, note) {
+      return '<div class="ps-smy-h">' + esc(title) +
+        (note ? ' <span class="ps-smy-mini">' + esc(note) + '</span>' : '') + '</div>';
+    }
+
+    /* ⚠️⚠️ NO BASELINE AT ALL IS A DIFFERENT ANSWER FROM "NOTHING HAS SLIPPED", AND THE PAGE WAS
+       GIVING THE WRONG ONE. Owner, of this section on OPW101: *"what does this section provide?"*
+       — nothing, and worse than nothing. Every one of that project's 2,561 activities carries no
+       baseline, so the section read **"Nothing is finishing later than its baseline."** beside a
+       **Behind baseline 0 · 0 ahead · 0 on time** card. All of that parses as good news. The truth
+       is that not one figure on this page can be measured against a baseline, which is itself the
+       finding and the thing to act on.
+       ⚠️ The test is that NOTHING resolved, not that `noBL` is merely non-zero: a programme where
+       most activities carry a baseline and a handful do not is the ordinary case, and the count in
+       the section note already reports it. */
+    var noBase = (d.bl.behind + d.bl.ahead + d.bl.onTime) === 0 && d.bl.noBL > 0;
+
+    var slipRows = d.bl.worst.map(function (s) {
+      return '<li class="ps-smy-row" data-goto="' + esc(s.r.id) + '">' +
+        '<span class="ps-smy-t"><b>' + esc(s.r.activity_id || '') + '</b> ' + esc(s.r.activity_name || '') + '</span>' +
+        '<span class="ps-smy-v ps-smy-bad">+' + s.days + 'd</span></li>';
+    }).join('') || '<li class="ps-smy-row ps-smy-none">' +
+      (noBase
+        ? 'Not one of this project’s ' + nFmt(d.bl.noBL) + ' activities carries a baseline, so ' +
+          'nothing on this page can be measured against one. Set one in <b>Actions ▾ Baselines…</b>.'
+        : 'Nothing is finishing later than its baseline.') + '</li>';
+
+    var msRows = d.ms.next.map(function (m) {
+      var tone = m.overdue ? ' ps-smy-bad' : (m.slip != null && m.slip > 0 ? ' ps-smy-warn' : '');
+      return '<li class="ps-smy-row" data-goto="' + esc(m.r.id) + '">' +
+        '<span class="ps-smy-t"><b>' + esc(m.r.activity_id || '') + '</b> ' + esc(m.r.activity_name || '') + '</span>' +
+        '<span class="ps-smy-v' + tone + '">' + dt(m.date) +
+        (m.slip != null && m.slip !== 0 ? ' <i>' + (m.slip > 0 ? '+' : '') + m.slip + 'd</i>' : '') +
+        '</span></li>';
+    }).join('') || '<li class="ps-smy-row ps-smy-none">No milestone is still outstanding.</li>';
+
+    var lookRows = d.look.map(function (w) {
+      return '<li class="ps-smy-row"><span class="ps-smy-t">Next ' + w.days + ' days</span>' +
+        '<span class="ps-smy-v">' + nFmt(w.starts) + ' starting · ' + nFmt(w.finishes) + ' finishing' +
+        (w.critical ? ' <i class="ps-smy-bad">' + nFmt(w.critical) + ' critical</i>' : '') +
+        '</span></li>';
+    }).join('');
+
+    /* ⚠️ The percentage and the activity count are two different quantities and used to be printed
+       as one run of digits — `0% 1750`, which reads as a single number. They are now two
+       right-aligned columns of their own, and the count says what it counts. */
+    var tradeRows = d.trades.slice(0, 10).map(function (t) {
+      var w = t.pct == null ? 0 : Math.max(t.pct > 0 ? 2 : 0, Math.round(t.pct));
+      return '<li class="ps-smy-bar"><span class="ps-smy-bl" title="' + esc(t.trade) + '">' + esc(t.trade) + '</span>' +
+        '<span class="ps-smy-track"><i style="width:' + w + '%"></i></span>' +
+        '<span class="ps-smy-bp">' + pctTxt(t.pct) + '</span>' +
+        '<span class="ps-smy-bn">' + nFmt(t.n) + ' act' + (t.n === 1 ? '' : 's') + '</span></li>';
+    }).join('');
+
+    /* ⚠️ The health panel's own metrics, worst first, and only the ones with a real denominator —
+       a metric measured over 0 eligible activities is not a clean score, it is no score. */
+    var worstHealth = d.health.metrics.filter(function (m) { return m.denom > 0 && m.count > 0; })
+      .sort(function (a, b) { return b.pct - a.pct; }).slice(0, 5)
+      .map(function (m) {
+        return '<li class="ps-smy-row"><span class="ps-smy-t">' + esc(m.label) + '</span>' +
+          '<span class="ps-smy-v">' + m.count + ' of ' + m.denom + ' <i>' + m.pct + '%</i></span></li>';
+      }).join('') || '<li class="ps-smy-row ps-smy-none">No findings.</li>';
+
+    host.innerHTML =
+      '<div class="ps-smy">' +
+        '<div class="ps-smy-head">' +
+          '<h2>Schedule summary <span class="ps-smy-mini">' + esc(projName()) + '</span></h2>' +
+          /* ⚠️ `baseline <b>Baseline 21-Aug-26</b>` READ AS A STUTTER, because a baseline here is
+             user-named and the name usually already begins with the word. The label is printed as
+             it stands and only prefixed when it does not say so itself (e.g. the `BL0` fallback).
+             ⚠️ The Print button is gone at the owner's request — Ctrl+P does the same thing, and a
+             button whose whole job is to call `window.print()` is a control in the way. */
+          '<div class="ps-smy-meta">As of <b>' + dt(t_(d.asOf)) + '</b>' +
+            ' · <b>' + nFmt(d.counts.tasks) + '</b> activities' +
+            ' · <b>' + nFmt(d.counts.miles) + '</b> milestone' + (d.counts.miles === 1 ? '' : 's') +
+            ' · ' + esc(/^baseline/i.test(d.baseline) ? d.baseline : 'baseline ' + d.baseline) +
+          '</div>' +
+          /* ⚠️⚠️ THE DATA DATE IS PER BROWSER, AND THIS IS THE ONE SCREEN WHERE THAT MATTERS.
+             It lives in localStorage (`ps_datadate_<pid>`) and drives 62 call sites including the
+             CPM — so two planners on one project can hold different data dates and every figure
+             below differs, with nothing on screen saying so. That is tolerable on a working grid
+             and a liability on a page whose purpose is to be SHOWN to someone, so it is stated
+             here rather than left to be discovered. Flagged 2026-09-14 (h); still not fixed. */
+          /* ⚠️⚠️ DISMISSIBLE, AND THE KEY CARRIES THE DATE — which is what keeps it honest.
+             Owner: *"The yellow notification warning needs to be dismissible as well. This doesn't
+             have to be shown all the time."* Fair: once you have read it, repeating it on every
+             visit is noise. But the hazard is real and does not go away, so "dismissed" means
+             *"I have acknowledged THIS pinned date"*, not *"never tell me again"* —
+             `smyWarnKey()` includes the data date, so re-pinning a different one brings the
+             warning back. A permanent dismissal would let a planner silently inherit somebody
+             else's "now" and never be told. */
+          (d.pinned && !smyWarnOff()
+            ? '<p class="ps-smy-warn">⚠ The data date is pinned on <b>this browser only</b> — it is not ' +
+              'shared with the project, so another planner may be reading these figures as of a different day.' +
+              '<button type="button" class="ps-smy-warnx" id="ps-smy-warnx" title="Dismiss until the data date changes" aria-label="Dismiss">×</button></p>'
+            : '') +
+        '</div>' +
+
+        '<div class="ps-smy-kpis">' +
+          card('Complete', pctTxt(d.pctComplete), 'duration-weighted') +
+          card('In progress', String(d.counts.inProgress), d.counts.notStarted + ' not started') +
+          /* ⚠️ An em dash, not a zero. "0 behind · 0 ahead · 0 on time" is what this card printed on
+             a programme with no baseline anywhere, and three zeros read as three measurements. */
+          (noBase
+            ? card('Behind baseline', '—', 'no baseline set')
+            : card('Behind baseline', String(d.bl.behind), d.bl.ahead + ' ahead · ' + d.bl.onTime + ' on time',
+                   d.bl.behind ? 'bad' : '')) +
+          card('Critical', String(d.cpm.critical), d.cpm.negFloat + ' with negative float',
+               d.cpm.negFloat ? 'bad' : '') +
+          card('Finish', dt(d.cpm.finish),
+               d.cpm.slip == null ? 'no baseline to compare' :
+                 (d.cpm.slip > 0 ? d.cpm.slip + 'd later than baseline'
+                                 : (d.cpm.slip < 0 ? (-d.cpm.slip) + 'd earlier' : 'on the baseline')),
+               d.cpm.slip > 0 ? 'bad' : (d.cpm.slip < 0 ? 'good' : '')) +
+          card('Health', d.health.score + '%', 'schedule quality checks',
+               d.health.score >= 80 ? 'good' : (d.health.score < 50 ? 'bad' : 'warn')) +
+        '</div>' +
+
+        '<div class="ps-smy-cols">' +
+          '<div class="ps-smy-col">' +
+            sect('Biggest slips against ' + d.baseline, d.bl.noBL ? d.bl.noBL + ' activities carry no baseline' : '') +
+            '<ul class="ps-smy-list">' + slipRows + '</ul>' +
+            sect('Next milestones', d.ms.overdue ? d.ms.overdue + ' overdue' : (d.ms.undated ? d.ms.undated + ' undated' : '')) +
+            '<ul class="ps-smy-list">' + msRows + '</ul>' +
+          '</div>' +
+          '<div class="ps-smy-col">' +
+            sect('Look-ahead', 'from the data date') +
+            '<ul class="ps-smy-list">' + lookRows + '</ul>' +
+            sect('Schedule health', d.health.score + '% over ' + d.health.total + ' activities') +
+            '<ul class="ps-smy-list">' + worstHealth + '</ul>' +
+          '</div>' +
+        '</div>' +
+
+        sect('Progress by trade', d.counts.noDates ? d.counts.noDates + ' activities have no dates and carry no weight' : '') +
+        '<ul class="ps-smy-bars">' + tradeRows + '</ul>' +
+
+        (d.co.activities
+          ? '<p class="ps-smy-note"><b>' + d.co.activities + '</b> change-order activit' +
+            (d.co.activities === 1 ? 'y' : 'ies') +
+            (d.co.refs ? ' across <b>' + d.co.refs + '</b> variation' + (d.co.refs === 1 ? '' : 's') : '') +
+            ' are in this programme.</p>'
+          : '') +
+        /* ⚠️ Two facts, one line. The third sentence — *"Everything here is derived from the
+           schedule as it stands; nothing on this page changes it"* — is gone at the owner's
+           request, and they are right: it reassures about something nobody suspected, and a
+           read-only page saying it is read-only is the screen explaining itself rather than
+           reporting. The two that stay are both load-bearing: without the first a reader takes the
+           percentage for a mean, and without the second they take the variance for a comparison
+           against the current plan, which measures nothing. */
+        '<p class="ps-smy-note"><b>Duration-weighted</b> — a 200-day activity counts for more than ' +
+          'a 1-day one. Variance is against <b>' + esc(d.baseline) + '</b>, not the current plan.</p>' +
+      '</div>';
+
+    host.querySelectorAll('[data-goto]').forEach(function (el) {
+      el.onclick = function () { gotoActivity(el.dataset.goto); };
+    });
+    // ⚠️ The Print button and its handler went TOGETHER. A handler bound to an id nothing renders
+    // any more is the `#pk-boq` shape this repo has already shipped once.
+    var wx = document.getElementById('ps-smy-warnx');
+    if (wx) wx.onclick = function () { smyWarnOff(true); renderSummary(); };
+  }
+  /* Thousands separators, because this page prints counts in the thousands (2,561 reads; 2561 does
+     not). ⚠️ Its own helper rather than `Fmt.moneyShort`, which rounds to 2.6K — a count must stay
+     exact. Non-finite input yields an em dash instead of "NaN". */
+  function nFmt(n) {
+    var v = Number(n);
+    if (!isFinite(v)) return '—';
+    try { return v.toLocaleString(); } catch (e) { return String(v); }
+  }
+  /* Has the planner acknowledged the pinned-data-date warning FOR THIS DATE? Keyed on the date
+     itself, so re-pinning brings the warning back rather than inheriting a stale acknowledgement —
+     see the note at the render site. Per browser, like the data date it is about. */
+  function smyWarnKey() { return 'ps_smywarn_' + (pid || '') + '_' + (dataDate ? dstr(dataDate) : ''); }
+  function smyWarnOff(set) {
+    try {
+      if (set) { localStorage.setItem(smyWarnKey(), '1'); return true; }
+      return localStorage.getItem(smyWarnKey()) === '1';
+    } catch (e) { return false; }
+  }
+  /* A tiny helper so the header can format the ISO the data returns without re-parsing it twice. */
+  function t_(iso) { return pd(iso); }
+
   function gotoActivity(id) {
     var r = rows.find(function (x) { return x.id === id; });
     if (!r) return;
@@ -46830,6 +48094,7 @@
     }
     var v = document.getElementById('ps-view-schedule');
     if (v) v.classList.toggle('ps-flowline-mode', flowlineMode);
+    _psSyncLongDoc();
     var btn = document.getElementById('ps-flowbtn');
     if (btn) btn.classList.toggle('active', flowlineMode);
     var host = document.getElementById('ps-flowline');
@@ -47103,8 +48368,16 @@
      silently freeze the label at boot again, and it would look correct on a project with no
      pinned date. */
   function marksLegendHTML() {
-    return
-      '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
+    /* ⚠⚠ THE FIRST STRING MUST STAY ON THE `return` LINE. A bare `return` followed by a
+       newline is terminated by AUTOMATIC SEMICOLON INSERTION, so this function returned `undefined`
+       and the concatenation at its call site printed the literal word "undefined" into the legend
+       -- owner-reported, 2026-09-14, with the screenshot showing it beside the Activity chip.
+       Introduced by bf7c846, which turned `var MARKS_LEGEND_HTML =\n  '<span...` into
+       `return\n  '<span...`: legal as an assignment, fatal as a return. The four entries below
+       (WBS summary, planned-dates rail, Milestone, Data date) had been missing from the legend
+       since that commit, and nothing caught it because the orphaned expression still PARSES --
+       `node --check` is green on this function either way. */
+    return '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
       // ⚠️ .lg-lsmoff AGAIN, deliberately — and this is a fold, not a removal. It used to show in
       // both views, but in the coloured view the bar sample below ALREADY draws the rail and names
       // it, so the two chips described the same mark twice and read as a clash. Plain view: this is

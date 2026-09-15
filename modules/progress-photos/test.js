@@ -5021,6 +5021,314 @@ console.log('\n[misc] insert().select() returns the new row id');
     ctx.indexedDB = savedIndexedDB;
   })();
 
+  // 2026-09-14, later still yet again: "the 360 draft still gets removed
+  // once a new session open... please retain since processing takes time."
+  // A genuine cross-session round trip was ALSO checked directly against a
+  // real browser (Playwright + Chromium, a persistent profile so IndexedDB
+  // survives a brand-new page load, not just a fresh in-memory array) — see
+  // this module's own CLAUDE.md for that finding — and confirmed the core
+  // persist/rehydrate mechanism already survives a genuine new page load
+  // correctly. What that could not have caught, and what this file's own
+  // fake IndexedDB (above) could not either, because it never fails: a
+  // single transient `indexedDB.open()` failure used to poison
+  // Pano360DraftStore for the REST of the page's life (dbp cached the
+  // REJECTED promise forever), with nothing ever retrying and nothing ever
+  // telling the planner. Fixed; genuinely executed here against a fake
+  // IndexedDB whose `open()` fails on purpose for its first call, then
+  // succeeds — the shape a real, momentary storage hiccup takes.
+  await (async function () {
+    function makeFlakyIndexedDB(failFirstNCalls) {
+      var databases = new Map();
+      var openCalls = 0;
+      function getDb(name) {
+        if (!databases.has(name)) databases.set(name, { stores: new Map(), keyPaths: {} });
+        return databases.get(name);
+      }
+      return {
+        open: function (name) {
+          openCalls++;
+          var thisCall = openCalls;
+          var req = { onupgradeneeded: null, onsuccess: null, onerror: null, onblocked: null, result: null };
+          setTimeout(function () {
+            if (thisCall <= failFirstNCalls) { req.onerror && req.onerror({ target: { error: new Error('simulated transient IndexedDB failure') } }); return; }
+            var db = getDb(name);
+            var fakeDb = {
+              objectStoreNames: { contains: function (n) { return db.stores.has(n); } },
+              createObjectStore: function (n, opts) { db.stores.set(n, new Map()); db.keyPaths[n] = opts.keyPath; return {}; },
+              transaction: function (storeName) {
+                var storeMap = db.stores.get(storeName);
+                var tx = { oncomplete: null, onerror: null };
+                var store = {
+                  put: function (record) { storeMap.set(record[db.keyPaths[storeName]], record); },
+                  delete: function (key) { storeMap.delete(key); },
+                  openCursor: function () {
+                    var entries = Array.from(storeMap.values());
+                    var i = 0;
+                    var curReq = { onsuccess: null, onerror: null };
+                    function step() {
+                      setTimeout(function () {
+                        if (i < entries.length) {
+                          var value = entries[i++];
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: { value: value, continue: step } } });
+                        } else {
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: null } });
+                        }
+                      }, 0);
+                    }
+                    step();
+                    return curReq;
+                  }
+                };
+                setTimeout(function () { tx.oncomplete && tx.oncomplete(); }, 0);
+                return { objectStore: function () { return store; } };
+              }
+            };
+            req.result = fakeDb;
+            if (db.stores.size === 0) req.onupgradeneeded && req.onupgradeneeded({ target: { result: fakeDb } });
+            req.onsuccess && req.onsuccess({ target: { result: fakeDb } });
+          }, 0);
+          return req;
+        }
+      };
+    }
+    function makeFlakyDraft(overrides) {
+      return Object.assign({
+        id: 'flaky_' + Math.random().toString(36).slice(2), pid: 'DEMO01', source: 'video',
+        status: 'processing', error: null, video: null, videoUrl: null,
+        stitchResult: null, stitchUrl: null, repBlob: null, repUrl: null,
+        pendingAdjust: {}, meta: { desc: 'flaky', date: '2026-09-14', works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+        onUpdate: null, _persistSourceBlob: { fake: 'bytes' }
+      }, overrides || {});
+    }
+
+    var savedIndexedDB2 = ctx.indexedDB;
+    var savedWarn = console.warn;
+    var warnCalls = [];
+    console.warn = function () { warnCalls.push(Array.prototype.slice.call(arguments)); };
+    ctx.indexedDB = makeFlakyIndexedDB(1);   // the very first open() rejects; every one after succeeds
+    // A prior section already resolved a real `dbp` against ITS fake
+    // IndexedDB — open() would otherwise reuse that live connection and
+    // never call the flaky indexedDB.open() at all. Cleared so this test
+    // exercises a fresh, unconnected store, matching what a real page
+    // actually starts with.
+    PP._Pano360DraftStore._resetConnectionForTest();
+    ctx.__toasts = [];
+    PP._pano360Drafts().length = 0;
+    PP._setUid('flaky-user');
+    PP._resetPano360PersistFailWarned();
+
+    var draftA = makeFlakyDraft({ id: 'flakyA' });
+    PP._persistPano360Draft(draftA);
+    await new Promise(function (r) { setTimeout(r, 30); });
+
+    ok('a failed indexedDB.open() is logged via console.warn, naming the draft — never a completely silent swallow',
+       warnCalls.some(function (c) { return /Could not persist 360° draft flakyA/.test(String(c[0])); }));
+    ok('…and the SAME failure toasts a warning to the planner ("keep this tab open… may be lost") — not just a console line only a developer would ever see',
+       ctx.__toasts.some(function (t) { return t[0] === 'warn' && /could not save your 360° capture locally/.test(t[1]); }));
+
+    var draftB = makeFlakyDraft({ id: 'flakyB' });
+    PP._persistPano360Draft(draftB);
+    await new Promise(function (r) { setTimeout(r, 30); });
+    var storedAfterRetry = await PP._Pano360DraftStore.all();
+    ok('open() no longer caches a REJECTED promise — a transient failure does not permanently break persistence for the rest of the page session; the very next persist attempt reaches a real, successful write',
+       storedAfterRetry.some(function (r) { return r.id === 'flakyB'; }));
+    ok('…and the toast warning fires at most ONCE per page load, not once per failed persist',
+       ctx.__toasts.filter(function (t) { return t[0] === 'warn' && /could not save your 360° capture locally/.test(t[1]); }).length === 1);
+
+    console.warn = savedWarn;
+    ctx.indexedDB = savedIndexedDB2;
+    PP._Pano360DraftStore._resetConnectionForTest();   // don't leave dbp pointed at the now-restored fake DB's stale closure
+  })();
+
+  // beforeunload: while at least one draft is genuinely still processing,
+  // leaving the page must ask first (the browser's own native "leave site?"
+  // prompt) — the standard mitigation for "you'll lose real work if you
+  // navigate away right now", pointed at the one condition where the WASM
+  // stitch would have to restart from scratch. Genuinely executed against a
+  // tracked fake `window.addEventListener`, not just read from source.
+  (function () {
+    var region = mjs.slice(mjs.indexOf('async function init(user, prof)'), mjs.indexOf('async function init(user, prof)') + 2500);
+    ok('init() registers a beforeunload listener (in addition to the existing online listener) that calls preventDefault()/sets returnValue when a draft is still processing',
+       /addEventListener\('beforeunload', function \(e\) \{/.test(region) &&
+       /PANO360_DRAFTS\.some\(function \(d\) \{ return d\.status === 'processing'; \}\)/.test(region) &&
+       /e\.preventDefault\(\);/.test(region) && /e\.returnValue = '';/.test(region));
+  })();
+
+  // 2026-09-14, later still yet again (again): "the video still gets removed
+  // once a new session opens... please retain since processing takes time" —
+  // reported AGAIN after the promise-caching fix above had already shipped.
+  // Two further, real gaps this time: (1) this origin's IndexedDB storage was
+  // never asked to be exempt from the browser's own best-effort eviction, so
+  // "persisted correctly" and "the browser silently threw it away under disk
+  // pressure" were indistinguishable from the outside; (2) recovering a draft
+  // was completely silent — the only sign of it was the small topbar badge,
+  // which a planner reopening the app after closing it mid-capture has no
+  // particular reason to go looking for, so a genuinely-recovered draft still
+  // read as "my video is gone" from their side. Both addressed below, both
+  // genuinely executed against real fakes, never just read from source.
+  await (async function () {
+    var savedNavigator = ctx.navigator;
+
+    // --- ensurePersistentStorage(): every real branch, driven for real ---
+    ctx.navigator = { onLine: true };   // no storage API at all
+    await PP._ensurePersistentStorage();
+    ok('ensurePersistentStorage() is a silent no-op when navigator.storage does not exist at all (an older/unsupported browser) — never throws',
+       true);   // reaching this line without throwing IS the assertion
+
+    ctx.navigator = { onLine: true, storage: {} };   // storage exists, .persist does not
+    await PP._ensurePersistentStorage();
+    ok('…and the same when navigator.storage.persist itself is missing (feature not implemented on this device)', true);
+
+    var persistCalls, persistedCalls, savedInfo, infoCalls;
+    function freshStorageNav(persistedResult, persistResult) {
+      persistCalls = 0; persistedCalls = 0;
+      return {
+        onLine: true,
+        storage: {
+          persisted: function () { persistedCalls++; return Promise.resolve(persistedResult); },
+          persist: function () { persistCalls++; return Promise.resolve(persistResult); }
+        }
+      };
+    }
+    savedInfo = console.info; infoCalls = [];
+    console.info = function () { infoCalls.push(Array.prototype.slice.call(arguments).join(' ')); };
+
+    ctx.navigator = freshStorageNav(true, true);   // already persisted
+    await PP._ensurePersistentStorage();
+    ok('already-persisted storage is checked FIRST via navigator.storage.persisted(), and persist() is never called again once it is true',
+       persistedCalls === 1 && persistCalls === 0);
+
+    ctx.navigator = freshStorageNav(false, true);   // not yet persisted, browser grants it
+    await PP._ensurePersistentStorage();
+    ok('not-yet-persisted storage calls navigator.storage.persist() exactly once, and logs that it was GRANTED',
+       persistCalls === 1 && infoCalls.some(function (m) { return /persistent storage granted/i.test(m); }));
+
+    infoCalls = [];
+    ctx.navigator = freshStorageNav(false, false);   // browser refuses (common on several mobile browsers)
+    await PP._ensurePersistentStorage();
+    ok('…and a REFUSAL is logged honestly ("was not granted"), never misreported as success',
+       persistCalls === 1 && infoCalls.some(function (m) { return /was not granted/i.test(m); }) &&
+       !infoCalls.some(function (m) { return /granted for this device/i.test(m) && !/was not granted/i.test(m); }));
+
+    ctx.navigator = {
+      onLine: true,
+      storage: {
+        persisted: function () { return Promise.reject(new Error('boom')); },
+        persist: function () { return Promise.reject(new Error('boom')); }
+      }
+    };
+    var threw = false;
+    try { await PP._ensurePersistentStorage(); } catch (e) { threw = true; }
+    ok('a genuine failure inside the Storage API (rejected promises) is swallowed — best-effort only, never fatal to init()', !threw);
+
+    console.info = savedInfo;
+    ctx.navigator = savedNavigator;
+  })();
+
+  // --- rehydratePano360Drafts() now tells the planner what it recovered,
+  // instead of silently restarting a stitch (or restoring a finished one)
+  // with nothing on screen to say so. ---
+  await (async function () {
+    function makeGoodIndexedDB() {
+      var databases = new Map();
+      function getDb(name) { if (!databases.has(name)) databases.set(name, { stores: new Map(), keyPaths: {} }); return databases.get(name); }
+      return {
+        open: function (name) {
+          var req = { onupgradeneeded: null, onsuccess: null, onerror: null, result: null };
+          setTimeout(function () {
+            var db = getDb(name);
+            var fakeDb = {
+              objectStoreNames: { contains: function (n) { return db.stores.has(n); } },
+              createObjectStore: function (n, opts) { db.stores.set(n, new Map()); db.keyPaths[n] = opts.keyPath; return {}; },
+              transaction: function (storeName) {
+                var storeMap = db.stores.get(storeName);
+                var tx = { oncomplete: null, onerror: null };
+                var store = {
+                  put: function (record) { storeMap.set(record[db.keyPaths[storeName]], record); },
+                  delete: function (key) { storeMap.delete(key); },
+                  openCursor: function () {
+                    var entries = Array.from(storeMap.values());
+                    var i = 0;
+                    var curReq = { onsuccess: null, onerror: null };
+                    function step() {
+                      setTimeout(function () {
+                        if (i < entries.length) {
+                          var value = entries[i++];
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: { value: value, continue: step } } });
+                        } else {
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: null } });
+                        }
+                      }, 0);
+                    }
+                    step();
+                    return curReq;
+                  }
+                };
+                setTimeout(function () { tx.oncomplete && tx.oncomplete(); }, 0);
+                return { objectStore: function () { return store; } };
+              }
+            };
+            req.result = fakeDb;
+            if (db.stores.size === 0) req.onupgradeneeded && req.onupgradeneeded({ target: { result: fakeDb } });
+            req.onsuccess && req.onsuccess({ target: { result: fakeDb } });
+          }, 0);
+          return req;
+        }
+      };
+    }
+    function makeToastDraft(overrides) {
+      return Object.assign({
+        id: 'toastdraft_' + Math.random().toString(36).slice(2), pid: 'DEMO01', source: 'video',
+        status: 'processing', error: null, video: null, videoUrl: null,
+        stitchResult: null, stitchUrl: null, repBlob: null, repUrl: null,
+        pendingAdjust: {}, meta: { desc: 'a recovered capture', date: '2026-09-14', works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+        onUpdate: null, _persistSourceBlob: { fake: 'bytes' }
+      }, overrides || {});
+    }
+
+    var savedIndexedDB3 = ctx.indexedDB;
+    ctx.indexedDB = makeGoodIndexedDB();
+    PP._Pano360DraftStore._resetConnectionForTest();
+    PP._pano360Drafts().length = 0;
+    ctx.__toasts = [];
+    PP._setUid('toast-user');
+
+    var procDraft = makeToastDraft({ id: 'toastProc' });
+    PP._persistPano360Draft(procDraft);
+    var doneDraft = makeToastDraft({ id: 'toastDone', status: 'ready', _persistSourceBlob: null, stitchResult: { blob: { fake: 'jpg' }, width: 10, height: 10, quality: 'ok' }, repBlob: { fake: 'thumb' } });
+    PP._persistPano360Draft(doneDraft);
+    await new Promise(function (r) { setTimeout(r, 30); });
+
+    PP._pano360Drafts().length = 0;   // as if this were a fresh page load — nothing in memory yet
+    ctx.__toasts = [];
+    await PP._rehydratePano360Drafts();
+
+    ok('rehydratePano360Drafts() toasts a recovery summary naming ONE still-processing capture being restarted, so recovering a draft is no longer indistinguishable from it having been lost',
+       ctx.__toasts.some(function (t) { return t[0] === 'ok' && /1 360° capture resuming/i.test(t[1]) && /restarting from your saved recording/i.test(t[1]); }));
+    ok('…and the SAME toast also names the one already-finished capture waiting for review, in one message rather than two',
+       ctx.__toasts.some(function (t) { return t[0] === 'ok' && /1 finished 360° capture.*waiting for review/i.test(t[1]); }));
+    ok('…exactly one recovery toast fires per rehydrate call, not one per recovered draft',
+       ctx.__toasts.filter(function (t) { return /Recovered from before you closed this app/.test(t[1]); }).length === 1);
+
+    // A second rehydrate against the SAME already-in-memory drafts recovers
+    // nothing new (findPano360Draft already finds each one) -- must not
+    // toast a phantom "recovery" for drafts that were never actually lost.
+    ctx.__toasts = [];
+    await PP._rehydratePano360Drafts();
+    ok('a rehydrate that recovers NOTHING new (every persisted draft is already in memory) fires no toast at all',
+       ctx.__toasts.length === 0);
+
+    // And genuinely nothing persisted at all (a brand-new user) -> no toast.
+    PP._pano360Drafts().length = 0;
+    ctx.__toasts = [];
+    PP._setUid('toast-user-with-nothing-saved');
+    await PP._rehydratePano360Drafts();
+    ok('a user with no persisted 360° drafts at all gets no recovery toast either — the toast only ever fires when something real was recovered',
+       ctx.__toasts.length === 0);
+
+    ctx.indexedDB = savedIndexedDB3;
+  })();
+
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
 })();

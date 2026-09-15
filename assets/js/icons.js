@@ -95,6 +95,14 @@
     pencil:      '<path d="M4 20h4L20 8a2.83 2.83 0 0 0-4-4L4 16z"/><line x1="14" y1="6" x2="18" y2="10"/>',
     link:        '<path d="M9 15l6-6"/><path d="M11 6l1-1a4 4 0 0 1 6 6l-1 1"/><path d="M13 18l-1 1a4 4 0 0 1-6-6l1-1"/>',
     pulse:       '<path d="M3 12h4l2-8 4 16 2-8h6"/>',
+    /* A schedule milestone: the DIAMOND this app already draws one with (`.ps-mile` in the
+       Project Schedule's Gantt), sitting on a timeline. ⚠️ It is the diamond ON A BASELINE
+       rather than a bare one, so it cannot be confused with the drawing palette's own shape
+       tools (`square`, `circleShape`, `polygon`) — a diamond by itself is a shape, a diamond
+       on a line is a date. Added because `Milestones` and `Meetings` sat next to each other
+       in the Portfolio sidebar both drawing `calendar`, and a collapsed rail has nothing but
+       the glyph to tell two rows apart. */
+    milestone:   '<path d="M12 3.5 18.5 10 12 16.5 5.5 10z"/><line x1="3" y1="20.5" x2="21" y2="20.5"/>',
     undo:        '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     redo:        '<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
     // A recurring/cyclical schedule — two bracket-shaped arrows facing opposite

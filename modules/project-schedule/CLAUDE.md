@@ -1,3 +1,1008 @@
+## 2026-09-15 (j) — The Summary told a project with no baseline that nothing had slipped
+
+Owner, with the Summary open on OPW101 and six numbered points. One of them is a defect and the
+rest are the page saying too much, or too little.
+
+### ⚠️⚠️ 1 · "WHAT DOES THIS SECTION PROVIDE?" — NOTHING, AND WORSE THAN NOTHING
+
+Owner, of *Biggest slips against Baseline 21-Aug-26 · 2561 activities carry no baseline*. On that
+project **2,561 of 2,561 activities carry no baseline**, so the section printed **"Nothing is
+finishing later than its baseline."** — beside a **Behind baseline 0 · 0 ahead · 0 on time** card.
+
+Every one of those reads as good news. The truth is that **not one figure on the page can be
+measured against a baseline at all**, which is itself the finding and the thing to act on. A screen
+that answers *"nothing has slipped"* to *"nothing can be measured"* is worse than one that says
+nothing, because a reader acts on it.
+
+- The empty state now names the situation and where to fix it (**Actions ▾ Baselines…**).
+- The **Behind baseline** card shows an **em dash**, not a zero: three zeros read as three
+  measurements.
+- ⚠️ The test is that **nothing resolved**, not that `noBL` is merely non-zero. A programme where
+  most activities carry a baseline and a handful do not is the ordinary case, and the count in the
+  section note already reports it. Only the all-or-nothing case changes.
+
+### ⚠️ 2 · The look-ahead was counts with nothing to act on
+
+Owner: *"Look ahead seem to be useful but doesn't add much value."* Right — *"241 starting"* over a
+2,561-activity programme says nothing about **which** 241. Each window now also reports how many of
+that work is **on the critical path**, which is the one cut that changes what you do next, and it
+costs nothing: `_critical` is already on the row from `ensureCPM`.
+⚠️ Counted **once per activity**, not once per edge — a 5-day task inside a 42-day window both
+starts and finishes in it, and is one piece of critical work rather than two.
+
+### 3 · Schedule Health — unchanged, as agreed
+
+### 4 · Progress by trade: `0% 1750` was one run of digits
+
+Two different quantities printed as one. They are now two right-aligned columns of their own —
+`0%` and `1,750 acts` — with `tabular-nums` so a column of percentages lines up, and the count says
+what it counts. On a phone both drop their fixed reservation, since the track wraps below them.
+
+### 5 · The footnote loses its third sentence
+
+Owner: *"too lengthy and the last sentence doesn't provide any value."* Correct — *"Everything here
+is derived from the schedule as it stands; nothing on this page changes it"* reassures about
+something nobody suspected, and a read-only page saying it is read-only is the screen explaining
+itself rather than reporting.
+⚠️ **The other two stay, and are load-bearing:** without the first a reader takes the percentage
+for a mean; without the second they take the variance for a comparison against the *current* plan,
+which measures nothing.
+
+### 6 · The header, and the Print button
+
+*"As of 01-Feb-27 · baseline Baseline 21-Aug-26 · 2561 activities, 0 milestones"* →
+**"As of 01-Feb-27 · 2,561 activities · 0 milestones · Baseline 21-Aug-26"**.
+⚠️ `baseline Baseline 21-Aug-26` was a **stutter**, because a baseline here is user-named and the
+name usually already begins with that word. The label is printed as it stands and prefixed only
+when it does not say so itself (the `BL0` fallback). Counts gain thousands separators — 2,561 reads
+and 2561 does not.
+⚠️ **Print is gone at the owner's request, and its handler went with it.** Ctrl+P does the same
+thing, and a handler bound to an id nothing renders is the `#pk-boq` shape this repo has shipped
+once already. The `@media print` rules stay: the page still prints, it just no longer carries a
+button to do it.
+
+### ⚠️⚠️ 0 · The data-date notice is dismissible, and the key carries the date
+
+Owner: *"The yellow notification warning needs to be dismissible as well. This doesn't have to be
+shown all the time."* Fair — once read, repeating it every visit is noise.
+
+But the hazard is real and does not go away: the data date is per **browser** and drives 62 call
+sites including the CPM. So *dismissed* means **"I have acknowledged THIS pinned date"**, not
+"never tell me again" — `smyWarnKey()` includes the data date, so **re-pinning a different one
+brings the warning back**. A permanent dismissal would let a planner silently inherit somebody
+else's "now" and never be told.
+
+### Verified
+
+**30 assertions, 0 failing**, `summaryData` sliced out by name and executed over a fixture shaped
+like OPW101 — 2,561 activities, 0 milestones, **no baseline anywhere** — with **HEAD run beside it
+as the control**: HEAD's windows carry no critical figure, HEAD has no no-baseline branch, HEAD
+carries the Print button and the third sentence, and HEAD runs the percentage and the count
+together. Starts, finishes, progress, the trade split and health are all asserted **unchanged**.
+The previous suite still passes **34/34**.
+
+**Rendered at 1400px** against the module's own stylesheet — ⚠️ inside an **iframe**, because the
+pane is ~344px and the phone media query applies to it; and ⚠️ taking the **one real `<style>`
+block**, since the regex returns three here and two are JS strings that build the print stylesheets.
+Header exact, no Print button, warning background resolving to `rgba(199,119,0,0.12)` (a **colour**,
+so the sheet is provably in the cascade), dismiss **24×24** and not overlapping the text, trade
+percentages right-aligned at one x and counts at another, look-ahead rows reading
+*"241 starting · 161 finishing 30 critical"*, and **no horizontal page scroll**.
+
+**The dismiss was clicked, through the real handler:** warning gone and the key written; re-pinning
+the data date to 15-Mar-27 **brings it back**; returning to 01-Feb-27 keeps it dismissed.
+⚠️ Measured at 20×20 first — under WCAG 2.5.8 AA's 24px target — and raised.
+⚠️ A harness fault worth recording: the first render threw `t_ is not defined` because I had not
+sliced that one-line helper. A missing slice reads exactly like a missing function in the code.
+
+`wiring-check` 136/136; inline script parses (3.34MB); `ps-smy-bv` and `ps-smy-print` are gone from
+the CSS and the JS, not left dead.
+⚠️ **Not verified signed in** — the fixture is shaped like OPW101, but no live project has been
+summarised.
+
+`MODULE_V` → `20260915s`, sort-checked.
+
+
+## 2026-09-15 (i) — A class code that lost its leading zero resolves again
+
+**Run `migrations/2026-09-15-class-code-pad.sql`.** Owner: *"let's fix the class code leading
+zeroes."* The item 2026-09-15 (f) reported and refused to guess at.
+
+### ⚠️⚠️ THE MIGRATION'S RULE IS NOT BEING BROKEN — IT IS BEING INVERTED
+
+`2026-08-21-class-codes.sql` forbids **de-zeroing**, because the de-zeroed space is not unique:
+`015051` (Gen Req › Earthmoving) collides with `15051` (Metal Works › Railings), and `017151` with
+`17151`. That is a rule about **stripping** a zero, or about padding a value that is **already a real
+code**. `ccKeyOf` does neither: the raw value is looked up first at **both** levels, and the padded
+form is consulted only when the raw resolves to nothing — i.e. only for a value that is already
+broken. `15051` resolves, so `15051` is never touched.
+
+⚠️ **Measured against the seeded chart, not argued:** every code at either level is 5 or 6 characters
+— **there is no 4-character code anywhere** — and of the 221 de-zeroed forms that are not themselves
+real, **221 pad to exactly one real code and 0 are ambiguous**. A collision still stores `''` and
+resolves to nothing rather than guessing.
+
+### ⚠️⚠️ AND THE WRITER WAS FIXED FIVE DAYS AGO
+
+`CLASS_CODE_DB` — `+ Library` in the Schedule Builder — held Finance's L2 group chart **with the
+leading zeros stripped** until **2026-09-10 (z4)** padded all 43 entries. Everything pushed from the
+library before that date carries the de-zeroed code; the library is correct now. So this is a bounded
+read-time repair of existing rows, not a licence for new ones, and the push is deliberately untouched.
+
+### ⚠️ It fixes the SCREEN. The migration fixes the DATA.
+
+`boq_allocations` gates on `project_schedule.class_code`, and the BOQ allocator matches an activity's
+**stored** code against a bill line's — so a padded code still misses there until the migration runs.
+`ccodeCellHtml` therefore marks it: a **dotted underline** and the stored value in the tooltip.
+⚠️ **Not a colour.** The code shown *is* the right code; red means *not in the chart at either
+level*, and blurring those two is the confusion the owner had to ask about on 2026-09-15 (f).
+
+### Verified
+
+**45 assertions, 0 failing**, the resolver sliced out by name and executed over the real chart with
+**HEAD as the control**: `3050 → 03050 Rebar`, `4050 → 04050 Formworks`, `5050 → 05050 Concrete`,
+`6050 → 06050 Precast Works`, and **HEAD resolves none of the four at either level** — the red tags
+from the screenshot, reproduced. Both collision pairs stay distinct and unpadded; **901 real codes
+resolve exactly as on HEAD** with none flagged; `ccGroupOf` still answers for the allocator; and
+⚠️ **an unloaded chart pads nothing and calls nothing unknown**. Inline script parses (3.3MB).
+⚠️ **Not verified signed in**, and the migration has not been run.
+
+`MODULE_V` → `20260915q`, sort-checked.
+
+
+## 2026-09-15 (h) — A Summary view, derived from the engines that already exist
+
+Owner: *"a dashboard summary view for the module for reporting purposes."* A fourth entry in the
+title menu: **Summary**.
+
+- ⚠️⚠️ **NOT "Dashboard" and NOT "Reporting view"** — the first is the project-level page (which
+  already carries a Project Schedule panel), the second is a LAYOUT MODE in this module that strips
+  the chrome off the Gantt. A third thing needs a third name.
+- ⚠️ It revives what the **Planner Cockpit** was removed for on 2026-09-02 (*"a monitoring surface,
+  not schedule development"*). That reasoning holds for a monitoring view among the BUILDING views;
+  this one derives everything and offers nowhere to act.
+- ⚠️⚠️ **It computes nothing of its own** — `computeHealth`, `ensureCPM`, `dispStart`/`dispFin`,
+  `blPrimaryLabel`, `isWbs`/`isMile`/`isChangeOrder`, `today()`. This module has already shipped a 3D
+  view that disagreed with the 2D view of the same data; a summary with its own arithmetic would be
+  a second opinion presented as a report. `summaryData()` is pure over `rows` + `today()` so it can
+  be sliced and executed; the renderer only formats what it returns.
+- **Duration-weighted progress** (a mean makes a 1-day activity worth a 200-day one — 14.7% vs 25%
+  on the fixture), **variance against the primary baseline's finish** with the no-baseline rows
+  counted, **undated milestones counted not dropped**, the **look-ahead from the data date**, a
+  **named bucket** for activities with no trade, and `null` rather than `0%` for a trade with no dates.
+- ⚠️⚠️ **The data-date warning is the point.** It is per-BROWSER localStorage driving 62 call
+  sites including the CPM (flagged 2026-09-14 h, still unfixed), so two planners can read different
+  figures with nothing saying so. Stated on screen when pinned.
+- ⚠️ `ps-longdoc` is set for this tab, or `.pd-content { height:100vh }` pins it and the lower half
+  is unreachable — the 2026-09-14 (w) defect.
+- ⚠️ Rendered **on entry only**: recomputing on every grid edit would cost a CPM pass per keystroke
+  for a view nobody is looking at.
+
+### ⚠️⚠️ A class collision only rendering could find
+
+**`.ps-sum` is already the WBS summary BAR**, and it is `position:absolute`. The panel inherited it,
+fell out of flow and rendered as a 56px sliver over an empty page — while the DOM was complete and
+every count assertion passed. Renamed `ps-smy-*`; the `ps-sum*` set is asserted back to **exactly**
+HEAD's nine names.
+
+**34 assertions**, `summaryData()` sliced out by name and executed over a hand-computed programme.
+⚠️ Three were MINE being wrong — a mis-count, a tie that made "worst slip" prove nothing, and a
+forecast date used where the baseline belonged, which is the very mistake the figure exists to
+prevent. Rendered at 1280px and 390px: 6 KPIs, 5 bars, 15 rows, no horizontal scroll either width.
+⚠️ Not verified signed in. `MODULE_V` → `20260915p`.
+
+## 2026-09-15 (g) — Activity attachments, in the form's Notes section
+
+**Run `migrations/2026-09-15-schedule-attachments.sql`.** Owner: *"attachments on activities in the
+Schedule module, in the Notes section."*
+
+⚠️ **A correction to what the ask assumed:** the "Notes section" here is the last section of the Edit
+Activity modal and it held exactly one thing, a Remarks textarea. The **Notebook / Files tabs were
+never built** — `renderDetails()` handles ten tabs and none is notes; all that survived were two
+orphan comment headers and `migrations/add_notebook_files.sql`, whose `notebook` and `files` jsonb
+columns **nothing in this module reads** (checked: all four `.files` hits are DOM `FileList`). Those
+two comment headers are now replaced by the real thing; the dead columns are reported, not dropped.
+
+- **`PDAttach` (assets/js/attach.js), an instance — not a copy.** The three ordering rules live once.
+- ⚠️⚠️ **`activity_id`, never the row uuid** — an import reinserts every row. And `activity_name` is
+  stored beside it as a tell-tale, because a *regenerated* schedule reissues the same id space to
+  different work (2026-09-14 t). `attStale()` reports a mismatch and re-points nothing.
+- ⚠️⚠️ **Renaming the Activity ID carries the files across**, scoped to `project_id` + the old id.
+- ⚠️ **One project-scoped read** (`PDAttach.loadProject`), never `.in(activity_id, …)` — 16,000
+  activities do not fit in a URL — and through `PDb.selectAll`, because the 1000-row cap is silent.
+- ⚠️ `_attStaged` is reset on **every** form open, or files chosen for a cancelled save would be
+  flushed onto the next activity opened.
+- ⚠️ No grid indicator and no unused `attCount` helper: saved column order is positional, so a new
+  column is its own change.
+
+### ⚠️⚠️ Two bugs `node --check` could not see, both found by running it
+
+- **`canWrite()`** — a variable, not a function. Throws on the first paint. Fourth instance here.
+- **`loadProject` was never exported from `attach.js`**, and the caller's try/catch **swallowed** it,
+  so the panel rendered empty for ever and looked right.
+
+**21 assertions, 0 failing**, executing the sliced functions against the module's real neighbours.
+⚠️ Contrast bases pinned to SHAs — both of today's suites went green on both sides the moment their
+commits landed. ⚠️ Not verified signed in; the migration has not been run.
+`MODULE_V` → `20260915l`; `attach.js` → `?v=20260915b`.
+
+## 2026-09-15 (f) — The Class Code cell prints a code and nothing else
+
+Owner, off an OPW101 screenshot: *"Some class codes are correct with only having a number within
+them and others have a number and series of characters. It should only be the number that is
+reflected in the class codes."*
+
+`ccodeCellHtml` appended the Finance description after the tag on both resolving branches —
+`'<span class="ps-cctag">' + code + '</span> ' + desc`. The cell now emits the tag alone.
+
+- ⚠️⚠️ **THE MISSING SPACE WAS THE FLEX ANONYMOUS-ITEM TRAP, third occurrence in this repo.**
+  `.ps-cell` is `display:flex`, so the trailing text node became an anonymous flex item and the
+  browser stripped its leading space — the source really did contain it and the screen really could
+  not show it. Same mechanism as the sidebar brand gap and `Use 0 activit ies`. Emitting one element
+  instead of two means the trap cannot recur here.
+- ⚠️ **Nothing is lost.** `ttl` already carried `code — L1 › L2 › L3`, and the task row now matches
+  `sumCcodeHtml` beneath it, which has always printed the code alone. At `--c-ccode: 190px` the
+  description was being ellipsised on most rows regardless.
+- ⚠️⚠️ **The rows that LOOKED right were the broken ones.** Reproduced against HEAD: the bare-number
+  rows (`3050`…`9050`) were taking the **`unknown`** branch — not in the chart at either level, which
+  is why they render red — while `10050`+ took the **`group`** branch and resolved correctly. The
+  break falls between the 4-digit and 5-digit codes, i.e. OPW101's stored codes are missing a leading
+  zero the chart has (`03050`).
+  ⚠️ **Not fixed, and not safely fixable in a render function:** `2026-08-21-class-codes.sql` records
+  that de-zeroing collides genuinely different items (`015051` Earthmoving with `15051` Railings), so
+  both forms can be real codes. It needs the chart compared against the project's stored values.
+- **Verified** by slicing `ccodeCellHtml` out of the shipped file **by name** and executing it over
+  all four outcomes with **HEAD as the control**: 4/4 pass on the fix, **2/4 fail on HEAD** — exactly
+  the item and group cases the owner photographed. Each case asserts the cell contains **no letters**,
+  which is the literal requirement, and that the tooltip still leads with the code.
+  ⚠️ Not verified signed in. `MODULE_V` → `20260915j`, sort-checked.
+
+## 2026-09-15 (e) — The site draws every floor from its own plan, and the labels were mirrored under it — ethanrobles10
+
+Owner, with the per-tower card and the site view side by side: *"how come in this view, the per
+floor configuration is defined. However in the site view, there is no defined configuration or
+defined floor plans per floor and look at the labels."*
+
+Two faults in one screenshot, and they are unrelated to each other.
+
+### ⚠️⚠️ ONE: THE SITE WAS DRAWING EVERY FLOOR FROM THE TOWER'S SITE OUTLINE
+The floor-by-floor site model emits one cell per (tower, floor) and every one of them carries the
+same `c.label` — the tower. So `_vsZpPolysOf(sitePlan, label)` answered with the tower's single
+traced site shape thirteen times over, and the building came out an extruded prism. **The floors
+were never consulted at all**, even though their plans were sitting in the same map the per-tower
+card reads, which is exactly why the owner could see them in one view and not the other.
+
+⚠️ The floor's own plan is now **fitted into the tower's place** (`_vsZpFitPolys`): the plan's
+bounding box is centred inside the tower's — its traced site footprint where it has one, its wrap
+slot where it does not. Two facts have to survive that, and both do: WHERE the building stands (the
+site trace) and WHAT SHAPE the floor is (the floor trace).
+⚠️ **CONTAIN, NEVER STRETCH.** The two are different drawings at different scales, and stretching a
+floor plan to fill a site footprint would invent a floor nobody drew — the one thing this view
+exists not to do. A plan proportionally deeper than its footprint sits narrower than it instead.
+⚠️ Each sheet's own `ar` divides the depth before anything is compared, or a floor drawn on a wide
+sheet and one drawn on a tall sheet stop being the same building.
+⚠️ **After the colour decision, deliberately**: `fill` is already settled from the tower's site
+polygon, so a floor plan cannot repaint a tower and delete the channel that says which building this
+is. And a project with no floor plans traced keeps exactly the prisms it has today.
+
+### ⚠️⚠️ TWO: THE LABEL'S RING WAS THE TOWER'S MIRROR IMAGE
+Yesterday's fix gave each floor name its tower's footprint ring and projected it per frame. The ring
+was read straight out of the plan: `[(u - 0.5) * plateW, (v - 0.5) * plateD]`. But `_vs3PolyMesh`
+lays a traced ring down with `rotation.x = -PI/2`, which sends the shape's **+Y to world −Z** — so
+the mesh stands at the mirror of those coordinates in depth. The names were being anchored to where
+the tower **would** be if the site were flipped: right side of the property, wrong place on it, and
+under perspective that lands a name low and squashed rather than obviously somewhere else. A tower
+traced near the middle of the sheet barely moved; the one traced off-centre was **42 px** out.
+⚠️ **A label's ring must be the coordinates the MESH is built in, not the coordinates the plan is
+stored in.** One minus sign, with the reason written beside it.
+
+### ⚠️⚠️ AND THE HARNESS COULD NOT HAVE CAUGHT IT, WHICH IS THE REAL LESSON
+Yesterday's test worked out where a tower stands by **repeating the builder's own plate-to-world
+formula** — the same formula that had the sign error — so it made the identical mistake and agreed
+with itself: 51 assertions, 0 failures, over a view that was visibly wrong. A test that recomputes
+what the code computes only proves the code is self-consistent.
+⚠️ So the fakes now **record geometry**: `Shape` keeps its ring, `ExtrudeGeometry` its shapes and
+depth, `BoxGeometry` its dimensions, and every `Mesh` is remembered with its `userData.key`. Every
+position the test checks is read back off the mesh the builder actually made — shape points, its own
+rotation, its own position — and nothing is derived twice.
+
+### Verified
+- **52 assertions in node, 0 failed**, executing the shipped `_vs3Build` on a site of three towers
+  (two traced, one untraced with no levelled work) and five floor plans:
+  - floor 2's L-shaped plan is drawn as **six corners**, floor 1's rectangle as four, and B1 — which
+    has no plan traced — keeps the tower's site footprint;
+  - the fitted floor stays **inside its own tower's** traced footprint, and Tower B's copy of floor 2
+    is drawn at Tower B rather than on top of Tower A's;
+  - the plan's proportions survive the move (contain, not stretch) to within 2%;
+  - every floor name lands within **1 px** of the leftmost projection of **its own floor's mesh** at
+    that floor's own mid-height, over **15 camera angles** — measured at 0.00 px across and down.
+- ⚠️ **GATE**: the previous commit fails 15 of those same assertions, off by up to **42 px across
+  and 26 px down**.
+- **Real three.js r128, in a browser**, measured against the meshes' own vertex buffers and world
+  matrices: every name is within **0.36 px** of its floor's leftmost drawn vertex at eight azimuths
+  (previous commit: **42 px inside** the building at 90°, **39 px outside** it at 270°), and the
+  rendered frame shows each tower stepping floor by floor instead of standing as one prism.
+- The single-building path is untouched and proven so in the same run; `test-lsm` **702/702** and
+  `wiring-check` **126/126** pass unchanged. MODULE_V → `20260915f`.
+- ⚠️ **Not verified signed in.** The plan store is stood in for by a fixture in the harness; what is
+  proven is that the builder asks the floor for its plan, places it on the right tower, and names it
+  where it stands.
+
+## 2026-09-15 (d) — The pane stops being capped to the viewport; the time bar sticks instead
+
+Owner: *"the main screen can't even be seen without having to select the expand button"*, then
+*"let's do the pane cap next."*
+
+### ⚠️⚠️ WHY THE CAP WAS THE CAUSE
+
+`_vs3Build` sizes a building from its **width** — `clamp(320, width × 0.72, 520)` — never from the
+pane. So every card is 320–520px tall whatever the pane allows. `_vsApplyPane` capped the pane at
+`innerHeight − paneTop − 16`, and **every pixel of chrome above the pane came straight out of that
+number**. On the owner's screen it left ~475px for a stack of five ~420px cards, which
+`.ps-vs-body` then scrolled internally: one card at a time, through a slot. That is the report.
+
+**Measured, 1440×900, five cards:**
+
+| | pane height | body scrolls internally | what you see |
+|---|---:|---|---|
+| capped (as shipped) | **475px** | **yes** | one card, clipped |
+| uncapped | **986px** | no | every card at full height |
+
+The page grows instead, which this view is already set up for: `.ps-longdoc` is on in vertical
+stacking (see `_psSyncLongDoc`) precisely so `.pd-content` may exceed one screen.
+
+### ⚠️⚠️ THE NOTE THAT SAID STICKY COULD NOT DO THIS WAS RIGHT — AND ITS PREMISE WAS THE CAP
+
+The rule the cap replaced carried a measured finding, verbatim:
+
+> *"Sticky is bounded by its containing block, and the time bar is the LAST child of the pane — the
+> container's bottom edge IS the bar's bottom edge, so it has zero travel and the rule silently never
+> fires. Measured: the bar scrolled away exactly as before at scrollY 0/300/600."*
+
+That was taken **while the pane was capped**. A capped pane is never taller than the screen, so its
+bottom edge is always on screen and a bottom-sticky child has nothing to stick to. The conclusion
+followed from the cap, not from sticky — so removing the cap changes the answer. It was re-measured
+rather than inherited, and the original finding is **credited in the rule's own comment**, not
+deleted: it was correct, and a later reader needs to know why it no longer applies.
+
+**Measured with the cap gone:** `position` computes to `sticky`; the bar sits at the viewport's
+bottom edge at scrollY 0, 300, 600 and 900, then rides down to its resting place at the end of the
+page. Reachable at every stop, in both themes, at 1440×900 and 1280×720 (pane 1412px there).
+
+⚠️ Fixed positioning is still wrong, for the reason the original note gives: out of flow, it would
+overlap the last building rather than ending the pane.
+⚠️ `z-index:2` and the existing card background, because the bar now passes **over** the buildings
+while stuck.
+
+### What went with the cap
+
+`_vsApplyPane` and `--ps-vs-paneh` are gone, along with all three call sites — the resize listener,
+the notice-dismiss handler, and the tail of `renderVStack`. Each existed only to re-measure a cap
+that no longer exists.
+
+⚠️ **A function left behind writing a custom property no rule reads is the exact shape of the dead
+`--ps-vs-fith` this file already documents** (the Fit button wrote it for weeks; no selector ever read
+it). Removing the writer with the reader is the whole point.
+
+⚠️ **One stale claim corrected in place:** the Fit-button note said *"What DOES fit the stack is the
+pane's own `--ps-vs-paneh` max-height, and that half is live and stays."* It does not, as of this
+commit. Left uncorrected it would have sent the next reader looking for a live mechanism that had
+been deleted — which is precisely the failure that note was written to prevent.
+
+### ⚠️⚠️ A harness fault worth more than this change: `<style>` matches THREE blocks in this file
+
+`re.findall(r'<style>([\s\S]*?)</style>')` returns **three** matches here: the real stylesheet
+(376,101 bytes) and **two JavaScript string literals** inside the inline `<script>` that build the
+print/export stylesheets. Joining them appends ~3.7 KB of JavaScript — concatenation operators, an
+unterminated string, unbalanced braces — after the CSS.
+
+**The consequence is silent and total: every rule appended after that point is dropped.** The rule
+under test in this pass came back `position: static` and looked like proof that sticky could not
+work. It had simply never been parsed. Two defences, both now in the harness generator:
+
+- **Filter on the JS tell** (`"' +" not in block`) and assert exactly one block survives.
+- **Put any candidate rule in its own `<style>` element**, which parses independently and cannot be
+  swallowed by whatever the previous block ends with.
+
+⚠️ Earlier harnesses this week joined all three blocks too. Their measurements stand — the real
+stylesheet is block 0 and parses first — but the CSS byte counts quoted in those entries are ~3.7 KB
+too high, and anything they appended after `__CSS__` was cosmetic (a guide line, an `h4`).
+
+⚠️ **And one harness bug of the same family:** `var top = …` at global scope does not shadow
+`window.top` — it *is* `window.top`, which is not writable, so the arithmetic yielded `NaN`, the cap
+was set to `NaNpx`, and the "capped" arm was indistinguishable from the uncapped one. The shipped
+`_vsApplyPane` was never affected: its `top` is a function-local.
+
+### Verified
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance on the **real block only**, no
+duplicate ids, no orphaned `return`, `_vsApplyPane` gone with every call site, no code line mentioning
+the cap variable (only the three comments that explain the history), and `.ps-vs-tl` carrying
+`position:sticky; bottom:0; z-index:2` with an opaque background.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915d`, sort-checked against `20260915c`.
+
+## 2026-09-15 (c) — The notices become one line, and the two filter rows become one
+
+Owner, on a 3-tower / 5-trade / 609-activity project: *"UI in this situation needs a big rework. the
+main screen can't even be seen without having to select the expand button."* Then: *"The notification
+needs a big rework as well its too lengthy and the text itself is not professional."* Then: *"The
+Towers toolbar and trades toolbar can be in the same level."*
+
+### ⚠️⚠️ THE THREE ARE ONE PROBLEM: THE CHROME HAD EATEN THE DRAWING
+
+Measured in a browser at 1440×900, on the owner's project shape, against the shipped build:
+
+| block | before | after |
+|---|---:|---:|
+| module toolbar | 36 | 36 |
+| filter rows | **50** (2 rows) | **26** (1 row) |
+| model bar | 32 | 32 |
+| **the notice** | **103** | **31** |
+| card header + meter | 46 | 46 |
+| per-card view bar | 32 | 32 |
+| caption | 29 | 29 |
+| timeline card | 107 | 107 |
+| **chrome total** | **435** | **339** |
+| **left for the drawing** | **427** | **523** |
+
+**−96px of chrome, and the drawing gains all of it.** On the owner's own screenshot the notice was
+taller still (~157px: their project also trips the *branch is a grouping* cause, which adds a fourth
+bullet), so the saving there is larger than the 72px measured here.
+
+### The notice: one line, with the diagnosis behind a disclosure
+
+`_vsWarnWrap(key, html)` is now `_vsWarnWrap(key, summary, detail)`. The summary is one line; the
+detail sits in a `<details>` that is **shut by default**. Measured: **31px shut, 135px open.**
+
+⚠️⚠️ **Collapsed, not cut.** Every line of that detail was written from a real diagnosis on a real
+project — 4PH Strevi, 692 of 15,834 rows unplaced, 76 of them from a single missing `RD` alias — and
+deleting it would cost the next planner that investigation again. It is one click away.
+
+⚠️ **`<details>`/`<summary>`, not a button and a handler.** The disclosure is native: no wiring, no
+state to lose across the repaint that `renderVStack` performs on every control, and keyboard-operable
+without any code of ours. The dismiss `×` stays a sibling of the `<details>`, so it is not part of the
+summary's hit area — hit-tested to confirm.
+
+⚠️ **The register changed, not just the length.** Out: *"is the usual culprit"*, *"so either:"*,
+*"or leave them here"*, *"That is deliberate"*, *"which is exactly what a floor doing all its zones at
+once would look like"*. In: the count and the fact, then the causes as a numbered list, then the exact
+path to the fix. Where a sentence explained **why a design decision was taken**, it moved into the
+code comments — which is where it belongs and where it now stays.
+
+⚠️ **The assign control stays in the summary on the `alltower` notice.** It is the fix; a fix shut
+behind a disclosure is a fix nobody applies. Only the explanation folds away.
+
+### Towers and Trades share one row
+
+Both are now fragments emitted into a single `.ps-vs-chips`, separated by a `.ps-tb-div` — the same
+way `.ps-tb-row` has always kept unrelated groups apart in one line. Each keeps its label.
+
+⚠️ **They wrap as one list, not as two locked groups.** A group that could not be split would jump to
+the next line whole and leave a half-empty row above it. The two labels and the rule are what say
+where one filter ends.
+
+⚠️ The divider is emitted only with a left neighbour: on a single-tower project `towerChips` is empty
+and the row is the trades filter alone, exactly as before. `.ps-vs-twchips` now matches no element and
+says so in its own rule.
+
+### Verified
+
+CSS and the module toolbar extracted from the shipped file verbatim; the toolbar sliced by div-depth
+matching. Both themes at 1440×900 and 1900×1000. Notice 31px shut / 135px open in both themes, the
+`color-mix` hairline resolving to 25% alpha on the dark ground; one filter row carrying both labels
+and the divider; no horizontal scroll; the dismiss button hit-tests to itself.
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance, no duplicate ids, no orphaned
+`return`, the disclosure opens and closes exactly once, all four notices go through the wrapper, the
+`nolevel` list and its four items close, and neither chip fragment opens a `<div>` it does not close.
+
+⚠️ **Two gates of my own were wrong before they were right, and both are the same shape as bugs this
+file already records:** the register check searched all 3.3 MB and failed on *"That is deliberate"* in
+a code comment 600 lines away about a save dialog; and a source-size cap failed because this change
+**added** code comments while shortening the delivered text. Source bytes are the wrong proxy for a
+rendered height. Both are now scoped or replaced, with the reason written next to them.
+
+### ⚠️ What is still spending the budget, and is untouched here
+
+The drawing has 523px at 1440×900 — better, not solved. The remaining blocks, largest first: the
+**timeline card at 107px**, the **card header + meter at 46px**, the **per-card view bar at 32px**.
+And structurally, `_vsApplyPane` caps the pane at `innerHeight − paneTop − 16`, so every pixel of
+chrome above it still comes straight out of the buildings. Letting the pane exceed the viewport (the
+page already grows — see `.ps-longdoc`) is the lever that does not require trimming anything else.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915c`, sort-checked against `20260915b`.
+
+## 2026-09-15 (b) — One left edge and one right edge for the whole module
+
+Owner: *"I think we can still improve the UI. The sides are not aligned with each other."*
+
+### ⚠️⚠️ FOUR DIFFERENT EDGES IN ONE MODULE, AND NONE OF THEM WAS THE TOOLBAR'S
+
+`.ps-toolbar` and its `.ps-tb-row` carry **no horizontal padding**, so `.pd-main`'s 12px *is* the
+module's edge and the toolbar sits directly on it. Every full-width panel pane was adding an inset of
+its own on top of that. Measured at 1440px before changing anything, against the toolbar row:
+
+| row | left | Δ | right | Δ |
+|---|---|---|---|---|
+| `.pd-main` content edge | 12 | 0 | 1428 | 0 |
+| `.ps-tb-row` — the toolbar | 12 | — | 1428 | — |
+| `.ps-vs-chips` — trades | 26 | **+14** | | |
+| `.ps-vs-bar` — model | 26 | **+14** | | |
+| `.ps-vs-viewport` — the buildings | 26 | **+14** | 1414 | **−14** |
+| `.ps-vs-caption` — the key | 28 | **+16** | | |
+| `.ps-flowline` | 26 | **+14** | 1414 | **−14** |
+| `.ps-progress` | | **−4** (8px where the others used 14) | | |
+
+The caption's extra 2px was inherited from `.ps-actlegend`'s shape when it was written yesterday —
+the house idiom for a caption strip, and 2px off the edge everything else sits on.
+
+All five are now `0`. Horizontal padding only: **the vertical padding is untouched**, because only the
+sides were the complaint and the top padding is what spaces each pane from its own divider.
+
+⚠️ **The phone breakpoint goes to 0 as well.** `.ps-vstack` had `padding:8px 8px 18px` under
+`@media (max-width:700px)`; re-adding an inset there would reintroduce the misalignment at exactly the
+width where the screen can least afford the pixels. Only the vertical padding tightens now.
+
+⚠️ **`.ps-network` needed nothing** — it draws its own full border at the pane edge and was already on
+the module's line.
+
+### Verified
+
+**The toolbar markup is sliced out of the shipped file verbatim**, by div-depth matching, not
+reproduced — it is the thing everything else has to line up *with*, so a hand-made stand-in would
+have been measuring against a guess. CSS is the shipped `<style>` block, also verbatim.
+
+After, at 1440px light and 1024px dark: **every row's left edge equals the toolbar's** (Δ 0), and every
+row that is full-width by construction — the buildings viewport, the flowline pane, `.pd-main` itself
+— **ends on the toolbar's right edge** (Δ 0). The trades row, the model bar and the caption end short
+of it because their content is shorter than the width, which is not a misalignment.
+
+Computed horizontal padding, read back from the rendered page: `.ps-toolbar`, `.ps-vstack`,
+`.ps-flowline`, `.ps-progress` and `.ps-vs-caption` all `0px / 0px`.
+
+⚠️ **One measurement in the harness is void and is not being relied on:** `#ps-view-schedule` is a
+flex column, so the `.ps-progress` stub collapses to zero width there and its box coordinates are
+meaningless. Its computed padding is the evidence for that pane, and it reads `0px / 0px`.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915b`, sort-checked against `20260915a`.
+
+## 2026-09-15 (a) — Consolidated is gone, and the reason it was redundant is the feature nobody wired
+
+Owner: *"The consolidated button in the vertical stacking seem to be no longer needed since its
+function has been the same with the other buttons as well."*
+
+### ⚠️⚠️ THE OWNER IS RIGHT ABOUT THE SCREEN, AND THIS FILE ALREADY KNEW WHY
+
+Consolidated's one distinguishing feature — splitting each level into a cell per trade, so a single
+building compares the trades side by side — **has never rendered.** `_vsRowTradeCells` and
+`_vsTowerSVG`'s `tradeSplit` parameter are fully implemented and committed; **no call site has ever
+passed them**, in the 2D path or the 3D one. The 2026-09-04 entry in this file recorded exactly that
+and left it: *"the ask here was level 1, and wiring it is a feature change nobody asked for. Worth a
+decision."*
+
+So what the button actually drew was one brand-red card with **a single cell per level**, and because
+`_vsMixTrades` is true whenever a trade-combining scope holds more than one trade, Detail was pinned
+to level 1 — no zones either. A picture carrying nothing the per-trade cards do not carry better.
+That is the redundancy the owner is reporting, and it is a symptom of the unwired split, not of the
+view being a bad idea.
+
+**The decision was put to the owner directly on 2026-09-15 — remove, or wire the split — and they
+chose remove.** ⚠️ Wiring it remains a live option and everything it needs is still in the file; see
+the note now at the head of `_vsRowTradeCells`.
+
+### What went
+
+| | |
+|---|---|
+| the button | `data-vssc="all"` |
+| the render branch | the `'all'` arm of the scope chain in `renderVStack` |
+| the mix-trades term | `_vsMixTrades` now covers `tower` and `site` only |
+| the PDF caption arm | `Consolidated — one building` |
+| four comment parentheticals | *"(per tower, consolidated)"* → *"(per tower, site)"* |
+
+⚠️ **No migration, and the reason is worth recording:** `_vsScope` is a plain module variable that is
+**never persisted** — it resets to `'trade'` on every load — and it is only ever assigned from
+`b.dataset.vssc`. Removing the only button carrying that value removes the only way in, so no
+fallback guard was written for a state nothing can produce.
+
+### ⚠️⚠️ The Model segment goes with it on a single-tower project
+
+`Per tower` needs more than one tower and `Site` needs a tower breakdown *and* a traced plan — so on
+a single-tower project Consolidated was the **second of two** options, and removing it would leave a
+segment labelled MODEL naming a question with one answer. That is the thing the Towers chip row
+already refuses to do (*"a row reading 'All towers · Tower 1' is two controls for a question with one
+answer"*), so the segment is emitted only when more than one scope is on offer.
+
+⚠️ **Deliberately NOT the disabled-select treatment the one-tower case got elsewhere.** That control
+had something to say — from the drawing alone a reader could not tell whether one building was one
+tower or every tower merged. Here each card is titled with its trade and carries its trade's colour
+dot, so the view names itself.
+
+⚠️ **And the divider went with the segment.** The rule between Model and 2D/3D was unconditional; with
+neither the segment nor the site call-to-action emitted, a single-tower bar would have opened on a
+vertical stroke separating nothing.
+
+### Two things found while removing it
+
+- ⚠️ **The PDF caption had no `site` arm** and fell through to *"One building per trade"* — a sheet
+  naming a view it is not showing, one line above a comment that rails against exactly that (*"a
+  document that misstates its own subject, and it is the copy that leaves the building"*). Fixed
+  here rather than left beside its own warning.
+- ⚠️ **A comment quoting the removed comparison tripped the gate written to find it.** Same shape as
+  the quoted `id="…"` that fooled the duplicate-id gate on 2026-09-09. The comment is reworded and
+  says why it does not spell the expression out.
+
+### Verified
+
+**Slice-and-execute against the shipped file**, never a reimplementation: the four emission
+expressions (`_scopeBtns`, `_scopeN`, the segment, the divider) were cut out of `index.html` by
+anchor and run under stubbed `towerNames` / `_vsSitePlan()`:
+
+| project shape | buttons | Model segment | leading divider |
+|---|---|---|---|
+| 1 tower | `trade` | **no** | **no** |
+| 1 tower + site plan | `trade` | no | no |
+| 3 towers, no plan | `trade`, `tower` | yes | yes |
+| 3 towers + site plan | `trade`, `tower`, `site` | yes | yes |
+
+Asserted as invariants, not just as rows: the segment appears **exactly when** there is more than one
+option, and the divider **never** appears without something to its left.
+
+**Rendered in a browser**, both themes, 1024px and 1440px, all three shapes: no bar opens on a
+divider, every bar's first child is flush with the bar's own left edge, the word *Consolidated*
+appears nowhere, and nothing overflows.
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance comments-stripped, no
+duplicate ids, no orphaned `return`, nothing tests or assigns the removed scope, and
+`_vsRowTradeCells` / `tradeSplit` are asserted **present** — they are kept on purpose.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915a`, sort-checked against `20260914zvs4`.
+
+## 2026-09-14 (z2) — The key goes under the figure, not one row below the toolbar
+
+Owner, on the caption that shipped an hour earlier: *"This should be relocated so that the toolbars
+are grouped. Legend should be relocated to another location."*
+
+### ⚠️⚠️ THE FIRST MOVE FIXED THE WRONG HALF
+
+`829f488` took the legend out of `.ps-vs-bar` and put it in a `.ps-vs-caption` **directly beneath**
+it. That answered *"a proper location than the toolbar itself"* literally and missed what the
+arrangement was doing: a reader coming down the pane still met **controls, controls, then a line of
+prose** before any content. The header was three bands deep, and a strip parked between the last
+control and the first building reads as part of the header no matter what it is called.
+
+Owner's phrasing has both halves in it — *"so that the toolbars are grouped"* is about what the
+caption was **separating**, not about where it should go.
+
+**So it is a footer.** `.ps-vs-pane` is a flex column, and the caption is now its middle child:
+
+```
+.ps-vs-pane  =  [ .ps-vs-body (the scroller)  |  .ps-vs-caption  |  the timeline card ]
+```
+
+- **A figure's caption goes under the figure.** The key describes the fills and the DONE pills in the
+  buildings; it now sits under them.
+- ⚠️ **Above the timeline card, not below it.** That card is a *control* — drag the handle to walk the
+  programme. Putting the key under it would separate the key from what it keys **by a control**,
+  which is the arrangement this move exists to undo.
+- ⚠️ **Pinned, not scrolled.** It is a sibling of `.ps-vs-body`, not a child, so the buildings scroll
+  past it. Measured: `body.scrollTop` 0 → 400 while the caption moved **0px**. Same reasoning the
+  existing note gives for keeping the toolbars outside the scroller, applied to the other end.
+
+### The rule moved to the other edge
+
+As a header strip the caption deliberately had **no** border — it sat 10px under the pane's own rule
+and a second hairline read as a stack of boxes. As a footer it is the only thing separating a line of
+grey text from the drawing above it, so it now carries `border-top`. Measured `1px solid
+rgb(220,219,219)` light and `1px solid rgba(255,255,255,.12)` dark — the token follows the theme.
+
+⚠️ **`flex:0 0 auto` is load-bearing.** `.ps-vs-pane` is a flex column whose body is `1 1 auto`;
+without it this strip would share the leftover height and the key would stretch down the pane.
+
+### Verified
+
+Harness CSS is the shipped `<style>` block **extracted verbatim** (376,190 bytes), asserted to carry
+every rule under test first. Both themes, 1024px and 1440px, 4 and 11 trades, with and without the
+Towers row and the compare basis:
+
+| | result |
+|---|---|
+| Trades row → control bar | **10px**, every case |
+| control bar → the pane | **10px** — nothing between the toolbars and the content |
+| caption below the stage | **true**, every case |
+| caption above the timeline | **true**, every case |
+| caption a sibling of the bar (i.e. still in the header) | **false**, every case |
+| caption movement while the body scrolls 400px | **0px** |
+| caption lines / overflow / page h-scroll | 1 / none / none |
+
+Static gates green: inline script parses (3.29 MB), CSS braces balance comments-stripped, no
+duplicate ids, no orphaned `return`, `caption` built before use and emitted **exactly once** — a gate
+added because the obvious way to move a string is to paste it and forget to delete the original, and
+the symptom would be the key rendering twice.
+
+⚠️ **Not verified signed in.** Measured on the real CSS with reproduced markup; no live project
+opened. ⚠️ The tick/untick report against `#ps-actlegend` from the previous entry is still open and
+untouched by this change.
+
+`MODULE_V` → `20260914zvs4`, sort-checked against `20260914zvs3`.
+
+## 2026-09-14 (z) — An even rhythm, a caption instead of a toolbar, and a legend four views thought they were hiding
+
+Owner: *"The Toolbar, Trades, and Model toolbars UI needs more work. There is a bigger space between
+the toolbar and trades toolbar and a smaller gap between the trades toolbar and model toolbar. If we
+can also relocate the legend and tooltip to a proper location than the toolbar itself. Let's check
+for other views for consistency"*, and then, on a screenshot of the stacking view: *"Is this supposed
+to be shown when vertical stacking is opened?"*
+
+### ⚠️⚠️ THE ANSWER TO THAT QUESTION IS NO, AND FOUR RULES ALREADY SAID SO — TO A CLASS THAT NO LONGER EXISTS
+
+The Gantt's colour legend (`#ps-actlegend`) was showing under the stacking pane, which has no Gantt
+in it. Every full-width panel view carries a rule that reads *"hide the legend"*:
+
+```
+#ps-view-schedule.ps-net-mode      .ps-legend { display:none; }
+#ps-view-schedule.ps-flowline-mode .ps-legend,
+#ps-view-schedule.ps-vstack-mode   .ps-legend,     (twice — the file has two copies)
+#ps-view-schedule.ps-progress-mode .ps-legend { display:none !important; }
+```
+
+**`.ps-legend` is not in the markup and has not been since 2026-08-17**, when the bar-mark key was
+folded into the activity legend and its wrapper was deleted. The note on `.ps-actlegend .lg` records
+that exact deletion — *"this rule stopped matching anything"* — because that rule **was** retargeted
+at the time. These five lines were not. So for four weeks every panel view (network, flowline,
+progress, stacking) left the colour legend sitting under a pane it describes nothing in.
+
+Retargeted to `.ps-actlegend`. **Measured in a browser, both themes:** `display:none` under all four
+modes, `block` with no mode on — asserted **both ways**, because a rule that hides it everywhere
+would pass a one-sided test and break the Gantt.
+
+⚠️ **The `@media print` rule and the ≤700px rule still name `.ps-legend` and are equally dead — left
+alone on purpose.** Both of those still have a Gantt on screen, and a coloured chart printed without
+its key is a worse page than one with it. Retarget them with a decision about print, not as tidying.
+
+### ⚠️⚠️ `marksLegendHTML()` HAS RETURNED `undefined` SINCE bf7c846 — A BARE `return`
+
+The owner's screenshot shows the literal word **"undefined"** in the legend strip. Cause:
+
+```js
+function marksLegendHTML() {
+  return                                          // ← ASI terminates the statement HERE
+    '<span class="lg lg-lsmoff">…' + …            // ← an orphaned expression, never returned
+}
+```
+
+`bf7c846` turned `var MARKS_LEGEND_HTML =\n  '<span…` into `return\n  '<span…`. Legal as an
+assignment, fatal as a return: automatic semicolon insertion ends the statement at the newline, the
+function returns `undefined`, and `'…' + undefined` prints the word. **Four legend entries — WBS
+summary, the BL0 planned-dates rail, Milestone and Data date — have been missing from the legend
+since that commit.**
+
+⚠️ **Nothing caught it because the orphan still PARSES.** `node --check` is green on that function
+either way; a syntax gate cannot see this. Proven by slicing the function out of the shipped file and
+executing it, before and after — the base pinned to a **SHA**, not `HEAD:`, which becomes
+self-comparison the moment this work commits:
+
+| | `typeof` | length | WBS summary | BL0 rail | Milestone | Data date |
+|---|---|---|---|---|---|---|
+| d403f7f | `undefined` | — | ✗ | ✗ | ✗ | ✗ |
+| now | `string` | 491 | ✓ | ✓ | ✓ | ✓ |
+
+A new static gate fails on any `return` left alone on a line with a continuation under it.
+
+### The rhythm: 15px above the trades row, 0px below it
+
+Measured before changing anything. `.ps-vs-chips` carried **no bottom margin at all**, so the trade
+filter and the control bar were touching while a 15px gap sat above them — the asymmetry the owner
+reported, in both directions at once. Both are **10px** now, and `.ps-vs-twchips`' private 6px is
+gone so the Towers row takes the same gap as its sibling.
+
+⚠️ **The gap above the rule is deliberately left larger** (12px: the toolbar's 8px margin plus the
+pane's 4px). That one separates the *module's* toolbar from the pane — a section break, not a sibling
+gap — and equalising it would erase the very distinction the rule was added to draw this morning.
+
+**Measured, both themes, 1024px and 1440px, at 4 / 7 / 11 trades, with and without the Towers row and
+the compare basis — 10 combinations:** Towers→Trades **10px**, Trades→bar **10px**, bar→caption
+**8px**, caption→stage **10px**, in every one. No bar overflow, no caption overflow, no page
+horizontal scroll. The bar takes two lines at 1024px, as it did before; the caption never takes more
+than one.
+
+### A caption is not a toolbar, and the legend was in the wrong one
+
+Owner: *"relocate the legend and tooltip to a proper location than the toolbar itself."* New
+`.ps-vs-caption` sits under the bar and over the buildings. **The split is by kind, not by length:** a
+toolbar holds what you press, a caption holds what you read.
+
+- **Moved:** the fill / ✓ DONE key (with its tooltip), the compare slip colours, the activity count.
+- **Kept in the bar:** the **Planned marker colour picker**. It is an input; demoting a live control
+  to a caption strip is the same mistake pointing the other way.
+
+⚠️ No border on the caption. The pane's own rule already draws one 10px above it, and a second
+hairline turns a two-row header into a stack of boxes — it is set apart by being quieter, not by
+another line.
+
+⚠️ **A change of behaviour, taken deliberately and easy to veto:** the caption is **not** hidden in
+Reporting view. That view is the one people are *shown*, and a chart of hatched fills and coloured
+DONE pills without its key is the one place the key cannot be spared.
+
+⚠️ **And that same reporting rule was missing its own target.** It reads
+`body.ps-reporting .ps-vs-bar .ps-vs-note`, and its comment says it hides *"the stacking bar's own
+field labels"* — but this morning's weld moved those labels **inside** their segments as
+`.ps-vs-seglab`. From that commit until this one it hid the legend instead, which is the opposite of
+what it says. `.ps-vs-seglab` added.
+
+### The other views, for consistency
+
+`.ps-flowline` and `.ps-progress` now carry the same `1px solid var(--pd-line)` top divider and 4px
+margin as `.ps-vstack` — they replace the split the same way, and without a line the module toolbar
+and the pane's own toolbar read as one run of controls. `.ps-network` is the exception and keeps its
+own full border. Verified: all three report `1px solid rgb(220,219,219) / margin-top 4px`.
+
+⚠️ **The progress pane keeps its 4px/8px padding**, not the stacking pane's 10px/14px: it *is* the
+scroller (`overflow:auto`), so its padding sits inside the scrolled area and a bigger top pad becomes
+dead space that scrolls away. The border and the margin were what had to match.
+
+### Verified
+
+Harness CSS is the shipped `<style>` block **extracted verbatim** (375,690 bytes), asserted to carry
+every rule under test before a single measurement is taken. All static gates green: the inline script
+parses (3.29 MB), CSS braces balance comments-stripped, no duplicate static ids, no orphaned
+`return`, the bar and the caption each close their own `<div>`.
+
+⚠️ **Not verified signed in.** The layout was measured on its real CSS with reproduced markup, and
+`marksLegendHTML` was executed from the shipped source — but no live project was opened.
+
+⚠️ **One symptom in the owner's report is not explained yet:** *"when i tick/untick colour activities
+by the legend pane disappears."* The handler is `renderActLegend(); renderGantt();`, and neither sets
+`display:none` on a project with rows — so this is not accounted for by anything above. It stops
+mattering in the stacking view now that the pane is hidden there at all; if it also happens in the
+ordinary Gantt view it is a separate defect and still open.
+
+`MODULE_V` → `20260914zvs3`, sort-checked against `20260914zvs2`.
+
+## 2026-09-14 (w) — The two things that really were clipping, and the five toolbars that were not
+
+Owner: *“Side panel clips as well when page is scrolled”*, *“The buttons are still clipping let's
+make sure that the UI for the toolbars are professional looking”*, *“UI still clips i refreshed the
+in-app browser”*.
+
+### ⚠⚠ THE TOOLBARS DO NOT CLIP — MEASURED BEFORE CHANGING ANYTHING
+`.pd-topbar` (9 controls), `.pd-modulebar` (33), `.ps-toolbar` (65), `.ps-vs-bar` (19) and
+`.ps-vs-chips` (5): **0 elements whose content overflows their own box, 0 past their bar's right
+edge, 0 bars scrolling horizontally, and no horizontal page scroll.** Redesigning five working bars
+would have been a large change aimed at the wrong thing.
+
+### ⚠⚠ 1 · THE 3D CANVAS WAS 1117px WIDE IN A 698px BOX WITH `overflow:hidden`
+419px of every building, cut off. `_vs3Build` returns `resize()` as a **capability on purpose** —
+*“a WebGL canvas does not reflow … the owner (or the modal) knows when the box changed”*. The focus
+window calls it; **the inline cards had nobody to call it**, so a canvas built at one pane width kept
+that drawing buffer for ever.
+- New `_vs3WatchSize()` — a **`ResizeObserver` on `#ps-vstack`**. ⚠ Not a window `resize` listener:
+  the pane also narrows when the **sidebar collapses**, which fires no window resize.
+- ⚠⚠ **Width only.** `resize()` computes the canvas height *from* the width, so acting on a height
+  change would be the observer reacting to its own effect — an endless loop.
+- ⚠ 120ms debounce (every pass reallocates a drawing buffer), one observer for the page's life,
+  registered when the first card is pushed to `_vs3Scenes`, and never disconnected — it reads
+  `_vs3Scenes`, which a repaint empties, so with no cards it costs one comparison.
+
+### ⚠⚠ 2 · `.ps-longdoc` WAS SET FROM THE TAB, AND THREE MODES ALSO SCROLL THE PAGE
+With Vertical Stacking on the page was **1,327px inside a `.pd-app` of 900px**, and a sticky box
+cannot travel outside its containing block — so the sidebar scrolled away and its top was cut off.
+Vertical Stacking, Activity Progress and Flowline each replace the split with a long document;
+`switchTab` only knew about the Setup and Cost Loading **tabs**. Same cause as 2026-09-11 (a7).
+- ⚠⚠ **One writer** (`_psSyncLongDoc`), because four things decide the class and a second writer
+  would undo the first. ⚠ The tab is read back off the element `switchTab` stamped it on, never
+  held in a parallel variable.
+
+### Verified
+- `_psSyncLongDoc` sliced and executed over **8 states: 8/8 correct**; ⚠⚠ the negative build with
+  the `panel ||` term removed **fails exactly the 3 panel cases** and passes the other 5.
+- The resize watcher driven against a fake `ResizeObserver`: **7 assertions**, the load-bearing one
+  being that a height-only change schedules **nothing**.
+- ⚠ A harness bug of my own, recorded: `new Function` runs its body in **global scope**, so the
+  test's own closure variable was invisible inside it.
+- `node --check` PARSE OK; **2,054 → 2,056 functions, 0 lost**.
+- **Re-verified on the deployed build** after a cache-busting reload: 1 `barChart` / 1 `trendingUp`,
+  no Towers row, 4 groups / 0 orphaned labels, 0 clipped elements, header **122px → 97px** at 1280.
+  ⚠ The owner's first screenshots were a **cached page** — the module page is loaded at its own URL,
+  so `MODULE_V` busts the link from the dashboard grid and not a direct reload.
+
+`MODULE_V` → `20260914x` — the third collision of the session, caught the same way: by `curl`,
+not by git, since both sides writing one string conflicts on nothing.
+
+## 2026-09-14 (u) — The duplicate toolbar glyph, `_vsTowerOf` answering a floor, and a label torn off its control
+
+Owner: *“1. These two icons are the same. let's fix  2. Vertical stacking UI looks messy, let's
+fix”*, then *“make sure that the UI is easily understandable, no functions are compromised, and
+everything looks clean and no clipping”*, then *“Ui still needs some work”* with a third screenshot.
+
+### 1 · `#ps-progressbtn` and `#ps-flowbtn` both drew `trendingUp`
+Both are **icon-only** (`.ps-icobtn`, no text), so the glyph was the only thing telling them apart —
+the 2026-09-14 (c) defect exactly. Activity Progress → **`barChart`**; Flowline keeps `trendingUp`,
+since a flowline is literally a rising trend line.
+⚠ **An existing glyph** — `barChart` is in `icons.js` already and used 0 times here, so `icons.js`
+(21 pages) is untouched. ⚠ The live DOM scan also found `ps-actionsbtn`/`ps-vstackbtn` sharing `box`
+and `ps-analyzebtn`/`ps-crit` sharing `risk`; **both left alone on purpose** — those carry text
+labels (*Actions ▾*, *Analyze ▾*) or are a menu item echoing its own parent menu's icon, so the
+glyph is not the only separator and the defect class does not apply.
+
+### ⚠⚠ 2 · THE TOWER WAS BEING READ OFF THE FLOOR LEVEL
+```js
+var id  = _vsTowerLevelId();            // no tower level -> falls back to LOC_LEVELS[0] = Floor
+var v   = id ? r.location[id] : '';     // -> “F1”
+var raw = String(v || r.location[VS_LOC_TOWER] || '').trim();   // the literal key never reached
+```
+Measured live on DEMO01: `LOC_LEVELS` is **Floor, Zone** — no tower level — while every row's
+`location` carries `“tower”: “Tower 1”`. So the picker offered **“All towers / F1 / F2 / F3”**, and
+selecting a “tower” filtered to a floor.
+- New **`_vsTowerLevelNamedId()`** — the name-matched level id, or `''`. ⚠ It cannot be folded into
+  `_vsTowerLevelId`, which must always name some level because it drives the band axis; that
+  fallback is correct there and wrong as an answer to *“is there a tower level at all?”*
+- ⚠ Precedence is now **named level → reserved `tower` key → `LOC_LEVELS[0]`**. A project with a
+  real tower level is unchanged (and there the push writes both from one `towerLabel()` call, so
+  they agree by construction); an import with no literal key is byte-identical.
+- ⚠ **Read-time only** — no row is written, matching the `locTowerToken` precedent directly above it.
+
+### ⚠⚠ 3 · A WRAP FELL BETWEEN A LABEL AND THE CONTROL IT NAMES
+Reproduced at **1280px**: `Show` at `top:244`, its `Finish|Start` segment at `top:277`. `.ps-vs-bar`
+is `flex-wrap:wrap` and packs items one at a time, so the label and its control are two independent
+items and the wrap can land between them. Each pair is now one **`.ps-vs-grp`** (`inline-flex`,
+`flex-wrap:nowrap`, `flex:0 0 auto`) — the pair moves as a unit or not at all. The `.il-timepair`
+fix, same cause.
+- ⚠⚠ **Two direct-child selectors had to be widened or a feature would have broken silently:**
+  `body.ps-reporting .ps-vs-bar > .ps-vs-note` (reporting view hides the field labels) and
+  `.ps-vs-bar > .ps-vs-note { min-width:0 }`. Nesting the notes one level deeper makes `>` stop
+  matching. Both changed to descendant — same set, same behaviour.
+  ⚠ `.ps-vs-twchips > .ps-vs-note` is deliberately untouched: that label lives in the tower chip
+  row, not in the bar, and is not nested by this change.
+- ⚠ Internal `gap:8px` matches the bar's own, so this changes what can **wrap** and nothing about
+  spacing. ⚠ Four groups: Detail (+ the axis name it describes), Dates, Show, Zoom.
+
+### Measured before touching anything
+| width | Towers | Trades | `.ps-vs-bar` | header total | clipped children | page scrolls X |
+|---|---|---|---|---|---|---|
+| 1440 | 25 | 25 | 72 (2 rows) | 122px | **0** | **no** |
+| 1280 | 25 | 25 | 72 (2 rows) | 122px | **0** | **no** |
+| 846 | 38 | 38 | 162 (4 rows) | 238px | **0** | **no** |
+
+⚠ **Nothing clips anywhere**, so the complaint is density and raggedness rather than overflow.
+⚠ **My first row count was my own artefact** — clustering the bar's children on a 6px tolerance
+separated each segmented control from its 18px label and reported **8** rows where there are **4**;
+re-clustered on vertical centres it is 4 at 846px and 2 at desktop. ⚠ The five short `.ps-vs-note`
+elements are control **labels** (*Detail, Zone, Dates, Show, Zoom*), not prose. **15 controls, none
+removed.**
+
+### Verified
+- **28 assertions**: every `.ps-icobtn`'s `data-ico` resolved through the shipped `icons.js` and
+  grouped by the **drawn geometry**, plus a check that each name resolves at all (a typo renders an
+  empty box, silently) and that each button really is icon-only. ⚠⚠ **The negative build bites**,
+  naming the pair: *ps-progressbtn (trendingUp) + ps-flowbtn (trendingUp)*.
+- **Slice-and-execute on `_vsTowerOf`** over four shapes with the pre-fix copy as the control:
+  DEMO01 `“F1” → “Tower 1”`, and **identical** on the other three.
+- `node --check` PARSE OK (3.28M chars, one inline block); **2,052 → 2,053 functions, 0 lost**; 0 NUL
+  bytes; 4 groups opened and 4 closed.
+- ⚠ **Three of my own checks were wrong first:** python's `/tmp` is not bash's on this machine;
+  `grep -c $'\x00'` reported **50,355** lines (the empty-pattern trap — counted in python instead);
+  and two content anchors matched 2 and 5 times, because `.ps-vs-note` is **declared twice** in this
+  stylesheet and `>+</button>` appears on **five** buttons. The patch script aborts before writing on
+  a bad anchor count, so nothing was half-applied.
+- ⚠ **Not re-verified signed in on a multi-tower project.** DEMO01 has one tower, so the branch this
+  fix most changes — several real towers under a `Floor › Zone` breakdown — is proved by execution
+  against fixtures, not observed live.
+
+`MODULE_V` → `20260914v`. ⚠⚠ Re-derived **twice**: past the `20260914t` a concurrent session had
+already deployed, and then past `20260914u` — which that session had **independently picked too**.
+The rebase merged cleanly precisely *because* both sides wrote the same string, so nothing flagged
+it; caught by `curl`-ing the deployed page rather than trusting the local file.
+
 ## 2026-09-14 (t) — The end-to-end run redone with Auto-trace actually pressed
 
 Owner: *“Let's redo the whole process from scratch. Make sure that the zone and trade sequence is
@@ -83,6 +1088,212 @@ headings / 345 distinct** (the repeats are sub-headings like `### Verified`, whi
 
 ---
 
+### Ink on the tint, welded labels, and a name for the trades row (2026-09-14) — fmlozano
+
+Owner, on the colour pass that shipped hours earlier: *"still needs work"*, then *"Placement of the
+trades buttons need work."*
+
+### ⚠️⚠️ The first cut swapped five red FILLS for five red TEXTS, and that is why it was not enough
+
+`25d8cbc` took `.ps-vs-seg > button.on` from a solid `--pd-red` fill to
+`background:var(--pd-red-light); color:var(--pd-red-dark)`, borrowed from the shared
+`.pd-seg-multi`. The fills went, the **count of red marks in the row did not** — five active rungs,
+five red words. The owner's "still needs work" was exactly right.
+
+⚠️ **And `.pd-seg-multi` was the wrong sibling to copy.** That pattern is for **multi-select**
+groups; every segment in this bar is single-select, and the shared file's single-select pattern
+(`.pd-seg > button.on`) is a solid red fill — which is what we were leaving. Neither shared pattern
+was designed for *five single-selects in one row*.
+
+**The right precedent was one row above, in this very pane.** `.ps-vs-chip.on` had already settled
+it, and its own note says so: *"INK on the red tint, not brand red as text … the red stays as the
+border and the tint, which carry the state without being the text."* The chips had been ink-on-tint
+since 2026-09-02 and the segments disagreed with them, in the same pane, at the same moment.
+
+So the active rung is now `background:var(--pd-red-light); color:var(--pd-ink)` plus the 2px red
+underline — **the underline is the only red left in an active control.**
+
+**Measured in a browser, both themes:**
+
+| | first cut (red text) | now (ink) |
+|---|---|---|
+| red fills anywhere in the pane | 0 | **0** |
+| red **texts** anywhere in the pane | 5 | **0** |
+| active contrast, light | 5.11:1 | **14.25:1** |
+| active contrast, dark | 6.76:1 | **13.45:1** |
+| chip and segment active state | disagreed | **identical** (`#FDECEA` / `#231F20`) |
+
+⚠️ **No `html.pd-dark` ink override is needed, and the one the first cut added is gone rather than
+merely unused** — `--pd-ink` is itself theme-remapped (`#231F20` / `#F0EFEF`), which is the whole
+reason ink works here where `--pd-red-dark` needed a `#FF8A80` override.
+
+### Four labels that floated beside their controls are now welded inside them
+
+Detail, Dates, Show and Zoom were free-standing grey words next to their segments, so the row read
+as eleven loose things rather than five named controls — and `.ps-vs-grp` existed purely to stop a
+label being wrapped away from the control it names (see its own note). New `.ps-vs-seglab` puts each
+label **inside** the segment's border on the quiet surface; `Model` gains one too, and the scope
+segment finally says what it is.
+
+⚠️ Shape taken from the shared `.pd-seg-lab` (risk-register and stakeholder-map already use it) so
+the two read as one idiom, but not reusing the class: it is sized for `.pd-seg`'s 34px rung and this
+bar's segments are shorter. Same values, different sizing.
+
+⚠️ **Zoom's two buttons stopped being loose `.pd-btn`s** and became a real segment, so the bar has
+one kind of control rather than two. `#ps-vs-zout` / `#ps-vs-zin` are preserved — they are what
+`wireVStack` binds to.
+
+⚠️ The site card's own **Show** was welded too. It is a different surface (inside the card, because
+it changes what the model *is* rather than where the camera is), but leaving one "Show" floating
+while welding the other is the inconsistency that gets reported next.
+
+### The trades row now says what it is
+
+Owner: *"Placement of the trades buttons need work."* It sat at the top of the pane as an
+**unlabelled** row of pills directly above a dense control bar, so nothing distinguished a *filter*
+from more toolbar.
+
+⚠️ **Its sibling already had a label and it did not.** The Towers row has carried one since
+2026-09-13 for precisely this reason — its comment reads *"the two rows now look alike and a reader
+has to be able to tell which one they are ticking."* The trades row never got the same treatment.
+Both now use `.ps-vs-rowlab`: the welded label's typography, without a border to sit inside.
+
+Kept on its own row rather than folded into the bar: a project can carry ten trades, and a filter
+behind a click is not what this owner wants (direct controls over nested menus).
+
+### Verified
+
+Rendered in a browser against a harness whose CSS is the **shipped `<style>` block extracted
+verbatim**, in both themes. Zero red fills and zero red texts in the whole pane; six welded labels
+present (Trades, Model, Detail, Dates, Show, Zoom); the divider intact; no bar overflow and no page
+horizontal scroll at 1180px and 1400px.
+
+`<span>` tags in the generated bar balance 34/34 — the four welds each replaced a
+`<note/><seg>` pair with a `<seg><lab/>` pair, which keeps the existing closers correct, and the
+Zoom weld replaced a whole `.ps-vs-grp` including its closer. Inline script parses.
+
+⚠️ **Not verified signed in.** The bar was measured on its real CSS with reproduced markup, not
+against live data — so the wrap behaviour at a real trade count (this project has four; ten would
+wrap sooner) is inferred, not seen.
+
+`MODULE_V` → `20260914zvs2`, sort-checked against `20260914zvs`.
+### Five solid red blocks in one bar, and a pane with no edge above it (2026-09-14) — fmlozano
+
+Owner: *"toolbar UI needs to be properly reworked. Main toolbar does not [have] a divider with the
+vertical stacking toolbar."* Plus: verify the side-panel clipping **on all modes**.
+
+### ⚠️⚠️ The bar was not too big. It had five maximum-emphasis marks and no entry point
+
+`.ps-vs-seg > button.on` was `background:var(--pd-red); color:#fff` — and this bar carries **five
+segmented controls that each always show exactly one active button**: scope, 2D/3D, Detail, Dates,
+Show. So the row rendered **five solid brand-red blocks at once**, every time, whatever the planner
+had chosen. Nothing was wrong with any one of them; with five things shouting, none of them is
+emphasis. That is what reads as "a wall of controls", and it is why the earlier passes that removed
+*words* from this bar did not fix the feeling — the noise was never the word count.
+
+**Measured in a browser, before and after, on the shipped stylesheet:**
+
+| | before | after |
+|---|---|---|
+| controls in the pane with a solid brand-red fill | **5** | **0** |
+| active-state contrast, light | **4.12:1** — below AA | **5.11:1** |
+| active-state contrast, dark | **4.12:1** | **6.76:1** |
+| `.ps-vstack` top border | `0px none` | `1px solid var(--pd-line)` |
+
+⚠️ **The old state also failed AA.** White on `#EE3124` is 4.12:1, under the 4.5 threshold for
+normal text — so this was never only a taste question. `dashboard.css`'s own token comment already
+said as much about brand red at this size; the segmented control had just never been held to it.
+
+⚠️ **THE TREATMENT IS THE APP'S OWN, NOT A NEW ONE.** `.pd-seg-multi > button.on` in the shared
+`dashboard.css` settled this already: the tint carries the state, a 2px red underline keeps the
+brand cue, the ink stays readable, and dark mode overrides the ink to `#FF8A80` because
+`--pd-red-dark` is only **2.64:1** on the dark tint. Those exact values are reused here, and the
+suite asserts the two rules still agree — if they ever diverge, the app is back to two different
+segmented-active states, which is the inconsistency this removes. Copied rather than shared as a
+class because `.ps-vs-seg` has its own sizing and overflow.
+
+⚠️ `--pd-red-light` **is** theme-remapped (`#FDECEA` light / `#3D1A19` dark), so the tint follows
+the theme. A fixed light tint here would have been the `.ps-fmt` *"why is there light colors?"* bug
+all over again.
+
+⚠️ **The scrubber keeps its solid red, deliberately.** `.ps-vs-fz-scrub .ps-vs-seg button.on` sits
+on the focus window's **scrim over the 3D stage**, not on a card — a tint designed to read against
+`--pd-card` all but disappears there. It is also more specific, so it wins without `!important`.
+Documented in place so the next pass does not "finish the job".
+
+### The divider
+
+`.ps-vstack` was padding and nothing else, so the pane's trade chips began 12px under the module
+toolbar with no edge between them and the two bars read as one three-row control block. It now
+carries `border-top:1px solid var(--pd-line); margin-top:4px; padding-top:14px`.
+
+⚠️ **On the pane, not under the toolbar.** `.ps-toolbar` is shared by every view in this module
+(grid, network, progress, flow line); a bottom border there would rule off views that have no
+second bar to be divided *from*. The pane that introduces its own toolbar is what owes the reader
+an edge.
+
+### Verifying the clipping on all modes — and the one that was never a bug
+
+The previous pass (`f494c81`) fixed a sticky sidebar and a 3D canvas 419px wider than its box, and
+its note said *"four things decide the class now"*. Enumerating from the source rather than from
+that function: there are **four** `ps-*-mode` classes, and `_psSyncLongDoc` names **three**.
+
+**`ps-net-mode` is the missing one, and withholding the class is correct.** It hides `.ps-split`
+exactly like the other three, so it looks like a fourth long document — but its own rule gives
+`.ps-network` `flex:1 1 auto; min-height:0; overflow:hidden`, which **fills the viewport and clips
+internally instead of growing the page**. `.ps-longdoc` exists only to let `.pd-content` grow so a
+sticky sidebar has travel; a pane that never grows does not need it, and giving it the class would
+switch `.pd-content` to `height:auto` for a view that wants to be exactly one viewport tall.
+Asserted **both ways**: the class is withheld, *and* the CSS that makes withholding it correct is
+still present — so if `overflow:hidden` is ever removed from that rule, the suite fails and says why.
+
+All **15** mode × tab states executed against the sliced `_psSyncLongDoc`; 15/15 as expected.
+
+### ⚠️ Found, named, not fixed: this file declares the same rules twice
+
+Measured: **14 rule lines are byte-identical** across two interleaved regions (~1529-1810 and
+~1829-2262) — `.ps-vstack`, `.ps-vs-bar`, `.ps-vs-note`, `.ps-vs-chips`, `.ps-vs-chip`,
+`.ps-vs-chip.on`, `.ps-vs-dot`, `.ps-vs-towerh` and friends. They are identical **today**, so
+nothing renders wrong; the hazard is entirely for the next editor, who can change one of them, see
+no effect, and conclude the CSS is not loading.
+
+Not deduplicated here: the regions are interleaved rather than one pasted block (the later one also
+carries rules the earlier never had), so reconciling them is its own careful diff and not something
+to do inside a toolbar change. A warning block now sits at the head of the earlier region naming
+every affected rule, and the divider is deliberately declared **after both copies** — the suite
+asserts that ordering, because a new property added to the earlier copy would work today only
+because the later copy happens not to set it.
+
+### Verified
+
+**33 assertions** executing `_psSyncLongDoc` sliced from the shipped file and parsing the shipped
+`<style>` blocks, with a **contrast build pinned to `f494c81`** (not `HEAD:`, which stops being the
+pre-change state the moment this commits) failing **11** of them — exactly the active-state and
+divider groups. Section A passes in both builds, correctly: it verifies existing behaviour rather
+than new.
+
+Browser measurements taken against a harness whose CSS is the **shipped `<style>` block extracted
+verbatim**, not re-typed — the last time a control was verified against a hand-copied shell, two of
+the host's own rules never applied and it passed on a layout that overlapped in the real app.
+
+⚠️ **Two measurement traps hit and corrected in the doing.** (1) Reading `getComputedStyle` in the
+same JS turn as a class change returned stale values. (2) More seriously, **a hidden Browser pane
+serves stale computed styles, not just void geometry** — it reported the dark tint on a light-themed
+root while `--pd-red-light` on the same element computed to `#FDECEA`. The dark figures above were
+taken while visible; the light ones are arithmetic on the token values, and they agree with both the
+browser's dark reading and `dashboard.css`'s own recorded 5.11 / 2.64.
+
+⚠️ The raw `{`/`}` count in this file does not balance and **never did** — one `{` inside a CSS
+comment. With comments stripped it balances exactly (2172 → 2174, +2 open, +2 close). The
+comments-stripped count is the honest gate; the suite asserts the raw imbalance is still exactly
+one, so nobody chases it as a regression.
+
+⚠️ **Not verified signed in** — no project loaded, so the bar was measured on its real CSS with
+reproduced markup rather than against live data.
+
+`MODULE_V` → `20260914zvs`. ⚠️ Sort-checked against the current `20260914x`: a natural-looking
+`20260914vsbar` would have sorted **backwards** (`v` < `x`), which is the regression this repo has
+already had once.
 ### The typical set carries real chart codes, and a strange code is flagged (2026-09-14) — fmlozano
 
 Owner, after the DEMO01 end-to-end run: *“Both — re-seed and flag”*.

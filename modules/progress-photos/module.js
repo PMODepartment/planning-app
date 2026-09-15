@@ -267,11 +267,36 @@ window.ProgressPhotos = (function () {
   }
 
   // ------------------------------------------------------------------ init ---
+  // ⚠️⚠️ 2026-09-14, later still yet again (again): "the video still gets
+  // removed once a new session opens" -- persisting the draft's source blob
+  // (see Pano360DraftStore below) only helps if the browser actually KEEPS
+  // that IndexedDB data. By default this origin's storage is "best-effort" --
+  // a browser under disk pressure is free to silently evict it, and that is
+  // indistinguishable from the planner's own perspective from "my capture is
+  // just gone." `navigator.storage.persist()` asks the browser to exempt this
+  // origin from that automatic eviction. It is a REQUEST, not a guarantee --
+  // support and the criteria a browser applies (installed-as-app, site
+  // engagement, an explicit permission prompt, or simply "not supported at
+  // all" on some mobile browsers) vary, so this can silently do nothing on
+  // some devices. It is still strictly better than never asking at all, and
+  // costs nothing when unsupported (feature-detected, wrapped in try/catch,
+  // never blocks anything else in init()).
+  async function ensurePersistentStorage() {
+    try {
+      if (!navigator.storage || !navigator.storage.persist) return;
+      var already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+      if (already) return;
+      var granted = await navigator.storage.persist();
+      console.info('[progress-photos] Persistent storage ' + (granted ? 'granted' : 'was not granted') + ' for this device.');
+    } catch (e) { /* best-effort only -- never fatal to init() */ }
+  }
+
   async function init(user, prof) {
     profile = prof; uid = user.id;
     canWrite = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
     pid = sessionStorage.getItem('pd_project') || '';
     restoreUI();
+    ensurePersistentStorage();   // deliberately not awaited -- best-effort, must not delay init()
 
     await fillProjects();
     wire();
@@ -287,6 +312,22 @@ window.ProgressPhotos = (function () {
     // background work that must not delay the rest of init().
     rehydratePano360Drafts();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
+    // ⚠️⚠️ 2026-09-14, later still yet again: persisting a still-processing
+    // draft's SOURCE means the recording survives an accidental close/
+    // navigate -- but "survives" here means "the WASM stitch restarts from
+    // scratch next time", never "keeps going in the background of a closed
+    // tab" (nothing can do that). Losing that CPU time (and the planner's
+    // patience) to a stray back-button tap is worth a native "leave this
+    // page?" prompt while at least one draft is genuinely still stitching --
+    // exactly the standard browsers already offer for "you have unsaved
+    // changes", pointed at the one condition where leaving costs real time
+    // rather than real data.
+    window.addEventListener('beforeunload', function (e) {
+      if (PANO360_DRAFTS.some(function (d) { return d.status === 'processing'; })) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
     joinCollab();
   }
 
@@ -5884,16 +5925,32 @@ window.ProgressPhotos = (function () {
   // above PANO360_DRAFTS for what this is for and the "per person" rule.
   var Pano360DraftStore = (function () {
     var DB_NAME = 'pp_pano360_drafts_v1', STORE = 'drafts', dbp = null;
+    // ⚠️⚠️ 2026-09-14, later still yet again: `dbp` used to be memoized
+    // UNCONDITIONALLY on the first call, including a REJECTED promise — so
+    // one transient `indexedDB.open()` failure (a momentary storage-pressure
+    // hiccup, a blocked upgrade, a private-mode restriction that clears once
+    // the user grants persistence) permanently broke persistence for the
+    // rest of the page's life: every later `put`/`all`/`remove` chained onto
+    // the same already-rejected promise and short-circuited straight to
+    // `.catch()` with no retry, ever. That is a plausible real cause of "the
+    // draft gets removed" reports that this file's own earlier fake-
+    // IndexedDB tests could never catch (a mock that always resolves has no
+    // failure to memoize). `dbp` is now only cached on SUCCESS; a failed open
+    // clears it so the very next persist attempt gets a fresh try instead of
+    // inheriting a permanently-poisoned promise.
     function open() {
       if (dbp) return dbp;
       dbp = new Promise(function (resolve, reject) {
-        var req = indexedDB.open(DB_NAME, 1);
+        var req;
+        try { req = indexedDB.open(DB_NAME, 1); }
+        catch (e) { dbp = null; reject(e); return; }
         req.onupgradeneeded = function () {
           var d = req.result;
           if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'id' });
         };
         req.onsuccess = function () { resolve(req.result); };
-        req.onerror = function () { reject(req.error); };
+        req.onerror = function () { dbp = null; reject(req.error); };
+        req.onblocked = function () { dbp = null; reject(new Error('IndexedDB open was blocked by another tab')); };
       });
       return dbp;
     }
@@ -5932,7 +5989,16 @@ window.ProgressPhotos = (function () {
     function allForUser(userId) {
       return all().then(function (list) { return list.filter(function (r) { return r.uid === userId; }); });
     }
-    return { put: put, remove: remove, all: all, allForUser: allForUser };
+    return {
+      put: put, remove: remove, all: all, allForUser: allForUser,
+      // Test-only: forces the NEXT open() to call indexedDB.open() again
+      // instead of reusing whatever `dbp` a previous (real) connection in
+      // this same test run already resolved to — needed to genuinely
+      // exercise the "does open() retry after a failure" fix in isolation,
+      // since a real page only ever calls open() with a fresh, unconnected
+      // `dbp` in the first place.
+      _resetConnectionForTest: function () { dbp = null; }
+    };
   })();
 
   // Snapshots a draft's current, structured-clone-safe state into
@@ -5961,8 +6027,25 @@ window.ProgressPhotos = (function () {
       pendingAdjust: draft.pendingAdjust || {},
       updatedAt: Date.now()
     };
-    Pano360DraftStore.put(rec).catch(function () {});
+    // ⚠️⚠️ A failed write here used to be completely silent -- the whole
+    // point of this feature is "survives a session ending while it's
+    // processing," so a write that never actually lands (a real device's
+    // storage quota, a private-mode restriction, a transient IndexedDB
+    // error) must not fail quietly. Logged every time (for whoever's
+    // actually debugging a report like this), toasted at most ONCE per
+    // session (never per progress tick -- a 48-frame stitch calls this
+    // dozens of times and a failing write fails the same way every time) so
+    // the planner has an actual chance to notice their draft may not
+    // survive closing the tab, rather than discovering it's gone later.
+    Pano360DraftStore.put(rec).catch(function (e) {
+      console.warn('[progress-photos] Could not persist 360° draft ' + draft.id + ' to local storage:', e);
+      if (!pano360PersistFailWarned) {
+        pano360PersistFailWarned = true;
+        UI.toast('This device could not save your 360° capture locally -- keep this tab open until it finishes, or it may be lost if you close it.', 'warn');
+      }
+    });
   }
+  var pano360PersistFailWarned = false;   // toast the storage-failure warning at most once per page load
 
   // Reconnects this signed-in user's own in-progress/finished-but-
   // unconfirmed 360° drafts after a reload or a fresh login -- called once
@@ -5976,7 +6059,8 @@ window.ProgressPhotos = (function () {
   async function rehydratePano360Drafts() {
     if (!uid || typeof indexedDB === 'undefined') return;
     var records;
-    try { records = await Pano360DraftStore.allForUser(uid); } catch (e) { return; }
+    try { records = await Pano360DraftStore.allForUser(uid); } catch (e) { console.warn('[progress-photos] Could not read persisted 360° drafts:', e); return; }
+    var resuming = 0, restored = 0;   // for the recovery toast below -- see its own comment
     records.forEach(function (rec) {
       if (findPano360Draft(rec.id)) return;
       var d = {
@@ -6002,6 +6086,7 @@ window.ProgressPhotos = (function () {
       PANO360_DRAFTS.push(d);
       if (d.status === 'processing') {
         if (rec.sourceBlob) {
+          resuming++;
           d._persistSourceBlob = rec.sourceBlob;
           if (d.source === 'video') {
             d.video = rec.sourceBlob;
@@ -6018,8 +6103,27 @@ window.ProgressPhotos = (function () {
           d.error = 'Processing was interrupted and could not be resumed -- please record or upload again';
           persistPano360Draft(d);
         }
+      } else {
+        restored++;
       }
     });
+    // ⚠️⚠️ 2026-09-14, later still yet again (again): recovering a draft used
+    // to be completely silent -- the ONLY sign it survived was the small
+    // topbar "N drafts" badge, which a planner reopening the app after
+    // closing it mid-capture has no particular reason to go looking for.
+    // From their side that is indistinguishable from "my video is just
+    // gone" -- which is exactly what was reported, even though the source
+    // was in fact being persisted correctly the whole time. A direct toast,
+    // fired once per app open (never per draft), says plainly that nothing
+    // was lost and that a still-processing one is being restarted -- the
+    // one thing recovery cannot do (see the RESTARTED-not-resumed note atop
+    // this function) and so the one thing worth being upfront about.
+    if (resuming || restored) {
+      var bits = [];
+      if (resuming) bits.push(resuming + ' 360° capture' + (resuming === 1 ? '' : 's') + ' resuming (restarting from your saved recording)');
+      if (restored) bits.push(restored + ' finished 360° capture' + (restored === 1 ? '' : 's') + ' waiting for review');
+      UI.toast('Recovered from before you closed this app: ' + bits.join(', ') + '.', 'ok');
+    }
     renderPano360DraftsBadge();
   }
 
@@ -7549,6 +7653,11 @@ window.ProgressPhotos = (function () {
     _findPano360Draft: function (id) { return findPano360Draft(id); },
     _pano360Drafts: function () { return PANO360_DRAFTS; },
     _Pano360DraftStore: Pano360DraftStore,
-    _setUid: function (v) { uid = v; }
+    _setUid: function (v) { uid = v; },
+    // Test-only: lets a real-failure test reset the "warn once per page
+    // load" latch deterministically, instead of depending on being the
+    // first test in the file to ever trigger a persist failure.
+    _resetPano360PersistFailWarned: function () { pano360PersistFailWarned = false; },
+    _ensurePersistentStorage: function () { return ensurePersistentStorage(); }
   };
 })();

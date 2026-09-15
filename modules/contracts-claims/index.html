@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260912q" />
-  <link rel="stylesheet" href="module.css?v=20260911c" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915f" />
+  <link rel="stylesheet" href="module.css?v=20260915g" />
 </head>
 <body>
   <div class="pd-app">
@@ -92,18 +92,27 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="../../assets/js/config.js?v=20260913a"></script>
+  <script src="../../assets/js/config.js?v=20260915a"></script>
   <script src="../../assets/js/auth.js?v=20260914e"></script>
   <script src="../../assets/js/db.js?v=20260914d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260914e"></script>
-  <script src="../../assets/js/icons.js?v=20260913a"></script>
+  <script src="../../assets/js/ui.js?v=20260915g"></script>
+  <script src="../../assets/js/claims.js?v=20260915a"></script>
+  <script src="../../assets/js/notebook.js?v=20260915d"></script>
+  <script src="../../assets/js/icons.js?v=20260915f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <!-- boq.js must load BEFORE module.js's init runs (it is read as window.BOQ). -->
   <!-- locmatch.js first: boq.js and affected.js both call PDLoc, and the schedule loads it too. -->
   <script src="../../assets/js/locmatch.js?v=20260910z1"></script>
+  <!-- ⚠ attach.js BEFORE module.js: `PDAttach` is the attachment engine this module's own
+       att* delegates are built on (it was extracted out of module.js on 2026-09-15 so the
+       Project Schedule could use the same ordering rules rather than a second copy). The
+       instance is built lazily on first use, so strictly this only has to precede a click —
+       but a shared dependency listed after its consumer is how a load-order bug gets written
+       later by someone reading the order as the contract. -->
+  <script src="../../assets/js/attach.js?v=20260915b"></script>
   <script src="../../assets/js/co-insert.js?v=20260909r"></script>
   <script src="../../assets/js/xlgrid.js?v=20260907e"></script>
   <script src="boq.js?v=20260914s"></script>
@@ -111,8 +120,8 @@
   <script src="packages.js?v=20260911uc"></script>
   <!-- affected.js before wizard.js and module.js: both read it as window.CCAffected. -->
   <script src="affected.js?v=20260911b"></script>
-  <script src="wizard.js?v=20260911uc"></script>
-  <script src="module.js?v=20260914u"></script>
+  <script src="wizard.js?v=20260915c"></script>
+  <script src="module.js?v=20260915h"></script>
   <script>
     // Item 1 (2026-09-02): the topbar tab strip becomes ONE dropdown, and the
     // static module label beside it goes with it — the trigger already names

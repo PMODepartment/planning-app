@@ -102,6 +102,1716 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (w) — The Portfolio Dashboard never finished loading, and the filter offered to narrow it could not
+
+Owner, with two screenshots: *"Right now it always fails loading the schedules across 21 projects"*,
+then *"selected two projects only still fails"*. Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+### ⚠️⚠️ THE SECOND SCREENSHOT IS THE DIAGNOSIS
+
+The filter button reads **"2 projects"** while the pane still reads **"Loading schedules across 21
+project(s)…"**. `after()` — and both *Select all* and *Clear* — ended in `renderAll()`, which paints
+the **Overview pane and nothing else**; the other twelve views each have their own `load<View>()`
+and **none was called**. The scope control's own comment claims it *"scopes EVERY view"*. It never
+did. One `renderCurrent()` now repaints the Overview and re-runs the active view, through a single
+`viewLoaders()` list **`switchView` reads too** — two copies is how a view gets wired for arrival
+and forgotten when the filter changes. ⚠️ Only the network-bound load is debounced, so five ticks
+are one fetch and the Overview still repaints on each.
+
+⚠️⚠️ **And a superseded load could win.** `loadScurve` had no generation token, so two overlapping
+loads both painted and whichever finished **last** committed the state — which is exactly how a
+stale 21-project message survived a change to two.
+
+### ⚠️⚠️ THE READ COULD NOT USE THE INDEX IT WAS BUILT FOR
+
+It paged with `.in('project_id', ids).order('id')`, while `project_schedule_proj_id_idx` is
+`(project_id, id)` and its own migration says what it is for: *"(where project_id = ? and id > ?
+order by id) — an indexed range scan per page."* **One project.** Across 21 ids the plan degenerates
+and a page can run past the ~8s `statement_timeout`. It pages **per project** now, the
+`count:'exact'` pre-read is **gone** (it counted every activity in the selection, on every load, to
+decide whether to show a toast), and one project failing is **named** rather than failing the view.
+
+⚠️⚠️ **It also fetched ~100k rows to draw a chart it then refused to draw** — above five projects
+the overlay falls back to Actual-only anyway. `schedule_scurve_agg_multi` already returned the
+combined curve server-side in one call and was used only for the KPI strip; that roll-up is the
+default render now, fed in as a **single series** rather than given a second renderer, and rows are
+read only at five projects or fewer. ⚠️ The Forecast toggle is **disabled** when the roll-up is
+drawn — the aggregate carries no SPI forecast, so the box would otherwise have sat ticked over a
+chart with no forecast line.
+
+⚠️ **"Load failed." is gone.** A timeout, an un-run migration and an RLS refusal read alike and none
+was actionable; `57014` now says to narrow the filter, `PGRST202` names the migration file.
+
+### Verified
+
+**73 assertions, 0 failing**, sliced out of the shipped file and executed, contrast pinned to
+**`aae4752`**. ⚠️⚠️ **The negative build bites:** strip the generation guard and the suite reports
+**two paints with the stale 21-project load winning — the owner's screenshot, reproduced.**
+⚠️ **Two first-run failures were MY assertions, not the code** — the only `count:'exact'` left is
+inside the comment saying it was removed, and two of three `"Load failed."` are comments quoting the
+deleted message. The checker was measuring its own explanation; comments are stripped through
+`tools/scan.js` now.
+
+`wiring-check` **136/136**, `scan` self-test 10/10, `selectall-key` 88 safe / 0 broken.
+⚠️ **Not verified signed in** — the roll-up RPC has never run against 21 real projects.
+**Hard-refresh the Portfolio Dashboard once.** `MODULE_V` → `20260915t`, sort-checked against the
+`20260915s` the live site is serving.
+
+### 2026-09-15 (v) — The Schedule Summary told a project with no baseline that nothing had slipped
+
+Owner, with the Summary open on OPW101, six numbered points plus the notice. Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+⚠️⚠️ **One of the six is a defect, not a layout question.** On that project **2,561 of 2,561
+activities carry no baseline**, so *Biggest slips* printed **"Nothing is finishing later than its
+baseline"** beside a **Behind baseline 0 · 0 ahead · 0 on time** card. All of that reads as good
+news; the truth is that not one figure on the page can be measured against a baseline, which is
+itself the finding. The empty state now says so and names **Actions ▾ Baselines…**, and the card
+shows an em dash — three zeros read as three measurements. ⚠️ The test is that **nothing**
+resolved, not that some activities lack a baseline, which is the ordinary case.
+
+⚠️⚠️ **The data-date notice is dismissible, and the key carries the DATE.** The hazard is real —
+the data date is per browser and drives 62 call sites — so *dismissed* means "I have acknowledged
+THIS pinned date", and re-pinning a different one brings the warning back. A permanent dismissal
+would let a planner silently inherit somebody else's "now".
+
+Also: the look-ahead reports how much of each window is **critical** ("241 starting" says nothing
+about which 241), counted once per activity rather than once per edge; the trade bars split
+`0% 1750` into two right-aligned columns; the footnote loses its third sentence (a read-only page
+saying it is read-only) and keeps the two load-bearing ones; the header loses the
+`baseline Baseline …` stutter and gains thousands separators; and **Print is gone with its
+handler** — Ctrl+P does the same thing, and a handler bound to an id nothing renders is the
+`#pk-boq` shape this repo has shipped once.
+
+**30 assertions, 0 failing**, sliced by name and executed over a fixture shaped like OPW101, with
+**HEAD as the control** on every point; the previous suite still 34/34. Rendered at 1400px in an
+iframe against the module's own stylesheet, and the dismiss **clicked through the real handler**.
+⚠️ Measured at 20×20 first — under WCAG's 24px target — and raised. `wiring-check` 136/136.
+⚠️ **Not verified signed in.** `MODULE_V` → `20260915s`.
+
+⚠️⚠️ **AND THIS ENTRY HAD TO BE WRITTEN TWICE, FOR THE REASON THE 2026-09-15 (g) ENTRY ALREADY
+RECORDS.** The first version went in through `node -e "…"` from bash, and **every backticked term
+was command-substituted away before node ever saw the string** — five silent holes where
+`0% 1750`, `baseline Baseline …`, `#pk-boq`, `wiring-check` and `MODULE_V` had been, and bash
+printing `0%: command not found` as the only clue. That log already says, in as many words:
+*"Changelog prose goes through a file written with the editor, not through a double-quoted shell
+argument."* **Write the prose to a file and splice the file.** The damage is invisible in a
+rendered diff, because a missing code span reads as an ordinary sentence.
+
+
+### 2026-09-15 (u) — Three sidebar rows drawing one glyph, a rail that lost its grouping, and a portfolio figure that was a mean
+
+Owner: *"Portfolio overview dashboard needs work let's start on this. Side panel in portfolio
+overview needs work as well especially when collapsed. Some icons are the same let's think of how to
+solve this."* Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md). What reaches beyond
+that page:
+
+### ⚠️⚠️ THE DUPLICATE ICONS ARE A COLLAPSED-RAIL DEFECT, AND THERE WERE THREE
+
+Measured by rendering the nav through the shipped `UI.renderNav` and grouping rows by the geometry
+each icon **draws** — not by name, because two names can map to identical paths (`grid`/`gridView`
+and `group`/`users` both do). `barChart` was **Dashboard and Productivity Rates**, `calendar` was
+**Milestones and Meetings**, `clipboard` was **Issues and Concerns and My Work**.
+
+⚠️ It matters because the rail collapses: at 64px `.pd-navtxt` is `display:none` — asserted — so the
+glyph is all that is left. Same defect class the Project Schedule's toolbar has paid for twice.
+⚠️⚠️ **The three rows changed are the three that exist only in that nav.** A module's icon is its
+identity in the project sidebar and the module grid too, so moving one would change two other
+screens to fix neither.
+
+`icons.js` gains **`milestone`** — the diamond this app already draws a milestone with, on a
+baseline. ⚠️ A bare diamond would collide with the drawing palette's own shape tools; a diamond on a
+line is a date rather than a shape.
+
+### The collapsed rail keeps its grouping
+
+Nineteen rows in a 64px column with the section headings dropped to nothing. A heading now folds to a
+**rule** instead — the words go, the boundary stays.
+⚠️⚠️ **Not `opacity: 0`:** opacity applies to the border too, so an opacity-hidden heading cannot
+carry a divider. ⚠️⚠️ **And not `var(--pd-line)`** — found by rendering, not reading: that token is
+the *light-theme* divider and this rail is `#231F20` in both themes, so it painted a near-white rule
+on a near-black column.
+
+⚠️⚠️ **A pre-existing bug the same change exposed:** the mobile drawer's rule restored `display` and
+nothing else, while the collapsed rule zeroes height, padding and opacity — none of which a
+`display` resets. The drawer has been rendering its Portfolio / Personal / System headings **at zero
+height and zero opacity**, present in the DOM and invisible on screen. Every property is handed back
+now, restated from the base rule so the drawer matches the expanded rail exactly.
+
+### ⚠️ The Portfolio page is finally cache-busted
+
+`portfolio-overview` is not in `APP_CONFIG.MODULES`, so `ModulesGrid.href` never reached it and every
+sidebar link was a bare `index.html` — which is why that module's log has had to end three entries
+with *"hard-refresh once"*. `poBase` now carries `MODULE_V`.
+
+### ⚠️⚠️ And the page's headline progress figure was a mean
+
+₱50M at 100%, ₱50M at 100%, ₱2B at 5% read as **68% complete**; weighted by value it is **10%**.
+Same fault and same fix as the Project Schedule's Summary view. It degrades to the mean when nothing
+can be weighted, reports which basis it used, and counts the projects reporting no progress rather
+than dropping them.
+
+### Verified
+
+**26 assertions** on the weighting, sliced by name and executed, with **HEAD's own mean lifted
+verbatim from `renderKPIs` as the control** — 68% against 10%, agreeing at 40% on equal budgets.
+**5 assertions** on the nav through the shipped `renderNav`, including the project sidebar as a
+regression guard. **Measured in a browser** at 1400px — ⚠️ inside an **iframe**, because the pane is
+a few hundred px wide and the phone media query applied to it, which is how the first run measured
+the drawer instead of the rail: rail 64px, 19 icons, **0 collisions**, dividers painting
+`rgb(66,62,63)` on `rgb(35,31,32)`, no horizontal scroll, background asserted as a **colour**.
+
+⚠️ **Two of my own mistakes, recorded rather than smoothed over:** an expectation of 7% where the
+answer is 10% (I mis-read 2000×5), and a control that would not build because `var avg = [^;]+;`
+stopped at the `;` inside `return a + b;`.
+⚠️ **Checked and NOT changed:** `isBehind`'s `sf > ff` reads backwards against its own comment, and
+is right — `schedule_finish` is the live programme's finish and `forecast_finish` is hand-entered,
+so the schedule running past the committed date **is** behind. Settled by reading the writers.
+
+`dashboard.css` → `?v=20260915f` (31 pages), `ui.js` → `?v=20260915f` (23), `icons.js` →
+`?v=20260915f` (23), `MODULE_V` → `20260915r`, all sort-checked; `wiring-check` 136/136, every asset
+on one version.
+⚠️ **Not verified signed in.**
+⚠️ **Deliberately NOT guessed at:** the rest of *"the dashboard needs work"*. What is fixed is a
+figure that was wrong and a rail that was unreadable; whether the Overview should also **rank
+projects by attention** is a design decision and the owner's to make.
+⚠️ **Queued, at the owner's own request:** *"the portfolio view of the schedule needs work as well.
+Let's queue this."* Not started.
+
+
+### 2026-09-15 (t) — The class codes get their leading zeros back, and the notebook's list folds away
+
+**Run `migrations/2026-09-15-class-code-pad.sql`.** Owner: *"let's fix the class code leading zeroes"*
+and *"I want the side panel within the notebook to be collapsible as well."*
+
+### ⚠️⚠️ THE CLASS-CODE CAUSE IS ALREADY FIXED — WHAT IS LEFT IS THE ROWS IT WROTE
+
+On 2026-09-15 (l) I reported this as *"not fixed, and not safely fixable in a render function"*,
+because `2026-08-21-class-codes.sql` records that de-zeroing **collides genuinely different items**
+(`015051` Earthmoving with `15051` Railings). That warning is about **stripping** a zero, or padding
+a value that is **already a real code**. Measured against the seeded chart rather than argued:
+
+| | |
+|---|---|
+| codes at either level that are 4 characters long | **0** — every one is 5 or 6 |
+| de-zeroed forms that are not themselves real codes | 221 |
+| …of those, ones that pad to **exactly one** real code | **221** |
+| …ambiguous | **0** |
+| real codes that also pad to another real code (the migration's collision) | 6, and **all six resolve on their own**, so the pad index is never consulted for them |
+
+So **pad only on a miss** is provably safe here: `15051` resolves, therefore `15051` is never touched.
+
+⚠️⚠️ **And the origin turned out to be a fault this repo already closed.** `CLASS_CODE_DB` — the
+Schedule Builder's `+ Library` list — held Finance's Level-2 group chart **with the leading zeros
+stripped** until **2026-09-10 (z4)** padded all 43 of them. Anything pushed from the library before
+that date carries the de-zeroed code. The library is correct now, so this is a bounded repair of
+existing rows, not an ongoing leak. Nothing new writes one.
+
+⚠️ **The read-time fix repairs the SCREEN, and the migration repairs the DATA — and they are not the
+same job.** `boq_allocations` gates on `project_schedule.class_code` and the BOQ allocator matches an
+activity's stored code against a bill line's, so until the migration runs those still see `3050` and
+still miss. The cell therefore marks a padded code with a **dotted underline** and names the stored
+value in its tooltip — deliberately **not** a colour, because the code shown *is* correct and red is
+reserved for one the chart does not know at either level, which is the confusion the owner already
+had to ask about once.
+
+### Verified — 45 assertions, and the control bites
+
+The resolver sliced out of the shipped file **by name** and executed over the real 702-row chart,
+with **HEAD run beside it**: all four codes from the screenshot resolve to their padded group and
+name the right work (`3050` → `03050` Rebar), while **HEAD resolves none of them at either level** —
+the red tag, reproduced. Plus: both collision pairs stay distinct and unpadded; **901 real codes
+resolve exactly as they did on HEAD** and none is flagged; every de-zeroed form in the chart is
+unique; an unknown code is still unknown; and ⚠️ **a chart that has not loaded yet accuses nobody**
+(the `[]`-is-truthy family of false alarm this module has shipped before).
+
+### The notebook's note list folds
+
+⚠️ **Two states, two localStorage keys, deliberately.** Folding the list means *"give the writing
+more room"*; shutting the drawer means *"I am done"*. One key would make each gesture undo the other.
+⚠️⚠️ **And the head now names the current note while the list is folded** — the list was the only
+thing on screen saying *which* note you are typing into, and folding it without replacing that is how
+somebody writes a paragraph into yesterday's note. The empty-state placeholder changes too: telling
+you to "select a note" from a list you cannot see reads as a broken screen.
+⚠️ `.pd-nb.sidehid .pd-nb-side` is (0,2,0) against a base rule that declares **no `display`** — so
+there is nothing for it to tie with. That is the whole lesson of the panel two rules above, and the
+comment says so in place.
+
+### ⚠️⚠️ AND THE OTHER THREE REPORTS IN THE SAME MESSAGE WERE A STALE PAGE, NOT DEFECTS
+
+*"There is still a x button"*, *"clicking on the notes doesn't close and open"*, *"I don't see the
+dashboard view of the contracts & claims"*, *"Schedule module doesn't have the dashboard view"* —
+checked against the deployed site rather than assumed: the live `modules/project-schedule/index.html`
+already requests `notebook.js?v=20260915c`, the × is absent from the source, the FAB handler is
+`isOpen() ? close() : open()`, `ccDashHTML()` is the **first thing the Contract tab renders**, and
+`data-tab="summary"` is in the title menu. The owner's own URL bar carries **no `?v=`** at all, so
+that tab bypassed `MODULE_V` entirely — a bookmark or a tab open since before the deploy.
+⚠️ `sw.js` already forces `cache:'reload'` on every HTML navigation, so a genuine reload gets fresh
+bytes; what it cannot fix is a tab nobody has reloaded. **Hard-refresh once.**
+
+⚠️ **The `MODULE_V` fallback literal had drifted seven letters behind** (`20260915i` against the
+pages' `20260915p`) and is brought current. It is only read by a page that omits the query string —
+harmless today, and exactly the drift the 2026-09-03 (r) entry had to correct once already.
+
+`wiring-check` **136/136**; `notebook.js` and the schedule's 3.3MB inline script both parse;
+`dashboard.css` braces 566/566; every asset on one version, 0 splits.
+`dashboard.css` → `?v=20260915e` (31 pages), `notebook.js` → `?v=20260915d` (23 pages),
+`MODULE_V` → `20260915q`, all sort-checked.
+⚠️ **Not verified signed in** — the resolver is proved by execution against the real chart, and the
+migration has **not been run**, so no stored code has actually been repaired.
+
+
+### 2026-09-15 (r) — The notebook could be opened and never closed, and `+ New` lost the note it made
+
+Owner, twice: *"The notebook is not collapsible let's fix. I want the notes button can be clickable
+to open and close the notebook. Let's remove the close button since the notebook can be opened and
+closed via [it] already which will make it redundant."* Then: *"The notes +new button doesn't work as
+well it doesn't let me save the current page and create a new one."*
+
+### ⚠️⚠️ THE FIRST ONE IS A DEFECT THIS FILE ALREADY DOCUMENTS, MADE AGAIN
+
+`panel.hidden = true` did nothing, because `.pd-nb-panel { display:flex }` is specificity **(0,1,0)
+— exactly equal to the user agent's own `[hidden] { display:none }`** — and an author rule beats the
+UA default at equal specificity. `dashboard.css` carries a note about precisely this for
+`.il-icondd-menu`, and the 2026-09-09 (u2) entry fixed it app-wide for `.pd-btn`. One stylesheet
+later, I wrote it again.
+
+⚠️⚠️ **And the first fix was not enough, which is the more useful half.** Adding
+`.pd-nb-panel { display:none }` *above* the existing block left the original `display:flex` in place
+**after** it at the same specificity, so it still won on source order and the panel still would not
+close. **Adding a rule is not the same as removing the one that fights it.** The `display` is now
+gone from that block entirely; the `.open` class opens it and a `:not([hidden])` stops any future
+rule out-ranking the attribute again.
+
+⚠️ The **×** button is gone, as asked — the FAB is a toggle and a second control doing the same thing
+in the same corner is one more thing to read. Escape still closes it from the keyboard.
+
+### ⚠️⚠️ THE SECOND ONE WAS TWO BUGS BEHIND ONE SYMPTOM
+
+1. **A stale read error was never cleared.** `err` was set once by a failed `load()` and `listHTML`
+   rendered that failure **for ever** — so a note created afterwards went into `notes` and could not
+   be seen. That is "+ New does nothing", exactly.
+2. ⚠️⚠️ **A load in flight clobbered a write that landed while it was out.** `load()` assigns `notes`
+   WHOLESALE, so a note created between the read being issued and it returning was silently
+   discarded when the stale list arrived — **measured in the harness: the row was in the database
+   and the panel still read "No notes yet".** Every writer now bumps a `loadGen` token and a load
+   whose token has moved on throws its result away. Same device, and the same failure, as the
+   contracts-claims load race fixed earlier today.
+
+⚠️ **And the most likely thing anyone actually saw first: the migration.** *"Could not read your
+notes"* was the same vague sentence for a missing table as for a failed read. A missing table now
+says **the notebook is not set up yet** and names `2026-09-15-user-notes.sql`; reopening **retries**
+the read, so running the migration with the page open no longer needs a reload to take effect.
+
+### Verified
+
+Driven in a real browser against the shipped files: **12 assertions on the healthy path** (opens,
+**closes**, toggles back, `+ New` saves the current note before making a new one, both listed, the
+title derived) and **6 on the un-migrated path** (names the migration file, does not read as
+working-but-empty, `+ New` reports the cause and writes nothing, reopening retries once the table
+exists, and **a create issued during an in-flight load survives it**).
+
+⚠️ **My own test found the collapse still broken twice before it was fixed** — once because the
+browser was serving a cached `dashboard.css` I had edited without bumping its `?v=` (this repo's
+single most-recorded deploy failure, hit inside a test of my own), and once because of the
+source-order problem above. Neither would have been visible by reading.
+
+`dashboard.css` → `?v=20260915d`, `notebook.js` → `?v=20260915c`, both across all 34 referencing
+pages, both sort-checked.
+
+### 2026-09-15 (s) — The Project Schedule gets a Summary view
+
+Owner: *"a dashboard summary view for the module for reporting purposes."* A fourth entry in the
+title menu, after Schedule Setup / Project Schedule / Cost Loading.
+
+⚠️⚠️ **NOT CALLED "DASHBOARD", AND NOT "REPORTING VIEW" — BOTH NAMES WERE ALREADY TAKEN.**
+"Dashboard" is the project-level page, which already carries a Project Schedule panel; two things
+one word apart and one level apart is the duplicate the sidebar just had fixed. "Reporting view" is
+a **layout mode in this very module** that strips the chrome off the Gantt for presenting it.
+⚠️ It also revives an idea that was deliberately removed — the Planner Cockpit went on 2026-09-02 as
+*"a monitoring surface, not schedule development"*. That reasoning was about a monitoring view
+sitting among the schedule-**building** views and it still holds; what is different is that this one
+**derives** everything and offers no second place to act.
+
+### It computes nothing of its own, and that is the design constraint
+
+Every figure comes from the functions the grid and the Gantt already use — `computeHealth`,
+`ensureCPM`, `dispStart`/`dispFin`, `blPrimaryLabel`, `isWbs`/`isMile`/`isChangeOrder`, `today()`.
+Not stylistic: this module has shipped a 3D view that disagreed with the 2D view of the same data
+(`_vsTowerModel` exists because of it), and the S-curve maths drifted after being hand-copied. A
+summary that recomputed progress its own way would be a second opinion presented as a report.
+
+- **Progress is duration-weighted**, and the page says so — a plain mean of `percent_complete` makes
+  a 1-day activity worth as much as a 200-day one. On the test programme the honest figure is
+  **14.7%** where a mean says 25%.
+- **Variance is against the primary baseline's finish**, never the current plan: comparing a forecast
+  to the plan it came from measures nothing, and re-baselining would make a six-month slip read as
+  on time. Rows carrying **no** baseline are counted and reported, not quietly excluded.
+- **Undated milestones are counted**, not dropped — "no milestone due" and "nobody has dated this
+  milestone" are opposite facts and only the second is a reason to go and look.
+- **The look-ahead runs from the data date**, not the wall clock, or it would disagree with the bars.
+- **An activity with no trade gets a named bucket**; a trade whose activities have no dates reports
+  **null, not 0%**.
+- ⚠️⚠️ **The data-date warning is the point of the page.** The data date lives in `localStorage` per
+  BROWSER and drives 62 call sites including the CPM — flagged on 2026-09-14 (h) and still not fixed
+  — so two planners can read different figures with nothing saying so. Tolerable on a working grid;
+  a liability on the one screen built to be shown to someone. It is stated on screen when pinned.
+
+### ⚠️⚠️ A CLASS COLLISION THAT ONLY RENDERING COULD FIND
+
+`.ps-sum` is **already the WBS summary BAR in the Gantt**, and it is `position:absolute`. My panel
+inherited that, fell out of flow, and rendered as a 56px sliver over an empty page — while the DOM
+was complete and every count assertion passed. Renamed to `ps-smy-*`; the `ps-sum*` set is asserted
+back to **exactly** HEAD's nine names.
+
+### Verified
+
+**34 assertions**, `summaryData()` sliced out by name and executed over a programme whose answers
+were computed by hand — the weighting, the ahead/on-time/behind split, the worst-slip ordering, the
+project finish against the latest **baseline** finish, milestone ordering and overdue, all three
+look-ahead windows, the trade buckets, and the pinned/unpinned data-date flag.
+⚠️ **Three of those assertions were MINE being wrong, not the code's** — I mis-counted the
+no-baseline rows, built a tie that made "worst slip" prove nothing, and used a forecast date where
+the baseline belonged. That last one is exactly the mistake the figure exists to prevent, and I made
+it in the test before the code could make it anywhere.
+
+Rendered against the real stylesheets at 1280px and 390px: 6 KPI cards, 5 trade bars, 15 rows, **no
+horizontal page scroll** at either width, two columns collapsing to one and the trade bars wrapping
+on a phone. `wiring-check` 136/136.
+
+⚠️ **Not verified signed in** — no real schedule has been summarised, so this is the shipped
+derivation over a fixture. ⚠️ The view renders **on entry only**, deliberately: recomputing it on
+every grid edit would cost a CPM pass per keystroke for a view nobody is looking at — so leave and
+re-enter after editing.
+
+`MODULE_V` → `20260915p`, sort-checked.
+
+### 2026-09-15 (q) — Contracts & Claims gets the time it was missing, and the portfolio stops being a register
+
+Owner: *"Let's develop a dashboard in the contracts & claims register… In terms of portfolio-level
+contracts & claims there should be a proper dashboard as well but should provide portfolio level
+information that can provide informed decisions for higher management. UI in the portfolio-level
+needs work as well."*
+
+### ⚠️⚠️ FIRST, `assets/js/claims.js` (`PDClaims`) — BEFORE A THIRD COPY WAS WRITTEN
+
+Four rules were already written **twice** — `ccRow` in dashboard.html and `ccBlock` in
+contracts-claims — and the portfolio rebuild was about to be the third. Every previous time this
+repo let that happen the copies drifted, and the one that drifted was the one nobody was looking at
+(three location normalisers, one of which matched a 13th-floor leaf to *"3rd Floor"*; the S-curve
+maths copied into portfolio-overview; the change-order insert).
+
+The rules, unchanged, now in one place: **decided = Approved + Disapproved** (Cancelled was never
+adjudicated); **recovery over decided only** (dividing by everything submitted reads as a
+catastrophic ~0% on a young register); **shortfall clamped at 0** (an approval above the ask is a
+data-entry question, not a credit); **aging derived, never stored**, null once decided, null if never
+submitted, never negative.
+⚠️ It exposes a **scalar** and a **row** form of each, because the two existing callers read
+different shapes — the project dashboard holds server-side aggregates, the register holds rows — and
+making one reshape its data to suit the other would be the tail wagging the dog.
+⚠️ **Money and days never meet.** Every function takes the key pair from its caller, so an EOT is
+measured in days because the caller passed day keys, not because a function guessed.
+
+### The Contract tab: the money half had no time half
+
+It could say what was claimed and what came back. It could not answer the question a commercial
+meeting opens with — **how long has the client been sitting on this, and how long do they normally
+take?** Added, from columns that have existed since 2026-07-20 and which nothing but the per-row
+aging ever read: **pending value and pending time**, **oldest pending**, **recovery rate**, an
+**aging breakdown** (0–30 / 31–60 / 61–90 / 90+), and **hand-off velocity** (submitted → evaluated →
+decided).
+
+### The portfolio: four tiles and a flat dump become a decision surface
+
+It was `kpi2 × 4` and every row of every project's register in one table **sorted by project name** —
+so the project that most needs attention was wherever the alphabet put it. Now: an **exposure strip**,
+**projects ranked by unrecovered exposure** (pending + shortfall, ties broken on the oldest pending),
+a **portfolio aging breakdown**, and the full register **kept behind a disclosure that states its own
+count** — the page is also used to find one row, and deleting that to make room would trade one job
+for another.
+⚠️ **Projects with nothing outstanding are still listed, at the bottom.** A management view that hides
+the healthy projects cannot be used to say "these four are fine", which is half of what it is for.
+
+### ⚠️⚠️ TWO REAL DEFECTS, AND ONE OF THEM WAS IN CODE I HAD ALREADY PASSED
+
+1. **The Contract tab's header undercounted.** `agingBuckets().n` counts records that have an AGE, so
+   a record Pending but never submitted was missing from *"N pending"* while appearing on its own row
+   two lines below — a header disagreeing with the list under it.
+2. ⚠️⚠️ **The aging bars were measured on a different basis from the figure printed beside them.**
+   The bars used `sub_amount` while *"Pending value"* prefers `eval_amount` — so the bars totalled
+   ₱100,000 under a headline reading ₱99,000. **The portfolio test caught it; the Contract tab's own
+   test had asserted the wrong number as correct.** Both now take the same key list, through one
+   shared `valueOf`, so a bucket total cannot be measured differently from its own headline again.
+
+### Verified
+
+**68 assertions across three suites, 0 failing**, every renderer sliced out of the shipped file by
+name and executed — never retyped:
+
+- **31 on the rules**, including the ones that hide a defect: recovery **35%** over decided rather
+  than 7.8% of everything submitted; a future submitted date yielding **null**, not a negative age;
+  a backwards date span **dropped rather than clamped to 0**, which would quietly pull an average
+  down and hide it; and asking for amount keys on an EOT giving **0, not a silent mix**.
+- **15 on the Contract tab**, including a register holding only a contract rendering **nothing**
+  rather than a wall of dashes.
+- **22 on the portfolio**, over three projects built so the **alphabetical and exposure orders
+  disagree** — otherwise the ranking could be right by accident. It ranks Charlie · Bravo · Alpha
+  where the alphabet says the reverse.
+
+Rendered in a browser against the real stylesheets at 1280px and 390px: both sheets loaded (447 +
+255 rules), **no horizontal page scroll at either width**, aging rows wrapping on a phone and the
+ranked table scrolling **inside its own box**, and the tones resolving to real values
+(`rgb(239,83,80)` / `rgb(224,160,8)`) rather than stuck literals. `wiring-check` **136/136**.
+
+⚠️ **Not verified signed in** — no live register has been read, so these are the shipped renderers
+over fixtures.
+⚠️⚠️ **`portfolio-overview/index.html` IS NOT CACHE-BUSTED** — it is reached by a plain sidebar href
+and `MODULE_V` does not cover it, as that module's own log records. **Hard-refresh the Portfolio
+Dashboard once** or the rebuilt view will not appear.
+
+New `claims.js` → `?v=20260915a`; contracts-claims `module.js`/`module.css` → `?v=20260915g`;
+`MODULE_V` → `20260915o`, sort-checked.
+
+### 2026-09-15 (p) — "Personal Dashboard" becomes My Work, and the app gets a notebook
+
+**Run `migrations/2026-09-15-user-notes.sql`.** Owner: *"Personal 'Dashboard' shouldn't be called
+dashboard let's think of another terminology… Let's also add a personal notebook in the app that
+saves… like a sticky note that doesn't close when moving through pages. Collapsible but can be
+opened somewhere within the page."*
+
+### The rename, and the sharper problem underneath it
+
+The sidebar rendered **two rows both reading "Dashboard"** — Portfolio → Dashboard, and Personal →
+Dashboard ten lines below it. The label was not distinguishing the two things it existed to
+distinguish.
+
+**"My Work" is not a new word.** The avatar menu has linked this page as *My Work* since it was
+built (`renderUserBar`), the file is `my-work.html`, the global is `MyWork` and the script is
+`my-work.js`. The app already called it that everywhere except the one place a planner reads.
+
+⚠️ **The `personal-dashboard` KEY is deliberately unchanged.** It is an identifier `my-work.html`
+passes to `cls()`, not text anyone sees — and renaming an identifier to match a label is how a
+two-place change becomes a silent mismatch. Same call the Manpower/Equipment rename made when
+`data-view="loading"` stayed put while the tab became *Overview*.
+
+### The notebook — `assets/js/notebook.js` (`PDNotes`), on all 23 signed-in shell pages
+
+⚠️⚠️ **"DOESN'T CLOSE WHEN MOVING THROUGH PAGES" IS NOT LITERALLY POSSIBLE, and pretending
+otherwise would be the wrong build.** This app is 24 separate documents with no shared runtime;
+every navigation is a full page load, so nothing survives by staying alive. What the ask actually
+wants — and what this does — is that the drawer **comes back exactly as you left it**: open or shut,
+on the same note. That state is per-browser convenience and lives in `localStorage`; the **notes** are
+a table, because *"that saves"* has to mean saved.
+
+- ⚠️⚠️ **A table, not localStorage.** localStorage is per-browser: a note written on the laptop would
+  be invisible on the desktop and gone the day the profile is cleared. A planner told their notes
+  save will not find out otherwise until they have lost some.
+- ⚠️⚠️ **RLS is owner-only, and notably NOT `is_admin()`.** Every other table here reads through
+  `can_access_project()` and several let an admin see everything. These are private working notes —
+  the place someone writes *"the PM is being difficult"* — and an admin silently able to read them is
+  a different product from the one that was asked for.
+- ⚠️ **`created_by` defaults to `auth.uid()` and the client never sends it**, so writing a note onto
+  another account is not something the browser can express rather than something it is trusted not to.
+- ⚠️ **`project_id` is `on delete SET NULL`** — the opposite of every other `project_id` in this
+  schema, deliberately. Archiving a project must not delete somebody's own notes about it.
+- ⚠️ **Many notes, not one scratchpad**, with the title **derived from the first line and stored**. A
+  notebook that demands a title before you can type is a form, and people stop using it.
+- ⚠️ **Not a second to-do list.** Tasks already exists and is fed from real assignment data; a
+  notebook that grew checkboxes would start disagreeing with it about what a planner owes.
+- ⚠️ **`.mw-fab` on the project dashboard moved 18px → 74px.** That page is the only one with two
+  floating buttons, so it is the page that yields — the notebook is on all 23.
+- ⚠️ **z-index 55** — above content, **below** the mobile nav scrim (60) and the open off-canvas
+  sidebar (70), so opening the navigation covers the notebook rather than fighting it.
+
+⚠️ **`home.html` is deliberately excluded** — it carries `.pd-app` but loads no `ui.js`, so the
+notebook's error reporting (`UI.toast`) would be silent and a missing migration would read as an
+empty notebook. One transient landing page, and a control whose failures are invisible is worse than
+no control. `projects.html` — the page login actually lands on — has it.
+
+### Verified
+
+Driven in a real browser against the shipped files with a recording stand-in for PostgREST —
+**15 assertions, 0 failing**, and the three that matter most are the ones about losing work:
+
+- **the debounce writes ONCE, not once per keystroke**, and has *not* written before it fires;
+- **switching note flushes the pending edit** (the edit is in the database afterwards);
+- ⚠️ **a 200-with-zero-rows is reported as a failure, not a save** — the RLS silent-success this repo
+  has recorded since `boq_tag_activities`. The status reads *Not saved* and a toast names it.
+
+Plus: the title is derived from the **first line only** and goes live in the list while typing;
+`created_by` is **absent** from the insert payload; and after a **full page navigation** the drawer
+comes back open on the same note (`survivedNavigation: YES`).
+
+Measured at 1280px and at phone width, both themes: panel 380×516 (list 132 + editor 246), **no
+horizontal page scroll**, and every colour resolving to a genuinely different value per theme
+(`tokensResolve: true`) rather than a stuck literal.
+
+`node tools/wiring-check.js` **133/133** (up from 129 — `PDNotes` now loads and assigns its global);
+`dashboard.css` braces 567/567; 0 NUL bytes; every touched page audited as **version-string-only**
+except the three that genuinely changed.
+
+⚠️ **Not verified signed in, and the migration has not been run** — no note has been written against
+a real database, so the owner-only policy is argued from its own text rather than observed refusing
+another account. ⚠️ Until the migration runs the FAB appears and opening it reports the missing table
+**by filename** rather than looking empty.
+
+`dashboard.css` → `?v=20260915b` and `ui.js` → `?v=20260915a` (both shared, bumped across all 34
+referencing pages); new `notebook.js` → `?v=20260915a`; `MODULE_V` → `20260915n`, sort-checked.
+
+### 2026-09-15 (o) — Contracts & Claims stops painting a register it has not loaded yet
+
+Owner: *"Loading contracts & claims module loads 3 different views for split seconds then loads
+properly."*
+
+### ⚠️⚠️ AND THE FIRST MEASUREMENT WAS WRONG, WHICH IS THE PART WORTH KEEPING
+
+The obvious suspect was `#cc-filters` — a full filter bar sitting in static markup, collapsed only
+once `UI.wireFilterToggle()` adds `.pd-filtergroup` after auth. A harness measured it **visible,
+284px tall, 7 controls**, and that would have been a tidy story. It was **my harness**: the file sat
+at the server root, so `module.css` — a *relative* href — 404'd and I measured an unstyled page.
+Rebuilt beside the module, both stylesheets load (422 + 563 rules) and `#cc-filters` computes
+**`display:none`** from the first byte, because all three modules that use this pattern already
+declare `.cc-filters { display:none }` in their own CSS. The tab strip is likewise already covered
+by `pd-tabsrc`. **The pre-auth frame is a single empty state, not a flash.** Assert a COLOUR *and*
+prove the module stylesheet is in the cascade before believing any of it.
+
+### The real cause: a repaint racing the load that feeds it
+
+`load()` makes five round trips, and fired the affected-links read **alongside** them with
+`ensureLinks().then(render)` gated on nothing. `cc_affected_activities` is a small table, so it
+routinely won that race and repainted while `rows` still held **nothing** (a first open) or **the
+previous project's records** (a switch) — a genuinely different register, replaced a moment later.
+`load()` is also called **un-awaited** from the project-switch handler, so two loads could overlap
+and whichever finished *last* committed `rows`, `PKGS` and `ALL_PROJECTS`.
+
+A monotonic `_loadGen`, the same device project-schedule already uses, settles both: every await
+re-checks it, every paint goes through one `paint()` that no-ops on a superseded load, and each of
+`PKGS` / `ALL_PROJECTS` is assigned **after** its check rather than before — module state written by
+a stale load is a wrong screen, not merely an early one.
+
+⚠️ **The links repaint is kept, gated on `_painted === gen`.** Nothing is lost by making it wait: if
+the links land first the cache is already full and the main paint draws the chips anyway (`affChip`
+reads that cache and never fetches). It only has work to do when it lands *after*.
+
+### Verified
+
+`load()` **sliced out of the shipped file and executed** with the timing controlled, against
+`afb3bf3` as the control:
+
+| | paints |
+|---|---|
+| **before** (control) | `0 rows` → `1 rows` — **the reported flash, reproduced** |
+| **after** | `1 rows` |
+
+**7 assertions, 0 failing**, and the two that stop this being a blunt fix: a **late** links read still
+triggers its repaint (2 paints), and two overlapping loads produce **1 paint, not 2**.
+`node tools/wiring-check.js` 129/129; `node --check` clean.
+
+⚠️ **Not verified signed in** — the race is driven with stubbed timings, not watched on a real login.
+⚠️ **The BOQ section still mounts in after the register, and that is deliberate** — a BOQ is 1,200+
+lines and six round trips, and its lazy mount is a documented decision, not part of this defect.
+⚠️ A superseded load's `loadAttachments` can still write the attachment cache before its check;
+self-correcting, since the current load overwrites it, and named rather than papered over.
+
+`module.js` → `?v=20260915f`; `MODULE_V` → `20260915m`, both sort-checked.
+
+### 2026-09-15 (n) — An activity can carry its paperwork, and a missing export was hiding behind a catch
+
+**Run `migrations/2026-09-15-schedule-attachments.sql`.** Owner: *"attachments on activities in the
+Schedule module, in the Notes section."* The engine landed in (m); this is the table, the bucket and
+the panel.
+
+- **Where:** the **Notes** section of the Edit Activity form, under Remarks. ⚠️ Deliberately not a
+  tenth `.ps-form-sec` — the section-nav rail is built from those, and a method statement or a permit
+  is the evidence behind the remark rather than a separate subject.
+- ⚠️⚠️ **Keyed on `activity_id`, the planner's own id, never `project_schedule.id`.** An import
+  DELETES AND REINSERTS EVERY ROW, so a uuid link would be destroyed by the next import and take
+  every attachment on the project with it. Same rule the Drawing Register already uses to link here.
+- ⚠️⚠️ **And that trade has a known cost, so `activity_name` is stored beside it.** A *regenerated*
+  schedule reissues the same generated id space to different work — measured on 2026-09-14 (t),
+  where 24 of 50 stale allocations silently re-attached to activities nobody had allocated them to.
+  A broken link is visible; that one is not. The panel compares the stored name to the current one
+  and **says so**, in warn colours, without re-pointing anything: only a person can tell a reissued
+  id from a renamed activity.
+- ⚠️⚠️ **Renaming the Activity ID moves the files with it.** The link *is* the id, so editing it
+  from `SB300004` to `SB300099` would otherwise leave every file filed under an id nothing carries
+  any more — in the bucket, invisible on every screen. Scoped to `project_id` AND the old id, run
+  only when the id actually changed, and the toast says how many moved.
+- ⚠️ **A dedicated `project-schedule` bucket, not the `contracts-claims` one.** Reuse would have cost
+  nothing (those policies key on `bucket_id`), and would leave a bucket named `contracts-claims`
+  holding permits — so any later decision about the commercial bucket silently applies to the
+  schedule too.
+- ⚠️ **No grid indicator in this pass, and no unused helper waiting for one.** A paperclip column
+  would be useful, but saved column sort and order are POSITIONAL, so inserting a column silently
+  re-points every planner's stored layout. Its own change, appended rather than inserted.
+
+### ⚠️⚠️ TWO BUGS CAUGHT BY EXECUTING THE WIRING, NEITHER VISIBLE TO `node --check`
+
+1. **`canWrite()` — it is a VARIABLE in this module, not a function.** It parses cleanly and throws
+   *"canWrite is not a function"* on the first paint. Fourth time this repo has recorded that exact
+   shape (`below is not defined`, stakeholder-map's own `canWrite`, boq.js's `locKey`).
+2. **`loadProject` was added to `attach.js` and NEVER EXPORTED — and (m) shipped it that way.** The
+   schedule's caller wraps the read in a try/catch so an un-migrated database still opens the module,
+   so *"e.loadProject is not a function"* was **swallowed** and the panel rendered empty for ever,
+   looking entirely correct. This is the z6 shape with the arrow reversed, and only running it found
+   it.
+
+### Verified
+
+**21 assertions, 0 failing**, executing the new functions sliced out of the shipped file by name
+against the module's real neighbours, with `PDAttach` loaded for real: the panel renders an attached
+file under `ps-` classes (never `cc-`); a writer gets the upload control and a **viewer gets none but
+still sees the file**; all four states of the stale tell-tale (same name silent · renamed names both ·
+**no stored name silent, not accused** · activity gone says so); the owner key taken from the field
+and not the row, including the null that puts it into staged mode; the re-point firing on a rename,
+scoped to project + old id, and **writing nothing** on an unchanged id or a new activity; and an
+un-migrated database neither throwing nor blanking the panel, naming the migration by filename.
+
+⚠️ **The contrast bases are pinned to SHAs, not `HEAD`.** Both suites from earlier today went green
+on **both** sides the moment their commits landed — `git show HEAD:` had become self-comparison, the
+trap this repo already records. Re-pinned: the class-code control (`2e200bc`) fails 2 of 4 again, and
+the extraction equivalence (`2a9489c`) still reports **7 identical, 0 differing**.
+
+`node tools/wiring-check.js` **129/129**; inline script parses; the real `<style>` block's brace delta
+is **+12/+12** (⚠️ the whole-file count is off by one in HEAD too — two of the three `<style>` matches
+are JS strings, so only the genuine block can be counted).
+⚠️ **Not verified signed in, and the migration has not been run** — no file has been uploaded, no
+signed URL opened and no re-point executed against a real project.
+
+`attach.js` → `?v=20260915b` **on both referencing pages** (its contents changed after (m) shipped);
+`MODULE_V` → `20260915l`, sort-checked.
+
+### 2026-09-15 (m) — The attachment engine becomes shared, before a second module copies it
+
+Groundwork for the owner's ask: *"attachments on activities in the Schedule module, in the Notes
+section. The engine for that already exists now … but the schedule is a different module with its own
+table, so it needs its own activity_attachments table and migration."*
+
+The table and the migration are right, and so is the reading that the engine exists. What the ask
+leaves open is **how** the schedule gets at it — and the answer must not be a copy.
+
+### ⚠️⚠️ THE VALUABLE PART IS NOT THE UPLOAD, IT IS THREE ORDERING RULES
+
+1. The **object is written before the row**, so a failed upload never leaves a row pointing at nothing.
+2. If the row write then fails, the **object is rolled back**, so a failed insert never leaves a file
+   in the bucket with nothing to explain it.
+3. On removal the **row goes first**, because a failed object delete leaves a recoverable orphan
+   whereas the reverse leaves an attachment that will not open.
+
+Those are three decisions that are only obvious once you have got them wrong, and this repo has paid
+for a hand-copied duplicate at least three times — the location normaliser (**three** copies, one of
+which matched a 13th-floor leaf to *"3rd Floor"*), the S-curve maths copied into portfolio-overview,
+and the change-order insert. So `assets/js/attach.js` (**`PDAttach`**) is the engine, parameterised by
+table, bucket, owner column, doc-type vocabulary and CSS prefix; contracts-claims now delegates to it
+and the schedule will take an instance rather than a copy.
+
+- ⚠️ **The `cls` prefix is why no CSS changed.** The engine emits `cc-att*` for contracts-claims
+  exactly as before, so that module's stylesheet is untouched. Neutral shared classes would have meant
+  retargeting working CSS in the same commit that moved the JS.
+- ⚠️ **`parentWord` keeps the two shipped sentences byte-identical.** Extracting a function should not
+  quietly reword a screen that was signed off — a copy change is a change and belongs in its own commit.
+- ⚠️ **`loadProject()` is new and the schedule is why.** `load()` uses `.in(ownerCol, ids)`, and a
+  project can carry 16,000 activities — PostgREST puts `in.(…)` in the URL and a list that long is
+  refused before it is answered. One project-scoped read replaces it, **through `PDb.selectAll`**,
+  because PostgREST caps a read at 1000 rows server-side **with no error** and a silently truncated
+  read here means files that exist and cannot be seen.
+- ⚠️ **Six delegates were written and then deleted as dead.** `attLabel`, `attSize`, `attOf`,
+  `attUpload`, `attOpen`, `attRemove` — their only callers were inside the panel, which is in the
+  shared file now. Grepped `module.js` **and** `wizard.js` for each: zero call sites.
+
+### Verified — it is a MOVE, and that is measured rather than asserted
+
+HEAD's `attPanelHTML` sliced out **by name** and executed beside the shipped `PDAttach.panelHTML` over
+the same inputs, comparing the rendered HTML **byte for byte**: existing record with 3 files as writer
+(1357 chars) and as viewer (558), a new record with 2 staged files (1067), a new record with nothing
+(705), a record with no files (70), files and staged together (1764), and the *"table not migrated"*
+branch. **7 identical, 0 differing.** A refactor that cannot show this is a rewrite with extra steps.
+
+`node tools/wiring-check.js` **129 passed, 0 failed**, and `PDAttach` now appears among the providers
+that load and assign their global — the check that exists because `boq.js` once threw on the way out
+of its own IIFE and took the entire BOQ down with it.
+
+⚠️ **Not verified signed in** — no file has been uploaded through the extracted engine.
+⚠️ **The schedule is NOT wired yet**, deliberately: `migrations/2026-09-15-schedule-attachments.sql`
+and the panel land together, so a migration cannot be run for a feature that is not there to use it.
+
+`attach.js` → `?v=20260915a` (new); contracts-claims `module.js` → `?v=20260915e`;
+`MODULE_V` → `20260915k`, sort-checked against `20260915j`.
+
+### 2026-09-15 (l) — The Class Code column prints a code, and the missing space was a third flex trap
+
+Owner, with a screenshot of OPW101: *"Some class codes are correct with only having a number within
+them and others have a number and series of characters. It should only be the number that is
+reflected in the class codes."*
+
+`ccodeCellHtml` appended the Finance description after the code tag on **both** resolving branches,
+so a column headed CLASS CODE printed `10050Homogenous Tiles`. It now prints the code alone. The
+description is not lost — `title` already carried the full path (`10050 — Tiling Works ›
+Homogenous Tiles`), and this makes the task row agree with `sumCcodeHtml` directly beneath it, which
+has always printed the code by itself.
+
+### ⚠️⚠️ THE MISSING SPACE WAS NOT A TYPO — IT IS THE FLEX ANONYMOUS-ITEM TRAP, FOR THE THIRD TIME
+
+The source genuinely contained the space: `'</span> ' + esc(c.desc_l3)`. But `.ps-cell` is
+`display:flex`, so a bare text node beside an element becomes an **anonymous flex item** and the
+browser strips its leading whitespace. The space was real and unrenderable. This repo has now paid
+for that mechanism three times — the sidebar brand gap (2026-09-09 x, measured 18px where the rule
+said 9), the `Use 0 activit ies` button (2026-09-10 za1), and this. Printing the code alone removes
+the second element, so the trap cannot apply here again.
+
+### ⚠️⚠️ AND THE SCREENSHOT'S "CORRECT" CODES WERE THE BROKEN ONES
+
+Worth stating plainly, because it inverts what the screen looks like it is saying. Reproducing the
+report against HEAD shows which rows took which branch:
+
+| what the owner saw | branch | what it actually means |
+|---|---|---|
+| `3050`, `4050` … `9050` — bare number, **red** | `unknown` | **not in the chart at either level** |
+| `10050Homogenous Tiles` … — number **+ text** | `group` | resolves fine, at L2 |
+
+So the rows that looked right were the ones failing to resolve, and the rows that looked wrong were
+the healthy ones. ⚠️ **Reported, NOT fixed:** the pattern is that OPW101's 4-digit codes are missing
+a leading zero (the chart holds `03050`, the activity carries `3050`) while its 5-digit codes need
+none — which is why the break falls exactly between row 13 and row 14. Padding at read time is the
+obvious fix and **it is not safe**: `2026-08-21-class-codes.sql` records that de-zeroing collides
+genuinely different items (`015051` Earthmoving with `15051` Railings), so the padded and unpadded
+forms can both be real codes. That needs the chart checked against the project's stored values, not
+a guess in a render function. Hovering any red code names the cause today.
+
+### Verified
+
+`ccodeCellHtml` **sliced out of the shipped file by name and executed** — never retyped — over all
+four outcomes, with **HEAD run beside it as the control**:
+
+| case | fix | HEAD (control) |
+|---|---|---|
+| item `03050` | `03050` | **`03050 Rebar`** |
+| group `10050` | `10050` | **`10050 Tiling Works`** |
+| unknown `3050` | `3050` | `3050` |
+| blank | `—` | `—` |
+
+**4 pass / 0 fail on the fix; 2 of 4 fail on the control**, and the two that fail are exactly the two
+the owner photographed — so the test bites rather than passing on both files. Each case also asserts
+the cell contains **no letters at all**, which is the owner's actual requirement rather than a proxy
+for it, and that the tooltip still leads with the code.
+
+`node tools/wiring-check.js` 129/129, 0 failed. ⚠️ **Not verified signed in** — the cell is proven by
+execution against the chart fixtures, not by reloading OPW101.
+
+`MODULE_V` → `20260915j`, sort-checked against `20260915i`.
+
+### 2026-09-15 (k) — The project dashboard's three registers are reordered
+
+Owner: *"In the project level dashboard let's move the contracts & claims section after issues &
+concerns and move up progress photos before issues & concerns."*
+
+The band was `contracts → issues → photos` and is now **`photos → issues → contracts`**. Markup only:
+three sibling `<div>`s inside `#stat-band` swapped, and `renderViz`'s three `try` calls put into the
+same order to match.
+
+⚠️ **The render order is cosmetic and is said so in the code.** Each renderer writes into its own
+host by id, so re-ordering the calls changes nothing on screen — it is there so the next reader is
+not misled into thinking the markup order is something else. What actually moves the panels is the
+markup.
+
+⚠️ **The inline `style="margin-top:12px"` on `#viz-photos` was DROPPED, not carried along.**
+`.pd-viz` already declares exactly `margin-top:12px` (dashboard.html:284), so the inline copy only
+ever restated the class — measured after the move: all five panels report `margin-top: 12px`,
+`#viz-photos` included. Carrying a redundant override to the top of the band would have implied it
+was doing something.
+
+⚠️ **The comment above the band was corrected, not left standing.** It read *"Issues is full width
+now, and the new Contracts & Claims summary sits above it"* — true when written on 2026-09-15 (e),
+false the moment this change landed. A comment that confidently describes the opposite of the code
+is worse than none (the same correction 2026-09-11 (ze) had to make).
+
+### Checked before moving anything
+
+- **No positional CSS**: no `:first-child` / `:last-child` / `:nth-*` / `+` / `~` rule anywhere
+  targets `.pd-viz`, in either `dashboard.css` or the page's own `<style>`.
+- **No order-dependent JS**: `dashboard.html` contains zero `insertBefore` /
+  `nextElementSibling` / `previousElementSibling` / `firstElementChild` / indexed-`children` reads.
+  The only `#stat-band` reference is `loadStatus`'s hide-the-whole-band branch.
+
+### Verified
+
+Measured in a browser against the **real** stylesheets — `assets/css/dashboard.css` linked (cache-
+busted) plus the page's own `<style>` block, with the `#stat-band` section lifted verbatim out of
+`dashboard.html` rather than retyped:
+
+| | 344px | 1280px |
+|---|---|---|
+| order (by measured `top`) | scurve · program · **photos · issues · contracts** | identical |
+| `margin-top`, all five | 12px | 12px |
+| panel width | 324 | 1232 |
+| page scrolls sideways | — | **no** |
+
+⚠️ **The measurement was gated before it was trusted** — `visibilityState: "visible"` and a non-zero
+`clientWidth`, because a hidden tab voids all geometry; and the panel background was asserted as a
+**colour** (`rgb(255,255,255)`, not transparent), which is what proves the stylesheet actually
+loaded rather than the harness reporting perfect numbers on unstyled elements.
+
+Inline `<script>` parses (1 block, 0 failures). ⚠️ **Not verified signed in** — `requireLogin`
+redirects here, so this is the shipped markup under the shipped CSS, not a live project's panels.
+
+⚠️ **No `?v=` or `MODULE_V` bump**, deliberately: `dashboard.html` is fetched at its own URL and is
+not a module page, and no shared asset changed — bumping would invalidate 29 pages' caches for a
+file none of them load.
+
+⚠️ The harness was written as `_scratch-harness.html` (matching **two** `.gitignore` patterns,
+confirmed ignored by `git status --untracked-files=all` before use) and **deleted before
+committing** — this repo has shipped harness files to production twice.
+
+### 2026-09-15 (j) — Form controls go back onto the scale the scale itself designates
+
+Owner, on the Edit Activity modal: *"Let's also check the font size in the edit activity pop-up window
+it might be wrong since the font size based on the screenshot is too small for the window size."*
+
+### ⚠️⚠️ IT WAS NOT THAT MODAL. EVERY INPUT IN THE APP WAS 10px
+
+`.pd-input, .pd-select, .pd-textarea { font-size: var(--pd-fs-micro) }` — 10px, app-wide, set
+deliberately on 2026-09-10 with a note saying it matched `.pd-label`. Measured in the Edit Activity
+form before changing anything:
+
+| element | was | now | token |
+|---|---:|---:|---|
+| field label (`.pd-label`) | 10px | **11px** | `--pd-fs-xs` |
+| helper `<small>` inside a label | **8.3px** | **10px** | `--pd-fs-micro` |
+| input | 10px | **12.5px** | `--pd-fs-sm` |
+| select | 10px | **12.5px** | `--pd-fs-sm` |
+
+⚠️⚠️ **The scale's own documentation settles it.** `--pd-fs-sm: 12.5px /* button, input, select,
+secondary body */` — the token that exists *for* controls. `--pd-fs-micro` is defined as *"UPPERCASE
+label, caption, count badge"*, and `.pd-label` is overwhelmingly used for **sentence-case** field
+names: 47 of them in this one form, every one sentence case. The 10px was a departure from the scale,
+not an expression of it.
+
+⚠️⚠️ **And the codebase had already voted.** 42 rules across 14 files were overriding that default
+upward — 22 to `sm`, 20 to `base` — in cash-flow, contracts-claims, equipment-loading, issues-lessons,
+manpower-loading, portfolio-overview, productivity-rates, progress-photos, project-schedule,
+resource-loading, risk-register, s-curve, stakeholder-map and `dashboard.css` itself. **A default that
+every second form has to undo is not a default.**
+
+The 8.3px helper text was the worst of it: a `<small>` with no size of its own takes the browser's
+0.83em, which on a 10px label lands below every token in the scale.
+
+### The cleanup
+
+The 22 now-redundant `font-size: var(--pd-fs-sm)` overrides are removed. ⚠️ **Conservatively:** a
+declaration went only when **every** selector in its rule targets a control. One rule was skipped and
+named — `.ps-cset-row input[type=text], .ps-cset-row .pd-input` — because dropping it there would
+also have resized a bare `input`, which has no `.pd-input` default to fall back to. The 20 overrides
+to `base` are left alone: 13px is still a deliberate step above the new 12.5px default.
+
+### ⚠️⚠️ THE CLEANUP DELETED THE DEFAULT IT WAS CLEANING UP AFTER
+
+The sweep could not tell the rule that **defines** the size from the rules that were merely repeating
+it — so it removed the declaration this change had just added, and every input in the app fell back
+to the browser's 13.33px. Caught by **measuring after the sweep instead of trusting it**: the harness
+reported 13.3333px and `matchingFontSizeRules: []`, which is the signature of no rule applying at all
+rather than of a rule applying wrongly. The declaration is restored with a note telling the next
+cleanup to leave it alone.
+
+### Verified
+
+Measured in a browser against the **local** stylesheet — not the deployed one, which would have shown
+the old values and read as "no change". Five modules whose overrides were removed, all reporting
+identically:
+
+```
+contracts-claims   input 12.5  select 12.5  label 11  small 10
+progress-photos    input 12.5  select 12.5  label 11  small 10
+cash-flow          input 12.5  select 12.5  label 11  small 10
+equipment-loading  input 12.5  select 12.5  label 11  small 10
+project-schedule   input 12.5  select 12.5  label 11  small 10
+```
+
+CSS braces balance, comments-stripped, in all six touched files.
+
+⚠️ **The phone `!important` floor is untouched**: `select, textarea { font-size: var(--pd-fs-tap)
+!important }` still pins inputs at 16px under the mobile breakpoint so iOS never zooms on focus.
+
+⚠️ **Coverage is honest, not total.** Five modules were measured; the other nine were not opened. The
+change is a single declaration in a shared stylesheet plus removals that are no-ops by value, so the
+risk is low — but a form in an unmeasured module could still hold a rule that now wins differently.
+
+⚠️ **`dashboard.css?v=` bumped to `20260915a` across all 31 pages that load it** — a shared asset
+change with a stale token on any page is the cache trap this repo has already recorded.
+
+`progress-photos/module.css` → `20260915a`, `contracts-claims/module.css` → `20260915d`,
+`MODULE_V` → `20260915i`, all sort-checked.
+
+### 2026-09-15 (i) — The wizard's BOQ step asks instead of only explaining
+
+Owner: *"Check also the BOQ step yes this is optional but if the planner opts to develop it already
+let's fix."*
+
+### ⚠️⚠️ ON A CONTRACT RUN IT HAD NO CONTROL AT ALL
+
+Four paragraphs of prose and a Next button. A planner holding the priced bill on the day of award
+had to finish the wizard, find the BOQ tab and start again — the same *"leave the wizard and go find
+it"* answer a previous round already rejected for the BOQ type itself (2026-08-27: *"I don't
+understand the BOQ wizard. How will I add the BOQ then if this is the case?"*).
+
+It now asks, with three options:
+
+| | |
+|---|---|
+| **Not yet** | preselected — records the contract, skips exactly as before |
+| **Build it by hand** | after the save, the **New BOQ** steps open |
+| **Import the client's workbook** | after the save, the **importer** opens |
+
+⚠️ **Still optional, and still the default.** The owner's original point stands and is not being
+reversed: a contract is recorded the week it is awarded and the priced BOQ arrives weeks later. What
+changed is that *"I have it"* is now expressible.
+
+⚠️⚠️ **It hands off; it does not ask again.** Neither branch duplicates the BOQ type's fields —
+`manual` reopens this very wizard as a **BOQ run**, where naming the BOQ, choosing between a new
+document and a new revision, and picking trades already live. A second name/revision form here would
+be a third create-surface on one module, which is how they drift apart.
+
+⚠️⚠️ **After the contract is saved, never before.** The contract may create the very package the BOQ
+would be narrowed to, so a BOQ opened first would be scoped against something that does not exist
+yet. The hand-off runs last, after `D.done()`, and `close()` has already run — so neither surface
+opens underneath the wizard's own overlay, which is the ordering the BOQ type's import path already
+documents.
+
+⚠️ **The Review step names it.** Review is where a planner checks what pressing Save will do, and on
+a Contract it may now do a second thing; a hand-off that appears unannounced reads as the wizard
+having gone wrong. Silent on *Not yet*, which promises nothing.
+
+### Verified
+
+`stepBoq` and `stepReview` **sliced out of `wizard.js` and executed** across all three states:
+
+| choice | radios | preselected | says saved-first | names |
+|---|---|---|---|---|
+| later | 3 | ✓ | — | — |
+| manual | 3 | ✓ | ✓ | New BOQ |
+| import | 3 | ✓ | ✓ | importer |
+
+The review is silent on *later*, names the importer on *import*, the New BOQ steps on *manual*.
+Rendered under the module's own CSS at 900px: three options, *Not yet* carrying the selected state,
+no overflow — and selecting *Import* repaints with "The contract is saved first, then the importer
+opens."
+
+Static gates: both files parse; `st.ctBoq` is initialised in `open()` (the note on `pkgList` records
+what happens to a step that reads state `open()` never set); the hand-off runs after `D.done()` and
+only on a Contract; `close()` precedes it; and — the cross-file one — **every `D.openBoq*` the
+wizard calls is exposed by `module.js`**.
+
+⚠️ **The long prose is kept, not trimmed.** The progress-billing answer and the "loaded against the
+whole project" line both survive: the first answers a question the comment records being asked
+repeatedly, and the second is what stops the step looking like it gates something it does not.
+
+⚠️ **Not verified signed in** — no contract was saved and neither hand-off was watched opening.
+
+`module.js` / `wizard.js` → `20260915c`, `MODULE_V` → `20260915h`, both sort-checked.
+
+### 2026-09-15 (h) — Contracts & Claims: a record can carry its paperwork
+
+Owner: *"In the contracts & claims module there should also be an attach a file feature in the
+contracts, claims, eot, and change order"*, and then, shown the wizard: *"Where in the wizard can the
+planner add attachments? Yes there is an existing bucket but it can't be accessed / there is no path
+for planners to upload them."*
+
+Both true. The `contracts-claims` bucket has existed since `2026-08-25-pmi.sql` and — the part that
+matters — **its three storage policies are keyed on `bucket_id`, not on PMI**. So nothing about
+storage needed changing. What was missing was a table for a record's files, and any screen at all
+that offered an upload.
+
+⚠️ **Run `migrations/2026-09-15-cc-attachments.sql`.** Until then the panel says so by name rather
+than failing the module: the read is tolerant exactly like `PKGS`.
+
+### What was built
+
+- **`cc_attachments`** — a separate table from `pmi_attachments`, not a widened one. One attachment
+  table serving both would need a nullable `pmi_id` *and* a nullable `record_id` with a check
+  constraint holding the invariant — i.e. the database no longer able to say what an attachment
+  belongs to. Two narrow tables with real foreign keys cost one more `CREATE` and answer that by
+  construction.
+- **One panel, two modes**, because there are two ways to create a record. A record has no id until
+  it is saved, so files chosen beforehand are **staged in memory and flushed once the row exists**;
+  given an id the same panel talks to the database directly. Two implementations of "attach a file"
+  on one module is how they come to disagree about the path convention.
+- **A `Files` step in the wizard**, before Review — offered on Contract, Claim, Change Order and EOT,
+  and not on Package or BOQ, neither of which has a row for a file to hang off. It keeps the wizard's
+  own promise that *"NOTHING IS WRITTEN UNTIL THE LAST STEP"*.
+- **A `Files` section in the compact edit form**, because the wizard is new-records-only by design
+  and most attaching happens to a record that already exists.
+
+### ⚠️⚠️ Two bugs caught by checking things a parser cannot see
+
+- **`BUCKET` was undefined.** The upload code was lifted from `pmi.js`, and `BUCKET` is *pmi.js's*
+  constant — a different IIFE. It parsed cleanly and would have thrown `BUCKET is not defined` on the
+  first upload. That is the fourth time this repo has recorded that exact shape (`below is not
+  defined`, stakeholder-map's `canWrite`, boq.js's `locKey`). Caught by asserting every free
+  identifier resolves in **this file's** scope; `node --check` sees none of it.
+- **`st.files` was read by a step but not initialised by `open()`.** The note directly above
+  `pkgList` in that same initialiser records what happened last time: a TypeError on first paint and
+  a step that rendered nothing. Now declared where the rest of the wizard's state is.
+
+### The ordering rules are the feature, and they are `pmi.js`'s
+
+Upload runs **before** the row write, so a failed upload never leaves a row pointing at nothing. The
+object is **rolled back** if the row write then fails. On removal the **row goes first**, because a
+failed object delete leaves a recoverable orphan whereas the reverse leaves an attachment that will
+not open. Each is asserted by a gate that reads the source order, not by intention.
+
+⚠️ **A failed upload can never fail the record.** `attFlush` reports per file and leaves the row
+standing — the record is the commercial fact the planner came to save, and the file can be
+re-attached in one click. Same rule the affected-work write already follows.
+
+### Verified
+
+27 static gates, the two cross-file ones being the point:
+
+- **Every `D.att*` the wizard calls is exposed by module.js** — `attFlush`, `attPanelHTML`,
+  `attPanelWire`. A mismatch here is invisible to both parsers.
+- **The UI's `doc_type` vocabulary is exactly the migration's `CHECK` set.** A value the UI offers
+  and the constraint refuses is an insert that fails *after* the object is in the bucket — the one
+  ordering the rollback handles least cleanly.
+
+⚠️⚠️ **NOT verified against a live database.** The migration has not been run, so no upload, signed
+URL or delete has actually executed — only the code paths' shape and their contracts were checked.
+The first real test is attaching a file after running the migration.
+
+⚠️ **Still outstanding from the same message:** *"Check also the BOQ step yes this is optional but if
+the planner opts to develop it already let's fix."* Confirmed as a real gap — on a **Contract** run
+that step is four paragraphs of prose and no control at all, so a planner who has the BOQ in hand
+must finish the wizard and start again from the BOQ tab. Not fixed in this commit.
+
+`module.js` / `module.css` / `wizard.js` → `20260915b`, `MODULE_V` → `20260915g`, all sort-checked. ⚠ `20260915f` was skipped: a concurrent session chose the SAME token for its own change, so git rebased both sides cleanly and left one cache token covering two different builds — a browser holding theirs would never have fetched this. A token collision does not conflict; it has to be looked for.
+
+### 2026-09-15 (g) — Contracts & Claims: the Contract tab opens on the register's own dashboard
+
+Owner: *"Let's rework the front page of the contracts & claims module to have an own dashboard within
+it."* Asked whether that meant a new tab or a band inside Contract, the owner chose **inside the
+Contract tab** — which is already what the module opens on.
+
+- ⚠️⚠️ **That choice preserves a standing decision of the owner's.** The module has exactly three tabs
+  because of 2026-08-26: *"There are too many tabs to keep track of"*, and the markup carries a
+  warning that the tab count is load-bearing — `module.css` hides the module title below 1460px
+  because "5 tabs need more room", and a sixth tab is why the page once had no title at all on a
+  laptop. A fourth tab would have reopened both.
+- ⚠️⚠️ **The band summarises the whole REGISTER, not the Contract tab.** `rows` holds every record
+  type, so it reports contract, change orders, cost claims and EOT together — which is the point of a
+  front page. The table under it is still the Contract list: the band is the module's summary, the
+  table is the tab's content.
+- ⚠️⚠️ **Same figures, same order, as the project dashboard's panel shipped the same day.** Two
+  screens reporting one register must not describe it differently. What differs is only the source:
+  this computes from rows already in memory and costs no query; the dashboard reads declared metrics
+  through the shell.
+- ⚠️ **Unfiltered on purpose.** It reads `rows`, never `visibleRows()` — a summary that moved when
+  someone typed in the search box would be reporting the filter, not the register. The toolbar's
+  "Showing N records" already says what the filter is doing.
+- ⚠️ **A computed zero is a zero; only an empty block is a dash.** Caught by rendering the two screens
+  side by side: `sum` over an empty list returns 0, and formatting every falsy value as an em dash
+  printed `—` where the project dashboard printed `0d`. With records present every figure is numeric;
+  with none, the whole block reads `—`.
+- The two old KPI cards are gone — the contract value now carries its package breakdown, and a record
+  count is already in the toolbar.
+
+### Verified
+
+`ccBlock` / `ccDashHTML` sliced out of `module.js` and executed under the module's own CSS, both
+themes at 1280px and 1100px:
+
+| block | figures |
+|---|---|
+| Change orders, 3 records | ₱92.4M submitted · ₱81.2M evaluated · ₱68.5M approved · **₱19.5M shortfall** over two decided records |
+| Cost claims, 3 records | ₱41.8M submitted · **₱12.6M disapproved** · ₱16.6M shortfall |
+| Extension of time, 2 records | 214d claimed · 160d evaluated · nothing decided |
+| Packages | 50 / 32 / 10%, an **8% unallocated** remainder, bar at 92% |
+
+One line per strip, no overflow, no page h-scroll, and the no-packages arm drawing a note instead of
+an empty bar. ⚠️ **Not verified signed in.**
+
+`module.js` / `module.css` → `20260915a`, `MODULE_V` → `20260915e`, both sort-checked.
+
+⚠️ **A note to self about writing these entries:** this one was first written through
+`python -c "…"` from bash, and every backticked term in it was evaluated as a command substitution
+and silently vanished from the file. Changelog prose goes through a file written with the editor, not
+through a double-quoted shell argument.
+
+### 2026-09-15 (f) — Project dashboard: the packages become a breakdown of the contract value
+
+Owner, on the panel live: *"The packages shouldn't be a separate KPI card. This is a breakdown of
+the whole contract value. Let's show it that way."*
+
+- ⚠⚠ **A `Packages: 3` cell answered "how many", which nobody asked.** What a reader wants from a
+  package list is *which part of the money each one is*. The contract value is now the headline and
+  the packages are rows beneath it — largest first, each with its amount and its share — over an
+  allocation bar.
+- ⚠⚠ **When the packages do not add up to the contract, the gap is a ROW, not a footnote.**
+  Packages summing to less means work not allocated to any package, and that remainder is the most
+  useful thing this block can say, so it is drawn as *Not allocated to a package* with its own share.
+  Summing to MORE is a data error and says so in words — a negative remainder drawn as a bar would
+  read as a credit.
+- ⚠ The contract VALUE is still the register's own Contract rows, not the sum of
+  `packages.contract_amount`: the module's "Total contract value" KPI reads that same figure, and two
+  screens quoting different contract values is worse than one quoting fewer. What changed is how the
+  packages are shown against it, not which number is the contract.
+- ⚠ The share denominator falls back to the packages' own total when there is no Contract record
+  yet, so the bars still mean something on a project that has packages and no contract row.
+
+**Verified** with the real `renderContracts` under the dashboard's own CSS, both themes at 1280px:
+packages present (bar, three rows, archived flagged, an 8% unallocated remainder in warn colour);
+and the owner's own live case — a contract value with **no** packages — which draws the headline and
+a note naming where packages are set up, with no orphan bar and no empty list. Not verified signed in.
+
+### 2026-09-15 (e) — Project dashboard: two panels out, a dead classification out, a Contracts & Claims summary in
+
+Owner, four comments on the project-level dashboard: *"No need to have the minutes"*; *"Issues &
+Concerns: how are items classified as critical or high? if this is a dead end let's remove"*;
+*"approaching deadlines of activities no need"*; and *"add summary ng contracts claims"* with the
+four blocks spelled out.
+
+### ⚠️⚠️ THE ANSWER TO THE CLASSIFICATION QUESTION IS "NOTHING CLASSIFIES THEM"
+
+`issues_lessons.severity` **exists in the schema** (`Low | Medium | High | Critical`), inherited from
+the Power Apps import this register was built from. The module that owns the register **writes it
+nowhere**: `severity` appears **0 times** in `modules/issues-lessons/module.js` and `index.html` — no
+field on the form, no column in the table, no filter. So the only rows that could ever count were
+ones that arrived carrying a severity from an import; anything raised in the app is permanently
+uncounted. The dashboard was showing two cells that read 0 forever and could not be acted on.
+
+Both cells are gone, and so are their metrics. **`On hold` takes their place** — the one open-register
+distinction this module does record.
+
+⚠️ **The database column is left alone.** It holds real imported values on the Power Apps projects,
+and dropping it would destroy them. What was removed is the dashboard's claim to report on it.
+
+⚠️ **A gate caught a half-removal.** The cells went, but the per-row severity **tag** in the open-items
+list and the `severity` entry in two column fetch-lists survived. Half a removal is worse than none:
+it leaves the register looking as though it classifies issues, on a field nothing can set. All gone,
+and the column is no longer fetched.
+
+### Minutes of Meeting and Approaching Deadlines
+
+Both panels removed — renderer, host and call. ⚠️ **The Minutes module and its launcher tile are
+untouched**; only the dashboard panel went. `.pd-viz-2col` went with them: it held MoM beside Issues,
+and a two-column wrapper with one child is a half-width panel next to a gap.
+
+### The Contracts & Claims summary
+
+Four blocks, as asked: **Contract** (packages, value), **Change orders**, **Cost claims**, **Extension
+of time** — the last in days, the others in money.
+
+⚠️⚠️ **The four-stage pipeline is COLUMNS, not statuses**, and getting that backwards is the easy
+mistake. A claim moves Estimated → Submitted → Evaluated → Client Approved, and each stage is its own
+column (`est_/sub_/eval_/approved_`, suffixed `_amount` or `_days`). `status` is a separate axis with
+its own vocabulary — Pending | Approved | Disapproved | Cancelled. **There is no "Submitted" status
+and no "Disputed" one.**
+
+So "disputed" is reported as **two** figures, at the owner's choice, because one number cannot carry
+both meanings:
+
+- **Disapproved** — the submitted value of rows the client formally rejected. Reads 0 when a claim was
+  approved at less than it asked for, which is the common case.
+- **Shortfall** — submitted minus approved, the module's own "In dispute" wording in BOQ.
+
+⚠️ The shortfall counts **decided rows only** (Approved + Disapproved). That is the rule the module's
+own Recovery-rate KPI already uses, and its reason is written there: a still-Pending claim is not a
+failure, and dividing by everything submitted reads as a catastrophic ~0% on a young register. The
+dashboard must not disagree with the module about this.
+
+⚠️ **Packages come from the `packages` table via the companion-table mechanism**, not from a
+`record_type` — `contracts_claims.package_id` points at them. The contract **value** is the register's
+own Contract rows, the same figure the module's "Total contract value" KPI shows, because two screens
+quoting different contract values is worse than one screen quoting fewer. When the packages' own total
+disagrees, a third cell says so rather than silently picking a winner.
+
+⚠️ **Shortfall is clamped at 0.** An approval above what was submitted is a data-entry question, not a
+negative dispute, and a "−₱2.1M disputed" cell would read as a credit.
+
+### Verified
+
+**`ccRow` sliced out of `dashboard.html` and executed** against four registers — never a
+reimplementation:
+
+| case | Submitted | Evaluated | Approved | Disapproved | Shortfall |
+|---|---|---|---|---|---|
+| approved below ask | 100 | 90 | 70 | — | **30** |
+| formally rejected | 100 | 90 | 0 | **100** | 100 |
+| nothing decided | 100 | 90 | — | — | **0** |
+| approved above ask | 100 | 100 | 120 | — | **0** (clamped) |
+
+⚠️⚠️ **A cross-file gate, because this is where a typo hides:** every metric the panel reads as
+`m.<key>` is asserted to be declared as `key: '<key>'` in `config.js` — **18 prefixed combinations
+plus the direct reads** — and every column those metrics name is asserted to exist in
+`supabase-build.sql`. Neither parser can see a mismatch; it surfaces as a blank cell.
+
+Rendered in a browser under the dashboard's own CSS with the real `renderContracts`: four blocks, each
+on **one line** at 1280px and at 900px, light and dark, no panel overflow, no page h-scroll, and the
+empty state drawing correctly.
+
+⚠️ **Not verified signed in** — no live project was loaded, so the figures above are from stubs and
+the metric engine's own aggregation was not exercised end to end.
+
+⚠️ **`assets/js/config.js?v=` bumped to `20260915a` in all 29 pages that load it**, root and module
+alike. The first pass only caught the 13 at root; a module page left on the old token would serve a
+stale config declaring metrics this change removed.
+
+### 2026-09-15 (d) — Project Schedule: the stacking pane stops being capped to the viewport
+
+Owner: *"the main screen can't even be seen without having to select the expand button"*, then *"let's
+do the pane cap next."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **A measured finding can go stale when its premise changes, and it will still read as settled.**
+  The rule here carried *"position:sticky CANNOT do this … Measured: the bar scrolled away at scrollY
+  0/300/600."* True — **while the pane was capped to the viewport**, because a capped pane's bottom is
+  always on screen and a bottom-sticky child has nothing to stick to. The conclusion followed from the
+  cap, not from sticky. Re-measure a recorded finding when you change the thing it depended on, and
+  **credit it in place** rather than deleting it: it was right, and the next reader needs to know why
+  it stopped being right.
+- ⚠️⚠️ **`<style>` matches more than the stylesheet in a single-file module.** In
+  `project-schedule/index.html` the regex returns **three** blocks: the real one, plus two JS string
+  literals that build the print/export stylesheets. Joining them appends JavaScript to the CSS and
+  **silently drops every rule appended after it** — a harness rule under test came back
+  `position: static` and looked like proof the approach could not work. Filter on the JS tell
+  (`' +`), assert one block survives, and put any candidate rule in **its own `<style>` element**.
+- ⚠️ **`var top` at global scope is `window.top`.** Not a shadow — the Window itself, unwritable, so
+  arithmetic on it yields `NaN`. A harness silently lost the very cap it was supposed to reproduce.
+  Function-local `top` is fine, which is why the shipped code was unaffected.
+- ⚠️ **Delete the writer with the reader.** Removing a CSS cap means removing the JS that measured it
+  and every call site, or you are left with a function writing a custom property nothing reads —
+  which this module has already documented once (`--ps-vs-fith`, written for weeks, never read).
+
+`MODULE_V` → `20260915d`, sort-checked against `20260915c`.
+
+### 2026-09-15 (c) — Project Schedule: a notice that was 103px, and two filter rows that are now one
+
+Owner: *"the main screen can't even be seen"*, *"The notification … its too lengthy and the text
+itself is not professional"*, *"The Towers toolbar and trades toolbar can be in the same level"*.
+Module detail in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **Measure the chrome as a budget before redesigning any of it.** Block by block at 1440×900:
+  toolbar 36, filter rows 50, model bar 32, notice 103, card header 46, per-card view bar 32, caption
+  29, timeline card 107 — 435px of chrome, and the drawing got what was left. The two blocks worth
+  attacking were obvious only once they were numbers. Now 339px, and every pixel saved goes to the
+  content.
+- ⚠️⚠️ **A long diagnostic notice should collapse, not shrink.** The detail in this one was written
+  from a real field investigation; deleting it would cost the next planner that work again.
+  `<details>`/`<summary>` gives the disclosure natively — no handler, no state to lose across a
+  re-render, keyboard-operable for free. 103px → 31px shut.
+- ⚠️ **"Unprofessional" was about register, not length.** Asides (*"is the usual culprit"*), narration
+  of what the reader will see, and sentences justifying a design decision all came out; the count, the
+  fact, the causes as a list, and the exact path to the fix went in. The justifications moved into the
+  code comments, which is where they belong.
+- ⚠️ **Two of my own gates were wrong first.** One searched the whole 3.3 MB file for prose and failed
+  on a code comment 600 lines away; one capped source bytes, which this change *increased* while
+  shortening the delivered text. **Source size is the wrong proxy for a rendered height** — measure the
+  rendering. Both are the same shape as the quoted `id="…"` that fooled the duplicate-id gate.
+
+`MODULE_V` → `20260915c`, sort-checked against `20260915b`.
+
+### 2026-09-15 (b) — Project Schedule: the toolbar defines the module's edge, and four panes each had their own
+
+Owner: *"The sides are not aligned with each other."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **`.ps-toolbar` has no horizontal padding, so `.pd-main`'s 12px IS the module's edge.** Any pane
+  that adds padding of its own is inset from the toolbar by exactly that much. Measured at 1440px:
+  the stacking and flowline panes +14px a side, the caption +16, the progress pane −4 — four edges in
+  one module, none of them the toolbar's. All now 0; vertical padding untouched.
+- ⚠️ **A "caption strip" idiom copied from a sibling carries the sibling's inset with it.** The
+  caption took `padding:8px 2px` from `.ps-actlegend` and was 2px off everything else.
+- ⚠️ **When measuring alignment, extract the reference.** The toolbar markup was sliced out of the
+  shipped file by div-depth matching rather than reproduced — it is the thing everything lines up
+  *with*, so a hand-made stand-in measures against a guess. Same discipline as extracting the
+  `<style>` block, applied to the markup.
+- ⚠️ **A harness measurement can be void without being wrong-looking.** `#ps-view-schedule` is a flex
+  column, so a stubbed `.ps-progress` collapses to zero width and reports a nonsense left edge. Fall
+  back to the computed property when a box measurement cannot be trusted, and say which one you used.
+
+`MODULE_V` → `20260915b`, sort-checked against `20260915a`.
+
+### 2026-09-15 (a) — Project Schedule: a view reported as redundant, because the thing that made it distinct was never wired
+
+Owner: *"The consolidated button in the vertical stacking seem to be no longer needed since its
+function has been the same with the other buttons as well."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **"This control is redundant" can be a bug report about something else entirely.** Consolidated
+  was meant to split each level into one cell per trade; the code for that is written, committed, and
+  **called from nowhere**, so the view drew one undifferentiated block per floor and earned its
+  reputation. The changelog had already flagged it as *"worth a decision"* eleven days earlier. **Put
+  the finding to the owner before acting on the symptom** — remove or wire are different products,
+  and only they can choose. They chose remove; the implementation is kept, with a note saying what it
+  would take to use it.
+- ⚠️ **Removing one option from a segmented control can empty the segment.** Two of the remaining
+  scopes are conditional, so a single-tower project was left with a control labelled MODEL offering
+  one answer. Check what a segment degrades to on the smallest project shape, not just the one in
+  front of you.
+- ⚠️ **A divider belongs to whatever is on its left.** An unconditional rule between two segments
+  becomes a leading stroke the moment the left one is conditional.
+- ⚠️ **A comment that quotes the expression a gate looks for will trip that gate** — the same way a
+  quoted `id="…"` fooled the duplicate-id gate on 2026-09-09. Reword the comment; do not weaken the
+  gate.
+
+`MODULE_V` → `20260915a`, sort-checked against `20260914zvs4`.
+
+### Pormac's Portfolio checkbox is removed; scope now follows how the module was opened (2026-09-14)
+
+Owner: *"remove the portfolio checkbox. when pormac is in project, discuss only based on project
+data. when pormac is in portfolio, answer based on all projects. no need for the portfolio
+checkbox."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+The checkbox only ever set a *default* and could be flipped back off mid-session; the real signal
+— `#pmc_scope=portfolio` on Pormac's own Portfolio-sidebar link — already existed and was already
+correct, since a module page always renders under `mode:'project'` in `UI.renderNav` regardless of
+which nav family linked to it. Scope is now decided once from that hash on load, with no control
+left that can change it: opened from a project's module grid, Pormac answers from that project
+only; opened from the Portfolio sidebar, it answers across every project the planner can see. The
+project `<select>` is hidden (not merely disabled) in portfolio scope, since there is nothing left
+in the UI that could turn it back off.
+
+**Verified:** `node --check`, brace balance, 0 NUL bytes, `node tools/wiring-check.js` 126/126,
+0 version splits. ⚠️ Not verified signed in.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914zx`;
+`assets/js/modules-grid.js` → `?v=20260914zx` (2 pages, MODULE_V fallback too; re-derived past the
+concurrent `20260914zvs4` after rebasing this branch onto it).
+
+### 2026-09-14 (z2) — Project Schedule: "out of the toolbar" was not the same request as "out of the way"
+
+Owner, an hour after the legend moved out of the stacking toolbar: *"This should be relocated so that
+the toolbars are grouped. Legend should be relocated to another location."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **A strip parked between the last control and the first pixel of content still reads as
+  header.** The previous pass took the legend out of the control bar and dropped it one row below —
+  which satisfies *"not in the toolbar"* and changes nothing a reader experiences: the pane still
+  opened with controls, controls, prose, content. **Read the whole sentence for what the item is
+  separating**, not just for where it is being moved from. The fix is a footer under the figure, the
+  place a caption has always gone.
+- ⚠️ **Pin a caption by parentage, not by CSS.** Making it a sibling of the scroller rather than a
+  child is what keeps it still while the content scrolls — no `position:sticky`, nothing to fight.
+  Verify it by scrolling and asserting the caption moved **0px**, not by reading the rule.
+- ⚠️ **In a flex column, a footer needs `flex:0 0 auto`** or it shares the leftover height with the
+  body and stretches.
+
+`MODULE_V` → `20260914zvs4`, sort-checked against `20260914zvs3`.
+
+### 2026-09-14 (z) — Project Schedule: a dead selector four views were hiding nothing with, and a `return` that returned nothing
+
+Owner, on the stacking view: *"Is this supposed to be shown when vertical stacking is opened?"*, plus
+a toolbar spacing and legend-placement pass. Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+Two findings worth carrying past this module:
+
+- ⚠️⚠️ **A deleted class leaves its hide-rules behind, and they fail silently.** `.ps-legend` was
+  removed from the markup on 2026-08-17. One rule that named it was retargeted at the time; **five
+  more were not**, so four different views each carried a rule saying "hide the legend" and hid
+  nothing for four weeks. A selector that matches zero elements is indistinguishable from a rule that
+  works, in every tool. When you delete a wrapper, grep the whole file for its class — not just the
+  rules near the change.
+- ⚠️⚠️ **`return` alone on a line returns `undefined`, and the code under it still parses.**
+  Converting `var X =\n  'html…'` into `return\n  'html…'` is a one-word edit that is legal as an
+  assignment and fatal as a return: automatic semicolon insertion ends the statement at the newline.
+  The orphaned expression is a valid statement, so **`node --check` stays green** and a syntax gate
+  cannot see it. The symptom reaches the user as the literal word `undefined` in the page. There is
+  now a static gate for it; the general lesson is that "it parses" is not "it runs".
+
+`MODULE_V` → `20260914zvs3`, sort-checked against `20260914zvs2`. ⚠️ The token must sort **after** the
+current one as a plain string — `…vsbar` sorts *before* `…x`, which is how a previous session moved it
+backwards.
+
+### 2026-09-14 (zvs2) — The red moved from the fill to the text; now it is neither
+
+Owner, on the colour pass that shipped hours earlier: *"still needs work"*, then *"Placement of the
+trades buttons need work."* Module only — detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **THE FIRST CUT SWAPPED FIVE RED FILLS FOR FIVE RED TEXTS.** `25d8cbc` removed the solid
+  fills but set `color:var(--pd-red-dark)`, so the **count of red marks never changed** — five active
+  rungs, five red words. "Still needs work" was exactly right.
+- ⚠️⚠️ **AND IT COPIED THE WRONG SIBLING.** `.pd-seg-multi` is the shared pattern for **multi-select**
+  groups; every segment in this bar is single-select, and the shared single-select pattern is the
+  solid fill we were leaving. Neither was designed for five single-selects in one row. **The right
+  precedent was one row above in the same pane** — `.ps-vs-chip.on`, whose own note already read
+  *"INK on the red tint, not brand red as text … the red stays as the border and the tint, which
+  carry the state without being the text."* The chips had settled it in September and the segments
+  disagreed with them.
+- Active rung is now tint + **ink** + the 2px underline — **the underline is the only red left**.
+  Measured both themes: red texts in the pane **5 → 0**; contrast **5.11 → 14.25** light and
+  **6.76 → 13.45** dark; chip and segment active states now **identical** rather than disagreeing.
+- ⚠️ The `html.pd-dark` ink override the first cut needed is **gone, not merely unused**: `--pd-ink`
+  is itself theme-remapped, which is exactly why ink works where `--pd-red-dark` needed `#FF8A80`.
+- **Four labels welded inside their controls.** Detail / Dates / Show / Zoom were free-standing grey
+  words, so the row read as eleven loose things rather than five named controls — `.ps-vs-grp` existed
+  only to stop a label being wrapped away from its own control. Shape taken from the shared
+  `.pd-seg-lab`; Model gains one too, and Zoom's loose `.pd-btn`s became a real segment (ids
+  preserved — the wiring binds to them).
+- **The trades row now says what it is.** ⚠️ Its sibling already had a label and it did not: the
+  Towers row has carried one since 2026-09-13 precisely because *"the two rows now look alike and a
+  reader has to be able to tell which one they are ticking"*. Kept on its own row — a project can
+  carry ten trades, and a filter behind a click is not what this owner wants.
+- **Verified** in a browser against a harness whose CSS is the shipped `<style>` block extracted
+  verbatim, both themes: 0 red fills, 0 red texts, 6 welded labels, divider intact, no bar overflow
+  or page scroll at 1180px and 1400px. Generated `<span>` tags balance 34/34.
+- ⚠️ Not verified signed in. `MODULE_V` → `20260914zvs2`, sort-checked.
+### 2026-09-14 (zvs) — The Vertical Stacking bar had five red blocks and no edge above it
+
+Owner: *"toolbar UI needs to be properly reworked. Main toolbar does not [have] a divider with the
+vertical stacking toolbar"*, plus: verify the side-panel clipping **on all modes**. Module only —
+detail in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **THE BAR WAS NOT TOO BIG — IT HAD FIVE MAXIMUM-EMPHASIS MARKS AND NO ENTRY POINT.**
+  `.ps-vs-seg > button.on` was a solid `--pd-red` fill with white text, and the bar carries **five
+  segmented controls that each always show exactly one active button** (scope, 2D/3D, Detail, Dates,
+  Show). So it rendered **five solid brand-red blocks at once**, always. That is why the earlier
+  passes that removed *words* from this bar never fixed the feeling: the noise was never the word
+  count. Measured, before → after: **5 → 0** solid-red controls in the pane.
+- ⚠️ **AND THE OLD STATE FAILED AA.** White on `#EE3124` is **4.12:1**, under the 4.5 threshold for
+  normal text — so this was never only a taste question. The new state measures **5.11:1 light /
+  6.76:1 dark**.
+- ⚠️ **The treatment is the app's own, not a new one.** `.pd-seg-multi > button.on` in the shared
+  `dashboard.css` settled this already — tint carries the state, a 2px red underline keeps the brand
+  cue, and dark mode overrides the ink to `#FF8A80` because `--pd-red-dark` is only **2.64:1** on the
+  dark tint. Those exact values are reused, and the suite asserts the two rules still agree, or the
+  app is back to two different segmented-active states.
+- ⚠️ **The 3D scrubber keeps its solid red, deliberately** — it sits on a scrim over the stage, not
+  on a card, where a tint all but disappears. Documented in place so the next pass does not flatten it.
+- **The divider** is `border-top` on `.ps-vstack`, ⚠️ **not** on `.ps-toolbar`: that bar is shared by
+  every view in the module, and a rule there would divide off views that have no second bar.
+- ⚠️⚠️ **"Verify on all modes" found a fourth mode — and the answer is that it is correctly
+  excluded.** Enumerating from the source rather than from the function under test: there are **four**
+  `ps-*-mode` classes and `_psSyncLongDoc` names **three**. `ps-net-mode` hides `.ps-split` like the
+  others, but its own rule makes `.ps-network` `flex:1 1 auto; overflow:hidden` — it **fills** the
+  viewport and clips internally instead of growing the page, and `.ps-longdoc` exists only to let the
+  page grow. Asserted **both ways**, so removing that `overflow:hidden` later fails the suite and says
+  why. All **15** mode × tab states executed: 15/15.
+- ⚠️ **Found, named, not fixed:** `modules/project-schedule/index.html` declares **14 rule lines
+  twice**, byte-identical, across two interleaved CSS regions. Identical today so nothing renders
+  wrong — the hazard is the next editor changing one copy and seeing no effect. A warning block now
+  names every affected rule, and the new divider is declared **after both copies**, which the suite
+  asserts.
+- **Verified: 33 assertions** with a contrast build **pinned to `f494c81`** failing 11 — exactly the
+  active-state and divider groups. Browser measurements taken against a harness whose CSS is the
+  **shipped `<style>` block extracted verbatim**, after the last hand-copied-shell harness passed on a
+  layout that overlapped in the real app.
+- ⚠️ **A hidden Browser pane serves stale computed styles, not just void geometry** — it reported the
+  dark tint on a light-themed root while the token on that same element computed light. Caught because
+  the harness refuses to report when `visibilityState !== 'visible'`; the light figures are arithmetic
+  on the token values and agree with both the browser's dark reading and `dashboard.css`'s own
+  recorded 5.11 / 2.64.
+- ⚠️ Not verified signed in. `MODULE_V` → `20260914zvs`, **sort-checked** against the current
+  `20260914x` — a natural `20260914vsbar` would have sorted backwards.
+### Pormac gets a Clear history button (2026-09-14)
+
+Owner: *"provide also option to clear history."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+A trash-icon button beside the project select clears the current scope's conversation
+(project, General, or Portfolio) after a confirm. ⚠️⚠️ It deletes **every**
+`pormac_conversations` row for that scope — not only the canonical one — using the identical
+scope predicate `loadConversation()` reads with, since that function merges every row for a
+scope and deleting only the canonical one would let an older row silently resurface as "the"
+conversation on the next load. `pormac_messages` cascades on delete, so no separate delete or
+policy is needed there. `.eq('created_by', profile.id)` keeps an admin's click scoped to their
+own conversation, matching the read side's own guard.
+
+**Verified:** `node --check`, brace balance, `node tools/wiring-check.js` 126/126, 0 version
+splits. ⚠️ Not verified signed in.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914w`;
+`assets/js/modules-grid.js` → `?v=20260914w` (2 pages, MODULE_V fallback too; re-derived past
+main's own concurrent `20260914v` after rebasing this branch onto it).
+### 2026-09-14 (w) — Two real clipping defects: a sticky sidebar with nowhere to stick, and 419px of every building cut off
+
+Owner, continuing the same session: *“Side panel clips as well when page is scrolled”*, then
+*“The buttons are still clipping let's make sure that the UI for the toolbars are professional
+looking”*, then *“UI still clips i refreshed the in-app browser”*. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### ⚠⚠ 1 · THE TOOLBARS WERE NOT CLIPPING, AND MEASURING IS WHY THAT MATTERED
+Every bar on the page was measured for real clipping — an element whose `scrollWidth` exceeds its
+own `clientWidth`, or which sits past its bar's right edge:
+
+| bar | controls | content overflowing its box | past the edge | bar scrolls X |
+|---|---|---|---|---|
+| `.pd-topbar` | 9 | **0** | **0** | no |
+| `.pd-modulebar` | 33 | **0** | **0** | no |
+| `.ps-toolbar` | 65 | **0** | **0** | no |
+| `.ps-vs-bar` | 19 | **0** | **0** | no |
+| `.ps-vs-chips` | 5 | **0** | **0** | no |
+
+**Nothing in any toolbar clips**, and the page does not scroll sideways. Chasing the toolbars would
+have been a redesign of five working bars while the actual defects sat elsewhere — which is the
+whole reason for measuring before changing. The two things that really were cut off are below.
+
+### ⚠⚠ 2 · 419px OF EVERY BUILDING WAS BEING CUT OFF
+Measured live at a 846px viewport: the 3D canvas was **1117px wide inside a 698px `.ps-vs-tower`
+whose `overflow` is `hidden`**. The model was not badly centred — more than a third of it was
+outside its own card.
+`_vs3Build` exposes **`resize()` as a capability, deliberately** — its own note reads *“a WebGL
+canvas does not reflow: its drawing buffer and the camera's aspect are numbers set once … the owner
+(or the modal) knows when the box changed; this is how it says so”*. The **focus window** says so.
+The **cards on the page never did**, so a canvas built at one pane width kept that drawing buffer
+for ever, and any narrowing after the build clipped it.
+- A **`ResizeObserver` on `#ps-vstack`**, not a window `resize` listener — the pane also changes
+  width when the **sidebar collapses**, which fires no window resize at all.
+- ⚠⚠ **WIDTH ONLY.** `resize()` derives the canvas **height** from the width, so reacting to a
+  height change would make the observer watch its own effect and re-enter for ever.
+- ⚠ Debounced at 120ms (a drag-resize fires continuously and each pass reallocates a drawing
+  buffer), one observer for the life of the page, and a scene with no `resize()` is skipped rather
+  than throwing.
+
+### ⚠⚠ 3 · A STICKY SIDEBAR CANNOT TRAVEL OUTSIDE ITS CONTAINING BLOCK
+With Vertical Stacking on, the page was **1,327px tall inside a `.pd-app` pinned to 900px**, so
+once you scrolled, the sidebar's containing block had gone and the rail went with it — its top cut
+off, exactly the screenshot. `.ps-longdoc` (which drops the `100vh` that makes the Schedule scroll
+its own panes) was set from the **TAB alone**: right for Setup and Cost Loading, and blind to the
+three panel modes that replace the Schedule's split with a long document of their own — Vertical
+Stacking, Activity Progress and Flowline. **Same cause as 2026-09-11 (a7)**, which fixed it for the
+two tabs and could not have known about the modes.
+- ⚠⚠ **ONE WRITER.** Four things now decide the class, and a second writer would undo the first:
+  `switchTab` fires on every tab change and the three mode setters on every toggle. They all call
+  one `_psSyncLongDoc()` that asks the whole question, rather than each asserting its own half.
+- ⚠ The tab is read back off the element `switchTab` wrote it to, not kept in a parallel variable
+  that could drift from the DOM.
+
+### Verified
+- **`_psSyncLongDoc` sliced out of the shipped file and executed over all 8 states** — schedule
+  alone, schedule + each of the three panel modes, builder, costload, builder + a mode, and the
+  “no tab recorded yet” cold open: **8/8 correct**. ⚠⚠ **The negative build bites**: removing just
+  the `panel ||` term fails exactly the three panel cases and still passes the other five.
+- **The resize watcher executed against a fake `ResizeObserver`** — **7 assertions**, including the
+  one most likely to be wrong: a **height-only** change (the same width reported back) schedules
+  **nothing**, so it cannot re-enter; a width change schedules exactly one debounced pass that
+  resizes every live scene; `watch()` is idempotent.
+- ⚠ **My own harness was wrong first** and is recorded rather than quietly fixed: `new Function`'s
+  body runs in **global scope**, so the fake observer's callback — a closure variable in the test —
+  was not visible from inside it and the probe threw `cb is not defined`.
+- `node --check` **PARSE OK**; **2,054 → 2,056 functions, 0 lost**.
+
+### Re-verified live, on the deployed build
+After a cache-busting reload of the real page: **1 `barChart` and 1 `trendingUp`** (the duplicate
+pair gone), the bogus **Towers row absent**, **4 label groups with 0 orphaned labels**, **0 clipped
+elements**, **0 children past the bar's edge**, no horizontal page scroll — and the stacking header
+down from **122px to 97px** at 1280.
+⚠ **The owner's first two screenshots were a CACHED page**, which is worth recording: the module
+page is fetched directly at its own URL, so `MODULE_V` only cache-busts the link *from the dashboard
+grid* — a direct reload can still serve stale bytes. `curl` against the deployed file confirmed all
+three fixes were on the server while the browser was still showing the old UI.
+
+`MODULE_V` → `20260914x`. ⚠⚠ **The THIRD version collision of this session** — the concurrent
+session independently took `20260914w` as well. Each time it was caught by `curl`-ing the deployed
+page rather than trusting the local file, and each time the rebase merged **cleanly**, because both
+sides wrote the *identical* string and git had nothing to flag.
+
+
+### 2026-09-14 (u) — Two buttons drawing one glyph, a Towers row listing floors, and a label torn off its control
+
+Owner, from the live app with two screenshots: *“1. These two icons are the same. let's fix
+2. Vertical stacking UI looks messy, let's fix”*, then *“make sure that the UI is easily
+understandable, no functions are compromised, and everything looks clean and no clipping”*, then a
+third screenshot: *“Ui still needs some work”*. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 1 · The duplicate pair, and the precedent it follows
+`#ps-progressbtn` and `#ps-flowbtn` both drew **`trendingUp`**, and both are **icon-only**, so the
+glyph was the only thing separating them — the same defect class as 2026-09-14 (c)'s
+`#ps-lsmbtn`/`#ps-outlinebtn`. Activity Progress takes **`barChart`** (three bars on a baseline,
+unmistakable against a polyline); Flowline keeps `trendingUp`, because a flowline **is** a rising
+trend line — diagonal bands whose slope is the production rate.
+⚠ **An EXISTING glyph, deliberately** — `barChart` is already in `icons.js` and used **0 times** in
+this file, so nothing is added to a shared asset 21 pages carry for a two-button problem.
+⚠ The live scan also found `ps-actionsbtn`/`ps-vstackbtn` sharing `box` and `ps-analyzebtn`/`ps-crit`
+sharing `risk`. **Both left alone on purpose** — those carry text labels (*Actions ▾*, *Analyze ▾*)
+or are a menu item echoing its own parent menu's icon, so the glyph is not the only separator.
+
+### ⚠⚠ 2 · THE TOWERS ROW WAS LISTING FLOORS, AND THE WRITER'S OWN FALLBACK WAS UNREACHABLE
+The chip row read **“All towers / F1 / F2 / F3”** while every one of DEMO01's 66 rows carries
+`location.tower = “Tower 1”`. The push stamps the tower under the reserved `tower` key **always**,
+and under a level id **only when `locLevelFor('tower')` resolves one** — its own comment calls the
+literal *“a fallback the stacking still reads”*. But `_vsTowerOf` read `LOC_LEVELS[0]` **first**, and
+`_vsTowerLevelId()` falls back to `LOC_LEVELS[0]` when no level is named tower/building/block — which
+on a **Floor › Zone** breakdown is the **FLOOR**. So the fallback was never reached, every row
+answered its own floor, and picking a “tower” filtered to a storey.
+- New **`_vsTowerLevelNamedId()`** separates *“which level IS the tower”* from *“which level does the
+  band axis use”*. ⚠ The two cannot be one function: `_vsTowerLevelId` must always name **some**
+  level (it drives the band axis, which cannot be empty), and that fallback is right for a
+  `Tower › Level › Zone` project whose first level is called something else.
+- ⚠ **A named tower level still wins**, so a real `Tower › Level › Zone` project is unchanged — and
+  there the push writes both values from the **same `towerLabel()` call**, so they cannot disagree.
+- ⚠ **`LOC_LEVELS[0]` is still the last resort**, so an import that never carried the literal key is
+  byte-identical. ⚠ **Read-time only** — no row is written, matching the `locTowerToken` precedent
+  directly above it.
+- **It also removes a row of clutter**, which is item 2's own complaint: with one real tower the chip
+  row is correctly hidden.
+
+### ⚠⚠ 3 · “Show” SAT ON ONE ROW AND ITS OWN Finish|Start CONTROL ON THE NEXT
+Found in the owner's third screenshot and then reproduced by measurement at **1280px**: the label
+`Show` at `top:244` with the segment it names at `top:277`. `.ps-vs-bar` is `flex-wrap:wrap`, which
+packs items **one at a time**, so a label and its control are two independent items and a wrap can
+fall between them — leaving a label naming nothing above a control named by nothing.
+Each (label + control) pair is now one **`.ps-vs-grp`** nowrap box, so it counts as a single item to
+the outer row: the pair can still be pushed to its own line **as a whole**, it can no longer be split
+down the middle. ⚠ **Exactly the `.il-timepair` fix (2026-09-12), same cause** — *“a nowrap box with
+min-width:0 children cannot itself be split by an ancestor's wrap”*.
+- ⚠⚠ **TWO DIRECT-CHILD SELECTORS HAD TO BE WIDENED OR THIS WOULD HAVE BROKEN A FEATURE SILENTLY.**
+  `body.ps-reporting .ps-vs-bar > .ps-vs-note` (reporting view hides the field labels) and
+  `.ps-vs-bar > .ps-vs-note { min-width:0 }` both addressed these notes as **direct** children;
+  nesting them one level deeper makes both stop matching. Changed to descendant, same behaviour.
+  ⚠ `.ps-vs-twchips > .ps-vs-note` is untouched — that label is in the tower chip row, not the bar.
+- ⚠ The group's internal `gap` is **8px, matching `.ps-vs-bar`'s own**, so the grouping changes what
+  can **wrap** and nothing about how the bar is spaced. ⚠ `flex:0 0 auto`, because a group squeezed
+  narrower than its contents is how a segmented control gets clipped.
+
+### Measured, not eyeballed — the Vertical Stacking control stack, before
+| width | Towers | Trades | bar | header total | clipped children | page scrolls X |
+|---|---|---|---|---|---|---|
+| 1440 / 1280 | 25 | 25 | 72 (2 rows) | **122px** | **0** | **no** |
+| 846 | 38 | 38 | 162 (4 rows) | **238px** | **0** | **no** |
+
+⚠ **Nothing clips at any width measured**, so the “messy” reading is density and raggedness, not
+overflow. ⚠ And the bar's **“rows” were partly my own measurement artefact**: clustering children on
+a 6px tolerance split each segmented control from its 18px label and reported **8** rows where there
+are **4**. Re-clustered on vertical centres it is 4 at 846px and 2 at desktop. ⚠ The five short
+`.ps-vs-note` elements are control **labels** (*Detail, Zone, Dates, Show, Zoom*), not prose — the
+only real prose is the legend and the activity count. **15 controls, and not one was removed.**
+
+### Verified
+- **28 assertions** from a new checker that resolves every `.ps-icobtn`'s `data-ico` through the
+  **shipped `icons.js`** and groups by the geometry actually **drawn** (two different names could map
+  to identical paths). ⚠⚠ **The negative build bites and names the reported pair**: against the
+  pre-fix file it fails with *“these share a drawing: ps-progressbtn (trendingUp) + ps-flowbtn
+  (trendingUp)”*. ⚠ It also caught a button whose `data-ico` is built by a **JS expression** rather
+  than static markup — now skipped and counted, rather than reported as a missing glyph.
+- **`_vsTowerOf` / `_vsTowerLevelId` / `_vsTowerLevelNamedId` sliced out of the shipped file and
+  executed** over four shapes, with the pre-fix copy as the control: it differs on **exactly one** —
+  DEMO01 answers `“F1”` before and `“Tower 1”` after — and is **identical** on a real tower level, on an
+  import with no literal key, and on a row with no location.
+- `node --check` **PARSE OK** on the 3.28M-character inline script; **2,052 → 2,053 functions, 0
+  lost**; **0 NUL bytes**; 4 `.ps-vs-grp` opened and 4 closed.
+- ⚠ **Three of my own checks were wrong first**, each recorded rather than quietly fixed: python's
+  `/tmp` is not bash's `/tmp` on this machine; **`grep -c $'\x00'` degenerates to an empty pattern**
+  and reported all **50,355** lines as holding a NUL; and two content anchors matched 2 and 5 times
+  (`.ps-vs-note` is declared twice, and `>+</button>` appears on five buttons) — the patch script
+  **aborts before writing** on a bad anchor count, so nothing was half-applied.
+- ⚠ **Rebased onto two incoming commits** that also touch this file (a shared `db.js`/`ui.js` `?v=`
+  bump); the hunks are ~10,000 lines apart, merged cleanly, both sides verified present afterwards.
+
+`MODULE_V` → `20260914v`. ⚠⚠ **Re-derived TWICE, and the second time is the instructive one.**
+The live site was already serving `20260914t` from a concurrent session while this tree sat at `s`,
+so the token was taken from **what `curl` actually returns** rather than from the local file — `u`.
+The push was then rejected, and the rebase revealed that the concurrent session had **independently
+chosen `20260914u` as well**. ⚠ **That rebase merged CLEANLY**, because both sides set the *identical*
+string and git had nothing to conflict on — which is the dangerous shape: my changes would have
+shipped under a version a browser had already cached **without them**. Bumped past both to `v`.
+
+⚠ **Reported, NOT shipped — the rest of item 2 is a design decision.** At 846px the bar is still 4
+rows. The lever with precedent is folding the low-frequency controls behind the existing
+**Display ▾** pattern (2026-09-10 collapsed 21 controls that way). That changes **where a planner
+finds a control**, so it is the owner's call rather than my judgement — the measurements above are
+the evidence for it.
+
 ### Portfolio mode, generalized: every module gets a read-only cross-project view (2026-09-14)
 
 Owner: *"portfolio is not working, let's fix it."* Two requirements: opening a module from the
