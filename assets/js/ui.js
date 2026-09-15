@@ -415,7 +415,6 @@
          is absent, rather than linking to a version string that does not exist. */
       var poBase = base + 'modules/portfolio-overview/index.html' +
         (window.ModulesGrid && ModulesGrid.MODULE_V ? '?v=' + encodeURIComponent(ModulesGrid.MODULE_V) : '');
-      function poHref(tab) { return poBase + '#po_view=' + encodeURIComponent(JSON.stringify({ v: tab })); }
       // ctx.modules is optional — every project-mode page already passes it (it built the
       // module grid), but the five portfolio-mode pages never needed to before now. Default
       // to the shared registry rather than requiring five call sites to be updated.
@@ -461,15 +460,19 @@
            collision in this nav would change two other screens to fix neither. */
         '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Dashboard</span></a>' +
-        // ⚠️⚠️ MILESTONES HAS NO MODULE, so `pmods` below cannot produce it — it is a
-        //    portfolio-only view that existed ONLY as an in-page tab. When the owner had
-        //    that tab strip removed (2026-09-09) it would have become unreachable: the
-        //    strip was its single entry point. Listed explicitly here for that reason.
-        //    `overview` needs no row — the plain `poBase` "Dashboard" link above already
-        //    lands on it.
-        // ⚠️ `milestone`, not `calendar` — Meetings is the row directly below and it IS a calendar.
-        '<a href="' + poHref('milestones') + '" title="Milestones — portfolio-wide">' +
-          '<span class="pd-navico" data-ico="milestone"></span><span class="pd-navtxt">Milestones</span></a>' +
+        // ⚠️ MILESTONES WAS A ROW HERE AND IS GONE — owner, 2026-09-16: *"There is a
+        //    milestones tab in the side panel for portfolio view. Let's remove this since
+        //    milestones are already seen within the schedule."*
+        // ⚠️⚠️ THIS IS A NAMED REVERSAL OF 2026-09-09 (p3), AND THE REASON THAT ROW EXISTED
+        //    NO LONGER HOLDS. It was added because Milestones has no module — `pmods` below
+        //    cannot produce it — so when the in-page tab strip was removed it would have been
+        //    left with NO entry point at all. The strip came back on 2026-09-15 (u) as the
+        //    view switcher (`.po-tabs` → UI.tabsToDropdown), and `data-view="milestones"` is
+        //    one of its buttons — checked, not assumed. So the view is still reachable from
+        //    the Portfolio Dashboard itself; only the duplicate sidebar row is gone.
+        // ⚠️ `poHref()` went with it: this was its only caller, and a helper left behind with
+        //    no reader is the dead-export shape `tools/dead-exports.js` exists to catch.
+        //    `poBase` stays — the Dashboard row above still uses it.
         pmods.map(pmodRow).join('') +
         // ⚠️ Personal (My Work / Tasks) is super-admin-only "for now" too (2026-09-03,
         // same owner ask as the module hiding above) — gated the same way, off the global

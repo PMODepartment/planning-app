@@ -131,11 +131,33 @@
       });
       if (error) throw error;
     },
-    // Hard delete. The RPC refuses if ANY module row still references the
-    // project and names what's blocking — surface error.message to the admin.
+    // ⚠️⚠️ HARD DELETE, AND SINCE 2026-09-16 IT NO LONGER REFUSES — IT PURGES.
+    // This comment used to read "the RPC refuses if ANY module row still
+    // references the project and names what's blocking", which was true and is
+    // now false: admin_delete_project() deletes every project-scoped row it can
+    // find and then the project. A comment that confidently describes the
+    // opposite of the code is worse than none, so it is corrected here rather
+    // than left for the next reader to trust.
+    //
+    // ⚠️ It can still throw, and the message is still worth surfacing verbatim:
+    // 'Not authorized', 'Project % not found', or — the one that matters — a
+    // purge that could not finish, which NAMES the tables and guarantees
+    // nothing was deleted (the whole function body is one transaction).
     async deleteProject(id) {
       var { error } = await sb().rpc('admin_delete_project', { target: id });
       if (error) throw error;
+    },
+    // What deleteProject() is about to do, read BEFORE the button is armed.
+    // ⚠️ The RPC already existed, was already granted, and had ZERO callers — its
+    // own comment said "the projects.html modal can call this to preview before
+    // it arms the button." It never did. This is that caller, not new SQL.
+    // Rows come back as { table_name, row_count, class } where class is
+    // 'delete' (the rows go) or 'unlink' (the rows stay, their project_id is
+    // cleared — user_notes and packages.planners_project_id today).
+    async previewProjectDelete(id) {
+      var { data, error } = await sb().rpc('admin_project_delete_preview', { target: id });
+      if (error) throw error;
+      return data || [];
     },
 
     // ---- Group Heads (the flat tag that replaced the workspace tree) ----

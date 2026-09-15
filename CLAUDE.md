@@ -102,6 +102,190 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (a) — The project delete stops refusing and starts purging; a CRITICAL RLS hole closed; Milestones leaves the portfolio sidebar
+
+Owner, three things: *"I need to have the guard when deleting a project removed since its very
+difficult to remove a project. I've removed the schedule in the schedule module and still the project
+can't be removed probably due to the default WBS."*, *"Check security issue as well"* (with a Supabase
+advisor screenshot), and mid-turn *"There is a milestones tab in the side panel for portfolio view.
+Let's remove this since milestones are already seen within the schedule."*
+
+### ⚠️⚠️ WHY THAT PROJECT COULD NOT BE DELETED, AND WHY REMOVING THE REFUSAL ALONE WOULD NOT HAVE HELPED
+
+`wbs_nodes` carries a `project_id` — bare `text not null`, **no foreign key at all** — and is not on
+the residue whitelist, so it blocked. The schedule module auto-seeds a **locked 7-node WBS skeleton**
+every time the project is opened, and **both** the client's `_clearWbsTree` and the server's
+`clear_project_wbs_nodes` delete only `is_locked = false` rows. So the skeleton is **un-clearable and
+self-reseeding**: clearing the schedule writes it straight back. The gate was unwinnable by
+construction — the same shape as the `schedule_audit` deadlock the 2026-08-12 migration was written
+to fix, recurring with a different table.
+
+⚠️⚠️ **And simply deleting the refusal would have replaced a friendly message with a raw FK error.**
+Re-derived from `supabase-build.sql` before a line was written:
+
+| | |
+|---|---|
+| FKs to `projects(id)` | **30 CASCADE · 33 NO ACTION · 2 SET NULL** |
+| tables carrying a `project_id` | **89** |
+| …of which **no FK to projects at all** | **25** — `wbs_nodes`, `schedule_baselines`, `activity_*`, `equipment_*`, `manpower_*`, `location_levels`, `cost_accounts` … |
+
+The 33 NO ACTION would have killed the final `delete from projects`, and the 25 FK-less tables are
+invisible to FK semantics entirely — they are the **actual** blocker, and no amount of
+`ON DELETE CASCADE` would reach them. **So `admin_delete_project` now purges rather than refuses**
+(`migrations/2026-09-16-delete-project-purge.sql`, owner runs it).
+
+⚠️ **Rejected: converting the 33 NO ACTION FKs to CASCADE.** It is the purer schema change and it
+permanently alters behaviour far outside this feature — afterwards `delete from boq_revisions where
+id = …` silently takes its items, for every code path, for ever — still would not cover the 25
+FK-less tables, and adding FKs to those would likely fail on pre-existing orphan project codes.
+
+### ⚠️⚠️ THE SET NULL LIST IS READ FROM THE CATALOG, AND MY OWN GREP IS THE ARGUMENT FOR IT
+
+Rows that must **survive** are found from `pg_constraint.confdeltype = 'n'` at run time, never from a
+list in the function. The first pass of my repo scan found **one** such column; there are **two** —
+`packages.planners_project_id` is declared by an `alter table … add column` whose `references` clause
+sits on the **next line**, and the pattern could not cross it. **A hardcoded list built from that pass
+would have deleted every sibling package link in the database.** The schema's own declaration stays
+the single source of truth.
+
+⚠️ And only a SET NULL column actually **named** `project_id` excuses its table from the delete
+sweep: `packages` carries **both** a cascading `project_id` (its own project — those rows should go)
+and the SET NULL `planners_project_id` (another project's pointer — that row must survive).
+
+### ⚠️ A retry loop, not a topological sort — and a 120s timeout that is the likeliest silent failure
+
+Deleting in catalog order can raise an FK violation **between** two module tables (measured: only
+three such edges exist today). So every table is attempted, the refusals are re-queued, and a pass
+that makes **no progress raises and names the tables** rather than half-deleting a project and
+reporting success. The whole body is one transaction.
+
+⚠️⚠️ `alter function admin_delete_project(text) set statement_timeout = '120s'` — PostgREST runs as
+`authenticated`, which this project caps at **8s**, and a 100k-row `project_schedule` purge across 89
+tables goes straight through it. That one line is the single most likely cause of an otherwise
+correct *"it just times out"*.
+
+### The dialog reads the blast radius before it arms, and its copy was FALSE
+
+`admin_project_delete_preview` **already existed, was already granted, and had zero callers** — its
+own comment said *"the projects.html modal can call this to preview before it arms the button."* It
+never did. `PDb.previewProjectDelete` is that caller; its `class` column is repurposed from
+`residue | blocking` (words for a gate that no longer exists) to **`delete | unlink`**.
+
+- ⚠️ **If the preview fails, the button never arms.** Not a refusal to delete — a refusal to let
+  somebody delete blind when the blast radius could not be read. It is the one place this change does
+  not simply remove the guard, and it says so on screen, naming the migration to run.
+- ⚠️ `opts.preview` is **optional**, so the group-head path is byte-identical — asserted, not assumed.
+- ⚠️⚠️ **The copy had become a lie.** It promised *"It is refused while the project still holds real
+  work … the error names what is blocking"* — one click before it did not. Rewritten: it deletes
+  everything listed, notebook entries are **kept and unlinked**, **files in storage are NOT removed**,
+  and **Archive** is still the reversible alternative. The stale comment in `db.js` saying the RPC
+  refuses is corrected too.
+
+### ⚠️ Storage is explicitly out of scope, on technical grounds
+
+Seven private buckets hold objects under project-code folders and nothing here deletes them.
+`delete from storage.objects` removes the **metadata rows** and leaves the bytes in the backing store
+— Supabase only reclaims those through the storage API — so the files would become unreachable **and
+stay billed**, which is worse than doing nothing. The dialog says so, and the migration ships the
+orphan report.
+
+### Part 2 — the CRITICAL advisory
+
+`public.wbs_summary_backup_20260817` had **RLS disabled**: ~103,548 WBS rows across every project,
+created ad hoc in the SQL editor, in no tracked migration.
+⚠️ **Severity measured, not assumed:** `anon` is refused (`42501`), so this is *not* open to the
+internet — but `alter default privileges … grant select, insert, update, delete on tables to
+authenticated` gives every new public table full DML to `authenticated`, and with RLS off there is no
+row filter. Any signed-in account, a `viewer` included, could read every project's WBS and delete the
+rollback. `migrations/2026-09-16-backup-table-rls.sql` enables RLS with **no policies** (which denies
+everyone but the owner and `service_role`) and revokes the grants.
+⚠️ **A loop, not four bare statements:** these tables are hand-made and which of them exist differs
+per environment, and `alter table` on a missing one aborts the whole file in the editor's single
+transaction. It secures `wbs_null_code_backup_20260824` too, and says which it skipped — the advisor
+flagged only one, and this answers both cases without needing to know why.
+⚠️ **Not dropped** — it is the only rollback for the 2026-08-17 cleanup, and that was the owner's call.
+⚠️ Nothing in the app reads either table: checked, the only references anywhere are prose in a
+changelog.
+
+### Milestones leaves the portfolio sidebar
+
+⚠️⚠️ **A NAMED REVERSAL, and the reason the row existed no longer holds.** It was added on
+2026-09-09 (p3) precisely because Milestones has no module — `pmods` cannot produce it — so with the
+in-page tab strip removed it would have had **no entry point at all**. The strip came back on
+2026-09-15 (u) as the view switcher, and `data-view="milestones"` is one of its buttons — **checked,
+not assumed** — so the view is still reachable from the Portfolio Dashboard itself and only the
+duplicate row is gone. `poHref()` went with it (its only caller); `poBase` stays.
+⚠️ The `milestone` glyph in `icons.js` now has **zero users** and is deliberately LEFT: an unused
+glyph in an icon set is not a dead handler, and removing it would bump a shared asset across 23 pages
+for no behavioural gain.
+
+### ⚠️⚠️ FOUND IN PASSING: `supabase-build.sql` ON MAIN WAS 13 MIGRATIONS STALE
+
+Regenerating it for this change moved it from **155 to 171 migrations** — so the one file that claims
+to build the whole database could not have. Caught by reading the diff size (2,140 insertions for a
+114-line migration) rather than trusting it.
+⚠️ Verified the three **destructive one-offs** stayed out: `gen-build.js` filters on a date-prefixed
+filename, so `CLEANUP-wbs-null-code-20260824.sql` and friends are excluded — its `delete from
+public.project_schedule` appears **0 times** in the build.
+⚠️ **And a correction to the plan this was built from:** it said to assert the old refusal string is
+*gone* from the build. It cannot be — the build **replays every migration in order**. What matters is
+that the new definition comes **last**, which is asserted: definitions at 3048, 4828 and **16423**,
+with the purge messages and the timeout after the last one.
+
+### Two new checkers, because there is no local Postgres here
+
+- **`tools/sql-struct.js`** — matches plpgsql block openers to their closers inside every dollar-quoted
+  body. **134 bodies across 171 migrations, 0 unbalanced.**
+- **`tools/sql-scan.js`** — the character walker it runs on. ⚠️⚠️ **Regexes cannot do this and both
+  directions bit me**: stripping `--` comments first lets a `--` inside a string literal chop it and
+  swallow the rest of the file; stripping strings first lets an apostrophe inside a comment
+  (*"somebody's own notes"*) open a phantom string. That is `tools/scan.js`'s lesson, in SQL.
+- ⚠️⚠️ **THE CHECKER WAS WRONG THREE TIMES BEFORE IT WAS RIGHT, and each time it accused CORRECT
+  code:** it matched `loop` + a newline + `if` as one token and swallowed the `if`; it hit the comment
+  trap above; and it treated `drop constraint IF EXISTS` as a block opener (3 false positives), then
+  over-corrected by skipping every `if exists` — which threw away the real `if exists (select …) then`
+  and took the false positives from 3 to **38**. The rule that works is whether a `then` follows
+  before the statement ends. It **self-tests on all of those shapes before reporting anything**.
+
+### Verified
+
+**`tools/test-delete-dialog.js` — 44 assertions, 0 failing**, with `confirmDelete` /
+`deleteProjectModal` / `previewHTML` / `nfmt` **sliced out of `projects.html` by name** and executed;
+a missing slice **aborts** rather than comparing nothing. The button arms only on an exact,
+case-sensitive match (a trailing space still arms — the shipped rule trims); a rejecting preview
+**never** arms it; `previewProjectDelete` is called **exactly once**; the label excludes the unlink
+rows (**12,439**, not 12,442); `user_notes` renders **under** the kept heading, asserted by **position**
+rather than by echoing the class back; and `opts.run` fires **once** under a double-click.
+
+⚠️⚠️ **Both contrasts bite.** Against main the slicer **aborts** — the functions do not exist. Against
+a mutation build with `opts.preview` removed: **19 failures**, all in the preview groups, while the
+group-head path and the copy still pass.
+
+⚠️ **Four of my first assertions were the HARNESS being wrong, not the code:** the stub ignored the
+`disabled` attribute in the markup, and it called `onclick()` directly — which a real browser will
+**not** do on a disabled button, so a correct double-click guard read as a double-run.
+
+The sidebar is proved by executing the shipped `UI.renderNav`: **9 assertions**, Milestones absent,
+the other twelve rows intact, no `#po_view=` link left, `MODULE_V` still carried — and **main's copy
+renders the owner's screenshot exactly**, thirteen rows including Milestones.
+
+`wiring-check` **139/139**, every JS file parses, `projects.html`'s inline script parses,
+`scan.js` self-test 10/10, every asset on one version.
+
+### ⚠️ NOT VERIFIED, and stated as limits rather than gaps
+
+**No local Postgres and no SQL executor of any kind** — no `psql`, no Docker, no Supabase CLI on this
+machine — so **neither migration has been executed**. What is proven is their structure. Specifically
+unverified until the owner runs them: that the live schema matches `/migrations` (VERIFICATION.md
+documents measured drift); that no trigger on a purged table raises mid-sweep; that the purge
+completes inside 120s (mitigated, not proven); and **that the `user_notes` rule holds in practice** —
+that is the one most easily lost, and losing it silently destroys other people's private notes.
+**Run the `begin; … rollback;` rehearsal in the migration's own verify block, on the smallest real
+project, off-hours, before deleting anything real.**
+⚠️ **Not verified signed in** — no dialog has been opened against a live project.
+
+`ui.js` / `db.js` → `?v=20260915i` (23 / 25 pages), `MODULE_V` → `20260915z`, all sort-checked.
+
 ### 2026-09-15 (zb) — Admin becomes Users: Projects moves out for good, and module access gets a per-user override
 
 Owner, on the very page (za) had just reworked: *"1. projects already has a separate module, no need
