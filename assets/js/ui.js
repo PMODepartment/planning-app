@@ -436,8 +436,21 @@
         // role rather than a new ctx flag.
         (superAdmin
           ? '<div class="pd-navsec">Personal</div>' +
-            '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
-              '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Dashboard</span></a>' +
+            /* ⚠️⚠️ "My Work", NOT "Dashboard" — owner 2026-09-15: *"Personal 'Dashboard' shouldn't
+               be called dashboard."* The sharper problem was that this sidebar rendered TWO rows
+               both reading "Dashboard" (Portfolio → Dashboard, ten lines above, and this one), so
+               the label did not distinguish the two things it was on screen to distinguish.
+               ⚠️ "My Work" is not a new word: the avatar menu has linked this page as "My Work"
+                  since it was built (see renderUserBar), the file is `my-work.html`, the module is
+                  `MyWork` and the script is `my-work.js`. The app already called it this
+                  everywhere except the one place the planner reads.
+               ⚠️ THE KEY `personal-dashboard` IS DELIBERATELY UNCHANGED. It is an identifier passed
+                  by my-work.html to `cls()`, not text anyone sees, and renaming an identifier to
+                  match a label is how a two-place change becomes a silent mismatch. Same call the
+                  Manpower/Equipment rename made when `data-view="loading"` stayed put while the
+                  tab became "Overview". */
+            '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="My Work">' +
+              '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">My Work</span></a>' +
             '<a href="' + base + 'my-tasks.html"' + cls('my-tasks') + ' title="Tasks">' +
               '<span class="pd-navico" data-ico="check"></span><span class="pd-navtxt">Tasks</span></a>'
           : '') +

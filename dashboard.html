@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260915a" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260915b" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260910w3" />
 </head>
 <body>
@@ -252,7 +252,14 @@
       color:var(--pd-muted); font-variant-numeric:tabular-nums; }
 
     /* ---- "My items" drawer -------------------------------------------------------------------- */
-    .mw-fab { position:fixed; right:18px; bottom:18px; z-index:60; display:inline-flex; align-items:center;
+    /* ⚠️ RAISED 18px → 74px ON 2026-09-15, and only because THIS page has two floating
+       buttons. The personal notebook's own FAB (`.pd-nb`, dashboard.css) is fixed at
+       right:18px; bottom:18px on all 24 shell pages, so leaving this one there would stack
+       two controls on the same pixels — on the one page that has both. 74px = the notebook
+       FAB's height plus a gap, measured rather than guessed.
+       ⚠️ The notebook does NOT move instead: it is on every page, this is on one, so the
+       page with the extra control is the page that yields. */
+    .mw-fab { position:fixed; right:18px; bottom:74px; z-index:60; display:inline-flex; align-items:center;
       gap:8px; padding:11px 15px; border-radius:var(--pd-radius-pill); border:1px solid var(--pd-line);
       background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:var(--pd-fs-sm); font-weight:700;
       cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.32); }
@@ -432,9 +439,10 @@
   <script src="assets/js/db.js?v=20260914d"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260901a"></script>
-  <script src="assets/js/ui.js?v=20260914d"></script>
+  <script src="assets/js/ui.js?v=20260915a"></script>
+  <script src="assets/js/notebook.js?v=20260915a"></script>
   <script src="assets/js/icons.js?v=20260913a"></script>
-  <script src="assets/js/modules-grid.js?v=20260915m"></script>
+  <script src="assets/js/modules-grid.js?v=20260915n"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {

@@ -102,6 +102,92 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (p) — "Personal Dashboard" becomes My Work, and the app gets a notebook
+
+**Run `migrations/2026-09-15-user-notes.sql`.** Owner: *"Personal 'Dashboard' shouldn't be called
+dashboard let's think of another terminology… Let's also add a personal notebook in the app that
+saves… like a sticky note that doesn't close when moving through pages. Collapsible but can be
+opened somewhere within the page."*
+
+### The rename, and the sharper problem underneath it
+
+The sidebar rendered **two rows both reading "Dashboard"** — Portfolio → Dashboard, and Personal →
+Dashboard ten lines below it. The label was not distinguishing the two things it existed to
+distinguish.
+
+**"My Work" is not a new word.** The avatar menu has linked this page as *My Work* since it was
+built (`renderUserBar`), the file is `my-work.html`, the global is `MyWork` and the script is
+`my-work.js`. The app already called it that everywhere except the one place a planner reads.
+
+⚠️ **The `personal-dashboard` KEY is deliberately unchanged.** It is an identifier `my-work.html`
+passes to `cls()`, not text anyone sees — and renaming an identifier to match a label is how a
+two-place change becomes a silent mismatch. Same call the Manpower/Equipment rename made when
+`data-view="loading"` stayed put while the tab became *Overview*.
+
+### The notebook — `assets/js/notebook.js` (`PDNotes`), on all 23 signed-in shell pages
+
+⚠️⚠️ **"DOESN'T CLOSE WHEN MOVING THROUGH PAGES" IS NOT LITERALLY POSSIBLE, and pretending
+otherwise would be the wrong build.** This app is 24 separate documents with no shared runtime;
+every navigation is a full page load, so nothing survives by staying alive. What the ask actually
+wants — and what this does — is that the drawer **comes back exactly as you left it**: open or shut,
+on the same note. That state is per-browser convenience and lives in `localStorage`; the **notes** are
+a table, because *"that saves"* has to mean saved.
+
+- ⚠️⚠️ **A table, not localStorage.** localStorage is per-browser: a note written on the laptop would
+  be invisible on the desktop and gone the day the profile is cleared. A planner told their notes
+  save will not find out otherwise until they have lost some.
+- ⚠️⚠️ **RLS is owner-only, and notably NOT `is_admin()`.** Every other table here reads through
+  `can_access_project()` and several let an admin see everything. These are private working notes —
+  the place someone writes *"the PM is being difficult"* — and an admin silently able to read them is
+  a different product from the one that was asked for.
+- ⚠️ **`created_by` defaults to `auth.uid()` and the client never sends it**, so writing a note onto
+  another account is not something the browser can express rather than something it is trusted not to.
+- ⚠️ **`project_id` is `on delete SET NULL`** — the opposite of every other `project_id` in this
+  schema, deliberately. Archiving a project must not delete somebody's own notes about it.
+- ⚠️ **Many notes, not one scratchpad**, with the title **derived from the first line and stored**. A
+  notebook that demands a title before you can type is a form, and people stop using it.
+- ⚠️ **Not a second to-do list.** Tasks already exists and is fed from real assignment data; a
+  notebook that grew checkboxes would start disagreeing with it about what a planner owes.
+- ⚠️ **`.mw-fab` on the project dashboard moved 18px → 74px.** That page is the only one with two
+  floating buttons, so it is the page that yields — the notebook is on all 23.
+- ⚠️ **z-index 55** — above content, **below** the mobile nav scrim (60) and the open off-canvas
+  sidebar (70), so opening the navigation covers the notebook rather than fighting it.
+
+⚠️ **`home.html` is deliberately excluded** — it carries `.pd-app` but loads no `ui.js`, so the
+notebook's error reporting (`UI.toast`) would be silent and a missing migration would read as an
+empty notebook. One transient landing page, and a control whose failures are invisible is worse than
+no control. `projects.html` — the page login actually lands on — has it.
+
+### Verified
+
+Driven in a real browser against the shipped files with a recording stand-in for PostgREST —
+**15 assertions, 0 failing**, and the three that matter most are the ones about losing work:
+
+- **the debounce writes ONCE, not once per keystroke**, and has *not* written before it fires;
+- **switching note flushes the pending edit** (the edit is in the database afterwards);
+- ⚠️ **a 200-with-zero-rows is reported as a failure, not a save** — the RLS silent-success this repo
+  has recorded since `boq_tag_activities`. The status reads *Not saved* and a toast names it.
+
+Plus: the title is derived from the **first line only** and goes live in the list while typing;
+`created_by` is **absent** from the insert payload; and after a **full page navigation** the drawer
+comes back open on the same note (`survivedNavigation: YES`).
+
+Measured at 1280px and at phone width, both themes: panel 380×516 (list 132 + editor 246), **no
+horizontal page scroll**, and every colour resolving to a genuinely different value per theme
+(`tokensResolve: true`) rather than a stuck literal.
+
+`node tools/wiring-check.js` **133/133** (up from 129 — `PDNotes` now loads and assigns its global);
+`dashboard.css` braces 567/567; 0 NUL bytes; every touched page audited as **version-string-only**
+except the three that genuinely changed.
+
+⚠️ **Not verified signed in, and the migration has not been run** — no note has been written against
+a real database, so the owner-only policy is argued from its own text rather than observed refusing
+another account. ⚠️ Until the migration runs the FAB appears and opening it reports the missing table
+**by filename** rather than looking empty.
+
+`dashboard.css` → `?v=20260915b` and `ui.js` → `?v=20260915a` (both shared, bumped across all 34
+referencing pages); new `notebook.js` → `?v=20260915a`; `MODULE_V` → `20260915n`, sort-checked.
+
 ### 2026-09-15 (o) — Contracts & Claims stops painting a register it has not loaded yet
 
 Owner: *"Loading contracts & claims module loads 3 different views for split seconds then loads
