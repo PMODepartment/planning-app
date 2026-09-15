@@ -102,6 +102,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (y) — The measurement query returned section 5 and nothing else, seven times over
+
+The owner ran `docs/portfolio-coverage-query.sql` and sent back section 5. Then sent it again.
+
+⚠️⚠️ **THE FILE WAS SEVEN SEPARATE STATEMENTS, AND THE SUPABASE SQL EDITOR SHOWS ONLY THE LAST
+ONE'S RESULT.** Section 5 is the last. So every run answered the phase question and silently
+discarded sections 1–4 — the `isBehind` flip counts, the roll-up coverage and the staleness figures
+that two later decisions are waiting on. Nothing was wrong with the SQL; the file was shaped so that
+six sevenths of its output could never be seen.
+
+**Query A is now ONE statement returning every figure as `section · metric · value` rows.** The
+per-project detail (which projects flip, freshness per project, activities per project) stays
+separate — one row per project cannot share that shape — and is labelled to run on its own.
+
+⚠️ **A bug of mine, caught before it shipped:** the combined query chained `b` off a CTE declared
+*below* it. A CTE may only reference one declared before it, so it would have failed to run at all —
+the second un-runnable version of the same file.
+
+⚠️⚠️ **And the arity checker was wrong twice before it was right.** It reported two `UNION ALL`
+branches with the wrong column count: one was the outer `select * from (` wrapper, and the other was
+`'activities, portfolio-wide'` — **a comma inside a string literal**, counted as a column separator
+because the checker was not quote-aware. That is the exact reason `tools/scan.js` exists. Made
+quote-aware and self-tested on that case: **20 branches, 0 arity errors.**
+
+Verified: balanced parens, **zero write verbs** (provably read-only), CTEs declared before use.
+⚠️ **Not run against the database from here** — the owner's next run is the real test.
+
+### What section 5 already settled
+
+**8.1% phase coverage** (12,136 of 149,233 activities; **12 of 20** projects carry any phase). A
+phase drill-down would be empty for 92% of the portfolio, so the Portfolio Schedule view will expand
+a project to its **top-level WBS branches** — which every schedule has — and treat phase as a tint
+where present. Decided by measurement rather than argument.
+⚠️ **149,233 activities** also confirms the load-failure premise: that is what the old S-Curve read
+was dragging into the browser on every portfolio-wide open.
+
 ### 2026-09-15 (x) — The Portfolio Dashboard gets a module bar it already had
 
 Owner: *"the UI needs complete rework: refresh button is out of place let's just follow the
