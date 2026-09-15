@@ -1,3 +1,59 @@
+## 2026-09-15 (b) — One left edge and one right edge for the whole module
+
+Owner: *"I think we can still improve the UI. The sides are not aligned with each other."*
+
+### ⚠️⚠️ FOUR DIFFERENT EDGES IN ONE MODULE, AND NONE OF THEM WAS THE TOOLBAR'S
+
+`.ps-toolbar` and its `.ps-tb-row` carry **no horizontal padding**, so `.pd-main`'s 12px *is* the
+module's edge and the toolbar sits directly on it. Every full-width panel pane was adding an inset of
+its own on top of that. Measured at 1440px before changing anything, against the toolbar row:
+
+| row | left | Δ | right | Δ |
+|---|---|---|---|---|
+| `.pd-main` content edge | 12 | 0 | 1428 | 0 |
+| `.ps-tb-row` — the toolbar | 12 | — | 1428 | — |
+| `.ps-vs-chips` — trades | 26 | **+14** | | |
+| `.ps-vs-bar` — model | 26 | **+14** | | |
+| `.ps-vs-viewport` — the buildings | 26 | **+14** | 1414 | **−14** |
+| `.ps-vs-caption` — the key | 28 | **+16** | | |
+| `.ps-flowline` | 26 | **+14** | 1414 | **−14** |
+| `.ps-progress` | | **−4** (8px where the others used 14) | | |
+
+The caption's extra 2px was inherited from `.ps-actlegend`'s shape when it was written yesterday —
+the house idiom for a caption strip, and 2px off the edge everything else sits on.
+
+All five are now `0`. Horizontal padding only: **the vertical padding is untouched**, because only the
+sides were the complaint and the top padding is what spaces each pane from its own divider.
+
+⚠️ **The phone breakpoint goes to 0 as well.** `.ps-vstack` had `padding:8px 8px 18px` under
+`@media (max-width:700px)`; re-adding an inset there would reintroduce the misalignment at exactly the
+width where the screen can least afford the pixels. Only the vertical padding tightens now.
+
+⚠️ **`.ps-network` needed nothing** — it draws its own full border at the pane edge and was already on
+the module's line.
+
+### Verified
+
+**The toolbar markup is sliced out of the shipped file verbatim**, by div-depth matching, not
+reproduced — it is the thing everything else has to line up *with*, so a hand-made stand-in would
+have been measuring against a guess. CSS is the shipped `<style>` block, also verbatim.
+
+After, at 1440px light and 1024px dark: **every row's left edge equals the toolbar's** (Δ 0), and every
+row that is full-width by construction — the buildings viewport, the flowline pane, `.pd-main` itself
+— **ends on the toolbar's right edge** (Δ 0). The trades row, the model bar and the caption end short
+of it because their content is shorter than the width, which is not a misalignment.
+
+Computed horizontal padding, read back from the rendered page: `.ps-toolbar`, `.ps-vstack`,
+`.ps-flowline`, `.ps-progress` and `.ps-vs-caption` all `0px / 0px`.
+
+⚠️ **One measurement in the harness is void and is not being relied on:** `#ps-view-schedule` is a
+flex column, so the `.ps-progress` stub collapses to zero width there and its box coordinates are
+meaningless. Its computed padding is the evidence for that pane, and it reads `0px / 0px`.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915b`, sort-checked against `20260915a`.
+
 ## 2026-09-15 (a) — Consolidated is gone, and the reason it was redundant is the feature nobody wired
 
 Owner: *"The consolidated button in the vertical stacking seem to be no longer needed since its

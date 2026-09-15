@@ -102,6 +102,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (b) — Project Schedule: the toolbar defines the module's edge, and four panes each had their own
+
+Owner: *"The sides are not aligned with each other."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **`.ps-toolbar` has no horizontal padding, so `.pd-main`'s 12px IS the module's edge.** Any pane
+  that adds padding of its own is inset from the toolbar by exactly that much. Measured at 1440px:
+  the stacking and flowline panes +14px a side, the caption +16, the progress pane −4 — four edges in
+  one module, none of them the toolbar's. All now 0; vertical padding untouched.
+- ⚠️ **A "caption strip" idiom copied from a sibling carries the sibling's inset with it.** The
+  caption took `padding:8px 2px` from `.ps-actlegend` and was 2px off everything else.
+- ⚠️ **When measuring alignment, extract the reference.** The toolbar markup was sliced out of the
+  shipped file by div-depth matching rather than reproduced — it is the thing everything lines up
+  *with*, so a hand-made stand-in measures against a guess. Same discipline as extracting the
+  `<style>` block, applied to the markup.
+- ⚠️ **A harness measurement can be void without being wrong-looking.** `#ps-view-schedule` is a flex
+  column, so a stubbed `.ps-progress` collapses to zero width and reports a nonsense left edge. Fall
+  back to the computed property when a box measurement cannot be trusted, and say which one you used.
+
+`MODULE_V` → `20260915b`, sort-checked against `20260915a`.
+
 ### 2026-09-15 (a) — Project Schedule: a view reported as redundant, because the thing that made it distinct was never wired
 
 Owner: *"The consolidated button in the vertical stacking seem to be no longer needed since its

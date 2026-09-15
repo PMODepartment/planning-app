@@ -1089,7 +1089,7 @@
        pane's own toolbar read as one run of controls. `.ps-network` is the exception -- it already
        draws a full border of its own. Owner 2026-09-14: *"Let's check for other views for
        consistency."* */
-    .ps-flowline { border-top:1px solid var(--pd-line); margin-top:4px; padding:10px 14px 20px; }
+    .ps-flowline { border-top:1px solid var(--pd-line); margin-top:4px; padding:10px 0 20px; }
     .ps-fl-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; margin-bottom:8px; }
     .ps-fl-title { font-size:var(--pd-fs-md); font-weight:800; color:var(--pd-ink); }
     .ps-fl-sub { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
@@ -1551,7 +1551,16 @@
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
-    .ps-vstack { padding:12px 14px 20px; }
+    /* ⚠⚠ NO HORIZONTAL PADDING: THE MODULE HAS ONE LEFT EDGE AND ONE RIGHT EDGE. Owner
+       2026-09-15: *"The sides are not aligned with each other."* `.ps-toolbar` and its `.ps-tb-row`
+       carry NO horizontal padding, so `.pd-main`'s 12px IS the module's edge and the toolbar sits on
+       it. Each full-width panel pane was adding an inset of its own on top of that -- measured at
+       1440px against the toolbar row: this pane and the flowline +14px on each side, the caption
+       +16, the progress pane -4 (it used 8px where the others used 14). Four different edges in one
+       module, none of them the toolbar's.
+       ⚠ The VERTICAL padding is untouched. Only the sides were the complaint, and the top padding
+         is what spaces the pane from its own divider. */
+    .ps-vstack { padding:12px 0 20px; }
     /* ---- Cost Loading (4-step wizard) ------------------------------------------------------
        ⚠️ Deliberately built ON the Schedule Setup's own classes (.sbld-wrap / .sbld-rail /
        .sbld-step / .sbld-panel / .sbld-kpi / .sbld-tablewrap / .sbld-foot) rather than beside them.
@@ -1907,7 +1916,16 @@
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
-    .ps-vstack { padding:12px 14px 20px; }
+    /* ⚠⚠ NO HORIZONTAL PADDING: THE MODULE HAS ONE LEFT EDGE AND ONE RIGHT EDGE. Owner
+       2026-09-15: *"The sides are not aligned with each other."* `.ps-toolbar` and its `.ps-tb-row`
+       carry NO horizontal padding, so `.pd-main`'s 12px IS the module's edge and the toolbar sits on
+       it. Each full-width panel pane was adding an inset of its own on top of that -- measured at
+       1440px against the toolbar row: this pane and the flowline +14px on each side, the caption
+       +16, the progress pane -4 (it used 8px where the others used 14). Four different edges in one
+       module, none of them the toolbar's.
+       ⚠ The VERTICAL padding is untouched. Only the sides were the complaint, and the top padding
+         is what spaces the pane from its own divider. */
+    .ps-vstack { padding:12px 0 20px; }
     /* ⚠⚠ THE RULE BETWEEN THE MODULE TOOLBAR AND THIS PANE. Owner 2026-09-14: *"Main toolbar
        does not [have] a divider with the vertical stacking toolbar."* Correct -- `.ps-vstack` was
        padding and nothing else, so the pane's own trade chips began 12px under the module's
@@ -2047,7 +2065,7 @@
        ⚠ `align-items:center` and the same 16px column gap as `.ps-vs-bar`, so a caption that
          wraps to two lines still reads as one strip. */
     .ps-vs-caption { display:flex; flex:0 0 auto; align-items:center; flex-wrap:wrap; gap:6px 16px;
-      margin:0; padding:8px 2px 2px; border-top:1px solid var(--pd-line);
+      margin:0; padding:8px 0 2px; border-top:1px solid var(--pd-line);
       font-size:var(--pd-fs-sm); color:var(--pd-muted); max-width:100%; }
     .ps-vs-caption .ps-vs-note { min-width:0; }
     /* In the caption the legend is no longer competing with controls for the row, so it may take
@@ -2371,7 +2389,10 @@
       /* ⚠️ The magnifier is DISABLED, not merely hidden: on a touch screen there is no hover to
          drive it, and a docked panel would eat half the screen to show nothing. Tapping a zone
          still opens its activity list, which is the phone equivalent. */
-      .ps-vstack { padding:8px 8px 18px; }
+      /* ⚠ Sides stay at 0 here too: the phone breakpoint narrows `.pd-main`'s own padding, so
+         re-adding an inset would reintroduce the misalignment at exactly the width where the screen
+         can least afford it. Only the vertical padding tightens. */
+      .ps-vstack { padding:8px 0 18px; }
       .ps-vs-chip, .ps-vs-seg button, .ps-vs-bar .pd-btn, .ps-vs-bar .pd-select { min-height:44px; }
       .ps-vs-chips { gap:8px 6px; }
       /* The building itself keeps its drawn size and scrolls — shrinking the svg to 375px makes
@@ -2411,7 +2432,7 @@
        ⚠ The padding stays 4px/8px, NOT the stacking pane's 10px/14px: this pane is the scroller
          itself (`overflow:auto`), so its padding is inside the scrolled area and a bigger top pad
          becomes dead space that scrolls away. The border and margin are what had to match. */
-    .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 8px 12px;
+    .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 0 12px;
       border-top:1px solid var(--pd-line); margin-top:4px; }
     @keyframes ps-viewin { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
     .ps-progress.ps-anim, .ps-split.ps-anim, .ps-network.ps-anim, .ps-vstack.ps-anim { animation: ps-viewin .28s cubic-bezier(.22,.61,.36,1); }
