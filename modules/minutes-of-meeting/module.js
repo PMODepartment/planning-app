@@ -355,8 +355,22 @@ window.MinutesOfMeeting = (function () {
       return rowSvg;
     }).join('');
     var h = items.length ? (y - gap + padTop) : (padTop * 2 + barH);
-    return '<svg viewBox="0 0 ' + w + ' ' + h.toFixed(1) + '" width="100%" height="' + h.toFixed(1) + '" role="img" ' +
-      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMinYMin meet" overflow="visible">' + svg + '</svg>';
+    // ⚠️⚠️ width IS `w`, NEVER "100%". `width="100%"` with a `viewBox` whose
+    // own width is a DIFFERENT number (esp. the 760 the "Minutes by meeting"
+    // card passes) forces the browser to uniformly SCALE the whole viewBox to
+    // fit the actual rendered width — bars, gaps AND every `font-size="11"`
+    // text node included. On a ~340px phone that is scale≈0.45: labels render
+    // at ~5px, unreadable, and because the `height` attribute stays the
+    // UNSCALED `h` while the visible content shrinks with it, the box is left
+    // with blank space below the (now smaller) bars before the legend below
+    // it — the reported "white space between bars and legend". Rendering at
+    // the chart's own true pixel size instead (matched 1:1 to `viewBox`)
+    // means text is always exactly `fs`px and the box height always exactly
+    // matches its content, whatever container it lands in. A chart wider than
+    // its card scrolls horizontally — `.il-dash-cardbody-scroll` — rather
+    // than being silently shrunk into illegibility.
+    return '<svg viewBox="0 0 ' + w + ' ' + h.toFixed(1) + '" width="' + w + '" height="' + h.toFixed(1) + '" role="img" ' +
+      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" overflow="visible">' + svg + '</svg>';
   }
 
   // ==========================================================================
