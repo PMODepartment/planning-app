@@ -84,6 +84,7 @@ developer, plug into one shared shell.
 | `tools/dead-exports.js` | `node tools/dead-exports.js` — a key on a module's public object that NOTHING in the repo reads (the inverse of wiring-check). ⚠️⚠️ It VERIFIES each parse and prints an UNPARSED list for surfaces its tokenizer could not read — `ScheduleBuilder` is currently one of them, so a clean run does not cover it. |
 | `tools/dark-remap.js` | `node tools/dark-remap.js` — a COLOUR token whose only definition sits in a light-mode block, so it keeps its light value on a dark ground. ⚠️⚠️ It knows the two patterns that look identical to that bug and are not: a brand colour, and the FILL half of this repo's fill/text split (`--sm-c`/`--rcm-c` stay fixed, `--sm-t`/`--rcm-t` remap). Tokens only — a raw colour literal with no dark rule is out of scope. |
 | `tools/loc-key-agree.js` | `node tools/loc-key-agree.js` — the location merge key exists TWICE on purpose (`PDLoc.normKey` and the schedule's private `_locNormKeyCalc`); this proves they still agree, over the ordinal maps, the function bodies and 51 real spellings. ⚠️⚠️ It is a MONEY path — a key that drifts moves a BOQ line to the wrong floor, through `planned_cost` into the S-curve. A slice that cannot find either function ABORTS rather than passing. |
+| `tools/portfolio-provenance.js` | `node tools/portfolio-provenance.js` — the shared layer that tells you WHICH PROJECT a consolidated portfolio row came from (`UI.groupByProject` and friends), executed rather than read. ⚠️⚠️ The two assertions that matter are the ones whose failure looks like a working screen: a row with no `project_id` must not be dropped, and row order inside a group must be the caller's — this regroups, it never re-sorts. ⚠️ Three contrast builds revert one rule each; a clean run means nothing unless they bite. |
 | `tools/selectall-key.js` | `node tools/selectall-key.js` — a `PDb.selectAll` call on a relation with no `id`, which pages on `id` by default and so returns `400 / 42703` on EVERY read. ⚠️⚠️ This shape has shipped FOUR times (`class_codes`, `trade_map`, and two vendor views that had never loaded on any project). It resolves table constants, and a relation it cannot find in the repo SQL is reported as UNKNOWN rather than assumed safe. |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
@@ -101,6 +102,141 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-15 (aa) — A consolidated row now says which project it is from
+
+Owner, with a phone screenshot of Meetings opened portfolio-wide — six rows all reading
+`Meeting Aug 31, 2026` and nothing to tell them apart: *"1. in the project selector, always use this
+type of dropdown when portfolio is selected. 2. for consolidated data in portfolio, if in list group
+by project 3. for consolidated data not in list, add a marker project code to identify"*, scoped to
+*"modules that are accessible to all"*.
+
+### ⚠️⚠️ THE PROJECT ID *IS* THE CODE, WHICH IS WHY THIS COSTS NO QUERY
+
+`projects.id` is text — `AVR101`, the PK — so a consolidated row already carries its own project
+code in `project_id` and always did. Only the NAME needs a lookup. Every marker below is therefore
+correct on the very first paint, and a label asked for before the name cache lands degrades to the
+bare code rather than to a blank cell or the word `undefined`.
+
+**New shared layer in `ui.js`** — `projectCode` / `projectName` / `projectLabel` / `projectTagHTML` /
+`groupByProject` / `projectGroupRowHTML`, plus `.pd-projtag` and `.pd-projgroup*` in `dashboard.css`.
+⚠️ Shared because **four** surfaces need it, and four hand-rolled id→label lookups is the drift this
+repo has already paid for three times (the location normaliser, the S-curve maths copied into
+portfolio-overview, the change-order insert). ⚠️ The tint is a neutral `rgba(128,128,128,a)`, never a
+light-mode hex — a colour defined only in a light block keeps its light value on a dark ground, which
+is the bug `tools/dark-remap.js` exists to catch — and it deliberately avoids the red/green/amber the
+status pills own, because provenance is not a state.
+
+### ⚠️⚠️ `display:flex` ON A `<td>` SILENTLY DROPS ITS `colspan`, AND ONLY RENDERING FOUND IT
+
+The group band was a `<td class="pd-projgroup" colspan="7">` styled as a flex row. A flex `<td>`
+leaves the table box model, the browser wraps it in an anonymous cell and **ignores `colspan`
+entirely**. Measured: the band came out **342px wide inside a 1398px table** — a notch down the side
+of every group — while the markup, the attribute and the CSS all read as correct. The cell stays a
+plain table cell now with the flex row as a nested `<div>`; measured after, the band spans **1398 of
+1398** at desktop and **exactly what a data row spans** at 390px.
+
+### Item 2 — the `Project` COLUMN is replaced, not decorated
+
+⚠️⚠️ **And the screens that needed it were not the ones in the screenshot.** A concurrent session
+landed `assets/js/portfolio-dash.js` hours earlier: in portfolio scope a module now **skips its own
+`init()`** and `PortfolioDash.takeOver()` renders that module's portfolio view instead. So the three
+consolidated tables a planner actually reaches are that file's — and every one of them was a flat
+list with a `Project` **name** column repeated down every row, sorted so that one project's records
+were scattered the whole length of the table. The column goes and a band takes its place: the
+question is answered once per project instead of once per row, and a project's rows are finally
+adjacent. **Issues & Concerns, Meetings and Contracts & Claims**, ordered by **code** through the
+shared helpers so a project sits in the same place on every consolidated screen.
+⚠️ Contracts' sort loses its project half outright rather than keeping it — bands keyed on the code
+beside rows sorted by the name is how a table ends up with its groups in one order and its rows in
+another. ⚠️ The two per-project **roll-up** tables (the contracts exposure ranking, the photo
+per-project summary) are left alone: a project IS the row there, so grouping would be one row per
+group.
+
+### Item 3 — the photo tile carries the code
+
+The Progress Photos strip is tiles, not a list, so each carries the shared chip. ⚠️ It **replaces**
+the project name the caption used to print: a tile is ~150px and a project name routinely runs past
+it, so that caption was being ellipsised into something that identified nothing. Measured: the chip
+is **57px inside a 150px tile**, and the full name is still one hover away in the title the tile
+already carried.
+
+### Item 1 — one Portfolio dropdown, not two
+
+`UI.enhanceProjectSelect` (every module page) has rendered Portfolio as a two-line
+**Portfolio / every project you can see** since it was built. `UI.renderSwitcher` — the same control
+on the six shell pages — showed a bare one-line *Portfolio*, so the app described one state two ways
+depending on which page you stood on. Same phrase, verbatim, so there is one string to change if it
+is ever reworded.
+
+### ⚠️⚠️ AND A REGISTER THAT RENDERED NOTHING AT ALL IN PORTFOLIO SCOPE
+
+Found while wiring Issues & Concerns: the 2026-09-14 pass consolidated that module's **reads** across
+every accessible project and left **four render guards** testing `!pid` — which is null in portfolio
+**by design**. So the Dashboard said *"Select a project to see its dashboard"*, the log said
+*"Select a project to see its issues"* and the Lessons screen painted an empty string, all while
+`rows` and `LESSONS` held the entire portfolio. The data was loaded and nothing drew it. Every guard
+now asks the real question — is there NEITHER a project NOR a portfolio? ⚠️ Since the takeover above
+skips `init()`, this is now the **fallback** path (portfolio-dash failing to load), which is exactly
+when a blank screen is least affordable.
+
+⚠️ Three modules also stop **offering writes** in portfolio scope (`canAdd`/`canWrite`/`canEditRow`
+/`canEditLesson`). Portfolio is read-only at the Supabase client itself — `auth.js` refuses every
+write — so withholding the control is honest where offering one whose save bounces is not. Before
+this the modules drew nothing, so nothing was clickable; the moment they render, a steward would
+otherwise get editable fields that cannot save. ⚠️ Contracts' Contract tab also stops handing
+`CCPackages.show` a **null** pid: that file's own `load()` already records packages as single-project
+concepts skipped in portfolio, and this branch was the one place still reaching for them.
+
+### Verified
+
+**`node tools/portfolio-provenance.js` — 38 assertions, 0 failing, 3/3 contrast builds bite**,
+executing the shipped `ui.js` rather than reading it. The two assertions that matter are the two
+whose failures look like a working screen: **a row with no `project_id` is not dropped** (it gathers
+in a named bucket, last) and **row order inside a group is exactly the caller's** (this regroups, it
+never re-sorts, so a list sorted by date stays sorted by date inside each project). Reverting either
+rule in memory fails the suite, as does reverting the colspan.
+⚠️ The suite counted a phrase **3 times where there are 2** on its first run — it was matching the
+comment that explains the change. Comments are stripped through `tools/scan.js` now, the same
+correction `cellcount.py` and the (w) BOQ suite each had to make.
+
+**Rendered in a real browser**, served over HTTP so the shipped stylesheets are genuinely in the
+cascade, at **1400px and 390px in both themes**: band spans a data row exactly in the `.pd-table` and
+`.po-table` shapes alike; the no-project bucket reads *"No project recorded"* and sorts last; the
+code ink remaps **`rgb(35,31,32)` → `rgb(240,239,239)`** and the name **`rgb(90,88,88)` →
+`rgb(185,183,183)`**, so every colour resolves through tokens rather than sticking at a literal; no
+horizontal **page** scroll at either width.
+⚠️ Two harness faults recorded rather than smoothed over: `addStyleTag({path})` **rejects outright**
+when the stylesheet's `@import` of Google Fonts cannot resolve offline, and `setContent` gives a
+document whose origin **denies `localStorage`**, so `ui.js` threw on load. Both would have reported an
+unstyled or unloaded page as a finding. The harness lives in the scratchpad and was never written
+into the repo — harness files have shipped to production here twice.
+
+`wiring-check` **139/139**, `test-portfolio` 86/86, `dead-hooks` at its documented 9-finding baseline,
+`scan` self-test 10/10, every asset on one version, 0 NUL bytes.
+⚠️ **Not verified signed in.** No live portfolio has been opened, so what is proven is the shipped
+code executed and the shipped CSS measured — not a real register grouped on real projects.
+
+### ⚠️⚠️ ONE THING THE OWNER SHOULD DECIDE, BECAUSE IT CHANGES WHAT THEY ASKED ABOUT
+
+The screenshot shows the **Meetings list** — every meeting across every project, with the
+List/Calendar toggle — and item 2 was about grouping *that*. The concurrent takeover replaces it: the
+Meetings portfolio view is now an **open action-items worklist**, so that list is no longer reachable
+in portfolio scope at all. The grouping and the calendar's own code markers **are** implemented in
+`minutes-of-meeting/module.js` (and in Contracts & Claims and Progress Photos, whose registers are
+taken over the same way) and are correct, but they render only on the fallback path until somebody
+decides whether the module's own register should come back portfolio-wide. Reported rather than
+reversed: undoing another session's product decision is not mine to make.
+
+⚠️ **Deliberately NOT changed, and named so it is not read as an oversight:** the `risk` and
+`productivity` portfolio tables are the identical flat-list-with-a-Project-column shape and are one
+line each. Both belong to `superAdminOnly` modules, and the owner scoped this round to *"modules that
+are accessible to all"*.
+
+`ui.js` / `dashboard.css` / `portfolio-dash.js` / `modules-grid.js` → `?v=20260915y` (23 / 31 / 6 / 2
+pages), the four modules' own `module.js` with them, `MODULE_V` → `20260915y` including the fallback
+literal. ⚠️ Re-derived **after** rebasing onto `origin/main`, from the `20260915x` that branch had
+already taken — not guessed beforehand, which is the rule this log has now recorded six times.
 
 ## 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
 

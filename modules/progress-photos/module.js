@@ -221,7 +221,16 @@ window.ProgressPhotos = (function () {
     return m;
   }
 
+  // ⚠️ One portfolio predicate for the module. Opened from the Portfolio
+  // sidebar `pid` stays null by design and the library consolidates across
+  // every accessible project (see load()).
+  function ppPortfolio() { return !!(window.AppAuth && AppAuth.isPortfolioScope()); }
+
   // ---- per-project UI persistence ------------------------------------------
+  // ⚠️ `pid` is null in portfolio scope, so the portfolio's own grouping /
+  // collapse / tile-size choices are remembered under their own key rather than
+  // overwriting whichever project was last open. That falls out of the key
+  // shape; it is called out here because it is load-bearing, not incidental.
   function uiKey(k) { return 'pp_' + k + '_' + pid; }
   function saveUI() {
     try {
@@ -242,7 +251,16 @@ window.ProgressPhotos = (function () {
       if (['list', 'gallery', 'plan'].indexOf(v) >= 0) view = v;
       collapsed = JSON.parse(localStorage.getItem(uiKey('collapsed')) || '{}') || {};
       var g = localStorage.getItem(uiKey('gallerygroup'));
+      // ⚠️ 'project' is only a coherent grouping in portfolio scope — inside a
+      // single project it would print one header over every photo. A stored
+      // 'project' read outside that scope is therefore ignored, falling through
+      // to the 'month' default rather than restoring a useless grouping.
       if (['none', 'month', 'trade', 'location'].indexOf(g) >= 0) galleryGroupBy = g;
+      else if (g === 'project' && ppPortfolio()) galleryGroupBy = g;
+      // Owner (2026-09-15): consolidated data shown as a list groups by
+      // project. With nothing stored yet that is what portfolio scope opens on;
+      // a planner who then picks Month is remembered, and not overruled here.
+      else if (!g && ppPortfolio()) galleryGroupBy = 'project';
       var ts = parseFloat(localStorage.getItem(uiKey('tilescale')));
       // ⚠⚠ A STORED SCALE IS ONLY HONOURED ONCE THE SLIDER HAS ACTUALLY BEEN MOVED.
       //   Every existing user has a stored 1/3 written by the old default, which is
@@ -293,7 +311,10 @@ window.ProgressPhotos = (function () {
 
   async function init(user, prof) {
     profile = prof; uid = user.id;
-    canWrite = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
+    // ⚠️ `&& !ppPortfolio()` — portfolio is read-only at the Supabase client
+    // itself (auth.js refuses every write). Withholding the control is honest;
+    // offering one whose save bounces is not.
+    canWrite = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0 && !ppPortfolio();
     pid = sessionStorage.getItem('pd_project') || '';
     restoreUI();
     ensurePersistentStorage();   // deliberately not awaited -- best-effort, must not delay init()
@@ -751,6 +772,14 @@ window.ProgressPhotos = (function () {
     // (outside #pp-view), wired ONCE here rather than rebuilt by wireRows()
     // on every render, unlike the row/tile markup itself.
     if ($('pp-groupby')) {
+      // ⚠️ Hidden rather than absent from the markup: the <select> is static
+      // HTML shared by every scope, and removing the node would mean rebuilding
+      // the control on every project switch. `hidden` on an <option> is honored
+      // by every browser this app targets, and the restore path above refuses a
+      // stored 'project' outside portfolio scope, so the value can never be
+      // reachable while the option is not.
+      var _pOpt = $('pp-groupby').querySelector('option[value="project"]');
+      if (_pOpt) _pOpt.hidden = !ppPortfolio();
       $('pp-groupby').value = galleryGroupBy;
       $('pp-groupby').onchange = function () { galleryGroupBy = this.value; saveUI(); render(); };
     }
@@ -1765,11 +1794,19 @@ window.ProgressPhotos = (function () {
       return (tradesOf(r)[0] || '').trim() || 'Untagged';
     }
     if (galleryGroupBy === 'location') return r.location || 'Unassigned';
+    // ⚠️ The key is the project ID, which IS the code — so it needs no lookup
+    // and sorts stably even before the name cache lands. groupLabelOf turns it
+    // into "CODE — Name" for the header.
+    if (galleryGroupBy === 'project') return r.project_id || 'No project';
     // month (default)
     var m = (r.taken_at || '').slice(0, 7);   // YYYY-MM
     return m || 'Undated';
   }
   function groupLabelOf(key) {
+    if (galleryGroupBy === 'project') {
+      return (key && key !== 'No project' && window.UI && UI.projectLabel)
+        ? UI.projectLabel(key) : key;
+    }
     if (galleryGroupBy === 'month' && /^\d{4}-\d{2}$/.test(key)) {
       var parts = key.split('-');
       return MONTH_NAMES[(+parts[1]) - 1] + ' ' + parts[0];
@@ -1797,7 +1834,7 @@ window.ProgressPhotos = (function () {
     // has no place in a recency ordering and reading it as "most recent"
     // is exactly backwards). Trade/Location: alphabetical, the "nothing
     // tagged" bucket ("Untagged"/"Unassigned") always last.
-    var UNTAGGED = { Untagged: 1, Unassigned: 1, Undated: 1 };
+    var UNTAGGED = { Untagged: 1, Unassigned: 1, Undated: 1, 'No project': 1 };
     order.sort(function (a, b) {
       var au = !!UNTAGGED[a], bu = !!UNTAGGED[b];
       if (au && !bu) return 1; if (bu && !au) return -1;
@@ -2348,10 +2385,16 @@ window.ProgressPhotos = (function () {
       var when = r.taken_at ? Fmt.date(r.taken_at) : '';
       var where = (r.location || '').trim();
       var what = (r.description || '').trim();
-      var cap = (when || where || what)
+      // Owner (2026-09-15): "for consolidated data not in list, add a marker
+      // project code to identify." ⚠️ Suppressed when the grouping is ALREADY
+      // by project — the header two lines up says it, and repeating it on every
+      // tile of a wall of tiles is noise, not identification.
+      var ptag = (ppPortfolio() && galleryGroupBy !== 'project' && window.UI && UI.projectTagHTML)
+        ? UI.projectTagHTML(r.project_id) : '';
+      var cap = (when || where || what || ptag)
         ? '<figcaption class="pp-cardcap">' +
             (what ? '<b>' + Fmt.esc(clipCap(what, 48)) + '</b>' : '') +
-            '<span>' + Fmt.esc([when, where].filter(Boolean).join('  ·  ')) + '</span>' +
+            '<span>' + ptag + Fmt.esc([when, where].filter(Boolean).join('  ·  ')) + '</span>' +
           '</figcaption>'
         : '';
       return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +

@@ -17,6 +17,13 @@ window.ContractsClaims = (function () {
   var TABLE = 'contracts_claims';
   var sb = function () { return window.__sb || (window.__sb = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY)); };
 
+  // ⚠️ One portfolio predicate for the whole module. Opened from the Portfolio
+  // sidebar `pid` stays null by design and the register consolidates across
+  // every accessible project (see load()) — which means `!pid` is NOT the same
+  // question as "nothing to show", and anything that reads it as one draws an
+  // empty screen over loaded data.
+  function ccPortfolio() { return !!(window.AppAuth && AppAuth.isPortfolioScope()); }
+
   // ===== live collaboration (presence + who's-editing row cursor) + offline =====
   var _collab = null, _remoteSel = {}, _collabSelf = {}, PKEY = 'contracts_claims', PID_PFX = 'cc';
   function joinCollab() {
@@ -301,7 +308,16 @@ window.ContractsClaims = (function () {
     /* The Contract tab is now keyed by PACKAGE — a contract defines a package, so one
        list carries both, and a package with no contract (or a contract with no package)
        is shown rather than dropped. packages.js owns that view. */
-    if (view === 'contract' && window.CCPackages) {
+    // ⚠️⚠️ THE PACKAGE VIEW IS SKIPPED IN PORTFOLIO SCOPE, and the reason is
+    // already written into load(): "packages... are single-project concepts (a
+    // change order's scope, a contract lot) — they have no honest cross-project
+    // reading, so they are skipped entirely rather than being fetched against a
+    // null/undefined project id." This branch was the one place that still
+    // reached for them anyway, handing `CCPackages.show` a null pid straight
+    // into `PDb.getPackages(null)`. Contract RECORDS do consolidate, so the
+    // Contract tab falls through to the ordinary table below instead — grouped
+    // by project, like every other consolidated list (owner, 2026-09-15).
+    if (view === 'contract' && window.CCPackages && !ccPortfolio()) {
       document.getElementById('cc-filters').style.display = 'none';
       if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
       CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew,
@@ -343,7 +359,12 @@ window.ContractsClaims = (function () {
 
     // Project roll-up banner (the app's gray total row)
     h += '<tr class="cc-total"><td></td><td class="cc-desc"><div class="cc-total-name">' +
-      '<span data-ico="folder" data-ico-size="15"></span>' + esc(projName() || pid || 'Project') + '</div></td>' +
+      // ⚠️ In portfolio scope there is no one project to name, and `projName()`
+      // is empty with `pid` null — this row used to read a bare "Project" over
+      // a total spanning the whole portfolio. It is a grand total there, and
+      // says so; the per-project subtotals are the group bands below it.
+      '<span data-ico="folder" data-ico-size="15"></span>' +
+      esc(ccPortfolio() ? 'All projects' : (projName() || pid || 'Project')) + '</div></td>' +
       (view === 'claims' ? '<td></td>' : '') +
       c.cols.map(function (col) { return '<td class="cc-r">' + num(t[col.key]) + '</td>'; }).join('') +
       (view === 'contract' ? '' : '<td></td><td></td>') +
@@ -353,10 +374,16 @@ window.ContractsClaims = (function () {
       h += '<tr><td colspan="' + span + '" style="text-align:center;padding:34px;" class="cc-mut">No records match these filters.</td></tr>';
     }
 
-    list.forEach(function (r) {
+    // Owner (2026-09-15): "for consolidated data in portfolio, if in list group
+    // by project." ⚠️ Grouping runs after visibleRows()/its sort and preserves
+    // that order inside each project — UI.groupByProject never re-sorts.
+    // ⚠️ Guarded on the helper existing, not only on the scope: a stale cached
+    // `ui.js` would otherwise throw here and blank the register.
+    var ccRowHTML = function (r) {
+      var out = '';
       var st = statusOf(r), age = agingOf(r);
       var ageCls = age == null ? '' : (age >= 90 ? ' bad' : age >= 30 ? ' warn' : '');
-      h += '<tr' + (sel[r.id] ? ' class="cc-selrow"' : '') + ' data-id="' + esc(r.id) + '">' +
+      out += '<tr' + (sel[r.id] ? ' class="cc-selrow"' : '') + ' data-id="' + esc(r.id) + '">' +
         '<td class="cc-cb"><input type="checkbox" data-cb="' + esc(r.id) + '"' + (sel[r.id] ? ' checked' : '') + ' /></td>' +
         '<td class="cc-desc"><div class="cc-desc-txt" title="' + esc(descOf(r)) + '">' + esc(descOf(r)) + '</div>' +
           (r.counterparty ? '<div class="cc-mini">' + esc(clean(r.counterparty)) + '</div>' : '') +
@@ -373,7 +400,15 @@ window.ContractsClaims = (function () {
         (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-edit="' + esc(r.id) + '" title="Edit">&#9998;</button> ' +
           '<button class="pd-btn" data-del="' + esc(r.id) + '" title="Delete">&times;</button></td>' : '') +
         '</tr>';
-    });
+      return out;
+    };
+    if (ccPortfolio() && window.UI && UI.groupByProject) {
+      h += UI.groupByProject(list).map(function (g) {
+        return UI.projectGroupRowHTML(g, span) + g.rows.map(ccRowHTML).join('');
+      }).join('');
+    } else {
+      h += list.map(ccRowHTML).join('');
+    }
     h += '</tbody></table></div>';
 
     var selN = Object.keys(sel).filter(function (k) { return sel[k]; }).length;
@@ -1708,7 +1743,13 @@ window.ContractsClaims = (function () {
     UID = (user && user.id) || (profile && profile.id) || null;
     _collabSelf = { id: UID, name: (profile && (profile.name || profile.email)) || 'Someone' };
     isAdmin = !!(profile && (profile.role === 'admin' || profile.role === 'super_admin'));
-    canWrite = !!(profile && ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1);
+    // ⚠️ `&& !ccPortfolio()` — portfolio is read-only at the Supabase client
+    // itself (auth.js refuses every write), so the honest screen withholds the
+    // control rather than offering one whose save bounces. It also keeps the
+    // row-action column, the bulk bar and the select-all checkbox out of a
+    // table that now spans several projects, where a bulk status change would
+    // read as acting on all of them.
+    canWrite = !!(profile && ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1) && !ccPortfolio();
     UI.initShell();
 
     document.getElementById('cc-clear').style.display = isAdmin ? '' : 'none';

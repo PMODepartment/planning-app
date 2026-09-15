@@ -113,7 +113,43 @@ window.IssuesLessons = (function () {
     return 'Raised by ' + (r.department ? 'the ' + r.department + ' department' : 'someone else') +
       '. Only they or a planner can change it.';
   }
+  // ---- Portfolio scope (owner, 2026-09-15) --------------------------------
+  // ⚠️⚠️ THIS MODULE RENDERED NOTHING AT ALL IN PORTFOLIO SCOPE. The 2026-09-14
+  // pass consolidated the READS across every accessible project and left every
+  // render guard below testing `!pid` — which is null in portfolio BY DESIGN —
+  // so the Dashboard said "Select a project to see its dashboard", the log said
+  // "Select a project to see its issues" and the Lessons screen painted an
+  // empty string, all while `rows`/`LESSONS` held the whole portfolio. The data
+  // was loaded and nothing drew it. Every one of those guards now asks the real
+  // question: is there NEITHER a project NOR a portfolio to draw?
+  function ilPortfolio() { return !!(window.AppAuth && AppAuth.isPortfolioScope()); }
+  // Owner (2026-09-15): "for consolidated data in portfolio, if in list group
+  // by project." Both registers here are lists, so both go through one builder
+  // rather than two copies that would drift the first time a column moved.
+  // ⚠️ The running index is threaded ACROSS groups, not reset per project: the
+  // Issues log's "No." column numbers a row by its position in the list you are
+  // looking at, and restarting at 1 under every project would make two rows
+  // share a number on one screen.
+  // ⚠️ Guarded on the helper existing, not just on the scope — a browser
+  // holding a stale `ui.js` would otherwise throw and blank the register, which
+  // is a far worse failure than an ungrouped list.
+  function ilGroupedBody(list, rowHTML, colspan) {
+    if (!ilPortfolio() || !(window.UI && UI.groupByProject)) {
+      return list.map(function (r, i) { return rowHTML(r, i); }).join('');
+    }
+    var i = 0;
+    return UI.groupByProject(list).map(function (g) {
+      return UI.projectGroupRowHTML(g, colspan) +
+        g.rows.map(function (r) { return rowHTML(r, i++); }).join('');
+    }).join('');
+  }
   function canEditRow(r) {
+    // ⚠️ Portfolio is read-only at the Supabase client itself (auth.js wraps
+    // every write and refuses it), so the honest thing on screen is to withhold
+    // the control rather than offer it and let the save bounce. Before this the
+    // module drew nothing, so nothing was clickable; now that it renders, a
+    // steward would otherwise get editable fields that cannot save.
+    if (ilPortfolio()) return false;
     if (isSteward) return true;
     return !!(canAdd && r && r.created_by && UID && r.created_by === UID);
   }
@@ -437,7 +473,11 @@ window.IssuesLessons = (function () {
     UID = (user && user.id) || (prof && prof.id) || null;
     _collabSelf = { id: UID, name: (prof && (prof.name || prof.email)) || 'Someone' };
     isSteward = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
-    canAdd = !!prof && prof.status === 'approved' && prof.role !== 'viewer';
+    // ⚠️ `&& !ilPortfolio()` — these two gate every "+ New" / import / bulk
+    // control in the module. In portfolio scope the write would be refused at
+    // the client anyway; not offering it is the difference between a read-only
+    // screen and a screen that looks writable and is not.
+    canAdd = !!prof && prof.status === 'approved' && prof.role !== 'viewer' && !ilPortfolio();
     canWrite = canAdd;
 
     // ⚠️ Deep link from My Work, and from the sibling Minutes of Meeting module's
@@ -1533,7 +1573,7 @@ window.IssuesLessons = (function () {
     var anyF = ['search', 'status', 'department', 'champion'].some(function (k) { return dFilters[k]; });
     var clr = $('il-dclearfilters'); if (clr) clr.hidden = !anyF;
     if (screen === 'dashboard') { var ft = $('il-topfilttoggle'); if (ft) ft.classList.toggle('has-active', anyF); }
-    if (!pid) {
+    if (!pid && !ilPortfolio()) {
       host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Select a project to see its dashboard.</div>';
       return;
     }
@@ -1671,6 +1711,15 @@ window.IssuesLessons = (function () {
       ? (latestChampionText(r) || '(no champion)')
       : (r.department || '(no department)');
   }
+  // Owner (2026-09-15): "for consolidated data not in list, add a marker
+  // project code to identify." A board has no group header to hang a project
+  // name off, so the card carries the code itself. ⚠️ Empty outside portfolio
+  // scope, where every card is the one project by definition and the chip would
+  // be pure noise.
+  function ilProjTag(r) {
+    return (ilPortfolio() && window.UI && UI.projectTagHTML)
+      ? UI.projectTagHTML(r && r.project_id) : '';
+  }
   function issKanbanCardHTML(r) {
     var a = agingDays(r);
     var agingTxt = a == null ? '' : (a + ' day' + (a === 1 ? '' : 's') + ' open');
@@ -1678,6 +1727,7 @@ window.IssuesLessons = (function () {
     return '<div class="il-kanban-card il-clickrow" data-open="' + Fmt.esc(r.id) + '">' +
       '<div class="il-kanban-card-title">' + Fmt.esc(clip(r.description, 90)) + '</div>' +
       '<div class="il-kanban-card-meta">' +
+        ilProjTag(r) +
         '<span class="il-pill ' + statusClass(r.status) + '">' + Fmt.esc(r.status || 'Open') + '</span>' +
         (champ ? '<span>' + Fmt.esc(champ) + '</span>' : '') +
         (agingTxt ? '<span>' + agingTxt + '</span>' : '') +
@@ -1706,14 +1756,14 @@ window.IssuesLessons = (function () {
     // still has a way to switch, even though there is nothing to board yet).
     var vb = $('il-issues-viewbar'), listWrap = $('il-issues-listwrap'), kanbanWrap = $('il-issues-kanban');
     if (vb) {
-      vb.innerHTML = pid ? viewKanbanBarHTML('il-issues', _issView, _issKanbanGroup) : '';
+      vb.innerHTML = (pid || ilPortfolio()) ? viewKanbanBarHTML('il-issues', _issView, _issKanbanGroup) : '';
       wireViewKanbanBar(vb,
         function () { _issView = 'list'; renderIssuesLog(); },
         function () { _issView = 'kanban'; renderIssuesLog(); },
         function (g) { _issKanbanGroup = g; renderIssuesLog(); });
       if (window.Icons) Icons.hydrate(vb);
     }
-    if (!pid) {
+    if (!pid && !ilPortfolio()) {
       if (sortNote) sortNote.remove();
       if (listWrap) listWrap.hidden = false;
       if (kanbanWrap) kanbanWrap.hidden = true;
@@ -1726,7 +1776,9 @@ window.IssuesLessons = (function () {
       if (kanbanWrap) kanbanWrap.hidden = true;
       t.innerHTML = '<tr><td style="padding:0;">' +
         '<div class="il-empty"><span data-ico="clipboard" data-ico-size="40"></span>' +
-        '<div class="il-empty-title">No issues logged yet for this project.</div>' +
+        '<div class="il-empty-title">' + (ilPortfolio()
+          ? 'No issues logged on any project you can see.'
+          : 'No issues logged yet for this project.') + '</div>' +
         (canWrite ? '<div>Use <strong>+ New issue</strong> to log the first one.</div>' : '') +
         '</div></td></tr>';
       if (window.Icons) Icons.hydrate(t);
@@ -1772,14 +1824,17 @@ window.IssuesLessons = (function () {
     // in that case via its own `ro` flag, so this also lets a viewer read a record they
     // never had a click-through to before). Only a planner's delete icon remains, and it
     // stops the click from bubbling up into the row-open.
-    var body = data.map(function (r, i) {
+    var issRowHTML = function (r, i) {
       var a = agingDays(r);
       var agingTxt = a == null ? '—' : (a + ' day' + (a === 1 ? '' : 's'));
       var hot = a != null && a > 90 && (r.status || 'Open') !== 'Closed';
       // data-l = the column heading — unused on desktop (the <thead> supplies
       // it), read by the phone-width layout (2026-09-11: scroll, not cards —
       // see the note on .pd-table.il-table in module.css).
-      var issCanDrag = !_issSort.key;
+      // ⚠️ Off in portfolio scope as well as under a sort: reordering is a
+      // write, and the manual order it writes is per project — dragging a row
+      // past another project's rows has no meaning to store.
+      var issCanDrag = !_issSort.key && !ilPortfolio();
       return '<tr class="il-clickrow" data-open="' + Fmt.esc(r.id) + '"' +
         (issCanDrag ? ' data-reorder-row="' + Fmt.esc(r.id) + '"' : '') + '>' +
         // Item 2: drag handle — a separate element so the row's own click-to-open
@@ -1810,7 +1865,8 @@ window.IssuesLessons = (function () {
           '<button class="il-iconbtn is-danger" title="Delete" data-del="' + r.id + '">🗑</button>' +
           '</td>' : '') +
       '</tr>';
-    }).join('');
+    };
+    var body = ilGroupedBody(data, issRowHTML, isSteward ? 12 : 11);
 
     t.innerHTML = head + '<tbody>' + (body ||
       '<tr><td colspan="' + (isSteward ? 12 : 11) + '" style="padding:24px;color:var(--pd-muted);">No issues match the current filters.</td></tr>') +
@@ -1927,7 +1983,7 @@ window.IssuesLessons = (function () {
   // "reporting" meant.
   function renderIssueDetailView() {
     var host = $('il-issues-view'); if (!host) return;
-    if (!pid) {
+    if (!pid && !ilPortfolio()) {
       host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Select a project to see its issues.</div>';
       return;
     }
@@ -3071,6 +3127,7 @@ window.IssuesLessons = (function () {
   // everyone reads. A lesson with no `created_by` is planner-only — there is no way to
   // know whose it was.
   function canEditLesson(l) {
+    if (ilPortfolio()) return false;   // read-only — see canEditRow
     if (isLegacyLesson(l)) return false;
     if (isSteward) return true;
     return !!(canAdd && l && l.created_by && UID && l.created_by === UID);
@@ -3116,7 +3173,7 @@ window.IssuesLessons = (function () {
     // Item 1: the dot on the shared topbar funnel, only while Lessons is active.
     if (screen === 'lessons') { var ft = $('il-topfilttoggle'); if (ft) ft.classList.toggle('has-active', anyF); }
     var host = $('il-lessons-view'); if (!host) return;
-    if (!pid) { host.innerHTML = ''; return; }
+    if (!pid && !ilPortfolio()) { host.innerHTML = ''; return; }
     // ⚠️ Just `log`/`detail` now — the analytics landing page moved out to its own
     // top-level tab (combined with Issues' — see renderDashboardScreen()).
     if (_lessMode === 'detail') renderLessonDetailView(host);
@@ -3167,6 +3224,7 @@ window.IssuesLessons = (function () {
     return '<div class="il-kanban-card il-clickrow" data-open-lesson="' + Fmt.esc(l.id) + '">' +
       '<div class="il-kanban-card-title">' + Fmt.esc(clip(l.lesson, 90)) + '</div>' +
       '<div class="il-kanban-card-meta">' +
+        ilProjTag(l) +
         '<span>' + Fmt.esc(lessonSourceText(l)) + '</span>' +
         (resolved ? '<span>Resolved ' + Fmt.date(resolved) + '</span>' : '') +
       '</div>' +
@@ -3209,7 +3267,9 @@ window.IssuesLessons = (function () {
     if (!list.length) {
       host.innerHTML = migrateNoteHTML() + viewBarHTML +
         '<div class="il-empty"><span data-ico="bulb" data-ico-size="40"></span>' +
-        '<div class="il-empty-title">No lessons captured yet for this project.</div>' +
+        '<div class="il-empty-title">' + (ilPortfolio()
+          ? 'No lessons captured on any project you can see.'
+          : 'No lessons captured yet for this project.') + '</div>' +
         (canAdd ? '<div>Use <strong>+ New lesson</strong> to capture the first one.</div>' : '') +
         '</div>';
       wireBar();
@@ -3245,9 +3305,9 @@ window.IssuesLessons = (function () {
       sortThHTML('Issue', 'issue', _lessSort) +
       sortThHTML('Date Resolved', 'resolved', _lessSort) +
       '</tr></thead>';
-    var body = list.map(function (l, i) {
+    var lessRowHTML = function (l, i) {
       var resolved = lessonResolvedDate(l);
-      var canDrag = !isLegacyLesson(l) && !_lessSort.key;
+      var canDrag = !isLegacyLesson(l) && !_lessSort.key && !ilPortfolio();
       return '<tr class="il-clickrow" data-open-lesson="' + Fmt.esc(l.id) + '"' +
         (canDrag ? ' data-reorder-row="' + Fmt.esc(l.id) + '"' : '') + '>' +
         '<td class="il-dragcell">' + (canDrag ? dragGripHTML(l.id) : '') + '</td>' +
@@ -3256,7 +3316,8 @@ window.IssuesLessons = (function () {
         '<td class="il-cell-wrap" data-l="Issue"><div class="il-clip">' + Fmt.esc(lessonIssueCellText(l)) + '</div></td>' +
         '<td class="il-ls-date" data-l="Date resolved">' + (resolved ? Fmt.date(resolved) : '—') + '</td>' +
       '</tr>';
-    }).join('');
+    };
+    var body = ilGroupedBody(list, lessRowHTML, 5);
     // ITEM 9: the sort note (and the way back to manual order), present only
     // while a sort is active.
     var sortNoteHTML = _lessSort.key
