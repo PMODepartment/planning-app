@@ -102,6 +102,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (za) — Admin: what a role's project list actually means, and Group Heads move onto this page
+
+Owner: *"in Users, provide information about difference in user assignments. provide also super admin
+with access to all modules. in projects, please add also way to add and assign group heads."*
+
+### ⚠️⚠️ THE PROJECTS COLUMN WAS BACKWARDS FOR ADMIN AND SUPER_ADMIN
+
+`can_access_project()` (SQL) and its client mirror `AppAuth.canAccessProject()` both grant `admin` and
+`super_admin` **every** project regardless of what sits in `users.projects` — checked against both
+definitions, not assumed. So an admin whose array happened to be empty showed **"—"** in the Projects
+column, which reads as *no access*, when the truth was the opposite. The column (renamed **Access**)
+now states what the role actually grants: `admin`/`super_admin` read **"All projects"**; planner/user/
+viewer keep the literal chip list, because that array is the real boundary for them. The **Projects**
+button — which only ever writes that same inert array — is hidden for the two full-access roles rather
+than left on screen doing nothing; it reappears the moment a role drops to planner/user/viewer.
+
+### The super_admin-only module set, made visible instead of left implicit
+
+`config.js`'s `superAdminOnly` flag already hides a module from everyone but `super_admin` — verified
+across all three places that gate it (`ui.js` `renderNav`, `modules-grid.js`, `dashboard.html`'s tile
+grid) plus `portfolio-overview`'s own five-tab list, all consistent. So super_admin already had access
+to every module; nothing there needed changing. What was missing was saying so: the Access column now
+reads off `APP_CONFIG.MODULES.filter(m => m.superAdminOnly)` — never a hardcoded list, so it cannot
+drift from what actually gates — and shows super_admin **"+ all modules"**, while every other role gets
+**"N modules hidden"** naming which ones in the tooltip.
+
+### Group Heads get a second entry point, not a second implementation
+
+Group Heads (`group_heads` / `projects.group_head_id` — the flat tag that replaced the old workspace
+tree, see `assets/js/db.js`) had exactly one screen, `projects.html`'s own **Manage Group Heads**
+modal. Admin's Projects tab now carries the same actions — reorder, edit, retire, delete, and a
+**Group Head** select right in **Edit project** — built against the identical `PDb.getGroupHeads` /
+`createGroupHead` / `updateGroupHead` / `deleteGroupHead` calls `projects.html` already uses, so there
+is one table being managed from two screens rather than two notions of what a group head is.
+⚠️ An inactive group head still lists when it is a project's *current* value, or the select would
+silently reassign the project the moment it is opened. ⚠️ The list inside **Manage Group Heads**
+redraws itself after any of its own nested Edit/Delete/reorder actions — those only know to call the
+page's `loadProjects()`, so the open list is tracked (`ghmOpen`) and repainted from there rather than
+needing every nested action to know about it directly.
+
+No migration — `group_heads` and `projects.group_head_id` already exist and are already read/written
+by `projects.html` in production; this is UI only, reusing what is already deployed.
+
+Verified: the inline script parses (`new Function`); no new/changed element id collides with an
+existing one; `RESTRICTED_MODULES`, `ghOptions`, `ghNameOf`, `countForGh` checked by hand against the
+shipped `PDb`/`AppAuth`/`config.js` shapes rather than guessed.
+⚠️ **Not verified signed in** — no live login is possible in this environment.
+
+No shared asset changed, so no `?v=` bump and no `MODULE_V` bump — `admin.html` is fetched at its own
+URL and is not a module page.
+
+⚠️ **Re-lettered `(z)` → `(za)` when this branch merged.** A concurrent session had already taken
+`2026-09-15 (z)` on `main` for the Portfolio Dashboard's Phase B entry, and both sides prepended under
+`## Changelog`, so the merge left two different entries wearing one letter. Every letter `a`–`z` is
+spent for this date; `za` is the next, matching how 2026-09-07 and 2026-09-10 continued past `z`.
+The collision changes nothing about the work — it is a changelog label, and no `?v=` or `MODULE_V`
+token was involved, which is why it conflicted quietly rather than failing anything.
 ### 2026-09-15 (w) — A 3D card framed for a shape its canvas no longer had
 
 Owner: *“The presets view also do not view properly and I cannot see the ground”*, with the
