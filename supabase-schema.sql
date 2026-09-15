@@ -49,6 +49,12 @@ create table if not exists users (
   status      text default 'pending'
                 check (status in ('pending','approved','rejected')),
   projects    text[] default '{}',              -- assigned project ids
+  -- Per-user override of config.js MODULES[].superAdminOnly's role-based
+  -- default. NULL = no override (the historical behavior); a (possibly
+  -- empty) array = the exact module keys this user may see. See
+  -- migrations/2026-09-15-user-module-access.sql for the full reasoning —
+  -- this column is added to existing deployments via that migration.
+  module_access text[],
   last_login  timestamptz,
   created_at  timestamptz default now()
 );
