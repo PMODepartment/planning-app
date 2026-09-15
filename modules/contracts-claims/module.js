@@ -378,14 +378,109 @@ window.ContractsClaims = (function () {
     paintRemote();
   }
 
+  /* ==========================================================================================
+     THE REGISTER'S OWN DASHBOARD.
+     Owner 2026-09-15: *"Let's rework the front page of the contracts & claims module to have an own
+     dashboard within it."* Asked where it should live — a new tab, or inside Contract — the owner
+     chose INSIDE THE CONTRACT TAB, which is already what the module opens on. That keeps the
+     standing three-tab decision (2026-08-26: *"There are too many tabs to keep track of"*) and the
+     1460px title breakpoint that the tab count drives.
+
+     ⚠⚠ IT SUMMARISES THE WHOLE REGISTER, NOT THE CONTRACT TAB. `rows` holds every record type,
+       so the band reports contract, change orders, claims and EOT together — which is the point of
+       a front page. The list under it is still the Contract list; the band is the module's summary,
+       the table is the tab's content.
+     ⚠⚠ THE SAME FIGURES, IN THE SAME ORDER, AS THE PROJECT DASHBOARD'S PANEL (2026-09-15). Two
+       screens reporting the same register must not describe it differently — so the blocks, the
+       cell order and the two-figure treatment of "disputed" are deliberately identical. What
+       differs is only the source: this one computes from the rows already in memory, so it costs
+       no query; the dashboard reads declared metrics through the shell.
+     ⚠ UNFILTERED, and on purpose. It reads `rows`, never `visibleRows()`: a summary that moved
+       when someone typed in the search box would be reporting the filter, not the register. The
+       count line under the toolbar already says what the filter is showing.
+     ========================================================================================== */
+  function ccBlock(label, nRec, list, subK, evK, apK, fmt) {
+    var sum = function (arr, k) {
+      return arr.reduce(function (a, r) { var v = Number(r[k]); return a + (isFinite(v) ? v : 0); }, 0);
+    };
+    /* Decided = Approved + Disapproved. The rule the Recovery-rate KPI in this same file already
+       uses, and for the reason written there: a still-Pending claim is not a failure, and counting
+       it as one reads as a catastrophic ~0%% on a young register. Cancelled never adjudicated. */
+    var decided = list.filter(function (r) { var s = statusOf(r); return s === 'Approved' || s === 'Disapproved'; });
+    var disapRows = list.filter(function (r) { return statusOf(r) === 'Disapproved'; });
+    // ⚠ Clamped at 0: an approval ABOVE what was asked is a data-entry question, not a credit.
+    var short = Math.max(0, sum(decided, subK) - sum(decided, apK));
+    /* ⚠ A COMPUTED ZERO IS A ZERO; ONLY AN EMPTY BLOCK IS A DASH. `sum` over an empty list
+       returns 0, so formatting every falsy value as '—' printed a dash where the project
+       dashboard prints '0d' — two screens describing the same register differently, which is
+       the one thing this band was written not to do. With records present every figure is
+       numeric; with none, the whole block reads '—'. */
+    var f = list.length ? fmt : function () { return '—'; };
+    return '<div class="cc-dash-h">' + esc(label) +
+        (nRec ? ' <span class="cc-mini">' + nRec + ' record' + (nRec === 1 ? '' : 's') + '</span>' : '') + '</div>' +
+      '<div class="cc-kpis">' +
+        kpi('Submitted', f(sum(list, subK)), 'as claimed') +
+        kpi('Evaluated', f(sum(list, evK)), 'after review') +
+        kpi('Approved', f(sum(list, apK)), 'client approved', sum(list, apK) ? 'good' : '') +
+        kpi('Disapproved', f(sum(disapRows, subK)), 'rejected outright', disapRows.length ? 'bad' : '') +
+        kpi('Shortfall', f(short), decided.length ? 'claimed not certified' : 'nothing decided yet',
+            short ? 'warn' : '') +
+      '</div>';
+  }
+  function ccDashHTML() {
+    var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
+    var days = function (v) { return (v == null || isNaN(v)) ? '—' : num(Number(v) || 0) + 'd'; };
+    var of = function (t) { return rows.filter(function (r) { return r.record_type === t; }); };
+    var contracts = of('Contract');
+    var ctVal = contracts.reduce(function (a, r) { var v = Number(r.amount); return a + (isFinite(v) ? v : 0); }, 0);
+    var pk = (PKGS || []).slice();
+    var pkAmt = pk.reduce(function (a, r) { var v = Number(r.contract_amount); return a + (isFinite(v) ? v : 0); }, 0);
+    /* ⚠ The packages are the contract value BROKEN UP, not a count beside it — the owner's
+       correction on the project dashboard the same day, applied here so the two screens agree.
+       The remainder is a row, because "not allocated to a package" is the useful fact. */
+    var base = ctVal > 0 ? ctVal : pkAmt;
+    var pkRows = pk.sort(function (a, b) { return (Number(b.contract_amount) || 0) - (Number(a.contract_amount) || 0); })
+      .map(function (r) {
+        var v = Number(r.contract_amount);
+        var share = (base && isFinite(v)) ? Math.round(v / base * 100) : null;
+        return '<li class="cc-dash-pk"><span>' + esc([r.code, r.name].filter(Boolean).join(' · ') || 'Untitled package') +
+          '<i>' + (share == null ? 'no amount set' : share + '% of the contract value') +
+          (String(r.status) === 'archived' ? ' · archived' : '') + '</i></span>' +
+          '<b>' + money(isFinite(v) ? v : 0) + '</b></li>';
+      }).join('');
+    var rest = ctVal - pkAmt;
+    if (pk.length && ctVal && rest > 1) {
+      pkRows += '<li class="cc-dash-pk cc-dash-rest"><span>Not allocated to a package' +
+        '<i>' + Math.round(rest / base * 100) + '% of the contract value</i></span><b>' + money(rest) + '</b></li>';
+    }
+    return '<div class="cc-dash">' +
+      '<div class="cc-dash-h">Contract value <span class="cc-mini">' + money(ctVal) +
+        (pk.length ? ' across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's') : '') + '</span></div>' +
+      (pk.length
+        ? '<div class="cc-dash-bar"><i style="width:' +
+            Math.max(0, Math.min(100, base ? Math.round(pkAmt / base * 100) : 0)) + '%"></i></div>' +
+          '<ul class="cc-dash-pks">' + pkRows + '</ul>' +
+          (ctVal && rest < -1
+            ? '<p class="cc-hint">The packages total ' + money(pkAmt) + ', more than the contract records add up to. ' +
+              'One of the two is wrong — the package amounts or the contract record.</p>' : '')
+        : '<p class="cc-hint">No package breakdown yet. Packages are set up from the Contract tab, and every ' +
+          'change order, claim and extension of time can then be raised against one.</p>') +
+      ccBlock('Change orders', of('Change Order').length, of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money) +
+      ccBlock('Cost claims', of('Claim').length, of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money) +
+      ccBlock('Extension of time', of('EOT').length, of('EOT'), 'sub_days', 'eval_days', 'approved_days', days) +
+      '<p class="cc-hint">Submitted, evaluated and approved are the pipeline columns on each record. ' +
+        '<b>Disapproved</b> is what the client rejected outright; <b>shortfall</b> is submitted minus approved ' +
+        'across decided records — claimed, not certified. Records still pending a decision count in neither. ' +
+        'This summary covers the whole register and does not move with the filters.</p>' +
+      '</div>';
+  }
+
   function kpiHTML(list, t) {
     var c = cfg();
-    if (view === 'contract') {
-      return '<div class="cc-kpis">' +
-        kpi('Contracts', list.length, 'records on this project') +
-        kpi('Total contract value', num(t.amount), 'sum of all contracts') +
-        '</div>';
-    }
+    /* ⚠ The Contract tab's two KPI cards (`Contracts` / `Total contract value`) are gone: the
+       dashboard above carries the contract value with its package breakdown, and a record count is
+       already in the toolbar's "Showing N records". */
+    if (view === 'contract') return ccDashHTML();
     var pend = list.filter(isPending);
     var ages = pend.map(agingOf).filter(function (a) { return a != null; });
     var oldest = ages.length ? Math.max.apply(null, ages) : 0;

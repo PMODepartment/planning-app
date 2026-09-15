@@ -125,6 +125,28 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-age.warn { color:var(--pd-warn-text); }
 .cc-age.bad  { color:var(--pd-bad-text); }
 
+/* ---- The register's own dashboard, at the top of the Contract tab (2026-09-15) ----------------
+   ⚠ Built from the module's OWN idioms (`.cc-kpis` / `.cc-kpi`), not the project dashboard's
+     `.pd-mini-*`. The two screens report the same figures in the same order, but each should look
+     like the page it is on rather than importing the other's furniture. */
+.cc-dash { margin-bottom: 14px; }
+.cc-dash-h { display:flex; align-items:baseline; gap:8px; margin:14px 0 6px;
+  font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--pd-muted); }
+.cc-dash > .cc-dash-h:first-child { margin-top:0; }
+/* How much of the contract value the packages account for. */
+.cc-dash-bar { height:6px; border-radius:99px; background:var(--pd-line); overflow:hidden; margin-bottom:8px; }
+.cc-dash-bar > i { display:block; height:100%; background:var(--pd-red); }
+.cc-dash-pks { list-style:none; margin:0 0 4px; padding:0; }
+.cc-dash-pk { display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+  padding:7px 0; border-bottom:1px solid var(--pd-line); font-size:13px; }
+.cc-dash-pk:last-child { border-bottom:0; }
+.cc-dash-pk > span { min-width:0; }
+.cc-dash-pk > span > i { display:block; font-style:normal; font-size:11px; color:var(--pd-muted); }
+.cc-dash-pk > b { flex:none; font-variant-numeric:tabular-nums; }
+/* The unallocated remainder is a real figure, not an error — warn, not bad. */
+.cc-dash-rest > b { color:var(--pd-warn-text); }
+
 /* ---- KPI strip ---------------------------------------------------------- */
 .cc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
 .cc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);

@@ -102,6 +102,57 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (g) — Contracts & Claims: the Contract tab opens on the register's own dashboard
+
+Owner: *"Let's rework the front page of the contracts & claims module to have an own dashboard within
+it."* Asked whether that meant a new tab or a band inside Contract, the owner chose **inside the
+Contract tab** — which is already what the module opens on.
+
+- ⚠️⚠️ **That choice preserves a standing decision of the owner's.** The module has exactly three tabs
+  because of 2026-08-26: *"There are too many tabs to keep track of"*, and the markup carries a
+  warning that the tab count is load-bearing — `module.css` hides the module title below 1460px
+  because "5 tabs need more room", and a sixth tab is why the page once had no title at all on a
+  laptop. A fourth tab would have reopened both.
+- ⚠️⚠️ **The band summarises the whole REGISTER, not the Contract tab.** `rows` holds every record
+  type, so it reports contract, change orders, cost claims and EOT together — which is the point of a
+  front page. The table under it is still the Contract list: the band is the module's summary, the
+  table is the tab's content.
+- ⚠️⚠️ **Same figures, same order, as the project dashboard's panel shipped the same day.** Two
+  screens reporting one register must not describe it differently. What differs is only the source:
+  this computes from rows already in memory and costs no query; the dashboard reads declared metrics
+  through the shell.
+- ⚠️ **Unfiltered on purpose.** It reads `rows`, never `visibleRows()` — a summary that moved when
+  someone typed in the search box would be reporting the filter, not the register. The toolbar's
+  "Showing N records" already says what the filter is doing.
+- ⚠️ **A computed zero is a zero; only an empty block is a dash.** Caught by rendering the two screens
+  side by side: `sum` over an empty list returns 0, and formatting every falsy value as an em dash
+  printed `—` where the project dashboard printed `0d`. With records present every figure is numeric;
+  with none, the whole block reads `—`.
+- The two old KPI cards are gone — the contract value now carries its package breakdown, and a record
+  count is already in the toolbar.
+
+### Verified
+
+`ccBlock` / `ccDashHTML` sliced out of `module.js` and executed under the module's own CSS, both
+themes at 1280px and 1100px:
+
+| block | figures |
+|---|---|
+| Change orders, 3 records | ₱92.4M submitted · ₱81.2M evaluated · ₱68.5M approved · **₱19.5M shortfall** over two decided records |
+| Cost claims, 3 records | ₱41.8M submitted · **₱12.6M disapproved** · ₱16.6M shortfall |
+| Extension of time, 2 records | 214d claimed · 160d evaluated · nothing decided |
+| Packages | 50 / 32 / 10%, an **8% unallocated** remainder, bar at 92% |
+
+One line per strip, no overflow, no page h-scroll, and the no-packages arm drawing a note instead of
+an empty bar. ⚠️ **Not verified signed in.**
+
+`module.js` / `module.css` → `20260915a`, `MODULE_V` → `20260915e`, both sort-checked.
+
+⚠️ **A note to self about writing these entries:** this one was first written through
+`python -c "…"` from bash, and every backticked term in it was evaluated as a command substitution
+and silently vanished from the file. Changelog prose goes through a file written with the editor, not
+through a double-quoted shell argument.
+
 ### 2026-09-15 (f) — Project dashboard: the packages become a breakdown of the contract value
 
 Owner, on the panel live: *"The packages shouldn't be a separate KPI card. This is a breakdown of
