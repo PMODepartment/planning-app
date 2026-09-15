@@ -102,6 +102,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (z) — Phase B finished: one funnel where there were five, and one KPI card where there were three
+
+Owner: *"make sure the UI is consistent and professional looking."* Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+⚠️⚠️ **Two filter surfaces were on screen at once and FIVE funnels existed** — the scope picker in
+its own bar, the Overview's toolbar carrying a second funnel and a second search box below it, and
+four other views each with their own. There is **one** now, in the tool cluster, pointed at whichever
+view has a panel. `UI.wireFilterToggle` re-binds its onclick on every call, which is what lets one
+button serve N panels and keeps the has-active dot following the view rather than going stale; every
+other view's panel is closed on a switch, because a button cannot un-toggle a panel it is no longer
+pointed at.
+
+### ⚠️⚠️ AND `hidden` DID NOTHING TO IT — THE SAME SPECIFICITY TIE, ON A DIFFERENT COMPONENT
+
+`.pd-filttoggle` is `display:inline-flex` at **(0,1,0)**, exactly tying the user agent's
+`[hidden] { display:none }`, and an author rule wins that tie. `dashboard.css` carries the identical
+fix for `.pd-btn` and explains it at length; `.pd-filttoggle` never got one. **Measured, with the
+negative build as proof: with the rule `hidden` computes `none`; with the rule deleted from the live
+stylesheet it computes `flex`** and the button stays on screen.
+⚠️ **Fixed locally and REPORTED rather than shipped app-wide** — the real repair belongs in
+`dashboard.css`, which 31 pages load, and that is its own change with its own bump.
+
+### ⚠️⚠️ THREE KPI TREATMENTS, AND THE BEST ONE WAS UNUSED
+
+`.po-kpi2` was value weight **700** against the shared **800**, radius `md` against `lg`, padding
+14/16 against 16/18 — so three views disagreed with the Overview and none matched the app, while
+`.pd-kpi` (accent bar, semantic variants, AA-measured) was used **nowhere on this page**. The
+2026-09-10 (w2) convergence missed it.
+
+⚠️ **The producers changed; their signatures did not**, so all **40 call sites** converge untouched.
+The token maps to the shared **semantic variant** rather than an inline colour, so the accent tints
+too — and an unrecognised token still falls back to a colour, because silently dropping a caller's
+meaning is the failure this repo keeps paying for. The six private rules are **deleted**, not left
+beside the shared ones.
+
+The S-Curve's three loose checkboxes become `.pd-seg.pd-seg-multi`, the app's own multi-select
+segment. ⚠️ A disabled rung fires no click, so Forecast cannot be turned on when nothing drawn
+carries one — the refusal is the control's own.
+
+### Verified
+
+**96 assertions, 0 failing.** ⚠️ The KPI cards are executed through the **real `UI.kpi`**, loaded the
+way `wiring-check` loads a browser script, so this proves the shipped page emits the shared card
+rather than that a stub does. Measured in a browser at 1400/390px from markup the shipped code
+produced: radius **12px**, padding **16/18**, value **20px/800**, a **4px** accent bar `.po-kpi2`
+never had; the segment's on-state tint + ink + **2px inset underline**; **1 funnel** in the module
+bar; no sideways scroll.
+⚠️ **Three of seven first-run failures were MY assertions** — testing the inline `<script>` for
+markup and CSS that live in the HTML outside it.
+
+`wiring-check` 136/136, `dead-hooks` 0 findings in this module. Harness deleted before committing.
+⚠️ **Not verified signed in.** `MODULE_V` → `20260915v`, sort-checked.
+
 ### 2026-09-15 (y) — The measurement query returned section 5 and nothing else, seven times over
 
 The owner ran `docs/portfolio-coverage-query.sql` and sent back section 5. Then sent it again.

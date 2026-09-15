@@ -1,5 +1,97 @@
 # Module: portfolio-overview
 
+## 2026-09-15 (v) — Phase B finished: one funnel, one KPI card, and the series switch stops being a fourth idiom
+
+Continuing the owner's *"the UI needs complete rework… make sure the UI is consistent and
+professional looking"*. (u) put the controls in the module bar; this is the rest.
+
+### ⚠️⚠️ TWO FILTER SURFACES WERE ON SCREEN AT ONCE, AND FIVE FUNNELS EXISTED
+
+The scope picker sat in its own bar and the Overview's toolbar carried a **second** funnel and a
+**second** search box immediately below it, with nothing stating the relationship — and four other
+views each had a funnel of their own. **Five `.pd-filttoggle` buttons, five `wireFilterToggle`
+calls.** There is now **one**, in the tool cluster, pointed at whichever view has a panel.
+
+- ⚠️ **`UI.wireFilterToggle` re-binds the button's onclick on every call**, which is exactly what
+  lets one button serve N panels — and it re-syncs the has-active dot for the panel it is now
+  pointed at, so the "something is filtered" signal follows the view instead of going stale.
+- ⚠️ **Every other view's panel is closed on a switch.** One button cannot un-toggle a panel it is
+  no longer pointed at, so a panel left open would still be open the next time that view came round,
+  with the funnel showing no sign of it.
+- ⚠️ Eight views have no panel; the button is **hidden** there rather than sitting inert.
+
+### ⚠️⚠️ AND `hidden` DID NOTHING TO IT — THE SAME TIE, ON A DIFFERENT COMPONENT
+
+`.pd-filttoggle` is `display:inline-flex` at specificity **(0,1,0)**, which **exactly ties** the user
+agent's own `[hidden] { display:none }` — and an author rule beats the UA default at equal
+specificity. `dashboard.css` carries the identical fix for `.pd-btn` (line ~634) and explains it at
+length; `.pd-filttoggle` never got one.
+
+**Measured, and the negative build is the proof:** with the rule, `hidden` computes `display:none`;
+**with the rule deleted from the live stylesheet it computes `flex`** — the button stays on screen.
+⚠️ **Fixed LOCALLY and reported rather than shipped app-wide:** the real repair belongs in
+`dashboard.css`, which **31 pages** load, and that is its own change with its own bump. This page is
+simply the first to need `hidden` on a filter toggle.
+
+### ⚠️⚠️ THREE KPI TREATMENTS BECOME ONE — AND THE BEST ONE WAS UNUSED
+
+`.po-kpi2` was **value weight 700** against the shared **800**, radius `md` against `lg`, padding
+14/16 against 16/18. So the S-Curve, Milestones and Cash Flow strips did not match the Overview's,
+and none matched the rest of the app — while `.pd-kpi`, with its accent bar, its semantic variants
+and its AA-measured contrast, was used **nowhere on this page**. The 2026-09-10 (w2) pass converged
+five modules onto it and this page was not among them.
+
+⚠️ **The two producers changed; their SIGNATURES did not.** All **40 `kpi2` call sites** and 6
+`msKpi` sites converge without being touched, so there is no chance of catching some and missing
+others. ⚠️ The token maps to the shared **semantic variant**, not an inline colour, so the accent bar
+is tinted too — and an **unrecognised** token still falls back to an inline colour, because silently
+dropping a caller's meaning is the "silent nothing" this repo keeps paying for.
+⚠️ The six private rules are **deleted**, not left beside the shared ones — a dead near-duplicate is
+what the next editor changes by mistake. ⚠️ `--po-ms-*` **stays**: checked, and it still colours the
+calendar chips, state pills and slip figures.
+
+### The series switch is the app's own control
+
+Three loose checkboxes become `.pd-seg.pd-seg-multi` — the shared multi-select segment, whose note in
+`dashboard.css` explains why a multi choice is tint + underline rather than the solid red of a single
+choice. ⚠️ A **disabled rung fires no click**, so Forecast cannot be turned on when nothing drawn
+carries one: the refusal is the control's own rather than a guard bolted beside it. ⚠️ The note's
+wording changed with the control ("Tick" → "Turn back on") — copy that describes a control it no
+longer matches is worse than none.
+
+### Verified — 96 assertions, and measured in a browser
+
+**The KPI cards are executed through the REAL `UI.kpi`**, loaded the way `tools/wiring-check.js`
+loads a browser script, so this proves the shipped page emits the shared card rather than that a stub
+does. Both producers, every variant, the unknown-token fallback, and the empty sub-line.
+
+Measured against the real stylesheets at 1400 and 390px, markup **produced by the shipped code**:
+
+| | measured |
+|---|---|
+| KPI radius / padding / value | **12px · 16px 18px · 20px/800** (was 8px · 14/16 · 700) |
+| accent bar | **4px**, `rgb(238,49,36)` — the shared card's signature, which `.po-kpi2` never had |
+| semantic variant | bad value `rgb(239,83,80)`, distinct from the plain `rgb(240,239,239)` |
+| segment, on | tint `rgb(61,26,25)` + ink `rgb(255,138,128)` + **2px inset red underline** |
+| segment, disabled | opacity .55, `not-allowed` |
+| funnels in the document | **1**, in `.pd-modulebar`, at both widths |
+| sideways page scroll | **none** |
+
+⚠️ **Three of the seven first-run failures were MY assertions, not the code** — they tested the
+inline `<script>` for markup and CSS that live in the HTML outside it. Re-pointed at the document.
+⚠️ The harness was **deleted before committing**, after confirming git could not see it.
+
+`test-portfolio.js` **96/96**, `wiring-check` 136/136, `dead-hooks` **0 findings in this module**,
+CSS braces 273/273, inline `<script>` parses.
+
+⚠️ **Not verified signed in.**
+⚠️ **Reported, not fixed:** `.pd-filttoggle[hidden]` belongs in `dashboard.css` for every module,
+not just this page.
+⚠️ **Phase B is now complete.** Next is the Overview rebuild — the four decision blocks, the
+attention ranking, and the removals.
+
+`MODULE_V` → `20260915v`, sort-checked against the `20260915u` the live site is serving.
+
 ## 2026-09-15 (u) — The chrome: one tool cluster, one scope control, and a filter panel that stops being a wall
 
 Owner: *"the UI needs complete rework: refresh button is out of place let's just follow the
