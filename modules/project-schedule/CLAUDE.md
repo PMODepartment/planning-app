@@ -1,3 +1,97 @@
+## 2026-09-15 (a) — Consolidated is gone, and the reason it was redundant is the feature nobody wired
+
+Owner: *"The consolidated button in the vertical stacking seem to be no longer needed since its
+function has been the same with the other buttons as well."*
+
+### ⚠️⚠️ THE OWNER IS RIGHT ABOUT THE SCREEN, AND THIS FILE ALREADY KNEW WHY
+
+Consolidated's one distinguishing feature — splitting each level into a cell per trade, so a single
+building compares the trades side by side — **has never rendered.** `_vsRowTradeCells` and
+`_vsTowerSVG`'s `tradeSplit` parameter are fully implemented and committed; **no call site has ever
+passed them**, in the 2D path or the 3D one. The 2026-09-04 entry in this file recorded exactly that
+and left it: *"the ask here was level 1, and wiring it is a feature change nobody asked for. Worth a
+decision."*
+
+So what the button actually drew was one brand-red card with **a single cell per level**, and because
+`_vsMixTrades` is true whenever a trade-combining scope holds more than one trade, Detail was pinned
+to level 1 — no zones either. A picture carrying nothing the per-trade cards do not carry better.
+That is the redundancy the owner is reporting, and it is a symptom of the unwired split, not of the
+view being a bad idea.
+
+**The decision was put to the owner directly on 2026-09-15 — remove, or wire the split — and they
+chose remove.** ⚠️ Wiring it remains a live option and everything it needs is still in the file; see
+the note now at the head of `_vsRowTradeCells`.
+
+### What went
+
+| | |
+|---|---|
+| the button | `data-vssc="all"` |
+| the render branch | the `'all'` arm of the scope chain in `renderVStack` |
+| the mix-trades term | `_vsMixTrades` now covers `tower` and `site` only |
+| the PDF caption arm | `Consolidated — one building` |
+| four comment parentheticals | *"(per tower, consolidated)"* → *"(per tower, site)"* |
+
+⚠️ **No migration, and the reason is worth recording:** `_vsScope` is a plain module variable that is
+**never persisted** — it resets to `'trade'` on every load — and it is only ever assigned from
+`b.dataset.vssc`. Removing the only button carrying that value removes the only way in, so no
+fallback guard was written for a state nothing can produce.
+
+### ⚠️⚠️ The Model segment goes with it on a single-tower project
+
+`Per tower` needs more than one tower and `Site` needs a tower breakdown *and* a traced plan — so on
+a single-tower project Consolidated was the **second of two** options, and removing it would leave a
+segment labelled MODEL naming a question with one answer. That is the thing the Towers chip row
+already refuses to do (*"a row reading 'All towers · Tower 1' is two controls for a question with one
+answer"*), so the segment is emitted only when more than one scope is on offer.
+
+⚠️ **Deliberately NOT the disabled-select treatment the one-tower case got elsewhere.** That control
+had something to say — from the drawing alone a reader could not tell whether one building was one
+tower or every tower merged. Here each card is titled with its trade and carries its trade's colour
+dot, so the view names itself.
+
+⚠️ **And the divider went with the segment.** The rule between Model and 2D/3D was unconditional; with
+neither the segment nor the site call-to-action emitted, a single-tower bar would have opened on a
+vertical stroke separating nothing.
+
+### Two things found while removing it
+
+- ⚠️ **The PDF caption had no `site` arm** and fell through to *"One building per trade"* — a sheet
+  naming a view it is not showing, one line above a comment that rails against exactly that (*"a
+  document that misstates its own subject, and it is the copy that leaves the building"*). Fixed
+  here rather than left beside its own warning.
+- ⚠️ **A comment quoting the removed comparison tripped the gate written to find it.** Same shape as
+  the quoted `id="…"` that fooled the duplicate-id gate on 2026-09-09. The comment is reworded and
+  says why it does not spell the expression out.
+
+### Verified
+
+**Slice-and-execute against the shipped file**, never a reimplementation: the four emission
+expressions (`_scopeBtns`, `_scopeN`, the segment, the divider) were cut out of `index.html` by
+anchor and run under stubbed `towerNames` / `_vsSitePlan()`:
+
+| project shape | buttons | Model segment | leading divider |
+|---|---|---|---|
+| 1 tower | `trade` | **no** | **no** |
+| 1 tower + site plan | `trade` | no | no |
+| 3 towers, no plan | `trade`, `tower` | yes | yes |
+| 3 towers + site plan | `trade`, `tower`, `site` | yes | yes |
+
+Asserted as invariants, not just as rows: the segment appears **exactly when** there is more than one
+option, and the divider **never** appears without something to its left.
+
+**Rendered in a browser**, both themes, 1024px and 1440px, all three shapes: no bar opens on a
+divider, every bar's first child is flush with the bar's own left edge, the word *Consolidated*
+appears nowhere, and nothing overflows.
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance comments-stripped, no
+duplicate ids, no orphaned `return`, nothing tests or assigns the removed scope, and
+`_vsRowTradeCells` / `tradeSplit` are asserted **present** — they are kept on purpose.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915a`, sort-checked against `20260914zvs4`.
+
 ## 2026-09-14 (z2) — The key goes under the figure, not one row below the toolbar
 
 Owner, on the caption that shipped an hour earlier: *"This should be relocated so that the toolbars

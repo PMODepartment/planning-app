@@ -15020,7 +15020,10 @@
   // so the filter menu, per-column filters, the advanced filter and the search box all narrow the
   // stacking too. Deliberate: a second filter UI here would be one more thing to drift out of step.
   var vstackMode = false;
-  var _vsScope = 'trade';       // 'trade' = one tower per trade · 'all' = one consolidated tower
+  // 'trade' = one card per trade · 'tower' = one card per tower · 'site' = the site plan.
+  // ⚠ Session state, never persisted -- so it resets to 'trade' on every load, which is what made
+  //   removing the 'all' scope safe without a migration.
+  var _vsScope = 'trade';
   var _vsDetail = 2;            // 1 = per level · 2 = per zone · 3 = per unit (capped at LOC_LEVELS)
   var _vsZoom = 1;
   // ⚠️ The magnifier was REMOVED (owner 2026-09-02: *"remove the magnifier since there is a zoom in
@@ -15984,6 +15987,18 @@
     order.sort(function (a, b) { return cmpGroupName(a.label, b.label); });
     return order;
   }
+  /* ⚠⚠⚠ UNREACHABLE, AND KEPT ON PURPOSE. No call site has ever passed `tradeSplit` to
+     `_vsTowerBody` / `_vsTowerSVG` / `_vsTowerModel`, so this function has never drawn a pixel --
+     recorded in this module's CLAUDE.md on 2026-09-04 (*"the Consolidated trade split has never
+     rendered ... worth a decision"*). The decision came on 2026-09-15: the owner removed the
+     Consolidated button rather than wire it, BECAUSE the view was indistinguishable without it.
+     ⚠ NOT deleted, because the scope it was written for is not the only one it fits. `tower` and
+       `site` combine trades too (see `_vsMixTrades`), and they are the reason `Detail` clamps to
+       level 1 on those views -- this split is the implemented answer to that clamp. Deleting it
+       would throw away the only implementation of a feature two live scopes could still use.
+     ⚠ To wire it: pass the canonical trade order as the 4th argument from the scope branch in
+       renderVStack. Everything below, `_vsTowerSVG`'s `rowCells`, and the banded-height handling in
+       the plan code are already written for it. */
   // Consolidated's cells: one per TRADE, in canonical construction order, each carrying its own
   // colour. Owner: *"when clicking consolidated, the trades should be stacked all together (e.g.
   // site works, structural, archi, mepf), however users should have options to pick the trades that
@@ -16048,8 +16063,11 @@
     });
     return true;
   }
-  // `tradeSplit` (Consolidated only) = the canonical trade order; when present each level row is
-  // split by trade instead of by the location sub-path, and each cell paints its own trade colour.
+  // `tradeSplit` = the canonical trade order; when present each level row is split by trade instead
+  // of by the location sub-path, and each cell paints its own trade colour.
+  // ⚠ NO CALL SITE PASSES IT -- see the note on `_vsRowTradeCells`. It was written for the
+  //   Consolidated scope, which was removed on 2026-09-15; `tower` and `site` are the scopes it
+  //   would fit now.
   /* ==========================================================================================
      THE PLAN, THE ORIENTATION, AND THE 3D VIEW OF THE VERTICAL STACKING.
      Owner 2026-09-09: *"i was thinking of establishing a 3D view of the 2D vertical stacking that
@@ -16396,7 +16414,7 @@
   }
   /* ⚠️⚠️ THE TRADE IS PART OF THE QUESTION. Zoning is per trade, so "the plan for Level 3" is
      not a question with one answer — the Architectural card must be given Architectural's Level 3.
-     A card that spans trades (per tower, consolidated) passes none and falls back to the bare key,
+     A card that spans trades (per tower, site) passes none and falls back to the bare key,
      which the builder only emits when every trade that named that floor agrees about it. */
   function _vsZpFor(levelValue, trade) {
     var all = _vsZpAll();
@@ -17913,8 +17931,8 @@
        arrangement is a guess or a statement. Claiming the planner's layout when none is defined
        would be the worse error, so the default is the cautious one. */
     var _fit = _vsPlanFit(model);
-    /* ⚠️⚠️ A CARD THAT SPANS TRADES SAYS WHOSE PLAN IT IS DRAWING. Consolidated and per-tower
-       cards read the bare floor key, and when several trades traced the same floor that key now
+    /* ⚠️⚠️ A CARD THAT SPANS TRADES SAYS WHOSE PLAN IT IS DRAWING. Per-tower and site cards
+       read the bare floor key, and when several trades traced the same floor that key now
        answers with the LARGEST of their plans rather than refusing (see zpBareShape). That is a
        real footprint, but it is not "the plan for this card" — it is one trade's plan standing for
        all of them, and a planner comparing it against a trade whose plan is smaller has to be able
@@ -18305,7 +18323,7 @@
        to come back out — see the harness check that now enumerates exactly that. */
     /* ⚠️⚠️ WHOSE PLAN THIS CARD READS, derived here rather than passed in by four call sites.
        A card whose activities are all one trade IS that trade — true of the per-trade cards by
-       construction, and of a per-tower or consolidated card that happens to hold one trade,
+       construction, and of a per-tower or site card that happens to hold one trade,
        which should read that trade's plan too. A mixed card has no single answer and gets null,
        which sends the lookup to the bare key. */
     var _tr = null, _trOne = true;
@@ -19687,7 +19705,14 @@
     var w = window.open('', '_blank');
     if (!w) { UI.toast('Allow pop-ups to export the stacking as PDF.', 'error'); return; }
 
-    var scopeWord = _vsScope === 'tower' ? 'One building per tower' : (_vsScope === 'all' ? 'Consolidated — one building' : 'One building per trade');
+    /* ⚠⚠ 'site' HAD NO ARM AND FELL THROUGH TO "One building per trade" -- a printed sheet
+       naming a view it is not showing. Found while removing the 'all' arm on 2026-09-15; it is the
+       same fault the note directly below names for the tower caption ("a document that misstates
+       its own subject, and it is the copy that leaves the building"), so it is fixed here rather
+       than left one line from its own warning. */
+    var scopeWord = _vsScope === 'tower' ? 'One building per tower'
+                  : _vsScope === 'site' ? 'The site development plan'
+                  : 'One building per trade';
     /* ⚠️⚠️ THE EXPORT MUST NOT SAY "All towers" WHEN TWO ARE SHOWN. `_vsTower` reads 'ALL' whenever
        the selection is not exactly one (see renderVStack), which is right for filtering and wrong
        for a caption: a PDF headed "All towers" over a drawing of Tower 1 and Tower 2 is a document
@@ -19937,7 +19962,7 @@
     // mixed when the scope COMBINES trades and the selection holds more than one of them:
     // narrowing the chips to a single trade un-mixes it and the zones come straight back.
     // Per trade never mixes - each card there is one trade.
-    _vsMixTrades = (_vsScope === 'tower' || _vsScope === 'all' || _vsScope === 'site') && tradesShown.length > 1;
+    _vsMixTrades = (_vsScope === 'tower' || _vsScope === 'site') && tradesShown.length > 1;
     detail = _vsDetailNow();
 
     var detailBtns = '';
@@ -19990,9 +20015,10 @@
     // ⚠️ 'All towers' ALSO sets the per-tower scope, because side-by-side is what the owner asked the
     // option to mean and it is the only scope that draws one model per tower. Leaving the scope alone
     // would let the option say 'side by side' while the trade scope merged every tower into one model.
-    // ⚠️ It does NOT touch the toolbar's own 'Consolidated' button, which means the opposite — ONE
-    // merged model for the whole project. Two controls, two meanings; collapsing them would silently
-    // redefine a button planners already use.
+    // ⚠️ It used to be kept distinct from the toolbar's 'Consolidated' button, which meant the
+    // opposite — ONE merged model for the whole project. That button was removed on 2026-09-15, so
+    // there is no longer a second meaning to collide with; the per-tower scope is now the only thing
+    // "side by side" can set.
     /* ⚠️⚠️ BUILT FROM `_twAll`, NEVER FROM THE FILTERED `towerNames`. This list IS the chip row, and
        building it from the towers currently shown would delete the chips for the towers currently
        hidden — leaving a planner who ticked Tower 1 and Tower 2 with no way back to the other six,
@@ -20054,10 +20080,28 @@
         '</span>'
       : '';
 
-    var bar = '<div class="ps-vs-bar">' +
-      '<span class="ps-vs-seg"><span class="ps-vs-seglab">Model</span><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
+    /* ⚠⚠ CONSOLIDATED IS GONE. Owner 2026-09-15: *"The consolidated button in the vertical
+       stacking seem to be no longer needed since its function has been the same with the other
+       buttons as well."* Measured before removing anything, and the owner is right about the
+       screen: the card's ONE distinguishing feature -- splitting each level into a cell per trade
+       -- has never rendered. `_vsRowTradeCells` and `_vsTowerSVG`'s `tradeSplit` parameter are
+       fully implemented and no call site has ever passed them (flagged in this module's CLAUDE.md
+       on 2026-09-04 as *"worth a decision"*). So what it actually drew was one brand-red building
+       with a single cell per level, pinned to Detail 1 by `_vsMixTrades` -- a picture carrying
+       nothing the per-trade cards do not carry better.
+       ⚠ The owner chose REMOVE over wiring the split, asked directly, 2026-09-15.
+       ⚠ WHAT GOES WITH IT: on a single-tower project this was the second of two options, so the
+         Model segment would be left naming a question with one answer -- the same thing the Towers
+         chip row refuses to do ("a row reading 'All towers · Tower 1' is two controls for a
+         question with one answer"). The segment is therefore emitted only when more than one scope
+         is on offer.
+       ⚠ NOT the disabled-select treatment the one-tower case got. That control had something to
+         say -- a reader could not tell from the drawing whether one building was one tower or every
+         tower merged. Here each card is titled with its trade and carries its trade's colour dot,
+         so the view names itself and a control saying "Per trade" adds nothing. */
+    var _scopeBtns =
+      '<button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
-      '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button>' +
       /* ⚠️⚠️ THE SITE BUTTON ONLY EXISTS WHEN THERE IS A SITE PLAN TO DRAW, and that is not
          timidity — a Site view with no traced plan is every tower at the same place on a guessed
          grid, which is a picture that says something false about where the buildings stand. A
@@ -20068,7 +20112,14 @@
       ((towerNames.length > 1 && _vsSitePlan())
         ? '<button data-vssc="site"' + (_vsScope === 'site' ? ' class="on"' : '') +
           ' title="The master site development plan — every tower where it actually stands, each as tall as its own storey count and shaded by its own progress. Drawn in Schedule Setup › Floors &amp; Zones › Site plan.">Site</button>'
-        : '') + '</span>' +
+        : '');
+    /* ⚠ COUNTED, not inferred from the string. The three conditions above are the authority on
+       which buttons exist; re-testing them here would be a second copy able to disagree with the
+       first, which is how a segment ends up hidden with two options inside it. */
+    var _scopeN = (_scopeBtns.match(/data-vssc=/g) || []).length;
+
+    var bar = '<div class="ps-vs-bar">' +
+      (_scopeN > 1 ? '<span class="ps-vs-seg"><span class="ps-vs-seglab">Model</span>' + _scopeBtns + '</span>' : '') +
       /* ⚠️⚠️ AND WHEN THERE IS NO PLAN, A WAY TO GO AND DRAW ONE. Owner 2026-09-13: *"how can i see
          the 2 towers based on their arrangement?"* — on a multi-tower project with nothing traced,
          the Site button is absent (it would draw a false picture), and until now the screen said
@@ -20081,7 +20132,10 @@
           esc('Arrange the ' + towerNames.length + ' towers on a site plan, and this view can show where each one stands. Opens Schedule Setup › Floors & Zones.') +
           '"><span data-ico="compass" data-ico-size="14"></span> Draw the site plan…</button>'
         : '') +
-      '<span class="ps-tb-div"></span>' +
+      /* ⚠ The divider goes with whatever is to its LEFT. With Consolidated removed, a
+         single-tower project emits neither the Model segment nor the site call-to-action, and an
+         unconditional rule here would open the bar on a vertical stroke separating nothing. */
+      (_scopeN > 1 || (towerNames.length > 1 && !_vsSitePlan()) ? '<span class="ps-tb-div"></span>' : '') +
       '<span class="ps-vs-seg">' +
         '<button data-vs3d="0"' + (!_vs3D ? ' class="on"' : '') + ' title="The section: storeys as rows, zones across">2D</button>' +
         '<button data-vs3d="1"' + (_vs3D ? ' class="on"' : '') + ' title="The same storeys and zones as a solid model you can orbit, with the four elevations named">3D</button>' +
@@ -20406,13 +20460,15 @@
           '<div class="ps-vs3-load">Loading the site view…</div></div>' +
           _vsSiteFoot(_sm, _sfit) + '</div>';
       }
-    } else if (_vsScope === 'all') {
-      towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; ' +
-        (_vsTradeSel.length ? esc(tradesShown.join(', ')) : 'all trades') +
-        (_vsTower === 'ALL' ? '' : ' &middot; ' + esc(_vsTower)) + '</span>' +
-        '<span class="ct">' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span>' + _vsFocusReg('Consolidated', 'var(--pd-red)', acts, 'ALL') + '</div>' + _vsCardMeter(acts) +
-        _vsTowerBody(acts, 'var(--pd-red)', 'ALL') + '</div>';
     } else {
+      /* ⚠ The consolidated-scope branch that stood here -- one brand-red card for the whole
+         project -- was removed on 2026-09-15 with its button. Nothing can set that scope any more:
+         it was never persisted (a plain module var reset to 'trade' on every load) and it was only
+         ever assigned from `b.dataset.vssc`, so removing the only button carrying that value
+         removes the only way in. No fallback guard is written for a value nothing can produce.
+         ⚠ Deliberately NOT spelling the removed comparison out here: a gate scans this file for
+           any code still testing it, and a comment quoting the expression is indistinguishable
+           from the real thing -- exactly how a quoted id once fooled the duplicate-id gate. */
       towers = tradesShown.map(function (t) {
         var list = acts.filter(function (r) { return _vsTradeOf(r) === t; });
         var col = _vsColor(t);
@@ -37154,7 +37210,7 @@
          it — which is the join that already went wrong once here.
          ⚠️ The bare floor name is STILL emitted, but only when every trade that has a plan for
          that floor points at the SAME plate. It is what a card spanning several trades (per
-         tower, consolidated) reads, and when the trades disagree there is no honest answer, so
+         tower, site) reads, and when the trades disagree there is no honest answer, so
          it emits nothing and the card falls back to the wrap. */
       function zpTradeKeys(g) {
         var out2 = [], seen = {};

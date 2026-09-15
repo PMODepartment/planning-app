@@ -102,6 +102,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (a) — Project Schedule: a view reported as redundant, because the thing that made it distinct was never wired
+
+Owner: *"The consolidated button in the vertical stacking seem to be no longer needed since its
+function has been the same with the other buttons as well."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **"This control is redundant" can be a bug report about something else entirely.** Consolidated
+  was meant to split each level into one cell per trade; the code for that is written, committed, and
+  **called from nowhere**, so the view drew one undifferentiated block per floor and earned its
+  reputation. The changelog had already flagged it as *"worth a decision"* eleven days earlier. **Put
+  the finding to the owner before acting on the symptom** — remove or wire are different products,
+  and only they can choose. They chose remove; the implementation is kept, with a note saying what it
+  would take to use it.
+- ⚠️ **Removing one option from a segmented control can empty the segment.** Two of the remaining
+  scopes are conditional, so a single-tower project was left with a control labelled MODEL offering
+  one answer. Check what a segment degrades to on the smallest project shape, not just the one in
+  front of you.
+- ⚠️ **A divider belongs to whatever is on its left.** An unconditional rule between two segments
+  becomes a leading stroke the moment the left one is conditional.
+- ⚠️ **A comment that quotes the expression a gate looks for will trip that gate** — the same way a
+  quoted `id="…"` fooled the duplicate-id gate on 2026-09-09. Reword the comment; do not weaken the
+  gate.
+
+`MODULE_V` → `20260915a`, sort-checked against `20260914zvs4`.
+
 ### Pormac's Portfolio checkbox is removed; scope now follows how the module was opened (2026-09-14)
 
 Owner: *"remove the portfolio checkbox. when pormac is in project, discuss only based on project
