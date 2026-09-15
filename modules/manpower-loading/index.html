@@ -590,10 +590,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
+<script src="../../assets/js/auth.js?v=20260914e"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260915f"></script>
+<script src="../../assets/js/ui.js?v=20260915g"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script>
@@ -3730,9 +3730,18 @@
     projects = projects.filter(function (p) { return AppAuth.canAccessProject(prof, p.id); });
     PROJECTS = projects;
     sel.innerHTML = projects.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
-    var saved = sessionStorage.getItem('pd_project');
-    if (saved && projects.some(function (p) { return p.id === saved; })) sel.value = saved;
-    pid = sel.value || null;
+    // ⚠️ Portfolio scope never falls back to a real project — pid stays null on purpose
+    // (see AppAuth.isPortfolioScope()); load() already renders empty per-project tabs for a
+    // null pid, and this module's own Portfolio tab is the consolidated-across-every-project
+    // view, so arriving in this scope opens straight onto it below instead of an empty Loading tab.
+    var portfolioScope = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!portfolioScope) {
+      var saved = sessionStorage.getItem('pd_project');
+      if (saved && projects.some(function (p) { return p.id === saved; })) sel.value = saved;
+      pid = sel.value || null;
+    } else {
+      pid = null;
+    }
     if (UI.enhanceProjectSelect) UI.enhanceProjectSelect(sel);
     sel.onchange = function () {
       pid = sel.value || null;
@@ -3745,6 +3754,10 @@
       load(true);
     };
     await load(true);
+    if (portfolioScope) {
+      switchView('portfolio', document.querySelector('.mp-tab[data-view="portfolio"]'));
+      loadPortfolio();
+    }
   }
 
     // ⚠️ Converts this module's flat tab strip into the shared compact dropdown, which is what

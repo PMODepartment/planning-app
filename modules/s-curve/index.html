@@ -486,11 +486,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
+<script src="../../assets/js/auth.js?v=20260914e"></script>
 <script src="../../assets/js/db.js?v=20260914d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/scurve.js?v=20260901a"></script>
-<script src="../../assets/js/ui.js?v=20260915f"></script>
+<script src="../../assets/js/ui.js?v=20260915g"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -636,7 +636,13 @@
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('sc-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()). S-Curve's engine is a
+    // per-project schedule curve (basis/mode/trade filters all keyed off one project's rows), and
+    // there is no single combined curve across projects — the empty-state message below says so
+    // rather than silently drawing a stale project's curve.
+    var portfolioScope = window.AppAuth && AppAuth.isPortfolioScope();
+    pid = portfolioScope ? null : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
@@ -1998,7 +2004,10 @@
           ? 'No cost is loaded on this schedule yet — none of its ' + d.nAct + ' activities carries a Planned IBB, so there is no money to curve.<br>' +
             'Load it in <b>Project Schedule → Cost Loading</b> (enlist → assign → distribute → apply), then come back. ' +
             'Meanwhile, <b>Duration</b> weighting works now.'
-        : (pid ? 'This project has no dated activities. Import or add a schedule first.' : 'Select a project.')) + '</div>';
+        : (pid ? 'This project has no dated activities. Import or add a schedule first.'
+              : (window.AppAuth && AppAuth.isPortfolioScope()
+                ? 'S-Curve is a per-project schedule curve — there is no single combined curve across every project. Pick a project from the selector above to see its S-Curve.'
+                : 'Select a project.'))) + '</div>';
       basisNote.textContent = ''; return;
     }
     /* ⚠️⚠️ THE SOURCE IS NAMED FIRST, before the weighting. A manual curve and a schedule-derived
