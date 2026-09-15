@@ -1,5 +1,107 @@
 # Module: portfolio-overview
 
+## 2026-09-15 (t) — The portfolio never finished loading, and the filter offered to narrow it could not
+
+Owner, with two screenshots: *"Right now it always fails loading the schedules across 21 projects"*,
+then *"selected two projects only still fails"*. Both true, and the second screenshot is the
+diagnosis: the filter button reads **"2 projects"** while the pane still reads **"Loading schedules
+across 21 project(s)…"**.
+
+### ⚠️⚠️ THE FILTER NEVER RE-RAN THE VIEW IT WAS FILTERING
+
+`after()` — and both *Select all* and *Clear* — ended in `renderAll()`, which paints the **Overview
+pane and nothing else**. The other twelve views each have their own `load<View>()` and **none was
+called**. So ticking two projects on the S-Curve tab updated `projSel`, updated the button label,
+repainted a hidden pane, and left the earlier 21-project load holding the screen. The scope
+control's own comment claims it *"scopes EVERY view"*. It never did.
+
+One `renderCurrent()` now repaints the Overview **and** re-runs the active view, through a single
+`viewLoaders()` list that **`switchView` reads too** — two copies is how a view gets wired for
+arrival and forgotten when the filter changes.
+⚠️ **The Overview repaints immediately and only the network-bound load is debounced (250ms)**, so
+ticking five projects is one fetch rather than five, and the page never feels stalled.
+⚠️ The four Overview toolbar controls (Group by, status, behind-only, search) go through it as well
+— they also change `filtered()`, and therefore also change every view's scope.
+
+### ⚠️⚠️ AND A SUPERSEDED LOAD COULD WIN
+
+`loadScurve` had no generation token, so two overlapping loads both painted and whichever finished
+**last** committed `scData` / `scLoadedIds`. That is precisely why a stale *"across 21 project(s)"*
+survived a change to two. A monotonic `_scGen` is re-checked after every `await` — the same device
+`contracts-claims` and `notebook.js` already use.
+
+### ⚠️⚠️ THE READ COULD NOT USE THE INDEX IT WAS BUILT FOR
+
+`fetchScheduleForIds` paged with `.in('project_id', ids).order('id')`. The index is
+`project_schedule_proj_id_idx (project_id, id)`, and `2026-07-20-schedule-scurve-agg.sql:92` says
+what it is for in as many words: *"(where project_id = ? and id > ? order by id) — an indexed range
+scan per page."* **One project.** Across 21 ids there is no single range to scan, the plan
+degenerates, and a page can run past the ~8s `statement_timeout`. It now pages **per project**.
+⚠️ **The `count:'exact'` pre-read is gone** — it counted every activity in the selection on every
+load, to decide whether to show a warning toast.
+⚠️ **One project failing no longer fails the view**: it is collected, **named**, and the other
+twenty still draw. A partial portfolio that says which project is missing beats an empty one that
+says nothing.
+
+### ⚠️⚠️ IT FETCHED ~100k ROWS TO DRAW A CHART IT THEN REFUSED TO DRAW
+
+`SC_FULL_MAX` is 5: above five projects the overlay already falls back to Actual-only, and 21 curves
+are unreadable regardless. Meanwhile `schedule_scurve_agg_multi` returns the combined curve
+**server-side in one call** and was already wired — used only to fill the KPI strip. The roll-up is
+now the default render, and rows are read only at five projects or fewer.
+⚠️ **The combined curve is fed in as a single series rather than given a second renderer** —
+`scRenderChart` already draws N named series, and one of them being "the portfolio" costs nothing. A
+parallel renderer is how two pictures of one dataset start disagreeing, which this page has already
+paid for once with `scCompute`.
+⚠️ **The Forecast toggle now refuses instead of lying.** The aggregate carries no SPI forecast, so
+with the roll-up drawn the box would have sat **ticked over a chart with no forecast line**. It is
+disabled, with the reason in its title.
+
+### ⚠️ Every failure used to read the same
+
+The RPC's error was swallowed (`catch (e) { roll = null; }`) and the row fetch printed **"Load
+failed."** — a statement timeout, an un-run migration and an RLS refusal, all one sentence, none of
+them actionable. `scErrText` names the cause: `57014` says it timed out and to narrow the filter,
+`PGRST202` names the migration file, `42501` says permission.
+
+### Verified — 73 assertions, 0 failing, and the negative build bites
+
+New `modules/portfolio-overview/test-portfolio.js`. Every function is **sliced out of the shipped
+`index.html` and executed**; a slice that will not parse **aborts** rather than quietly comparing
+nothing. The contrast base is pinned to **`aae4752`**, never `HEAD`.
+
+- The dispatch driven for **all twelve** lazy views plus Overview: each repaints immediately, each
+  runs its own loader once, forced past the id cache — and **three rapid ticks produce one load**.
+- ⚠️⚠️ **The race is executed, not asserted on source:** a 21-project load is started, superseded by
+  a 2-project one, and the stale RPC then answers last. **One paint, and the surviving scope is the
+  newer one.** Strip the guard out of the shipped function and the suite reports **two paints with
+  the stale 21-project load winning — the owner's screenshot, reproduced.**
+- The pager against a stub that fails project 7 with `57014`: the other twenty load, the failure is
+  named, `.in(` is never used, and no `count` option is ever sent.
+- All four error causes read differently, including recognised **from the message alone** when
+  PostgREST sends no code.
+
+⚠️ **Two of the failures on the first run were MY assertions, not the code**, and both are traps this
+repo has recorded: the only `count:'exact'` left on the page is **inside the comment explaining that
+it was removed**, and two of the three `"Load failed."` are comments quoting the message this change
+deleted — the checker measuring its own explanation. Comments are stripped through `tools/scan.js`
+now, and the *"Load failed."* assertion is **scoped to the S-curve loader**, because Cash Flow still
+prints it and is a different view deliberately out of this change.
+
+`node tools/wiring-check.js` **136/136**, `tools/scan.js` self-test 10/10, `selectall-key` 88 safe /
+0 broken, inline `<script>` parses, CSS braces 278/278, 0 NUL bytes, LF throughout.
+
+⚠️ **Not verified signed in** — no live portfolio has been loaded, so the roll-up RPC has never been
+called against 21 real projects. That is the first thing to check: open the Portfolio Dashboard,
+hard-refresh once, and the S-Curve should draw a single combined curve immediately instead of
+counting to 21.
+⚠️ **Deliberately NOT in this commit:** the chrome rework (the scope picker, the funnel, Refresh and
+Export placement, one KPI component), the Overview rebuild, and the Portfolio Schedule view. This
+one is the defect.
+
+`MODULE_V` → `20260915t`, sort-checked against the `20260915s` the live site is serving.
+
+
 ## 2026-09-15 (r) — Three sidebar rows drew the same glyph, the collapsed rail lost its grouping, and "Avg Schedule %" was a mean
 
 Owner: *"Portfolio overview dashboard needs work let's start on this. Side panel in portfolio

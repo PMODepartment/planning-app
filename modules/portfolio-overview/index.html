@@ -217,6 +217,10 @@
     .po-sc-series label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
     .po-sc-series input { width:auto; min-height:0; }
     .po-sc-note { margin-top:8px; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
+    /* A series the drawn data cannot carry. Dimmed and not-allowed rather than hidden —
+       a toggle that vanishes reads as a missing feature, one that is visibly off reads
+       as "not available for this data", which is the true statement. */
+    .po-sc-series label.po-sc-off { opacity:.55; cursor:not-allowed; }
     /* The project legend can be long, so it wraps and sits under the style legend. */
     .po-legend-proj { margin-top:6px; }
     /* ---- Stakeholder directory (portfolio-level authoring) ---- */
@@ -1284,7 +1288,7 @@
     var after = function () {
       document.getElementById('po-projfilter-label').textContent = projFilterLabel();
       renderProjFilterList();   // repaint so a parent's tick state follows its packages
-      renderAll();
+      renderCurrent();
     };
     host.querySelectorAll('input[data-pf]').forEach(function (cb) {
       cb.onchange = function () {
@@ -1312,17 +1316,46 @@
     menu.querySelector('[data-act="all"]').onclick = function () {
       PROJ.forEach(function (p) { projSel[p.id] = true; });
       document.getElementById('po-projfilter-label').textContent = projFilterLabel();
-      renderProjFilterList(); renderAll();
+      renderProjFilterList(); renderCurrent();
     };
     menu.querySelector('[data-act="none"]').onclick = function () {
       projSel = {};
       document.getElementById('po-projfilter-label').textContent = projFilterLabel();
-      renderProjFilterList(); renderAll();
+      renderProjFilterList(); renderCurrent();
     };
     document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) menu.classList.remove('open'); });
   }
 
   function renderAll() { var list = filtered(); renderKPIs(list); renderDonut(list); renderBars(list); renderTable(list); }
+
+  /* ⚠️⚠️ ANYTHING THAT CHANGES `filtered()` MUST COME THROUGH HERE, NOT `renderAll()`.
+     renderAll() paints the OVERVIEW pane only. The scope control's own note below says it
+     "scopes EVERY view" — it never did: the twelve other views each have their own
+     load<View>() and none was called, so narrowing the filter while standing on the
+     S-Curve updated the button label, repainted a hidden pane, and left the previous
+     load's "across 21 project(s)" on screen. That is the defect the owner reported.
+     ⚠️ The Overview repaints IMMEDIATELY (it is free — it reads PROJ from memory); only the
+     network-bound view load is debounced, so ticking five projects is one fetch, not five. */
+  var _viewLoadT = null;
+  function renderCurrent() {
+    renderAll();
+    if (_viewLoadT) clearTimeout(_viewLoadT);
+    _viewLoadT = setTimeout(function () {
+      _viewLoadT = null;
+      var f = viewLoaders()[view];
+      if (f) f(true);
+    }, 250);
+  }
+
+  /* ⚠️ ONE list of "which loader belongs to which view", read by BOTH switchView() and
+     renderCurrent(). Two copies is how a view gets added to one and forgotten in the other.
+     A function (not a var) so hoisting makes it safe to call from anywhere in this IIFE. */
+  function viewLoaders() {
+    return { scurve: loadScurve, cashflow: loadCashflow, resources: loadResources,
+             equipment: loadEquipment, milestones: loadMilestones, risk: loadRisks,
+             stakeholders: loadStakeholders, issues: loadIssues, meetings: loadMeetings,
+             contracts: loadContracts, photos: loadPhotos, productivity: loadProductivity };
+  }
 
   // ================= Portfolio S-Curve (cross-project) =================
   // Scoped to whatever the Overview tab's project filter currently resolves to (filtered()).
@@ -1333,33 +1366,45 @@
   function scopedProjectIds() { return filtered().map(function (p) { return p.id; }); }
   function scopeLabel(ids) { return ids.length === PROJ.length ? 'all ' + PROJ.length + ' projects' : ids.length + ' of ' + PROJ.length + ' projects'; }
   function isWbsRow(r) { return r.activity_type === 'WBS Summary'; }
-  async function fetchScheduleForIds(ids) {
-    if (!ids.length) return [];
-    var all = [];
-    var cnt = await sb().from('project_schedule').select('*', { count: 'exact', head: true }).in('project_id', ids);
-    if (cnt.error) throw cnt.error;
-    var total = cnt.count || 0;
-    if (!total) return [];
-    if (total > 20000) UI.toast('Loading ' + total + ' activities across ' + ids.length + ' project(s) — this may take a moment. Narrow the project filter for a faster view.', 'warn');
-    // Keyset pagination with an explicit order (indexed PK range scan) instead of parallel
-    // OFFSET .range(): OFFSET re-scans every preceding row (deep pages timed out on 42k-row
-    // projects) and, with NO .order(), OFFSET pages can duplicate/skip rows → wrong totals.
-    // Lean columns only (the fields scCompute reads) — not select('*') across tens of thousands.
-    // ⚠⚠ `project_id` IS LOAD-BEARING and was deliberately absent before: every row
-    //    arrived anonymous, which is exactly why a per-project overlay could not be drawn.
-    // ⚠ The rest of the list mirrors PDScurve.COLS so the fetch and the engine cannot
-    //    drift about which columns the maths needs.
+  /* ⚠️⚠️ PAGED PER PROJECT, NOT `.in('project_id', ids)` — AND THAT IS THE FIX.
+     The index this read lives or dies by is `project_schedule_proj_id_idx (project_id, id)`,
+     and migrations/2026-07-20-schedule-scurve-agg.sql:92 says what it is for in as many
+     words: "(where project_id = ? and id > ? order by id) — an indexed range scan per page."
+     ONE project. Across 21 ids there is no single range to scan, the plan degenerates, and a
+     page can run past the ~8s statement_timeout — which reached the owner as a bare
+     "Load failed." on every portfolio-wide open.
+     ⚠️ THE `count:'exact'` PRE-READ IS GONE. It counted every activity in the selection to
+        decide whether to show a warning toast, and it was the most timeout-prone statement
+        on the page — paid on every load, for a toast.
+     ⚠️ One project failing no longer fails the view: it is collected and NAMED, and the rest
+        still draw. A partial portfolio that says which project is missing beats an empty one
+        that says nothing. */
+  async function fetchScheduleForIds(ids, onProgress) {
+    if (!ids.length) return { rows: [], failed: [] };
+    // Lean columns only — never select('*') across tens of thousands of rows.
+    // ⚠⚠ `project_id` IS LOAD-BEARING and was deliberately absent once: every row arrived
+    //    anonymous, which is exactly why a per-project overlay could not be drawn.
+    // ⚠ The rest mirrors PDScurve.COLS so the fetch and the engine cannot drift about which
+    //    columns the maths needs.
     var LEAN = 'project_id,' + (window.PDScurve ? PDScurve.COLS.join(',')
       : 'id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish');
-    var last = null;
-    while (true) {
-      var q = sb().from('project_schedule').select(LEAN).in('project_id', ids).order('id', { ascending: true }).limit(1000);
-      if (last) q = q.gt('id', last);
-      var r = await q; if (r.error) throw r.error;
-      var b = r.data || []; all = all.concat(b);
-      if (b.length < 1000) break; last = b[b.length - 1].id;
+    var all = [], failed = [];
+    for (var i = 0; i < ids.length; i++) {
+      var pid = ids[i];
+      if (onProgress) onProgress(i, ids.length);
+      try {
+        var last = null;
+        while (true) {
+          var q = sb().from('project_schedule').select(LEAN).eq('project_id', pid)
+                    .order('id', { ascending: true }).limit(1000);
+          if (last) q = q.gt('id', last);
+          var r = await q; if (r.error) throw r.error;
+          var b = r.data || []; all = all.concat(b);
+          if (b.length < 1000) break; last = b[b.length - 1].id;
+        }
+      } catch (e) { failed.push({ id: pid, err: e }); }
     }
-    return all;
+    return { rows: all, failed: failed };
   }
   // ⚠️⚠️ scCompute() USED TO BE A HAND-COPIED DUPLICATE of assets/js/scurve.js's maths and
   //    is now a thin wrapper over the shared engine. The duplicate is exactly the drift the
@@ -1418,6 +1463,11 @@
     }
     var per = scData.per;
     var sel = scSeriesSel || { bl: per.length <= SC_FULL_MAX, ac: true, fc: per.length <= SC_FULL_MAX };
+    /* ⚠️ The combined roll-up comes from the server-side monthly aggregate, which carries no
+       SPI-stretched forecast — only the row-derived per-project curves do. Without this the
+       Forecast box would sit TICKED over a chart that draws no forecast line, which is the
+       silent-nothing this page has been bitten by before. */
+    var anyFc = per.some(function (p) { return !!(p.d && p.d.forecastC); });
 
     // shared month axis: the union across every drawn project
     var lo = Infinity, hi = -Infinity;
@@ -1493,12 +1543,22 @@
       '<div class="po-sc-series">' +
         ['bl', 'ac', 'fc'].map(function (kk, i) {
           var lbl = ['Baseline', 'Actual', 'Forecast'][i];
-          return '<label><input type="checkbox" data-sc="' + kk + '"' + (sel[kk] ? ' checked' : '') + '> ' + lbl + '</label>';
+          var off = (kk === 'fc' && !anyFc);
+          return '<label' + (off ? ' class="po-sc-off" title="The combined portfolio roll-up carries no forecast — narrow the filter to ' + SC_FULL_MAX + ' projects or fewer for per-project curves."' : '') +
+            '><input type="checkbox" data-sc="' + kk + '"' + (sel[kk] && !off ? ' checked' : '') + (off ? ' disabled' : '') + '> ' + lbl + '</label>';
         }).join('') +
       '</div>';
     // ⚠️ When the default has quietly dropped two series, SAY SO. A chart that silently
     //    shows a third of what was asked for reads as missing data.
-    var note = (!scSeriesSel && per.length > SC_FULL_MAX)
+    /* ⚠️ A chart showing ONE line across 21 projects must say that is what it is. The
+       roll-up is the honest portfolio curve; per-project curves are a different question
+       and are read from rows, which is why they are offered only at a scope small enough
+       to read them. Neither case silently drops a project. */
+    var note = scData.rollupOnly
+      ? '<div class="po-sc-note">One <b>combined</b> curve across <b>' + (scData.nProjects || per.length) +
+        '</b> projects, computed on the database rather than read row by row. Narrow the project filter to <b>' +
+        SC_FULL_MAX + ' projects or fewer</b> to compare each project\'s own curve.</div>'
+      : (!scSeriesSel && per.length > SC_FULL_MAX)
       ? '<div class="po-sc-note">Showing <b>Actual</b> only — ' + per.length +
         ' projects × 3 series is too many lines to read. Tick Baseline or Forecast to add them back, ' +
         'or narrow the project filter.</div>'
@@ -1556,50 +1616,115 @@
       kpi2('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? '--pd-ok' : '--pd-bad');
   }
   var scLoadedIds = null;
+  /* ⚠️ A monotonic load token. Two overlapping loads used to BOTH paint, and whichever
+     finished LAST committed scData / scLoadedIds — which is how a superseded 21-project
+     load left its "Loading schedules across 21 project(s)…" on screen while the filter
+     button already read "2 projects". Same device as contracts-claims and notebook.js. */
+  var _scGen = 0;
+
+  /* ⚠️ NAMES THE CAUSE. "Load failed." covered a statement timeout, an un-run migration and
+     an RLS refusal alike — three different problems, none of them actionable from one
+     sentence. Codes this repo already recognises elsewhere. */
+  function scErrText(e) {
+    var code = (e && (e.code || e.status)) || '';
+    var msg = (e && (e.message || e.msg)) || String(e || '');
+    if (code === '57014' || /statement timeout|canceling statement/i.test(msg))
+      return 'the database cancelled the read on a timeout (57014) — narrow the project filter and try again';
+    if (code === 'PGRST202' || /Could not find the function/i.test(msg))
+      return 'the roll-up function is not deployed — run migrations/2026-07-20-schedule-scurve-agg.sql';
+    if (code === '42501' || /permission denied/i.test(msg))
+      return 'permission denied on the schedule read';
+    return msg || 'unknown error';
+  }
+
   async function loadScurve(force) {
     var ids = scopedProjectIds();
     if (!force && scLoadedIds && scLoadedIds.join(',') === ids.join(',')) return;
-    document.getElementById('po-sc-scope').textContent = scopeLabel(ids);
+    var gen = ++_scGen;
+    var scopeEl = document.getElementById('po-sc-scope');
+    if (scopeEl) scopeEl.textContent = scopeLabel(ids);
     var kpiHost = document.getElementById('po-sc-kpis'), chartHost = document.getElementById('po-sc-chart');
     if (!ids.length) {
       kpiHost.innerHTML = '';
       chartHost.innerHTML = '<div class="po-empty">No projects match the current filter.</div>';
-      scData = null; return;
+      scData = null; scLoadedIds = ids; return;
     }
-    chartHost.innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
     kpiHost.innerHTML = '';
+    chartHost.innerHTML = '<div class="po-empty">Reading the portfolio roll-up…</div>';
+
+    /* ⚠️⚠️ THE ROLL-UP IS THE DEFAULT RENDER, AND IT IS ONE SERVER-SIDE CALL.
+       This page used to fetch every activity of every project — ~100k rows over 21
+       projects — to draw a chart it then REFUSED to draw: above SC_FULL_MAX the overlay
+       falls back to Actual-only anyway, and 21 curves are unreadable regardless. So the
+       combined curve is what loads, and rows are read only when there are few enough
+       projects for per-project curves to mean something. */
+    var roll = null, rollErr = null;
     try {
-      // ⚠️ THE FAST PATH IS KEPT, FOR THE KPI STRIP ONLY. `schedule_scurve_agg_multi`
-      //    returns ONE combined monthly aggregate for the whole selection — it cannot
-      //    produce per-project series, so the overlay has to come from rows. Rendering
-      //    the roll-up KPIs off the RPC first means the strip appears immediately instead
-      //    of waiting on a 40k-row fetch, which is what it always did.
-      var roll = null;
+      var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
+      if (gen !== _scGen) return;                       // superseded — do not paint
+      if (r.error) rollErr = r.error;
+      else if (r.data && r.data.months) roll = scComputeFromAgg(r.data);
+    } catch (e) { if (gen !== _scGen) return; rollErr = e; }
+    if (gen !== _scGen) return;
+
+    var nameOf = {};
+    PROJ.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
+
+    /* Per-project curves only where they can be read. ⚠️ A DEFAULT, NOT A LIMIT — and no
+       project is ever silently dropped: the note under the chart says the combined curve is
+       what is drawn and how to get the per-project ones. */
+    var wantPer = ids.length <= SC_FULL_MAX;
+    var per = [], failed = [];
+    if (wantPer) {
+      chartHost.innerHTML = '<div class="po-empty">Reading ' + ids.length + ' project schedule(s)…</div>';
+      var res;
       try {
-        var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
-        if (!r.error && r.data && r.data.months) { roll = scComputeFromAgg(r.data); scRenderKpis(roll); }
-      } catch (e) { roll = null; }
-
-      var rows = await fetchScheduleForIds(ids);
-      if (!roll || roll.empty) { roll = scCompute(rows); scRenderKpis(roll); }
-
-      // ⚠️ Grouped by `project_id`, which fetchScheduleForIds now selects. It was
-      //    deliberately absent from the LEAN column list before — which is precisely WHY
-      //    a per-project overlay was impossible: every row arrived anonymous and the
-      //    combined maths never needed to know which project it came from.
+        res = await fetchScheduleForIds(ids, function (i, n) {
+          if (gen !== _scGen) return;
+          chartHost.innerHTML = '<div class="po-empty">Reading project ' + (i + 1) + ' of ' + n + '…</div>';
+        });
+      } catch (e) { if (gen !== _scGen) return; res = { rows: [], failed: [{ id: '(all)', err: e }] }; }
+      if (gen !== _scGen) return;
+      failed = res.failed || [];
       var byP = {};
-      rows.forEach(function (x) { (byP[x.project_id] = byP[x.project_id] || []).push(x); });
-      var nameOf = {};
-      PROJ.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
-      var per = ids.map(function (id) { return { id: id, name: nameOf[id] || id, d: scCompute(byP[id] || []) }; })
-                   .filter(function (p) { return p.d && !p.d.empty; });
+      (res.rows || []).forEach(function (x) { (byP[x.project_id] = byP[x.project_id] || []).push(x); });
+      per = ids.map(function (id) { return { id: id, name: nameOf[id] || id, d: scCompute(byP[id] || []) }; })
+               .filter(function (p) { return p.d && !p.d.empty; });
+      if (!roll || roll.empty) { var merged = scCompute(res.rows || []); if (!merged.empty) roll = merged; }
+    }
 
-      scData = { rollup: roll, per: per };
-      scLoadedIds = ids;
-      scRenderChart();
-    } catch (e) {
-      UI.toast('Could not load schedules: ' + (e.message || e), 'error');
-      chartHost.innerHTML = '<div class="po-empty">Load failed.</div>';
+    if (gen !== _scGen) return;
+
+    /* ⚠️ THE COMBINED CURVE IS FED IN AS A SINGLE SERIES rather than given a second
+       renderer — scRenderChart already draws N named series, and one of them being "the
+       portfolio" costs nothing. A parallel renderer is how two pictures of one dataset
+       start disagreeing, which this page has already paid for once with scCompute. */
+    var rollupOnly = !per.length;
+    if (rollupOnly && roll && !roll.empty) {
+      per = [{ id: '__portfolio__', name: 'Portfolio — ' + ids.length + ' project' + (ids.length === 1 ? '' : 's'), d: roll }];
+    }
+
+    if (roll && !roll.empty) scRenderKpis(roll);
+    else kpiHost.innerHTML = '';
+
+    scData = { rollup: roll, per: per, rollupOnly: rollupOnly, nProjects: ids.length, failed: failed };
+    scLoadedIds = ids;
+
+    if (!per.length) {
+      var why = rollErr ? scErrText(rollErr)
+        : (failed.length ? failed.length + ' project(s) could not be read — ' + scErrText(failed[0].err)
+                         : 'no project in scope has any dated activity');
+      chartHost.innerHTML = '<div class="po-empty">Could not draw the portfolio S-curve: ' + esc(why) + '</div>';
+      if (rollErr || failed.length) UI.toast('S-curve: ' + why, 'error');
+      return;
+    }
+    scRenderChart();
+    // ⚠️ Reported even when the chart drew: a curve missing two projects is not the
+    //    portfolio's curve, and nothing else on screen would say so.
+    if (failed.length) {
+      UI.toast(failed.length + ' project(s) could not be read (' +
+        failed.map(function (f) { return nameOf[f.id] || f.id; }).join(', ') + ') — ' +
+        scErrText(failed[0].err), 'warn');
     }
   }
 
@@ -3054,18 +3179,10 @@
     document.getElementById('po-view-contracts').style.display = v === 'contracts' ? '' : 'none';
     document.getElementById('po-view-photos').style.display = v === 'photos' ? '' : 'none';
     document.getElementById('po-view-productivity').style.display = v === 'productivity' ? '' : 'none';
-    if (v === 'scurve') loadScurve(false);
-    if (v === 'cashflow') loadCashflow(false);
-    if (v === 'resources') loadResources(false);
-    if (v === 'equipment') loadEquipment(false);
-    if (v === 'milestones') loadMilestones(false);
-    if (v === 'risk') loadRisks(false);
-    if (v === 'stakeholders') loadStakeholders(false);
-    if (v === 'issues') loadIssues(false);
-    if (v === 'meetings') loadMeetings(false);
-    if (v === 'contracts') loadContracts(false);
-    if (v === 'photos') loadPhotos(false);
-    if (v === 'productivity') loadProductivity(false);
+    // ⚠️ Through viewLoaders() — the same list renderCurrent() reads, so a new view cannot
+    //    be wired for arrival and forgotten when the project filter changes (or vice versa).
+    var f = viewLoaders()[v];
+    if (f) f(false);
     placeScope(v);
   }
 
@@ -3713,11 +3830,11 @@
     // unhidden app-wide now, so its tab stays too. `resources`/`s-curve`/`milestones`/
     // `issues`/`meetings`/`photos`/`overview` stay — none of those seven modules are
     // superAdminOnly.
-    document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
+    document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderCurrent(); };
     wireProjFilter();
-    document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };
-    document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderAll(); };
-    document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderAll(); };
+    document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderCurrent(); };
+    document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderCurrent(); };
+    document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderCurrent(); };
     document.getElementById('po-export').onclick = exportExcel;
     // Each tab's own filter row (incl. its search box) hides behind one
     // funnel toggle instead of sitting permanently open.

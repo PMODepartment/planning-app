@@ -102,6 +102,62 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (w) — The Portfolio Dashboard never finished loading, and the filter offered to narrow it could not
+
+Owner, with two screenshots: *"Right now it always fails loading the schedules across 21 projects"*,
+then *"selected two projects only still fails"*. Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+### ⚠️⚠️ THE SECOND SCREENSHOT IS THE DIAGNOSIS
+
+The filter button reads **"2 projects"** while the pane still reads **"Loading schedules across 21
+project(s)…"**. `after()` — and both *Select all* and *Clear* — ended in `renderAll()`, which paints
+the **Overview pane and nothing else**; the other twelve views each have their own `load<View>()`
+and **none was called**. The scope control's own comment claims it *"scopes EVERY view"*. It never
+did. One `renderCurrent()` now repaints the Overview and re-runs the active view, through a single
+`viewLoaders()` list **`switchView` reads too** — two copies is how a view gets wired for arrival
+and forgotten when the filter changes. ⚠️ Only the network-bound load is debounced, so five ticks
+are one fetch and the Overview still repaints on each.
+
+⚠️⚠️ **And a superseded load could win.** `loadScurve` had no generation token, so two overlapping
+loads both painted and whichever finished **last** committed the state — which is exactly how a
+stale 21-project message survived a change to two.
+
+### ⚠️⚠️ THE READ COULD NOT USE THE INDEX IT WAS BUILT FOR
+
+It paged with `.in('project_id', ids).order('id')`, while `project_schedule_proj_id_idx` is
+`(project_id, id)` and its own migration says what it is for: *"(where project_id = ? and id > ?
+order by id) — an indexed range scan per page."* **One project.** Across 21 ids the plan degenerates
+and a page can run past the ~8s `statement_timeout`. It pages **per project** now, the
+`count:'exact'` pre-read is **gone** (it counted every activity in the selection, on every load, to
+decide whether to show a toast), and one project failing is **named** rather than failing the view.
+
+⚠️⚠️ **It also fetched ~100k rows to draw a chart it then refused to draw** — above five projects
+the overlay falls back to Actual-only anyway. `schedule_scurve_agg_multi` already returned the
+combined curve server-side in one call and was used only for the KPI strip; that roll-up is the
+default render now, fed in as a **single series** rather than given a second renderer, and rows are
+read only at five projects or fewer. ⚠️ The Forecast toggle is **disabled** when the roll-up is
+drawn — the aggregate carries no SPI forecast, so the box would otherwise have sat ticked over a
+chart with no forecast line.
+
+⚠️ **"Load failed." is gone.** A timeout, an un-run migration and an RLS refusal read alike and none
+was actionable; `57014` now says to narrow the filter, `PGRST202` names the migration file.
+
+### Verified
+
+**73 assertions, 0 failing**, sliced out of the shipped file and executed, contrast pinned to
+**`aae4752`**. ⚠️⚠️ **The negative build bites:** strip the generation guard and the suite reports
+**two paints with the stale 21-project load winning — the owner's screenshot, reproduced.**
+⚠️ **Two first-run failures were MY assertions, not the code** — the only `count:'exact'` left is
+inside the comment saying it was removed, and two of three `"Load failed."` are comments quoting the
+deleted message. The checker was measuring its own explanation; comments are stripped through
+`tools/scan.js` now.
+
+`wiring-check` **136/136**, `scan` self-test 10/10, `selectall-key` 88 safe / 0 broken.
+⚠️ **Not verified signed in** — the roll-up RPC has never run against 21 real projects.
+**Hard-refresh the Portfolio Dashboard once.** `MODULE_V` → `20260915t`, sort-checked against the
+`20260915s` the live site is serving.
+
 ### 2026-09-15 (v) — The Schedule Summary told a project with no baseline that nothing had slipped
 
 Owner, with the Summary open on OPW101, six numbered points plus the notice. Module detail in
