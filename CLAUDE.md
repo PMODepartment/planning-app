@@ -102,6 +102,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (b) — The sidebar's and profile menu's "Admin" link is renamed Users, with a matching icon
+
+Owner: *"also, when clicking on profile, there is button for admin, change this to users. for the
+profile pop up and the side bar, change also the icon of users to users."*
+
+Two sites in `assets/js/ui.js` render the same link to `admin.html` — `renderUserBar()`'s avatar/
+profile dropdown, and `renderNav()`'s sidebar System section — and both carried the label **Admin**
+with a gear (`settings`) icon. Both are now labelled **Users** and carry the `users` icon (a
+person-pair glyph already defined in `icons.js`, used nowhere else on this link before). ⚠️ Only the
+label and icon changed — the link still points at `admin.html`, and the `isAdmin`/`ctx.isAdmin` role
+gate (`['admin','super_admin'].indexOf(profile.role) !== -1`) is untouched; renaming the button is
+not the same decision as who can see it.
+
+⚠️ The sidebar's `cls('admin')` active-state class and the popup's own structure are unchanged —
+only the visible text (`Admin` → `Users`), the `title` attribute on the sidebar link, and the
+`data-ico` value (`settings` → `users`) moved.
+
+Verified: `node --check` on `ui.js`; grepped for both edit sites and confirmed no other `settings`-
+icon reference to this link survives.
+⚠️ **Not verified signed in** — no live login is possible in this environment.
+
+`ui.js` is shared — `?v=` bumped `20260915g` → `20260916a` across all **23** referencing pages
+(root pages, `admin.html`, and every module `index.html`), confirmed 0 stale references remain and
+all 23 now point at the new token.
+
 ### 2026-09-16 (a) — Admin: the mobile role/department selects were clipped, and Access splits into Projects + Modules with the button beside its own column
 
 Owner, off a phone screenshot of the Users table showing "super admin" as "cuner admin" and

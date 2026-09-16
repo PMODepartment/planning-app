@@ -62,7 +62,7 @@
         ? '<a class="pd-usermenu-link" href="' + base + 'my-work.html">' + mIco('clipboard') + 'My Work</a>'
         : '') +
       (isAdmin
-        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('settings') + 'Admin</a>'
+        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('users') + 'Users</a>'
         : '');
 
     mount.innerHTML =
@@ -494,8 +494,8 @@
           : '') +
         (ctx.isAdmin
           ? '<div class="pd-navsec">System</div>' +
-            '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Admin">' +
-              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>'
+            '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Users">' +
+              '<span class="pd-navico" data-ico="users"></span><span class="pd-navtxt">Users</span></a>'
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled && visible(m); });
