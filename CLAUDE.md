@@ -102,6 +102,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (v) — The Portfolio Dashboard is the Overview: two duplicate views and the one-entry dropdown are gone
+
+Owner, on the page with its view dropdown open: *"Stakeholder map is here why? This is just a
+duplicate from the stakeholder map module that can already be navigated in the side panel. Let's
+just remove the milestones tab as well, this is also a duplicate essentially from the schedule
+module. Let's just rework the overview tab and remove the dropdown selector. Having the 'Overview'
+itself is already a duplicate of the Portfolio Dashboard name."*
+
+The last act of the move that started on 2026-09-15. Twelve of the thirteen views this page once
+carried now live in the modules they describe; the thirteenth is the Overview, which is what the
+page is.
+
+- **Stakeholder Map → `stakeholder-map`, Milestones → `project-schedule`.** ⚠️ The read-only
+  objection this file recorded against moving the Stakeholder Map *does not apply to a redirect*.
+  It was an argument against MOUNTING the authoring directory inside that module under
+  `#pd_scope=portfolio`, where every *+ Add person* would raise a read-only toast. Sending a
+  planner to the module is not that — it opens in its own scope and its writes land, exactly as
+  when the sidebar takes them there. Milestones resolves to the Project Schedule, whose portfolio
+  view is a cross-project Gantt of the same dates.
+- **The dropdown is gone**, and with one view left that is not a loss: a dropdown over one entry
+  names the page you are already standing on. The `<h1>` says *Portfolio Dashboard*; the removed
+  entry said *Overview*, which is the same thing twice.
+- ⚠️⚠️ **THE DEEP LINKS DO NOT DIE WITH THE TABS.** `#po_view=` links to all twelve have been in
+  the sidebar, in bookmarks and in messages for months, and `switchView` is what every one of them
+  arrives through. `PO_MOVED_VIEWS` still resolves each name to the module that owns it now.
+  ⚠️ `stakeholders` also keeps its entry in the super-admin gate, which runs *before* the redirect
+  — that is what still stops a planner who cannot see Stakeholder Map from being redirected into
+  it by an old link.
+- **1,016 lines of renderer came out with the two views** — the milestone calendar, the stakeholder
+  directory and the influence/interest matrix. ⚠️ Deleted, not merely unreferenced: a renderer left
+  in the source is one the next reader takes for the live one, which is the drift this whole move
+  exists to end. The page is **1,303 lines, from 2,407**.
+- ⚠️ The comment that had defended reinstating the dropdown on 2026-09-15 is **rewritten, not
+  deleted** — it is the record of why it came back in between, and its argument ("one compact
+  trigger naming the view you are on") was fair while the page had three views.
+
+**Verified.** `modules/portfolio-overview/test-portfolio.js` **128 passed, 0 failed** (was 115),
+run against the real page: `viewLoaders` names one view, `FILTER_PANEL` one panel, the redirect
+table twelve entries each pointing at a module that exists **on disk**, and every removed renderer
+asserted to "not occur in this page at all any more".
+⚠️⚠️ **Two of the new assertions were caught being vacuous and fixed rather than trusted.** They
+read `JS` — the extracted inline `<script>` — while asserting MARKUP facts (`class="po-tabs"`,
+`id="po-view-milestones"`), so they passed for the wrong reason: nothing in a `<script>` says any
+of that. They read `html` now. ⚠️ And the explanatory comment left in the page had to *stop naming*
+the functions it said were removed, because the "does not occur" check counts occurrences in the
+source and a comment is an occurrence — which would have kept the check red forever, or taught the
+next person to relax it.
+Inline script parses; 0 duplicate DOM ids; 0 element ids referenced by JS but absent from markup;
+`wiring-check` 139/0; `test-portfolio-dash` 351/0.
+⚠️ **Not verified signed in** — and this page in particular could not be rendered here at all:
+without a session `auth.js` redirects to the login page before anything paints.
+
 ### 2026-09-16 (u) — HOTFIX: the duplicated title bar — the module bar is CREATED after we try to hide it
 
 Owner, off screenshots of Issues, Meetings and the S-Curve: *"Title bar has bugged out completely
