@@ -160,6 +160,10 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
   font: inherit; text-transform:none; letter-spacing:normal; font-weight:600;
   color:var(--pd-red); white-space:nowrap; }
 .cc-dash-goto:hover { text-decoration:underline; }
+/* Inline variant (dashGotoBtn's 2nd arg) — a group row's label cell isn't flex, so the base
+   rule's `margin-left:auto` has nothing to push against; this one just trails the label text. */
+.cc-dash-goto-inline { margin-left:8px; font-size:var(--pd-fs-xs); font-weight:600;
+  text-transform:none; letter-spacing:normal; }
 /* ---- The per-type table (ccTypeGroupHTML, module.js) — a `.pd-table` with one group row
    (`.cc-dashgrp`, reusing the shared `.pd-grp` bold-row treatment) and its records collapsed under
    it (`.pd-collapsed`, the same shared class every other collapsible table in this app uses). ---- */

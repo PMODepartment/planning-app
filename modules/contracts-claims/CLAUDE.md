@@ -1,5 +1,52 @@
 # Module: contracts-claims
 
+## 2026-09-16 (c) — Contract, Change Orders and Cost Claims share one table
+
+Owner: *"combine contracts, change orders, and coat claims in 1 table."*
+
+`ccTypeGroupHTML` (b) built one `<table>` per type. Split into `ccTypeRows(label, list, subK, evK,
+apK, fmt, goto)` — the group row + its detail rows only, no table of its own — so several types
+can share one `<table>`. **`ccMoneyTableHTML()`** is that shared table for Contract / Change
+Orders / Cost Claims; `ccTypeGroupHTML` is now a thin wrapper (still used for Extension of Time,
+alone in its own table below).
+
+⚠️⚠️ **Extension of Time stays separate, and that is not an oversight — `assets/js/claims.js`'s own
+header forbids the alternative.** *"Money and days are never mixed… every function here takes the
+key pair from its caller rather than guessing."* Folding EOT's day-counts into the same Submitted/
+Evaluated/Approved columns as peso figures would let the three group rows' totals be summed
+together by anyone reading across a row, which is exactly the mistake that comment exists to rule
+out. One shared table for the three MONEY types; EOT keeps its own.
+
+⚠️⚠️ **A Contract record has no pipeline, and forcing it through one is a worse bug than leaving
+it out.** `VIEWS.contract` has always had a single `amount` column, no Evaluated/Approved/Disputed/
+Status (2026-08-26: *"Contract has no pipeline — it's a flat description + amount list"*). Joining
+it into this table needed a real branch, not a reused zero: `ccTypeRows` takes `simple = !evK` and
+when true, every one of Evaluated/Approved/Disputed/Status renders a dash — for the group row AND
+every detail row — rather than `0`, which would read as "evaluated at nothing" on a document that
+was never evaluated at all.
+
+⚠️ **The old "Contract value" header's own "View contract →" link is removed, not duplicated.**
+The merged table's own Contract row now carries that same jump inline in its label cell
+(`dashGotoBtn`'s new `inline` argument, since a group-row `<td>` isn't the flex row `.cc-dash-h`
+relies on for `margin-left:auto`). Two identical links doing the identical thing on one screen
+reads as a mistake; the package `%`-breakdown above the table is untouched, since it answers a
+different question (allocation, not the claims pipeline) that the merged table has no column for.
+
+### Verified
+
+`node --check` clean; `module.css` braces balanced (648/648). Same real-Chromium harness as (a)/
+(b), git-ignored and deleted before this commit: **2 tables render** where there were 3 (Contract/
+CO/Claims merged, EOT separate), **4 groups, 7 detail rows total** (1 Contract + 2 CO + 2 Claims +
+2 EOT), all hidden by default and all 7 visible after clicking every group row; the Contract row
+and its one detail row both show real dashes (not `0`/`—` inconsistently) across Evaluated/
+Approved/Disputed/Status; the inline "View change orders →" link — now inside the merged table —
+still switches to the Claims tab and sets the type filter, confirmed by reading `.cc-tab.active`
+and `#cc-f-type.value` after the click. Checked in both themes.
+⚠️ Not verified signed in — fixture data through `_internals`, not a live project.
+
+`module.css` / `module.js` → `?v=20260916h`. No `MODULE_V` bump — `index.html` is unchanged this
+round.
+
 ## 2026-09-16 (b) — The dashboard tiles become a table, and each type gets a "Group" expand
 
 Owner, on the tab shipped hours earlier: *"the dashboard tiles look very ugly, provide me sample

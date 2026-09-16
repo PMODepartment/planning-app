@@ -443,8 +443,11 @@ window.ContractsClaims = (function () {
      `filters.type` half of the jump. `goto.type` is only set for the two blocks living on the
      Claims/Change Order tab, which is the one tab whose own type filter `switchTab` does not
      clear on the way in (see `switchTab`'s `if (v !== 'claims')` guard). */
-  function dashGotoBtn(goto) {
-    return '<button type="button" class="cc-dash-goto" data-dash-tab="' + esc(goto.tab) + '"' +
+  function dashGotoBtn(goto, inline) {
+    /* `inline`: this button sits inside a table cell (a group row's label), not `.cc-dash-h`'s
+       flex row — `.cc-dash-goto`'s `margin-left:auto` has nothing to push against there. */
+    return '<button type="button" class="cc-dash-goto' + (inline ? ' cc-dash-goto-inline' : '') +
+      '" data-dash-tab="' + esc(goto.tab) + '"' +
       (goto.type ? ' data-dash-type="' + esc(goto.type) + '"' : '') +
       '>View ' + esc(goto.label || 'records') + ' &rarr;</button>';
   }
@@ -486,47 +489,81 @@ window.ContractsClaims = (function () {
        group row is that same population, not a fourth way of totalling it. Detail rows carry
        `data-grp` back to it; `wireDashGroups` is the one handler that opens or closes them, so a
        reader can scan three totals first and only expand the type they came to check. */
-  function ccTypeGroupHTML(label, list, subK, evK, apK, fmt, goto) {
-    var sum = PDClaims.sum;
-    var short = PDClaims.shortfallOf(list, subK, apK);
+  var CC_DASH_COLS = '<th>Submission</th><th class="cc-r">Submitted</th><th class="cc-r">Evaluated</th>' +
+    '<th class="cc-r">Approved</th><th class="cc-r">Disputed</th><th>Status</th>';
+  /* One type's group row + its (initially collapsed) detail rows — no `<table>` of its own, so
+     several types can share ONE table (`ccMoneyTableHTML`, Contract/Change Orders/Cost Claims)
+     while a type that cannot share the others' unit still gets a table of its own
+     (`ccTypeGroupHTML`, Extension of Time — days, not money).
+     ⚠️⚠️ `evK`/`apK` OMITTED MEANS "NO PIPELINE", NOT "ZERO" — a Contract record has one amount
+     and no Evaluated/Approved/Disputed/Status at all (2026-08-26: *"Contract has no pipeline —
+     it's a flat description + amount list"*). Forcing it through the same three-column pipeline
+     as a claim would either invent numbers it does not have or silently read them as zero, which
+     is a false claim in either direction. Both are dashes instead — `simple` short-circuits every
+     one of them, group row and detail rows alike, rather than trusting three separate callers to
+     each remember to pass nulls correctly. */
+  function ccTypeRows(label, list, subK, evK, apK, fmt, goto) {
+    var sum = PDClaims.sum, simple = !evK;
+    var short = simple ? 0 : PDClaims.shortfallOf(list, subK, apK);
     var f = list.length ? fmt : function () { return '—'; };
+    var dash = '<span class="cc-mut">—</span>';
     var gid = 'ccg-' + label.replace(/[^a-z0-9]+/gi, '').toLowerCase();
 
     var counts = {};
-    list.forEach(function (r) { var s = statusOf(r) || 'Pending'; counts[s] = (counts[s] || 0) + 1; });
-    var statusSummary = Object.keys(counts).map(function (s) { return counts[s] + ' ' + s.toLowerCase(); }).join(' · ') || '—';
+    if (!simple) list.forEach(function (r) { var s = statusOf(r) || 'Pending'; counts[s] = (counts[s] || 0) + 1; });
+    var statusSummary = simple ? '—' :
+      (Object.keys(counts).map(function (s) { return counts[s] + ' ' + s.toLowerCase(); }).join(' · ') || '—');
 
     var rowsHtml = list.map(function (r) {
       var st = statusOf(r);
       /* Per-record disputed: only a DECIDED record has actually been argued over. */
-      var disp = PDClaims.isDecided(r) ? PDClaims.shortfall(r[subK], r[apK]) : null;
+      var disp = (!simple && PDClaims.isDecided(r)) ? PDClaims.shortfall(r[subK], r[apK]) : null;
       return '<tr class="cc-dashrow pd-collapsed" data-grp="' + gid + '">' +
         '<td class="cc-desc"><div class="cc-desc-txt" title="' + esc(descOf(r)) + '">' + esc(descOf(r)) + '</div>' +
           (r.date_submitted ? '<div class="cc-mini">Submitted ' + fmtDate(r.date_submitted) + '</div>' : '') + '</td>' +
         '<td class="cc-r">' + fmt(Number(r[subK]) || 0) + '</td>' +
-        '<td class="cc-r">' + fmt(Number(r[evK]) || 0) + '</td>' +
-        '<td class="cc-r">' + fmt(Number(r[apK]) || 0) + '</td>' +
-        '<td class="cc-r">' + (disp == null ? '<span class="cc-mut">—</span>' : fmt(disp)) + '</td>' +
-        '<td><span class="cc-st ' + (STATUS_CLS[st] || '') + '">' + esc(st || '—') + '</span></td>' +
+        '<td class="cc-r">' + (simple ? dash : fmt(Number(r[evK]) || 0)) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : fmt(Number(r[apK]) || 0)) + '</td>' +
+        '<td class="cc-r">' + (disp == null ? dash : fmt(disp)) + '</td>' +
+        '<td>' + (simple ? dash : '<span class="cc-st ' + (STATUS_CLS[st] || '') + '">' + esc(st || '—') + '</span>') + '</td>' +
         '</tr>';
     }).join('');
 
+    return '<tr class="pd-grp cc-dashgrp"' + (list.length ? ' data-grptoggle="' + gid + '"' : '') + '>' +
+        '<td>' + (list.length ? '<span class="cc-dashcaret">&#9656;</span> ' : '') + esc(label) +
+          (list.length ? ' <span class="cc-mini">' + list.length + ' record' + (list.length === 1 ? '' : 's') + '</span>' : '') +
+          (goto ? dashGotoBtn(goto, true) : '') + '</td>' +
+        '<td class="cc-r">' + f(sum(list, subK)) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : f(sum(list, evK))) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : f(sum(list, apK))) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : f(short)) + '</td>' +
+        '<td class="cc-mini">' + esc(statusSummary) + '</td>' +
+      '</tr>' + rowsHtml;
+  }
+  /* Contract, Change Orders and Cost Claims are all money, so they share ONE table.
+     Owner: *"combine contracts, change orders, and coat claims in 1 table."* Extension of Time
+     keeps its own table below (`ccTypeGroupHTML`) — it is days, and `PDClaims`'s own header
+     comment forbids mixing money and days in one column, let alone one sum. */
+  function ccMoneyTableHTML() {
+    var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
+    var of = function (t) { return rows.filter(function (r) { return r.record_type === t; }); };
+    var n = of('Contract').length + of('Change Order').length + of('Claim').length;
+    return '<div class="cc-dash-h">Contract, change orders &amp; cost claims' +
+        (n ? ' <span class="cc-mini">' + n + ' record' + (n === 1 ? '' : 's') + '</span>' : '') + '</div>' +
+      '<table class="pd-table cc-dashtbl"><thead><tr>' + CC_DASH_COLS + '</tr></thead><tbody>' +
+        ccTypeRows('Contract', of('Contract'), 'amount', null, null, money, { tab: 'contract', label: 'contract' }) +
+        ccTypeRows('Change orders', of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money,
+          { tab: 'claims', type: 'Change Order', label: 'change orders' }) +
+        ccTypeRows('Cost claims', of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money,
+          { tab: 'claims', type: 'Claim', label: 'cost claims' }) +
+      '</tbody></table>';
+  }
+  function ccTypeGroupHTML(label, list, subK, evK, apK, fmt, goto) {
     return '<div class="cc-dash-h">' + esc(label) +
         (list.length ? ' <span class="cc-mini">' + list.length + ' record' + (list.length === 1 ? '' : 's') + '</span>' : '') +
         (goto ? dashGotoBtn(goto) : '') + '</div>' +
-      '<table class="pd-table cc-dashtbl"><thead><tr>' +
-        '<th>Submission</th><th class="cc-r">Submitted</th><th class="cc-r">Evaluated</th>' +
-        '<th class="cc-r">Approved</th><th class="cc-r">Disputed</th><th>Status</th>' +
-      '</tr></thead><tbody>' +
-        '<tr class="pd-grp cc-dashgrp"' + (list.length ? ' data-grptoggle="' + gid + '"' : '') + '>' +
-          '<td>' + (list.length ? '<span class="cc-dashcaret">&#9656;</span> ' : '') + esc(label) + '</td>' +
-          '<td class="cc-r">' + f(sum(list, subK)) + '</td>' +
-          '<td class="cc-r">' + f(sum(list, evK)) + '</td>' +
-          '<td class="cc-r">' + f(sum(list, apK)) + '</td>' +
-          '<td class="cc-r">' + f(short) + '</td>' +
-          '<td class="cc-mini">' + esc(statusSummary) + '</td>' +
-        '</tr>' +
-        rowsHtml +
+      '<table class="pd-table cc-dashtbl"><thead><tr>' + CC_DASH_COLS + '</tr></thead><tbody>' +
+        ccTypeRows(label, list, subK, evK, apK, fmt, null) +
       '</tbody></table>';
   }
   function wireDashGroups(host) {
@@ -567,10 +604,14 @@ window.ContractsClaims = (function () {
       pkRows += '<li class="cc-dash-pk cc-dash-rest"><span>Not allocated to a package' +
         '<i>' + Math.round(rest / base * 100) + '% of the contract value</i></span><b>' + money(rest) + '</b></li>';
     }
+    /* ⚠ No goto link on this header — the merged table right below already carries a "View
+       contract →" on its own Contract row, and one screen naming the same jump twice reads as
+       a mistake rather than two independent facts. This header stays because the package
+       %-share breakdown is a different concept (allocation, not the claims pipeline) that the
+       merged table below has nowhere to show. */
     return '<div class="cc-dash">' +
       '<div class="cc-dash-h">Contract value <span class="cc-mini">' + money(ctVal) +
-        (pk.length ? ' across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's') : '') + '</span>' +
-        dashGotoBtn({ tab: 'contract', label: 'contract' }) + '</div>' +
+        (pk.length ? ' across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's') : '') + '</span></div>' +
       (pk.length
         ? '<div class="cc-dash-bar"><i style="width:' +
             Math.max(0, Math.min(100, base ? Math.round(pkAmt / base * 100) : 0)) + '%"></i></div>' +
@@ -580,10 +621,7 @@ window.ContractsClaims = (function () {
               'One of the two is wrong — the package amounts or the contract record.</p>' : '')
         : '<p class="cc-hint">No package breakdown yet. Packages are set up from the Contract tab, and every ' +
           'change order, claim and extension of time can then be raised against one.</p>') +
-      ccTypeGroupHTML('Change orders', of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money,
-        { tab: 'claims', type: 'Change Order', label: 'change orders' }) +
-      ccTypeGroupHTML('Cost claims', of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money,
-        { tab: 'claims', type: 'Claim', label: 'cost claims' }) +
+      ccMoneyTableHTML() +
       ccTypeGroupHTML('Extension of time', of('EOT'), 'sub_days', 'eval_days', 'approved_days', days,
         { tab: 'eot', label: 'extension of time' }) +
       ccTimeHTML() +
