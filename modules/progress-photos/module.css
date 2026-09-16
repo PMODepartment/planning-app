@@ -60,7 +60,15 @@
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
 }
-.pp-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
+/* ⚠️⚠️ THE HOVER RESTATEMENT IS GONE, AND IT WAS A REAL BUG, NOT JUST DUPLICATION.
+   `.pp-topbar-tools .pd-btn:hover` did not exclude `.pd-btn-primary`, and at (0,3,0) it outranked
+   dashboard.css's own `.pd-btn-primary:hover` (0,2,0) -- so the RED primary in this module's bar
+   turned GREY the moment you pointed at it, which is the one button in the bar that must not
+   recede. MEASURED in a browser against the shipped sheets (the loaded `:hover` rules rewritten
+   in place to a class of equal specificity, so the cascade under test is the real one):
+   `rgb(238,49,36)` at rest -> `rgb(244,244,244)` on hover.
+   ⚠️ The hover now comes from `.pd-modulebar .pd-btn:not(.pd-btn-primary):hover` in
+   dashboard.css, which carries that exclusion. Do not restate it here. */
 .pp-topbar-tools .pd-btn.pp-tb-labeled { height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap; }
 .pp-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 /* Sixth round item 7: a quiet, breadcrumb-style "back to the list" link,
@@ -89,13 +97,14 @@
 .pp-topsearch .pd-input {
   height: 34px; font-size: var(--pd-fs-base); width: 100%; min-width: 0;
 }
-.pp-topfilttoggle {
-  height: 34px; width: 34px; padding: 0; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: transparent; border-color: transparent; color: var(--pd-muted);
-  cursor: pointer; border-radius: var(--pd-radius);
-}
-.pp-topfilttoggle:hover, .pp-topfilttoggle.is-active { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-red); }
+/* ⚠️⚠️ `.pp-topfilttoggle` IS GONE — IT WAS A BYTE-FOR-BYTE COPY of the shared
+   `.pd-filttoggle` (dashboard.css): same 34px square, same transparent-until-hover, same muted
+   ink, same `has-active` dot. The markup carries `pd-btn pd-filttoggle` now.
+   ⚠️ Safe because the module addresses this button by its **id**, never by this class —
+   `$('pp-topfilttoggle')`, and the `has-active` toggle is by id too, which the shared rule's own
+   `::after` dot picks up unchanged.
+   ⚠️ Part of the 2026-09-16 toolbar pass: the owner's *"some buttons have an outline then
+   some doesn't"*. A private duplicate of a shared control is how two of them drift apart. */
 
 /* ---- Slim filter bar (Drawing Register's .dr-filters) --------------------- */
 /* Owner feedback (item 8): denser and plainer — smaller controls, tighter

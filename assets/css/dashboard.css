@@ -2101,6 +2101,50 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 .pd-filtergroup .pd-select { flex: 1 1 150px; min-width: 0; max-width: 200px; }
 .pd-filtergroup input[type="text"], .pd-filtergroup input[type="search"],
 .pd-filtergroup input:not([type]) { flex: 1 1 220px; min-width: 160px; }
+/* ==== EVERY MODULE-BAR BUTTON, ONE TREATMENT ===============================================
+   Owner 2026-09-16: *"Let's also check the toolbar buttons UI overall. Some buttons have an
+   outline then some doesn't. Let's make the UI in the app globally consistent."*
+
+   ⚠️⚠️ IT WAS A FOUR-MODULE SPLIT, and both halves were deliberate. `cash-flow`,
+   `productivity-rates`, `project-schedule` and `s-curve` each declared
+   `.x-topbar-tools .pd-btn { background:transparent; border-color:transparent }` in their own
+   stylesheet; the other ten left `.pd-btn`'s outlined default. Same bar, same kind of button, two
+   looks — and which one you got depended on which module you were standing in.
+
+   ⚠️ GHOST WINS, AND NOT BY TASTE: `.pd-filttoggle` (just below) is the one button that exists
+   in EVERY module's bar, and it has been transparent-until-hover since it was written. Ten modules
+   were therefore already showing a ghost funnel beside outlined neighbours — so ghost is the
+   app's existing majority for a module-bar tool, and adopting it makes the funnel consistent with
+   what sits next to it instead of being the odd one out. It also reads better: six outlined boxes
+   in a row beside a red primary is noise, and the one action worth noticing is the primary.
+   ⚠️ THE PRIMARY KEEPS ITS FILL — `:not(.pd-btn-primary)`. It is the one control in the bar
+   that must not recede, and hollowing it out is how a toolbar stops having a subject.
+   ⚠️ Scoped to `.pd-modulebar`, which is where `UI.initModuleTopbar()` moves every module's
+   tool cluster — so this reaches all fourteen (and any module added later) without any of them
+   restating it. A `.pd-btn` anywhere ELSE in the app is untouched and stays outlined.
+   ⚠️⚠️ DO NOT re-add a per-module copy of this. `.x-topbar-tools .pd-btn` is (0,2,0), the
+   same as this, and every module stylesheet loads AFTER dashboard.css — so a private copy silently
+   wins and the split comes straight back. The four that had one have had it removed. */
+.pd-modulebar .pd-btn:not(.pd-btn-primary) { background: transparent; border-color: transparent; }
+.pd-modulebar .pd-btn:not(.pd-btn-primary):hover { background: var(--pd-bg); border-color: var(--pd-line); }
+/* A disabled button must not answer the hover — it would read as clickable. */
+.pd-modulebar .pd-btn:not(.pd-btn-primary):disabled:hover { background: transparent; border-color: transparent; }
+/* An icon-only tool is a 34px square, the same square `.pd-filttoggle` already is, so the row
+   reads as one set rather than as buttons of assorted widths.
+   ⚠️⚠️ A BUTTON THAT CARRIES TEXT MUST BE EXCLUDED, OR ITS LABEL IS CLIPPED TO 34px. Ten
+   modules already mark theirs `*-tb-labeled`; SEVEN buttons across five modules carried text and
+   no marker at all, and this rule would have squashed every one of them — found by scanning the
+   tool clusters for a button with text and no marker, not by looking at screenshots.
+   ⚠️ The match is `[class*="tb-labeled"]` with NO leading hyphen, so it covers both the shared
+   `pd-tb-labeled` below and every module's own `rr-`/`il-`/`pp-`... spelling. */
+.pd-modulebar .pd-btn:not(.pd-btn-primary):not([class*="tb-labeled"]) {
+  width: 34px; height: 34px; padding: 0; justify-content: center;
+}
+/* The shared marker, for a labelled tool in a module that has no spelling of its own. */
+.pd-modulebar .pd-btn.pd-tb-labeled {
+  height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap;
+}
+
 .pd-filttoggle {
   position: relative; height: 34px; width: 34px; padding: 0; flex: none;
   display: inline-flex; align-items: center; justify-content: center;

@@ -102,6 +102,87 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (z) — One treatment and one order for every module bar, and a red primary that stopped going grey
+
+Owner, across three messages: *"Let's also check the toolbar buttons UI overall. Some buttons have
+an outline then some doesn't. Let's make the UI in the app globally consistent."* and *"Let's also
+double check the sequencing of the buttons of the toolbar. Some modules have the filter button
+first then others last. Some has the main red button last or before the filter. Let's make this
+consistent making sure that the modules UI are professionally looking, simple and yet elegant."*
+
+### ⚠️⚠️ THE OUTLINE SPLIT WAS FOUR MODULES, AND GHOST WON ON EVIDENCE
+
+`cash-flow`, `productivity-rates`, `project-schedule` and `s-curve` each declared
+`.x-topbar-tools .pd-btn { background:transparent; border-color:transparent }` in their own
+stylesheet; the other ten left `.pd-btn`'s outlined default. Same bar, same kind of button, two
+looks, decided by which module you were standing in.
+
+⚠️ **Ghost is not a taste call.** `.pd-filttoggle` is the one button that exists in every module's
+bar, and it has been transparent-until-hover since it was written — so ten modules were already
+showing a ghost funnel beside outlined neighbours. Adopting ghost makes the funnel consistent with
+what sits next to it rather than being the odd one out, and it is the smaller change to the
+app's own established idiom. One rule now, `.pd-modulebar .pd-btn:not(.pd-btn-primary)`, scoped to
+where `UI.initModuleTopbar()` moves every module's tool cluster — so it reaches all fourteen and
+any module added later. The four private copies are deleted, with a note in each saying why a new
+one must not appear: `.x-topbar-tools .pd-btn` is (0,2,0), the same as the shared rule, and module
+stylesheets load *after* dashboard.css, so a private copy silently wins.
+
+### ⚠️⚠️ AND THE RED PRIMARY TURNED GREY ON HOVER IN SIX MODULES
+
+Six more modules restated the hover — `.x-topbar-tools .pd-btn:hover` — **without excluding
+`.pd-btn-primary`**. At (0,3,0) that outranks dashboard.css's own `.pd-btn-primary:hover` (0,2,0),
+so the one button in the bar that must not recede went grey exactly as you pointed at it.
+
+**Measured, not reasoned about.** `getComputedStyle` cannot report a `:hover`, so the harness
+rewrote every *loaded* `:hover` rule to a class of equal specificity through the CSSOM, in place —
+same specificity, same source order, the shipped sheets under test:
+
+| | rest | hover |
+|---|---|---|
+| before | `rgb(238,49,36)` | **`rgb(244,244,244)`** |
+| after | `rgb(238,49,36)` | `rgb(196,33,39)` (Dark Red, per the brandbook) |
+
+### One order, read left to right as a sentence
+
+    [ view / mode ] | [ filter ] | [ PRIMARY ] | [ other tools ] [ export ] [ refresh ]
+
+What am I looking at, narrow it, do the thing I came to do, then the occasional tools, then the two
+that belong to the page rather than the work. Eight bars moved: Risk Register and Stakeholder Map
+had the primary **last, after export**; Minutes of Meeting had export **before** the primary;
+Issues & Concerns and the Portfolio Dashboard had refresh before export; Cash Flow *led* with
+refresh; Project Schedule had the filter **second-to-last, behind five other tools**; Contracts &
+Claims had export in the middle of its own tools; Progress Photos had refresh sliding into the
+middle of the row the moment a planner selected photos.
+
+⚠️ **Checked mechanically, not by eye** — a script classifies every button in every tool cluster and
+asserts the ranks never decrease. It also caught its own first version: counting dropdown *menu
+items* as toolbar buttons flagged Minutes of Meeting and Project Schedule as out of order when they
+were not.
+
+### Two more things the pass turned up
+
+- ⚠️⚠️ **SEVEN BUTTONS WOULD HAVE BEEN CLIPPED TO 34px.** The shared rule squares icon-only tools,
+  excluding the `*-tb-labeled` marker ten modules already use — but seven buttons across five
+  modules carried *text* and no marker at all. Found by scanning the clusters for a button with
+  text and no marker, before any of it shipped. Five gained a shared `pd-tb-labeled`; Risk
+  Register's and Stakeholder Map's text "Export" became the download **icon** every other module
+  already uses, which is a down payment on the export-consistency ask.
+- **`.il-topfilttoggle` and `.pp-topfilttoggle` are gone.** Both were byte-for-byte copies of
+  `.pd-filttoggle`. ⚠️ Safe because both modules address the button by **id**, never by that class.
+
+**Verified.** `wiring-check` 139/0; `test-portfolio-dash` 351/0; `portfolio-overview` 128/0;
+`dead-hooks` clean for every new class. Geometry measured in a real browser at 1440px against the
+shipped sheets: **all five tool buttons across two different modules are pixel-identical** —
+34×34, `rgba(0,0,0,0)` background and border — and both primaries are `rgb(238,49,36)`.
+⚠️⚠️ The scary parse flags were checked against the committed baseline rather than assumed: Progress
+Photos' `bad=2` and Project Schedule's 2302/2301 brace count are **identical in kind to HEAD** —
+the documented extractor artefacts (a `<script>` substring inside a CDN URL; a `<style>` regex
+matching JS strings). Brace counts fell by exactly the rules deleted (−3, −2, −2, −2).
+⚠️ **Not verified signed in.**
+
+`dashboard.css` → `20260916v`; `contracts-claims` → `20260916j`; `issues-lessons`,
+`minutes-of-meeting`, `progress-photos` `module.css` → `20260916a`.
+
 ### 2026-09-16 (y) — A code owner with no commits was gating the module he never wrote
 
 Owner: *"There is a commit that is always blocked by yohanmay for rachellelungsod's account.
@@ -236,6 +317,7 @@ is simply whether the Role/Department dropdowns read cleanly at phone width.
 No shared asset changed (`dashboard.css`, `icons.js` untouched) — `chevronDown`/`check`/`x`/`trash`
 are all existing icons — so no `?v=` bump and no `MODULE_V` bump; `admin.html` is fetched at its own
 URL and is not a module page.
+
 ### 2026-09-16 (v) — The Portfolio Dashboard is the Overview: two duplicate views and the one-entry dropdown are gone
 
 Owner, on the page with its view dropdown open: *"Stakeholder map is here why? This is just a

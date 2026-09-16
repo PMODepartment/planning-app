@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916v" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
@@ -416,11 +416,15 @@
       color:var(--pd-danger-text); font-weight:700; background:transparent;
       border:1px solid var(--pd-red); border-radius:var(--pd-radius); white-space:nowrap; }
     body.ps-reporting .ps-toolbar .ps-rv-exit:hover { background:var(--pd-red-light); border-color:var(--pd-red); color:var(--pd-danger-text); }
-    .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; }
+    /* ⚠️⚠️ THE BUTTON TREATMENT IS SHARED NOW — see `.pd-modulebar .pd-btn` in
+       dashboard.css. This module was one of FOUR that declared its own (transparent until hover,
+       34px square) while the other ten left `.pd-btn` outlined, which is the "some buttons have an
+       outline then some doesn't" the owner reported on 2026-09-16.
+       ⚠️ DO NOT re-add a `background` / `border-color` / `width` / `height` rule for
+       `.ps-topbar-tools .pd-btn` here. It is (0,2,0), the same as the shared rule, and this stylesheet loads
+       AFTER dashboard.css — so it would win, silently, and only in this module. */
     .ps-topbar-tools .pd-btn:not(.ps-tb-labeled) { font-size:var(--pd-fs-base); }
-    .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-topbar-tools .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
-    .ps-topbar-tools .pd-btn:disabled:hover { background:transparent; border-color:transparent; }
     .ps-topbar-tools .pd-select { height:34px; width:auto; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
     .ps-topbar-tools .pd-select:hover, .ps-topbar-tools .pd-select:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .ps-topbar-tools .ps-menu { left:auto; right:0; }
@@ -4572,6 +4576,8 @@
            before #user-bar, so these sit immediately beside the night-mode button -->
       <button class="ps-datadate-badge" id="ps-datadate-badge" title="Data date — click to change (Schedule dialog)">Data Date: —</button>
       <div class="ps-topbar-tools" id="ps-topbar-tools">
+        <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="16"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
+        <span class="ps-tb-sep"></span>
         <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="16"></span></button>
         <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="16"></span></button>
         <span class="ps-tb-sep"></span>
@@ -4590,7 +4596,6 @@
         <button class="pd-btn ps-tb-labeled" id="ps-report" title="Reports — run, view, edit &amp; create"><span data-ico="clipboard" data-ico-size="16"></span> Reports</button>
         <button class="pd-btn ps-tb-labeled" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="16"></span> Health</button>
         <span class="ps-tb-sep"></span>
-        <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="16"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
         <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
       </div>
       <div id="ps-presence" title="People viewing this project"></div>

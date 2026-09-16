@@ -21,7 +21,15 @@
 .dr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
 .dr-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
   background:transparent; border-color:transparent; font-size:var(--dr-fs-base); }
-.dr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+/* ⚠️⚠️ THE HOVER RESTATEMENT IS GONE, AND IT WAS A REAL BUG, NOT JUST DUPLICATION.
+   `.dr-topbar-tools .pd-btn:hover` did not exclude `.pd-btn-primary`, and at (0,3,0) it outranked
+   dashboard.css's own `.pd-btn-primary:hover` (0,2,0) -- so the RED primary in this module's bar
+   turned GREY the moment you pointed at it, which is the one button in the bar that must not
+   recede. MEASURED in a browser against the shipped sheets (the loaded `:hover` rules rewritten
+   in place to a class of equal specificity, so the cascade under test is the real one):
+   `rgb(238,49,36)` at rest -> `rgb(244,244,244)` on hover.
+   ⚠️ The hover now comes from `.pd-modulebar .pd-btn:not(.pd-btn-primary):hover` in
+   dashboard.css, which carries that exclusion. Do not restate it here. */
 .dr-topbar-tools .pd-btn.dr-tb-labeled { width:auto; padding:0 12px; gap:6px; }
 .dr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 .dr-clearbtn { color:var(--pd-bad-text); }
