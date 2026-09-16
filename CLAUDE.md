@@ -102,6 +102,137 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (n) — The Project Schedule gets a portfolio view, and a helper reached across a closure it does not share
+
+Owner, from the plan's Phase E: the sidebar's **Project Schedule** row opened portfolio-wide and drew
+**nothing at all** — 2026-09-14 deliberately left `pid` null there and attempted no cross-project
+consolidation, so the row led to an empty page. The cross-project Gantt now lives in
+`assets/js/portfolio-dash.js` as an eleventh dashboard, beside the ten the owner moved into their own
+modules on 2026-09-15 and 2026-09-16. Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### ⚠️⚠️ IT READS NO ACTIVITY ROWS, WHICH IS WHY IT CANNOT REPEAT TODAY'S OTHER OUTAGE
+
+Every bar comes from the roll-up columns already on the project row — `schedule_start`,
+`schedule_finish`, `schedule_progress`, `schedule_updated_at` — plus `start_date` / `end_date` and
+`forecast_finish`. `PROJ` is already in memory, so the view renders with **no read at all**. That
+matters today in particular: entry (j) records the portfolio S-Curve timing out on its first real
+open because `schedule_scurve_agg_multi` is combinatorial in the project count. This view has no such
+surface to fail on.
+
+### ⚠️⚠️ AND A HELPER REACHED INTO A CLOSURE IT DOES NOT SHARE — FOUND BY RUNNING, NOT READING
+
+The month axis called `cfMonthLabel(...)`. That function exists **only inside the CASH FLOW
+dashboard's own `setup()` closure**, a few hundred lines below. Each `def()` gets its own closure, so
+the call **parses cleanly**, and it throws `cfMonthLabel is not defined` the moment the axis is drawn
+— which is every portfolio open whose span is under four years.
+
+⚠️⚠️ **`wiring-check` passed 139/139 and could not see it.** It loads each script and enumerates
+globals; a cross-closure reference inside a function that only runs at render time is neither. Same
+blind spot the z6 BOQ outage is recorded under, and the fourth time this repo has paid for this exact
+shape (`below is not defined`, stakeholder-map's `canWrite`, `boq.js`'s `locKey`, now this).
+
+⚠️ It is `moLabel` at module scope, beside `pd` / `today` — the two date helpers moved there on
+2026-09-15 after the **identical** fault took the Meetings dashboard down. ⚠️ Named `moLabel`, not
+`cfMonthLabel`: `cf` means cash flow, and this is the generic month tick any view here can use. The
+cash-flow copy is **deliberately left alone** — it is another session's working code, and converging
+the two is its own change.
+
+⚠️ The measurement is what caught it: the four KPI cards rendered correctly and the rows did not.
+A defect that leaves half the screen right is the kind a glance passes.
+
+### What the row says, and what it refuses to guess
+
+The contract window as a rail, the live programme as the bar filled to its progress, a forecast
+marker, and the overrun drawn past the contract finish. Plus the two things a confident-looking bar
+must not hide:
+
+- ⚠️ **A stale roll-up says so.** `schedule_updated_at` is written when the schedule module is opened,
+  so a project untouched for months carries a plausible bar built on old numbers. Anything past
+  `STALE_DAYS = 45` is marked and counted.
+- ⚠️ **A project with no roll-up gets a NAMED row, never a bar guessed from contract dates.** The
+  coverage line counts it rather than dropping it — the rule the Overview's own coverage note follows.
+- ⚠️ **Today, not a data date.** The Project Schedule's data date lives in `localStorage` **per
+  browser** and is not portfolio-wide (flagged 2026-09-14 h, still open). The note says which is used.
+- ⚠️ Grouping reuses `PDProgram`, so AVR101 + AVR102 roll up as they do in the table — and
+  **a group of one gets no heading**, which is `program.js`'s own rule: *"a heading above a single
+  project invents a hierarchy that is not there."*
+
+### ⚠️⚠️ THE WORKING TREE WAS BUILT ON A STALE BASE, AND COMMITTING IT WOULD HAVE DELETED FOUR DASHBOARDS
+
+Caught by reading `git diff --numstat` rather than trusting it. HEAD's `portfolio-dash.js` carried
+**ten** dashboards; my uncommitted copy carried **seven**, because it predated (g), which moved
+S-Curve, Cash Flow, Resources and Equipment into it. The diff read **+217 / −1041**: committing it
+would have **deleted four shipped dashboards** and resurrected four panes (g) had removed from
+`portfolio-overview`. Fixed by resetting both files to HEAD and re-applying through content-anchored
+scripts that abort on a bad anchor count, which is how this repo has integrated a moving `main` before.
+
+⚠️⚠️ **And three of my own version edits were moving BACKWARDS** — `portfolio-dash.js` and `.css` from
+`20260916j` to `e`, and **`db.js` from `20260916b` to `20260915i`**, a shared asset that was never
+mine to touch. A token that sorts *earlier* than one a browser already holds is worse than a
+collision: the new bytes are never fetched. All reverted, then re-derived past **both** `20260916j`
+and `MODULE_V`'s `20260916k`, sort-checked as plain strings.
+
+⚠️ `modules/contracts-claims/index.html` is staged as **HEAD + my one edit**, not from the working
+tree: it also carried a concurrent session's bumps for `boq.js` / `module.js` / `module.css`, whose
+**contents are still uncommitted**. Shipping those tokens would have cached the OLD bytes under the
+NEW token, so their fix could never reach anyone. Their three files are untouched.
+
+### Verified
+
+**186 assertions, 0 failing** (`tools/test-portfolio-dash.js`, was 184). ⚠️ One existing assertion
+pinned the layer at **ten** dashboards and correctly failed; **retargeted to eleven and named**,
+rather than weakened. `test-portfolio` 99/99, `wiring-check` **139/139**, every asset on one version,
+the 3.3MB inline script parses, CSS braces 303/303, 0 NUL bytes.
+
+⚠️⚠️ **A new cross-closure sweep, and it BITES**: every name called inside the new `def()` is resolved
+against that block's own functions and the module scope. Clean now; re-injecting `cfMonthLabel`
+reports it. A check that has never failed proves nothing.
+
+**Rendered in a browser**, in an iframe at 1400px light, 1400px dark and 390px, transitions disabled
+before measuring: **0 errors**, KPIs reading `6 / 5 of 6 / 1 / 1` — exactly the fixture's
+hand-derivable answers — one group heading for the real pair and **none** above the three groups of
+one, 5 bars, 1 overrun, the un-rolled-up project named rather than drawn, bars inside their tracks at
+every width, no sideways scroll, and `--pd-*` resolving **per theme** (overrun `rgb(196,33,39)` light
+against `rgb(255,138,128)` dark), which is what proves the stylesheet is in the cascade.
+⚠️ The module's own UI is **hidden, not removed** — its script has already bound handlers to those
+nodes — and `takeOver` wired the project `<select>` with 7 options, which is the escape route out of
+portfolio scope.
+⚠️ **One of my own assertions was wrong rather than the code**: it read `#main`'s `display`, but the
+dashboard mounts *inside* `#main` as `#po-dash-host`, so the honest check is whether the module's own
+markup is hidden. It is.
+
+⚠️ **Not verified signed in** — the fixture is hand-built, so no real portfolio has been drawn.
+⚠️ The harness was gitignored (`**/*harness*`) and **deleted before committing**; this repo has
+shipped harness files to production twice.
+
+`portfolio-dash.js` / `portfolio-dash.css` → `?v=20260916n` (12 pages); `MODULE_V` → `20260916n`.
+⚠️ **D4 is NOT in this commit, and the reason is a measurement.** Its S-curve half calls
+`schedule_scurve_agg_multi`, which entry (j) removed hours ago for timing out in production at 21
+projects, and its funding half reads `fetchCashFlowForIds`, which (g) moved off this page. Both would
+now be duplicates of code that lives elsewhere. It needs the fan-out lifted into the shared
+`PDScurve` engine first — reported rather than guessed at.
+
+### ⚠️⚠️ AND THIS ENTRY HAD TO BE WRITTEN TWICE, FOR THE REASON THE HEADER OF THIS FILE WARNS ABOUT
+
+The code above shipped in `be632cf`. **This entry did not.** Two sessions rebased the same two
+commits onto `8c0fd9f` at the same moment, and the CLAUDE.md conflict was resolved by taking one
+side — so the record of the change was dropped while the change itself landed. That is the merge
+trap this file's own header describes, in the losing direction: a doubled log is visible in a diff,
+and a *missing* entry reads as an ordinary log. Restored here, on top, re-lettered **(n)** because
+`(m)` had by then been taken by the portfolio S-Curve entry.
+
+⚠️⚠️ **AND BOTH SIDES INDEPENDENTLY CHOSE `20260916m` FOR THE SAME TWO ASSETS.** Git had nothing
+to flag — both wrote the identical string, so the rebase merged **cleanly** — and the result is that
+`portfolio-dash.js` and `.css` shipped content from BOTH changes under a token the first deploy had
+already used. A browser holding `20260916m` from the S-Curve deploy would never fetch the Gantt's
+bytes. Re-derived to `20260916n` here, sort-checked past `j`, `k` and `m`. Fourth time this repo has
+recorded this collision, and the first time it has been caught *after* the push rather than before.
+⚠️ The lesson that keeps not sticking: **re-derive the token from what the remote actually has
+AFTER integrating**, and check it again immediately before pushing — an identical string is not a
+conflict, so nothing will stop you.
+
+
 ### 2026-09-16 (m) — The portfolio S-Curve gets periodic bars, and a month you can click open
 
 Owner: *"for the s-curve, pls provide breakdowns. and periodic values that are in the form of a bar

@@ -85,8 +85,9 @@ dashboard mounts *inside* `#main`.
 ⚠️ **Not verified signed in** — the fixture is hand-built; no real portfolio has been drawn.
 ⚠️ Harness gitignored and **deleted before committing**.
 
-`portfolio-dash.js` / `portfolio-dash.css` → `?v=20260916m`; `MODULE_V` → `20260916m`, sort-checked
-past `20260916j` and `20260916k`.
+`portfolio-dash.js` / `portfolio-dash.css` → `?v=20260916n`; `MODULE_V` → `20260916n`, sort-checked
+past `20260916j`, `20260916k` and the `20260916m` a concurrent session chose for the same assets
+in the same minute — see root (n).
 ⚠️ **The working tree was on a stale base and would have deleted four dashboards** — see root (m).
 
 ## 2026-09-16 (k) — The Summary is rebuilt around a verdict, and seven figures it already computed
