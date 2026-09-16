@@ -170,6 +170,12 @@ function makeDom() {
   }
 
   const doc = {
+    /* ⚠ A REAL `body`. `takeOver()` marks the PAGE (`body.classList.add('po-dash-page')`) because
+       `.pd-modulebar` does not exist yet when it runs on a cached session -- see the note there.
+       Without a body here the suite crashed rather than covering it, which is the good failure:
+       a fake DOM that quietly answers everything lets a renderer reaching for a node nobody
+       provides look healthy. */
+    body: el('body'),
     getElementById(id) { return byId[id] || null; },
     createElement(tag) { return el(tag); },
     querySelector(sel) { return query(null, sel)[0] || null; },
@@ -977,7 +983,30 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
     sel.selectedIndex = 0;
     sel.onchange.call(sel);
     ok(left, tag + 'takeOver: choosing a project LEAVES portfolio scope');
+    /* ==== THE DUPLICATED TITLE BAR (2026-09-16) ==============================================
+       Owner: *"Title bar has bugged out completely it duplicated. Check across all modules."*
+       ⚠⚠ THE MODULE BAR IS NOT IN ANY MODULE'S MARKUP -- `UI.initModuleTopbar()` CREATES it on
+       DOMContentLoaded, and takeOver() runs from `AppAuth.requireLogin`'s callback, which races
+       it. On a cached session the callback wins, so hiding `.pd-modulebar` BY ELEMENT reaches
+       nothing and the bar is built afterwards, unhidden, above the dashboard's own bar.
+       ⚠ So what is asserted is the BODY class, not the element: it is the only one of the two
+       that is still true when the bar is built late. `doc._modulebar` is deliberately left unset
+       below to reproduce exactly that ordering. */
+    ok(doc.body.classList.contains('po-dash-page'),
+       tag + 'takeOver: the PAGE is marked, so a module bar built later is born hidden');
     eq(win.sessionStorage.getItem('pd_project'), 'P1', tag + 'takeOver: and remembers which one');
+  }
+  {
+    /* The cached-session order, reproduced: NO `.pd-modulebar` exists when takeOver runs. */
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {}, rpc: { portfolio_resource_summary: { data: [], error: null } } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    const doc = win.document;
+    doc._main = doc._el('div');
+    doc._modulebar = null;                       // <- built later by initModuleTopbar, as in life
+    await win.PortfolioDash.takeOver('resources', {});
+    ok(doc.body.classList.contains('po-dash-page'),
+       tag + 'takeOver: marks the page even when there is no module bar YET to hide');
   }
 }
 

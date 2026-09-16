@@ -102,6 +102,67 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (u) — HOTFIX: the duplicated title bar — the module bar is CREATED after we try to hide it
+
+Owner, off screenshots of Issues, Meetings and the S-Curve: *"Title bar has bugged out completely
+it duplicated. Check across all modules."* A regression from (t), and the more interesting half of
+the bug that entry was fixing.
+
+### ⚠️⚠️ `.pd-modulebar` IS NOT IN ANY MODULE'S MARKUP
+
+(t) established that `takeOver()` could not hide the module's chrome with the `hidden` ATTRIBUTE,
+because `.pd-modulebar { display: flex }` beats a UA-stylesheet rule. True, and fixed. But hiding it
+**by element** still reaches nothing half the time, because **`UI.initModuleTopbar()` CREATES that
+element** (ui.js) — it is not in the page, it is built on `DOMContentLoaded` out of the topbar's
+title, tabs and tools.
+
+`takeOver()` runs from `AppAuth.requireLogin`'s callback. **Those two race:**
+
+| session | who wins | result |
+|---|---|---|
+| cold — auth pays two round-trips | `DOMContentLoaded` | bar exists, gets hidden, correct |
+| **cached** — auth resolves at once | **the auth callback** | `querySelectorAll('.pd-modulebar')` matches **nothing**; the bar is built a moment later, unhidden, above the dashboard's own bar |
+
+⚠️ A bug whose trigger is *"are you already logged in?"* is exactly the kind that survives testing —
+and it is why my own render harness for (t) missed it: that harness called `initModuleTopbar()`
+BEFORE `takeOver()`, which is the order that works.
+
+### The fix is to mark the PAGE, not the element
+
+`document.body.classList.add('po-dash-page')`, and the stylesheet does the hiding:
+
+```css
+body.po-dash-page .pd-modulebar:not(.po-dash-bar) { display:none !important; }
+body.po-dash-page .pd-main > :not(#po-dash-host)  { display:none !important; }
+```
+
+However late the bar is built, it is born into a page that already says a dashboard has taken it
+over. ⚠️ `:not(.po-dash-bar)` is load-bearing — the dashboard's own bar is deliberately a
+`.pd-modulebar` too (it wants the shell's height, border and ≤700px stacking), so without it the
+page would hide its own heading and have none at all. The second rule gives the same guarantee for
+`.pd-main`: a module that renders into it later cannot put itself back on screen underneath.
+⚠️ The per-element class is KEPT — it carries the `hidden` semantics, and `.pd-main`'s own children
+really are in the markup.
+
+**Verified against the order that fails.** A render harness that calls `takeOver()` FIRST and
+`initModuleTopbar()` afterwards — reproducing the cached-session sequence, `0` module bars present
+at takeOver time — measured in a real browser at 1440×900:
+
+| build | visible `.pd-modulebar` |
+|---|---|
+| shipped (t) | **2** — 58px module bar + 52px dashboard bar (the screenshot) |
+| this fix | **1** |
+
+⚠️ The contrast was run by swapping the *pushed* `8cf5022` files into the harness and back, so the
+measurement discriminates rather than merely agreeing with me. `tools/test-portfolio-dash.js`
+**351 passed, 0 failed** — the fake DOM gained a real `body` (it had none, so the new line crashed
+the suite rather than being silently skipped, which is the good failure) plus a mount that leaves
+`_modulebar` unset to reproduce the race. `wiring-check` 139/0.
+⚠️ Not verified signed in — but this is precisely the path a signed-in session takes, so it is the
+one still worth a look on the live site.
+
+`portfolio-dash.js`/`.css` → `20260916u`.
+
 ### 2026-09-16 (t) — One table design across the app; a portfolio view that isn't drawn under its own module's chrome
 
 Owner, off five screenshots side by side: *"There are different table formats seen throughout the

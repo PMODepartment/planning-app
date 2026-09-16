@@ -3030,6 +3030,22 @@
        that plays the same card to show something.
        ⚠ `hidden` is still set alongside it, for the semantics the attribute carries (it is what
        assistive tech and `:not([hidden])` selectors read); the class is what actually hides. */
+    /* ⚠⚠ THE PAGE IS MARKED, NOT JUST THE ELEMENTS — AND THIS IS THE SECOND HALF OF THE BUG.
+       The first half was `hidden` losing to an author `display` rule (see the note below). Fixing
+       that alone left the module bar STILL on screen, now with the dashboard's own bar under it —
+       the owner's *"title bar has bugged out completely, it duplicated"*, across every module.
+       ⚠⚠ BECAUSE `.pd-modulebar` DOES NOT EXIST YET WHEN THIS RUNS, HALF THE TIME. It is not in
+       any module's markup: `UI.initModuleTopbar()` CREATES it (ui.js) and moves the title, tabs and
+       tools into it — and that runs on DOMContentLoaded, while this runs from
+       `AppAuth.requireLogin`'s callback. Those two race. With a cold session the auth round-trips
+       lose and the bar is there to be hidden; with a cached session they win, this
+       `querySelectorAll` matches NOTHING, and the bar is built afterwards, unhidden. A bug that
+       depends on whether you are already logged in is exactly the kind that survives testing.
+       ⚠ So the rule is hung on the BODY and the stylesheet does the hiding. However late the bar
+       is built, it is born into a page that already says "a dashboard has taken this over".
+       ⚠ The per-element class is kept as well: it is what carries the `hidden` semantics, and it
+       still covers `.pd-main`'s own children, which ARE in the markup and never move. */
+    document.body.classList.add('po-dash-page');
     Array.prototype.forEach.call(main.children, function (c) { c.hidden = true; c.classList.add('po-taken-over'); });
     Array.prototype.forEach.call(document.querySelectorAll(opts.hide || '.pd-modulebar'), function (n) {
       n.hidden = true; n.classList.add('po-taken-over');

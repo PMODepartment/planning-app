@@ -19,6 +19,19 @@
        (`body.ps-reporting .pd-modulebar`), and an ordinary class would lose to a module that
        plays the same card to SHOW something. */
     .po-taken-over { display:none !important; }
+    /* ⚠⚠ AND THE SAME THING SAID ABOUT THE PAGE, WHICH IS WHAT ACTUALLY HOLDS. `.pd-modulebar`
+       is CREATED by `UI.initModuleTopbar()` on DOMContentLoaded, and `takeOver()` runs from an
+       auth callback that races it — so on a cached session the class above is applied to an element
+       that does not exist yet, and the bar appears a moment later untouched, ABOVE the dashboard's
+       own bar. That is the duplicated title bar. Hung on the body, the rule is already in force
+       whenever the bar is finally built.
+       ⚠️ `:not(.po-dash-bar)` is load-bearing: the dashboard's OWN bar is deliberately a
+       `.pd-modulebar` too (it wants the shell's height, border and ≤700px stacking), so without
+       this it would hide itself and the page would have no heading at all.
+       ⚠️ The `.pd-main` rule is the same guarantee for the module's content: a module that renders
+       into `.pd-main` after this point cannot put itself back on screen underneath the dashboard. */
+    body.po-dash-page .pd-modulebar:not(.po-dash-bar) { display:none !important; }
+    body.po-dash-page .pd-main > :not(#po-dash-host) { display:none !important; }
 
     /* ---- the portfolio module bar (buildBar in portfolio-dash.js) ---------------------------
        ⚠️ The element carries `.pd-modulebar` TOO, so the height, border, background and the
