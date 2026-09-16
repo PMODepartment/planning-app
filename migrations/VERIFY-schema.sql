@@ -215,8 +215,6 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-10-progress-photos-schedule-integration.sql','column','progress_photos','activity_name'),
     ('2026-08-10-progress-photos-schedule-integration.sql','column','progress_photos','wbs_node_id'),
     ('2026-08-11-drawing-register-scope.sql','column','drawing_register','scope'),
-    ('2026-08-12-delete-project-residue.sql','function','admin_delete_project',''),
-    ('2026-08-12-delete-project-residue.sql','function','admin_project_delete_preview',''),
     ('2026-08-12-delete-project-residue.sql','function','project_residue_tables',''),
     ('2026-08-12-group-heads-replace-workspaces.sql','column','projects','group_head_id'),
     ('2026-08-12-group-heads-replace-workspaces.sql','function','admin_delete_group_head',''),
@@ -489,7 +487,13 @@ with expected(migration, kind, obj, col) as (values
     ('2026-09-15-cc-attachments.sql','table','cc_attachments',''),
     ('2026-09-15-schedule-attachments.sql','table','activity_attachments',''),
     ('2026-09-15-user-module-access.sql','column','users','module_access'),
-    ('2026-09-15-user-notes.sql','table','user_notes','')
+    ('2026-09-15-user-notes.sql','table','user_notes',''),
+    ('2026-09-16-delete-project-purge.sql','function','admin_delete_project',''),
+    ('2026-09-16-delete-project-purge.sql','function','admin_project_delete_preview',''),
+    ('2026-09-16-pano360-jobs.sql','function','pano360_invoke',''),
+    ('2026-09-16-pano360-jobs.sql','function','pano360_jobs_after_insert',''),
+    ('2026-09-16-pano360-jobs.sql','function','pano360_sweep_stuck_jobs',''),
+    ('2026-09-16-pano360-jobs.sql','table','pano360_jobs','')
 ),
 missing as (
   select e.* from expected e

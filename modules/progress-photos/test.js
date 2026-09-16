@@ -4652,10 +4652,13 @@ console.log('\n[misc] insert().select() returns the new row id');
      /function extractFrames\(videoBlob, count, maxW, knownDuration, onProgress\)/.test(p3js) &&
      /var dur = \(isFinite\(knownDuration\) && knownDuration > 0\) \? knownDuration : await fixInfiniteDuration\(video\);/.test(p3js) &&
      /if \(onProgress\) onProgress\(i \+ 1, count\);/.test(p3js));
-  ok('module.js\'s runStitch reads all 4 stages into a real, changing status message — not one static "Reading video…" for the whole extraction phase',
-     /Extracting up to ' \+ a \+ ' frame' \+ \(a === 1 \? '' : 's'\) \+ '…';/.test(mjs) &&
-     /Extracting frames — ' \+ a \+ ' of ' \+ b \+ ' \(' \+ Math\.round\(\(a \/ b\) \* 100\) \+ '%\)';/.test(mjs) &&
-     /Stitching panorama — ' \+ Math\.round\(a \* 100\) \+ '%';/.test(mjs));
+  ok('SUPERSEDED 2026-09-16: module.js no longer runs a local, 4-stage stitch at all — runStitchForDraft extracts+uploads frames and hands stitching to a server-side pano360_jobs job, so the OLD 4-stage local progress strings are gone from the source',
+     !/function runStitch\(/.test(mjs) &&
+     !/Extracting up to ' \+ a \+ ' frame' \+ \(a === 1 \? '' : 's'\) \+ '…';/.test(mjs) &&
+     !/Stitching panorama — ' \+ Math\.round\(a \* 100\) \+ '%';/.test(mjs) &&
+     /function runStitchForDraft\(draft\)/.test(mjs) &&
+     /var jobId = newPanoJobId\(\);/.test(mjs) &&
+     /var framePaths = await uploadJobFrames\(draft\.pid, jobId, draft\.video, function \(stage, done, total\)/.test(mjs));
 
   // Genuine execution: a fake, controllable <video> element (same
   // monkey-patch-document.createElement convention as the capture.js race

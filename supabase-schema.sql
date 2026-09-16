@@ -358,6 +358,118 @@ create policy floor_plan_pins_rw on floor_plan_pins for all
 create index if not exists ppr_slides_ppr_idx
   on ppr_slides (ppr_id, slide_no);
 
+-- 1c) Server-side 360° stitching (pano360_jobs) -------------------------------
+-- See migrations/2026-09-16-pano360-jobs.sql for the full design note (why a
+-- job queue rather than one function call, how self-chaining + the pg_cron
+-- safety net drive it forward, and the one manual Vault step this file
+-- cannot do for you).
+create extension if not exists pg_net;
+
+create table if not exists pano360_jobs (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text not null references projects(id),
+  created_by      uuid not null default auth.uid() references users(id),
+  status          text not null default 'queued'
+                    check (status in ('queued','aligning','compositing','done','failed','cancelled')),
+  frame_paths     text[] not null,
+  frame_count     int not null,
+  step_cursor     int not null default 0,
+  offsets         jsonb not null default '[]'::jsonb,
+  pairs_total     int,
+  pairs_fallback  int not null default 0,
+  composite_state jsonb,
+  result_path     text,
+  thumb_path      text,
+  quality         text,
+  progress_pct    numeric not null default 0,
+  progress_msg    text,
+  error           text,
+  attempts        int not null default 0,
+  meta            jsonb not null default '{}'::jsonb,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists pano360_jobs_proj_idx on pano360_jobs (project_id, created_at desc);
+create index if not exists pano360_jobs_active_idx on pano360_jobs (status, updated_at)
+  where status in ('queued', 'aligning', 'compositing');
+
+alter table pano360_jobs enable row level security;
+drop policy if exists pano360_jobs_read on pano360_jobs;
+create policy pano360_jobs_read on pano360_jobs for select using (can_access_project(project_id));
+drop policy if exists pano360_jobs_ins on pano360_jobs;
+create policy pano360_jobs_ins on pano360_jobs for insert with check (
+  is_writer() and created_by = auth.uid() and can_access_project(project_id)
+  and status = 'queued' and step_cursor = 0
+);
+-- ⚠️ Column-level GRANT (below) is what actually restricts an ordinary client
+-- to the `status` column alone — see the migration file's own long comment.
+drop policy if exists pano360_jobs_upd on pano360_jobs;
+create policy pano360_jobs_upd on pano360_jobs for update
+  using ((created_by = auth.uid() or is_admin()) and status in ('queued','aligning','compositing'))
+  with check ((created_by = auth.uid() or is_admin()) and status = 'cancelled');
+revoke update on pano360_jobs from authenticated;
+grant update (status) on pano360_jobs to authenticated;
+drop policy if exists pano360_jobs_del on pano360_jobs;
+create policy pano360_jobs_del on pano360_jobs for delete using (
+  (created_by = auth.uid() or is_admin()) and status in ('done','failed','cancelled')
+);
+
+create or replace function pano360_invoke(p_job_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_url text; v_key text;
+begin
+  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'pano360_function_url';
+  select decrypted_secret into v_key from vault.decrypted_secrets where name = 'pano360_service_key';
+  if v_url is null or v_key is null then return; end if; -- see migration's own note: deliberate no-op until Vault is configured
+  perform net.http_post(
+    url := v_url,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_key),
+    body := jsonb_build_object('job_id', p_job_id)
+  );
+end;
+$$;
+grant execute on function pano360_invoke(uuid) to service_role;
+
+create or replace function pano360_jobs_after_insert()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.status = 'queued' then perform pano360_invoke(new.id); end if;
+  return new;
+end;
+$$;
+drop trigger if exists pano360_jobs_notify on pano360_jobs;
+create trigger pano360_jobs_notify after insert on pano360_jobs
+  for each row execute function pano360_jobs_after_insert();
+
+create or replace function pano360_sweep_stuck_jobs()
+returns void language plpgsql security definer set search_path = public as $$
+declare r record;
+begin
+  for r in
+    select id from pano360_jobs
+    where status in ('queued','aligning','compositing') and updated_at < now() - interval '90 seconds' and attempts < 200
+    order by updated_at asc limit 25
+  loop
+    update pano360_jobs set attempts = attempts + 1, updated_at = now() where id = r.id;
+    perform pano360_invoke(r.id);
+  end loop;
+  update pano360_jobs set status = 'failed',
+    error = 'Stopped after ' || attempts || ' retries with no progress — the frame files may be missing from storage.',
+    updated_at = now()
+  where status in ('queued','aligning','compositing') and attempts >= 200;
+end;
+$$;
+grant execute on function pano360_sweep_stuck_jobs() to service_role, postgres;
+
+do $$
+begin
+  execute 'create extension if not exists pg_cron';
+  perform cron.unschedule('pano360-sweep') where exists (select 1 from cron.job where jobname = 'pano360-sweep');
+  perform cron.schedule('pano360-sweep', '* * * * *', 'select pano360_sweep_stuck_jobs();');
+exception when others then
+  raise notice 'pano360-jobs: could not schedule the pg_cron safety net (%). Self-chaining via pg_net still works on its own.', sqlerrm;
+end $$;
+
 -- 2) Issues, Concerns & Lessons Learned --------------------------------------
 create table if not exists issues_lessons (
   id          uuid primary key default gen_random_uuid(),

@@ -1006,6 +1006,11 @@ window.Pano360 = (function () {
     extractFrameAt: extractFrameAt,
     getDuration: getDuration,
     stitchFromVideo: stitchFromVideo,
+    // Real public exports — the server-job upload path (module.js) extracts and
+    // uploads frames itself now, rather than running the whole local stitch, so
+    // it needs these two directly rather than only through stitchFromVideo.
+    extractFrames: extractFrames,
+    frameCountFor: frameCountFor,
     // Test-only hooks — genuinely execute the pure/near-pure pieces.
     _extractFrames: extractFrames,
     _fixInfiniteDuration: fixInfiniteDuration,

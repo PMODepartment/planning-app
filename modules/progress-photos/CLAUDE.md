@@ -2,6 +2,126 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 360° stitching moves off the browser entirely: extract-and-upload on the client, a self-chaining Edge Function job does the actual alignment/compositing server-side (2026-09-16)
+
+Every entry below this one, going back to 2026-09-11, is the same fight fought from the client
+side: OpenCV.js/WASM stitching a real recording is genuinely several minutes of sequential,
+CPU-heavy work, and a phone browser tab — especially iOS Safari, which evicts a backgrounded
+tab's memory far more aggressively than desktop and does not reliably fire `beforeunload` on an
+app-switcher kill — cannot be trusted to keep that work alive for that long. Every fix so far
+(fixed-48 frame sampling, `navigator.storage.persist()`, IndexedDB draft persistence, a
+completion `Notification`) made losing that work *less likely* or *easier to recover from*. None
+of them could make the underlying problem — a multi-minute compute job living entirely inside one
+browser tab — actually go away. This entry does: the stitch itself now runs **server-side**, in a
+self-chaining Supabase Edge Function job, and the browser's part of a 360° capture shrinks to
+"extract frames, upload them, insert one row" — seconds of work, safely on Storage before anything
+can be lost.
+
+### The server side (already built and documented in their own files)
+
+**`migrations/2026-09-16-pano360-jobs.sql`** (run this) adds `pano360_jobs` — one row per capture,
+tracking `status` (`queued → aligning → compositing → done|failed|cancelled`), the uploaded
+`frame_paths`, a `step_cursor`/`offsets`/`composite_state` the worker uses to resume where it left
+off, `progress_pct`/`progress_msg` for the client to poll, and `result_path`/`thumb_path` once
+done. RLS: any project writer may INSERT, but `with check` forces `status='queued'` and
+`step_cursor=0` — a client can never hand the worker a job that claims to already be in progress.
+UPDATE is column-level restricted (`grant update (status) …`) so the only thing a client can ever
+change post-insert is cancelling it (`status='cancelled'`) — every alignment/compositing field is
+write-only from the worker's own service-role connection. DELETE is owner/admin, terminal statuses
+only. A `pano360_invoke(job_id)` SECURITY DEFINER function (reading a Vault-stored function URL +
+service key) drives the job forward — a `pg_net.http_post` trigger fires it on insert/status
+change, with a `pg_cron` sweep as the safety net for a job that stalls between invocations. **It
+is a deliberate no-op until the owner runs the two Vault `create_secret` calls the migration's own
+header documents** — until then a job sits `queued` forever, which is a config gap, not a code bug.
+
+**`supabase/functions/pano360-process/index.ts`** is the worker. Per the migration's own reasoning:
+Edge Functions cap **active CPU time** at ~2s per invocation regardless of plan (wall-clock and
+network I/O don't count against it, but WASM/pixel-math does) — so it deliberately does **one
+bounded step** per invocation (align one frame pair, or paste one small batch into the growing
+composite) and re-invokes itself for the next, rather than gambling that a real ~47-pair capture
+fits inside a single cold-isolate call. The alignment/compositing math itself is pure TypeScript,
+Node-testable with no Supabase/Deno runtime needed — built and verified in an earlier turn of this
+same work (tasks #2–#4 above), not touched in this pass.
+
+### The client side — this pass
+
+**`runStitchForDraft(draft)` no longer calls `Pano360.stitchFromVideo` at all.** It now:
+extracts frames locally (still via `Pano360.getDuration`/`frameCountFor`/`extractFrames` — video
+decoding has to happen in a browser, there's no way around that part), downsizes each to a
+`JOB_FRAME_MAXW=640` JPEG at `JOB_FRAME_JPEG_Q=0.82` (matching the server's own
+`COMPOSITE_FRAME_MAX_WIDTH`, so the two sides agree on what a "frame" is), uploads them through a
+capped-concurrency pool (`JOB_UPLOAD_CONCURRENCY=4`, the same pattern this file already uses
+elsewhere for batch uploads) to `<project>/pano360-jobs/<jobId>/frame-XXXX.jpg`, inserts one
+`pano360_jobs` row, and polls it (`PANO360_POLL_MS=4000`, plain `setTimeout` — not Realtime,
+deliberately: this needs one row's state on a slow cadence, not a subscription) until it reaches
+`done`/`failed`/`cancelled`.
+
+- **`pano360.js` gained two real, documented exports** — `extractFrames`/`frameCountFor` — for the
+  client to call directly, rather than only through the now-unused `stitchFromVideo` local-stitch
+  path. Everything else in that file (the actual OpenCV.js pipeline, the frame-density history
+  documented at length below) is untouched; the client simply stopped calling into it for the
+  stitch itself.
+- **The video's own bytes are dropped the moment every frame is safely uploaded** — resuming a
+  draft after that point means polling the job, never re-extracting/re-uploading the source. This
+  is a real reduction in what has to survive a tab eviction: only the small `jobId` needs to
+  persist locally, not a multi-hundred-MB raw recording.
+- **`pollPano360Job`'s "row not found" handling distinguishes two different facts.** A brand-new
+  job may not have replicated to the read replica yet (retry silently); a job that **existed and
+  then vanished** (Discard cancels-then-deletes the row) rejects with a real message instead of
+  polling forever. `trackJobToCompletion` checks `findPano360Draft(draft.id)` before every DOM
+  mutation, at every tick and at completion/failure, so a background poll for a draft the planner
+  already discarded or confirmed-and-saved can never resurrect or mutate it.
+- **`rehydratePano360Drafts()` is now three-way, not two-way.** A persisted draft recovers as: a
+  **job-backed** resume (`rec.jobId` present — `trackJobToCompletion` picks the poll back up,
+  genuinely continuing on the server, not restarting anything); a **legacy local restart**
+  (`rec.sourceBlob` present, no `jobId` — a draft persisted by an older build of this code, before
+  this change, still gets its honest "restarting from your saved recording" treatment); or an
+  honest error (`processing` with neither — cannot be resumed, says so). The recovery toast now
+  distinguishes all three in its wording (*"resuming (continuing on the server)"* vs. *"resuming
+  (restarting from your saved recording)"* vs. *"waiting for review"*), so a planner isn't told
+  their capture is "resuming" when what's actually happening is a fresh local re-stitch.
+- **A job-backed `'ready'` draft rehydrates its `stitchResult` from the job row's own columns**
+  (`width`/`height`/`quality`/`pairs_fallback`/`pairs_total`), never from a blob that may not
+  exist locally — `signStoragePath(rec.jobResultPath)` re-signs the URL fresh on every rehydrate,
+  since a signed URL has a real expiry and a draft can sit unconfirmed across more than one
+  browser session.
+- **Confirm & Save reuses the server's own output paths directly wherever possible**, rather than
+  re-uploading bytes the job already produced: `draft.jobResultPath` becomes the saved row's
+  `photo_url` outright (no second upload of the finished panorama), and `draft.jobThumbPath`
+  becomes `thumb_url` **unless** the planner explicitly picked a different frame via "Use this
+  view as thumbnail" (tracked by the new `_thumbOverridden` flag, set the moment that button is
+  used) — in which case the planner's own chosen frame is uploaded instead, exactly as before.
+  Only the legacy (no-job, pre-processed-photo) path still uploads from a local blob at all.
+
+### Verified
+
+`node --check` clean on `module.js`, `pano360.js` and `test.js`. The one existing assertion this
+architecture change genuinely broke — `test.js`'s check on the OLD `runStitch`'s 4-stage local
+progress-message strings, which no longer exist now that stitching doesn't happen locally at all —
+was rewritten in place to assert the current shape (`runStitchForDraft` extracting+uploading via
+`uploadJobFrames`, no local 4-stage message, no `function runStitch(` at all), per this file's own
+"healthy churn from an intentional change" convention rather than left failing or silently deleted.
+Full suite: **973 passed, 4 failed** — the same 4 pre-existing, unrelated failures this file's own
+history already carries (a PDF page-break assertion, a filter-panel density assertion, and two
+`capture.js` audio-track assertions), confirmed unchanged by diffing the exact failure set against
+`HEAD` before this change (via `git stash`) — this pass introduces zero new failures and fixes zero
+pre-existing ones; it is scoped entirely to the 360° job-upload rewrite.
+
+⚠️ **Not verified signed in, and the two things most worth watching on the first real capture**:
+(1) the Vault secrets (`pano360_function_url`/`pano360_service_key`) have not been set by the
+owner, so `pano360_invoke` is currently a documented no-op — a real capture will upload its frames,
+insert its job row, and then sit at `queued` forever until that config step is done; (2) no real
+frame has ever been uploaded through `uploadJobFrames` or polled through `pollPano360Job` against a
+live Supabase project — the upload/poll logic is new this pass and has only been checked by
+`node --check` and manual review, not by driving a real capture end to end. The Edge Function
+worker itself (`pano360-process`) and its own alignment/compositing math were built and are
+documented in an earlier turn of this same work, not re-verified here.
+
+`module.js`/`pano360.js?v=` → `20260916a`; `MODULE_V` bumped to match (this module's own
+`index.html` changed — both script tags' `?v=` lines), re-derived past whatever `origin/main` has
+independently reached the same day, per this repo's own standing rule for exactly that collision
+shape.
+
 ## "When I close the browser app, the video I uploaded for 360 processing is gone" — a real browser-eviction risk closed with `navigator.storage.persist()`, and silent recovery made visible with a toast (2026-09-14, later still yet again again again)
 
 Owner: *"when I close the browser app, the video i uploaded for 360 processing is gone. please
