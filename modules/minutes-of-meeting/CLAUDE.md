@@ -1,5 +1,101 @@
 # Module: minutes-of-meeting
 
+## 2026-09-15 (b) — "Minutes by meeting" fits its card instead of scrolling, and the List/Calendar tab loses its whitespace
+
+Owner, two phone screenshots. (1) The Meetings Dashboard's "Minutes by Meeting" tile: *"reduce the
+bar width a bit instead making it scrollable"*. (2) The Meetings List toolbar's List/Calendar
+toggle: *"there is some whitespace. please fix."*
+
+### 1 — the chart was measured against the viewport, not guessed from it
+
+The previous fix (below) made `hbarSVG` render at its own true pixel width always — correct, and
+the reason "Minutes by Meeting" then needed `.il-dash-cardbody-scroll` to scroll at all: that tile
+passed a flat `width: 760`, sized for a wide desktop card, and a phone's card is nowhere near
+760px wide.
+
+⚠️⚠️ **The fix is not a smaller hard-coded number — a fixed number is exactly what was wrong the
+first time.** `host` (`renderMomDashboard`'s own `#il-mom-view` root, already in scope) is a plain
+block child of `.pd-main`, so its `clientWidth` already reflects the real available width —
+whatever the sidebar is doing (expanded, collapsed, or a mobile off-canvas drawer that consumes no
+flex width at all), at whatever viewport size. `meetingChartW = clamp(300, host.clientWidth - 40,
+760)` — `-40` covers the wide card's own `16px` side padding (32) plus a small buffer, and the
+760 ceiling keeps desktop exactly as it was. Passed into the SAME `hbarSVG` call, so the chart is
+sized to fit its card instead of overflowing it — nothing about how `hbarSVG` renders changed.
+
+### 2 — `.il-mom-browsebar > * { flex: 1 1 100%; }` had one child left, and it had a border
+
+⚠️⚠️ **A stale mobile rule, not a new bug.** That stretch-every-child-to-full-width rule was
+written when `.il-mom-browsebar` still held a search box worth stretching on a phone. The
+2026-09-03 round-2 pass moved Filter/Export/"+ Add meeting"/search out into the static top bar,
+leaving `.il-viewtoggle` — the List/Calendar toggle — as the row's **only** child, and nobody
+revisited the mobile override once that happened. `.il-viewtoggle` carries a real `border` (it's
+a two-button pill), so stretching it to `flex-basis: 100%` filled that bordered box with a visible
+blank strip to the right of the two icons: exactly the "whitespace" in the tab, on the phone width
+where the `@media (max-width: 700px)` rule applies.
+
+The rule is removed. `.il-viewtoggle` already declares `flex: none` (its own intrinsic two-button
+width) and `.il-mom-browsebar` already right-aligns it (`justify-content: flex-end`) — both hold at
+every width once the override stops fighting them.
+
+### Verified
+
+`node --check` clean on `module.js`; `module.css` brace balance holds (365/365); 0 NUL bytes across
+`module.js`/`module.css`/`index.html`; `node tools/wiring-check.js` — 136/136, 3,670 cross-module
+references, 0 failed.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the chart-width fix
+is reasoned from the CSS box model (`clientWidth` on a plain block child of `.pd-main`) and the
+whitespace fix from the cascade (an equal-specificity rule losing its only reason to exist), not
+observed rendered on a device.
+
+`module.css`/`module.js?v=` → `20260915b`. No `MODULE_V` bump — `index.html`'s structure is
+unchanged, only the two module-local asset versions moved.
+
+## 2026-09-15 — The dashboard's "Minutes by meeting" bar chart was scaling text to ~5px, and leaving the blank space behind
+
+Owner, off a phone screenshot of the Meetings Dashboard: *"minutes by meeting tile labels are not
+readable. there is also white space between bars and legend."*
+
+⚠️⚠️ **BOTH SYMPTOMS ARE ONE CAUSE.** `hbarSVG`'s returned `<svg>` set `width="100%"` (fluid, fills
+its container) against a `viewBox` whose own width is a fixed number — `380` for the Department/
+Responsible cards, **`760`** for "Minutes by meeting" specifically, so its bars would have more room
+on a wide desktop dashboard. A mismatch between the rendered width and the viewBox width forces the
+browser to scale the WHOLE viewBox uniformly to fit — bars, gaps and every `font-size="11"` text node
+alike — while the `height` **attribute** stayed the un-scaled value. On a ~340px phone the "Minutes by
+meeting" card's scale factor is 340/760 ≈ **0.447**: labels render at **~4.9px**, and because the SVG's
+own box height never shrank to match, the now-tinier content leaves roughly **70px of blank space**
+inside that box before the legend that follows it — measured by executing the shipped function
+(`git show HEAD`) against a fixture shaped like the screenshot (4 meetings). The Department/Responsible
+cards carry the identical defect, just milder, since their default width (380) is much closer to a
+typical phone's container width.
+
+**Fixed by rendering the chart at its own true pixel size, always.** `width`/`height` attributes now
+match `viewBox` 1:1 (`width="' + w + '"`, not `"100%"`), so a scale mismatch can never occur — text is
+always exactly `fs`px, on any screen, and the box height always exactly equals its real content height,
+so there is never blank space left over. ⚠️ **A chart now needing more room than its card scrolls
+horizontally instead** — `.il-dash-cardbody-scroll` gains `overflow-x: auto`, and `.il-dash-card` (a
+CSS grid item) gains `min-width: 0` so a wide, non-shrinking SVG can't force the whole grid track
+wider and push the page into horizontal scroll — the same `grid-item min-width:auto` trap this app's
+own history has recorded for `.pp-form2` images.
+
+**Verified:** the shipped `hbarSVG` sliced out of the file and executed against a before/after
+contrast — BEFORE (git HEAD): `width="100%"`, scale 0.447 on a 340px container, rendered font ≈4.9px,
+≈70px of dead space inside the box; AFTER: `width="760"` (or `"380"` for the sibling cards), scale
+always 1, font always 11px, box height always equals content height. `node --check` clean;
+`module.css` brace balance holds (366/366); 0 NUL bytes across all three touched files;
+`node tools/wiring-check.js` — 126/126, 0 version splits; `node tools/dead-hooks.js` unchanged against
+its documented 9-finding baseline.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the scale/geometry
+claims are proved by executing the real shipped function against a fixture, not observed rendered on
+a device. This module's own three dashboard bar charts (Department, Responsible, Meeting) share one
+`hbarSVG`, so all three are fixed together; `issues-lessons/module.js` carries its own, separately
+maintained copy of the same function (this app's convention — no shared chart runtime across modules)
+and is untouched, since it was not reported and was never passed a width wider than its default.
+
+`module.css`/`module.js?v=` → `20260915a`. No `MODULE_V` bump — `index.html`'s structure is
+unchanged, only the two module-local asset versions moved.
+
 ## 2026-09-13 — Recurring becomes a tinted cycle-icon toggle, matching the star; the Meetings List drops its "Recurring" label for the same icon
 
 Owner, off the "+ Add meeting" screenshot: *"the recurring button is still off. to fix, beside the

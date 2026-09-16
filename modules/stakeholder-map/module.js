@@ -523,7 +523,7 @@ window.StakeholderMap = (function () {
     //    localStorage, and the seg's `on` class is markup that does not know about it.
     setLayout(smLayout, true);
     switchView(curView);
-    if (pid) load();
+    if (pid || (window.AppAuth && AppAuth.isPortfolioScope())) load();
     joinCollab();
   }
 
@@ -540,7 +540,13 @@ window.StakeholderMap = (function () {
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = $('sm-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ Portfolio scope never falls back to a real project — see the
+    // identical note in risk-register/module.js's loadProjects(). `pid` stays
+    // null, which is what makes `load()` below query across every project
+    // instead of silently substituting the first one alphabetically.
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     sel.innerHTML = '<option value="">Select project…</option>' +
       projects.map(function (p) {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>';
@@ -568,15 +574,22 @@ window.StakeholderMap = (function () {
   }
 
   async function load() {
-    if (!pid) return;
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) return;
     // ⚠️ Keyset-paginated (PDb.selectAll) — a plain .select() truncates at 1000 rows
     // server-side with no error. Shaped as {data}/{error} so the offline-cache and
     // migration-hint branches below are untouched.
     var res;
-    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
-    catch (err) { res = { error: err }; }
+    try {
+      if (portfolio) {
+        var ids = await UI.allProjectIds();
+        res = { data: ids.length ? await PDb.selectAll(TABLE, function (q) { return q.in('project_id', ids); }) : [] };
+      } else {
+        res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) };
+      }
+    } catch (err) { res = { error: err }; }
     if (res.error) {
-      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
+      if (!portfolio && window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
       UI.toast(migrationHint(res.error), 'error'); return;
     }
     rows = res.data || [];
@@ -591,7 +604,7 @@ window.StakeholderMap = (function () {
     overlayPeople();
 
     sortRows();
-    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
+    if (!portfolio && window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
 
     // ⚠️ Two renders on purpose. The first paints the register straight away with
     // initials avatars; signing 85 photo URLs is a network round trip and making
@@ -1706,7 +1719,11 @@ window.StakeholderMap = (function () {
   }
 
   function openForm(r, fopts) {
-    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!pid) {
+      UI.toast((window.AppAuth && AppAuth.isPortfolioScope())
+        ? 'Portfolio is read-only — switch to a project to add or edit.' : 'Select a project first', 'warn');
+      return;
+    }
     var isNew = !r; r = r || {};
     var e = E();
     fopts = fopts || {};

@@ -931,7 +931,11 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
    --------------------------------------------------------------------------- */
 .il-mom-dashsec { margin: 18px 0 10px; font-size: var(--pd-fs-base); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
 .il-dash-grid { display: grid; grid-template-columns: 0.8fr 1.6fr 1.6fr; gap: 14px; align-items: stretch; }
-.il-dash-card { padding: 14px 16px; display: flex; flex-direction: column; }
+/* ⚠️ min-width:0 — a CSS grid item's default min-width is `auto`, so a bar
+   chart wider than its card (hbarSVG now renders at its own true pixel
+   width, never scaled to fit) would otherwise widen the whole GRID TRACK
+   instead of scrolling inside `.il-dash-cardbody-scroll` below. */
+.il-dash-card { padding: 14px 16px; display: flex; flex-direction: column; min-width: 0; }
 /* h4 is the chart's TITLE and the one place bold survives on this dashboard
    (2026-09-03 owner ask: "no bold font except chart titles"). Not set here —
    it inherits the browser's default bold <h4> weight, which is exactly the
@@ -947,7 +951,11 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-dash-legend-bottom { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 10px; }
 .il-dash-cardbody { height: 260px; }
 .il-dash-cardbody-center { display: flex; align-items: center; justify-content: center; }
-.il-dash-cardbody-scroll { overflow-y: auto; padding-right: 2px; }
+/* overflow-x:auto — hbarSVG renders each chart at its own true pixel width
+   now (never stretched to fit), so a chart wider than its card (the "Minutes
+   by meeting" card's own width:760, or any card on a narrow phone) scrolls
+   horizontally here rather than being scaled down into illegible text. */
+.il-dash-cardbody-scroll { overflow-y: auto; overflow-x: auto; padding-right: 2px; }
 .il-dash-wide { grid-column: 1 / -1; }
 .il-donut-svg { max-width: 320px; }
 /* One legend text size for every chart's legend, pie or bar (2026-09-03:
@@ -1028,8 +1036,17 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 
 /* ---- Mobile & tablet ------------------------------------------------------ */
 @media (max-width: 700px) {
-  .il-mom-browsebar { flex-wrap: wrap; }
-  .il-mom-browsebar > * { flex: 1 1 100%; min-width: 0; }
+  /* ⚠️⚠️ `.il-mom-browsebar > * { flex: 1 1 100%; }` USED to stretch every child of
+     this row to the full row width on a phone — written back when the row still held
+     a search box worth stretching. Items 2-3 (2026-09-03, round 2) moved everything
+     but the List/Calendar toggle out into the static top bar, so `.il-viewtoggle` has
+     been the row's ONLY child since — and stretching it to 100% width fills its own
+     bordered box (`.il-viewtoggle` carries a real `border`) with a visible blank strip
+     to the right of the two icon buttons: the reported "whitespace" in the tab that
+     switches list/calendar. The toggle already declares `flex: none` (its intrinsic,
+     two-button width) and `.il-mom-browsebar` already right-aligns it
+     (`justify-content: flex-end`) at every width — nothing here needs to override that
+     any more, on a phone or otherwise. */
   .il-mom-listtable { min-width: 0; }
   .il-mom-schedbody { flex-direction: column; }
   .il-mom-schedbody.has-sel .il-mom-schedlist { flex: 1 1 auto; }
