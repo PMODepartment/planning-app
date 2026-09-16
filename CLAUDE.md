@@ -102,6 +102,111 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (x) — The sidebar's and profile menu's "Admin" link is renamed Users, with a matching icon
+
+Owner: *"also, when clicking on profile, there is button for admin, change this to users. for the
+profile pop up and the side bar, change also the icon of users to users."*
+
+Two sites in `assets/js/ui.js` render the same link to `admin.html` — `renderUserBar()`'s avatar/
+profile dropdown, and `renderNav()`'s sidebar System section — and both carried the label **Admin**
+with a gear (`settings`) icon. Both are now labelled **Users** and carry the `users` icon (a
+person-pair glyph already defined in `icons.js`, used nowhere else on this link before). ⚠️ Only the
+label and icon changed — the link still points at `admin.html`, and the `isAdmin`/`ctx.isAdmin` role
+gate (`['admin','super_admin'].indexOf(profile.role) !== -1`) is untouched; renaming the button is
+not the same decision as who can see it.
+
+⚠️ The sidebar's `cls('admin')` active-state class and the popup's own structure are unchanged —
+only the visible text (`Admin` → `Users`), the `title` attribute on the sidebar link, and the
+`data-ico` value (`settings` → `users`) moved.
+
+Verified: `node --check` on `ui.js`; grepped for both edit sites and confirmed no other `settings`-
+icon reference to this link survives.
+⚠️ **Not verified signed in** — no live login is possible in this environment.
+
+`ui.js` is shared — `?v=` bumped `20260915g` → `20260916a` across all **23** referencing pages
+(root pages, `admin.html`, and every module `index.html`), confirmed 0 stale references remain and
+all 23 now point at the new token.
+
+### 2026-09-16 (w) — Admin: the mobile role/department selects were clipped, and Access splits into Projects + Modules with the button beside its own column
+
+Owner, off a phone screenshot of the Users table showing "super admin" as "cuner admin" and
+"planner" as "nlanner": the role/department selects are unreadable on mobile. Then: consolidate
+Approve/Reject/Delete under one Actions control, icon-only; and split the combined Access column
+back into a Projects column and a Modules column, each with its own assignment control beside it.
+
+### ⚠️⚠️ THE GARBLED TEXT IS THE SAME BUG THIS FILE ALREADY DOCUMENTS FOR FILTER SELECTS, JUST NEVER EXTENDED HERE
+
+`dashboard.css`'s ≤700px block carries `.pd-app .pd-main .pd-select { height:auto; min-height:var(--pd-tap) }`
+specifically because the iOS-zoom guard forces every mobile input to 16px, and a `<select>` fixed at
+34px with 10px of padding clips the font's own line height — that fix is on file, with the exact words
+*"clipped the descenders off 'All categories'"*. But the very next rule, `.pd-app .pd-main table
+.pd-select { width:auto; height:34px; min-height:0 }`, re-shrinks any select sitting inside a
+`<table>` back down — correct for a dense editable grid (a BOQ line, a cost matrix cell) where 34px
+matches the row it lives in, and exactly wrong for this table's Role/Department selects, which are
+ordinary `.pd-table` rows carrying whole words ("super_admin", "Human Resources") at the enlarged
+font. The clipped, compressed glyph run is what read as "cuner admin". Fixed with a page-local
+override in admin.html's own `<style>` — `#users-table .pd-select { height:auto; min-height:var(--pd-tap);
+min-width:150px }` — an id beats the shared rule's three classes/elements on specificity regardless of
+source order, so no `!important` is needed and no shared file changes for one page's table shape.
+
+### Approve / Reject / Delete become one icon-only Actions menu
+
+⚠️ A body-appended popover, positioned `fixed` from the trigger's own `getBoundingClientRect()`,
+rather than nested `absolute` in the cell — the table's card wrapper is `overflow:auto` so the wide
+table can scroll, and a nested popover would be clipped by that same scroller the moment a row near
+the bottom opened one. ⚠️⚠️ Toggled by a **class**, never `[hidden]` — this file already records at
+length how `[hidden]` loses a specificity tie against an author's own `display` rule on other
+components in this app; a class sidesteps the trap rather than risking it a third time. Icon-only,
+with `title=` carrying the label (this app's standing icon-only-button convention); Delete keeps its
+danger tint, Reject a warn tint, Approve an ok tint — colour-coded at a glance inside one control
+rather than three separate buttons of mixed weight. `data-approve`/`data-reject`/`data-del` are gone
+in favour of one `data-am-act`, but nothing about *what* each action does changed, only where the
+control lives.
+
+⚠️ The "close on outside click" and "close on Escape" listeners are wired to `document` **once**,
+outside `loadUsers()` — `loadUsers()` reruns on every approve/reject/delete/role/department change,
+and a listener re-added on each rerun would stack a fresh, never-removed copy per call, each one a
+no-op past its own render but still walking the DOM on every click for the rest of the session. The
+menu elements themselves *are* rebuilt every render (they're appended to `<body>`, so they outlive a
+table rebuild unless removed by hand) — cleared at the top of `wireActionsMenus` before new ones are
+appended, so a stale menu can never sit forgotten on the page keyed to a user id that has since moved.
+
+### Access splits into Projects and Modules, and the Projects button moves beside its own column
+
+⚠️ **"Access" was answering two different questions in one cell** — which projects, and which
+screens — and that is what stranded the Projects button in the Actions cluster with nothing to say
+it belonged to the chip list two columns to its left. Two columns now: **Projects** (the chip list
+or "All projects", with the **Projects** button riding in the same cell right beside it, for the
+roles it still means anything for) and **Modules** (the `superAdminOnly` readout, alone).
+
+⚠️⚠️ **There is no equivalent "Modules" button, and that is a finding rather than an omission.**
+Module visibility is a property of the **role** (`config.js`'s `superAdminOnly`, gated identically in
+`ui.js`'s `renderNav`, `modules-grid.js` and `dashboard.html`'s tile grid) — there is no per-user
+override anywhere in the schema for it to open a picker onto. Building one would mean a new column,
+new RLS, and touching every one of those enforcement points for a feature nobody has asked to exist
+yet; putting a button there that writes nowhere would be worse than the gap it replaces. If a
+per-user module override is actually wanted, that is its own, larger change.
+
+⚠️⚠️ **CORRECTION (merged 2026-09-16):** that larger change landed the same day — see
+2026-09-15 (zb) below, which adds `users.module_access`, `AppAuth.moduleVisible()` and a real
+**Modules** button per row. This entry's finding stood only until that entry shipped; it is left
+in place as the reasoning that made the later change necessary, not as a still-true statement of
+the schema.
+
+Verified: the inline `<script>` parses (`node --check`); brace balance holds (163/163 overall,
+20/20 in the `<style>` block); 0 NUL bytes; `data-approve`/`data-reject`/`data-del` confirmed gone
+from the Users table (the one surviving `data-del` hit is the unrelated Group Head row, untouched);
+every new `--pd-*` token referenced (`--pd-tap`, `--pd-z-escape`, `--pd-ok-bg`, `--pd-warn-bg`,
+`--pd-bad-bg`, `--pd-radius`, `--pd-radius-md`, `--pd-card`, `--pd-line`, `--pd-shadow-lg`, `--pd-ink`,
+`--pd-bg`) confirmed defined in `dashboard.css` and paired for dark mode.
+⚠️ **Not verified signed in, and not rendered** — no browser is available in this environment, so the
+mobile select fix is argued from the same box-model reasoning `dashboard.css`'s own comment already
+uses for the sibling bug, not observed on a phone. The owner's own reload is the real test; the tell
+is simply whether the Role/Department dropdowns read cleanly at phone width.
+
+No shared asset changed (`dashboard.css`, `icons.js` untouched) — `chevronDown`/`check`/`x`/`trash`
+are all existing icons — so no `?v=` bump and no `MODULE_V` bump; `admin.html` is fetched at its own
+URL and is not a module page.
 ### 2026-09-16 (v) — The Portfolio Dashboard is the Overview: two duplicate views and the one-entry dropdown are gone
 
 Owner, on the page with its view dropdown open: *"Stakeholder map is here why? This is just a
@@ -2049,7 +2154,7 @@ different entry under one letter. Every letter `a`–`z` is spent for this date;
 matching how 2026-09-07 and 2026-09-10 continued past `z`. The collision changes nothing about the
 work — it is a changelog label, and no `?v=` or `MODULE_V` token was involved, which is why it
 conflicted quietly rather than failing anything.
-## 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
+### 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
 
 Owner, with the Portfolio Dashboard's view dropdown open: *"there is a dashboard module, and there is
 a dropdown that links to each module. that is wrong. The idea of each dashboard (e.g. s-curve, risk
@@ -2131,7 +2236,7 @@ New `assets/js/portfolio-dash.js` + `assets/css/portfolio-dash.css` at `?v=20260
 
 ### 2026-09-15 (w) — A 3D card framed for a shape its canvas no longer had
 
-Owner: *“The presets view also do not view properly and I cannot see the ground”*, with the
+Owner: *"The presets view also do not view properly and I cannot see the ground"*, with the
 Vertical Stacking on `Right` showing a slab at the bottom of a mostly empty card. Detail:
 [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
 
@@ -2171,14 +2276,14 @@ PARSE OK; **2,074 → 2,075 functions, 0 lost**; 0 NUL bytes.
 The browser session signed out mid-task and signing in is not something I do, so **no rendered
 frame has been seen**. What is proven is the arithmetic. The honest thing to check first is simply
 whether the building now fills the card at a wide window.
-⚠ **“I cannot see the ground” is NOT addressed and is not the same bug.** The grade plate belongs
+⚠ **"I cannot see the ground" is NOT addressed and is not the same bug.** The grade plate belongs
 to the **site** model (`_vsSiteFloorModel`, 2026-09-14); a per-trade tower card has never drawn one.
 Whether it should is a design question, not a framing fault, so it is reported rather than guessed
 at.
 
 ### The rest of this toolbar was fixed by a concurrent session, not by me
-Owner's *“the trades button still clips”*, *“no delineation from the main toolbar”* and *“let's
-revamp and make it proper”* are **already live**, shipped in parallel by the session working
+Owner's *"the trades button still clips"*, *"no delineation from the main toolbar"* and *"let's
+revamp and make it proper"* are **already live**, shipped in parallel by the session working
 `claude/portfolio-module-fixes-e4cu09`: `.ps-vstack` gained
 `border-top:1px solid var(--pd-line)` (the delineation), and the group labels moved **inside** the
 segments as `.ps-vs-seglab` with `.ps-vs-rowlab` for the chip rows — a uniform treatment, and a

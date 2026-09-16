@@ -62,7 +62,7 @@
         ? '<a class="pd-usermenu-link" href="' + base + 'my-work.html">' + mIco('clipboard') + 'My Work</a>'
         : '') +
       (isAdmin
-        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('settings') + 'Admin</a>'
+        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('users') + 'Users</a>'
         : '');
 
     mount.innerHTML =
@@ -524,14 +524,17 @@
             /* ⚠️ "Users", NOT "Admin" — owner 2026-09-15: *"for admin keep only user
                management and rename to Users."* admin.html dropped its Projects tab the
                same change (projects.html already owns that, group heads included), so
-               the page is user management now and the label says so.
+               the page is user management now and the label says so. A later owner ask
+               ("change also the icon of users to users") swapped the glyph too, from the
+               gear (`settings`) to the people pair (`users`) — the popup menu's matching
+               link (renderUserBar, above) carries the identical icon.
                ⚠️ THE KEY `admin` IS DELIBERATELY UNCHANGED — same call as the My Work
                row's `personal-dashboard` key just above: `cls('admin')` here and the
                `active: 'admin'` admin.html itself passes to renderNav must keep matching
                each other, and the filename/href stays `admin.html` so nothing that
-               already links here breaks. Only the visible word moved. */
+               already links here breaks. Only the visible word and the icon moved. */
             '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Users">' +
-              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Users</span></a>'
+              '<span class="pd-navico" data-ico="users"></span><span class="pd-navtxt">Users</span></a>'
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled && visible(m); });
