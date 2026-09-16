@@ -7,9 +7,9 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
   <link rel="stylesheet" href="module.css?v=20260916i" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916e" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
 </head>
 <body>
   <div class="pd-app">
@@ -35,21 +35,23 @@
           <select class="pd-select cc-project" id="cc-project" title="Project"></select>
         </div>
         <div class="cc-tabs pd-tabsrc" role="tablist">
-          <!-- ⚠️ THREE TABS, NOT SIX (2026-08-26). Owner: *"There are too many tabs to keep
-               track of."* Packages folded into Contract (a contract defines a package, so
-               one list keyed by package carries both); BOQ folded under Contract and PMI
-               under Claims — both keep their own screens, reached from inside the parent
-               tab instead of competing with it at the top level.
-               ⚠️ The tab count is load-bearing for the TITLE: module.css hid
-               `.cc-title-txt` below 1460px because "5 tabs need more room", so the sixth
-               tab is why the page had no title at all on a normal laptop. -->
+          <!-- ⚠️⚠️ TWO SESSIONS BUILT A DASHBOARD TAB FOR THIS MODULE INDEPENDENTLY, THE SAME
+               DAY, AND DISAGREED ABOUT WHERE IT LANDS. A concurrent session's dashboard put it
+               FIRST and made it the landing view ("the owner called this the module's front
+               page"); this session's owner, live, said the opposite in as many words — "it need
+               not be the landing tab" — and asked for a plainer single-table summary instead
+               (see module.js above ccDashHTML()). Resolved in favor of THIS session's version:
+               Contract stays the landing tab, Dashboard is fourth. The concurrent session's own
+               richer dashboard body (KPI cards, a verdict line, an async BOQ read) was NOT
+               carried over — the two are different designs for the same tab and only one can
+               ship; this owner's explicit, live instruction is what decided which.
+               ⚠️ The tab count is not load-bearing for the title either way — see the retained
+               reasoning below (unchanged since 2026-09-03/09-16): `UI.tabsToDropdown('.cc-tabs')`
+               converts this strip into one trigger naming only the current screen, so a fourth
+               entry costs zero width. -->
           <button class="cc-tab active" data-view="contract">Contract</button>
           <button class="cc-tab" data-view="claims">Claims / Change Order</button>
           <button class="cc-tab" data-view="eot">Extension of Time</button>
-          <!-- ⚠️ A FOURTH TAB, DELIBERATELY — see 2026-09-16 in module.js above ccDashHTML().
-               Not the landing tab (owner: "it need not be the landing tab"); Contract stays
-               active by default. The strip is a dropdown (UI.tabsToDropdown below), which is
-               why a fourth entry costs nothing in width — the owner's own reason for allowing it. -->
           <button class="cc-tab" data-view="dashboard">Dashboard</button>
         </div>
         <div class="cc-topbar-tools" id="cc-topbar-tools">
@@ -100,9 +102,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="../../assets/js/config.js?v=20260915a"></script>
   <script src="../../assets/js/auth.js?v=20260915a"></script>
-  <script src="../../assets/js/db.js?v=20260915i"></script>
+  <script src="../../assets/js/db.js?v=20260916c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260915i"></script>
+  <script src="../../assets/js/ui.js?v=20260916u"></script>
   <script src="../../assets/js/claims.js?v=20260915a"></script>
   <script src="../../assets/js/notebook.js?v=20260915d"></script>
   <script src="../../assets/js/icons.js?v=20260915f"></script>
@@ -121,14 +123,14 @@
   <script src="../../assets/js/attach.js?v=20260915b"></script>
   <script src="../../assets/js/co-insert.js?v=20260909r"></script>
   <script src="../../assets/js/xlgrid.js?v=20260907e"></script>
-  <script src="../../assets/js/portfolio-dash.js?v=20260915x"></script>
-  <script src="boq.js?v=20260914s"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
+  <script src="boq.js?v=20260916a"></script>
   <script src="pmi.js?v=20260911uc"></script>
-  <script src="packages.js?v=20260911uc"></script>
+  <script src="packages.js?v=20260916i"></script>
   <!-- affected.js before wizard.js and module.js: both read it as window.CCAffected. -->
   <script src="affected.js?v=20260911b"></script>
   <script src="wizard.js?v=20260915c"></script>
-  <script src="module.js?v=20260916i"></script>
+  <script src="module.js?v=20260916k"></script>
   <script>
     // Item 1 (2026-09-02): the topbar tab strip becomes ONE dropdown, and the
     // static module label beside it goes with it — the trigger already names

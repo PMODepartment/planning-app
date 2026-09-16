@@ -198,3 +198,65 @@ CSS layout, independent of any data, so the fix applies identically to a real se
   DP/billing-net/retention/terms lag land in the correct months and totals
   conserve (cash in = contract, cash out = Σ budgets).
 - Not yet run against live logins + live WPM read (see Status).
+
+---
+
+## The consolidated portfolio cash flow lands here (2026-09-16) — eprobles
+
+⚠️⚠️ **THE REFUSAL WAS ABOUT THE PROJECTION, NOT ABOUT THE PORTFOLIO.** Opened portfolio-wide
+this module said *"there is no single combined figure to show across every project"* — correct
+about summing several projects' own derived projections (one contract, one schedule, one WPM
+mirror each), and beside the point: the portfolio view does not re-derive anything. It reads
+`cash_flow_rollup`, the per-project monthly roll-up **this module itself writes on load**, and
+consolidates that.
+
+⚠️ Which means the portfolio view is only as complete as the roll-up: a project whose Cash Flow
+has never been opened contributes nothing, and the empty state says so in as many words. ⚠️ The
+read is paginated (`PDb.selectAll`) — 19 projects × a ~5-year horizon is past PostgREST's
+1000-row cap, and a truncated read here would under-state the peak funding need silently.
+
+Owner, 2026-09-16: *"at a portfolio view, the dashboards of each corresponding module must be
+revised … those dashboards must be the landing page of each module when under the portfolio
+view."*
+
+⚠️⚠️ **THE DASHBOARD IS THE LANDING PAGE OF THIS MODULE IN PORTFOLIO SCOPE.** Opened from the
+Portfolio sidebar (`#pd_scope=portfolio`), this page now mounts its cross-project view from
+`assets/js/portfolio-dash.js` — the renderer that used to be a TAB on a separate page called
+Portfolio Dashboard, moved here whole. Opened from a project's own module grid, nothing about
+this module changes.
+
+- ⚠️ **The module's own `init()` is SKIPPED** in that scope: it would read the same tables a
+  second time into a UI hidden underneath the dashboard.
+- ⚠️⚠️ **So `takeOver()` wires the topbar project `<select>` itself.** Skipping `init()` skips
+  the code that fills it, and choosing a project there is the only way to LEAVE portfolio scope
+  from the page you are standing on. A test asserts the id handed to `takeOver` exists in this
+  page's own markup — a typo there is a null nothing notices.
+- ⚠️ **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to
+  those nodes; tearing them out would turn every one into a null dereference.
+- ⚠️ Guarded on `PortfolioDash.has()`, not on the script tag: if the layer fails to load, this
+  module falls through to its own behaviour rather than rendering nothing.
+
+Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
+with the real `ui.js`/`db.js`/`scurve.js`, gated against the pinned commit before it). ⚠️ **Not verified
+signed in.**
+
+## The WPM mirror read was still cursor-less — and the checker could not see it (2026-09-16) — fmlozano
+
+`loadWPM()` pages `wpm_work_packages` through `PDb.selectAll`, and the comment above it already says
+what a truncated read costs: *"a bare select capping at 1000 rows would silently understate cash out —
+and therefore the net cash flow and the peak funding need."* The `cols` list it passed **did not name
+`id`**, which is the paging cursor `selectAll` reads off the last returned row — so the read stopped
+after one page anyway, by a different door than the one that comment guards.
+
+⚠️ **The 2026-08-16 audit fix is what makes this subtle.** That pass moved this read to `selectAll`
+*precisely so* it would not truncate, and it worked — until you notice `selectAll` cannot page a
+projection that omits its own cursor. A read can be correctly paginated and still return one page.
+
+`cols` now leads with `id`. The `trade`-less retry is `cols.replace(',trade', '')`, which still carries it.
+
+⚠️ **Both of these call sites were INVISIBLE to `tools/selectall-key.js` until this change**, because
+they pass a variable rather than a literal and the checker read only the argument. It now resolves a
+nearby `var`/`let`/`const` declaration and applies any literal `.replace()` chain, so both sites are
+checked — and were negative-tested by putting the bug back. See the main log, 2026-09-16 (q).
+
+⚠️ Not verified signed in; `wpm_work_packages` is RLS-gated, so no live row count was read.

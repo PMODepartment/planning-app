@@ -54,6 +54,15 @@ window.ContractsClaims = (function () {
      `fmt` is how their values render. Contract has no pipeline — it's a flat
      description + amount list — so it carries a single `amount` column. */
   var VIEWS = {
+    /* ⚠️⚠️ THE DASHBOARD IS NOT A REGISTER VIEW, AND IT IS IN HERE ANYWAY — DEFENSIVELY.
+       `render()` returns on this view long before anything reads `types` or `cols`, so these
+       are never consulted on the happy path. But `cfg()` is `VIEWS[view]` and is called from
+       eight places (visibleRows, totals, the table head, kpiHTML, emptyHTML, exportRows,
+       printing), and a view key with no entry makes every one of them throw on `undefined`.
+       An empty-but-present entry turns "I missed a call site" from a blank screen into a
+       harmless no-op. `types: []` matches no record, which is the correct answer for a screen
+       that lists none. */
+    dashboard: { label: 'Dashboard', types: [], unit: 'amount', cols: [] },
     contract: {
       label: 'Contract', types: ['Contract'], unit: 'amount',
       cols: [{ key: 'amount', head: 'Contract Amount' }]
@@ -71,6 +80,11 @@ window.ContractsClaims = (function () {
   };
 
   // ---- state ---------------------------------------------------------------
+  /* ⚠️ `view` lands on Contract, not Dashboard — a concurrent session's own thread made the
+     Dashboard the landing view; THIS session's owner said the opposite, live: "it need not be
+     the landing tab" (see the collision note in CLAUDE.md and the matching comment in
+     index.html's `.cc-tabs`). Reversible in one word; `UI.bindHistoryState` still restores
+     whatever tab a link names. */
   var UID = null, pid = null, rows = [], view = 'contract';
   var histView = null;   // UI.bindHistoryState() handle for the top-level cc-tabs — see init()
   var canWrite = false, isAdmin = false, sel = {};
@@ -298,6 +312,10 @@ window.ContractsClaims = (function () {
     document.getElementById('cc-filters').style.display = '';
     document.getElementById('cc-topbar-tools').style.display = '';
     if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = '';
+    /* ⚠️ Reset before any branch hides it, or Export stays gone after leaving the Dashboard —
+       the same shape as the filter toggle above, which is reset here for the same reason. */
+    if (document.getElementById('cc-export')) document.getElementById('cc-export').style.display = '';
+
     /* The Contract tab is now keyed by PACKAGE — a contract defines a package, so one
        list carries both, and a package with no contract (or a contract with no package)
        is shown rather than dropped. packages.js owns that view. */
@@ -500,7 +518,16 @@ window.ContractsClaims = (function () {
      Owner: *"combine contracts, change orders, and coat claims in 1 table"*, then
      *"include already EOT in the table."* */
   function ccDashHTML() {
-    var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
+    /* ⚠️ Owner: "for amounts round off to nearest .00 M" — every peso figure on this table is
+       expressed in millions, two decimals, regardless of magnitude (so ₱1,155,577,055.60 reads
+       as ₱1,155.58M, and a ₱20,000 record reads as ₱0.02M rather than switching to a smaller
+       unit). Deliberately its own formatter, not `Fmt.moneyShort` (db.js) — that one switches to
+       a "B" suffix above ₱1B, which is a different, coarser figure than "nearest million" asked
+       for here. */
+    var money = function (v) {
+      if (v == null || isNaN(v)) return '—';
+      return '₱' + (Number(v) / 1e6).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'M';
+    };
     var days = function (v) { return (v == null || isNaN(v)) ? '—' : num(Number(v) || 0) + 'd'; };
     var of = function (t) { return rows.filter(function (r) { return r.record_type === t; }); };
     var n = rows.length;
@@ -521,7 +548,12 @@ window.ContractsClaims = (function () {
     /* ⚠ The Contract tab's two KPI cards (`Contracts` / `Total contract value`) are gone: the
        dashboard above carries the contract value with its package breakdown, and a record count is
        already in the toolbar's "Showing N records". */
-    if (view === 'contract') return ccDashHTML();
+    /* ⚠️ THE `view === 'contract'` BRANCH IS GONE FROM HERE, and its absence is the point.
+       `render()` hands the Contract tab to `CCPackages.show()` and returns before this function is
+       ever called, so this line was unreachable — which is exactly how the dashboard came to be
+       built, shipped and never seen. `ccDashHTML` is now passed INTO that view. Do not restore a
+       call here: one renderer with one call site is what stops the band and the packages view
+       disagreeing about the contract value. */
     var pend = list.filter(isPending);
     var ages = pend.map(agingOf).filter(function (a) { return a != null; });
     var oldest = ages.length ? Math.max.apply(null, ages) : 0;

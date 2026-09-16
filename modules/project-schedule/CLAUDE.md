@@ -1,3 +1,226 @@
+## 2026-09-16 — The portfolio gantt: today was never a line, and the grain is chosen rather than guessed — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+Owner: *"Project schedule portfolio level needs complete rework. UI bugged out completely. Double
+check the graph as well. is this supposed to be a gantt chart? Let's also have a toggle for year,
+quarterly, monthly viewing"*, and *"the toolbars isn't necessary since these are unusable not until
+a project is selected."*
+
+- **The "bugged out" UI was `.ps-toolbar` still on screen.** `takeOver()` set `hidden` on it, and
+  `.ps-toolbar { display: flex }` (this module's own stylesheet) beats the UA `[hidden]` rule
+  outright. Actions / Add activity / WBS / Split were drawing over the dashboard the whole time.
+  Fixed in the layer with a class, so every module is covered at once.
+- ⚠⚠ **"Today" was a stack of 18px stubs, not a line.** `.po-sh-now` was emitted inside every
+  `.po-sh-track` plus once in the axis, so it broke at every row gutter and group heading — a bar
+  could not be read against a date, which is most of what a gantt is for. It is one continuous line
+  on a grid layer over the whole plot now, with period gridlines beside it.
+- ⚠️ **The label column's width existed twice** (a 230px axis margin, a 220px label flex-basis) and
+  only the eye ever checked they agreed. One custom property feeds the axis, the grid and the label.
+- **Auto | Year | Quarter | Month.** ⚠️ Quarters and years anchor on the CALENDAR: stepping
+  `i % every` from the window's first month labelled Feb/May/Aug/Nov as "quarters" whenever the
+  earliest contract began in February.
+- ⚠️ **The plot widens from the tick count** — the first attempt was a flat `min-width:1600px`,
+  which at month grain measured **95 of 96 labels overlapping their neighbour**.
+- It IS a gantt, deliberately at PROGRAMME level: one bar per project (contract window rail, live
+  programme bar with its POC fill, the overrun past contract finish, a forecast-finish marker),
+  never per activity.
+
+## 2026-09-16 (m) — Portfolio scope draws a cross-project Gantt, and stops drawing nothing
+
+Owner, Phase E of the portfolio plan: *"the portfolio view of the schedule needs work as well."*
+Opened from the Portfolio sidebar this module drew **nothing at all** — 2026-09-14 set `pid` to null
+here on purpose and attempted no cross-project consolidation, so the row led to an empty page.
+
+### Where it lives, and why not in this file
+
+The dashboard is an eleventh `def()` in `assets/js/portfolio-dash.js`, beside the ten the owner moved
+into their own modules on 2026-09-15 and 2026-09-16 — **not** a new tab in `portfolio-overview`.
+
+⚠️⚠️ **The plan said to re-point `PORTFOLIO_TAB['project-schedule']`, and that map was REMOVED on
+2026-09-14.** Each module now opens portfolio-wide itself via `#pd_scope=portfolio`, so the plan's own
+step was stale. Followed the owner's more recent direction rather than the written step, and said so.
+
+This page's contribution is 23 lines: the stylesheet, the script, and one branch after
+`UI.renderNav(...)`.
+
+```js
+if (window.AppAuth && AppAuth.isPortfolioScope() &&
+    window.PortfolioDash && PortfolioDash.has('schedule')) {
+  PortfolioDash.takeOver('schedule', { select: '#ps-project' }).catch(...);
+  return;
+}
+```
+
+⚠️ **After `renderNav`, before `renderHeader()` and everything under it.** The shell and sidebar must
+be up — a planner has to be able to leave the page — and **everything below is skipped deliberately**:
+this module's wiring and `load()` are built around one project id, and running them with none is how a
+hidden UI issues reads nobody can look at.
+⚠️ `takeOver()` wires the project `<select>` itself, because skipping this block skips the line that
+fills it. Without it there is no way out of portfolio scope from the page you are standing on.
+Measured: **7 options** present after mount.
+
+### ⚠️⚠️ NO ACTIVITY ROWS. NONE.
+
+Every bar comes from roll-up columns already on the project row plus `start_date` / `end_date` and
+`forecast_finish`. `PROJ` is in memory, so the view costs **no read**. This matters on the day the
+portfolio S-Curve timed out (root (j), `57014`, combinatorial in the project count): this view has no
+such surface.
+
+### What it refuses to guess
+
+- ⚠️ **A stale roll-up is marked.** `schedule_updated_at` is written when this module is opened, so an
+  untouched project carries a plausible bar built on old numbers. Past `STALE_DAYS = 45` it says so,
+  on the row and in the KPI strip.
+- ⚠️ **No roll-up → a NAMED row, never a bar guessed from contract dates.** Counted in the coverage
+  line rather than dropped.
+- ⚠️ **Today, not a data date** — the data date is `localStorage` **per browser** and not
+  portfolio-wide (2026-09-14 h, still open). The note says which was used.
+- ⚠️ Grouping is `PDProgram`, and **a group of one gets no heading**: *"a heading above a single
+  project invents a hierarchy that is not there."*
+
+### ⚠️⚠️ A CROSS-CLOSURE CALL, AND A SIGNATURE BUG — ONE FOUND BY RUNNING, ONE BY READING
+
+- The month axis called **`cfMonthLabel`**, which lives only inside the **cash-flow** dashboard's own
+  `setup()` closure. It parses; it throws at render. **`wiring-check` 139/139 cannot see it** — it
+  enumerates globals, and this is neither. Now `moLabel` at module scope beside `pd` / `today`, which
+  were moved there for the identical fault a day earlier. ⚠️ The tell was that the **KPI strip
+  rendered correctly and the rows did not**.
+- **`PDProgram.labelFor` takes a PROJECT, not a key** — it derives the key itself. I passed the key,
+  so it derived a key from a key. Caught by **reading `program.js`**, not by running: the wrong call
+  still returns a string.
+
+### Verified
+
+`tools/test-portfolio-dash.js` **186/186** (was 184). ⚠️ An existing assertion pinned the layer at
+**ten** dashboards and correctly failed — **retargeted to eleven and named**, not weakened.
+`test-portfolio` 99/99, `wiring-check` 139/139, this page's 3.3MB inline script parses.
+
+⚠️⚠️ **A cross-closure sweep that bites**: re-injecting `cfMonthLabel` makes it report; clean
+otherwise.
+
+**Rendered in an iframe** at 1400px light, 1400px dark and 390px, transitions killed first, against a
+fixture whose every answer is hand-derivable — AVR101+AVR102 a real pair, OPW101 a group of one,
+BAU101 past its contract finish, SLN101 with no roll-up, GPR101 ~200 days stale:
+**0 errors**; KPIs `6 / 5 of 6 / 1 / 1`; **one** group heading and none above the three singles;
+5 bars, 1 overrun; the un-rolled-up project named, not drawn; bars inside their tracks at every width;
+no sideways scroll; and the overrun resolving `rgb(196,33,39)` light against `rgb(255,138,128)` dark,
+which is what proves the relocated stylesheet is in the cascade.
+⚠️ The module's own UI is **hidden, not removed** — its script has already bound handlers to those
+nodes. ⚠️ One of my own assertions was wrong rather than the code: it read `#main`'s `display`, but the
+dashboard mounts *inside* `#main`.
+
+⚠️ **Not verified signed in** — the fixture is hand-built; no real portfolio has been drawn.
+⚠️ Harness gitignored and **deleted before committing**.
+
+`portfolio-dash.js` / `portfolio-dash.css` → `?v=20260916n`; `MODULE_V` → `20260916n`, sort-checked
+past `20260916j`, `20260916k` and the `20260916m` a concurrent session chose for the same assets
+in the same minute — see root (n).
+⚠️ **The working tree was on a stale base and would have deleted four dashboards** — see root (m).
+
+## 2026-09-16 (k) — The Summary is rebuilt around a verdict, and seven figures it already computed
+
+Owner: *"Check the summary page live it needs UI improvements overhaul"*, then, asked whether KPI
+cards were the right shape at all: *"Let's brainstorm."*
+
+### ⚠️⚠️ WHAT WAS WRONG WAS THE RANKING, NOT THE FIGURES
+
+Measured on the shipped page at 1400px **before a line was changed**:
+
+| | |
+|---|---|
+| KPI cards | **six**, laid out **5 + 1** — a **746px trailing gap** with a lone Health card in it |
+| charts | **zero**, anywhere on the page |
+| detail rows | **eighteen, in four sections, all drawn with the identical `.ps-smy-row`** — so a 64-day slip reads exactly like a schedule-quality metric |
+| section headings | **11px — the same size as their own content**, so nothing outranks anything |
+
+⚠️⚠️ **`summaryData()` IS BYTE-IDENTICAL TO BEFORE — 7850 chars, compared programmatically rather
+than asserted.** The arithmetic was already right; what the page lacked was a shape that says which
+number matters. Every change here is presentation.
+
+⚠️ **The principle is this repo's own.** The Portfolio Overview went through exactly this on
+2026-09-16 (e) and recorded it in one line — *"What was there reported LEVELS … A level is not a
+decision."* So: **one verdict, then the evidence, then the detail.**
+
+1. a **verdict line** — the finish position as a sentence, not assembled by the reader
+2. **four cards, not six** — each triggering a different action
+3. a **curve**, because *"are we catching up or falling further behind"* is a question no count can
+   answer at any size
+4. what is **driving** the finish, ranked — not a count of critical activities
+5. **milestones on a time axis**, so overdue sits visibly left of today
+6. trades, look-ahead and health as **supporting detail**
+
+### ⚠️⚠️ SEVEN FIGURES THE PAGE ALREADY COMPUTED AND NEVER PRINTED
+
+`cpm.start` (the programme had **no start date on screen**), `ms.achieved`, `counts.done`,
+`counts.acts`, `counts.total`, `ms.total` and the trade count. Found by grepping the old renderer for
+each: **0 uses**. Computing a figure and not printing it is the cheapest kind of waste — the work is
+already done. *"14 of 120 achieved"* is also what makes *"3 overdue"* mean anything.
+
+### The decisions worth keeping
+
+- ⚠️⚠️ **THE CURVE COMES FROM `PDScurve`, THE SHARED ENGINE.** `portfolio-overview` carried a
+  hand-copied copy of this maths until 2026-09-10 (z1) and its own log records what that cost. The
+  S-Curve module, the project Dashboard panel and this page now read one engine. ⚠️ It returns null
+  rather than throwing when the engine is absent, because `scurve.js` is one more script tag that can
+  fail to load.
+- ⚠️⚠️ **The actual series is CLIPPED AT THE DATA DATE, and it has to be** — `PDScurve` pads the
+  series to the full programme span, so drawing it unclipped would show a flat "actual" line running
+  into the future, which reads as *work stopped* rather than *not yet reported*.
+- ⚠️⚠️ **Two EXPLICIT tracks, not `auto-fit`.** Measured at 1400px: `auto-fit` built **three** tracks
+  for two columns of content, stranding the third. The same 5+1 defect the six cards had, one level
+  down.
+- ⚠️⚠️ **The verdict tint is composited over `--pd-card`, NOT over the page ground** — a tint measured
+  against the wrong surface is how a "passing" contrast figure ships unreadable. Same reasoning as the
+  BOQ status pills.
+- ⚠️ **`.ps-smy` cap 1180 → 1320px.** With a curve and a two-column body the old cap starved both.
+- ⚠️⚠️ **NO BASELINE AT ALL IS A DIFFERENT ANSWER FROM "NOTHING HAS SLIPPED", kept verbatim from
+  2026-09-15 (v).** That entry exists because the page told a project with 2,561 unbaselined
+  activities that nothing had slipped. The rebuild does not get to quietly re-introduce it.
+
+### ⚠️ One real gap found by the class audit, and one false positive
+
+Auditing every `ps-smy-*` class emitted against every one with a CSS rule: **`ps-smy-col` was emitted
+four times with no rule at all.** Not broken — the track is `minmax(0,1fr)`, which is the deliberate
+shrink guard — but a grid child defaults to `min-width:auto`, so the day one of those wrappers holds
+a flex row it would widen past its column on a long activity name. `.ps-smy-col { min-width:0 }`
+closes it and stops the class reading as emitted-but-unstyled to the next audit.
+
+⚠️ `ps-smy-v-` is flagged by the same audit and is **correct**: it is `'ps-smy-v-' + vTone`, a
+concatenated prefix, and all four assignments of `vTone` are `good` / `bad` / `none`, each with a
+rule. The trailing-hyphen shape is the false positive `tools/dead-hooks.js` already documents.
+
+### Verified
+
+Inline `<script>` **parses** — 1 block, which is the check that matters here, because a 50k-line
+module dies whole on one syntax error and brace-balance cannot see it. `<style>` braces
+**2298 / 2298**; `function` keywords 7122 → **7139**; 0 NUL, pure LF. `wiring-check` **139/139**
+(`scurve.js` resolves and every asset is on one version); `dead-hooks` **9**, the documented baseline.
+The concurrent session's suites re-run on the integrated tree: `portfolio-dash` **184/0**,
+`portfolio-overview` **99/0**.
+
+⚠️⚠️ **MY OWN PARSE CHECKER WAS WRONG FIRST, and it reproduced this repo's documented 16/14 false
+positive.** A global `<script>` regex left to run over text it had already consumed matched the
+literal `<script` **inside the JS strings that build the print and export stylesheets**, opened bogus
+overlapping blocks and reported two parse failures in correct code. It reported them **identically on
+HEAD**, which is the only reason I did not chase them. Fixed by resuming the scan *after* each block
+it closes — which is also the browser's own rule. It now finds **1** block, not 3.
+
+⚠️ **Not verified signed in**, and ⚠️ **no committed suite covers `summaryData`** — the 30 assertions
+the 2026-09-15 (s) entry cites were scratch files and are not in the repo, the same gap
+`contracts-claims` had before `test-boq.js` was written. The function is unchanged here, so this
+change does not widen that gap, but it does not close it either.
+
+⚠️ **Carved.** This work was uncommitted in the same file as the concurrent session's unpushed
+portfolio-scope work (`takeOver('schedule')`). Established first that my Summary code makes **zero**
+references to `PortfolioDash`, then removed their three blocks and **restored their own newer
+`db.js` token**, which the working tree had reverted. Their work is untouched on disk.
+
+`MODULE_V` → `20260916k`. ⚠️ **Not `j`** — the concurrent session took that while this was in flight,
+and the token is re-derived from what `origin/main` actually has **after** integrating, never guessed
+before. `scurve.js` keeps `?v=20260901a`: it is newly referenced here, not changed.
+
 ## 2026-09-15 (w) — `fitDist`: one framing rule, and it finally knows the canvas's shape
 
 Owner: *“The presets view also do not view properly and I cannot see the ground”*.

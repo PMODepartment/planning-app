@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260916a" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260916u" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260910w3" />
 </head>
 <body>
@@ -436,16 +436,16 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260915a"></script>
   <script src="assets/js/auth.js?v=20260915a"></script>
-  <script src="assets/js/db.js?v=20260915i"></script>
+  <script src="assets/js/db.js?v=20260916c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/scurve.js?v=20260901a"></script>
-  <script src="assets/js/ui.js?v=20260915i"></script>
+  <script src="assets/js/scurve.js?v=20260916r"></script>
+  <script src="assets/js/ui.js?v=20260916u"></script>
   <!-- PDClaims — the shortfall/decided/recovery rules this page's Contracts & Claims panel
        shares with the register's own band and the portfolio view. -->
   <script src="assets/js/claims.js?v=20260915a"></script>
   <script src="assets/js/notebook.js?v=20260915d"></script>
   <script src="assets/js/icons.js?v=20260915f"></script>
-  <script src="assets/js/modules-grid.js?v=20260916f"></script>
+  <script src="assets/js/modules-grid.js?v=20260916s"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -457,6 +457,27 @@
     var CURUSER = null;   // the signed-in auth user; My Work needs the id, not the profile
 
     AppAuth.requireLogin(function (user, profile) {
+      /* ==== PORTFOLIO SCOPE IS NOT THIS PAGE ==============================================
+         Owner, with a screenshot of this page headed "Portfolio - every project you can see"
+         and then rendering One Portwood's own POC, SPI and S-Curve: *"portfolio view but
+         previews the project level dashboard."*
+         Every module page renders its sidebar under mode:'project' whatever nav family linked
+         to it (ui.js says so in as many words), so the Dashboard row there points at THIS file.
+         Opened from a module in portfolio scope it drew whichever project `pd_project` happened
+         to hold - one project's figures under a heading promising every project.
+         ⚠️⚠️ THE GUARD IS HERE, NOT ONLY ON THE LINK. Fixing the link alone leaves the bare URL,
+         a bookmark and the Back button all landing on the same wrong page; this catches every
+         route in. ⚠️ `location.replace`, so a page nobody meant to open does not sit in the Back
+         history and bounce the planner straight out of the portfolio again.
+         ⚠️ It cannot trap anyone: picking a real project calls AppAuth.setPortfolioScope(false)
+         from the shared selector, so the next visit here renders normally.
+         ⚠️ Cache-busted the same way the sidebar builds that link - MODULE_V, falling back to the
+         bare path rather than to a version string that does not exist. */
+      if (AppAuth.isPortfolioScope()) {
+        location.replace('modules/portfolio-overview/index.html' +
+          (window.ModulesGrid && ModulesGrid.MODULE_V ? '?v=' + encodeURIComponent(ModulesGrid.MODULE_V) : ''));
+        return;
+      }
       CURUSER = user;
       UI.renderUserBar(profile);
       var first = (profile.name || profile.email || '').split(' ')[0];

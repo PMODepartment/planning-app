@@ -165,6 +165,17 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-dashcaret { display:inline-block; width:10px; font-size:10px; color:var(--pd-muted); }
 .cc-dashrow > td { font-size: var(--pd-fs-sm); }
 .cc-dashrow .cc-desc-txt { font-weight: 500; -webkit-line-clamp: 1; }
+/* ⚠️⚠️ `.cc-r` ALONE NEVER WON HERE — a specificity bug, not a design choice. `.cc-dashtbl`
+   carries the shared `.pd-table` component (dashboard.css), whose own
+   `.pd-table th, .pd-table td { text-align: left }` is (0,1,1) against `.cc-r`'s bare (0,1,0),
+   so every Submitted/Evaluated/Approved/Disputed figure rendered LEFT-aligned regardless of the
+   class, in every build up to and including the merge that landed this comment. Measured, not
+   assumed: `getComputedStyle` on a `.cc-dashtbl td.cc-r` reported `text-align: left` with
+   `.pd-table th, .pd-table td` as the only matching rule for that property. Scoped here to two
+   classes + the element (0,2,1), which beats it, rather than bumping the shared `.cc-r` used
+   by every OTHER table in this module (boq.js's `.cc-table` sets no `text-align` on `td`, so it
+   never had this collision — only a table also carrying `.pd-table` does). */
+.cc-dashtbl td.cc-r, .cc-dashtbl th.cc-r { text-align: right; }
 
 /* ---- KPI strip ---------------------------------------------------------- */
 .cc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
