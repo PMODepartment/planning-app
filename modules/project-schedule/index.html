@@ -8058,7 +8058,7 @@
       var list = [];
       try {
         list = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
-          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at');
+          'id,wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at');
       } catch (e) { list = []; }
       // Trade order then WP number, so every picker and report shows packages in the order
       // they are actually procured rather than in mirror-id order.
@@ -8361,7 +8361,7 @@
       var mirror;
       try {
         mirror = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
-          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
+          'id,wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
       } catch (e) { return; }   // a partial read must not be mirrored as the truth
       // ⚠️ Never synced, or this project has no work packages yet — leave the branch
       // exactly as it is. Reading "no rows" as "delete everything" is how a failed or

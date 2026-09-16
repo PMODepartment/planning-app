@@ -719,7 +719,9 @@
     wpRows = []; wpmStatus = 'loading'; wpmMsg = ''; wpmSyncedAt = null;
     var wpmPid = settings.wpm_project_id;
     if (!wpmPid) { wpmStatus = 'no-map'; wpmMsg = 'No WPM project id mapped'; return; }
-    var cols = 'wp_no,description,trade,approved_budget_bcb,awarded_cost,total_awarded,dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at';
+    // ⚠️ `id` FIRST: it is the paging cursor `selectAll` reads off the last returned row.
+    // A cols list without it made the read below stop after 1000 rows, with no error.
+    var cols = 'id,wp_no,description,trade,approved_budget_bcb,awarded_cost,total_awarded,dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at';
     // ⚠️ Paginated: this mirror is the ENTIRE cash-out side of the projection, so a bare select
     // capping at 1000 rows would silently understate cash out — and therefore the net cash flow
     // and the peak funding need — with no error and a plausible-looking number.

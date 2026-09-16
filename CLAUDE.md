@@ -102,6 +102,74 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (s) — The last five cursor-less reads, and the two the checker could not see at all
+
+Owner: *"fix the other call sites as well"* — the five `PDb.selectAll` reads left standing by (o),
+which the engine fix covers but which still name a projection without their own paging cursor.
+
+| read | what it feeds |
+|---|---|
+| `cash-flow/index.html:729,733` | `wpm_work_packages`, the **entire cash-out side** — cash out, net cash flow, peak funding need |
+| `project-schedule/index.html:8060,8363` | the **Procurement branch**: the WP picker, the grid label, the procurement report, and the sync that writes activities |
+| `manpower-loading/index.html:2867` | `manpower_loading` at **every month**, portfolio scope — the manpower curve and the people Gantt |
+
+All five now lead with `id`. Checked before changing anything: none passes a 4th `key` argument, so
+all default to `id`; both relations declare `id uuid primary key`; and **every consumer reads these
+rows by field name**. The one that could have bitten is the Procurement sync — its activity payload
+is built field-by-field (`activity_name`, …, `work_package`) and handed to
+`Object.assign({ project_id, created_by, activity_id }, patch)`, never spread from the mirror row, so
+the newly selected `id` cannot land in a schedule activity's own primary key.
+
+### ⚠️ Two of the five were invisible to the checker, which is the more useful half of this
+
+`cash-flow` passes a **local** (`cols`), and on its fallback path `cols.replace(',trade', '')`. Both
+read as "built at runtime" to a checker that looks only at the argument — so after (o) they sat in an
+unreadable list where **a fixed site and a broken one look exactly alike**. That list is where this
+class of bug would hide next.
+
+`colsOf` now resolves a cols **variable**, and `resolveCols` applies any `.replace('a','b')` chain with
+the real `String.prototype.replace` — so what the report prints is what the browser sends, including
+that a string argument replaces only the FIRST match. Both cash-flow sites now resolve, print the
+declaration they came from, and are checked like any literal. The fallback correctly shows `trade`
+gone and `id` still there.
+
+⚠️⚠️ **It is PROXIMITY, not scope analysis, and deliberately timid — a wrong resolution reports a
+broken site as fine, the one failure this file must not have.** Three conditions, all required: a
+`var`/`let`/`const` **declaration** holding one string literal (so a function PARAMETER is never
+resolved); within `NEAR` = 40 lines above the call; and no other assignment to that name in between
+(`===` and `=>` do not count). Anything else stays unreadable, which is the honest answer.
+
+⚠️ **Every regex in it is built from REGEX LITERALS via `.source`, never from backslashes typed inside
+a string.** The first draft of this resolver lost a backslash layer in the edit that wrote it —
+`'\s'` arrived as `'\s'`, which is silently the letter `s` — and the file still parsed, still ran,
+and matched nothing. It was caught by running the resolver against 11 fixtures **before** splicing it
+in, not by reading it.
+
+Eight new self-tests, all driving the real `colsOf`/`resolveCols`: the plain variable, the applied
+`.replace`, a replace that strips the CURSOR (caught, not excused), a parameter, a declaration below
+the call, a reassignment in between, a comparison in between (not disqualifying), and a declaration
+out of reach. **23 self-tests, 103 sites, 0 broken, 0 advisory, 0 unreadable.** Negative-tested by
+removing the `id,` from `cash-flow` again: both sites reappear in the cursor-absent list — where,
+before this change, neither could ever have appeared.
+
+`MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → **`20260916s`**, or the
+three edited module pages serve cached HTML.
+
+⚠️⚠️ **`20260916r` was written first and had to be re-derived: the concurrent session had ALREADY
+PUSHED `MODULE_V = 20260916r` while this was in flight** — the same token, for the same asset,
+chosen independently by both sides, which git reports as no conflict at all (the two edits are
+byte-identical, so the rebase simply dropped this one). A browser holding `…r` from their deploy
+would never fetch these three module pages again. **Fifth time this repo has hit that.** Re-derived
+to `s` and sort-checked past every token in the rebased tree (`a c i j p q r`). On a clean
+`HEAD` + these files tree: `wiring-check` **139 passed, 0 failed**, and all five pages' inline script
+blocks parse at their real byte offsets (the project-schedule block spans lines 5352–51988 and does
+contain both edits — a parse check that misses the block it was written for is worth nothing).
+
+⚠️ **Not verified signed in**, and nothing here is observable in the browser preview. The reads are
+RLS-gated; the fix and the defect are both established by reading the shipped `selectAll`.
+⚠️ `modules/project-schedule/CLAUDE.md` is **not** updated here — it is dirty with a concurrent
+session's work, and staging it would have carried their changes into this commit.
+
 ### 2026-09-16 (r) — The portfolio fan-out moves into PDScurve, and the Overview draws the curve it could not afford before
 
 Owner: *"Let's do D4 with the shared PDScurve fan-out."* The last block of the portfolio plan, and

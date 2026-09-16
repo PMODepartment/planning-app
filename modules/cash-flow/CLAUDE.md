@@ -239,3 +239,24 @@ this module changes.
 Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
 with the real `ui.js`/`db.js`/`scurve.js`, gated against the pinned commit before it). ⚠️ **Not verified
 signed in.**
+
+## The WPM mirror read was still cursor-less — and the checker could not see it (2026-09-16) — fmlozano
+
+`loadWPM()` pages `wpm_work_packages` through `PDb.selectAll`, and the comment above it already says
+what a truncated read costs: *"a bare select capping at 1000 rows would silently understate cash out —
+and therefore the net cash flow and the peak funding need."* The `cols` list it passed **did not name
+`id`**, which is the paging cursor `selectAll` reads off the last returned row — so the read stopped
+after one page anyway, by a different door than the one that comment guards.
+
+⚠️ **The 2026-08-16 audit fix is what makes this subtle.** That pass moved this read to `selectAll`
+*precisely so* it would not truncate, and it worked — until you notice `selectAll` cannot page a
+projection that omits its own cursor. A read can be correctly paginated and still return one page.
+
+`cols` now leads with `id`. The `trade`-less retry is `cols.replace(',trade', '')`, which still carries it.
+
+⚠️ **Both of these call sites were INVISIBLE to `tools/selectall-key.js` until this change**, because
+they pass a variable rather than a literal and the checker read only the argument. It now resolves a
+nearby `var`/`let`/`const` declaration and applies any literal `.replace()` chain, so both sites are
+checked — and were negative-tested by putting the bug back. See the main log, 2026-09-16 (q).
+
+⚠️ Not verified signed in; `wpm_work_packages` is RLS-gated, so no live row count was read.

@@ -2866,7 +2866,7 @@
         // snapshot below still narrows to `iso`, so the "this month" table is unchanged.
         loadRows = loadRows.concat(await PDb.selectAll('manpower_loading',
           (function (c) { return function (q) { return q.in('project_id', c); }; })(chunk),
-          'position_id,project_id,period,planned_qty,approved_qty,forecast_qty,actual_qty'));
+          'id,position_id,project_id,period,planned_qty,approved_qty,forecast_qty,actual_qty'));
         rosterRows = rosterRows.concat(await PDb.selectAll('manpower_roster',
           (function (c) { return function (q) { return q.in('project_id', c); }; })(chunk),
           'id,project_id,position_id,employee_name,contract_start,contract_end,employee_status'));
