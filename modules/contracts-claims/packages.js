@@ -25,28 +25,22 @@ window.CCPackages = (function () {
   var UID = null, canWrite = false, pid = null, PKG = [], loaded = false;
   var CONTRACTS = [], onSub = null, onNew = null, onEditRecord = null;   // contracts to join, the BOQ, the wizard, the record form
   var onBoq = null;                 // mounts the inline BOQ section - see module.js
-  var onDash = null;                // returns the register's summary band - see show()
   var esc = function (x) { return Fmt.esc(String(x == null ? '' : x)); };
   function host() { return document.getElementById('cc-view'); }
 
   function init(deps) { UID = deps.uid; canWrite = !!deps.canWrite; }
   function reset() { loaded = false; PKG = []; }
-  async function show(projectId, contracts, openSub, openNew, editRecord, mountBoq, dashHTML) {
+  async function show(projectId, contracts, openSub, openNew, editRecord, mountBoq) {
     pid = projectId;
     CONTRACTS = contracts || [];
     onSub = openSub || null;
     onNew = openNew || null;
-    /* ⚠️⚠️ THE DASHBOARD IS PASSED IN, AND IT HAD NO WAY IN AT ALL UNTIL NOW. `ccDashHTML()`
-       (module.js) was built on 2026-09-15 (g) as the Contract tab's summary band, reached through
-       `kpiHTML()` — and `render()` in module.js hands the whole Contract tab to THIS view and
-       RETURNS before the line that calls `kpiHTML`. So the only call site sat on a branch that can
-       never run, and the band has never rendered once. Owner, 2026-09-16: *"I do not see the
-       dashboard in contracts & claims."* Exactly right, and the `#pk-boq` shape again — a correct
-       renderer with no entry point.
-       ⚠️ A CALLBACK, not a copy: `ccDashHTML` closes over module.js's own `rows` and `PKGS`, which
-       is where the register lives. Re-deriving either here would be a second answer to "what is
-       this contract worth", and the two would drift. Same idiom as `onBoq`/`onSub`/`onNew`. */
-    onDash = dashHTML || null;
+    /* ⚠️ THE SUMMARY BAND USED TO BE PASSED IN HERE, and the plumbing went with it on
+       2026-09-16 rather than being left accepting an argument nobody sends. It was handed to this
+       view on 2026-09-16 because its only call site (module.js `kpiHTML`) sat below a `return`
+       and could never run - the `#pk-boq` shape, a correct renderer with no entry point. The
+       owner then asked for it on a tab of its own, so it has one call site again, in module.js's
+       `view === 'dashboard'` branch. This view is the Contract tab's records + lots + BOQ. */
     /* The record form lives in module.js (types, the claim pipeline, the tolerant-column
        save). This view only needs the way IN to it, so the pencil on a contract row opens
        the same form the Claims register does rather than a second, thinner copy. */
@@ -399,7 +393,7 @@ window.CCPackages = (function () {
        ⚠️ Unlike the BOQ below, this is re-rendered on every package edit ON PURPOSE: `ccDashHTML`
        is pure over `rows`/`PKGS` and costs no round-trip, and a contract value that did not move
        when you edited a package amount would be a stale number on a summary. */
-    h.innerHTML = (onDash ? onDash() : '') + contractsHTML() + packagesHTML() + boqSectionHTML();
+    h.innerHTML = contractsHTML() + packagesHTML() + boqSectionHTML();
     if (window.Icons && Icons.hydrate) Icons.hydrate(h);
     wire(h);
     if (onBoq) onBoq();

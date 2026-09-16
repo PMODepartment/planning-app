@@ -54,6 +54,15 @@ window.ContractsClaims = (function () {
      `fmt` is how their values render. Contract has no pipeline — it's a flat
      description + amount list — so it carries a single `amount` column. */
   var VIEWS = {
+    /* ⚠️⚠️ THE DASHBOARD IS NOT A REGISTER VIEW, AND IT IS IN HERE ANYWAY — DEFENSIVELY.
+       `render()` returns on this view long before anything reads `types` or `cols`, so these
+       are never consulted on the happy path. But `cfg()` is `VIEWS[view]` and is called from
+       eight places (visibleRows, totals, the table head, kpiHTML, emptyHTML, exportRows,
+       printing), and a view key with no entry makes every one of them throw on `undefined`.
+       An empty-but-present entry turns "I missed a call site" from a blank screen into a
+       harmless no-op. `types: []` matches no record, which is the correct answer for a screen
+       that lists none. */
+    dashboard: { label: 'Dashboard', types: [], unit: 'amount', cols: [] },
     contract: {
       label: 'Contract', types: ['Contract'], unit: 'amount',
       cols: [{ key: 'amount', head: 'Contract Amount' }]
@@ -71,7 +80,11 @@ window.ContractsClaims = (function () {
   };
 
   // ---- state ---------------------------------------------------------------
-  var UID = null, pid = null, rows = [], view = 'contract';
+  /* ⚠️ `view` LANDS ON THE DASHBOARD (2026-09-16). The owner called this the module's front
+     page when the band was commissioned, and a summary nobody lands on is a summary nobody
+     reads — which is most of how the band went unnoticed for a day. Reversible in one word;
+     `UI.bindHistoryState` still restores whatever tab a link names. */
+  var UID = null, pid = null, rows = [], view = 'dashboard';
   var histView = null;   // UI.bindHistoryState() handle for the top-level cc-tabs — see init()
   var canWrite = false, isAdmin = false, sel = {};
   var filters = { q: '', type: '', status: '', dateField: '', from: '', to: '', pkg: '' };
@@ -298,21 +311,48 @@ window.ContractsClaims = (function () {
     document.getElementById('cc-filters').style.display = '';
     document.getElementById('cc-topbar-tools').style.display = '';
     if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = '';
+    /* ⚠️ Reset before any branch hides it, or Export stays gone after leaving the Dashboard —
+       the same shape as the filter toggle above, which is reset here for the same reason. */
+    if (document.getElementById('cc-export')) document.getElementById('cc-export').style.display = '';
+
+    /* ==========================================================================================
+       THE DASHBOARD TAB (2026-09-16). Owner: *"let's just have a separate tab for the
+       dashboard."* It was a band at the top of the Contract tab; measured there, it stood 856px
+       and pushed the Contract records table to y=961 — so the tab's own content started at the
+       very bottom of a laptop screen, and that was AFTER a trim from 1028px. A summary big
+       enough to be useful and a register big enough to read do not fit on one screen, and the
+       honest answer is two screens rather than a smaller summary.
+       ⚠️ It renders `ccDashHTML()` and nothing else — same function, same figures, same call
+       site count. Moving it did not fork it.
+       ⚠️ Export is hidden: `cfg().types` is empty here, so it would write an empty workbook,
+       which is worse than no button. PRINT IS KEPT — `window.print()` needs no table and this
+       is the one screen in the module somebody actually wants on paper for a meeting.
+       ⚠️ `+ Add` is kept and falls through to 'Contract' (see openNew's ternary), which is the
+       right default from a screen headlined by the contract value. */
+    if (view === 'dashboard') {
+      document.getElementById('cc-filters').style.display = 'none';
+      if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
+      if (document.getElementById('cc-export')) document.getElementById('cc-export').style.display = 'none';
+      document.getElementById('cc-count').textContent = '';
+      host.innerHTML = ccDashHTML();
+      return;
+    }
     /* The Contract tab is now keyed by PACKAGE — a contract defines a package, so one
        list carries both, and a package with no contract (or a contract with no package)
        is shown rather than dropped. packages.js owns that view. */
     if (view === 'contract' && window.CCPackages) {
       document.getElementById('cc-filters').style.display = 'none';
       if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
-      /* ⚠️⚠️ `ccDashHTML` IS PASSED IN HERE BECAUSE THIS `return` IS WHY IT NEVER RENDERED.
-         It was reached through `kpiHTML()` at the bottom of this function — below this line — so
-         from the day the packages-keyed Contract view took over this branch, the register's whole
-         summary band was unreachable. Owner, 2026-09-16: *"I do not see the dashboard in contracts
-         & claims."* Handing it to the view that actually owns the tab is the fix; adding a second
-         call site above this return would leave two, and two drift. */
+      /* ⚠️⚠️ THE SUMMARY BAND IS NO LONGER PASSED IN, AND THAT IS NOT A REVERT OF THE FIX ABOVE
+         IT — IT IS THE SAME FIX, RELOCATED. The band was unreachable because it hung off
+         `kpiHTML()` at the bottom of this function, below this `return`; passing it into this
+         view made it reachable, and on 2026-09-16 the owner asked for it on a tab of its own
+         instead. It now has ONE call site, in the `view === 'dashboard'` branch above. The
+         `dashHTML` parameter went from packages.js with it rather than being left accepting an
+         argument nobody passes. */
       CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew,
         function (id) { openForm(rows.find(function (r) { return String(r.id) === String(id); })); },
-        mountBoqInline, ccDashHTML);
+        mountBoqInline);
       return;
     }
     // The Claim/CO type filter only applies to the claims tab.
@@ -446,7 +486,26 @@ window.ContractsClaims = (function () {
        carries a 1020px floor sized for the 9-column register, which would put a 6-column summary
        into a horizontal scroll on an ordinary laptop.
      ========================================================================================== */
+  /* ⚠️ ONE PREDICATE, read by the table and by the legend that explains the table, so the two
+     can never disagree about whether there is a pipeline to describe. `PDClaims.claimsOnly` is
+     the same rule `ccTimeHTML` already gates itself on — which is why "With the client" was
+     correctly absent on OPW101 while the table above it drew fifteen dashes. */
+  function ccHasClaims() { return PDClaims.claimsOnly(rows).length > 0; }
+
   function ccMoneyTable() {
+    /* ⚠️⚠️ ALL THREE EMPTY IS THE ORDINARY EARLY STATE OF A PROJECT, AND IT RENDERED AS FIFTEEN
+       EM DASHES. Measured on the live OPW101: one contract, zero change orders, zero cost claims,
+       zero extensions of time — so a 3x5 grid of nothing, under a heading, above a paragraph
+       defining five columns that had no figures in them. That is most of the tab, saying nothing.
+       ⚠️ ONLY when all three are empty. A project with three change orders and no EOT must still
+       draw the full table with EOT as a row of dashes: "none raised" is a real fact about that
+       record type and collapsing the table would hide it. The test is the register, not one row. */
+    if (!ccHasClaims()) {
+      return '<div class="cc-dash-h">The pipeline</div>' +
+        '<p class="cc-hint">No change orders, cost claims or extensions of time have been raised on ' +
+        'this project yet. When they are, this is where what was claimed and what came back is ' +
+        'summarised — submitted, evaluated, approved, and the shortfall across decided records.</p>';
+    }
     var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
     var days = function (v) { return (v == null || isNaN(v)) ? '—' : num(Number(v) || 0) + 'd'; };
     var of = function (t) { return rows.filter(function (r) { return r.record_type === t; }); };
@@ -561,10 +620,15 @@ window.ContractsClaims = (function () {
           'change order, claim and extension of time can then be raised against one.</p>') +
       ccMoneyTable() +
       ccTimeHTML() +
-      '<p class="cc-hint">Submitted, evaluated and approved are the pipeline columns on each record. ' +
-        '<b>Disapproved</b> is what the client rejected outright; <b>shortfall</b> is submitted minus approved ' +
-        'across decided records — claimed, not certified. Records still pending a decision count in neither. ' +
-        'This summary covers the whole register and does not move with the filters.</p>' +
+      /* ⚠️ The legend goes with the table it explains. On a register with nothing raised yet it
+         was five column definitions for five columns that are not on screen — read once, useless,
+         and the longest thing on the tab. */
+      (ccHasClaims()
+        ? '<p class="cc-hint">Submitted, evaluated and approved are the pipeline columns on each record. ' +
+          '<b>Disapproved</b> is what the client rejected outright; <b>shortfall</b> is submitted minus approved ' +
+          'across decided records — claimed, not certified. Records still pending a decision count in neither. ' +
+          'This summary covers the whole register and does not move with the filters.</p>'
+        : '') +
       '</div>';
   }
 

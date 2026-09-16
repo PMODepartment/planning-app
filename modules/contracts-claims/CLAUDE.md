@@ -1,5 +1,105 @@
 # Module: contracts-claims
 
+## 2026-09-16 (h) — The dashboard gets its own tab, and a cache token I forgot an hour earlier
+
+Owner, with a screenshot of the live OPW101 Contract tab: *"Let's improve the dashboard for the
+contracts & claims. I think let's just have a separate tab for the dashboard if this is the case"*.
+
+### ⚠️⚠️ WHAT THE SCREENSHOT ACTUALLY SHOWED WAS 15 EM DASHES
+
+OPW101 carries a contract and **no claims, change orders or EOT** — the ordinary early state of a
+project. So the pipeline table the previous entry had just built rendered three rows by five columns
+of `—`, under a header naming five figures none of which exist, **360px of it**, above an honest
+one-line paragraph explaining what the table would say if there were anything to say. The band was
+mostly a promise.
+
+`ccHasClaims()` — one predicate, `PDClaims.claimsOnly(rows).length > 0`, read by the table **and**
+the legend so they cannot disagree — collapses the whole thing to a single sentence:
+
+> No change orders, cost claims or extensions of time have been raised on this project yet. When
+> they are, this is where what was claimed and what came back is summarised — submitted, evaluated,
+> approved, and the shortfall across decided records.
+
+| measured on OPW101 exactly (contract only, no packages) | before | after |
+|---|---|---|
+| pipeline block | **360px** | **121px** |
+| em-dash cells | **15** | **0** |
+
+⚠️ **It is one predicate, not two tests.** The legend paragraph explains a table; a legend that
+survives its own table is the *"a comment that confidently describes the opposite of the code"*
+shape this repo has recorded twice. ⚠️ And it gates on `claimsOnly`, **PDClaims' own rule**
+(everything that is not a Contract), never a local copy — the whole reason that file exists.
+
+### The tab
+
+`VIEWS` gains a `dashboard` entry and the module **lands on it**: `view = 'dashboard'`. `render()`
+branches before the contract branch and returns, so the band is the whole screen rather than a
+header on somebody else's.
+
+| | before | after |
+|---|---|---|
+| Contract tab height | 1585px, records at y=961 | **643px, records first** |
+| Dashboard | folded into the Contract tab | its own tab, 856px |
+
+- ⚠️⚠️ **THE OLD FOUR-TAB OBJECTION IS STALE, AND THAT WAS CHECKED RATHER THAN ASSUMED.** The
+  markup carried a warning that *"the tab count is load-bearing for the TITLE"*, because `module.css`
+  once hid `.cc-title-txt` below 1460px on the grounds that *"5 tabs need more room"*. That was true
+  of **a strip of labelled buttons**. Since 2026-09-03 the strip is converted by
+  `UI.tabsToDropdown('.cc-tabs')` into ONE trigger naming only the CURRENT screen — so its width is
+  set by the longest label that can BE current, *"Claims / Change Order"*, and **"Dashboard" is
+  shorter, so a fourth entry costs zero width**. The title text is hidden above 701px regardless by
+  `.pd-title-hasdrop`, precisely because the trigger already names the screen. Neither half of the
+  warning survives; it is replaced with the measurement.
+- ⚠️ **The 2026-08-26 folding is UNTOUCHED.** Packages stay inside Contract, BOQ under Contract, PMI
+  under Claims. This adds a read-only summary; it does not reopen *"there are too many tabs to keep
+  track of"*.
+- ⚠️ **Export is hidden on the dashboard and RESET at the top of `render()`** — a control hidden by
+  one branch and never restored is invisible on every tab after it. **Print is deliberately kept**:
+  `window.print()` needs no table.
+
+### ⚠️⚠️ AND `packages.js` SHIPPED AN HOUR EARLIER UNDER A CACHE TOKEN FROM 2026-09-11
+
+The previous commit (`c752e7f`) passed `ccDashHTML` into `CCPackages.show(...)` — **23 changed lines
+in `packages.js`** — and bumped `module.css` and `module.js` only. `packages.js?v=20260911uc` was
+left exactly as it was. So a returning browser with a warm cache kept serving the old `show()`, the
+one whose signature has no `dashHTML` parameter, and **the band that commit existed to resurrect
+would not have appeared for them at all.** This repo's single most-recorded deploy failure, and I
+made it while writing an entry about a different one.
+
+Found by reading `git show c752e7f -- index.html` against `git show --stat`, not by a checker —
+`wiring-check` §4 proves every asset is on ONE version, which it was; what it cannot know is whether
+that one version is **newer than the bytes**. Fixed forward: `packages.js` is bumped here, and this
+round removes the `dashHTML`/`onDash` plumbing entirely, so the stale-cache case resolves either way.
+
+⚠️ **`packages.js` is reverted to one line** — `contractsHTML() + packagesHTML() + boqSectionHTML()`
+— rather than keeping an unused parameter. The band has **exactly one call site** again, which is
+the property that stopped it drifting from the project-dashboard panel in the first place.
+
+### Verified
+
+All 24 static gates pass, including the ones that would catch a half-move: exactly **one**
+`ccDashHTML()` call site, the dashboard branch **before** the contract branch and returning, no
+`onDash`/`dashHTML` left in `packages.js`, `ccHasClaims` read three times, the arithmetic still
+routed through `PDClaims.sum` / `decided` / `isDisapproved` / `shortfallOf`, 13/13 emitted classes
+carrying a CSS rule, 0 NUL and pure LF, CSS braces 660.
+
+Rendered: the populated dashboard tab at **856px / 3 table rows / 6 cards**; the Contract tab with
+`hasBand: false` and `cc-sechead` as its first child; and the OPW101 empty case above.
+`wiring-check` **139/139** (its asset pass is what confirms the bump landed on one version),
+`test-boq.js` **66/0**, `dead-hooks` 9 — the documented baseline, all in `project-schedule`'s
+blocked file.
+
+⚠️ **Not verified signed in** — fixture data through the shipped renderer, plus a fixture shaped
+exactly like the live OPW101. No live register has been read.
+
+⚠️⚠️ **`MODULE_V` → `20260916i`, NOT `h` — the collision this log has now recorded six times.**
+A concurrent session independently chose `20260916h` for its own `MODULE_V` and pushed first, and
+**that does not conflict**: git saw the identical string on both sides and merged it silently. A
+browser holding their `h` would never have fetched my module page. The token is therefore
+re-derived from what `origin/main` actually has, **after** integrating rather than before.
+`module.js` and `packages.js` → `?v=20260916i`. ⚠️ `module.css` is deliberately NOT bumped — it
+did not change this round.
+
 ## 2026-09-16 — The dashboard the module could not reach, and then could not see past
 
 Two owner turns, one story. First: *"I do not see the dashboard in contracts & claims"* — with a
