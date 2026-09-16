@@ -1,3 +1,88 @@
+## 2026-09-16 (zb) — Where a tower stands and what shape it is come from different drawings, and BOTH readings now ask both
+
+Owner, with the plan editor open on the L-shaped, three-zone **F1 of Tower 1**: *"wow haha, now the
+actual floor plan is gone? look at the floor plan defined here…"*
+
+### ⚠️⚠️ FOUR REPORTS IN ONE DAY, AND I ANSWERED THE WRONG ONE THREE TIMES
+
+| # | the report | what I changed | why it did not close |
+|---|---|---|---|
+| (y) | *"positioning and configuration … something happened when choosing floor by floor"* | keyed the plan lookup by **tower** | real fault, wrong half |
+| (z) | *"the issue still remains … not the same"* | fitted onto the **minimum-area rectangle** instead of the bounding box | real fault, wrong half |
+| (za) | (same report, third time) | **stopped the site reading floor plans at all** | over-correction — it deleted what the owner wanted |
+| (zb) | *"now the actual floor plan is gone?"* | **both readings read both drawings** | ⟵ this entry |
+
+Read the reports **together** and they are one sentence: *show me the floor plan I drew, and show me
+the same building in both readings.* I kept reading them as one or the other.
+
+> ⚠️⚠️ **THE DEFECT WAS NEVER *WHICH* DRAWING THE SITE USED. IT WAS THAT ONLY ONE OF THE TWO
+> READINGS USED IT.** **Whole towers** extruded the tower's traced **site** polygon — a placement
+> rectangle. **Floor by floor** re-drew every slice from the **floor** plan — an L with a core and
+> three zones. One building, two outlines, two clicks apart. Every one of (y), (z) and (za) moved
+> the floor plan around and left that asymmetry standing.
+
+### The fix: one rule, both readings
+
+`if (model.siteFloors && c.floor && !_pg)` → **`if (model.site)`**. Both site models set
+`site: true`; only Floor by floor sets `siteFloors`, and gating on **that** is what let the two
+readings disagree.
+
+| the question | the drawing that answers it |
+|---|---|
+| **where** the tower stands, how big it is, which way it runs | the **site plan** — its traced polygon's own rectangle (`_vsZpMinRect`), or its wrap slot where the site plan does not name it |
+| **what shape** it is | the **floor plans** — each floor for its own slice in *Floor by floor*, the tower's **biggest** floor for the one solid in *Whole towers* |
+
+Same drawings, same target, same transform (`_twSrc` — one source box per tower), so the massing
+solid **is** the biggest floor slice, and a setback is still a setback inside it.
+
+⚠️ **`_vsZpMinRect` is back**, and brought back out of the history rather than retyped from memory.
+It was correct geometry removed in (za) for a question the view had stopped asking; the view asks it
+again, so it is load-bearing again. The note on it now records both the removal and the return.
+
+⚠️ **`floors` is carried on a whole-tower cell.** That cell names no floor, so without it the
+renderer cannot find the tower's plans and *Whole towers* silently keeps its old outline. Collected
+from the loop that already computes `storeyN`, so the count and the list cannot drift.
+
+⚠️ **The biggest floor, not the first.** A massing solid is the building's outline and the outline of
+a building is its widest floor — the podium, not the penthouse and not whichever level sorted first.
+Measured in the same proportional units the shared box is built in, ties keeping the first.
+
+### Proved where all four versions actually differed — the call site
+
+`test-sitefit.js` rewritten — **31 assertions, 0 failing**, and it now runs the **resolution chain**
+rather than only the geometry: `_twFloors`, `_twSrc` and `_twBiggestPlan` are sliced out of
+`_vs3Build` by name and executed against a plan map and a row of cells, with `_vsZpFor` and its
+tower index sliced in too. Nothing is stubbed but the two things the renderer itself supplies.
+
+- the branch is entered for **both** readings — `if (model.site)`, asserted by regex on the shipped,
+  comment-blanked source, **and mutation-tested**: changing it back to `model.siteFloors` fails that
+  assertion and only that one
+- a whole-tower cell and a floor slice **resolve the identical source box**, and the massing solid
+  is byte-for-byte the biggest floor slice
+- the biggest floor wins **whichever order** the levels arrive in
+- the L keeps **all three zones**, lands inside the traced slab heading and all, and fills the
+  traced footprint in one direction without ever overrunning it
+- a setback stays **0.5 ×** the podium in both directions
+- an untraced tower's **wrap slot** is unchanged and still axis-aligned
+
+⚠️ **The contrast block runs pinned `feae648b` — entry (za), two hours old —** and requires it to
+reproduce the asymmetry at the call site: only `siteFloors` reads a plan, and a traced tower is
+excluded from even that. That is exactly the screenshot the owner replied to.
+
+⚠️⚠️ **The lesson, recorded because it cost four rounds:** the assertion has to sit where the
+**decision** is. A suite that exercised `_vsZpFitPolys` would have gone green on all four versions,
+including the three that were rejected — the geometry helper was never the thing that was wrong.
+
+`wiring-check` **139/139**, `test-lsm` **702/702**, `test-builder` **101/101**,
+`test-zoneplan` **27/27**, `test-sitefit` **31/31**, `scan` self-test clean. The inline script
+parses (1 block), pure LF.
+
+⚠️ **Not verified signed in.** The anon key has no grants and DEMO01 needs a login. **First thing to
+check:** *Whole towers* and *Floor by floor* should now show the **same L-shaped Tower 1**, in the
+same place, at the same size — the second simply cut into floors.
+
+`MODULE_V` → `20260916zb`, re-derived from what `origin/main` serves (`20260916za`).
+
 ## 2026-09-16 (za) — The site plan wins where it speaks: a traced tower is the same building in both readings
 
 Owner, with the two site readings side by side for the third time today: *"the issue still remains.

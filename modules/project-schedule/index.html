@@ -16902,6 +16902,56 @@
     });
     return b;
   }
+  /* ==== THE TOWER’S OWN RECTANGLE, NOT THE BOX ITS CORNERS HAPPEN TO FALL IN ==========
+     ⚠️⚠️ REMOVED ON 2026-09-16 (za) AND BROUGHT BACK THE SAME DAY, because (za) answered the
+     wrong half of the report: it stopped the site reading floor plans at all, and the owner’s
+     reply was *"now the actual floor plan is gone? look at the floor plan defined here…"* with
+     the L-shaped F1 of Tower 1 on screen. The floor plan belongs on the site. What was never
+     true is that only ONE of the two readings used it. Both do now, so this is load-bearing
+     again — left in the history rather than rewritten from memory.
+
+     ⚠️⚠️ AN AXIS-ALIGNED BOUNDING BOX IS NOT A BUILDING. A site plan is traced over a
+     property, and a property is almost never square to the sheet — so a slab tower drawn along a
+     boundary at 30° has a bounding box HALF AS BIG AGAIN as the slab and square-ish where the slab
+     is narrow, centred where the slab is not.
+     ⚠️ SO THE TARGET IS THE MINIMUM-AREA RECTANGLE of the traced footprint — its centre, its
+     extents AND its heading. Rotating calipers over the convex hull: the minimum-area rectangle
+     always has a side flush with a hull edge, so trying each hull edge as the heading is exact and
+     not a search. For a tower traced square to the sheet it IS the bounding box.
+     ⚠️ In the PLATE’S metric space (`u × plateW`, `v × plateD`) — rotating 0..1 coordinates whose
+     two axes are different real lengths would shear the tower. The depth flip `_vs3PolyMesh`
+     applies afterwards is a mirror of the whole scene and mirrors the heading with it. */
+  function _vsZpMinRect(polys, plateW, plateD) {
+    var pts = [];
+    (polys || []).forEach(function (q) {
+      (q.pts || []).forEach(function (p) { pts.push([p[0] * plateW, p[1] * plateD]); });
+    });
+    if (pts.length < 3) return null;
+    var h = _vs3Hull(pts);
+    if (!h || h.length < 3) return null;
+    var best = null;
+    for (var i = 0; i < h.length; i++) {
+      var a = h[i], b = h[(i + 1) % h.length];
+      var dx = b[0] - a[0], dy = b[1] - a[1], L = Math.sqrt(dx * dx + dy * dy);
+      if (!(L > 1e-9)) continue;
+      var ux = dx / L, uy = dy / L;
+      var mnU = null, mxU = null, mnV = null, mxV = null;
+      for (var k = 0; k < h.length; k++) {
+        var pu = h[k][0] * ux + h[k][1] * uy, pv = -h[k][0] * uy + h[k][1] * ux;
+        if (mnU === null || pu < mnU) mnU = pu;
+        if (mxU === null || pu > mxU) mxU = pu;
+        if (mnV === null || pv < mnV) mnV = pv;
+        if (mxV === null || pv > mxV) mxV = pv;
+      }
+      var w = mxU - mnU, d = mxV - mnV, area = w * d;
+      if (!best || area < best.area - 1e-12) {
+        var cu = (mnU + mxU) / 2, cv = (mnV + mxV) / 2;
+        best = { area: area, w: w, d: d, ux: ux, uy: uy,
+                 cx: cu * ux - cv * uy, cy: cu * uy + cv * ux };
+      }
+    }
+    return (best && best.w > 1e-9 && best.d > 1e-9) ? best : null;
+  }
   function _vsZpFitPolys(floorPlate, box, plateW, plateD, src) {
     var polys = _vsZpOutlineOf(floorPlate);
     if (!polys || !polys.length) return null;
@@ -16912,16 +16962,24 @@
     if (!sb || sb.u0 === null) return null;
     var fw = sb.u1 - sb.u0, fd = sb.v1 - sb.v0;
     if (!(fw > 1e-6) || !(fd > 1e-6)) return null;
-    /* The target: the wrap slot this tower stands in, in the plate’s metric space. ⚠️ Axis-aligned,
-       and rightly — a wrap slot has no heading to keep. The only caller left is the one for a tower
-       the site plan does not name; a traced tower keeps its own footprint and never comes here. */
-    var tw = (box.u1 - box.u0) * plateW, td = (box.v1 - box.v0) * plateD;
-    var cx = (box.u0 + box.u1) / 2 * plateW, cy = (box.v0 + box.v1) / 2 * plateD;
+    /* The target, in the plate’s metric space: centre, extents and heading. Either the tower’s own
+       rectangle (`_vsZpMinRect`, for a tower traced on the site plan) or a wrap slot — which is
+       axis-aligned, and rightly, because a slot has no heading to keep. */
+    var tw, td, cx, cy, ux, uy;
+    if (box && box.w > 0 && box.d > 0) {
+      tw = box.w; td = box.d; cx = box.cx; cy = box.cy; ux = box.ux; uy = box.uy;
+    } else {
+      tw = (box.u1 - box.u0) * plateW; td = (box.v1 - box.v0) * plateD;
+      cx = (box.u0 + box.u1) / 2 * plateW; cy = (box.v0 + box.v1) / 2 * plateD;
+      ux = 1; uy = 0;
+    }
     if (!(tw > 1e-6) || !(td > 1e-6)) return null;
-    /* ⚠️ WHICH WAY ROUND THE PLAN FACES. A plan sheet carries no compass, and a plan drawn
-       landscape dropped into a portrait slot would otherwise be shrunk to the width of that slot’s
-       short side. It takes the quarter turn that fits better — a quarter turn, never a stretch.
-       ⚠️ Decided from the TOWER’S source box, so every floor of a tower turns the same way. */
+    /* ⚠️ WHICH WAY ROUND THE PLAN FACES. A plan sheet carries no compass, and a tower traced
+       north–south on the site with its plan drawn landscape would otherwise be shrunk to the width
+       of its own short side. The site trace is what says which way the building runs, so the plan
+       takes the heading that fits it best — a quarter turn, never a stretch.
+       ⚠️ Decided from the TOWER’S source box, so every floor of a tower turns the same way, and
+       so the massing solid and the floor stack cannot face different ways. */
     var sA = Math.min(tw / fw, td / fd), sB = Math.min(tw / fd, td / fw), turn = sB > sA;
     var s = turn ? sB : sA;
     var cu2 = (sb.u0 + sb.u1) / 2, cv2 = (sb.v0 + sb.v1) / 2;
@@ -16931,7 +16989,7 @@
         pts: (q.pts || []).map(function (p) {
           var a = (p[0] - cu2) * s, b2 = (p[1] / arF - cv2) * s;
           if (turn) { var t = a; a = -b2; b2 = t; }
-          return [(cx + a) / plateW, (cy + b2) / plateD];
+          return [(cx + a * ux - b2 * uy) / plateW, (cy + a * uy + b2 * ux) / plateD];
         })
       };
     });
@@ -17510,19 +17568,71 @@
          ⚠️ In PROPORTIONAL units (depth over the sheet’s `ar`) so a podium traced on a wide sheet
          and a typical floor traced on a tall one are still the same building — the same rule
          `_vsZpFitPolys` compares with, and the reason the two can share one box at all. */
-      var _twSrcMemo = {};
-      function _twSrc(lab) {
-        if (!model.siteFloors) return null;
-        var k = lab || '*';
-        if (k in _twSrcMemo) return _twSrcMemo[k];
-        var b = { u0: null, u1: null, v0: null, v1: null };
+      /* ==== THE TOWER’S FLOORS, AND ONE SCALE FOR ALL OF THEM =============================
+         ⚠️⚠️ BOTH READINGS OF THE SITE ASK THE SAME TWO QUESTIONS OF THE SAME TWO DRAWINGS, and
+         that is the whole of the 2026-09-16 fix. The SITE plan says WHERE a tower stands, how big
+         it is and which way it runs — one traced polygon per tower. The FLOOR plans say WHAT SHAPE
+         it is — the L with a core and three zones the planner actually drew. Whole towers takes
+         the tower’s biggest floor for its one solid; Floor by floor takes each floor for its own
+         slice. Same drawings, same transform, so the two cannot disagree about a building.
+         ⚠️⚠️ AND ONE SOURCE BOX PER TOWER, never one per floor. Scaling each floor to fill the
+         tower’s rectangle on its own blows a setback penthouse up to the size of the podium under
+         it: every floor comes out the same footprint, which is a picture that says the building has
+         no setbacks — and it would put the massing solid at a different size again. Measured
+         together, the biggest floor fills the footprint and every other floor keeps its own size
+         and offset inside it.
+         ⚠️ In PROPORTIONAL units (depth over each sheet’s own `ar`) so a podium traced on a wide
+         sheet and a typical floor on a tall one are still the same building — the same rule
+         `_vsZpFitPolys` compares with, and the reason several floors can share one box at all.
+         ⚠️ Per ROW and memoised per tower: the site is one row holding every cell it has, so the
+         row’s own cells are exactly the floors to measure. A whole-tower cell names no floor and
+         carries `c.floors` instead — see `_vsSiteModel`. */
+      var _twFlMemo = {}, _twSrcMemo = {}, _twBigMemo = {};
+      function _twFloors(c) {
+        var k = (c && c.label) || '*';
+        if (k in _twFlMemo) return _twFlMemo[k];
+        var out = [];
         cells.forEach(function (c2) {
-          if ((c2.label || '*') !== k || !c2.floor) return;
-          var pl = _vsZpFor(c2.floor, model.trade, c2.label);
-          if (pl) _vsZpPlanBox(pl, b);
+          if (((c2 && c2.label) || '*') !== k) return;
+          if (c2.floor) { if (out.indexOf(c2.floor) < 0) out.push(c2.floor); }
+          else if (c2.floors) c2.floors.forEach(function (f) { if (f && out.indexOf(f) < 0) out.push(f); });
         });
-        _twSrcMemo[k] = (b.u0 === null) ? null : b;
+        _twFlMemo[k] = out;
+        return out;
+      }
+      function _twSrc(c) {
+        if (!model.site) return null;
+        var k = (c && c.label) || '*';
+        if (k in _twSrcMemo) return _twSrcMemo[k];
+        var bx = { u0: null, u1: null, v0: null, v1: null };
+        _twFloors(c).forEach(function (f) {
+          var pl = _vsZpFor(f, model.trade, c.label);
+          if (pl) _vsZpPlanBox(pl, bx);
+        });
+        _twSrcMemo[k] = (bx.u0 === null) ? null : bx;
         return _twSrcMemo[k];
+      }
+      /* ⚠️⚠️ WHICH FLOOR A WHOLE-TOWER SOLID IS DRAWN FROM: THE BIGGEST ONE. A massing solid is
+         the building’s outline, and the outline of a building is its widest floor — the podium, not
+         the penthouse and not whichever floor happens to sort first. Measured in the same
+         proportional units the shared box is built in, so the answer cannot depend on which sheet
+         a floor was drawn on.
+         ⚠️ Ties keep the FIRST, so the answer cannot depend on the order the levels came out of
+         the schedule. */
+      function _twBiggestPlan(c) {
+        var k = (c && c.label) || '*';
+        if (k in _twBigMemo) return _twBigMemo[k];
+        var best = null, bestA = 0;
+        _twFloors(c).forEach(function (f) {
+          var pl = _vsZpFor(f, model.trade, c.label);
+          if (!pl) return;
+          var bx = _vsZpPlanBox(pl, null);
+          if (!bx || bx.u0 === null) return;
+          var ar2 = (bx.u1 - bx.u0) * (bx.v1 - bx.v0);
+          if (ar2 > bestA + 1e-12) { bestA = ar2; best = pl; }
+        });
+        _twBigMemo[k] = best;
+        return best;
       }
       cells.forEach(function (c, ci) {
         var p = slots[(c.slot == null ? ci : c.slot)] || { row: 0, col: 0, cols: 1, rows: 1 };
@@ -17629,53 +17739,61 @@
         }
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
-        /* ==== THE SITE PLAN WINS WHERE IT SPEAKS; THE FLOOR PLAN FILLS THE SILENCE =========
-           Owner 2026-09-15: *"in the site view, there is no defined configuration or defined
-           floor plans per floor."* — so every slice of a tower was redrawn from that floor’s own
-           plan, fitted into the tower’s place.
-           Owner 2026-09-16, three times, the last with the two readings side by side:
-           *"The configuration of the tower is not the same and the location is not the same. why?"*
+        /* ==== WHERE A TOWER STANDS, AND WHAT SHAPE IT IS, COME FROM DIFFERENT DRAWINGS =====
+           Owner 2026-09-15: *"in the site view, there is no defined configuration or defined floor
+           plans per floor."*
+           Owner 2026-09-16, three times: *"the configuration of the tower is not the same and the
+           location is not the same. why?"* — then, when the floor plans were taken back out,
+           *"now the actual floor plan is gone? look at the floor plan defined here…"*, with the
+           L-shaped three-zone F1 of Tower 1 on screen.
 
-           ⚠️⚠️ BECAUSE A FLOOR PLAN AND A SITE TRACE ARE TWO DIFFERENT DRAWINGS OF ONE BUILDING,
-           AND NO AMOUNT OF FITTING MAKES ONE INTO THE OTHER. A site plan is traced building by
-           building — an outline at grade, a rectangle on the owner’s own project. A floor plan is
-           traced room by room, on a different sheet, at a different scale, with a core and a notch
-           in it. Placing the second where the first says is not a smaller error than the last two
-           attempts at it (the bounding box, then the oriented rectangle, both this same day): it
-           is the SAME error, because the shape being placed was never the tower’s footprint.
-           Two clicks apart, one building was a rectangle and an L, in two places. The card’s own
-           footer has said *"Every tower is placed as you traced it"* the whole time, and the Floor
-           by floor button has promised *"on its own footprint"*. Both were untrue.
+           ⚠️⚠️ THE TWO REPORTS ARE ONE REPORT, AND NEITHER DRAWING WAS THE PROBLEM. Read them
+           together and they say: show me the floor plan I drew, and show me the same building in
+           both readings. The defect was never *which* drawing the site used — it was that only
+           ONE of the two readings used it. **Whole towers** extruded the tower’s traced SITE
+           polygon (a placement rectangle); **Floor by floor** re-drew every slice from the FLOOR
+           plan (an L with a core). One building, two outlines, two clicks apart. Three attempts
+           this day moved the floor plan around — into the bounding box, onto the minimum-area
+           rectangle, then out of the view altogether — and all three left that asymmetry standing,
+           which is why none of them closed the report.
 
-           ⚠️⚠️ SO THE TOWER’S TRACED SITE FOOTPRINT IS THE TOWER, IN BOTH READINGS. Whole towers
-           and Floor by floor now differ in exactly the thing their names differ in: whether the
-           solid is cut into storeys. Same outline, same place, same size, same heading. What a
-           floor contributes here is what a SITE view can honestly show of it — that it exists,
-           its name, its progress, its dates and its click — and not a shape from another drawing.
-           ⚠️ WHERE TO SEE A FLOOR’S SHAPE: **Per tower**, one control away, whose whole job is
-           *"what does this building look like"* and which extrudes every floor at its own traced
-           coordinates. That is the answer to 2026-09-15, in the view that can carry it.
+           ⚠️⚠️ SO BOTH READINGS NOW ASK THE SAME TWO QUESTIONS OF THE SAME TWO DRAWINGS:
+             the SITE plan says WHERE the tower stands, how big it is and which way it runs —
+               its traced polygon’s own rectangle (`_vsZpMinRect`), or its wrap slot where the
+               site plan does not name it;
+             the FLOOR plans say WHAT SHAPE it is — each floor for its own slice in Floor by
+               floor, and the tower’s BIGGEST floor for the one solid in Whole towers.
+           Same drawings, same target, same transform (`_twSrc`, one source box per tower), so the
+           massing and the floor stack are the same outline in the same place at the same size,
+           and a setback is still a setback inside it. That is what the card’s footer has claimed
+           all along — *"Every tower is placed as you traced it"* — and what the Floor by floor
+           button promises: *"on its own footprint"*.
 
-           ⚠️ AND THE FLOOR PLAN STILL FILLS A SILENCE. A tower the site plan does not name has no
-           footprint to keep — it stands on a wrap slot, a box the size of its share of the grid,
-           and there the floor’s own plan is strictly better than a box and can contradict nothing.
-           `!_pg` is the whole test: a traced tower never reaches this. */
-        if (model.siteFloors && c.floor && !_pg) {
-          /* ⚠️ The wrap slot, in the PLATE’s own coordinates — and the depth axis is inverted on
-             the way in, because `_vs3PolyMesh` inverts it on the way out (rotation.x = -PI/2 sends
-             a shape’s +Y to world −Z). Handing it an un-inverted box would fit the floor plan into
-             the mirror image of the slot its own block is drawn in. */
-          var _tb = { u0: (x - exW / 2) / plateW + 0.5, u1: (x + exW / 2) / plateW + 0.5,
+           ⚠️ AFTER the colour decision, deliberately. `fill` is already settled from the tower’s
+           site polygon, so a floor plan cannot repaint a tower and delete the channel that says
+           which building this is.
+           ⚠️ Nothing found leaves `_pg` exactly as it was: a project with no floor plans traced
+           keeps the site prisms it has today rather than losing its towers, in BOTH readings. */
+        if (model.site) {
+          var _fpl = c.floor ? _vsZpFor(c.floor, model.trade, c.label) : _twBiggestPlan(c);
+          if (_fpl) {
+            /* ⚠️⚠️ THE TOWER’S OWN RECTANGLE, not the box its corners fall in — see _vsZpMinRect.
+               A site is traced over a property and a property is rarely square to the sheet, so the
+               bounding box of an angled slab is bigger than the slab, square where the slab is thin,
+               and centred somewhere the slab is not. */
+            var _tb = (_pg && _pg.length) ? _vsZpMinRect(_pg, plateW, plateD) : null;
+            /* ⚠️ The wrap slot, in the PLATE’s own coordinates — and the depth axis is inverted on
+               the way in, because `_vs3PolyMesh` inverts it on the way out (rotation.x = -PI/2 sends
+               a shape’s +Y to world −Z). Handing it an un-inverted box would fit the floor plan into
+               the mirror image of the slot its own block is drawn in.
+               ⚠️ Axis-aligned, and rightly: a wrap slot has no heading to keep. */
+            if (!_tb) {
+              _tb = { u0: (x - exW / 2) / plateW + 0.5, u1: (x + exW / 2) / plateW + 0.5,
                       v0: 0.5 - (z + exD / 2) / plateD, v1: 0.5 - (z - exD / 2) / plateD };
-          /* ⚠️⚠️ THE TOWER IS THE CELL’S, not the model’s. A site card holds every tower, so
-             `model.tower` is null here and the lookup would fall back to the bare floor key — which
-             is the very collapse this argument exists to close (see _vsZpFor). `c.label` IS the
-             tower on both site models. */
-          var _fpl = _vsZpFor(c.floor, model.trade, c.label);
-          /* ⚠️ ONE TRANSFORM FOR THE TOWER’S FLOORS, so a setback stays a setback inside the slot
-             rather than every floor being blown up to fill it — see `_twSrc`. */
-          var _fpg = _fpl ? _vsZpFitPolys(_fpl, _tb, plateW, plateD, _twSrc(c.label)) : null;
-          if (_fpg && _fpg.length) _pg = _fpg;
+            }
+            var _fpg = _vsZpFitPolys(_fpl, _tb, plateW, plateD, _twSrc(c));
+            if (_fpg && _fpg.length) _pg = _fpg;
+          }
         }
         /* ==== A FLOOR LABEL BESIDE ITS OWN TOWER =========================================
            Owner 2026-09-14: *"what's better if you just attach the labels of the ground floor, 2nd
@@ -18867,18 +18985,26 @@
        stands beside the tower views, and those are drawn from the schedule too. A tower whose setup
        says forty floors but whose schedule carries eight would otherwise be drawn forty tall and
        eight tall in two views of one project. */
-    var storeyN = {}, maxN = 1;
+    var storeyN = {}, maxN = 1, levsOf = {};
     towers.forEach(function (t) {
-      var seen = {}, k = 0;
+      var seen = {}, k = 0, levs = [];
       byTower[t].forEach(function (r) {
         var v = _vsLevVal(r, _vsAxis()[0].id);
-        if (v && !seen[v]) { seen[v] = 1; k++; }
+        if (v && !seen[v]) { seen[v] = 1; k++; levs.push(v); }
       });
       storeyN[t] = k || 1;
+      levsOf[t] = levs;
       if (storeyN[t] > maxN) maxN = storeyN[t];
     });
+    /* ⚠️⚠️ `floors` — THE LEVELS THIS TOWER HAS WORK ON, CARRIED ON THE CELL. A whole-tower cell
+       is one solid and names no floor, so without this the renderer could not find the tower’s
+       floor plans and the massing would be drawn from a different outline than the floor stack
+       beside it. That disagreement is the whole of the 2026-09-16 report; the two readings now
+       answer the same question from the same drawings, and this is what lets them.
+       ⚠️ Already computed, one line above, for `storeyN` — collected rather than re-derived, so
+       the count and the list cannot drift apart. */
     var cells = towers.map(function (t) {
-      return { label: t, list: byTower[t], color: _vsTowerColor(t, towers) };
+      return { label: t, list: byTower[t], color: _vsTowerColor(t, towers), floors: levsOf[t] || [] };
     }).filter(function (c) { return c.list.length; });
     if (!cells.length) return null;
     var byLevel = {}; byLevel[VS_SITE_ROW] = list;
