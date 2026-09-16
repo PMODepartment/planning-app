@@ -1,5 +1,31 @@
 # Module: s-curve
 
+## 2026-09-16 — The portfolio Manual data tab does something, and the curve gets a project filter — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+- **The tab was a dead control.** `.sc-tabs [data-view]` is static markup wired inside
+  `AppAuth.requireLogin`'s callback — *after* the portfolio branch `return`s — so in portfolio scope
+  the dropdown rendered, opened, and did nothing. Owner: *"there is a manual data tab that is
+  clickable that doesn't work."*
+- ⚠⚠ **The portfolio Manual tab is a REGISTER, not the sheet, and it cannot be the sheet.** The
+  project-level tab is an editable trades × months grid; portfolio scope is read-only at the Supabase
+  chokepoint (auth.js wraps `.from()`), so a grid rendered there would accept keystrokes and have
+  every save refused by the network. It lists which projects carry a hand-entered curve, whether the
+  planned one is locked, the months covered and when it was last touched — one row per PROJECT, not
+  per cell, because `scurve_manual` is one row per trade × month × kind.
+- **`?scView=manual`** opens a project's own sheet from that register. Read AFTER the remembered
+  `viewKey()` value so an explicit link wins, and written back to the same per-project key so the
+  choice sticks the way pressing the tab would — a deep link that un-remembers itself would be a
+  third kind of state beside the two this module already keeps.
+- ⚠️ Tolerant of the pre-migration state, like the project-level tab: a missing `scurve_manual`
+  degrades to a nudge naming `migrations/2026-09-10-scurve-manual-poc.sql`.
+- **A project filter**, which this view had been built for and shipped without — `loadScurve`
+  already carried the "No projects match the current filter" empty state. It narrows
+  `scopedProjectIds()`, so it costs no per-view code and re-reads only the projects selected
+  (`fetchAggForIds` is per-project, so narrowing is CHEAPER, not dearer).
+
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
 > 2. This module is **S-Curve** (Phase 2). Your DB table is `s_curve`

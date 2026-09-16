@@ -1,3 +1,32 @@
+## 2026-09-16 — The portfolio gantt: today was never a line, and the grain is chosen rather than guessed — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+Owner: *"Project schedule portfolio level needs complete rework. UI bugged out completely. Double
+check the graph as well. is this supposed to be a gantt chart? Let's also have a toggle for year,
+quarterly, monthly viewing"*, and *"the toolbars isn't necessary since these are unusable not until
+a project is selected."*
+
+- **The "bugged out" UI was `.ps-toolbar` still on screen.** `takeOver()` set `hidden` on it, and
+  `.ps-toolbar { display: flex }` (this module's own stylesheet) beats the UA `[hidden]` rule
+  outright. Actions / Add activity / WBS / Split were drawing over the dashboard the whole time.
+  Fixed in the layer with a class, so every module is covered at once.
+- ⚠⚠ **"Today" was a stack of 18px stubs, not a line.** `.po-sh-now` was emitted inside every
+  `.po-sh-track` plus once in the axis, so it broke at every row gutter and group heading — a bar
+  could not be read against a date, which is most of what a gantt is for. It is one continuous line
+  on a grid layer over the whole plot now, with period gridlines beside it.
+- ⚠️ **The label column's width existed twice** (a 230px axis margin, a 220px label flex-basis) and
+  only the eye ever checked they agreed. One custom property feeds the axis, the grid and the label.
+- **Auto | Year | Quarter | Month.** ⚠️ Quarters and years anchor on the CALENDAR: stepping
+  `i % every` from the window's first month labelled Feb/May/Aug/Nov as "quarters" whenever the
+  earliest contract began in February.
+- ⚠️ **The plot widens from the tick count** — the first attempt was a flat `min-width:1600px`,
+  which at month grain measured **95 of 96 labels overlapping their neighbour**.
+- It IS a gantt, deliberately at PROGRAMME level: one bar per project (contract window rail, live
+  programme bar with its POC fill, the overrun past contract finish, a forecast-finish marker),
+  never per activity.
+
 ## 2026-09-16 (m) — Portfolio scope draws a cross-project Gantt, and stops drawing nothing
 
 Owner, Phase E of the portfolio plan: *"the portfolio view of the schedule needs work as well."*

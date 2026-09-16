@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916t" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916r" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916t" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
        2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) —
@@ -491,10 +491,10 @@
 <script src="../../assets/js/db.js?v=20260916c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/scurve.js?v=20260916r"></script>
-<script src="../../assets/js/ui.js?v=20260916t"></script>
+<script src="../../assets/js/ui.js?v=20260916u"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
-<script src="../../assets/js/portfolio-dash.js?v=20260916r"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260916t"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <!-- ⚠️ The app's own spreadsheet layer (Tab/Enter/arrows, Ctrl+D, Excel paste). The manual matrix
@@ -702,6 +702,16 @@
     // and another monthly, and a global preference would open the second at the wrong grain.
     try { var _pv = localStorage.getItem('sc_period_' + pid); period = (_pv === 'quarter' || _pv === 'year') ? _pv : 'month'; } catch (e) { period = 'month'; }
     try { view = localStorage.getItem(viewKey()) === 'manual' ? 'manual' : 'curve'; } catch (e) { view = 'curve'; }
+    /* ⚠⚠ `?scView=manual` — FROM THE PORTFOLIO REGISTER (2026-09-16). The portfolio S-Curve's
+       Manual data tab lists which projects carry a hand-entered curve and opens one here, on the
+       tab that can actually edit it. Read AFTER the remembered view above so an explicit link
+       wins over what this planner last had open, and WRITTEN BACK to the same per-project key so
+       the choice sticks the way pressing the tab would — a deep link that un-remembers itself on
+       the next visit would be a third kind of state beside the two this module already keeps. */
+    try {
+      var _dl = new URLSearchParams(location.search).get('scView');
+      if (_dl === 'manual' || _dl === 'curve') { view = _dl; localStorage.setItem(viewKey(), view); }
+    } catch (e) { /* no URLSearchParams / no storage — the remembered view above still stands */ }
     // ⚠️ Reset with the project — a breakdown open on the previous project's Q3 is meaningless here.
     bdOpen = null; _costCo = null; _costCoKey = ''; _trSeries = null; _trSeriesKey = '';
     MAN = null; manMissing = false; manDirty = {};

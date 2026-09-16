@@ -102,6 +102,190 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (t) — One table design across the app; a portfolio view that isn't drawn under its own module's chrome
+
+Owner, off five screenshots side by side: *"There are different table formats seen throughout the
+modules. We already have an approved UI of tables seen in projects.html. Let's follow that
+universally."* Then, in the same session: open a meeting/issue from the portfolio table; the Issues
+logo is duplicated; Progress Photos bugs out; the S-Curve's Manual data tab does nothing and it has
+no project filter; Project Schedule's portfolio view *"bugged out completely"* and wants a
+year/quarter/month toggle; and *"check the risk register, stakeholder map, manpower loading,
+equipment loading and productivity rates tables as well."*
+
+### ⚠️⚠️ ONE ROOT CAUSE UNDER THREE OF THE REPORTS: `hidden` IS NOT `display:none`
+
+`PortfolioDash.takeOver()` hides the module's own UI so its dashboard can take the page. It did that
+by setting the **`hidden` attribute** — and `[hidden] { display: none }` is a *UA-stylesheet* rule,
+which **any** author rule that sets `display` beats outright, however weak its selector. Three of the
+things that line points at declare exactly that:
+
+| element | rule | where |
+|---|---|---|
+| `.pd-modulebar` | `display: flex` | dashboard.css — **every module** |
+| `.ps-toolbar` | `display: flex` | project-schedule — its authoring toolbar |
+| `.po-toolbar` | `display: flex` | portfolio-dash.css |
+
+So `n.hidden = true` set an attribute that changed nothing, and **every portfolio view has been
+drawing underneath its module's own still-visible chrome since the layer shipped**. That is
+Project Schedule's *"bugged out completely"* (its Actions / Add activity / WBS / Split toolbar still
+on screen over the gantt), and it is the Issues *"duplicated logo"* — a module bar that was supposed
+to be gone, showing its `<h1>` mark beside the tab dropdown's. It is now a class,
+`.po-taken-over { display: none !important }` (`!important` because `body.ps-reporting .pd-modulebar`
+already plays that card to *show* something, and an ordinary class would lose to it). The `hidden`
+attribute is still set alongside, for the semantics it genuinely carries.
+
+⚠️ **And nobody had ever seen a portfolio page with the module bar really gone** — it has no heading,
+no name, nothing saying which module you are standing in. `buildBar()` now builds one:
+the module's mark and title, a muted **Portfolio** chip, a slot for view tabs, and the project
+filter. It reuses `.pd-modulebar` rather than inventing a bar class, so the shell's height, border
+and ≤700px stacking rule all still apply.
+
+### The approved table, claimed by name rather than restated
+
+`.po-table` declared its own width, type scale, header treatment, cell padding and hover — a whole
+second table design, a few pixels from the approved one and drifting. Every portfolio table now
+carries **`pd-table pd-proj-table` in its markup** and takes the look from dashboard.css itself; what
+is left in `portfolio-dash.css` is only what `.po-table` genuinely adds. The same move was applied to
+the five modules the owner named:
+
+- **Manpower Loading**, **Equipment Loading**, **Productivity Rates** — private table CSS deleted,
+  markup adopts the approved classes (13 tables between them).
+- **Risk Register**, **Stakeholder Map** — already on `.pd-table`, but not on the approved *density*;
+  they now carry `.pd-proj-table` too.
+- Group headings are the approved **`.pd-ghchip`** (tinted, red left border) + **`.pd-ghcount`**
+  everywhere, including on the gantt. ⚠️ The count carries its **noun** — "6 issues", "2 action
+  items" — because a naked number beside a project name reads as an id at a glance.
+- ⚠️ **The mobile card conversion is gone from Risk Register and Stakeholder Map.** The owner already
+  ruled on that shape for Issues & Concerns on 2026-09-11 (*"maintain table view even in mobile view
+  and just allow scroll"*); these two still did the thing that was rejected.
+- ⚠️ **`.po-table th { cursor:pointer }` removed** — only a few of these tables sort, and a pointer
+  over something that does not respond is a lie.
+- ⚠️⚠️ **And so is `position:sticky` on those headers, which had never once worked.** Every one of
+  these tables sits in a `<div style="overflow-x:auto">`, and `overflow-x:auto` computes
+  `overflow-y` to `auto` as well — making that box the sticky ancestor. It is only ever as tall as
+  its content, so it never scrolls, so the header has nothing to stick within: **rendered at
+  1440×900 with 80 rows and the page scrolled 1200px, the `<th>` sat at y = −902.** Removed rather
+  than repaired — projects.html has no sticky header, and making these eleven the only tables in the
+  app that pin theirs would be a *new* inconsistency introduced by the change meant to end them.
+
+### Rows that open, through each module's own front door
+
+- **Issues** rows carry `?openIssue=<id>` — a query parameter, matching the `?openLesson=` deep link
+  that module already answers, because its history binding (`il_screen`) carries only which *screen*
+  is showing, not which issue is open.
+- **Meetings** rows carry `#mom_view={"t":"meetings","v":"detail","m":<id>}` — ⚠️ **not a new
+  protocol**: that is the hash `UI.bindHistoryState` already round-trips, so the link opens the
+  meeting through the module's own `apply()` with no second code path to keep in step.
+- ⚠️ Both **leave portfolio scope first**, and must: portfolio is read-only at the Supabase
+  chokepoint, so an issue "opened" with the flag still set would render an editor whose every Save
+  the network refuses.
+- ⚠️ The **meeting** opens, not the action item — Minutes of Meeting has no single-item screen.
+
+### The S-Curve: a Manual data tab that does something, and a project filter
+
+The tab was a **dead control** — static markup wired by the module's own `init()`, which a portfolio
+open deliberately skips. ⚠️ **It is a register, not the sheet, and it cannot be the sheet**: the
+project-level tab is an editable trades × months grid and portfolio scope is read-only, so a grid
+here would take keystrokes and have every save refused. It now answers the question a portfolio can:
+which projects carry a hand-entered curve, whether the planned one is locked, the months it covers,
+when it was last touched — and each row opens that project's own sheet via `?scView=manual`.
+
+⚠️⚠️ **This file's header used to say there is "deliberately no multi-project picker here."** The
+owner overruled that, and on this view the argument was always weakest: eighteen overlaid curves is
+a thicket, and `loadScurve` already carried the *"No projects match the current filter"* empty state
+from its life on the Portfolio Dashboard — a filter it had been built for and shipped without. The
+picker narrows **`scopedProjectIds()` and nothing else**, so all eleven views honour it without a
+line of per-view code and none can honour it differently from another. `PROJ` is deliberately *not*
+narrowed — it is also the id→name lookup every view labels its rows from.
+
+### The Project Schedule gantt, reworked
+
+- ⚠️⚠️ **"Today" was never a line.** `.po-sh-now` was emitted per row *inside* each 18px-tall track,
+  plus once inside the 18px axis — a stack of disconnected stubs with a gap at every row gutter and
+  group heading. It is now **one continuous line** on a grid layer spanning the whole plot, with
+  period gridlines beside it, so a bar can be read against a date. Measured: 1 element, 185px tall.
+- ⚠️ **The label column's width lived in two places** — a 230px `margin-left` on the axis and a 220px
+  `flex-basis` on the row label — two numbers that had to agree and were only ever checked by eye.
+  One custom property now feeds the axis, the grid and the label. Measured aligned to the pixel
+  (347/347/347, width 1370/1370/1370).
+- **Year | Quarter | Month | Auto.** The grain used to be *inferred* from the span alone, so a
+  2020–2031 portfolio was always years with no way to ask otherwise. ⚠️ Quarters and years are
+  anchored on the **calendar**: stepping `i % every` from the first month in the window put
+  "quarters" on Feb/May/Aug/Nov whenever the earliest contract began in February.
+- ⚠️ **The plot widens from the tick count, and the first constant was measured wrong.**
+  `min-width: 1600px` at month grain is 96 labels in 1370px: asking the DOM how many overlapped
+  their neighbour returned **95 of 96** — the unreadable smear the control exists to escape,
+  reproduced by the escape hatch. Each tick now gets a floor of its own label's width
+  (`max(100%, N px)`), so year/auto still fit the pane exactly. **Re-measured: 0 overlaps at all
+  four grains.**
+- Rows are banded. ⚠️ **In JS, not with `:nth-child`** — headings and rows are both plain divs, so
+  `:nth-child(even)` counts the headings and the stripe flips at every group. And the counter runs
+  across the **whole chart**: per-group indexing looked right in the code and produced **one striped
+  row in five** on real data, because most parents hold a single package.
+
+### Progress Photos: a nudge that named a file which could not run
+
+The view answered *every* failure with `/favorite|schema cache/` → *"run
+`migrations/2026-09-07-progress-photos-favorites.sql`"*. That is right for a missing **column** and
+wrong for a missing **table**: that migration's first statement is `alter table progress_photos add
+column …`, so against a database without the table it dies with exactly the
+`42P01: relation "progress_photos" does not exist` the owner reported **after following this very
+message**. A nudge that names a file which then fails reads as "the app is broken in two places".
+
+- The two are now told apart (`42703`/`column … does not exist` vs `42P01`/`PGRST205`) and each names
+  the file that will actually run.
+- ⚠️ The **whole view** says so. This branch wrote into the photo grid alone and returned, leaving
+  the KPI strip and the per-project table as blank elements — which is the "bugs out" screenshot: one
+  sentence and two empty boxes.
+- The migration now **guards its own prerequisite** with `to_regclass` and raises a message naming
+  `supabase-schema.sql`. ⚠️ A guard, not a `create` — `progress_photos` belongs to the schema file,
+  and a second thinner copy here is how two definitions of one table start to drift.
+- ⚠️ **Probed against production before changing anything**: `progress_photos` **does** exist there
+  (`42501 permission denied`, not `42P01`), so on this database it is the `favorite` **column** that
+  is outstanding, and the favorites migration is the right one to run.
+
+### The duplicated logo, fixed at the cause
+
+`UI.tabsToDropdown()` hid the module's title **text** beside a trigger that already names the screen.
+But when the caller also passes `opts.icon` the trigger carries the module's **mark** as well — so
+what is left of the `<h1>` is a second copy of that mark: two clipboards, then "Issues & Concerns ▾".
+Issues had been papering over this in its own JS (`switchScreen()` sets the `<h1>` to
+`display:none`), which is why it only showed where `switchScreen` does not run — the portfolio view,
+and the moment before auth resolves on a normal load. ⚠️ The **whole element** is hidden, never the
+text alone: a text-only hide is what once left "an icon alone on a line", which this file's own
+comments forbid bringing back.
+
+### Side panels on scroll — checked, and they are fine
+
+Measured on a 3107px page scrolled to 1200: `.pd-sidebar` (sticky, `top:0`, `height:100vh`,
+own `overflow-y:auto`) held at y=0, and `.pd-topbar` held at y=0. No defect. The module bar scrolls
+away with the page — ⚠️ that is how **every** module bar in this app behaves (`.pd-modulebar` has no
+`position`), so the new portfolio bar matching it is the consistent behaviour, not a regression.
+
+⚠⚠ **And `tools/selectall-key.js` caught a real bug in the new S-Curve register before it shipped.** `scurve_manual_meta` is keyed `project_id text primary key` — it has **no `id` column** — and `PDb.selectAll` pages on `id` unless told otherwise, so that read would have returned `400 / 42703` on **every** open of the Manual data tab. It now passes `project_id` as the cursor (legal where `sort_order`/`period` are not: a keyset cursor must be unique and non-null, and this is the primary key). This exact shape has now shipped four times in this repo, which is why that checker exists — it surfaces to a planner as an empty screen blaming a migration they have already run. `selectall-key` now reports **103 safe, 0 broken**.
+
+**Verified.** `tools/test-portfolio-dash.js` **345 passed, 0 failed** (was 292) — the shipped layer
+*loaded and mounted*, never re-implemented. New coverage: every view's table asks for the approved
+treatment by name; the chip/count/noun; both deep-link shapes (the Meetings one asserted as the exact
+encoded `mom_view` payload, so it cannot drift into a private protocol); the grain toggle's labels at
+each grain; exactly one `po-sh-now` per render; the tick-count-derived width; and the S-Curve bar's
+Curve | Manual data tabs. ⚠️ **Two of those were caught being vacuous and fixed rather than trusted**:
+the harness's `grpRows` matched `class="po-grp"` *exactly* and saw zero group rows once the approved
+class joined it, and the table assertion fell through a `_markup` seam that did not exist yet
+(adding it turned 327 into 337 — ten assertions that had been running on `''`). The table test was
+then **proved to discriminate** by breaking one table on purpose and watching it fail by name.
+`wiring-check` 139/0; `dead-hooks` clean for every new class; `dark-remap` 0 findings; `sql-scan`
+self-test 4/4; `node --check` on every touched `.js`; inline `<script>` and `<style>` brace balance
+on all six touched pages. Geometry **measured in a real browser against the shipped CSS** at 1440×900
+and 500×800 — the approved `6px 12px / 10px` header and `6px 12px / 12.5px` cell reproduced
+identically in Manpower, Risk Register and Productivity Rates, and the chip's **colour** asserted
+(`3px solid rgb(238,49,36)` on `rgb(253,236,234)`), never just its width.
+⚠️ **Not verified signed in** — this environment has no live Supabase session; the reads are faked.
+
+Shared assets bumped: `portfolio-dash.js`/`.css` → `20260916s`, `ui.js` → `20260916r`,
+`dashboard.css` → `20260916b`, `issues-lessons/module.js` → `20260916a`,
+`risk-register`/`stakeholder-map` `module.css` → `20260916a`.
+
 ### 2026-09-16 (s) — The last five cursor-less reads, and the two the checker could not see at all
 
 Owner: *"fix the other call sites as well"* — the five `PDb.selectAll` reads left standing by (o),
@@ -169,6 +353,7 @@ contain both edits — a parse check that misses the block it was written for is
 RLS-gated; the fix and the defect are both established by reading the shipped `selectAll`.
 ⚠️ `modules/project-schedule/CLAUDE.md` is **not** updated here — it is dirty with a concurrent
 session's work, and staging it would have carried their changes into this commit.
+
 
 ### 2026-09-16 (r) — The portfolio fan-out moves into PDScurve, and the Overview draws the curve it could not afford before
 

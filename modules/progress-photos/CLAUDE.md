@@ -1,5 +1,25 @@
 # Module: progress-photos
 
+## 2026-09-16 — The portfolio view named a migration that could not run — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+- The favorites read answered EVERY failure with `/favorite|schema cache/` → *"run
+  `migrations/2026-09-07-progress-photos-favorites.sql`"*. Right for a missing **column**, wrong for
+  a missing **table**: that file's first statement is `alter table progress_photos add column …`, so
+  without the table it dies with `42P01: relation "progress_photos" does not exist` — which is
+  exactly what the owner hit **after following this message**.
+- The two are told apart now (`42703` vs `42P01`/`PGRST205`) and each names the file that will run.
+- ⚠️ The whole view says so, not just the photo grid: the branch wrote one sentence into `grid` and
+  returned, leaving the KPI strip and the per-project table blank — which reads as a half-loaded page
+  rather than one clear prerequisite. That is the "bugs out" screenshot.
+- The migration guards its own prerequisite with `to_regclass` and raises a message naming
+  `supabase-schema.sql`. ⚠️ A guard, never a `create` — the table belongs to the schema file, and a
+  second thinner copy is how two definitions of one table start to drift.
+- ⚠️ **Probed against production first**: `progress_photos` DOES exist there (`42501 permission
+  denied`, not `42P01`), so on this database it is the `favorite` column that is outstanding.
+
 Developer change log for the **progress-photos** module. Update every PR.
 
 ## "When I close the browser app, the video I uploaded for 360 processing is gone" — a real browser-eviction risk closed with `navigator.storage.persist()`, and silent recovery made visible with a toast (2026-09-14, later still yet again again again)
