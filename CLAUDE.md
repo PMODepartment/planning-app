@@ -103,6 +103,65 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (a6) — `claude/progress-photos-ui-6v64d8` closed unmerged: the work is already in, and the feature is gone
+
+Owner: *"review claude/progress-photos-ui-6v64d8"* → *"delete the branch and add the changelog entry"*.
+Reviewed, deleted on the remote, **nothing merged**. Recorded here so the branch name is not
+re-reviewed in three weeks.
+
+**Tip SHA, if it is ever wanted back: `e53b9a1e969739519844a5f53b59a833414da78b`**
+(*"Progress Photos: fix — no delete path for 360°/3D media in the Gallery"*, 2026-09-04). Recover with
+`git branch <name> e53b9a1` — this entry was written and pushed **before** the ref was deleted, on
+purpose.
+
+### It had a twin already on main
+
+`33cdbba` (2026-09-04) carries the same title, the same date and the same 8 files, and **is an ancestor
+of main**. The branch was a leftover of work that reached main by another route. Each piece was checked
+on its own rather than trusting the matching title:
+
+| branch content | on main? |
+|---|---|
+| RLS widened to `status in ('pending_approval','done','failed')` | ✅ `supabase-schema.sql:246-250` |
+| `migrations/2026-09-04-reconstruction-delete-terminal.sql` | ✅ file present |
+| same policy inside `supabase-build.sql` | ✅ present |
+| 5 new `VERIFY-schema.sql` migration rows | ✅ all 5, counts matching 2/1/1/3/2 |
+
+### ⚠️⚠️ And it patched a feature that no longer exists
+
+`6d88d2c` (2026-09-10) — *"Remove 360° panorama and 3D reconstruction features"* — deleted **2,295
+lines**, including the whole of `pano.js` (1,032) and `recon.js` (470). Those are the two files the
+branch adds Delete buttons to. `reconstruction_requests` survives in the schema files but has **zero
+references in any JS or HTML** on main; the table is stale history.
+
+⚠️ Not to be confused with today's 360° viewer. That is a **separate, later** implementation —
+`pano360.js` + Pannellum — which is what (z2) fixed. Same words, different subsystem.
+
+### What merging would have cost
+
+A throwaway trial merge produced **8 conflicts**:
+
+```
+UU  migrations/VERIFY-schema.sql / CLAUDE.md / index.html / module.js / test.js / supabase-build.sql
+DU  modules/progress-photos/pano.js     deleted on main, modified on branch
+DU  modules/progress-photos/recon.js    deleted on main, modified on branch
+```
+
+The two `DU` rows are the trap: resolved toward the branch they **resurrect 1,471 lines** of
+deliberately removed code, and a delete/modify conflict is exactly the kind that gets waved through as
+"take theirs". `supabase-build.sql` is the second trap — main moved it **+5,354 lines across 12
+commits** since the merge-base, while the branch carries a 2026-09-02 regeneration of the same file.
+Branch was 622 commits behind.
+
+### The SQL itself was good, for the record
+
+Idempotent, and the reasoning held: the active-job protection exists so a row cannot be retracted out
+from under a live RunPod job, and that rationale genuinely stops applying once a request is terminal.
+It simply landed already, and nothing reads the table now.
+
+⚠️ Still worth confirming independently: whether that policy was ever actually **run** against the live
+database. `supabase-schema.sql` records it either way — the file is not evidence of execution.
+
 ### 2026-09-16 (a5) — The Portfolio Dashboard trims down: even spacing, one-line notes, no second S-curve, no look-ahead
 
 Owner, on the live page: *"the s-curve needs to be spaced evenly between other cards"*,
