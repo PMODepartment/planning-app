@@ -2,7 +2,7 @@
 
 ## 2026-09-16 (later) — Even spacing, one-line notes, no second S-curve, no look-ahead — fmlozano
 
-See the root `CLAUDE.md` (2026-09-16 (a4)) for the full entry, and (z3) for the read fixes that
+See the root `CLAUDE.md` (2026-09-16 (a5)) for the full entry, and (z3) for the read fixes that
 came first — the `?` column and the two cancelled statements.
 
 - `#po-view-overview` is a **flex column with one `gap`**. It was `display:block` with no card
