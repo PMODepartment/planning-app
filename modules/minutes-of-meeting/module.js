@@ -1670,9 +1670,6 @@ window.MinutesOfMeeting = (function () {
       var c = itemOpenCount([m.id]);
       out.push({
         kind: 'meeting', id: m.id, favorite: !!m.is_favorite,
-        // ⚠️ Carried so the LIST can group by it in portfolio scope. Never read
-        // in project scope — every row there is the one project by definition.
-        project_id: m.project_id,
         recurring: !!m.schedule_id,
         title: m.title || '(untitled)',
         dateSort: m.meeting_date || '',
@@ -1891,70 +1888,10 @@ window.MinutesOfMeeting = (function () {
       '<circle cx="3" cy="3" r="1.3"/><circle cx="9" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/>' +
       '<circle cx="9" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="9" cy="13" r="1.3"/></svg></span>';
   }
-  // ---- Portfolio provenance (owner, 2026-09-15) ---------------------------
-  // Opened from the Portfolio sidebar this module lists every project's
-  // meetings at once, and until now a row said nothing about which project it
-  // belonged to — six rows reading "Meeting Aug 31, 2026" with no way to tell
-  // them apart. The LIST groups by project; the CALENDAR, where there is no
-  // room for a group header, marks each chip with the project CODE.
-  // ⚠️ Both go through the SHARED `UI.*` helpers rather than a local lookup —
-  // three other modules mark rows the same way and four private copies is the
-  // drift this repo keeps paying for.
-  function momPortfolio() { return !!(window.AppAuth && AppAuth.isPortfolioScope()); }
-  // ⚠️ Guarded on the helper's existence, not just on the scope: a browser
-  // holding a stale `ui.js` would otherwise throw here and blank the module,
-  // which is a far worse failure than an unmarked chip.
-  function momProjTag(x) {
-    return (momPortfolio() && window.UI && UI.projectTagHTML)
-      ? UI.projectTagHTML(x && x.project_id, { cls: 'il-mom-projtag' }) : '';
-  }
-  // ⚠️ The chip is narrow and the code now takes part of it, so the title is
-  // clipped harder in portfolio scope — the alternative is a code that gets
-  // ellipsised away, which would defeat the whole point of showing it.
-  function momChipClip(n) { return momPortfolio() ? Math.max(8, n - 7) : n; }
-
-  // The list's own row, lifted out of renderMomListHTML so the plain and the
-  // grouped body can share ONE renderer — two copies is how the two bodies
-  // start disagreeing about what a row shows.
-  var MOM_LIST_COLS = 7;   // favourite · Title · Date · recurring · Attendees · Location · Minutes
-  function momListRowHTML(r) {
-    return '<tr class="il-mom-lrow" data-id="' + Fmt.esc(r.id) + '">' +
-      '<td class="il-mom-favtd"><button type="button" class="il-mom-favbtn' + (r.favorite ? ' on' : '') +
-        '" data-fav="' + Fmt.esc(r.id) + '" title="' +
-        (r.favorite ? 'Remove from favorites' : 'Add to favorites') + '">' + (r.favorite ? '★' : '☆') + '</button></td>' +
-      '<td>' + Fmt.esc(r.title) +
-        (r.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
-      '<td>' + Fmt.esc(r.dateLabel) + '</td>' +
-      '<td class="il-mom-rectd">' + (r.recurring ?
-        '<span class="il-mom-recic" data-ico="repeat" data-ico-size="16" title="Recurring meeting" aria-label="Recurring meeting"></span>' :
-        '') + '</td>' +
-      '<td>' + (r.attendees || '—') + '</td>' +
-      '<td>' + Fmt.esc(r.location) + '</td>' +
-      // Item 11 — "X of Y open", never a bare total. ⚠️ A meeting with no
-      // minutes at all reads "—", not "0 of 0 open": nothing has been
-      // recorded yet, which is a different fact from everything being closed.
-      '<td class="il-mom-opencell">' + (r.total ? (r.open + ' of ' + r.total + ' open') : '—') + '</td>' +
-    '</tr>';
-  }
-  // ⚠️ Grouping runs AFTER the sort and preserves the caller's order inside
-  // each group (UI.groupByProject never re-sorts), so a list sorted by date
-  // is still sorted by date within every project.
-  function momListBodyHTML(sorted) {
-    if (!momPortfolio() || !(window.UI && UI.groupByProject)) return sorted.map(momListRowHTML).join('');
-    return UI.groupByProject(sorted).map(function (g) {
-      return UI.projectGroupRowHTML(g, MOM_LIST_COLS) + g.rows.map(momListRowHTML).join('');
-    }).join('');
-  }
-
   function renderMomListHTML(rows) {
     if (!rows.length) {
       return '<div class="il-empty" style="padding:28px;">' +
-        // ⚠️ "on this project" is false in portfolio scope — the read spans
-        // every project the planner can see, so an empty result there means
-        // the whole portfolio is empty, which is a different fact.
-        (MOMS.length ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.'
-          : (momPortfolio() ? 'No minutes recorded on any project you can see.'
-                            : 'No minutes recorded on this project yet.')) +
+        (MOMS.length ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
       '</div>';
     }
     var sorted = momSortedRows(rows);
@@ -1973,7 +1910,25 @@ window.MinutesOfMeeting = (function () {
         momListSortTh('Attendees', 'attendees') + momListSortTh('Location', 'location') +
         momListSortTh('Minutes', 'open') +
       '</tr></thead><tbody>' +
-      momListBodyHTML(sorted) +
+      sorted.map(function (r) {
+        return '<tr class="il-mom-lrow" data-id="' + Fmt.esc(r.id) + '">' +
+          '<td class="il-mom-favtd"><button type="button" class="il-mom-favbtn' + (r.favorite ? ' on' : '') +
+            '" data-fav="' + Fmt.esc(r.id) + '" title="' +
+            (r.favorite ? 'Remove from favorites' : 'Add to favorites') + '">' + (r.favorite ? '★' : '☆') + '</button></td>' +
+          '<td>' + Fmt.esc(r.title) +
+            (r.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
+          '<td>' + Fmt.esc(r.dateLabel) + '</td>' +
+          '<td class="il-mom-rectd">' + (r.recurring ?
+            '<span class="il-mom-recic" data-ico="repeat" data-ico-size="16" title="Recurring meeting" aria-label="Recurring meeting"></span>' :
+            '') + '</td>' +
+          '<td>' + (r.attendees || '—') + '</td>' +
+          '<td>' + Fmt.esc(r.location) + '</td>' +
+          // Item 11 — "X of Y open", never a bare total. ⚠️ A meeting with no
+          // minutes at all reads "—", not "0 of 0 open": nothing has been
+          // recorded yet, which is a different fact from everything being closed.
+          '<td class="il-mom-opencell">' + (r.total ? (r.open + ' of ' + r.total + ' open') : '—') + '</td>' +
+        '</tr>';
+      }).join('') +
       '</tbody></table></div>';
   }
 
@@ -2082,7 +2037,7 @@ window.MinutesOfMeeting = (function () {
           allDay[iso].map(function (x) {
             return '<button type="button" class="il-mom-calchip' + (x.is_distributed ? '' : ' is-draft') +
               '" data-mom="' + Fmt.esc(x.id) + '" title="' + Fmt.esc(x.title || '(untitled)') + '">' +
-              momProjTag(x) + Fmt.esc(clip(x.title || '(untitled)', momChipClip(18))) + '</button>';
+              Fmt.esc(clip(x.title || '(untitled)', 18)) + '</button>';
           }).join('') + '</div>';
       }).join('') + '</div>';
 
@@ -2103,8 +2058,7 @@ window.MinutesOfMeeting = (function () {
         return '<button type="button" class="il-mom-wk-event' + (x.is_distributed ? '' : ' is-draft') +
           '" data-mom="' + Fmt.esc(x.id) + '" style="top:' + top + 'px;height:' + hpx + 'px;" title="' +
           Fmt.esc((x.title || '(untitled)') + ' · ' + x.start_time + (x.end_time ? '–' + x.end_time : '')) + '">' +
-          '<span class="il-mom-wk-eventtime">' + Fmt.esc(x.start_time) + '</span> ' + momProjTag(x) +
-          Fmt.esc(clip(x.title || '(untitled)', momChipClip(22))) +
+          '<span class="il-mom-wk-eventtime">' + Fmt.esc(x.start_time) + '</span> ' + Fmt.esc(clip(x.title || '(untitled)', 22)) +
         '</button>';
       }).join('');
       return '<div class="il-mom-wk-daycol il-mom-wk-daybody">' + hourLines + evs + '</div>';
@@ -2198,7 +2152,7 @@ window.MinutesOfMeeting = (function () {
         here.slice(0, 4).map(function (x) {
           return '<button type="button" class="il-mom-calchip' + (x.is_distributed ? '' : ' is-draft') +
             '" data-mom="' + Fmt.esc(x.id) + '" title="' + Fmt.esc(x.title || '(untitled)') + '">' +
-            momProjTag(x) + Fmt.esc(clip(x.title || '(untitled)', momChipClip(22))) + '</button>';
+            Fmt.esc(clip(x.title || '(untitled)', 22)) + '</button>';
         }).join('') +
         (here.length > 4 ? '<div class="il-mom-calmore">+' + (here.length - 4) + ' more</div>' : '') +
         (planned[iso] || []).map(function (s) {

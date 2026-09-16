@@ -1100,15 +1100,3 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
    without the whole screen shouting. Scoped to this module's own root so it
    cannot reach the shared shell. */
 #il-mom-view b, #il-mom-view strong { font-weight: 700; }
-
-/* ---- Portfolio provenance (owner, 2026-09-15) ----------------------------
-   Opened from the Portfolio sidebar this module lists every project's meetings
-   at once. The List groups by project (the shared .pd-projgrouprow band); the
-   calendar has no room for a group header, so each chip carries the project
-   CODE instead — the shared .pd-projtag, shrunk to fit a chip that is already
-   only a couple of hundred pixels wide.
-   ⚠️ Size and spacing ONLY. Colour stays with the shared rule so this marker
-   cannot drift away from the identical one in the three other modules that
-   consolidate. */
-.il-mom-calchip .pd-projtag, .il-mom-wk-event .pd-projtag { margin-right: 4px;
-  padding: 0 4px; font-size: 9px; letter-spacing: 0; }
