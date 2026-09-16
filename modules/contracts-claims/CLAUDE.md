@@ -88,6 +88,13 @@ harness itself — which is the point of writing one down rather than trusting i
   `title`, and the whole page is asserted on `scrollWidth > clientWidth`: **0 truncated** across every
   label, value and sub in all six cases.
 
+⚠ **Two `.cc-hint` paragraphs in a row OVERLAPPED by 4px.** `.cc-hint` is
+`margin-top:-4px; margin-bottom:0` — built to sit tight under the table it annotates — so the
+contract's description and the "no package breakdown yet" hint touched and read as one run-on
+paragraph. `.cc-dash .cc-hint + .cc-hint { margin-top: 10px }` separates only the adjacent pair;
+a hint following a table keeps its deliberate negative margin (measured: −4px → 10px, and the
+table-following hint unchanged at 33px). `module.css` → `20260916i`.
+
 ### Measured, not assumed
 
 | | light | dark |

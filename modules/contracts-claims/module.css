@@ -1470,3 +1470,9 @@ html.pd-dark .pmi-chtab tr.pmi-ch-cleared td { background:rgba(78,209,139,.08); 
 }
 .cc-dash-facts span { color: var(--pd-muted); font-size: var(--pd-fs-sm); }
 .cc-dash-facts b { font-weight: 700; font-size: var(--pd-fs-sm); text-align: right; overflow-wrap: anywhere; }
+/* ⚠⚠ `.cc-hint` is `margin-top:-4px; margin-bottom:0` — it is built to sit TIGHT UNDER the
+   table it annotates, so two of them in a row OVERLAP by 4px. Measured on the rebuilt dashboard:
+   the contract's description and the "no package breakdown yet" hint touched, reading as one
+   run-on paragraph. Only the adjacent pair is separated; a hint following a table keeps its
+   deliberate negative margin. */
+.cc-dash .cc-hint + .cc-hint { margin-top: 10px; }
