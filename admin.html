@@ -116,11 +116,34 @@
       t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Access</th><th>Actions</th></tr></thead><tbody>' +
         users.map(function (u) {
           var canSuper = ME.role === 'super_admin';
+          var isSuper = u.role === 'super_admin';
+          // ⚠️⚠️ A plain admin can SEE a super_admin's row in full — RLS
+          // already grants that (`users_self_read` is `auth.uid() = id or
+          // is_admin()`, and `is_admin()` covers both admin and
+          // super_admin) — but must not be able to CHANGE it. Owner:
+          // "if I am an admin, I should not be able to change the access of
+          // super_admin but I should be able to see who are super_admin."
+          // `admin_delete_user()` already enforces "only a super_admin may
+          // delete a super_admin" server-side; `locked` extends that same
+          // rule to every other control on this row. Enforced again in the
+          // DATABASE (migrations/2026-09-16-users-protect-super-admin.sql
+          // tightens `users_admin_update`) — this is a courtesy so a
+          // disabled control reads as locked rather than a write silently
+          // doing nothing (or throwing) once it reaches RLS.
+          var locked = isSuper && !canSuper;
+          var lockAttr = locked ? ' disabled title="Only a super_admin can change a super_admin’s account"' : '';
+          // ⚠️ Include `super_admin` as an option whenever the row's CURRENT
+          // role already is one, even if this viewer could not have GRANTED
+          // it — otherwise the <select> has no matching option, the browser
+          // silently falls back to displaying the first one, and a
+          // super_admin's own row would misreport its role to an admin
+          // looking right at it. The row is `disabled` in that case anyway
+          // (see `locked` above), so this only fixes what is shown, never
+          // what can be picked.
           var roleOpts = AppAuth.ROLES
-            .filter(function (r){ return r !== 'super_admin' || canSuper; })
+            .filter(function (r){ return r !== 'super_admin' || canSuper || isSuper; })
             .map(function (r){ return '<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+r+'</option>'; }).join('');
           var isFullAccess = (u.role === 'admin' || u.role === 'super_admin');
-          var isSuper = u.role === 'super_admin';
           var okChip = 'style="background:var(--pd-ok-bg);color:var(--pd-ok-text);"';
           var projCell = isFullAccess
             ? '<span class="pd-chip" '+okChip+' title="Role-based — every project is reachable no matter what is checked in Assign projects.">All projects</span>'
@@ -148,24 +171,34 @@
           return '<tr>' +
             '<td>'+Fmt.esc(u.name)+'</td>' +
             '<td>'+Fmt.esc(u.email)+'</td>' +
-            '<td><select class="pd-select" style="min-width:130px;" data-role="'+u.id+'">'+roleOpts+'</select></td>' +
+            '<td><select class="pd-select" style="min-width:130px;" data-role="'+u.id+'"'+lockAttr+'>'+roleOpts+'</select></td>' +
             // The department a person raises issues for (D1). Defaults their entries in
-            // the Issues & Concerns register so it is not retyped — and mistyped — per issue.
-            '<td><select class="pd-select" style="min-width:140px;" data-dept="'+u.id+'">' +
+            // the Issues & Concerns register so it is not retyped — and mistyped — per
+            // issue. ⚠️ Locked too, not just role/status/access — the DATABASE now
+            // refuses ANY column write to a super_admin's row from a plain admin (see
+            // `locked` above), and leaving this one control live would have it click,
+            // toast "Saved", and change nothing: `users_admin_update`'s `using` clause
+            // simply excludes the row, so the UPDATE affects 0 rows with no error to
+            // catch. One disabled control is honest; a live one that silently no-ops is
+            // the "PostgREST answers a filtered UPDATE with 200 and 0 rows" trap this
+            // repo has already paid for once (`boq_tag_activities`).
+            '<td><select class="pd-select" style="min-width:140px;" data-dept="'+u.id+'"'+lockAttr+'>' +
               '<option value="">—</option>' +
               DEPARTMENTS.map(function(d){ return '<option'+(u.department===d?' selected':'')+'>'+d+'</option>'; }).join('') +
             '</select></td>' +
             '<td class="pd-status-'+u.status+'">'+u.status+'</td>' +
             '<td>'+projCell+moduleCell+'</td>' +
             '<td style="white-space:nowrap;">' +
-              (u.status!=='approved' ? '<button class="pd-btn pd-btn-primary" data-approve="'+u.id+'">Approve</button> ' : '') +
-              (u.status!=='rejected' ? '<button class="pd-btn" data-reject="'+u.id+'">Reject</button> ' : '') +
+              (u.status!=='approved' ? '<button class="pd-btn pd-btn-primary" data-approve="'+u.id+'"'+lockAttr+'>Approve</button> ' : '') +
+              (u.status!=='rejected' ? '<button class="pd-btn" data-reject="'+u.id+'"'+lockAttr+'>Reject</button> ' : '') +
               // Assigning projects to a role that already sees every one of them is a
               // control that changes nothing — it re-appears the moment the role is
               // dropped to planner/user/viewer, where the assignment is real again.
+              // (Never shown for a super_admin row at all, `isFullAccess` covers it —
+              // `locked` does not need to reach this button.)
               (!isFullAccess ? '<button class="pd-btn" data-projects="'+u.id+'">Projects</button> ' : '') +
-              '<button class="pd-btn" data-modules="'+u.id+'">Modules</button>' +
-              (u.id!==ME.id ? ' <button class="pd-btn pd-btn-danger" data-del="'+u.id+'">Delete</button>' : '') +
+              '<button class="pd-btn" data-modules="'+u.id+'"'+lockAttr+'>Modules</button>' +
+              (u.id!==ME.id ? ' <button class="pd-btn pd-btn-danger" data-del="'+u.id+'"'+lockAttr+'>Delete</button>' : '') +
             '</td>' +
           '</tr>';
         }).join('') + '</tbody>';

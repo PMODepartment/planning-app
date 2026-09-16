@@ -102,6 +102,65 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (c) — An admin can no longer touch a super_admin's account, and the row still says who they are
+
+**Run `migrations/2026-09-16-users-protect-super-admin.sql`.** Owner, on the Users page: *"if I am
+an admin, I should not be able to change the access of super_admin but I should be able to see who
+are super_admin."*
+
+⚠️ **The second half was already true and needed no change.** `users_self_read` is `auth.uid() = id
+or is_admin()`, and `is_admin()` covers both `admin` and `super_admin` — a plain admin already reads
+every super_admin's row in full, and the Access column (2026-09-15) already states it in words
+("+ all modules"). What was missing was the first half.
+
+⚠️⚠️ **`users_admin_update` treated the two admin roles alike, and that is the gap.** It was the same
+`auth.uid() = id or is_admin()` — no distinction — so a plain admin could change a super_admin's
+role, status, department, projects or module access through the identical write every control on
+this page already uses (`PDb.updateUser`, `assets/js/db.js` — its only caller anywhere in the app is
+this one page). **This brings UPDATE into line with a rule DELETE already has**:
+`admin_delete_user()` has said since it was written "only a super_admin may delete a super_admin";
+UPDATE was the one action on the same row left open.
+
+⚠️⚠️ **New `is_super_admin()`, and `users_admin_update` checked on BOTH sides of the write — dropping
+either half re-opens exactly one gap.** `using` reads the row's CURRENT role, so a plain admin cannot
+edit an existing super_admin's row down to something else (the new role alone would satisfy a
+check that only looked forward). `with check` reads the row's NEW role, so a plain admin cannot
+promote an ordinary user straight to super_admin (the old role alone would satisfy a check that only
+looked backward). Both together, or one gap survives.
+
+⚠️⚠️ **THE WHOLE ROW IS LOCKED, NOT A COLUMN LIST.** A policy has no per-column granularity without a
+trigger, and "department saves but role silently doesn't" is a worse experience than one rule: a
+super_admin's row is untouchable by anyone but a super_admin (or the row's own owner —
+`auth.uid() = id` is unchanged). `admin.html` locks every control on such a row for a plain admin
+viewer — Role, Department, Approve/Reject, Modules, Delete — all with the same `title`, rather than
+guessing which columns "count" as access. ⚠️ Also fixed in passing: the Role `<select>` used to
+**drop `super_admin` from its own option list** whenever the viewer could not grant it — including on
+a row that already **is** super_admin, so the control had no option matching the current value and a
+browser would silently show the first one instead. It is included (and the whole select disabled)
+whenever the row's own role is already super_admin, so the dropdown states the truth even locked.
+
+⚠️ **The client lock is a courtesy, not the enforcement.** Without the DB-side policy change, a
+disabled control would just mean the write goes on to hit RLS's `using` clause, gets silently
+excluded, and returns 200/0-rows-changed with no error — the "PostgREST answers a filtered UPDATE
+with success and nothing changed" trap this repo has already paid for once
+(`boq_tag_activities`). The migration is what actually stops it; the UI change stops it from looking
+like it worked.
+
+**Verified:** the migration's own object (`is_super_admin`) is now tracked —
+`node migrations/gen-verify.js` regenerated cleanly (also picking up two functions
+`2026-09-16-delete-project-purge.sql` superseded that had not been re-synced since); `node --check`
+on the extracted inline script; 0 duplicate ids in `admin.html`; brace-balance holds (49/49);
+`node tools/wiring-check.js` — 139 passed, 0 failed, 3,710 cross-module references, every asset on
+one version. No `?v=`/`MODULE_V` bump — `admin.html` is fetched at its own URL with no shared asset
+changed.
+⚠️ **`supabase-build.sql` was again NOT regenerated** — `node migrations/gen-build.js` reports it
+~474 lines behind the migrations directory for reasons unrelated to this change (this repo's own
+2026-09-15 (zb) entry made the same call for the same reason); folding that drift into this diff
+would be the wrong trade.
+⚠️ **Not verified signed in** — no live login is possible in this environment; the RLS policy change
+is argued from the policy text and this repo's existing `admin_delete_user()` precedent, not observed
+refusing a real write.
+
 ### 2026-09-16 (b) — The delete is verified against the live database, and the PREVIEW gets the timeout I left off
 
 **Run `migrations/2026-09-16-preview-timeout.sql`.** Owner ran both of (a)'s migrations, then the
