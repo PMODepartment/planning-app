@@ -44,6 +44,22 @@
   --pd-ink: #231F20;          /* Black — primary text */
   --pd-muted: #5A5858;        /* secondary text */
   --pd-line: #DCDBDB;         /* Construction Gray — borders/dividers */
+  /* ==== THE PORTFOLIO GANTT'S THREE BARS =====================================================
+     ⚠️⚠️ THESE EXIST BECAUSE THE CHART WAS ALL BUT INVISIBLE IN DARK MODE. It reused
+     `--pd-line` for BOTH the contract rail and the schedule track, and `--pd-dark` for the
+     progress fill. In dark mode `--pd-line` is `rgba(255,255,255,.12)` and `--pd-dark` is
+     **#161717** — on the `#2B2C2B` card those bars sit on, the fill computes to a contrast ratio
+     of **1.28:1**. A near-black bar on dark grey. Owner 2026-09-16: *"due to dark mode the Gantt
+     bars are barely seen or barely appreciated, especially the contract window and live
+     programme."*
+     ⚠️ The FILL INVERTS between themes and that is the point: it must contrast with the
+     TRACK it sits inside, and the track is light on white and light-on-dark in dark mode. A single
+     fixed colour cannot do both, which is exactly how the old one failed.
+     ⚠️ Semantic names, not `--po-gray-1`: a reader changing these needs to know which bar
+     they are looking at, and the legend on the chart uses the same three words. */
+  --po-sh-rail:  #E4E3E3;     /* contract period — a quiet rail behind everything */
+  --po-sh-track: #C4C3C3;     /* current schedule, the part not yet done */
+  --po-sh-fill:  #2B2C2B;     /* of that schedule, what is reported complete */
   --pd-bg: #F4F4F4;           /* app background */
   --pd-card: #FFFFFF;         /* White — surfaces */
   /* Status (kept distinct from brand red so "error" ≠ "brand") */
@@ -1099,6 +1115,13 @@ html.pd-dark {
   --pd-bg: #1C1C1C;                   /* app background */
   --pd-card: #2B2C2B;                 /* surfaces (brand Dark Gray) */
   --pd-dark: #161717;                 /* topbar-dark/toast — darker than cards */
+  /* ⚠️ See the light block for why the FILL flips to near-white here: it has to read against
+     `--po-sh-track`, and the track is a light wash on a dark card. Measured against `--pd-card`
+     (#2B2C2B): rail 1.9:1 (a hairline, deliberately quiet), track 3.4:1, fill 11.6:1 — against
+     the 1.28:1 the fill used to have. */
+  --po-sh-rail:  rgba(255,255,255,0.20);
+  --po-sh-track: rgba(255,255,255,0.34);
+  --po-sh-fill:  #EDEDED;
   --pd-sidebar-bg: #161717;           /* the panel goes darker still on dark, as it always has */
   --pd-red-light: #3D1A19;            /* red tint on dark */
   --pd-red-mid: #6E2A25;

@@ -106,7 +106,11 @@
     .po-projfilter-menu { display:none; }
     .po-projfilter-menu.open {
       display:flex; flex-direction:column; position:absolute; top:calc(100% + 6px); right:0;
-      z-index:40; width:min(560px, calc(100vw - 32px)); max-height:min(60vh, 460px);
+      /* ⚠️ 640px, and two columns of 260px inside it. At 560px a grouped list of long project
+         names ("4PH Jenara Residences Construction Schedule Test") ellipsised in almost every row,
+         which is a picker you cannot pick from. ⚠️ Still `min(..., 100vw - 32px)`, so it can
+         never be wider than the window — the clipping that rule was added for. */
+      z-index:40; width:min(640px, calc(100vw - 32px)); max-height:min(66vh, 520px);
       background:var(--pd-card); border:1px solid var(--pd-line);
       border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg); overflow:hidden;
     }
@@ -122,7 +126,15 @@
     /* ⚠️ The LIST scrolls, not the popover — the search box and Select all / Clear must stay
        reachable with 21 projects on screen, which is exactly when they are needed. */
     .po-projfilter-list { flex:1 1 auto; min-height:0; overflow-y:auto; padding:4px 0;
-      display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); }
+      display:grid; grid-template-columns:1fr; }
+    /* ⚠️⚠️ ONE COLUMN, and that is a reversal made on a measurement. Two columns fitted more
+       rows, and at 640px it ellipsised THREE OF FIVE project names in the test fixture --
+       "4PH Jenara Residences Construction Schedule Test" and its like are the norm here, not the
+       exception. A picker whose names you cannot read is not denser, it is unusable; the list
+       scrolls, so the rows that do not fit are one flick away and still legible. */
+    /* A group head's heading spans the whole list rather than sitting in one column, or the
+       grouping reads as two unrelated lists side by side. */
+    .po-projfilter-list label.po-pf-prog { grid-column:1 / -1; }
     .po-projfilter-list label { display:flex; align-items:center; gap:8px; padding:7px 12px;
       font-size:var(--pd-fs-base); cursor:pointer; color:var(--pd-ink); }
     .po-projfilter-list label:hover { background:var(--pd-red-light); }
@@ -133,6 +145,13 @@
     .po-projfilter-list label.po-pf-prog { padding-top:9px; border-top:1px solid var(--pd-line,#eee); }
     .po-projfilter-list label.po-pf-prog:first-child { border-top:0; }
     .po-projfilter-list .po-pf-count { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); white-space:nowrap; }
+    /* ⚠️ A view may mark a project it cannot draw (see `pfBadge` in portfolio-dash.js). Muted,
+       not red: it is a statement about the data, not a fault the planner caused. */
+    .po-pf-badge { margin-left:8px; flex:0 0 auto; font-size:var(--pd-fs-micro); font-weight:700;
+      color:var(--pd-muted); background:var(--pd-bg); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); padding:1px 6px; white-space:nowrap; }
+    /* The name takes the room; the badge and the code keep theirs. */
+    .po-projfilter-list label > span:first-of-type { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .po-projfilter-list label.po-pf-child { padding-left:30px; }
     /* ⚠️⚠️ ON A PHONE THE POPOVER IS PINNED TO THE VIEWPORT, NOT THE BUTTON — measured, not
        assumed: at 390px the right-anchored panel put its own left edge at −78px, so a third
@@ -237,15 +256,24 @@
     /* Row banding — eighteen unbanded rows of thin bars is where the eye loses which label goes
        with which bar. ⚠️ On the ROW, not on the track, so the tint runs under the label too. */
     .po-sh-row.alt { background:var(--pd-bg); }
-    .po-sh-lab { flex:0 0 var(--po-sh-lab, 220px); min-width:0; font-size:var(--pd-fs-base);
+    .po-sh-lab { display:flex; align-items:baseline; gap:6px;
+      flex:0 0 var(--po-sh-lab, 220px); min-width:0; font-size:var(--pd-fs-base);
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* The row label is name + progress + any flag. ⚠️ The NAME takes the room and ellipsises;
+       the figure and the flag keep theirs, because a truncated "153d late" is worse than a
+       truncated project name you can still recognise. */
+    .po-sh-nm { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    .po-sh-pct { flex:0 0 auto; color:var(--pd-muted); font-size:var(--pd-fs-xs); }
     .po-sh-track { position:relative; flex:1 1 auto; height:18px; min-width:0; }
     /* the contract window is the GROUND the programme is measured against, so it reads as a
        rail behind the bar rather than as a second bar competing with it */
-    .po-sh-rail { position:absolute; top:7px; height:4px; background:var(--pd-line); border-radius:2px; }
-    .po-sh-bar { position:absolute; top:3px; height:12px; background:var(--pd-line);
+    /* ⚠️ `--po-sh-*`, not `--pd-line`/`--pd-dark` — those two made the whole chart a set of
+       near-invisible bars in dark mode (contrast 1.28:1 for the fill). See the token block in
+       dashboard.css. Do not put a raw `--pd-*` surface token back on a bar here. */
+    .po-sh-rail { position:absolute; top:7px; height:4px; background:var(--po-sh-rail); border-radius:2px; }
+    .po-sh-bar { position:absolute; top:3px; height:12px; background:var(--po-sh-track);
       border:1px solid var(--pd-dark); border-radius:3px; overflow:hidden; }
-    .po-sh-fill { display:block; height:100%; background:var(--pd-dark); }
+    .po-sh-fill { display:block; height:100%; background:var(--po-sh-fill); }
     .po-sh-over { position:absolute; top:3px; height:12px; background:var(--pd-bad-text);
       opacity:.75; border-radius:0 3px 3px 0; }
     .po-sh-fc { position:absolute; top:1px; width:2px; height:16px; background:var(--pd-warn-text); }

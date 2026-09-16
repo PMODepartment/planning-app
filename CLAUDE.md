@@ -103,6 +103,82 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (b7) — The portfolio Gantt answers its seven questions, and four of the answers were "this should not be here"
+
+Owner, with seven questions about the Project Schedule's portfolio chart. Most were not requests —
+they were *"why is this here?"*, and in four cases the honest answer was that it should not be.
+
+### ⚠️%s DARK MODE: THE PROGRESS FILL WAS AT 1.28:1
+
+The chart reused `--pd-line` for BOTH the contract rail and the schedule track, and `--pd-dark` for
+the progress fill. In dark mode `--pd-line` is `rgba(255,255,255,.12)` and `--pd-dark` is
+**#161717** — on the **#2B2C2B** card those bars sit on, the fill computed to a contrast ratio of
+**1.28:1**. A near-black bar on dark grey. *"Due to dark mode the Gantt bars are barely seen."*
+
+Three semantic tokens now, and the fill **inverts between themes** — which is the point, because it
+has to read against the TRACK, and the track is light on white and a light wash on a dark card. One
+fixed colour cannot do both, which is exactly how the old one failed. Measured in a real browser:
+
+| | fill vs card | fill vs track |
+|---|---|---|
+| before (dark) | **1.28:1** | — |
+| after (dark) | **11.98:1** | 4.02:1 |
+| after (light) | 14.02:1 | 7.97:1 |
+
+⚠️ The legend's swatches now read the **same three tokens the bars do**. They were hard-coded to
+`--pd-line`/`--pd-dark`, so a legend could be — and was about to be — wrong about the chart beside it.
+
+### The four "why is this here?"s
+
+- **The amber text after HO Renovation was not a bug**, and it is gone anyway. `roll-up 58d old`
+  meant `schedule_updated_at` was stamped 58 days ago, so the bar is drawn from numbers nobody has
+  refreshed. True — and a statement about OUR data, not about the project. It read as an error
+  against one project's name while saying nothing that project's team could act on. ⚠️ Exactly the
+  argument the owner made for the KPI cards, applied to the row flag for consistency.
+- **Both roll-up KPI cards removed** — *"this doesn't provide informed decision making value but
+  just a debugging warning."* They counted the health of our data. What replaces them answers what
+  the chart is for: **Worst slip** and **Finishing within 90 days**, both already derived per row,
+  so neither costs a read.
+- **The coverage paragraph removed**, and what it said moved somewhere it can be used: the picker
+  badges the specific project **`no roll-up`**, next to the tick box that includes it, instead of
+  reporting a count at the bottom of the page after the chart. ⚠️ The badge is a per-VIEW hook that
+  resets on mount — a picker still saying "no schedule roll-up" after the planner moved to Cash
+  Flow would be nonsense.
+- **"What does the % mean?"** — it is `schedule_progress`, the project's own roll-up,
+  duration-weighted across its activities, the same number the bar's fill draws. It was a bare
+  *"9%"* hanging off the name; it reads **"9% done"** now and its tooltip says where it comes from.
+
+### The three naming answers, fixed in the control rather than in a reply
+
+- *"Why is it called contract window and live programme?"* — fair, because neither is a phrase a
+  planner says. **Contract period** and **Current schedule**.
+- *"What does Group by parent project do? Does this refer to the packages?"* — it does.
+  **"Group packages by parent project"**, with the definition in its `title`.
+- *"There is a running past contract only — what does this mean?"* — it keeps projects whose current
+  schedule finishes after the contract end date. **"Finishing late only"**.
+- *"There is a TEST with 2 projects — is this even possible?"* — yes, and it is the packages
+  grouping doing its job: `PDProgram.keyOf` groups on the project's `program` field (falling back to
+  the id's letter prefix), so two projects both carrying `program = 'Test'` group under it. The
+  heading read as the bare code because `labelOf` refuses to invent a shared name when the members'
+  names share fewer than three characters. Real data, most likely test data.
+
+### The picker
+
+Grouped by **group head** now, not by parent project — which is a different question, and at
+portfolio level was nearly always a group of one, so the picker was a flat list wearing eighteen
+headings. ⚠️%s AND IT IS ONE COLUMN, WHICH IS A REVERSAL MADE ON A MEASUREMENT: two columns fitted
+more rows and ellipsised **three of five** project names in the fixture — names like *"4PH Jenara
+Residences Construction Schedule Test"* are the norm here. Re-measured at 640px: **zero**
+ellipsised. A denser picker you cannot read is not denser.
+
+**Verified.** `test-portfolio-dash` **381 passed, 0 failed** (was 351), every new assertion
+**negative-tested**: putting the staleness KPI back, reverting the legend wording, and re-grouping
+the picker by parent project each fail by name. Contrast measured in a real browser in BOTH themes,
+compositing the translucent tokens over the actual card colour rather than reading them raw.
+`wiring-check` 139/0; `toolbar-order` 15/0; `portfolio-overview` 166/0; `dark-remap` 0 findings.
+`portfolio-dash.js`/`.css` → `20260916w`; `dashboard.css` → `20260916w`.
+⚠️ **Not verified signed in.**
+
 ### 2026-09-16 (a7) — Two fully-merged Progress Photos branches deleted
 
 Owner: *"delete those two stale branches too"*. Housekeeping only, nothing lost.
@@ -178,6 +254,7 @@ It simply landed already, and nothing reads the table now.
 
 ⚠️ Still worth confirming independently: whether that policy was ever actually **run** against the live
 database. `supabase-schema.sql` records it either way — the file is not evidence of execution.
+
 
 ### 2026-09-16 (a5) — The Portfolio Dashboard trims down: even spacing, one-line notes, no second S-curve, no look-ahead
 
