@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916n" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916p" />
 </head>
 <body>
 <div class="pd-app">
@@ -138,6 +138,16 @@
           </div>
           <div style="overflow-x:auto;"><table class="po-table" id="po-rank"></table></div>
           <p class="po-note" id="po-ranknote"></p>
+        </div>
+
+        <!-- D5 — what lands next. ⚠️ Placed ABOVE the coverage note so both derived blocks
+             sit over the caveat that qualifies them, and the plain register stays last. -->
+        <div class="po-card">
+          <div class="po-sechead">
+            <h3>What lands next</h3>
+            <span class="po-mut" id="po-look-note"></span>
+          </div>
+          <div id="po-look"></div>
         </div>
 
         <!-- ⚠️ What this page could NOT see. A figure computed over 11 of 21 projects is a
@@ -831,9 +841,73 @@
   /* ⚠️ Paints from PROJ only — never fetches. `loadOverview` owns the reads and calls
      back into here as each lands, so the first paint is instant and a slow or failing
      read degrades one block instead of holding the page. */
+  /* ======================= D5 — what lands next =====================================
+     The next 30 / 60 / 90 days of milestones across every project in scope, overdue first.
+     ⚠⚠ NO READ OF ITS OWN. `ovX.ms` is already fetched for the strip's own 30-day figure, so
+        this list and that number cannot disagree about which milestones exist — and adding a
+        second read of the same table is how two blocks on one page start contradicting
+        each other.
+     ⚠ The Milestones view stays: that one is a month CALENDAR you navigate, this answers
+       "what is coming at me" without navigating. Different questions, both worth having. */
+  function renderLookahead(list) {
+    var host = document.getElementById('po-look'), note = document.getElementById('po-look-note');
+    if (!host) return;
+    if (ovX.err.ms) { host.innerHTML = '<div class="po-empty">The milestone read failed, so this list is not drawn.</div>'; note.textContent = 'unavailable'; return; }
+    if (!ovX.ms) { host.innerHTML = '<div class="po-empty">Reading milestones\u2026</div>'; note.textContent = ''; return; }
+
+    var nameOf = {}; list.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
+    var t = today(), t0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    var rows = [], undated = 0;
+    ovX.ms.forEach(function (r) {
+      if (!nameOf[r.project_id]) return;                                 // outside the current scope
+      if (r.actual_finish || num(r.percent_complete) >= 100) return;     // already achieved
+      var d = pd(r.end_date || r.start_date);
+      /* ⚠⚠ An undated milestone is COUNTED, never dropped: "nothing falls due" and "nobody has
+         dated this one" are opposite facts, and only the second is a reason to go and look. */
+      if (!d) { undated++; return; }
+      var days = Math.round((d - t0) / 86400000);
+      if (days > 90) return;
+      rows.push({ days: days, proj: nameOf[r.project_id],
+                  name: r.activity_name || '(unnamed)', prog: !!r.program_milestone });
+    });
+    rows.sort(function (a, b) { return a.days - b.days; });   // overdue first, then by date
+
+    var BUCKETS = [
+      { label: 'Overdue',      cls: 'po-bad',  test: function (r) { return r.days < 0; } },
+      { label: 'Next 30 days', cls: 'po-warn', test: function (r) { return r.days >= 0 && r.days <= 30; } },
+      { label: '31 – 60 days', cls: '',      test: function (r) { return r.days > 30 && r.days <= 60; } },
+      { label: '61 – 90 days', cls: '',      test: function (r) { return r.days > 60 && r.days <= 90; } }
+    ];
+    var CAP = 6, html = '', shown = 0;
+    BUCKETS.forEach(function (b) {
+      var got = rows.filter(b.test);
+      if (!got.length) return;
+      shown += got.length;
+      html += '<div class="po-look-grp"><div class="po-look-head ' + b.cls + '">' + b.label +
+              ' <span class="po-mut">' + got.length + '</span></div>';
+      got.slice(0, CAP).forEach(function (r) {
+        html += '<div class="po-look-row">' +
+          '<span class="po-look-when ' + (r.days < 0 ? 'po-bad' : '') + '">' +
+            (r.days < 0 ? Math.abs(r.days) + 'd late' : r.days === 0 ? 'today' : 'in ' + r.days + 'd') + '</span>' +
+          '<span class="po-look-name">' + esc(r.name) +
+            (r.prog ? ' <span class="po-ms-prog">program</span>' : '') + '</span>' +
+          '<span class="po-look-proj">' + esc(r.proj) + '</span></div>';
+      });
+      /* ⚠ A cap whose only signal is a "+" is one a planner cannot act on — say how many, and
+         where the rest are. */
+      if (got.length > CAP)
+        html += '<div class="po-look-more">' + (got.length - CAP) +
+                ' more in this window — the Milestones view lists them all.</div>';
+      html += '</div>';
+    });
+    host.innerHTML = html || '<div class="po-empty">Nothing falls due in the next 90 days for the projects in scope.</div>';
+    note.innerHTML = shown + ' in the next 90 days' +
+      (undated ? ' · <span class="po-warn">' + undated + ' undated</span>, so they cannot be placed' : '');
+  }
+
   function renderAll() {
     var list = filtered();
-    renderKPIs(list); renderRank(list); renderTable(list); renderCoverage(list);
+    renderKPIs(list); renderRank(list); renderLookahead(list); renderTable(list); renderCoverage(list);
   }
 
   /* ⚠️⚠️ ANYTHING THAT CHANGES `filtered()` MUST COME THROUGH HERE, NOT `renderAll()`.

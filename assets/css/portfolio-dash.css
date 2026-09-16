@@ -92,9 +92,7 @@
     .po-card h3 { margin:0 0 10px; font-size:var(--pd-fs-base); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .po-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:24px; text-align:center; }
     /* ---- D4 trend charts + D5 look-ahead (Overview) ---- */
-    .po-trends { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin:16px 0; }
     .po-mini { display:block; width:100%; }
-    .po-tr-mark { fill:var(--pd-bad-text); stroke:var(--pd-card); stroke-width:1.5; }
     .po-look-grp { margin-top:12px; }
     .po-look-grp:first-child { margin-top:0; }
     .po-look-head { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em;
@@ -565,7 +563,6 @@
         .po-card { overflow-x: auto; }
         .po-svg { min-width: 520px; }
         .po-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-        .po-trends { grid-template-columns: 1fr; }
         /* a 220px label column on a 390px screen leaves the bar no room at all */
         .po-sh-axis { margin-left: 0; }
         .po-sh-row { flex-wrap: wrap; gap: 2px; }

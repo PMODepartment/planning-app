@@ -102,6 +102,90 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (p) — The Portfolio Overview answers "what lands next", and three CSS rules that styled nothing are removed
+
+Phase D5 of the portfolio plan, and the last piece of Phase D. The Overview ranked projects by
+attention and said nothing about **when** anything was due. It now carries a **30 / 60 / 90 day
+look-ahead** of milestones across every project in scope, overdue first.
+
+### ⚠️⚠️ IT COSTS NO READ, AND THAT IS THE DESIGN CONSTRAINT
+
+`ovX.ms` is already fetched by `loadOverview` for the strip's own 30-day figure — the same
+server-filtered read (`activity_type.ilike.%milestone%` OR `program_milestone`), already carrying
+`activity_name`, `program_milestone`, `start_date`, `end_date`, `actual_finish` and
+`percent_complete`. So this list and that number **cannot disagree about which milestones exist**.
+⚠️ A second read of the same table is how two blocks on one page start contradicting each other,
+which is the fault the shared `PDClaims` extraction and the `scCompute` de-duplication were both
+written to end.
+
+⚠️ **The Milestones view stays.** That one is a month **calendar you navigate**; this answers
+*"what is coming at me"* without navigating. Different questions, and deleting either to make room
+would trade one job for another — the call the Contracts portfolio view already made for its own
+register.
+
+### What it refuses to do
+
+- ⚠️⚠️ **An undated milestone is COUNTED, never dropped.** *"Nothing falls due"* and *"nobody has
+  dated this one"* are opposite facts and only the second is a reason to go and look, so they are
+  reported in the note (*"2 undated, so they cannot be placed"*) rather than silently excluded. The
+  same rule the Project Schedule's own Summary applies to its milestone count.
+- ⚠️ **Achieved work is excluded on two tests, not one** — an `actual_finish` *or* 100% complete.
+  Either alone leaves a finished milestone sitting in Overdue.
+- ⚠️ **A failed read is NAMED**, and never rendered as an empty window: *"nothing falls due"* over a
+  read that did not happen is the most misleading thing this block could say. Loading, empty and
+  failed are three different sentences.
+- ⚠️ **The cap states its own count.** Six rows per bucket, then *"3 more in this window — the
+  Milestones view lists them all"*. A cap whose only signal is a `+` is one a planner cannot act on,
+  which this repo has already shipped once in the BOQ worklist.
+
+### ⚠️⚠️ AND THREE CSS RULES ON MAIN WERE STYLING NOTHING — MINE, SHIPPED TWO COMMITS AGO
+
+`.po-trends`, `.po-tr-mark` and the phone `.po-trends` override went in with (n)'s Phase E
+stylesheet by accident: they belong to **D4**, which is not built. Measured: `po-trends` and `po-tr-`
+occur **0 times** in every JS and HTML file on `main`. Removed rather than left — *"a renderer
+nothing calls reads as working code to every tool"* is this page's own reason for deleting its
+donut and bars, and it applies to a rule nothing emits. The `.po-look-*` rules from the same commit
+are now genuinely in use.
+
+### Verified
+
+**32 assertions, 0 failing**, the renderer **sliced out of the shipped file by name and executed** —
+never retyped — over a fixture built so a naive implementation gives a different answer:
+
+⚠️⚠️ **The order is the point, and the alphabet disagrees with it.** The fixture's milestones are
+named so that sorting by name would read *Alpha, Bravo, Charlie, Whisky, Xray, Yankee, Zeta*; the
+assertion requires *Zeta late, Alpha today, Yankee d30, Bravo d31, Xray d60, Charlie d61, Whisky
+d90* — overdue first, then by date. Otherwise the ordering could be right by accident.
+
+Every bucket boundary is asserted **on both sides**: day 0 is *Next 30* and not *Overdue*, day 30 is
+*Next 30* and day 31 is not, days 60 and 61 land either side of the second cut, day 90 is in and day
+**91 is dropped**. Plus: the two achieved milestones excluded, a project outside the scope excluded,
+the two undated counted and not placed, the program tag on the one program milestone and not on its
+neighbour, the cap drawing exactly 6 rows and naming the 3 it held back, all three non-list states,
+and narrowing the scope dropping the other project's rows **and its undated count with them**.
+
+⚠️ **The contrast bites**: the same suite against `origin/main` reports `renderLookahead` absent.
+
+**Rendered in an iframe** at 1400px light, 1400px dark and 390px, transitions disabled before
+measuring: **0 errors**, four buckets counting `1 / 2 / 2 / 2`, seven rows in the order above,
+*"30d late"* / *"today"* / *"in 30d"* rather than *"in 0d"*, the note reading *"7 in the next 90 days
+· 1 undated"*, the `when` column at its declared **78px**, nothing overflowing its own row, and no
+sideways page scroll. ⚠️ The tone resolves **per theme** — `rgb(196,33,39)` light against
+`rgb(255,138,128)` dark — which is what proves the stylesheet is in the cascade rather than the
+harness reporting tidy geometry on unstyled markup. At 390px the row wraps and the project name
+takes its own line, as its phone rule intends.
+
+`wiring-check` 139/139, `test-portfolio` 99/99, the inline script parses, every asset on one version.
+⚠️ **Not verified signed in** — the fixture is hand-built, so no real portfolio's milestones have
+been listed.
+
+`portfolio-dash.css` → `?v=20260916p` (12 pages); `MODULE_V` → `20260916p`, sort-checked.
+⚠️ `portfolio-dash.js` is **not** bumped — its bytes did not change, and bumping an unchanged asset
+invalidates twelve pages' caches for nothing.
+⚠️ **D4 is still not built**, and the reason is unchanged from (n): its S-curve half calls the RPC
+removed for timing out at 21 projects, and its funding half reads a function that moved to another
+module. It needs the per-project fan-out lifted into the shared `PDScurve` engine first.
+
 ### 2026-09-16 (n) — The Project Schedule gets a portfolio view, and a helper reached across a closure it does not share
 
 Owner, from the plan's Phase E: the sidebar's **Project Schedule** row opened portfolio-wide and drew
