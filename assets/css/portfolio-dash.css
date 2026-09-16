@@ -88,18 +88,21 @@
     }
     .po-projfilter-list label.po-pf-child code { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     /* charts */
-    .po-charts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:16px; margin:16px 0; }
-    @media (max-width:920px){ .po-charts { grid-template-columns:1fr; } }
     .po-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; box-shadow:var(--pd-shadow); min-width:0; }
     .po-card h3 { margin:0 0 10px; font-size:var(--pd-fs-base); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-    .po-donut-wrap { display:flex; align-items:center; gap:18px; }
-    .po-legend { display:flex; flex-direction:column; gap:7px; font-size:var(--pd-fs-base); }
-    .po-legend .lg { display:flex; align-items:center; gap:8px; }
-    .po-legend .sw { width:12px; height:12px; border-radius:3px; flex:none; }
-    .po-legend .ct { margin-left:auto; font-weight:700; color:var(--pd-muted); padding-left:12px; }
-    .po-bars svg { display:block; width:100%; }
     .po-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:24px; text-align:center; }
     /* grouped portfolio table */
+    .po-sechead { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
+    .po-sechead h3 { margin:0; }
+    .po-mut { color:var(--pd-muted); font-size:var(--pd-fs-sm); }
+    .po-note { margin:10px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.55; }
+    .po-coverage { margin:14px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.55; }
+    /* ⚠️ `--pd-*-text` for INK, never the base token: --pd-ok is 4.12:1 and --pd-warn 3.46:1
+       on white, both under AA, and dashboard.css says so where they are declared. */
+    .po-bad  { color:var(--pd-bad-text);  font-weight:700; }
+    .po-warn { color:var(--pd-warn-text); font-weight:700; }
+    .po-ok   { color:var(--pd-ok-text); }
+    .po-dash { color:var(--pd-muted); }
     .po-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
     .po-table th { position:sticky; top:0; background:var(--pd-bg); text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase;
       letter-spacing:.04em; color:var(--pd-muted); padding:9px 12px; border-bottom:2px solid var(--pd-line); white-space:nowrap; cursor:pointer; }
@@ -470,7 +473,6 @@
       @media (max-width: 700px) {
         .po-card { overflow-x: auto; }
         .po-svg { min-width: 520px; }
-        .po-donut-wrap { justify-content: center; }
         .po-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
         .po-table { min-width: 760px; }
         .po-projfilter { max-width: 100%; }

@@ -102,6 +102,61 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (e) — The Portfolio Overview stops reporting levels and starts ranking attention
+
+**Run `migrations/2026-09-15-scurve-status-per-project.sql`.** Phase D of the portfolio plan.
+Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+### ⚠️⚠️ FOUR OF THE EIGHT KPI CARDS READ `—` ON THE REAL PORTFOLIO
+
+Original Budget, Estimated Cost, Budget Variance and Over Budget were all empty, and the
+largest chart on the page printed *"No budget figures captured yet."* So half the strip and
+the biggest block reported money nobody has entered, while schedule — which the portfolio
+**does** have — got one card. The donut, the four money cards and the budget-by-group bars
+are gone, along with `card()`, `portfolioProgress`, `progressBasisNote` and `groupLabel()`;
+**deleted, not left dead**, because a renderer nothing calls reads as working code to every
+tool. ⚠️ `HEALTH` stays — the table's per-row health dot reads it.
+
+In their place: four figures that each trigger a different action, **projects ranked by
+attention** on all four inputs the owner chose, and a coverage note counting the projects
+with no schedule roll-up rather than dropping them.
+⚠️ **Healthy projects are still listed, at the bottom, with dashes** — a management view that
+hides them cannot be used to say *"these four are fine"*, which is half its job.
+
+### ⚠️⚠️ AND THE PAGE MOVED UNDER IT MID-FLIGHT
+
+Written against a 13-view page, landed on a 7-view one: a concurrent `1583eaf` moved six
+portfolio dashboards into the modules they describe and **moved this page's whole `<style>`
+block into `assets/css/portfolio-dash.css`**. Two of the three Phase D patch scripts
+**aborted on their CSS anchors** rather than writing — which is what the anchor counts exist
+for. Integrated by rebase; three conflict hunks, each resolved on its merits rather than by
+taking a side, with the CSS delta re-applied to the new stylesheet at **+87 chars, byte-
+identical to the delta it had inline**.
+
+⚠️⚠️ **That stylesheet is now SHARED by seven pages**, so the rules Phase D deletes had to be
+checked rather than assumed: **zero emissions repo-wide**, including from the six moved
+dashboards. ⚠️ My first check was **wrong and would have cleared a live rule** — `grep -o`
+truncates the match before `grep -v` can filter it. Re-run on word boundaries there are no
+genuine uses.
+
+### Verified
+
+**107 assertions, 0 failing**, sliced out of the shipped page and executed. ⚠️⚠️ The ranking
+fixture is built so the **alphabetical and attention orders disagree** — it ranks **Bravo ·
+Alpha · Charlie** where the alphabet says the reverse — otherwise the ordering could be right
+by accident. Rendered in a browser at 1400/390px in both themes: 0 errors, that same order on
+screen, the healthy project last with dashes, 0 donut/bars/legend elements, no sideways
+scroll, and the inks resolving per theme — which is what proves the **relocated** stylesheet
+is in the cascade.
+⚠️ **Three of the faults found were my own harness's**, each reading exactly like a defect in
+the shipped code: a `Fmt` stub missing `esc`, a lifted function set missing `HEALTH`, and a
+dependency scan blind to `rankSort` because it is passed **by reference**.
+
+`wiring-check` 139/139, `dead-hooks` 0 findings in this module.
+⚠️ **Not verified signed in.** `portfolio-dash.css` → `?v=20260916e` (7 pages);
+`MODULE_V` → `20260916e`, sort-checked against the `20260915z` the live site serves.
+
 ### 2026-09-16 (d) — Dropdown text on iPhone was faint because the page never told the browser it was light
 
 Owner, with a screenshot of the Users page on an iPhone: the Role and Department `<select>`
@@ -144,7 +199,7 @@ reachable from this environment; the fix is argued from the CSS cascade and the 
 `color-scheme`, which is exactly the mechanism the dark-mode block already relies on for the same
 controls in the other direction.
 
-`dashboard.css?v=` → `20260916a` (31 pages, shared, sort-checked). No `MODULE_V` bump — a shared
+`dashboard.css?v=` → `20260916e` (31 pages, shared, sort-checked). No `MODULE_V` bump — a shared
 stylesheet token-only change, no module `index.html` changed structurally.
 
 ### 2026-09-16 (c) — An admin can no longer touch a super_admin's account, and the row still says who they are
@@ -205,7 +260,6 @@ would be the wrong trade.
 ⚠️ **Not verified signed in** — no live login is possible in this environment; the RLS policy change
 is argued from the policy text and this repo's existing `admin_delete_user()` precedent, not observed
 refusing a real write.
-
 ### 2026-09-16 (b) — The delete is verified against the live database, and the PREVIEW gets the timeout I left off
 
 **Run `migrations/2026-09-16-preview-timeout.sql`.** Owner ran both of (a)'s migrations, then the

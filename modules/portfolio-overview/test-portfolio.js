@@ -75,9 +75,9 @@ function dispatchSandbox(viewName) {
     'return { renderCurrent: renderCurrent, viewLoaders: viewLoaders };';
   const calls = [];
   const timers = [];
-  const loaderNames = ['loadScurve', 'loadCashflow', 'loadResources', 'loadEquipment',
-    'loadMilestones', 'loadRisks', 'loadStakeholders', 'loadIssues', 'loadMeetings',
-    'loadContracts', 'loadPhotos', 'loadProductivity'];
+  const loaderNames = ['loadOverview', 'loadScurve', 'loadCashflow', 'loadResources',
+    'loadEquipment', 'loadMilestones', 'loadRisks', 'loadStakeholders', 'loadIssues',
+    'loadMeetings', 'loadContracts', 'loadPhotos', 'loadProductivity'];
   const args = [
     function renderAll() { calls.push(['renderAll']); },
     viewName,
@@ -97,6 +97,7 @@ function dispatchSandbox(viewName) {
 }
 
 const VIEW_LOADER = {
+  overview: 'loadOverview',
   scurve: 'loadScurve', cashflow: 'loadCashflow', resources: 'loadResources',
   equipment: 'loadEquipment', milestones: 'loadMilestones',
   stakeholders: 'loadStakeholders'
@@ -112,12 +113,19 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
   eq(loaded[0] && loaded[0][1], true, v + ': loader is forced past the id-list cache');
 });
 
-/* ⚠️ The Overview itself has no loader — it IS renderAll. Asserting this stops a future
-   edit inventing a phantom loadOverview and firing a network read for nothing. */
+/* ⚠️⚠️ THIS ASSERTION IS THE REVERSE OF WHAT IT WAS, DELIBERATELY. Until Phase D the
+   Overview had no loader — it painted from PROJ and read nothing, and this suite asserted
+   exactly that. The decision surface gave it four enrichment reads, so it now has one, and
+   the suite was changed to match the design rather than the design bent to keep it green.
+   What still matters is that the Overview repaints FIRST and reads second: the first paint
+   must not wait on a round trip. */
 {
   const s = dispatchSandbox('overview');
-  s.api.renderCurrent(); s.flush();
-  eq(s.calls.length, 1, 'overview: repaints and loads nothing');
+  s.api.renderCurrent();
+  eq(s.calls.length, 1, 'overview: paints from PROJ before any read is issued');
+  eq(s.calls[0][0], 'renderAll', 'overview: and that first call is the repaint');
+  s.flush();
+  eq(s.calls.filter(c => c[0] === 'loadOverview').length, 1, 'overview: then loads, once');
 }
 
 /* ⚠️ THE DEBOUNCE. Forcing on every tick would mean five fetches for five checkboxes; the
@@ -141,7 +149,7 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
   const keys = Object.keys(new Function(sliceFn(JS, 'viewLoaders') +
     '\nreturn viewLoaders.toString();')().match(/\{[\s\S]*\}/)[0]
     .split('\n').join(' ').match(/(\w+):/g).reduce(function (a, k) { a[k.slice(0, -1)] = 1; return a; }, {}));
-  eq(keys.length, 6, 'viewLoaders names the six lazy views this page still hosts');
+  eq(keys.length, 7, 'viewLoaders names the six lazy views this page still hosts, plus Overview');
   /* ⚠️⚠️ AND NOT THE SIX THAT MOVED. Owner 2026-09-15: the dropdown was a second home for six
      modules, and their dashboards now live in the modules themselves
      (assets/js/portfolio-dash.js). A loader left behind here would be a second copy of a
@@ -432,6 +440,79 @@ function report() {
   ok(/pd-seg pd-seg-multi/.test(chart), 'series: uses the shared multi-select segment');
   ok(!/type="checkbox" data-sc/.test(chart), 'series: no loose checkboxes left');
   ok(/button\[data-sc\]/.test(chart), 'series: wired to the buttons it renders');
+
+  /* ============================================ 3c · the decision surface (D)
+     Every derivation sliced out of the shipped page and executed. */
+  function surface(ovX) {
+    const body = 'var ovX = OVX;\n' +
+      ['pd', 'num', 'variance', 'progressOf', 'isOverdue', 'behindPP', 'slipDays',
+       'claimsOf', 'openIssues', 'flagsOf', 'rankSort'].map(n => sliceFn(JS, n)).join('\n') +
+      '\nreturn { behindPP, slipDays, claimsOf, openIssues, flagsOf, rankSort };';
+    return new Function('OVX', 'today', 'PDClaims', body)(
+      ovX, () => new Date(2026, 8, 16), win.PDClaims || null);
+  }
+  // PDClaims is a separate shared file; load it the same way as ui.js.
+  const claimsSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'js', 'claims.js'), 'utf8');
+  new Function('window', claimsSrc)(win);
+  ok(win.PDClaims && typeof win.PDClaims.pendingValue === 'function', 'D: the real PDClaims loaded');
+
+  const ST = {
+    // behind plan: (done - planned) / tot * 100
+    ALPHA: { tot_dur: 100, planned_dur: 50, done_dur: 30 },   // -20 pp, badly behind
+    BRAVO: { tot_dur: 100, planned_dur: 50, done_dur: 49 },   //  -1 pp, a shade behind
+    CHARLIE: { tot_dur: 100, planned_dur: 40, done_dur: 55 }  // +15 pp, ahead
+  };
+  const S = surface({ status: ST, claims: [], ms: null, iss: [], err: {} });
+
+  eq(Math.round(S.behindPP({ id: 'ALPHA' })), -20, 'D: behindPP is (actual − planned) over the weight');
+  eq(Math.round(S.behindPP({ id: 'CHARLIE' })), 15, 'D: ahead of plan is POSITIVE');
+  eq(S.behindPP({ id: 'NOPE' }), null, 'D: a project with no status row yields null, never 0');
+  eq(surface({ status: null, claims: null, ms: null, iss: null, err: {} })
+       .behindPP({ id: 'ALPHA' }), null, 'D: before the read lands it is null, not 0');
+  /* ⚠️ A zero-weight project must not divide by zero and must not read as "on plan". */
+  eq(surface({ status: { X: { tot_dur: 0, planned_dur: 0, done_dur: 0 } }, err: {} })
+       .behindPP({ id: 'X' }), null, 'D: a zero-duration project yields null, not NaN or 0');
+
+  /* slipDays uses forecast_finish || end_date — the rule the table already displays. */
+  eq(S.slipDays({ schedule_finish: '2026-12-31', forecast_finish: '2026-12-01' }), 30,
+     'D: slip counts days past the typed forecast');
+  eq(S.slipDays({ schedule_finish: '2026-12-31', end_date: '2026-12-01' }), 30,
+     'D: and falls back to the contract end date when no forecast is typed');
+  eq(S.slipDays({ schedule_finish: '2026-11-01', forecast_finish: '2026-12-01' }), -30,
+     'D: finishing early is negative, not clamped');
+  eq(S.slipDays({ forecast_finish: '2026-12-01' }), null, 'D: no programme finish yields null');
+
+  /* ⚠️⚠️ THE ORDERING FIXTURE IS BUILT SO ALPHABETICAL AND ATTENTION DISAGREE — otherwise
+     the ranking could be right by accident. Alphabetically Alpha, Bravo, Charlie; by
+     attention it must be Bravo (4 flags), Alpha (1), Charlie (0). */
+  const P_ALPHA   = { id: 'ALPHA', name: 'Alpha', schedule_finish: '2026-09-01',
+                      forecast_finish: '2026-09-30', estimated_cost: 1, original_budget: 1 };
+  const P_BRAVO   = { id: 'BRAVO', name: 'Bravo', schedule_finish: '2027-06-30',
+                      forecast_finish: '2026-01-01', estimated_cost: 900, original_budget: 100,
+                      schedule_progress: 10 };
+  const P_CHARLIE = { id: 'CHARLIE', name: 'Charlie', schedule_finish: '2026-09-01',
+                      forecast_finish: '2026-12-31', estimated_cost: 100, original_budget: 100 };
+  const S2 = surface({ status: ST, claims: [], ms: null, iss: [], err: {} });
+  const order = [P_ALPHA, P_BRAVO, P_CHARLIE].sort(S2.rankSort).map(p => p.name);
+  eq(order.join(' '), 'Bravo Alpha Charlie',
+     'D: ranked Bravo · Alpha · Charlie where the alphabet says the reverse');
+  eq(S2.flagsOf(P_CHARLIE).length, 0, 'D: a healthy project raises no flag');
+  ok(order[order.length - 1] === 'Charlie',
+     'D: and is still LISTED, at the bottom — a view that hides the healthy ones cannot say "these are fine"');
+  ok(S2.flagsOf(P_BRAVO).length > S2.flagsOf(P_ALPHA).length,
+     'D: more signals ranks higher');
+  /* ⚠️ Every flag must be a NAMED reason, since the row's tooltip prints them. */
+  ok(S2.flagsOf(P_BRAVO).every(f => typeof f === 'string' && f.length),
+     'D: each raised signal names itself');
+
+  /* ⚠️ Money and days never meet: exposure is money, EOT is days, and claimsOf keeps them
+     in separate fields rather than summing them into one "exposure" figure. */
+  const cl = surface({ status: ST, err: {}, claims: [
+    { project_id: 'ALPHA', record_type: 'Cost Claim', status: 'Pending',
+      sub_amount: 1000, eval_amount: 900, submitted_date: '2026-01-01' }
+  ] }).claimsOf('ALPHA');
+  ok(cl && typeof cl.exposure === 'number' && typeof cl.eotDays === 'number',
+     'D: exposure (money) and eotDays (days) are separate fields');
 
   /* ===================================================== 4 · source invariants
      ⚠️⚠️ COMMENTS ARE STRIPPED FIRST, AND BOTH OF THESE FAILED UNTIL THEY WERE.

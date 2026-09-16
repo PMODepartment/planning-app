@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260915x" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916e" />
 </head>
 <body>
 <div class="pd-app">
@@ -122,12 +122,27 @@
           </div>
         </div>
 
-        <div class="pd-info-grid" id="po-kpis"></div>
+        <div class="pd-kpis" id="po-kpis"></div>
 
-        <div class="po-charts">
-          <div class="po-card"><h3>Schedule Health</h3><div id="po-donut"></div></div>
-          <div class="po-card"><h3 id="po-bars-title">Budget by Workspace — Original vs Estimated</h3><div class="po-bars" id="po-bars"></div></div>
+        <!-- ⚠️⚠️ THE DONUT AND THE BUDGET BARS ARE GONE, and the live page is the argument:
+             four of the eight KPI cards read "—" and this chart printed "No budget figures
+             captured yet", so half the strip and the biggest block on the page were devoted
+             to money the portfolio has not captured — while schedule, which it HAS, got one
+             card. A ranked list of WHICH projects need attention also says more than a donut
+             counting how many do.
+             ⚠️ `HEALTH` itself stays: the table's per-row dot still reads it. -->
+        <div class="po-card">
+          <div class="po-sechead">
+            <h3>Projects by attention</h3>
+            <span class="po-mut" id="po-rank-count"></span>
+          </div>
+          <div style="overflow-x:auto;"><table class="po-table" id="po-rank"></table></div>
+          <p class="po-note" id="po-ranknote"></p>
         </div>
+
+        <!-- ⚠️ What this page could NOT see. A figure computed over 11 of 21 projects is a
+             different statement from one computed over 21, and nothing else on screen says so. -->
+        <p class="po-coverage" id="po-coverage"></p>
 
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-table"></table></div>
@@ -367,136 +382,309 @@
     });
   }
 
-  // ---- KPI cards ----
-  function card(ic, label, val, cls, ttl) { return '<div class="pd-info-card"' + (ttl ? ' title="' + esc(ttl) + '"' : '') + '><div class="pd-info-ic">' + Icons.svg(ic, 22) + '</div><div class="pd-info-label">' + esc(label) + '</div><div class="pd-info-val"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + esc(val) + '</div></div>'; }
-
   /* ==========================================================================
-     PORTFOLIO PROGRESS — weighted by value, never a mean of percentages
+     THE OVERVIEW IS A DECISION SURFACE, NOT A REGISTER
      ==========================================================================
-     ⚠️⚠️ A PLAIN MEAN MAKES A ₱50M FIT-OUT COUNT AS MUCH AS A ₱2B TOWER. That is the figure
-     this strip used to print, under the label "Avg Schedule %" — arithmetically an average of
-     project percentages, and on a portfolio of wildly different project sizes it is not the
-     portfolio's progress at all. Two small finished projects and one huge one barely started
-     read as 67% complete. Same fault, same fix, as the Project Schedule's own Summary view,
-     which weights by duration and says so.
+     It used to report LEVELS — eight cards, a donut and a bar chart. "Portfolio
+     Progress 10%" is a level; "8 percentage points behind plan" is a decision. The
+     shape here is the one the Contracts portfolio view arrived at on 2026-09-15 (q):
+     a strip of exposures, then projects RANKED by how much attention they need, then
+     the register kept underneath because the page is also used to find one project.
 
-     ⚠️ THE WEIGHT IS `original_budget` — the contract value, which is the only measure of size
-     the project row carries and the one management is actually reading the number against.
-     `schedule_activities` was the alternative and is a worse proxy: a count of rows says how
-     finely somebody broke the work down, not how much of it there is.
+     ⚠️⚠️ THE FIRST PAINT COSTS NOTHING AND IS NOT WAITED FOR. Everything below renders
+     from PROJ, which is already in memory; the four reads that enrich it land
+     independently and repaint as they arrive. A landing page that blocks on four
+     round trips is the defect this module just spent two commits removing.
+     ⚠️ Each read owns its own slice and its own error. One failing does not blank the
+     others, and every block says which of its inputs is missing rather than printing
+     a confident zero. */
+  var ovX = { ids: null, status: null, claims: null, ms: null, iss: null, err: {} };
+  var _ovGen = 0;
 
-     ⚠️⚠️ AND IT DEGRADES RATHER THAN LYING. A project can carry progress with no budget, or a
-     budget with no progress, and only those with BOTH can be weighted. When nothing can be
-     weighted the figure falls back to the plain mean — which is the honest answer at that
-     point — and the basis is REPORTED either way, because a weighted and an unweighted figure
-     differ and a reader has no way to tell them apart from the number alone.
-     ⚠️ Projects with no progress at all are COUNTED and named, never silently dropped: "62%"
-     over three of eleven projects is a different statement from "62%". */
-  function portfolioProgress(list) {
-    var withPct = list.filter(function (p) { return progressOf(p) != null; });
-    var weighted = withPct.filter(function (p) { return num(p.original_budget) > 0; });
-    var skipped = list.length - withPct.length;
-    if (!withPct.length) return { pct: null, basis: 'none', counted: 0, skipped: skipped, unweighted: 0 };
-    if (weighted.length) {
-      var w = weighted.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
-      var s = weighted.reduce(function (a, p) { return a + num(p.original_budget) * progressOf(p); }, 0);
-      return { pct: Math.round(s / w), basis: 'budget', counted: weighted.length,
-               skipped: skipped, unweighted: withPct.length - weighted.length };
+  function ovReset() { ovX = { ids: null, status: null, claims: null, ms: null, iss: null, err: {} }; }
+
+  async function loadOverview(force) {
+    var ids = scopedProjectIds();
+    if (!force && ovX.ids && ovX.ids.join(',') === ids.join(',')) return;
+    var gen = ++_ovGen;
+    ovReset(); ovX.ids = ids;
+    if (!ids.length) { renderAll(); return; }
+
+    function settle(key, p, shape) {
+      return p.then(function (v) { if (gen === _ovGen) { ovX[key] = shape ? shape(v) : v; renderAll(); } })
+              .catch(function (e) { if (gen === _ovGen) { ovX.err[key] = e; renderAll(); } });
     }
-    var m = withPct.reduce(function (a, p) { return a + progressOf(p); }, 0) / withPct.length;
-    return { pct: Math.round(m), basis: 'mean', counted: withPct.length, skipped: skipped, unweighted: 0 };
+
+    /* ⚠️ `schedule_scurve_status` is ONE pass per project with no month series — see
+       migrations/2026-09-15-scurve-status-per-project.sql for why this is not an
+       extension of the curve RPC. Absent (un-migrated) it degrades: the behind-plan
+       column and card say so by name instead of showing a wrong number. */
+    settle('status', sb().rpc('schedule_scurve_status', { p_ids: ids }).then(function (r) {
+      if (r.error) throw r.error;
+      var by = {};
+      (r.data || []).forEach(function (row) { by[row.project_id] = row; });
+      return by;
+    }));
+
+    settle('claims', PDb.selectAll('contracts_claims', function (q) { return q.in('project_id', ids); }));
+
+    settle('ms', PDb.selectAll('project_schedule', function (q) {
+      return q.in('project_id', ids).or('activity_type.ilike.%milestone%,program_milestone.is.true');
+    }, 'id,project_id,activity_name,activity_type,program_milestone,start_date,end_date,actual_finish,percent_complete'));
+
+    settle('iss', PDb.selectAll('issues_lessons', function (q) { return q.in('project_id', ids); },
+      'id,project_id,status,priority'));
   }
-  function progressBasisNote(r) {
-    if (r.basis === 'none') return 'No project in scope reports a schedule progress figure.';
-    var t = r.basis === 'budget'
-      ? 'Weighted by original budget across ' + r.counted + ' project' + (r.counted === 1 ? '' : 's') +
-        ' — not a mean of percentages, so a large project counts for more than a small one.'
-      : 'A plain mean across ' + r.counted + ' project' + (r.counted === 1 ? '' : 's') +
-        ', because no project in scope carries an original budget to weight by.';
-    if (r.unweighted) t += ' ' + r.unweighted + ' project' + (r.unweighted === 1 ? ' reports' : 's report') +
-      ' progress but no budget, so ' + (r.unweighted === 1 ? 'it is' : 'they are') + ' not in the weighted figure.';
-    if (r.skipped) t += ' ' + r.skipped + ' project' + (r.skipped === 1 ? '' : 's') + ' report no progress at all.';
-    return t;
+
+  /* ---- per-project derivations ------------------------------------------ */
+  /* ⚠️ Behind plan is (actual − planned) as a share of the project's own duration
+     weight, so a big project and a small one are on the same scale. NEGATIVE is
+     behind. ⚠️ Measured AS OF TODAY; the S-Curve tab's own strip snaps to the end of
+     the current month because its curve is monthly, so the two can differ by a few
+     points inside one month. Stated in the note rather than left to be discovered. */
+  function behindPP(p) {
+    var r = ovX.status && ovX.status[p.id];
+    if (!r || !(+r.tot_dur > 0)) return null;
+    return ((+r.done_dur - +r.planned_dur) / +r.tot_dur) * 100;
   }
+  /* Days the live programme runs past the finish this page DISPLAYS.
+     ⚠️ `forecast_finish || end_date` — the same rule the table's Forecast Finish column,
+     its sort and projects.html all use. `isBehind` still reads the bare forecast_finish
+     and so never tests a project with only a contract date; that asymmetry is the owner's
+     open decision, and this column deliberately does not pretend it is settled. */
+  function slipDays(p) {
+    var sf = pd(p.schedule_finish), cf = pd(p.forecast_finish || p.end_date);
+    if (!sf || !cf) return null;
+    return Math.round((sf - cf) / 86400000);
+  }
+  function claimsOf(pid) {
+    if (!ovX.claims) return null;
+    var rows = ovX.claims.filter(function (r) { return r.project_id === pid; });
+    var cash = rows.filter(function (r) { return PDClaims.typeOf(r) !== PDClaims.T_EOT; });
+    var eots = PDClaims.ofType(rows, PDClaims.T_EOT);
+    var pend = PDClaims.pendingValue(cash, 'eval_amount', 'sub_amount');
+    var shortf = PDClaims.shortfallOf(cash, 'sub_amount', 'approved_amount');
+    var agg = PDClaims.agingBuckets(cash, ['eval_amount', 'sub_amount']);
+    return { exposure: pend + shortf, oldest: agg.oldest,
+             eotDays: PDClaims.pendingValue(eots, 'eval_days', 'sub_days') };
+  }
+  function openIssues(pid) {
+    if (!ovX.iss) return null;
+    return ovX.iss.filter(function (r) {
+      return r.project_id === pid && String(r.status || '').toLowerCase() !== 'closed';
+    }).length;
+  }
+
+  /* ⚠️⚠️ THE RANK IS AN ORDERING OVER SIGNALS, NEVER A SINGLE SCORE. Days, money and
+     counts are not commensurable, and a made-up composite number would present them as
+     if they were — this page already carries THREE different progress weightings and
+     does not need a fourth invented quantity. So: how many of five signals are raised,
+     then the worst slip in days, then the name. The note under the table says exactly
+     that, because a ranked list with an unexplained order is not a decision surface. */
+  function flagsOf(p) {
+    var f = [], bp = behindPP(p), sl = slipDays(p), cl = claimsOf(p.id), oi = openIssues(p.id);
+    if (bp != null && bp <= -5) f.push('behind plan');
+    if (sl != null && sl > 0) f.push('past its committed finish');
+    if (isOverdue(p)) f.push('overdue');
+    if (variance(p) > 0) f.push('over budget');
+    if (cl && cl.exposure > 0) f.push('unrecovered exposure');
+    return f;
+  }
+  function rankSort(a, b) {
+    var fa = flagsOf(a).length, fb = flagsOf(b).length;
+    if (fa !== fb) return fb - fa;
+    var sa = slipDays(a) || 0, sb2 = slipDays(b) || 0;
+    if (sa !== sb2) return sb2 - sa;
+    return (a.name || a.id).localeCompare(b.name || b.id);
+  }
+
+  function ppCell(p) {
+    var v = behindPP(p);
+    if (v == null) return '<span class="po-dash">—</span>';
+    var t = (v > 0 ? '+' : '') + v.toFixed(1) + ' pp';
+    return '<span class="' + (v <= -5 ? 'po-bad' : v < 0 ? 'po-warn' : 'po-ok') + '">' + t + '</span>';
+  }
+  function slipCell(p) {
+    var v = slipDays(p);
+    if (v == null) return '<span class="po-dash">—</span>';
+    if (v <= 0) return '<span class="po-ok">' + v + 'd</span>';
+    return '<span class="' + (v > 30 ? 'po-bad' : 'po-warn') + '">+' + v + 'd</span>';
+  }
+  function expCell(p) {
+    var c = claimsOf(p.id);
+    if (!c) return '<span class="po-dash">' + (ovX.err.claims ? '?' : '…') + '</span>';
+    if (!c.exposure) return '<span class="po-dash">—</span>';
+    return '<span class="' + (c.oldest > 90 ? 'po-bad' : c.oldest > 60 ? 'po-warn' : '') + '">' +
+      Fmt.moneyShort(c.exposure) + '</span>';
+  }
+  function issCell(p) {
+    var n = openIssues(p.id);
+    if (n == null) return '<span class="po-dash">' + (ovX.err.iss ? '?' : '…') + '</span>';
+    return n ? String(n) : '<span class="po-dash">—</span>';
+  }
+
+  function renderRank(list) {
+    var host = document.getElementById('po-rank');
+    var cnt = document.getElementById('po-rank-count');
+    var note = document.getElementById('po-ranknote');
+    if (!host) return;
+    var sorted = list.slice().sort(rankSort);
+    var flagged = sorted.filter(function (p) { return flagsOf(p).length; }).length;
+    cnt.textContent = flagged ? flagged + ' of ' + sorted.length + ' need attention'
+                              : sorted.length ? 'nothing is flagged' : '';
+    if (!sorted.length) {
+      host.innerHTML = '<tbody><tr><td class="po-empty">No projects match the current filters.</td></tr></tbody>';
+      note.textContent = ''; return;
+    }
+    var head = '<thead><tr><th>Project</th><th>Behind plan</th><th>Past committed finish</th>' +
+      '<th class="num">Budget variance</th><th class="num">Unrecovered exposure</th>' +
+      '<th class="num">Open issues</th></tr></thead>';
+    var body = sorted.map(function (p) {
+      var f = flagsOf(p);
+      return '<tr class="po-row" data-pick="' + esc(p.id) + '" title="' +
+        esc(f.length ? f.join(' · ') : 'nothing flagged') + '">' +
+        '<td><span class="po-proj-name"><span class="po-health" style="background:' +
+          HEALTH[health(p)].color + ';"></span>' + esc(p.name || p.id) + '</span></td>' +
+        '<td>' + ppCell(p) + '</td>' +
+        '<td>' + slipCell(p) + '</td>' +
+        '<td class="num">' + varCell(p) + '</td>' +
+        '<td class="num">' + expCell(p) + '</td>' +
+        '<td class="num">' + issCell(p) + '</td></tr>';
+    }).join('');
+    host.innerHTML = head + '<tbody>' + body + '</tbody>';
+    host.querySelectorAll('.po-row[data-pick]').forEach(function (r) {
+      r.onclick = function () { openProject(r.dataset.pick); };
+    });
+
+    var measured = list.filter(function (p) { return behindPP(p) != null; }).length;
+    note.innerHTML = 'Ordered by how many of five signals are raised — behind plan, past its ' +
+      'committed finish, overdue, over budget, unrecovered exposure — then by the worst slip in ' +
+      'days. <b>Projects with nothing flagged are still listed, at the bottom</b>, showing dashes ' +
+      'rather than zeros. Days, money and counts stay in their own columns: there is no combined ' +
+      'score, because they are not the same kind of quantity. ' +
+      (ovX.status
+        ? '<b>Behind plan</b> is measured as of today over ' + measured + ' of ' + list.length +
+          ' project(s); the S-Curve tab snaps to the end of the current month, so the two can ' +
+          'differ slightly inside one month.'
+        : ovX.err.status
+          ? '<b>Behind plan</b> is unavailable — ' + esc(scErrText(ovX.err.status)) + '.'
+          : '<b>Behind plan</b> is still loading.');
+  }
+
+  /* ⚠️ What the page could NOT see. The old strip did this for ONE figure (it reported
+     whether its progress number was weighted or a plain mean, and over how many
+     projects); this generalises it, because every figure above is only as good as the
+     inputs that reached it. ⚠️ A comment naming a function that has been deleted is
+     worse than none, so it describes the behaviour rather than citing the old name. */
+  function renderCoverage(list) {
+    var el = document.getElementById('po-coverage');
+    if (!el) return;
+    if (!list.length) { el.textContent = ''; return; }
+    var noRollup = list.filter(function (p) { return !p.schedule_updated_at; }).length;
+    var stale = list.filter(function (p) {
+      if (!p.schedule_updated_at) return false;
+      return (Date.now() - new Date(p.schedule_updated_at).getTime()) > 30 * 86400000;
+    }).length;
+    var noBudget = list.filter(function (p) { return !(num(p.original_budget) > 0); }).length;
+    var bits = [];
+    if (noRollup) bits.push('<b>' + noRollup + '</b> carry no schedule roll-up at all');
+    if (stale) bits.push('<b>' + stale + '</b> were last rolled up more than 30 days ago');
+    if (noBudget) bits.push('<b>' + noBudget + '</b> carry no original budget');
+    Object.keys(ovX.err).forEach(function (k) {
+      bits.push('the ' + ({ status: 'behind-plan', claims: 'commercial', ms: 'milestone',
+                            iss: 'issues' }[k] || k) + ' read failed');
+    });
+    el.innerHTML = bits.length
+      ? 'Of the ' + list.length + ' project(s) in scope, ' + bits.join('; ') +
+        ' — so the figures above are computed over what is there, not over all of them.'
+      : 'All ' + list.length + ' project(s) in scope carry a schedule roll-up and a budget.';
+  }
+
+  /* ⚠️⚠️ FOUR FIGURES, EACH TRIGGERING A DIFFERENT ACTION — replacing eight cards of
+     which four restated money the portfolio has not captured. Anything that cannot be
+     computed says so; a computed 0 and an absent figure are different statements, and
+     printing them the same way is what made the old strip read as broken. */
   function renderKPIs(list) {
-    var active = list.filter(function (p) { return (p.status || 'active') === 'active'; }).length;
+    var host = document.getElementById('po-kpis');
+    if (!host) return;
+
+    /* 1 · Behind plan — the one number this page exists to show. Weighted by duration
+       across the whole scope, so a 16,000-activity tower is not one vote beside a
+       fit-out. ⚠️ NEGATIVE is behind. */
+    var tot = 0, plan = 0, done = 0, measured = 0;
+    list.forEach(function (p) {
+      var r = ovX.status && ovX.status[p.id];
+      if (!r || !(+r.tot_dur > 0)) return;
+      tot += +r.tot_dur; plan += +r.planned_dur; done += +r.done_dur; measured++;
+    });
+    var pp = tot > 0 ? ((done - plan) / tot) * 100 : null;
+    var ppTxt = pp == null ? (ovX.err.status ? 'unavailable' : measured || !ovX.status ? '…' : '—')
+                           : (pp > 0 ? '+' : '') + pp.toFixed(1) + ' pp';
+    var ppCls = pp == null ? '' : pp <= -5 ? 'pd-kpi-bad' : pp < 0 ? 'pd-kpi-warn' : 'pd-kpi-ok';
+    var ppSub = ovX.err.status ? 'run migrations/2026-09-15-scurve-status-per-project.sql'
+              : pp == null ? 'no project in scope reports a dated schedule'
+              : 'duration-weighted across ' + measured + ' of ' + list.length + ' project(s), as of today';
+
+    /* 2 · Money — one card where there were four, and it says "not captured" rather
+       than printing four dashes that read as a broken page. */
     var orig = list.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
     var est = list.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
-    var vr = est - orig;
-    var prog = portfolioProgress(list);
     var over = list.filter(function (p) { return variance(p) > 0; }).length;
-    var behind = list.filter(isBehind).length;
-    document.getElementById('po-kpis').innerHTML =
-      card('layers', 'Projects', String(list.length)) +
-      card('check', 'Active', String(active)) +
-      /* ⚠️ The LABEL changed with the arithmetic. "Avg Schedule %" described a mean, and leaving
-         that word over a weighted figure would be worse than leaving the mean in place. */
-      card('barChart', 'Portfolio Progress' + (prog.basis === 'budget' ? ' (by value)' : ''),
-           prog.pct != null ? prog.pct + '%' : '—', null, progressBasisNote(prog)) +
-      card('cash', 'Original Budget', orig ? Fmt.moneyShort(orig) : '—') +
-      card('calculator', 'Estimated Cost', est ? Fmt.moneyShort(est) : '—') +
-      card(vr > 0 ? 'triangleUp' : 'triangleDown', 'Budget Variance', (orig || est) ? Fmt.moneyShort(vr) : '—', vr > 0 ? '--pd-bad' : '--pd-ok') +
-      card('risk', 'Over Budget', String(over), over ? '--pd-bad' : null) +
-      card('calendar', 'Behind Schedule', String(behind), behind ? '--pd-bad' : null);
+    var haveMoney = orig || est;
+    var vr = est - orig;
+    var moneyTxt = haveMoney ? (vr > 0 ? '+' : '') + Fmt.moneyShort(vr) : 'not captured';
+    var moneySub = haveMoney
+      ? Fmt.moneyShort(orig) + ' budget · ' + Fmt.moneyShort(est) + ' estimated · ' + over + ' over'
+      : 'no project in scope carries a budget figure';
+
+    /* 3 · Commercial exposure. ⚠️ MONEY AND DAYS ARE NEVER ADDED — the rule PDClaims
+       already enforces; the EOT figure rides in the sub-line as its own quantity. */
+    var exposure = null, oldest = 0, eotDays = 0, nExp = 0;
+    if (ovX.claims) {
+      exposure = 0;
+      list.forEach(function (p) {
+        var c = claimsOf(p.id); if (!c) return;
+        exposure += c.exposure; eotDays += c.eotDays || 0;
+        if (c.exposure > 0) nExp++;
+        if (c.oldest > oldest) oldest = c.oldest;
+      });
+    }
+    var expTxt = ovX.err.claims ? 'unavailable' : exposure == null ? '…'
+               : exposure ? Fmt.moneyShort(exposure) : '—';
+    var expSub = ovX.err.claims ? 'the commercial read failed'
+               : exposure == null ? 'reading the register…'
+               : exposure ? nExp + ' project(s) · oldest pending ' + (oldest || 0) + 'd' +
+                            (eotDays ? ' · ' + eotDays + 'd EOT pending' : '')
+                          : 'nothing outstanding across the portfolio';
+
+    /* 4 · What lands next. ⚠️ Overdue is called out SEPARATELY rather than folded into
+       the count — "6 due" and "6 due, 4 of them already late" are different facts. */
+    var due = null, overdue = 0;
+    if (ovX.ms) {
+      var t = today(), in30 = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 30);
+      var inScope = {}; list.forEach(function (p) { inScope[p.id] = 1; });
+      due = 0;
+      ovX.ms.forEach(function (r) {
+        if (!inScope[r.project_id]) return;
+        if (r.actual_finish || num(r.percent_complete) >= 100) return;
+        var d = pd(r.end_date || r.start_date); if (!d) return;
+        if (d < t) { overdue++; due++; } else if (d <= in30) due++;
+      });
+    }
+    var dueTxt = ovX.err.ms ? 'unavailable' : due == null ? '…' : String(due);
+    var dueSub = ovX.err.ms ? 'the milestone read failed'
+               : due == null ? 'reading milestones…'
+               : overdue ? overdue + ' already overdue' : 'none overdue';
+
+    host.innerHTML =
+      UI.kpi('Behind plan', ppTxt, { cls: ppCls, sub: ppSub }) +
+      UI.kpi('Budget variance', moneyTxt, { cls: haveMoney && vr > 0 ? 'pd-kpi-bad' : '', sub: moneySub }) +
+      UI.kpi('Unrecovered exposure', expTxt,
+             { cls: exposure ? (oldest > 90 ? 'pd-kpi-bad' : 'pd-kpi-warn') : '', sub: expSub }) +
+      UI.kpi('Milestones due in 30 days', dueTxt,
+             { cls: overdue ? 'pd-kpi-bad' : '', sub: dueSub });
   }
 
-  // ---- Schedule Health donut ----
-  function renderDonut(list) {
-    var counts = { ontrack: 0, behind: 0, none: 0 };
-    list.forEach(function (p) { counts[health(p)]++; });
-    var total = list.length, host = document.getElementById('po-donut');
-    if (!total) { host.innerHTML = '<div class="po-empty">No projects in scope.</div>'; return; }
-    var order = ['ontrack', 'behind', 'none'], R = 52, C = 62, sw = 20, circ = 2 * Math.PI * R, off = 0;
-    var arcs = '';
-    order.forEach(function (k) {
-      var frac = counts[k] / total; if (frac <= 0) return;
-      var len = frac * circ;
-      arcs += '<circle cx="' + C + '" cy="' + C + '" r="' + R + '" fill="none" stroke="' + HEALTH[k].color + '" stroke-width="' + sw + '" ' +
-        'stroke-dasharray="' + len + ' ' + (circ - len) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 ' + C + ' ' + C + ')"/>';
-      off += len;
-    });
-    var svg = '<svg width="124" height="124" viewBox="0 0 124 124">' + arcs +
-      '<text x="' + C + '" y="' + (C - 2) + '" text-anchor="middle" font-size="24" font-weight="800" fill="var(--pd-ink)">' + total + '</text>' +
-      '<text x="' + C + '" y="' + (C + 15) + '" text-anchor="middle" font-size="10" fill="var(--pd-muted)">projects</text></svg>';
-    var legend = '<div class="po-legend">' + order.map(function (k) {
-      return '<div class="lg"><span class="sw" style="background:' + HEALTH[k].color + ';"></span>' + HEALTH[k].label + '<span class="ct">' + counts[k] + '</span></div>';
-    }).join('') + '</div>';
-    host.innerHTML = '<div class="po-donut-wrap">' + svg + legend + '</div>';
-  }
-
-  // ---- Budget-by-group horizontal bars (Original vs Estimated) ----
-  function renderBars(list) {
-    document.getElementById('po-bars-title').textContent = 'Budget by ' + groupLabel() + ' — Original vs Estimated';
-    var groups = {};
-    list.forEach(function (p) { var k = groupKeyOf(p); var g = groups[k] || (groups[k] = { orig: 0, est: 0, ps: [] }); g.orig += num(p.original_budget); g.est += num(p.estimated_cost); g.ps.push(p); });
-    // Bars are read at a glance, so they carry the DISPLAY name ("Avesta Residences"),
-    // not the grouping key ("AVR") — the key is an implementation detail of the rollup.
-    var arr = Object.keys(groups).map(function (k) { return { name: groupDisplayOf(k, groups[k].ps), orig: groups[k].orig, est: groups[k].est }; })
-      .filter(function (g) { return g.orig || g.est; })
-      .sort(function (a, b) { return b.est - a.est; }).slice(0, 8);
-    var host = document.getElementById('po-bars');
-    if (!arr.length) { host.innerHTML = '<div class="po-empty">No budget figures captured yet. Add Original Budget / Estimated Cost on projects (Projects selector).</div>'; return; }
-    var max = Math.max.apply(null, arr.map(function (g) { return Math.max(g.orig, g.est); })) || 1;
-    // W leaves room past valX for the widest Fmt.moneyShort() output ("₱999.99M"/"₱999.99B",
-    // ~50 viewBox units at font-size 10) — too little margin here lets the SVG's own
-    // overflow:hidden silently clip the value label on months/billions with more digits
-    // (e.g. "₱910.00M" clipped while the shorter "₱1.82B" on the row above did not).
-    var rowH = 34, padL = 4, W = 580, barW = 360, labelW = 150, valX = padL + labelW + barW + 8;
-    var H = arr.length * rowH + 10, out = '';
-    arr.forEach(function (g, i) {
-      var y = i * rowH + 6, bo = barW * g.orig / max, be = barW * g.est / max;
-      var nm = g.name.length > 22 ? g.name.slice(0, 21) + '…' : g.name;
-      out += '<text x="' + padL + '" y="' + (y + 13) + '" font-size="11" fill="var(--pd-ink)">' + esc(nm) + '</text>' +
-        '<rect x="' + (padL + labelW) + '" y="' + (y + 3) + '" width="' + Math.max(bo, 1) + '" height="9" rx="2" fill="#9a9a9a"/>' +
-        '<rect x="' + (padL + labelW) + '" y="' + (y + 15) + '" width="' + Math.max(be, 1) + '" height="9" rx="2" fill="' + (g.est > g.orig ? '#C42127' : '#1f8f4e') + '"/>' +
-        '<text x="' + valX + '" y="' + (y + 19) + '" font-size="10" fill="var(--pd-muted)">' + Fmt.moneyShort(g.est) + '</text>';
-    });
-    out += '<g font-size="10" fill="var(--pd-muted)"><rect x="' + (padL + labelW) + '" y="' + (H - 2) + '" width="10" height="7" rx="1" fill="#9a9a9a"/><text x="' + (padL + labelW + 14) + '" y="' + (H + 4) + '">Original</text>' +
-      '<rect x="' + (padL + labelW + 74) + '" y="' + (H - 2) + '" width="10" height="7" rx="1" fill="#C42127"/><text x="' + (padL + labelW + 88) + '" y="' + (H + 4) + '">Estimated</text></g>';
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + (H + 12) + '" preserveAspectRatio="xMinYMin meet">' + out + '</svg>';
-  }
-
-  function groupLabel() { return { grouphead: 'Group Head', program: 'Parent project', status: 'Status', none: 'Portfolio' }[groupMode] || 'Group Head'; }
 
   // ---- grouped, sortable portfolio table ----
   var COLS = [
@@ -699,7 +887,13 @@
     document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) menu.classList.remove('open'); });
   }
 
-  function renderAll() { var list = filtered(); renderKPIs(list); renderDonut(list); renderBars(list); renderTable(list); }
+  /* ⚠️ Paints from PROJ only — never fetches. `loadOverview` owns the reads and calls
+     back into here as each lands, so the first paint is instant and a slow or failing
+     read degrades one block instead of holding the page. */
+  function renderAll() {
+    var list = filtered();
+    renderKPIs(list); renderRank(list); renderTable(list); renderCoverage(list);
+  }
 
   /* ⚠️⚠️ ANYTHING THAT CHANGES `filtered()` MUST COME THROUGH HERE, NOT `renderAll()`.
      renderAll() paints the OVERVIEW pane only. The scope control's own note below says it
@@ -757,8 +951,11 @@
      renderCurrent(). Two copies is how a view gets added to one and forgotten in the other.
      A function (not a var) so hoisting makes it safe to call from anywhere in this IIFE. */
   function viewLoaders() {
-    return { scurve: loadScurve, cashflow: loadCashflow, resources: loadResources,
-             equipment: loadEquipment, milestones: loadMilestones,
+    /* ⚠️ The Overview has a loader NOW — it did not before, because it had nothing to
+       read. Its four enrichment reads go through the same list, so the project filter
+       re-runs them exactly as it re-runs any other view's. */
+    return { overview: loadOverview, scurve: loadScurve, cashflow: loadCashflow,
+             resources: loadResources, equipment: loadEquipment, milestones: loadMilestones,
              stakeholders: loadStakeholders };
   }
 
