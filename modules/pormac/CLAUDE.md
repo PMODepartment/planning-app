@@ -6,6 +6,62 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-16 — Every mirror figure this module quoted was a sum over at most the first 1000 rows
+
+Found while fixing the same bug one module over (contracts-claims, `computeProjectTotal`). Not a
+guess about this module — the same defect, in **all four** of its mirror reads, confirmed against the shipped
+`PDb.selectAll` before anything was changed.
+
+### ⚠️⚠️ THE CURSOR COLUMN WAS NOT IN THE PROJECTION, SO PAGING STOPPED AFTER ONE PAGE
+
+`PDb.selectAll(table, apply, cols, key)` pages with a keyset cursor it reads **off the last returned
+ROW OBJECT** — `last = page[page.length - 1][k]` — and then bails on `if (last == null) return out;`.
+A cursor column the relation HAS but the `cols` string does NOT ask for comes back **`undefined`**,
+and `undefined == null` is **true**. So the loop returned after 1000 rows: no error, no warning, a
+plausible smaller number.
+
+Confirmed for each of the four sites before touching them — **none passes a 4th `key` argument**, so
+all four default to `id`, and `wpm_work_packages`, `wpm_vendors` and `eng_design_progress` each
+declare `id uuid primary key` (so `id` was a valid cursor all along; it simply was not selected):
+
+| site | read | what it fed |
+|---|---|---|
+| `:744` | work packages, scoped to one WPM project | count, awarded count, approved-budget and awarded-cost totals |
+| `:746` | **work packages, UNSCOPED** — the portfolio fallback | the same four figures, across every project |
+| `:764` | vendor directory, whole table | vendor count, accredited count |
+| `:780` | engineering design progress | per-tower % list, and the portfolio per-project averages |
+
+### ⚠️⚠️ NOT A LATENT BUG FOR THIS TABLE — `sync-wpm` ALREADY SAYS SO IN WRITING
+
+`supabase/functions/sync-wpm/index.ts`, of the very rows it mirrors into `wpm_work_packages`:
+*"Unscoped — which is what any full or cron sync does — this reads EVERY work package in the WPM
+portfolio, far past the 1000-row cap."* The unscoped fallback at `:746` is exactly that read. Its
+`readAll` has force-prepended `id` since it was written, with the reason spelled out —
+*"`id` is therefore selected even when the caller does not want it"* — and the browser side simply
+never did the same thing.
+
+⚠️ **What was understated, plainly:** every number in the three sentences this module hands the
+assistant, which the assistant then states to the planner as fact. Not a chart or a tile — prose,
+with no "approximately" anywhere in it. The vendor and unscoped-work-package reads are whole-table,
+so they were the most exposed; the project-scoped work-package read needs one project past 1000
+packages; the engineering read needs it under Portfolio scope.
+
+### The fix is in the engine, and the call sites are explicit anyway
+
+`selectAll` now folds the cursor column into its own projection (`assets/js/db.js`), so all 103 call
+sites are immune and no caller has to remember. It is skipped when `cols` is absent (`'*'` already
+carries it) or already names the cursor, so `moduleMetrics` — which seeds `want = { id: 1 }` — is
+untouched. The four sites here still say `id,` themselves, so the column list reads as what it is
+rather than as a projection that happens to work.
+
+⚠️ `tools/selectall-key.js` extended: it checked only that the RELATION has an `id`, which is why it
+passed **103/103 while five sites were truncating**. It now also reads the `cols` string. See the
+root entry for what that turned up.
+
+⚠️ **Not verified signed in.** The defect and the fix are both confirmed by reading the shipped
+`selectAll`, and the row volume is confirmed by the sync function's own note — but these tables are
+RLS-gated to an approved user, so the live row counts were not read.
+
 ## 2026-09-14 (c) — The Portfolio checkbox is gone: scope now follows how the module was opened, with nothing to flip
 
 Owner: *"remove the portfolio checkbox. when pormac is in project, discuss only based on project

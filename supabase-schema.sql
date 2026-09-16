@@ -861,6 +861,21 @@ create or replace function is_admin() returns boolean
   );
 $$;
 
+-- Helper: is the current user specifically a super_admin (not merely an
+-- admin)? `is_admin()` treats the two roles alike everywhere that is right —
+-- reading users, writing projects, most module tables. This is for the
+-- handful of places that are not: only a super_admin may act on another
+-- super_admin's account. See migrations/2026-09-16-users-protect-super-admin.sql.
+create or replace function is_super_admin() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from users u
+    where u.id = auth.uid()
+      and u.status = 'approved'
+      and u.role = 'super_admin'
+  );
+$$;
+
 create or replace function is_approved() returns boolean
   language sql stable security definer set search_path = public as $$
   select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved');
@@ -942,8 +957,16 @@ drop policy if exists users_self_read on users;
 create policy users_self_read on users for select using (auth.uid() = id or is_admin());
 drop policy if exists users_self_insert on users;
 create policy users_self_insert on users for insert with check (auth.uid() = id);
+-- ⚠️ An admin may update any user's row EXCEPT a super_admin's — that one
+-- needs a super_admin actor (or the row's own owner, unchanged). Checked on
+-- BOTH the row as it stands now (`using`, blocks demoting/editing an existing
+-- super_admin) and as it would read after the write (`with check`, blocks
+-- promoting someone else straight to super_admin). See migrations/2026-09-16-
+-- users-protect-super-admin.sql for why both are needed.
 drop policy if exists users_admin_update on users;
-create policy users_admin_update on users for update using (auth.uid() = id or is_admin());
+create policy users_admin_update on users for update
+  using (auth.uid() = id or (is_admin() and (role <> 'super_admin' or is_super_admin())))
+  with check (auth.uid() = id or (is_admin() and (role <> 'super_admin' or is_super_admin())));
 
 drop policy if exists projects_read on projects;
 create policy projects_read on projects for select using (is_admin() or can_access_project(id));

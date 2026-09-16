@@ -2536,7 +2536,17 @@ window.BOQ = (function () {
     if (!ids.length) { PROJTOTAL = 0; return; }
     try {
       var rows = await PDb.selectAll(T_ITEM, function (q) { return q.in('revision_id', ids); },
-                                     'amount,line_kind,exclusion_note');
+                                     /* ⚠️⚠️ 'id' IS THE PAGING CURSOR AND MUST BE SELECTED.
+                                        PDb.selectAll reads its next cursor off the last
+                                        RETURNED ROW OBJECT — `page[page.length-1][k]` — and
+                                        then bails on `last == null`. A cursor column absent
+                                        from the projection is `undefined`, and `undefined ==
+                                        null` is TRUE, so the loop returned after one page:
+                                        this roll-up truncated at 1000 items, with no error
+                                        anywhere, and the figure it produces is a CONTRACT
+                                        TOTAL. Audited 2026-09-16; four more of these live in
+                                        modules/pormac/module.js. */
+                                     'id,amount,line_kind,exclusion_note');
       PROJTOTAL = rows.reduce(function (a, r) { return a + (moneyLine(r) ? Number(r.amount) : 0); }, 0);
     } catch (e) { PROJTOTAL = null; }   // a failed roll-up shows this document's figure, never a wrong one
   }
@@ -6256,8 +6266,124 @@ window.BOQ = (function () {
   function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; TRADEMAP = {}; clearTradeActs();
     ALLREVS = []; PROJTOTAL = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; WBSNAME = {}; LOCMATCH = null; SCHED = null; schedErr = null; PKGS = []; }
 
+  /* ==========================================================================================
+     THE COMMERCIAL SUMMARY — a LEAN read for the Dashboard tab (2026-09-16).
+
+     Owner, on the live Dashboard of a project with a contract and no claims:
+     *"Dashboard needs complete rework"*. It rendered two sentences and one number, because
+     EVERY block on it derived from the CLAIMS pipeline — `ccTimeHTML` returns '' outright with
+     no claims, the money table collapses, the legend suppresses — and the one non-claims block
+     (packages) was empty too. The contract half of a module called Contracts & Claims was a
+     single figure, while the BOQ two tabs away held the contract total, the certified POC and
+     the revenue actually billed.
+
+     ⚠️⚠️ A SECOND READ, NOT A SECOND IMPLEMENTATION. `periodTotals`, `contractSum` and
+     `sheetTotals` are pure over their arguments, so every figure here comes from the SAME
+     functions the Billing tab uses. Re-deriving POC for a dashboard is the hand-copied-S-curve
+     mistake this repo has already paid for (portfolio-overview, 2026-09-10 z1) and the reason
+     `assets/js/claims.js` exists at all.
+
+     ⚠️⚠️ AND IT IS LEAN ON PURPOSE. `load()` is ~8 round trips and pulls every one of a BOQ's
+     ~900 items with every column. The Dashboard is now the LANDING view, so paying that on every
+     module open would undo exactly what the Contract tab's lazy mount was built for. This reads
+     seven columns, the current revision(s), and ONE period.
+
+     ⚠️ IT TOUCHES NONE OF THIS MODULE'S STATE — no REVS / ITEMS / PERIODS / PROG assignment.
+     Opening the Dashboard must not change what the Contract tab's BOQ is showing.
+
+     ⚠️⚠️ EVERY ABSENT FIGURE IS null, NEVER 0. "not yet billed" and "0% certified" are opposite
+     claims about a project, and a failed read reports `err` rather than a confident zero — the
+     empty-read-as-a-legitimate-zero trap this very file has recorded twice (`ensureCodes`,
+     `ensureSugg`, where `[]` is truthy and cached a failure for the whole session).
+     ========================================================================================== */
+  async function commercialSummary(projectId) {
+    var out = {
+      state: 'none',            /* none | draft | issued | billed */
+      err: null, docs: 0, docName: null, revNo: null, issuedDate: null,
+      contract: null, poc: null, revenue: null, materials: null, labor: null,
+      periods: 0, lastBilling: null, lastDate: null
+    };
+    if (!projectId) return out;
+    try {
+      var docs = [];
+      /* tolerant, like every other schema addition here: no documents table simply means the
+         older flat shape, never an error on screen */
+      try {
+        docs = await PDb.selectAll('boq_documents', function (q) {
+          return q.eq('project_id', projectId).order('sort_order');
+        });
+      } catch (e) { docs = []; }
+      out.docs = docs.length;
+      out.docName = docs.length ? (docs[0].name || null) : null;
+
+      var revs = await PDb.selectAll(T_REV, function (q) { return q.eq('project_id', projectId); });
+      if (!revs.length) return out;                    /* 'none' — no BOQ on this project at all */
+
+      /* ⚠️⚠️ `is_current` IS FALSE ON EVERY DRAFT, enforced by the trigger. Measured live on
+         2026-09-14 (q): on a project whose revisions are all draft this is precisely why the
+         contract value reads zero. That is a STATE TO REPORT, not a zero to print. */
+      var current = revs.filter(function (r) { return r.is_current; });
+      if (!current.length) {
+        out.state = 'draft';
+        out.revNo = (revs.slice().sort(function (a, b) {
+          return String(b.rev_no || '').localeCompare(String(a.rev_no || ''), undefined, { numeric: true });
+        })[0] || {}).rev_no || null;
+        return out;
+      }
+
+      /* Across every document's current revision, which is the project-level figure — the same
+         rule `computeProjectTotal` applies once a project carries more than one BOQ. */
+      var ids = current.map(function (r) { return r.id; });
+      var newest = current.slice().sort(function (a, b) {
+        return String(b.issued_date || '').localeCompare(String(a.issued_date || ''));
+      })[0];
+      out.revNo = newest && newest.rev_no;
+      out.issuedDate = (newest && newest.issued_date) || null;
+
+      /* ⚠️ SEVEN COLUMNS. `moneyLine` needs line_kind / exclusion_note / amount, `periodTotals`
+         needs id and the material-labour split, `sheetTotals` needs sheet. Nothing else is read,
+         so a 900-line bill costs a fraction of what the Contract tab pays. */
+      var items = await PDb.selectAll(T_ITEM, function (q) { return q.in('revision_id', ids); },
+        'id,sheet,amount,line_kind,exclusion_note,mat_amount,lab_amount');
+      out.contract = contractSum(items);
+      out.state = 'issued';
+
+      var pers = [];
+      try { pers = await PDb.selectAll(T_PER, function (q) { return q.eq('project_id', projectId); }); }
+      catch (e) { pers = []; }
+      out.periods = pers.length;
+      if (!pers.length) return out;                    /* issued, nothing billed yet */
+
+      /* ⚠️ The LATEST period carries the TO-DATE figure — `rel_pct` is cumulative, which is why
+         the Billing tab derives "previous" by subtracting the prior period rather than summing. */
+      var last = pers.slice().sort(function (a, b) {
+        return String(a.period_end || '').localeCompare(String(b.period_end || ''));
+      }).pop();
+      out.lastBilling = last.billing_no || null;
+      out.lastDate = last.period_end || null;
+
+      var prog = await PDb.selectAll(T_PROG, function (q) { return q.eq('period_id', last.id); },
+        'id,boq_item_id,rel_pct');   /* ⚠️⚠️ 'id' IS THE PAGING CURSOR AND MUST BE SELECTED */
+      var rel = {};
+      prog.forEach(function (p) { rel[p.boq_item_id] = Number(p.rel_pct) || 0; });
+
+      var t = periodTotals(items, rel, out.contract);
+      out.poc = t.poc; out.revenue = t.revenue;
+      out.materials = t.materials; out.labor = t.labor;
+      out.state = 'billed';
+    } catch (e) {
+      /* ⚠️ Reported, never swallowed into zeros. The dashboard says the read failed. */
+      out.err = (e && e.message) || String(e);
+    }
+    return out;
+  }
+
   return {
     init: init, show: show, reset: reset, render: render,
+    /* ⚠️ The Dashboard tab reads the commercial position through THIS, not by loading the
+       whole BOQ: load() is ~8 round trips over every column of ~900 items, and the Dashboard
+       is the module's landing view. See the note on the function. */
+    commercialSummary: commercialSummary,
     /* ⚠ For the topbar's "export what?" chooser. Returns the CURRENT revision's rows under the
        filters on screen, or null when there is nothing -- so the chooser can grey the option
        rather than produce an empty sheet. It writes no file; the caller owns the workbook. */

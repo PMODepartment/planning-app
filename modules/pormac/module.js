@@ -729,10 +729,22 @@ window.Pormac = (function () {
           // checked the planner asked for every project, so trying (and
           // failing) a single-project match first would just be a wasted
           // round trip in front of the answer they wanted.
+          // ⚠️⚠️ `id` IS THE PAGING CURSOR AND HAD TO BE ADDED TO ALL THREE MIRROR READS.
+          // `PDb.selectAll` reads its next cursor off the last RETURNED ROW OBJECT, so a cursor
+          // left out of the column list is `undefined`, `undefined == null` is true, and the loop
+          // returned after ONE page. Every figure in the sentence below -- the work-package count,
+          // how many are awarded, the approved-budget total and the awarded-cost total -- was a
+          // sum over AT MOST THE FIRST 1000 ROWS, and the assistant stated it as fact.
+          // ⚠️⚠️ NOT HYPOTHETICAL FOR THIS TABLE. `supabase/functions/sync-wpm` says of the very
+          // rows it mirrors here: *"Unscoped -- which is what any full or cron sync does -- this
+          // reads EVERY work package in the WPM portfolio, far past the 1000-row cap."* The
+          // unscoped fallback on the next line is exactly that read.
+          // ⚠️ `selectAll` now forces the cursor in by itself; these stay explicit so the list
+          // reads as what it is rather than as a projection that happens to work.
           var scoped = (pid && !portfolioAll) ? await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', pid); },
-            'wp_no,description,approved_budget_bcb,awarded_cost,award_status,procurement_status,delivery_status') : [];
+            'id,wp_no,description,approved_budget_bcb,awarded_cost,award_status,procurement_status,delivery_status') : [];
           var rows = scoped.length ? scoped : await PDb.selectAll('wpm_work_packages', null,
-            'wp_no,description,approved_budget_bcb,awarded_cost,award_status,procurement_status,delivery_status');
+            'id,wp_no,description,approved_budget_bcb,awarded_cost,award_status,procurement_status,delivery_status');
           if (!rows.length) return null;
           var awarded = rows.filter(function (r) { return r.award_status && /award/i.test(r.award_status); }).length;
           var totalBudget = rows.reduce(function (n, r) { return n + (Number(r.approved_budget_bcb) || 0); }, 0);
@@ -749,7 +761,7 @@ window.Pormac = (function () {
         keywords: /vendor|contractor|subcon|accredit/i,
         needsProject: false,
         fetch: async function () {
-          var rows = await PDb.selectAll('wpm_vendors', null, 'name,trade_categories,accreditation,status');
+          var rows = await PDb.selectAll('wpm_vendors', null, 'id,name,trade_categories,accreditation,status');
           if (!rows.length) return null;
           var accredited = rows.filter(function (r) { return r.accreditation === 'accredited'; }).length;
           return 'Vendor directory (portfolio-wide, mirrored from WPM): ' + rows.length + ' vendors, ' +
@@ -767,7 +779,7 @@ window.Pormac = (function () {
           // Portfolio, `.in(...)` over every project's id — filter.
           var rows = await PDb.selectAll('eng_design_progress',
             function (q) { return portfolioAll ? q.in('project_id', allProjectIds()) : q.eq('project_id', pid); },
-            'project_id,source,top_level,basis,percent_complete,units_total,units_done,synced_at');
+            'id,project_id,source,top_level,basis,percent_complete,units_total,units_done,synced_at');
           if (!rows.length) return null;
           var asOf = rows[0] && rows[0].synced_at ? Fmt.date(rows[0].synced_at) : null;
           if (!portfolioAll) {

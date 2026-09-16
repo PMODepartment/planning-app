@@ -117,10 +117,10 @@ live Supabase project — the upload/poll logic is new this pass and has only be
 worker itself (`pano360-process`) and its own alignment/compositing math were built and are
 documented in an earlier turn of this same work, not re-verified here.
 
-`module.js`/`pano360.js?v=` → `20260916a`; `MODULE_V` bumped to match (this module's own
-`index.html` changed — both script tags' `?v=` lines), re-derived past whatever `origin/main` has
-independently reached the same day, per this repo's own standing rule for exactly that collision
-shape.
+`module.js`/`pano360.js?v=` → `20260916a`; `MODULE_V` → `20260916s` (the `modules-grid.js?v=` tag
+on `dashboard.html`/`modules.html`, and its own fallback literal) — re-derived *after* merging
+`origin/main`, which had independently reached `20260916r` the same day for an unrelated portfolio
+change; `s` sorts past it, per this repo's own standing rule for exactly this collision shape.
 
 ## "When I close the browser app, the video I uploaded for 360 processing is gone" — a real browser-eviction risk closed with `navigator.storage.persist()`, and silent recovery made visible with a toast (2026-09-14, later still yet again again again)
 

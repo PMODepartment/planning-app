@@ -7,7 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915f" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916r" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -393,11 +394,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260915i"></script>
+<script src="../../assets/js/db.js?v=20260916c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260915i"></script>
+<script src="../../assets/js/ui.js?v=20260916q"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260916r"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script>
@@ -2400,6 +2402,25 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 'cash-flow', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+
+    /* ⚠️⚠️ THE PORTFOLIO FACE OF THIS MODULE IS ITS OWN DASHBOARD NOW (owner, 2026-09-16:
+       *"those dashboards must be the landing page of each module when under the portfolio
+       view"*). Opened from the Portfolio sidebar (`#pd_scope=portfolio`, read once by
+       AppAuth) this page used to give Cash Flow is a per-project projection … there is no single combined figure to show across every project.
+       The cross-project view it was missing already existed — as a TAB on a page called
+       Portfolio Dashboard. It is `assets/js/portfolio-dash.js` now, and it is mounted here.
+       ⚠️ THE MODULE'S OWN init() IS SKIPPED from this point on, deliberately: it would read
+       the same tables a second time into a UI hidden underneath the dashboard. `takeOver`
+       therefore wires the topbar project <select> itself — picking a project there LEAVES
+       portfolio scope, which is the only way back out of it from this page.
+       ⚠️ Guarded on `PortfolioDash.has()` rather than on the script tag: if the layer fails
+       to load, the module falls through to its own behaviour instead of rendering nothing. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('cashflow')) {
+      PortfolioDash.takeOver('cashflow', { select: '#cf-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     document.getElementById('cf-project').onchange = function (e) { pid = e.target.value || null; if (pid) { sessionStorage.setItem('pd_project', pid); var o = e.target.selectedOptions[0]; projName = o ? o.textContent : ''; } loadAll().then(joinCollab); };
     document.getElementById('cf-refresh').onclick = function () { loadAll(true); };
     document.getElementById('cf-datadate').onchange = function (e) { setDataDate(e.target.value); loadAll(true); };

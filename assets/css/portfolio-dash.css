@@ -88,18 +88,69 @@
     }
     .po-projfilter-list label.po-pf-child code { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     /* charts */
-    .po-charts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:16px; margin:16px 0; }
-    @media (max-width:920px){ .po-charts { grid-template-columns:1fr; } }
     .po-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; box-shadow:var(--pd-shadow); min-width:0; }
     .po-card h3 { margin:0 0 10px; font-size:var(--pd-fs-base); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-    .po-donut-wrap { display:flex; align-items:center; gap:18px; }
-    .po-legend { display:flex; flex-direction:column; gap:7px; font-size:var(--pd-fs-base); }
-    .po-legend .lg { display:flex; align-items:center; gap:8px; }
-    .po-legend .sw { width:12px; height:12px; border-radius:3px; flex:none; }
-    .po-legend .ct { margin-left:auto; font-weight:700; color:var(--pd-muted); padding-left:12px; }
-    .po-bars svg { display:block; width:100%; }
     .po-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:24px; text-align:center; }
+    /* ---- D4 trend charts + D5 look-ahead (Overview) ---- */
+    .po-mini { display:block; width:100%; }
+    /* ---- D4: the portfolio curve. ⚠️ `.po-tr-mark` was removed in (p) as a rule nothing
+       emitted — correct then, and the chart that emits it landed in (r). ---- */
+    .po-tr-svg { width:100%; height:170px; display:block; }
+    .po-tr-grid { stroke:var(--pd-line); stroke-width:1; }
+    .po-tr-ax { fill:var(--pd-muted); font-size:9px; }
+    .po-tr-plan { fill:none; stroke:var(--pd-muted); stroke-width:2; vector-effect:non-scaling-stroke; }
+    .po-tr-act { fill:none; stroke:var(--pd-ok-text); stroke-width:2.5; vector-effect:non-scaling-stroke; }
+    .po-tr-now { stroke:var(--pd-red); stroke-width:1; stroke-dasharray:4 3; }
+    .po-tr-mark { fill:var(--pd-ok-text); stroke:var(--pd-card); stroke-width:1.5; }
+    .po-tr-legend { display:flex; gap:14px; align-items:center; margin-top:8px;
+      font-size:var(--pd-fs-sm); color:var(--pd-ink); }
+    .po-tr-sw { display:inline-block; width:14px; height:3px; margin-right:6px; vertical-align:middle; }
+    .po-tr-sw-plan { background:var(--pd-muted); }
+    .po-tr-sw-act { background:var(--pd-ok-text); }
+    .po-look-grp { margin-top:12px; }
+    .po-look-grp:first-child { margin-top:0; }
+    .po-look-head { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em;
+      font-weight:700; color:var(--pd-muted); padding-bottom:5px; border-bottom:1px solid var(--pd-line); }
+    .po-look-row { display:flex; align-items:baseline; gap:10px; padding:6px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); }
+    .po-look-row:last-child { border-bottom:0; }
+    .po-look-when { flex:0 0 78px; font-variant-numeric:tabular-nums; color:var(--pd-muted); }
+    .po-look-name { flex:1 1 auto; min-width:0; }
+    .po-look-proj { flex:0 0 auto; color:var(--pd-muted); font-size:var(--pd-fs-sm); }
+    .po-look-more { padding-top:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    /* ---- Phase E: the cross-project Gantt (Project Schedule, portfolio scope) ---- */
+    .po-sh-axis { position:relative; height:18px; margin-left:230px; border-bottom:1px solid var(--pd-line); }
+    .po-sh-tick { position:absolute; top:0; transform:translateX(-50%); font-size:var(--pd-fs-xs);
+      color:var(--pd-muted); white-space:nowrap; }
+    .po-sh-body { margin-top:6px; }
+    .po-sh-grp { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em;
+      font-weight:700; color:var(--pd-muted); margin:12px 0 4px; }
+    .po-sh-row { display:flex; align-items:center; gap:10px; padding:5px 0; }
+    .po-sh-lab { flex:0 0 220px; min-width:0; font-size:var(--pd-fs-base);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .po-sh-track { position:relative; flex:1 1 auto; height:18px; min-width:0; }
+    /* the contract window is the GROUND the programme is measured against, so it reads as a
+       rail behind the bar rather than as a second bar competing with it */
+    .po-sh-rail { position:absolute; top:7px; height:4px; background:var(--pd-line); border-radius:2px; }
+    .po-sh-bar { position:absolute; top:3px; height:12px; background:var(--pd-line);
+      border:1px solid var(--pd-dark); border-radius:3px; overflow:hidden; }
+    .po-sh-fill { display:block; height:100%; background:var(--pd-dark); }
+    .po-sh-over { position:absolute; top:3px; height:12px; background:var(--pd-bad-text);
+      opacity:.75; border-radius:0 3px 3px 0; }
+    .po-sh-fc { position:absolute; top:1px; width:2px; height:16px; background:var(--pd-warn-text); }
+    .po-sh-now { position:absolute; top:0; bottom:0; width:0; border-left:1px dashed var(--pd-red); }
     /* grouped portfolio table */
+    .po-sechead { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
+    .po-sechead h3 { margin:0; }
+    .po-mut { color:var(--pd-muted); font-size:var(--pd-fs-sm); }
+    .po-note { margin:10px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.55; }
+    .po-coverage { margin:14px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.55; }
+    /* ⚠️ `--pd-*-text` for INK, never the base token: --pd-ok is 4.12:1 and --pd-warn 3.46:1
+       on white, both under AA, and dashboard.css says so where they are declared. */
+    .po-bad  { color:var(--pd-bad-text);  font-weight:700; }
+    .po-warn { color:var(--pd-warn-text); font-weight:700; }
+    .po-ok   { color:var(--pd-ok-text); }
+    .po-dash { color:var(--pd-muted); }
     .po-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
     .po-table th { position:sticky; top:0; background:var(--pd-bg); text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase;
       letter-spacing:.04em; color:var(--pd-muted); padding:9px 12px; border-bottom:2px solid var(--pd-line); white-space:nowrap; cursor:pointer; }
@@ -263,6 +314,61 @@
        a toggle that vanishes reads as a missing feature, one that is visibly off reads
        as "not available for this data", which is the true statement. */
     .po-sc-series .pd-seg > button[disabled] { opacity:.55; cursor:not-allowed; }
+    /* ---- The periodic bars, and the month a planner can click -------------------------------
+       Owner 2026-09-16: *"periodic values that are in the form of a bar chart … allow users to
+       click a specific month to know the breakdowns"*.
+       ⚠️ THE SAME TWO COLOURS AS THE CUMULATIVE LINES, so a reader learns one key and not two:
+       planned is the neutral ink, actual is brand red. Spelled the same way the single-project
+       S-Curve spells its own bars (`.sc-barp` / `.sc-bara`, modules/s-curve) — one idiom for one
+       chart shape across two screens.
+       ⚠️ Planned is the PALE one and sits behind: a month under plan should show the plan
+       standing behind it, not two bars competing for the slot. */
+    .po-barp { fill:var(--pd-dark); opacity:.20; }
+    html.pd-dark .po-barp { fill:#c7ccd1; opacity:.22; }
+    .po-bara { fill:var(--pd-red); opacity:.85; }
+    .sw2-barp { background:var(--pd-dark); opacity:.3; }
+    html.pd-dark .sw2-barp { background:#c7ccd1; }
+    .sw2-bara { background:var(--pd-red); opacity:.85; }
+    /* ⚠️ The bars get their OWN right-hand axis. A month's production is a tenth the size of a
+       cumulative figure, so sharing the left axis would draw every bar as a sliver on the floor. */
+    .po-ylab3 { fill:var(--pd-muted); font-size:10px; text-anchor:start; }
+    .po-ylab3-t { font-size:9px; font-weight:700; text-anchor:end; }
+    /* ⚠️⚠️ THE HIT TARGET IS THE WHOLE COLUMN, NOT THE BAR. A month whose bar is two pixels tall
+       (or absent altogether) is exactly the month a planner most wants to ask about, and a
+       two-pixel target cannot be hit. Transparent until hovered, so it never competes with the
+       chart it sits on top of. */
+    .po-svg-click { cursor:default; }
+    .po-sc-band { fill:var(--pd-ink); opacity:0; cursor:pointer; }
+    .po-sc-band:hover { opacity:.05; }
+    .po-sc-band.on { opacity:.09; }
+    html.pd-dark .po-sc-band { fill:#fff; }
+
+    /* ---- What a clicked month is made of ----------------------------------------------------
+       ⚠️ A panel UNDER the chart, not a modal: the question it answers is "what is inside THAT
+       month", and a dialog over the chart hides the month being asked about. */
+    .po-sc-bd { margin-top:16px; }
+    .po-bd-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+    .po-bd-head h3 { margin:0; text-transform:none; font-size:15px; }
+    .po-bd-sum { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    .po-bd-sum b { color:var(--pd-ink); }
+    .po-bd-head #po-bd-x { margin-left:auto; }
+    .po-bd-note { margin-top:10px; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.55; }
+    .po-bd-note code { font-size:.94em; }
+    .po-bd-table td.k small { display:block; font-weight:400; color:var(--pd-muted); font-size:var(--pd-fs-xs); }
+    /* ⚠️ Actual is tinted in the table exactly as it is on the chart, so the two read as one
+       answer rather than as two tables that happen to be near each other. */
+    .po-bd-table .is-act { color:var(--pd-red); }
+    /* ⚠️ DIMMED, NOT DROPPED. A trade that did nothing in this month is an ANSWER to "what was
+       this month made of" — hiding it turns a complete list into a filtered one with nothing
+       saying so, and the Total row would then look wrong against the header. */
+    .po-bd-quiet td { opacity:.55; }
+    .po-bd-table tfoot td { font-weight:700; border-top:2px solid var(--pd-line); }
+    /* ⚠️ The panel saying its own total does not match the chart above it. Warn tone, not error:
+       the numbers are still the best available reading of the month — what is lost is the check. */
+    .po-bd-warn { margin-top:10px; padding:9px 12px; border-radius:var(--pd-radius-md,8px);
+                  background:color-mix(in srgb, var(--pd-warn) 12%, transparent);
+                  border:1px solid color-mix(in srgb, var(--pd-warn) 40%, transparent);
+                  font-size:var(--pd-fs-sm); line-height:1.5; color:var(--pd-ink); }
     /* The project legend can be long, so it wraps and sits under the style legend. */
     .po-legend-proj { margin-top:6px; }
     /* ---- Stakeholder directory (portfolio-level authoring) ---- */
@@ -470,8 +576,14 @@
       @media (max-width: 700px) {
         .po-card { overflow-x: auto; }
         .po-svg { min-width: 520px; }
-        .po-donut-wrap { justify-content: center; }
         .po-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        /* a 220px label column on a 390px screen leaves the bar no room at all */
+        .po-sh-axis { margin-left: 0; }
+        .po-sh-row { flex-wrap: wrap; gap: 2px; }
+        .po-sh-lab { flex: 1 1 100%; white-space: normal; }
+        .po-sh-track { flex: 1 1 100%; }
+        .po-look-row { flex-wrap: wrap; gap: 4px 10px; }
+        .po-look-proj { flex-basis: 100%; }
         .po-table { min-width: 760px; }
         .po-projfilter { max-width: 100%; }
       }
