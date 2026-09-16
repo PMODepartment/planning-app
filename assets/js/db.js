@@ -36,8 +36,24 @@
     // memory for a display order.
     async selectAll(table, apply, cols, key) {
       var out = [], last = null, PAGE = 1000, k = key || 'id';
+      // ⚠️⚠️ THE CURSOR COLUMN IS FORCED INTO THE PROJECTION, even when the caller did not ask for
+      // it. The loop below reads its next cursor off the last RETURNED ROW OBJECT, so a cursor
+      // absent from `cols` is `undefined`, `undefined == null` is true, and the terminator returns
+      // after ONE page -- 1000 rows, silently, with no error and a plausible smaller number.
+      // Found live 2026-09-16: four PorMac reads (work packages, vendors, engineering progress)
+      // and a BOQ roll-up that was computing a CONTRACT TOTAL from the first 1000 items.
+      // ⚠️⚠️ `supabase/functions/sync-wpm`'s own `readAll` has forced `id` in since it was written,
+      // for this exact reason -- the browser side simply never did. Fixing it here, once, is why
+      // no caller has to remember: ask for the columns you want and paging still works.
+      // ⚠️ Skipped when `cols` is absent (`'*'` already carries it) or already names the cursor,
+      // so `moduleMetrics` (which seeds `want = { id: 1 }`) is unchanged.
+      var need = '*';
+      if (cols) {
+        var hasK = String(cols).split(',').some(function (c) { return c.trim() === k; });
+        need = hasK ? cols : k + ',' + cols;
+      }
       for (;;) {
-        var q = sb().from(table).select(cols || '*');
+        var q = sb().from(table).select(need);
         if (typeof apply === 'function') q = apply(q);
         q = q.order(k, { ascending: true }).limit(PAGE);
         if (last) q = q.gt(k, last);
@@ -49,7 +65,10 @@
         // page is ambiguous (it may or may not be the last).
         if (page.length < PAGE) return out;
         last = page[page.length - 1][k];
-        // Defensive: a table whose key is not unique would loop forever otherwise.
+        // Defensive: a table whose key is not unique would loop forever otherwise. ⚠️ This can no
+        // longer be reached by a projection that omitted the cursor -- `need` above guarantees the
+        // column is selected -- so reaching it now means the column is genuinely NULL in the data,
+        // i.e. the caller named a `key` that is not a primary key.
         if (last == null) return out;
       }
     },

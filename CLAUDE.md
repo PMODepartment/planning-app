@@ -185,6 +185,73 @@ invalidates twelve pages' caches for nothing.
 ⚠️ **D4 is still not built**, and the reason is unchanged from (n): its S-curve half calls the RPC
 removed for timing out at 21 projects, and its funding half reads a function that moved to another
 module. It needs the per-project fan-out lifted into the shared `PDScurve` engine first.
+### 2026-09-16 (o) — `selectAll` now selects its own cursor, because ten reads were truncating at 1000 rows and nothing said so
+
+Follow-on from (l), which found the first one. Module detail in
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+### ⚠️⚠️ THE CHECKER PASSED 103/103 WHILE TEN CALL SITES WERE SILENTLY TRUNCATING
+
+`PDb.selectAll` pages with a keyset cursor it reads **off the last returned ROW OBJECT** —
+`last = page[page.length - 1][k]` — then bails on `if (last == null) return out;`. A cursor column
+the relation **has** but the `cols` string does **not ask for** comes back `undefined`, and
+`undefined == null` is true. One page. 1000 rows. No error, and a plausible smaller number.
+
+`tools/selectall-key.js` asked whether the RELATION has an `id`. It never asked whether the
+**PROJECTION** does — two independent ways to break the same loop, and only one of them was checked.
+
+**Ten call sites across five modules, and what each one understated:**
+
+| | read | figure |
+|---|---|---|
+| `contracts-claims/boq.js:2539` | current-revision BOQ items | a **CONTRACT TOTAL** (fixed in (l)) |
+| `pormac/module.js` ×4 | WPM work packages (scoped **and unscoped**), the vendor directory, engineering design progress | every number in the sentences the assistant states to the planner as fact |
+| `cash-flow/index.html:727,731` | `wpm_work_packages`, the entire cash-out side | **cash out, net cash flow and the peak funding need** — its own comment says exactly that |
+| `project-schedule/index.html:8060,8363` | `wpm_work_packages` | the **Procurement branch** |
+| `manpower-loading/index.html:2867` | `manpower_loading`, **every month** at portfolio scope | the **manpower curve and the people Gantt** — which its own comment says are the whole reason that read exists. ⚠ The `manpower_positions` and `manpower_roster` reads either side of it **do** select `id`: the rule was known in the same function, two lines up. |
+
+⚠️⚠️ **`sync-wpm` PREDICTED ALL OF IT, IN A COMMENT, BEFORE ANY OF IT WAS FOUND:** *"A truncated read
+here silently understates Cash Flow's cash-out, the schedule's Procurement branch and vendor
+performance — and nothing anywhere reports a problem."* Its own `readAll` has force-prepended `id`
+since the day it was written. **The browser side never did the same thing**, so every one of those
+three predictions came true on the client instead.
+
+### The fix is the engine, not the call sites
+
+`selectAll` folds the cursor into its own projection now. All 103 call sites are immune, including
+the two that build `cols` at runtime and can never be caught statically — which is most of why this
+belongs in `db.js` rather than in a lint rule. Skipped when `cols` is absent (`'*'` already carries
+it) or already names the cursor, so `moduleMetrics` (which seeds `want = { id: 1 }`) is unchanged.
+Only PorMac's four call sites were also made explicit, since that is the module this pass was for.
+
+### ⚠️ And the checker now carries the assertion that makes that safe
+
+`forcesCursor()` reads the **shipped** `selectAll` body and fails the run if the guard ever leaves it
+— naming the exact sites that would start truncating again. Negative-tested: with the guard removed
+the run prints `FATAL`, relabels the advisory list **LIVE TRUNCATIONS**, and exits 1; `db.js` was
+restored byte-identical afterwards (hash-compared).
+
+⚠️ **The projection check is ADVISORY, not fatal, and that is deliberate.** Those sites page
+correctly today, so reporting them as broken would be a false finding — and this file's own rule is
+that one false finding teaches people to skip the report.
+
+⚠️ **The checker was wrong about two correct sites on its first run, and both are now fixed** — the
+kind of thing that is only visible by running it: a **comment inside the argument list** (`boq.js`
+documents the cursor rule right where the cols string is passed, and that comment contains commas,
+so the arg splitter chopped it into "arguments"), and a **concatenated literal** (`portfolio-overview`
+splits a 14-column list across two lines with `'…,' + '…'`). Eight new self-tests, all calling
+`colsOf` itself rather than a retyped copy. The run is now 15 self-tests, 103 sites, 0 broken,
+3 advisory, 2 unreadable.
+
+`db.js?v=` → `20260916c` (25 pages); `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260916q` — re-derived past the `p` a concurrent session pushed
+while this was in flight, because a token that sorts EARLIER than one already served can never
+invalidate it — so the module pages re-fetch and actually pick up the
+new `db.js` token. `wiring-check`: **139 passed, 0 failed** — every asset reference on one version.
+
+⚠️ **Not verified signed in.** The defect and the fix are confirmed by reading the shipped
+`selectAll`; the row volumes come from `sync-wpm`'s own note. The affected tables are RLS-gated to an
+approved user, so live row counts were not read.
 
 ### 2026-09-16 (n) — The Project Schedule gets a portfolio view, and a helper reached across a closure it does not share
 
