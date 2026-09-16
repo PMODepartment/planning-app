@@ -474,12 +474,17 @@
     var base = ctx.base || '';
     var active = ctx.active || '';
     function cls(key) { return active === key ? ' class="active"' : ''; }
-    // ⚠️ Read straight off the global `requireLogin` already set, rather than a ctx flag every
+    // ⚠️ Read straight off the globals `requireLogin` already set, rather than a ctx flag every
     // one of the 15+ call sites would otherwise have to be taught to pass — see config.js's
     // `superAdminOnly` comment. `!!` guards a page that renders nav before auth resolves (none do
     // today, but a false positive here would show every super-admin-only link to a stranger).
     var superAdmin = !!window.__role && window.__role === 'super_admin';
-    function visible(m) { return !m.superAdminOnly || superAdmin; }
+    // ⚠️ `AppAuth.moduleVisible` (2026-09-15) is the ONE gate — role default plus the per-user
+    // override from admin.html's Modules editor — shared with ModulesGrid.visible() so the
+    // sidebar and the launcher/dashboard tile grid cannot disagree about a module.
+    function visible(m) {
+      return window.AppAuth ? AppAuth.moduleVisible(m, window.__profile) : (!m.superAdminOnly || superAdmin);
+    }
     var html;
     if (mode === 'portfolio') {
       // Three scopes, per the owner's own structure: PORTFOLIO (every project's data,
@@ -582,8 +587,17 @@
           : '') +
         (ctx.isAdmin
           ? '<div class="pd-navsec">System</div>' +
-            '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Admin">' +
-              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>'
+            /* ⚠️ "Users", NOT "Admin" — owner 2026-09-15: *"for admin keep only user
+               management and rename to Users."* admin.html dropped its Projects tab the
+               same change (projects.html already owns that, group heads included), so
+               the page is user management now and the label says so.
+               ⚠️ THE KEY `admin` IS DELIBERATELY UNCHANGED — same call as the My Work
+               row's `personal-dashboard` key just above: `cls('admin')` here and the
+               `active: 'admin'` admin.html itself passes to renderNav must keep matching
+               each other, and the filename/href stays `admin.html` so nothing that
+               already links here breaks. Only the visible word moved. */
+            '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Users">' +
+              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Users</span></a>'
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled && visible(m); });

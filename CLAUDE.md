@@ -76,7 +76,7 @@ developer, plug into one shared shell.
 | `assets/css/dashboard.css` | Global styles + design tokens (`--pd-*`) |
 | `projects.html` | **Project Selector** (entry point): Workspace→Program→Project tree + project list |
 | `dashboard.html` | **Project Home** for the selected project (Project/Program/Workspace tabs + module grid) |
-| `admin.html` | User approval/roles/project-assignment + project & workspace management |
+| `admin.html` | **Users** — approval, roles, per-project and per-module access. Project & group-head CRUD moved to `projects.html` (2026-09-15) |
 | `supabase-schema.sql` / `supabase-setup.sql` | All shared + module tables, RLS, grants, helpers, bootstrap |
 | `tools/wiring-check.js` | **Run `node tools/wiring-check.js` before any commit that touches a shared asset or a cross-module call.** Loads every shipped browser script against a window stub and proves: each assigns its global, no export (incl. `_internals`) is undefined, every cross-module reference names a key its provider really exports, every referenced asset exists and is on ONE version, and every enabled module's page is real. ⚠️ It **self-tests first** by reproducing the 2026-09-10 (z6) outage in memory — a checker that has never failed proves nothing. |
 | `tools/scan.js` | The string/comment/regex-aware source scanner both checkers use. ⚠️ Self-tests on ten shapes before any caller trusts it — a line-comment regex eats every line with a double slash inside a string, which silently deleted 62 references from wiring-check's own sweep. |
@@ -103,7 +103,151 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-15 (aa) — A consolidated row now says which project it is from
+### 2026-09-15 (zb) — Admin becomes Users: Projects moves out for good, and module access gets a per-user override
+
+Owner, on the very page (za) had just reworked: *"1. projects already has a separate module, no need
+to mix with admin. for admin keep only user management and rename to Users. 2. provide options to
+change module access for users with button to reset to default."*
+
+#### 1 · The Projects tab is gone, not merely hidden
+
+(za) had *just* built a second, in-admin copy of `projects.html`'s own project & Group Head CRUD —
+correctly, at the time, since the owner asked for it there. This reverses that specific call rather
+than contradicting it: `projects.html` already owns `manageGroupHeadsModal()` and
+`createProject`/`updateProject`/`deleteProject`/`archiveProject` against the identical tables, so
+admin.html's Projects tab was a second implementation of a working screen — the drift this repo has
+paid for repeatedly (three location normalisers, a hand-copied S-curve, the change-order insert) in
+miniature. Deleted rather than left dead: `GH`/`ghById`/`ghmOpen`, `indexGh`, `ghNameOf`, `ghOptions`,
+`countForGh`, `applyTab`/`wireTabs` (and the `adm_tab` `UI.bindHistoryState` key with them), `loadProjects`,
+`groupHeadRow`, `manageGroupHeadsModal`, `groupHeadModal`, `confirmDeleteGroupHead`,
+`confirmDeleteProject`, `autoParent`, `editProject` — the `.pd-tabs`/`.pd-tab`/`.pd-tabpane` CSS shell
+with them, since a single-pane page needs no tab bar. `assets/js/program.js` (only ever pulled in for
+`autoParent`'s `PDProgram.keyOf`) is dropped from the page too.
+
+⚠️ **`ALL_PROJECTS` stays, fetched inline in `loadUsers()`.** It still feeds *Assign projects* — which
+project screen to open in is a user-management question, unlike creating or deleting the project
+itself.
+
+⚠️⚠️ **THE RENAME TOUCHES ONLY THE LABEL.** `<title>`, `<h1>` and the sidebar link text all become
+"Users" (`ui.js:497`), but `active: 'admin'` (the string `UI.renderNav` matches against to highlight
+the row), the `admin.html` filename, and `requireAdmin`'s own role check are all left exactly as they
+are — the same call this repo already made for `personal-dashboard` (the key) vs "My Work" (the
+label) and `data-view="loading"` vs "Overview". Renaming the identifier to match the label is how a
+two-place change becomes a silent mismatch the next person has to rediscover.
+
+#### 2 · A per-user module-access override, with a real "no override" state
+
+**Run `migrations/2026-09-15-user-module-access.sql`.** New nullable `users.module_access text[]`.
+
+⚠️⚠️ **NULL IS NOT THE SAME AS `{}`, AND THAT DISTINCTION IS THE WHOLE DESIGN.** An empty array is a
+real, meaningful value — "this user gets no modules at all." NULL is the only value that can honestly
+mean "nobody has ever touched this; keep following the role," which is exactly what **Reset to
+default** has to write. A boolean-per-module map, or a non-nullable array defaulting to `{}`, could
+not express that difference — either would make "never customised" indistinguishable from
+"deliberately emptied."
+
+⚠️ **One shared predicate, not three copies of a rule.** `AppAuth.moduleVisible(m, profile)`
+(`auth.js`) is now the single place that decides whether a module shows up: `module_access` absent →
+the existing `superAdminOnly` role default alone, unchanged; `module_access` an array → it is the
+*exact* set, in **either direction** — it can grant a `superAdminOnly` module to an ordinary planner,
+or withhold an everyday module from anyone, role notwithstanding. `ui.js`'s `renderNav`,
+`modules-grid.js`'s `visible()` (which `dashboard.html`'s tile grid already delegated to) and
+Portfolio Overview's own hardcoded five-view gate (`switchView`, its tab-strip filter) all now call
+it, so the sidebar, the launcher, the dashboard tiles and the portfolio deep links can no longer
+disagree about what one user can see. Each site degrades to the old bare-role check if `AppAuth`
+happens not to be loaded yet — the same defensiveness `ui.js`'s existing `superAdmin` guard already
+used.
+
+⚠️ No RLS/grant change was needed: `users_admin_update` is a plain row-level policy with no column
+list, so it already covers this column the same way it already covers `role`/`status`/`projects`.
+
+Admin's Users table gets a **Modules** button per row (every role, not only the restricted ones —
+the ask was general per-user control, not only a defense against `superAdminOnly`), opening a
+checklist of every `enabled` module, pre-ticked from whatever currently applies (the role default if
+untouched, the stored list if not) so the dialog never looks like it is proposing an unmade change.
+**Reset to default** writes `module_access: null` — disabled when there is nothing to reset. The
+Access column's module chip now reports "N of M modules (custom)" once an override exists, rather
+than continuing to print the role-based sentence over a list that no longer describes the user.
+
+`supabase-schema.sql`'s `users` table declares the column directly (the base-table convention this
+schema uses for its own foundational tables, not the module-table `alter ... add column` pattern);
+`migrations/VERIFY-schema.sql` regenerated (`node migrations/gen-verify.js`) to check for it.
+⚠️ `supabase-build.sql` was **not** regenerated in this commit — a `node migrations/gen-build.js` run
+found it **2,021 lines behind** the migrations directory for reasons unrelated to this change,
+and folding that unrelated drift into this diff would have been the wrong trade; it is its own commit.
+
+**Verified:** `node tools/wiring-check.js` — 139 passed, 0 failed, 3,707 cross-module references,
+every asset on one version; `node --check` on `auth.js`/`ui.js`/`modules-grid.js`; both touched pages'
+inline `<script>` (admin.html, portfolio-overview/index.html) parse; 0 duplicate ids in admin.html;
+0 NUL bytes across every touched file.
+⚠️ **Not verified signed in** — no live login is possible in this environment. The override is
+proved by reading `AppAuth.moduleVisible`'s logic against every combination it can be in, not by
+watching a real user's sidebar change.
+
+`assets/js/auth.js?v=` → `20260915a`, `assets/js/ui.js?v=` → `20260915h` (both shared, bumped across
+every referencing page), `assets/js/modules-grid.js?v=` → `20260915y` (dashboard.html + modules.html,
+its own fallback literal with them). No `MODULE_V` bump beyond what `modules-grid.js`'s own version
+derivation already carries — no module's `index.html` changed.
+
+### 2026-09-15 (za) — Admin: what a role's project list actually means, and Group Heads move onto this page
+
+Owner: *"in Users, provide information about difference in user assignments. provide also super admin
+with access to all modules. in projects, please add also way to add and assign group heads."*
+
+### ⚠️⚠️ THE PROJECTS COLUMN WAS BACKWARDS FOR ADMIN AND SUPER_ADMIN
+
+`can_access_project()` (SQL) and its client mirror `AppAuth.canAccessProject()` both grant `admin` and
+`super_admin` **every** project regardless of what sits in `users.projects` — checked against both
+definitions, not assumed. So an admin whose array happened to be empty showed **"—"** in the Projects
+column, which reads as *no access*, when the truth was the opposite. The column (renamed **Access**)
+now states what the role actually grants: `admin`/`super_admin` read **"All projects"**; planner/user/
+viewer keep the literal chip list, because that array is the real boundary for them. The **Projects**
+button — which only ever writes that same inert array — is hidden for the two full-access roles rather
+than left on screen doing nothing; it reappears the moment a role drops to planner/user/viewer.
+
+### The super_admin-only module set, made visible instead of left implicit
+
+`config.js`'s `superAdminOnly` flag already hides a module from everyone but `super_admin` — verified
+across all three places that gate it (`ui.js` `renderNav`, `modules-grid.js`, `dashboard.html`'s tile
+grid) plus `portfolio-overview`'s own five-tab list, all consistent. So super_admin already had access
+to every module; nothing there needed changing. What was missing was saying so: the Access column now
+reads off `APP_CONFIG.MODULES.filter(m => m.superAdminOnly)` — never a hardcoded list, so it cannot
+drift from what actually gates — and shows super_admin **"+ all modules"**, while every other role gets
+**"N modules hidden"** naming which ones in the tooltip.
+
+### Group Heads get a second entry point, not a second implementation
+
+Group Heads (`group_heads` / `projects.group_head_id` — the flat tag that replaced the old workspace
+tree, see `assets/js/db.js`) had exactly one screen, `projects.html`'s own **Manage Group Heads**
+modal. Admin's Projects tab now carries the same actions — reorder, edit, retire, delete, and a
+**Group Head** select right in **Edit project** — built against the identical `PDb.getGroupHeads` /
+`createGroupHead` / `updateGroupHead` / `deleteGroupHead` calls `projects.html` already uses, so there
+is one table being managed from two screens rather than two notions of what a group head is.
+⚠️ An inactive group head still lists when it is a project's *current* value, or the select would
+silently reassign the project the moment it is opened. ⚠️ The list inside **Manage Group Heads**
+redraws itself after any of its own nested Edit/Delete/reorder actions — those only know to call the
+page's `loadProjects()`, so the open list is tracked (`ghmOpen`) and repainted from there rather than
+needing every nested action to know about it directly.
+
+No migration — `group_heads` and `projects.group_head_id` already exist and are already read/written
+by `projects.html` in production; this is UI only, reusing what is already deployed.
+
+Verified: the inline script parses (`new Function`); no new/changed element id collides with an
+existing one; `RESTRICTED_MODULES`, `ghOptions`, `ghNameOf`, `countForGh` checked by hand against the
+shipped `PDb`/`AppAuth`/`config.js` shapes rather than guessed.
+⚠️ **Not verified signed in** — no live login is possible in this environment.
+
+No shared asset changed, so no `?v=` bump and no `MODULE_V` bump — `admin.html` is fetched at its own
+URL and is not a module page.
+
+⚠️ **Re-lettered `(z)` → `(za)` when this branch merged.** A concurrent session had already taken
+`2026-09-15 (z)` on `main` for the Portfolio Dashboard's Phase B entry, so both sides prepended a
+different entry under one letter. Every letter `a`–`z` is spent for this date; `za` is the next,
+matching how 2026-09-07 and 2026-09-10 continued past `z`. The collision changes nothing about the
+work — it is a changelog label, and no `?v=` or `MODULE_V` token was involved, which is why it
+conflicted quietly rather than failing anything.
+
+### 2026-09-15 (zc) — A consolidated row now says which project it is from
 
 Owner, with a phone screenshot of Meetings opened portfolio-wide — six rows all reading
 `Meeting Aug 31, 2026` and nothing to tell them apart: *"1. in the project selector, always use this
@@ -233,10 +377,32 @@ reversed: undoing another session's product decision is not mine to make.
 line each. Both belong to `superAdminOnly` modules, and the owner scoped this round to *"modules that
 are accessible to all"*.
 
-`ui.js` / `dashboard.css` / `portfolio-dash.js` / `modules-grid.js` → `?v=20260915y` (23 / 31 / 6 / 2
-pages), the four modules' own `module.js` with them, `MODULE_V` → `20260915y` including the fallback
-literal. ⚠️ Re-derived **after** rebasing onto `origin/main`, from the `20260915x` that branch had
-already taken — not guessed beforehand, which is the rule this log has now recorded six times.
+`ui.js` / `dashboard.css` / `portfolio-dash.js` / `modules-grid.js` → `?v=20260915z` (23 / 31 / 6 / 2
+pages), the four modules' own `module.js` with them, `MODULE_V` → `20260915z` including the fallback
+literal.
+
+⚠️⚠️ **`z`, NOT the `y` this entry first shipped with — the same two-sessions-one-token collision this
+log has now recorded five times, and it was invisible in the diff.** This branch re-derived `y` after
+rebasing onto `origin/main`'s `20260915x`, which was correct at that moment; seventeen minutes later
+the concurrent Admin → Users session independently derived **the identical `20260915y`** for
+`modules-grid.js` and `MODULE_V` off the same base. Both sides wrote the same string, so git had
+nothing to conflict on there and **merged it silently** — leaving one cache token covering two
+different builds, which is the shape where a browser holding theirs would never fetch this. Found by
+listing every `?v=20260915*` token on `origin/main` before resolving rather than after, and re-derived
+past **both** sides. ⚠️ The rule that keeps working is the one this log already states: re-derive the
+token **after** integrating, from what the remote actually has — never beforehand, and never by
+picking an unusual letter, which has failed here twice (`uic` once sorted *before* a live `v2`).
+
+⚠️ Merged with `origin/main` rather than rebased (the repo's own `b23accb` precedent for resolving a
+PR conflict), so nothing is force-pushed. **24 files conflicted and 23 of them were this one token**;
+the twenty-fourth was `admin.html`, where main genuinely renamed the page and dropped `program.js` —
+main's content taken whole there, with only the `dashboard.css` bump carried across. `CLAUDE.md`
+resolved as the **union of new entries**, per this file's own header: **276 dated headings, 276
+distinct — no doubling**, and the line count lands on base + both sides exactly.
+⚠️ This entry was re-lettered `(aa)` → `(zc)`: every letter `a`–`z` was spent for 2026-09-15 before
+either side started, and main had already continued past `z` with `za`/`zb`. It is a label, and the
+work is unchanged. ⚠️ Main's `## 2026-09-15 (x)` heading is `##` where this file's convention is
+`###`; pre-existing on `origin/main`, left alone rather than folded into a merge commit.
 
 ## 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
 

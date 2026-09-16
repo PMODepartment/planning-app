@@ -217,6 +217,34 @@
     return (profile.projects || []).indexOf(projectId) !== -1;
   }
 
+  // moduleVisible(m, profile): the ONE place that decides whether a module
+  // shows up for a signed-in user — read by UI.renderNav, ModulesGrid.visible
+  // (which dashboard.html's own tile grid delegates to), and Portfolio
+  // Overview's hardcoded tab list, so all three surfaces a module can appear
+  // on cannot disagree about it.
+  //
+  // ⚠️ `m.superAdminOnly` (config.js) is still the DEFAULT — untouched here —
+  //    and `profile.module_access` (2026-09-15, admin.html's per-user Modules
+  //    editor) is an OVERRIDE on top of it, not a second independent rule:
+  //    - `module_access` absent/null → the role default alone decides, exactly
+  //      as before this existed. This is "Reset to default"'s whole effect.
+  //    - `module_access` a (possibly empty) array → it is the EXACT set of
+  //      keys this user may see, in EITHER direction: it can grant a
+  //      `superAdminOnly` module to a non-super_admin, or withhold an
+  //      ordinary module from anyone, role notwithstanding.
+  //    A plain boolean-per-module map could not express "never touched" vs
+  //    "deliberately set to nothing," which is exactly the distinction
+  //    Reset-to-default needs to act on.
+  // ⚠️ A retired module (`enabled:false`) is not this function's concern —
+  //    every caller already filters on `enabled` separately, and an override
+  //    naming a retired module's key is simply never asked about.
+  function moduleVisible(m, profile) {
+    if (profile && Array.isArray(profile.module_access)) {
+      return profile.module_access.indexOf(m.key) !== -1;
+    }
+    return !m.superAdminOnly || !!profile && profile.role === 'super_admin';
+  }
+
   async function login(email, password) {
     return getSB().auth.signInWithPassword({ email: email, password: password });
   }
@@ -265,6 +293,7 @@
     getSB: getSB, ROLES: ROLES,
     requireLogin: requireLogin, requireRole: requireRole, requireAdmin: requireAdmin,
     isAutoApprove: isAutoApprove, canAccessProject: canAccessProject,
+    moduleVisible: moduleVisible,
     login: login, loginWithMicrosoft: loginWithMicrosoft, register: register, logout: logout,
     isPortfolioScope: isPortfolioScope, setPortfolioScope: setPortfolioScope,
   };
