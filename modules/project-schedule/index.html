@@ -8,6 +8,9 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
+  <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
+       and a module cannot reach a <style> block inside another page. -->
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916m" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -5333,6 +5336,7 @@
        2026-09-10 (z1) and its own log records what that cost. The S-Curve module, the project
        Dashboard panel and this page now read one engine. -->
   <script src="../../assets/js/scurve.js?v=20260901a"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260916m"></script>
 <script src="../../assets/js/ui.js?v=20260915i"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
@@ -50607,6 +50611,24 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 'project-schedule', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+    /* ==== PORTFOLIO SCOPE IS THIS MODULE'S DASHBOARD ====================================
+       Owner: *"the portfolio view of the schedule needs work as well."* Opened portfolio-wide
+       this module drew nothing at all - 2026-09-14 deliberately left `pid` null here and
+       attempted no cross-project consolidation, so the sidebar's Project Schedule row led to
+       an empty page. The cross-project Gantt now lives in portfolio-dash.js, beside the six
+       dashboards the owner moved into their own modules on 2026-09-15.
+       ⚠️ EVERYTHING BELOW IS SKIPPED, deliberately. This module's wiring and load() are built
+       around one project id; running them with none is how a hidden UI issues reads nobody can
+       look at. ⚠️ takeOver() wires the project <select> itself, because skipping this block
+       skips the line that fills it - and without it there is no way to leave portfolio scope
+       from the page you are standing on. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() &&
+        window.PortfolioDash && PortfolioDash.has('schedule')) {
+      PortfolioDash.takeOver('schedule', { select: '#ps-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     renderHeader();
     try { var cw = JSON.parse(localStorage.getItem('ps_cols') || 'null'); if (cw) { var gp = document.querySelector('.ps-grid-pane'); Object.keys(cw).forEach(function (c) { if (cw[c]) gp.style.setProperty('--c-' + c, cw[c]); }); } } catch (e) {}
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); }; });

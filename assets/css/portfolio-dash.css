@@ -91,6 +91,42 @@
     .po-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; box-shadow:var(--pd-shadow); min-width:0; }
     .po-card h3 { margin:0 0 10px; font-size:var(--pd-fs-base); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .po-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:24px; text-align:center; }
+    /* ---- D4 trend charts + D5 look-ahead (Overview) ---- */
+    .po-trends { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin:16px 0; }
+    .po-mini { display:block; width:100%; }
+    .po-tr-mark { fill:var(--pd-bad-text); stroke:var(--pd-card); stroke-width:1.5; }
+    .po-look-grp { margin-top:12px; }
+    .po-look-grp:first-child { margin-top:0; }
+    .po-look-head { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em;
+      font-weight:700; color:var(--pd-muted); padding-bottom:5px; border-bottom:1px solid var(--pd-line); }
+    .po-look-row { display:flex; align-items:baseline; gap:10px; padding:6px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); }
+    .po-look-row:last-child { border-bottom:0; }
+    .po-look-when { flex:0 0 78px; font-variant-numeric:tabular-nums; color:var(--pd-muted); }
+    .po-look-name { flex:1 1 auto; min-width:0; }
+    .po-look-proj { flex:0 0 auto; color:var(--pd-muted); font-size:var(--pd-fs-sm); }
+    .po-look-more { padding-top:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    /* ---- Phase E: the cross-project Gantt (Project Schedule, portfolio scope) ---- */
+    .po-sh-axis { position:relative; height:18px; margin-left:230px; border-bottom:1px solid var(--pd-line); }
+    .po-sh-tick { position:absolute; top:0; transform:translateX(-50%); font-size:var(--pd-fs-xs);
+      color:var(--pd-muted); white-space:nowrap; }
+    .po-sh-body { margin-top:6px; }
+    .po-sh-grp { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em;
+      font-weight:700; color:var(--pd-muted); margin:12px 0 4px; }
+    .po-sh-row { display:flex; align-items:center; gap:10px; padding:5px 0; }
+    .po-sh-lab { flex:0 0 220px; min-width:0; font-size:var(--pd-fs-base);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .po-sh-track { position:relative; flex:1 1 auto; height:18px; min-width:0; }
+    /* the contract window is the GROUND the programme is measured against, so it reads as a
+       rail behind the bar rather than as a second bar competing with it */
+    .po-sh-rail { position:absolute; top:7px; height:4px; background:var(--pd-line); border-radius:2px; }
+    .po-sh-bar { position:absolute; top:3px; height:12px; background:var(--pd-line);
+      border:1px solid var(--pd-dark); border-radius:3px; overflow:hidden; }
+    .po-sh-fill { display:block; height:100%; background:var(--pd-dark); }
+    .po-sh-over { position:absolute; top:3px; height:12px; background:var(--pd-bad-text);
+      opacity:.75; border-radius:0 3px 3px 0; }
+    .po-sh-fc { position:absolute; top:1px; width:2px; height:16px; background:var(--pd-warn-text); }
+    .po-sh-now { position:absolute; top:0; bottom:0; width:0; border-left:1px dashed var(--pd-red); }
     /* grouped portfolio table */
     .po-sechead { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
     .po-sechead h3 { margin:0; }
@@ -529,6 +565,14 @@
         .po-card { overflow-x: auto; }
         .po-svg { min-width: 520px; }
         .po-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .po-trends { grid-template-columns: 1fr; }
+        /* a 220px label column on a 390px screen leaves the bar no room at all */
+        .po-sh-axis { margin-left: 0; }
+        .po-sh-row { flex-wrap: wrap; gap: 2px; }
+        .po-sh-lab { flex: 1 1 100%; white-space: normal; }
+        .po-sh-track { flex: 1 1 100%; }
+        .po-look-row { flex-wrap: wrap; gap: 4px 10px; }
+        .po-look-proj { flex-basis: 100%; }
         .po-table { min-width: 760px; }
         .po-projfilter { max-width: 100%; }
       }

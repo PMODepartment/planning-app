@@ -1,3 +1,94 @@
+## 2026-09-16 (m) — Portfolio scope draws a cross-project Gantt, and stops drawing nothing
+
+Owner, Phase E of the portfolio plan: *"the portfolio view of the schedule needs work as well."*
+Opened from the Portfolio sidebar this module drew **nothing at all** — 2026-09-14 set `pid` to null
+here on purpose and attempted no cross-project consolidation, so the row led to an empty page.
+
+### Where it lives, and why not in this file
+
+The dashboard is an eleventh `def()` in `assets/js/portfolio-dash.js`, beside the ten the owner moved
+into their own modules on 2026-09-15 and 2026-09-16 — **not** a new tab in `portfolio-overview`.
+
+⚠️⚠️ **The plan said to re-point `PORTFOLIO_TAB['project-schedule']`, and that map was REMOVED on
+2026-09-14.** Each module now opens portfolio-wide itself via `#pd_scope=portfolio`, so the plan's own
+step was stale. Followed the owner's more recent direction rather than the written step, and said so.
+
+This page's contribution is 23 lines: the stylesheet, the script, and one branch after
+`UI.renderNav(...)`.
+
+```js
+if (window.AppAuth && AppAuth.isPortfolioScope() &&
+    window.PortfolioDash && PortfolioDash.has('schedule')) {
+  PortfolioDash.takeOver('schedule', { select: '#ps-project' }).catch(...);
+  return;
+}
+```
+
+⚠️ **After `renderNav`, before `renderHeader()` and everything under it.** The shell and sidebar must
+be up — a planner has to be able to leave the page — and **everything below is skipped deliberately**:
+this module's wiring and `load()` are built around one project id, and running them with none is how a
+hidden UI issues reads nobody can look at.
+⚠️ `takeOver()` wires the project `<select>` itself, because skipping this block skips the line that
+fills it. Without it there is no way out of portfolio scope from the page you are standing on.
+Measured: **7 options** present after mount.
+
+### ⚠️⚠️ NO ACTIVITY ROWS. NONE.
+
+Every bar comes from roll-up columns already on the project row plus `start_date` / `end_date` and
+`forecast_finish`. `PROJ` is in memory, so the view costs **no read**. This matters on the day the
+portfolio S-Curve timed out (root (j), `57014`, combinatorial in the project count): this view has no
+such surface.
+
+### What it refuses to guess
+
+- ⚠️ **A stale roll-up is marked.** `schedule_updated_at` is written when this module is opened, so an
+  untouched project carries a plausible bar built on old numbers. Past `STALE_DAYS = 45` it says so,
+  on the row and in the KPI strip.
+- ⚠️ **No roll-up → a NAMED row, never a bar guessed from contract dates.** Counted in the coverage
+  line rather than dropped.
+- ⚠️ **Today, not a data date** — the data date is `localStorage` **per browser** and not
+  portfolio-wide (2026-09-14 h, still open). The note says which was used.
+- ⚠️ Grouping is `PDProgram`, and **a group of one gets no heading**: *"a heading above a single
+  project invents a hierarchy that is not there."*
+
+### ⚠️⚠️ A CROSS-CLOSURE CALL, AND A SIGNATURE BUG — ONE FOUND BY RUNNING, ONE BY READING
+
+- The month axis called **`cfMonthLabel`**, which lives only inside the **cash-flow** dashboard's own
+  `setup()` closure. It parses; it throws at render. **`wiring-check` 139/139 cannot see it** — it
+  enumerates globals, and this is neither. Now `moLabel` at module scope beside `pd` / `today`, which
+  were moved there for the identical fault a day earlier. ⚠️ The tell was that the **KPI strip
+  rendered correctly and the rows did not**.
+- **`PDProgram.labelFor` takes a PROJECT, not a key** — it derives the key itself. I passed the key,
+  so it derived a key from a key. Caught by **reading `program.js`**, not by running: the wrong call
+  still returns a string.
+
+### Verified
+
+`tools/test-portfolio-dash.js` **186/186** (was 184). ⚠️ An existing assertion pinned the layer at
+**ten** dashboards and correctly failed — **retargeted to eleven and named**, not weakened.
+`test-portfolio` 99/99, `wiring-check` 139/139, this page's 3.3MB inline script parses.
+
+⚠️⚠️ **A cross-closure sweep that bites**: re-injecting `cfMonthLabel` makes it report; clean
+otherwise.
+
+**Rendered in an iframe** at 1400px light, 1400px dark and 390px, transitions killed first, against a
+fixture whose every answer is hand-derivable — AVR101+AVR102 a real pair, OPW101 a group of one,
+BAU101 past its contract finish, SLN101 with no roll-up, GPR101 ~200 days stale:
+**0 errors**; KPIs `6 / 5 of 6 / 1 / 1`; **one** group heading and none above the three singles;
+5 bars, 1 overrun; the un-rolled-up project named, not drawn; bars inside their tracks at every width;
+no sideways scroll; and the overrun resolving `rgb(196,33,39)` light against `rgb(255,138,128)` dark,
+which is what proves the relocated stylesheet is in the cascade.
+⚠️ The module's own UI is **hidden, not removed** — its script has already bound handlers to those
+nodes. ⚠️ One of my own assertions was wrong rather than the code: it read `#main`'s `display`, but the
+dashboard mounts *inside* `#main`.
+
+⚠️ **Not verified signed in** — the fixture is hand-built; no real portfolio has been drawn.
+⚠️ Harness gitignored and **deleted before committing**.
+
+`portfolio-dash.js` / `portfolio-dash.css` → `?v=20260916m`; `MODULE_V` → `20260916m`, sort-checked
+past `20260916j` and `20260916k`.
+⚠️ **The working tree was on a stale base and would have deleted four dashboards** — see root (m).
+
 ## 2026-09-16 (k) — The Summary is rebuilt around a verdict, and seven figures it already computed
 
 Owner: *"Check the summary page live it needs UI improvements overhaul"*, then, asked whether KPI

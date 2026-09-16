@@ -60,6 +60,22 @@
      “is it late” test in this app uses. */
   function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
   function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+  /* ⚠️⚠️ THE SAME CLASS OF FAULT AS THE DATE PAIR ABOVE, CAUGHT A SECOND TIME AND BY RUNNING
+     THE VIEW RATHER THAN READING IT. The Project Schedule dashboard's month axis reached for
+     `cfMonthLabel(...)` — a helper that exists only inside the CASH FLOW dashboard's own
+     `setup()` closure, a few hundred lines below. Each `def()` gets its own closure, so the
+     call PARSES fine, `wiring-check` cannot see it (it enumerates globals, and this is neither),
+     and it throws `cfMonthLabel is not defined` the moment the axis is drawn — which is every
+     portfolio open whose span is under four years. Measured: the KPI strip rendered and the
+     rows did not.
+     ⚠️ Named `moLabel`, not `cfMonthLabel` — `cf` means CASH FLOW, and this is the generic month
+     tick any view here can use. The cash-flow copy is deliberately left alone: it is another
+     session's working code, and converging the two is its own change. */
+  function moLabel(k) {
+    var MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var m = String(k || '').match(/^(\d{4})-(\d{2})$/);
+    return m ? MABBR[+m[2] - 1] + " '" + m[1].slice(2) : String(k || '');
+  }
   var KPI_VARIANT = { '--pd-ok': 'pd-kpi-ok', '--pd-warn': 'pd-kpi-warn', '--pd-bad': 'pd-kpi-bad' };
   function kpi2(l, v, cls) {
     var variant = cls ? KPI_VARIANT[cls] : '';
@@ -2173,6 +2189,197 @@
      ⚠️ ONE ENTRY POINT, and it is async: the markup goes in, the projects are fetched once, then
      the view loads itself. A module calls it and awaits it; nothing else needs to know how a
      dashboard is built. */
+  def("schedule", {
+    title: "Project Schedule",
+    needs: [],
+    markup: [
+      "        <div class=\"po-toolbar\">",
+      "          <div class=\"po-toolbar-fields\" id=\"po-sh-fields\">",
+      "            <select class=\"pd-select\" id=\"po-sh-group\" style=\"max-width:190px;\">",
+      "              <option value=\"program\">Group by parent project</option>",
+      "              <option value=\"none\">No grouping</option>",
+      "            </select>",
+      "            <label class=\"po-chk\"><input type=\"checkbox\" id=\"po-sh-slip\"> Running past contract only</label>",
+      "            <span class=\"po-spacer\"></span>",
+      "            <div class=\"po-search\"><span data-ico=\"search\" data-ico-size=\"15\"></span><input class=\"pd-input\" id=\"po-sh-q\" placeholder=\"Search project…\" /></div>",
+      "          </div>",
+      "        </div>",
+      "        <div class=\"pd-kpis\" id=\"po-sh-kpis\"></div>",
+      "        <div class=\"po-card\">",
+      "          <div class=\"po-sechead\"><h3>Programme against contract</h3><span class=\"po-mut\" id=\"po-sh-note\"></span></div>",
+      "          <div id=\"po-sh-gantt\"></div>",
+      "        </div>",
+      "        <p class=\"po-coverage\" id=\"po-sh-cov\"></p>"
+    ].join('\n'),
+    setup: function () {
+      var shGroup = 'program', shSlipOnly = false, shQuery = '';
+      var STALE_DAYS = 45;
+
+      function shRows() {
+        var q = shQuery.trim().toLowerCase();
+        return PROJ.filter(function (p) {
+          if (q && String(p.name || p.id).toLowerCase().indexOf(q) < 0 &&
+                   String(p.id).toLowerCase().indexOf(q) < 0) return false;
+          if (shSlipOnly && !(shSlip(p) > 0)) return false;
+          return true;
+        }).map(shShape);
+      }
+      /* ⚠️ A project with no roll-up gets a NAMED EMPTY ROW, never a bar guessed from its
+         contract dates - a contract window is what was agreed, not what is planned. */
+      function shShape(p) {
+        var cs = pd(p.start_date), cf = pd(p.end_date);
+        var ps = pd(p.schedule_start), pf = pd(p.schedule_finish);
+        var ff = pd(p.forecast_finish);
+        var upd = pd(p.schedule_updated_at);
+        var age = upd ? Math.round((today() - upd) / 86400000) : null;
+        return { p: p, id: p.id, name: p.name || p.id, cs: cs, cf: cf, ps: ps, pf: pf, ff: ff,
+                 pct: Math.max(0, Math.min(100, num(p.schedule_progress))),
+                 acts: num(p.schedule_activities), age: age,
+                 has: !!(ps && pf), slip: shSlip(p) };
+      }
+      function shSlip(p) {
+        var pf = pd(p.schedule_finish), cf = pd(p.end_date);
+        if (!pf || !cf) return null;
+        return Math.round((pf - cf) / 86400000);
+      }
+      /* ⚠️ PDProgram.labelFor takes the PROJECT, not the key - it derives the key itself.
+         ⚠️ It is loaded by project-schedule but not by every module that carries
+         portfolio-dash.js, so an absent PDProgram degrades to no grouping rather than
+         throwing on a page that simply does not have it. */
+      function shGroupOf(p) {
+        if (shGroup === 'none' || !(window.PDProgram && PDProgram.keyOf))
+          return { key: '_all', label: 'All projects' };
+        return { key: PDProgram.keyOf(p), label: PDProgram.labelFor(p, PROJ) || PDProgram.keyOf(p) };
+      }
+
+      function shRender() {
+        var rows = shRows();
+        var host = document.getElementById('po-sh-gantt');
+        var kpis = document.getElementById('po-sh-kpis');
+        var note = document.getElementById('po-sh-note');
+        var cov = document.getElementById('po-sh-cov');
+        if (!host) return;
+
+        var withRoll = rows.filter(function (r) { return r.has; });
+        var late = withRoll.filter(function (r) { return r.slip > 0; });
+        var stale = withRoll.filter(function (r) { return r.age != null && r.age > STALE_DAYS; });
+        kpis.innerHTML =
+          kpi2('Projects', String(rows.length)) +
+          kpi2('With a roll-up', withRoll.length + ' of ' + rows.length) +
+          kpi2('Past contract finish', String(late.length), late.length ? '--pd-bad' : '--pd-ok') +
+          kpi2('Roll-up over ' + STALE_DAYS + 'd old', String(stale.length), stale.length ? '--pd-warn' : '--pd-ok');
+
+        if (!withRoll.length) {
+          host.innerHTML = '<div class="po-empty">No project in scope carries a schedule roll-up yet. ' +
+            'It is written when a project\'s Project Schedule is opened.</div>';
+          note.textContent = ''; cov.textContent = ''; return;
+        }
+
+        /* the window: every date any drawn row carries, plus today */
+        var ts = [+today()];
+        withRoll.forEach(function (r) {
+          [r.cs, r.cf, r.ps, r.pf, r.ff].forEach(function (d) { if (d) ts.push(+d); });
+        });
+        var t0 = new Date(Math.min.apply(null, ts)), t1 = new Date(Math.max.apply(null, ts));
+        var span = (+t1 - +t0) || 1;
+        function x(d) { return ((+d - +t0) / span) * 100; }
+
+        /* ⚠️ Month ticks thin to quarters then years; a tick per month over a five-year
+           portfolio is an unreadable smear of labels. */
+        var months = [], c = new Date(t0.getFullYear(), t0.getMonth(), 1);
+        while (c <= t1) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+        var every = months.length > 48 ? 12 : months.length > 18 ? 3 : 1;
+        var axis = months.map(function (m, i) {
+          if (i % every) return '';
+          return '<span class="po-sh-tick" style="left:' + x(m).toFixed(3) + '%">' +
+            (every === 12 ? m.getFullYear() : moLabel(m.getFullYear() + '-' + ('0' + (m.getMonth() + 1)).slice(-2))) +
+            '</span>';
+        }).join('');
+        var nowX = x(today());
+
+        var groups = {};
+        rows.forEach(function (r) {
+          var g = shGroupOf(r.p);
+          (groups[g.key] || (groups[g.key] = { label: g.label, rows: [] })).rows.push(r);
+        });
+
+        var body = Object.keys(groups).sort(function (a, b) {
+          return String(groups[a].label).localeCompare(String(groups[b].label));
+        }).map(function (k) {
+          var g = groups[k];
+          /* ⚠️ program.js's own rule: a heading above a SINGLE project invents a hierarchy
+             that is not there. A parent with one package reads as a plain row. */
+          var head = g.rows.length > 1
+            ? '<div class="po-sh-grp">' + esc(g.label) + ' <span class="po-mut">' + g.rows.length + '</span></div>'
+            : '';
+          return head + g.rows.sort(function (a, b) {
+            return (b.slip == null ? -1e9 : b.slip) - (a.slip == null ? -1e9 : a.slip);
+          }).map(shRow).join('');
+        }).join('');
+
+        host.innerHTML = '<div class="po-sh-axis">' + axis +
+          '<span class="po-sh-now" style="left:' + nowX.toFixed(3) + '%"></span></div>' +
+          '<div class="po-sh-body">' + body + '</div>' +
+          '<div class="po-legend2">' +
+            '<span class="po-lg2"><span class="sw2" style="background:var(--pd-line);"></span>Contract window</span>' +
+            '<span class="po-lg2"><span class="sw2" style="background:var(--pd-dark);"></span>Live programme</span>' +
+            '<span class="po-lg2"><span class="sw2" style="background:var(--pd-bad-text);"></span>Past contract finish</span>' +
+            '<span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-red);"></span>Today</span>' +
+          '</div>';
+
+        function shRow(r) {
+          if (!r.has) return '';
+          var a = Math.min(x(r.ps), x(r.pf)), b = Math.max(x(r.ps), x(r.pf));
+          var rail = (r.cs && r.cf)
+            ? '<span class="po-sh-rail" style="left:' + x(r.cs).toFixed(3) + '%;width:' +
+              Math.max(0.2, x(r.cf) - x(r.cs)).toFixed(3) + '%"></span>' : '';
+          /* the overrun is drawn as its own segment past the contract finish */
+          var over = '';
+          if (r.cf && r.slip > 0)
+            over = '<span class="po-sh-over" style="left:' + x(r.cf).toFixed(3) + '%;width:' +
+                   Math.max(0.2, b - x(r.cf)).toFixed(3) + '%"></span>';
+          var bar = '<span class="po-sh-bar" style="left:' + a.toFixed(3) + '%;width:' +
+                    Math.max(0.3, b - a).toFixed(3) + '%">' +
+                    '<span class="po-sh-fill" style="width:' + r.pct + '%"></span></span>';
+          var fc = r.ff ? '<span class="po-sh-fc" style="left:' + x(r.ff).toFixed(3) + '%" title="Forecast finish"></span>' : '';
+          var flags = '';
+          if (r.slip > 0) flags += ' <span class="po-bad">' + r.slip + 'd past contract</span>';
+          /* ⚠️ A stale roll-up is SAID, not silently drawn as current: schedule_updated_at is
+             written when the module is opened, so a project untouched for months carries a
+             confident-looking bar built from months-old numbers. */
+          if (r.age != null && r.age > STALE_DAYS) flags += ' <span class="po-warn">roll-up ' + r.age + 'd old</span>';
+          return '<div class="po-sh-row">' +
+            '<div class="po-sh-lab">' + esc(r.name) +
+              '<span class="po-mut"> ' + Math.round(r.pct) + '%</span>' + flags + '</div>' +
+            '<div class="po-sh-track">' + rail + over + bar + fc +
+              '<span class="po-sh-now" style="left:' + nowX.toFixed(3) + '%"></span></div>' +
+            '</div>';
+        }
+
+        note.innerHTML = withRoll.length + ' drawn · ' +
+          t0.getFullYear() + ' – ' + t1.getFullYear() +
+          ' · <span class="po-mut">measured against today, not a data date</span>';
+        /* ⚠️ What the picture could NOT show, counted rather than dropped. */
+        var noRoll = rows.length - withRoll.length;
+        var noContract = withRoll.filter(function (r) { return !(r.cs && r.cf); }).length;
+        var bits = [];
+        if (noRoll) bits.push(noRoll + ' project(s) carry no schedule roll-up, so they are not drawn');
+        if (noContract) bits.push(noContract + ' have no contract window to measure against');
+        if (stale.length) bits.push(stale.length + ' were last rolled up over ' + STALE_DAYS + ' days ago');
+        cov.textContent = bits.length
+          ? 'Of the ' + rows.length + ' project(s) in scope, ' + bits.join('; ') + '.'
+          : '';
+      }
+
+      async function loadSchedule() { shRender(); }
+
+      document.getElementById('po-sh-group').onchange = function (e) { shGroup = e.target.value; shRender(); };
+      document.getElementById('po-sh-slip').onchange = function (e) { shSlipOnly = e.target.checked; shRender(); };
+      document.getElementById('po-sh-q').oninput = function (e) { shQuery = e.target.value; shRender(); };
+      return { load: loadSchedule };
+    }
+  });
+
   async function mount(key, host, opts) {
     opts = opts || {};
     var v = VIEWS[key];

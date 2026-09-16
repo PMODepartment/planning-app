@@ -268,8 +268,13 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
   });
   if (!expectMoved) return;   // the gate stops here — nothing further can be mounted
 
-  eq(keys.length, 10, tag + 'ten dashboards in all (six from 2026-09-15, four from 2026-09-16)');
+  eq(keys.length, 11, tag + 'eleven dashboards in all (six from 2026-09-15, four + Project Schedule from 2026-09-16)');
   eq(probe.PortfolioDash.titleOf('scurve'), 'Portfolio S-Curve', tag + 'and each is named');
+  /* The cross-project Gantt. ⚠️ It reads NO activity rows — every bar comes from the roll-up
+     columns already on the project row — so it cannot reproduce the timeout the S-Curve fan-out
+     above exists to fix. */
+  eq(probe.PortfolioDash.has('schedule'), true, tag + 'the layer holds "schedule"');
+  eq(probe.PortfolioDash.titleOf('schedule'), 'Project Schedule', tag + 'and it is named');
 
   /* ================================================================ the S-Curve fan-out
      ⚠️⚠️ THE LIVE FAILURE THIS REPLACED: `schedule_scurve_agg_multi(21 ids)` returned 57014 on
