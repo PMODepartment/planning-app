@@ -142,81 +142,29 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-att-add .pd-select { height:32px; }
 .cc-att-st { font-size:12px; color:var(--pd-muted); }
 
-/* ---- The register's own dashboard — its own tab since 2026-09-16, a Contract-tab band before
-   that (see the long comment above ccDashHTML() in module.js for the reversal and why it had
-   been unreachable in between). ⚠ The "With the client" section below still uses the module's own
-   `.cc-kpis` / `.cc-kpi` tiles; the three type blocks moved off tiles onto `.cc-dashtbl`
-   (owner: "the dashboard tiles look very ugly") — see the comment above ccTypeGroupHTML(). */
+/* ---- The register's own dashboard — one table, nothing else (2026-09-16). See the long comment
+   above ccDashHTML() in module.js for the history: a Contract-tab band, unreachable for 11 days,
+   reconnected as its own tab, tiles replaced by this table, Contract/CO/Claims/EOT all merged into
+   it. The package %-breakdown (`.cc-dash-bar`/`.cc-dash-pks`/`.cc-dash-pk`), the "With the client"
+   KPIs and the aging-bar rules (`.cc-ages`/`.cc-age-l`/`.cc-age-bar`/`.cc-age-v`/`.cc-age-warn`/
+   `.cc-age-bad`/`.cc-age-unsent`) that used to live here are DELETED, not left orphaned — their
+   only caller (`ccTimeHTML`) is deleted too. ⚠ The BARE `.cc-age`/`.cc-age.warn`/`.cc-age.bad`
+   rule near the top of this file is untouched — that one styles the per-row aging figure in the
+   ordinary record tables (module.js, pmi.js) and has nothing to do with this dashboard. */
 .cc-dash { margin-bottom: 14px; }
 .cc-dash-h { display:flex; align-items:baseline; gap:8px; margin:14px 0 6px;
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
   color:var(--pd-muted); }
 .cc-dash > .cc-dash-h:first-child { margin-top:0; }
-/* The per-block "View …" jump (dashGotoBtn/wireDashGoto, module.js). ⚠ margin-left:auto pins it
-   to the row's trailing edge regardless of how long the label + record count run — a block with
-   0 records has a short heading and the button must not drift inward to meet it. Plain text
-   styling, not `.pd-btn`: this sits inside an uppercase label row, not a toolbar. */
-.cc-dash-goto { margin-left:auto; border:0; background:none; padding:0; cursor:pointer;
-  font: inherit; text-transform:none; letter-spacing:normal; font-weight:600;
-  color:var(--pd-red); white-space:nowrap; }
-.cc-dash-goto:hover { text-decoration:underline; }
-/* Inline variant (dashGotoBtn's 2nd arg) — a group row's label cell isn't flex, so the base
-   rule's `margin-left:auto` has nothing to push against; this one just trails the label text. */
-.cc-dash-goto-inline { margin-left:8px; font-size:var(--pd-fs-xs); font-weight:600;
-  text-transform:none; letter-spacing:normal; }
-/* ---- The per-type table (ccTypeGroupHTML, module.js) — a `.pd-table` with one group row
-   (`.cc-dashgrp`, reusing the shared `.pd-grp` bold-row treatment) and its records collapsed under
-   it (`.pd-collapsed`, the same shared class every other collapsible table in this app uses). ---- */
+/* ---- The one table (ccTypeRows/ccDashHTML, module.js) — a `.pd-table` with a group row per
+   type (`.cc-dashgrp`, reusing the shared `.pd-grp` bold-row treatment) and its records under it,
+   open by default and collapsible via `.pd-collapsed` (the same shared class every other
+   collapsible table in this app uses). ---- */
 .cc-dashtbl { margin: 0 0 14px; }
 .cc-dashgrp { cursor: pointer; }
 .cc-dashcaret { display:inline-block; width:10px; font-size:10px; color:var(--pd-muted); }
 .cc-dashrow > td { font-size: var(--pd-fs-sm); }
 .cc-dashrow .cc-desc-txt { font-weight: 500; -webkit-line-clamp: 1; }
-/* How much of the contract value the packages account for. */
-.cc-dash-bar { height:6px; border-radius:99px; background:var(--pd-line); overflow:hidden; margin-bottom:8px; }
-.cc-dash-bar > i { display:block; height:100%; background:var(--pd-red); }
-.cc-dash-pks { list-style:none; margin:0 0 4px; padding:0; }
-.cc-dash-pk { display:flex; align-items:baseline; justify-content:space-between; gap:12px;
-  padding:7px 0; border-bottom:1px solid var(--pd-line); font-size:13px; }
-.cc-dash-pk:last-child { border-bottom:0; }
-
-/* ---- Aging bars (ccTimeHTML) -------------------------------------------------
-   ⚠ Same idiom as .cc-dash-pk above rather than a new one: a label, a measure and
-     a figure on one row. The bar is scaled to the LARGEST bucket, not the total —
-     scaled to the total, a healthy register draws three invisible slivers.
-   ⚠ Tones are tokens, never literals: --pd-warn-* / --pd-bad-* are the paired
-     light/dark surfaces, so this reads correctly in both themes without an
-     html.pd-dark override. And the TEXT tone is *-text, never --pd-warn itself,
-     which measures 3.46:1 and is a surface colour. */
-.cc-ages { list-style:none; margin:0 0 4px; padding:0; }
-.cc-age { display:flex; align-items:center; gap:10px; padding:5px 0;
-  border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
-.cc-age:last-child { border-bottom:0; }
-.cc-age-l { flex:0 0 108px; color:var(--pd-muted); }
-.cc-age-bar { flex:1 1 auto; height:8px; min-width:40px; border-radius:99px;
-  background:var(--pd-line); overflow:hidden; }
-.cc-age-bar > i { display:block; height:100%; background:var(--pd-red); }
-.cc-age-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--pd-ink); }
-.cc-age-warn .cc-age-bar > i { background:var(--pd-warn); }
-.cc-age-warn .cc-age-v { color:var(--pd-warn-text); }
-.cc-age-bad  .cc-age-bar > i { background:var(--pd-bad); }
-.cc-age-bad  .cc-age-v { color:var(--pd-bad-text); }
-/* Nothing is drawn for "not submitted" — it has no age, so a bar would imply one. */
-.cc-age-unsent .cc-age-bar { background:transparent; }
-.cc-age-unsent .cc-age-l, .cc-age-unsent .cc-age-v { color:var(--pd-muted); font-style:italic; }
-
-@media (max-width:700px) {
-  /* A 108px label beside a bar beside a figure does not fit a phone; the figure
-     takes its own line rather than squeezing the bar to nothing. */
-  .cc-age { flex-wrap:wrap; }
-  .cc-age-l { flex:1 1 auto; }
-  .cc-age-bar { flex:1 1 100%; order:3; }
-}
-.cc-dash-pk > span { min-width:0; }
-.cc-dash-pk > span > i { display:block; font-style:normal; font-size:11px; color:var(--pd-muted); }
-.cc-dash-pk > b { flex:none; font-variant-numeric:tabular-nums; }
-/* The unallocated remainder is a real figure, not an error — warn, not bad. */
-.cc-dash-rest > b { color:var(--pd-warn-text); }
 
 /* ---- KPI strip ---------------------------------------------------------- */
 .cc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }

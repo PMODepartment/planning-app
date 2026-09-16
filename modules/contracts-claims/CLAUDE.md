@@ -1,5 +1,72 @@
 # Module: contracts-claims
 
+## 2026-09-16 (d) — The dashboard becomes just the one table: EOT merged in, the goto buttons removed, everything opens by default
+
+Owner, on the merged table shipped in (c): *"option 2 is nicer. but leave only the main table in
+the dashboard. include already EOT In the table. no need for the view buttons."*
+
+### Three reversals of (b)/(c), all in the same direction — one screen, one table
+
+- **EOT joins the same table as a fourth group**, reversing (c)'s deliberate separation. That
+  separation existed to satisfy `assets/js/claims.js`'s own rule — *"money and days are never
+  mixed"* — and the rule still holds: `ccTypeRows` never sums or compares ACROSS groups, only
+  within one group's own list, so a peso group and a day group sitting in the same `<table>` never
+  have their figures added together. What the owner asked for is one table on screen, not one
+  arithmetic; the four group totals stay independently correct, and the "Disputed" column reads
+  `Nd` for EOT the same way `ccDashHTML`'s `days()` formatter already renders everywhere else in
+  the app that shows day counts beside money.
+- **The package `%`-breakdown block and the "With the client" pending/aging section
+  (`ccTimeHTML`) are deleted, not hidden.** Both answered real questions (how the contract splits
+  by package; how long a submission has been sitting with the client) but neither is "the main
+  table" the owner asked to keep — and a function nothing calls is the exact dead-code shape this
+  module was reconnected from in (a). `ccTimeHTML`, its aging-bucket rendering and its call site are
+  removed outright, along with the closing hint paragraph that used to sit under it.
+- **The inline "View contract/change orders →" jump links are gone.** `dashGotoBtn` and
+  `wireDashGoto` — added in (c) specifically so the merged table's Contract row could still jump to
+  the Contract tab — are deleted along with their only caller. The Dashboard tab is now a read
+  surface with nothing that switches tabs from inside it.
+
+### ⚠️⚠️ Groups now open by default, and that reading was a guess I made explicit before building it
+
+The owner's "option 2 is nicer" referred to the second of two mockups I'd sent — the EXPANDED
+screenshot, never actually clicked open in the harness that produced it (both mockups were static
+renders, not the live toggle behaviour). Read as: the table's natural resting state should show
+every record, not a collapsed row per type. `ccTypeRows` no longer starts detail rows with
+`pd-collapsed`; the group row starts with `.open` and the caret (`▾`) rather than the closed glyph
+(`▸`). Collapsing is still available — `wireDashGroups` is unchanged, toggling `pd-collapsed` and
+the caret exactly as before — only the DEFAULT state flipped. ⚠️ If this reading is wrong, the fix
+is one word (drop `.open` from the group row's class and restore the initial `pd-collapsed` on the
+detail rows) rather than a redesign.
+
+### ⚠️ A CSS collision found and fixed as a side effect of deleting `ccTimeHTML`'s block
+
+`.cc-age` was declared TWICE in `module.css`: once as the simple `font-weight:700` / `.warn` /
+`.bad` text modifier the ordinary record tables' per-row Aging column has always used (module.js,
+pmi.js), and again — inside the now-deleted `ccTimeHTML`-only block — as a `display:flex` layout
+rule with its own `.cc-age-l`/`.cc-age-bar`/`.cc-age-v`/`.cc-age-warn`/`.cc-age-bad`/
+`.cc-age-unsent` family and a phone override block. Both applied cumulatively to any element
+carrying the class. Deleting the second definition (and its whole family, and the phone block that
+existed only for it) removes the collision; the original simple rule at the top of the file —
+confirmed still present and unchanged — is the only `.cc-age` left, and it is still exactly what
+the record tables' Aging column needs.
+
+### Verified
+
+`node --check` clean; `module.css` braces balanced (619/619, down from 648 — the deleted
+`.cc-dash-goto`/`.cc-dash-bar`/`.cc-dash-pks`/`.cc-dash-pk`/`.cc-dash-rest` and the whole
+`ccTimeHTML`-only `.cc-age*` family accounted for the drop, confirmed by grepping for each removed
+selector before and after). Same real-Chromium harness as (a)/(b)/(c), git-ignored and deleted
+before this commit, with the same 7-record fixture (1 Contract, 2 Change Orders, 2 Claims, 2 EOT):
+**1 table** (down from 2), **0 goto buttons**, **1 `.cc-dash` block** (the package-breakdown and
+aging sections gone), **7 of 7 detail rows visible with no click** (all four groups open by
+default), **0 leftover KPI tiles**. Checked in both themes — the dark-mode render resolves every
+status colour (Pending/Approved/Disapproved) and every group-row tint through the same tokens as
+before, nothing hardcoded.
+⚠️ Not verified signed in — fixture data through `_internals`, not a live project.
+
+`module.css` / `module.js` → `?v=20260916i`. No `MODULE_V` bump — the tab list is unchanged this
+round, only the Dashboard tab's own content.
+
 ## 2026-09-16 (c) — Contract, Change Orders and Cost Claims share one table
 
 Owner: *"combine contracts, change orders, and coat claims in 1 table."*
