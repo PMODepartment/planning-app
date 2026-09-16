@@ -96,12 +96,12 @@ function dispatchSandbox(viewName) {
   };
 }
 
-/* ⚠️ THREE VIEWS, AND THE LIST IS THE POINT. Ten of the thirteen moved to the modules they
-   describe (2026-09-15 and 2026-09-16); what a name left in here would buy is a green run
-   over a loader this page no longer has. */
-const VIEW_LOADER = {
-  overview: 'loadOverview', milestones: 'loadMilestones', stakeholders: 'loadStakeholders'
-};
+/* ⚠️⚠️ ONE VIEW, AND THE LIST IS THE POINT. All twelve of the others moved to the
+   modules they describe (2026-09-15, then 2026-09-16 twice); what a name left in here would buy
+   is a green run over a loader this page no longer has. Owner on the last two: *"Stakeholder map
+   is here why? This is just a duplicate from the stakeholder map module that can already be
+   navigated in the side panel. Let's just remove the milestones tab as well."* */
+const VIEW_LOADER = { overview: 'loadOverview' };
 
 Object.keys(VIEW_LOADER).forEach(function (v) {
   const s = dispatchSandbox(v);
@@ -131,12 +131,12 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
 /* ⚠️ THE DEBOUNCE. Forcing on every tick would mean five fetches for five checkboxes; the
    Overview still repaints on each one, so the page never feels stalled. */
 {
-  const s = dispatchSandbox('stakeholders');
+  const s = dispatchSandbox('overview');
   s.api.renderCurrent(); s.api.renderCurrent(); s.api.renderCurrent();
   eq(s.calls.filter(function (c) { return c[0] === 'renderAll'; }).length, 3,
      'three ticks repaint the Overview three times');
   s.flush();
-  eq(s.calls.filter(function (c) { return c[0] === 'loadStakeholders'; }).length, 1,
+  eq(s.calls.filter(function (c) { return c[0] === 'loadOverview'; }).length, 1,
      'three ticks produce ONE view load, not three');
 }
 
@@ -149,13 +149,13 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
   const keys = Object.keys(new Function(sliceFn(JS, 'viewLoaders') +
     '\nreturn viewLoaders.toString();')().match(/\{[\s\S]*\}/)[0]
     .split('\n').join(' ').match(/(\w+):/g).reduce(function (a, k) { a[k.slice(0, -1)] = 1; return a; }, {}));
-  eq(keys.length, 3, 'viewLoaders names the two lazy views this page still hosts, plus Overview');
+  eq(keys.length, 1, 'viewLoaders names the one view this page still hosts');
   /* ⚠️⚠️ AND NOT THE SIX THAT MOVED. Owner 2026-09-15: the dropdown was a second home for six
      modules, and their dashboards now live in the modules themselves
      (assets/js/portfolio-dash.js). A loader left behind here would be a second copy of a
      renderer that is no longer on this page — the drift the move exists to end. */
   ['risk', 'issues', 'meetings', 'contracts', 'photos', 'productivity',
-   'scurve', 'cashflow', 'resources', 'equipment'].forEach(function (k) {
+   'scurve', 'cashflow', 'resources', 'equipment', 'milestones', 'stakeholders'].forEach(function (k) {
     ok(keys.indexOf(k) < 0, 'viewLoaders no longer names "' + k + '" — it moved to its module');
   });
   /* ⚠️⚠️ AND NEITHER DOES THE FILE. A loader can be dropped from the list and left in the
@@ -165,13 +165,25 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
   ['loadScurve', 'scRenderChart', 'scComputeFromAgg', 'fetchScheduleForIds', 'scErrText',
    'loadCashflow', 'cfRenderChart', 'cfMonthlySeries',
    'loadResources', 'rsRenderTable',
-   'loadEquipment', 'eqBuild', 'eqRenderGrid', 'eqExport'].forEach(function (fn) {
+   'loadEquipment', 'eqBuild', 'eqRenderGrid', 'eqExport',
+   /* ⚠️⚠️ AND THE LAST TWO VIEWS, 2026-09-16. These are the ones that were NOT merely
+      unreferenced before -- 1,016 lines of milestone calendar and stakeholder directory/matrix
+      came out with them. A renderer left in the source is one the next reader takes for the live
+      one, which is the whole reason this list exists. */
+   'loadMilestones', 'renderMilestones', 'msVisible', 'msStateOf', 'msKpi', 'wireMilestones',
+   'loadStakeholders', 'shRender', 'shVisible',
+   'dirRender', 'dirRenderUniverse', 'dirRenderHealth', 'openDirAdd', 'dirCard'].forEach(function (fn) {
     eq((JS.match(new RegExp('\\b' + fn + '\\b', 'g')) || []).length, 0,
        fn + ' does not occur in this page at all any more');
   });
   /* ⚠️ A deep link to one of them must still resolve, to the module that owns it now. */
   const MOVED = new Function('return ' + /var PO_MOVED_VIEWS = (\{[\s\S]*?\});/.exec(JS)[1])();
-  eq(Object.keys(MOVED).length, 10, 'all ten moved views still resolve from an old #po_view= link');
+  eq(Object.keys(MOVED).length, 12, 'all twelve moved views still resolve from an old #po_view= link');
+  /* ⚠️⚠️ THE TWO REMOVED ON 2026-09-16 REDIRECT RATHER THAN 404. `#po_view=` links to
+     both have been in the sidebar, in bookmarks and in messages for months. */
+  eq(MOVED.stakeholders, 'stakeholder-map', 'the Stakeholder Map deep link lands on that module');
+  eq(MOVED.milestones, 'project-schedule',
+     'and Milestones lands on Project Schedule, whose portfolio view is the same dates as a Gantt');
   eq(MOVED.risk, 'risk-register', 'and they name the module that hosts them');
   eq(MOVED.scurve, 's-curve', 'the S-Curve deep link lands on the S-Curve module');
   eq(MOVED.cashflow, 'cash-flow', 'the Cash Flow deep link lands on the Cash Flow module');
@@ -183,11 +195,20 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
     ok(fs.existsSync(path.join(__dirname, '..', MOVED[k], 'index.html')),
        'the module ' + MOVED[k] + ' that "' + k + '" redirects to exists on disk');
   });
-  /* ⚠️ And the three that stayed are NOT in the table, or the page would redirect to itself. */
-  ['overview', 'milestones', 'stakeholders'].forEach(function (k) {
-    ok(!MOVED[k], '"' + k + '" stays on this page and is not redirected');
-  });
+  /* ⚠️ And the ONE that stayed is not in the table, or the page would redirect to itself. */
+  ok(!MOVED.overview, '"overview" stays on this page and is not redirected');
   ok(/location\.replace\(/.test(sw), 'switchView redirects rather than pushing a dead tab onto Back');
+  /* ⚠️⚠️ AND THE DROPDOWN ITSELF IS GONE. Owner: *"remove the dropdown selector. Having
+     the 'Overview' itself is already a duplicate of the Portfolio Dashboard name."* A dropdown
+     over one entry names the page you are already standing on. */
+  /* ⚠️ `html`, not `JS` — these are MARKUP facts, and `JS` is only the inline <script>.
+     Asserted against the extracted script they would all have passed for the wrong reason
+     (nothing in a <script> says `class="po-tabs"`), which is a green light over an unrun test. */
+  eq((html.match(/class="po-tabs/g) || []).length, 0, 'the .po-tabs strip is not in the markup');
+  eq((html.match(/tabsToDropdown\(/g) || []).length, 0, 'and nothing tries to convert it');
+  eq((html.match(/id="po-view-milestones"/g) || []).length, 0, 'the Milestones pane is gone');
+  eq((html.match(/id="po-view-stakeholders"/g) || []).length, 0, 'the Stakeholder Map pane is gone');
+  ok(/id="po-view-overview"/.test(html), 'and the Overview is still here');
 }
 
 /* -- the contrast: on the pinned base the same gesture reaches NO loader ---- */
@@ -236,10 +257,10 @@ function report() {
   ok(UI && typeof UI.kpi === 'function', 'kpi: the real UI.kpi loaded');
 
   const kpiFns = new Function('UI', 'esc',
-    sliceFn(JS, 'kpi2') + '\n' + sliceFn(JS, 'msKpi') +
+    sliceFn(JS, 'kpi2') +
     '\nvar KPI_VARIANT = { "--pd-ok": "pd-kpi-ok", "--pd-warn": "pd-kpi-warn", "--pd-bad": "pd-kpi-bad" };' +
     '\nvar MS_VARIANT = { good: "pd-kpi-ok", warn: "pd-kpi-warn", bad: "pd-kpi-bad" };' +
-    '\nreturn { kpi2: kpi2, msKpi: msKpi };')(UI, s => String(s));
+    '\nreturn { kpi2: kpi2 };')(UI, s => String(s));
 
   const plain = kpiFns.kpi2('Planned to date', '42%');
   ok(/class="pd-kpi"/.test(plain), 'kpi2 emits the SHARED card');
@@ -259,16 +280,16 @@ function report() {
   const odd = kpiFns.kpi2('x', '1', '--po-ms-info');
   ok(/var\(--po-ms-info\)/.test(odd), 'kpi2 falls back to an inline colour for an unknown token');
 
-  const ms = kpiFns.msKpi('Overdue', '3', 'across 4 projects', 'bad');
-  ok(/class="pd-kpi pd-kpi-bad"/.test(ms), 'msKpi maps its own good/warn/bad vocabulary');
-  ok(/pd-kpi-sub/.test(ms), 'msKpi keeps its sub-line');
-  ok(!/pd-kpi-sub/.test(kpiFns.msKpi('x', '1', '', '')),
-     'msKpi emits no empty sub-line when there is nothing to say');
+  /* ⚠️ `msKpi` was the Milestone calendar's own KPI vocabulary and went with that view
+     (2026-09-16). Its assertions are not rewritten against `kpi2` -- that would be a new test
+     wearing an old one's name; the "does not occur in this page at all" list above is what now
+     covers it. */
 
   /* B6: one funnel for thirteen views, and every panel it names must exist. */
   const FP = JSON.parse(JSON.stringify(
     new Function('return ' + /var FILTER_PANEL = (\{[\s\S]*?\});/.exec(CODE)[1])()));
-  eq(Object.keys(FP).length, 2, 'filter: two views declare a panel — equipment took its own with it');
+  eq(Object.keys(FP).length, 1,
+     'filter: one view declares a panel — the Stakeholder Map took its own with it (2026-09-16)');
   ok(!FP.equipment, 'filter: the Equipment panel left with the Equipment view');
   Object.keys(FP).forEach(k =>
     ok(new RegExp('id="' + FP[k] + '"').test(html), 'filter: panel ' + FP[k] + ' exists in the markup'));

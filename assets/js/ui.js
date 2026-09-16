@@ -956,6 +956,23 @@
       // no separate icon row left to be "alone" — see `.pd-h1-hasdrop`.
       var h1 = titleTxt.closest('h1');
       if (h1) h1.classList.add('pd-h1-hasdrop');
+      /* ⚠⚠ AN ICON-CARRYING TRIGGER MAKES THE WHOLE <h1> REDUNDANT, NOT JUST ITS TEXT — AND
+         THIS IS THE "DUPLICATED LOGO" THE OWNER REPORTED ON ISSUES & CONCERNS (2026-09-16).
+         `.pd-title-hasdrop` hides the title TEXT above 700px, on the reasoning that the trigger
+         already names the screen. True — but when the caller also passes `opts.icon` the trigger
+         names the screen AND carries the module's mark, so what is left of the <h1> is a second
+         copy of that same mark sitting beside it: two clipboards, then "Issues & Concerns ▾".
+         Issues had been papering over this in its own JS (switchScreen() sets the <h1> to
+         `display:none` on every screen), which is why it only ever showed where switchScreen does
+         not run — the portfolio view, and the moment before auth resolves on a normal load.
+         ⚠ Hiding the WHOLE element is the safe shape, and deliberately so: hiding the text alone
+         is what once left "an icon alone on a line" with the trigger's label on the next, a defect
+         this repo fixed once and its own comments forbid bringing back. With the element gone
+         there is no orphan row to leave behind, at any width.
+         ⚠ Only two callers pass an icon today (Issues & Concerns, Progress Photos) and Progress
+         Photos has no <h1> at all — so this is one module's duplicate mark, removed at the cause
+         rather than worked around a third time. */
+      if (h1 && opts && opts.icon) h1.classList.add('pd-h1-hasdropico');
     }
 
     var wrap = document.createElement('div');

@@ -1,5 +1,21 @@
 # Manpower Loading — module change log
 
+## 2026-09-16 — The table adopts the approved projects.html treatment — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+Owner: *"We already have an approved UI of tables seen in projects.html. Let's follow that
+universally."* `.mp-table` declared its own width, type scale, header treatment, cell
+padding and hover — a whole private table design, a few pixels from the approved one. Eight tables
+adopt `pd-table pd-proj-table`; the duplicate declarations are deleted. The `.mp-grp` group heading
+is the approved `.pd-ghchip` (tinted, red left border) instead of a bold uppercase cell.
+
+⚠️ The look now comes from `.pd-table .pd-proj-table` in dashboard.css, claimed **by name in the
+markup**, rather than being restated here. Do NOT re-add width / font-size / padding / border /
+hover rules for this table: this stylesheet loads after dashboard.css, so at equal specificity they
+win and silently restore the second design.
+
 ## Fix: the phone tab strip overlapped itself — `display:inline-flex` defeated the shared wrap rule (2026-09-02)
 
 Found via a headless audit pass (mocked-Supabase Playwright harness rendering the real, unmodified

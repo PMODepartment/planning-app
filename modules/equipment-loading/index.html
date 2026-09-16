@@ -159,12 +159,18 @@
       text-align:center; border:1px solid var(--pd-red); border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-ink); }
 
     /* ---- Register ----------------------------------------------------------------------- */
-    .eq-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
-    .eq-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:var(--pd-fs-xs); font-weight:700;
-      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    /* ⚠⚠ THE APPROVED TABLE IS projects.html's, AND THIS IS NOT A SECOND COPY OF IT.
+       Owner 2026-09-16: *"We already have an approved UI of tables seen in projects.html. Let's
+       follow that universally"*, then *"include the manpower loading and equipment loading
+       modules in the check as well."* This block used to declare its own width, type scale,
+       header treatment, cell padding and hover — values a few pixels off the approved ones, which
+       is exactly what made the app's tables read as several different designs.
+       ⚠️ The table now carries `pd-table pd-proj-table` IN ITS MARKUP and takes all of that from
+       dashboard.css. What is left here is only what is particular to THIS table.
+       ⚠️ Do NOT re-add width / font-size / padding / border / hover rules. This stylesheet loads
+       after dashboard.css, so at equal specificity they would win and silently restore the second
+       design. */
     .eq-table th.num, .eq-table td.num { text-align:right; }
-    .eq-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
-    .eq-table tr:hover td { background:var(--pd-bg); }
     .eq-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); }
     .eq-badge.eq-rent { background:var(--pd-red-light); color:var(--pd-red); }
     .eq-actions { display:flex; gap:5px; }
@@ -474,7 +480,7 @@
       <!-- REGISTER -->
       <div id="eq-view-register" style="display:none;">
         <div class="eq-card" style="padding:0;overflow:auto;">
-          <table class="eq-table" id="eq-reg"></table>
+          <table class="pd-table pd-proj-table eq-table" id="eq-reg"></table>
         </div>
       </div>
 

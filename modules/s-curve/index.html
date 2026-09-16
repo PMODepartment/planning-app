@@ -702,6 +702,16 @@
     // and another monthly, and a global preference would open the second at the wrong grain.
     try { var _pv = localStorage.getItem('sc_period_' + pid); period = (_pv === 'quarter' || _pv === 'year') ? _pv : 'month'; } catch (e) { period = 'month'; }
     try { view = localStorage.getItem(viewKey()) === 'manual' ? 'manual' : 'curve'; } catch (e) { view = 'curve'; }
+    /* ⚠⚠ `?scView=manual` — FROM THE PORTFOLIO REGISTER (2026-09-16). The portfolio S-Curve's
+       Manual data tab lists which projects carry a hand-entered curve and opens one here, on the
+       tab that can actually edit it. Read AFTER the remembered view above so an explicit link
+       wins over what this planner last had open, and WRITTEN BACK to the same per-project key so
+       the choice sticks the way pressing the tab would — a deep link that un-remembers itself on
+       the next visit would be a third kind of state beside the two this module already keeps. */
+    try {
+      var _dl = new URLSearchParams(location.search).get('scView');
+      if (_dl === 'manual' || _dl === 'curve') { view = _dl; localStorage.setItem(viewKey(), view); }
+    } catch (e) { /* no URLSearchParams / no storage — the remembered view above still stands */ }
     // ⚠️ Reset with the project — a breakdown open on the previous project's Q3 is meaningless here.
     bdOpen = null; _costCo = null; _costCoKey = ''; _trSeries = null; _trSeriesKey = '';
     MAN = null; manMissing = false; manDirty = {};

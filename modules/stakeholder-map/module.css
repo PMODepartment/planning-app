@@ -293,28 +293,20 @@ html.pd-dark .sm-fsec { color:#FF8A80; }
    '.pd-table.sm-table' / '.sm-table td' so they outrank it — dropping the
    '.pd-table' qualifier silently restores side-scrolling.
    ---------------------------------------------------------------------------- */
+/* ⚠⚠ THE CARD CONVERSION IS GONE, AND THE RULING IS NOT NEW. Below 900px this table used to
+   stop being a table — `thead` hidden, every row a stacked card, every cell relabelled from its
+   `data-l`. The owner rejected exactly that shape for Issues & Concerns on 2026-09-11: *"in
+   mobile view, the table turns into tiles. maintain table view even in mobile view and just
+   allow scroll"*, and that module's own CSS records the block being removed for it. This is the
+   same decision applied to the other two tables that still did it, as part of *"make sure we have
+   a consistent UI for all tables"* (2026-09-16).
+   ⚠️ So the shared `.pd-table` phone rule — a nowrap horizontal scroller — is what applies now,
+   and the overrides below were written `.pd-table.sm-table` / `.sm-table td` PRECISELY to outrank it.
+   Removing them is what lets it through; do not reinstate them.
+   ⚠️ What is KEPT below is only what is still true of a table row on a small screen: the
+   filters stacking, and the form/photo layout in this module's own modal — neither of which has
+   anything to do with turning rows into cards. */
 @media (max-width: 900px) {
-  .pd-table.sm-table { display:block; min-width:0; overflow-x:visible; white-space:normal; background:none; }
-  .sm-table thead { display:none; }
-  .sm-table tbody { display:block; }
-  .sm-table tr { display:block; margin-bottom:10px; padding:12px;
-    background:var(--pd-card); border:1px solid var(--pd-line);
-    border-radius:var(--pd-radius); box-shadow:var(--pd-shadow); }
-  .sm-table tr:hover td { background:none; }
-  .sm-table td { display:block; border:0; padding:3px 0; white-space:normal; font-size:var(--pd-fs-base); max-width:none; }
-  .sm-table td[data-l]::before { content:attr(data-l) ": "; color:var(--pd-muted); font-weight:700; font-size:var(--pd-fs-sm); }
-  .sm-table td .sm-sub { white-space:normal; max-width:none; }
-  /* A stacked card has the room the table row did not — show the whole plan. */
-  .sm-clamp { -webkit-line-clamp:none; display:block; }
-  /* The person is the card headline — no inline label, and no avatar shrink. */
-  .sm-table td.sm-c-name { font-size:var(--pd-fs-md); padding-bottom:8px; }
-  .sm-table td.sm-c-name::before { content:none; }
-  .sm-table td.sm-rowacts { display:flex; gap:8px; margin-top:8px; white-space:normal !important; }
-  .sm-table td.sm-rowacts .pd-btn { flex:0 1 auto; justify-content:center; }
-  .sm-table td.sm-rowacts .pd-btn:only-child { flex:1 1 auto; }
-  /* An activity group header is a full-width band, not a stacked card. */
-  .sm-table tr.sm-grow { display:block; padding:0; margin:14px 0 8px; border:0; box-shadow:none; background:none; }
-  .sm-table tr.sm-grow > td { display:block; border-radius:var(--pd-radius); }
   .sm-filters { flex-wrap:wrap; gap:8px; }
   .sm-filters > * { flex:1 1 100%; min-width:0; }
   .sm-frow > .pd-field { flex:1 1 100% !important; }

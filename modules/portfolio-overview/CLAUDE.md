@@ -1,5 +1,23 @@
 # Module: portfolio-overview
 
+## 2026-09-16 — The page IS the Overview: the last two duplicate views and the dropdown are gone — fmlozano
+
+See the root `CLAUDE.md` (2026-09-16 (v)) for the full entry.
+
+- **Stakeholder Map** and **Milestones** joined `PO_MOVED_VIEWS` — they redirect to
+  `stakeholder-map` and `project-schedule`, both already in the sidebar. ⚠️ The read-only argument
+  this file recorded against moving the Stakeholder Map was about MOUNTING it under
+  `#pd_scope=portfolio`, not about redirecting to the module, which opens in its own scope.
+- **`.po-tabs` is gone again**, one day after being reinstated. That reinstatement was reasonable
+  for three views and is not for one.
+- **1,016 lines of renderer deleted** (`ms*`, `dir*`, `sh*` and the person panel). The page is
+  1,303 lines, from 2,407.
+- `viewLoaders()` → `{ overview }`; `FILTER_PANEL` → `{ overview }`; `switchView` keeps only its
+  role as the **deep-link resolver** `#po_view=` arrives through.
+- `test-portfolio.js` updated to match and grew to **128 assertions** — including that each removed
+  renderer no longer occurs in the file at all. ⚠️ Do not name those functions in a comment here:
+  the check counts occurrences in the source, so a comment naming them keeps it red.
+
 ## 2026-09-16 (f) — The last four views leave, and what is left is not a module list
 
 Owner, after the first wave: *"at a portfolio view, the dashboards of each corresponding module

@@ -1,5 +1,24 @@
 # Module: minutes-of-meeting
 
+## 2026-09-16 — A portfolio row opens its meeting, through this module's own history key — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+- A row in the cross-project action-item table links to
+  `#mom_view={"t":"meetings","v":"detail","m":<mom_id>}`. ⚠⚠ **That is not a new deep-link
+  protocol** — it is the hash `UI.bindHistoryState({ key: 'mom_view' })` already writes and restores
+  ("a link landing straight on this page with our key already in the hash restores that view"), so
+  the meeting opens through this module's OWN `apply()`. Inventing a `?meeting=` parameter would have
+  given the app two ways to open a meeting, one of which this module does not know about.
+- ⚠️ Safe against the boot order, checked rather than assumed: `momReset()` — the only thing that
+  clears `_momSel` — is called on a project switch and on Refresh, never in the normal boot path, and
+  `render()` guards on `!_momLoaded` with "Loading minutes…" instead of resetting the view. So the
+  restored `_momSel` survives the `load()` that follows and the meeting paints when the rows land.
+- ⚠️ The MEETING opens, not the action item: there is no single-item screen here — an action item
+  is a row inside its meeting's detail view, which is where a planner reads and answers it.
+- The portfolio group heading counts **action items**, not a bare number.
+
 ## 2026-09-15 (b) — "Minutes by meeting" fits its card instead of scrolling, and the List/Calendar tab loses its whitespace
 
 Owner, two phone screenshots. (1) The Meetings Dashboard's "Minutes by Meeting" tile: *"reduce the

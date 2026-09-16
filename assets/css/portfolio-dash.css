@@ -11,6 +11,59 @@
    links it and behaves exactly as it did; a module links it and gets the styling the view was
    designed in rather than an approximation of it.
    ============================================================================================ */
+    /* ⚠⚠ WHAT A MOUNTED DASHBOARD HIDES. `PortfolioDash.takeOver()` used to set the `hidden`
+       ATTRIBUTE on the module's own chrome, which does nothing the moment that chrome has an
+       author `display` rule — and `.pd-modulebar`, `.ps-toolbar` and `.po-toolbar` all do. See
+       the long note at takeOver() in portfolio-dash.js for the full shape of the bug.
+       ⚠ `!important` because a module may legitimately use `display:none !important` of its own
+       (`body.ps-reporting .pd-modulebar`), and an ordinary class would lose to a module that
+       plays the same card to SHOW something. */
+    .po-taken-over { display:none !important; }
+    /* ⚠⚠ AND THE SAME THING SAID ABOUT THE PAGE, WHICH IS WHAT ACTUALLY HOLDS. `.pd-modulebar`
+       is CREATED by `UI.initModuleTopbar()` on DOMContentLoaded, and `takeOver()` runs from an
+       auth callback that races it — so on a cached session the class above is applied to an element
+       that does not exist yet, and the bar appears a moment later untouched, ABOVE the dashboard's
+       own bar. That is the duplicated title bar. Hung on the body, the rule is already in force
+       whenever the bar is finally built.
+       ⚠️ `:not(.po-dash-bar)` is load-bearing: the dashboard's OWN bar is deliberately a
+       `.pd-modulebar` too (it wants the shell's height, border and ≤700px stacking), so without
+       this it would hide itself and the page would have no heading at all.
+       ⚠️ The `.pd-main` rule is the same guarantee for the module's content: a module that renders
+       into `.pd-main` after this point cannot put itself back on screen underneath the dashboard. */
+    body.po-dash-page .pd-modulebar:not(.po-dash-bar) { display:none !important; }
+    body.po-dash-page .pd-main > :not(#po-dash-host) { display:none !important; }
+
+    /* ---- the portfolio module bar (buildBar in portfolio-dash.js) ---------------------------
+       ⚠️ The element carries `.pd-modulebar` TOO, so the height, border, background and the
+       ≤700px stacking rule all come from dashboard.css — this only adds what is particular to a
+       portfolio bar. Do not restate any of those here. */
+    .po-dash-bar .po-bar-ico { display:inline-flex; align-items:center; color:var(--pd-red); }
+    /* "Portfolio" as a quiet chip beside the module name, answering the question the hidden
+       module bar used to answer implicitly: which scope am I reading this in? ⚠️ Muted, not red:
+       red in this app means "act on this", and this is a statement of fact. */
+    .po-bar-scope {
+      font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+      color:var(--pd-muted); background:var(--pd-bg); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); padding:2px 8px; white-space:nowrap;
+    }
+    .po-bar-tabs { display:flex; align-items:center; gap:6px; flex:0 1 auto; min-width:0; }
+    .po-bar-tabs:empty { display:none; }
+    /* ⚠️ `margin-left:auto` is what pushes the tools to the right edge. It is on the TOOLS, not
+       a spacer element, so that when the bar wraps below 700px the tools start their own row at
+       the left instead of hanging off a spacer that is no longer beside anything. */
+    .po-bar-tools { display:flex; align-items:center; gap:8px; margin-left:auto; flex:0 0 auto; }
+    /* The view tabs inside the bar — the same segmented control the modules use for a two-screen
+       switch, so Curve | Manual data reads identically here and in the project-level S-Curve. */
+    .po-bar-tab {
+      border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
+      padding:5px 12px; border-radius:var(--pd-radius); cursor:pointer;
+      font-size:var(--pd-fs-sm); font-weight:700; white-space:nowrap;
+    }
+    .po-bar-tab:hover { background:var(--pd-red-light); color:var(--pd-ink); }
+    .po-bar-tab.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    @media (max-width: 700px) {
+      .po-bar-tools { margin-left:0; flex:1 1 100%; }
+    }
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
     /* Filters (incl. each tab's search box) collapse behind one funnel toggle
@@ -119,14 +172,50 @@
     .po-look-proj { flex:0 0 auto; color:var(--pd-muted); font-size:var(--pd-fs-sm); }
     .po-look-more { padding-top:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     /* ---- Phase E: the cross-project Gantt (Project Schedule, portfolio scope) ---- */
-    .po-sh-axis { position:relative; height:18px; margin-left:230px; border-bottom:1px solid var(--pd-line); }
+    /* ==== THE PORTFOLIO GANTT ==================================================================
+       ⚠️⚠️ THE LABEL COLUMN'S WIDTH LIVES HERE, ONCE. It used to be written twice — a 230px
+       `margin-left` on the axis and a 220px `flex-basis` on the row label (+10px gap) — two
+       numbers that had to agree for the ticks to sit over the bars they date, and which nothing
+       but the eye ever checked. One custom property now feeds the axis, the grid layer and the
+       label, so they cannot drift apart.
+       ⚠️ `--po-sh-lab` is the label column ALONE; the gap is added where it is needed, so the
+       one place that has to know about the gap is this block. */
+    .po-sh-chart { --po-sh-lab:220px; --po-sh-gap:10px; }
+    /* At a fine grain over a long portfolio the plot is allowed to be WIDER than the pane and to
+       scroll, rather than squeezing a hundred labels into it.
+       ⚠️ THE WIDTH ITSELF IS SET INLINE, by shRender, as `max(100%, <ticks × per-tick>px)` — it
+       depends on how many ticks the chosen grain produced, which is not something a stylesheet
+       can know. A fixed `min-width` here was tried and measured: 96 monthly labels in the
+       resulting width overlapped their neighbour 95 times. */
+    .po-sh-scroll { overflow-x:auto; }
+    .po-sh-inner { position:relative; min-width:100%; }
+    .po-sh-axis { position:relative; height:18px; margin-left:calc(var(--po-sh-lab) + var(--po-sh-gap)); border-bottom:1px solid var(--pd-line); }
+    /* ⚠⚠ THE GRID AND "TODAY" ARE ONE LAYER OVER THE WHOLE PLOT, not a stub per row. `.po-sh-now`
+       used to be emitted inside every 18px `.po-sh-track` and once inside the 18px axis, so today
+       was a broken stack of dashes with a gap at every row gutter and group heading rather than a
+       line you could read a bar against. This box is absolutely positioned over the rows and
+       inset by the same label column, so each line runs the full height in one piece.
+       ⚠️ `pointer-events:none` — it sits ON TOP of the rows, and without it the whole plot area
+       would swallow every hover and click the rows below it are entitled to. */
+    .po-sh-plot { position:absolute; left:calc(var(--po-sh-lab) + var(--po-sh-gap)); right:0; top:18px; bottom:0;
+      pointer-events:none; }
+    .po-sh-grid { position:relative; width:100%; height:100%; }
+    .po-sh-gl { position:absolute; top:0; bottom:0; width:0; border-left:1px solid var(--pd-line); opacity:.55; }
     .po-sh-tick { position:absolute; top:0; transform:translateX(-50%); font-size:var(--pd-fs-xs);
       color:var(--pd-muted); white-space:nowrap; }
     .po-sh-body { margin-top:6px; }
-    .po-sh-grp { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em;
+    /* ⚠️ The SAME `.pd-ghchip` + `.pd-ghcount` heading the grouped portfolio TABLES use (see
+       groupHeadRow), so a group reads identically whether you are looking at it in a table or on
+       the gantt. Its own uppercase/letter-spacing below is therefore inert on the chip — kept
+       only for the bare-text form nothing emits any more. */
+    .po-sh-grp { display:flex; align-items:center; gap:8px;
+      font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em;
       font-weight:700; color:var(--pd-muted); margin:12px 0 4px; }
-    .po-sh-row { display:flex; align-items:center; gap:10px; padding:5px 0; }
-    .po-sh-lab { flex:0 0 220px; min-width:0; font-size:var(--pd-fs-base);
+    .po-sh-row { display:flex; align-items:center; gap:var(--po-sh-gap, 10px); padding:5px 0; }
+    /* Row banding — eighteen unbanded rows of thin bars is where the eye loses which label goes
+       with which bar. ⚠️ On the ROW, not on the track, so the tint runs under the label too. */
+    .po-sh-row.alt { background:var(--pd-bg); }
+    .po-sh-lab { flex:0 0 var(--po-sh-lab, 220px); min-width:0; font-size:var(--pd-fs-base);
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .po-sh-track { position:relative; flex:1 1 auto; height:18px; min-width:0; }
     /* the contract window is the GROUND the programme is measured against, so it reads as a
@@ -138,7 +227,10 @@
     .po-sh-over { position:absolute; top:3px; height:12px; background:var(--pd-bad-text);
       opacity:.75; border-radius:0 3px 3px 0; }
     .po-sh-fc { position:absolute; top:1px; width:2px; height:16px; background:var(--pd-warn-text); }
-    .po-sh-now { position:absolute; top:0; bottom:0; width:0; border-left:1px dashed var(--pd-red); }
+    /* ⚠️ 2px and full-opacity red: this is the single most-read line on the chart (everything
+       here is *"measured against today, not a data date"*), and at 1px dashed over a banded
+       background it was the faintest thing on it. */
+    .po-sh-now { position:absolute; top:0; bottom:0; width:0; border-left:2px dashed var(--pd-red); }
     /* grouped portfolio table */
     .po-sechead { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
     .po-sechead h3 { margin:0; }
@@ -151,15 +243,49 @@
     .po-warn { color:var(--pd-warn-text); font-weight:700; }
     .po-ok   { color:var(--pd-ok-text); }
     .po-dash { color:var(--pd-muted); }
-    .po-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
-    .po-table th { position:sticky; top:0; background:var(--pd-bg); text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase;
-      letter-spacing:.04em; color:var(--pd-muted); padding:9px 12px; border-bottom:2px solid var(--pd-line); white-space:nowrap; cursor:pointer; }
-    .po-table th.num { text-align:right; }
-    .po-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
-    .po-table td.num { text-align:right; }
-    .po-grp td { background:var(--pd-bg); font-weight:700; border-top:2px solid var(--pd-line); cursor:pointer; }
+    /* ⚠️⚠️ THE APPROVED TABLE IS projects.html's, AND THIS IS NOT A SECOND COPY OF IT.
+       Owner 2026-09-16, off five screenshots side by side: *"There are different table formats
+       seen throughout the modules. We already have an approved UI of tables seen in projects.html.
+       Let's follow that universally."* `.po-table` used to declare its own width / type scale /
+       header treatment / cell padding — a whole second table design, three tokens away from the
+       approved one and drifting further every time either was touched.
+       ⚠️ So every portfolio table now carries `pd-table pd-proj-table` IN ITS MARKUP and gets the
+       approved look from dashboard.css itself — the SAME rules projects.html is drawn with, not a
+       restatement of them here. What is left below is only what `.po-table` genuinely ADDS and the
+       approved base does not have, so there is nothing to keep in sync.
+       ⚠️ Do NOT re-add width / font-size / padding / border rules here. They would win on file
+       order (portfolio-dash.css loads after dashboard.css at equal specificity) and silently
+       restore the second design this removes. */
+    /* ⚠⚠ AND THERE IS NO STICKY HEADER, DELIBERATELY — MEASURED, NOT ASSUMED. `.po-table th`
+       carried `position:sticky; top:0` for as long as it has existed, and it never once stuck:
+       every one of these tables sits in a `<div style="overflow-x:auto">`, and a box with
+       `overflow-x:auto` has its used `overflow-y` computed to `auto` as well, which makes it the
+       sticky ancestor. That box is only ever as tall as its content, so it never scrolls, so the
+       header has nothing to stick within — rendered at 1440×900 with 80 rows and the page scrolled
+       1200px, the `<th>` sat at y = -902. A rule that has been inert since it was written.
+       ⚠️ It is REMOVED rather than repaired, because repairing it would break the thing the owner
+       actually asked for: projects.html — the approved table — has no sticky header, and making
+       these eleven the only tables in the app that pin their header would be a new inconsistency
+       introduced by the change meant to end them. (Doing it properly also costs a nested
+       scrollbar: the wrapper would need its own `max-height`, so a long table would scroll inside
+       a page that is also scrolling.)
+       ⚠️ `cursor:pointer` on EVERY header goes too. Only a few of these tables sort, and this
+       repo's own rule (see groupHeadRow in portfolio-dash.js) is that a pointer over something
+       that does not respond is a lie. `.pd-table th.pd-sort` already carries the pointer for the
+       headers that really do sort. */
+    /* The group header row. ⚠️ Its LOOK is `.pd-group-row` + `.pd-ghchip` + `.pd-ghcount` from
+       dashboard.css — the tinted chip with the red left border that projects.html groups by, and
+       the muted count beside it. `.po-grp` adds only the one thing projects.html's groups cannot
+       do: COLLAPSE. ⚠️ Not a second header design; re-read the `.po-table` note above before
+       adding any colour, weight or padding here. */
+    .po-grp td { cursor:pointer; user-select:none; }
     .po-grp .po-grp-name { display:flex; align-items:center; gap:7px; }
     .po-grp .po-caret { width:12px; display:inline-block; color:var(--pd-muted); }
+    /* ⚠️ The chip is the group's NAME, so it must not shrink to nothing beside a long one; the
+       count is secondary and may. Without this the flex row above squeezed the chip's own padding
+       away at narrow widths and the red border landed on the first letter. */
+    .po-grp .pd-ghchip { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .po-grp .pd-ghcount { flex:0 0 auto; }
     .po-proj-name { display:flex; align-items:center; gap:8px; }
     .po-proj-name .ic { color:var(--pd-red); display:inline-flex; }
     .po-row { cursor:pointer; }
@@ -578,7 +704,12 @@
         .po-svg { min-width: 520px; }
         .po-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
         /* a 220px label column on a 390px screen leaves the bar no room at all */
+        /* ⚠️ Below 700px the label takes its own full-width line (see `.po-sh-lab` just below),
+           so there is no label COLUMN left for the axis or the grid layer to clear. Both are
+           re-zeroed together — leaving the grid inset while the axis was not is how the ticks and
+           the gridlines they belong to ended up a column apart. */
         .po-sh-axis { margin-left: 0; }
+        .po-sh-plot { left: 0; }
         .po-sh-row { flex-wrap: wrap; gap: 2px; }
         .po-sh-lab { flex: 1 1 100%; white-space: normal; }
         .po-sh-track { flex: 1 1 100%; }

@@ -1838,6 +1838,14 @@ body { overflow-x: clip; }
 @media (min-width: 701px) {
   .pd-modulebar > h1 .pd-title-hasdrop { display: none; }
 }
+/* ⚠⚠ AT EVERY WIDTH, and that is the difference from the rule above. `UI.tabsToDropdown()`
+   adds `.pd-h1-hasdropico` only when its caller passed `opts.icon`, i.e. when the dropdown
+   trigger carries the module's mark itself — at which point the <h1> beside it is a duplicate
+   ICON as well as duplicate text, and there is nothing left in it worth a row at any size.
+   ⚠ The whole element, never the text alone: a text-only hide is what leaves a bare icon
+   stranded on its own line (see the long note above, and issues-lessons/module.css's "REMOVED"
+   block). Nothing is stranded by removing the element. */
+.pd-modulebar > h1.pd-h1-hasdropico { display: none; }
 .pd-modulebar > [class$="-tabs"] {
   display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
 }

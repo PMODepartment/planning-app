@@ -543,8 +543,17 @@ window.IssuesLessons = (function () {
       await load();
       try {
         var dl = new URLSearchParams(location.search);
+        /* ⚠⚠ FROM THE PORTFOLIO TABLE (2026-09-16). Owner: *"I want to be able to open those
+           specific meetings/items from the table as well from the portfolio view, not just a
+           viewing page."* A row in the cross-project register now links here with the issue's id;
+           portfolio-dash.js has already cleared portfolio scope and remembered the project, so by
+           the time this runs we are a NORMAL project-scoped load with `load()` awaited above —
+           which is what `openIssue()` needs, since it renders the detail drill-down immediately.
+           ⚠ FIRST, before the lesson links: an explicit "open THIS issue" is the most specific
+           thing the URL can ask for, and these are mutually exclusive branches. */
+        if (dl.get('openIssue')) openIssue(dl.get('openIssue'));
         // From Minutes of Meeting's "N lessons" / "Lesson captured" button.
-        if (dl.get('openLesson')) openLesson(dl.get('openLesson'));
+        else if (dl.get('openLesson')) openLesson(dl.get('openLesson'));
         // ⚠️ From Minutes of Meeting's "Capture lesson" button (owner item 8,
         // 2026-09-02: "when capturing lessons, it should go to the ordinary Add
         // Lessons Learned page. no linking needed"). It opens the SAME form the
