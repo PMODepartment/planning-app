@@ -103,6 +103,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (z4) — The console's 400 is a dead refresh token, and it is supposed to be there
+
+Owner: *"chase down the 400 error"* — the one error left in the Progress Photos console after the
+`wirePanoDrag()` hotfix and the Pannellum bump. **No code changed. This entry exists so nobody
+chases it a second time.**
+
+```
+POST <SUPABASE_URL>/auth/v1/token?grant_type=refresh_token  ->  400
+{"code":"validation_failed","message":"Refresh token is not valid"}
+```
+
+`AppAuth.requireLogin()` (`assets/js/auth.js:180`) opens every page with `getSession()`.
+supabase-js v2 silently attempts a token refresh there when the stored session has expired; if the
+stored refresh token is dead the endpoint answers 400, the client reports no session, and the app
+redirects to Sign in. That is the whole event — a stale token being detected and rejected, exactly
+as designed.
+
+### It fires once per dead session, not once per page load
+
+The distinction is the entire diagnosis, and the console buffer hands it over for free because it
+accumulates across reloads:
+
+| console line | occurrences |
+|---|---|
+| `loadSchedule(AVR101): 4321 non-summary activities loaded…` — one per module load | **5** |
+| `Failed to load resource: … status of 400` | **1** |
+
+Five loads after signing in, zero recurrences. The single 400 lines up with the only unauthenticated
+load of the session — the first navigation, which landed on the Sign in page.
+
+Reproduced deliberately to confirm the mechanism: a throwaway client
+(`persistSession:false`, `autoRefreshToken:false`, its own `storageKey`) called `refreshSession()`
+with a junk token and produced the same endpoint, the same 400, the same body — and the console error
+count went 1 → 2 with a **byte-identical** message. The real session was verified still valid
+immediately after, and again after cleanup.
+
+### ⚠️⚠️ Two tools that will tell you nothing, and do it convincingly
+
+Both of these report *success*, not failure, which is why this looked unfindable:
+
+- **Resource Timing gives `responseStatus: 0` for cross-origin entries** with no
+  `Timing-Allow-Origin` header. 77 resources, **zero** failures reported — the Supabase call is in
+  there, wearing a status that means "not allowed to tell you", not "fine".
+- **The network panel only records same-origin requests.** 200 entries, every one
+  `pmodepartment.github.io`, not a single `supabase.co` row. An empty filter result read as "no such
+  request", when it meant "this panel never sees that origin".
+
+Patching `fetch` late does not save you either: an interceptor armed at 929ms caught nothing, because
+the auth bootstrap is the **first** thing the page does. Either patch before the document's own
+scripts, or reproduce the call by hand against a throwaway client — the second is easier and cannot
+touch the live session.
+
+### Verdict: nothing to fix
+
+Correct, self-healing behaviour, and not suppressible in any case — Chrome logs
+`Failed to load resource` for any non-2xx at the network layer, before app code ever sees the
+response. Catching it inside `requireLogin()` would change nothing in the console.
+
+⚠️ The reason it is worth writing down: a benign 400 sitting in the console is indistinguishable at a
+glance from a real failure, and this repo has already lost time to exactly that shape of thing — see
+(z1), where a stale `?v=` token would have made a correct fix look inert.
+
 ### 2026-09-16 (z3) — The Portfolio Dashboard's failing reads: one phantom column and two statements the database cancelled
 
 Owner, off the live page: the Open Issues column was a row of **`?`**, Behind plan read
