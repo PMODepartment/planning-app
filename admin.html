@@ -17,6 +17,54 @@
     .pd-status-pending { color:var(--pd-warn-text); font-weight:700; }
     .pd-status-approved { color:var(--pd-ok-text); font-weight:700; }
     .pd-status-rejected { color:var(--pd-bad-text); font-weight:700; }
+
+    /* ⚠️⚠️ dashboard.css's own `.pd-app .pd-main table .pd-select { height:34px;
+       min-height:0 }` (≤700px) exists so a SELECT inside a dense editable grid
+       (the BOQ table, a cost matrix) stays as compact as the row it lives in —
+       correct there, because those rows are themselves ~34px. This table's rows
+       are ordinary `.pd-table` rows (8/10px padding) and these two selects carry
+       whole words ("super_admin", "Human Resources") at the 16px the iOS-zoom
+       guard forces on every mobile input — 34px is not enough box for that
+       font-size's own line height plus the select's 10px vertical padding, and
+       the clipped/overlapping glyphs are what read as garbled on a phone.
+       `#users-table` (an id) beats `.pd-app .pd-main table` (three classes/
+       elements) on specificity regardless of rule order, so no !important
+       is needed to win back the room. */
+    @media (max-width: 700px) {
+      #users-table .pd-select { height:auto; min-height:var(--pd-tap); min-width:150px; }
+    }
+
+    /* Actions menu — a single "Actions" trigger replacing three loose buttons,
+       with Approve/Reject/Delete as icon-only controls inside it (title=
+       carries the label, matching this app's icon-only-button convention).
+       ⚠️⚠️ Appended to <body> and positioned `fixed` from the trigger's own
+       rect, rather than nested `absolute` inside the table cell — the table's
+       card wrapper is `overflow:auto` (so a wide table scrolls), and a popover
+       nested inside it would be clipped by that same scroller the moment a row
+       near the bottom opened one. ⚠️ Toggled by a CLASS, never `[hidden]` —
+       dashboard.css already documents at length how `[hidden]` loses a
+       specificity tie against an author's own `display` rule on other
+       components in this app; a class sidesteps that whole trap rather than
+       risking it a third time. */
+    .pd-actions-menu {
+      display:none; position:fixed; z-index:var(--pd-z-escape);
+      background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg);
+      padding:4px; gap:2px;
+    }
+    .pd-actions-menu.open { display:flex; }
+    .pd-am-btn {
+      border:none; background:transparent; cursor:pointer; color:var(--pd-ink);
+      width:var(--pd-tap); height:var(--pd-tap); border-radius:var(--pd-radius);
+      display:inline-flex; align-items:center; justify-content:center;
+    }
+    .pd-am-btn:hover { background:var(--pd-bg); }
+    .pd-am-btn.pd-am-approve:hover { background:var(--pd-ok-bg); color:var(--pd-ok-text); }
+    .pd-am-btn.pd-am-reject:hover  { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
+    .pd-am-btn.pd-am-danger { color:var(--pd-bad-text); }
+    .pd-am-btn.pd-am-danger:hover { background:var(--pd-bad-bg); }
+    /* .pd-actions-trigger needs no rules of its own — .pd-btn already gives it
+       inline-flex + gap, which is all "Actions <chevron>" needs. */
   </style>
 </head>
 <body>
@@ -165,11 +213,20 @@
       // (and its client mirror `AppAuth.canAccessProject`) grant them EVERY project
       // regardless of what is checked here — verified against both, not assumed. So an
       // admin with an empty array read as "no project access", which is backwards; they
-      // had all of it. "Access" now states what the role actually grants, and only
+      // had all of it. What each role actually grants is stated here, and only
       // planner/user/viewer — the roles the array genuinely restricts — still show the
       // literal assignment.
+      // ⚠️ Projects and Modules are now their OWN columns rather than one combined
+      // "Access" cell — a project answers "which projects", a module answers "which
+      // screens", and squeezing both into one cell is what made the Projects button
+      // read as belonging to neither. The Projects button now sits INSIDE the
+      // Projects cell, beside the thing it assigns. There is no equivalent button
+      // for Modules: module visibility is a property of the ROLE (config.js's
+      // `superAdminOnly`), not a per-user assignment — there is nothing in the
+      // schema to open a picker onto, so the column states the fact and offers
+      // no control, rather than a button that would write nowhere.
       var restrictedNames = RESTRICTED_MODULES.map(function (m) { return m.name; }).join(', ');
-      t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Access</th><th>Actions</th></tr></thead><tbody>' +
+      t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Modules</th><th>Actions</th></tr></thead><tbody>' +
         users.map(function (u) {
           var canSuper = ME.role === 'super_admin';
           var roleOpts = AppAuth.ROLES
@@ -181,15 +238,25 @@
           var projCell = isFullAccess
             ? '<span class="pd-chip" '+okChip+' title="Role-based — every project is reachable no matter what is checked in Assign projects.">All projects</span>'
             : ((u.projects||[]).map(function(p){ return '<span class="pd-chip">'+Fmt.esc(p)+'</span>'; }).join('') || '<span style="color:var(--pd-muted);">No projects assigned</span>');
+          // Assigning projects to a role that already sees every one of them is a
+          // control that changes nothing — it re-appears the moment the role is
+          // dropped to planner/user/viewer, where the assignment is real again.
+          var projBtn = !isFullAccess ? '<button class="pd-btn pd-btn-sm" data-projects="'+u.id+'">Projects</button>' : '';
           // The 6 (today) modules config.js marks `superAdminOnly` are invisible to
           // EVERY other role, admin included — this is the "super_admin sees all
           // modules" guarantee, made visible rather than left implicit in code.
-          var moduleCell = '';
-          if (RESTRICTED_MODULES.length) {
-            moduleCell = isSuper
-              ? ' <span class="pd-chip" '+okChip+' title="'+Fmt.esc(restrictedNames)+'">+ all modules</span>'
-              : ' <span class="pd-chip" title="'+Fmt.esc(restrictedNames)+' — visible to super_admin only">'+RESTRICTED_MODULES.length+' module'+(RESTRICTED_MODULES.length===1?'':'s')+' hidden</span>';
-          }
+          var moduleCell = RESTRICTED_MODULES.length
+            ? (isSuper
+                ? '<span class="pd-chip" '+okChip+' title="'+Fmt.esc(restrictedNames)+'">+ all modules</span>'
+                : '<span class="pd-chip" title="'+Fmt.esc(restrictedNames)+' — visible to super_admin only">'+RESTRICTED_MODULES.length+' module'+(RESTRICTED_MODULES.length===1?'':'s')+' hidden</span>')
+            : '<span style="color:var(--pd-muted);">—</span>';
+          // ⚠️⚠️ Approve/Reject/Delete collapse into one "Actions" menu with icon-only
+          // controls (title= carries the label) rather than three loose buttons —
+          // `data-approve`/`data-reject`/`data-del` are unchanged, so the wiring
+          // below needs no change, only where the attribute is printed. A row with
+          // none of the three applicable (impossible today — Approve or Reject
+          // always applies) renders no trigger at all rather than a dead button.
+          var hasMenu = (u.status!=='approved') || (u.status!=='rejected') || (u.id!==ME.id);
           return '<tr>' +
             '<td>'+Fmt.esc(u.name)+'</td>' +
             '<td>'+Fmt.esc(u.email)+'</td>' +
@@ -201,25 +268,77 @@
               DEPARTMENTS.map(function(d){ return '<option'+(u.department===d?' selected':'')+'>'+d+'</option>'; }).join('') +
             '</select></td>' +
             '<td class="pd-status-'+u.status+'">'+u.status+'</td>' +
-            '<td>'+projCell+moduleCell+'</td>' +
-            '<td style="white-space:nowrap;">' +
-              (u.status!=='approved' ? '<button class="pd-btn pd-btn-primary" data-approve="'+u.id+'">Approve</button> ' : '') +
-              (u.status!=='rejected' ? '<button class="pd-btn" data-reject="'+u.id+'">Reject</button> ' : '') +
-              // Assigning projects to a role that already sees every one of them is a
-              // control that changes nothing — it re-appears the moment the role is
-              // dropped to planner/user/viewer, where the assignment is real again.
-              (!isFullAccess ? '<button class="pd-btn" data-projects="'+u.id+'">Projects</button>' : '') +
-              (u.id!==ME.id ? ' <button class="pd-btn pd-btn-danger" data-del="'+u.id+'">Delete</button>' : '') +
+            '<td><div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">'+projCell+projBtn+'</div></td>' +
+            '<td>'+moduleCell+'</td>' +
+            '<td>' + (hasMenu
+              ? '<button type="button" class="pd-btn pd-btn-sm pd-actions-trigger" data-actions-trigger="'+u.id+'">Actions '+(window.Icons?Icons.svg('chevronDown',13):'▾')+'</button>'
+              : '<span style="color:var(--pd-muted);">—</span>') +
             '</td>' +
           '</tr>';
         }).join('') + '</tbody>';
 
       t.querySelectorAll('[data-role]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.role, { role: s.value }); }; });
       t.querySelectorAll('[data-dept]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.dept, { department: s.value || null }); }; });
-      t.querySelectorAll('[data-approve]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.approve, { status:'approved' }); }; });
-      t.querySelectorAll('[data-reject]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.reject, { status:'rejected' }); }; });
       t.querySelectorAll('[data-projects]').forEach(function(b){ b.onclick = function(){ assignProjects(users.find(function(x){return x.id===b.dataset.projects;})); }; });
-      t.querySelectorAll('[data-del]').forEach(function(b){ b.onclick = function(){ deleteUser(users.find(function(x){return x.id===b.dataset.del;})); }; });
+      wireActionsMenus(t, users);
+    }
+
+    // Closes every open actions-menu popover. Page-scope and wired to
+    // document ONCE (below, outside loadUsers) rather than re-bound on every
+    // render — a listener re-added on each approve/reject/delete would stack
+    // a fresh, never-removed copy per call and accumulate for the life of the
+    // session, each one a no-op past its own render but still walking the DOM
+    // on every click.
+    function closeActionMenus() { document.querySelectorAll('.pd-actions-menu.open').forEach(function (m) { m.classList.remove('open'); }); }
+    document.addEventListener('click', closeActionMenus);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeActionMenus(); });
+
+    // ⚠️⚠️ The menus are appended to <body>, not nested in the table cell — see
+    // the CSS comment on .pd-actions-menu for why. That means they OUTLIVE a
+    // table rebuild unless removed by hand first: loadUsers() re-renders on
+    // every approve/reject/delete/role/department change, and each call would
+    // otherwise leave the previous render's menus behind, accumulating in the
+    // DOM (and, since they're keyed by user id, silently reusing stale ids).
+    function wireActionsMenus(t, users) {
+      document.querySelectorAll('.pd-actions-menu').forEach(function (m) { m.remove(); });
+      t.querySelectorAll('[data-actions-trigger]').forEach(function (trig) {
+        var id = trig.dataset.actionsTrigger;
+        var u = users.find(function (x) { return x.id === id; });
+        if (!u) return;
+        var items = [];
+        if (u.status !== 'approved') items.push({ act:'approve', ico:'check',  label:'Approve', cls:'pd-am-approve' });
+        if (u.status !== 'rejected') items.push({ act:'reject',  ico:'x',      label:'Reject',  cls:'pd-am-reject'  });
+        if (u.id !== ME.id)          items.push({ act:'del',     ico:'trash',  label:'Delete',  cls:'pd-am-danger'  });
+        if (!items.length) return;
+        var menu = document.createElement('div');
+        menu.className = 'pd-actions-menu';
+        menu.innerHTML = items.map(function (it) {
+          return '<button type="button" class="pd-am-btn '+it.cls+'" title="'+it.label+'" data-am-act="'+it.act+'">'+(window.Icons?Icons.svg(it.ico,16):it.label)+'</button>';
+        }).join('');
+        document.body.appendChild(menu);
+        trig.onclick = function (e) {
+          e.stopPropagation();
+          var willOpen = !menu.classList.contains('open');
+          closeActionMenus();
+          if (willOpen) {
+            var r = trig.getBoundingClientRect();
+            menu.style.top = (r.bottom + 4) + 'px';
+            menu.style.right = (window.innerWidth - r.right) + 'px';
+            menu.style.left = 'auto';
+            menu.classList.add('open');
+          }
+        };
+        menu.querySelectorAll('[data-am-act]').forEach(function (b) {
+          b.onclick = function (e) {
+            e.stopPropagation();
+            closeActionMenus();
+            var act = b.dataset.amAct;
+            if (act === 'approve') setUser(u.id, { status:'approved' });
+            else if (act === 'reject') setUser(u.id, { status:'rejected' });
+            else if (act === 'del') deleteUser(u);
+          };
+        });
+      });
     }
 
     function deleteUser(u) {
