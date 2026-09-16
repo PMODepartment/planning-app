@@ -1,5 +1,19 @@
 # Module: minutes-of-meeting
 
+## 2026-09-16 (later) — The icon-dropdown this module wrote is now the app's — fmlozano
+
+See the root `CLAUDE.md` (2026-09-16 (c7)).
+
+- `iconMenuHTML` / `wireIconMenu` / `closeIconMenus` **moved into `ui.js`**; this module's copies
+  are one-line forwarders. ⚠️ The local NAMES are kept on purpose — eight call sites use them.
+- `.il-icondd*` moved to `.pd-iconmenu*` in dashboard.css, **with its `:not([hidden])` note**,
+  which is the load-bearing part: a plain `display:flex` on the menu class is (0,1,0), the same
+  as the UA's `[hidden]{display:none}`, and the menu renders OPEN on load. That shipped once.
+- ⚠️ The static export trigger in `index.html` moved to the shared classes too — `wireIconMenu`
+  looks for `.pd-iconmenu-btn`, so a leftover `.il-icondd-btn` would simply never be wired.
+- ⚠️ One live query had to follow: `querySelector('#il-mom-exportsel .il-icondd-btn')`, the
+  busy-state lookup in the export handler.
+
 ## 2026-09-16 — A portfolio row opens its meeting, through this module's own history key — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the

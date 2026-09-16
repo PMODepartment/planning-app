@@ -199,4 +199,36 @@ for (const d of dirs) {
   console.log('  ' + (good ? 'ok  ' : 'BAD ') + d.padEnd(20) + render(seq));
 }
 console.log('\ntoolbar-order: ' + seen + ' module bar(s), ' + bad + ' out of order');
-if (bad) process.exit(1);
+
+/* ==== THE EXPORT CONTROL, ONE IDIOM ==========================================================
+   Owner 2026-09-16: *"I've noticed across multiple modules there are different UI's for export.
+   Let's make this consistent."* There were four: a bespoke dropdown in Issues & Concerns, a
+   generic one in Minutes of Meeting, a plain button in seven modules, and a File menu in Project
+   Schedule.
+   ⚠️ CONSISTENT DOES NOT MEAN "EVERYTHING GETS A MENU". A module with one export format keeps a
+   plain button — a one-entry dropdown is a control that cannot do anything. What has to match is
+   the TRIGGER: the same download icon, the same 34px square, the same slot in the bar. Where there
+   IS a choice, it opens the SHARED `UI.iconMenuHTML` dropdown rather than a private one.
+   ⚠️⚠️ SO THE CHECK IS FOR A PRIVATE COPY, not for a menu. A module that grows its own
+   `.x-export-menu` is the drift this pass removed, and it is invisible in a diff of that module. */
+let exBad = 0;
+const PRIVATE_MENU = /\.[a-z]{2,3}-(?:export-menu|exportwrap|icondd)\b/;
+for (const d of dirs) {
+  for (const f of ['index.html', 'module.css']) {
+    const fp = path.join(ROOT, 'modules', d, f);
+    if (!fs.existsSync(fp)) continue;
+    const src = fs.readFileSync(fp, 'utf8');
+    /* Strip comments first — this pass left notes in several modules explaining what was
+       removed, and a note naming the old class is not a private copy of it. */
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '');
+    const m = PRIVATE_MENU.exec(code);
+    if (m) { exBad++; console.log('  BAD ' + d.padEnd(20) + 'private export menu: ' + m[0] + ' (' + f + ')'); }
+  }
+}
+/* And the shared control must still be exported by ui.js, or the two modules that use it break. */
+const uiSrc = fs.readFileSync(path.join(ROOT, 'assets', 'js', 'ui.js'), 'utf8');
+['iconMenuHTML', 'wireIconMenu', 'closeIconMenus'].forEach(function (fn) {
+  if (uiSrc.indexOf(fn + ': ' + fn) < 0) { exBad++; console.log('  BAD ui.js does not export ' + fn); }
+});
+console.log('export-ui:     ' + exBad + ' private export control(s)');
+if (bad || exBad) process.exit(1);

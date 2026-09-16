@@ -2168,6 +2168,31 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
   height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap;
 }
 
+/* ---- Icon-only dropdown (UI.iconMenuHTML) -------------------------------------------------
+   ⚠️⚠️ MOVED from minutes-of-meeting/module.css together with its JS. The
+   `:not([hidden])` below is LOAD-BEARING and was paid for once already: `wireIconMenu` toggles
+   the `hidden` ATTRIBUTE, and a plain `.pd-iconmenu-menu { display:flex }` is (0,1,0) — exactly
+   the user agent's own `[hidden]{display:none}` — so an author rule of equal specificity wins and
+   the menu renders OPEN by default. That shipped once, as "the export dropdown is open when the
+   page loads". Do not drop the `:not([hidden])`. */
+.pd-iconmenu { position: relative; display: inline-flex; }
+.pd-iconmenu[hidden] { display: none; }
+.pd-iconmenu-btn { display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0; }
+.pd-iconmenu-menu:not([hidden]) {
+  position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; min-width: 150px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: var(--pd-shadow-lg);
+}
+.pd-iconmenu-item {
+  border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 6px;
+  font-size: var(--pd-fs-base); color: var(--pd-ink); cursor: pointer;
+}
+.pd-iconmenu-item:hover { background: var(--pd-bg); color: var(--pd-red); }
+/* The trigger reads as pressed while its menu is open, like every other toggle in the bar. */
+.pd-modulebar .pd-iconmenu-btn.is-active { background: var(--pd-bg); border-color: var(--pd-line); }
+
 .pd-filttoggle {
   position: relative; height: 34px; width: 34px; padding: 0; flex: none;
   display: inline-flex; align-items: center; justify-content: center;

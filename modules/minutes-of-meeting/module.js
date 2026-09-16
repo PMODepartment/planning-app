@@ -647,38 +647,23 @@ window.MinutesOfMeeting = (function () {
   // list view and the detail view each render one, never both at once, so one
   // id per call site is enough; `wireIconMenu` re-binds on every repaint.
   // ==========================================================================
+  /* ⚠️⚠️ THESE THREE MOVED INTO `ui.js` AND THIS IS NOW A FORWARDER. Owner 2026-09-16:
+     *"I've noticed across multiple modules there are different UI's for export. Let's make this
+     consistent."* This module's version was already the good one — generic over id/icon/title/
+     options, with a wire step and a global close — while Issues & Concerns carried a SECOND,
+     bespoke implementation of the same control. Two implementations of one control is how two of
+     them drift, so the better one was promoted rather than either being re-derived.
+     ⚠️ The LOCAL NAMES ARE KEPT deliberately: eight call sites in this file use them, and
+     rewriting all eight to `UI.` would be churn that buys nothing and risks missing one. What
+     changed is where the behaviour lives, not what this module calls it.
+     ⚠️ The classes the shared version emits are `pd-iconmenu*`, so this module's static
+     export trigger in index.html was moved onto them too — `wireIconMenu` looks for
+     `.pd-iconmenu-btn`, and a leftover `.il-icondd-btn` would simply never be wired. */
   function iconMenuHTML(id, icon, title, options, extraBtnCls) {
-    return '<div class="il-icondd" id="' + id + '">' +
-      '<button type="button" class="pd-btn pd-btn-sm il-icondd-btn' + (extraBtnCls ? ' ' + extraBtnCls : '') +
-        '" title="' + Fmt.esc(title) + '" aria-label="' + Fmt.esc(title) + '">' +
-        '<span data-ico="' + icon + '" data-ico-size="16"></span></button>' +
-      '<div class="il-icondd-menu" hidden>' +
-        options.map(function (o) {
-          return '<button type="button" class="il-icondd-item" data-val="' + Fmt.esc(o.value) + '">' + Fmt.esc(o.label) + '</button>';
-        }).join('') +
-      '</div></div>';
+    return UI.iconMenuHTML(id, icon, title, options, extraBtnCls);
   }
-  // Every open menu closes before a new one opens, and a global (capture-phase,
-  // wired once in wire()) click listener closes whatever is left open on any
-  // click outside it — the same pattern the dashboard's own `.il-mom-msel`
-  // picker would need if it ever grew a second instance on screen at once.
-  function closeIconMenus(root) {
-    (root || document).querySelectorAll('.il-icondd-menu').forEach(function (m) { m.hidden = true; });
-  }
-  function wireIconMenu(root, id, onPick) {
-    var wrap = root.querySelector('#' + id); if (!wrap) return;
-    var btn = wrap.querySelector('.il-icondd-btn'), menu = wrap.querySelector('.il-icondd-menu');
-    if (!btn || !menu) return;
-    btn.onclick = function (e) {
-      e.stopPropagation();
-      var was = !menu.hidden;
-      closeIconMenus(root);
-      menu.hidden = was;
-    };
-    wrap.querySelectorAll('.il-icondd-item').forEach(function (b) {
-      b.onclick = function (e) { e.stopPropagation(); menu.hidden = true; onPick(b.dataset.val); };
-    });
-  }
+  function closeIconMenus(root) { return UI.closeIconMenus(root); }
+  function wireIconMenu(root, id, onPick) { return UI.wireIconMenu(root, id, onPick); }
 
   // ⚠️ ONE field renderer, in reporting mode a field renders as TEXT rather than a
   // control — a single-line <input> CLIPS its own value. Newlines survive as <br>
@@ -5498,7 +5483,7 @@ window.MinutesOfMeeting = (function () {
       return;
     }
     var btn = document.getElementById('il-mom-exportsel')
-      ? document.querySelector('#il-mom-exportsel .il-icondd-btn') : null;
+      ? document.querySelector('#il-mom-exportsel .pd-iconmenu-btn') : null;
     setBusy(btn, true);
     try {
       var items = momItemsOf(mom.id);

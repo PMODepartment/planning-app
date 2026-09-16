@@ -103,6 +103,71 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (c7) — One export control: the better of two implementations promoted, the bespoke one deleted
+
+Owner: *"I've noticed across multiple modules there are different UI's for export. Let's make this
+consistent."* There were **four idioms**: a bespoke dropdown in Issues & Concerns, a generic one in
+Minutes of Meeting, a plain button in seven modules, and a File menu in Project Schedule.
+
+### ⚠️ CONSISTENT DOES NOT MEAN "EVERYTHING GETS A MENU"
+
+A module with **one** export format keeps a plain button — a one-entry dropdown is a control that
+cannot do anything. What has to match is the **trigger**: the same download icon, the same 34px
+square, the same slot in the bar, which the module-bar pass already gave it. Where there IS a
+choice, it opens the **shared** dropdown instead of a private one. So the split is now 2 modules
+with a menu, 7 with a button, and **one implementation behind both**.
+
+### ⚠️⚠️ MOVED, NOT RE-DERIVED — AND THE BETTER ONE WON
+
+Minutes of Meeting's version was already generic (id / icon / title / options, a wire step and a
+global close). Issues & Concerns had a second, bespoke one for the same job. The generic one was
+promoted to `UI.iconMenuHTML` / `wireIconMenu` / `closeIconMenus` + `.pd-iconmenu*`, and **every
+hard-won detail came with it** — including the `:not([hidden])` rule that module's own stylesheet
+documents at length, because `wireIconMenu` toggles the `hidden` ATTRIBUTE and a plain
+`.x-menu { display:flex }` is (0,1,0), exactly the user agent's `[hidden]{display:none}`. That tie
+once shipped as *"the export dropdown is open when the page loads"*. Re-deriving the component here
+would have re-derived the bug.
+
+- **Minutes of Meeting** keeps its three LOCAL NAMES as one-line forwarders. ⚠️ Eight call sites
+  use them; rewriting all eight buys nothing and risks missing one. What changed is where the
+  behaviour lives.
+- **Issues & Concerns** loses `.il-exportwrap` / `.il-export-menu` outright. Its version differed in
+  a way that mattered: it held open/closed on a **CSS class**, so it needed its own outside-click
+  listener — added inside `wire()`, which runs on **every repaint**. The shared one binds **one**
+  document listener for every menu on the page.
+- ⚠️ Two live references would have broken silently and were caught by grepping for them rather
+  than by clicking: Minutes of Meeting's `querySelector('#il-mom-exportsel .il-icondd-btn')` (the
+  busy-state lookup) and Issues' `$('il-exportwrap')` (the show/hide-per-screen logic). Both now
+  name the shared class and the mount respectively.
+
+**Verified in a real browser**, because this is a component whose whole job is behaviour:
+
+| | |
+|---|---|
+| closed on load | **yes** — the `:not([hidden])` tie does not recur |
+| opens / trigger reads pressed | yes |
+| picking returns the value and closes | yes (`pdf`) |
+| closes on an outside click | yes |
+| menu stays inside the viewport | yes |
+| trigger matches its neighbour in the bar | yes — identical 34px box and background |
+| **6 re-wires add how many document listeners?** | **0**, and it still opens and closes |
+
+That last row was measured by wrapping `document.addEventListener` and counting, because the claim
+"one listener for every menu" is one I wrote in a comment — a comment is not evidence.
+
+**And it is guarded.** `tools/toolbar-order.js` now also fails on a **private export control**
+(`.x-export-menu` / `.x-exportwrap` / `.x-icondd`) or on `ui.js` ceasing to export the shared three.
+⚠️ It strips comments before looking: this pass left notes in several modules explaining what was
+removed, and a note naming the old class is not a copy of it. Negative-tested both ways — adding
+`.il-export-menu` back fails by name, and dropping `iconMenuHTML` from ui.js's exports fails by name.
+
+`wiring-check` 139/0; `test-portfolio-dash` 381/0; `portfolio-overview` 166/0; `toolbar-order` 15
+bars / 0 out of order / 0 private export controls; `dark-remap` 0 findings; both touched pages parse
+with 0 duplicate ids; all three touched stylesheets brace-balanced.
+`ui.js` → `20260916w`; `dashboard.css` → `20260916x`; `issues-lessons` → `20260916b`;
+`minutes-of-meeting` `module.css` → `20260916b`, `module.js` → `20260916a`.
+⚠️ **Not verified signed in.**
+
 ### 2026-09-16 (b7) — The portfolio Gantt answers its seven questions, and four of the answers were "this should not be here"
 
 Owner, with seven questions about the Project Schedule's portfolio chart. Most were not requests —

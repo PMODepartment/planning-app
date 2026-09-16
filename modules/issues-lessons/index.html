@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916w" />
-  <link rel="stylesheet" href="module.css?v=20260916a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916x" />
+  <link rel="stylesheet" href="module.css?v=20260916b" />
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916w" />
 </head>
 <body>
@@ -69,15 +69,16 @@
           <!-- Item 8: export the currently-shown Issues or Lessons list (whichever
                screen is active) as Excel / PDF / HTML. Hidden on the Dashboard tab
                (nothing there is "the list" to export) — see syncChrome() in module.js. -->
-          <div class="il-exportwrap" id="il-exportwrap">
-            <button class="pd-btn" id="il-export-btn" title="Export this list">
-              <span data-ico="download" data-ico-size="16"></span></button>
-            <div class="il-export-menu" id="il-export-menu">
-              <button data-export="excel">Export as Excel (.xlsx)</button>
-              <button data-export="pdf">Export as PDF</button>
-              <button data-export="html">Export as HTML</button>
-            </div>
-          </div>
+          <!-- ⚠⚠ THE SHARED ICON-DROPDOWN (UI.iconMenuHTML / wireIconMenu, ui.js). Owner
+               2026-09-16: *"I've noticed across multiple modules there are different UI's for
+               export. Let's make this consistent."* This module carried its own — `.il-exportwrap`
+               / `.il-export-menu`, with its own open/close state on a CLASS rather than the
+               `hidden` attribute, its own outside-click listener and its own `is-active` handling.
+               Minutes of Meeting had a second, generic one; that is the one that was promoted, and
+               this markup is now the same component, emitted by the same function.
+               ⚠ Built by JS rather than written here, so there is ONE definition of the control's
+               markup. Wired in wire() — see `UI.wireIconMenu`. -->
+          <div id="il-export-mount"></div>
           <!-- ⚠️ Refresh is LAST in every module bar in the app: it acts on the page rather than
                on the work, and it wants to be in the same place whichever module you are in. -->
           <button class="pd-btn" id="il-refresh" title="Reload">
@@ -191,7 +192,7 @@
   <script src="../../assets/js/auth.js?v=20260915a"></script>
   <script src="../../assets/js/db.js?v=20260916d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260916v"></script>
+  <script src="../../assets/js/ui.js?v=20260916w"></script>
   <script src="../../assets/js/notebook.js?v=20260915d"></script>
   <script src="../../assets/js/icons.js?v=20260915f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -205,7 +206,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="../../assets/js/portfolio-dash.js?v=20260916w"></script>
-  <script src="module.js?v=20260916a"></script>
+  <script src="module.js?v=20260916b"></script>
   <script>
     // Issues & Concerns / Lessons Learned / Dashboard as a Project-Schedule-style
     // dropdown instead of a flat tab row (kept from before the Minutes of Meeting
