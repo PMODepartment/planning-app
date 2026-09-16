@@ -67,6 +67,67 @@ try {
   console.log('NOTE: contrast base ' + BASE_SHA + ' unavailable (' + e.message.split('\n')[0] + ')');
 }
 
+/* ====================== 0a · THE OVERVIEW TRIM (2026-09-16) ==================================
+   Owner, on the live page: *"What lands next what's the purpose of this? Let's just remove this"*,
+   *"the s-curve needs to be spaced evenly between other cards"*, *"there is already a portfolio
+   s-curve, can't we just reference that than create a new one"* and *"highlighted tooltips need to
+   be simplified."* */
+{
+  /* --- the look-ahead is GONE, renderer and all ------------------------------------------- */
+  eq((html.match(/po-look/g) || []).length, 0, 'the "What lands next" markup is gone');
+  eq((JS.match(/renderLookahead/g) || []).length, 0, 'and its renderer with it — not merely unwired');
+  /* ⚠️ The `ms` read it shared must STAY: the "Milestones due in 30 days" KPI still needs it,
+     and removing a read because one of its two consumers went is how a figure silently empties. */
+  ok(/settle\('ms'/.test(JS), 'the milestone read is kept — the 30-day KPI still reads it');
+
+  /* --- the curve card REFERENCES the S-Curve module rather than standing alone ------------- */
+  ok(/po-seclink/.test(html), 'the curve card carries a link out');
+  const href = /<a class="po-seclink" href="([^"]+)"/.exec(html);
+  ok(!!href, 'and the link has an href');
+  if (href) {
+    const target = href[1].split('#')[0];
+    ok(/s-curve/.test(target), 'which points at the S-Curve module');
+    /* ⚠️ The path must RESOLVE. A link to a page that is not there is worse than no link,
+       and the only way to notice is to click it. */
+    ok(fs.existsSync(path.join(__dirname, '..', '..', 'modules', 'portfolio-overview', target)) ||
+       fs.existsSync(path.join(__dirname, target)),
+       'and that page exists on disk: ' + target);
+    ok(/#pd_scope=portfolio/.test(href[1]), 'and opens it in PORTFOLIO scope, not on one project');
+  }
+  /* ⚠️⚠️ AND THE CURVE IS STILL THE SHARED ENGINE'S. "Reference it, do not rebuild it" is
+     only true while these three calls are what produce the numbers — if this page ever computes
+     its own curve, the card becomes the second implementation the owner asked us to avoid. */
+  ['PDScurve.fanOutAgg', 'PDScurve.mergeAggs', 'PDScurve.computeFromAgg'].forEach(fn => {
+    ok(JS.indexOf(fn) >= 0, 'the curve still comes from the shared engine — ' + fn);
+  });
+
+  /* --- even spacing, and a label that does not break mid-phrase ---------------------------- */
+  /* ⚠️ Read here rather than reusing the `PODCSS` declared further down — that `const` is
+     below this block, and a `const` is not hoisted into it. */
+  const POD = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'css', 'portfolio-dash.css'), 'utf8');
+  ok(/#po-view-overview\s*\{[^}]*display:\s*flex/.test(POD),
+     'the Overview is a flex column, so its gap belongs to the container');
+  ok(/#po-view-overview\s*\{[^}]*gap:/.test(POD), 'and it declares one gap for every card');
+  /* ⚠️ The two ad-hoc margins must be zeroed, or the container gap is DOUBLED under them —
+     which is the uneven spacing this fixes, reintroduced by the fix. */
+  ok(/#po-view-overview > \.pd-kpis\s*\{[^}]*margin-bottom:\s*0/.test(POD),
+     'and the KPI strip no longer adds its own margin on top of that gap');
+  ok(/\.po-chk\s*\{[^}]*white-space:\s*nowrap/.test(POD),
+     'a checkbox/label phrase does not wrap between its words');
+
+  /* --- the notes are a line, not a paragraph ------------------------------------------------ */
+  const rank = /note\.innerHTML = ([\s\S]*?);\n/.exec(JS);
+  ok(!!rank, 'the rank note is still set');
+  if (rank) {
+    ok(!/there is no combined score/.test(rank[1]),
+       'the rank note no longer explains the ranking rationale under the table');
+    ok(!/narrow the project filter and try again/.test(rank[1]),
+       'and no longer tells the planner to work around a read that now succeeds');
+  }
+  ok(!/so the figures above are computed over what is there, not over all of them/.test(JS),
+     'the coverage note drops the clause that restated what its own list implies');
+}
+
 /* ============================== 0 · THE READS THAT WERE FAILING (2026-09-16) ==================
    Owner, off the live page: the Open Issues column was a row of `?`, Behind plan said
    *"unavailable — the database cancelled the read on a timeout (57014)"*, and both milestone

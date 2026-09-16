@@ -78,7 +78,13 @@
     .po-search > [data-ico] { position:absolute; left:10px; color:var(--pd-muted); pointer-events:none; display:inline-flex; }
     .po-search .pd-input { padding-left:32px; width:220px; }
     .po-spacer { margin-left:auto; }
-    .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-base); cursor:pointer; color:var(--pd-ink); }
+    /* ⚠️ `white-space:nowrap` — a label like "Group by" or "Running past contract only" is a
+       PHRASE, and an inline-flex box with normal white-space breaks it between words the moment
+       the flex line is squeezed. Measured on the Portfolio Dashboard at 1440px: the "Group by"
+       label rendered 38px tall — two 19px lines — while its text needs 60px of a 1313px row.
+       The label wrapped, not because there was no room, but because nothing said not to. */
+    .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-base);
+      cursor:pointer; color:var(--pd-ink); white-space:nowrap; }
     /* multi-select project filter */
     /* ⚠️⚠️ NOT A DROPDOWN ANY MORE. It was `position:absolute; left:0; width:260px`
        hanging off a RIGHT-ALIGNED button, so a 260px menu opened rightwards from a
@@ -143,6 +149,22 @@
     /* charts */
     .po-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; box-shadow:var(--pd-shadow); min-width:0; }
     .po-card h3 { margin:0 0 10px; font-size:var(--pd-fs-base); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    /* ⚠️⚠️ THE OVERVIEW IS ONE COLUMN WITH ONE GAP. Owner 2026-09-16: *"the s-curve needs to
+       be spaced evenly between other cards."* It was a plain `display:block` stack in which
+       `.po-card` carries NO margin, so the only separation anywhere came from two unrelated
+       ad-hoc margins — `.pd-kpis`'s 20px bottom and `.po-coverage`'s 14px top. MEASURED at
+       1440px, the gaps down the page were **20, 0, 0, 14, 0**: the curve card, the card above it
+       and the register below were all touching.
+       ⚠️ A flex column with `gap` is the fix rather than a margin on `.po-card`: the gap belongs
+       to the CONTAINER, so it cannot be doubled by a neighbour's margin and nothing has to know
+       what sits next to it. The two ad-hoc margins are zeroed here for exactly that reason. */
+    #po-view-overview { display:flex; flex-direction:column; gap:16px; }
+    #po-view-overview > .pd-kpis { margin-bottom:0; }
+    #po-view-overview > .po-coverage { margin-top:0; }
+    /* A section heading may carry a link through to the module that owns the full view. */
+    .po-seclink { margin-left:auto; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-red);
+      text-decoration:none; white-space:nowrap; }
+    .po-seclink:hover { text-decoration:underline; }
     .po-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:24px; text-align:center; }
     /* ---- D4 trend charts + D5 look-ahead (Overview) ---- */
     .po-mini { display:block; width:100%; }

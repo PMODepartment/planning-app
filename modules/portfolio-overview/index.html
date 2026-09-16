@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916v" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916v" />
 </head>
 <body>
 <div class="pd-app">
@@ -147,26 +147,30 @@
           <p class="po-note" id="po-ranknote"></p>
         </div>
 
-        <!-- D4 — the portfolio's own planned-vs-actual curve. ⚠️ One card, not two: the funding
-             curve is NOT here, see the note in loadCurve(). -->
+        <!-- ⚠️⚠️ THIS IS A WINDOW ONTO THE PORTFOLIO S-CURVE, NOT A SECOND ONE. Owner
+             2026-09-16: *"there is already a portfolio s-curve, can't we just reference that
+             than create a new one."* The numbers here are not re-derived — the curve is computed
+             by the SHARED engine (`PDScurve.fanOutAgg` → `mergeAggs` → `computeFromAgg`), the
+             same three calls the S-Curve module's own portfolio view makes, so the two cannot
+             disagree. What is local is only the small sparkline that fits a dashboard row.
+             ⚠️ And it now SAYS where the full one is. A summary that cannot be opened is a
+             dead end; the link is the difference between referencing a view and duplicating it. -->
         <div class="po-card">
           <div class="po-sechead">
             <h3>Planned vs actual, across the portfolio</h3>
             <span class="po-mut" id="po-tr-note"></span>
+            <a class="po-seclink" href="../s-curve/index.html#pd_scope=portfolio"
+               title="The full Portfolio S-Curve — per-project curves, the monthly breakdown and the trade split">Open the Portfolio S-Curve →</a>
           </div>
           <div id="po-tr-sc"></div>
         </div>
 
-        <!-- D5 — what lands next. ⚠️ Placed ABOVE the coverage note so both derived blocks
-             sit over the caveat that qualifies them, and the plain register stays last. -->
-        <div class="po-card">
-          <div class="po-sechead">
-            <h3>What lands next</h3>
-            <span class="po-mut" id="po-look-note"></span>
-          </div>
-          <div id="po-look"></div>
-        </div>
-
+        <!-- ⚠️⚠️ "WHAT LANDS NEXT" IS GONE (owner, 2026-09-16: *"What lands next what's the
+             purpose of this? Let's just remove this"*). It listed the next 30/60/90 days of
+             milestones — which is the Project Schedule's portfolio Gantt, one click away in the
+             sidebar, drawn against a real time axis instead of as three stacked lists.
+             ⚠️ The `ms` read it shared is KEPT: the "Milestones due in 30 days" figure in the
+             KPI strip above still needs it, and that figure is a count a planner acts on. -->
         <!-- ⚠️ What this page could NOT see. A figure computed over 11 of 21 projects is a
              different statement from one computed over 21, and nothing else on screen says so. -->
         <p class="po-coverage" id="po-coverage"></p>
@@ -538,21 +542,20 @@
     });
 
     var measured = list.filter(function (p) { return behindPP(p) != null; }).length;
-    note.innerHTML = 'Ordered by how many of five signals are raised — behind plan, past its ' +
-      'committed finish, overdue, over budget, unrecovered exposure — then by the worst slip in ' +
-      'days. <b>Projects with nothing flagged are still listed, at the bottom</b>, showing dashes ' +
-      'rather than zeros. Days, money and counts stay in their own columns: there is no combined ' +
-      'score, because they are not the same kind of quantity. ' +
+    /* ⚠️⚠️ ONE LINE, NOT A PARAGRAPH. Owner 2026-09-16: *"Highlighted tooltips need to be
+       simplified."* This ran to five sentences and explained the RANKING RULE, the dash
+       convention and why there is no combined score — design rationale, which belongs in the
+       code (it is in `rankSort`'s own comment, directly above) and not under the table on every
+       load. What a planner needs here is what the order means and whether a column is
+       trustworthy right now.
+       ⚠️ The per-project reasons did not go anywhere: every row still carries its own flags
+       in its `title`, which is where a specific question gets a specific answer. */
+    note.innerHTML = 'Most signals first, then the worst slip. Unflagged projects follow, with dashes. ' +
       (ovX.status
-        ? '<b>Behind plan</b> is measured as of today over ' + measured + ' of ' + list.length +
-          ' project(s); the S-Curve tab snaps to the end of the current month, so the two can ' +
-          'differ slightly inside one month.'
+        ? '<b>Behind plan</b> is as of today, over ' + measured + ' of ' + list.length + '.'
         : ovX.err.status
-          // ⚠️ The advice belongs HERE, not in PDb.errText: this screen carries the project
-          //    filter it names. The module pages that share that helper do not.
-          ? '<b>Behind plan</b> is unavailable — ' + esc(PDb.errText(ovX.err.status)) +
-            (/timeout/.test(PDb.errText(ovX.err.status)) ? '; narrow the project filter and try again' : '') + '.'
-          : '<b>Behind plan</b> is still loading.');
+          ? '<b>Behind plan</b> is unavailable — ' + esc(PDb.errText(ovX.err.status)) + '.'
+          : '<b>Behind plan</b> is loading.');
   }
 
   /* ⚠️ What the page could NOT see. The old strip did this for ONE figure (it reported
@@ -578,9 +581,12 @@
       bits.push('the ' + ({ status: 'behind-plan', claims: 'commercial', ms: 'milestone',
                             iss: 'issues' }[k] || k) + ' read failed');
     });
+    /* ⚠️ Shortened with the rank note above, and for the same reason. The trailing clause
+       Its trailing clause restated what the list of caveats already implies, on every load.
+       ⚠️ That clause is deliberately NOT quoted here: `test-portfolio.js` asserts it does not
+       occur in this file, and a comment quoting it is an occurrence. */
     el.innerHTML = bits.length
-      ? 'Of the ' + list.length + ' project(s) in scope, ' + bits.join('; ') +
-        ' — so the figures above are computed over what is there, not over all of them.'
+      ? 'Computed over what is there: of ' + list.length + ' project(s), ' + bits.join('; ') + '.'
       : 'All ' + list.length + ' project(s) in scope carry a schedule roll-up and a budget.';
   }
 
@@ -882,68 +888,6 @@
         each other.
      ⚠ The Milestones view stays: that one is a month CALENDAR you navigate, this answers
        "what is coming at me" without navigating. Different questions, both worth having. */
-  function renderLookahead(list) {
-    var host = document.getElementById('po-look'), note = document.getElementById('po-look-note');
-    if (!host) return;
-    if (ovX.err.ms) { host.innerHTML = '<div class="po-empty">The milestone read failed, so this list is not drawn.</div>'; note.textContent = 'unavailable'; return; }
-    if (!ovX.ms) { host.innerHTML = '<div class="po-empty">Reading milestones\u2026</div>'; note.textContent = ''; return; }
-
-    var nameOf = {}; list.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
-    var t = today(), t0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
-    var rows = [], undated = 0;
-    ovX.ms.forEach(function (r) {
-      if (!nameOf[r.project_id]) return;                                 // outside the current scope
-      if (r.actual_finish || num(r.percent_complete) >= 100) return;     // already achieved
-      var d = pd(r.end_date || r.start_date);
-      /* ⚠⚠ An undated milestone is COUNTED, never dropped: "nothing falls due" and "nobody has
-         dated this one" are opposite facts, and only the second is a reason to go and look. */
-      if (!d) { undated++; return; }
-      var days = Math.round((d - t0) / 86400000);
-      if (days > 90) return;
-      rows.push({ days: days, proj: nameOf[r.project_id],
-                  name: r.activity_name || '(unnamed)', prog: !!r.program_milestone });
-    });
-    rows.sort(function (a, b) { return a.days - b.days; });   // overdue first, then by date
-
-    var BUCKETS = [
-      { label: 'Overdue',      cls: 'po-bad',  test: function (r) { return r.days < 0; } },
-      { label: 'Next 30 days', cls: 'po-warn', test: function (r) { return r.days >= 0 && r.days <= 30; } },
-      { label: '31 – 60 days', cls: '',      test: function (r) { return r.days > 30 && r.days <= 60; } },
-      { label: '61 – 90 days', cls: '',      test: function (r) { return r.days > 60 && r.days <= 90; } }
-    ];
-    var CAP = 6, html = '', shown = 0;
-    BUCKETS.forEach(function (b) {
-      var got = rows.filter(b.test);
-      if (!got.length) return;
-      shown += got.length;
-      html += '<div class="po-look-grp"><div class="po-look-head ' + b.cls + '">' + b.label +
-              ' <span class="po-mut">' + got.length + '</span></div>';
-      got.slice(0, CAP).forEach(function (r) {
-        html += '<div class="po-look-row">' +
-          '<span class="po-look-when ' + (r.days < 0 ? 'po-bad' : '') + '">' +
-            (r.days < 0 ? Math.abs(r.days) + 'd late' : r.days === 0 ? 'today' : 'in ' + r.days + 'd') + '</span>' +
-          '<span class="po-look-name">' + esc(r.name) +
-            (r.prog ? ' <span class="po-ms-prog">program</span>' : '') + '</span>' +
-          '<span class="po-look-proj">' + esc(r.proj) + '</span></div>';
-      });
-      /* ⚠ A cap whose only signal is a "+" is one a planner cannot act on — say how many, and
-         where the rest are. */
-      if (got.length > CAP)
-        html += '<div class="po-look-more">' + (got.length - CAP) +
-                ' more in this window — the Milestones view lists them all.</div>';
-      html += '</div>';
-    });
-    host.innerHTML = html || '<div class="po-empty">Nothing falls due in the next 90 days for the projects in scope.</div>';
-    note.innerHTML = shown + ' in the next 90 days' +
-      (undated ? ' · <span class="po-warn">' + undated + ' undated</span>, so they cannot be placed' : '');
-  }
-
-  /* ======================= D4 — the portfolio curve ==================================
-     ⚠⚠ IT DRAWS FROM `PDScurve`, THE SAME ENGINE THE S-CURVE MODULE USES. This page carried a
-     hand-copied copy of that maths until 2026-09-10 (z1), and the "Overall Progress ≡ Actual to
-     date" bug then had to be reasoned about in three places. There is one copy now.
-     ⚠ The line stops at the data date (`ti`): every month after it is MODELLED, not recorded, and
-     drawing a confident actual line into the future is the one thing this chart may not do. */
   function miniChart(opts) {
     var W = 680, H = 170, padL = 34, padR = 8, padT = 10, padB = 20;
     var n = opts.n;
@@ -1016,7 +960,7 @@
 
   function renderAll() {
     var list = filtered();
-    renderKPIs(list); renderRank(list); renderTrends(); renderLookahead(list); renderTable(list); renderCoverage(list);
+    renderKPIs(list); renderRank(list); renderTrends(); renderTable(list); renderCoverage(list);
   }
 
   /* ⚠️⚠️ ANYTHING THAT CHANGES `filtered()` MUST COME THROUGH HERE, NOT `renderAll()`.

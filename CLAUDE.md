@@ -103,6 +103,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (a5) — The Portfolio Dashboard trims down: even spacing, one-line notes, no second S-curve, no look-ahead
+
+Owner, on the live page: *"the s-curve needs to be spaced evenly between other cards"*,
+*"highlighted tooltips need to be simplified"*, *"there is already a portfolio s-curve, can't we
+just reference that than create a new one"*, and *"What lands next — what's the purpose of this?
+Let's just remove this."*
+
+- ⚠️⚠️ **THE CARDS WERE TOUCHING, AND THE GAPS WERE 20 / 0 / 0 / 14 / 0.** Measured at 1440px.
+  `#po-view-overview` was a plain `display:block` stack and `.po-card` carries no margin, so the
+  only separation on the page came from two unrelated ad-hoc margins — `.pd-kpis`'s 20px bottom and
+  `.po-coverage`'s 14px top. The S-Curve card, the card above it and the register below were all
+  flush. It is a flex column with one `gap` now: ⚠️ the gap belongs to the CONTAINER, so it cannot
+  be doubled by a neighbour's margin and no card has to know what sits next to it — which is why
+  those two margins are zeroed rather than left to add up. **Re-measured: 16 / 16 / 16 / 16.**
+- **"What lands next" is gone**, renderer and all. It listed the next 30/60/90 days of milestones —
+  which is the Project Schedule's portfolio Gantt, one click away, drawn against a real time axis
+  instead of three stacked lists. ⚠️ The `ms` read it shared is **kept**: the *Milestones due in 30
+  days* figure still needs it, and dropping a read because one of its two consumers left is how a
+  figure silently empties.
+- ⚠️⚠️ **THE CURVE CARD REFERENCES THE PORTFOLIO S-CURVE RATHER THAN BEING A SECOND ONE.** The
+  numbers were never re-derived — it already computes through the shared engine
+  (`PDScurve.fanOutAgg` → `mergeAggs` → `computeFromAgg`), the same three calls the S-Curve
+  module's own portfolio view makes, so the two cannot disagree. What it lacked was a way through:
+  a summary that cannot be opened is a dead end, and the link is the difference between
+  *referencing* a view and *duplicating* it. The test now pins all three engine calls — the day
+  this page computes its own curve, the card becomes the duplicate the owner asked us to avoid.
+- **Both notes are a line, not a paragraph.** The rank note ran to five sentences explaining the
+  ranking rule, the dash convention and why there is no combined score — design rationale, which
+  belongs in `rankSort`'s own comment and not under the table on every load. ⚠️ The per-project
+  reasons did not go anywhere: each row still carries its flags in its `title`, which is where a
+  specific question gets a specific answer. It also stopped telling planners to *"narrow the
+  project filter and try again"* — advice for a read that (⚠️) has now fixed.
+- **"Group by" no longer breaks between its two words.** `.po-chk` is an inline-flex box with
+  normal white-space, so a label is free to wrap mid-phrase the moment the row is squeezed —
+  measured 38px tall, two 19px lines, for text needing 60px of a 1313px row. `white-space:nowrap`,
+  in the shared class, so *"Running past contract only"* on the Gantt gets it too.
+
+### ⚠️ Group by → Group Head: could not reproduce, and the code is correct
+
+Exercised against known data in a real browser, on the **shipped page with only the network
+stubbed**: selecting Group Head produced *Calimag Group (2) · Head Office (1) · Rodrin Group (2) ·
+Ronquillo Group (5) · (No group head) (2)*, and switching to Parent project re-grouped correctly.
+`groupKeyOf` → `groupHead` → `ghById[p.group_head_id]` is sound, the `onchange` is bound in the
+normal init path, and `renderAll` repaints the table. ⚠️ The most likely live cause is DATA — every
+project in scope resolving to `(No group head)`, which renders as one group and reads as "not
+grouping". Left unchanged rather than "fixed" blind.
+
+**Verified.** `portfolio-overview` **166 passed, 0 failed** (was 147), and every new assertion was
+**negative-tested**: removing the flex gap fails two by name, removing the `nowrap` fails one,
+breaking the S-Curve href fails *"and that page exists on disk"*. ⚠️ One assertion was caught red
+against correct code — the comment explaining the shortened coverage note QUOTED the clause the
+assertion forbids, so the comment was an occurrence. Same trap as (t)'s removed-function names, and
+the comment now says so instead of quoting it.
+`wiring-check` 139/0; `test-portfolio-dash` 351/0; `toolbar-order` 15/0; `dark-remap` 0 findings.
+`portfolio-dash.css` → `20260916v`.
+⚠️ **Not verified signed in.**
+
 ### 2026-09-16 (z4) — The console's 400 is a dead refresh token, and it is supposed to be there
 
 Owner: *"chase down the 400 error"* — the one error left in the Progress Photos console after the
@@ -164,6 +221,7 @@ response. Catching it inside `requireLogin()` would change nothing in the consol
 ⚠️ The reason it is worth writing down: a benign 400 sitting in the console is indistinguishable at a
 glance from a real failure, and this repo has already lost time to exactly that shape of thing — see
 (z1), where a stale `?v=` token would have made a correct fix look inert.
+
 
 ### 2026-09-16 (z3) — The Portfolio Dashboard's failing reads: one phantom column and two statements the database cancelled
 
