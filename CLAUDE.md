@@ -103,6 +103,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (a7) — Two fully-merged Progress Photos branches deleted
+
+Owner: *"delete those two stale branches too"*. Housekeeping only, nothing lost.
+
+| branch | tip | ahead of main |
+|---|---|---|
+| `claude/progress-photos-delete-fix` | `4a82844` | 0 |
+| `claude/progress-photos-gallery-fixes-gsshis` | `0a17215` | 0 |
+
+Each delete was gated on a fresh `git merge-base --is-ancestor <branch> origin/main`, re-run at delete
+time rather than reusing the earlier reading, and both tips were confirmed still contained in
+`origin/main` after pruning. No recovery SHA is needed — unlike (a6)'s `e53b9a1`, these held no unique
+commits, so the refs were redundant pointers at history main already owns.
+
+`origin/module/progress-photos` is now the only Progress Photos branch left, and it is the live
+working branch — left alone.
+
 ### 2026-09-16 (a6) — `claude/progress-photos-ui-6v64d8` closed unmerged: the work is already in, and the feature is gone
 
 Owner: *"review claude/progress-photos-ui-6v64d8"* → *"delete the branch and add the changelog entry"*.
