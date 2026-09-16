@@ -191,9 +191,22 @@ function ok(name, cond, got) {
   // renderSwitcher needs a real DOM to execute, which this harness has no
   // business faking. What it can prove is that the phrase the module-page
   // selector uses is now the phrase this one uses too.
+  // ⚠️⚠️ THREE, NOT TWO — a follow-up (owner, 2026-09-16: "always use this type
+  // of dropdown when portfolio is selected") found a THIRD surface this count
+  // did not know about: navListBody's own clickable Portfolio row inside the
+  // shared dropdown list (opened from either selector), which carried no
+  // subtitle at all until then. Left at 2 here would have made a real third
+  // fix look like a regression the next time this ran.
   const selPhrase = (CODE.match(/every project you can see/g) || []).length;
-  ok('the Portfolio subtitle exists in BOTH selectors', selPhrase === 2, selPhrase);
-  ok('the switcher gates it on portfolio mode', /mode === 'portfolio' \? '<small>every project you can see<\/small>'/.test(CODE));
+  ok('the Portfolio subtitle exists in all THREE selector surfaces', selPhrase === 3, selPhrase);
+  // ⚠️ The exact code SHAPE changed too, without changing the behaviour it
+  // proves: renderSwitcher now computes `subLabel` once (reused by both the
+  // portfolio and the non-portfolio branch) rather than inlining the ternary
+  // at the point of use. Matched on the assignment rather than the old
+  // inline `'<small>...'` construction, or this would fail on a refactor that
+  // changed nothing this test is actually meant to guard.
+  ok('the switcher gates it on portfolio mode',
+     /var subLabel = mode === 'portfolio' \? 'every project you can see' : opts\.ghLabel;/.test(CODE));
 
   /* ---- 6 · CONTRAST — each rule reverted, in memory ---------------------- */
   const NEG = [

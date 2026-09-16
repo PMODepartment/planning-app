@@ -7,7 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915z" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
        2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) —
@@ -487,12 +488,13 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260914d"></script>
+<script src="../../assets/js/db.js?v=20260916c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/scurve.js?v=20260901a"></script>
-<script src="../../assets/js/ui.js?v=20260915z"></script>
+<script src="../../assets/js/scurve.js?v=20260916r"></script>
+<script src="../../assets/js/ui.js?v=20260916u"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <!-- ⚠️ The app's own spreadsheet layer (Tab/Enter/arrows, Ctrl+D, Excel paste). The manual matrix
@@ -2559,6 +2561,25 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 's-curve', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+
+    /* ⚠️⚠️ THE PORTFOLIO FACE OF THIS MODULE IS ITS OWN DASHBOARD NOW (owner, 2026-09-16:
+       *"those dashboards must be the landing page of each module when under the portfolio
+       view"*). Opened from the Portfolio sidebar (`#pd_scope=portfolio`, read once by
+       AppAuth) this page used to give S-Curve is a per-project schedule curve — there is no single combined curve across every project.
+       The cross-project view it was missing already existed — as a TAB on a page called
+       Portfolio Dashboard. It is `assets/js/portfolio-dash.js` now, and it is mounted here.
+       ⚠️ THE MODULE'S OWN init() IS SKIPPED from this point on, deliberately: it would read
+       the same tables a second time into a UI hidden underneath the dashboard. `takeOver`
+       therefore wires the topbar project <select> itself — picking a project there LEAVES
+       portfolio scope, which is the only way back out of it from this page.
+       ⚠️ Guarded on `PortfolioDash.has()` rather than on the script tag: if the layer fails
+       to load, the module falls through to its own behaviour instead of rendering nothing. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('scurve')) {
+      PortfolioDash.takeOver('scurve', { select: '#sc-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     document.getElementById('sc-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load().then(joinCollab); };
     document.getElementById('sc-refresh').onclick = function () { load(); };
     /* The tab strip. ⚠️ Wired here, beside every other control, because the buttons are static

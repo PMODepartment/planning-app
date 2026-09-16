@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Progress Photos · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915z" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
   <link rel="stylesheet" href="module.css?v=20260915a" />
   <!-- Item 5 (2026-09-11, third round): "use open source Pannellum for 360
        viewer" — a real, MIT-licensed panorama viewer, pinned exact version,
@@ -16,7 +16,7 @@
        tag, no build step). Its stylesheet is required for the viewer's own
        controls/compass chrome to render correctly. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.min.css" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260915x" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
 </head>
 <body>
   <div class="pd-app">
@@ -227,11 +227,6 @@
             <label class="pp-groupby">Group by
               <select class="pd-select" id="pp-groupby">
                 <option value="none">None</option>
-                <!-- Portfolio scope only (owner, 2026-09-15): consolidated data
-                     shown as a list groups by project. module.js hides this
-                     option outside that scope, where it would print one header
-                     over every photo in the project. -->
-                <option value="project">Project</option>
                 <option value="month">Month captured</option>
                 <option value="trade">Trade</option>
                 <option value="location">Location</option>
@@ -397,9 +392,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.min.js"></script>
   <script src="../../assets/js/config.js?v=20260915a"></script>
   <script src="../../assets/js/auth.js?v=20260915a"></script>
-  <script src="../../assets/js/db.js?v=20260914d"></script>
+  <script src="../../assets/js/db.js?v=20260916c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260915z"></script>
+  <script src="../../assets/js/ui.js?v=20260916u"></script>
   <script src="../../assets/js/notebook.js?v=20260915d"></script>
   <script src="../../assets/js/icons.js?v=20260915f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -410,10 +405,10 @@
        Add Media flow calls into window.Capture/window.Pano360. pano.js/
        recon.js are retired (superseded by capture.js/pano360.js) — merged in
        from origin/main's own parallel session, 2026-09-12. -->
-  <script src="../../assets/js/portfolio-dash.js?v=20260915z"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
   <script src="capture.js?v=20260912c"></script>
   <script src="pano360.js?v=20260914i"></script>
-  <script src="module.js?v=20260915z"></script>
+  <script src="module.js?v=20260915w"></script>
   <script src="ppr.js?v=20260912a"></script>
   <script src="bim.js?v=20260912o"></script>
   <script>

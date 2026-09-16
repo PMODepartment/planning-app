@@ -148,8 +148,14 @@
         _ntIco('project', 14) + '<span class="pd-nt-proj-txt"><strong>' + esc(p.id + ' — ' + (p.name || p.id)) + '</strong>' +
         (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></div>';
     }
+    // ⚠️ Same "Portfolio" + "every project you can see" wording as the closed
+    // trigger (enhanceProjectSelect's syncBtn / renderSwitcher's mainLabel/
+    // subLabel, above) — owner, 2026-09-16: "always use this type of dropdown
+    // when portfolio is selected". The row you PICK Portfolio from should read
+    // exactly like the state it puts you in, not merely share one word with it.
     var portfolioRow = '<div class="pd-nt-portfolio' + (opts.portfolioActive ? ' sel' : '') + '" data-nt-portfolio="1">' +
-      _ntIco('barChart', 15) + '<span>Portfolio</span></div>';
+      _ntIco('barChart', 15) + '<span class="pd-nt-portfolio-txt"><strong>Portfolio</strong>' +
+      '<small>every project you can see</small></span></div>';
     var q = (opts.search || '').trim().toLowerCase(), body;
     if (q) {
       var matches = P.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; }).sort(_ntByName);
@@ -238,6 +244,19 @@
   async function allProjectIds() {
     if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
     return (_pdProjCache || []).map(function (p) { return p.id; });
+  }
+  // ---- Portfolio scope: a project's own row, by id ---------------------------
+  // The companion read to allProjectIds() — a module consolidating across the
+  // portfolio needs to know WHICH id is which, e.g. to group a list by project
+  // (owner, 2026-09-16: "for consolidated data in portfolio, if in list group by
+  // project"). Shares the exact same cache/read as allProjectIds() and the
+  // project-selector popover, so a module's grouping can never name a project
+  // differently from what the selector itself calls it.
+  async function projectsById() {
+    if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
+    var map = {};
+    (_pdProjCache || []).forEach(function (p) { map[p.id] = p; });
+    return map;
   }
 
   // ---- Portfolio provenance: which project a consolidated row came from ----
@@ -503,7 +522,6 @@
          is absent, rather than linking to a version string that does not exist. */
       var poBase = base + 'modules/portfolio-overview/index.html' +
         (window.ModulesGrid && ModulesGrid.MODULE_V ? '?v=' + encodeURIComponent(ModulesGrid.MODULE_V) : '');
-      function poHref(tab) { return poBase + '#po_view=' + encodeURIComponent(JSON.stringify({ v: tab })); }
       // ctx.modules is optional — every project-mode page already passes it (it built the
       // module grid), but the five portfolio-mode pages never needed to before now. Default
       // to the shared registry rather than requiring five call sites to be updated.
@@ -549,15 +567,19 @@
            collision in this nav would change two other screens to fix neither. */
         '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Dashboard</span></a>' +
-        // ⚠️⚠️ MILESTONES HAS NO MODULE, so `pmods` below cannot produce it — it is a
-        //    portfolio-only view that existed ONLY as an in-page tab. When the owner had
-        //    that tab strip removed (2026-09-09) it would have become unreachable: the
-        //    strip was its single entry point. Listed explicitly here for that reason.
-        //    `overview` needs no row — the plain `poBase` "Dashboard" link above already
-        //    lands on it.
-        // ⚠️ `milestone`, not `calendar` — Meetings is the row directly below and it IS a calendar.
-        '<a href="' + poHref('milestones') + '" title="Milestones — portfolio-wide">' +
-          '<span class="pd-navico" data-ico="milestone"></span><span class="pd-navtxt">Milestones</span></a>' +
+        // ⚠️ MILESTONES WAS A ROW HERE AND IS GONE — owner, 2026-09-16: *"There is a
+        //    milestones tab in the side panel for portfolio view. Let's remove this since
+        //    milestones are already seen within the schedule."*
+        // ⚠️⚠️ THIS IS A NAMED REVERSAL OF 2026-09-09 (p3), AND THE REASON THAT ROW EXISTED
+        //    NO LONGER HOLDS. It was added because Milestones has no module — `pmods` below
+        //    cannot produce it — so when the in-page tab strip was removed it would have been
+        //    left with NO entry point at all. The strip came back on 2026-09-15 (u) as the
+        //    view switcher (`.po-tabs` → UI.tabsToDropdown), and `data-view="milestones"` is
+        //    one of its buttons — checked, not assumed. So the view is still reachable from
+        //    the Portfolio Dashboard itself; only the duplicate sidebar row is gone.
+        // ⚠️ `poHref()` went with it: this was its only caller, and a helper left behind with
+        //    no reader is the dead-export shape `tools/dead-exports.js` exists to catch.
+        //    `poBase` stays — the Dashboard row above still uses it.
         pmods.map(pmodRow).join('') +
         // ⚠️ Personal (My Work / Tasks) is super-admin-only "for now" too (2026-09-03,
         // same owner ask as the module hiding above) — gated the same way, off the global
@@ -624,7 +646,15 @@
       mods = mods.filter(function (m) { return m.key !== 'pormac'; });
       html = '<div class="pd-navsec">Project</div>' +
         (pormacMod ? modRow(pormacMod) : '') +
-        '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
+        /* ⚠️ In PORTFOLIO scope this row must not point at the project dashboard. A module
+           page always renders this nav under mode:'project' (see the note at the top of this
+           function), so without this the Dashboard row led out of the portfolio and into
+           whichever project `pd_project` last held. dashboard.html guards itself as well; this
+           is what stops the redirect ever being seen. */
+        '<a href="' + (window.AppAuth && AppAuth.isPortfolioScope()
+            ? base + 'modules/portfolio-overview/index.html' +
+              (window.ModulesGrid && ModulesGrid.MODULE_V ? '?v=' + encodeURIComponent(ModulesGrid.MODULE_V) : '')
+            : base + 'dashboard.html') + '"' + cls('dashboard') + ' title="Dashboard">' +
           '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard</span></a>' +
         mods.map(modRow).join('');
     }
@@ -653,23 +683,21 @@
     // pname before this runs) gets it for free.
     var mainLabel = mode === 'portfolio' ? 'Portfolio'
       : (pid && opts.pname ? pid + ' — ' + opts.pname : (opts.pname || 'Select a project'));
+    // ⚠️⚠️ PORTFOLIO'S SUBTITLE IS FIXED TEXT, MATCHING enhanceProjectSelect's OWN
+    // portfolio-scope trigger VERBATIM (owner, 2026-09-16: "always use this type of
+    // dropdown when portfolio is selected"). Before this, this shell-page topbar
+    // switcher showed a bare "Portfolio" with no subtitle at all while the
+    // per-module project selector (enhanceProjectSelect, above) showed "Portfolio"
+    // over "every project you can see" — two different readings of the same state,
+    // depending only on which of the two selector components a given page happens
+    // to use. `opts.ghLabel` still wins outside Portfolio mode (a project's own
+    // address/group-head subtitle, or its async-fetched placeholder).
+    var subLabel = mode === 'portfolio' ? 'every project you can see' : opts.ghLabel;
     mount.innerHTML =
       '<button class="pd-projsw-btn" type="button">' +
         '<span class="pd-projsw-ic" data-ico="' + (mode === 'portfolio' ? 'barChart' : 'project') + '" data-ico-size="16"></span>' +
         '<span class="pd-projsw-txt"><strong>' + esc(mainLabel) + '</strong>' +
-          (opts.ghLabel ? '<small>' + esc(opts.ghLabel) + '</small>'
-            // ⚠️ Owner (2026-09-15): "always use this type of dropdown when
-            // portfolio is selected." The module pages' own selector
-            // (enhanceProjectSelect, above) has rendered Portfolio as a
-            // two-line "Portfolio / every project you can see" since it was
-            // built; this switcher — the SAME control on the six shell pages
-            // (projects, admin, my-work, my-tasks, person, portfolio-overview)
-            // — showed a bare one-line "Portfolio" instead, so the app
-            // described the same state two different ways depending on which
-            // page you happened to be standing on. Same words, verbatim, so
-            // there is one phrase to change if it is ever reworded.
-            : (mode === 'portfolio' ? '<small>every project you can see</small>'
-                                    : '<small class="pd-projsw-sub"></small>')) + '</span>' +
+          (subLabel ? '<small>' + esc(subLabel) + '</small>' : '<small class="pd-projsw-sub"></small>') + '</span>' +
         '<span class="pd-projsw-caret" data-ico="chevronDown" data-ico-size="13"></span>' +
       '</button>' +
       '<div class="pd-projsw-menu"></div>';
@@ -1204,6 +1232,7 @@
                 renderNav: renderNav, renderSwitcher: renderSwitcher,
                 renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
                 wireFilterToggle: wireFilterToggle, allProjectIds: allProjectIds,
+                projectsById: projectsById,
                 projectCode: projectCode, projectName: projectName,
                 projectLabel: projectLabel, projectTagHTML: projectTagHTML,
                 groupByProject: groupByProject, projectGroupRowHTML: projectGroupRowHTML,

@@ -7,7 +7,10 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915z" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
+       and a module cannot reach a <style> block inside another page. -->
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -761,7 +764,9 @@
          someone will project onto a wall, so a stuck literal would be most visible exactly here.
        ⚠️ Text tones are --pd-*-text, never --pd-bad / --pd-warn themselves, which are SURFACE
          colours (--pd-warn measures 3.46:1 and is not a text colour). */
-    .ps-smy { padding:16px 18px 40px; max-width:1180px; }
+    /* ⚠️ 1320, not 1180 — with a curve and a two-column body the old cap starved both. Still
+       capped: a measure that runs the full width of a 27" monitor is unreadable prose. */
+    .ps-smy { padding:16px 18px 40px; max-width:1320px; }
     .ps-smy-empty { padding:40px 18px; color:var(--pd-muted); font-size:var(--pd-fs-base); }
     .ps-smy-head h2 { margin:0 0 4px; font-size:var(--pd-fs-lg); font-weight:800; letter-spacing:-.01em; }
     .ps-smy-mini { font-size:var(--pd-fs-xs); font-weight:500; color:var(--pd-muted); }
@@ -782,8 +787,12 @@
       background:none; border:0; cursor:pointer; line-height:1;
       font-size:var(--pd-fs-md); color:inherit; opacity:.65; border-radius:var(--pd-radius); }
     .ps-smy-warnx:hover { opacity:1; background:rgba(0,0,0,.08); }
-    .ps-smy-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-      gap:10px; margin-bottom:16px; }
+    /* ⚠️⚠️ MEASURED AT 1400px BEFORE THIS CHANGED: six cards at minmax(150px) laid out FIVE THEN
+       ONE, with a 746px trailing gap and a lone Health card sitting in it. There are four cards
+       now, and a 210px floor puts all four on one row down to ~900px and 2x2 below that — it can
+       no longer produce a single orphan. */
+    .ps-smy-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+      gap:10px; margin-bottom:14px; }
     .ps-smy-kpi { position:relative; background:var(--pd-card); border:1px solid var(--pd-line);
       border-radius:var(--pd-radius-md); padding:12px 14px; overflow:hidden; }
     .ps-smy-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
@@ -798,9 +807,24 @@
     .ps-smy-kpi.warn .ps-smy-kpi-v { color:var(--pd-warn-text); }
     .ps-smy-kpi.bad  .ps-smy-kpi-v { color:var(--pd-bad-text); }
     .ps-smy-kpi-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:2px; }
-    .ps-smy-cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:0 22px; }
-    .ps-smy-h { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
-      letter-spacing:.04em; color:var(--pd-muted); margin:14px 0 6px; }
+    /* ⚠️⚠️ TWO EXPLICIT TRACKS, NOT auto-fit. Measured at 1400px: auto-fit built THREE tracks for
+       two children and left the third empty, so the columns came out 428px each inside a 1144px
+       container — 266px of dead space on the right of a page that was already cramped.
+       ⚠️ AND THE ROW GAP WAS 0, so the moment it wrapped to one column the two sections butted
+       together with nothing between them. minmax(0,1fr), not 1fr: a grid track's default minimum
+       is auto, so a long un-breakable activity name would otherwise push its own column wider. */
+    .ps-smy-cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px 22px; }
+    /* ⚠️ The TRACK already cannot blow out — minmax(0,1fr), deliberately. This guards the
+       ITEM: a grid child defaults to min-width:auto, so the day one of these wrappers holds a
+       flex row it would widen past its column on a long activity name. Also stops the class
+       reading as emitted-but-unstyled to the next class audit. */
+    .ps-smy-col { min-width:0; }
+    @media (max-width:900px) { .ps-smy-cols { grid-template-columns:minmax(0,1fr); } }
+    /* ⚠️ A SECTION HEADING MUST OUTRANK ITS OWN CONTENT, and this one did not: heading and rows
+       were both --pd-fs-xs (11px) in muted ink, so nothing on the page had a hierarchy. Up one
+       rung and into body ink; the rows stay at xs. */
+    .ps-smy-h { font-size:var(--pd-fs-sm); font-weight:700; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-ink); margin:16px 0 6px; }
     .ps-smy-list { list-style:none; margin:0; padding:0; }
     .ps-smy-row { display:flex; align-items:baseline; gap:10px; padding:6px 0;
       border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
@@ -845,6 +869,87 @@
       .ps-smy-row[data-goto] { cursor:default; }
       .ps-smy-kpi { break-inside:avoid; }
     }
+    /* ---- Summary: the verdict, the curve and the milestone axis (2026-09-16) ----------------
+       ⚠️ Tokens only, like the block above. This is the one screen someone projects onto a wall,
+         so a stuck literal is most visible exactly here, and text tones are --pd-*-text, never
+         --pd-bad / --pd-warn themselves (those are SURFACE colours; --pd-warn measures 3.46:1). */
+    /* ⚠️⚠️ THE VERDICT IS THE HEADLINE, so it outranks everything under it — 26px against the
+       cards' 20px. A row of equal-weight cards made the reader assemble the sentence themselves,
+       which is what "needs a UI overhaul" turned out to mean. */
+    .ps-smy-verdict { border:1px solid var(--pd-line); border-left:4px solid var(--pd-muted);
+      background:var(--pd-card); border-radius:var(--pd-radius-md);
+      padding:14px 16px; margin:0 0 14px; }
+    /* ⚠️⚠️ THE TINT IS COMPOSITED OVER --pd-card, NOT OVER THE PAGE GROUND, AND THAT IS A CONTRAST
+       FIX RATHER THAN A STYLE CHOICE. The status tints are rgba at 12-16%, so what they end up
+       sitting on decides the ratio. Painted straight onto --pd-bg the bad headline measured
+       **4.39:1** — under AA's 4.5 — because the page ground is darker than a card; over --pd-card
+       it measures **4.80**. Two flat gradient layers is how you put an alpha tint on an opaque base
+       in one `background`. ⚠️ Measured by COMPOSITING the alpha, never by reading backgroundColor
+       and dropping the channel — that is how a tint of the same hue once read 1.00 and looked fine.
+       ⚠️ It also passes at 3:1 as large text (24px/800) either way; this is the belt as well as the
+       braces, because the Summary is the screen that gets projected onto a wall. */
+    .ps-smy-verdict.ps-smy-v-bad  { border-left-color:var(--pd-bad);
+      background:linear-gradient(var(--pd-bad-bg),var(--pd-bad-bg)), var(--pd-card); }
+    .ps-smy-verdict.ps-smy-v-good { border-left-color:var(--pd-ok);
+      background:linear-gradient(var(--pd-ok-bg),var(--pd-ok-bg)), var(--pd-card); }
+    .ps-smy-verdict.ps-smy-v-none { border-left-color:var(--pd-warn);
+      background:linear-gradient(var(--pd-warn-bg),var(--pd-warn-bg)), var(--pd-card); }
+    .ps-smy-vh { font-size:var(--pd-fs-hero); font-weight:800; letter-spacing:-.02em; line-height:1.15; }
+    .ps-smy-v-bad  .ps-smy-vh { color:var(--pd-bad-text); }
+    .ps-smy-v-good .ps-smy-vh { color:var(--pd-ok-text); }
+    .ps-smy-v-none .ps-smy-vh { color:var(--pd-warn-text); }
+    .ps-smy-vs { font-size:var(--pd-fs-sm); color:var(--pd-ink); margin-top:4px; max-width:78ch; }
+    .ps-smy-vs b { font-weight:700; }
+    .ps-smy-good { color:var(--pd-ok-text); }
+
+    /* The curve. ⚠️ `preserveAspectRatio="none"` plus a fixed CSS height is what lets one viewBox
+       stretch to any column width without a resize listener — the chart is a shape, not a
+       measurement, and its x axis is already labelled. */
+    .ps-smy-chart { background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); padding:10px 12px 8px; margin:0 0 4px; }
+    .ps-smy-chart-empty { color:var(--pd-muted); font-size:var(--pd-fs-xs); padding:18px 12px; }
+    .ps-smy-svg { display:block; width:100%; height:190px; }
+    .ps-smy-gl { stroke:var(--pd-line); stroke-width:1; }
+    .ps-smy-gt { fill:var(--pd-muted); font-size:9px; text-anchor:end; }
+    .ps-smy-gx { text-anchor:middle; }
+    .ps-smy-now { stroke:var(--pd-red); stroke-width:1.5; stroke-dasharray:3 3; }
+    .ps-smy-pl { fill:none; stroke:var(--pd-muted); stroke-width:2; stroke-dasharray:5 4; }
+    .ps-smy-ac { fill:none; stroke:var(--pd-red); stroke-width:2.5; }
+    .ps-smy-fc { fill:none; stroke:var(--pd-warn); stroke-width:2; stroke-dasharray:2 3; }
+    .ps-smy-leg { display:flex; flex-wrap:wrap; gap:14px; margin-top:6px;
+      font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .ps-smy-lg { display:inline-flex; align-items:center; gap:5px; }
+    .ps-smy-lg::before { content:""; width:14px; height:0; border-top-width:2px; border-top-style:solid; }
+    .ps-smy-lg-pl::before { border-top-color:var(--pd-muted); border-top-style:dashed; }
+    .ps-smy-lg-ac::before { border-top-color:var(--pd-red); }
+    .ps-smy-lg-fc::before { border-top-color:var(--pd-warn); border-top-style:dotted; }
+    .ps-smy-lg-spi::before { display:none; }
+
+    /* "What is driving the finish" — the slip leads the row, because it is the answer and the
+       activity name is which one. ⚠️ Fixed-width figure column with tabular-nums so a column of
+       slips lines up and can be compared at a glance. */
+    .ps-smy-drow { display:flex; align-items:baseline; gap:10px; padding:7px 0;
+      border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-sm); cursor:pointer; }
+    .ps-smy-drow:last-child { border-bottom:0; }
+    .ps-smy-drow:hover { background:var(--pd-card); }
+    .ps-smy-dv { flex:0 0 66px; text-align:right; font-weight:800;
+      font-variant-numeric:tabular-nums; font-size:var(--pd-fs-md); }
+    .ps-smy-dt { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    /* The milestone axis. ⚠️ Dots are positioned by PERCENT of the span, so the strip needs no
+       measurement and reflows with the column. */
+    .ps-smy-ms { margin:2px 0 8px; }
+    .ps-smy-msaxis { position:relative; height:18px; border-radius:99px;
+      background:var(--pd-line); margin:0 6px; }
+    .ps-smy-msdot { position:absolute; top:3px; width:12px; height:12px; margin-left:-6px;
+      border-radius:99px; background:var(--pd-muted); border:2px solid var(--pd-card); }
+    .ps-smy-msdot.bad  { background:var(--pd-bad); }
+    .ps-smy-msdot.warn { background:var(--pd-warn); }
+    .ps-smy-msnow { position:absolute; top:-2px; bottom:-2px; width:2px; margin-left:-1px;
+      background:var(--pd-red); }
+    .ps-smy-msends { display:flex; justify-content:space-between; margin:3px 6px 0;
+      font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+
     .ps-cctag { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); }
     .ps-cctag.unknown { color:var(--pd-red); }
     /* ⚠️ A GROUP-level code is valid, not a warning — so it is toned, never coloured like `.unknown`.
@@ -5224,9 +5329,15 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260914d"></script>
+<script src="../../assets/js/db.js?v=20260916c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260915z"></script>
+<!-- ⚠️ The SHARED curve engine, for the Summary's progress chart. Loaded rather than
+       reimplemented: portfolio-overview carried a hand-copied copy of this maths until
+       2026-09-10 (z1) and its own log records what that cost. The S-Curve module, the project
+       Dashboard panel and this page now read one engine. -->
+  <script src="../../assets/js/scurve.js?v=20260916r"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
+<script src="../../assets/js/ui.js?v=20260916u"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
@@ -7947,7 +8058,7 @@
       var list = [];
       try {
         list = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
-          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at');
+          'id,wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at');
       } catch (e) { list = []; }
       // Trade order then WP number, so every picker and report shows packages in the order
       // they are actually procured rather than in mirror-id order.
@@ -8250,7 +8361,7 @@
       var mirror;
       try {
         mirror = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
-          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
+          'id,wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
       } catch (e) { return; }   // a partial read must not be mirrored as the truth
       // ⚠️ Never synced, or this project has no work packages yet — leave the branch
       // exactly as it is. Reading "no rows" as "delete everything" is how a failed or
@@ -46770,6 +46881,36 @@
     };
   }
 
+  /* ==========================================================================================
+     THE SUMMARY, REBUILT AROUND A VERDICT — 2026-09-16.
+     Owner: *"Check the summary page live it needs UI improvements overhaul"*, then, asked whether
+     KPI cards were the right shape at all: *"Let's brainstorm."*
+
+     ⚠️⚠️ WHAT WAS WRONG WAS THE RANKING, NOT THE FIGURES. Measured on the shipped page at 1400px
+     before a line was changed: SIX KPI cards laid out **5 + 1**, leaving a **746px trailing gap**
+     with a lone Health card in it; **zero charts** anywhere; **eighteen rows in four sections all
+     drawn with the identical `.ps-smy-row` treatment**, so a 64-day slip reads exactly like a
+     schedule-quality metric; and section headings at **11px — the same size as their own content**,
+     so nothing outranks anything. The arithmetic behind it was already right (30 assertions on
+     `summaryData`, untouched here); what it lacked was a shape that says which number matters.
+
+     ⚠️ THE PRINCIPLE, and it is this repo's own: the Portfolio Overview went through exactly this
+     on 2026-09-16 (e) and recorded the finding in one line — *"What was there reported LEVELS ...
+     A level is not a decision."* So: **one verdict, then the evidence, then the detail.**
+       1 · a VERDICT line — the finish position stated as a sentence, not assembled by the reader
+       2 · FOUR cards, not six — each triggering a different action
+       3 · a CURVE, because "are we catching up or falling further behind" is a question no count
+           can answer at any size
+       4 · what is DRIVING the finish, ranked — not a count of critical activities
+       5 · milestones on a TIME AXIS, so overdue sits visibly left of today
+       6 · trades, look-ahead and health as supporting detail
+
+     ⚠️⚠️ SEVEN FIGURES `summaryData()` COMPUTED WERE NEVER SHOWN, and each is surfaced here:
+     `cpm.start` (the programme had no start date on screen), `ms.achieved`, `counts.done`,
+     `counts.acts`, `counts.total`, `ms.total` and the trade count. Verified by grepping the old
+     renderer for each: 0 uses. Computing a figure and not printing it is the cheapest kind of
+     waste — the work is already done.
+     ========================================================================================== */
   function renderSummary() {
     var host = document.getElementById('ps-view-summary');
     if (!host) return;
@@ -46782,44 +46923,108 @@
     function card(label, value, sub, tone) {
       return '<div class="ps-smy-kpi' + (tone ? ' ' + tone : '') + '"><div class="ps-smy-kpi-l">' + esc(label) + '</div>' +
         '<div class="ps-smy-kpi-v">' + value + '</div>' +
-        '<div class="ps-smy-kpi-s">' + esc(sub || '') + '</div></div>';
+        '<div class="ps-smy-kpi-s">' + (sub || '') + '</div></div>';
     }
     function sect(title, note) {
       return '<div class="ps-smy-h">' + esc(title) +
         (note ? ' <span class="ps-smy-mini">' + esc(note) + '</span>' : '') + '</div>';
     }
 
-    /* ⚠️⚠️ NO BASELINE AT ALL IS A DIFFERENT ANSWER FROM "NOTHING HAS SLIPPED", AND THE PAGE WAS
-       GIVING THE WRONG ONE. Owner, of this section on OPW101: *"what does this section provide?"*
-       — nothing, and worse than nothing. Every one of that project's 2,561 activities carries no
-       baseline, so the section read **"Nothing is finishing later than its baseline."** beside a
-       **Behind baseline 0 · 0 ahead · 0 on time** card. All of that parses as good news. The truth
-       is that not one figure on this page can be measured against a baseline, which is itself the
-       finding and the thing to act on.
-       ⚠️ The test is that NOTHING resolved, not that `noBL` is merely non-zero: a programme where
-       most activities carry a baseline and a handful do not is the ordinary case, and the count in
-       the section note already reports it. */
+    /* ⚠️⚠️ NO BASELINE AT ALL IS A DIFFERENT ANSWER FROM "NOTHING HAS SLIPPED". Kept verbatim from
+       the 2026-09-15 (v) fix: on OPW101 every one of 2,561 activities carries no baseline, so the
+       old page read "Nothing is finishing later than its baseline" beside "0 behind · 0 ahead ·
+       0 on time" — all of which parses as good news, when the truth is that not one figure here
+       can be measured against a baseline. The test is that NOTHING resolved, not that some rows
+       lack a baseline, which is the ordinary case. */
     var noBase = (d.bl.behind + d.bl.ahead + d.bl.onTime) === 0 && d.bl.noBL > 0;
 
+    /* ---- 1 · THE VERDICT ---------------------------------------------------------------------
+       ⚠️ A sentence, because a row of cards makes the reader assemble one. The slip already
+       existed as a card sub-line; what it never had was the emphasis of being the answer.
+       ⚠️ Three states, and "no baseline" is a real third one — not a zero. */
+    var vTone, vHead, vSub;
+    if (d.cpm.slip == null) {
+      vTone = 'none';
+      vHead = 'No baseline to measure against';
+      vSub = noBase
+        ? 'Not one of this project’s ' + nFmt(d.bl.noBL) + ' activities carries a baseline. ' +
+          'Set one in <b>Actions ▾ Baselines…</b> and every figure below becomes a comparison.'
+        : 'The programme finish is <b>' + dt(d.cpm.finish) + '</b>. ' +
+          nFmt(d.bl.noBL) + ' activities carry no baseline finish.';
+    } else if (d.cpm.slip > 0) {
+      vTone = 'bad';
+      vHead = nFmt(d.cpm.slip) + ' days later than ' + esc(d.baseline);
+      vSub = 'Finishing <b>' + dt(d.cpm.finish) + '</b> against a baseline finish of <b>' +
+        dt(d.cpm.blFinish) + '</b>.';
+    } else if (d.cpm.slip < 0) {
+      vTone = 'good';
+      vHead = nFmt(-d.cpm.slip) + ' days earlier than ' + esc(d.baseline);
+      vSub = 'Finishing <b>' + dt(d.cpm.finish) + '</b> against a baseline finish of <b>' +
+        dt(d.cpm.blFinish) + '</b>.';
+    } else {
+      vTone = 'good';
+      vHead = 'On the baseline finish';
+      vSub = 'Finishing <b>' + dt(d.cpm.finish) + '</b>, the date ' + esc(d.baseline) + ' committed to.';
+    }
+    var verdict =
+      '<div class="ps-smy-verdict ps-smy-v-' + vTone + '">' +
+        '<div class="ps-smy-vh">' + vHead + '</div>' +
+        '<div class="ps-smy-vs">' + vSub + '</div>' +
+      '</div>';
+
+    /* ---- 2 · FOUR CARDS ----------------------------------------------------------------------
+       ⚠️⚠️ FOUR, NOT SIX, AND THE CUT IS NOT ARBITRARY. `Finish` became the verdict above, so a
+       card repeating it would be the same fact twice. `In progress` merged into Complete's own
+       sub-line, where the three states (done / running / not started) belong together rather than
+       split across two cards.
+       ⚠️⚠️ COMPLETE NOW CARRIES ITS VARIANCE, which is the figure the page most conspicuously
+       lacked: "34.6%" alone says nothing without "against 48.2% planned". `d.pctComplete` is
+       duration-weighted and so is the curve's planned figure, so the two ARE comparable — pairing
+       a duration-weighted actual with a cost-weighted plan is the trap `config.js` added `pvDur`
+       to avoid, and the same trap applies here. */
+    var curve = smyCurve(d);
+    var planNow = curve && !curve.empty ? curve.plannedPct : null;
+    var varPP = (planNow != null && d.pctComplete != null) ? (d.pctComplete - planNow) : null;
+    var cards =
+      card('Complete', pctTxt(d.pctComplete),
+        varPP == null
+          ? 'duration-weighted · ' + nFmt(d.counts.done) + ' done, ' + nFmt(d.counts.inProgress) + ' running'
+          : '<span class="' + (varPP >= 0 ? 'ps-smy-good' : 'ps-smy-bad') + '">' +
+            (varPP >= 0 ? '+' : '') + (Math.round(varPP * 10) / 10) + ' pts vs ' + pctTxt(planNow) +
+            ' planned</span>',
+        varPP == null ? '' : (varPP >= -2 ? 'good' : (varPP < -10 ? 'bad' : 'warn'))) +
+      (noBase
+        /* ⚠️ An em dash, not a zero — three zeros read as three measurements. */
+        ? card('Behind baseline', '—', 'no baseline set')
+        : card('Behind baseline', nFmt(d.bl.behind),
+               nFmt(d.bl.ahead) + ' ahead · ' + nFmt(d.bl.onTime) + ' on time',
+               d.bl.behind ? 'bad' : 'good')) +
+      card('Critical', nFmt(d.cpm.critical),
+           d.cpm.negFloat ? nFmt(d.cpm.negFloat) + ' with negative float' : 'none with negative float',
+           d.cpm.negFloat ? 'bad' : '') +
+      card('Health', d.health.score + '%',
+           'over ' + nFmt(d.health.total) + ' activities',
+           d.health.score >= 80 ? 'good' : (d.health.score < 50 ? 'bad' : 'warn'));
+
+    /* ---- 4 · WHAT IS DRIVING THE FINISH ------------------------------------------------------
+       ⚠️ The same rows the old page called "Biggest slips", given the weight of being an answer:
+       the slip is the figure, not a footnote beside the name. Still `data-goto`, so a click still
+       lands on the activity in the grid. */
     var slipRows = d.bl.worst.map(function (s) {
-      return '<li class="ps-smy-row" data-goto="' + esc(s.r.id) + '">' +
-        '<span class="ps-smy-t"><b>' + esc(s.r.activity_id || '') + '</b> ' + esc(s.r.activity_name || '') + '</span>' +
-        '<span class="ps-smy-v ps-smy-bad">+' + s.days + 'd</span></li>';
+      return '<li class="ps-smy-drow" data-goto="' + esc(s.r.id) + '">' +
+        '<span class="ps-smy-dv ps-smy-bad">+' + nFmt(s.days) + 'd</span>' +
+        '<span class="ps-smy-dt"><b>' + esc(s.r.activity_id || '') + '</b> ' +
+          esc(s.r.activity_name || '') + '</span></li>';
     }).join('') || '<li class="ps-smy-row ps-smy-none">' +
       (noBase
         ? 'Not one of this project’s ' + nFmt(d.bl.noBL) + ' activities carries a baseline, so ' +
           'nothing on this page can be measured against one. Set one in <b>Actions ▾ Baselines…</b>.'
         : 'Nothing is finishing later than its baseline.') + '</li>';
 
-    var msRows = d.ms.next.map(function (m) {
-      var tone = m.overdue ? ' ps-smy-bad' : (m.slip != null && m.slip > 0 ? ' ps-smy-warn' : '');
-      return '<li class="ps-smy-row" data-goto="' + esc(m.r.id) + '">' +
-        '<span class="ps-smy-t"><b>' + esc(m.r.activity_id || '') + '</b> ' + esc(m.r.activity_name || '') + '</span>' +
-        '<span class="ps-smy-v' + tone + '">' + dt(m.date) +
-        (m.slip != null && m.slip !== 0 ? ' <i>' + (m.slip > 0 ? '+' : '') + m.slip + 'd</i>' : '') +
-        '</span></li>';
-    }).join('') || '<li class="ps-smy-row ps-smy-none">No milestone is still outstanding.</li>';
+    /* ---- 5 · MILESTONES ON A TIME AXIS ------------------------------------------------------- */
+    var msStrip = smyMsStrip(d, dt);
 
+    /* ---- 6 · SUPPORTING DETAIL --------------------------------------------------------------- */
     var lookRows = d.look.map(function (w) {
       return '<li class="ps-smy-row"><span class="ps-smy-t">Next ' + w.days + ' days</span>' +
         '<span class="ps-smy-v">' + nFmt(w.starts) + ' starting · ' + nFmt(w.finishes) + ' finishing' +
@@ -46827,54 +47032,55 @@
         '</span></li>';
     }).join('');
 
-    /* ⚠️ The percentage and the activity count are two different quantities and used to be printed
-       as one run of digits — `0% 1750`, which reads as a single number. They are now two
-       right-aligned columns of their own, and the count says what it counts. */
-    var tradeRows = d.trades.slice(0, 10).map(function (t) {
+    /* ⚠️ Only metrics with a real denominator — a score measured over 0 eligible activities is
+       not a clean result, it is no result. */
+    var worstHealth = d.health.metrics.filter(function (m) { return m.denom > 0 && m.count > 0; })
+      .sort(function (a, b) { return b.pct - a.pct; }).slice(0, 5)
+      .map(function (m) {
+        return '<li class="ps-smy-row"><span class="ps-smy-t">' + esc(m.label) + '</span>' +
+          '<span class="ps-smy-v">' + nFmt(m.count) + ' of ' + nFmt(m.denom) + ' <i>' + m.pct + '%</i></span></li>';
+      }).join('') || '<li class="ps-smy-row ps-smy-none">No findings.</li>';
+
+    /* ⚠️ The percentage and the activity count are two right-aligned columns of their own —
+       `0% 1750` used to run together as one number. */
+    var TRADE_CAP = 10;
+    var tradeRows = d.trades.slice(0, TRADE_CAP).map(function (t) {
       var w = t.pct == null ? 0 : Math.max(t.pct > 0 ? 2 : 0, Math.round(t.pct));
       return '<li class="ps-smy-bar"><span class="ps-smy-bl" title="' + esc(t.trade) + '">' + esc(t.trade) + '</span>' +
         '<span class="ps-smy-track"><i style="width:' + w + '%"></i></span>' +
         '<span class="ps-smy-bp">' + pctTxt(t.pct) + '</span>' +
         '<span class="ps-smy-bn">' + nFmt(t.n) + ' act' + (t.n === 1 ? '' : 's') + '</span></li>';
     }).join('');
-
-    /* ⚠️ The health panel's own metrics, worst first, and only the ones with a real denominator —
-       a metric measured over 0 eligible activities is not a clean score, it is no score. */
-    var worstHealth = d.health.metrics.filter(function (m) { return m.denom > 0 && m.count > 0; })
-      .sort(function (a, b) { return b.pct - a.pct; }).slice(0, 5)
-      .map(function (m) {
-        return '<li class="ps-smy-row"><span class="ps-smy-t">' + esc(m.label) + '</span>' +
-          '<span class="ps-smy-v">' + m.count + ' of ' + m.denom + ' <i>' + m.pct + '%</i></span></li>';
-      }).join('') || '<li class="ps-smy-row ps-smy-none">No findings.</li>';
+    /* ⚠️ A cap that hides rows without saying so is the defect this repo fixed on the BOQ's
+       Match-to-schedule worklist (300 of 903 lines shown, no notice of any kind). */
+    var tradeMore = d.trades.length > TRADE_CAP
+      ? '<li class="ps-smy-row ps-smy-none">' + nFmt(d.trades.length - TRADE_CAP) +
+        ' more trade' + (d.trades.length - TRADE_CAP === 1 ? '' : 's') + ' not shown.</li>' : '';
 
     host.innerHTML =
       '<div class="ps-smy">' +
         '<div class="ps-smy-head">' +
           '<h2>Schedule summary <span class="ps-smy-mini">' + esc(projName()) + '</span></h2>' +
-          /* ⚠️ `baseline <b>Baseline 21-Aug-26</b>` READ AS A STUTTER, because a baseline here is
-             user-named and the name usually already begins with the word. The label is printed as
-             it stands and only prefixed when it does not say so itself (e.g. the `BL0` fallback).
-             ⚠️ The Print button is gone at the owner's request — Ctrl+P does the same thing, and a
-             button whose whole job is to call `window.print()` is a control in the way. */
+          /* ⚠️ `baseline <b>Baseline 21-Aug-26</b>` READ AS A STUTTER — a baseline here is
+             user-named and the name usually already begins with the word, so it is prefixed only
+             when it does not say so itself (the `BL0` fallback).
+             ⚠️ THE PROGRAMME START IS HERE, and it is one of the seven figures `summaryData`
+             computed and the page never printed. A summary that states a finish date and not a
+             start gives the reader no span to judge the slip against. */
           '<div class="ps-smy-meta">As of <b>' + dt(t_(d.asOf)) + '</b>' +
+            ' · <b>' + dt(d.cpm.start) + '</b> → <b>' + dt(d.cpm.finish) + '</b>' +
             ' · <b>' + nFmt(d.counts.tasks) + '</b> activities' +
             ' · <b>' + nFmt(d.counts.miles) + '</b> milestone' + (d.counts.miles === 1 ? '' : 's') +
             ' · ' + esc(/^baseline/i.test(d.baseline) ? d.baseline : 'baseline ' + d.baseline) +
           '</div>' +
           /* ⚠️⚠️ THE DATA DATE IS PER BROWSER, AND THIS IS THE ONE SCREEN WHERE THAT MATTERS.
              It lives in localStorage (`ps_datadate_<pid>`) and drives 62 call sites including the
-             CPM — so two planners on one project can hold different data dates and every figure
-             below differs, with nothing on screen saying so. That is tolerable on a working grid
-             and a liability on a page whose purpose is to be SHOWN to someone, so it is stated
-             here rather than left to be discovered. Flagged 2026-09-14 (h); still not fixed. */
-          /* ⚠️⚠️ DISMISSIBLE, AND THE KEY CARRIES THE DATE — which is what keeps it honest.
-             Owner: *"The yellow notification warning needs to be dismissible as well. This doesn't
-             have to be shown all the time."* Fair: once you have read it, repeating it on every
-             visit is noise. But the hazard is real and does not go away, so "dismissed" means
-             *"I have acknowledged THIS pinned date"*, not *"never tell me again"* —
-             `smyWarnKey()` includes the data date, so re-pinning a different one brings the
-             warning back. A permanent dismissal would let a planner silently inherit somebody
-             else's "now" and never be told. */
+             CPM, so two planners on one project can hold different data dates and every figure
+             here differs with nothing saying so. Tolerable on a working grid, a liability on a
+             page built to be shown to someone. Flagged 2026-09-14 (h); still not fixed.
+             ⚠️ Dismissible, and `smyWarnKey()` carries the DATE — "dismissed" means "I have
+             acknowledged THIS pinned date", so re-pinning a different one brings it back. A
+             permanent dismissal would let a planner silently inherit somebody else's "now". */
           (d.pinned && !smyWarnOff()
             ? '<p class="ps-smy-warn">⚠ The data date is pinned on <b>this browser only</b> — it is not ' +
               'shared with the project, so another planner may be reading these figures as of a different day.' +
@@ -46882,57 +47088,52 @@
             : '') +
         '</div>' +
 
-        '<div class="ps-smy-kpis">' +
-          card('Complete', pctTxt(d.pctComplete), 'duration-weighted') +
-          card('In progress', String(d.counts.inProgress), d.counts.notStarted + ' not started') +
-          /* ⚠️ An em dash, not a zero. "0 behind · 0 ahead · 0 on time" is what this card printed on
-             a programme with no baseline anywhere, and three zeros read as three measurements. */
-          (noBase
-            ? card('Behind baseline', '—', 'no baseline set')
-            : card('Behind baseline', String(d.bl.behind), d.bl.ahead + ' ahead · ' + d.bl.onTime + ' on time',
-                   d.bl.behind ? 'bad' : '')) +
-          card('Critical', String(d.cpm.critical), d.cpm.negFloat + ' with negative float',
-               d.cpm.negFloat ? 'bad' : '') +
-          card('Finish', dt(d.cpm.finish),
-               d.cpm.slip == null ? 'no baseline to compare' :
-                 (d.cpm.slip > 0 ? d.cpm.slip + 'd later than baseline'
-                                 : (d.cpm.slip < 0 ? (-d.cpm.slip) + 'd earlier' : 'on the baseline')),
-               d.cpm.slip > 0 ? 'bad' : (d.cpm.slip < 0 ? 'good' : '')) +
-          card('Health', d.health.score + '%', 'schedule quality checks',
-               d.health.score >= 80 ? 'good' : (d.health.score < 50 ? 'bad' : 'warn')) +
-        '</div>' +
+        verdict +
+        '<div class="ps-smy-kpis">' + cards + '</div>' +
+        smyCurveSVG(curve, d) +
 
         '<div class="ps-smy-cols">' +
           '<div class="ps-smy-col">' +
-            sect('Biggest slips against ' + d.baseline, d.bl.noBL ? d.bl.noBL + ' activities carry no baseline' : '') +
+            sect('What is driving the finish',
+                 d.bl.noBL ? nFmt(d.bl.noBL) + ' activities carry no baseline' : 'largest slips against ' + d.baseline) +
             '<ul class="ps-smy-list">' + slipRows + '</ul>' +
-            sect('Next milestones', d.ms.overdue ? d.ms.overdue + ' overdue' : (d.ms.undated ? d.ms.undated + ' undated' : '')) +
-            '<ul class="ps-smy-list">' + msRows + '</ul>' +
           '</div>' +
+          '<div class="ps-smy-col">' +
+            /* ⚠️ `ms.achieved` and `ms.total` are two more of the seven the old page computed and
+               never printed — and "14 of 120 achieved" is what makes "3 overdue" mean something. */
+            sect('Milestones',
+                 nFmt(d.ms.achieved) + ' of ' + nFmt(d.ms.total) + ' achieved' +
+                 (d.ms.overdue ? ' · ' + nFmt(d.ms.overdue) + ' overdue' : '') +
+                 (d.ms.undated ? ' · ' + nFmt(d.ms.undated) + ' undated' : '')) +
+            msStrip +
+          '</div>' +
+        '</div>' +
+
+        sect('Progress by trade',
+             (d.counts.noDates ? nFmt(d.counts.noDates) + ' activities have no dates and carry no weight' : '')) +
+        '<ul class="ps-smy-bars">' + tradeRows + tradeMore + '</ul>' +
+
+        '<div class="ps-smy-cols">' +
           '<div class="ps-smy-col">' +
             sect('Look-ahead', 'from the data date') +
             '<ul class="ps-smy-list">' + lookRows + '</ul>' +
-            sect('Schedule health', d.health.score + '% over ' + d.health.total + ' activities') +
+          '</div>' +
+          '<div class="ps-smy-col">' +
+            sect('Schedule health', d.health.score + '% over ' + nFmt(d.health.total) + ' activities') +
             '<ul class="ps-smy-list">' + worstHealth + '</ul>' +
           '</div>' +
         '</div>' +
 
-        sect('Progress by trade', d.counts.noDates ? d.counts.noDates + ' activities have no dates and carry no weight' : '') +
-        '<ul class="ps-smy-bars">' + tradeRows + '</ul>' +
-
         (d.co.activities
-          ? '<p class="ps-smy-note"><b>' + d.co.activities + '</b> change-order activit' +
+          ? '<p class="ps-smy-note"><b>' + nFmt(d.co.activities) + '</b> change-order activit' +
             (d.co.activities === 1 ? 'y' : 'ies') +
-            (d.co.refs ? ' across <b>' + d.co.refs + '</b> variation' + (d.co.refs === 1 ? '' : 's') : '') +
+            (d.co.refs ? ' across <b>' + nFmt(d.co.refs) + '</b> variation' + (d.co.refs === 1 ? '' : 's') : '') +
             ' are in this programme.</p>'
           : '') +
-        /* ⚠️ Two facts, one line. The third sentence — *"Everything here is derived from the
-           schedule as it stands; nothing on this page changes it"* — is gone at the owner's
-           request, and they are right: it reassures about something nobody suspected, and a
-           read-only page saying it is read-only is the screen explaining itself rather than
-           reporting. The two that stay are both load-bearing: without the first a reader takes the
-           percentage for a mean, and without the second they take the variance for a comparison
-           against the current plan, which measures nothing. */
+        /* ⚠️ Two facts, one line, both load-bearing: without the first a reader takes the
+           percentage for a mean, without the second they take the variance for a comparison
+           against the current plan, which measures nothing. The third sentence this used to carry
+           — a read-only page saying it is read-only — is gone at the owner's request. */
         '<p class="ps-smy-note"><b>Duration-weighted</b> — a 200-day activity counts for more than ' +
           'a 1-day one. Variance is against <b>' + esc(d.baseline) + '</b>, not the current plan.</p>' +
       '</div>';
@@ -46940,11 +47141,145 @@
     host.querySelectorAll('[data-goto]').forEach(function (el) {
       el.onclick = function () { gotoActivity(el.dataset.goto); };
     });
-    // ⚠️ The Print button and its handler went TOGETHER. A handler bound to an id nothing renders
-    // any more is the `#pk-boq` shape this repo has already shipped once.
+    // ⚠️ The Print button and its handler went TOGETHER on 2026-09-15 (v). A handler bound to an
+    // id nothing renders is the `#pk-boq` shape this repo has already shipped once.
     var wx = document.getElementById('ps-smy-warnx');
     if (wx) wx.onclick = function () { smyWarnOff(true); renderSummary(); };
   }
+
+  /* ⚠️⚠️ THE CURVE COMES FROM `PDScurve`, THE SHARED ENGINE, AND NOT FROM A SECOND IMPLEMENTATION
+     WRITTEN HERE. This repo has paid for the alternative once already: `portfolio-overview` carried
+     a hand-copied `scCompute` until 2026-09-10 (z1), and its own log records the cost — the same
+     project drawn two ways, with the two free to drift. The S-Curve module, the project Dashboard
+     panel and this page now all read one engine, so they cannot disagree about one project's curve.
+     ⚠️ DURATION basis, matching `pctComplete` above and the dashboard's own `curve: {basis:'dur'}`
+     — a project with no cost loading must not silently open on a money curve built from a handful
+     of priced activities.
+     ⚠️ `today: dataDate || undefined` so the curve's data date is the page's data date. Letting the
+     engine default to the wall clock would put the vertical "now" line somewhere the rest of the
+     page disagrees with, which on a pinned schedule is every figure above it.
+     ⚠️ Returns null rather than throwing when the engine is absent — `scurve.js` is one more script
+     on a module page that already loads fourteen, and a summary that dies because a chart could not
+     be drawn is worse than a summary with no chart. */
+  function smyCurve(d) {
+    if (!window.PDScurve || !PDScurve.compute) return null;
+    try {
+      return PDScurve.compute(rows, { basis: 'dur', today: dataDate || undefined });
+    } catch (e) { return null; }
+  }
+
+  /* The curve panel. ⚠️ Inline SVG with a viewBox and no fixed width, so it scales with the column
+     instead of needing a resize listener. Colours are tokens, not literals — this is the one screen
+     someone projects onto a wall, in whichever theme their laptop is in. */
+  function smyCurveSVG(c, d) {
+    if (!c) return '';
+    if (c.empty) {
+      return '<div class="ps-smy-h">Progress against plan</div>' +
+        '<div class="ps-smy-chart ps-smy-chart-empty">' +
+        (c.noCost
+          ? 'This project is not cost-loaded, so only the duration curve can be drawn.'
+          : 'Not enough dated activities to draw a curve.') + '</div>';
+    }
+    var W = 1000, H = 190, padL = 34, padR = 10, padT = 10, padB = 22;
+    var n = c.months.length;
+    if (n < 2) return '';
+    var TOT = c.TOT || 1;
+    var x = function (i) { return padL + (i / (n - 1)) * (W - padL - padR); };
+    var y = function (v) { return padT + (1 - Math.max(0, Math.min(1, v / TOT))) * (H - padT - padB); };
+    /* ⚠️ A run, not one polyline through the nulls: `actualC` is null past the data date and
+       `forecastC` is null before it, and a single polyline would draw a straight line across the
+       gap — a claim about months the series deliberately says nothing about. */
+    function path(arr) {
+      var runs = [], cur = [];
+      arr.forEach(function (v, i) {
+        if (v == null) { if (cur.length > 1) runs.push(cur); cur = []; return; }
+        cur.push(x(i).toFixed(1) + ',' + y(v).toFixed(1));
+      });
+      if (cur.length > 1) runs.push(cur);
+      return runs;
+    }
+    function poly(arr, cls) {
+      return path(arr).map(function (r) {
+        return '<polyline class="' + cls + '" points="' + r.join(' ') + '" />';
+      }).join('');
+    }
+    var grid = [0, 25, 50, 75, 100].map(function (p) {
+      var yy = y(TOT * p / 100);
+      return '<line class="ps-smy-gl" x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" />' +
+        '<text class="ps-smy-gt" x="' + (padL - 5) + '" y="' + (yy + 3).toFixed(1) + '">' + p + '</text>';
+    }).join('');
+    /* Year ticks only — a label per month over a three-year programme is an unreadable smear. */
+    var ticks = c.months.map(function (m, i) {
+      if (m.getMonth() !== 0 && i !== 0) return '';
+      return '<text class="ps-smy-gt ps-smy-gx" x="' + x(i).toFixed(1) + '" y="' + (H - 6) + '">' + m.getFullYear() + '</text>';
+    }).join('');
+    var nowX = x(Math.max(0, Math.min(n - 1, c.ti)));
+    return '<div class="ps-smy-h">Progress against plan ' +
+        '<span class="ps-smy-mini">duration-weighted, from the same engine the S-Curve module uses</span></div>' +
+      '<div class="ps-smy-chart">' +
+        '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" class="ps-smy-svg" role="img" ' +
+          'aria-label="Cumulative planned, actual and forecast progress">' +
+          grid + ticks +
+          '<line class="ps-smy-now" x1="' + nowX.toFixed(1) + '" y1="' + padT + '" x2="' + nowX.toFixed(1) + '" y2="' + (H - padB) + '" />' +
+          poly(c.plannedC, 'ps-smy-pl') +
+          poly(c.forecastC, 'ps-smy-fc') +
+          /* ⚠️⚠️ THE ACTUAL SERIES IS CLIPPED AT THE DATA DATE, AND IT HAS TO BE: `PDScurve` pads
+             `actualC` past `ti` with ZERO, not null — measured on this very fixture, 15 zeros
+             after the data date. Handed to the renderer whole it drew the actual line PLUNGING to
+             the floor at "now" and running along the bottom to the end of the programme, which
+             reads as a project that un-built itself. An actual for a month that has not happened
+             is not a low number, it is not a number. `dashboard.html`'s own S-curve panel clips
+             the same way (`p.first > c.ti ? null : …`), and the portfolio overlay's log records
+             the identical trap. Caught by reading the series, not the chart. */
+          poly(c.actualC.map(function (v, i) { return i > c.ti ? null : v; }), 'ps-smy-ac') +
+        '</svg>' +
+        '<div class="ps-smy-leg">' +
+          '<span class="ps-smy-lg ps-smy-lg-pl">Planned ' + pctOf(c.plannedPct) + '</span>' +
+          '<span class="ps-smy-lg ps-smy-lg-ac">Actual ' + pctOf(c.actualPct) + '</span>' +
+          (c.fcFinish ? '<span class="ps-smy-lg ps-smy-lg-fc">Forecast finish ' + fmtOPCDate(dstr(c.fcFinish)) + '</span>' : '') +
+          (c.spi ? '<span class="ps-smy-lg ps-smy-lg-spi">SPI ' + (Math.round(c.spi * 100) / 100).toFixed(2) + '</span>' : '') +
+        '</div>' +
+      '</div>';
+  }
+  function pctOf(v) { return v == null ? '—' : (Math.round(v * 10) / 10) + '%'; }
+
+  /* Milestones on a time axis. ⚠️ A STRIP, not a list, because the one thing a list cannot show is
+     that an overdue milestone sits to the LEFT of today — which is the whole point of the word.
+     ⚠️ Undated milestones cannot be placed and are COUNTED in the section head rather than dropped:
+     "no milestone due" and "nobody has dated this milestone" are opposite facts and only the second
+     is a reason to go and look (the rule the portfolio calendar already follows). */
+  function smyMsStrip(d, dt) {
+    var list = d.ms.next || [];
+    if (!list.length) return '<ul class="ps-smy-list"><li class="ps-smy-row ps-smy-none">No milestone is still outstanding.</li></ul>';
+    var ds = list.map(function (m) { return pd(m.date); }).filter(Boolean).map(function (x) { return +x; });
+    var t0 = +today();
+    ds.push(t0);
+    var lo = Math.min.apply(null, ds), hi = Math.max.apply(null, ds);
+    var span = (hi - lo) || 1;
+    var px = function (v) { return ((v - lo) / span) * 100; };
+    var marks = list.map(function (m) {
+      var p = pd(m.date); if (!p) return '';
+      var tone = m.overdue ? ' bad' : (m.slip != null && m.slip > 0 ? ' warn' : '');
+      return '<i class="ps-smy-msdot' + tone + '" style="left:' + px(+p).toFixed(2) + '%" ' +
+        'title="' + esc((m.r.activity_id || '') + ' ' + (m.r.activity_name || '')) + ' · ' + esc(dt(m.date)) + '"></i>';
+    }).join('');
+    var rowsHtml = list.map(function (m) {
+      var tone = m.overdue ? ' ps-smy-bad' : (m.slip != null && m.slip > 0 ? ' ps-smy-warn2' : '');
+      return '<li class="ps-smy-row" data-goto="' + esc(m.r.id) + '">' +
+        '<span class="ps-smy-t"><b>' + esc(m.r.activity_id || '') + '</b> ' + esc(m.r.activity_name || '') + '</span>' +
+        '<span class="ps-smy-v' + tone + '">' + dt(m.date) +
+        (m.slip != null && m.slip !== 0 ? ' <i>' + (m.slip > 0 ? '+' : '') + nFmt(m.slip) + 'd</i>' : '') +
+        '</span></li>';
+    }).join('');
+    return '<div class="ps-smy-ms">' +
+        '<div class="ps-smy-msaxis">' + marks +
+          '<i class="ps-smy-msnow" style="left:' + px(t0).toFixed(2) + '%" title="Data date"></i>' +
+        '</div>' +
+        '<div class="ps-smy-msends"><span>' + esc(dt(dstr(new Date(lo)))) + '</span><span>' + esc(dt(dstr(new Date(hi)))) + '</span></div>' +
+      '</div>' +
+      '<ul class="ps-smy-list">' + rowsHtml + '</ul>';
+  }
+
   /* Thousands separators, because this page prints counts in the thousands (2,561 reads; 2561 does
      not). ⚠️ Its own helper rather than `Fmt.moneyShort`, which rounds to 2.6K — a count must stay
      exact. Non-finite input yields an em dash instead of "NaN". */
@@ -50276,6 +50611,24 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 'project-schedule', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+    /* ==== PORTFOLIO SCOPE IS THIS MODULE'S DASHBOARD ====================================
+       Owner: *"the portfolio view of the schedule needs work as well."* Opened portfolio-wide
+       this module drew nothing at all - 2026-09-14 deliberately left `pid` null here and
+       attempted no cross-project consolidation, so the sidebar's Project Schedule row led to
+       an empty page. The cross-project Gantt now lives in portfolio-dash.js, beside the six
+       dashboards the owner moved into their own modules on 2026-09-15.
+       ⚠️ EVERYTHING BELOW IS SKIPPED, deliberately. This module's wiring and load() are built
+       around one project id; running them with none is how a hidden UI issues reads nobody can
+       look at. ⚠️ takeOver() wires the project <select> itself, because skipping this block
+       skips the line that fills it - and without it there is no way to leave portfolio scope
+       from the page you are standing on. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() &&
+        window.PortfolioDash && PortfolioDash.has('schedule')) {
+      PortfolioDash.takeOver('schedule', { select: '#ps-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     renderHeader();
     try { var cw = JSON.parse(localStorage.getItem('ps_cols') || 'null'); if (cw) { var gp = document.querySelector('.ps-grid-pane'); Object.keys(cw).forEach(function (c) { if (cw[c]) gp.style.setProperty('--c-' + c, cw[c]); }); } } catch (e) {}
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); }; });
