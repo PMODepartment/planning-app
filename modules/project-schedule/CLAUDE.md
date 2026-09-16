@@ -1,3 +1,86 @@
+## 2026-09-16 (za) — The site plan wins where it speaks: a traced tower is the same building in both readings
+
+Owner, with the two site readings side by side for the third time today: *"the issue still remains.
+The configuration of the tower is not the same and the location is not the same. why?"*
+
+### ⚠️⚠️ BECAUSE I HAD BEEN ANSWERING THE WRONG QUESTION, TWICE
+
+Entries (y) and (z) both took the report as a **placement** problem and made the placement better:
+
+| attempt | what it changed | what the owner saw |
+|---|---|---|
+| (y) | the plan lookup was keyed by tower, so each tower read **its own** floor plan | still a different shape, in a different place |
+| (z) | the plan was fitted onto the tower's **minimum-area rectangle** instead of its bounding box | still a different shape, in a different place |
+
+Both were real fixes to real faults. **Neither could ever close this report**, and the third
+screenshot is what made that plain: in *Whole towers* Tower 1 is a **rectangle**; in *Floor by
+floor* the same tower is an **L with a notch**. No fitting rule turns one into the other, because
+
+> ⚠️⚠️ **THE SHAPE BEING PLACED WAS NEVER THAT TOWER'S FOOTPRINT.**
+> A **site plan** is traced building by building — an outline at grade, one polygon per tower.
+> A **floor plan** is traced room by room, on a different sheet, at a different scale, with a core
+> and a notch in it. They are two drawings of one building and only one of them is a footprint.
+
+The card's own footer has said *"Every tower is placed as you traced it"* the whole time, and the
+**Floor by floor** button has promised *"on its own footprint"*. Both were untrue the moment a
+floor plan was substituted.
+
+### The fix: the traced site footprint IS the tower, in both readings
+
+`if (model.siteFloors && c.floor)` → **`if (model.siteFloors && c.floor && !_pg)`**. One
+conjunct, and the two readings now differ in exactly the thing their names differ in — whether the
+solid is cut into storeys. Same outline, same place, same size, same heading.
+
+⚠️ **What a floor still contributes to the site** is what a site view can honestly show of it: that
+it exists, its name beside its own tower, its progress, its dates, its click, and a gap on the
+ladder where a tower has no work. None of that needs a second outline.
+
+⚠️ **Where a floor's SHAPE lives: *Per tower*,** one control away, whose whole job is *"what does
+this building look like"* and which extrudes every floor at its own traced coordinates. That is the
+2026-09-15 request answered in the view that can carry it — the site card never could.
+
+⚠️ **The floor plan still fills a SILENCE.** A tower the site plan does not name has no footprint to
+keep: it stands on a **wrap slot**, a box the size of its share of the grid which the footer already
+calls a guess, and there a traced floor plan is strictly better than a box and can contradict
+nothing. `!_pg` is the whole test.
+
+⚠️ **`_vsZpMinRect` is REMOVED, not left dead.** It was a correct piece of geometry for a question
+this view no longer asks, and a hull-and-calipers helper nothing calls is the next person's trap.
+The 90°-turn and one-box-per-tower rules stay, because the wrap-slot path still needs both.
+
+### Proved at the CALL SITE, which is where all three versions actually differed
+
+`test-sitefit.js` rewritten — **17 assertions, 0 failing**.
+
+⚠️⚠️ **The gate reads the shipped `if (...)` out of `_vs3Build`** (through `scan.blankComments`,
+so a `_pg` in a comment is not code) and requires `!_pg` in it. **A suite that only exercised the
+fit helper would have gone green on all three of today's versions, including the two the owner
+rejected** — the helper was never the thing that was wrong. That is the lesson of this entry in one
+line: the assertion has to sit where the decision is.
+
+- a traced tower's footprint is not replaced — the branch cannot be entered for it
+- the rejected oriented-rectangle attempt is gone from the file, not dead in it
+- exactly one definition and one call of the fit helper remain
+- an untraced tower still gets its floor plan, contained and centred in its wrap slot
+- a setback in that slot stays **0.5 ×** the podium's length and **1.0 ×** its depth
+- a portrait-drawn plan is turned to run the length of a wide slot, and never stretched
+
+⚠️ **The contrast block runs pinned `e8a9e73b` — entry (z), an hour old —** and requires it to
+reproduce the defect *at the call site*: a traced tower has its footprint replaced. Pinning the
+version I shipped an hour ago rather than this morning's base is deliberate; (z) is what the owner
+was looking at when they wrote *"the issue still remains"*.
+
+`wiring-check` **139/139**, `test-lsm` **702/702**, `test-builder` **101/101**,
+`test-zoneplan` **27/27**, `test-sitefit` **17/17**, `scan` self-test clean, `dead-hooks` at its
+documented baseline. The inline script parses (1 block), pure LF.
+
+⚠️ **Not verified signed in.** The anon key has no grants and DEMO01 needs a login. **First thing to
+check:** switch between *Whole towers* and *Floor by floor* — Tower 1 and Tower 2 should be the same
+two outlines in the same two places, the second reading simply cut into floors.
+
+`MODULE_V` → `20260916za`, re-derived from what `origin/main` serves (`20260916z`).
+⚠️ `za` follows `z` — not `z1`, and the next collision after `za` is `zb`.
+
 ## 2026-09-16 (z) — Floor by floor: a tower is not the box its corners fall in
 
 Owner, with the two site readings side by side again: *"look at the 3d vertical stacking view

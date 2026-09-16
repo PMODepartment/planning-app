@@ -16852,36 +16852,37 @@
        than the zones drawn on it can only be stated by drawing it. */
     return out.length ? out : plate.polys;
   }
-  /* ==== A FLOOR'S OWN PLAN, PUT WHERE ITS TOWER STANDS ON THE SITE ========================
+  /* ==== A FLOOR'S OWN PLAN, FOR A TOWER THE SITE PLAN DOES NOT NAME =======================
      Owner 2026-09-15, with the per-tower card beside the site view: *"how come in this view, the
      per floor configuration is defined. However in the site view, there is no defined
      configuration or defined floor plans per floor."*
 
-     ⚠️⚠️ THE SITE WAS DRAWING EVERY FLOOR FROM THE TOWER'S SITE FOOTPRINT. On the site plan a
-     tower is ONE traced shape, and the floor-by-floor model hands every slice of that tower the
-     same `c.label` — so `_vsZpPolysOf(sitePlan, tower)` answered with that one outline thirteen
-     times and the building came out an extruded prism. The floors were never consulted. The plans
-     the planner traced per floor were sitting in the same map the per-tower card reads.
+     ⚠️⚠️ AND THE ANSWER TO THAT WAS NOT THIS. Fitting a floor plan into a tower's traced site
+     footprint was tried twice on 2026-09-16 — into its bounding box, then onto its minimum-area
+     rectangle — and rejected both times by the owner in the same words: *"the configuration of
+     the tower is not the same and the location is not the same"*. It cannot be made to work,
+     because the shape being placed was never that tower's footprint: a site plan is traced
+     building by building, an outline at grade, and a floor plan is traced room by room on another
+     sheet at another scale with a core and a notch in it. A traced tower therefore keeps its own
+     site footprint in both readings of the site — see the call site in `_vs3Build`.
 
-     ⚠️ So the floor's own plan is fitted INTO the tower's place. Two facts have to survive that:
-     WHERE the building stands (the site trace) and WHAT SHAPE the floor is (the floor trace).
-     The plan is placed on the tower's own rectangle — centre, extents and heading, see
-     `_vsZpMinRect` — which keeps both.
-     ⚠️⚠️ AND ONE TRANSFORM SERVES THE WHOLE TOWER, never one per floor. Scaling each floor to
-     fill the tower's box on its own blows a setback penthouse up to the size of the podium under
-     it and centres both on the same point: every floor comes out the same footprint, which is a
-     picture that says the building has no setbacks. It also made the site card disagree with the
-     PER-TOWER card about the same building, which draws each floor at its own traced coordinates
-     and shows the setback. `_vsZpPlanBox` accumulates the tower's floors into one source box, the
-     largest floor fills the footprint, and every other floor keeps its own size and offset inside
-     it — the relationship between the floors is the planner's drawing, not this function's.
-     ⚠️ CONTAIN, NEVER STRETCH. The two traces are different drawings at different scales, and
-     stretching a floor plan to fill a site footprint would invent a floor that is not the shape
-     anybody drew — the one thing this view exists to avoid. A plan that is proportionally deeper
-     than its site footprint therefore sits narrower than that footprint rather than distorting.
+     ⚠️ WHAT IS LEFT FOR THIS FUNCTION is the silence: a tower the site plan does not name has no
+     footprint to keep. It stands on a WRAP SLOT — a box the size of its share of the grid, which
+     is a guess and says so in the footer — and there the floor's own plan is strictly better than
+     a box and can contradict nothing.
+     ⚠️⚠️ ONE TRANSFORM SERVES THE WHOLE TOWER, never one per floor. Scaling each floor to fill
+     the slot on its own blows a setback penthouse up to the size of the podium under it and
+     centres both on the same point: every floor comes out the same footprint, which is a picture
+     that says the building has no setbacks — and it made this card disagree with the PER-TOWER
+     card, which draws each floor at its own traced coordinates. `_vsZpPlanBox` accumulates the
+     tower's floors into one source box, the largest floor fills the slot, and every other floor
+     keeps its own size and offset inside it.
+     ⚠️ CONTAIN, NEVER STRETCH. Stretching a plan to fill the slot would invent a floor that is
+     not the shape anybody drew — the one thing this view exists to avoid. A plan proportionally
+     deeper than its slot sits narrower than it rather than distorting.
      ⚠️ The sheets carry their own aspect, so depth is divided by the floor sheet's `ar` before it
      is compared with anything: a floor drawn on a wide sheet and one drawn on a tall sheet are the
-     same building, and only `ar` says so.
+     same building, and only `ar` says so. That is also what lets several floors share one box.
      ⚠️ Points come back in the SITE plate's own 0..1 coordinates, because that is what
      `_vs3PolyMesh` extrudes — this helper never touches world units, so the flip that function
      applies to the depth axis stays its business and cannot be applied twice. */
@@ -16901,56 +16902,6 @@
     });
     return b;
   }
-  /* ==== THE TOWER’S OWN RECTANGLE, NOT THE BOX ITS CORNERS HAPPEN TO FALL IN ==========
-     Owner 2026-09-16, a second time, with the site card in both modes side by side:
-     *"look at the 3d vertical stacking view looking at site and then look at the floor by floor
-     view. FIX"* — the towers change size and place between the two readings of one drawing.
-
-     ⚠️⚠️ AN AXIS-ALIGNED BOUNDING BOX IS NOT A BUILDING. A site plan is traced over a
-     property, and a property is almost never square to the sheet — so a slab tower drawn along a
-     boundary at 30° has a bounding box HALF AS BIG AGAIN as the slab and square-ish where the slab
-     is narrow. Fitting the floor plan into that box is what made Floor by floor draw a wide
-     squared-off building where Whole towers draws a thin angled one, in a different place: the box
-     centre is not the slab centre once the slab is turned.
-     ⚠️ SO THE TARGET IS THE MINIMUM-AREA RECTANGLE of the traced footprint — its centre, its
-     extents AND its heading. Rotating calipers over the convex hull: the minimum-area rectangle
-     always has a side flush with a hull edge, so trying each hull edge as the heading is exact and
-     not a search. For a tower traced square to the sheet it IS the bounding box, so every project
-     that never noticed this keeps exactly the drawing it has.
-     ⚠️ In the PLATE’S metric space (`u × plateW`, `v × plateD`) — rotating 0..1 coordinates whose
-     two axes are different real lengths would shear the tower. The depth flip `_vs3PolyMesh`
-     applies afterwards is a mirror of the whole scene and mirrors the heading with it. */
-  function _vsZpMinRect(polys, plateW, plateD) {
-    var pts = [];
-    (polys || []).forEach(function (q) {
-      (q.pts || []).forEach(function (p) { pts.push([p[0] * plateW, p[1] * plateD]); });
-    });
-    if (pts.length < 3) return null;
-    var h = _vs3Hull(pts);
-    if (!h || h.length < 3) return null;
-    var best = null;
-    for (var i = 0; i < h.length; i++) {
-      var a = h[i], b = h[(i + 1) % h.length];
-      var dx = b[0] - a[0], dy = b[1] - a[1], L = Math.sqrt(dx * dx + dy * dy);
-      if (!(L > 1e-9)) continue;
-      var ux = dx / L, uy = dy / L;
-      var mnU = null, mxU = null, mnV = null, mxV = null;
-      for (var k = 0; k < h.length; k++) {
-        var pu = h[k][0] * ux + h[k][1] * uy, pv = -h[k][0] * uy + h[k][1] * ux;
-        if (mnU === null || pu < mnU) mnU = pu;
-        if (mxU === null || pu > mxU) mxU = pu;
-        if (mnV === null || pv < mnV) mnV = pv;
-        if (mxV === null || pv > mxV) mxV = pv;
-      }
-      var w = mxU - mnU, d = mxV - mnV, area = w * d;
-      if (!best || area < best.area - 1e-12) {
-        var cu = (mnU + mxU) / 2, cv = (mnV + mxV) / 2;
-        best = { area: area, w: w, d: d, ux: ux, uy: uy,
-                 cx: cu * ux - cv * uy, cy: cu * uy + cv * ux };
-      }
-    }
-    return (best && best.w > 1e-9 && best.d > 1e-9) ? best : null;
-  }
   function _vsZpFitPolys(floorPlate, box, plateW, plateD, src) {
     var polys = _vsZpOutlineOf(floorPlate);
     if (!polys || !polys.length) return null;
@@ -16961,20 +16912,15 @@
     if (!sb || sb.u0 === null) return null;
     var fw = sb.u1 - sb.u0, fd = sb.v1 - sb.v0;
     if (!(fw > 1e-6) || !(fd > 1e-6)) return null;
-    // The target, in the plate’s metric space: centre, extents and heading.
-    var tw, td, cx, cy, ux, uy;
-    if (box && box.w > 0 && box.d > 0) {
-      tw = box.w; td = box.d; cx = box.cx; cy = box.cy; ux = box.ux; uy = box.uy;
-    } else {
-      tw = (box.u1 - box.u0) * plateW; td = (box.v1 - box.v0) * plateD;
-      cx = (box.u0 + box.u1) / 2 * plateW; cy = (box.v0 + box.v1) / 2 * plateD;
-      ux = 1; uy = 0;
-    }
+    /* The target: the wrap slot this tower stands in, in the plate’s metric space. ⚠️ Axis-aligned,
+       and rightly — a wrap slot has no heading to keep. The only caller left is the one for a tower
+       the site plan does not name; a traced tower keeps its own footprint and never comes here. */
+    var tw = (box.u1 - box.u0) * plateW, td = (box.v1 - box.v0) * plateD;
+    var cx = (box.u0 + box.u1) / 2 * plateW, cy = (box.v0 + box.v1) / 2 * plateD;
     if (!(tw > 1e-6) || !(td > 1e-6)) return null;
-    /* ⚠️ WHICH WAY ROUND THE PLAN FACES. A plan sheet carries no compass, and a tower traced
-       north–south on the site with its plan drawn landscape would otherwise be shrunk to the
-       width of its own short side. The site trace is what says which way the building runs, so the
-       plan takes the heading that fits it best — a quarter turn, never a stretch.
+    /* ⚠️ WHICH WAY ROUND THE PLAN FACES. A plan sheet carries no compass, and a plan drawn
+       landscape dropped into a portrait slot would otherwise be shrunk to the width of that slot’s
+       short side. It takes the quarter turn that fits better — a quarter turn, never a stretch.
        ⚠️ Decided from the TOWER’S source box, so every floor of a tower turns the same way. */
     var sA = Math.min(tw / fw, td / fd), sB = Math.min(tw / fd, td / fw), turn = sB > sA;
     var s = turn ? sB : sA;
@@ -16985,7 +16931,7 @@
         pts: (q.pts || []).map(function (p) {
           var a = (p[0] - cu2) * s, b2 = (p[1] / arF - cv2) * s;
           if (turn) { var t = a; a = -b2; b2 = t; }
-          return [(cx + a * ux - b2 * uy) / plateW, (cy + a * uy + b2 * ux) / plateD];
+          return [(cx + a) / plateW, (cy + b2) / plateD];
         })
       };
     });
@@ -17683,42 +17629,51 @@
         }
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
-        /* ==== ON THE SITE, A FLOOR IS DRAWN FROM ITS OWN PLAN ==============================
+        /* ==== THE SITE PLAN WINS WHERE IT SPEAKS; THE FLOOR PLAN FILLS THE SILENCE =========
            Owner 2026-09-15: *"in the site view, there is no defined configuration or defined
-           floor plans per floor."* And there was not: every slice of a tower carried the tower's
-           SITE outline, because that is what `c.label` matches on the site plan. The floor's own
-           plan — the one the per-tower card draws, traced under Floors & Zones › Plan — is fitted
-           into the tower's place instead, so the site says what each floor IS as well as where it
-           stands. See _vsZpFitPolys for what "fitted" means and what it refuses to do.
-           ⚠️ THE TARGET IS THE TOWER'S OWN BOX: its traced site footprint where it has one, its
-           wrap slot where it does not. Either way the floor lands on the tower, not on the site.
-           ⚠️ AFTER the colour decision, deliberately. `fill` is already settled from the tower's
-           site polygon, so a floor plan cannot repaint a tower and delete the channel that says
-           which building this is.
-           ⚠️ Nothing found leaves `_pg` exactly as it was: a project with no floor plans traced
-           keeps the prisms it has today rather than losing its towers. */
-        if (model.siteFloors && c.floor) {
-          /* ⚠️⚠️ THE TOWER’S OWN RECTANGLE, not the box its corners fall in — see _vsZpMinRect.
-             A site is traced over a property and a property is rarely square to the sheet, so the
-             bounding box of an angled slab is bigger than the slab, square where the slab is thin,
-             and centred somewhere the slab is not. That box is what drew a wide, squared-off,
-             displaced building here where Whole towers draws a thin angled one. */
-          var _tb = (_pg && _pg.length) ? _vsZpMinRect(_pg, plateW, plateD) : null;
+           floor plans per floor."* — so every slice of a tower was redrawn from that floor’s own
+           plan, fitted into the tower’s place.
+           Owner 2026-09-16, three times, the last with the two readings side by side:
+           *"The configuration of the tower is not the same and the location is not the same. why?"*
+
+           ⚠️⚠️ BECAUSE A FLOOR PLAN AND A SITE TRACE ARE TWO DIFFERENT DRAWINGS OF ONE BUILDING,
+           AND NO AMOUNT OF FITTING MAKES ONE INTO THE OTHER. A site plan is traced building by
+           building — an outline at grade, a rectangle on the owner’s own project. A floor plan is
+           traced room by room, on a different sheet, at a different scale, with a core and a notch
+           in it. Placing the second where the first says is not a smaller error than the last two
+           attempts at it (the bounding box, then the oriented rectangle, both this same day): it
+           is the SAME error, because the shape being placed was never the tower’s footprint.
+           Two clicks apart, one building was a rectangle and an L, in two places. The card’s own
+           footer has said *"Every tower is placed as you traced it"* the whole time, and the Floor
+           by floor button has promised *"on its own footprint"*. Both were untrue.
+
+           ⚠️⚠️ SO THE TOWER’S TRACED SITE FOOTPRINT IS THE TOWER, IN BOTH READINGS. Whole towers
+           and Floor by floor now differ in exactly the thing their names differ in: whether the
+           solid is cut into storeys. Same outline, same place, same size, same heading. What a
+           floor contributes here is what a SITE view can honestly show of it — that it exists,
+           its name, its progress, its dates and its click — and not a shape from another drawing.
+           ⚠️ WHERE TO SEE A FLOOR’S SHAPE: **Per tower**, one control away, whose whole job is
+           *"what does this building look like"* and which extrudes every floor at its own traced
+           coordinates. That is the answer to 2026-09-15, in the view that can carry it.
+
+           ⚠️ AND THE FLOOR PLAN STILL FILLS A SILENCE. A tower the site plan does not name has no
+           footprint to keep — it stands on a wrap slot, a box the size of its share of the grid,
+           and there the floor’s own plan is strictly better than a box and can contradict nothing.
+           `!_pg` is the whole test: a traced tower never reaches this. */
+        if (model.siteFloors && c.floor && !_pg) {
           /* ⚠️ The wrap slot, in the PLATE’s own coordinates — and the depth axis is inverted on
              the way in, because `_vs3PolyMesh` inverts it on the way out (rotation.x = -PI/2 sends
              a shape’s +Y to world −Z). Handing it an un-inverted box would fit the floor plan into
-             the mirror image of the slot its own block is drawn in.
-             ⚠️ Axis-aligned, and rightly: a wrap slot has no heading to keep. */
-          if (!_tb) {
-            _tb = { u0: (x - exW / 2) / plateW + 0.5, u1: (x + exW / 2) / plateW + 0.5,
-                    v0: 0.5 - (z + exD / 2) / plateD, v1: 0.5 - (z - exD / 2) / plateD };
-          }
+             the mirror image of the slot its own block is drawn in. */
+          var _tb = { u0: (x - exW / 2) / plateW + 0.5, u1: (x + exW / 2) / plateW + 0.5,
+                      v0: 0.5 - (z + exD / 2) / plateD, v1: 0.5 - (z - exD / 2) / plateD };
           /* ⚠️⚠️ THE TOWER IS THE CELL’S, not the model’s. A site card holds every tower, so
              `model.tower` is null here and the lookup would fall back to the bare floor key — which
              is the very collapse this argument exists to close (see _vsZpFor). `c.label` IS the
-             tower on both site models, and it is what the tower’s own site footprint was matched on
-             two dozen lines above, so the two cannot disagree about which building this is. */
+             tower on both site models. */
           var _fpl = _vsZpFor(c.floor, model.trade, c.label);
+          /* ⚠️ ONE TRANSFORM FOR THE TOWER’S FLOORS, so a setback stays a setback inside the slot
+             rather than every floor being blown up to fill it — see `_twSrc`. */
           var _fpg = _fpl ? _vsZpFitPolys(_fpl, _tb, plateW, plateD, _twSrc(c.label)) : null;
           if (_fpg && _fpg.length) _pg = _fpg;
         }
