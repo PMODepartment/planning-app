@@ -102,6 +102,51 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (d) — Dropdown text on iPhone was faint because the page never told the browser it was light
+
+Owner, with a screenshot of the Users page on an iPhone: the Role and Department `<select>`
+dropdowns showed their text ("admin", "planner") extremely faint, thin and low-contrast against the
+white cell — legible on desktop, not on the phone.
+
+### ⚠️⚠️ THE PAGE DECLARED DARK MODE'S NATIVE-CONTROL SCHEME AND NEVER DECLARED LIGHT'S
+
+`html.pd-dark { color-scheme: dark; }` has existed since dark mode shipped, with a comment naming
+exactly why: `color-scheme` tells the browser which palette to use for the parts of a `<select>`,
+date picker or scrollbar it draws **natively** rather than from author CSS. `:root` — the state the
+app is in whenever `.pd-dark` is not present — declared no `color-scheme` at all.
+
+This app's theme is a **class**, set by `theme.js`, and has nothing to do with the OS's own dark-mode
+setting. So a session with the app rendering **light** (white card, `--pd-ink` near-black text, no
+`.pd-dark` class) on a phone whose **iOS system appearance is Dark** left the browser with no signal
+either way for the one thing it does not take from `--pd-card`/`--pd-ink`: the native chrome of the
+`<select>` itself. WebKit falls back to the OS preference for that — rendering the box's own text in
+something close to white, **on top of the app's own correctly-white cell**. That is "faint, thin,
+barely legible against the white background" exactly: not a broken colour token (`--pd-ink` is a
+solid `#231F20` and always was), a missing signal for the one surface the token cannot reach.
+
+⚠️ **`:root { color-scheme: light; }` cannot un-set dark mode when dark mode is genuinely on** —
+`:root` is a pseudo-class, specificity `(0,1,0)`; `html.pd-dark` is element+class, `(0,1,1)`, so the
+dark declaration keeps winning on specificity alone, in either source order. Verified by inspection of
+both rules' selectors rather than assumed.
+
+⚠️ Nothing about `.pd-select`'s own `color`/`background`/`padding` needed to change — those already
+resolve to the correct light-theme tokens and were never the problem; only the native-chrome signal
+was missing, for every `<select>` and date/time input on the page, on any device whose OS appearance
+disagrees with the app's own current theme.
+
+### Verified
+
+Brace balance on `dashboard.css` holds (577/577), 0 NUL bytes. `node tools/wiring-check.js` —
+**139 passed, 0 failed**, 3,710 cross-module references, every asset on one version. `admin.html`'s
+inline script still parses.
+⚠️ **Not verified signed in, and not verified on a real iPhone** — no live login or real iOS device is
+reachable from this environment; the fix is argued from the CSS cascade and the standard meaning of
+`color-scheme`, which is exactly the mechanism the dark-mode block already relies on for the same
+controls in the other direction.
+
+`dashboard.css?v=` → `20260916a` (31 pages, shared, sort-checked). No `MODULE_V` bump — a shared
+stylesheet token-only change, no module `index.html` changed structurally.
+
 ### 2026-09-16 (c) — An admin can no longer touch a super_admin's account, and the row still says who they are
 
 **Run `migrations/2026-09-16-users-protect-super-admin.sql`.** Owner, on the Users page: *"if I am
