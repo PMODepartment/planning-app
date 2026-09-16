@@ -5512,18 +5512,33 @@
     for (var i = 0; i < t.length; i++) { h = ((h << 5) - h + t.charCodeAt(i)) | 0; }
     return h;
   }
+  /* ⚠️⚠️ THE VERSION IS PART OF THE SIGNATURE, so widening what the repairs read re-runs them
+     ONCE on every project instead of leaving the ones already in the bad state to sit in it for
+     ever. A fingerprint is a promise that nothing the repairs read has moved; changing what they
+     read breaks that promise, and a signature stored from before the change is not evidence of
+     anything. Bump this whenever the set of facts below changes. */
+  var _HEAL_SIG_V = 2;
   function _healFingerprint() {
     var nAct = 0, nWbs = 0, h = 2166136261;
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (isWbs(r)) { nWbs++; h = _hash32(h, r.wbs + '\u0001' + (r.wbs_node_id || '')); }
-      else nAct++;
+      /* ⚠️⚠️ AN ACTIVITY'S (code, node) IS PART OF THIS NOW, and leaving it out was the same
+         blind spot as the one inside `_wbsResyncCodes`, one level up. The repairs read an
+         activity's dotted code and the node it is filed under; an activity RE-FILED onto a
+         different node while every branch kept its code moved nothing this signature covered, so
+         the gate reported "nothing to do" and the chain never ran — which is how a project reaches
+         a STEADY state with activities addressing branches that no longer exist. Owner 2026-09-16:
+         *"there are activities that do not fall in the correct location or zoning."*
+         ⚠️ One more hash per activity: the same cost class as the nodes already swept here, against
+         a chain of network round-trips it is deciding whether to skip. */
+      else { nAct++; h = _hash32(h, (r.wbs || '') + '\u0001' + (r.wbs_node_id || '')); }
     }
     for (var j = 0; j < WBS_NODES.length; j++) {
       var n = WBS_NODES[j]; if (!n) continue;
       h = _hash32(h, n.id + '\u0001' + (n.parent_id || '') + '\u0001' + (n.sort_order || 0) + '\u0001' + (n.code || ''));
     }
-    return rows.length + '.' + nAct + '.' + nWbs + '.' + WBS_NODES.length + '.' + ((h >>> 0).toString(36));
+    return 'v' + _HEAL_SIG_V + '.' + rows.length + '.' + nAct + '.' + nWbs + '.' + WBS_NODES.length + '.' + ((h >>> 0).toString(36));
   }
   function _healKey() { return 'ps_healsig_' + pid; }
   function _healWasClean() { try { return localStorage.getItem(_healKey()); } catch (e) { return null; } }
@@ -29164,6 +29179,31 @@
     return moved;
   }
   var _resyncWarned = {};
+  /* THE CODE ONE ROW SHOULD CARRY, given its node's code. ⚠️⚠️ A SUMMARY ROW *IS* ITS NODE; AN
+     IMPORTED ACTIVITY SITS ONE LEVEL BELOW IT.
+     Until activities were attached to the tree (`_wbsLinkActivityParents`) every row reaching this
+     rule was a summary row, so "the row's code is the node's code" held. It does not hold for an
+     activity: an imported activity carries its own leaf segment — "4.2.3.1.5" under branch
+     "4.2.3.1" — and rewriting it to the branch code would collapse EVERY activity in a branch onto
+     one shared code, which `rebuild()` then reads as ancestry. Measured against the real files: the
+     un-guarded rule rewrites 4,393 (Avesta) / 16,393 (Strevi) activity codes, i.e. the entire
+     schedule, on the first load() after adoption. Only the BRANCH part of the code may move; the
+     row's own tail segment is its identity and is kept.
+     ⚠️ Depth is the discriminator and it is reliable: a Builder-pushed / manually-added activity is
+     filed AT its node and carries exactly the node's code (same depth → take the node's code as-is),
+     while an imported activity is strictly deeper.
+     ⚠️ Named and lifted out of the loop so it can be EXECUTED by the suite rather than read — the
+     rule is the whole of what a re-sync does to a row, and it lived inside a paging function that
+     needs a database. */
+  function _wbsWantCodeFor(r, nodeCode) {
+    if (!nodeCode) return null;
+    var want = String(nodeCode);
+    if (r && r.activity_type !== 'WBS Summary') {
+      var sg = String(r.wbs == null ? '' : r.wbs).split('.'), wSegs = want.split('.');
+      if (sg.length > wSegs.length) want = want + '.' + sg[sg.length - 1];
+    }
+    return want;
+  }
   async function _wbsResyncCodes() {
     // ⚠️ Scrub first: this pass WRITES, and a falsy node would either throw part-way through
     // (leaving the tree half-repaired) or be judged as a node with no parent and re-rooted.
@@ -29208,14 +29248,41 @@
     _resyncingCodes = true;
     try {
       var ownPid = pid, codeOf = computeWbsCodes(), all = [], bad = false;
-      // ⚠️ TWO PHASES, and the second one usually does not run. Until activities were attached to the
-      // tree (_wbsLinkActivityParents) "linked rows" and "summary rows" were the same set, so one
-      // unfiltered page-through was free. Now every activity carries a node id too, and paging them
-      // all in would DOUBLE this query on every single load — 29 round-trips instead of 13 on the
-      // Strevi project — to discover, almost always, that nothing drifted.
-      // The short-circuit is exact rather than a heuristic: an activity's target code is its node's
-      // code plus its own tail, so if not one summary row's code has moved, no activity's can have
-      // either. A healthy project therefore pays LESS than before this change, not more.
+      /* ==== BOTH PAGES, ALWAYS — A SUMMARY ROW CANNOT SEE AN ACTIVITY’S DRIFT ===============
+         Owner 2026-09-16, with the WBS tree open on a builder-pushed schedule: *"pls fix the logic
+         of the grouping or the WBS when generated from the schedule builder. as you can see there
+         are activities that do not fall in the correct location or zoning."* — Rebar for
+         `Tower 2 · Floor 2 · Zone 1` sitting after the last floor branch instead of inside Zone 1,
+         with its neighbours from the same zone correctly filed.
+
+         ⚠️⚠️ THIS PASS HAD A SHORT-CIRCUIT THAT CALLED ITSELF EXACT AND WAS NOT. It paged the
+         SUMMARY rows, and fetched the activities only if one of those codes had moved — reasoning
+         that *"an activity’s target code is its node’s code plus its own tail, so if not one
+         summary row’s code has moved, no activity’s can have either."*
+         That holds only while the one way an activity’s code can go stale is its NODE being
+         renumbered. It is not: **an activity also drifts when it is re-filed onto a different
+         node while every branch keeps the code it had.**
+
+         ⚠️⚠️ AND THE PASS THAT DOES EXACTLY THAT RUNS IMMEDIATELY BEFORE THIS ONE, IN THIS
+         CHAIN. `_wbsDedupeSiblingNodes` merges two nodes for one branch and *moves their
+         activities onto the surviving branch* — which changes `wbs_node_id` and does NOT touch
+         the dotted code. The survivor’s own summary row was already correct, so `_summaryDrift`
+         came back false, the activities were never fetched, and every moved activity kept a code
+         addressing a branch that no longer exists. `rebuild()` derives the grid’s hierarchy by
+         SPLITTING that code, so those rows render after the last surviving sibling, in code
+         order, detached from the zone their `wbs_node_id` says they are in. The builder’s
+         grouping was right the whole time; this is what unfiled it.
+         ⚠️ The same hole is open for any other re-filing — `_wbsLinkActivityParents`, a manual
+         re-parent in the WBS Manager, a re-push that adopts an existing branch.
+
+         ⚠️ SO BOTH PAGES ARE FETCHED, AND THE COST IS PAID WHERE IT BELONGS. The saving the old
+         gate was written for is real (13 round-trips instead of 26 on a 12,459-node project) but
+         it was buying it with correctness. The honest saving is the CALLER’S: the whole repair
+         chain is already behind `_healNeeded` (see `_healFingerprint`), so an unchanged project
+         never reaches this function. What this used to save was the second page on a load where
+         something HAD moved — which is precisely the load that has to look.
+         ⚠️ Three columns, `wbs_node_id` not null. An activity with no node has nothing to be
+         re-synced against and is never touched here. */
       async function page(summariesOnly) {
         var out = [], from = 0;
         for (;;) {
@@ -29232,35 +29299,16 @@
       }
       all = await page(true);
       if (bad) return 0;
-      var _summaryDrift = all.some(function (r) {
-        var w = codeOf[r.wbs_node_id];
-        return w && String(r.wbs) !== String(w);
-      });
-      if (_summaryDrift) {
-        all = all.concat(await page(false));
-        if (bad) return 0;
-      }
+      all = all.concat(await page(false));
+      if (bad) return 0;
       // Group the drifted rows by the code they SHOULD carry — one UPDATE per target code.
       var byCode = {}, n = 0;
       all.forEach(function (r) {
         var want = codeOf[r.wbs_node_id];
         if (!want) return;
-        // ⚠️⚠️ A SUMMARY ROW *IS* ITS NODE; AN IMPORTED ACTIVITY SITS ONE LEVEL BELOW IT.
-        // Until activities were attached to the tree (_wbsLinkActivityParents) every row reaching
-        // this loop was a summary row, so "the row's code is the node's code" held. It does not hold
-        // for an activity: an imported activity carries its own leaf segment — "4.2.3.1.5" under
-        // branch "4.2.3.1" — and rewriting it to the branch code would collapse EVERY activity in a
-        // branch onto one shared code, which rebuild() then reads as ancestry. Measured against the
-        // real files: the un-guarded rule rewrites 4,393 (Avesta) / 16,393 (Strevi) activity codes,
-        // i.e. the entire schedule, on the first load() after adoption. Only the BRANCH part of the
-        // code may move; the row's own tail segment is its identity and is kept.
-        // Depth is the discriminator and it is reliable: a Builder-pushed / manually-added activity
-        // is filed AT its node and carries exactly the node's code (same depth → take `want` as-is,
-        // unchanged behaviour), while an imported activity is strictly deeper.
-        if (r.activity_type !== 'WBS Summary') {
-          var segs = String(r.wbs == null ? '' : r.wbs).split('.'), wSegs = String(want).split('.');
-          if (segs.length > wSegs.length) want = want + '.' + segs[segs.length - 1];
-        }
+        // ⚠️ The rule is `_wbsWantCodeFor` — a summary row IS its node, an imported activity sits
+        // one level below it, and only the BRANCH part of a code may move. Named, so the suite runs it.
+        want = _wbsWantCodeFor(r, want);
         if (String(r.wbs) === String(want)) return;
         (byCode[want] = byCode[want] || []).push(r.id); n++;
       });
@@ -44506,7 +44554,8 @@
         nodeDescs.forEach(function (nd) { var d = depthOf[nd.key]; (byDepth[d] = byDepth[d] || []).push(nd); if (d > maxDepth) maxDepth = d; });
         var doneN = 0;
         for (var dep = 1; dep <= maxDepth && wbsOk; dep++) {
-          var level = byDepth[dep] || [], batch = [], batchDescs = [];
+          // ⚠️ Per DEPTH, because that is the scope of one insert — see the dedupe below.
+          var level = byDepth[dep] || [], batch = [], batchDescs = [], _pendingByKey = {};
           for (var li = 0; li < level.length; li++) {
             var nd = level[li];
             soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
@@ -44529,6 +44578,32 @@
             /* ⚠️ package_id on the BRANCH as well as the leaf. packageOf() resolves an
                activity through its nearest tagged ancestor, so tagging the branches is
                what keeps a re-parented or newly-added activity inside the right lot. */
+            /* ==== TWO DESCS, ONE BRANCH: DEDUPE BEFORE THE INSERT, NOT AFTER =================
+               ⚠⚠ `existingChild` READS `WBS_NODES`, AND `WBS_NODES` IS NOT WRITTEN UNTIL THE BATCH
+               COMES BACK. So it can only see branches that existed BEFORE this push — two descs at
+               the same depth with the same parent and the same name both fell through it and were
+               inserted, giving one branch two nodes with the activities split between them.
+               ⚠⚠ AND THAT IS WHERE THE OWNER’S MISFILED ACTIVITIES CAME FROM. `_wbsDedupeSiblingNodes`
+               finds the pair on the next load and merges them — correctly — by moving the loser’s
+               activities onto the survivor, which changes `wbs_node_id` and not the dotted code. Half
+               a zone then addressed a branch that no longer existed. `_wbsResyncCodes` now repairs
+               that; this stops making it.
+               ⚠️ The duplicate is mapped to the FIRST desc’s key once its id is known — `sameAs`,
+               resolved after the insert — rather than dropped: its rows belong on that branch.
+               ⚠️ `reused` too, so the second desc writes no second WBS-Summary row for one node.
+               ⚠️ Keyed exactly as `existingChild` keys: parent id + trimmed, lower-cased name. Two
+               spellings that would collide in the database must collide here. */
+            var _dk = String(parentId || '') + '\u0000' + _nm.toLowerCase();
+            if (_pendingByKey[_dk]) {
+              nd.sameAs = _pendingByKey[_dk]; reused[nd.key] = 1;
+              /* ⚠️ Give back the sibling slot `_nodeOrderPlan` just took — a duplicate occupies no
+                 position of its own, and a gap in `sort_order` is what re-codes a branch on the
+                 next load. The KEY it took depends on the branch kind, so undo the one it used. */
+              var _sk = nd.keepOrder ? ('+' + nd.parentKey) : nd.parentKey;
+              if (soByParent[_sk] != null) soByParent[_sk]--;
+              doneN++; continue;
+            }
+            _pendingByKey[_dk] = nd.key;
             var _row = { project_id: pid, parent_id: parentId, name: _nm, sort_order: _plan.sort, created_by: UID };
             if (usePkg) _row.package_id = usePkg;
             batch.push(_row);
@@ -44537,13 +44612,22 @@
           for (var b = 0; b < batch.length && wbsOk; b += 400) {
             var slice_ = batch.slice(b, b + 400), descs_ = batchDescs.slice(b, b + 400);
             var bres = await sb().from('wbs_nodes').insert(slice_).select();
-            if (!bres.error && bres.data && bres.data.length === slice_.length) {
-              for (var k2 = 0; k2 < descs_.length; k2++) {
-                keyToNodeId[descs_[k2].key] = bres.data[k2].id;
-                WBS_NODES.push(bres.data[k2]); createdNodeIds.push(bres.data[k2].id);
-              }
-            } else if (!bres.error && bres.data) {
-              // Short or reordered response — match each desc to its row by (parent_id, name).
+            if (!bres.error && bres.data) {
+              /* ==== MATCHED BY (parent_id, name). NEVER BY POSITION ==========================
+                 ⚠⚠ THIS USED TO TRUST THE ROW ORDER OF THE RESPONSE whenever the response was
+                 full-length, and fall back to matching only when it was SHORT. A response that
+                 comes back complete but REORDERED therefore passed the length check and was matched
+                 positionally — handing every desc a sibling’s node id, so a whole branch’s
+                 activities were filed under the branch next door and the summary row written for it
+                 carried another branch’s name. Exactly the owner’s *"activities that do not fall in
+                 the correct location or zoning"*, and invisible in the push summary because nothing
+                 errored.
+                 ⚠️ PostgREST is not documented to preserve payload order, and the old code already
+                 said so — it wrote the fallback for it and then gated the fallback on a condition
+                 that a reordered full response does not meet. The match is cheap (one pass over a
+                 shrinking pool) and is now the only path, so the guarantee is never assumed.
+                 ⚠️ Siblings within one batch are unique on (parent_id, name) — the dedupe above is
+                 what makes this match unambiguous. */
               var pool = bres.data.slice();
               for (var k3 = 0; k3 < descs_.length; k3++) {
                 var want = slice_[k3], hit = -1;
@@ -44568,6 +44652,9 @@
             if (typeof setProgress === 'function') setProgress(0.35 * Math.min(1, doneN / Math.max(1, nodeDescs.length)));
           }
         }
+        /* ⚠️ The descs that were folded into an earlier one now take its node id. Done AFTER every
+           depth, so a chain of duplicates resolves whichever order they were seen in. */
+        nodeDescs.forEach(function (nd) { if (nd.sameAs && keyToNodeId[nd.sameAs]) keyToNodeId[nd.key] = keyToNodeId[nd.sameAs]; });
         // ⚠️⚠️ ROLL THE PARTIAL TREE BACK. This is the root cause of the duplicated WBS rows the
         // owner has reported twice. The loop above stops at the FIRST insert error, but every node it
         // already created stays in `wbs_nodes` — and the fallback below then writes a dotted-code
