@@ -103,6 +103,37 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (z1) — The Progress Photos hotfix is merged, and the cache-bust token that would have hidden it
+
+Owner: *"Can you preview if there are any pull requests from the progress photos and merge it"* — then
+the merge command itself.
+
+Merged `module/progress-photos` (`ba6045a`, Rachelle) into main as `44ab9b0`: one deleted line in
+`modules/progress-photos/module.js`, the other 23 comments. `wire()` still called `wirePanoDrag()`,
+deleted 2026-09-11 when the 360° viewer moved to Pannellum, and the `ReferenceError` it threw
+synchronously inside `wire()` — which `init()` calls with no try/catch — skipped `load()`,
+`loadSchedule()` and `fillFilterOptions()` for the rest of the session, on **every** project.
+
+Checked before merging, not after: main still had the live call at `module.js:851` and **no
+definition of the function anywhere in the module** (every other hit is a comment in CLAUDE.md,
+module.css or test.js); main had not touched `module.js` since the merge-base, so the merge was
+clean at 1 file, +24/−3; the merged file passes `node --check`.
+
+### ⚠️ The check that mattered was the one run against the *broken* file
+
+A static pass over `wire()`'s body reported **no calls to undefined names** after the merge — which
+is worth exactly nothing on its own, because a checker that finds nothing looks identical to a
+checker that is broken. Run against pre-merge main the same pass reports `wirePanoDrag`. Only the
+second run makes the first one evidence.
+
+### ⚠️⚠️ The hotfix would not have reached a single browser that had already loaded the module
+
+`modules/progress-photos/index.html:414` read `module.js?v=20260916z1` — **the same token the hotfix
+commit names as the deployed build it reproduced the crash against.** The fix changed `module.js`
+but nothing changed the URL it is fetched from, so every browser holding that token in cache would
+have kept serving the crashing file and the merge would have looked like it did nothing. Bumped to
+`20260916z2`. Sort-checked forward against the existing token, not just changed.
+
 ### 2026-09-16 (z) — One treatment and one order for every module bar, and a red primary that stopped going grey
 
 Owner, across three messages: *"Let's also check the toolbar buttons UI overall. Some buttons have
