@@ -1,3 +1,105 @@
+## 2026-09-16 (k) — The Summary is rebuilt around a verdict, and seven figures it already computed
+
+Owner: *"Check the summary page live it needs UI improvements overhaul"*, then, asked whether KPI
+cards were the right shape at all: *"Let's brainstorm."*
+
+### ⚠️⚠️ WHAT WAS WRONG WAS THE RANKING, NOT THE FIGURES
+
+Measured on the shipped page at 1400px **before a line was changed**:
+
+| | |
+|---|---|
+| KPI cards | **six**, laid out **5 + 1** — a **746px trailing gap** with a lone Health card in it |
+| charts | **zero**, anywhere on the page |
+| detail rows | **eighteen, in four sections, all drawn with the identical `.ps-smy-row`** — so a 64-day slip reads exactly like a schedule-quality metric |
+| section headings | **11px — the same size as their own content**, so nothing outranks anything |
+
+⚠️⚠️ **`summaryData()` IS BYTE-IDENTICAL TO BEFORE — 7850 chars, compared programmatically rather
+than asserted.** The arithmetic was already right; what the page lacked was a shape that says which
+number matters. Every change here is presentation.
+
+⚠️ **The principle is this repo's own.** The Portfolio Overview went through exactly this on
+2026-09-16 (e) and recorded it in one line — *"What was there reported LEVELS … A level is not a
+decision."* So: **one verdict, then the evidence, then the detail.**
+
+1. a **verdict line** — the finish position as a sentence, not assembled by the reader
+2. **four cards, not six** — each triggering a different action
+3. a **curve**, because *"are we catching up or falling further behind"* is a question no count can
+   answer at any size
+4. what is **driving** the finish, ranked — not a count of critical activities
+5. **milestones on a time axis**, so overdue sits visibly left of today
+6. trades, look-ahead and health as **supporting detail**
+
+### ⚠️⚠️ SEVEN FIGURES THE PAGE ALREADY COMPUTED AND NEVER PRINTED
+
+`cpm.start` (the programme had **no start date on screen**), `ms.achieved`, `counts.done`,
+`counts.acts`, `counts.total`, `ms.total` and the trade count. Found by grepping the old renderer for
+each: **0 uses**. Computing a figure and not printing it is the cheapest kind of waste — the work is
+already done. *"14 of 120 achieved"* is also what makes *"3 overdue"* mean anything.
+
+### The decisions worth keeping
+
+- ⚠️⚠️ **THE CURVE COMES FROM `PDScurve`, THE SHARED ENGINE.** `portfolio-overview` carried a
+  hand-copied copy of this maths until 2026-09-10 (z1) and its own log records what that cost. The
+  S-Curve module, the project Dashboard panel and this page now read one engine. ⚠️ It returns null
+  rather than throwing when the engine is absent, because `scurve.js` is one more script tag that can
+  fail to load.
+- ⚠️⚠️ **The actual series is CLIPPED AT THE DATA DATE, and it has to be** — `PDScurve` pads the
+  series to the full programme span, so drawing it unclipped would show a flat "actual" line running
+  into the future, which reads as *work stopped* rather than *not yet reported*.
+- ⚠️⚠️ **Two EXPLICIT tracks, not `auto-fit`.** Measured at 1400px: `auto-fit` built **three** tracks
+  for two columns of content, stranding the third. The same 5+1 defect the six cards had, one level
+  down.
+- ⚠️⚠️ **The verdict tint is composited over `--pd-card`, NOT over the page ground** — a tint measured
+  against the wrong surface is how a "passing" contrast figure ships unreadable. Same reasoning as the
+  BOQ status pills.
+- ⚠️ **`.ps-smy` cap 1180 → 1320px.** With a curve and a two-column body the old cap starved both.
+- ⚠️⚠️ **NO BASELINE AT ALL IS A DIFFERENT ANSWER FROM "NOTHING HAS SLIPPED", kept verbatim from
+  2026-09-15 (v).** That entry exists because the page told a project with 2,561 unbaselined
+  activities that nothing had slipped. The rebuild does not get to quietly re-introduce it.
+
+### ⚠️ One real gap found by the class audit, and one false positive
+
+Auditing every `ps-smy-*` class emitted against every one with a CSS rule: **`ps-smy-col` was emitted
+four times with no rule at all.** Not broken — the track is `minmax(0,1fr)`, which is the deliberate
+shrink guard — but a grid child defaults to `min-width:auto`, so the day one of those wrappers holds
+a flex row it would widen past its column on a long activity name. `.ps-smy-col { min-width:0 }`
+closes it and stops the class reading as emitted-but-unstyled to the next audit.
+
+⚠️ `ps-smy-v-` is flagged by the same audit and is **correct**: it is `'ps-smy-v-' + vTone`, a
+concatenated prefix, and all four assignments of `vTone` are `good` / `bad` / `none`, each with a
+rule. The trailing-hyphen shape is the false positive `tools/dead-hooks.js` already documents.
+
+### Verified
+
+Inline `<script>` **parses** — 1 block, which is the check that matters here, because a 50k-line
+module dies whole on one syntax error and brace-balance cannot see it. `<style>` braces
+**2298 / 2298**; `function` keywords 7122 → **7139**; 0 NUL, pure LF. `wiring-check` **139/139**
+(`scurve.js` resolves and every asset is on one version); `dead-hooks` **9**, the documented baseline.
+The concurrent session's suites re-run on the integrated tree: `portfolio-dash` **184/0**,
+`portfolio-overview` **99/0**.
+
+⚠️⚠️ **MY OWN PARSE CHECKER WAS WRONG FIRST, and it reproduced this repo's documented 16/14 false
+positive.** A global `<script>` regex left to run over text it had already consumed matched the
+literal `<script` **inside the JS strings that build the print and export stylesheets**, opened bogus
+overlapping blocks and reported two parse failures in correct code. It reported them **identically on
+HEAD**, which is the only reason I did not chase them. Fixed by resuming the scan *after* each block
+it closes — which is also the browser's own rule. It now finds **1** block, not 3.
+
+⚠️ **Not verified signed in**, and ⚠️ **no committed suite covers `summaryData`** — the 30 assertions
+the 2026-09-15 (s) entry cites were scratch files and are not in the repo, the same gap
+`contracts-claims` had before `test-boq.js` was written. The function is unchanged here, so this
+change does not widen that gap, but it does not close it either.
+
+⚠️ **Carved.** This work was uncommitted in the same file as the concurrent session's unpushed
+portfolio-scope work (`takeOver('schedule')`). Established first that my Summary code makes **zero**
+references to `PortfolioDash`, then removed their three blocks and **restored their own newer
+`db.js` token**, which the working tree had reverted. Their work is untouched on disk.
+
+`MODULE_V` → `20260916k`. ⚠️ **Not `j`** — the concurrent session took that while this was in flight,
+and the token is re-derived from what `origin/main` actually has **after** integrating, never guessed
+before. `scurve.js` keeps `?v=20260901a`: it is newly referenced here, not changed.
+
 ## 2026-09-15 (w) — `fitDist`: one framing rule, and it finally knows the canvas's shape
 
 Owner: *“The presets view also do not view properly and I cannot see the ground”*.

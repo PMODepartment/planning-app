@@ -102,6 +102,65 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (k) — The Schedule Summary is rebuilt around a verdict, and seven figures it already computed
+
+Owner: *"Check the summary page live it needs UI improvements overhaul"*, then, asked whether KPI
+cards were the right shape at all: *"Let's brainstorm."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### ⚠️⚠️ THE RANKING WAS WRONG, NOT THE FIGURES
+
+Measured on the shipped page at 1400px **before a line was changed**: **six** KPI cards laid out
+**5 + 1**, leaving a **746px trailing gap** with a lone Health card in it; **zero** charts anywhere;
+**eighteen detail rows across four sections all drawn with the identical treatment**, so a 64-day
+slip reads exactly like a schedule-quality metric; and section headings at **11px — the same size as
+their own content**, so nothing outranks anything.
+
+⚠️⚠️ **`summaryData()` IS BYTE-IDENTICAL TO BEFORE — 7850 chars, compared programmatically rather
+than asserted.** The arithmetic was already right. Every change here is presentation.
+
+⚠️ **The principle is this repo's own**, from the Portfolio Overview's 2026-09-16 (e) pass: *"A level
+is not a decision."* So — one **verdict** as a sentence, four cards instead of six (each triggering a
+different action), a **curve** because *"are we catching up or falling behind"* is a question no count
+can answer at any size, what is **driving** the finish, **milestones on a time axis** so overdue sits
+visibly left of today, then the rest as supporting detail.
+
+### ⚠️⚠️ SEVEN FIGURES THE PAGE COMPUTED AND NEVER PRINTED
+
+`cpm.start` — **the programme had no start date on screen** — plus `ms.achieved`, `counts.done`,
+`counts.acts`, `counts.total`, `ms.total` and the trade count. Found by grepping the old renderer for
+each: **0 uses**. Computing a figure and not printing it is the cheapest kind of waste.
+
+⚠️⚠️ **The curve reads `PDScurve`, the SHARED engine, not a second implementation** —
+`portfolio-overview` carried a hand-copied copy of this maths until 2026-09-10 (z1) and its own log
+records what that cost. ⚠️ Its actual series is **clipped at the data date**, because `PDScurve` pads
+to the full span and an unclipped line runs flat into the future, which reads as *work stopped*
+rather than *not yet reported*.
+
+### Verified
+
+The inline `<script>` **parses** — the check that matters here, since a 50k-line module dies whole on
+one syntax error and brace-balance cannot see it. `<style>` braces **2298/2298**, functions
+7122 → **7139**, 0 NUL, pure LF. `wiring-check` **139/139**, `dead-hooks` **9** (documented baseline),
+and the concurrent session's own suites re-run green on the integrated tree — `portfolio-dash`
+**184/0**, `portfolio-overview` **99/0**.
+
+⚠️⚠️ **My own parse checker was wrong first and reproduced this repo's documented 16/14 false
+positive** — a global `<script>` regex matched the literal `<script` inside the JS strings that build
+the print stylesheets, opened bogus overlapping blocks and reported failures in correct code. It
+reported them **identically on HEAD**, which is the only reason I did not chase them. Fixed by
+resuming the scan after each block it closes; it now finds **1** block, not 3.
+
+⚠️ **Not verified signed in**, and ⚠️ **no committed suite covers `summaryData`** — the 30 assertions
+the 2026-09-15 (s) entry cites were scratch files, never committed. The function is unchanged here,
+so this does not widen that gap; it does not close it either.
+
+⚠️ **Carved** out of the same file as the concurrent session's unpushed portfolio-scope work, after
+establishing my Summary code makes **zero** references to `PortfolioDash` — and their own newer
+`db.js` token was **restored**, since the working tree had reverted it. `MODULE_V` → `20260916k`;
+⚠️ **not `j`**, which they took while this was in flight — re-derived from `origin/main` **after**
+integrating, never guessed before.
+
 ### 2026-09-16 (j) — The portfolio S-Curve timed out on its first real open, and the advice it gave could not be taken
 
 Owner, with the live screenshot: *"how come this error popped up for the scurve."* The pane read
