@@ -40,7 +40,7 @@ this module changes.
   module falls through to its own behaviour rather than rendering nothing.
 
 Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
-with the real `ui.js`/`db.js`/`scurve.js`, gated against `origin/main`). ⚠️ **Not verified
+with the real `ui.js`/`db.js`/`scurve.js`, gated against the pinned commit before it). ⚠️ **Not verified
 signed in.**
 
 ---

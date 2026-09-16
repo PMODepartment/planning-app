@@ -12,10 +12,12 @@
  *    and a stub of a rule is a second copy of that rule — the same fault the whole move exists
  *    to end. `PDb.selectAll` / `getProjects` / `sb()` ARE faked: they are the network.
  *
- * ⚠️ THE GATE. A suite that has never failed proves nothing, so the same checks are run against
- *    `origin/main`'s own copies of these files: there the four views of 2026-09-16 were panes of
- *    modules/portfolio-overview/index.html and no module mounted them. If the gate goes green on
- *    both sides, this file is measuring nothing and says so.
+ * ⚠️⚠️ THE GATE IS PINNED TO A SHA, NEVER `origin/main` AND NEVER `HEAD`. A suite that has never
+ *    failed proves nothing, so the same checks run against the commit BEFORE this change, where
+ *    the four views were panes of modules/portfolio-overview/index.html and no module mounted
+ *    them. ⚠️ A MOVING REF BECOMES SELF-COMPARISON THE INSTANT THE CHANGE IS PUSHED. This file
+ *    shipped reading `origin/main` and went inert one commit later — caught by running it again
+ *    after the push, which is the only thing that would have caught it.
  */
 'use strict';
 
@@ -26,6 +28,7 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 const DASH = path.join(ROOT, 'assets', 'js', 'portfolio-dash.js');
+const BASE_SHA = 'c752e7f4';   // the commit BEFORE the four moved — see the gate note above
 
 let pass = 0, fail = 0;
 const fails = [];
@@ -480,25 +483,26 @@ HOSTS.forEach(function (h) {
 
   /* ⚠️⚠️ THE GATE. Pull origin/main's own copies into a temp dir and run the same probe. There
      the four are NOT in the layer — they are panes of the Portfolio Dashboard. If this passes,
-     the suite above is asserting something that is actually new. */
+     the suite above is asserting something that is actually new. ⚠️ When this change is no longer
+     the newest thing here, LEAVE THE SHA ALONE: it is the last commit that still contrasts. */
   let gated = false;
   try {
     const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podash-base-'));
     ['db.js', 'icons.js', 'scurve.js', 'ui.js', 'portfolio-dash.js'].forEach(function (f) {
-      fs.writeFileSync(path.join(tmp, f), cp.execSync('git show origin/main:assets/js/' + f,
+      fs.writeFileSync(path.join(tmp, f), cp.execSync('git show ' + BASE_SHA + ':assets/js/' + f,
         { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
     });
-    const basePO = cp.execSync('git show origin/main:modules/portfolio-overview/index.html',
+    const basePO = cp.execSync('git show ' + BASE_SHA + ':modules/portfolio-overview/index.html',
       { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     ['po-view-scurve', 'po-view-cashflow', 'po-view-resources', 'po-view-equipment'].forEach(function (id) {
-      ok(basePO.indexOf('id="' + id + '"') >= 0, 'GATE: on origin/main "' + id + '" IS a pane of the Dashboard');
+      ok(basePO.indexOf('id="' + id + '"') >= 0, 'GATE: at ' + BASE_SHA + ' "' + id + '" IS a pane of the Dashboard');
     });
     ok(/function loadScurve/.test(basePO), 'GATE: and loadScurve lives there, not in the layer');
     await suite(fs.readFileSync(path.join(tmp, 'portfolio-dash.js'), 'utf8'), tmp, 'GATE', false);
     gated = true;
     fs.rmSync(tmp, { recursive: true, force: true });
   } catch (e) {
-    console.log('NOTE: gate against origin/main unavailable (' + String(e.message).split('\n')[0] + ')');
+    console.log('NOTE: gate against ' + BASE_SHA + ' unavailable (' + String(e.message).split('\n')[0] + ')');
   }
   ok(gated, 'GATE: the contrast build ran — a suite that has never failed proves nothing');
 

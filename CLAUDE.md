@@ -231,9 +231,11 @@ and the Overview still needs it for its own schedule read after `loadScurve` lef
   `Fmt.moneyShort` and `PDScurve.compute` carry rules and a stub of a rule is a second copy of it.
   Only the network is faked. ⚠️ The S-curve tests that used to live in `test-portfolio.js` moved
   **with** the S-curve; they were not duplicated and not dropped.
-- ⚠️ **GATE:** the same probe runs against `origin/main`'s own `assets/js/*` and asserts the
-  opposite — there the four are **not** in the layer, they are panes of the Dashboard, and
-  `loadScurve` lives in that page.
+- ⚠️ **GATE, PINNED TO A SHA:** the same probe runs against `c752e7f4`'s own `assets/js/*` and
+  asserts the opposite — there the four are **not** in the layer, they are panes of the
+  Dashboard, and `loadScurve` lives in that page. ⚠️⚠️ It shipped reading `origin/main` and
+  **went inert one commit later**; re-running the suite after the push is what caught it, and
+  nothing else would have. A moving ref is self-comparison the instant the change lands.
 - ⚠️ **Mutation-checked, three ways:** breaking the case-insensitive asset grouping, the S-curve
   activity count, and a view's key each turn the suite red.
 - `test-portfolio.js` **99/99** (rewritten to the new contract: three views, ten redirects, and an
