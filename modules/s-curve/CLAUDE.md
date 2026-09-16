@@ -632,3 +632,45 @@ synthetic 30-month programme twice — compact and full — side by side in one 
 synthetic curve, not on a project's own manual sheet. What is proven is the geometry, the scoping of
 the `-sm` rules and that the full-size chart is untouched; what has not been seen is the preview
 redrawing as a planner types into the matrix.
+
+---
+
+## The portfolio S-Curve lands here instead of being refused (2026-09-16) — eprobles
+
+⚠️⚠️ **THIS MODULE USED TO REFUSE THE QUESTION AND THE APP ALREADY HAD THE ANSWER.** Opened
+portfolio-wide, `loadProjects()` leaves `pid` null on purpose and the empty state said *"S-Curve
+is a per-project schedule curve — there is no single combined curve across every project."* That
+is true of THIS engine (basis/mode/trade filters are all keyed off one project's rows) and false
+of the app: `schedule_scurve_agg_multi` returns a combined monthly roll-up, and a tab on the
+Portfolio Dashboard had been drawing it for months.
+
+⚠️ The portfolio curve is a DIFFERENT renderer, not this one widened — colour is the project,
+line style is the series, and every curve runs 0→100 % of **its own** total because duration
+units are not comparable across projects. Above five projects it draws the server-side combined
+curve alone; 3N lines is not a comparison. The empty state above is kept as the fall-through if
+the layer ever fails to load.
+
+Owner, 2026-09-16: *"at a portfolio view, the dashboards of each corresponding module must be
+revised … those dashboards must be the landing page of each module when under the portfolio
+view."*
+
+⚠️⚠️ **THE DASHBOARD IS THE LANDING PAGE OF THIS MODULE IN PORTFOLIO SCOPE.** Opened from the
+Portfolio sidebar (`#pd_scope=portfolio`), this page now mounts its cross-project view from
+`assets/js/portfolio-dash.js` — the renderer that used to be a TAB on a separate page called
+Portfolio Dashboard, moved here whole. Opened from a project's own module grid, nothing about
+this module changes.
+
+- ⚠️ **The module's own `init()` is SKIPPED** in that scope: it would read the same tables a
+  second time into a UI hidden underneath the dashboard.
+- ⚠️⚠️ **So `takeOver()` wires the topbar project `<select>` itself.** Skipping `init()` skips
+  the code that fills it, and choosing a project there is the only way to LEAVE portfolio scope
+  from the page you are standing on. A test asserts the id handed to `takeOver` exists in this
+  page's own markup — a typo there is a null nothing notices.
+- ⚠️ **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to
+  those nodes; tearing them out would turn every one into a null dereference.
+- ⚠️ Guarded on `PortfolioDash.has()`, not on the script tag: if the layer fails to load, this
+  module falls through to its own behaviour rather than rendering nothing.
+
+Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
+with the real `ui.js`/`db.js`/`scurve.js`, gated against `origin/main`). ⚠️ **Not verified
+signed in.**

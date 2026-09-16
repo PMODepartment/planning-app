@@ -690,6 +690,26 @@
     },
   };
 
+  /* ⚠️ NAMES THE CAUSE OF A FAILED READ, and it is shared because two screens ask the same
+     question of the same tables. "Load failed." covered a statement timeout, an un-run
+     migration and an RLS refusal alike — three different problems, none of them actionable
+     from one sentence. It lived in `portfolio-overview` as `scErrText`; when the Portfolio
+     S-Curve moved out to `portfolio-dash.js` (2026-09-16) the Overview still needed it for
+     its own schedule read, and the choice was one copy here or two copies drifting apart.
+     ⚠️ Codes, not message matching first: `code` is what PostgREST/Postgres actually return,
+     and the regexes are only the fallback for drivers that flatten the error to a string. */
+  PDb.errText = function (e) {
+    var code = (e && (e.code || e.status)) || '';
+    var msg = (e && (e.message || e.msg)) || String(e || '');
+    if (code === '57014' || /statement timeout|canceling statement/i.test(msg))
+      return 'the database cancelled the read on a timeout (57014) — narrow the project filter and try again';
+    if (code === 'PGRST202' || /Could not find the function/i.test(msg))
+      return 'the roll-up function is not deployed — run migrations/2026-07-20-schedule-scurve-agg.sql';
+    if (code === '42501' || /permission denied/i.test(msg))
+      return 'permission denied on the schedule read';
+    return msg || 'unknown error';
+  };
+
   window.PDb = PDb;
   window.Fmt = Fmt;
 })();

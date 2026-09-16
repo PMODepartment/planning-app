@@ -8,6 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Equipment Loading · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916h" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -543,11 +544,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260915i"></script>
+<script src="../../assets/js/db.js?v=20260916a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260915i"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260916h"></script>
 <script>
 // ============================================================================
 // Equipment Loading (per project).
@@ -3198,6 +3200,25 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 'equipment-loading', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+
+    /* ⚠️⚠️ THE PORTFOLIO FACE OF THIS MODULE IS ITS OWN DASHBOARD NOW (owner, 2026-09-16:
+       *"those dashboards must be the landing page of each module when under the portfolio
+       view"*). Opened from the Portfolio sidebar (`#pd_scope=portfolio`, read once by
+       AppAuth) this page used to give a consolidated register with the Site Plan and schedule-link features blank — a portfolio answer, but not the one the availability grid gives.
+       The cross-project view it was missing already existed — as a TAB on a page called
+       Portfolio Dashboard. It is `assets/js/portfolio-dash.js` now, and it is mounted here.
+       ⚠️ THE MODULE'S OWN init() IS SKIPPED from this point on, deliberately: it would read
+       the same tables a second time into a UI hidden underneath the dashboard. `takeOver`
+       therefore wires the topbar project <select> itself — picking a project there LEAVES
+       portfolio scope, which is the only way back out of it from this page.
+       ⚠️ Guarded on `PortfolioDash.has()` rather than on the script tag: if the layer fails
+       to load, the module falls through to its own behaviour instead of rendering nothing. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('equipment')) {
+      PortfolioDash.takeOver('equipment', { select: '#eq-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     document.getElementById('eq-g-group').onchange = function (e) { gGroup = e.target.value; renderGantt(); };
     document.querySelectorAll('#eq-detail button').forEach(function (b) {
       b.onclick = function () {

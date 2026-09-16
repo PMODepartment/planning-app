@@ -1,3 +1,42 @@
+## The portfolio resource roll-up lands here, and the type pill finally has a style (2026-09-16) — eprobles
+
+⚠️⚠️ **THIS MODULE HAD NO PORTFOLIO BRANCH AT ALL.** Opened from the Portfolio sidebar it fell
+back to whatever project was last in `sessionStorage` and showed that one project's resources
+under a sidebar that said Portfolio. It now mounts the cross-project roll-up
+(`portfolio_resource_summary`, server-aggregated — safe at 27k+ assignments per project).
+
+⚠️ **AND THE MOVE FIXED A BUG NOBODY HAD REPORTED.** That view draws the resource type as
+`<span class="rl-badge">`, and `.rl-badge` is defined in **this file's own `<style>` block** —
+which the Portfolio Dashboard could not reach. The pill has been rendering unstyled there since
+the view was written. Hosted by its module, it is a pill.
+
+Owner, 2026-09-16: *"at a portfolio view, the dashboards of each corresponding module must be
+revised … those dashboards must be the landing page of each module when under the portfolio
+view."*
+
+⚠️⚠️ **THE DASHBOARD IS THE LANDING PAGE OF THIS MODULE IN PORTFOLIO SCOPE.** Opened from the
+Portfolio sidebar (`#pd_scope=portfolio`), this page now mounts its cross-project view from
+`assets/js/portfolio-dash.js` — the renderer that used to be a TAB on a separate page called
+Portfolio Dashboard, moved here whole. Opened from a project's own module grid, nothing about
+this module changes.
+
+- ⚠️ **The module's own `init()` is SKIPPED** in that scope: it would read the same tables a
+  second time into a UI hidden underneath the dashboard.
+- ⚠️⚠️ **So `takeOver()` wires the topbar project `<select>` itself.** Skipping `init()` skips
+  the code that fills it, and choosing a project there is the only way to LEAVE portfolio scope
+  from the page you are standing on. A test asserts the id handed to `takeOver` exists in this
+  page's own markup — a typo there is a null nothing notices.
+- ⚠️ **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to
+  those nodes; tearing them out would turn every one into a null dereference.
+- ⚠️ Guarded on `PortfolioDash.has()`, not on the script tag: if the layer fails to load, this
+  module falls through to its own behaviour rather than rendering nothing.
+
+Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
+with the real `ui.js`/`db.js`/`scurve.js`, gated against `origin/main`). ⚠️ **Not verified
+signed in.**
+
+---
+
 # Module: resource-loading
 
 ## Live collaboration + offline (2026-07-26) — fmlozano

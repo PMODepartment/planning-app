@@ -96,11 +96,11 @@ function dispatchSandbox(viewName) {
   };
 }
 
+/* ⚠️ THREE VIEWS, AND THE LIST IS THE POINT. Ten of the thirteen moved to the modules they
+   describe (2026-09-15 and 2026-09-16); what a name left in here would buy is a green run
+   over a loader this page no longer has. */
 const VIEW_LOADER = {
-  overview: 'loadOverview',
-  scurve: 'loadScurve', cashflow: 'loadCashflow', resources: 'loadResources',
-  equipment: 'loadEquipment', milestones: 'loadMilestones',
-  stakeholders: 'loadStakeholders'
+  overview: 'loadOverview', milestones: 'loadMilestones', stakeholders: 'loadStakeholders'
 };
 
 Object.keys(VIEW_LOADER).forEach(function (v) {
@@ -131,12 +131,12 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
 /* ⚠️ THE DEBOUNCE. Forcing on every tick would mean five fetches for five checkboxes; the
    Overview still repaints on each one, so the page never feels stalled. */
 {
-  const s = dispatchSandbox('scurve');
+  const s = dispatchSandbox('stakeholders');
   s.api.renderCurrent(); s.api.renderCurrent(); s.api.renderCurrent();
   eq(s.calls.filter(function (c) { return c[0] === 'renderAll'; }).length, 3,
      'three ticks repaint the Overview three times');
   s.flush();
-  eq(s.calls.filter(function (c) { return c[0] === 'loadScurve'; }).length, 1,
+  eq(s.calls.filter(function (c) { return c[0] === 'loadStakeholders'; }).length, 1,
      'three ticks produce ONE view load, not three');
 }
 
@@ -145,22 +145,48 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
 {
   const sw = sliceFn(JS, 'switchView');
   ok(/viewLoaders\(\)\[v\]/.test(sw), 'switchView dispatches through viewLoaders()');
-  ok(!/if \(v === 'scurve'\) loadScurve/.test(sw), 'switchView no longer carries its own copy of the list');
+  ok(!/if \(v === 'milestones'\) loadMilestones/.test(sw), 'switchView no longer carries its own copy of the list');
   const keys = Object.keys(new Function(sliceFn(JS, 'viewLoaders') +
     '\nreturn viewLoaders.toString();')().match(/\{[\s\S]*\}/)[0]
     .split('\n').join(' ').match(/(\w+):/g).reduce(function (a, k) { a[k.slice(0, -1)] = 1; return a; }, {}));
-  eq(keys.length, 7, 'viewLoaders names the six lazy views this page still hosts, plus Overview');
+  eq(keys.length, 3, 'viewLoaders names the two lazy views this page still hosts, plus Overview');
   /* ⚠️⚠️ AND NOT THE SIX THAT MOVED. Owner 2026-09-15: the dropdown was a second home for six
      modules, and their dashboards now live in the modules themselves
      (assets/js/portfolio-dash.js). A loader left behind here would be a second copy of a
      renderer that is no longer on this page — the drift the move exists to end. */
-  ['risk', 'issues', 'meetings', 'contracts', 'photos', 'productivity'].forEach(function (k) {
+  ['risk', 'issues', 'meetings', 'contracts', 'photos', 'productivity',
+   'scurve', 'cashflow', 'resources', 'equipment'].forEach(function (k) {
     ok(keys.indexOf(k) < 0, 'viewLoaders no longer names "' + k + '" — it moved to its module');
+  });
+  /* ⚠️⚠️ AND NEITHER DOES THE FILE. A loader can be dropped from the list and left in the
+     source, where the next reader takes it for the live one — which is a second copy of a
+     renderer, the exact fault this move exists to end. Every renderer of the four that left
+     on 2026-09-16 must be GONE, not merely unreferenced. */
+  ['loadScurve', 'scRenderChart', 'scComputeFromAgg', 'fetchScheduleForIds', 'scErrText',
+   'loadCashflow', 'cfRenderChart', 'cfMonthlySeries',
+   'loadResources', 'rsRenderTable',
+   'loadEquipment', 'eqBuild', 'eqRenderGrid', 'eqExport'].forEach(function (fn) {
+    eq((JS.match(new RegExp('\\b' + fn + '\\b', 'g')) || []).length, 0,
+       fn + ' does not occur in this page at all any more');
   });
   /* ⚠️ A deep link to one of them must still resolve, to the module that owns it now. */
   const MOVED = new Function('return ' + /var PO_MOVED_VIEWS = (\{[\s\S]*?\});/.exec(JS)[1])();
-  eq(Object.keys(MOVED).length, 6, 'all six moved views still resolve from an old #po_view= link');
+  eq(Object.keys(MOVED).length, 10, 'all ten moved views still resolve from an old #po_view= link');
   eq(MOVED.risk, 'risk-register', 'and they name the module that hosts them');
+  eq(MOVED.scurve, 's-curve', 'the S-Curve deep link lands on the S-Curve module');
+  eq(MOVED.cashflow, 'cash-flow', 'the Cash Flow deep link lands on the Cash Flow module');
+  eq(MOVED.resources, 'resource-loading', 'the Resources deep link lands on Resource Loading');
+  eq(MOVED.equipment, 'equipment-loading', 'the Equipment deep link lands on Equipment Loading');
+  /* ⚠️ Every moved view names a module that EXISTS on disk. A typo here is a redirect to a
+     404, and the only way to notice it is to click the link. */
+  Object.keys(MOVED).forEach(function (k) {
+    ok(fs.existsSync(path.join(__dirname, '..', MOVED[k], 'index.html')),
+       'the module ' + MOVED[k] + ' that "' + k + '" redirects to exists on disk');
+  });
+  /* ⚠️ And the three that stayed are NOT in the table, or the page would redirect to itself. */
+  ['overview', 'milestones', 'stakeholders'].forEach(function (k) {
+    ok(!MOVED[k], '"' + k + '" stays on this page and is not redirected');
+  });
   ok(/location\.replace\(/.test(sw), 'switchView redirects rather than pushing a dead tab onto Back');
 }
 
@@ -184,196 +210,16 @@ if (baseJS) {
      'BASE: renderAll reaches no view loader — the reported defect, reproduced');
 }
 
-/* ================================================ 2 · the cross-project pager
-   A3: per-project keyset paging, no exact count, one project's failure named. */
-function pagerSandbox(opts) {
-  const seen = { selects: [], eq: 0, in: 0, projects: [] };
-  function makeQuery(pid) {
-    let rowsLeft = opts.rows[pid] === undefined ? 10 : opts.rows[pid];
-    let sent = 0;
-    const q = {
-      eq: function (col, v) { seen.eq++; seen.projects.push(v); return q; },
-      in: function () { seen.in++; return q; },
-      order: function () { return q; },
-      limit: function (n) { q._lim = n; return q; },
-      gt: function () { return q; },
-      then: function (res) {
-        if (opts.failFor && opts.failFor.indexOf(pid) !== -1) {
-          return res({ error: { code: '57014', message: 'canceling statement due to statement timeout' } });
-        }
-        const take = Math.min(q._lim, rowsLeft - sent);
-        const page = [];
-        for (let i = 0; i < take; i++) page.push({ id: pid + '-' + (sent + i), project_id: pid });
-        sent += take;
-        return res({ data: page, error: null });
-      }
-    };
-    return q;
-  }
-  let curPid = null;
-  const sb = function () {
-    return { from: function () {
-      return { select: function (cols, opt2) { seen.selects.push(opt2 || null); return makeQuery(curPid); } };
-    } };
-  };
-  const body = sliceFn(JS, 'fetchScheduleForIds') +
-    '\nreturn function (ids, cb) { return fetchScheduleForIds(ids, function (i, n) { curPid = ids[i]; if (cb) cb(i, n); }); };';
-  const run = new Function('sb,window,PDScurve,setCur', body)(
-    function () { return sb(); }, {}, null, null);
-  // curPid must be set BEFORE the select — wire it through the progress callback
-  const wrapped = function (ids) {
-    let idx = { i: 0 };
-    curPid = ids[0];
-    return run(ids, function (i) { curPid = ids[i]; });
-  };
-  return { run: wrapped, seen: seen };
-}
-
-{
-  const ids = [];
-  for (let i = 1; i <= 21; i++) ids.push('P' + i);
-  const rows = {}; ids.forEach(function (p) { rows[p] = 10; });
-  const s = pagerSandbox({ rows: rows, failFor: ['P7'] });
-  s.run(ids).then(function (res) {
-    eq(res.failed.length, 1, 'pager: one project failed');
-    eq(res.failed[0].id, 'P7', 'pager: the failure is NAMED, not anonymous');
-    eq(res.rows.length, 200, 'pager: the other twenty projects still loaded');
-    eq(s.seen.in, 0, 'pager: never uses .in(project_id, ids) — the plan that degenerates');
-    ok(s.seen.eq >= 21, 'pager: one .eq(project_id) per project — the shape the index exists for');
-    eq(s.seen.selects.filter(function (o) { return o && o.count; }).length, 0,
-       'pager: no count:exact pre-read remains');
-    raceSuite().then(report);
-  });
-}
-
-/* ============================================ 2b · the overlapping-load race
-   A2: the owner's screenshot IS this bug — the filter button read "2 projects" while the
-   pane still read "Loading schedules across 21 project(s)…", because a superseded load was
-   left holding the screen. Executed, not asserted on source. */
-function deferred() {
-  let res; const p = new Promise(function (r) { res = r; });
-  return { promise: p, resolve: res };
-}
-function scurveSandbox(mutate) {
-  const log = { charts: 0, kpis: 0, toasts: [], html: [] };
-  let ids = [];
-  const rpcs = [];
-  const el = function () {
-    return { set innerHTML(v) { log.html.push(v); }, get innerHTML() { return ''; },
-             set textContent(v) {}, get textContent() { return ''; } };
-  };
-  let fnSrc = sliceFn(JS, 'loadScurve');
-  if (mutate) fnSrc = mutate(fnSrc);
-  const body = 'var _scGen = 0, scLoadedIds = null, scData = null;\n' +
-    fnSrc + '\n' +
-    'return { loadScurve: loadScurve, state: function () { return { ids: scLoadedIds, data: scData }; } };';
-  const api = new Function(
-    'scopedProjectIds,document,scopeLabel,sb,scComputeFromAgg,PROJ,SC_FULL_MAX,' +
-    'fetchScheduleForIds,scCompute,scRenderKpis,scRenderChart,esc,UI,scErrText',
-    body)(
-    function () { return ids; },
-    { getElementById: el },
-    function (x) { return x.length + ' projects'; },
-    function () { return { rpc: function () { const d = deferred(); rpcs.push(d); return d.promise; } }; },
-    function (a) { return { empty: false, months: [new Date()], plannedC: [0], actualC: [0],
-                            TOT: 1, ti: 0, variance: 0, _from: a._tag }; },
-    [],
-    5,
-    function () { return Promise.resolve({ rows: [], failed: [] }); },
-    function () { return { empty: true }; },
-    function () { log.kpis++; },
-    function () { log.charts++; },
-    function (s) { return s; },
-    { toast: function (m, k) { log.toasts.push([k, m]); } },
-    function (e) { return String((e && e.message) || e); }
-  );
-  return { api: api, log: log, rpcs: rpcs, setIds: function (v) { ids = v; } };
-}
-
-async function raceSuite() {
-  const s = scurveSandbox();
-  const big = []; for (let i = 1; i <= 21; i++) big.push('P' + i);
-
-  s.setIds(big);
-  const a = s.api.loadScurve(true);          // gen 1 — 21 projects, RPC left pending
-  s.setIds(['P1', 'P2']);
-  const b = s.api.loadScurve(true);          // gen 2 — supersedes it
-
-  // the NEWER load answers first, then the stale one comes back
-  s.rpcs[1].resolve({ data: { months: [{ key: '2026-01', pd: 1, ad: 1 }], _tag: 'B' }, error: null });
-  await b;
-  s.rpcs[0].resolve({ data: { months: [{ key: '2026-01', pd: 1, ad: 1 }], _tag: 'A' }, error: null });
-  await a;
-
-  eq(s.log.charts, 1, 'race: ONE paint, not two');
-  eq(s.api.state().ids.length, 2, 'race: the surviving scope is the NEWER one (2 projects)');
-  eq(s.api.state().data.nProjects, 2, 'race: the stale 21-project load committed nothing');
-  ok(!s.log.html.some(function (h) { return /21 project/.test(h); }),
-     'race: no "…21 project(s)" message is left holding the screen');
-
-  /* ⚠️ And the ordinary case still paints: a lone load is not suppressed by its own token. */
-  const s2 = scurveSandbox();
-  s2.setIds(['P1', 'P2']);
-  const c = s2.api.loadScurve(true);
-  s2.rpcs[0].resolve({ data: { months: [{ key: '2026-01', pd: 1, ad: 1 }] }, error: null });
-  await c;
-  eq(s2.log.charts, 1, 'race: an un-superseded load does paint');
-
-  /* ⚠️ A failing RPC with no rows to fall back on must NAME the cause, not print a bare
-     "Load failed." — and must not leave the KPI strip claiming a figure. */
-  const s3 = scurveSandbox();
-  s3.setIds(big);
-  const d = s3.api.loadScurve(true);
-  s3.rpcs[0].resolve({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } });
-  await d;
-  eq(s3.log.charts, 0, 'race: a failed roll-up draws no chart');
-  ok(s3.log.html.some(function (h) { return /Could not draw the portfolio S-curve/.test(h); }),
-     'race: the failure is reported in the pane');
-  ok(s3.log.toasts.some(function (t) { return t[0] === 'error'; }),
-     'race: and raised as an error toast');
-
-  /* ⚠️⚠️ THE NEGATIVE BUILD — a suite that has never failed proves nothing.
-     Strip the generation guard out of the SHIPPED function and the owner's screenshot comes
-     back: both loads paint, and the stale 21-project one wins because it answered last.
-     Same device as tools/wiring-check.js, which re-injects the z6 outage before it will
-     trust its own green run. */
-  const stripGuard = function (s) {
-    const out = s.split('if (gen !== _scGen) return;').join('');
-    if (out === s) throw new Error('negative build is inert — the guard text moved');
-    return out;
-  };
-  const n = scurveSandbox(stripGuard);
-  n.setIds(big);
-  const na = n.api.loadScurve(true);
-  n.setIds(['P1', 'P2']);
-  const nb = n.api.loadScurve(true);
-  n.rpcs[1].resolve({ data: { months: [{ key: '2026-01', pd: 1, ad: 1 }] }, error: null });
-  await nb;
-  n.rpcs[0].resolve({ data: { months: [{ key: '2026-01', pd: 1, ad: 1 }] }, error: null });
-  await na;
-  ok(n.log.charts === 2, 'NEGATIVE: without the guard both loads paint (bug reproduced)');
-  ok(n.api.state().ids.length === 21,
-     'NEGATIVE: without the guard the STALE 21-project load wins — the owner\'s screenshot');
-}
+/* ⚠️⚠️ THE S-CURVE SUITE MOVED WITH THE S-CURVE (2026-09-16).
+   The cross-project pager, the overlapping-load race and the error-text cases used to live
+   here because `loadScurve` did. It is `assets/js/portfolio-dash.js` now and the error namer
+   is `PDb.errText`, so the tests that execute them are `tools/test-portfolio-dash.js`.
+   ⚠️ NOT DELETED AND NOT DUPLICATED: a test left behind slicing a function this page no longer
+   contains would abort on a null slice, and a copy kept "just in case" is the second renderer
+   problem in test form. Run both suites. */
 
 function report() {
   const CODE = scan.clean('x.js', JS);   // comments blanked, string bodies kept
-  /* ======================================================= 3 · the error text
-     A5: a timeout, a missing migration and an RLS refusal must not read alike. */
-  const se = new Function(sliceFn(JS, 'scErrText') + '\nreturn scErrText;')();
-  const t = se({ code: '57014', message: 'canceling statement due to statement timeout' });
-  const m = se({ code: 'PGRST202', message: 'Could not find the function' });
-  const r = se({ code: '42501', message: 'permission denied for table project_schedule' });
-  const o = se({ message: 'socket hang up' });
-  ok(/57014/.test(t) && /narrow/i.test(t), 'err: a timeout says so and says what to do');
-  ok(/2026-07-20-schedule-scurve-agg\.sql/.test(m), 'err: a missing function names its migration');
-  ok(/permission/i.test(r), 'err: an RLS refusal says permission');
-  eq(o, 'socket hang up', 'err: anything else passes through unchanged');
-  ok(new Set([t, m, r, o]).size === 4, 'err: all four causes read differently');
-
-  /* ⚠️ A message-only match must still work: PostgREST does not always populate `code`. */
-  ok(/57014/.test(se({ message: 'canceling statement due to statement timeout' })),
-     'err: recognised from the message alone when no code is given');
 
   /* ================================================ 3b · the chrome (Phase B)
      B8: one KPI component. The two private producers are executed through the REAL
@@ -422,12 +268,13 @@ function report() {
   /* B6: one funnel for thirteen views, and every panel it names must exist. */
   const FP = JSON.parse(JSON.stringify(
     new Function('return ' + /var FILTER_PANEL = (\{[\s\S]*?\});/.exec(CODE)[1])()));
-  eq(Object.keys(FP).length, 3, 'filter: three views declare a panel — risk and issues took theirs with them');
+  eq(Object.keys(FP).length, 2, 'filter: two views declare a panel — equipment took its own with it');
+  ok(!FP.equipment, 'filter: the Equipment panel left with the Equipment view');
   Object.keys(FP).forEach(k =>
     ok(new RegExp('id="' + FP[k] + '"').test(html), 'filter: panel ' + FP[k] + ' exists in the markup'));
   eq((html.match(/class="pd-filttoggle"/g) || []).length, 1, 'filter: exactly ONE funnel in the markup');
   /* ⚠️⚠️ READ FROM THE STYLESHEET, NOT THE PAGE. The whole <style> block moved to
-     assets/css/portfolio-dash.css on 2026-09-15, because the six dashboards that now live in their
+     assets/css/portfolio-dash.css on 2026-09-15, because the ten dashboards that now live in their
      own modules are drawn with these classes and a module cannot reach a <style> block inside
      another page. Asserting against the HTML here would have passed only until somebody looked. */
   const PODCSS = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'css', 'portfolio-dash.css'), 'utf8');
@@ -435,11 +282,7 @@ function report() {
      'filter: the [hidden] specificity tie is handled (inline-flex ties the UA rule)');
   ok(/portfolio-dash\.css/.test(html), 'and the page links the stylesheet those rules moved into');
 
-  /* B9: the series switch is the app's own multi-select segment, not loose checkboxes. */
-  const chart = sliceFn(JS, 'scRenderChart');
-  ok(/pd-seg pd-seg-multi/.test(chart), 'series: uses the shared multi-select segment');
-  ok(!/type="checkbox" data-sc/.test(chart), 'series: no loose checkboxes left');
-  ok(/button\[data-sc\]/.test(chart), 'series: wired to the buttons it renders');
+  /* B9's series-segment checks went with scRenderChart — tools/test-portfolio-dash.js. */
 
   /* ============================================ 3c · the decision surface (D)
      Every derivation sliced out of the shipped page and executed. */
@@ -514,27 +357,10 @@ function report() {
   ok(cl && typeof cl.exposure === 'number' && typeof cl.eotDays === 'number',
      'D: exposure (money) and eotDays (days) are separate fields');
 
-  /* ===================================================== 4 · source invariants
-     ⚠️⚠️ COMMENTS ARE STRIPPED FIRST, AND BOTH OF THESE FAILED UNTIL THEY WERE.
-     The only `count:'exact'` left on the page is inside the comment explaining that the
-     pre-read was REMOVED, and two of the three "Load failed." are comments quoting the
-     message this change deleted. A checker that reads its own explanation and reports it as
-     a finding is the `cellcount.py` trap, third occurrence in this repo. */
-  ok(!/count:\s*'exact'/.test(CODE), 'no count:exact remains in CODE (comments stripped)');
-  ok(/\.eq\('project_id', pid\)/.test(CODE), 'the pager binds one project at a time');
-  ok(/_scGen/.test(CODE), 'the S-curve load carries a generation token');
-  ok((CODE.match(/if \(gen !== _scGen\) return;/g) || []).length >= 5,
-     'every await in loadScurve re-checks the token');
-
-  /* ⚠️ Scoped to the S-CURVE loader. Cash Flow still prints "Load failed." and is a
-     different view, deliberately out of this change — asserting page-wide would fail for a
-     reason that is not this fix's, which is how a suite gets disabled. */
-  const scLoad = sliceFn(JS, 'loadScurve');
-  ok(!/Load failed\./.test(scan.clean('x.js', scLoad)),
-     'the bare "Load failed." is gone from the S-curve loader');
-  ok(/scErrText\(/.test(scLoad), 'the S-curve loader reports through scErrText');
 
   console.log('');
   console.log('portfolio-overview: ' + pass + ' passed, ' + fail + ' failed');
   if (fail) { console.log('\n  ' + fails.join('\n  ')); process.exit(1); }
 }
+
+report();

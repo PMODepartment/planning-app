@@ -198,3 +198,44 @@ CSS layout, independent of any data, so the fix applies identically to a real se
   DP/billing-net/retention/terms lag land in the correct months and totals
   conserve (cash in = contract, cash out = Σ budgets).
 - Not yet run against live logins + live WPM read (see Status).
+
+---
+
+## The consolidated portfolio cash flow lands here (2026-09-16) — eprobles
+
+⚠️⚠️ **THE REFUSAL WAS ABOUT THE PROJECTION, NOT ABOUT THE PORTFOLIO.** Opened portfolio-wide
+this module said *"there is no single combined figure to show across every project"* — correct
+about summing several projects' own derived projections (one contract, one schedule, one WPM
+mirror each), and beside the point: the portfolio view does not re-derive anything. It reads
+`cash_flow_rollup`, the per-project monthly roll-up **this module itself writes on load**, and
+consolidates that.
+
+⚠️ Which means the portfolio view is only as complete as the roll-up: a project whose Cash Flow
+has never been opened contributes nothing, and the empty state says so in as many words. ⚠️ The
+read is paginated (`PDb.selectAll`) — 19 projects × a ~5-year horizon is past PostgREST's
+1000-row cap, and a truncated read here would under-state the peak funding need silently.
+
+Owner, 2026-09-16: *"at a portfolio view, the dashboards of each corresponding module must be
+revised … those dashboards must be the landing page of each module when under the portfolio
+view."*
+
+⚠️⚠️ **THE DASHBOARD IS THE LANDING PAGE OF THIS MODULE IN PORTFOLIO SCOPE.** Opened from the
+Portfolio sidebar (`#pd_scope=portfolio`), this page now mounts its cross-project view from
+`assets/js/portfolio-dash.js` — the renderer that used to be a TAB on a separate page called
+Portfolio Dashboard, moved here whole. Opened from a project's own module grid, nothing about
+this module changes.
+
+- ⚠️ **The module's own `init()` is SKIPPED** in that scope: it would read the same tables a
+  second time into a UI hidden underneath the dashboard.
+- ⚠️⚠️ **So `takeOver()` wires the topbar project `<select>` itself.** Skipping `init()` skips
+  the code that fills it, and choosing a project there is the only way to LEAVE portfolio scope
+  from the page you are standing on. A test asserts the id handed to `takeOver` exists in this
+  page's own markup — a typo there is a null nothing notices.
+- ⚠️ **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to
+  those nodes; tearing them out would turn every one into a null dereference.
+- ⚠️ Guarded on `PortfolioDash.has()`, not on the script tag: if the layer fails to load, this
+  module falls through to its own behaviour rather than rendering nothing.
+
+Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
+with the real `ui.js`/`db.js`/`scurve.js`, gated against `origin/main`). ⚠️ **Not verified
+signed in.**

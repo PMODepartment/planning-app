@@ -1,5 +1,69 @@
 # Module: portfolio-overview
 
+## 2026-09-16 (f) — The last four views leave, and what is left is not a module list
+
+Owner, after the first wave: *"at a portfolio view, the dashboards of each corresponding module
+must be revised. However your stored revisions are in the dashboard module, and then there is just
+a dropdown to see the modules. Wrong. Those dashboards must be the landing page of each module
+when under the portfolio view."*
+
+⚠️⚠️ **2026-09-15 (x) MOVED SIX AND STOPPED**, which left the dropdown still listing S-Curve, Cash
+Flow, Resources and Equipment — so from the owner's seat nothing had changed. The four heaviest
+renderers on this page are now `assets/js/portfolio-dash.js` too, mounted by `s-curve`,
+`cash-flow`, `resource-loading` and `equipment-loading`.
+
+⚠️ **MOVED, NOT COPIED, AND THE TEST NOW PROVES THE STRONGER CLAIM.** `loadScurve`, `scRenderChart`,
+`scComputeFromAgg`, `fetchScheduleForIds`, `loadCashflow`, `cfRenderChart`, `loadResources`,
+`loadEquipment`, `eqBuild`, `eqRenderGrid` and `eqExport` occur **zero** times in this file — not
+"are unreferenced", *absent*. A loader dropped from `viewLoaders()` and left in the source is a
+second renderer waiting for the next reader to mistake it for the live one.
+
+### ⚠️ THREE VIEWS REMAIN, AND NONE OF THEM IS A MODULE
+- **Overview** — this page's own subject.
+- **Milestones** — no module exists to move it to. (Its sidebar row went on 2026-09-16: *"milestones
+  are already seen within the schedule."* The tab is its only entry point now.)
+- **Stakeholder Map** — ⚠️⚠️ and this one is a decision, not an oversight. Its portfolio view is an
+  **authoring** directory (*+ Add person*, assign, favourite) and writes are refused at the shared
+  Supabase chokepoint while the portfolio flag is set (`auth.js`). **This page is not in portfolio
+  scope**, so those writes land here; moving the view into `stakeholder-map` under
+  `#pd_scope=portfolio` would leave every one of those buttons raising a read-only toast. The scope
+  question has to be answered before the view can follow the others.
+
+### ⚠️ What went with them, and what deliberately did not
+- `scopedProjectIds` and `scopeLabel` **stayed** — the Overview, the Milestone calendar and the
+  Stakeholder Map all ask which projects are in scope. The shared layer answers the same question
+  its own way (every project the planner can see; there is no in-page filter on a module page).
+- `kpi2` / `clip` / `statePill` **stayed** — still used by the three remaining views.
+- ⚠️ `scErrText` **left, and became `PDb.errText`**. The Overview still needs it for its own
+  `schedule_scurve_status` read, so the choice was one shared copy or two drifting ones. The
+  `[hidden]`-specificity and error-text assertions moved to the suites that own them now.
+- ⚠️ `assets/js/scurve.js` **is no longer loaded by this page.** `scCompute` was the only consumer
+  and it went with the S-Curve. A script tag for an engine nothing calls is a page paying for a
+  dependency it does not have.
+- The **Equipment filter panel** left `FILTER_PANEL` with the Equipment view; two views declare a
+  panel now, and the funnel hides on the third.
+
+### ⚠️ A deep link must not die with the tab — still true, now ten deep
+`PO_MOVED_VIEWS` carries all ten. `#po_view=scurve` and its nine siblings resolve to the module
+that owns them, **after** the super-admin gate (a planner who cannot see Equipment still lands on
+the Overview, exactly as before) and with `location.replace` so a tab that no longer exists is not
+a step in the Back history. ⚠️ The suite now also asserts every module named in that table
+**exists on disk** — a typo there is a redirect to a 404 whose only symptom is a click.
+
+### Verified
+- `test-portfolio.js` **99/99**, rewritten to the new contract: `viewLoaders` names **three**,
+  the ten that moved are asserted **absent from the file**, `PO_MOVED_VIEWS` resolves all ten to
+  modules that exist, and the three that stayed are asserted **not** to be in it — a page that
+  redirects to itself is an infinite reload.
+- **158 assertions** in the new `tools/test-portfolio-dash.js`, which mounts every moved view
+  against a fake DOM with the real `ui.js` / `db.js` / `scurve.js`, and gates against
+  `origin/main`.
+- `wiring-check` **139/139**, `dead-hooks` unchanged, the inline script parses.
+
+⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260916h`.
+
 ## 2026-09-16 (e) — The Overview becomes a decision surface, on a page that moved under it
 
 Phase D of the portfolio plan. Owner's framing: the front page should support *"informed

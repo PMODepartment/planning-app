@@ -102,6 +102,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+<<<<<<< HEAD
 ### 2026-09-16 (f) — Contracts & Claims: a dashboard nothing could reach, then one you could not see past
 
 Two owner turns, one story: *"I do not see the dashboard in contracts & claims"*, and then, once it
@@ -171,6 +172,82 @@ have. Neutralising the new table changed **nothing**, which is what proved it wa
 ⚠️ Not `f`: that token was consumed by Project Schedule Summary work that is **deliberately not in
 this commit** (it is entangled with another session's uncommitted portfolio files), so the next free
 token is `g` — sort-checked against the `20260916e` the live site serves.
+=======
+### 2026-09-16 (f) — The last four portfolio dashboards become the landing page of the module they describe
+
+Owner, after the first wave: *"at a portfolio view, the dashboards of each corresponding module
+must be revised. However your stored revisions are in the dashboard module, and then there is just
+a dropdown to see the modules. Wrong. Those dashboards must be the landing page of each module
+when under the portfolio view."*
+
+**The 2026-09-15 (x) pass moved six and stopped**, leaving the four heaviest and the dropdown that
+listed them. This finishes it: **S-Curve → `s-curve`, Cash Flow → `cash-flow`, Resources →
+`resource-loading`, Equipment → `equipment-loading`**, into `assets/js/portfolio-dash.js` beside
+the other six. Ten dashboards, each hosted by the module it is about.
+
+### ⚠️⚠️ THREE OF THE FOUR MODULES WERE REFUSING TO ANSWER THE QUESTION THE DASHBOARD ANSWERED
+
+Opened from the Portfolio sidebar, `s-curve` said *"there is no single combined curve across every
+project"* and `cash-flow` said *"there is no single combined figure"* — while a tab on another page
+drew exactly that, off a server-side aggregate built for it (`schedule_scurve_agg_multi`,
+`cash_flow_rollup`). The refusal was true of the module's own per-project engine and **false of the
+app**. `resource-loading` had no portfolio branch at all and simply opened on whatever project was
+last in `sessionStorage`. That is the cost of a dashboard living somewhere other than its module,
+stated plainly.
+
+⚠️ **THE DROPDOWN IS DOWN TO THREE ENTRIES AND NONE OF THEM IS A MODULE**: the Overview (this
+page's own subject), the Milestone calendar (no module exists) and the Stakeholder Map.
+
+### ⚠️ The Stakeholder Map still has not moved, and the reason is unchanged
+
+Its portfolio view is an **authoring** directory — *+ Add person*, assign, favourite — and writes
+are refused at the shared Supabase chokepoint whenever the portfolio flag is set (`auth.js`).
+`portfolio-overview` is NOT in portfolio scope, so those writes land there today; mounting the same
+view inside `stakeholder-map` under `#pd_scope=portfolio` would turn every one of those buttons
+into a read-only toast. It needs the scope question answered, not a redirect. **Named, not
+forgotten.**
+
+### ⚠️ Two things the move fixed on its own
+
+- ⚠️ **`Icons.hydrate(document.getElementById('po-view-equipment'))`** — the Equipment renderer
+  re-hydrated its icons through the id of the **pane it used to sit in**. `Icons.hydrate(null)`
+  falls back to the whole document, so nothing threw and nothing looked wrong; the name was simply
+  pointing at a screen that no longer exists. `mount()` hands the host to `setup()` now.
+- ⚠️ **`.rl-badge` was never styled on the Dashboard.** The Resources table draws the resource
+  type as a pill whose rule lives in `modules/resource-loading/index.html`'s own `<style>` — a page
+  the Portfolio Dashboard could not reach. Hosted by its module, the pill is a pill.
+
+### ⚠️ `scErrText` became `PDb.errText` rather than a second copy
+
+It names the cause of a failed read — a statement timeout, an un-run migration, an RLS refusal —
+and the Overview still needs it for its own schedule read after `loadScurve` left. One copy in
+`db.js`, two callers. Two copies is the fault this whole change exists to end.
+
+### Verified
+
+- **New `tools/test-portfolio-dash.js`: 158 assertions**, and it is the suite the first wave never
+  had. The shipped layer is LOADED the way a browser loads it and every view is MOUNTED against a
+  narrow fake DOM — with the **real `ui.js`, `db.js` and `scurve.js`**, because `UI.kpi`,
+  `Fmt.moneyShort` and `PDScurve.compute` carry rules and a stub of a rule is a second copy of it.
+  Only the network is faked. ⚠️ The S-curve tests that used to live in `test-portfolio.js` moved
+  **with** the S-curve; they were not duplicated and not dropped.
+- ⚠️ **GATE:** the same probe runs against `origin/main`'s own `assets/js/*` and asserts the
+  opposite — there the four are **not** in the layer, they are panes of the Dashboard, and
+  `loadScurve` lives in that page.
+- ⚠️ **Mutation-checked, three ways:** breaking the case-insensitive asset grouping, the S-curve
+  activity count, and a view's key each turn the suite red.
+- `test-portfolio.js` **99/99** (rewritten to the new contract: three views, ten redirects, and an
+  assertion that every moved renderer is *absent from the file*, not merely unreferenced),
+  `wiring-check` **139/139**, `test-lsm` **702/702**, `dead-hooks` unchanged, every touched page's
+  inline script parses.
+
+⚠️ **Not verified signed in** — no dashboard has been mounted against a live project. First thing
+to try: open **S-Curve** from the Portfolio sidebar; it should draw the combined curve instead of
+telling you there isn't one.
+
+`assets/js/portfolio-dash.js` + `assets/css/portfolio-dash.css` at `?v=20260916h`; `db.js` at
+`?v=20260916a` (it gained `errText`); `MODULE_V` → `20260916h`.
+>>>>>>> 8c3ce68e (The last four portfolio dashboards become their modules' landing page)
 
 ### 2026-09-16 (e) — The Portfolio Overview stops reporting levels and starts ranking attention
 
