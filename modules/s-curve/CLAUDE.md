@@ -1,5 +1,31 @@
 # Module: s-curve
 
+## 2026-09-16 — The portfolio Manual data tab does something, and the curve gets a project filter — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+- **The tab was a dead control.** `.sc-tabs [data-view]` is static markup wired inside
+  `AppAuth.requireLogin`'s callback — *after* the portfolio branch `return`s — so in portfolio scope
+  the dropdown rendered, opened, and did nothing. Owner: *"there is a manual data tab that is
+  clickable that doesn't work."*
+- ⚠⚠ **The portfolio Manual tab is a REGISTER, not the sheet, and it cannot be the sheet.** The
+  project-level tab is an editable trades × months grid; portfolio scope is read-only at the Supabase
+  chokepoint (auth.js wraps `.from()`), so a grid rendered there would accept keystrokes and have
+  every save refused by the network. It lists which projects carry a hand-entered curve, whether the
+  planned one is locked, the months covered and when it was last touched — one row per PROJECT, not
+  per cell, because `scurve_manual` is one row per trade × month × kind.
+- **`?scView=manual`** opens a project's own sheet from that register. Read AFTER the remembered
+  `viewKey()` value so an explicit link wins, and written back to the same per-project key so the
+  choice sticks the way pressing the tab would — a deep link that un-remembers itself would be a
+  third kind of state beside the two this module already keeps.
+- ⚠️ Tolerant of the pre-migration state, like the project-level tab: a missing `scurve_manual`
+  degrades to a nudge naming `migrations/2026-09-10-scurve-manual-poc.sql`.
+- **A project filter**, which this view had been built for and shipped without — `loadScurve`
+  already carried the "No projects match the current filter" empty state. It narrows
+  `scopedProjectIds()`, so it costs no per-view code and re-reads only the projects selected
+  (`fetchAggForIds` is per-project, so narrowing is CHEAPER, not dearer).
+
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
 > 2. This module is **S-Curve** (Phase 2). Your DB table is `s_curve`
@@ -632,3 +658,116 @@ synthetic 30-month programme twice — compact and full — side by side in one 
 synthetic curve, not on a project's own manual sheet. What is proven is the geometry, the scoping of
 the `-sm` rules and that the full-size chart is untouched; what has not been seen is the preview
 redrawing as a planner types into the matrix.
+
+---
+
+## The portfolio S-Curve lands here instead of being refused (2026-09-16) — eprobles
+
+⚠️⚠️ **THIS MODULE USED TO REFUSE THE QUESTION AND THE APP ALREADY HAD THE ANSWER.** Opened
+portfolio-wide, `loadProjects()` leaves `pid` null on purpose and the empty state said *"S-Curve
+is a per-project schedule curve — there is no single combined curve across every project."* That
+is true of THIS engine (basis/mode/trade filters are all keyed off one project's rows) and false
+of the app: `schedule_scurve_agg_multi` returns a combined monthly roll-up, and a tab on the
+Portfolio Dashboard had been drawing it for months.
+
+⚠️ The portfolio curve is a DIFFERENT renderer, not this one widened — colour is the project,
+line style is the series, and every curve runs 0→100 % of **its own** total because duration
+units are not comparable across projects. Above five projects it draws the server-side combined
+curve alone; 3N lines is not a comparison. The empty state above is kept as the fall-through if
+the layer ever fails to load.
+
+Owner, 2026-09-16: *"at a portfolio view, the dashboards of each corresponding module must be
+revised … those dashboards must be the landing page of each module when under the portfolio
+view."*
+
+⚠️⚠️ **THE DASHBOARD IS THE LANDING PAGE OF THIS MODULE IN PORTFOLIO SCOPE.** Opened from the
+Portfolio sidebar (`#pd_scope=portfolio`), this page now mounts its cross-project view from
+`assets/js/portfolio-dash.js` — the renderer that used to be a TAB on a separate page called
+Portfolio Dashboard, moved here whole. Opened from a project's own module grid, nothing about
+this module changes.
+
+- ⚠️ **The module's own `init()` is SKIPPED** in that scope: it would read the same tables a
+  second time into a UI hidden underneath the dashboard.
+- ⚠️⚠️ **So `takeOver()` wires the topbar project `<select>` itself.** Skipping `init()` skips
+  the code that fills it, and choosing a project there is the only way to LEAVE portfolio scope
+  from the page you are standing on. A test asserts the id handed to `takeOver` exists in this
+  page's own markup — a typo there is a null nothing notices.
+- ⚠️ **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to
+  those nodes; tearing them out would turn every one into a null dereference.
+- ⚠️ Guarded on `PortfolioDash.has()`, not on the script tag: if the layer fails to load, this
+  module falls through to its own behaviour rather than rendering nothing.
+
+Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
+with the real `ui.js`/`db.js`/`scurve.js`, gated against the pinned commit before it). ⚠️ **Not verified
+signed in.**
+
+---
+
+## The portfolio curve timed out on its first real open (2026-09-16 j) — eprobles
+
+Owner, with the live screenshot: *"how come this error popped up for the scurve."* **57014 — the
+database cancelled the read.**
+
+⚠️⚠️ **`schedule_scurve_agg_multi(p_ids)` CROSS JOINs its month series against its leaf activities.**
+One project is ~60 months x ~16k leaves; twenty-one is the UNION of every horizon x EVERY activity —
+about thirty million rows, past the ~8s statement_timeout, every time. The cost is combinatorial in N,
+so it was always going to fail at portfolio scale; it only surfaced now because this became a landing
+page instead of a tab almost nobody opened.
+
+**Now N calls to `schedule_scurve_agg(p_id)`** — the same SQL with one id, the call THIS module has
+always made for a single project — four in flight, merged in the browser. ⚠️ Identical arithmetic:
+every merged field is a plain `sum` over leaves server-side.
+
+⚠️⚠️ **THE CARRY-FORWARD IS THE CORRECTNESS OF THE MERGE.** Each project’s month series spans only its
+own dates and the figures are CUMULATIVE, so a month after a project finishes is absent while its true
+contribution is its full total. Read as zero, the portfolio curve DIPS the month a project completes.
+Absent *before* a project starts really is zero, and the carry starts there.
+
+⚠️ **One project failing no longer fails the view** — it is named, and the rest still draw, with the
+chart itself saying over how many projects it was drawn.
+
+⚠️ The empty state this module shows outside portfolio scope is unchanged, and remains the
+fall-through if `portfolio-dash.js` ever fails to load.
+
+Verified: `tools/test-portfolio-dash.js` 184/184, including that `schedule_scurve_agg_multi` is never
+called, that the combined planned curve never goes backwards, and that a partial read still draws.
+⚠️ **Not verified signed in** — the timeout only reproduces against the owner’s own 21 projects.
+
+---
+
+## The portfolio curve gets periodic bars and a clickable month (2026-09-16 m) — eprobles
+
+Owner: *"pls provide breakdowns. and periodic values that are in the form of a bar chart. And allow
+users to click a specific month to know the breakdowns (for example per trade, but if not applicable
+put others)."*
+
+⚠️ **THIS MODULE'S OWN CURVE ALREADY HAD ALL THREE** (2026-09-10). What did not was the PORTFOLIO
+curve that became this page's landing view in portfolio scope — so the two now answer the same
+question the same way, with the same bar colours and the same "planned behind, actual in front"
+rule. `assets/js/portfolio-dash.js`; the root log has the detail.
+
+- **Bars** are cumulative *n* − *n−1* off the same array the curve is drawn from, so they cannot
+  drift from it. Their own right-hand axis, 55 % of the plot height, and ⚠️ **no actual bar on the
+  data-date month** — the same reason already recorded here for this module's own chart: that
+  month's cumulative actual is pinned to overall percent complete, so the step into it absorbs the
+  whole discrepancy between the model and reality, which is not a month's production.
+- **Click a month** for the split: **by trade** (what was asked for, and the default) or **by
+  project** (free — the per-project aggregates the curve already fetched ARE that answer).
+- ⚠️ **Per trade needs `migrations/2026-09-16-scurve-trade-agg.sql`.** The monthly roll-up carries no
+  trade and never has, and splitting a portfolio month client-side would mean a third of a million
+  activity rows — the read the server-side aggregate exists to avoid. The new aggregate is fanned
+  out one project at a time (for the reason this morning's timeout established), lazily, and cached.
+  Untagged work lands in **`No trade set`** — this module's own `UNTRADED` label, spelled identically
+  in the SQL on purpose, because two names for one bucket across two screens is the drift this repo
+  keeps paying for.
+- ⚠️ **Not deployed is not an error.** The panel falls through to *by project*, flips the toggle so
+  the control and the content agree, and names the file to run.
+- ⚠️⚠️ **The panel reconciles itself out loud.** The split and the curve come from two different
+  aggregates over the same rows, so "they agree" is an assumption about two pieces of SQL, not a
+  fact of one. If the Total does not match the header the panel says so and tells the reader to take
+  the rows as a shape. Found in the preview, where a header of 10.4 % sat above a Total of 17.1 %
+  and nothing on screen remarked on it.
+
+Verified: `tools/test-portfolio-dash.js` **252/252**, mutation-checked three ways, and rendered and
+clicked in a real browser against fixtures (both dimensions' totals matched the header exactly).
+⚠️ **Not verified against real data** — the new SQL has not been executed from here.

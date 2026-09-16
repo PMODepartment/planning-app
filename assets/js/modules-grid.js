@@ -33,7 +33,7 @@
       var m = s && s.match(/[?&]v=([^&]+)/);
       if (m) return decodeURIComponent(m[1]);
     } catch (e) {}
-    return '20260915x';
+    return '20260916p';
   })();
 
   function href(m) {
@@ -75,7 +75,12 @@
   // ⚠️ `superAdminOnly` modules (config.js, 2026-09-03) are hidden from everyone but
   // super_admin, read off the global `AppAuth.requireLogin` already sets — see the
   // matching note in ui.js's `renderNav`, which gates the sidebar the same way.
-  function visible(m) { return !m.superAdminOnly || window.__role === 'super_admin'; }
+  // ⚠️ Delegated to `AppAuth.moduleVisible` (2026-09-15), which layers admin.html's
+  // per-user Modules override on top of that role default — so this launcher grid
+  // and the sidebar cannot disagree about which modules a given user sees.
+  function visible(m) {
+    return window.AppAuth ? AppAuth.moduleVisible(m, window.__profile) : (!m.superAdminOnly || window.__role === 'super_admin');
+  }
 
   window.ModulesGrid = {
     MODULE_V: MODULE_V,

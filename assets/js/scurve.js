@@ -241,11 +241,122 @@
     };
   }
 
+  /* =========================================================================================
+     THE PORTFOLIO FAN-OUT — one aggregate call per project, merged here.
+     MOVED (not copied) out of `def("scurve")`'s closure in portfolio-dash.js on 2026-09-16, so
+     the Portfolio Overview's own trend chart draws from these functions rather than a second
+     copy. ⚠⚠ `portfolio-overview` carried a hand-copied S-curve until 2026-09-10 (z1), and the
+     "Overall Progress ≡ Actual to date" bug then had to be reasoned about in three places
+     instead of one — which is the whole reason this file exists.
+     ⚠⚠ WHY NOT `schedule_scurve_agg_multi`: it CROSS JOINs its month series against its leaf
+     activities, so with N projects the series spans the union of every project's horizon while
+     the leaf set is every project's activities — ~30M rows for a hundred-point chart. It was
+     cancelled in production at the ~8s statement_timeout (57014) on 2026-09-16, the first time a
+     planner opened that view. `schedule_scurve_agg(p_id)` is the same SQL with one id, and the
+     shape `project_schedule_proj_id_idx` exists for.
+     ⚠⚠ THE CALLER IS INJECTED. This file still makes no request of its own and needs no Supabase
+     client: `callOne(id)` returns whatever the caller's rpc returns. That is what keeps PDScurve
+     a pure engine and lets the fan-out be driven from a test with no database.
+     ========================================================================================= */
+  var SC_AGG_CONC = 4;   // four in flight: enough to hide latency, not enough to queue on the db
+
+async function fanOutAgg(callOne, ids, opts) {
+    opts = opts || {};
+  var onProgress = opts.onProgress;
+  var conc = opts.concurrency || SC_AGG_CONC;
+  var aggs = [], failed = [], done = 0, queue = (ids || []).slice();
+    async function worker() {
+      while (queue.length) {
+        var id = queue.shift();
+        try {
+          var r = await callOne(id);
+          if (r && r.error) throw r.error;
+          var data = r && r.data;
+          if (data && data.months && data.months.length) aggs.push({ id: id, agg: data });
+        } catch (e) { failed.push({ id: id, err: e }); }
+        done++;
+        if (onProgress) onProgress(done, (ids || []).length);
+      }
+    }
+    var ws = [];
+    for (var i = 0; i < Math.min(conc, (ids || []).length); i++) ws.push(worker());
+    await Promise.all(ws);
+    return { aggs: aggs, failed: failed };
+  }
+
+function carry(months, axisKeys) {
+    var by = {};
+    (months || []).forEach(function (m) { by[m.key] = m; });
+    var pd = [], ad = [], last = { pd: 0, ad: 0 };
+    axisKeys.forEach(function (k) {
+      var m = by[k];
+      if (m) last = { pd: +m.pd || 0, ad: +m.ad || 0 };
+      pd.push(last.pd); ad.push(last.ad);
+    });
+    return { pd: pd, ad: ad };
+  }
+
+function mergeAggs(list) {
+    if (!list || !list.length) return null;
+    var keys = {};
+    list.forEach(function (a) { (a.agg.months || []).forEach(function (m) { keys[m.key] = 1; }); });
+    var axis = Object.keys(keys).sort();
+    if (!axis.length) return null;
+    var acc = axis.map(function () { return { pd: 0, pc: 0, ad: 0, ac: 0 }; });
+    list.forEach(function (a) {
+      /* ⚠️ Through the shared scCarry — see it for why an absent month is not a zero. The cost
+         columns keep their own tiny carry because the trade aggregate has no money in it. */
+      var c = carry(a.agg.months, axis), by = {}, lastC = { pc: 0, ac: 0 };
+      (a.agg.months || []).forEach(function (m) { by[m.key] = m; });
+      axis.forEach(function (k, i) {
+        var m = by[k];
+        if (m) lastC = { pc: +m.pc || 0, ac: +m.ac || 0 };
+        acc[i].pd += c.pd[i]; acc[i].ad += c.ad[i];
+        acc[i].pc += lastC.pc; acc[i].ac += lastC.ac;
+      });
+    });
+    function total(f) {
+      return list.reduce(function (t, a) { return t + (+a.agg[f] || 0); }, 0);
+    }
+    var mins = list.map(function (a) { return a.agg.minDate; }).filter(Boolean).sort();
+    var maxs = list.map(function (a) { return a.agg.maxDate; }).filter(Boolean).sort();
+    return {
+      months: axis.map(function (k, i) {
+        return { key: k, pd: acc[i].pd, pc: acc[i].pc, ad: acc[i].ad, ac: acc[i].ac };
+      }),
+      totDur: total('totDur'), totCost: total('totCost'),
+      doneDur: total('doneDur'), doneCost: total('doneCost'),
+      nAct: total('nAct'), nCost: total('nCost'),
+      minDate: mins[0] || null, maxDate: maxs[maxs.length - 1] || null
+    };
+  }
+
+function computeFromAgg(a) {
+    if (!a || !a.months || !a.months.length || !(+a.totDur > 0)) return { empty: true };
+    var start = pd(a.minDate), maxEnd = pd(a.maxDate); if (!start) return { empty: true };
+    var pts = [{ t: +start, pd: 0, ad: 0 }];
+    a.months.forEach(function (mm) { var y = +String(mm.key).slice(0, 4), mo = +String(mm.key).slice(5, 7); pts.push({ t: +new Date(y, mo, 0), pd: +mm.pd || 0, ad: +mm.ad || 0 }); });
+    function interp(f, t) { if (t <= pts[0].t) return 0; var last = pts[pts.length - 1]; if (t >= last.t) return last[f]; for (var i = 1; i < pts.length; i++) { if (t <= pts[i].t) { var A = pts[i - 1], B = pts[i]; var r = (B.t - A.t) ? (t - A.t) / (B.t - A.t) : 0; return A[f] + (B[f] - A[f]) * r; } } return last[f]; }
+    var TOT = +a.totDur, overallDone = +a.doneDur || 0, tnow = today();
+    var domainMax = new Date(Math.max(+maxEnd, +tnow));
+    var months = [], c = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    function me(m) { return new Date(m.getFullYear(), m.getMonth() + 1, 0); }
+    var plannedC = months.map(function (m) { return interp('pd', +me(m)); });
+    var ti = -1; for (var i = 0; i < months.length; i++) { if (me(months[i]) >= tnow) { ti = i; break; } } if (ti < 0) ti = months.length - 1;
+    var actualC = months.map(function (m, idx) { return idx < ti ? interp('ad', +me(m)) : 0; });
+    actualC[ti] = overallDone;
+    var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0, overallPct = TOT ? overallDone / TOT * 100 : 0;
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: a.nAct || 0 };
+  }
+
   window.PDScurve = {
     COLS: COLS,
     pd: pd, today: today, isWbs: isWbs,
     curveCdf: curveCdf, curveOfRow: curveOfRow,
     durSeries: durSeries, costSeries: costSeries,
-    shapeNote: shapeNote, compute: compute
+    shapeNote: shapeNote, compute: compute,
+    /* the portfolio trio (plus the carry they share) — see the block above */
+    fanOutAgg: fanOutAgg, carry: carry, mergeAggs: mergeAggs, computeFromAgg: computeFromAgg
   };
 })();

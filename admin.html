@@ -6,13 +6,9 @@
   <link rel="icon" type="image/png" href="assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
-  <title>Admin · Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260915f" />
+  <title>Users · Planners Dashboard</title>
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260916u" />
   <style>
-    .pd-tabs { display:flex; gap:4px; border-bottom:1px solid var(--pd-line); margin-bottom:18px; }
-    .pd-tab { padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent; color:var(--pd-muted); font-weight:700; }
-    .pd-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
-    .pd-tabpane { display:none; } .pd-tabpane.active { display:block; }
     .pd-chip { display:inline-block; font-size:var(--pd-fs-xs); padding:2px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); margin:2px 3px 2px 0; }
     .pd-status-pending { color:var(--pd-warn-text); font-weight:700; }
     .pd-status-approved { color:var(--pd-ok-text); font-weight:700; }
@@ -87,27 +83,22 @@
       <div class="pd-sidebar-foot">Megawide Construction Corporation<br>PMO Department</div>
     </aside>
     <div class="pd-content">
-      <div class="pd-topbar"><div id="ctx-switcher"></div><h1>Admin</h1><div id="user-bar"></div></div>
+      <!-- ⚠️ `<h1>Users</h1>` (2026-09-15) — this page was "Admin" carrying BOTH user
+           management and project/group-head CRUD, and the latter already lives in
+           projects.html (which owns the identical `manageGroupHeadsModal` /
+           `createProject`/`updateProject`/`deleteProject`/`archiveProject` calls this
+           page used to duplicate). Owner: "projects already has a separate module, no
+           need to mix with admin. for admin keep only user management and rename to
+           Users." Only the VISIBLE label changes — `active: 'admin'` below, the
+           `admin.html` filename, and `requireAdmin`'s own role check are all left as
+           they are, so nothing that links here (the sidebar, a bookmark, `requireAdmin`)
+           silently breaks. Same convention this repo already uses for a relabelled
+           screen whose identifier stays put (`personal-dashboard`, `data-view="loading"`
+           — see ui.js's own comment on the My Work row). -->
+      <div class="pd-topbar"><div id="ctx-switcher"></div><h1>Users</h1><div id="user-bar"></div></div>
       <div class="pd-main">
-        <div class="pd-tabs">
-          <div class="pd-tab active" data-tab="users">Users</div>
-          <div class="pd-tab" data-tab="projects">Projects</div>
-        </div>
-
-        <div class="pd-tabpane active" id="pane-users">
-          <div class="pd-card" style="padding:0;overflow:auto;">
-            <table class="pd-table" id="users-table"></table>
-          </div>
-        </div>
-
-        <div class="pd-tabpane" id="pane-projects">
-          <div style="margin-bottom:14px;display:flex;gap:8px;">
-            <button class="pd-btn pd-btn-primary" id="btn-add-project">+ New project</button>
-            <button class="pd-btn" id="btn-manage-gh">Manage group heads…</button>
-          </div>
-          <div class="pd-card" style="padding:0;overflow:auto;">
-            <table class="pd-table" id="projects-table"></table>
-          </div>
+        <div class="pd-card" style="padding:0;overflow:auto;">
+          <table class="pd-table" id="users-table"></table>
         </div>
       </div>
     </div>
@@ -115,90 +106,43 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260915a"></script>
-  <script src="assets/js/auth.js?v=20260914e"></script>
-  <script src="assets/js/db.js?v=20260914d"></script>
-  <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/ui.js?v=20260916a"></script>
+  <script src="assets/js/auth.js?v=20260915a"></script>
+  <script src="assets/js/db.js?v=20260916c"></script>
+  <script src="assets/js/ui.js?v=20260916v"></script>
   <script src="assets/js/notebook.js?v=20260915d"></script>
   <script src="assets/js/icons.js?v=20260915f"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
-    // Group heads (see assets/js/db.js "Group Heads" section — the flat tag that
-    // replaced the old workspace tree). Loaded once and refreshed alongside the
-    // Projects tab; projects.html manages the same rows through the same API.
-    var GH = [], ghById = {};
-    // {el, draw} while Manage Group Heads is open, so a save made from its own
-    // nested Edit/Delete dialogs (which only know to call loadProjects()) is
-    // reflected in the list underneath without having to close and reopen it.
-    var ghmOpen = null;
-    // ⚠️ Modules only `super_admin` can open (config.js `superAdminOnly`, see the
-    // comment there). Read off the live registry rather than hardcoded, so this
-    // list can never drift from what ui.js/modules-grid.js actually gate.
+    // ⚠️ Modules only `super_admin` can open BY ROLE DEFAULT (config.js
+    // `superAdminOnly`, see the comment there). Read off the live registry
+    // rather than hardcoded, so this list can never drift from what
+    // ui.js/modules-grid.js actually gate. A per-user override (below) can
+    // still put any of these in reach of a non-super_admin, or take an
+    // ordinary module away from anyone — this list is only the DEFAULT.
     var RESTRICTED_MODULES = (window.APP_CONFIG && APP_CONFIG.MODULES || []).filter(function (m) { return m.superAdminOnly; });
+    // Every module a user could plausibly be granted or denied — retired
+    // (`enabled:false`) modules are not offered here, since there is nothing
+    // real to turn on for them.
+    var ENABLED_MODULES = (window.APP_CONFIG && APP_CONFIG.MODULES || []).filter(function (m) { return m.enabled; });
 
     AppAuth.requireAdmin(function (user, profile) {
       ME = profile;
       UI.renderUserBar(profile);
       // requireAdmin already gated the page, so isAdmin is always true here.
+      // ⚠️ `active: 'admin'` is the sidebar's INTERNAL key (assets/js/ui.js), not the
+      // label — it stays 'admin' so the highlighted-row match against admin.html's own
+      // nav link (still `cls('admin')`, now labelled "Users") keeps working.
       UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'admin', base: '', isAdmin: true });
       UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'portfolio', base: '' });
-      wireTabs();
       loadUsers();
-      loadProjects();
     });
-
-    function indexGh() { ghById = {}; GH.forEach(function (g) { ghById[g.id] = g; }); }
-    function ghNameOf(p) {
-      if (!p.group_head_id) return null;
-      var g = ghById[p.group_head_id];
-      return g ? g.name : p.group_head_id;
-    }
-    // An inactive group head still appears when it is the project's CURRENT
-    // value — otherwise the select would silently fall back to the first option
-    // and saving would reassign the project without anyone asking for it.
-    function ghOptions(cur) {
-      var seen = {};
-      var opts = GH.slice()
-        .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)); })
-        .filter(function (g) { return g.active !== false || g.id === cur; })
-        .map(function (g) {
-          seen[g.id] = 1;
-          return '<option value="'+Fmt.esc(g.id)+'"'+(cur===g.id?' selected':'')+'>'+Fmt.esc(g.name)+(g.active===false?' (inactive)':'')+'</option>';
-        });
-      if (cur && !seen[cur]) opts.unshift('<option value="'+Fmt.esc(cur)+'" selected>'+Fmt.esc(cur)+'</option>');
-      return opts.join('');
-    }
-    function countForGh(id) {
-      return ALL_PROJECTS.filter(function (p) { return p.group_head_id === id; }).length;
-    }
-
-    // Extracted so it can double as UI.bindHistoryState's apply() below.
-    function applyTab(tabKey) {
-      document.querySelectorAll('.pd-tab').forEach(function (x){ x.classList.toggle('active', x.dataset.tab === tabKey); });
-      document.querySelectorAll('.pd-tabpane').forEach(function (x){ x.classList.remove('active'); });
-      var pane = document.getElementById('pane-' + tabKey);
-      if (pane) pane.classList.add('active');
-    }
-
-    function wireTabs() {
-      document.querySelectorAll('.pd-tab').forEach(function (t) {
-        t.onclick = function () { applyTab(t.dataset.tab); histTab.push(); };
-      });
-      // Browser-history integration — see UI.bindHistoryState in ui.js. Without this,
-      // switching Users/Projects never touches the URL, so the browser's native Back
-      // button jumps straight past a tab switch to whatever page opened Admin.
-      var histTab = UI.bindHistoryState({
-        key: 'adm_tab',
-        get: function () { var cur = document.querySelector('.pd-tab.active'); return { t: cur ? cur.dataset.tab : 'users' }; },
-        apply: function (s) { applyTab(s.t); }
-      });
-      document.getElementById('btn-add-project').onclick = function () { editProject(null); };
-      document.getElementById('btn-manage-gh').onclick = function () { manageGroupHeadsModal(); };
-    }
 
     // -------- Users --------
     async function loadUsers() {
       var users = await PDb.getAllUsers();
+      // ⚠️ Kept here (not moved to projects.html) — the Assign Projects modal below is
+      // still part of USER management (who can reach which project), even though
+      // creating/editing/deleting the projects themselves is now projects.html's alone.
       ALL_PROJECTS = await PDb.getProjects();
       var t = document.getElementById('users-table');
       // ⚠️ DEPARTMENTS is duplicated from modules/issues-lessons/module.js rather than
@@ -218,22 +162,44 @@
       // literal assignment.
       // ⚠️ Projects and Modules are now their OWN columns rather than one combined
       // "Access" cell — a project answers "which projects", a module answers "which
-      // screens", and squeezing both into one cell is what made the Projects button
-      // read as belonging to neither. The Projects button now sits INSIDE the
-      // Projects cell, beside the thing it assigns. There is no equivalent button
-      // for Modules: module visibility is a property of the ROLE (config.js's
-      // `superAdminOnly`), not a per-user assignment — there is nothing in the
-      // schema to open a picker onto, so the column states the fact and offers
-      // no control, rather than a button that would write nowhere.
+      // screens", and squeezing both into one cell is what made each button
+      // read as belonging to neither. Each button sits INSIDE its own cell,
+      // beside the thing it assigns. ⚠️ The Modules button/`moduleAccessModal`
+      // (2026-09-15) supersede the note this comment used to carry here — module
+      // visibility was a pure role default with nothing to override; it no longer
+      // is, now that `users.module_access` can hold a per-user custom list.
       var restrictedNames = RESTRICTED_MODULES.map(function (m) { return m.name; }).join(', ');
       t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Modules</th><th>Actions</th></tr></thead><tbody>' +
         users.map(function (u) {
           var canSuper = ME.role === 'super_admin';
+          var isSuper = u.role === 'super_admin';
+          // ⚠️⚠️ A plain admin can SEE a super_admin's row in full — RLS
+          // already grants that (`users_self_read` is `auth.uid() = id or
+          // is_admin()`, and `is_admin()` covers both admin and
+          // super_admin) — but must not be able to CHANGE it. Owner:
+          // "if I am an admin, I should not be able to change the access of
+          // super_admin but I should be able to see who are super_admin."
+          // `admin_delete_user()` already enforces "only a super_admin may
+          // delete a super_admin" server-side; `locked` extends that same
+          // rule to every other control on this row. Enforced again in the
+          // DATABASE (migrations/2026-09-16-users-protect-super-admin.sql
+          // tightens `users_admin_update`) — this is a courtesy so a
+          // disabled control reads as locked rather than a write silently
+          // doing nothing (or throwing) once it reaches RLS.
+          var locked = isSuper && !canSuper;
+          var lockAttr = locked ? ' disabled title="Only a super_admin can change a super_admin’s account"' : '';
+          // ⚠️ Include `super_admin` as an option whenever the row's CURRENT
+          // role already is one, even if this viewer could not have GRANTED
+          // it — otherwise the <select> has no matching option, the browser
+          // silently falls back to displaying the first one, and a
+          // super_admin's own row would misreport its role to an admin
+          // looking right at it. The row is `disabled` in that case anyway
+          // (see `locked` above), so this only fixes what is shown, never
+          // what can be picked.
           var roleOpts = AppAuth.ROLES
-            .filter(function (r){ return r !== 'super_admin' || canSuper; })
+            .filter(function (r){ return r !== 'super_admin' || canSuper || isSuper; })
             .map(function (r){ return '<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+r+'</option>'; }).join('');
           var isFullAccess = (u.role === 'admin' || u.role === 'super_admin');
-          var isSuper = u.role === 'super_admin';
           var okChip = 'style="background:var(--pd-ok-bg);color:var(--pd-ok-text);"';
           var projCell = isFullAccess
             ? '<span class="pd-chip" '+okChip+' title="Role-based — every project is reachable no matter what is checked in Assign projects.">All projects</span>'
@@ -242,34 +208,59 @@
           // control that changes nothing — it re-appears the moment the role is
           // dropped to planner/user/viewer, where the assignment is real again.
           var projBtn = !isFullAccess ? '<button class="pd-btn pd-btn-sm" data-projects="'+u.id+'">Projects</button>' : '';
-          // The 6 (today) modules config.js marks `superAdminOnly` are invisible to
-          // EVERY other role, admin included — this is the "super_admin sees all
-          // modules" guarantee, made visible rather than left implicit in code.
-          var moduleCell = RESTRICTED_MODULES.length
-            ? (isSuper
-                ? '<span class="pd-chip" '+okChip+' title="'+Fmt.esc(restrictedNames)+'">+ all modules</span>'
-                : '<span class="pd-chip" title="'+Fmt.esc(restrictedNames)+' — visible to super_admin only">'+RESTRICTED_MODULES.length+' module'+(RESTRICTED_MODULES.length===1?'':'s')+' hidden</span>')
-            : '<span style="color:var(--pd-muted);">—</span>';
+          // ⚠️⚠️ A per-user override (`module_access`, 2026-09-15) means this column can no
+          // longer just report the ROLE's default — a custom list may say something
+          // different, and showing the role text over a custom list would be a lie. Same
+          // shape as the Projects column correction above: state what actually applies.
+          var hasOverride = Array.isArray(u.module_access);
+          var visibleCount = ENABLED_MODULES.filter(function (m) { return AppAuth.moduleVisible(m, u); }).length;
+          var moduleCell;
+          if (hasOverride) {
+            moduleCell = '<span class="pd-chip" title="Custom module access, set from the Modules button — no longer follows the '+Fmt.esc(u.role)+' role default">'+
+              visibleCount+' of '+ENABLED_MODULES.length+' modules (custom)</span>';
+          } else if (RESTRICTED_MODULES.length) {
+            // The 6 (today) modules config.js marks `superAdminOnly` are invisible to
+            // EVERY other role, admin included — this is the "super_admin sees all
+            // modules" guarantee, made visible rather than left implicit in code.
+            moduleCell = isSuper
+              ? '<span class="pd-chip" '+okChip+' title="'+Fmt.esc(restrictedNames)+'">+ all modules</span>'
+              : '<span class="pd-chip" title="'+Fmt.esc(restrictedNames)+' — visible to super_admin only">'+RESTRICTED_MODULES.length+' module'+(RESTRICTED_MODULES.length===1?'':'s')+' hidden</span>';
+          } else {
+            moduleCell = '<span style="color:var(--pd-muted);">—</span>';
+          }
           // ⚠️⚠️ Approve/Reject/Delete collapse into one "Actions" menu with icon-only
           // controls (title= carries the label) rather than three loose buttons —
           // `data-approve`/`data-reject`/`data-del` are unchanged, so the wiring
           // below needs no change, only where the attribute is printed. A row with
           // none of the three applicable (impossible today — Approve or Reject
           // always applies) renders no trigger at all rather than a dead button.
+          // ⚠️ `Modules` is deliberately NOT in this menu — it rides beside the
+          // Modules column's own chip, the same place the Projects button rides
+          // beside the Projects column's chip list, rather than joining a menu
+          // meant for record-lifecycle actions (approve/reject/delete).
           var hasMenu = (u.status!=='approved') || (u.status!=='rejected') || (u.id!==ME.id);
           return '<tr>' +
             '<td>'+Fmt.esc(u.name)+'</td>' +
             '<td>'+Fmt.esc(u.email)+'</td>' +
-            '<td><select class="pd-select" style="min-width:130px;" data-role="'+u.id+'">'+roleOpts+'</select></td>' +
+            '<td><select class="pd-select" style="min-width:130px;" data-role="'+u.id+'"'+lockAttr+'>'+roleOpts+'</select></td>' +
             // The department a person raises issues for (D1). Defaults their entries in
-            // the Issues & Concerns register so it is not retyped — and mistyped — per issue.
-            '<td><select class="pd-select" style="min-width:140px;" data-dept="'+u.id+'">' +
+            // the Issues & Concerns register so it is not retyped — and mistyped — per
+            // issue. ⚠️ Locked too, not just role/status/access — the DATABASE now
+            // refuses ANY column write to a super_admin's row from a plain admin (see
+            // `locked` above), and leaving this one control live would have it click,
+            // toast "Saved", and change nothing: `users_admin_update`'s `using` clause
+            // simply excludes the row, so the UPDATE affects 0 rows with no error to
+            // catch. One disabled control is honest; a live one that silently no-ops is
+            // the "PostgREST answers a filtered UPDATE with 200 and 0 rows" trap this
+            // repo has already paid for once (`boq_tag_activities`).
+            '<td><select class="pd-select" style="min-width:140px;" data-dept="'+u.id+'"'+lockAttr+'>' +
               '<option value="">—</option>' +
               DEPARTMENTS.map(function(d){ return '<option'+(u.department===d?' selected':'')+'>'+d+'</option>'; }).join('') +
             '</select></td>' +
             '<td class="pd-status-'+u.status+'">'+u.status+'</td>' +
             '<td><div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">'+projCell+projBtn+'</div></td>' +
-            '<td>'+moduleCell+'</td>' +
+            '<td><div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">'+moduleCell+
+              '<button class="pd-btn pd-btn-sm" data-modules="'+u.id+'"'+lockAttr+'>Modules</button></div></td>' +
             '<td>' + (hasMenu
               ? '<button type="button" class="pd-btn pd-btn-sm pd-actions-trigger" data-actions-trigger="'+u.id+'">Actions '+(window.Icons?Icons.svg('chevronDown',13):'▾')+'</button>'
               : '<span style="color:var(--pd-muted);">—</span>') +
@@ -280,6 +271,7 @@
       t.querySelectorAll('[data-role]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.role, { role: s.value }); }; });
       t.querySelectorAll('[data-dept]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.dept, { department: s.value || null }); }; });
       t.querySelectorAll('[data-projects]').forEach(function(b){ b.onclick = function(){ assignProjects(users.find(function(x){return x.id===b.dataset.projects;})); }; });
+      t.querySelectorAll('[data-modules]').forEach(function(b){ b.onclick = function(){ moduleAccessModal(users.find(function(x){return x.id===b.dataset.modules;})); }; });
       wireActionsMenus(t, users);
     }
 
@@ -365,7 +357,7 @@
       var checks = ALL_PROJECTS.map(function(p){
         var on = (u.projects||[]).indexOf(p.id) !== -1;
         return '<label style="display:block;padding:5px 0;"><input type="checkbox" value="'+p.id+'"'+(on?' checked':'')+'> '+Fmt.esc(p.name)+' <span style="color:var(--pd-muted);">('+p.id+')</span></label>';
-      }).join('') || '<p style="color:var(--pd-muted);">No projects yet — create one in the Projects tab.</p>';
+      }).join('') || '<p style="color:var(--pd-muted);">No projects yet — create one in the Projects module.</p>';
       var m = UI.modal(
         '<h2 style="margin-top:0;">Assign projects — '+Fmt.esc(u.name)+'</h2>' +
         '<div style="max-height:50vh;overflow:auto;">'+checks+'</div>' +
@@ -379,241 +371,51 @@
       };
     }
 
-    // -------- Projects --------
-    async function loadProjects() {
-      var res = await Promise.all([PDb.getProjects(), PDb.getGroupHeads()]);
-      var ps = res[0]; GH = res[1]; ALL_PROJECTS = ps; indexGh();
-      if (ghmOpen && document.body.contains(ghmOpen.el)) ghmOpen.draw();
-      var t = document.getElementById('projects-table');
-      t.innerHTML = '<thead><tr><th>ID</th><th>Name</th><th>Group Head</th><th>Location</th><th>Status</th><th>Dates</th><th></th></tr></thead><tbody>' +
-        (ps.length ? ps.map(function(p){
-          var gh = ghNameOf(p);
-          return '<tr>' +
-            '<td><strong>'+Fmt.esc(p.id)+'</strong></td>' +
-            '<td>'+Fmt.esc(p.name)+'</td>' +
-            '<td>'+(gh ? Fmt.esc(gh) : '<span style="color:var(--pd-muted);">— Unassigned —</span>')+'</td>' +
-            '<td>'+Fmt.esc(p.location)+'</td>' +
-            '<td>'+Fmt.esc(p.status)+'</td>' +
-            '<td>'+Fmt.date(p.start_date)+' – '+Fmt.date(p.end_date)+'</td>' +
-            '<td><button class="pd-btn" data-edit="'+p.id+'">Edit</button></td>' +
-          '</tr>';
-        }).join('') : '<tr><td colspan="7" style="padding:24px;color:var(--pd-muted);">No projects yet.</td></tr>') + '</tbody>';
-      t.querySelectorAll('[data-edit]').forEach(function(b){ b.onclick = function(){ editProject(ps.find(function(x){return x.id===b.dataset.edit;})); }; });
-    }
-
-    // ---- Manage Group Heads ----
-    // Same table `projects.html`'s own "Manage Group Heads" screen manages — this
-    // is a second entry point onto identical rows, not a parallel concept, so an
-    // admin doing user/role work never has to leave this page to set one up.
-    function groupHeadRow(g, i, list) {
-      var n = countForGh(g.id);
-      return '<div class="pd-ghm-row">' +
-        '<div class="pd-ghm-order">' +
-          '<button class="pd-icon-btn" data-up="'+Fmt.esc(g.id)+'" title="Move up"'+(i===0?' disabled':'')+'>' +
-            '<span data-ico="chevronDown" data-ico-size="14" style="transform:rotate(180deg);"></span></button>' +
-          '<button class="pd-icon-btn" data-down="'+Fmt.esc(g.id)+'" title="Move down"'+(i===list.length-1?' disabled':'')+'>' +
-            '<span data-ico="chevronDown" data-ico-size="14"></span></button>' +
-        '</div>' +
-        '<div class="pd-ghm-name"><strong>'+Fmt.esc(g.name)+'</strong>' +
-          '<small><code>'+Fmt.esc(g.id)+'</code> &middot; '+n+' project'+(n===1?'':'s')+
-          (g.active===false?' &middot; <em>inactive</em>':'')+'</small></div>' +
-        '<button class="pd-btn pd-btn-sm" data-edit="'+Fmt.esc(g.id)+'">Edit</button>' +
-        '<button class="pd-btn pd-btn-sm pd-btn-danger" data-del="'+Fmt.esc(g.id)+'">Delete</button>' +
-      '</div>';
-    }
-    function manageGroupHeadsModal() {
+    // -------- Module access (2026-09-15) --------
+    // Owner: "provide options to change module access for users with button to reset to
+    // default." One checklist over every ENABLED module (retired ones have nothing to
+    // grant), pre-ticked from whatever applies to this user RIGHT NOW — the role default
+    // via AppAuth.moduleVisible if they have no override yet, or their existing custom
+    // list if they do — so opening the dialog never looks like it is proposing a change
+    // that has not happened.
+    function moduleAccessModal(u) {
+      var hasOverride = Array.isArray(u.module_access);
+      var rows = ENABLED_MODULES.map(function (m) {
+        var on = AppAuth.moduleVisible(m, u);
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;">' +
+          '<input type="checkbox" value="'+Fmt.esc(m.key)+'"'+(on?' checked':'')+'> ' +
+          Fmt.esc(m.name) +
+          (m.superAdminOnly ? ' <span style="color:var(--pd-muted);font-size:11px;">(super_admin by default)</span>' : '') +
+          '</label>';
+      }).join('');
       var m = UI.modal(
-        '<h2 style="margin-top:0;">Manage Group Heads</h2>' +
-        '<p style="color:var(--pd-muted);font-size:13px;margin-top:-6px;">Reorder, edit, retire or delete a group ' +
-        'head, then assign one to a project from its Edit dialog. Delete only succeeds while <b>no project is ' +
-        'assigned</b> to it — untick <b>Active</b> to retire one with history instead.</p>' +
-        '<div style="margin-bottom:10px;"><button class="pd-btn pd-btn-primary" id="ghm-new">+ New group head</button></div>' +
-        '<div class="pd-ghm-list" id="ghm-list"></div>' +
-        '<div style="margin-top:14px;text-align:right;"><button class="pd-btn" id="ghm-close">Close</button></div>');
-      function draw() {
-        var list = GH.slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)); });
-        var host = m.el.querySelector('#ghm-list');
-        host.innerHTML = list.length ? list.map(function (g, i) { return groupHeadRow(g, i, list); }).join('')
-          : '<div class="pd-empty" style="padding:20px;">No group heads yet.</div>';
-        if (window.Icons) Icons.hydrate(host);
-        host.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { groupHeadModal(ghById[b.dataset.edit]); }; });
-        host.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { confirmDeleteGroupHead(ghById[b.dataset.del], null); }; });
-        host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { swapGh(b.dataset.up, -1, list); }; });
-        host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { swapGh(b.dataset.down, 1, list); }; });
-      }
-      // Swaps the two rows' sort_order (assigning by position first, if neither
-      // has ever been set, so the very first reorder has something to swap).
-      async function swapGh(id, dir, list) {
-        var i = list.findIndex(function (x) { return x.id === id; });
-        var j = i + dir;
-        if (j < 0 || j >= list.length) return;
-        var a = list[i], b = list[j];
-        var ao = a.sort_order, bo = b.sort_order;
-        if (ao == null) ao = i; if (bo == null) bo = j;
-        if (ao === bo) bo = ao + dir;
-        try {
-          await Promise.all([PDb.updateGroupHead(a.id, { sort_order: bo }), PDb.updateGroupHead(b.id, { sort_order: ao })]);
-          await loadProjects();
-        } catch (e) { UI.toast(e.message,'error'); }
-      }
-      m.el.querySelector('#ghm-new').onclick = function () { groupHeadModal(null); };
-      m.el.querySelector('#ghm-close').onclick = function () { ghmOpen = null; m.close(); };
-      ghmOpen = { el: m.el, draw: draw };
-      draw();
-    }
-
-    function groupHeadModal(g) {
-      var isNew = !g; g = g || {};
-      var m = UI.modal(
-        '<h2 style="margin-top:0;">'+(isNew?'New Group Head':'Edit Group Head')+'</h2>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>ID '+(isNew?'(e.g. CALIMAG)':'')+'</label>' +
-          '<input class="pd-input" id="g-id" value="'+Fmt.esc(g.id)+'"'+(isNew?'':' disabled')+'></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Sort order</label><input class="pd-input" type="number" id="g-sort" value="'+(g.sort_order!=null?g.sort_order:0)+'"></div></div>' +
-        '<div class="pd-field"><label>Name</label><input class="pd-input" id="g-name" value="'+Fmt.esc(g.name)+'"></div>' +
-        '<div class="pd-field"><label><input type="checkbox" id="g-active"'+(g.active===false?'':' checked')+'> Active <small>(uncheck to retire — existing projects keep their assignment)</small></label></div>' +
-        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
-        (isNew ? '<div style="flex:1;"></div>' : '<button class="pd-btn pd-btn-danger" id="g-del">Delete…</button><div style="flex:1;"></div>') +
-        '<button class="pd-btn" id="g-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="g-save">Save</button></div>');
-      m.el.querySelector('#g-cancel').onclick = m.close;
-      if (!isNew) m.el.querySelector('#g-del').onclick = function () { confirmDeleteGroupHead(g, m); };
-      m.el.querySelector('#g-save').onclick = async function () {
-        var data = {
-          name: m.el.querySelector('#g-name').value.trim(),
-          sort_order: Number(m.el.querySelector('#g-sort').value || 0),
-          active: m.el.querySelector('#g-active').checked,
-        };
-        if (!data.name) { UI.toast('Name required','warn'); return; }
-        try {
-          if (isNew) {
-            var id = m.el.querySelector('#g-id').value.trim().toUpperCase();
-            if (!id) { UI.toast('ID required','warn'); return; }
-            data.id = id; await PDb.createGroupHead(data);
-          } else { await PDb.updateGroupHead(g.id, data); }
-          UI.toast('Saved','ok'); m.close(); await loadProjects();
-        } catch (e) { UI.toast(e.message,'error'); }
+        '<h2 style="margin-top:0;">Module access — '+Fmt.esc(u.name)+'</h2>' +
+        '<p style="color:var(--pd-muted);font-size:13px;margin-top:-6px;">' +
+          (hasOverride
+            ? 'This user has a <b>custom</b> module list, overriding the <b>'+Fmt.esc(u.role)+'</b> role default.'
+            : 'Ticked as the <b>'+Fmt.esc(u.role)+'</b> role currently sees it. Changing anything below and saving ' +
+              'records it as this user&rsquo;s own list, independent of their role from then on.') +
+        '</p>' +
+        '<div style="max-height:50vh;overflow:auto;">'+rows+'</div>' +
+        '<div style="margin-top:16px;display:flex;align-items:center;gap:8px;">' +
+          '<button class="pd-btn" id="ma-reset"'+(hasOverride?'':' disabled')+
+            ' title="Clear the custom list — this user goes back to seeing whatever their role grants">Reset to default</button>' +
+          '<div style="flex:1;"></div>' +
+          '<button class="pd-btn" id="ma-cancel">Cancel</button> ' +
+          '<button class="pd-btn pd-btn-primary" id="ma-save">Save</button>' +
+        '</div>');
+      m.el.querySelector('#ma-cancel').onclick = m.close;
+      // ⚠️ Writes `module_access: null`, NOT `[]` — null is what AppAuth.moduleVisible
+      // reads as "no override, fall back to the role default"; an empty array is itself
+      // a (valid, if unusual) override meaning "no modules at all."
+      m.el.querySelector('#ma-reset').onclick = async function () {
+        try { await PDb.updateUser(u.id, { module_access: null }); UI.toast('Reset to role default','ok'); m.close(); loadUsers(); }
+        catch (e) { UI.toast(e.message,'error'); }
       };
-    }
-
-    // Hard delete, no undo — mirrors confirmDeleteProject's echo-to-confirm shape.
-    // The RPC refuses while any project still carries this group_head_id.
-    function confirmDeleteGroupHead(g, parent) {
-      var m = UI.modal(
-        '<h2 style="margin-top:0;">Delete group head '+Fmt.esc(g.id)+'?</h2>' +
-        '<p style="color:var(--pd-muted);">This cannot be undone. It only works if <b>no project is still ' +
-        'assigned</b> to this group head. To retire one that has history, untick <b>Active</b> in Edit instead — ' +
-        'it stops appearing as a choice on new projects but keeps every existing assignment readable.</p>' +
-        '<div class="pd-field"><label>Type <b>'+Fmt.esc(g.id)+'</b> to confirm</label>' +
-        '<input class="pd-input" id="dg-echo" autocomplete="off"></div>' +
-        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="dg-cancel">Cancel</button> ' +
-        '<button class="pd-btn pd-btn-danger" id="dg-go" disabled>Delete permanently</button></div>');
-      var echo = m.el.querySelector('#dg-echo'), go = m.el.querySelector('#dg-go');
-      echo.oninput = function () { go.disabled = echo.value.trim() !== g.id; };
-      m.el.querySelector('#dg-cancel').onclick = m.close;
-      go.onclick = async function () {
-        go.disabled = true;
-        try {
-          await PDb.deleteGroupHead(g.id);
-          UI.toast('Group head deleted','ok'); m.close(); if (parent) parent.close(); await loadProjects();
-        } catch (e) { UI.toast(e.message,'error'); go.disabled = false; }
-      };
-      echo.focus();
-    }
-
-    // Hard delete, no undo — the id must be typed to arm the button. The DB
-    // refuses a project that still has module data and names what's blocking.
-    function confirmDeleteProject(p, parent) {
-      var m = UI.modal(
-        '<h2 style="margin-top:0;">Delete project '+Fmt.esc(p.id)+'?</h2>' +
-        '<p style="color:var(--pd-muted);">This cannot be undone. It is refused while the project still ' +
-        'holds <b>real work</b> — a schedule, baseline, register, risk or cash-flow record — and the ' +
-        'error names what is blocking. Working calendars, audit history and derived data (S-curve, ' +
-        'roll-ups) are cleared automatically and never block. To keep the history instead, ' +
-        '<b>Archive</b>.</p>' +
-        '<div class="pd-field"><label>Type <b>'+Fmt.esc(p.id)+'</b> to confirm</label>' +
-        '<input class="pd-input" id="d-echo" autocomplete="off"></div>' +
-        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="d-cancel">Cancel</button> ' +
-        '<button class="pd-btn pd-btn-danger" id="d-go" disabled>Delete permanently</button></div>');
-      var echo = m.el.querySelector('#d-echo'), go = m.el.querySelector('#d-go');
-      echo.oninput = function () { go.disabled = echo.value.trim() !== p.id; };
-      m.el.querySelector('#d-cancel').onclick = m.close;
-      go.onclick = async function () {
-        go.disabled = true;
-        try {
-          await PDb.deleteProject(p.id);
-          UI.toast('Project deleted','ok'); m.close(); parent.close(); loadProjects();
-        } catch (e) { UI.toast(e.message,'error'); go.disabled = false; }
-      };
-      echo.focus();
-    }
-
-    /* What the code prefix would give, shown as the placeholder so an admin can see the
-       default before deciding whether to override it. */
-    function autoParent(p) {
-      // A new project has no id yet, so there is no prefix to show — say so rather
-      // than printing an empty placeholder that reads as a missing value.
-      if (!p || !p.id) return 'the code prefix';
-      try { return PDProgram.keyOf({ id: p.id, program: null }); } catch (e) { return 'the code prefix'; }
-    }
-    function editProject(p) {
-      var isNew = !p; p = p || {};
-      var m = UI.modal(
-        '<h2 style="margin-top:0;">'+(isNew?'New project':'Edit project')+'</h2>' +
-        '<div class="pd-field"><label>Project ID '+(isNew?'(e.g. AVR101)':'')+'</label><input class="pd-input" id="p-id" value="'+Fmt.esc(p.id)+'"'+(isNew?'':' disabled')+'></div>' +
-        '<div class="pd-field"><label>Name</label><input class="pd-input" id="p-name" value="'+Fmt.esc(p.name)+'"></div>' +
-        '<div class="pd-field"><label>Group Head</label><select class="pd-select" id="p-gh"><option value="">— Unassigned —</option>'+ghOptions(p.group_head_id||'')+'</select></div>' +
-        /* Parent project — the override, not the normal case. ⚠️ Leave it BLANK and the app
-           groups by the code prefix (AVR101 -> AVR), which every id in this portfolio already
-           follows. Set it only when the prefix is wrong: two developments sharing one, or one
-           development split across two. It changes reporting only — the projects stay separate
-           rows, which is what keeps the 1:1 mapping to Procurement and Engineering intact. */
-        '<div class="pd-field"><label>Parent project (optional)</label>' +
-          '<input class="pd-input" id="p-prog" value="'+Fmt.esc(p.program||'')+'" placeholder="'+Fmt.esc(autoParent(p))+'">' +
-          '<small style="display:block;margin-top:4px;color:var(--pd-muted);font-size:11px;">' +
-          'Blank = grouped by the code prefix (<b>'+Fmt.esc(autoParent(p))+'</b>). Set it only to override that.' +
-          '</small></div>' +
-        '<div class="pd-field"><label>Location</label><input class="pd-input" id="p-loc" value="'+Fmt.esc(p.location)+'"></div>' +
-        '<div class="pd-field"><label>Status</label><select class="pd-select" id="p-status">' +
-          ['active','archived'].map(function(s){return '<option'+(p.status===s?' selected':'')+'>'+s+'</option>';}).join('') + '</select></div>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Start</label><input class="pd-input" type="date" id="p-start" value="'+(p.start_date||'')+'"></div>' +
-        '<div class="pd-field" style="flex:1;"><label>End</label><input class="pd-input" type="date" id="p-end" value="'+(p.end_date||'')+'"></div></div>' +
-        // Page is requireAdmin-gated, so no extra role check on these.
-        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
-        (isNew ? '<div style="flex:1;"></div>' :
-          '<button class="pd-btn" id="p-arch">'+(p.status==='archived'?'Restore':'Archive')+'</button>' +
-          '<button class="pd-btn pd-btn-danger" id="p-del">Delete…</button><div style="flex:1;"></div>') +
-        '<button class="pd-btn" id="p-cancel">Cancel</button> ' +
-        '<button class="pd-btn pd-btn-primary" id="p-save">Save</button></div>');
-      m.el.querySelector('#p-cancel').onclick = m.close;
-      if (!isNew) {
-        m.el.querySelector('#p-arch').onclick = async function () {
-          var toArchive = p.status !== 'archived';
-          try {
-            await PDb.archiveProject(p.id, toArchive);
-            UI.toast(toArchive ? 'Project archived' : 'Project restored','ok');
-            m.close(); loadProjects();
-          } catch (e) { UI.toast(e.message,'error'); }
-        };
-        m.el.querySelector('#p-del').onclick = function () { confirmDeleteProject(p, m); };
-      }
-      m.el.querySelector('#p-save').onclick = async function () {
-        var data = {
-          name: m.el.querySelector('#p-name').value.trim(),
-          group_head_id: m.el.querySelector('#p-gh').value || null,
-          location: m.el.querySelector('#p-loc').value.trim(),
-          status: m.el.querySelector('#p-status').value,
-          // Empty means "use the code prefix", so it is stored as NULL rather than ''.
-          program: (m.el.querySelector('#p-prog').value || '').trim().toUpperCase() || null,
-          start_date: m.el.querySelector('#p-start').value || null,
-          end_date: m.el.querySelector('#p-end').value || null,
-        };
-        try {
-          if (isNew) {
-            var id = m.el.querySelector('#p-id').value.trim();
-            if (!id) { UI.toast('Project ID required','warn'); return; }
-            data.id = id; await PDb.createProject(data);
-          } else { await PDb.updateProject(p.id, data); }
-          UI.toast('Saved','ok'); m.close(); loadProjects();
-        } catch (e) { UI.toast(e.message,'error'); }
+      m.el.querySelector('#ma-save').onclick = async function () {
+        var keys = Array.prototype.slice.call(m.el.querySelectorAll('input:checked')).map(function(c){return c.value;});
+        try { await PDb.updateUser(u.id, { module_access: keys }); UI.toast('Module access saved','ok'); m.close(); loadUsers(); }
+        catch (e) { UI.toast(e.message,'error'); }
       };
     }
   </script>

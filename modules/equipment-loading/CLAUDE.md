@@ -1,3 +1,67 @@
+## The table adopts the approved projects.html treatment (2026-09-16) — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+Owner: *"We already have an approved UI of tables seen in projects.html. Let's follow that
+universally."* `.eq-table` declared its own width, type scale, header
+treatment, cell padding and hover — a whole private table design, a few pixels from the approved
+one, which is what made the app's tables read as several designs rather than one. It adopts
+`pd-table pd-proj-table` and the duplicate declarations are deleted.
+
+⚠️ The look now comes from `.pd-table .pd-proj-table` in dashboard.css, claimed **by name in the
+markup**, rather than being restated here. Do NOT re-add width / font-size / padding / border /
+hover rules for this table: this stylesheet loads after dashboard.css, so at equal specificity they
+win and silently restore the second design.
+
+
+## The availability grid becomes the portfolio landing page (2026-09-16) — eprobles
+
+⚠️⚠️ **THIS ONE ALREADY ANSWERED A PORTFOLIO QUESTION — JUST NOT THE SAME ONE.** `load()` has
+consolidated the register and the loading matrix across projects since portfolio scope existed.
+The Portfolio Dashboard's tab answered a different question: **where is each asset committed,
+and when does it come free** — a month grid where the empty cells carry the meaning. That grid
+is the landing page now; the module's own consolidated view is one project-selection away.
+
+⚠️ **A DOUBLE BOOKING IS REPORTED, NEVER ASSERTED.** Asset identity is `equipment_items.code`
+and its uniqueness is per PROJECT, so `TC-01` on two projects is EITHER one crane that moved or
+two projects that both numbered their first crane TC-01 — and nothing in the data separates
+those. The view names the projects and stops. Calling it an error would be a guess presented as
+a fact. ⚠️ Grouping is case- and space-insensitive (`TC-01` = `tc-01`), because that is what a
+human reading the sheet sees; a test holds that.
+
+⚠️ **A STALE NAME CAME OUT IN THE MOVE**: the renderer re-hydrated its icons through
+`getElementById('po-view-equipment')` — the id of the pane it used to sit in. `Icons.hydrate(null)`
+silently falls back to the whole document, so nothing threw and nothing looked wrong. `mount()`
+hands the host to `setup()` now.
+
+Owner, 2026-09-16: *"at a portfolio view, the dashboards of each corresponding module must be
+revised … those dashboards must be the landing page of each module when under the portfolio
+view."*
+
+⚠️⚠️ **THE DASHBOARD IS THE LANDING PAGE OF THIS MODULE IN PORTFOLIO SCOPE.** Opened from the
+Portfolio sidebar (`#pd_scope=portfolio`), this page now mounts its cross-project view from
+`assets/js/portfolio-dash.js` — the renderer that used to be a TAB on a separate page called
+Portfolio Dashboard, moved here whole. Opened from a project's own module grid, nothing about
+this module changes.
+
+- ⚠️ **The module's own `init()` is SKIPPED** in that scope: it would read the same tables a
+  second time into a UI hidden underneath the dashboard.
+- ⚠️⚠️ **So `takeOver()` wires the topbar project `<select>` itself.** Skipping `init()` skips
+  the code that fills it, and choosing a project there is the only way to LEAVE portfolio scope
+  from the page you are standing on. A test asserts the id handed to `takeOver` exists in this
+  page's own markup — a typo there is a null nothing notices.
+- ⚠️ **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to
+  those nodes; tearing them out would turn every one into a null dereference.
+- ⚠️ Guarded on `PortfolioDash.has()`, not on the script tag: if the layer fails to load, this
+  module falls through to its own behaviour rather than rendering nothing.
+
+Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
+with the real `ui.js`/`db.js`/`scurve.js`, gated against the pinned commit before it). ⚠️ **Not verified
+signed in.**
+
+---
+
 ## Site plan: the backdrop can be resized, moved and faded — and the workspace got bigger (2026-09-02) — eprobles
 
 Owner: *"add an option where you can resize the image uploaded, and also adjust the transparency of
