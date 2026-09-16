@@ -84,6 +84,7 @@ developer, plug into one shared shell.
 | `tools/dead-exports.js` | `node tools/dead-exports.js` — a key on a module's public object that NOTHING in the repo reads (the inverse of wiring-check). ⚠️⚠️ It VERIFIES each parse and prints an UNPARSED list for surfaces its tokenizer could not read — `ScheduleBuilder` is currently one of them, so a clean run does not cover it. |
 | `tools/dark-remap.js` | `node tools/dark-remap.js` — a COLOUR token whose only definition sits in a light-mode block, so it keeps its light value on a dark ground. ⚠️⚠️ It knows the two patterns that look identical to that bug and are not: a brand colour, and the FILL half of this repo's fill/text split (`--sm-c`/`--rcm-c` stay fixed, `--sm-t`/`--rcm-t` remap). Tokens only — a raw colour literal with no dark rule is out of scope. |
 | `tools/loc-key-agree.js` | `node tools/loc-key-agree.js` — the location merge key exists TWICE on purpose (`PDLoc.normKey` and the schedule's private `_locNormKeyCalc`); this proves they still agree, over the ordinal maps, the function bodies and 51 real spellings. ⚠️⚠️ It is a MONEY path — a key that drifts moves a BOQ line to the wrong floor, through `planned_cost` into the S-curve. A slice that cannot find either function ABORTS rather than passing. |
+| `tools/toolbar-order.js` | `node tools/toolbar-order.js` — every module bar follows ONE order (view · filter · PRIMARY · tools · export · refresh). Markup order across fifteen files drifts the moment anyone appends a button "because that is where the cursor was". ⚠⚠ It self-tests on BOTH directions first, and its own first version was wrong twice — it read dropdown MENU ITEMS as toolbar buttons, and a lazy regex swallowed Progress Photos' content filter bar (27 buttons captured where the bar has 20). A bar may hold several TABS' runs end to end; a rank may drop only onto a button that is hidden by default. |
 | `tools/selectall-key.js` | `node tools/selectall-key.js` — a `PDb.selectAll` call on a relation with no `id`, which pages on `id` by default and so returns `400 / 42703` on EVERY read. ⚠️⚠️ This shape has shipped FOUR times (`class_codes`, `trade_map`, and two vendor views that had never loaded on any project). It resolves table constants, and a relation it cannot find in the repo SQL is reported as UNKNOWN rather than assumed safe. |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
@@ -145,6 +146,19 @@ same specificity, same source order, the shipped sheets under test:
 ### One order, read left to right as a sentence
 
     [ view / mode ] | [ filter ] | [ PRIMARY ] | [ other tools ] [ export ] [ refresh ]
+
+⚠️⚠️ **AND IT IS A CHECKER NOW, `tools/toolbar-order.js`** — markup order across fifteen files
+drifts the moment anyone appends a button where the cursor happened to be, and nothing could tell.
+⚠️ It self-tests on both directions first, and **its own first two versions were wrong**: one read
+dropdown MENU ITEMS as toolbar buttons (flagging Minutes of Meeting and Project Schedule, which were
+fine), the other used a lazy regex for the cluster and swallowed Progress Photos' *content* filter
+bar — 27 buttons captured where that bar has 20, so the module was failed on buttons not in its
+toolbar at all. Both are fixed and both shapes are in the self-test; the cluster is now walked by
+div depth.
+⚠️ A bar may hold several TABS' runs end to end (Progress Photos keeps four in one cluster and
+shows one at a time), so a rank may drop **only** onto a button that is hidden by default. The same
+drop between two buttons a planner can see at once is still a defect — that discrimination is
+itself a self-test case.
 
 What am I looking at, narrow it, do the thing I came to do, then the occasional tools, then the two
 that belong to the page rather than the work. Eight bars moved: Risk Register and Stakeholder Map

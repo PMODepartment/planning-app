@@ -4581,6 +4581,12 @@
         <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="16"></span></button>
         <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="16"></span></button>
         <span class="ps-tb-sep"></span>
+        <button class="pd-btn ps-tb-labeled" id="ps-report" title="Reports — run, view, edit &amp; create"><span data-ico="clipboard" data-ico-size="16"></span> Reports</button>
+        <button class="pd-btn ps-tb-labeled" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="16"></span> Health</button>
+        <span class="ps-tb-sep"></span>
+        <!-- ⚠️ The File menu (Import / Export / Print) sits in the EXPORT slot, second to
+             last, like every other module's export control. It used to sit third, ahead of
+             Reports and Health. -->
         <!-- File: Import / Export / Print combined -->
         <div class="ps-menu-wrap"><button class="pd-btn ps-tb-labeled" id="ps-filebtn" title="Import, Export &amp; Print"><span data-ico="download" data-ico-size="16"></span> File <span data-ico="chevronDown" data-ico-size="13"></span></button>
           <div class="ps-menu ps-file-menu" id="ps-file-menu">
@@ -4593,9 +4599,6 @@
             <button id="ps-print"><span data-ico="printer" data-ico-size="14"></span> Print / Save as PDF</button>
           </div>
         </div>
-        <button class="pd-btn ps-tb-labeled" id="ps-report" title="Reports — run, view, edit &amp; create"><span data-ico="clipboard" data-ico-size="16"></span> Reports</button>
-        <button class="pd-btn ps-tb-labeled" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="16"></span> Health</button>
-        <span class="ps-tb-sep"></span>
         <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
       </div>
       <div id="ps-presence" title="People viewing this project"></div>
