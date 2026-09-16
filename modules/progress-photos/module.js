@@ -617,27 +617,21 @@ window.ProgressPhotos = (function () {
     return LOC_LEVELS.map(function (l) { return values[l.id]; }).filter(Boolean).join(' › ');
   }
 
-  // The schedule activity that's "current" for a set of picked location
-  // values: prefer In Progress (earliest start), else the next Not Started,
-  // else whatever's there. Matches any activity whose OWN location agrees on
-  // every level actually specified in `values` — an activity with additional
-  // levels set (more specific) still matches, so stopping the picker early
-  // (e.g. just Tower + Level, no Zone) still surfaces something.
-  function resolveActivity(values) {
-    var keys = Object.keys(values || {}).filter(function (k) { return values[k]; });
-    if (!keys.length) return null;
-    var cands = SCHED_ACTS.filter(function (a) {
-      var loc = a.location || {};
-      return keys.every(function (k) { return (loc[k] || '') === values[k]; });
-    });
-    if (!cands.length) return null;
-    var pick = cands.filter(function (a) { return (a.status || '') === 'In Progress'; })
-      .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
-    if (!pick) pick = cands.filter(function (a) { return (a.status || '') === 'Not Started'; })
-      .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
-    if (!pick) pick = cands[0];
-    return { id: pick.activity_id, name: pick.activity_name };
-  }
+  // ⚠️ 2026-09-16 fix: this module used to also resolve "the schedule
+  // activity that's current for this location" here and silently save it as
+  // the photo's own activity_id/activity_name — regardless of what Works
+  // value the planner actually picked. That is what produced a photo tagged
+  // "Rebar" for a location whose SCHEDULE happens to have Rebar in progress,
+  // even when the planner selected a completely different Works value (or
+  // none at all). The photo's activity must come from the photo itself — the
+  // Works picker — never be inferred from location alone. See
+  // worksActivityIdFor()/works_activity_ids, which already trace the real,
+  // planner-chosen Works value(s) back to a schedule activity id; that is now
+  // the ONLY source for a photo's activity_id/activity_name (see the three
+  // save handlers below). The removed function (`resolveActivity`) is not
+  // needed for anything else — grepped, its only callers were this file's own
+  // "Current activity" hint (also removed, see paintLocCtx) and the three
+  // save payloads.
 
   // Most recent photo captured at (a superset of) this set of location values.
   function lastCaptureAt(values) {
@@ -3496,13 +3490,25 @@ window.ProgressPhotos = (function () {
     // spacing, tuned generously now that the strip's own height is no
     // longer spoken for.
     'header{background:#fff;color:#231F20}' +
-    'header .dl-hdrbody{padding:18px 22px 14px}' +
+    // ⚠️ Real defect found live (2026-09-14) — see ppr.js's identical
+    // `.hdrbody` fix for the full writeup: `<header>` had no width cap of its
+    // own, so it did not line up with `.wrap`/`.dl-pagegroup` below it on any
+    // window wider than ~1180px. `.dl-hdrbody` now shares `.wrap`'s own
+    // max-width+centering formula (never a second, guessed number).
+    'header .dl-hdrbody{max-width:1180px;margin:0 auto;padding:18px 22px 14px}' +
     'header h1{margin:0;font-size:21px;letter-spacing:.01em;font-weight:700}' +
     'header p{margin:3px 0 0;font-size:13px;color:#6b6b6b;line-height:1.3}' +
     '.wrap{max-width:1180px;margin:0 auto;padding:18px}' +
     // Item 1 (2026-09-11): `.dl-pagegroup` wraps one `.dl-slide` + its own
     // footer as a single page-break unit — see ppr.js's identical
     // `.pagegroup` comment for the full reasoning.
+    //
+    // ⚠️ This base "card + separate footer strip" look is what the PDF export
+    // still uses (unchanged, approved — `exportSelectedPdf()` shares this
+    // same DL_CSS). The offline HTML export's OWN look is overridden by
+    // `DL_PAGECARD_CSS`, below — appended only to the offline-export's own
+    // `<style>` tag, never to the PDF capture's — see ppr.js's identical
+    // `EXPORT_PAGECARD_CSS` for the full writeup.
     '.dl-pagegroup{position:relative}' +
     '.dl-slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:12px 14px;margin-bottom:10px}' +
     // `break-after`/`page-break-after` is kept for a real browser printing
@@ -3558,7 +3564,33 @@ window.ProgressPhotos = (function () {
   // with photos "unnecessarily small" per that half-width column. Kept as a
   // SEPARATE fragment, appended only to the offline-HTML export's own CSS
   // (dlBodyHTML's caller) — never to the PDF capture's `wrap`.
-  var DL_MOBILE_CSS = '@media (max-width:820px){.dl-pair,.dl-pair.dl-single{grid-template-columns:1fr}}';
+  //
+  // ⚠️⚠️ A second, distinct bug (2026-09-14, same root cause as ppr.js's own
+  // EXPORT_MOBILE_CSS — see that comment for the full live-measured writeup):
+  // a bare `@media (max-width:820px)`, with no `screen` qualifier, also
+  // matches during PRINT — and a standard PORTRAIT A4/Letter page's usable
+  // content width is under 820px. Printing (or "Save as PDF") the saved
+  // offline HTML file therefore silently collapsed Previous/Current to one
+  // column too, roughly doubling each page's height and pushing the footer
+  // onto its own page 2. `screen and` scopes this breakpoint to on-screen
+  // viewing only (an actual phone browser), so it can never fire during
+  // print/PDF regardless of paper size or orientation.
+  var DL_MOBILE_CSS = '@media screen and (max-width:820px){.dl-pair,.dl-pair.dl-single{grid-template-columns:1fr}}';
+  // ⚠️⚠️ Real defect found live (2026-09-14) — see ppr.js's identical
+  // `EXPORT_PAGECARD_CSS` for the full writeup. `.dl-slide`'s own bordered
+  // card, immediately followed by `<footer>` as a plain un-boxed sibling
+  // with a visible gap, reads as two disconnected fragments rather than one
+  // complete page. HTML-EXPORT-ONLY, deliberately kept out of DL_CSS itself
+  // — the PDF export shares DL_CSS byte-for-byte and is already approved
+  // with the base "card + separate footer" look; this fragment is appended
+  // only to the offline export's own `<style>` tag, never to
+  // `exportSelectedPdf()`'s `wrap`. Moves the white background/border/radius
+  // from `.dl-slide` onto `.dl-pagegroup` instead, so the footer sits flush
+  // inside the same bordered card as its bottom section.
+  var DL_PAGECARD_CSS =
+    '.dl-pagegroup{background:#fff;border:1px solid #DCDBDB;border-radius:4px;overflow:hidden;margin-bottom:16px}' +
+    '.dl-slide{background:transparent;border:0;margin-bottom:0}' +
+    '@media print{.dl-pagegroup{border:0}}';
   // ⚠️ PDF-capture-only override (2026-09-11/12) — see ppr.js's identical
   // `EXPORT_PDF_CSS`/`layoutPagegroups()` for the full root-cause writeup.
   // Neutralizes `.dl-pagegroup`'s own `page-break-after` back to `auto`
@@ -3652,7 +3684,7 @@ window.ProgressPhotos = (function () {
     var html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
       '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
       '<title>' + Fmt.esc(projName || pid) + ' — Progress Photos</title>' +
-      '<style>' + DL_CSS + DL_MOBILE_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs, logo, tagline) + '</body></html>';
+      '<style>' + DL_CSS + DL_MOBILE_CSS + DL_PAGECARD_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs, logo, tagline) + '</body></html>';
     var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -5405,16 +5437,23 @@ window.ProgressPhotos = (function () {
     var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
     return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
+  // ⚠️ 2026-09-16: this used to also print "Current activity: <strong>Rebar
+  // Works</strong>" here — whichever schedule activity happens to be
+  // In-Progress/Not-Started AT THIS LOCATION, entirely independent of the
+  // photo actually being added. It read as though the photo had already been
+  // tagged with that activity (and, until this same fix, it silently WAS —
+  // see the save handlers' activity_id/activity_name). Removed outright:
+  // location alone must never imply or assign an activity. The one thing
+  // worth keeping is the reference photo below, which is just a prior shot
+  // for framing comparison, not an activity assignment.
   function paintLocCtx(idPrefix) {
     var ctx = $(idPrefix + '-actctx');
     var values = currentLocValues(idPrefix);
     var hasAny = Object.keys(values).length > 0;
     if (!ctx) return;
     if (!hasAny) { ctx.innerHTML = ''; return; }
-    var act = resolveActivity(values), last = lastCaptureAt(values);
+    var last = lastCaptureAt(values);
     var html = '';
-    if (act) html += '<div class="pp-actline">Current activity: <strong>' + Fmt.esc(act.name || act.id) + '</strong></div>';
-    else html += '<div class="pp-actline pp-muted">No active schedule activity found for this location.</div>';
     if (last) {
       // A small reference thumbnail never needed full-resolution — using
       // the (already-cheap, already-cached) thumbnail here instead of
@@ -5673,7 +5712,6 @@ window.ProgressPhotos = (function () {
       var reqErr = requiredFieldsMissing('pp');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
-      var act = resolveActivity(locVals);
       // Item 6: Works is a multi-select again; Trade is the UNION of every
       // chosen Works value's own derived trade. `trades`/`works_multi` are
       // the real array columns; `trade`/`works` stay populated too as the
@@ -5695,8 +5733,12 @@ window.ProgressPhotos = (function () {
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         view_name: viewNameEl ? viewNameEl.value.trim() : null,
-        activity_id: act ? act.id : null,
-        activity_name: act ? act.name : null,
+        // 2026-09-16 fix: activity_id/activity_name now trace the photo's
+        // OWN Works selection (same "first of the array" convention as
+        // trade/works above), never a schedule activity inferred from
+        // location alone — see the removed resolveActivity().
+        activity_id: worksActivityIdFor(worksList[0]) || null,
+        activity_name: worksList[0] || null,
         tags: readCodeTags('pp'),
         media_type: kind
       };
@@ -6633,7 +6675,6 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
       var locVals = draft.meta.locVals || {};
-      var act = resolveActivity(locVals);
       var worksList = draft.meta.works || [];
       var tradeList = deriveTradesForWorksList(worksList);
       var pinData = draft.meta.pinData;
@@ -6652,7 +6693,10 @@ window.ProgressPhotos = (function () {
           trade: tradeList[0] || null, works: worksList[0] || null,
           location: locBreadcrumb(locVals) || null, location_values: locVals,
           view_name: draft.meta.viewName || null,
-          activity_id: act ? act.id : null, activity_name: act ? act.name : null,
+          // 2026-09-16 fix: traced from the picked Works value, never from
+          // location alone — see the removed resolveActivity().
+          activity_id: worksActivityIdFor(worksList[0]) || null,
+          activity_name: worksList[0] || null,
           tags: draft.meta.tags || []
         };
         if (draft.pendingAdjust[0] && !adjustmentsAreDefault(draft.pendingAdjust[0])) row.adjustments = draft.pendingAdjust[0];
@@ -7174,7 +7218,6 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
       var locVals = currentLocValues('pp-e');
-      var act = resolveActivity(locVals);
       var worksList = readWorksMulti('pp-e');
       var tradeList = deriveTradesForWorksList(worksList);
       var pinData = window.BIM ? BIM.readPinField('pp-e') : null;   // read before the modal closes
@@ -7190,8 +7233,10 @@ window.ProgressPhotos = (function () {
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         view_name: viewNameEl ? viewNameEl.value.trim() : null,
-        activity_id: act ? act.id : null,
-        activity_name: act ? act.name : null,
+        // 2026-09-16 fix: traced from the picked Works value, never from
+        // location alone — see the removed resolveActivity().
+        activity_id: worksActivityIdFor(worksList[0]) || null,
+        activity_name: worksList[0] || null,
         tags: readCodeTags('pp-e'),
         updated_at: new Date().toISOString()
       };

@@ -22,6 +22,162 @@ Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Follow-up: the pagination fix was real, but the footer still read as a
+## separate, detached strip — a visual card-grouping defect, not a page-break
+## one (2026-09-14, later same day)
+
+Owner tested the media-query fix below live and confirmed Previous/Current now sit side by side,
+but rejected the sample: on screen (no printing involved), the footer still read as visually
+disconnected from its slide — a gap, and a separate white strip below the bordered photo card —
+on both the content page and the Thank You page, and the header did not line up with either.
+Scoped again to HTML export presentation only; PPTX, the PDF export, the red-square removal, the
+Previous/Current layout and the 2-photo cap were all re-confirmed untouched (see Verified, below).
+
+### What the previous entry's fix actually fixed, and what it didn't
+
+The earlier `screen and` fix was correct and necessary — it closed a real PRINT-time bug. It was
+never going to touch this: the visual read the owner is objecting to happens in ordinary on-screen
+viewing, with no print/PDF conversion involved at all, and has a completely different cause.
+
+### Root cause, found by rendering the real export and measuring it
+
+Two independent things, both in `EXPORT_CSS`/`DL_CSS`:
+
+1. **`.slide` carries its own white/border/radius "card" box, and `<footer>` is a plain, un-boxed
+   sibling below it** — a deliberate design from the 2026-09-11 footer-per-page round, intended to
+   read as "a full-bleed bar below the card". Seen live, it reads the opposite way: a rounded,
+   bordered box immediately followed by a separate flat strip, with `.slide`'s own
+   `margin-bottom:10px` opening a visible gap between them. That gap is small, but it is exactly
+   what makes the footer look like it belongs to a different page — precisely the owner's
+   complaint, restated for the umpteenth time in different words.
+2. **`<header>` has no width cap of its own** — `.wrap`/`.pagegroup` are centered in a 1180px
+   column, but `<header>`'s text sits flush against the true left edge of the browser window. On
+   any window wider than ~1180px (essentially every desktop), the header visibly does not line up
+   with the report content or footer under it — confirmed live via the owner's own screenshot,
+   where the header text starts far left of the centered white card below it.
+
+### The fix — and why it could NOT simply edit `EXPORT_CSS`/`DL_CSS` directly
+
+⚠️⚠️ **`EXPORT_CSS`/`DL_CSS` are shared, byte-for-byte, with the PDF export** (`exportPdf()`/
+`exportSelectedPdf()` build their off-screen capture from the exact same constant). The owner's
+own standing instruction is explicit: *"Do NOT modify the approved PDF export."* Editing `.slide`/
+`.pagegroup`'s box styling directly in the shared constant would have changed the PDF's rendered
+appearance too, silently, the moment it's next generated. So:
+
+- **The header alignment fix (item 2) went straight into the shared `header .hdrbody`/
+  `header .dl-hdrbody` rule** — confirmed safe for PDF: the PDF's own off-screen capture container
+  is fixed at `pdfPageWidthPx()` (~1062px), narrower than the 1180px cap, so `max-width:1180px`
+  never engages there; it can only ever take effect in a browser window wider than 1180px, which
+  the PDF's own fixed-width capture never is.
+- **The card-merge fix (item 1) is a NEW, offline-HTML-ONLY override fragment** —
+  `EXPORT_PAGECARD_CSS`/`DL_PAGECARD_CSS`, the same convention `EXPORT_MOBILE_CSS`/`EXPORT_PDF_CSS`
+  already established: a small CSS string appended only to `offlineHTML()`'s/the ad-hoc export's
+  own `<style>` tag, never to `exportPdf()`'s/`exportSelectedPdf()`'s `wrap`. It moves the white
+  background/border/radius from `.slide` onto `.pagegroup` (the real page unit) instead, clears
+  them off `.slide`, and lets `<footer>` sit flush inside that same bordered card as its bottom
+  section (`overflow:hidden` clips its square corners to the card's own radius). `.pagegroup` also
+  now carries the visible gap between one report page and the next (16px) — a real gap there is
+  correct, since those genuinely are different pages; nothing separates a page's own content from
+  its own footer any more. The base `EXPORT_CSS`/`DL_CSS` — and therefore the PDF export's own
+  rendered appearance — is completely untouched.
+
+### Verified — real export generated and measured, in a real rendered DOM
+
+Same stub-auth harness convention (deleted after use). Measured on the freshly generated export,
+mounted in a real iframe:
+- **`gapBetweenSlideAndFooter: 0`** on both the content page and the Thank You page (was a visible
+  10px gap plus two separate box outlines before this round).
+- `.pagegroup` computes `background: rgb(255,255,255)`, `border: ~1px solid rgb(220,219,219)`,
+  `border-radius: 4px` — the merged card; `.slide` computes fully transparent with no border.
+- **Header/content alignment measured at the pixel actually seen**, not at an outer box edge: the
+  `<h1>` text's own `left` and the visible white card's own `left` are **identical** (0px
+  difference) at a wide desktop width — before this round, the header had no cap at all and could
+  be off by hundreds of pixels depending on window width.
+- Re-confirmed alongside: `hdrstripCount: 0` (red-square removal untouched), `footerCount: 2` (one
+  per page, untouched), `.pair` computing two real, equal `568.2px 568.2px` tracks (Previous/Current
+  side-by-side untouched), the Thank You slide's own 4px red top rule intact.
+- Confirmed by re-reading the PDF capture call sites (`exportPdf()`/`exportSelectedPdf()`) that
+  their own `wrap.innerHTML` construction is still exactly `EXPORT_CSS + EXPORT_PDF_CSS` /
+  `DL_CSS + DL_PDF_CSS` — neither `EXPORT_PAGECARD_CSS` nor `DL_PAGECARD_CSS` is referenced there,
+  so the PDF export is provably unaffected by this round's change.
+- A real screenshot of the mounted export (both the content page and the Thank You page) confirmed
+  the same visually: one continuous white card per report page, header aligned with it, footer as
+  that card's own bottom section with no seam or gap.
+
+`ppr.js`/`module.js`/`index.html` → `?v=20260914b`. **Not committed** — kept in the working tree,
+awaiting the owner's visual sign-off before any commit or push.
+
+## Fixed: the printed/PDF'd offline HTML lost its footer to a stray page 2 — a
+## mobile breakpoint that also matches during print (2026-09-14)
+
+Owner, with a screenshot: the standalone HTML export's first page showed the header and photo
+content correctly, but the Megawide footer was landing on a page of its own instead of staying
+with its slide. Scoped explicitly to HTML pagination only — PPTX, the red-square removal, the
+Previous/Current side-by-side layout, the 2-photo cap and every other approved behavior were
+left untouched (confirmed: this fix touches exactly two CSS string constants, neither of which
+`exportPptx()`/`exportSelectedPptx()` or the PDF-capture path ever reference).
+
+### Root cause, found by generating a real export and measuring it, not by guessing
+
+`EXPORT_MOBILE_CSS`/`DL_MOBILE_CSS` (added 2026-09-09, to fix a *different* bug in the PDF
+capture path) carry a bare `@media (max-width:820px){.pair{grid-template-columns:1fr}...}` —
+collapsing Previous/Current from two columns to one, stacked vertically. That rule was written
+for "someone opening the saved HTML file on their own phone later," and it was correctly kept
+OFF the PDF capture's own off-screen `wrap` (which renders at a fixed design width). But it was
+never scoped to `screen` media, and a bare `@media (max-width:820px)` rule matches during
+**print** too — a standard PORTRAIT A4/Letter page's usable content width (~717px) is well
+under 820px, which is exactly the default orientation a browser prints in when nothing tells it
+otherwise. So printing (or "Save as PDF" on) the saved HTML file silently collapsed
+Previous/Current to one column, roughly **doubling** the content page's real height (measured on
+a real generated export: 588px → 1285px), and that taller page — combined with the report's own
+`<header>` sitting above `.pagegroup`'s `break-inside:avoid` unit — no longer fit one printed
+page. Since honoring "avoid" is then impossible, the browser breaks *inside* the unit instead of
+respecting it, and the footer (the pagegroup's last child) is what lands on the stray page 2.
+
+⚠️ **This is a different, previously-undiscovered defect from the two 2026-09-11 PDF fixes**
+(the pagination-plugin bug and the 1px bleed sliver) — those live entirely in the `html2pdf.js`
+capture path (`exportPdf()`/`layoutPagegroups()`), which this bug never touches; this one is
+about a REAL BROWSER printing the plain saved `.html` file, a code path with no JS-computed page
+math at all — it relies entirely on native CSS `break-inside`/`break-after`, which is why a
+media-query scoping mistake could reach it.
+
+### The fix
+
+`@media (max-width:820px)` → **`@media screen and (max-width:820px)`**, in both
+`EXPORT_MOBILE_CSS` (ppr.js) and `DL_MOBILE_CSS` (module.js, the ad-hoc Gallery-selection
+export — same construct, same bug, fixed identically since it's the same feature). Scoping the
+breakpoint to `screen` media means it can only ever apply when someone is actually viewing the
+file on an on-screen browser (a real phone) — CSS media-type matching (`screen` vs `print`) is
+basic, universally-consistent browser behavior, unlike the page-break properties this module has
+had to work around before, so this is a robust fix, not a best-effort one. Nothing else changed:
+the rule's own effect when it DOES apply (an actual narrow on-screen window) is byte-identical.
+
+### Verified — real export generated, measured before and after
+
+Stub-auth harness (real, unmodified `module.js`/`ppr.js`, harness deleted after use), driving a
+real `Download → HTML` through the actual UI. Measured on the real generated export:
+- **Before the fix**, at a 714px-wide print/portrait simulation: `.pair`'s own
+  `grid-template-columns` computed a single `645.6px` track (collapsed to one column, confirming
+  the bug); the first `.pagegroup` (slide + its own footer) measured **1281px tall** — with the
+  header above it, well past even a landscape page's own budget, let alone portrait's.
+- **With the two-column layout held (simulating the fix's effect)**, the identical 714px-wide
+  measurement: `.pagegroup` drops to **430px**; header + pagegroup together total **548px** —
+  comfortably under both a portrait page's (~1047px) and a landscape page's (~718px) usable
+  height, at every width tested.
+- **After the fix, in the real generated export**: `@media screen and (max-width:820px)`
+  confirmed present in the downloaded file's own `<style>` tag; at real desktop width, `.pair`
+  computes two genuine `568.2px 568.2px` tracks (not one), `hdrstrip` count is still **0** (the
+  red-square removal is untouched), footer count is **2** (one per pagegroup, untouched), and the
+  header/report-type/date text all render correctly.
+- Confirmed by grep that `EXPORT_MOBILE_CSS`/`DL_MOBILE_CSS` are referenced **only** inside
+  `offlineHTML()`/the ad-hoc offline-export function's own `<style>` tag — never by
+  `exportPdf()`/`exportSelectedPdf()` (which already deliberately exclude this fragment) and
+  never anywhere near `exportPptx()`/`exportSelectedPptx()` — confirming PPTX and the PDF export
+  are both completely unaffected by this change.
+
+`ppr.js`/`module.js`/`index.html` → `?v=20260914a`. **Not committed** — kept in the working tree
+per the owner's own standing instruction on this module's export work.
+
 ## "When I close the browser app, the video I uploaded for 360 processing is gone" — a real browser-eviction risk closed with `navigator.storage.persist()`, and silent recovery made visible with a toast (2026-09-14, later still yet again again again)
 
 Owner: *"when I close the browser app, the video i uploaded for 360 processing is gone. please
