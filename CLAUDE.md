@@ -102,6 +102,73 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (j) — The portfolio S-Curve timed out on its first real open, and the advice it gave could not be taken
+
+Owner, with the live screenshot: *"how come this error popped up for the scurve."* The pane read
+**"Could not draw the portfolio S-curve: the database cancelled the read on a timeout (57014) —
+narrow the project filter and try again."** Two separate faults in one sentence.
+
+### ⚠️⚠️ FAULT 1 — THE ROLL-UP WAS ONE STATEMENT, AND ITS COST IS COMBINATORIAL IN N
+
+`schedule_scurve_agg_multi(p_ids)` **CROSS JOINs its month series against its leaf activities**
+(`migrations/2026-07-20-schedule-scurve-agg.sql`). For one project that is ~60 months × ~16k
+leaves. For twenty-one it is the **union** of every project's horizon × **every** project's
+activities — roughly 100 × 300,000 = **thirty million rows to build a hundred-point chart**. Past
+the ~8s `statement_timeout`, every time, for everyone. ⚠️ It never showed up before because the
+Portfolio Dashboard tab it used to live on was opened by far fewer people than a module's landing
+page is.
+
+**The fix is N calls to `schedule_scurve_agg(p_id)` — the same SQL with one id**, four in flight,
+merged in the browser. That is the shape `project_schedule_proj_id_idx` exists for and exactly what
+the single-project S-Curve module has always called. ⚠️ **The arithmetic is identical**: every
+field the merge touches is a plain `sum` over leaves server-side, so summing per-project sums is
+what the combined call computed. ⚠️ A migration could fix this server-side too — but a migration is
+run by hand in the SQL editor and the view is broken until it is; this works on the database as
+deployed.
+
+⚠️⚠️ **THE CARRY-FORWARD IS THE CORRECTNESS OF THE MERGE, AND IT IS THE EASY THING TO GET WRONG.**
+Each project's month series spans only **its own** dates, and these are **cumulative** figures — so
+a month after a project finishes is simply absent from its series while its true contribution is
+its full total. Read as zero, the portfolio curve **dips every time a project completes**, which is
+the one thing an S-curve may never do. Absent *before* a project starts genuinely is zero, and the
+carry starts there. Tested on numbers, not on the shape of an SVG path.
+
+### ⚠️ FAULT 2 — THE MESSAGE NAMED A CONTROL THE SCREEN DOES NOT HAVE
+
+*"narrow the project filter and try again."* There **is no project filter** on a module page — that
+control belongs to the Portfolio Dashboard, which is where `scErrText` was written and where its
+only caller lived. It became `PDb.errText` yesterday and reached five module pages with the advice
+still attached. **A shared helper cannot know what control the screen it prints on carries**, so it
+now states the fact and the caller prescribes: the Overview appends *"narrow the project filter"*
+because it has one.
+
+### ⚠️ And one project failing no longer fails the view
+
+Where the single call was all-or-nothing — and what it returned was nothing — a failure is now
+**collected, NAMED, and the other twenty still draw**. The chart carries its own note: *"Drawn over
+18 of 21 projects — Avesta Residences, … could not be read. This is not the whole portfolio."*
+⚠️ **On the chart, not only in a toast**: a toast is gone in five seconds and a screenshot of this
+card ends up in a report.
+
+### Verified
+
+- `tools/test-portfolio-dash.js` **184/184** (was 158). New cases: the fan-out makes **N
+  single-id calls and never `schedule_scurve_agg_multi`**; the merge sums totals and activity
+  counts; the **combined planned curve never goes backwards**; a partial read still draws and says
+  so, names the project, and warns; a total failure names the code, the count and the projects —
+  and does **not** mention a filter.
+- ⚠️ **Mutation-checked:** removing the carry-forward turns 2 assertions red (and the March total
+  reads 60 instead of 100); making one project's failure abort the fan-out turns **8** red.
+- `test-portfolio` **99/99**, `wiring-check` **139/139**, `test-lsm` **702/702**, `dead-hooks`
+  unchanged, every touched page's inline script parses and loads in a real browser with no console
+  errors.
+
+⚠️ **Not verified signed in** — the timeout itself can only be reproduced against the owner's own
+21 projects. What is proven here is that the statement which timed out is no longer issued.
+
+`portfolio-dash.js` + `portfolio-dash.css` at `?v=20260916j`; `db.js` at `?v=20260916b`;
+`MODULE_V` → `20260916j`.
+
 ### 2026-09-16 (h) — Contracts & Claims: the dashboard gets its own tab, and a cache token I forgot an hour earlier
 
 Owner, with a screenshot of the live OPW101 Contract tab: *"Let's improve the dashboard for the

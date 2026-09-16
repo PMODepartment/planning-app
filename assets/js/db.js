@@ -691,7 +691,12 @@
   };
 
   /* ⚠️ NAMES THE CAUSE OF A FAILED READ, and it is shared because two screens ask the same
-     question of the same tables. "Load failed." covered a statement timeout, an un-run
+     question of the same tables.
+     ⚠️⚠️ IT DIAGNOSES, IT DOES NOT PRESCRIBE — changed 2026-09-16 after the owner hit a live
+     timeout on the portfolio S-Curve and was told to *"narrow the project filter"* on a module
+     page that HAS no project filter. The advice was written when the only caller was the
+     Portfolio Dashboard, which does have one. A shared helper cannot know what control the
+     screen it is printed on carries, so the caller appends the advice and this states the fact. "Load failed." covered a statement timeout, an un-run
      migration and an RLS refusal alike — three different problems, none of them actionable
      from one sentence. It lived in `portfolio-overview` as `scErrText`; when the Portfolio
      S-Curve moved out to `portfolio-dash.js` (2026-09-16) the Overview still needed it for
@@ -702,7 +707,7 @@
     var code = (e && (e.code || e.status)) || '';
     var msg = (e && (e.message || e.msg)) || String(e || '');
     if (code === '57014' || /statement timeout|canceling statement/i.test(msg))
-      return 'the database cancelled the read on a timeout (57014) — narrow the project filter and try again';
+      return 'the database cancelled the read on a timeout (57014)';
     if (code === 'PGRST202' || /Could not find the function/i.test(msg))
       return 'the roll-up function is not deployed — run migrations/2026-07-20-schedule-scurve-agg.sql';
     if (code === '42501' || /permission denied/i.test(msg))

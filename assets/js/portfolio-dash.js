@@ -931,9 +931,17 @@
           'or narrow the project filter.</div>'
         : '';
 
+      /* ⚠️⚠️ A PARTIAL CURVE MUST SAY IT IS PARTIAL, ON THE CHART. A portfolio curve missing
+         three projects is not the portfolio's curve, and a toast is gone in five seconds while
+         a screenshot of this card ends up in a report. */
+      var short = (scData && scData.failedNames && scData.failedNames.length)
+        ? '<div class="po-sc-note">Drawn over <b>' + scData.nRead + ' of ' + scData.nProjects +
+          '</b> projects — ' + esc(scNameList(scData.failedNames)) + ' could not be read. This is ' +
+          'not the whole portfolio.</div>'
+        : '';
       host.innerHTML =
         '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg">' + grid + todayL + lines + xlab + '</svg>' +
-        toggles + note +
+        toggles + short + note +
         '<div class="po-legend2">' + styleLegend + '</div>' +
         '<div class="po-legend2 po-legend-proj">' + projLegend + '</div>';
 
@@ -949,6 +957,96 @@
     }
 
     function scColor(i) { return SC_PALETTE[i % SC_PALETTE.length]; }
+    /* ==========================================================================================
+       ⚠️⚠️ ONE AGGREGATE CALL PER PROJECT, NOT ONE CALL FOR ALL OF THEM — AND THAT IS THE FIX.
+       `schedule_scurve_agg_multi(p_ids)` timed out in production on 2026-09-16 the first time a
+       planner opened this view (57014, ~8s statement_timeout, 21 projects). The reason is in the
+       SQL and it is combinatorial, not incidental: the function CROSS JOINs its month series
+       against its leaf activities, and with N projects the month series spans the UNION of every
+       project's dates while the leaf set is every project's activities. One project is ~60 months
+       x ~16k leaves; twenty-one is ~100 months x ~300k leaves — thirty million rows to build a
+       chart of a hundred points.
+       ⚠️ `schedule_scurve_agg(p_id)` is the SAME function with one id, and it is the shape the
+       index exists for — it is what the single-project S-Curve module has always called. So the
+       portfolio curve is N of those, summed here. Identical arithmetic: every field the merge
+       touches is a plain SUM over leaves server-side, so summing per-project sums gives exactly
+       what the combined call would have returned.
+       ⚠️ AND ONE PROJECT FAILING NO LONGER FAILS THE VIEW. It is collected and NAMED and the
+       other twenty still draw — where the single call was all-or-nothing, and what it returned
+       was nothing.
+       ⚠️ A migration could also fix this server-side, but a migration is run by hand in the
+       Supabase SQL editor and this view is broken until it is. The client fix works on the
+       database as deployed. ========================================================== */
+    var SC_AGG_CONC = 4;   // four in flight: enough to hide latency, not enough to queue on the db
+    async function fetchAggForIds(ids, onProgress) {
+      var aggs = [], failed = [], done = 0, queue = ids.slice();
+      async function worker() {
+        while (queue.length) {
+          var id = queue.shift();
+          try {
+            var r = await sb().rpc('schedule_scurve_agg', { p_id: id });
+            if (r.error) throw r.error;
+            if (r.data && r.data.months && r.data.months.length) aggs.push({ id: id, agg: r.data });
+          } catch (e) { failed.push({ id: id, err: e }); }
+          done++;
+          if (onProgress) onProgress(done, ids.length);
+        }
+      }
+      var ws = [];
+      for (var i = 0; i < Math.min(SC_AGG_CONC, ids.length); i++) ws.push(worker());
+      await Promise.all(ws);
+      return { aggs: aggs, failed: failed };
+    }
+
+    /* Sum N per-project aggregates into the one the combined call used to return.
+       ⚠️⚠️ THE CARRY-FORWARD IS THE WHOLE CORRECTNESS OF THIS FUNCTION. Each project's month
+       series spans only ITS OWN dates, and these are CUMULATIVE figures — so a month after a
+       project finishes is absent from its series while its true contribution is its full total.
+       Treating absent as zero would make the portfolio curve DIP every time a project completed,
+       which is the one thing an S-curve may never do. Before a project starts, absent IS zero,
+       and the carry starts there. Same rule `scOnAxis` applies to the drawn overlay. */
+    /* ⚠️ Capped. Twenty-one names in a toast is a wall nobody reads; three and a count is a
+       sentence. The full list is in scData.failed for anything that needs it. */
+    function scNameList(names) {
+      return names.length <= 3 ? names.join(', ')
+        : names.slice(0, 3).join(', ') + ' and ' + (names.length - 3) + ' more';
+    }
+    function scNames(failed, nameOf) {
+      return scNameList(failed.map(function (f) { return nameOf[f.id] || f.id; }));
+    }
+    function scMergeAggs(list) {
+      if (!list.length) return null;
+      var keys = {};
+      list.forEach(function (a) { (a.agg.months || []).forEach(function (m) { keys[m.key] = 1; }); });
+      var axis = Object.keys(keys).sort();
+      if (!axis.length) return null;
+      var acc = axis.map(function () { return { pd: 0, pc: 0, ad: 0, ac: 0 }; });
+      list.forEach(function (a) {
+        var by = {};
+        (a.agg.months || []).forEach(function (m) { by[m.key] = m; });
+        var last = { pd: 0, pc: 0, ad: 0, ac: 0 };
+        axis.forEach(function (k, i) {
+          var m = by[k];
+          if (m) last = { pd: +m.pd || 0, pc: +m.pc || 0, ad: +m.ad || 0, ac: +m.ac || 0 };
+          acc[i].pd += last.pd; acc[i].pc += last.pc; acc[i].ad += last.ad; acc[i].ac += last.ac;
+        });
+      });
+      function total(f) {
+        return list.reduce(function (t, a) { return t + (+a.agg[f] || 0); }, 0);
+      }
+      var mins = list.map(function (a) { return a.agg.minDate; }).filter(Boolean).sort();
+      var maxs = list.map(function (a) { return a.agg.maxDate; }).filter(Boolean).sort();
+      return {
+        months: axis.map(function (k, i) {
+          return { key: k, pd: acc[i].pd, pc: acc[i].pc, ad: acc[i].ad, ac: acc[i].ac };
+        }),
+        totDur: total('totDur'), totCost: total('totCost'),
+        doneDur: total('doneDur'), doneCost: total('doneCost'),
+        nAct: total('nAct'), nCost: total('nCost'),
+        minDate: mins[0] || null, maxDate: maxs[maxs.length - 1] || null
+      };
+    }
+
     // Same shape as scCompute(), but from the server-side combined aggregate (one JSON of
     // ~monthly buckets) instead of every raw activity row across the scoped projects.
     function scComputeFromAgg(a) {
@@ -997,31 +1095,36 @@
         scData = null; scLoadedIds = ids; return;
       }
       kpiHost.innerHTML = '';
-      chartHost.innerHTML = '<div class="po-empty">Reading the portfolio roll-up…</div>';
-
-      /* ⚠️⚠️ THE ROLL-UP IS THE DEFAULT RENDER, AND IT IS ONE SERVER-SIDE CALL.
-         This page used to fetch every activity of every project — ~100k rows over 21
-         projects — to draw a chart it then REFUSED to draw: above SC_FULL_MAX the overlay
-         falls back to Actual-only anyway, and 21 curves are unreadable regardless. So the
-         combined curve is what loads, and rows are read only when there are few enough
-         projects for per-project curves to mean something. */
-      var roll = null, rollErr = null;
-      try {
-        var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
-        if (gen !== _scGen) return;                       // superseded — do not paint
-        if (r.error) rollErr = r.error;
-        else if (r.data && r.data.months) roll = scComputeFromAgg(r.data);
-      } catch (e) { if (gen !== _scGen) return; rollErr = e; }
-      if (gen !== _scGen) return;
+      chartHost.innerHTML = '<div class="po-empty">Reading the roll-up of ' + ids.length + ' project(s)…</div>';
 
       var nameOf = {};
       PROJ.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
+
+      /* ⚠️⚠️ THE ROLL-UP IS THE DEFAULT RENDER, AND IT IS N SMALL SERVER-SIDE CALLS — see
+         fetchAggForIds for why the one big call had to go. This view never fetches raw activity
+         rows for the combined curve: ~100k rows over 21 projects, to draw a chart that above
+         SC_FULL_MAX falls back to Actual-only anyway. */
+      var roll = null, rollErr = null, aggFailed = [];
+      try {
+        var ra = await fetchAggForIds(ids, function (d, n) {
+          if (gen !== _scGen) return;
+          chartHost.innerHTML = '<div class="po-empty">Reading project ' + d + ' of ' + n + '…</div>';
+        });
+        if (gen !== _scGen) return;                       // superseded — do not paint
+        aggFailed = ra.failed || [];
+        var merged = scMergeAggs(ra.aggs || []);
+        if (merged) roll = scComputeFromAgg(merged);
+        /* ⚠️ Only an EMPTY result is an error. A partial one draws, and says so below — a curve
+           over eighteen of twenty-one projects beats an error message over all of them. */
+        if ((!roll || roll.empty) && aggFailed.length) rollErr = aggFailed[0].err;
+      } catch (e) { if (gen !== _scGen) return; rollErr = e; }
+      if (gen !== _scGen) return;
 
       /* Per-project curves only where they can be read. ⚠️ A DEFAULT, NOT A LIMIT — and no
          project is ever silently dropped: the note under the chart says the combined curve is
          what is drawn and how to get the per-project ones. */
       var wantPer = ids.length <= SC_FULL_MAX;
-      var per = [], failed = [];
+      var per = [], failed = aggFailed.slice();
       if (wantPer) {
         chartHost.innerHTML = '<div class="po-empty">Reading ' + ids.length + ' project schedule(s)…</div>';
         var res;
@@ -1032,7 +1135,11 @@
           });
         } catch (e) { if (gen !== _scGen) return; res = { rows: [], failed: [{ id: '(all)', err: e }] }; }
         if (gen !== _scGen) return;
-        failed = res.failed || [];
+        /* ⚠️ Merged, not replaced: a project can fail the aggregate AND the row read, and it must
+           be named once, not lost because the second list overwrote the first. */
+        (res.failed || []).forEach(function (f) {
+          if (!failed.some(function (x) { return x.id === f.id; })) failed.push(f);
+        });
         var byP = {};
         (res.rows || []).forEach(function (x) { (byP[x.project_id] = byP[x.project_id] || []).push(x); });
         per = ids.map(function (id) { return { id: id, name: nameOf[id] || id, d: scCompute(byP[id] || []) }; })
@@ -1054,13 +1161,19 @@
       if (roll && !roll.empty) scRenderKpis(roll);
       else kpiHost.innerHTML = '';
 
-      scData = { rollup: roll, per: per, rollupOnly: rollupOnly, nProjects: ids.length, failed: failed };
+      scData = { rollup: roll, per: per, rollupOnly: rollupOnly, nProjects: ids.length,
+                 nRead: ids.length - failed.length, failed: failed,
+                 failedNames: failed.map(function (f) { return nameOf[f.id] || f.id; }) };
       scLoadedIds = ids;
 
       if (!per.length) {
-        var why = rollErr ? PDb.errText(rollErr)
-          : (failed.length ? failed.length + ' project(s) could not be read — ' + PDb.errText(failed[0].err)
-                           : 'no project in scope has any dated activity');
+        /* ⚠️ NAMES THE PROJECTS, not just a count. Reading one project at a time is what makes
+           that possible, and it is the difference between "the S-curve failed" and "these two
+           schedules are the ones to look at". */
+        var why = failed.length
+          ? failed.length + ' of ' + ids.length + ' project(s) could not be read (' +
+            scNames(failed, nameOf) + ') — ' + PDb.errText(failed[0].err)
+          : (rollErr ? PDb.errText(rollErr) : 'no project in scope has any dated activity');
         chartHost.innerHTML = '<div class="po-empty">Could not draw the portfolio S-curve: ' + esc(why) + '</div>';
         if (rollErr || failed.length) UI.toast('S-curve: ' + why, 'error');
         return;
@@ -1069,12 +1182,14 @@
       // ⚠️ Reported even when the chart drew: a curve missing two projects is not the
       //    portfolio's curve, and nothing else on screen would say so.
       if (failed.length) {
-        UI.toast(failed.length + ' project(s) could not be read (' +
-          failed.map(function (f) { return nameOf[f.id] || f.id; }).join(', ') + ') — ' +
-          PDb.errText(failed[0].err), 'warn');
+        UI.toast(failed.length + ' of ' + ids.length + ' project(s) could not be read (' +
+          scNames(failed, nameOf) + ') — ' + PDb.errText(failed[0].err), 'warn');
       }
     }
-      return { load: loadScurve };
+      /* ⚠️ Test seam, same contract as `_setProjects`: the merged curve read back rather than
+         reached for inside the closure, so the carry-forward can be asserted on numbers instead
+         of on the shape of an SVG path. */
+      return { load: loadScurve, _data: function () { return scData; } };
     }
   });
 

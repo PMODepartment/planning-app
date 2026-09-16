@@ -200,6 +200,13 @@ function fakeNetwork(win, fixtures) {
   win._sb = {
     rpc(name, args) {
       (win._rpcs = win._rpcs || []).push([name, args]);
+      /* ⚠️ Keyed by project id, because the portfolio S-curve is N single-project calls now and
+         the interesting cases are the ones where SOME of them fail. */
+      if (fixtures.agg && name === 'schedule_scurve_agg') {
+        var a = fixtures.agg[args && args.p_id];
+        if (a === undefined) return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'no fixture' } });
+        return Promise.resolve(a.error ? { data: null, error: a.error } : { data: a, error: null });
+      }
       if (fixtures.rpc && (name in fixtures.rpc)) return Promise.resolve(fixtures.rpc[name]);
       return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
     },
@@ -242,20 +249,27 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
   eq(keys.length, 10, tag + 'ten dashboards in all (six from 2026-09-15, four from 2026-09-16)');
   eq(probe.PortfolioDash.titleOf('scurve'), 'Portfolio S-Curve', tag + 'and each is named');
 
-  /* ---- S-Curve: the combined roll-up draws, and the KPIs come off it -------------- */
+  /* ================================================================ the S-Curve fan-out
+     ⚠️⚠️ THE LIVE FAILURE THIS REPLACED: `schedule_scurve_agg_multi(21 ids)` returned 57014 on
+     the owner's first open of this view. The function CROSS JOINs its month series against its
+     leaf activities, so N projects is (union of every horizon) x (every activity) — thirty
+     million rows for a hundred-point chart. One call per project is the same arithmetic in the
+     shape the index exists for. */
+
+  /* P1 runs Jan–Feb and FINISHES; P2 runs Jan–Mar. Chosen for the carry-forward below. */
+  const AGG_P1 = { months: [{ key: '2026-01', pd: 20, ad: 10 }, { key: '2026-02', pd: 40, ad: 24 }],
+                   totDur: 40, doneDur: 24, nAct: 3, minDate: '2026-01-01', maxDate: '2026-02-28' };
+  const AGG_P2 = { months: [{ key: '2026-01', pd: 20, ad: 8 }, { key: '2026-02', pd: 40, ad: 16 },
+                            { key: '2026-03', pd: 60, ad: 24 }],
+                   totDur: 60, doneDur: 24, nAct: 4, minDate: '2026-01-15', maxDate: '2026-03-31' };
+  const TIMEOUT = { code: '57014', message: 'canceling statement due to statement timeout' };
+
   {
     const win = buildPage(dashSrc, assetsDir);
     fakeNetwork(win, {
-      tables: {},
-      rpc: {
-        schedule_scurve_agg_multi: {
-          data: { months: [{ key: '2026-01', pd: 40, ad: 30 }, { key: '2026-02', pd: 100, ad: 60 }],
-                  totDur: 100, doneDur: 60, minDate: '2026-01-01', maxDate: '2026-02-28', nAct: 7 },
-          error: null
-        }
-      },
-      /* ⚠️ Two projects is under SC_FULL_MAX, so the per-project overlay is fetched too —
-         the path that pages PER PROJECT. The fake counts how it asked. */
+      tables: {}, agg: { P1: AGG_P1, P2: AGG_P2 },
+      /* ⚠️ Two projects is under SC_FULL_MAX, so the raw-row overlay is fetched too — that path
+         is what carries the SPI-stretched forecast the aggregate has no column for. */
       schedule: {
         P1: [{ id: 1, project_id: 'P1', activity_type: 'Task', start_date: '2026-01-01',
                end_date: '2026-02-01', duration_days: 30, percent_complete: 50 }],
@@ -267,32 +281,83 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
     await mountView(win, 'scurve');
     const kpis = win.document.getElementById('po-sc-kpis').innerHTML;
     const chart = win.document.getElementById('po-sc-chart').innerHTML;
+    const rpcs = win._rpcs || [];
     has(kpis, 'pd-kpi', tag + 'sc: the KPI strip is the SHARED card, drawn by the real UI.kpi');
     has(kpis, 'Activities', tag + 'sc: it reports the activity count off the roll-up');
-    has(kpis, '7', tag + 'sc: and the count is the aggregate\'s own nAct, not a guess');
+    has(kpis, '7', tag + 'sc: and the count is 3 + 4 — the aggregates summed, not a guess');
     has(chart, '<svg', tag + 'sc: the chart drew');
     has(chart, 'pd-seg pd-seg-multi', tag + 'sc: the series switch is the shared multi-select segment');
     ok(!/type="checkbox" data-sc/.test(chart), tag + 'sc: and not loose checkboxes');
-    eq((win._rpcs || []).filter(r => r[0] === 'schedule_scurve_agg_multi').length, 1,
-       tag + 'sc: ONE server-side roll-up call, not one per project');
+    /* ⚠️⚠️ THE FIX ITSELF: the call that timed out in production is never made. */
+    eq(rpcs.filter(r => r[0] === 'schedule_scurve_agg_multi').length, 0,
+       tag + 'sc: schedule_scurve_agg_multi is NOT called — that is the statement that timed out');
+    eq(rpcs.filter(r => r[0] === 'schedule_scurve_agg').length, 2,
+       tag + 'sc: one single-project aggregate per project instead');
+    ok(rpcs.filter(r => r[0] === 'schedule_scurve_agg').every(r => typeof r[1].p_id === 'string'),
+       tag + 'sc: and each carries ONE id, which is the shape the index exists for');
     ok(!win._sb.from('project_schedule')._usedIn,
        tag + 'sc: the per-project pager never binds .in(project_id, ids)');
+    ok(!/could not be read/.test(chart), tag + 'sc: a complete read carries no partial-coverage note');
   }
 
-  /* ---- S-Curve: a failed roll-up NAMES the cause and paints nothing --------------- */
+  /* ---- ⚠️⚠️ THE CARRY-FORWARD, WHICH IS THE CORRECTNESS OF THE MERGE ---------------
+     P1 has no March bucket because it finished in February. Its contribution to March is its
+     FULL total, not zero — these are cumulative figures. Read as zero, the portfolio curve would
+     DIP the month a project completes, which is the one thing an S-curve may never do. */
   {
     const win = buildPage(dashSrc, assetsDir);
-    fakeNetwork(win, {
-      tables: {},
-      rpc: { schedule_scurve_agg_multi: { data: null,
-             error: { code: '57014', message: 'canceling statement due to statement timeout' } } },
-      schedule: {}
-    });
+    fakeNetwork(win, { tables: {}, agg: { P1: AGG_P1, P2: AGG_P2 }, schedule: { P1: [], P2: [] } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    const m = await mountView(win, 'scurve');
+    const d = m.api._data();
+    ok(!!(d && d.rollup && !d.rollup.empty), tag + 'merge: the combined curve computed');
+    if (d && d.rollup) {
+      const pc = d.rollup.plannedC.filter(v => v != null);
+      ok(pc.every((v, i) => i === 0 || v >= pc[i - 1] - 1e-9),
+         tag + 'merge: the combined PLANNED curve never goes backwards');
+      eq(d.rollup.TOT, 100, tag + 'merge: the total is 40 + 60 — per-project totals summed');
+      eq(d.rollup.activities, 7, tag + 'merge: and the activity count is 3 + 4');
+      /* March: P1 carried forward at 40 + P2 at 60 = 100, NOT P2's 60 alone. */
+      eq(Math.round(pc[pc.length - 1]), 100,
+         tag + 'merge: after P1 ends its 40 is still in the total — the carry-forward holds');
+    }
+  }
+
+  /* ---- ⚠️ ONE PROJECT FAILING NO LONGER FAILS THE VIEW ---------------------------- */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {}, agg: { P1: { error: TIMEOUT }, P2: AGG_P2 },
+                       schedule: { P1: [], P2: [] } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(win, 'scurve');
+    const chart = win.document.getElementById('po-sc-chart').innerHTML;
+    has(chart, '<svg', tag + 'partial: the other project still draws');
+    has(win.document.getElementById('po-sc-kpis').innerHTML, 'pd-kpi',
+        tag + 'partial: and its figures are reported');
+    /* ⚠️ ON THE CHART, not only in a toast: a toast is gone in five seconds and a screenshot of
+       this card ends up in a report. */
+    has(chart, 'could not be read', tag + 'partial: the chart says it is partial');
+    has(chart, '1 of 2', tag + 'partial: and says over how many projects it is drawn');
+    has(chart, 'Avesta Residences', tag + 'partial: the missing project is NAMED, not counted');
+    ok((win._toasts || []).some(t => t[0] === 'warn'), tag + 'partial: and a warning is raised');
+  }
+
+  /* ---- ⚠️ EVERY project failing still names them and paints nothing --------------- */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {}, agg: { P1: { error: TIMEOUT }, P2: { error: TIMEOUT } },
+                       schedule: { P1: [], P2: [] } });
     win.PortfolioDash._setProjects(PROJECTS, []);
     await mountView(win, 'scurve');
     const chart = win.document.getElementById('po-sc-chart').innerHTML;
     has(chart, 'Could not draw the portfolio S-curve', tag + 'sc: the failure is reported in the pane');
     has(chart, '57014', tag + 'sc: and NAMED — a timeout, not a bare "Load failed."');
+    has(chart, '2 of 2', tag + 'sc: with how many projects it could not read');
+    has(chart, 'Avesta Residences', tag + 'sc: and which ones');
+    /* ⚠️ THE ADVICE THE OWNER ACTUALLY SAW, AND WHY IT IS GONE: this screen has no project
+       filter to narrow. PDb.errText diagnoses; the caller prescribes. */
+    ok(!/narrow the project filter/.test(chart),
+       tag + 'sc: it does not tell the planner to narrow a filter this page does not have');
     eq(win.document.getElementById('po-sc-kpis').innerHTML, '',
        tag + 'sc: a failed read leaves no figure standing on the KPI strip');
     ok((win._toasts || []).some(t => t[0] === 'error'), tag + 'sc: and it is raised as an error toast');
@@ -433,7 +498,12 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
   const m = e({ code: 'PGRST202', message: 'Could not find the function' });
   const r = e({ code: '42501', message: 'permission denied for table project_schedule' });
   const o = e({ message: 'socket hang up' });
-  ok(/57014/.test(t) && /narrow/i.test(t), 'err: a timeout says so and says what to do');
+  ok(/57014/.test(t), 'err: a timeout names its code');
+  /* ⚠️⚠️ AND DOES NOT PRESCRIBE. It used to end "narrow the project filter and try again",
+     written when the only caller was the Portfolio Dashboard — which has one. The owner met
+     that sentence on a MODULE page, which does not. A shared helper cannot know what control
+     the screen it prints on carries. */
+  ok(!/narrow the project filter/.test(t), 'err: and does not name a control it cannot see');
   ok(/2026-07-20-schedule-scurve-agg\.sql/.test(m), 'err: a missing function names its migration');
   ok(/permission/i.test(r), 'err: an RLS refusal says permission');
   eq(o, 'socket hang up', 'err: anything else passes through unchanged');

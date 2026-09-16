@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916h" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916j" />
 </head>
 <body>
 <div class="pd-app">
@@ -213,7 +213,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260916a"></script>
+<script src="../../assets/js/db.js?v=20260916b"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260911uc"></script>
 <script src="../../assets/js/ui.js?v=20260915i"></script>
@@ -505,7 +505,10 @@
           ' project(s); the S-Curve tab snaps to the end of the current month, so the two can ' +
           'differ slightly inside one month.'
         : ovX.err.status
-          ? '<b>Behind plan</b> is unavailable — ' + esc(PDb.errText(ovX.err.status)) + '.'
+          // ⚠️ The advice belongs HERE, not in PDb.errText: this screen carries the project
+          //    filter it names. The module pages that share that helper do not.
+          ? '<b>Behind plan</b> is unavailable — ' + esc(PDb.errText(ovX.err.status)) +
+            (/timeout/.test(PDb.errText(ovX.err.status)) ? '; narrow the project filter and try again' : '') + '.'
           : '<b>Behind plan</b> is still loading.');
   }
 

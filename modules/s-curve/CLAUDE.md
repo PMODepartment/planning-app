@@ -674,3 +674,35 @@ this module changes.
 Verified by `tools/test-portfolio-dash.js` (158 assertions, the view mounted against a fake DOM
 with the real `ui.js`/`db.js`/`scurve.js`, gated against the pinned commit before it). ⚠️ **Not verified
 signed in.**
+
+---
+
+## The portfolio curve timed out on its first real open (2026-09-16 j) — eprobles
+
+Owner, with the live screenshot: *"how come this error popped up for the scurve."* **57014 — the
+database cancelled the read.**
+
+⚠️⚠️ **`schedule_scurve_agg_multi(p_ids)` CROSS JOINs its month series against its leaf activities.**
+One project is ~60 months x ~16k leaves; twenty-one is the UNION of every horizon x EVERY activity —
+about thirty million rows, past the ~8s statement_timeout, every time. The cost is combinatorial in N,
+so it was always going to fail at portfolio scale; it only surfaced now because this became a landing
+page instead of a tab almost nobody opened.
+
+**Now N calls to `schedule_scurve_agg(p_id)`** — the same SQL with one id, the call THIS module has
+always made for a single project — four in flight, merged in the browser. ⚠️ Identical arithmetic:
+every merged field is a plain `sum` over leaves server-side.
+
+⚠️⚠️ **THE CARRY-FORWARD IS THE CORRECTNESS OF THE MERGE.** Each project’s month series spans only its
+own dates and the figures are CUMULATIVE, so a month after a project finishes is absent while its true
+contribution is its full total. Read as zero, the portfolio curve DIPS the month a project completes.
+Absent *before* a project starts really is zero, and the carry starts there.
+
+⚠️ **One project failing no longer fails the view** — it is named, and the rest still draw, with the
+chart itself saying over how many projects it was drawn.
+
+⚠️ The empty state this module shows outside portfolio scope is unchanged, and remains the
+fall-through if `portfolio-dash.js` ever fails to load.
+
+Verified: `tools/test-portfolio-dash.js` 184/184, including that `schedule_scurve_agg_multi` is never
+called, that the combined planned curve never goes backwards, and that a partial read still draws.
+⚠️ **Not verified signed in** — the timeout only reproduces against the owner’s own 21 projects.
