@@ -142,15 +142,24 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-att-add .pd-select { height:32px; }
 .cc-att-st { font-size:12px; color:var(--pd-muted); }
 
-/* ---- The register's own dashboard, at the top of the Contract tab (2026-09-15) ----------------
-   ⚠ Built from the module's OWN idioms (`.cc-kpis` / `.cc-kpi`), not the project dashboard's
-     `.pd-mini-*`. The two screens report the same figures in the same order, but each should look
-     like the page it is on rather than importing the other's furniture. */
+/* ---- The register's own dashboard — its own tab since 2026-09-16, a Contract-tab band before
+   that (see the long comment above ccDashHTML() in module.js for the reversal and why it had
+   been unreachable in between). ⚠ Built from the module's OWN idioms (`.cc-kpis` / `.cc-kpi`),
+   not the project dashboard's `.pd-mini-*`. The two screens report the same figures in the same
+   order, but each should look like the page it is on rather than importing the other's furniture. */
 .cc-dash { margin-bottom: 14px; }
 .cc-dash-h { display:flex; align-items:baseline; gap:8px; margin:14px 0 6px;
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
   color:var(--pd-muted); }
 .cc-dash > .cc-dash-h:first-child { margin-top:0; }
+/* The per-block "View …" jump (dashGotoBtn/wireDashGoto, module.js). ⚠ margin-left:auto pins it
+   to the row's trailing edge regardless of how long the label + record count run — a block with
+   0 records has a short heading and the button must not drift inward to meet it. Plain text
+   styling, not `.pd-btn`: this sits inside an uppercase label row, not a toolbar. */
+.cc-dash-goto { margin-left:auto; border:0; background:none; padding:0; cursor:pointer;
+  font: inherit; text-transform:none; letter-spacing:normal; font-weight:600;
+  color:var(--pd-red); white-space:nowrap; }
+.cc-dash-goto:hover { text-decoration:underline; }
 /* How much of the contract value the packages account for. */
 .cc-dash-bar { height:6px; border-radius:99px; background:var(--pd-line); overflow:hidden; margin-bottom:8px; }
 .cc-dash-bar > i { display:block; height:100%; background:var(--pd-red); }

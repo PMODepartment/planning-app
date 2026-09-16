@@ -1,5 +1,78 @@
 # Module: contracts-claims
 
+## 2026-09-16 — The dashboard becomes a fourth tab, and reconnecting it found it had been dead
+
+Owner: *"aside from contracts, claims and change orders, and eot. add also a dashboard."* Asked
+whether it should be the landing tab: *"it need not be the landing tab."* Contract stays the
+default/active tab; **Dashboard** is a new peer tab after Extension of Time.
+
+### ⚠️⚠️ THE DASHBOARD ALREADY EXISTED AND HAD BEEN UNREACHABLE SINCE 2026-09-07
+
+`ccDashHTML()` / `ccTimeHTML()` (built 2026-09-15) were never dead in the sense of "unused code
+that renders nothing" — they compute real figures off `PDClaims`, the same rules engine the
+project dashboard and the portfolio view use. They were dead in the sharper sense: **nothing on
+the shipped page could call them.** `kpiHTML`'s `if (view === 'contract') return ccDashHTML();`
+is only reached from inside `render()`'s generic record-list path — and `render()` has, since
+2026-09-07 ("the BOQ moved inline"), a `view === 'contract'` branch that delegates wholesale to
+`CCPackages.show(...)` and `return`s *before* `kpiHTML` is ever called. Confirmed by reading every
+caller before writing anything: `packages.js` never references `ccDashHTML`, `ccTimeHTML` or
+`kpiHTML` either. So the Contract tab's own changelog entry ("Let's rework the front page … to
+have a dashboard within it") was correct about what was *built*, and wrong about what was *live*
+— an 11-day gap nobody could have noticed by looking at the tab, because the tab looked exactly
+as intended either way (a package/contract table with no band above it).
+
+Wiring it to a real tab is therefore a **move**, not a rewrite: `ccDashHTML`, `ccTimeHTML` and
+`ccBlock`'s money/day arithmetic are untouched. What changed:
+
+- **`render()` gains a `view === 'dashboard'` branch**, alongside the existing `contract` one —
+  same shape (hides the filter bar, since the dashboard reads `rows` whole and has no visible
+  list of its own to filter), calls `ccDashHTML()` into `#cc-view`.
+- **`ccBlock(...)` and the contract-value heading gain a `goto` link** — "View change orders →",
+  "View cost claims →", "View extension of time →", "View contract →" — each jumping to the tab
+  it summarises via a new `wireDashGoto(host)`. The two Claims-tab links (Change Order / Claim)
+  also set `filters.type` before repainting, because `switchTab` deliberately does **not** clear
+  that filter when *arriving at* the Claims tab (only when leaving it) — see its own
+  `if (v !== 'claims')` guard. ⚠️ Without this, a KPI a planner cannot click through to is a
+  number they have to take on faith, which is the same reasoning `affChip` already uses elsewhere
+  in this file.
+- **A fourth `<button class="cc-tab" data-view="dashboard">` in `index.html`.** No other markup
+  changed — `UI.tabsToDropdown('.cc-tabs')` already collapses the strip into one trigger, which is
+  the whole reason a fourth tab costs nothing (the owner's own point, confirmed by rendering it:
+  the trigger reads "Contract ▾" exactly as before, and the menu it opens lists all four).
+- **`_internals` gains `render`, `switchTab`, `ccDashHTML`**, so the tab can be driven and its
+  markup inspected without a live Supabase session — the same shape `_set` already used.
+
+### Verified
+
+- `node --check` clean on `module.js` and `modules-grid.js`; `module.css` braces balanced
+  (642/642).
+- **Rendered in a real, headless-Chromium harness** (git-ignored, deleted before this commit —
+  see `.gitignore`'s `**/_scratch*`/`**/*harness*` patterns) carrying the real `dashboard.css` +
+  `module.css` and the real `db.js` / `icons.js` / `ui.js` / `claims.js` / `module.js`, driven
+  through `_internals._set(...)` + `_internals.render()` against a fixture shaped like a real
+  register (2 contracts' worth of packages, 2 change orders, 2 claims, 2 EOTs, one record with no
+  package). Confirmed: the tab renders with **0 page errors**; the package bar, all three
+  `ccBlock`s and the aging/hand-off section all paint with real figures; clicking **View change
+  orders →** switches the active tab to Claims/Change Order **and** sets the type filter to
+  "Change Order", landing on exactly CO-014 and CO-018 (the two Claim rows correctly excluded);
+  and with `UI.tabsToDropdown` applied, the four-tab strip collapses to the same single trigger
+  the three-tab strip used, opening a menu that lists all four — confirming the owner's own point
+  that the dropdown absorbs a fourth tab for free.
+- ⚠️ **Not verified signed in** — no live login is possible in this environment. The harness is a
+  real DOM and a real cascade, not a stub of either, but it is fixture data through `_internals`,
+  not a real project's rows through a real Supabase read.
+
+`module.css` / `module.js` → `?v=20260916f`; `MODULE_V` → `20260916f` (the module's `index.html`
+gained a tab, so the launcher's cache-busted link needs to change too).
+
+### Not built here, deliberately
+
+- **No new figures.** Every block on the Dashboard tab was already computed by `ccDashHTML` /
+  `ccTimeHTML`; this reconnects and links them, it does not add a new metric.
+- **No portfolio-wide view here** — that already exists, separately, in `assets/js/portfolio-dash.js`,
+  shown when this same page is opened from the Portfolio sidebar (`AppAuth.isPortfolioScope()`).
+  This tab is the single-project view; the two do not overlap and are not meant to.
+
 ## 2026-09-15 (q) — The dashboard gains the time half it was missing
 
 Owner: *"Let's develop a dashboard in the contracts & claims register."* The money half shipped that

@@ -309,6 +309,17 @@ window.ContractsClaims = (function () {
         mountBoqInline);
       return;
     }
+    /* THE DASHBOARD TAB — see the long comment above ccDashHTML() for why this reconnects
+       rather than rewrites it. No filter bar: the dashboard reads `rows` whole, same as the
+       Contract tab's own record list does. */
+    if (view === 'dashboard') {
+      document.getElementById('cc-filters').style.display = 'none';
+      if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
+      host.innerHTML = ccDashHTML();
+      wireDashGoto(host);
+      if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+      return;
+    }
     // The Claim/CO type filter only applies to the claims tab.
     document.getElementById('cc-f-type').style.display = view === 'claims' ? '' : 'none';
     syncClearFilt();
@@ -394,27 +405,63 @@ window.ContractsClaims = (function () {
   }
 
   /* ==========================================================================================
-     THE REGISTER'S OWN DASHBOARD.
-     Owner 2026-09-15: *"Let's rework the front page of the contracts & claims module to have an own
-     dashboard within it."* Asked where it should live — a new tab, or inside Contract — the owner
-     chose INSIDE THE CONTRACT TAB, which is already what the module opens on. That keeps the
-     standing three-tab decision (2026-08-26: *"There are too many tabs to keep track of"*) and the
-     1460px title breakpoint that the tab count drives.
+     THE REGISTER'S OWN DASHBOARD — now a fourth tab, not a band (2026-09-16).
+     Owner, 2026-09-15: *"Let's rework the front page … to have an own dashboard within it."* —
+     answered then as a band at the top of the Contract tab, which kept the standing three-tab
+     decision (2026-08-26: *"There are too many tabs to keep track of"*).
+     Owner, 2026-09-16: *"add also a dashboard … show me a dashboard."* A NAMED REVERSAL of that
+     placement, not the three-tab decision itself — the tab strip is a dropdown
+     (`UI.tabsToDropdown`, see index.html), so a fourth entry costs no width, which is the
+     reason the owner gave for allowing it this time. `view === 'dashboard'` in render() is the
+     only new wiring; everything below is unchanged.
 
-     ⚠⚠ IT SUMMARISES THE WHOLE REGISTER, NOT THE CONTRACT TAB. `rows` holds every record type,
-       so the band reports contract, change orders, claims and EOT together — which is the point of
-       a front page. The list under it is still the Contract list; the band is the module's summary,
-       the table is the tab's content.
-     ⚠⚠ THE SAME FIGURES, IN THE SAME ORDER, AS THE PROJECT DASHBOARD'S PANEL (2026-09-15). Two
-       screens reporting the same register must not describe it differently — so the blocks, the
-       cell order and the two-figure treatment of "disputed" are deliberately identical. What
-       differs is only the source: this one computes from the rows already in memory, so it costs
-       no query; the dashboard reads declared metrics through the shell.
-     ⚠ UNFILTERED, and on purpose. It reads `rows`, never `visibleRows()`: a summary that moved
-       when someone typed in the search box would be reporting the filter, not the register. The
-       count line under the toolbar already says what the filter is showing.
+     ⚠⚠⚠ AND IT HAD BEEN DEAD CODE SINCE THE DAY IT SHIPPED. The Contract tab's own render()
+       was rewired the same day (2026-09-07, "the BOQ moved inline") to delegate wholesale to
+       `CCPackages.show(...)` and `return` — so `kpiHTML`'s `if (view === 'contract') return
+       ccDashHTML();` branch has been unreachable on every build since: nothing on the shipped
+       page has ever called it. Confirmed by reading every caller before writing a line here —
+       `packages.js` never references `ccDashHTML`/`ccTimeHTML`/`kpiHTML` either. Moving the
+       summary to its own tab is what makes it reachable again; the arithmetic below is
+       untouched from 2026-09-15, so this is a MOVE, not a rewrite.
+     ⚠⚠ IT SUMMARISES THE WHOLE REGISTER, NOT ONE TAB. `rows` holds every record type, so the
+       tab reports contract, change orders, claims and EOT together — which is the point of a
+       dashboard. Contract's own tab still lists its records and lots; nothing here duplicates it.
+     ⚠⚠ THE SAME FIGURES, IN THE SAME ORDER, AS THE PROJECT DASHBOARD'S PANEL AND THE PORTFOLIO
+       VIEW. Three screens reporting the same register must not describe it differently — so the
+       blocks, the cell order and the two-figure treatment of "disputed" are deliberately
+       identical, and all three go through `PDClaims` (assets/js/claims.js) for the rules.
+     ⚠ UNFILTERED, and on purpose. It reads `rows`, never `visibleRows()`: a dashboard that moved
+       when someone typed a search on another tab would be reporting a filter it cannot show.
+     ⚠ EACH BLOCK LINKS BACK TO THE TAB IT SUMMARISES (`ccBlock`'s `goto` argument, wired by
+       `wireDashGoto`). A KPI a planner cannot click through to is a number they have to take on
+       faith — and clicking it does not re-run any query, it just switches tab and, where the
+       target tab has a type filter, sets it before repainting.
      ========================================================================================== */
-  function ccBlock(label, nRec, list, subK, evK, apK, fmt) {
+  /* One button markup for every dashboard block, and one click handler for all of them
+     (`wireDashGoto`) — a per-block onclick would be a per-block chance to forget the
+     `filters.type` half of the jump. `goto.type` is only set for the two blocks living on the
+     Claims/Change Order tab, which is the one tab whose own type filter `switchTab` does not
+     clear on the way in (see `switchTab`'s `if (v !== 'claims')` guard). */
+  function dashGotoBtn(goto) {
+    return '<button type="button" class="cc-dash-goto" data-dash-tab="' + esc(goto.tab) + '"' +
+      (goto.type ? ' data-dash-type="' + esc(goto.type) + '"' : '') +
+      '>View ' + esc(goto.label || 'records') + ' &rarr;</button>';
+  }
+  function wireDashGoto(host) {
+    host.querySelectorAll('[data-dash-tab]').forEach(function (b) {
+      b.onclick = function () {
+        var tab = b.dataset.dashTab, type = b.dataset.dashType || '';
+        switchTab(tab);
+        if (type) {
+          filters.type = type;
+          var ft = document.getElementById('cc-f-type');
+          if (ft) ft.value = type;
+          render();
+        }
+      };
+    });
+  }
+  function ccBlock(label, nRec, list, subK, evK, apK, fmt, goto) {
     /* ⚠️⚠️ THE RULES MOVED TO PDClaims (assets/js/claims.js) ON 2026-09-15, UNCHANGED. Decided =
        Approved + Disapproved (Cancelled was never adjudicated); shortfall clamped at 0. They are
        there because the project dashboard's panel and the portfolio view apply exactly the same
@@ -431,7 +478,8 @@ window.ContractsClaims = (function () {
        numeric; with none, the whole block reads '—'. */
     var f = list.length ? fmt : function () { return '—'; };
     return '<div class="cc-dash-h">' + esc(label) +
-        (nRec ? ' <span class="cc-mini">' + nRec + ' record' + (nRec === 1 ? '' : 's') + '</span>' : '') + '</div>' +
+        (nRec ? ' <span class="cc-mini">' + nRec + ' record' + (nRec === 1 ? '' : 's') + '</span>' : '') +
+        (goto ? dashGotoBtn(goto) : '') + '</div>' +
       '<div class="cc-kpis">' +
         kpi('Submitted', f(sum(list, subK)), 'as claimed') +
         kpi('Evaluated', f(sum(list, evK)), 'after review') +
@@ -469,7 +517,8 @@ window.ContractsClaims = (function () {
     }
     return '<div class="cc-dash">' +
       '<div class="cc-dash-h">Contract value <span class="cc-mini">' + money(ctVal) +
-        (pk.length ? ' across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's') : '') + '</span></div>' +
+        (pk.length ? ' across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's') : '') + '</span>' +
+        dashGotoBtn({ tab: 'contract', label: 'contract' }) + '</div>' +
       (pk.length
         ? '<div class="cc-dash-bar"><i style="width:' +
             Math.max(0, Math.min(100, base ? Math.round(pkAmt / base * 100) : 0)) + '%"></i></div>' +
@@ -479,9 +528,12 @@ window.ContractsClaims = (function () {
               'One of the two is wrong — the package amounts or the contract record.</p>' : '')
         : '<p class="cc-hint">No package breakdown yet. Packages are set up from the Contract tab, and every ' +
           'change order, claim and extension of time can then be raised against one.</p>') +
-      ccBlock('Change orders', of('Change Order').length, of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money) +
-      ccBlock('Cost claims', of('Claim').length, of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money) +
-      ccBlock('Extension of time', of('EOT').length, of('EOT'), 'sub_days', 'eval_days', 'approved_days', days) +
+      ccBlock('Change orders', of('Change Order').length, of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money,
+        { tab: 'claims', type: 'Change Order', label: 'change orders' }) +
+      ccBlock('Cost claims', of('Claim').length, of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money,
+        { tab: 'claims', type: 'Claim', label: 'cost claims' }) +
+      ccBlock('Extension of time', of('EOT').length, of('EOT'), 'sub_days', 'eval_days', 'approved_days', days,
+        { tab: 'eot', label: 'extension of time' }) +
       ccTimeHTML() +
       '<p class="cc-hint">Submitted, evaluated and approved are the pipeline columns on each record. ' +
         '<b>Disapproved</b> is what the client rejected outright; <b>shortfall</b> is submitted minus approved ' +
@@ -1844,6 +1896,13 @@ window.ContractsClaims = (function () {
     init: init,
     _internals: { agingOf: agingOf, daysBetween: daysBetween, totals: totals, num: num, clean: clean,
       descOf: descOf, visibleRows: visibleRows, VIEWS: VIEWS,
-      _set: function (o) { if (o.rows) rows = o.rows; if (o.view) view = o.view; if (o.filters) filters = o.filters; if (o.pid) pid = o.pid; } }
+      /* render / switchTab / ccDashHTML: exposed so the Dashboard tab can be driven and its
+         markup inspected from a harness without a live Supabase session — the same shape as
+         `_set` below, extended rather than duplicated. */
+      render: render, switchTab: switchTab, ccDashHTML: ccDashHTML,
+      _set: function (o) {
+        if (o.rows) rows = o.rows; if (o.view) view = o.view; if (o.filters) filters = o.filters;
+        if (o.pid) pid = o.pid; if (o.pkgs) PKGS = o.pkgs; if (o.canWrite != null) canWrite = o.canWrite;
+      } }
   };
 })();

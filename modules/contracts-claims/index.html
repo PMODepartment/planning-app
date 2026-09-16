@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
-  <link rel="stylesheet" href="module.css?v=20260915g" />
+  <link rel="stylesheet" href="module.css?v=20260916f" />
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916e" />
 </head>
 <body>
@@ -46,6 +46,11 @@
           <button class="cc-tab active" data-view="contract">Contract</button>
           <button class="cc-tab" data-view="claims">Claims / Change Order</button>
           <button class="cc-tab" data-view="eot">Extension of Time</button>
+          <!-- ⚠️ A FOURTH TAB, DELIBERATELY — see 2026-09-16 in module.js above ccDashHTML().
+               Not the landing tab (owner: "it need not be the landing tab"); Contract stays
+               active by default. The strip is a dropdown (UI.tabsToDropdown below), which is
+               why a fourth entry costs nothing in width — the owner's own reason for allowing it. -->
+          <button class="cc-tab" data-view="dashboard">Dashboard</button>
         </div>
         <div class="cc-topbar-tools" id="cc-topbar-tools">
           <!-- Filters, moved into a single toggleable group (UI.wireFilterToggle,
@@ -123,7 +128,7 @@
   <!-- affected.js before wizard.js and module.js: both read it as window.CCAffected. -->
   <script src="affected.js?v=20260911b"></script>
   <script src="wizard.js?v=20260915c"></script>
-  <script src="module.js?v=20260915h"></script>
+  <script src="module.js?v=20260916f"></script>
   <script>
     // Item 1 (2026-09-02): the topbar tab strip becomes ONE dropdown, and the
     // static module label beside it goes with it — the trigger already names
