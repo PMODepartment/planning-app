@@ -93,6 +93,20 @@
     .po-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:24px; text-align:center; }
     /* ---- D4 trend charts + D5 look-ahead (Overview) ---- */
     .po-mini { display:block; width:100%; }
+    /* ---- D4: the portfolio curve. ⚠️ `.po-tr-mark` was removed in (p) as a rule nothing
+       emitted — correct then, and the chart that emits it landed in (r). ---- */
+    .po-tr-svg { width:100%; height:170px; display:block; }
+    .po-tr-grid { stroke:var(--pd-line); stroke-width:1; }
+    .po-tr-ax { fill:var(--pd-muted); font-size:9px; }
+    .po-tr-plan { fill:none; stroke:var(--pd-muted); stroke-width:2; vector-effect:non-scaling-stroke; }
+    .po-tr-act { fill:none; stroke:var(--pd-ok-text); stroke-width:2.5; vector-effect:non-scaling-stroke; }
+    .po-tr-now { stroke:var(--pd-red); stroke-width:1; stroke-dasharray:4 3; }
+    .po-tr-mark { fill:var(--pd-ok-text); stroke:var(--pd-card); stroke-width:1.5; }
+    .po-tr-legend { display:flex; gap:14px; align-items:center; margin-top:8px;
+      font-size:var(--pd-fs-sm); color:var(--pd-ink); }
+    .po-tr-sw { display:inline-block; width:14px; height:3px; margin-right:6px; vertical-align:middle; }
+    .po-tr-sw-plan { background:var(--pd-muted); }
+    .po-tr-sw-act { background:var(--pd-ok-text); }
     .po-look-grp { margin-top:12px; }
     .po-look-grp:first-child { margin-top:0; }
     .po-look-head { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em;

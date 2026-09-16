@@ -899,8 +899,20 @@ HOSTS.forEach(function (h) {
   ['po-view-scurve', 'po-view-cashflow', 'po-view-resources', 'po-view-equipment'].forEach(function (id) {
     ok(po.indexOf('id="' + id + '"') < 0, 'portfolio-overview no longer carries the pane ' + id);
   });
-  ok(po.indexOf('assets/js/scurve.js') < 0,
-     'portfolio-overview no longer loads the S-curve engine it stopped using');
+  /* ⚠⚠ REVERSED ON PURPOSE, 2026-09-16 (r). It stopped loading the engine in (g) when the
+     S-Curve pane moved out; D4 draws the portfolio curve on the Overview again, through
+     PDScurve's OWN fan-out. The assertion that matters now is the opposite one, plus the one
+     below it: the page must not have grown a second copy of the maths or a second RPC. */
+  ok(po.indexOf('assets/js/scurve.js') > 0,
+     'portfolio-overview loads the shared curve engine for its own trend chart');
+  /* ⚠ Asserted on the CALL, not on the string: the comment beside the fan-out names the
+     RPC it is avoiding, and a bare substring test would be measuring its own explanation. */
+  ok(!/rpc\(\s*['\"]schedule_scurve_agg_multi/.test(po),
+     'and never CALLS the combined RPC that was cancelled at the timeout');
+  ok(po.indexOf('PDScurve.fanOutAgg') > 0,
+     'it fans out per project through the shared engine');
+  ok(!/function scComputeFromAgg|function scMergeAggs/.test(po),
+     'and carries no copy of the merge or the agg->curve maths');
 }
 
 /* ============ 5 · the grouping is NEW — an explicit contrast, because the gate above
@@ -908,7 +920,11 @@ HOSTS.forEach(function (h) {
 {
   var baseDash = '';
   try {
-    baseDash = cp.execSync('git show origin/main:assets/js/portfolio-dash.js',
+    /* ⚠⚠ PINNED TO A SHA, NEVER origin/main. This was written against origin/main one commit
+       ago and became SELF-COMPARISON the moment that commit landed - it failed within the hour.
+       eec4ad1 is the last commit before the grouping, so it is the last one that still
+       contrasts; LEAVE IT ALONE once this is no longer the newest change here. */
+    baseDash = cp.execSync('git show eec4ad1:assets/js/portfolio-dash.js',
       { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   } catch (e) { baseDash = ''; }
   if (baseDash) {
@@ -919,7 +935,7 @@ HOSTS.forEach(function (h) {
     ok(baseDash.indexOf('po-mm-status') < 0,
        'CONTRAST: and Meetings had no status filter at all');
   } else {
-    ok(false, 'CONTRAST: could not read origin/main:assets/js/portfolio-dash.js');
+    ok(false, 'CONTRAST: could not read eec4ad1:assets/js/portfolio-dash.js');
   }
 }
 

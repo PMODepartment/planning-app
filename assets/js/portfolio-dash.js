@@ -1202,24 +1202,12 @@
        Supabase SQL editor and this view is broken until it is. The client fix works on the
        database as deployed. ========================================================== */
     var SC_AGG_CONC = 4;   // four in flight: enough to hide latency, not enough to queue on the db
+        /* ⚠️ MOVED to assets/js/scurve.js on 2026-09-16 so the Portfolio Overview draws the same
+       curve from the same code. The local names stay, so every call site in this closure is
+       untouched — the same shape the attach.js extraction used. */
     async function fetchAggForIds(ids, onProgress) {
-      var aggs = [], failed = [], done = 0, queue = ids.slice();
-      async function worker() {
-        while (queue.length) {
-          var id = queue.shift();
-          try {
-            var r = await sb().rpc('schedule_scurve_agg', { p_id: id });
-            if (r.error) throw r.error;
-            if (r.data && r.data.months && r.data.months.length) aggs.push({ id: id, agg: r.data });
-          } catch (e) { failed.push({ id: id, err: e }); }
-          done++;
-          if (onProgress) onProgress(done, ids.length);
-        }
-      }
-      var ws = [];
-      for (var i = 0; i < Math.min(SC_AGG_CONC, ids.length); i++) ws.push(worker());
-      await Promise.all(ws);
-      return { aggs: aggs, failed: failed };
+      return PDScurve.fanOutAgg(function (id) { return sb().rpc('schedule_scurve_agg', { p_id: id }); },
+                                ids, { onProgress: onProgress });
     }
 
     /* Sum N per-project aggregates into the one the combined call used to return.
@@ -1265,17 +1253,7 @@
        breakdown below put a per-entity month series onto a shared axis, and they must all read an
        absent month the same way: BEFORE the entity starts it is genuinely 0; AFTER it finishes its
        cumulative figure HOLDS. Two copies of this is how one of them starts dipping. */
-    function scCarry(months, axisKeys) {
-      var by = {};
-      (months || []).forEach(function (m) { by[m.key] = m; });
-      var pd = [], ad = [], last = { pd: 0, ad: 0 };
-      axisKeys.forEach(function (k) {
-        var m = by[k];
-        if (m) last = { pd: +m.pd || 0, ad: +m.ad || 0 };
-        pd.push(last.pd); ad.push(last.ad);
-      });
-      return { pd: pd, ad: ad };
-    }
+    function scCarry(months, axisKeys) { return PDScurve.carry(months, axisKeys); }
 
     /* ============================== the per-TRADE source, fetched only if it is asked for ====
        Owner 2026-09-16: *"click a specific month to know the breakdowns (for example per trade…)"*
@@ -1350,61 +1328,11 @@
         .sort(function (a, b) { return b.totDur - a.totDur; });
     }
 
-    function scMergeAggs(list) {
-      if (!list.length) return null;
-      var keys = {};
-      list.forEach(function (a) { (a.agg.months || []).forEach(function (m) { keys[m.key] = 1; }); });
-      var axis = Object.keys(keys).sort();
-      if (!axis.length) return null;
-      var acc = axis.map(function () { return { pd: 0, pc: 0, ad: 0, ac: 0 }; });
-      list.forEach(function (a) {
-        /* ⚠️ Through the shared scCarry — see it for why an absent month is not a zero. The cost
-           columns keep their own tiny carry because the trade aggregate has no money in it. */
-        var c = scCarry(a.agg.months, axis), by = {}, lastC = { pc: 0, ac: 0 };
-        (a.agg.months || []).forEach(function (m) { by[m.key] = m; });
-        axis.forEach(function (k, i) {
-          var m = by[k];
-          if (m) lastC = { pc: +m.pc || 0, ac: +m.ac || 0 };
-          acc[i].pd += c.pd[i]; acc[i].ad += c.ad[i];
-          acc[i].pc += lastC.pc; acc[i].ac += lastC.ac;
-        });
-      });
-      function total(f) {
-        return list.reduce(function (t, a) { return t + (+a.agg[f] || 0); }, 0);
-      }
-      var mins = list.map(function (a) { return a.agg.minDate; }).filter(Boolean).sort();
-      var maxs = list.map(function (a) { return a.agg.maxDate; }).filter(Boolean).sort();
-      return {
-        months: axis.map(function (k, i) {
-          return { key: k, pd: acc[i].pd, pc: acc[i].pc, ad: acc[i].ad, ac: acc[i].ac };
-        }),
-        totDur: total('totDur'), totCost: total('totCost'),
-        doneDur: total('doneDur'), doneCost: total('doneCost'),
-        nAct: total('nAct'), nCost: total('nCost'),
-        minDate: mins[0] || null, maxDate: maxs[maxs.length - 1] || null
-      };
-    }
+    function scMergeAggs(list) { return PDScurve.mergeAggs(list); }
 
     // Same shape as scCompute(), but from the server-side combined aggregate (one JSON of
     // ~monthly buckets) instead of every raw activity row across the scoped projects.
-    function scComputeFromAgg(a) {
-      if (!a || !a.months || !a.months.length || !(+a.totDur > 0)) return { empty: true };
-      var start = pd(a.minDate), maxEnd = pd(a.maxDate); if (!start) return { empty: true };
-      var pts = [{ t: +start, pd: 0, ad: 0 }];
-      a.months.forEach(function (mm) { var y = +String(mm.key).slice(0, 4), mo = +String(mm.key).slice(5, 7); pts.push({ t: +new Date(y, mo, 0), pd: +mm.pd || 0, ad: +mm.ad || 0 }); });
-      function interp(f, t) { if (t <= pts[0].t) return 0; var last = pts[pts.length - 1]; if (t >= last.t) return last[f]; for (var i = 1; i < pts.length; i++) { if (t <= pts[i].t) { var A = pts[i - 1], B = pts[i]; var r = (B.t - A.t) ? (t - A.t) / (B.t - A.t) : 0; return A[f] + (B[f] - A[f]) * r; } } return last[f]; }
-      var TOT = +a.totDur, overallDone = +a.doneDur || 0, tnow = today();
-      var domainMax = new Date(Math.max(+maxEnd, +tnow));
-      var months = [], c = new Date(start.getFullYear(), start.getMonth(), 1);
-      while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
-      function me(m) { return new Date(m.getFullYear(), m.getMonth() + 1, 0); }
-      var plannedC = months.map(function (m) { return interp('pd', +me(m)); });
-      var ti = -1; for (var i = 0; i < months.length; i++) { if (me(months[i]) >= tnow) { ti = i; break; } } if (ti < 0) ti = months.length - 1;
-      var actualC = months.map(function (m, idx) { return idx < ti ? interp('ad', +me(m)) : 0; });
-      actualC[ti] = overallDone;
-      var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0, overallPct = TOT ? overallDone / TOT * 100 : 0;
-      return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: a.nAct || 0 };
-    }
+    function scComputeFromAgg(a) { return PDScurve.computeFromAgg(a); }
 
 
     /* =========================================================================================

@@ -102,6 +102,108 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (r) — The portfolio fan-out moves into PDScurve, and the Overview draws the curve it could not afford before
+
+Owner: *"Let's do D4 with the shared PDScurve fan-out."* The last block of the portfolio plan, and
+the one that was blocked: D4's chart used to call `schedule_scurve_agg_multi`, which entry (j)
+removed hours earlier after it was **cancelled in production at the ~8s statement_timeout (57014)**
+the first time a planner opened the portfolio S-Curve. Shipping it as written would have
+reintroduced that failure on the **landing page**.
+
+### ⚠️⚠️ THE FAN-OUT MOVES INTO THE SHARED ENGINE, RATHER THAN BEING COPIED
+
+`fetchAggForIds`, `scCarry`, `scMergeAggs` and `scComputeFromAgg` lived inside `def("scurve")`'s
+closure in `portfolio-dash.js`. They are now `PDScurve.fanOutAgg` / `carry` / `mergeAggs` /
+`computeFromAgg`, and the four local names survive as **delegates**, so every call site in that
+closure is untouched — the shape the `attach.js` extraction used.
+
+⚠️ **The caller is INJECTED.** `fanOutAgg(callOne, ids, opts)` calls `callOne(id)` and knows nothing
+about Supabase, so `scurve.js` still makes **no request of its own** — asserted, not assumed — and
+the fan-out can be driven from a test with no database. That is what let this be shared without
+turning a pure engine into a data layer.
+
+⚠️ This page carried a **hand-copied** S-curve until 2026-09-10 (z1), and the *"Overall Progress ≡
+Actual to date"* bug then had to be reasoned about in three places. There is one copy now.
+
+### ⚠️⚠️ AND THE FIRST ATTEMPT SILENTLY REVERTED A COLLEAGUE'S REFACTOR
+
+I hand-pasted `scMergeAggs` into `PDScurve` from a **reading taken earlier in the session** — before
+the periodic-bars commit had factored its carry out into a shared `scCarry`. The anchor still matched
+(the *removal* was taken from the current file), so the patch applied cleanly and the suite stayed
+green: `scCarry` simply had no callers left in the moved copy.
+
+**The equivalence suite is the only thing that caught it** — the old copy sliced from the pinned base
+threw `scCarry is not defined`. Re-done by **slicing the current text programmatically** and applying
+exactly three renames, so the maths is moved rather than retyped. ⚠️ The rule this earns: *an
+extraction must copy the bytes that are there now, not the bytes you read an hour ago.*
+
+### The chart
+
+Planned against actual, duration-weighted, across every project in scope.
+- ⚠️⚠️ **The actual line stops at the data date.** Every month past `ti` is **modelled**, not
+  recorded — `computeFromAgg` pins that month to the true `doneDur` and zeroes the rest — so drawing
+  a confident actual line into the future is the one thing this chart may not do. Measured: 18
+  planned points against **8** actual, and the polyline's right edge proved to sit at the data-date
+  rule rather than past it.
+- ⚠️ **`null` past the cut, never 0** — a zero would draw the line crashing to the floor.
+- ⚠️ The headline is a **variance in percentage points**, labelled as a variance rather than as
+  progress: *"41.7% planned to date · 30.3% actual · −11.4 pts"*. The two are routinely confused and
+  only one of them is a decision.
+- ⚠️ **A project that could not be read is counted, not dropped** — *"19 project(s) drawn · 1 could
+  not be read"*. One project failing does not fail the chart, which is the whole point of a fan-out
+  where the single combined call was all-or-nothing and what it returned was nothing.
+- ⚠️ The basis is stated (*duration-weighted*), because this page already carries three different
+  progress weightings and a fourth stated silently is how they drift.
+
+⚠️ **`portfolio-overview` loads `scurve.js` again, and that is a named reversal.** It dropped the
+engine in (g) when the S-Curve pane moved into its own module. The committed assertion that it *no
+longer* loads it has been **retargeted, not deleted**, and three sharper ones put in its place: the
+page loads the shared engine, **never calls** the combined RPC, and **carries no copy** of the merge
+or the agg→curve maths.
+⚠️ That "never calls" assertion first failed against my own comment, which names the RPC it is
+avoiding — the checker measuring its own explanation. It tests the **call** now.
+
+### ⚠️ What is NOT here, and why
+
+**The funding curve — the other half of D4 — is not built.** It needs `cash_flow_rollup`, whose read
+and whose monthly reduction moved into `def("cashflow")` with that dashboard in (g). Drawing it here
+would mean a second copy of the monthly reduce and, worse, **a second peak-funding figure** that
+could disagree with the Cash Flow dashboard's. The honest fix is the same move this entry makes for
+the curve — lift the reduce and the peak into a shared home — and that is a decision about a new
+shared surface across twelve pages, so it is reported rather than guessed at.
+
+### Verified
+
+**31 equivalence assertions, 0 failing**: the old `scMergeAggs` / `scComputeFromAgg` /
+`fetchAggForIds` / `scCarry` sliced out of the pinned **`eec4ad1`** and executed **beside** the
+shipped `PDScurve` ones over the same fixtures — two overlapping projects, one project, none, a
+project with no months, and the failure path — compared deep-equal.
+⚠️ **A gate first proves the base still holds real implementations rather than delegates**, or the
+comparison would be self-comparison.
+⚠️⚠️ **And the carry-forward is asserted on the NUMBERS, not on equivalence alone** — equivalence
+would hold if both were wrong. A finishes in March at 40 and is absent from its own series
+afterwards; April reads 40 + 30 and May 40 + 60, January is A alone, and **neither merged curve ever
+dips** — which is the one thing an S-curve may not do. Concurrency measured at a peak of **4**.
+
+**292/292** `test-portfolio-dash` (was 289), **115/115** `test-portfolio` (was 99), `wiring-check`
+139/139, every asset on one version, both engines parse.
+⚠️ The (q) contrast I added yesterday **failed within the hour** — I had pinned it to `origin/main`,
+which became self-comparison the moment that commit landed. Re-pinned to a **SHA**, which is the rule
+this repo already records and I had just broken.
+
+**Rendered in an iframe** at 1400px light, 1400px dark and 390px: 0 errors, the 170px chart, 18
+planned points against 8 actual, the data-date rule and its marker, the legend, no sideways scroll —
+and every stroke resolving **per theme** (planned `rgb(90,88,88)` → `rgb(185,183,183)`, actual
+`rgb(18,105,58)` → `rgb(52,210,123)`, grid `rgb(220,219,219)` → `rgba(255,255,255,.12)`), which is
+what proves the stylesheet is in the cascade.
+
+⚠️ **Not verified signed in** — the fan-out has never run against the owner's own 21 projects, which
+is the case it exists for. The figure to watch on the first real open is the *"N project(s) drawn"*
+count: if it is short, the named failures are the projects to look at.
+
+`scurve.js` → `?v=20260916r` (4 pages); `portfolio-dash.js` / `portfolio-dash.css` → `?v=20260916r`
+(12 pages); `MODULE_V` → `20260916r`, sort-checked past `20260916q`.
+
 ### 2026-09-16 (q) — Meetings and Issues group per project, Meetings gets the filter it never had, and the portfolio Dashboard stops opening one project
 
 Owner, with three screenshots: *"I want to improve the UI for the Meetings and Issues and Concerns

@@ -363,4 +363,73 @@ function report() {
   if (fail) { console.log('\n  ' + fails.join('\n  ')); process.exit(1); }
 }
 
+/* ================================================================== D4 - the portfolio curve */
+{
+  const src = fs.readFileSync(PAGE, 'utf8');
+  const fn = sliceFn(src, 'renderTrends');
+  const mini = sliceFn(src, 'miniChart');
+  const moLab = sliceFn(src, 'moLabelLocal');
+
+  /* the hosts the renderer writes into */
+  function hosts() {
+    const h = { 'po-tr-sc': { innerHTML: '' }, 'po-tr-note': { innerHTML: '', textContent: '' } };
+    return h;
+  }
+  function run(ovX) {
+    const h = hosts();
+    const document = { getElementById: (id) => h[id] || null };
+    const esc = (x) => String(x == null ? '' : x);
+    new Function('ovX', 'document', 'esc', mini + '\n' + moLab + '\n' + fn + '\n renderTrends();')
+      (ovX, document, esc);
+    return { html: h['po-tr-sc'].innerHTML, note: h['po-tr-note'].innerHTML || h['po-tr-note'].textContent };
+  }
+
+  const months = [new Date(2026,0,1), new Date(2026,1,1), new Date(2026,2,1), new Date(2026,3,1), new Date(2026,4,1)];
+  const curve = { empty: false, months: months, TOT: 100,
+                  plannedC: [10, 30, 50, 70, 90], actualC: [8, 22, 35, 0, 0],
+                  ti: 2, plannedPct: 50, actualPct: 35, variance: -15 };
+
+  const r = run({ err: {}, curve: { curve: curve, drawn: 3, failed: 0 } });
+  ok(/<svg/.test(r.html), 'D4: a curve is drawn');
+
+  /* ⚠️⚠️ THE ACTUAL LINE STOPS AT THE DATA DATE. Everything past `ti` is MODELLED, not recorded,
+     and a confident actual line running into the future is the one thing this chart may not do.
+     The planned line runs the whole span, so counting points tells the two apart. */
+  const planPts = (r.html.match(/class="po-tr-plan" points="([^"]*)"/g) || []).join(' ');
+  const actPts = (r.html.match(/class="po-tr-act" points="([^"]*)"/g) || []).join(' ');
+  eq((planPts.match(/,/g) || []).length, 5, 'D4: the planned line covers all five months');
+  eq((actPts.match(/,/g) || []).length, 3, 'D4: the actual line stops at the data date (3 of 5)');
+
+  /* the marker and the data-date rule sit at ti */
+  ok(/po-tr-now/.test(r.html), 'D4: the data date is marked');
+  ok(/po-tr-mark/.test(r.html), 'D4: and the actual is dotted at it');
+
+  /* ⚠️ the variance is in PERCENTAGE POINTS and labelled as a variance, not as progress */
+  ok(/-15\.0 pts/.test(r.note), 'D4: the variance reads in percentage points');
+  ok(/po-bad/.test(r.note), 'D4: a negative variance is toned as bad');
+  ok(/50\.0% planned to date/.test(r.note) && /35\.0% actual/.test(r.note), 'D4: both figures are stated');
+  ok(/3 project\(s\) drawn/.test(r.note), 'D4: and how many projects it was drawn over');
+
+  const ahead = run({ err: {}, curve: { curve: Object.assign({}, curve, { variance: 4 }), drawn: 3, failed: 0 } });
+  ok(/\+4\.0 pts/.test(ahead.note) && /po-ok/.test(ahead.note), 'D4: ahead of plan is signed and toned ok');
+
+  /* ⚠️ a project that could not be read is COUNTED, never silently dropped from the picture */
+  const partial = run({ err: {}, curve: { curve: curve, drawn: 2, failed: 1 } });
+  ok(/1 could not be read/.test(partial.note), 'D4: a failed project is named in the note');
+
+  /* the three states that are not a chart */
+  ok(/could not be read/.test(run({ err: { curve: new Error('x') }, curve: null }).html),
+     'D4: a failed read is named, not drawn as an empty chart');
+  ok(/Reading the schedule roll-up/.test(run({ err: {}, curve: null }).html),
+     'D4: a pending read says so');
+  ok(/no curve to draw/.test(run({ err: {}, curve: { curve: { empty: true }, drawn: 0, failed: 0 } }).html),
+     'D4: nothing baselined says so rather than drawing a flat line at zero');
+
+  /* ⚠️ and the page must not have grown its own copy of the maths */
+  const clean = scan.clean(REL, src);
+  ok(clean.indexOf('function scMergeAggs') < 0 && clean.indexOf('function scComputeFromAgg') < 0,
+     'D4: the page carries no copy of the merge or the agg->curve maths');
+  ok(clean.indexOf('PDScurve.fanOutAgg') > 0, 'D4: it fans out through the shared engine');
+}
+
 report();

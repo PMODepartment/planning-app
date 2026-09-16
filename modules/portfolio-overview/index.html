@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916p" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916r" />
 </head>
 <body>
 <div class="pd-app">
@@ -140,6 +140,16 @@
           <p class="po-note" id="po-ranknote"></p>
         </div>
 
+        <!-- D4 — the portfolio's own planned-vs-actual curve. ⚠️ One card, not two: the funding
+             curve is NOT here, see the note in loadCurve(). -->
+        <div class="po-card">
+          <div class="po-sechead">
+            <h3>Planned vs actual, across the portfolio</h3>
+            <span class="po-mut" id="po-tr-note"></span>
+          </div>
+          <div id="po-tr-sc"></div>
+        </div>
+
         <!-- D5 — what lands next. ⚠️ Placed ABOVE the coverage note so both derived blocks
              sit over the caveat that qualifies them, and the plain register stays last. -->
         <div class="po-card">
@@ -224,6 +234,10 @@
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260915a"></script>
 <script src="../../assets/js/db.js?v=20260916c"></script>
+<!-- ⚠️ BACK, and deliberately. This page dropped the curve engine on 2026-09-16 (g) when the
+     S-Curve pane moved into its own module. D4 draws the portfolio curve here again - through
+     PDScurve's own fan-out, so there is no second copy of the maths and no second RPC. -->
+<script src="../../assets/js/scurve.js?v=20260916r"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260911uc"></script>
 <script src="../../assets/js/ui.js?v=20260916q"></script>
@@ -346,10 +360,10 @@
      ⚠️ Each read owns its own slice and its own error. One failing does not blank the
      others, and every block says which of its inputs is missing rather than printing
      a confident zero. */
-  var ovX = { ids: null, status: null, claims: null, ms: null, iss: null, err: {} };
+  var ovX = { ids: null, status: null, claims: null, ms: null, iss: null, curve: null, err: {} };
   var _ovGen = 0;
 
-  function ovReset() { ovX = { ids: null, status: null, claims: null, ms: null, iss: null, err: {} }; }
+  function ovReset() { ovX = { ids: null, status: null, claims: null, ms: null, iss: null, curve: null, err: {} }; }
 
   async function loadOverview(force) {
     var ids = scopedProjectIds();
@@ -379,6 +393,24 @@
     settle('ms', PDb.selectAll('project_schedule', function (q) {
       return q.in('project_id', ids).or('activity_type.ilike.%milestone%,program_milestone.is.true');
     }, 'id,project_id,activity_name,activity_type,program_milestone,start_date,end_date,actual_finish,percent_complete'));
+
+    /* ⚠⚠ ONE AGGREGATE CALL PER PROJECT, through the SHARED fan-out in PDScurve — never
+       `schedule_scurve_agg_multi`. That one CROSS JOINs its month series against its leaf
+       activities, so the cost is combinatorial in the project count; it was cancelled at the ~8s
+       statement_timeout (57014) the first time a planner opened the portfolio S-Curve on
+       2026-09-16, and this is the LANDING PAGE. The fan-out is the same SQL with one id, which is
+       the shape `project_schedule_proj_id_idx` exists for.
+       ⚠ One project failing does not fail the chart — `failed` is collected and counted, and the
+       rest still draw. ⚠ The merge's carry-forward is what stops the curve dipping every time a
+       project completes; it lives in PDScurve beside the fan-out. */
+    settle('curve', (async function () {
+      var r = await PDScurve.fanOutAgg(function (id) {
+        return sb().rpc('schedule_scurve_agg', { p_id: id });
+      }, ids, {});
+      var merged = PDScurve.mergeAggs(r.aggs);
+      return { curve: merged ? PDScurve.computeFromAgg(merged) : { empty: true },
+               drawn: r.aggs.length, failed: r.failed.length };
+    })());
 
     settle('iss', PDb.selectAll('issues_lessons', function (q) { return q.in('project_id', ids); },
       'id,project_id,status,priority'));
@@ -905,9 +937,85 @@
       (undated ? ' · <span class="po-warn">' + undated + ' undated</span>, so they cannot be placed' : '');
   }
 
+  /* ======================= D4 — the portfolio curve ==================================
+     ⚠⚠ IT DRAWS FROM `PDScurve`, THE SAME ENGINE THE S-CURVE MODULE USES. This page carried a
+     hand-copied copy of that maths until 2026-09-10 (z1), and the "Overall Progress ≡ Actual to
+     date" bug then had to be reasoned about in three places. There is one copy now.
+     ⚠ The line stops at the data date (`ti`): every month after it is MODELLED, not recorded, and
+     drawing a confident actual line into the future is the one thing this chart may not do. */
+  function miniChart(opts) {
+    var W = 680, H = 170, padL = 34, padR = 8, padT = 10, padB = 20;
+    var n = opts.n;
+    if (!n) return '<div class="po-empty">Nothing to draw.</div>';
+    function x(i) { return padL + (n === 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
+    function y(v) { return padT + (1 - (v / 100)) * (H - padT - padB); }
+    function poly(vals, cls) {
+      var pts = [], run = [];
+      vals.forEach(function (v, i) {
+        if (v == null) { if (run.length) { pts.push(run); run = []; } return; }
+        run.push(x(i).toFixed(1) + ',' + y(v).toFixed(1));
+      });
+      if (run.length) pts.push(run);
+      return pts.map(function (r) { return '<polyline class="' + cls + '" points="' + r.join(' ') + '" />'; }).join('');
+    }
+    var grid = [0, 25, 50, 75, 100].map(function (v) {
+      return '<line class="po-tr-grid" x1="' + padL + '" y1="' + y(v) + '" x2="' + (W - padR) + '" y2="' + y(v) + '" />' +
+             '<text class="po-tr-ax" x="' + (padL - 5) + '" y="' + (y(v) + 3) + '" text-anchor="end">' + v + '</text>';
+    }).join('');
+    var marks = '';
+    if (opts.ti != null && opts.ti >= 0 && opts.ti < n) {
+      marks = '<line class="po-tr-now" x1="' + x(opts.ti) + '" y1="' + padT + '" x2="' + x(opts.ti) + '" y2="' + (H - padB) + '" />';
+      if (opts.actual && opts.actual[opts.ti] != null)
+        marks += '<circle class="po-tr-mark" cx="' + x(opts.ti) + '" cy="' + y(opts.actual[opts.ti]) + '" r="3.5" />';
+    }
+    var lbl = (opts.labels || []).map(function (t, i) {
+      return t ? '<text class="po-tr-ax" x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(t) + '</text>' : '';
+    }).join('');
+    return '<svg class="po-tr-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img">' +
+      grid + marks + poly(opts.planned, 'po-tr-plan') + poly(opts.actual, 'po-tr-act') + lbl + '</svg>';
+  }
+
+  function renderTrends() {
+    var host = document.getElementById('po-tr-sc'), note = document.getElementById('po-tr-note');
+    if (!host) return;
+    if (ovX.err.curve) { host.innerHTML = '<div class="po-empty">The schedule roll-up could not be read, so the curve is not drawn.</div>'; note.textContent = 'unavailable'; return; }
+    if (!ovX.curve) { host.innerHTML = '<div class="po-empty">Reading the schedule roll-up\u2026</div>'; note.textContent = ''; return; }
+    var c = ovX.curve.curve;
+    if (!c || c.empty) {
+      host.innerHTML = '<div class="po-empty">No project in scope carries a baselined schedule, so there is no curve to draw.</div>';
+      note.textContent = ''; return;
+    }
+    var TOT = c.TOT || 1;
+    var planned = c.plannedC.map(function (v) { return v / TOT * 100; });
+    /* ⚠ null, not 0, past the data date — a zero would draw a line crashing to the floor. */
+    var actual = c.actualC.map(function (v, i) { return i <= c.ti ? v / TOT * 100 : null; });
+    var every = Math.max(1, Math.ceil(c.months.length / 8));
+    var labels = c.months.map(function (m, i) {
+      return (i % every === 0) ? moLabelLocal(m) : '';
+    });
+    host.innerHTML = miniChart({ n: c.months.length, planned: planned, actual: actual,
+                                 ti: c.ti, labels: labels }) +
+      '<div class="po-tr-legend">' +
+        '<span><i class="po-tr-sw po-tr-sw-plan"></i>Planned</span>' +
+        '<span><i class="po-tr-sw po-tr-sw-act"></i>Actual</span>' +
+        '<span class="po-mut">duration-weighted</span>' +
+      '</div>';
+    /* ⚠ The variance is stated in PERCENTAGE POINTS, and labelled as a variance rather than as
+       progress — the two are routinely confused and only one of them is a decision. */
+    var v = c.variance;
+    note.innerHTML = c.plannedPct.toFixed(1) + '% planned to date \u00b7 ' + c.actualPct.toFixed(1) + '% actual \u00b7 ' +
+      '<span class="' + (v < 0 ? 'po-bad' : 'po-ok') + '">' + (v >= 0 ? '+' : '') + v.toFixed(1) + ' pts</span>' +
+      ' \u00b7 ' + ovX.curve.drawn + ' project(s) drawn' +
+      (ovX.curve.failed ? ' \u00b7 <span class="po-warn">' + ovX.curve.failed + ' could not be read</span>' : '');
+  }
+  function moLabelLocal(d) {
+    var MA = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return MA[d.getMonth()] + " '" + String(d.getFullYear()).slice(2);
+  }
+
   function renderAll() {
     var list = filtered();
-    renderKPIs(list); renderRank(list); renderLookahead(list); renderTable(list); renderCoverage(list);
+    renderKPIs(list); renderRank(list); renderTrends(); renderLookahead(list); renderTable(list); renderCoverage(list);
   }
 
   /* ⚠️⚠️ ANYTHING THAT CHANGES `filtered()` MUST COME THROUGH HERE, NOT `renderAll()`.
