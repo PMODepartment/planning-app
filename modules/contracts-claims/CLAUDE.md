@@ -1,5 +1,101 @@
 # Module: contracts-claims
 
+## 2026-09-16 — The dashboard the module could not reach, and then could not see past
+
+Two owner turns, one story. First: *"I do not see the dashboard in contracts & claims"* — with a
+screenshot of the live Contract tab showing CONTRACT RECORDS and BILL OF QUANTITIES and no band at
+all. Then, once it was visible: trim the 22 KPI cards.
+
+### ⚠️⚠️ PART ONE: THE BAND WAS DEAD CODE, AND HAD BEEN SINCE THE DAY IT SHIPPED
+
+`ccDashHTML()` was built on 2026-09-15 (g) and its **only** call site was inside `kpiHTML()`. But
+`render()` hands the whole Contract tab to `CCPackages.show()` and **returns before the line that
+calls `kpiHTML`**. So that call sat on a branch that can never run, and the band had never rendered
+once — on any project, for anyone. The owner was right, and the entry below describing the band's
+figures describes something nobody had seen.
+
+Fixed by passing it INTO the view that owns the tab (`CCPackages.show(..., ccDashHTML)`), which is
+the only place it can be reached from. ⚠️ The unreachable `if (view === 'contract') return
+ccDashHTML();` in `kpiHTML` is **replaced by a comment saying why it was dead and not to restore
+it** — one renderer with one call site is what stops the band and the packages view drifting apart.
+
+### ⚠️⚠️ PART TWO: THE DEFECT WAS NOT THE CARD COUNT — THE BAND WAS TALLER THAN THE VIEWPORT
+
+Measured at 1400x1000 before changing anything: the band stood **1028px** and the Contract records
+table — the tab's own content — began at **y=1130**, below a 1000px viewport. You could not see a
+single contract record without scrolling. That is this module's own 2026-09-07 finding ("the page
+led with its rarest case") in a new costume.
+
+| measured in the SAME shell, same width | before | after |
+|---|---|---|
+| band height | 1028px | **856px** |
+| register table starts at | y = 1132 | **y = 961** |
+| KPI cards | 22 | **6** (3 shown, 3 folded) |
+| page height | 1756px | 1585px |
+
+### The money half becomes one table
+The 15 cards were Change orders / Cost claims / EOT carrying the **same five figures in the same
+order**, as three separate `.cc-kpis` grids 105px apart with a heading between each — so comparing
+a column DOWN the three record types, the one reading that matters, was the one reading you could
+not do at all.
+
+- ⚠️⚠️ **The project-dashboard invariant is honoured, and it is worth saying which half.** The rule
+  (2026-09-15) is that the two screens must not DESCRIBE THE REGISTER DIFFERENTLY — same figures,
+  same order, same two-figure treatment of "disputed". All three hold. What changes is
+  presentation, and the two screens are different objects: `dashboard.html`'s panel is one small
+  panel among many, where cards suit; this is the page you open TO READ THIS REGISTER, where a
+  table does. **Do not "re-sync" them by turning this back into cards.**
+- ⚠️ **A layer over `.cc-table`, never a second table class** — the rule this module set on
+  2026-09-07. The one override is `min-width`: that class carries a 1020px floor sized for the
+  9-column register, which would put a 6-column summary into a horizontal scroll on a laptop.
+
+### ⚠️⚠️ AND THE THREE FIGURES DO NOT RECONCILE ON SCREEN, WHICH NOTHING SAID
+Measured on the fixture: Submitted ₱145,400,000 minus Approved ₱68,500,000 is **₱76,900,000**,
+while Shortfall reads **₱35,900,000** — because Submitted and Approved sum EVERY record while
+Shortfall sums DECIDED ones only. Three numbers in a row where two look like they make the third,
+₱41M apart. Same family as the bug this module already paid for once, when the aging bars were
+measured on a different key from the headline beside them. The Shortfall column now says
+**`decided only`** in its own header; the hint paragraph explaining it was 400px below and had been
+there the whole time.
+
+### Deleted, and folded
+- **The "Oldest pending" card is gone** — it duplicated its own section header, which renders
+  *"With the client — 3 pending · oldest 137 days"* 40px above it. ⚠️ What the card DID carry and
+  the header did not is the **tone** (amber past 60 days, red past 90), so that moved up into the
+  header rather than going with the card. A de-duplication that quietly deletes a signal is not one.
+- **The `days` helper in `ccDashHTML` is removed**, not left — the EOT block is a row of
+  `ccMoneyTable` now and carries its own formatter, so it had no caller at all.
+- **The hand-off averages fold**, with the end-to-end figure on the summary so it need not be
+  opened. ⚠️ This is the ONLY screen in the app that calls `PDClaims.stageDays` — checked, not
+  assumed — so deleting the row would have made that rule dead code.
+- **Packages cap at the largest three.** ⚠️ "Not allocated to a package" is appended to the
+  VISIBLE part, never the fold: it is the most useful line in the block.
+
+### Verified
+**Every figure identical to before** — all 15 pipeline numbers, pending value, pending time,
+recovery rate and the three legs, read back off the rendered DOM, with the BEFORE build rendered in
+the **same harness shell** so the two geometry readings are comparable. 24 static gates pass. The
+package fold exercised at 1 / 3 / 4 / 8 lots: caps at 3 + remainder, singular/plural correct, and
+`remainderInFold: false` every time. Contrast min **5.84 light / 6.14 dark**, all clear AA. At a
+real 375px the page does **not** scroll sideways and the table scrolls inside its own 353px box.
+`wiring-check` 139/139, `test-boq.js` 66/0, `dead-hooks` 9 (documented baseline).
+
+⚠️ **Not verified signed in** — fixture data through the shipped renderer; no live register read.
+
+### ⚠️ Three traps worth keeping
+- **A fixed `?v=` on the harness served the browser's STALE `module.css`**, so the new tones and
+  `tabular-nums` read as "the rule is not applying". The token is unique per build now.
+- ⚠️⚠️ **The harness omitted `.pd-main` / `.pd-content`, and reported a phone defect the product
+  does not have.** `body.pd-app` is `display:flex`, so an un-wrapped `#cc-view` is a flex item whose
+  default `min-width:auto` resolves to the register table's 1020px floor and the page scrolls
+  sideways at 375px. Both wrappers carry `min-width:0` in `dashboard.css`, which is what stops it in
+  the real app. Neutralising the new table changed **nothing**, which is what proved it was the
+  shell and not the change. The harness lifts the real ancestor chain now.
+- **This module's "mixed line endings" note is STALE.** `module.js` and `module.css` are both pure
+  LF today — 1860 and 1375 lines, **0 CRLF**. Measured before anchoring a patch on `\n`.
+
+`module.js` / `module.css` → `?v=20260916g`; `MODULE_V` → `20260916g`.
+
 ## 2026-09-15 (q) — The dashboard gains the time half it was missing
 
 Owner: *"Let's develop a dashboard in the contracts & claims register."* The money half shipped that

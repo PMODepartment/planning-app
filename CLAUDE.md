@@ -102,6 +102,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (f) — Contracts & Claims: a dashboard nothing could reach, then one you could not see past
+
+Two owner turns, one story: *"I do not see the dashboard in contracts & claims"*, and then, once it
+was on screen, trim its 22 KPI cards. Module detail in
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+### ⚠️⚠️ THE BAND WAS DEAD CODE AND HAD NEVER RENDERED ONCE
+
+`ccDashHTML()` shipped on 2026-09-15 (g) with its **only** call site inside `kpiHTML()` — and
+`render()` hands the whole Contract tab to `CCPackages.show()` and **returns before the line that
+calls `kpiHTML`**. So that call sat on a branch that can never run. Every figure the 2026-09-15 (g)
+entry describes was describing something nobody had seen. Fixed by passing the band INTO the view
+that owns the tab; ⚠️ the unreachable branch is replaced by a comment saying why it was dead and
+not to restore it — the `#pk-boq` shape this repo has now shipped twice.
+
+### ⚠️⚠️ AND THE TRIM'S REAL DEFECT WAS NOT THE CARD COUNT
+
+Measured at 1400x1000 before changing anything: the band stood **1028px** and the Contract records
+table — the tab's own content — began at **y=1130**, below a 1000px viewport. **You could not see a
+single contract record without scrolling.** That is this module's own 2026-09-07 finding ("the page
+led with its rarest case") in a new costume, and it is why the answer is a restructure rather than
+deleting cards until the number looks better.
+
+| measured in the SAME harness shell, same width | before | after |
+|---|---|---|
+| band height | 1028px | **856px** |
+| register table starts at | y = 1132 | **y = 961** |
+| KPI cards | 22 | **6** |
+
+**The 15 money cards were one table wearing three headers** — Change orders / Cost claims / EOT
+carry the same five figures in the same order, as three grids 105px apart, so comparing a column
+DOWN the record types was the one reading you could not do. ⚠️ The project-dashboard invariant is
+honoured on the half it actually states — same figures, same order, same two-figure treatment of
+"disputed"; what changes is presentation, and a panel among panels and a page you open to read the
+register are different objects. ⚠️ A layer over `.cc-table`, never a second table class.
+
+⚠️⚠️ **Three figures that do not reconcile, and nothing said so.** Submitted ₱145.4M − Approved
+₱68.5M = ₱76.9M against a Shortfall of ₱35.9M — the first two sum EVERY record, the third only
+DECIDED ones. Two numbers that look like they make the third, ₱41M apart. The column header now
+says **`decided only`**; the paragraph explaining it sat 400px below and always had.
+
+Also: the **"Oldest pending" card duplicated its own header** and is gone (⚠️ its *tone* moved up
+rather than going with it); the now-callerless `days` helper is removed; the hand-off averages fold
+(⚠️ the only `PDClaims.stageDays` caller in the app — checked, so deleting the row would have made
+that rule dead); and packages cap at three, with ⚠️ "Not allocated to a package" kept OUT of the
+fold.
+
+### Verified
+
+**Every figure identical to before**, read off the rendered DOM, with the BEFORE build rendered in
+the **same shell** so the geometry is comparable. 24 static gates; the package fold exercised at
+1 / 3 / 4 / 8 lots; contrast min **5.84 light / 6.14 dark**, all AA; at a real 375px the page does
+**not** scroll sideways and the table scrolls in its own box. `wiring-check` 139/139, `test-boq.js`
+66/0, `dead-hooks` 9 (documented baseline).
+⚠️ **Not verified signed in.**
+
+⚠️⚠️ **TWO HARNESS FAULTS REPORTED DEFECTS THAT DO NOT EXIST**, and both are reusable: a fixed
+`?v=` served the browser's **stale** `module.css`, so new rules read as "not applying" (the token is
+unique per build now); and the harness **omitted `.pd-main` / `.pd-content`**, whose `min-width:0`
+is the only thing stopping `#cc-view` — a flex item of `body.pd-app` — from blowing out to the
+register table's 1020px floor. It reported a sideways scroll at 375px that the product does not
+have. Neutralising the new table changed **nothing**, which is what proved it was the shell.
+⚠️ Also corrected: this module's "mixed line endings" note is **stale** — `module.js` and
+`module.css` are pure LF today, 0 CRLF, measured before anchoring a patch on `\n`.
+
+`module.js` / `module.css` → `?v=20260916g`; **`MODULE_V` → `20260916g`**.
+⚠️ Not `f`: that token was consumed by Project Schedule Summary work that is **deliberately not in
+this commit** (it is entangled with another session's uncommitted portfolio files), so the next free
+token is `g` — sort-checked against the `20260916e` the live site serves.
+
 ### 2026-09-16 (e) — The Portfolio Overview stops reporting levels and starts ranking attention
 
 **Run `migrations/2026-09-15-scurve-status-per-project.sql`.** Phase D of the portfolio plan.
