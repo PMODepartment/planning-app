@@ -6,8 +6,8 @@
   <link rel="icon" type="image/png" href="assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
-  <title>Personal Dashboard &mdash; Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910z5" />
+  <title>My Work &mdash; Planners Dashboard</title>
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260916u" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260910w3" />
 </head>
 <body>
@@ -29,7 +29,7 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
-        <!-- No static title here — it duplicated "Personal Dashboard" right below it
+        <!-- No static title here — it duplicated "My Work" right below it
              (found 2026-09-01 auditing a real render of the app; dashboard.html already
              settled on this shape: switcher + user-bar only, the page heading carries
              the title). -->
@@ -41,7 +41,7 @@
 
       <div class="pd-main">
         <div class="pd-home-head">
-          <h2 id="mw-hello">Personal Dashboard</h2>
+          <h2 id="mw-hello">My Work</h2>
           <p class="mw-note" id="mw-sub">Everything assigned to your account, across every project you can access.</p>
         </div>
         <div id="mw-body"><p class="mw-empty">Loading&hellip;</p></div>
@@ -50,12 +50,13 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260910za"></script>
-  <script src="assets/js/auth.js?v=20260901b"></script>
-  <script src="assets/js/db.js?v=20260909n"></script>
+  <script src="assets/js/config.js?v=20260915a"></script>
+  <script src="assets/js/auth.js?v=20260915a"></script>
+  <script src="assets/js/db.js?v=20260916c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/ui.js?v=20260909s"></script>
-  <script src="assets/js/icons.js?v=20260909ui"></script>
+  <script src="assets/js/ui.js?v=20260916u"></script>
+  <script src="assets/js/notebook.js?v=20260915d"></script>
+  <script src="assets/js/icons.js?v=20260915f"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -65,7 +66,7 @@
       UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'personal-dashboard', base: '', isAdmin: isAdmin });
       UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'portfolio', base: '' });
       var first = (profile.name || '').trim().split(/\s+/)[0] || 'there';
-      document.getElementById('mw-hello').textContent = 'Personal Dashboard \u2014 ' + first;
+      document.getElementById('mw-hello').textContent = 'My Work \u2014 ' + first;
       MyWork.render(document.getElementById('mw-body'), user, profile);
       document.getElementById('mw-refresh').onclick = function () {
         MyWork.render(document.getElementById('mw-body'), user, profile);

@@ -24,6 +24,81 @@
 
   function getSB() { return window.__sb; }
 
+  // ---- Portfolio scope -------------------------------------------------
+  // A per-TAB flag, parallel to `pd_project` sessionStorage: true when a
+  // module was opened from the Portfolio side of the app (ui.js's renderNav
+  // appends `#pd_scope=portfolio` to every module link in its 'portfolio'
+  // branch) rather than from a specific project's own module grid. Read out
+  // of the hash exactly ONCE — into sessionStorage, which is what makes it
+  // survive whatever a module's own screen-switching does to the hash
+  // afterward (UI.bindHistoryState rewrites it on every view change).
+  //
+  // ⚠️ This generalizes the one-off convention Pormac shipped for itself
+  // (2026-09-14, `#pmc_scope=portfolio`) into something every module can
+  // read the same way, with no module-specific hash key to invent.
+  var PORTFOLIO_KEY = 'pd_portfolio';
+  if (/(^|[#&])pd_scope=portfolio(&|$)/.test(location.hash)) {
+    try { sessionStorage.setItem(PORTFOLIO_KEY, '1'); } catch (e) {}
+  }
+  function isPortfolioScope() {
+    try { return sessionStorage.getItem(PORTFOLIO_KEY) === '1'; } catch (e) { return false; }
+  }
+  // Called when a planner picks a REAL project out of the shared selector
+  // (UI.enhanceProjectSelect) while in Portfolio scope — leaving Portfolio
+  // for a specific project is the one place this flag is cleared again.
+  function setPortfolioScope(on) {
+    try {
+      if (on) sessionStorage.setItem(PORTFOLIO_KEY, '1');
+      else sessionStorage.removeItem(PORTFOLIO_KEY);
+    } catch (e) {}
+  }
+
+  // ⚠️⚠️ WRITES ARE BLOCKED AT THE ONE CHOKEPOINT EVERY MODULE'S WRITE GOES
+  // THROUGH, NOT RE-IMPLEMENTED PER MODULE. Every module in this app talks to
+  // Postgres the same way — `AppAuth.getSB().from(table).insert/update/
+  // upsert/delete(...)` — so wrapping `.from()` here makes "Portfolio is
+  // read-only" true for every module at once, present and future, without a
+  // single module file having to remember to check a flag before its own
+  // Save/Delete button fires. A module that ALSO hides its own Add/Edit
+  // buttons while in Portfolio scope is a nicer UI; this is the guarantee
+  // that holds even if it doesn't.
+  // ⚠️ `.rpc(...)` is deliberately NOT touched here — several modules read
+  // through a security-definer RPC (e.g. `is_admin()`), and blocking RPCs
+  // indiscriminately would break those reads. The handful of write-shaped
+  // RPCs are each still gated by their own `created_by =
+  // auth.uid()`/role checks server-side, same as if a viewer called them.
+  (function wrapWritesForPortfolio() {
+    if (window.__sb.__pdPortfolioWrapped) return;
+    window.__sb.__pdPortfolioWrapped = true;
+    var rawFrom = window.__sb.from.bind(window.__sb);
+    var WRITE_METHODS = ['insert', 'update', 'upsert', 'delete'];
+    window.__sb.from = function (table) {
+      var qb = rawFrom(table);
+      if (!isPortfolioScope()) return qb;
+      WRITE_METHODS.forEach(function (m) {
+        if (typeof qb[m] !== 'function') return;
+        qb[m] = function () {
+          if (window.UI && UI.toast) {
+            UI.toast('Portfolio is read-only — switch to a project to make changes.', 'warn');
+          }
+          var err = { message: 'Portfolio view is read-only.', code: 'PD_PORTFOLIO_READONLY' };
+          // A thenable that also carries the chainable methods a caller might
+          // still call before awaiting (.select()/.eq()/.single()/...) — every
+          // one of them just returns the same blocked result rather than
+          // reaching Postgres.
+          var blocked = {
+            then: function (resolve, reject) { return Promise.resolve({ data: null, error: err }).then(resolve, reject); }
+          };
+          ['select', 'eq', 'neq', 'in', 'is', 'match', 'single', 'maybeSingle', 'order', 'limit'].forEach(function (k) {
+            blocked[k] = function () { return blocked; };
+          });
+          return blocked;
+        };
+      });
+      return qb;
+    };
+  })();
+
   // Roles, highest → lowest privilege.
   var ROLES = ['super_admin', 'admin', 'planner', 'user', 'viewer'];
   var AUTO_APPROVE = ['super_admin', 'admin', 'planner'];
@@ -142,6 +217,34 @@
     return (profile.projects || []).indexOf(projectId) !== -1;
   }
 
+  // moduleVisible(m, profile): the ONE place that decides whether a module
+  // shows up for a signed-in user — read by UI.renderNav, ModulesGrid.visible
+  // (which dashboard.html's own tile grid delegates to), and Portfolio
+  // Overview's hardcoded tab list, so all three surfaces a module can appear
+  // on cannot disagree about it.
+  //
+  // ⚠️ `m.superAdminOnly` (config.js) is still the DEFAULT — untouched here —
+  //    and `profile.module_access` (2026-09-15, admin.html's per-user Modules
+  //    editor) is an OVERRIDE on top of it, not a second independent rule:
+  //    - `module_access` absent/null → the role default alone decides, exactly
+  //      as before this existed. This is "Reset to default"'s whole effect.
+  //    - `module_access` a (possibly empty) array → it is the EXACT set of
+  //      keys this user may see, in EITHER direction: it can grant a
+  //      `superAdminOnly` module to a non-super_admin, or withhold an
+  //      ordinary module from anyone, role notwithstanding.
+  //    A plain boolean-per-module map could not express "never touched" vs
+  //    "deliberately set to nothing," which is exactly the distinction
+  //    Reset-to-default needs to act on.
+  // ⚠️ A retired module (`enabled:false`) is not this function's concern —
+  //    every caller already filters on `enabled` separately, and an override
+  //    naming a retired module's key is simply never asked about.
+  function moduleVisible(m, profile) {
+    if (profile && Array.isArray(profile.module_access)) {
+      return profile.module_access.indexOf(m.key) !== -1;
+    }
+    return !m.superAdminOnly || !!profile && profile.role === 'super_admin';
+  }
+
   async function login(email, password) {
     return getSB().auth.signInWithPassword({ email: email, password: password });
   }
@@ -190,7 +293,9 @@
     getSB: getSB, ROLES: ROLES,
     requireLogin: requireLogin, requireRole: requireRole, requireAdmin: requireAdmin,
     isAutoApprove: isAutoApprove, canAccessProject: canAccessProject,
+    moduleVisible: moduleVisible,
     login: login, loginWithMicrosoft: loginWithMicrosoft, register: register, logout: logout,
+    isPortfolioScope: isPortfolioScope, setPortfolioScope: setPortfolioScope,
   };
   window.getSB = getSB;
 })();

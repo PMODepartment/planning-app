@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260916u" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260910w3" />
 </head>
 <body>
@@ -61,16 +61,23 @@
           <div class="pd-perf-grid" id="perf-grid"></div>
           <div class="pd-viz" id="viz-scurve"></div>
           <div class="pd-viz" id="viz-program"></div>
-          <div class="pd-viz-2col">
-            <div class="pd-viz" id="viz-mom"></div>
-            <div class="pd-viz" id="viz-issues"></div>
-          </div>
-          <!-- ⚠️ Approaching Deadlines sits BELOW the two registers at the owner's request
-               (2026-09-01). The order it makes is a reading order: the curve and the programme
-               say where the project stands, the two registers say what is being talked about,
-               and this says what falls due next — the thing you leave the dashboard to act on. -->
-          <div class="pd-viz" id="viz-due"></div>
-          <div class="pd-viz" id="viz-photos" style="margin-top:12px;"></div>
+          <!-- ⚠⚠ TWO PANELS WERE REMOVED HERE ON 2026-09-15, both at the owner's word.
+               • Minutes of Meeting (`viz-mom`): *"No need to have the minutes"*. The MODULE and its
+                 launcher tile are untouched — only the dashboard panel went.
+               • Approaching Deadlines (`viz-due`): *"approaching deadlines of activities no need"*.
+                 It had been placed below the registers on 2026-09-01 for a reading order that
+                 ended on "what falls due next"; the owner no longer wants that ending.
+               ⚠ `.pd-viz-2col` went with them. It held MoM beside Issues, and a two-column wrapper
+                 with one child is a half-width panel next to a gap. Issues is full width now.
+               ⚠ ORDER, owner 2026-09-15: *"move the contracts & claims section after issues &
+                 concerns and move up progress photos before issues & concerns."* So the band reads
+                 what the project LOOKS like (photos), then what is wrong with it (issues), then
+                 what it is worth (contracts). The `style="margin-top:12px"` that rode on
+                 `#viz-photos` is dropped with the move — `.pd-viz` already declares exactly that
+                 margin, so the inline copy only ever restated the class. -->
+          <div class="pd-viz" id="viz-photos"></div>
+          <div class="pd-viz" id="viz-issues"></div>
+          <div class="pd-viz" id="viz-contracts"></div>
         </section>
 
 
@@ -245,7 +252,14 @@
       color:var(--pd-muted); font-variant-numeric:tabular-nums; }
 
     /* ---- "My items" drawer -------------------------------------------------------------------- */
-    .mw-fab { position:fixed; right:18px; bottom:18px; z-index:60; display:inline-flex; align-items:center;
+    /* ⚠️ RAISED 18px → 74px ON 2026-09-15, and only because THIS page has two floating
+       buttons. The personal notebook's own FAB (`.pd-nb`, dashboard.css) is fixed at
+       right:18px; bottom:18px on all 24 shell pages, so leaving this one there would stack
+       two controls on the same pixels — on the one page that has both. 74px = the notebook
+       FAB's height plus a gap, measured rather than guessed.
+       ⚠️ The notebook does NOT move instead: it is on every page, this is on one, so the
+       page with the extra control is the page that yields. */
+    .mw-fab { position:fixed; right:18px; bottom:74px; z-index:60; display:inline-flex; align-items:center;
       gap:8px; padding:11px 15px; border-radius:var(--pd-radius-pill); border:1px solid var(--pd-line);
       background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:var(--pd-fs-sm); font-weight:700;
       cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.32); }
@@ -420,14 +434,18 @@
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260910za"></script>
-  <script src="assets/js/auth.js?v=20260901b"></script>
-  <script src="assets/js/db.js?v=20260909n"></script>
+  <script src="assets/js/config.js?v=20260915a"></script>
+  <script src="assets/js/auth.js?v=20260915a"></script>
+  <script src="assets/js/db.js?v=20260916c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/scurve.js?v=20260901a"></script>
-  <script src="assets/js/ui.js?v=20260909s"></script>
-  <script src="assets/js/icons.js?v=20260909ui"></script>
-  <script src="assets/js/modules-grid.js?v=20260911z4"></script>
+  <script src="assets/js/scurve.js?v=20260916r"></script>
+  <script src="assets/js/ui.js?v=20260916u"></script>
+  <!-- PDClaims — the shortfall/decided/recovery rules this page's Contracts & Claims panel
+       shares with the register's own band and the portfolio view. -->
+  <script src="assets/js/claims.js?v=20260915a"></script>
+  <script src="assets/js/notebook.js?v=20260915d"></script>
+  <script src="assets/js/icons.js?v=20260915f"></script>
+  <script src="assets/js/modules-grid.js?v=20260916s"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -439,6 +457,27 @@
     var CURUSER = null;   // the signed-in auth user; My Work needs the id, not the profile
 
     AppAuth.requireLogin(function (user, profile) {
+      /* ==== PORTFOLIO SCOPE IS NOT THIS PAGE ==============================================
+         Owner, with a screenshot of this page headed "Portfolio - every project you can see"
+         and then rendering One Portwood's own POC, SPI and S-Curve: *"portfolio view but
+         previews the project level dashboard."*
+         Every module page renders its sidebar under mode:'project' whatever nav family linked
+         to it (ui.js says so in as many words), so the Dashboard row there points at THIS file.
+         Opened from a module in portfolio scope it drew whichever project `pd_project` happened
+         to hold - one project's figures under a heading promising every project.
+         ⚠️⚠️ THE GUARD IS HERE, NOT ONLY ON THE LINK. Fixing the link alone leaves the bare URL,
+         a bookmark and the Back button all landing on the same wrong page; this catches every
+         route in. ⚠️ `location.replace`, so a page nobody meant to open does not sit in the Back
+         history and bounce the planner straight out of the portfolio again.
+         ⚠️ It cannot trap anyone: picking a real project calls AppAuth.setPortfolioScope(false)
+         from the shared selector, so the next visit here renders normally.
+         ⚠️ Cache-busted the same way the sidebar builds that link - MODULE_V, falling back to the
+         bare path rather than to a version string that does not exist. */
+      if (AppAuth.isPortfolioScope()) {
+        location.replace('modules/portfolio-overview/index.html' +
+          (window.ModulesGrid && ModulesGrid.MODULE_V ? '?v=' + encodeURIComponent(ModulesGrid.MODULE_V) : ''));
+        return;
+      }
       CURUSER = user;
       UI.renderUserBar(profile);
       var first = (profile.name || profile.email || '').split(' ')[0];
@@ -669,54 +708,6 @@
       if (n === 0) return '<span class="pd-tag pd-tag-warn">Due today</span>';
       if (n <= 7) return '<span class="pd-tag pd-tag-warn">in ' + n + 'd</span>';
       return '<span class="pd-tag">in ' + n + 'd</span>';
-    }
-
-    // ---- Approaching deadlines ------------------------------------------------------------------
-    function renderDue() {
-      var sch = MET['project-schedule'] || {};
-      var list = (sch.lists && sch.lists.dueSoon) || [];
-      var total = (sch.lists && sch.lists.dueSoon__total) || 0;
-      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'project-schedule'; });
-      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open schedule</a>' : '';
-      if (!sch.__rows) {
-        return vizEmpty('viz-due', 'Approaching Deadlines',
-          'No schedule on this project yet, so nothing can be due.');
-      }
-      if (!list.length) {
-        return vizEmpty('viz-due', 'Approaching Deadlines',
-          'Nothing unfinished falls due in the next 30 days, and nothing is overdue from the last 30. ' +
-          '⚠️ Activities with <b>no finish date</b> are not counted here — they cannot be late if nobody said when they were due.');
-      }
-      // ⚠️ The overdue figure is the DECLARED `overdue` list's total, not a count of the rows on
-      //    screen. Counting the visible slice would have said "1 already overdue" over a schedule
-      //    with nine — the eight-row cap is a display limit, and a headline number must not inherit
-      //    it. The two lists share their where-clauses; only the date window differs.
-      var overdue = (sch.lists && sch.lists.overdue__total) || 0;
-      var body = list.map(function (r) {
-        var isMs = String(r.activity_type || '').toLowerCase().indexOf('milestone') !== -1;
-        var pc = Math.max(0, Math.min(100, Math.round(r.percent_complete || 0)));
-        var n = _dueIn(r.end_date);
-        return '<li class="pd-list-r pd-due-r' + (n != null && n < 0 ? ' late' : '') + '">' +
-          '<span class="pd-list-t" title="' + Fmt.esc(r.activity_name || '') + '">' +
-            (isMs ? '<b class="pd-ms">◆</b> ' : '') + Fmt.esc(r.activity_name || r.activity_id || 'Untitled') +
-            '<small>' + Fmt.esc(r.activity_id || '') + (r.work_type ? ' &middot; ' + Fmt.esc(r.work_type) : '') + '</small>' +
-          '</span>' +
-          '<span class="pd-due-p">' + pc + '%</span>' +
-          '<span class="pd-list-d">' + Fmt.esc(Fmt.date(r.end_date)) + '</span>' +
-          _dueChip(r.end_date) + '</li>';
-      }).join('');
-      document.getElementById('viz-due').innerHTML =
-        vizHead('Approaching Deadlines',
-          // ⚠️ The window is stated in full. "Due within 30 days" would be a half-truth: the list
-          //    deliberately reaches 30 days into the PAST, because an activity that was due last
-          //    week and is still unfinished is the most urgent thing on it.
-          total + ' unfinished activit' + (total === 1 ? 'y' : 'ies') + ' due in the next 30 days or the last 30' +
-          (overdue ? ' &middot; <span class="pd-stat-warn">' + overdue + ' already overdue</span>' : ''),
-          link) +
-        '<ul class="pd-list pd-list-top">' + body + '</ul>' +
-        (total > list.length
-          ? '<div class="pd-viz-s pd-mini-note">Showing the ' + list.length + ' soonest of ' + total + '.</div>'
-          : '');
     }
 
     // ---- S-Curve panel -------------------------------------------------------------------------
@@ -1098,81 +1089,120 @@
         (rowsPv.length > 9 ? '<div class="pd-viz-s pd-mini-note">Showing the 9 earliest of ' + rowsPv.length + ' trades.</div>' : '');
     }
 
-    // ---- 2. Minutes of Meeting -----------------------------------------------------------------
-    // ⚠️ A module with NO ROWS is reported as "not in use", never as "0 drafts". The rule the old
-    //    status band applied to registers applies here too: zero on an unused module reads as good
-    //    news, and "no minutes have ever been recorded" is not good news.
-    function renderMom() {
-      var m = MET['minutes-of-meeting'] || {};
-      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'minutes-of-meeting'; });
+    // ---- 2. Contracts & Claims -----------------------------------------------------------------
+    /* Owner 2026-09-15: *"add summary ng contracts claims / contract - # of packages, total amount
+       / change orders - submitted, evaluated, approved, disputed total amts / cost claims - ... /
+       eot claims - ... total days"*.
+
+       ⚠ THE MONEY BLOCKS AND THE DAYS BLOCK ARE THE SAME SHAPE ON PURPOSE. A planner reading down
+         this panel is asking the same question three times — what did we ask for, what came back —
+         and only the unit changes. One row builder, one order of cells, `fmt` swapped.
+       ⚠ "Disputed" is two cells, not one: see the note on the metrics in config.js. */
+    function ccRow(label, nRecords, m, p, fmt) {
+      var sub = _n(m[p + 'Sub']), ev = _n(m[p + 'Eval']), ap = _n(m[p + 'Appr']);
+      var disap = _n(m[p + 'Disap']);
+      var decSub = _n(m[p + 'DecSub']) || 0, decAppr = _n(m[p + 'DecAppr']) || 0;
+      /* ⚠️ The clamp moved to PDClaims (assets/js/claims.js) on 2026-09-15, unchanged — an
+         approval ABOVE what was submitted is a data-entry question, not a negative dispute, and a
+         "−₱2.1M disputed" cell reads as a credit. It lives there because the register's own band
+         and the portfolio view apply the identical rule, and three copies of it is how the three
+         screens come to disagree about the same register. Scalar form, because this panel holds
+         server-side aggregates (config.js `dash.metrics`) rather than rows. */
+      var short = PDClaims.shortfall(decSub, decAppr);
+      return '<div class="pd-list-h">' + Fmt.esc(label) +
+          (nRecords ? ' &mdash; ' + nRecords + ' record' + (nRecords === 1 ? '' : 's') : '') + '</div>' +
+        '<div class="pd-mini-band">' +
+          miniCell('Submitted', fmt(sub), null, 'as claimed') +
+          miniCell('Evaluated', fmt(ev), null, 'after review') +
+          miniCell('Approved', fmt(ap), ap ? true : null, 'client approved') +
+          miniCell('Disapproved', fmt(disap), disap ? false : null, 'rejected outright') +
+          miniCell('Shortfall', fmt(short), short ? false : null,
+            decSub ? 'claimed not certified' : 'nothing decided yet') +
+        '</div>';
+    }
+    function renderContracts() {
+      var m = MET['contracts-claims'] || {};
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'contracts-claims'; });
       var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open module</a>' : '';
       if (!m.__rows) {
-        return vizEmpty('viz-mom', 'Minutes of Meeting',
-          'No minutes recorded on this project yet. Record one in <b>Minutes of Meeting</b> — ' +
-          'issues raised on the register are pulled onto the next agenda from there.');
+        return vizEmpty('viz-contracts', 'Contracts & Claims',
+          'Nothing on this register yet. The contract, its packages and any change orders, claims ' +
+          'and extensions of time are recorded in <b>Contracts &amp; Claims</b>.');
       }
-      var total = m.__rows || 0, draft = _n(m.draft) || 0, latest = m.latest || null;
-      var issued = Math.max(0, total - draft);
-      var pctIssued = total ? Math.round(issued / total * 100) : 0;
-      var series = _n(m.series) || 0;
-      // ⚠️ Escape the DATES, not the assembled string. Wrapping the whole thing in Fmt.esc()
-      // turned the '&rarr;' entity into a literal "&rarr;" on screen — the same double-escape
-      // that made the Issues panel read "Issues &amp; Concerns".
-      var span = (m.earliest && latest && m.earliest !== latest)
-        ? Fmt.esc(Fmt.date(m.earliest)) + ' &rarr; ' + Fmt.esc(Fmt.date(latest))
-        : (latest ? Fmt.esc(Fmt.date(latest)) : null);
+      // ⚠ The packages come from the COMPANION table (`packages`), not from a record_type. An
+      //   empty/absent companion is not an error — a project can hold a contract and no package
+      //   breakdown — so it degrades to a dash rather than hiding the block.
+      var pk = m.sub || [];
+      var pkN = pk.length;
+      var pkAmt = pk.reduce(function (a, r) { var v = Number(r.contract_amount); return a + (isFinite(v) ? v : 0); }, 0);
+      var money = function (v) { return v == null ? '\u2014' : Fmt.moneyShort(v); };
+      var days = function (v) { return v == null ? '\u2014' : Math.round(v).toLocaleString() + 'd'; };
 
-      // ⚠️ The LATEST MEETING'S ACTION ITEMS, not a list of meeting titles (owner, 2026-09-01). A
-      // list of titles tells a planner nothing they cannot get from the count above it; what they
-      // came for is what was decided and who owes it.
-      var last = (m.recent || [])[0] || null;
-      var items = last ? (m.sub || []).filter(function (r) { return r.mom_id === last.id; }) : [];
-      // Open first, then by due date — the ones with no date last, since an undated item cannot
-      // be ranked against a dated one without inventing a deadline for it.
-      items.sort(function (a, b) {
-        var ao = a.status === 'Closed' ? 1 : 0, bo = b.status === 'Closed' ? 1 : 0;
-        if (ao !== bo) return ao - bo;
-        if (!a.due_date) return b.due_date ? 1 : 0;
-        if (!b.due_date) return -1;
-        return a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0;
-      });
-      var openN = items.filter(function (r) { return r.status !== 'Closed'; }).length;
-      var rows = items.slice(0, 4).map(function (r) {
-        var txt = r.action_item || r.description || 'Untitled item';
-        var closed = r.status === 'Closed';
-        return '<li class="pd-list-r' + (closed ? ' done' : '') + '">' +
-          '<span class="pd-list-t" title="' + Fmt.esc(txt) + '">' +
-            (r.item_no ? '<b class="pd-no">' + Fmt.esc(r.item_no) + '</b> ' : '') + Fmt.esc(txt) +
-            (r.owner ? '<small>' + Fmt.esc(r.owner) + '</small>' : '') + '</span>' +
-          (closed ? '<span class="pd-tag pd-tag-ok">Closed</span>' : _dueChip(r.due_date)) +
-          '</li>';
+      /* ⚠⚠ THE PACKAGES ARE THE CONTRACT VALUE, BROKEN UP — NOT A FIGURE BESIDE IT. Owner
+         2026-09-15, on the shipped panel: *"The packages shouldn't be a separate KPI card. This is
+         a breakdown of the whole contract value. Let's show it that way."* A `Packages: 3` cell
+         answered "how many", which nobody asked; what a reader wants from a package list is
+         WHICH PART OF THE MONEY each one is. So the value is the headline and the packages are
+         rows under it, each carrying its own share.
+         ⚠ The contract VALUE is still the register's own Contract rows (`contractAmt`), not the sum
+           of `packages.contract_amount`: the module's "Total contract value" KPI reads that same
+           figure, and two screens quoting different contract values is worse than one quoting
+           fewer. What changed is how the packages are shown against it, not which number is the
+           contract.
+         ⚠ WHEN THEY DISAGREE, THE GAP IS A ROW, NOT A FOOTNOTE. Packages summing to less than the
+           contract leaves work not allocated to any package, and that remainder is the single most
+           useful thing this block can say — so it is drawn as its own row rather than reconciled
+           away. Summing to MORE is a data error and says so, because a negative remainder drawn as
+           a bar would read as a credit. */
+      var ctVal = _n(m.contractAmt);
+      // The denominator for the shares. Falls back to the packages' own total so the bars still
+      // mean something on a project that has packages but no Contract record yet.
+      var ctBase = (ctVal && ctVal > 0) ? ctVal : pkAmt;
+      var pkRows = pk.slice().sort(function (a, b) {
+        return (Number(b.contract_amount) || 0) - (Number(a.contract_amount) || 0);
+      }).map(function (r) {
+        var v = Number(r.contract_amount);
+        var share = (ctBase && isFinite(v)) ? Math.round(v / ctBase * 100) : null;
+        var nm = [r.code, r.name].filter(Boolean).join(' · ') || 'Untitled package';
+        return '<li class="pd-list-r">' +
+          '<span class="pd-list-t">' + Fmt.esc(nm) +
+            '<small>' + (share == null ? 'no amount set' : share + '% of the contract value') +
+            (String(r.status) === 'archived' ? ' &middot; archived' : '') + '</small></span>' +
+          '<span class="pd-tag">' + money(isFinite(v) ? v : null) + '</span></li>';
       }).join('');
-      var itemsHead = last
-        ? '<div class="pd-list-h">From ' + Fmt.esc(last.title || 'the latest meeting') +
-          (last.meeting_date ? ' &middot; ' + Fmt.esc(Fmt.date(last.meeting_date)) : '') +
-          ' &mdash; ' + (items.length ? openN + ' open of ' + items.length + ' item' + (items.length === 1 ? '' : 's')
-                                      : 'no action items recorded') + '</div>'
+      var rest = (ctVal || 0) - pkAmt;
+      var restRow = (pkN && ctVal && rest > 1)
+        ? '<li class="pd-list-r"><span class="pd-list-t">Not allocated to a package' +
+          '<small>' + Math.round(rest / ctBase * 100) + '% of the contract value</small></span>' +
+          '<span class="pd-tag pd-tag-warn">' + money(rest) + '</span></li>'
+        : '';
+      var overNote = (pkN && ctVal && rest < -1)
+        ? '<div class="pd-viz-s pd-mini-note"><span class="pd-stat-warn">The packages total ' +
+          money(pkAmt) + '</span>, which is more than the contract records add up to. One of the two ' +
+          'is wrong — the package amounts or the contract record.</div>'
         : '';
 
-      document.getElementById('viz-mom').innerHTML =
-        vizHead('Minutes of Meeting',
-          total + ' meeting' + (total === 1 ? '' : 's') + (span ? ' &middot; ' + span : ''),
+      document.getElementById('viz-contracts').innerHTML =
+        vizHead('Contracts & Claims',
+          (m.__rows || 0) + ' record' + ((m.__rows || 0) === 1 ? '' : 's'),
           link) +
-        '<div class="pd-mini-band">' +
-          miniCell('Meetings', String(total), null, 'Recorded on this project') +
-          miniCell('Distributed', String(issued), issued === total ? true : null, pctIssued + '% are out') +
-          miniCell('Draft', String(draft), draft ? false : true, draft ? 'Not yet distributed' : 'None in draft') +
-          miniCell('Recurring', String(series), null,
-            series ? 'From a meeting schedule' : 'All one-off meetings') +
-        '</div>' +
-        '<div class="pd-mini-bar" title="' + issued + ' distributed of ' + total + '"><i style="width:' + pctIssued + '%"></i></div>' +
-        (last ? itemsHead : '') +
-        (rows ? '<ul class="pd-list">' + rows + '</ul>' : '') +
-        (draft
-          ? '<div class="pd-viz-s pd-mini-note"><span class="pd-stat-warn">' + draft +
-            ' minute' + (draft === 1 ? '' : 's') + ' still in draft.</span> A minute nobody has ' +
-            'received cannot carry an action.</div>'
-          : '<div class="pd-viz-s pd-mini-note">Every recorded minute has been distributed.</div>');
+        '<div class="pd-list-h">Contract value &mdash; ' + money(ctVal) +
+          (pkN ? ' across ' + pkN + ' package' + (pkN === 1 ? '' : 's') : '') + '</div>' +
+        (pkN
+          ? '<div class="pd-mini-bar" title="' + money(pkAmt) + ' allocated to packages of ' +
+              money(ctVal) + '"><i style="width:' +
+              Math.max(0, Math.min(100, ctBase ? Math.round(pkAmt / ctBase * 100) : 0)) + '%"></i></div>' +
+            '<ul class="pd-list">' + pkRows + restRow + '</ul>' + overNote
+          : '<div class="pd-viz-s pd-mini-note">No package breakdown on this contract. Packages are ' +
+            'set up in <b>Contracts &amp; Claims</b>, and every change order, claim and extension of ' +
+            'time can then be raised against one.</div>') +
+        ccRow('Change orders', _n(m.coAllN) || 0, m, 'co', money) +
+        ccRow('Cost claims', _n(m.claimN) || 0, m, 'cl', money) +
+        ccRow('Extension of time', _n(m.eotN) || 0, m, 'eo', days) +
+        '<div class="pd-viz-s pd-mini-note">Submitted, evaluated and approved are the pipeline' +
+          ' columns on each record. <b>Disapproved</b> is what the client rejected outright;' +
+          ' <b>shortfall</b> is submitted minus approved across decided records — claimed, not' +
+          ' certified. Records still pending a decision count in neither.</div>';
     }
 
     // ---- 3. Issues & Concerns ------------------------------------------------------------------
@@ -1186,11 +1216,11 @@
       //    a second time and the panel rendered the literal text "Issues &amp; Concerns".
       if (!m.__rows) {
         return vizEmpty('viz-issues', 'Issues & Concerns',
-          'Nothing on this register yet. ⚠️ An empty register is not the same as a clear one — ' +
+          'Nothing on this register yet. An empty register is not the same as a clear one — ' +
           'if issues are being raised in meetings, they belong here too.');
       }
       var total = m.__rows || 0, open = _n(m.open) || 0, closed = _n(m.closed) || 0;
-      var hold = _n(m.onHold) || 0, crit = _n(m.critical) || 0, high = _n(m.high) || 0;
+      var hold = _n(m.onHold) || 0;
       var other = Math.max(0, total - open - closed);
       var pctClosed = total ? Math.round(closed / total * 100) : 0;
 
@@ -1202,15 +1232,16 @@
       var openTotal = (m.lists && m.lists.open__total) || 0;
       var rows = openRows.slice(0, 4).map(function (r) {
         var st = String(r.status || '').trim();
-        var sev = String(r.severity || '').trim();
-        var sevCls = sev === 'Critical' ? ' pd-tag-bad' : sev === 'High' ? ' pd-tag-warn' : '';
+        /* ⚠ The severity TAG went with the Critical/High cells (2026-09-15). Keeping it would
+           have left the list looking as though this register classifies issues, on a field the
+           Issues module never writes — and it would have been the only place in the app still
+           showing it. Half a removal is worse than none. */
         var age = _dueIn(r.date_raised);
         return '<li class="pd-list-r">' +
           '<span class="pd-list-t" title="' + Fmt.esc(r.title || '') + '">' + Fmt.esc(r.title || 'Untitled entry') +
             '<small>' + (r.date_raised ? 'raised ' + Fmt.esc(Fmt.date(r.date_raised)) +
               (age != null && age < 0 ? ' &middot; ' + Math.abs(age) + ' days open' : '') : 'no date raised') +
               (r.champion ? ' &middot; ' + Fmt.esc(r.champion) : '') + '</small></span>' +
-          (sev ? '<span class="pd-tag' + sevCls + '">' + Fmt.esc(sev) + '</span>' : '') +
           '<span class="pd-tag' + (st === 'On Hold' ? ' pd-tag-warn' : '') + '">' + Fmt.esc(st || 'No status') + '</span>' +
           '</li>';
       }).join('');
@@ -1225,9 +1256,12 @@
           (m.latest ? ' &middot; latest raised ' + Fmt.esc(Fmt.date(m.latest)) : ''),
           link) +
         '<div class="pd-mini-band">' +
-          miniCell('Open', String(open), open ? false : true, hold ? hold + ' of them on hold' : 'None on hold') +
-          miniCell('Critical', String(crit), crit ? false : true, crit ? 'Open and critical' : 'None open') +
-          miniCell('High', String(high), high ? false : null, high ? 'Open and high' : 'None open') +
+          /* ⚠ The Critical and High cells were removed on 2026-09-15: `issues_lessons.severity`
+             is an imported column the Issues module never writes, so both read 0 for anything
+             raised in the app. See the note where their metrics were declared. `On hold` takes
+             their place — it is the one open-register distinction this module DOES record. */
+          miniCell('Open', String(open), open ? false : true, open ? 'awaiting resolution' : 'nothing open') +
+          miniCell('On hold', String(hold), hold ? false : null, hold ? 'open but parked' : 'none parked') +
           miniCell('Closed', String(closed), closed ? true : null, pctClosed + '% of the register') +
         '</div>' +
         '<div class="pd-mini-bar" title="' + closed + ' closed of ' + total + '"><i style="width:' + pctClosed + '%"></i></div>' +
@@ -1399,12 +1433,14 @@
       // Each panel is independent: one module's missing data must not blank the others.
       // Each panel is independently guarded: one module's bad data must not blank the rest.
       try { renderPerf(); } catch (e) { var pg = document.getElementById('perf-grid'); if (pg) pg.innerHTML = '<div class="pd-viz-empty">Could not draw the performance row.</div>'; }
-      try { renderDue(); } catch (e) { vizEmpty('viz-due', 'Approaching Deadlines', 'Could not draw this panel.'); }
       try { renderScurve(); } catch (e) { vizEmpty('viz-scurve', 'S-Curve', 'Could not draw this panel.'); }
       try { renderProgram(); } catch (e) { vizEmpty('viz-program', 'Project Schedule & Milestones', 'Could not draw this panel.'); }
-      try { renderMom(); } catch (e) { vizEmpty('viz-mom', 'Minutes of Meeting', 'Could not draw this panel.'); }
-      try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
+      // ⚠ Kept in the band's own reading order (photos → issues → contracts). Each renderer writes
+      //   into its own host, so this order changes nothing on screen — it exists so the next reader
+      //   is not led to believe the markup order is something else.
       try { renderPhotos(); } catch (e) { vizEmpty('viz-photos', 'Progress Photos', 'Could not draw this panel.'); }
+      try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
+      try { renderContracts(); } catch (e) { vizEmpty('viz-contracts', 'Contracts &amp; Claims', 'Could not draw this panel.'); }
     }
 
     // Load every module's declared metrics in parallel, then draw once. A module that fails or

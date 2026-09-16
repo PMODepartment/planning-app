@@ -229,7 +229,7 @@ function winRemoveEventListener(type, fn) {
 const ctx = {
   __rafQueue: [],
   console, Promise, JSON, Math, Date, String, Number, Object, Array, Boolean,
-  setTimeout, clearTimeout, isNaN, parseInt, parseFloat, encodeURIComponent,
+  setTimeout, clearTimeout, setInterval, clearInterval, isNaN, parseInt, parseFloat, encodeURIComponent,
   document: documentStub,
   window: {},
   addEventListener: winAddEventListener,
@@ -243,6 +243,11 @@ const ctx = {
   sessionStorage: { _d: { pd_project: 'DEMO01' }, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); } },
   indexedDB: { open: () => ({ onupgradeneeded: null, onsuccess: null, onerror: null }) },
   URL: { createObjectURL: () => 'blob://x', revokeObjectURL() {} },
+  // Item 2 (2026-09-11, third round): capture.js's MediaRecorder.onstop
+  // handler builds a real `new Blob(...)` — a minimal stand-in (records
+  // its parts/type, nothing more) so that code path can genuinely execute
+  // here, same reasoning as every other minimal browser-API stand-in above.
+  Blob: function Blob(parts, opts) { this.parts = parts || []; this.type = (opts && opts.type) || ''; this.size = 0; },
   // Item 1 (2026-08-30): fileToImage()'s decode step, real enough to execute
   // makeThumbnailBlob()'s downscale math end to end — see FakeImage's own
   // comment above for why `src` firing onload synchronously is sufficient.
@@ -252,6 +257,29 @@ const ctx = {
   // path can run inside this sandbox at all; the fake ctx's stroke() doesn't
   // care what it's handed, it just records the call.
   Path2D: function Path2D(d) { this.d = d; },
+  // 2026-09-14: a controllable stand-in for the browser Notification API —
+  // `.permission` and `.requestPermission()`'s resolved value are mutated
+  // directly by individual tests (default/granted/denied), and `ctx.Notification`
+  // can be deleted entirely to model a browser/context where the API doesn't
+  // exist at all (module.js's own `typeof Notification === 'undefined'` guard
+  // is what that's checked against). Every constructed instance is recorded on
+  // `.__created` so a test can assert the real title/body/icon/tag it was
+  // given, not just that "something" was shown.
+  Notification: (function () {
+    function FakeNotification(title, opts) {
+      FakeNotification.__created.push({ title: title, opts: opts });
+      this.title = title; this.opts = opts; this.onclick = null;
+      this.close = function () { FakeNotification.__closed = (FakeNotification.__closed || 0) + 1; };
+    }
+    FakeNotification.permission = 'default';
+    FakeNotification.__created = [];
+    FakeNotification.__requestCount = 0;
+    FakeNotification.requestPermission = function () {
+      FakeNotification.__requestCount++;
+      return Promise.resolve(FakeNotification.permission);
+    };
+    return FakeNotification;
+  })(),
   fetch: async () => ({ ok: true, blob: async () => ({}) }),
   prompt: () => 'Typed Works Value',
   AppAuth: { getSB: () => sbStub, requireLogin() {} },
@@ -430,8 +458,10 @@ ok('location is derived purely from the breakdown breadcrumb on save (Add, Edit 
 // and untouched. Widened to fit that real, intentional field.
 ok('the insert/update payload now carries the UNION of every chosen Works value\'s derived trades + all chosen works in the array columns',
    /trades: tradeList,[\s\S]{0,120}works_multi: worksList,[\s\S]{0,120}trade: tradeList\[0\] \|\| null,[\s\S]{0,60}works: worksList\[0\] \|\| null,/.test(mjs));
-ok('the payload also carries view_name from the (now-mandatory) field, on Add, Edit AND the 360 upload',
-   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 3);
+ok('the payload also carries view_name from the (now-mandatory) field, on Add and Edit — read live off the DOM field at save time',
+   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 2);
+ok('…and the 360 draft review carries it too, but from draft.meta.viewName — captured into the draft when the review modal is left, not read live off a DOM field the background stitch may outlive',
+   /view_name: draft\.meta\.viewName \|\| null,/.test(mjs));
 ok('tolerantWrite gained a strip-rule for view_name, naming the migration file if it is missing',
    /'view_name' in job\.patch/.test(mjs) && /migrations\/2026-08-30-photos-round2\.sql/.test(mjs));
 ok('tolerantWrite also retries without trades/works_multi if that migration has not run yet',
@@ -739,7 +769,11 @@ console.log('\n[misc] insert().select() returns the new row id');
   // .pp-tab.active/.pd-btn-primary two entries up -- .ppr-panelabel.is-current
   // is the Current-slide pill in a presentation pane, .bim-revbadge is the
   // "current revision" pill in the floor-plan revision-history list.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.pp-kpmini-pin\b|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b|\.ppr-panelabel\.is-current\b|\.bim-revbadge\b/;
+  // Item 1 (2026-09-11, third round): .pp-stagermv is the SAME fixed-dark-
+  // scrim-corner-overlay family as .pp-cardsel/.pp-cardfav -- a remove-×
+  // button over an arbitrary staged photo/video thumbnail, never a
+  // themeable light surface.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.pp-kpmini-pin\b|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b|\.ppr-panelabel\.is-current\b|\.bim-revbadge\b|\.pp-stagermv\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -1903,13 +1937,18 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var filt = adjustmentsAreDefault\(r\.adjustments\) \? '' : ' style="filter:'/.test(mjs));
   // Overnight batch item 5: "extend feature of adjusting photo to videos
   // and 360" -- Adjust is no longer photo-only; it applies live to
-  // whichever media element is on screen (<video> for a video/360 row via
+  // whichever media element is on screen (<video> for a video row via
   // adjFilterEl, resolved from isVideo/isPano) and re-applies the instant
   // Save returns a new value.
-  ok('the lightbox applies the SAME filter live to whichever media element is on screen (img/video/pano) and re-applies it the instant Save returns a new value',
-     /var adjFilterEl = isVideo \? vidEl : \(isPano \? panoImg : imgEl\);/.test(mjs) &&
+  // ⚠️ 2026-09-11, THIRD round: a 360 row's filter target changed from the
+  // retired <img id="pp-lb-pano"> to the whole panorama WRAP
+  // (#pp-lb-panowrap) — a CSS filter composites everything rendered inside
+  // an element, WebGL canvas included, so filtering the wrap reaches the
+  // Pannellum viewer exactly as it did the old <img>.
+  ok('the lightbox applies the SAME filter live to whichever media element is on screen (img/video/panorama-wrap) and re-applies it the instant Save returns a new value',
+     /var adjFilterEl = isVideo \? vidEl : \(isPano \? panoWrap : imgEl\);/.test(mjs) &&
      /if \(adjFilterEl\) adjFilterEl\.style\.filter = cssFilterFor\(adjustmentsOf\(r\)\);/.test(mjs) &&
-     /var filterEl = isVideo \? vidEl : \(isPano \? panoImg : imgEl\);\s*if \(filterEl\) filterEl\.style\.filter = cssFilterFor\(newAdj\);/.test(mjs));
+     /var filterEl = isVideo \? vidEl : \(isPano \? panoWrap : imgEl\);\s*if \(filterEl\) filterEl\.style\.filter = cssFilterFor\(newAdj\);/.test(mjs));
   ok('the Adjust button is now available for photo, video AND 360 -- only Markup stays photo-only',
      /adjBtn\.style\.display = canWrite \? '' : 'none';/.test(mjs) &&
      /var markupExcluded = isVideo \|\| isPano;/.test(mjs));
@@ -3471,10 +3510,17 @@ console.log('\n[misc] insert().select() returns the new row id');
      /function keyPlanMiniMarkerHTML\(pin\) \{\s*return coneWedgeSVG\(pin\) \+\s*'<span class="pp-kpmini-pin pp-kpmini-pin-' \+ esc\(pin\.item_type \|\| 'photo'\) \+ '" '/.test(bmjs));
   // ⚠️ 2026-09-11, second round (item 4 — "the same pin as when adding,
   // the red circle with corresponding icon, don't use the green pin"):
-  // the mini pin is now 16px/circular/red with an icon inside, not a
-  // bare 12px teardrop coloured --pd-ok. Updated in place.
-  ok('module.css: .pp-kpmini-pin (the shared scaled-down pin) is now a CIRCLE (not a teardrop) sized to hold an icon, and coloured RED — matching .bim-pinstage-dot, "the same pin as when adding"; the old lightbox-only-named .pp-lb-kpoverlay-pin/.pp-lb-kppin-photo classes are still gone (renamed, not duplicated)',
-     /\.pp-kpmini-pin \{[^}]*width: 16px; height: 16px; border-radius: 50%;/.test(css) &&
+  // the mini pin is now circular/red with an icon inside, not a bare
+  // teardrop coloured --pd-ok. Updated in place.
+  // ⚠️ 2026-09-11, THIRD round (item 3 — "the pin should be proportionally
+  // smaller"): the pin's own size moved from a FIXED 16px to a PERCENTAGE
+  // of its containing overlay box (`width:10%`, `aspect-ratio:1` deriving
+  // the height from the resolved width) so it scales with the overlay's
+  // own drag-resized size instead of staying a constant pixel size — the
+  // shape (circle) and colour (red) are unchanged, only the sizing rule.
+  ok('module.css: .pp-kpmini-pin (the shared scaled-down pin) is now a CIRCLE (not a teardrop) sized PROPORTIONALLY (a % of its own overlay box, via aspect-ratio, not a fixed px) so it scales with the overlay, and coloured RED — matching .bim-pinstage-dot, "the same pin as when adding"; the old lightbox-only-named .pp-lb-kpoverlay-pin/.pp-lb-kppin-photo classes are still gone (renamed, not duplicated)',
+     /\.pp-kpmini-pin \{[^}]*width: 10%; aspect-ratio: 1;[^}]*border-radius: 50%;/.test(css) &&
+     !/\.pp-kpmini-pin \{[^}]*width: 16px; height: 16px;/.test(css) &&
      /\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-red\); \}/.test(css) &&
      !/\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-ok\); \}/.test(css) &&
      !/\.pp-lb-kpoverlay-pin\s*\{/.test(css) && !/\.pp-lb-kppin-photo/.test(css));
@@ -3782,43 +3828,40 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('the plain, synchronous redraw() definition itself is untouched — only discrete click actions elsewhere in the editor still call it directly',
      /function redraw\(\) \{ drawMarkupObjects\(ctx, objs, canvas\.width, canvas\.height, selectedIdx\); \}/.test(mjs));
 
-  // Genuine execution: wirePanoDrag()'s scroll-driven key-plan cone repaint
-  // really coalesces a burst of rapid scroll events into AT MOST ONE queued
-  // requestAnimationFrame callback, using the real production function (not
-  // a re-description of it) against the harness's real, queue-based rAF
-  // stub — never an immediate-call stub, which would make this pass
-  // whether the app coalesced anything or not.
+  // ⚠️ 2026-09-11, THIRD round: wireDragPan/wirePanoDrag (the scroll-driven
+  // pan strip this rAF-coalescing test originally proved) were DELETED —
+  // "use Pannellum for 360 viewer" replaced the plain drag-to-pan image
+  // with a real WebGL panorama viewer (see mountPannellumViewer/
+  // startPanoYawPoll near "Item 5" in module.js). The coalescing DISCIPLINE
+  // this test exists to protect still applies — the cone repaint must not
+  // run on every animation frame regardless of whether anything changed —
+  // it is just enforced a different way now (a per-frame yaw POLL that only
+  // fires its callback when the value actually changed, since Pannellum's
+  // stable API has no subscribable "view changed" event). Rewritten to
+  // prove THAT discipline against the current mechanism, not the retired
+  // one — genuine execution against the harness's real, queue-based rAF
+  // stub, never an immediate-call stub that would pass regardless.
   (function () {
-    var listeners = {};
-    var wrapEl = {
-      scrollLeft: 0, scrollWidth: 1000, clientWidth: 200,
-      addEventListener: function (type, fn) { listeners[type] = fn; },
-      removeEventListener: function () {},
-      setPointerCapture: function () {}
-    };
-    byId['pp-lb-panowrap'] = wrapEl;
-    try {
-      PP._wirePanoDrag();
-      ok('wirePanoDrag() wires a real scroll listener onto #pp-lb-panowrap', typeof listeners.scroll === 'function');
+    var fakeViewer = { _yaw: 0, getYaw: function () { return fakeViewer._yaw; }, destroy: function () {} };
+    var yawSeen = [];
+    var stop = PP._startPanoYawPoll(fakeViewer, function (yaw) { yawSeen.push(yaw); });
 
-      eq('before any scroll: 0 queued rAF callbacks', rafPending(), 0);
-      wrapEl.scrollLeft = 100; listeners.scroll();
-      wrapEl.scrollLeft = 200; listeners.scroll();
-      wrapEl.scrollLeft = 300; listeners.scroll();
-      eq('three rapid scroll events in the same burst coalesce into exactly ONE queued rAF callback, not three',
-         rafPending(), 1);
+    flushRaf();
+    eq('startPanoYawPoll: the first tick reports the viewer\'s current yaw', JSON.stringify(yawSeen), JSON.stringify([0]));
 
-      flushRaf();
-      eq('flushing the frame drains the queue back to 0 — the callback resets its own "pending" flag rather than leaving it stuck forever',
-         rafPending(), 0);
+    flushRaf();
+    eq('…an UNCHANGED yaw between two ticks does NOT fire the callback again — the same "only repaint on real change" discipline every other coalesced-repaint fix in this file already follows',
+       yawSeen.length, 1);
 
-      listeners.scroll();
-      eq('a scroll AFTER the frame has already run schedules a FRESH rAF — the coalescing guard is per-burst, not a permanent "never repaint again" latch',
-         rafPending(), 1);
-      flushRaf();
-    } finally {
-      delete byId['pp-lb-panowrap'];
-    }
+    fakeViewer._yaw = 42;
+    flushRaf();
+    eq('…a CHANGED yaw does fire, with the new value', JSON.stringify(yawSeen), JSON.stringify([0, 42]));
+
+    stop();
+    fakeViewer._yaw = 99;
+    flushRaf();
+    eq('stop() cancels the poll — no further callbacks fire after it, even though the yaw kept changing underneath it',
+       yawSeen.length, 2);
   })();
 
   console.log('\n[53] Key-plan pin/camera-angle display fix (2026-09-11): shared "mini" marker, not the full-size Plans-tab one');
@@ -3937,11 +3980,267 @@ console.log('\n[misc] insert().select() returns the new row id');
     }
   })();
 
+  // ⚠️ 2026-09-11, THIRD round — item 2 ("the close button does not work"),
+  // re-reported: a SECOND, real close-during-recording race, distinct from
+  // the getUserMedia one above. Tapping × WHILE a video is recording used
+  // to call close() (which stops the MediaRecorder and fires opts.onCancel
+  // -> onDone(null) immediately) — but the recorder's own ASYNC 'stop'
+  // event still caught up afterward and ran the callback wired at
+  // record-start, which called onDone(blob) a SECOND time with a real
+  // file. From the planner's side: the overlay visibly closed, then the
+  // recording got added anyway — exactly "I closed it and it didn't work".
+  // Genuinely executed against a controllable fake MediaRecorder (never an
+  // immediate no-op stub) so the timing this bug depends on is real.
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    var origMediaRecorder = ctx.MediaRecorder;
+    var origNavigator = ctx.navigator;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
+
+      var fakeTrack = { stop() {}, enabled: true, getCapabilities: () => ({}) };
+      var fakeStream = {
+        getTracks: () => [fakeTrack], getAudioTracks: () => [fakeTrack], getVideoTracks: () => [fakeTrack]
+      };
+      ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve(fakeStream) } };
+
+      var lastRecorder = null;
+      function FakeRecorder() {
+        lastRecorder = this;
+        this.state = 'recording';
+        this.start = function () {};
+        this.stop = function () { this.state = 'inactive'; };   // does NOT itself fire onstop — the test drives that, matching a real async event
+      }
+      FakeRecorder.isTypeSupported = function () { return false; };
+      ctx.MediaRecorder = FakeRecorder;
+
+      var doneArgs = [];
+      CAP.takeVideo(function (blob) { doneArgs.push(blob); });
+      // Video mode routes through openStreamWithAudioFallback() (an extra
+      // async/await hop beyond photo mode's direct openStream() call above),
+      // so a fixed few `await Promise.resolve()` ticks isn't reliably enough
+      // — a real macrotask flush drains every pending microtask first,
+      // regardless of how many hops the chain actually has.
+      await new Promise(function (r) { setTimeout(r, 0); });
+
+      idEls['pp-cap-shutter'].onclick();   // idle -> recording
+      ok('a fake MediaRecorder was actually constructed and started recording', !!lastRecorder && lastRecorder.state === 'recording');
+
+      idEls['pp-cap-close'].onclick();   // × tapped WHILE recording — the exact reported scenario
+      eq('closing mid-recording fires onCancel immediately with null', JSON.stringify(doneArgs), JSON.stringify([null]));
+      eq('…and close() already stopped the recorder synchronously', lastRecorder.state, 'inactive');
+
+      lastRecorder.onstop();   // the recorder's own async 'stop' event, catching up AFTER close() already ran
+      eq('the stray onstop-driven onDone is SKIPPED — stale() correctly detects that close() already ran, so a cancelled recording is never handed back as a "successful" one afterward',
+         doneArgs.length, 1);
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+      ctx.MediaRecorder = origMediaRecorder;
+      ctx.navigator = origNavigator;
+    }
+  })();
+
+  // …and the INVERSE case: recording stopped the ordinary way (tapping the
+  // shutter a second time, nobody closed anything) must still hand back the
+  // real blob — the stale() guard must not swallow a genuine completion.
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    var origMediaRecorder = ctx.MediaRecorder;
+    var origNavigator = ctx.navigator;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
+
+      var fakeTrack = { stop() {}, enabled: true, getCapabilities: () => ({}) };
+      var fakeStream = { getTracks: () => [fakeTrack], getAudioTracks: () => [fakeTrack], getVideoTracks: () => [fakeTrack] };
+      ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve(fakeStream) } };
+
+      var lastRecorder = null;
+      function FakeRecorder() {
+        lastRecorder = this;
+        this.state = 'recording'; this.mimeType = 'video/webm';
+        this.start = function () {};
+        this.stop = function () { this.state = 'inactive'; };
+      }
+      FakeRecorder.isTypeSupported = function () { return false; };
+      ctx.MediaRecorder = FakeRecorder;
+
+      var doneArgs = [];
+      CAP.takeVideo(function (blob) { doneArgs.push(blob); });
+      await new Promise(function (r) { setTimeout(r, 0); });
+
+      idEls['pp-cap-shutter'].onclick();   // idle -> recording
+      idEls['pp-cap-shutter'].onclick();   // recording -> stop, via the shutter itself (no close() involved)
+      lastRecorder.onstop();               // the real completion event
+
+      ok('stopping via the shutter (nobody closed anything) still hands back the real recorded blob — stale() must not swallow a genuine completion',
+         doneArgs.length === 1 && doneArgs[0] && doneArgs[0].constructor && doneArgs[0].constructor.name === 'Blob');
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+      ctx.MediaRecorder = origMediaRecorder;
+      ctx.navigator = origNavigator;
+    }
+  })();
+
+  // Item 2 (2026-09-11, third round): flash on/off/auto — genuinely
+  // executed against a fake video track exposing a `torch` capability, so
+  // the actual applyConstraints call (and its absence when unsupported)
+  // is proven, not just read from source.
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    var origNavigator = ctx.navigator;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
+
+      var appliedConstraints = [];
+      var fakeTrack = {
+        getCapabilities: () => ({ torch: true }),
+        applyConstraints: function (c) { appliedConstraints.push(c); return Promise.resolve(); }
+      };
+      var fakeStream = { getTracks: () => [fakeTrack], getAudioTracks: () => [], getVideoTracks: () => [fakeTrack] };
+      ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve(fakeStream) } };
+
+      CAP.takePhoto(function () {});
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      var flashBtn = idEls['pp-cap-flash'];
+      ok('the flash button is enabled the moment the stream\'s video track reports a torch capability',
+         flashBtn.disabled === false);
+
+      flashBtn.onclick();   // off -> on
+      eq('tapping the flash button while a torch-capable track is live applies torch:true',
+         JSON.stringify(appliedConstraints[appliedConstraints.length - 1]), JSON.stringify({ advanced: [{ torch: true }] }));
+
+      flashBtn.onclick();   // on -> auto
+      eq('…"auto" has no continuous-flash platform equivalent, so it applies torch:false — an honest degrade, not a fabricated third mode',
+         JSON.stringify(appliedConstraints[appliedConstraints.length - 1]), JSON.stringify({ advanced: [{ torch: false }] }));
+
+      flashBtn.onclick();   // auto -> off
+      eq('…cycling back to "off" also applies torch:false',
+         JSON.stringify(appliedConstraints[appliedConstraints.length - 1]), JSON.stringify({ advanced: [{ torch: false }] }));
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+      ctx.navigator = origNavigator;
+    }
+  })();
+
+  // …and the disabled/no-torch-capability case: the flash button must
+  // never look live while doing nothing (same convention as syncAudioBtn).
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    var origNavigator = ctx.navigator;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
+
+      var fakeTrack = { getCapabilities: () => ({}) };   // no torch key at all
+      var fakeStream = { getTracks: () => [fakeTrack], getAudioTracks: () => [], getVideoTracks: () => [fakeTrack] };
+      ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve(fakeStream) } };
+
+      CAP.takePhoto(function () {});
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      eq('a video track reporting no torch capability leaves the flash button DISABLED, never a control that looks live but silently does nothing',
+         idEls['pp-cap-flash'].disabled, true);
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+      ctx.navigator = origNavigator;
+    }
+  })();
+
   // Item 5: the mic toggle exists for video/360 and never for photo, and
   // openStream()'s audio argument tracks it.
-  ok('capture.js: buildOverlay renders #pp-cap-audio for video/360, a plain spacer for photo — never both',
+  // ⚠️ 2026-09-11, THIRD round (item 2 — "provide button for on/off/auto
+  // flash"): the mic toggle now shares a right-side cluster with a NEW
+  // flash button that's offered for EVERY mode (photo included) — so
+  // photo mode no longer needs the old plain `<span class="pp-cap-side">`
+  // spacer at all; the cluster simply renders the flash button alone.
+  ok('capture.js: buildOverlay renders #pp-cap-flash for every mode, and #pp-cap-audio ADDITIONALLY for video/360 — never for photo',
+     /id="pp-cap-flash"/.test(cjs) &&
      /opts\.mode !== 'photo'[\s\S]{0,120}id="pp-cap-audio"/.test(cjs) &&
-     /: '<span class="pp-cap-side"><\/span>'/.test(cjs));
+     /pp-cap-rightcluster/.test(cjs));
   // ⚠️ 2026-09-11, second round ("the mute button ... is not working"):
   // the mic toggle no longer reopens the whole stream, and no longer
   // refuses mid-recording — both assertions below are rewritten to match,
@@ -4023,58 +4322,182 @@ console.log('\n[misc] insert().select() returns the new row id');
      /\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-red\); \}/.test(css) &&
      !/\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-ok\); \}/.test(css));
 
-  // Item 5: the 360°-upload modal shows its metadata fields from the
-  // moment it opens, not only once processing finishes — structural,
-  // since this is a DOM/layout claim (whether .pp-form2 sits inside the
-  // #pp360-result block that stays `hidden` until the stitch completes).
+  // ⚠️⚠️ 2026-09-13: rewritten in place, not deleted — "healthy churn from
+  // an intentional change" per this file's own convention. The single
+  // open360Upload() modal these assertions used to slice is now a thin
+  // entry point (openPano360SourcePicker()); every DOM/structure claim
+  // below moved to openPano360Review(draft) — the review modal a 360°
+  // draft is confirmed/saved from, which stays reachable (and reopenable)
+  // while its stitch keeps running in the background. See the new draft
+  // architecture's own header comment in module.js: no upload/DB write may
+  // happen until this modal's own gated "Confirm & Save" is clicked.
   (function () {
-    var i = mjs.indexOf("function open360Upload()");
+    var i = mjs.indexOf("function openPano360Review(draft)");
     var j = mjs.indexOf("\n  function ", i + 10);
-    var body = mjs.slice(i, j > i ? j : i + 14000);
-    var resultStart = body.indexOf('id="pp360-result"');
-    var resultEnd = body.indexOf("'</div>' +\n        '<div class=\"pp-form2\">'".replace(/\s+/g, ' '));
+    var body = mjs.slice(i, j > i ? j : i + 16000);
+    var resultStart = body.indexOf('id="pp360rv-result"');
     var form2Idx = body.indexOf('class="pp-form2"');
-    ok('open360Upload: the metadata fields (.pp-form2 — Description/Date/Works/Location/Pin) render OUTSIDE #pp360-result, so they are visible immediately, matching the ordinary photo/video Add Media form',
-       resultStart > -1 && form2Idx > resultStart && !/id="pp360-result"[\s\S]{0,50}class="pp-form2"/.test(body.slice(resultStart, resultStart + 60)));
-    ok('open360Upload: the footer (Cancel/Save) is no longer gated behind processing — no id="pp360-footer", no hidden attribute on it',
-       !/pp360-footer/.test(mjs) &&
-       /<div class="pd-modal-footer">'\s*\+\s*'<button class="pd-btn" data-close>Cancel<\/button>'\s*\+\s*'<button class="pd-btn pd-btn-primary" id="pp360-save">Save 360° photo/.test(body));
-    ok('open360Upload: the thumbnail-frame scrubber defaults to the END of the walk-around (the LAST frame), not the midpoint — "the last frame will be used as thumbnail"',
-       /slider\.max = String\(Math\.max\(0\.01, dur\)\); slider\.value = String\(dur\);/.test(body) &&
-       !/slider\.value = String\(dur \/ 2\);/.test(body));
-    ok('open360Upload: the preview is the shared drag-to-pan strip (.pp-lb-panowrap/.pp-lb-pano), not a plain static <img> — "navigable ... not just a panoramic still photo"',
-       /class="pp-lb-panowrap" id="pp360-panowrap"/.test(body) && /class="pp-lb-pano" id="pp360-pano"/.test(body) &&
-       /wireDragPan\(\$\('pp360-panowrap'\)\);/.test(mjs));
+    ok('openPano360Review: the metadata fields (.pp-form2 — Description/Date/Works/Location/Pin) render OUTSIDE #pp360rv-result, so they are visible immediately, matching the ordinary photo/video Add Media form',
+       resultStart > -1 && form2Idx > resultStart && !/id="pp360rv-result"[\s\S]{0,50}class="pp-form2"/.test(body.slice(resultStart, resultStart + 60)));
+    ok('openPano360Review: the footer (Close/Discard/Confirm & Save) is never gated behind processing — no id="pp360rv-footer", no hidden attribute on it, so a draft can be discarded or the modal closed at any stage',
+       !/pp360rv-footer/.test(body) &&
+       /<div class="pd-modal-footer">'\s*\+\s*'<button class="pd-btn" data-close>Close<\/button>'\s*\+\s*'<button class="pd-btn pd-btn-danger" id="pp360rv-discard">Discard<\/button>'\s*\+\s*'<button class="pd-btn pd-btn-primary" id="pp360rv-save">Confirm &amp; Save/.test(body));
+    ok('openPano360Review: the preview is a real Pannellum viewer, mounted into #pp360rv-pano-viewer via the SAME mountPannellumViewer() the saved-photo lightbox uses — "navigable ... not just a panoramic still photo"',
+       /class="pp-lb-panowrap" id="pp360rv-panowrap"/.test(body) && /id="pp360rv-pano-viewer" class="pp-lb-panoviewer"/.test(body) &&
+       /pp360Viewer = mountPannellumViewer\(viewerEl, draft\.stitchUrl, hOverW\);/.test(mjs));
+    ok('open360 flow: the separate video-frame thumbnail scrubber is GONE — no #pp360-repslider, no #pp360-repframe, no Pano360.extractFrameAt call anywhere in the module',
+       !/pp360-repslider/.test(mjs) && !/pp360-repframe/.test(mjs) && !/Pano360\.extractFrameAt\(/.test(mjs));
+    ok('openPano360Review: "Use this view as thumbnail" captures whatever the viewer is CURRENTLY showing via the shared captureViewerThumbnail(), writing straight onto the DRAFT (draft.repBlob/draft.repUrl) — never onto DOM-only state that a modal close would lose — and a default is captured automatically the first time the panorama actually renders (viewer.on(\'load\', ...)) so Confirm & Save is never blocked on remembering to press it',
+       /id="pp360rv-usethumb">Use this view as thumbnail/.test(body) &&
+       /captureViewerThumbnail\(viewerEl, function \(blob\) \{/.test(mjs) &&
+       /draft\.repBlob = blob; draft\.repUrl = URL\.createObjectURL\(blob\);/.test(mjs) &&
+       /pp360Viewer\.on\('load', function \(\) \{/.test(mjs));
+    // ⚠️⚠️ 2026-09-13: the whole point of the draft architecture — this is
+    // the ONE place in the entire 360° flow allowed to touch Storage/the
+    // database, and it must be gated on the draft (not on any local modal
+    // variable, which the background stitch has no way to set).
+    ok('openPano360Review: uploadFile()/tolerantWrite() are called ONLY inside the Confirm & Save handler, guarded on draft.status === \'ready\' — never from the background stitch (runStitchForDraft/runPhotoForDraft/finishDraftStitch) and never from the source picker',
+       /if \(draft\.status !== 'ready' \|\| !draft\.stitchResult \|\| !draft\.repBlob\) \{/.test(body) &&
+       (function () {
+         var runStitchBody = mjs.slice(mjs.indexOf('async function runStitchForDraft'), mjs.indexOf('async function runPhotoForDraft'));
+         var runPhotoBody = mjs.slice(mjs.indexOf('async function runPhotoForDraft'), mjs.indexOf('function open360Upload()'));
+         var finishBody = mjs.slice(mjs.indexOf('function finishDraftStitch'), mjs.indexOf('async function runStitchForDraft'));
+         var sourcePickerBody = mjs.slice(mjs.indexOf('function openPano360SourcePicker()'), mjs.indexOf('function openPano360DraftsList()'));
+         return !/uploadFile\(|tolerantWrite\(/.test(runStitchBody) &&
+                !/uploadFile\(|tolerantWrite\(/.test(runPhotoBody) &&
+                !/uploadFile\(|tolerantWrite\(/.test(finishBody) &&
+                !/uploadFile\(|tolerantWrite\(/.test(sourcePickerBody);
+       })());
+    // ⚠️ The module has plenty of LEGITIMATE, unrelated localStorage/
+    // sessionStorage/indexedDB use elsewhere (view/collapse-state prefs, the
+    // current project id, the existing PDSync offline outbox) — a whole-file
+    // ban would always fail regardless of the drafts feature. Scoped instead
+    // to the exact region the draft feature lives in: from its own state
+    // declaration through the end of openPano360Review (the one place a
+    // draft is ever confirmed/saved), so only code that could plausibly
+    // persist a DRAFT is checked, not the rest of the module.
+    var draftsRegionStart = mjs.indexOf('var PANO360_DRAFTS = [];');
+    var draftsRegionEnd = mjs.indexOf('async function uploadFile(file) {', draftsRegionStart);
+    var draftsRegion = mjs.slice(draftsRegionStart, draftsRegionEnd > draftsRegionStart ? draftsRegionEnd : draftsRegionStart + 12000)
+      .replace(/^\s*\/\/.*$/gm, ''); // strip // comments — a bare mention in prose (e.g. "never persist a draft to sessionStorage") must not count, only real code
+    // ⚠️⚠️ 2026-09-14, later still: REWRITTEN, not left asserting the old
+    // "never persisted anywhere" rule — that rule was intentionally reversed
+    // ("the session already times out before completion... draft should
+    // extend beyond the session"). sessionStorage/localStorage are STILL
+    // never touched (neither can hold a Blob without a lossy round trip);
+    // IndexedDB is now used deliberately, gated on a real `uid`.
+    ok('a 360° draft still never touches sessionStorage/localStorage (neither can hold a Blob cheaply) — only IndexedDB, and only for the draft-persistence feature',
+       draftsRegionStart > -1 && draftsRegionEnd > draftsRegionStart &&
+       !/sessionStorage\.(setItem|getItem)|localStorage\.(setItem|getItem)/i.test(draftsRegion));
+    ok('…IndexedDB usage IS present now (Pano360DraftStore), a dedicated database separate from the existing pp_offline_v1 queue',
+       /var Pano360DraftStore = \(function \(\) \{/.test(draftsRegion) &&
+       /DB_NAME = 'pp_pano360_drafts_v1'/.test(draftsRegion) &&
+       /indexedDB\.open\(DB_NAME, 1\)/.test(draftsRegion));
+    ok('persistPano360Draft()/rehydratePano360Drafts() both refuse to run without a real uid — a draft can never be written or read back for "nobody in particular"',
+       /function persistPano360Draft\(draft\) \{\s*\n\s*if \(!uid \|\| typeof indexedDB === 'undefined'\) return;/.test(draftsRegion) &&
+       /async function rehydratePano360Drafts\(\) \{\s*\n\s*if \(!uid \|\| typeof indexedDB === 'undefined'\) return;/.test(draftsRegion));
+    ok('"per person": every persisted record carries the CURRENT uid, and reads are filtered to records whose uid matches it — allForUser(userId), never a bare all()',
+       /uid: uid,/.test(draftsRegion) &&
+       /function allForUser\(userId\) \{\s*\n\s*return all\(\)\.then\(function \(list\) \{ return list\.filter\(function \(r\) \{ return r\.uid === userId; \}\); \}\);/.test(draftsRegion) &&
+       /records = await Pano360DraftStore\.allForUser\(uid\);/.test(draftsRegion));
+    ok('the safety gate is untouched by the new persistence: persistPano360Draft/Pano360DraftStore never call uploadFile()/tolerantWrite() — IndexedDB is local browser storage, not the shared database',
+       !/uploadFile\(|tolerantWrite\(/.test(draftsRegion.slice(draftsRegion.indexOf("var Pano360DraftStore"), draftsRegion.indexOf('async function rehydratePano360Drafts') + 4000)));
   })();
 
-  // wireDragPan/wirePanoDrag — the lightbox's pan-drag mechanism was
-  // factored into a generic, reusable helper (wireDragPan) so the 360°
-  // upload preview above could reuse it rather than duplicating the drag
-  // gesture. Re-confirms the EXACT rAF-coalescing contract section [51]'s
-  // test already proved for wirePanoDrag() still holds after the refactor
-  // — same real, queue-based rAF stub, never an immediate-call one.
+  // 2026-09-14 (later still): "the other input fields are still not
+  // showing" — a real, confirmed gap in the fix above. openPano360Review's
+  // fields render immediately, but that is the SECOND modal, reached only
+  // after a source has already been picked in openPano360SourcePicker() —
+  // the FIRST modal, which the owner's own screenshot showed carrying only
+  // the three source buttons and Cancel, no fields at all. Fixed by moving
+  // the SAME Description/Capture date/Works/Location/Pin block onto the
+  // source-picker screen too, and carrying whatever was typed there into
+  // the draft's own meta (captureSrcMeta) before the review modal — which
+  // still shows the same fields, now pre-filled from what was already
+  // typed — ever opens.
   (function () {
-    var listeners = {};
-    var wrapEl = {
-      scrollLeft: 0, scrollWidth: 1000, clientWidth: 200,
-      addEventListener: function (type, fn) { listeners[type] = fn; },
-      removeEventListener: function () {},
-      setPointerCapture: function () {}
-    };
-    byId['pp-lb-panowrap'] = wrapEl;
+    var i = mjs.indexOf('function openPano360SourcePicker()');
+    var j = mjs.indexOf('\n  function openPano360DraftsList()');
+    var body = mjs.slice(i, j > i ? j : i + 12000);
+    var form2Idx = body.indexOf('class="pp-form2"');
+    var stepIdx = body.indexOf('id="pp360src-step"');
+    ok('openPano360SourcePicker: the metadata fields (.pp-form2 — Description/Capture date/Works/Location/Pin) now render on THIS FIRST screen, before any source is picked — not only in the review modal reached afterward',
+       form2Idx > -1 && stepIdx > -1 &&
+       /id="pp360src-desc"/.test(body) && /id="pp360src-date"/.test(body) &&
+       /worksMultiFieldHTML\('pp360src', \[\]\)/.test(body) &&
+       /locationFieldHTML\('pp360src', \{\}, ''\)/.test(body) &&
+       /BIM\.pinFieldHTML\('pp360src', null\)/.test(body));
+    ok('2026-09-14 (later still again): the Take video / Upload video / Upload 360° photo buttons (#pp360src-step) now render ABOVE the fields (.pp-form2) — the owner reported having to scroll past the Key Plan image and a paragraph of instructions to reach them; reversed from the ordering asserted just above at the point this fix shipped',
+       stepIdx > -1 && form2Idx > -1 && stepIdx < form2Idx);
+    ok('…and the fields are genuinely wired (wireLocationField/wireWorksMultiField/BIM.wirePinField + hydrate), the same way every other field-carrying modal in this module wires itself',
+       /wireLocationField\('pp360src'\);/.test(body) &&
+       /wireWorksMultiField\('pp360src'\);/.test(body) &&
+       /BIM\.wirePinField\('pp360src'\)/.test(body) &&
+       /hydrate\(m\.el\);/.test(body));
+    ok('captureSrcMeta() is called for BOTH the video path (startVideoDraft) and the pre-processed-photo path (havePhoto), and in each case BEFORE the modal closes / the review modal opens — so nothing typed on the first screen is lost',
+       /function captureSrcMeta\(draft\)/.test(body) &&
+       /function startVideoDraft\(blob\) \{[\s\S]{0,200}captureSrcMeta\(draft\);[\s\S]{0,80}m\.close\(\);[\s\S]{0,40}openPano360Review\(draft\);/.test(body) &&
+       /function havePhoto\(file\) \{[\s\S]{0,120}captureSrcMeta\(draft\);[\s\S]{0,80}m\.close\(\);[\s\S]{0,40}openPano360Review\(draft\);/.test(body));
+    ok('captureSrcMeta reads exactly the same fields the review modal itself reads back — desc/date/works/locVals/viewName/tags/pinData — onto draft.meta, so the review modal opens already pre-filled instead of asking twice',
+       /draft\.meta\.desc = descEl\.value\.trim\(\);/.test(body) &&
+       /draft\.meta\.works = readWorksMulti\('pp360src'\);/.test(body) &&
+       /draft\.meta\.locVals = currentLocValues\('pp360src'\);/.test(body) &&
+       /draft\.meta\.tags = readCodeTags\('pp360src'\);/.test(body) &&
+       /draft\.meta\.pinData = BIM\.readPinField\('pp360src'\);/.test(body));
+  })();
+
+  // Genuine execution: captureViewerThumbnail() — proves the 4:3-landscape
+  // crop (see the function's own comment on why "3:4 landscape" is read as
+  // 4:3) and the graceful null when the viewer hasn't rendered a canvas
+  // yet, against a fake canvas-bearing container rather than only reading
+  // the source.
+  (function () {
+    var wideContainer = { querySelector: function (sel) { return sel === 'canvas' ? { width: 1200, height: 600 } : null; } };
+    var captured = null;
+    PP._captureViewerThumbnail(wideContainer, function (blob) { captured = blob; });
+    ok('captureViewerThumbnail hands back a real JPEG Blob, cropped to a 640×480 (4:3) box',
+       captured && captured.__fakeBlob === true && captured.type === 'image/jpeg' && captured.size === 640 * 480);
+
+    var emptyContainer = { querySelector: function () { return null; } };
+    var captured2 = 'unset';
+    PP._captureViewerThumbnail(emptyContainer, function (blob) { captured2 = blob; });
+    eq('…and hands back null (never throws) when the viewer has not rendered a canvas yet', captured2, null);
+  })();
+
+  // Genuine execution: mountPannellumViewer() against an injected
+  // window.pannellum stub — confirms it calls the REAL library with a
+  // partial-equirectangular config (haov 360 for a full walk-around, vaov
+  // derived from the image's own aspect ratio and clamped to a sane
+  // range), auto-generates a container id when none is supplied, and
+  // degrades to null rather than throwing when the library itself is
+  // unavailable (a real, if narrow, possibility this app's own history
+  // already treats seriously for every optional third-party dependency).
+  (function () {
+    var lastConfig = null;
+    var fakeViewer = { getYaw: function () { return 0; }, destroy: function () {} };
+    var savedPannellum = ctx.pannellum;
+    ctx.pannellum = { viewer: function (id, config) { lastConfig = config; return fakeViewer; } };
     try {
-      PP._wirePanoDrag();
-      eq('wireDragPan (via wirePanoDrag): a burst of 3 rapid scroll events still coalesces to exactly ONE queued rAF callback after the refactor',
-         (function () {
-           wrapEl.scrollLeft = 50; listeners.scroll();
-           wrapEl.scrollLeft = 100; listeners.scroll();
-           wrapEl.scrollLeft = 150; listeners.scroll();
-           return rafPending();
-         })(), 1);
-      flushRaf();
+      var container = { querySelector: function () { return null; } };
+      var v = PP._mountPannellumViewer(container, 'blob:pano.jpg', 0.4);
+      eq('mountPannellumViewer returns the real pannellum.viewer(...) instance', v, fakeViewer);
+      ok('…auto-generates a container id when the element has none, rather than requiring every caller to supply one',
+         typeof container.id === 'string' && container.id.length > 0);
+      ok('…configured as a partial equirectangular panorama: haov 360 (a full walk-around), vaov derived from the image\'s own height/width ratio',
+         lastConfig.type === 'equirectangular' && lastConfig.panorama === 'blob:pano.jpg' && lastConfig.haov === 360 &&
+         lastConfig.vaov === Math.min(140, Math.max(20, 360 * 0.4)));
+
+      lastConfig = null;
+      PP._mountPannellumViewer({ querySelector: function () { return null; } }, 'blob:tall.jpg', 3);
+      eq('…vaov is CLAMPED for an extreme (very tall/narrow) aspect ratio, never left wildly obtuse', lastConfig.vaov, 140);
     } finally {
-      delete byId['pp-lb-panowrap'];
+      ctx.pannellum = savedPannellum;
     }
+
+    delete ctx.pannellum;
+    eq('mountPannellumViewer degrades to null (never throws) when window.pannellum itself is unavailable',
+       PP._mountPannellumViewer({ querySelector: function () { return null; } }, 'blob:x.jpg', 0.4), null);
+    ctx.pannellum = savedPannellum;
   })();
 
   // Item 5 (processing failures) — pano360.js's stitching math, genuinely
@@ -4104,13 +4527,807 @@ console.log('\n[misc] insert().select() returns the new row id');
     eq('Pano360: three composed 100px shifts place the fourth frame at x=300, not back near x=0 (the exact class of bug "processing has been failing" traces to)',
        JSON.stringify(P360._applyH3(p3, 0, 0)), JSON.stringify([300, 0]));
   })();
-  ok('pano360.js: the old warpOnto (pairwise-only, no accumulation across frames) is GONE — stitchFrames now composes a cumulative placement per frame',
+  ok('pano360.js: the old warpOnto (pairwise-only, no accumulation across frames) is GONE — stitchFrames now composes a cumulative placement per PLACED frame (usedIdx), not per raw extracted frame',
      !/function warpOnto\(/.test(p3js) &&
      /var placements = \[\[1, 0, 0, 0, 1, 0, 0, 0, 1\]\];/.test(p3js) &&
-     /placements\.push\(mat3Mul\(placements\[i - 1\], step\)\);/.test(p3js));
-  ok('pano360.js: the mosaic canvas is sized from the REAL bounding box of every frame\'s warped corners, never a fixed-width guess',
+     /placements\.push\(mat3Mul\(placements\[placements\.length - 1\], step\)\);/.test(p3js));
+  ok('pano360.js: the mosaic canvas is sized from the REAL bounding box of every PLACED frame\'s warped corners (usedIdx), never a fixed-width guess and never a frame the lookahead search skipped over',
      /var minX = 0, maxX = 0, minY = 0, maxY = 0;/.test(p3js) &&
-     /var MAX_DIM = 8000;/.test(p3js));
+     /usedIdx\.forEach\(function \(frameIdx, pi\) \{/.test(p3js) &&
+     /var MAX_DIM = 6000;/.test(p3js));
+
+  console.log('\n[55] Item 4 (2026-09-11, third round): Hugin is infeasible in-browser (documented, not integrated); seam feathering replaces the hard destination-over cut');
+
+  ok('pano360.js states, plainly, why Hugin was investigated and is NOT integrated — a native desktop app with no WASM/JS bindings, not merely "not chosen"',
+     /Hugin was investigated and is NOT integrated/.test(p3js) &&
+     /no WebAssembly build and no JS/.test(p3js) && /bindings anywhere/.test(p3js));
+  ok('…and the compositing loop no longer draws raw frames with a hard destination-over cut — every PLACED frame is feathered first, then painted in order with plain source-over blending',
+     !/globalCompositeOperation = idx2 === 0 \? 'source-over' : 'destination-over';/.test(p3js) &&
+     /var feathered = featheredFrame\(cylFrames\[frameIdx\], pi > 0, pi < lastPi, FEATHER_FRAC\);/.test(p3js) &&
+     /featherMat = cv\.imread\(feathered\);/.test(p3js));
+  ok('…ORB feature matching still runs against the PRISTINE frames (rawMats), never the feathered copies — feathering only touches what gets drawn, not what gets matched (2026-09-14: matching now goes through a per-frame feature cache, featuresFor(idx) -> computeFeatures(rawMats[idx]), rather than calling homographyBetween(rawMats[...]) directly, but rawMats — never the feathered copies — is still the only thing ORB ever sees)',
+     /rawMats\.push\(cv\.imread\(warpedCanvas\)\);/.test(p3js) &&
+     /featureCache\[idx\] = computeFeatures\(rawMats\[idx\]\);/.test(p3js) &&
+     /matchAndHomography\(featuresFor\(anchor\), featuresFor\(c\)\)/.test(p3js));
+
+  console.log('\n[55b] 2026-09-14 (review pass — "review 360 processing code to improve and optimize"): ORB feature detection split out of the pairwise match step and cached per frame index, so the join-search loop stops recomputing the SAME anchor frame\'s keypoints/descriptors on every one of up to JOIN_LOOKAHEAD candidate attempts');
+
+  ok('pano360.js: computeFeatures(mat) does ONLY the grayscale+ORB half (cv.cvtColor + orb.detectAndCompute), and deliberately does NOT delete the kp/desc it returns — the caller (the feature cache) owns their lifetime now, not this function',
+     /function computeFeatures\(mat\) \{/.test(p3js) &&
+     /cv\.cvtColor\(mat, gray, cv\.COLOR_RGBA2GRAY, 0\);/.test(p3js) &&
+     /orb\.detectAndCompute\(gray, mask, kp, desc\);/.test(p3js) &&
+     /return \{ kp: kp, desc: desc \};/.test(p3js));
+  ok('…matchAndHomography(prevFeat, curFeat) does ONLY the match/RANSAC/plausibility half, taking two ALREADY-COMPUTED feature sets — no cv.cvtColor, no new cv.ORB, anywhere in its body',
+     /function matchAndHomography\(prevFeat, curFeat\) \{/.test(p3js) &&
+     /matcher\.knnMatch\(prevFeat\.desc, curFeat\.desc, knn, 2\);/.test(p3js) &&
+     (function () {
+       var start = p3js.indexOf('function matchAndHomography(prevFeat, curFeat) {');
+       var end = p3js.indexOf('\n  function homographyBetween', start);
+       var body = p3js.slice(start, end);
+       return !/cv\.cvtColor/.test(body) && !/new cv\.ORB/.test(body);
+     })());
+  ok('…homographyBetween(prevMat, curMat) — the exported, backward-compatible single-pair function — is now a THIN WRAPPER: computeFeatures both sides, matchAndHomography once, delete both feature sets itself (nothing to cache across a single call)',
+     /function homographyBetween\(prevMat, curMat\) \{/.test(p3js) &&
+     /prevFeat = computeFeatures\(prevMat\);/.test(p3js) &&
+     /curFeat = computeFeatures\(curMat\);/.test(p3js) &&
+     /return matchAndHomography\(prevFeat, curFeat\);/.test(p3js) &&
+     /prevFeat\.kp\.delete\(\); prevFeat\.desc\.delete\(\);/.test(p3js) &&
+     /curFeat\.kp\.delete\(\); curFeat\.desc\.delete\(\);/.test(p3js));
+  ok('…stitchFrames\' own lookahead loop calls matchAndHomography(featuresFor(...)) — it never calls homographyBetween itself, which would silently reintroduce the per-candidate recomputation this whole change exists to remove',
+     !/homographyBetween\(rawMats\[anchor\]/.test(p3js) &&
+     /var res = matchAndHomography\(featuresFor\(anchor\), featuresFor\(c\)\);/.test(p3js));
+  ok('…every cached feature set is deleted exactly once in stitchFrames\' own cleanup, alongside rawMats — a frame skipped over by the lookahead search still had its features computed (and cached) the moment it was first tried, so it must still be cleaned up even though it was never placed',
+     /Object\.keys\(featureCache\)\.forEach\(function \(k\) \{/.test(p3js) &&
+     /featureCache\[k\]\.kp\.delete\(\); \} catch \(e\) \{\}/.test(p3js) &&
+     /featureCache\[k\]\.desc\.delete\(\); \} catch \(e\) \{\}/.test(p3js));
+  ok('pano360.js exports the two new pure/near-pure pieces as test-only hooks, same convention as every other pano360 hook',
+     /_computeFeatures: computeFeatures,/.test(p3js) &&
+     /_matchAndHomography: matchAndHomography/.test(p3js));
+  ok('the frame-warping loop that used to be TWO separate synchronous .map() passes with no yield at all is now ONE for-loop, yielding between frames — the one stretch of this pipeline that had no yieldToUI() call before this pass',
+     /for \(var wf = 0; wf < frames\.length; wf\+\+\) \{/.test(p3js) &&
+     /var warpedCanvas = cylindricalWarpFrame\(frames\[wf\], cylMaps\);/.test(p3js) &&
+     /cylFrames\.push\(warpedCanvas\);/.test(p3js) &&
+     (function () {
+       var start = p3js.indexOf('for (var wf = 0; wf < frames.length; wf++) {');
+       var end = p3js.indexOf('\n    } finally {\n      cylMaps.mapX.delete()', start);
+       return end > start && /await yieldToUI\(\);/.test(p3js.slice(start, end));
+     })());
+  ok('…a Mat-reuse variant (skip the second cv.imread by handing back cylindricalWarpFrame\'s own intermediate dst Mat) was tried, measured against a REAL OpenCV.js build, and DELIBERATELY NOT KEPT — it produced a small but real and repeatable divergence in the final mosaic\'s pixel dimensions versus the untouched code, for a measured ~2% extra speed on top of the caching change alone; cylindricalWarpFrame therefore still deletes dst and returns a bare canvas',
+     /cylindricalWarpFrame\(frameCanvas, maps\) \{/.test(p3js) &&
+     /return out;\n    \} finally \{ src\.delete\(\); dst\.delete\(\); \}/.test(p3js) &&
+     /it was NOT pixel-\n  \/\/ identical/.test(p3js));
+
+  console.log('\n[56] 2026-09-12 (later still): the stitcher now samples frame density from the video\'s own duration, and the chain SKIPS a frame with too little overlap rather than forcing a bad join');
+  console.log('[56b] 2026-09-12 (later still): sampling density raised to 30fps (frames = 30 * duration) so consecutive frames overlap enough to join across the WHOLE recording, not just a fraction of it');
+
+  ok('pano360.js no longer samples a FIXED frame count regardless of how long or short the clip is — frameCountFor scales with duration',
+     !/var FRAME_COUNT = 12;/.test(p3js) &&
+     /function frameCountFor\(durationSec\)/.test(p3js) &&
+     /var duration = await getDuration\(videoBlob\);/.test(p3js) &&
+     /var frameCount = frameCountFor\(duration\);/.test(p3js) &&
+     /extractFrames\(videoBlob, frameCount, WORK_MAXW, duration, function \(done, total\)/.test(p3js));
+  ok('…and the chain-building loop looks AHEAD up to JOIN_LOOKAHEAD frames from the last-placed anchor for the first confident join, rather than always forcing frame i against i-1',
+     /var JOIN_LOOKAHEAD = 5;/.test(p3js) &&
+     /var windowEnd = Math\.min\(lastIdx, i \+ JOIN_LOOKAHEAD - 1\);/.test(p3js) &&
+     /if \(confident\) break; \/\/ found a real join — stop searching further ahead/.test(p3js));
+  ok('…a candidate that produced a real homography is always preferred over one that did not, even when the raw match count says otherwise — a homography is what actually places a frame',
+     /var better = !best \? true : \(!!res\.H !== !!best\.H \? !!res\.H : res\.matches > best\.matches\);/.test(p3js));
+
+  console.log('\n[56c] 2026-09-13 (later still): "since it\'s taking too long to process and stitch an image, divide video to a fixed 48 frames per process" — frameCountFor no longer scales with duration at all');
+
+  ok('frameCountFor is now a FIXED count (48), regardless of duration — the 30fps/duration-scaled density this replaces is gone from the function body',
+     /var FIXED_FRAME_COUNT = 48;/.test(p3js) &&
+     /function frameCountFor\(durationSec\) \{\s*return FIXED_FRAME_COUNT;\s*\}/.test(p3js) &&
+     !/var FRAMES_PER_SEC/.test(p3js) &&
+     !/var MIN_FRAMES/.test(p3js) &&
+     !/var MAX_FRAMES/.test(p3js));
+
+  // Genuine execution of frameCountFor() — confirms the fixed count is
+  // ACTUALLY fixed (same output for a very short clip, an ordinary one, a
+  // very long one, and a degenerate/invalid duration), not just declared
+  // fixed in a comment while the body still varies its answer.
+  (function () {
+    eq('frameCountFor: a very short clip still samples exactly 48 frames',
+       P360._frameCountFor(0.3), 48);
+    eq('frameCountFor: a very long clip still samples exactly 48 frames — no longer scaled up or capped by duration',
+       P360._frameCountFor(9999), 48);
+    eq('frameCountFor: an ordinary mid-length clip samples exactly 48 frames, not 30 * duration',
+       P360._frameCountFor(6), 48);
+    eq('frameCountFor: a zero/invalid duration still returns 48 rather than throwing or sampling zero frames',
+       P360._frameCountFor(0), 48);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 48, not the old 720',
+       P360._frameCountFor(24), 48);
+    ok('…the count truly does not vary with duration — a 4s clip and a 20s clip get the identical frame count, unlike the retired 30fps scaling',
+       P360._frameCountFor(4) === P360._frameCountFor(20));
+  })();
+
+  console.log('\n[57] 2026-09-13: "reading video status is taking too long" — extractFrames now reports real per-frame progress, and skips re-resolving a duration the caller already knows');
+
+  ok('stitchFromVideo now reports 4 real stages ( duration / framecount / per-frame frames / stitch ), not the old single end-of-extraction "frames" callback',
+     /if \(onProgress\) onProgress\('duration'\);/.test(p3js) &&
+     /if \(onProgress\) onProgress\('framecount', frameCount\);/.test(p3js) &&
+     /function \(done, total\) \{\s*\n\s*if \(onProgress\) onProgress\('frames', done, total\);/.test(p3js) &&
+     !/if \(onProgress\) onProgress\('frames', 1\);/.test(p3js));
+  ok('…and extractFrames itself now takes a knownDuration + onProgress(done,total), firing after EVERY frame rather than once at the end',
+     /function extractFrames\(videoBlob, count, maxW, knownDuration, onProgress\)/.test(p3js) &&
+     /var dur = \(isFinite\(knownDuration\) && knownDuration > 0\) \? knownDuration : await fixInfiniteDuration\(video\);/.test(p3js) &&
+     /if \(onProgress\) onProgress\(i \+ 1, count\);/.test(p3js));
+  ok('module.js\'s runStitch reads all 4 stages into a real, changing status message — not one static "Reading video…" for the whole extraction phase',
+     /Extracting up to ' \+ a \+ ' frame' \+ \(a === 1 \? '' : 's'\) \+ '…';/.test(mjs) &&
+     /Extracting frames — ' \+ a \+ ' of ' \+ b \+ ' \(' \+ Math\.round\(\(a \/ b\) \* 100\) \+ '%\)';/.test(mjs) &&
+     /Stitching panorama — ' \+ Math\.round\(a \* 100\) \+ '%';/.test(mjs));
+
+  // Genuine execution: a fake, controllable <video> element (same
+  // monkey-patch-document.createElement convention as the capture.js race
+  // tests above, restored in a `finally` so it can never leak into a later
+  // test) proves extractFrames actually fires onProgress once per frame, in
+  // order, ending at (count, count) — and that a valid knownDuration really
+  // is used as-is rather than re-derived via fixInfiniteDuration (which
+  // would need a real 'timeupdate' event this fake video never fires).
+  await (async function () {
+    function makeFakeVideo() {
+      var listeners = {};
+      var _ct = 0;
+      return {
+        muted: false, playsInline: false, preload: '', src: null,
+        duration: NaN, videoWidth: 640, videoHeight: 480,
+        onloadedmetadata: null, onerror: null,
+        addEventListener: function (type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+        removeEventListener: function (type, fn) {
+          if (!listeners[type]) return;
+          listeners[type] = listeners[type].filter(function (f) { return f !== fn; });
+        },
+        get currentTime() { return _ct; },
+        set currentTime(v) {
+          _ct = v;
+          setTimeout(function () { (listeners.seeked || []).slice().forEach(function (f) { f(); }); }, 0);
+        }
+      };
+    }
+    var origCreateElement = ctx.document.createElement;
+    var fakeVideo = makeFakeVideo();
+    ctx.document.createElement = function (tag) {
+      if (tag === 'video') return fakeVideo;
+      return origCreateElement(tag);
+    };
+    try {
+      var progressCalls = [];
+      var p = P360._extractFrames({}, 5, 640, 12.5, function (done, total) { progressCalls.push([done, total]); });
+      fakeVideo.onloadedmetadata();   // simulate the metadata load firing
+      var frames = await p;
+      eq('extractFrames: extracted exactly `count` frames', frames.length, 5);
+      eq('extractFrames: onProgress fired exactly `count` times (once per frame, not once at the end)', progressCalls.length, 5);
+      ok('…in strict 1-of-5 .. 5-of-5 order, every call carrying the same total',
+         JSON.stringify(progressCalls) === JSON.stringify([[1, 5], [2, 5], [3, 5], [4, 5], [5, 5]]));
+    } finally {
+      ctx.document.createElement = origCreateElement;
+    }
+  })();
+
+  // Genuine execution of featherStops() — the one piece of the feathering
+  // fix that is silently wrong in a specific, easy-to-miss way if the clamp
+  // is off: an unclamped margin on a NARROW frame could exceed half its own
+  // width, which would make the two edge gradients overlap and invert.
+  (function () {
+    eq('featherStops: an ordinary-width frame gets a plain 12%-of-width margin',
+       JSON.stringify(P360._featherStops(1000, 0.12)), JSON.stringify({ marginPx: 120, stopFrac: 0.12 }));
+    eq('featherStops: the margin is CLAMPED to at most half the frame\'s own width, so the two edge gradients can never overlap/invert on a very narrow frame',
+       JSON.stringify(P360._featherStops(10, 0.9)), JSON.stringify({ marginPx: 5, stopFrac: 0.5 }));
+    eq('featherStops: a tiny frame still gets at least a 4px margin (never zero, which would make the gradient a no-op)',
+       P360._featherStops(20, 0.01).marginPx, 4);
+  })();
+
+  console.log('\n[58] 2026-09-14: "once the 360 is done processing, provide push notifications" — a real completion notification via the browser Notification API, plus the background-stall fix that makes it reachable at all');
+
+  // ⚠️⚠️ yieldToUI() switched from requestAnimationFrame to setTimeout — rAF
+  // is SUSPENDED ENTIRELY in a backgrounded/hidden tab, which would freeze
+  // the whole stitching pipeline (and so the completion notification it
+  // ends with) exactly when a planner switches away to another tab/app
+  // while it churns. Asserted on the shipped source, not merely described:
+  // the function body must contain no requestAnimationFrame call at all.
+  (function () {
+    var i = p3js.indexOf('function yieldToUI()');
+    var j = p3js.indexOf('\n  }', i);
+    var body = p3js.slice(i, j > i ? j + 4 : i + 300);
+    ok('yieldToUI() no longer calls requestAnimationFrame at all — only setTimeout, which is throttled (not suspended) in a hidden tab',
+       !/requestAnimationFrame/.test(body) && /setTimeout\(resolve, 0\)/.test(body));
+  })();
+
+  // Genuine execution of ensurePano360NotifyPermission(): requests
+  // permission ONLY when it's genuinely undecided ('default') — never when
+  // the planner has already answered (granted or denied), and never throws
+  // when the Notification API doesn't exist in this browser/context at all.
+  (function () {
+    var N = ctx.Notification;
+    try {
+      N.permission = 'default'; N.__requestCount = 0;
+      PP._ensurePano360NotifyPermission();
+      eq('ensurePano360NotifyPermission: permission is "default" (undecided) — requestPermission() IS called', N.__requestCount, 1);
+
+      N.permission = 'granted'; N.__requestCount = 0;
+      PP._ensurePano360NotifyPermission();
+      eq('…permission already "granted" — requestPermission() is NOT called again', N.__requestCount, 0);
+
+      N.permission = 'denied'; N.__requestCount = 0;
+      PP._ensurePano360NotifyPermission();
+      eq('…permission already "denied" — requestPermission() is NOT called again either', N.__requestCount, 0);
+
+      delete ctx.Notification;
+      var threw = false;
+      try { PP._ensurePano360NotifyPermission(); } catch (e) { threw = true; }
+      ok('…the Notification API not existing at all (typeof Notification === "undefined") is a plain no-op, never a throw', !threw);
+    } finally {
+      ctx.Notification = N; N.permission = 'default'; N.__requestCount = 0;
+    }
+  })();
+
+  // Genuine execution of notifyPano360Draft(): a real OS notification when
+  // granted (with the actual title/body/tag it was given, not just "some
+  // notification"), a toast fallback ONLY when there's no modal open to show
+  // the result live, and no double feedback when a modal IS open.
+  (function () {
+    var N = ctx.Notification;
+    function freshDraft(overrides) {
+      return Object.assign({ id: 'pano360draft_test_1', source: 'video', error: null, onUpdate: null,
+        meta: { desc: '' } }, overrides);
+    }
+    try {
+      // Granted: a real Notification is created, naming the draft's own
+      // description, and NO toast is fired on top of it.
+      N.permission = 'granted'; N.__created = []; ctx.__toasts = [];
+      var d1 = freshDraft({ meta: { desc: 'Roof deck, tower B' } });
+      PP._notifyPano360Draft(d1, true);
+      eq('notifyPano360Draft(ok=true, granted): exactly one real Notification is created', N.__created.length, 1);
+      ok('…titled for success, naming the draft\'s own description in the body, tagged with the draft\'s own id (so a re-notify of the same draft replaces rather than stacks)',
+         N.__created[0].title === '360° photo ready' &&
+         /Roof deck, tower B/.test(N.__created[0].opts.body) &&
+         N.__created[0].opts.tag === d1.id);
+      eq('…and no toast is fired alongside a real OS notification', (ctx.__toasts || []).length, 0);
+
+      N.__created = []; ctx.__toasts = [];
+      var d2 = freshDraft({ error: 'the video moved too fast to match' });
+      PP._notifyPano360Draft(d2, false);
+      ok('notifyPano360Draft(ok=false, granted): titled for failure and the body names the real underlying error, not a generic message',
+         N.__created[0].title === '360° photo failed' &&
+         /the video moved too fast to match/.test(N.__created[0].opts.body));
+
+      // Not granted (denied) AND no modal open on this draft (onUpdate is
+      // null) — the one case with no other feedback at all, so it degrades
+      // to a toast rather than going completely silent.
+      N.permission = 'denied'; N.__created = []; ctx.__toasts = [];
+      var d3 = freshDraft({ meta: { desc: 'Lobby walkthrough' } });
+      PP._notifyPano360Draft(d3, true);
+      eq('notifyPano360Draft(ok=true, denied, no modal open): falls back to a toast — 0 Notifications created', N.__created.length, 0);
+      eq('…exactly one "ok" toast fired, naming the draft', (ctx.__toasts || []).length, 1);
+      ok('…and it names the same description a granted notification would have', /Lobby walkthrough/.test(ctx.__toasts[0][1]) && ctx.__toasts[0][0] === 'ok');
+
+      var d3f = freshDraft({ error: 'stitching failed' });
+      ctx.__toasts = [];
+      PP._notifyPano360Draft(d3f, false);
+      eq('…a failure with no modal open toasts at "error" level', ctx.__toasts[0][0], 'error');
+
+      // Not granted, but a review modal IS open on this draft (onUpdate is
+      // set — the same flag openPano360Review() sets while it's watching a
+      // draft) — paint() already shows the result live, so no toast either.
+      N.permission = 'denied'; ctx.__toasts = [];
+      var d4 = freshDraft({ onUpdate: function () {} });
+      PP._notifyPano360Draft(d4, true);
+      eq('notifyPano360Draft: not granted, but a review modal IS watching this draft (onUpdate set) — no toast either, since paint() already updates what the planner is looking at', (ctx.__toasts || []).length, 0);
+
+      // Unsupported entirely (no Notification global at all) behaves
+      // exactly like "denied" for the purposes of the toast fallback.
+      delete ctx.Notification; ctx.__toasts = [];
+      var d5 = freshDraft({ meta: { desc: 'No Notification API here' } });
+      PP._notifyPano360Draft(d5, true);
+      eq('notifyPano360Draft: the Notification API not existing at all degrades the same way as "denied" — a toast, no throw', (ctx.__toasts || []).length, 1);
+    } finally {
+      ctx.Notification = N; N.permission = 'default'; N.__created = []; ctx.__toasts = [];
+    }
+  })();
+
+  // Wiring: the ONE success path (finishDraftStitch) and BOTH failure paths
+  // (the catch blocks in runStitchForDraft/runPhotoForDraft) each call
+  // notifyPano360Draft exactly once, at the real moment `draft.status`
+  // actually settles — never from any of the many intermediate progress
+  // ticks touchPano360Draft() also drives elsewhere in the same functions.
+  (function () {
+    // ⚠️ 2026-09-14, later still: rewritten in place (not weakened) — a new
+    // `draft._persistSourceBlob = null;` line now sits between the status/
+    // error assignment and the notify call at all three sites (the source
+    // blob is dropped once a draft settles; see persistPano360Draft's own
+    // comment), so each pattern now allows exactly that one extra line
+    // rather than requiring byte-adjacency.
+    ok('finishDraftStitch calls notifyPano360Draft(draft, true) right after draft.status is set to \'ready\' (allowing the new _persistSourceBlob=null line in between) — the moment stitching genuinely finishes',
+       /draft\.status = 'ready';\s*\n\s*draft\.progressMsg = null;\s*\n\s*draft\._persistSourceBlob = null;[^\n]*\n\s*notifyPano360Draft\(draft, true\);/.test(mjs));
+    var runStitchBody = mjs.slice(mjs.indexOf('async function runStitchForDraft'), mjs.indexOf('async function runPhotoForDraft'));
+    var runPhotoBody = mjs.slice(mjs.indexOf('async function runPhotoForDraft'), mjs.indexOf('function open360Upload()'));
+    ok('runStitchForDraft\'s catch block calls notifyPano360Draft(draft, false) — a failed background stitch still notifies, not just a silent draft.status flip',
+       /draft\.error = \(err && err\.message\) \? err\.message : 'an unknown error';\s*\n\s*draft\._persistSourceBlob = null;\s*\n\s*notifyPano360Draft\(draft, false\);/.test(runStitchBody));
+    ok('runPhotoForDraft\'s catch block does the same for a pre-processed 360° photo upload that fails to read',
+       /draft\.error = \(err && err\.message\) \? err\.message : 'an unknown error';\s*\n\s*draft\._persistSourceBlob = null;\s*\n\s*notifyPano360Draft\(draft, false\);/.test(runPhotoBody));
+    ok('ensurePano360NotifyPermission() is called from newPano360Draft() — the permission prompt is tied to the click/onchange that actually starts a capture, never asked for proactively on page load',
+       /function newPano360Draft\(source\) \{\s*_pano360DraftSeq\+\+;\s*ensurePano360NotifyPermission\(\);/.test(mjs));
+  })();
+
+  // 2026-09-14, later still: "since it's taking too long to process, the
+  // session already times out before completion. draft should extend
+  // beyond the session though this should only be per person." Genuinely
+  // executes persistPano360Draft/rehydratePano360Drafts/Pano360DraftStore
+  // against a REAL (if minimal) fake IndexedDB — a queue/event-based one,
+  // not an immediate-call stub, matching this file's own "a test that
+  // cannot fail is not evidence" standard for every other browser-API fake
+  // in this harness (the fake rAF queue, the fake Notification). The
+  // module-level `ctx.indexedDB` stub near the top of this file is a
+  // non-functional placeholder (never fires onsuccess/onupgradeneeded) —
+  // swapped out here for the duration of this section only, then restored.
+  // ⚠️ Must be `await`ed (matching every other genuinely-async section in
+  // this file) — the fake DB below defers through real setTimeout(...,0)
+  // macrotasks, and the file's own final process.exit() sits a few lines
+  // below this; an un-awaited IIFE here would let that exit run before any
+  // of these assertions ever fired.
+  await (async function () {
+    function makeFakeIndexedDB() {
+      var databases = new Map();
+      function getDb(name) {
+        if (!databases.has(name)) databases.set(name, { stores: new Map(), keyPaths: {} });
+        return databases.get(name);
+      }
+      return {
+        open: function (name) {
+          var req = { onupgradeneeded: null, onsuccess: null, onerror: null, result: null };
+          setTimeout(function () {
+            var db = getDb(name);
+            var fakeDb = {
+              objectStoreNames: { contains: function (n) { return db.stores.has(n); } },
+              createObjectStore: function (n, opts) { db.stores.set(n, new Map()); db.keyPaths[n] = opts.keyPath; return {}; },
+              transaction: function (storeName) {
+                var storeMap = db.stores.get(storeName);
+                var tx = { oncomplete: null, onerror: null };
+                var store = {
+                  put: function (record) { storeMap.set(record[db.keyPaths[storeName]], record); },
+                  delete: function (key) { storeMap.delete(key); },
+                  openCursor: function () {
+                    var entries = Array.from(storeMap.values());
+                    var i = 0;
+                    var curReq = { onsuccess: null, onerror: null };
+                    function step() {
+                      setTimeout(function () {
+                        if (i < entries.length) {
+                          var value = entries[i++];
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: { value: value, continue: step } } });
+                        } else {
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: null } });
+                        }
+                      }, 0);
+                    }
+                    step();
+                    return curReq;
+                  }
+                };
+                setTimeout(function () { tx.oncomplete && tx.oncomplete(); }, 0);
+                return { objectStore: function () { return store; } };
+              }
+            };
+            req.result = fakeDb;
+            if (db.stores.size === 0) req.onupgradeneeded && req.onupgradeneeded({ target: { result: fakeDb } });
+            req.onsuccess && req.onsuccess({ target: { result: fakeDb } });
+          }, 0);
+          return req;
+        }
+      };
+    }
+    var savedIndexedDB = ctx.indexedDB;
+    ctx.indexedDB = makeFakeIndexedDB();
+
+    function clearDrafts() { PP._pano360Drafts().length = 0; }
+    function makeDraft(overrides) {
+      return Object.assign({
+        id: 'test_' + Math.random().toString(36).slice(2), pid: 'DEMO01', source: 'video',
+        status: 'processing', error: null, video: null, videoUrl: null,
+        stitchResult: null, stitchUrl: null, repBlob: null, repUrl: null,
+        pendingAdjust: {}, meta: { desc: 'A test 360', date: '2026-09-14', works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+        onUpdate: null, _persistSourceBlob: null
+      }, overrides || {});
+    }
+
+    // A real put/all/allForUser/remove round trip through the fake DB.
+    PP._setUid('user-A');
+    var draft1 = makeDraft({ id: 'd1', _persistSourceBlob: { fake: 'video-bytes' } });
+    PP._persistPano360Draft(draft1);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var stored1 = await PP._Pano360DraftStore.all();
+    ok('persistPano360Draft() writes a real record into IndexedDB, carrying the CURRENT uid and (while status==="processing") the source blob',
+       stored1.length === 1 && stored1[0].id === 'd1' && stored1[0].uid === 'user-A' &&
+       stored1[0].sourceBlob && stored1[0].sourceBlob.fake === 'video-bytes' &&
+       stored1[0].meta.desc === 'A test 360');
+
+    // ⚠️⚠️ The "processing only" gate is proven from the STATUS, not from
+    // whether the caller remembered to null out _persistSourceBlob -- even
+    // an object that still carries a stale _persistSourceBlob stops being
+    // persisted as 'ready' the instant status changes.
+    draft1.status = 'ready';
+    draft1.stitchResult = { blob: { fake: 'stitched-jpeg' }, width: 4000, height: 700, quality: 'ok', pairsFallback: 0, pairsTotal: 9 };
+    draft1.repBlob = { fake: 'thumb-jpeg' };
+    PP._persistPano360Draft(draft1);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var stored1b = (await PP._Pano360DraftStore.all())[0];
+    ok('…and once a draft settles to "ready", the source blob is dropped from the persisted record even though draft._persistSourceBlob was never explicitly cleared — the gate reads draft.status, not a caller-maintained flag',
+       stored1b.sourceBlob === null && stored1b.stitchBlob && stored1b.stitchBlob.fake === 'stitched-jpeg' &&
+       stored1b.stitchWidth === 4000 && stored1b.repBlob.fake === 'thumb-jpeg');
+
+    // "should only be per person": a second user's draft is written to the
+    // SAME local database, and allForUser() must not let the two cross.
+    PP._setUid('user-B');
+    var draft2 = makeDraft({ id: 'd2', status: 'error', error: 'stitching failed' });
+    PP._persistPano360Draft(draft2);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var forA = await PP._Pano360DraftStore.allForUser('user-A');
+    var forB = await PP._Pano360DraftStore.allForUser('user-B');
+    ok('allForUser() filters strictly by uid — user A\'s drafts never include user B\'s, and vice versa, even though both live in the same local IndexedDB database',
+       forA.length === 1 && forA[0].id === 'd1' && forB.length === 1 && forB[0].id === 'd2');
+
+    // persistPano360Draft/rehydratePano360Drafts both refuse with no uid —
+    // proven by execution, not just read: writing a THIRD record with uid
+    // cleared must add nothing to the store.
+    PP._setUid(null);
+    var draft3 = makeDraft({ id: 'd3' });
+    PP._persistPano360Draft(draft3);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var storedAll = await PP._Pano360DraftStore.all();
+    ok('persistPano360Draft() is a no-op with no signed-in uid — a draft can never be written to local storage for "nobody in particular"',
+       storedAll.length === 2 && !storedAll.some(function (r) { return r.id === 'd3'; }));
+
+    // Rehydrate: a 'ready' record (this is the actual point of the feature —
+    // surviving a reload) restores with no reprocessing needed.
+    PP._setUid('user-A');
+    clearDrafts();
+    await PP._rehydratePano360Drafts();
+    var live = PP._pano360Drafts();
+    var d1live = PP._findPano360Draft('d1');
+    ok('rehydratePano360Drafts(): a persisted "ready" draft for the CURRENT user restores into PANO360_DRAFTS with its stitch result and thumbnail intact, and none of user B\'s drafts',
+       live.length === 1 && d1live && d1live.status === 'ready' &&
+       d1live.stitchResult && d1live.stitchResult.blob.fake === 'stitched-jpeg' &&
+       d1live.stitchResult.width === 4000 && d1live.repUrl);
+
+    // A 'processing' record with nothing left to resume from must not sit
+    // stuck forever -- it degrades to a real, Discard-able error instead.
+    PP._setUid('user-C');
+    var draft4 = makeDraft({ id: 'd4', status: 'processing', _persistSourceBlob: null });
+    PP._persistPano360Draft(draft4);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    clearDrafts();
+    await PP._rehydratePano360Drafts();
+    var d4live = PP._findPano360Draft('d4');
+    ok('rehydratePano360Drafts(): a "processing" draft with NO source blob to resume from (should not normally happen) becomes an honest error instead of a permanently stuck "Resuming…" draft',
+       d4live && d4live.status === 'error' && /interrupted/i.test(d4live.error));
+    var d4stored = (await PP._Pano360DraftStore.allForUser('user-C'))[0];
+    ok('…and that recovery is itself persisted, so the next reload sees the same honest error rather than trying (and failing) to resume again',
+       d4stored && d4stored.status === 'error');
+
+    // Discard removes the record from local storage too, not just memory.
+    clearDrafts();
+    PP._setUid('user-A');
+    var draft5 = makeDraft({ id: 'd5', status: 'error', error: 'x' });
+    PP._pano360Drafts().push(draft5);
+    PP._persistPano360Draft(draft5);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    ok('sanity: d5 is persisted before being removed', (await PP._Pano360DraftStore.allForUser('user-A')).some(function (r) { return r.id === 'd5'; }));
+    PP._removePano360Draft(draft5);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var afterRemove = await PP._Pano360DraftStore.allForUser('user-A');
+    ok('removePano360Draft() (Discard, and the same call after a successful Confirm & Save) deletes the record from IndexedDB too — a removed draft can never reappear on the next rehydrate',
+       !afterRemove.some(function (r) { return r.id === 'd5'; }) && !PP._findPano360Draft('d5'));
+
+    ctx.indexedDB = savedIndexedDB;
+  })();
+
+  // 2026-09-14, later still yet again: "the 360 draft still gets removed
+  // once a new session open... please retain since processing takes time."
+  // A genuine cross-session round trip was ALSO checked directly against a
+  // real browser (Playwright + Chromium, a persistent profile so IndexedDB
+  // survives a brand-new page load, not just a fresh in-memory array) — see
+  // this module's own CLAUDE.md for that finding — and confirmed the core
+  // persist/rehydrate mechanism already survives a genuine new page load
+  // correctly. What that could not have caught, and what this file's own
+  // fake IndexedDB (above) could not either, because it never fails: a
+  // single transient `indexedDB.open()` failure used to poison
+  // Pano360DraftStore for the REST of the page's life (dbp cached the
+  // REJECTED promise forever), with nothing ever retrying and nothing ever
+  // telling the planner. Fixed; genuinely executed here against a fake
+  // IndexedDB whose `open()` fails on purpose for its first call, then
+  // succeeds — the shape a real, momentary storage hiccup takes.
+  await (async function () {
+    function makeFlakyIndexedDB(failFirstNCalls) {
+      var databases = new Map();
+      var openCalls = 0;
+      function getDb(name) {
+        if (!databases.has(name)) databases.set(name, { stores: new Map(), keyPaths: {} });
+        return databases.get(name);
+      }
+      return {
+        open: function (name) {
+          openCalls++;
+          var thisCall = openCalls;
+          var req = { onupgradeneeded: null, onsuccess: null, onerror: null, onblocked: null, result: null };
+          setTimeout(function () {
+            if (thisCall <= failFirstNCalls) { req.onerror && req.onerror({ target: { error: new Error('simulated transient IndexedDB failure') } }); return; }
+            var db = getDb(name);
+            var fakeDb = {
+              objectStoreNames: { contains: function (n) { return db.stores.has(n); } },
+              createObjectStore: function (n, opts) { db.stores.set(n, new Map()); db.keyPaths[n] = opts.keyPath; return {}; },
+              transaction: function (storeName) {
+                var storeMap = db.stores.get(storeName);
+                var tx = { oncomplete: null, onerror: null };
+                var store = {
+                  put: function (record) { storeMap.set(record[db.keyPaths[storeName]], record); },
+                  delete: function (key) { storeMap.delete(key); },
+                  openCursor: function () {
+                    var entries = Array.from(storeMap.values());
+                    var i = 0;
+                    var curReq = { onsuccess: null, onerror: null };
+                    function step() {
+                      setTimeout(function () {
+                        if (i < entries.length) {
+                          var value = entries[i++];
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: { value: value, continue: step } } });
+                        } else {
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: null } });
+                        }
+                      }, 0);
+                    }
+                    step();
+                    return curReq;
+                  }
+                };
+                setTimeout(function () { tx.oncomplete && tx.oncomplete(); }, 0);
+                return { objectStore: function () { return store; } };
+              }
+            };
+            req.result = fakeDb;
+            if (db.stores.size === 0) req.onupgradeneeded && req.onupgradeneeded({ target: { result: fakeDb } });
+            req.onsuccess && req.onsuccess({ target: { result: fakeDb } });
+          }, 0);
+          return req;
+        }
+      };
+    }
+    function makeFlakyDraft(overrides) {
+      return Object.assign({
+        id: 'flaky_' + Math.random().toString(36).slice(2), pid: 'DEMO01', source: 'video',
+        status: 'processing', error: null, video: null, videoUrl: null,
+        stitchResult: null, stitchUrl: null, repBlob: null, repUrl: null,
+        pendingAdjust: {}, meta: { desc: 'flaky', date: '2026-09-14', works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+        onUpdate: null, _persistSourceBlob: { fake: 'bytes' }
+      }, overrides || {});
+    }
+
+    var savedIndexedDB2 = ctx.indexedDB;
+    var savedWarn = console.warn;
+    var warnCalls = [];
+    console.warn = function () { warnCalls.push(Array.prototype.slice.call(arguments)); };
+    ctx.indexedDB = makeFlakyIndexedDB(1);   // the very first open() rejects; every one after succeeds
+    // A prior section already resolved a real `dbp` against ITS fake
+    // IndexedDB — open() would otherwise reuse that live connection and
+    // never call the flaky indexedDB.open() at all. Cleared so this test
+    // exercises a fresh, unconnected store, matching what a real page
+    // actually starts with.
+    PP._Pano360DraftStore._resetConnectionForTest();
+    ctx.__toasts = [];
+    PP._pano360Drafts().length = 0;
+    PP._setUid('flaky-user');
+    PP._resetPano360PersistFailWarned();
+
+    var draftA = makeFlakyDraft({ id: 'flakyA' });
+    PP._persistPano360Draft(draftA);
+    await new Promise(function (r) { setTimeout(r, 30); });
+
+    ok('a failed indexedDB.open() is logged via console.warn, naming the draft — never a completely silent swallow',
+       warnCalls.some(function (c) { return /Could not persist 360° draft flakyA/.test(String(c[0])); }));
+    ok('…and the SAME failure toasts a warning to the planner ("keep this tab open… may be lost") — not just a console line only a developer would ever see',
+       ctx.__toasts.some(function (t) { return t[0] === 'warn' && /could not save your 360° capture locally/.test(t[1]); }));
+
+    var draftB = makeFlakyDraft({ id: 'flakyB' });
+    PP._persistPano360Draft(draftB);
+    await new Promise(function (r) { setTimeout(r, 30); });
+    var storedAfterRetry = await PP._Pano360DraftStore.all();
+    ok('open() no longer caches a REJECTED promise — a transient failure does not permanently break persistence for the rest of the page session; the very next persist attempt reaches a real, successful write',
+       storedAfterRetry.some(function (r) { return r.id === 'flakyB'; }));
+    ok('…and the toast warning fires at most ONCE per page load, not once per failed persist',
+       ctx.__toasts.filter(function (t) { return t[0] === 'warn' && /could not save your 360° capture locally/.test(t[1]); }).length === 1);
+
+    console.warn = savedWarn;
+    ctx.indexedDB = savedIndexedDB2;
+    PP._Pano360DraftStore._resetConnectionForTest();   // don't leave dbp pointed at the now-restored fake DB's stale closure
+  })();
+
+  // beforeunload: while at least one draft is genuinely still processing,
+  // leaving the page must ask first (the browser's own native "leave site?"
+  // prompt) — the standard mitigation for "you'll lose real work if you
+  // navigate away right now", pointed at the one condition where the WASM
+  // stitch would have to restart from scratch. Genuinely executed against a
+  // tracked fake `window.addEventListener`, not just read from source.
+  (function () {
+    var region = mjs.slice(mjs.indexOf('async function init(user, prof)'), mjs.indexOf('async function init(user, prof)') + 2500);
+    ok('init() registers a beforeunload listener (in addition to the existing online listener) that calls preventDefault()/sets returnValue when a draft is still processing',
+       /addEventListener\('beforeunload', function \(e\) \{/.test(region) &&
+       /PANO360_DRAFTS\.some\(function \(d\) \{ return d\.status === 'processing'; \}\)/.test(region) &&
+       /e\.preventDefault\(\);/.test(region) && /e\.returnValue = '';/.test(region));
+  })();
+
+  // 2026-09-14, later still yet again (again): "the video still gets removed
+  // once a new session opens... please retain since processing takes time" —
+  // reported AGAIN after the promise-caching fix above had already shipped.
+  // Two further, real gaps this time: (1) this origin's IndexedDB storage was
+  // never asked to be exempt from the browser's own best-effort eviction, so
+  // "persisted correctly" and "the browser silently threw it away under disk
+  // pressure" were indistinguishable from the outside; (2) recovering a draft
+  // was completely silent — the only sign of it was the small topbar badge,
+  // which a planner reopening the app after closing it mid-capture has no
+  // particular reason to go looking for, so a genuinely-recovered draft still
+  // read as "my video is gone" from their side. Both addressed below, both
+  // genuinely executed against real fakes, never just read from source.
+  await (async function () {
+    var savedNavigator = ctx.navigator;
+
+    // --- ensurePersistentStorage(): every real branch, driven for real ---
+    ctx.navigator = { onLine: true };   // no storage API at all
+    await PP._ensurePersistentStorage();
+    ok('ensurePersistentStorage() is a silent no-op when navigator.storage does not exist at all (an older/unsupported browser) — never throws',
+       true);   // reaching this line without throwing IS the assertion
+
+    ctx.navigator = { onLine: true, storage: {} };   // storage exists, .persist does not
+    await PP._ensurePersistentStorage();
+    ok('…and the same when navigator.storage.persist itself is missing (feature not implemented on this device)', true);
+
+    var persistCalls, persistedCalls, savedInfo, infoCalls;
+    function freshStorageNav(persistedResult, persistResult) {
+      persistCalls = 0; persistedCalls = 0;
+      return {
+        onLine: true,
+        storage: {
+          persisted: function () { persistedCalls++; return Promise.resolve(persistedResult); },
+          persist: function () { persistCalls++; return Promise.resolve(persistResult); }
+        }
+      };
+    }
+    savedInfo = console.info; infoCalls = [];
+    console.info = function () { infoCalls.push(Array.prototype.slice.call(arguments).join(' ')); };
+
+    ctx.navigator = freshStorageNav(true, true);   // already persisted
+    await PP._ensurePersistentStorage();
+    ok('already-persisted storage is checked FIRST via navigator.storage.persisted(), and persist() is never called again once it is true',
+       persistedCalls === 1 && persistCalls === 0);
+
+    ctx.navigator = freshStorageNav(false, true);   // not yet persisted, browser grants it
+    await PP._ensurePersistentStorage();
+    ok('not-yet-persisted storage calls navigator.storage.persist() exactly once, and logs that it was GRANTED',
+       persistCalls === 1 && infoCalls.some(function (m) { return /persistent storage granted/i.test(m); }));
+
+    infoCalls = [];
+    ctx.navigator = freshStorageNav(false, false);   // browser refuses (common on several mobile browsers)
+    await PP._ensurePersistentStorage();
+    ok('…and a REFUSAL is logged honestly ("was not granted"), never misreported as success',
+       persistCalls === 1 && infoCalls.some(function (m) { return /was not granted/i.test(m); }) &&
+       !infoCalls.some(function (m) { return /granted for this device/i.test(m) && !/was not granted/i.test(m); }));
+
+    ctx.navigator = {
+      onLine: true,
+      storage: {
+        persisted: function () { return Promise.reject(new Error('boom')); },
+        persist: function () { return Promise.reject(new Error('boom')); }
+      }
+    };
+    var threw = false;
+    try { await PP._ensurePersistentStorage(); } catch (e) { threw = true; }
+    ok('a genuine failure inside the Storage API (rejected promises) is swallowed — best-effort only, never fatal to init()', !threw);
+
+    console.info = savedInfo;
+    ctx.navigator = savedNavigator;
+  })();
+
+  // --- rehydratePano360Drafts() now tells the planner what it recovered,
+  // instead of silently restarting a stitch (or restoring a finished one)
+  // with nothing on screen to say so. ---
+  await (async function () {
+    function makeGoodIndexedDB() {
+      var databases = new Map();
+      function getDb(name) { if (!databases.has(name)) databases.set(name, { stores: new Map(), keyPaths: {} }); return databases.get(name); }
+      return {
+        open: function (name) {
+          var req = { onupgradeneeded: null, onsuccess: null, onerror: null, result: null };
+          setTimeout(function () {
+            var db = getDb(name);
+            var fakeDb = {
+              objectStoreNames: { contains: function (n) { return db.stores.has(n); } },
+              createObjectStore: function (n, opts) { db.stores.set(n, new Map()); db.keyPaths[n] = opts.keyPath; return {}; },
+              transaction: function (storeName) {
+                var storeMap = db.stores.get(storeName);
+                var tx = { oncomplete: null, onerror: null };
+                var store = {
+                  put: function (record) { storeMap.set(record[db.keyPaths[storeName]], record); },
+                  delete: function (key) { storeMap.delete(key); },
+                  openCursor: function () {
+                    var entries = Array.from(storeMap.values());
+                    var i = 0;
+                    var curReq = { onsuccess: null, onerror: null };
+                    function step() {
+                      setTimeout(function () {
+                        if (i < entries.length) {
+                          var value = entries[i++];
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: { value: value, continue: step } } });
+                        } else {
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: null } });
+                        }
+                      }, 0);
+                    }
+                    step();
+                    return curReq;
+                  }
+                };
+                setTimeout(function () { tx.oncomplete && tx.oncomplete(); }, 0);
+                return { objectStore: function () { return store; } };
+              }
+            };
+            req.result = fakeDb;
+            if (db.stores.size === 0) req.onupgradeneeded && req.onupgradeneeded({ target: { result: fakeDb } });
+            req.onsuccess && req.onsuccess({ target: { result: fakeDb } });
+          }, 0);
+          return req;
+        }
+      };
+    }
+    function makeToastDraft(overrides) {
+      return Object.assign({
+        id: 'toastdraft_' + Math.random().toString(36).slice(2), pid: 'DEMO01', source: 'video',
+        status: 'processing', error: null, video: null, videoUrl: null,
+        stitchResult: null, stitchUrl: null, repBlob: null, repUrl: null,
+        pendingAdjust: {}, meta: { desc: 'a recovered capture', date: '2026-09-14', works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+        onUpdate: null, _persistSourceBlob: { fake: 'bytes' }
+      }, overrides || {});
+    }
+
+    var savedIndexedDB3 = ctx.indexedDB;
+    ctx.indexedDB = makeGoodIndexedDB();
+    PP._Pano360DraftStore._resetConnectionForTest();
+    PP._pano360Drafts().length = 0;
+    ctx.__toasts = [];
+    PP._setUid('toast-user');
+
+    var procDraft = makeToastDraft({ id: 'toastProc' });
+    PP._persistPano360Draft(procDraft);
+    var doneDraft = makeToastDraft({ id: 'toastDone', status: 'ready', _persistSourceBlob: null, stitchResult: { blob: { fake: 'jpg' }, width: 10, height: 10, quality: 'ok' }, repBlob: { fake: 'thumb' } });
+    PP._persistPano360Draft(doneDraft);
+    await new Promise(function (r) { setTimeout(r, 30); });
+
+    PP._pano360Drafts().length = 0;   // as if this were a fresh page load — nothing in memory yet
+    ctx.__toasts = [];
+    await PP._rehydratePano360Drafts();
+
+    ok('rehydratePano360Drafts() toasts a recovery summary naming ONE still-processing capture being restarted, so recovering a draft is no longer indistinguishable from it having been lost',
+       ctx.__toasts.some(function (t) { return t[0] === 'ok' && /1 360° capture resuming/i.test(t[1]) && /restarting from your saved recording/i.test(t[1]); }));
+    ok('…and the SAME toast also names the one already-finished capture waiting for review, in one message rather than two',
+       ctx.__toasts.some(function (t) { return t[0] === 'ok' && /1 finished 360° capture.*waiting for review/i.test(t[1]); }));
+    ok('…exactly one recovery toast fires per rehydrate call, not one per recovered draft',
+       ctx.__toasts.filter(function (t) { return /Recovered from before you closed this app/.test(t[1]); }).length === 1);
+
+    // A second rehydrate against the SAME already-in-memory drafts recovers
+    // nothing new (findPano360Draft already finds each one) -- must not
+    // toast a phantom "recovery" for drafts that were never actually lost.
+    ctx.__toasts = [];
+    await PP._rehydratePano360Drafts();
+    ok('a rehydrate that recovers NOTHING new (every persisted draft is already in memory) fires no toast at all',
+       ctx.__toasts.length === 0);
+
+    // And genuinely nothing persisted at all (a brand-new user) -> no toast.
+    PP._pano360Drafts().length = 0;
+    ctx.__toasts = [];
+    PP._setUid('toast-user-with-nothing-saved');
+    await PP._rehydratePano360Drafts();
+    ok('a user with no persisted 360° drafts at all gets no recovery toast either — the toast only ever fires when something real was recovered',
+       ctx.__toasts.length === 0);
+
+    ctx.indexedDB = savedIndexedDB3;
+  })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

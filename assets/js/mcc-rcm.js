@@ -518,7 +518,7 @@ window.MCCRCM = (function () {
         return ['<strong>' + p.rating + '</strong>', esc(p.label), esc(p.rate),
           '<ul class="rcm-bul">' + p.bullets.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>'];
       }),
-      '⚠️ The <em>Probability rate</em> column is transcribed verbatim from the controlled document, where it runs backwards ' +
+      'The <em>Probability rate</em> column is transcribed verbatim from the controlled document, where it runs backwards ' +
       '(&gt;70% against Very Low, 0–10% against Very High). Score from the qualitative descriptors, which the register itself follows.');
   }
   function impactTableHTML() {

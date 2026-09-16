@@ -7,7 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Equipment Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -158,12 +159,18 @@
       text-align:center; border:1px solid var(--pd-red); border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-ink); }
 
     /* ---- Register ----------------------------------------------------------------------- */
-    .eq-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
-    .eq-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:var(--pd-fs-xs); font-weight:700;
-      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    /* ⚠⚠ THE APPROVED TABLE IS projects.html's, AND THIS IS NOT A SECOND COPY OF IT.
+       Owner 2026-09-16: *"We already have an approved UI of tables seen in projects.html. Let's
+       follow that universally"*, then *"include the manpower loading and equipment loading
+       modules in the check as well."* This block used to declare its own width, type scale,
+       header treatment, cell padding and hover — values a few pixels off the approved ones, which
+       is exactly what made the app's tables read as several different designs.
+       ⚠️ The table now carries `pd-table pd-proj-table` IN ITS MARKUP and takes all of that from
+       dashboard.css. What is left here is only what is particular to THIS table.
+       ⚠️ Do NOT re-add width / font-size / padding / border / hover rules. This stylesheet loads
+       after dashboard.css, so at equal specificity they would win and silently restore the second
+       design. */
     .eq-table th.num, .eq-table td.num { text-align:right; }
-    .eq-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
-    .eq-table tr:hover td { background:var(--pd-bg); }
     .eq-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); }
     .eq-badge.eq-rent { background:var(--pd-red-light); color:var(--pd-red); }
     .eq-actions { display:flex; gap:5px; }
@@ -245,7 +252,7 @@
     .eq-icorow { display:flex; align-items:center; gap:10px; padding:6px 8px; border-bottom:1px solid var(--pd-line); }
     .eq-icorow:last-child { border-bottom:0; }
     .eq-icorow .nm { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--pd-fs-sm); }
-    .eq-icorow .pd-select { max-width:190px; height:32px; font-size:var(--pd-fs-sm); }
+    .eq-icorow .pd-select { max-width:190px; height:32px; }
     .eq-menu { position:relative; display:inline-flex; }
     .eq-menu-pop { position:absolute; top:calc(100% + 4px); left:0; z-index:40; min-width:180px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg);
@@ -473,7 +480,7 @@
       <!-- REGISTER -->
       <div id="eq-view-register" style="display:none;">
         <div class="eq-card" style="padding:0;overflow:auto;">
-          <table class="eq-table" id="eq-reg"></table>
+          <table class="pd-table pd-proj-table eq-table" id="eq-reg"></table>
         </div>
       </div>
 
@@ -541,12 +548,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260910za"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260909n"></script>
+<script src="../../assets/js/config.js?v=20260915a"></script>
+<script src="../../assets/js/auth.js?v=20260915a"></script>
+<script src="../../assets/js/db.js?v=20260916c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260909s"></script>
-<script src="../../assets/js/icons.js?v=20260909ui"></script>
+<script src="../../assets/js/ui.js?v=20260916u"></script>
+<script src="../../assets/js/notebook.js?v=20260915d"></script>
+<script src="../../assets/js/icons.js?v=20260915f"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
 <script>
 // ============================================================================
 // Equipment Loading (per project).
@@ -723,11 +732,24 @@
   function catColor(c) { return CAT_COLOR[c] || '#7a7a7a'; }
 
   async function load(reset) {
-    if (!pid) { ITEMS = []; LOAD = {}; PLAN = { blocks: [] }; renderAll(); return; }
+    // Portfolio scope: no single project is selected, but every project the planner can
+    // see is in scope. The Site Plan / schedule-link features are inherently single-project
+    // (one drawing, one Location Breakdown), so they stay empty here; the register and the
+    // loading matrix are consolidated across every project instead of refusing outright.
+    // See AppAuth.isPortfolioScope(). Writes are already blocked network-wide in this scope.
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { ITEMS = []; LOAD = {}; PLAN = { blocks: [] }; renderAll(); return; }
     if (reset) showLoading('Loading equipment…');
     needsMigration = false;
     try {
-      ITEMS = await PDb.selectAll('equipment_items', function (q) { return q.eq('project_id', pid); });
+      var portfolioIds = null;
+      if (portfolio) {
+        portfolioIds = await (window.UI && UI.allProjectIds ? UI.allProjectIds() : Promise.resolve([]));
+        if (!portfolioIds.length) { ITEMS = []; LOAD = {}; PLAN = { blocks: [] }; hideLoading(); renderAll(); return; }
+      }
+      ITEMS = await PDb.selectAll('equipment_items', function (q) {
+        return portfolio ? q.in('project_id', portfolioIds) : q.eq('project_id', pid);
+      });
       ITEMS.sort(function (a, b) {
         var ai = EQ_CATS.indexOf(a.category), bi = EQ_CATS.indexOf(b.category);
         if (ai < 0) ai = 99; if (bi < 0) bi = 99;
@@ -737,8 +759,10 @@
       });
       // Placements: one row per (equipment, tower). ⚠️ Read BEFORE the loading rows are indexed
       // so a failure here cannot leave LINKS half-built against a fresh ITEMS list.
+      // ⚠️ Skipped in portfolio scope — a placement points at a shape id inside ONE project's
+      // own site plan, which has no meaning once several projects' items are mixed together.
       LINKS = {}; linksMissing = false;
-      try {
+      if (!portfolio) try {
         var lk = await PDb.selectAll('equipment_tower_links', function (q) { return q.eq('project_id', pid); });
         lk.forEach(function (l) { (LINKS[l.equipment_id] = LINKS[l.equipment_id] || []).push({ id: l.id, block_id: l.block_id }); });
       } catch (lerr) {
@@ -750,20 +774,28 @@
           ITEMS.forEach(function (i) { if (i.site_block) LINKS[i.id] = [{ id: null, block_id: i.site_block }]; });
         } else throw lerr;
       }
-      var rows = await PDb.selectAll('equipment_loading', function (q) { return q.eq('project_id', pid); });
+      var rows = await PDb.selectAll('equipment_loading', function (q) {
+        return portfolio ? q.in('project_id', portfolioIds) : q.eq('project_id', pid);
+      });
       LOAD = {};
       rows.forEach(function (r) { (LOAD[r.equipment_id] = LOAD[r.equipment_id] || {})[String(r.period).slice(0, 10)] = r; });
-      var sp = await sb().from('equipment_site_plan').select('plan').eq('project_id', pid).maybeSingle();
-      if (sp.error) throw sp.error;
-      PLAN = (sp.data && sp.data.plan) || { blocks: [] };
-      if (!Array.isArray(PLAN.blocks)) PLAN.blocks = [];
-      // The Location Breakdown levels are the schedule's own, read-only here. Which of them
-      // is the "tower" level is a per-project answer (some projects call it Building, some
-      // Structure), so it is remembered on the plan rather than guessed every time.
-      try {
-        LEVELS = await PDb.selectAll('location_levels', function (q) { return q.eq('project_id', pid).order('sort_order', { ascending: true }); });
-      } catch (_le) { LEVELS = []; }
-      if (!PLAN.level_id && LEVELS.length) PLAN.level_id = guessLevel();
+      // Site plan geometry and its Location Breakdown level are one project's own drawing —
+      // there is no single "portfolio site plan" to show, so the Site Plan tab stays empty here.
+      if (portfolio) {
+        PLAN = { blocks: [] }; LEVELS = [];
+      } else {
+        var sp = await sb().from('equipment_site_plan').select('plan').eq('project_id', pid).maybeSingle();
+        if (sp.error) throw sp.error;
+        PLAN = (sp.data && sp.data.plan) || { blocks: [] };
+        if (!Array.isArray(PLAN.blocks)) PLAN.blocks = [];
+        // The Location Breakdown levels are the schedule's own, read-only here. Which of them
+        // is the "tower" level is a per-project answer (some projects call it Building, some
+        // Structure), so it is remembered on the plan rather than guessed every time.
+        try {
+          LEVELS = await PDb.selectAll('location_levels', function (q) { return q.eq('project_id', pid).order('sort_order', { ascending: true }); });
+        } catch (_le) { LEVELS = []; }
+        if (!PLAN.level_id && LEVELS.length) PLAN.level_id = guessLevel();
+      }
     } catch (err) {
       // A missing table means the migration has not been run. Say exactly which file, and keep
       // the module usable (empty) rather than throwing a raw PostgREST message at the planner.
@@ -3174,6 +3206,25 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 'equipment-loading', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+
+    /* ⚠️⚠️ THE PORTFOLIO FACE OF THIS MODULE IS ITS OWN DASHBOARD NOW (owner, 2026-09-16:
+       *"those dashboards must be the landing page of each module when under the portfolio
+       view"*). Opened from the Portfolio sidebar (`#pd_scope=portfolio`, read once by
+       AppAuth) this page used to give a consolidated register with the Site Plan and schedule-link features blank — a portfolio answer, but not the one the availability grid gives.
+       The cross-project view it was missing already existed — as a TAB on a page called
+       Portfolio Dashboard. It is `assets/js/portfolio-dash.js` now, and it is mounted here.
+       ⚠️ THE MODULE'S OWN init() IS SKIPPED from this point on, deliberately: it would read
+       the same tables a second time into a UI hidden underneath the dashboard. `takeOver`
+       therefore wires the topbar project <select> itself — picking a project there LEAVES
+       portfolio scope, which is the only way back out of it from this page.
+       ⚠️ Guarded on `PortfolioDash.has()` rather than on the script tag: if the layer fails
+       to load, the module falls through to its own behaviour instead of rendering nothing. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('equipment')) {
+      PortfolioDash.takeOver('equipment', { select: '#eq-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     document.getElementById('eq-g-group').onchange = function (e) { gGroup = e.target.value; renderGantt(); };
     document.querySelectorAll('#eq-detail button').forEach(function (b) {
       b.onclick = function () {
@@ -3263,9 +3314,16 @@
     projects = projects.filter(function (p) { return AppAuth.canAccessProject(prof, p.id); });
     PROJECTS = projects;
     sel.innerHTML = projects.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
-    var saved = sessionStorage.getItem('pd_project');
-    if (saved && projects.some(function (p) { return p.id === saved; })) sel.value = saved;
-    pid = sel.value || null;
+    // ⚠️ Portfolio scope never falls back to a real project — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()), which is what
+    // load() reads to consolidate across every project instead of substituting one.
+    if (window.AppAuth && AppAuth.isPortfolioScope()) {
+      pid = null;
+    } else {
+      var saved = sessionStorage.getItem('pd_project');
+      if (saved && projects.some(function (p) { return p.id === saved; })) sel.value = saved;
+      pid = sel.value || null;
+    }
     if (UI.enhanceProjectSelect) UI.enhanceProjectSelect(sel);
     sel.onchange = function () {
       pid = sel.value || null;

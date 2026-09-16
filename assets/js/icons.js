@@ -65,6 +65,12 @@
     // (2026-09-03, owner: distinguish it from the calendar glyph Minutes of Meeting uses).
     ganttChart:  '<line x1="4" y1="6" x2="12" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="6" y1="18" x2="16" y2="18"/>',
     cash:        '<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><line x1="6" y1="9" x2="6" y2="9.01"/><line x1="18" y1="15" x2="18" y2="15.01"/>',
+    // Pormac's own icon (2026-09-12) — a speech bubble with two "eye" dots and
+    // a smile curve, so it reads as a friendly chat assistant rather than a
+    // generic message icon (`clipboard`/`contract` etc. are already taken by
+    // other modules; this is the one glyph in the set that has to read as
+    // "bot", not just "chat").
+    botChat:     '<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3.5V16H6a2 2 0 0 1-2-2z"/><circle cx="9" cy="9.3" r="1"/><circle cx="15" cy="9.3" r="1"/><path d="M9 12.6c1 .9 5 .9 6 0"/>',
 
     // --- KPI / misc ---
     user:        '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/>',
@@ -89,13 +95,32 @@
     pencil:      '<path d="M4 20h4L20 8a2.83 2.83 0 0 0-4-4L4 16z"/><line x1="14" y1="6" x2="18" y2="10"/>',
     link:        '<path d="M9 15l6-6"/><path d="M11 6l1-1a4 4 0 0 1 6 6l-1 1"/><path d="M13 18l-1 1a4 4 0 0 1-6-6l1-1"/>',
     pulse:       '<path d="M3 12h4l2-8 4 16 2-8h6"/>',
+    /* A schedule milestone: the DIAMOND this app already draws one with (`.ps-mile` in the
+       Project Schedule's Gantt), sitting on a timeline. ⚠️ It is the diamond ON A BASELINE
+       rather than a bare one, so it cannot be confused with the drawing palette's own shape
+       tools (`square`, `circleShape`, `polygon`) — a diamond by itself is a shape, a diamond
+       on a line is a date. Added because `Milestones` and `Meetings` sat next to each other
+       in the Portfolio sidebar both drawing `calendar`, and a collapsed rail has nothing but
+       the glyph to tell two rows apart. */
+    milestone:   '<path d="M12 3.5 18.5 10 12 16.5 5.5 10z"/><line x1="3" y1="20.5" x2="21" y2="20.5"/>',
     undo:        '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     redo:        '<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+    // A recurring/cyclical schedule — two bracket-shaped arrows facing opposite
+    // directions, forming a loop. Deliberately distinct from `refresh` (a single
+    // circular double-arrow used for "reload the data on this screen"): the two
+    // read as different verbs even though both involve arrows in a loop, and
+    // this app's own history records that overloading one glyph for two
+    // meanings is a trap ("eye" vs "slides" for view-vs-present).
+    repeat:      '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
     printer:     '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
     layout:      '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>',
     columns:     '<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>',
     palette:     '<circle cx="13.5" cy="6.5" r="1"/><circle cx="17" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12" r="1"/><path d="M12 22a10 10 0 1 1 10-10c0 2.2-1.8 3-3.2 3H16a2 2 0 0 0-1.4 3.4c.3.3.4.7.4 1.1A2 2 0 0 1 12 22z"/>',
     eye:         '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+    // A presentation screen on a stand, with two lines of "bullet" text inside —
+    // used for a Present/Reporting-view toggle (Minutes of Meeting, 2026-09-12),
+    // distinct from `eye` (which reads as "view/watch" rather than "present").
+    slides:      '<rect x="3" y="4" width="18" height="12" rx="1"/><line x1="7" y1="20" x2="17" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/><line x1="7" y1="9" x2="15" y2="9"/><line x1="7" y1="12.5" x2="12" y2="12.5"/>',
     folder:      '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     eyeOff:      '<path d="M9.9 5.2A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.6 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.4-1M3 3l18 18"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
     // Two opposing arrows — used for "swap/reorder" actions (e.g. Progress

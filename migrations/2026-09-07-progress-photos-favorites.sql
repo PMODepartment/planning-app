@@ -20,6 +20,29 @@
 -- SECURITY DEFINER function, never a widening of the table's own UPDATE
 -- policy (which would let any writer edit ANY field of ANY photo, not just
 -- the one boolean this needs).
+-- ⚠️⚠️ THE PREREQUISITE IS CHECKED FIRST, AND NAMED. Owner 2026-09-16 ran this file and got:
+--
+--     ERROR: 42P01: relation "progress_photos" does not exist
+--
+-- ...because every statement below ALTERS or INDEXES a table this file has never claimed to
+-- create. That is a true error and a useless one: it names the relation and not the reason, and
+-- the app's own Progress Photos portfolio view was, at the time, telling planners to run exactly
+-- this file whenever the read failed FOR ANY REASON -- including a missing table. So a planner
+-- following the app's advice was sent to a migration that could not run, and nothing on either
+-- screen said which of the two things was actually missing.
+--
+-- ⚠️ This is a GUARD, not a create. `progress_photos` belongs to supabase-schema.sql, which owns
+-- its columns, its RLS and its grants; creating a second, thinner copy of it here is how two
+-- definitions of one table start to drift. The guard raises a message that says what to run.
+do $$
+begin
+  if to_regclass('public.progress_photos') is null then
+    raise exception
+      'progress_photos does not exist yet. Run supabase-schema.sql first (it creates the table); this migration only adds the favorite flag to an existing one.'
+      using errcode = '42P01';
+  end if;
+end $$;
+
 alter table progress_photos add column if not exists favorite boolean not null default false;
 
 -- Fast lookup for the Portfolio Overview's favorites-only query (scoped by

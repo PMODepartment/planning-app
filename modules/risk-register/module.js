@@ -155,7 +155,7 @@ window.RiskRegister = (function () {
       apply: function (s) { switchView(s.view, document.querySelector('.rr-tabs [data-view="' + s.view + '"]')); }
     });
 
-    if (pid) load();
+    if (pid || (window.AppAuth && AppAuth.isPortfolioScope())) load();
     joinCollab();
   }
 
@@ -171,7 +171,17 @@ window.RiskRegister = (function () {
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = $('rr-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT. Arriving here
+    // via the Portfolio sidebar (`#pd_scope=portfolio`, read once by
+    // AppAuth), `pid` stays null on purpose — the alternative is exactly the
+    // reported bug: silently substituting the first project alphabetically
+    // and showing ITS real name in the selector as if it were correctly
+    // scoped. `pid === null` is also what `load()` reads below to switch the
+    // register from one project to every project this planner can see, and
+    // what already gates `openForm`/most write paths off (see there).
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     sel.innerHTML = '<option value="">Select project…</option>' +
       projects.map(function (p) {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>';
@@ -200,20 +210,30 @@ window.RiskRegister = (function () {
   }
 
   async function load() {
-    if (!pid) return;
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) return;
     // ⚠️ Keyset-paginated via PDb.selectAll: a plain .select() is capped at 1000 rows
     // SERVER-side and truncates silently — a register past that would under-report every
     // KPI with no error. Shaped as {data}/{error} so the offline-cache fallback is untouched.
     var res;
-    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
-    catch (err) { res = { error: err }; }
+    try {
+      if (portfolio) {
+        // ⚠️ Every project this planner can see (PDb.getProjects() is already
+        // RLS-scoped), not just the ones with a risk raised so far — an empty
+        // list here means "0 accessible projects", never "no risks anywhere".
+        var ids = await UI.allProjectIds();
+        res = { data: ids.length ? await PDb.selectAll(TABLE, function (q) { return q.in('project_id', ids); }) : [] };
+      } else {
+        res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) };
+      }
+    } catch (err) { res = { error: err }; }
     if (res.error) {
-      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
+      if (!portfolio && window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
       UI.toast(migrationHint(res.error), 'error'); return;
     }
     rows = res.data || [];
     sortRows();
-    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
+    if (!portfolio && window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
     render();
   }
 
@@ -673,7 +693,11 @@ window.RiskRegister = (function () {
   // Add / Edit — one modal, sectioned by the six RCM bands
   // ========================================================================
   function openForm(r) {
-    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!pid) {
+      UI.toast((window.AppAuth && AppAuth.isPortfolioScope())
+        ? 'Portfolio is read-only — switch to a project to add or edit.' : 'Select a project first', 'warn');
+      return;
+    }
     var isNew = !r; r = r || {};
     var e = E();
 

@@ -1,5 +1,711 @@
 # Module: contracts-claims
 
+## 2026-09-16 (i) — The dashboard rebuilt around the contract, and a roll-up that had been truncating at 1000 items
+
+Owner: *"Contracts & Claims Dashboard needs complete rework"*, and when asked whether that meant the
+commercial side or the claims side: ***"Both, commercial first"*** — the larger of the two answers.
+
+### ⚠️⚠️ THE PAGE HAD NO SUBJECT WHENEVER ITS ONLY SUBJECT WAS EMPTY
+
+Every block on the tab derived from the CLAIMS pipeline. `ccTimeHTML()` returns `''` outright with no
+claims; `ccMoneyTable()` collapses to one sentence; the legend suppresses itself — and the one
+non-claims block (packages) was empty too. On OPW101 — a **₱3.67B contract with nothing raised
+against it**, which is the state a project is in for most of its life — the whole tab rendered
+**two sentences and one number**, then ~700px of nothing. Meanwhile the BOQ two tabs away held the
+contract total, the certified POC and the revenue actually billed. A register is not only its disputes.
+
+### The tab now reads as one sequence, contract first
+
+1. a **verdict line** — the contract, who it is with, and what has been certified
+2. **four cards** on the shared `UI.kpi` / `UI.kpis` strip — contract value, certified to date,
+   claims exposure, time granted
+3. the **contract record's own facts** — reference, counterparty, signed date, value; all of which
+   the old dashboard computed nothing from and never showed
+4. the **packages**, unchanged (lifted out to `ccDashPkgHTML` so the page reads as a sequence)
+5. the **pipeline**, with a positive answer when there is none
+
+⚠️ **"None raised" is an answer, not an absence.** On a clean register the honest reading is *no
+exposure* — good news, stated as such — not three empty states apologising for having nothing to show.
+
+⚠️ **Exposure is pending + shortfall**, the same pair the portfolio view ranks projects by. Reporting
+only one understates the position in whichever direction that project happens to sit.
+
+### `BOQ.commercialSummary()` — a SECOND READ, NOT A SECOND IMPLEMENTATION
+
+⚠️⚠️ Every figure comes from the **same pure functions the Billing tab uses** — `periodTotals`,
+`contractSum`, `moneyLine`. Re-deriving POC for a dashboard is the hand-copied-S-curve mistake this
+repo has already paid for, and the reason `assets/js/claims.js` exists at all.
+
+⚠️⚠️ And it is **lean on purpose**. `load()` is ~8 round trips over every column of ~900 items, and
+the Dashboard is the module's LANDING view — paying that on every open would undo exactly what the
+Contract tab's lazy mount was built for. This reads **seven columns, the current revision(s), and ONE
+period**, assigns none of the module's state (`REVS` / `ITEMS` / `PERIODS` / `PROG` are untouched), and
+is **not awaited**: the page is readable from `rows` and `PKGS` before it lands, and the fill re-checks
+`_loadGen` after its await so a superseded project cannot paint over the new one.
+
+⚠️⚠️ **Every absent figure names its state; none of them is 0.** No BOQ / a draft BOQ (which bills
+nothing, by the trigger, so `is_current` is false on every revision) / issued but unbilled / the read
+failed. "Not yet billed" and "0% certified" are opposite claims about a project.
+
+### ⚠️⚠️ THE ROLL-UP THAT HAD BEEN TRUNCATING AT 1000 ITEMS, SILENTLY
+
+Found while writing the lean read, because I was about to copy it. `PDb.selectAll` paginates on a
+keyset cursor it reads **off the last returned ROW OBJECT** — `last = page[page.length-1][k]` — and
+then bails on `if (last == null) return out;`. A cursor column **absent from the projection** is
+`undefined`, and `undefined == null` is **true**, so the loop returns after the first page.
+
+`computeProjectTotal` (boq.js:2539) selected `'amount,line_kind,exclusion_note'` with **no `id`**. On a
+project whose current-revision BOQ items exceed 1000, it was computing a **CONTRACT TOTAL** from the
+first 1000 lines — no error, no warning, a plausible smaller number. Fixed, and the new lean reads
+select `id` for the same reason.
+
+⚠️ **`tools/selectall-key.js` cannot catch this.** It verifies the RELATION has an id column (103 call
+sites, 0 broken) — not that the **projection** includes it. A one-off audit of all explicit-`cols` call
+sites found **four more of exactly this bug in `modules/pormac/module.js`** (:732, :734, :752, :768),
+left for its own session rather than touched from here.
+
+### ⚠️⚠️ WHAT THE HARNESS GOT WRONG BEFORE IT GOT ANYTHING RIGHT
+
+Six cases rendered against the real `dashboard.css` + `module.css`. Four defects, three of them in the
+harness itself — which is the point of writing one down rather than trusting it:
+
+- **The harness was reporting one case six times.** `ccDashFill` resolves its targets with
+  `getElementById`, which returns the FIRST match in the document. Case 0 deliberately kept the real
+  id, so **every later case's fill landed on case 0** — case 0 showed case 5's figures and cases 1–5
+  stayed frozen on the pre-fill placeholder. Now every case is renamed after its own fill, and the
+  shipped `#cc-dash-certcard{display:contents}` rule is proven by **reading the computed value** while
+  the id is still real (`"contents"` × 6) rather than by leaving the id on.
+- **"THE PIPELINE" printed twice** — real, in the module. `ccMoneyTable` opens with its own
+  `cc-dash-h` in BOTH branches; the new heading above it was a duplicate. Removed. (12 → 6.)
+- **`function sub() { [native code] }` under three pipeline cards** — a harness artefact. The module's
+  local `kpi(label, value, sub, cls)` is **four positional args**; the shared `UI.kpi` takes
+  `(label, value, {sub, cls})`. Substituting one for the other made `opts.sub` read the legacy
+  `String.prototype.sub` off the string. The harness was inventing a bug that is not in the module.
+- **`.pd-kpi-sub` is `white-space:nowrap; text-overflow:ellipsis`** — real, and the worst of the four.
+  At a 235px card the sub-lines were not shortened but **CUT MID-FIGURE**:
+  `"₱632,924,530 of ₱3,670,000,00…"` reads as a *different number*, not as a truncation. Every sub is
+  now short-form money (`₱632.92M of ₱3.67B · billing 7`), the full sentence moved to the card's
+  `title`, and the whole page is asserted on `scrollWidth > clientWidth`: **0 truncated** across every
+  label, value and sub in all six cases.
+
+⚠ **Two `.cc-hint` paragraphs in a row OVERLAPPED by 4px.** `.cc-hint` is
+`margin-top:-4px; margin-bottom:0` — built to sit tight under the table it annotates — so the
+contract's description and the "no package breakdown yet" hint touched and read as one run-on
+paragraph. `.cc-dash .cc-hint + .cc-hint { margin-top: 10px }` separates only the adjacent pair;
+a hint following a table keeps its deliberate negative margin (measured: −4px → 10px, and the
+table-following hint unchanged at 33px). `module.css` → `20260916i`.
+
+### Measured, not assumed
+
+| | light | dark |
+|---|---|---|
+| `--pd-ok` value on card | **4.12:1** | **7.11:1** |
+| `--pd-warn` value on card | **3.46:1** | **6.14:1** |
+| `.pd-kpi-sub` | **7.07:1** | **7.02:1** |
+
+The values are 20px/800 — **large text, a 3:1 threshold** — which both status tokens clear; the subs
+are 11px and clear the 4.5:1 normal-text threshold. ⚠️ `--pd-warn` at **3.46:1** is exactly why these
+are surface tokens and must never be used as small text.
+
+All six states verified end to end in both themes: `17.2%` billed / draft / issued-unbilled / no BOQ /
+read failed / populated-with-claims, each showing its own figures. Case 5 arithmetic checked by hand:
+exposure ₱78.5M = ₱38.0M pending + ₱40.5M shortfall (23.9 + 16.6), 120d granted, 45d outstanding.
+
+Cache tokens bumped in `index.html`: `module.css` → `20260916h`, `boq.js` → `20260916a`,
+`module.js` → `20260916j` (all three sort-checked forward).
+
+⚠️ **Not clicked through signed in.** The harness stubs `BOQ.commercialSummary`; the lean read itself
+has not been run against Supabase.
+
+## 2026-09-16 (h) — The dashboard gets its own tab, and a cache token I forgot an hour earlier
+
+Owner, with a screenshot of the live OPW101 Contract tab: *"Let's improve the dashboard for the
+contracts & claims. I think let's just have a separate tab for the dashboard if this is the case"*.
+
+### ⚠️⚠️ WHAT THE SCREENSHOT ACTUALLY SHOWED WAS 15 EM DASHES
+
+OPW101 carries a contract and **no claims, change orders or EOT** — the ordinary early state of a
+project. So the pipeline table the previous entry had just built rendered three rows by five columns
+of `—`, under a header naming five figures none of which exist, **360px of it**, above an honest
+one-line paragraph explaining what the table would say if there were anything to say. The band was
+mostly a promise.
+
+`ccHasClaims()` — one predicate, `PDClaims.claimsOnly(rows).length > 0`, read by the table **and**
+the legend so they cannot disagree — collapses the whole thing to a single sentence:
+
+> No change orders, cost claims or extensions of time have been raised on this project yet. When
+> they are, this is where what was claimed and what came back is summarised — submitted, evaluated,
+> approved, and the shortfall across decided records.
+
+| measured on OPW101 exactly (contract only, no packages) | before | after |
+|---|---|---|
+| pipeline block | **360px** | **121px** |
+| em-dash cells | **15** | **0** |
+
+⚠️ **It is one predicate, not two tests.** The legend paragraph explains a table; a legend that
+survives its own table is the *"a comment that confidently describes the opposite of the code"*
+shape this repo has recorded twice. ⚠️ And it gates on `claimsOnly`, **PDClaims' own rule**
+(everything that is not a Contract), never a local copy — the whole reason that file exists.
+
+### The tab
+
+`VIEWS` gains a `dashboard` entry and the module **lands on it**: `view = 'dashboard'`. `render()`
+branches before the contract branch and returns, so the band is the whole screen rather than a
+header on somebody else's.
+
+| | before | after |
+|---|---|---|
+| Contract tab height | 1585px, records at y=961 | **643px, records first** |
+| Dashboard | folded into the Contract tab | its own tab, 856px |
+
+- ⚠️⚠️ **THE OLD FOUR-TAB OBJECTION IS STALE, AND THAT WAS CHECKED RATHER THAN ASSUMED.** The
+  markup carried a warning that *"the tab count is load-bearing for the TITLE"*, because `module.css`
+  once hid `.cc-title-txt` below 1460px on the grounds that *"5 tabs need more room"*. That was true
+  of **a strip of labelled buttons**. Since 2026-09-03 the strip is converted by
+  `UI.tabsToDropdown('.cc-tabs')` into ONE trigger naming only the CURRENT screen — so its width is
+  set by the longest label that can BE current, *"Claims / Change Order"*, and **"Dashboard" is
+  shorter, so a fourth entry costs zero width**. The title text is hidden above 701px regardless by
+  `.pd-title-hasdrop`, precisely because the trigger already names the screen. Neither half of the
+  warning survives; it is replaced with the measurement.
+- ⚠️ **The 2026-08-26 folding is UNTOUCHED.** Packages stay inside Contract, BOQ under Contract, PMI
+  under Claims. This adds a read-only summary; it does not reopen *"there are too many tabs to keep
+  track of"*.
+- ⚠️ **Export is hidden on the dashboard and RESET at the top of `render()`** — a control hidden by
+  one branch and never restored is invisible on every tab after it. **Print is deliberately kept**:
+  `window.print()` needs no table.
+
+### ⚠️⚠️ AND `packages.js` SHIPPED AN HOUR EARLIER UNDER A CACHE TOKEN FROM 2026-09-11
+
+The previous commit (`c752e7f`) passed `ccDashHTML` into `CCPackages.show(...)` — **23 changed lines
+in `packages.js`** — and bumped `module.css` and `module.js` only. `packages.js?v=20260911uc` was
+left exactly as it was. So a returning browser with a warm cache kept serving the old `show()`, the
+one whose signature has no `dashHTML` parameter, and **the band that commit existed to resurrect
+would not have appeared for them at all.** This repo's single most-recorded deploy failure, and I
+made it while writing an entry about a different one.
+
+Found by reading `git show c752e7f -- index.html` against `git show --stat`, not by a checker —
+`wiring-check` §4 proves every asset is on ONE version, which it was; what it cannot know is whether
+that one version is **newer than the bytes**. Fixed forward: `packages.js` is bumped here, and this
+round removes the `dashHTML`/`onDash` plumbing entirely, so the stale-cache case resolves either way.
+
+⚠️ **`packages.js` is reverted to one line** — `contractsHTML() + packagesHTML() + boqSectionHTML()`
+— rather than keeping an unused parameter. The band has **exactly one call site** again, which is
+the property that stopped it drifting from the project-dashboard panel in the first place.
+
+### Verified
+
+All 24 static gates pass, including the ones that would catch a half-move: exactly **one**
+`ccDashHTML()` call site, the dashboard branch **before** the contract branch and returning, no
+`onDash`/`dashHTML` left in `packages.js`, `ccHasClaims` read three times, the arithmetic still
+routed through `PDClaims.sum` / `decided` / `isDisapproved` / `shortfallOf`, 13/13 emitted classes
+carrying a CSS rule, 0 NUL and pure LF, CSS braces 660.
+
+Rendered: the populated dashboard tab at **856px / 3 table rows / 6 cards**; the Contract tab with
+`hasBand: false` and `cc-sechead` as its first child; and the OPW101 empty case above.
+`wiring-check` **139/139** (its asset pass is what confirms the bump landed on one version),
+`test-boq.js` **66/0**, `dead-hooks` 9 — the documented baseline, all in `project-schedule`'s
+blocked file.
+
+⚠️ **Not verified signed in** — fixture data through the shipped renderer, plus a fixture shaped
+exactly like the live OPW101. No live register has been read.
+
+⚠️⚠️ **`MODULE_V` → `20260916i`, NOT `h` — the collision this log has now recorded six times.**
+A concurrent session independently chose `20260916h` for its own `MODULE_V` and pushed first, and
+**that does not conflict**: git saw the identical string on both sides and merged it silently. A
+browser holding their `h` would never have fetched my module page. The token is therefore
+re-derived from what `origin/main` actually has, **after** integrating rather than before.
+`module.js` and `packages.js` → `?v=20260916i`. ⚠️ `module.css` is deliberately NOT bumped — it
+did not change this round.
+
+## 2026-09-16 — The dashboard the module could not reach, and then could not see past
+
+Two owner turns, one story. First: *"I do not see the dashboard in contracts & claims"* — with a
+screenshot of the live Contract tab showing CONTRACT RECORDS and BILL OF QUANTITIES and no band at
+all. Then, once it was visible: trim the 22 KPI cards.
+
+### ⚠️⚠️ PART ONE: THE BAND WAS DEAD CODE, AND HAD BEEN SINCE THE DAY IT SHIPPED
+
+`ccDashHTML()` was built on 2026-09-15 (g) and its **only** call site was inside `kpiHTML()`. But
+`render()` hands the whole Contract tab to `CCPackages.show()` and **returns before the line that
+calls `kpiHTML`**. So that call sat on a branch that can never run, and the band had never rendered
+once — on any project, for anyone. The owner was right, and the entry below describing the band's
+figures describes something nobody had seen.
+
+Fixed by passing it INTO the view that owns the tab (`CCPackages.show(..., ccDashHTML)`), which is
+the only place it can be reached from. ⚠️ The unreachable `if (view === 'contract') return
+ccDashHTML();` in `kpiHTML` is **replaced by a comment saying why it was dead and not to restore
+it** — one renderer with one call site is what stops the band and the packages view drifting apart.
+
+### ⚠️⚠️ PART TWO: THE DEFECT WAS NOT THE CARD COUNT — THE BAND WAS TALLER THAN THE VIEWPORT
+
+Measured at 1400x1000 before changing anything: the band stood **1028px** and the Contract records
+table — the tab's own content — began at **y=1130**, below a 1000px viewport. You could not see a
+single contract record without scrolling. That is this module's own 2026-09-07 finding ("the page
+led with its rarest case") in a new costume.
+
+| measured in the SAME shell, same width | before | after |
+|---|---|---|
+| band height | 1028px | **856px** |
+| register table starts at | y = 1132 | **y = 961** |
+| KPI cards | 22 | **6** (3 shown, 3 folded) |
+| page height | 1756px | 1585px |
+
+### The money half becomes one table
+The 15 cards were Change orders / Cost claims / EOT carrying the **same five figures in the same
+order**, as three separate `.cc-kpis` grids 105px apart with a heading between each — so comparing
+a column DOWN the three record types, the one reading that matters, was the one reading you could
+not do at all.
+
+- ⚠️⚠️ **The project-dashboard invariant is honoured, and it is worth saying which half.** The rule
+  (2026-09-15) is that the two screens must not DESCRIBE THE REGISTER DIFFERENTLY — same figures,
+  same order, same two-figure treatment of "disputed". All three hold. What changes is
+  presentation, and the two screens are different objects: `dashboard.html`'s panel is one small
+  panel among many, where cards suit; this is the page you open TO READ THIS REGISTER, where a
+  table does. **Do not "re-sync" them by turning this back into cards.**
+- ⚠️ **A layer over `.cc-table`, never a second table class** — the rule this module set on
+  2026-09-07. The one override is `min-width`: that class carries a 1020px floor sized for the
+  9-column register, which would put a 6-column summary into a horizontal scroll on a laptop.
+
+### ⚠️⚠️ AND THE THREE FIGURES DO NOT RECONCILE ON SCREEN, WHICH NOTHING SAID
+Measured on the fixture: Submitted ₱145,400,000 minus Approved ₱68,500,000 is **₱76,900,000**,
+while Shortfall reads **₱35,900,000** — because Submitted and Approved sum EVERY record while
+Shortfall sums DECIDED ones only. Three numbers in a row where two look like they make the third,
+₱41M apart. Same family as the bug this module already paid for once, when the aging bars were
+measured on a different key from the headline beside them. The Shortfall column now says
+**`decided only`** in its own header; the hint paragraph explaining it was 400px below and had been
+there the whole time.
+
+### Deleted, and folded
+- **The "Oldest pending" card is gone** — it duplicated its own section header, which renders
+  *"With the client — 3 pending · oldest 137 days"* 40px above it. ⚠️ What the card DID carry and
+  the header did not is the **tone** (amber past 60 days, red past 90), so that moved up into the
+  header rather than going with the card. A de-duplication that quietly deletes a signal is not one.
+- **The `days` helper in `ccDashHTML` is removed**, not left — the EOT block is a row of
+  `ccMoneyTable` now and carries its own formatter, so it had no caller at all.
+- **The hand-off averages fold**, with the end-to-end figure on the summary so it need not be
+  opened. ⚠️ This is the ONLY screen in the app that calls `PDClaims.stageDays` — checked, not
+  assumed — so deleting the row would have made that rule dead code.
+- **Packages cap at the largest three.** ⚠️ "Not allocated to a package" is appended to the
+  VISIBLE part, never the fold: it is the most useful line in the block.
+
+### Verified
+**Every figure identical to before** — all 15 pipeline numbers, pending value, pending time,
+recovery rate and the three legs, read back off the rendered DOM, with the BEFORE build rendered in
+the **same harness shell** so the two geometry readings are comparable. 24 static gates pass. The
+package fold exercised at 1 / 3 / 4 / 8 lots: caps at 3 + remainder, singular/plural correct, and
+`remainderInFold: false` every time. Contrast min **5.84 light / 6.14 dark**, all clear AA. At a
+real 375px the page does **not** scroll sideways and the table scrolls inside its own 353px box.
+`wiring-check` 139/139, `test-boq.js` 66/0, `dead-hooks` 9 (documented baseline).
+
+⚠️ **Not verified signed in** — fixture data through the shipped renderer; no live register read.
+
+### ⚠️ Three traps worth keeping
+- **A fixed `?v=` on the harness served the browser's STALE `module.css`**, so the new tones and
+  `tabular-nums` read as "the rule is not applying". The token is unique per build now.
+- ⚠️⚠️ **The harness omitted `.pd-main` / `.pd-content`, and reported a phone defect the product
+  does not have.** `body.pd-app` is `display:flex`, so an un-wrapped `#cc-view` is a flex item whose
+  default `min-width:auto` resolves to the register table's 1020px floor and the page scrolls
+  sideways at 375px. Both wrappers carry `min-width:0` in `dashboard.css`, which is what stops it in
+  the real app. Neutralising the new table changed **nothing**, which is what proved it was the
+  shell and not the change. The harness lifts the real ancestor chain now.
+- **This module's "mixed line endings" note is STALE.** `module.js` and `module.css` are both pure
+  LF today — 1860 and 1375 lines, **0 CRLF**. Measured before anchoring a patch on `\n`.
+
+`module.js` / `module.css` → `?v=20260916g`; `MODULE_V` → `20260916g`.
+
+## 2026-09-15 (q) — The dashboard gains the time half it was missing
+
+Owner: *"Let's develop a dashboard in the contracts & claims register."* The money half shipped that
+morning; it could say what was claimed and what came back, and could not answer the question a
+commercial meeting opens with — **how long has the client been holding this?**
+
+New `ccTimeHTML()`: pending value and pending time, oldest pending, recovery rate, an aging
+breakdown (0–30 / 31–60 / 61–90 / 90+) and hand-off velocity (submitted → evaluated → decided).
+
+- ⚠️⚠️ **Every figure comes from columns that already existed.** `date_submitted`,
+  `date_evaluated` and `date_approved` have been on this table since 2026-07-20 and nothing but the
+  per-row aging ever read them. No migration.
+- ⚠️⚠️ **The rules moved to `PDClaims` (assets/js/claims.js), unchanged** — `ccBlock` now
+  delegates too. They were already duplicated in dashboard.html and the portfolio view was about to
+  be a third copy.
+- ⚠️ **Not submitted is its own line**, never folded into 0–30: *"we have not sent it"* and
+  *"they have not answered"* are different problems with different owners.
+- ⚠️ **Bars scale to the largest bucket, not the total** — scaled to the total a healthy register
+  draws three invisible slivers and the one bucket that matters cannot be compared.
+- ⚠️ A leg with no decided records reads **no data**, never `0d`: zero claims the client turns
+  these round same-day, which is the opposite of *"we cannot tell yet"*.
+
+### ⚠️⚠️ Two defects the tests caught, one of them in this block after I had passed it
+
+- **The header undercounted.** `agingBuckets().n` counts records with an AGE, so a record Pending but
+  never submitted was missing from *"N pending"* while appearing on its own row two lines below.
+- **The bars were measured on a different basis from the figure beside them** — `sub_amount` while
+  *"Pending value"* prefers `eval_amount`, so the bars totalled ₱100,000 under a headline reading
+  ₱99,000. The PORTFOLIO test caught it; this block's own test had asserted the wrong figure as
+  correct. Both now pass the same key list through one shared `valueOf`.
+
+**15 assertions, 0 failing**, executing `ccTimeHTML` sliced out by name — including a register holding
+only a contract rendering **nothing** rather than a wall of dashes.
+⚠️ Not verified signed in. `module.js`/`module.css` → `?v=20260915g`; `MODULE_V` → `20260915o`.
+
+## 2026-09-15 (o) — The load stops painting a register it has not loaded yet
+
+Owner: *"Loading contracts & claims module loads 3 different views for split seconds then loads
+properly."*
+
+- ⚠️⚠️ **The first diagnosis was a harness artefact.** `#cc-filters` looked like the culprit — a full
+  filter bar in static markup, collapsed only when `wireFilterToggle` adds `.pd-filtergroup` after
+  auth — and a harness measured it visible at 284px. The harness sat at the server root, so
+  `module.css` (a **relative** href) 404'd. Rebuilt in `modules/contracts-claims/`, both sheets load
+  (422 + 563 rules) and `#cc-filters` is **`display:none` from the first byte**, because
+  `.cc-filters { display:none }` is declared right here in this module's own CSS. Same for
+  `rr-filters` and `sm-filters`. Nothing to fix there.
+- **The real cause:** `ensureLinks().then(render)` was gated on nothing and raced the four other
+  round trips `load()` makes. `cc_affected_activities` is small, so it usually won and repainted
+  while `rows` was still empty (first open) or still the previous project's (a switch).
+- ⚠️ **`load()` is also called un-awaited** from the project-switch handler, so two loads could
+  overlap and the *last to finish* committed `rows`, `PKGS` and `ALL_PROJECTS`.
+- **`_loadGen`** (project-schedule's own device): every await re-checks it, one `paint()` no-ops on a
+  superseded load, and ⚠️ `PKGS` / `ALL_PROJECTS` are assigned **after** the check — module state
+  from a stale load is a wrong screen, not just an early one.
+- ⚠️ The links repaint survives, gated on `_painted === gen`: if the links land first the cache is
+  already full and the main paint draws the chips anyway (`affChip` never fetches).
+
+**Verified** by slicing `load()` out and executing it with controlled timings, against `afb3bf3`:
+the control paints **`0 rows` → `1 rows`** (the flash, reproduced) and the fix paints **once**.
+**7 assertions, 0 failing** — including that a *late* links read still repaints, and that two
+overlapping loads produce 1 paint rather than 2. wiring-check 129/129.
+⚠️ Not verified signed in. ⚠️ The BOQ still mounts in afterwards, deliberately — that lazy mount is a
+documented decision, not part of this defect.
+
+`module.js` → `?v=20260915f`; `MODULE_V` → `20260915m`.
+
+## 2026-09-15 (m) — The attachment engine moves to `assets/js/attach.js`, and this module delegates
+
+Not a feature for this module — the Project Schedule needs attachments on activities, and the
+valuable part of what shipped here on 2026-09-15 (h) is not the upload. It is the three **ordering
+rules**: the object is written before the row, the object is rolled back if the row write fails, and
+on removal the row goes first. A second copy of those is a second set of ways to get them wrong.
+
+- **New `assets/js/attach.js` (`PDAttach`)**, parameterised by table, bucket, owner column, doc-type
+  vocabulary and CSS prefix. This module's `att*` functions are now thin delegates over an instance.
+- ⚠️ **The local names are kept** (`loadAttachments`, `attPanelHTML`, `attPanelWire`, `attFlush`), so
+  the three call sites, the `D.att*` exports and `wizard.js` are untouched and the diff stays
+  checkable. Same approach `affected.js` took when `PDLoc` was extracted.
+- ⚠️ **The `cls` prefix is why no CSS changed.** The engine emits `cc-att*` exactly as before, so this
+  module's stylesheet keeps working unmodified. Neutral shared classes would have meant retargeting
+  working CSS in the same commit that moved the JS — two risks where one will do.
+- ⚠️ **`parentWord` exists so the two shipped sentences are unchanged** — *"…when you save the
+  record"* and *"The record was saved, but…"*. Extracting a function must not quietly reword a screen
+  that was signed off.
+- ⚠️ **Six delegates were written and then DELETED as dead.** `attLabel`, `attSize`, `attOf`,
+  `attUpload`, `attOpen` and `attRemove` had their only callers inside the panel, which now lives in
+  the shared file. Grepped `module.js` and `wizard.js` for each: **zero call sites**. A delegate that
+  matches nothing reads as a feature that exists.
+
+### Verified — the extraction is a MOVE, proven rather than asserted
+
+HEAD's `attPanelHTML` was sliced out **by name** and executed beside the shipped
+`PDAttach.panelHTML` over the same inputs, comparing the HTML **byte for byte**:
+
+| case | result |
+|---|---|
+| existing record, 3 files, writer | **identical** (1357 chars) |
+| existing record, 3 files, viewer | **identical** (558) |
+| new record, 2 staged, writer | **identical** (1067) |
+| new record, nothing at all | **identical** (705) |
+| record with no files, viewer | **identical** (70) |
+| existing files + staged together | **identical** (1764) |
+| the "table not migrated" branch | **identical** |
+
+**7 identical, 0 differing.** A refactor that cannot show this is a rewrite with extra steps.
+`node tools/wiring-check.js` **129/129, 0 failed**, with `PDAttach` now among the providers that load
+and assign — the check that would catch the z6 shape.
+⚠️ **Not verified signed in** — no upload has run through the extracted engine.
+
+`module.js` → `?v=20260915e`; new `attach.js` → `?v=20260915a`; `MODULE_V` → `20260915k`.
+
+## 2026-09-14 (s) — #6: the procurement-trade answer stops vanishing when a bill is issued
+
+Owner: *“Let's do #6”* — the latent gate reported in (q).
+
+- ⚠️⚠️ **One predicate was answering two different questions.** The trade chip's tooltip, its
+  *“By trade”* label and the filter's *“All trades”* all gated on `isManualDraft()` —
+  `status === 'draft' && origin === 'manual'`. But `sheet` is written **from the Finance trade** by
+  `addAuthoredLines` and is never rewritten, and `issueRev` writes only `{status, is_current}`, so
+  **`origin` stays `'manual'` for ever.** The instant a hand-built bill was issued, its sections were
+  still trades and the app stopped saying so.
+- **New `isManualBill()` — origin only.** *What the sections are* is a question about origin;
+  *whether the bill is still editable* is a question about status. ⚠️ The two **editability** call
+  sites are deliberately untouched and asserted to stay that way: `subsFor` hides the Billing and
+  Class Codes tabs because a draft cannot bill, and `nocodes` explains a fault differently while the
+  Class Codes tab is off screen. Both are correctly about draft.
+- ⚠️ It degrades the same way `revStatus` does: on an import, or on a database without
+  `2026-09-07-boq-manual.sql`, `origin` is absent and the answer is false — the chip is then the
+  client's own workbook tab (`'BILLING BREAKDOWN '`, trailing space and all) and a trade lookup would
+  miss every time. That is the reason the gate exists at all, and it is preserved.
+- **Executed, not grepped.** `_set` injects `REVS`/`REVID` and both predicates read `curRev()`, so
+  the whole matrix is driven: manual+draft, **manual+ISSUED** (the bug — `bill` true, `draft` false),
+  import+draft, import+issued, absent origin, and no current revision.
+- ⚠️⚠️ **A gap in my own suite, found by a negative build and then closed.** Reverting the trade bar
+  to `isManualDraft()` left the suite **GREEN**: block 8 proved the two predicates *differ* and
+  asserted nothing about **which one the render reads** — and the render is where the bug lived.
+  Four call-site assertions added; that build now fails.
+
+**66 assertions, 0 failing; three negative builds bite (1 / 1 / 4).** `node --check` clean,
+**195 → 196 functions, 0 lost**, wiring-check 126/0, dead-hooks 9 known.
+`boq.js` → `?v=20260914s`; `MODULE_V` → `20260914s`.
+⚠️ **Latent when found and latent when fixed** — measured: all revisions are still `draft`, so nothing
+on screen changes today. What changes is what happens the first time somebody issues a bill.
+
+
+## 2026-09-14 (r) — #5: a link that nobody picked stopped claiming a human picked it
+
+**Run `migrations/2026-09-14-boq-alloc-method-link.sql`.** Owner: *“Let's do #5”* — the Method column
+reading `manual` on an accepted automatic proposal. 
+
+- ⚠️⚠️ **Measured on the live database before touching anything — 37 of DEMO01's 50 allocations
+  asserted a hand decision that never happened.** `method=manual` with `matched_by=code` on 14 rows
+  and `matched_by=name` on 23, each carrying a real match score. Only 13 were genuinely by hand.
+- ⚠️⚠️ **The cause is a coercion meeting a constraint, and the code already said so in two places.**
+  `proposeSplit` returns `method: null` at qty 0 on purpose — *“nothing has been split, and labelling
+  this 'prorata' would claim an arithmetic that did not happen”* — and the write then did
+  `prop.method || 'manual'`. It had to: the column is `not null` with
+  `check (method in ('location','prorata','manual'))`, so **the vocabulary had no value for “matched,
+  not yet quantified”**, the state 2026-09-07 (h) deliberately created. `scheduleSeedPlan`'s own
+  comment names the same trap.
+- **`'link'` is that missing value.** The migration widens the CHECK and back-fills, ⚠️ **narrowly —
+  `qty = 0` only**: a row with a quantity really was split and its method is a true statement.
+  ⚠️ It moves the hand-picked links too, and loses nothing — `method` describes the split, and at
+  qty 0 there wasn't one; **who** chose it is recorded in `matched_by`, which is the column that
+  answers that question.
+- ⚠️⚠️ **The degrade is the risky half, and it is proven against the live error text.** `method` is
+  NOT NULL with a CHECK, so on a database without this migration a `'link'` row is refused and **the
+  whole batch fails**. `upsertAllocs` — the one writer — gains a third fallback beside the two it
+  already had, mapping `link → manual` once per session and naming the migration. Probed live
+  (read-only, nothing written): `23514 … violates check constraint "boq_allocations_method_check"`,
+  which the matcher recognises. ⚠️ It matches on **the column name as well as the code**, never 23514
+  alone — this table carries other checks, and swallowing one as *“not migrated”* would hide a real
+  refusal.
+- ⚠️ **Seed-from-schedule had its own bare upsert and therefore NONE of the three degrades.** It now
+  writes through `upsertAllocs`, keeping its chunk loop and progress line (same `onConflict`, so a
+  300-slice is a drop-in), and records `matched_by: 'code'` — those links exist **because** the
+  activity carries the line's class code, which `scheduleSeedPlan` groups on and nothing else.
+- ⚠️ A latent `NOT NULL` violation closed in passing: `applyAllocPlans` wrote `method: x.p.method`
+  with no fallback. Safe today only because `planAllocs` filters on `qtyLine`; widening that to
+  `linkLine` — as the worklist already was — would have put a null in and failed the entire batch.
+
+**52 assertions, 0 failing; four negative builds bite (1 / 1 / 2 / 1).** `node --check` clean,
+**195 functions unchanged**, wiring-check 126/0. `boq.js` → `?v=20260914q`; `MODULE_V` → `20260914q`.
+⚠️ **Until the migration is run the app still writes `'manual'`** — correctly, via the degrade, with
+a toast naming the file.
+
+
+## 2026-09-14 (q) — #6 answered: `trade_map` IS read, and the answer disappears the moment a BOQ is issued
+
+Owner: *“Let's do #6 first”* — the open audit item, *does anything actually read `trade_map`*. Measured
+against the **live database, signed in**, not read off the source. **No shipped file changed:** this is
+an audit, one correction to this file's own record, and one latent defect reported rather than fixed.
+
+### The chain, end to end — it works
+**Exactly one read exists in the whole app** (`boq.js:662`), and it is wired through to exactly one
+consumer: `load()` → `TRADEMAP` → the trade chip's `title` in `tradesHTML()`.
+
+| measured live | result |
+|---|---|
+| `trade_map` read, exactly as `boq.js` issues it | **9 rows, no error** — RLS and grants are fine |
+| distinct `class_codes.trade` (702 codes) | `General Requirement` 126 · `MEPF Works` 320 · `Architectural Works` 109 · `Others` 94 · `Site Works` 24 · `Structural Works` 21 · `Allied Services Works` 8 |
+| `trade_map.finance_trade` keys | the same six, **string-for-string** |
+| `Others` | unmapped **on purpose** (94 codes, Finance's catch-all) |
+
+⚠️ **And that corrects a suspicion of my own.** I went in expecting the join to miss, because my own
+DEMO01 notes recorded sheet names reading *Allied*, *Architectural*, *MEPF*. Those were **my
+abbreviations in a summary**, not the data — the real values are the full names and they match
+exactly. The lesson is the one this file keeps recording: read the column, do not trust a note about it.
+
+**The tooltip was then read out of the live DOM on DEMO01**, all seven chips:
+*“MEPF Works — 0.00 · Let under: Electrical and Auxiliary Works, Fire Protection Works, Mechanical
+Works, Plumbing Works”*, and *“Others — 0.00 · No procurement trade maps to this.”* It fires, it is
+right, and it names all four MEPF subcontracts.
+
+### ⚠️⚠️ THE ONE REAL FINDING: the gate is `isManualDraft()`, and it should be origin alone
+`tradesHTML` gates on `status === 'draft' && origin === 'manual'`. But `sheet` is written **from the
+Finance trade** by `addAuthoredLines` (*“SHEET = TRADE, not division”*), and `issueRev` writes only
+`{status:'issued', is_current}` — **`origin` stays `'manual'` for ever**. So the instant a hand-built
+bill is issued, its sections are still genuinely trades and yet:
+
+- the tooltip stops naming procurement trades,
+- *“By trade”* becomes *“By sheet”*, and *“All trades”* becomes *“All sheets”*.
+
+The gate conflates two different questions: *“is this chip a Finance trade?”* (origin) and *“is this
+bill still editable?”* (status). Only the first governs whether the lookup means anything — and the
+mapping is arguably **more** useful once issued, which is when subcontracts are let.
+
+⚠️ **Latent, not live: nothing is broken today.** Measured — **all 6 revisions in the database are
+`draft`/`manual`; no BOQ has ever been issued** on any project. Reported rather than shipped, because
+it changes what a screen says in a state no project is in yet, and this repo's rule is that a design
+decision gets evidence and the owner's call. **The fix is narrow** — a new `isManualBill()` (origin
+only) for the two label sites and the tooltip.
+⚠️ **`isManualDraft()` itself must NOT change**, and the third and fourth call sites are why:
+`subsFor()` hides the Billing and Class Codes tabs because a draft cannot bill, and `nocodes` explains
+a fault differently because the Class Codes tab is not on screen. Both are correctly about **draft**.
+
+### Two things measured and deliberately NOT reported as defects
+- **Every trade total reads `0.00`.** Honest: of DEMO01's 903 lines (205 headings + 698 lines),
+  **0 carry an amount, a quantity or a rate** — the bill was built from the class-code library and
+  never priced. The 50 allocations from the end-to-end run are `qty = 0` links, which is what
+  2026-09-07 (h) defines as *matched, not yet quantified*.
+- **The chip label reads `Structural Works21` in `textContent`.** Measured: the count sits **6px**
+  clear of the last glyph. Only `textContent` lacks a separator; the render is correct. Reporting it
+  would have been crying wolf — and this file has the *“Use 0 activit ies”* entry to show the
+  difference between the two.
+
+### ⚠️ Reported in passing, not chased here
+**`is_current` is `false` on all six revisions**, which is the draft-not-current trigger working as
+designed — but `computeProjectTotal` requires `is_current && document_id`, so **every project's
+contract value reads zero until a BOQ is issued.** Correct by construction, and worth knowing before
+somebody reads it as a data loss.
+
+### ⚠️ My own probes were wrong three times, and each is the same lesson
+A bare `.select()` returned **exactly 1000 rows** (the PostgREST cap) and I nearly reported the
+per-revision counts it produced; `boq.js` is safe because it reads ITEMS through `PDb.selectAll`,
+which pages. Then a probe selecting `rate_material`/`rate_labour` — **columns that do not exist**
+(they are `mat_rate`/`lab_rate`) — errored, and I had not checked `.error`, so it reported
+**0 items on a revision that holds 903**. An un-checked error reads exactly like an empty table.
+
+**Verified:** all of the above measured signed in on the deployed build (`boq.js?v=20260914p`);
+`test-boq.js` 41/0 unchanged; no shipped file changed, so no `?v=` or `MODULE_V` bump.
+
+## 2026-09-14 (p) — The module gets its first committed suite, and it could not see 9 of its own assertions
+
+Owner, after the DEMO01 end-to-end run: *“Continue with boq.js instead”* — a committed test suite for
+this module rather than the next fix. It had **none**: the `suite-namematch` / `suite-retag` runs cited
+in entries since 2026-09-11 were scratch files and are not in the repo, which is why (k) and (m) were
+both found by driving the live app instead of by a test.
+
+New `modules/contracts-claims/test-boq.js` — **41 assertions, 0 failing; three negative builds bite
+(1 / 2 / 2).** Run it with `node modules/contracts-claims/test-boq.js`.
+
+### ⚠️⚠️ THE SUITE REPORTED “PASS: 32” WHILE NINE RESULTS WERE STILL PENDING
+Block 1 — the overwrite flag, **the entire bug this file exists for** — is `async`, and the report was
+top-level and synchronous. So every assertion after its first `await` resolved in a microtask *after*
+the summary had printed: `pass` read **32** at report time and **41** a tick later. They happened to
+pass. Had all nine failed, the run would still have said PASS, and the one defect the suite was written
+to pin would have been the one it could not see.
+
+Measured rather than reasoned: the same file with a `setTimeout` probe prints `PASS: 32` and then
+`AFTER MICROTASKS: pass=41`. Fixed by shape, not by patching the symptom — `block()` is a **registrar**,
+and one runner awaits every block in order before `report()` is called. A block that throws now fails
+with its name rather than aborting the run, which is the trap this repo has recorded twice (a raw-dot
+read of a nested shape; a null regex match) and which a suite this async would have hit next.
+
+### ⚠️⚠️ AND ONE ASSERTION PASSED FOR THE WRONG REASON
+`matchAct(a, c)` takes an **activity object and a code object** and returns `{score, why}` or null. I
+wrote it as two strings compared to a number. Two of the three assertions failed outright — and the
+third, `eq(matchAct('Rebar', 'Rebar Works'), null)`, **passed**: a string has no `.activity_name`, so
+`normKey('')` is `''` and the empty-name guard returns null long before the `an.length > 6` rung it
+claimed to pin is ever reached. **A null for the wrong cause is indistinguishable from a null for the
+right one.** Rewritten against the real shapes, with a 7-character control beside the 5-character case
+so the assertion is provably measuring the length guard and not something else about those strings.
+
+### What the suite pins, and why each one
+- **The overwrite flag reaches the RPC** — default `false`, `true` only when asked, the code and the id
+  array carried, and **no call at all** for a plan entry with no hits. Negative build: reverting
+  `tagRpc(p.code, ids, !!overwrite)` to the hardcoded `false` fails 1.
+- **The shortfall message names the already-coded cause.** Negative build: restoring the RLS-only blame
+  fails 2.
+- **The allocation cap states what it hides.** Negative build: un-naming `ALLOC_ROW_CAP` fails 2.
+- **`normKey` keeps spaces** — asserted *before* anything that depends on it, because 2026-09-11 (ue)
+  records a harness that injected `PDLoc.normKey` (which strips every separator) and so reported that
+  the screen built for this case finds nothing.
+- ⚠️ **It self-tests by reproducing the z6 outage first** — an `_internals` key naming a deleted
+  function, injected into the real `boq.js` in memory — and aborts unless it catches it. A checker that
+  has never failed proves nothing.
+
+### The one shipped change
+`_internals` gains `applyTagPlan`, `reportTagged` and `tagRpc`. ⚠️ Both names in each pair exist above
+that literal — a name here that does **not** is the z6 outage exactly, which is why `wiring-check`
+(126/0) is the gate that matters on this edit rather than `node --check`.
+
+**Verified:** `node --check` clean on both files; **195 functions before and after, 0 lost**;
+`wiring-check` 126/126, 0 version splits; `dead-hooks` 9 known; 0 NUL bytes, pure LF.
+⚠️ **Structural assertions are labelled as such in the file** — the cap notice is emitted inside a
+render function `_internals` does not reach, so those four read the source and say so rather than
+claiming to have executed it. `boq.js` → `?v=20260914p`; `MODULE_V` → `20260914p`.
+
+## 2026-09-14 (m) — The Match-to-schedule worklist hid two thirds of the bill, silently
+
+Same DEMO01 end-to-end run. With the bill grown to **903 lines** across all seven trades, the
+table rendered **exactly 300 rows and stopped**. No pager, no notice, nothing.
+
+### ⚠️⚠️ IT WAS NOT A SCROLL PROBLEM — WHOLE TRADES WERE ABSENT
+Counted in the live DOM: Allied 7, Architectural 104, General Requirement 120, MEPF 68, Others 1.
+**Structural Works and Site Works rendered ZERO rows.** A line (`255531 Smoke Sensor`) whose
+activity was sitting there waiting to be linked was reachable only by guessing to type in the
+search box — nothing on screen said so, or said the table was incomplete at all.
+
+- The cap **stays at 300**: the sort puts unallocated lines first, so the 300 shown genuinely ARE
+  the worklist, and rendering 903 rows of a bill is not the fix.
+- What was missing is the signal. The last row now reads *“Showing the first 300 of 903 lines —
+  **603 more not shown**. Unallocated lines are listed first; use the search above to reach any
+  line by code or description.”*
+- ⚠️ Emitted INSIDE the body so it cannot read as a line of the bill, muted, spanning every
+  column — the same `colspan="8"` the table's own empty state already uses.
+
+This is the rule the activity picker reached on 2026-09-10 (za2), where the note reads *“a cap
+whose entire signal is a `+` is one a planner cannot act on”*. This table had no signal at all.
+
+### Verified
+`node --check` clean; `wiring-check` 126/0; `dead-hooks` 9 known. Live re-verification follows
+the deploy, on the 903-line DEMO01 bill that produced the finding.
+
+## 2026-09-14 (k) — Match names wrote nothing, because the write said "do not overwrite"
+
+Found by building a project end to end on DEMO01 — Schedule Setup from scratch, a hand-built BOQ,
+then linking the two. The reconciliation screen offered **20 activities**, reported
+**"Only 0 of 20 tagged"**, and blamed RLS.
+
+### ⚠️⚠️ `applyTagPlan` HARDCODED `overwrite = false`
+`boq_tag_activities` skips a row that already carries a class code unless `p_overwrite` is true.
+`applyTagPlan` passed a literal `false`, so the Match-names screen could never write to the one
+population it exists for — 2026-09-11 (b1) widened it so *"an activity qualifies when it carries
+no code **or a code this bill does not use**"*, but only the SELECTION was widened; the write was
+not. The two halves have disagreed ever since.
+
+**Measured live on DEMO01, against the real RPC:** `p_overwrite:false` → **0**;
+`p_overwrite:true` on the same row → **1**, and the code actually changed. So the function was
+fine and the caller was not.
+
+- The flag is now a **parameter that still defaults to false**, so every other caller keeps the
+  safer behaviour. Only `openNameMatch` passes `true`.
+- ⚠️ **That screen had already earned the right to overwrite**: it prints the code each row
+  carries today (`boq-nm-had`, *"now FORM"*), offers **Skip** as the decline, and makes the planner
+  pick a line per name. That IS the decision to replace it.
+- ⚠️ **And it now says so before it runs.** The footer reads *"Tag 20 activities (13 replace a
+  code)"*. Moving a code moves money; the count of replacements should be visible before the press,
+  not discovered afterwards.
+
+### ⚠️⚠️ THE MESSAGE BLAMED THE WRONG THING, AND ITS COMMENT SAID "EXACTLY TWO CAUSES"
+There are three, and the invisible one was the common case: already-coded-and-not-overwriting.
+The toast named the second (RLS) while every one of the 20 was skipped for the third. Corrected in
+both the copy and the comment.
+
+### ⚠️ Two of my own diagnoses here were WRONG before they were right
+I first reported `boq_tag_activities` as a **missing function** (`PGRST202`) and `trade_map` as a
+**missing table** (`42703`). Both were my probes using names I GUESSED rather than read — the RPC
+takes `p_project_id/p_class_code/p_activity_ids`, not `p_project/p_code/p_ids`, and PostgREST
+echoes the signature you asked for; `trade_map`'s columns are `finance_trade`/`procurement_trade`,
+not `trade`. Both are fully applied. **Probe a name you have read, not one you expect** — the same
+shape as the `selectAll` key trap already on file.
+
+### Verified
+`node --check` clean; **195 functions before and after, 0 lost, 0 added** (comments stripped — the
+raw grep reported a phantom `function unable` from this entry's own prose, which is the
+checker-measuring-the-changelog trap this repo already records). `wiring-check` 126/0 — the check
+that would catch `window.BOQ` failing to assign. `dead-hooks` 9 known.
+⚠️ **No committed suite covers this module** — the `suite-namematch` runs cited in earlier entries
+were scratch files and are not in the repo. Live re-verification follows the deploy.
+
 ## 2026-09-10 (z1) — BOQ→schedule matching gets four rungs, and the location key was wrong twice
 
 **Run `migrations/2026-09-10-boq-match-rung.sql`.** Owner: *"How should we match the BOQ to the
@@ -604,8 +1310,8 @@ original build.
 ### Still open after this
 - **Design decision #6** (billing periods 26th→25th against monthly Cash Flow) — still needs the
   owner, still the one open item that changes a reported figure.
-- **`trade_map`'s migration has not been run**, so the trade tooltip has still never named a
-  procurement trade.
+- ~~**`trade_map`'s migration has not been run**~~ — **CLOSED 2026-09-14 (q).** It is applied,
+  the read works signed in (9 rows), and the tooltip names a procurement trade on every chip.
 - **`contracts_claims.status` has no fixed vocabulary**, so the module tile still claims no attention
   count.
 - The class-code chain's three missing hand-offs (audited in (a), not built).
@@ -796,9 +1502,11 @@ Read off this file and `ROADMAP.md` §B rather than invented. Ordered by what bl
   per-record editor to tick off "Recommending Approval". Per-stage aging surfaces the exposure the
   chain would explain, which is why this was deferred rather than dropped.
 - **Promoting a PMI to a `contracts_claims` claim is manual** — `claim_id` is stored but set by hand.
-- **`trade_map` is unread in anger.** The migration has not been run, so no row has been read and
-  the tooltip has never named a procurement trade. It also fires **only on a hand-built bill**: on
-  an import the chip is the client's own sheet name (`'BILLING BREAKDOWN '`, trailing space and all).
+- ~~**`trade_map` is unread in anger.**~~ **CLOSED 2026-09-14 (q), measured on the live database:**
+  the migration IS applied, the read returns its 9 rows signed in, and all seven chips on DEMO01
+  carry the right counterpart. It still fires **only on a hand-built bill** — on an import the chip
+  is the client's own sheet name (`'BILLING BREAKDOWN '`, trailing space and all).
+  ⚠️ **But it also stops at ISSUE, which is a latent defect — see (q).**
 
 **Consistency gaps that will bite**
 - ⚠️ **`openNewRev()` still writes `document_id` from `DOCID`, and it is the FALLBACK path** used

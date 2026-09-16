@@ -80,7 +80,7 @@
 .pp-f { padding: 11px 0; border-bottom: 1px solid var(--pd-line); }
 .pp-f:last-child { border-bottom: 0; padding-bottom: 0; }
 .pp-f:first-of-type { padding-top: 0; }
-.pp-l { font-size: 11.5px; font-weight: 600; color: var(--pd-muted); margin-bottom: 4px; }
+.pp-l { font-size: 11.5px; font-weight: 500; color: var(--pd-muted); margin-bottom: 4px; }
 .pp-v { font-size: 13.5px; color: var(--pd-ink); overflow-wrap: anywhere; white-space: pre-wrap; }
 /* ⚠️ The em dash is muted so an empty field reads as empty at a glance rather than
    as a value that happens to be a dash. */

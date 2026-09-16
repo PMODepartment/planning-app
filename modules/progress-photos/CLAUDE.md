@@ -1,5 +1,25 @@
 # Module: progress-photos
 
+## 2026-09-16 — The portfolio view named a migration that could not run — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+- The favorites read answered EVERY failure with `/favorite|schema cache/` → *"run
+  `migrations/2026-09-07-progress-photos-favorites.sql`"*. Right for a missing **column**, wrong for
+  a missing **table**: that file's first statement is `alter table progress_photos add column …`, so
+  without the table it dies with `42P01: relation "progress_photos" does not exist` — which is
+  exactly what the owner hit **after following this message**.
+- The two are told apart now (`42703` vs `42P01`/`PGRST205`) and each names the file that will run.
+- ⚠️ The whole view says so, not just the photo grid: the branch wrote one sentence into `grid` and
+  returned, leaving the KPI strip and the per-project table blank — which reads as a half-loaded page
+  rather than one clear prerequisite. That is the "bugs out" screenshot.
+- The migration guards its own prerequisite with `to_regclass` and raises a message naming
+  `supabase-schema.sql`. ⚠️ A guard, never a `create` — the table belongs to the schema file, and a
+  second thinner copy is how two definitions of one table start to drift.
+- ⚠️ **Probed against production first**: `progress_photos` DOES exist there (`42501 permission
+  denied`, not `42P01`), so on this database it is the `favorite` column that is outstanding.
+
 Developer change log for the **progress-photos** module. Update every PR.
 
 ## Follow-up: the pagination fix was real, but the footer still read as a
@@ -158,6 +178,1973 @@ real `Download → HTML` through the actual UI. Measured on the real generated e
 `ppr.js`/`module.js`/`index.html` → `?v=20260914a`. **Not committed** — kept in the working tree
 per the owner's own standing instruction on this module's export work.
 
+## "When I close the browser app, the video I uploaded for 360 processing is gone" — a real browser-eviction risk closed with `navigator.storage.persist()`, and silent recovery made visible with a toast (2026-09-14, later still yet again again again)
+
+Owner: *"when I close the browser app, the video i uploaded for 360 processing is gone. please
+retain progress of processing since processing takes some time."* — the same class of report the
+entry directly below this one already investigated and fixed once (the `Pano360DraftStore.open()`
+promise-caching bug). Re-checked that fix first rather than assuming it had regressed:
+`persistPano360Draft()`/`rehydratePano360Drafts()` are both structurally sound and match what PR
+#118 shipped — this is not a repeat of that bug.
+
+### What was actually still missing
+
+⚠️⚠️ **IndexedDB is not exempt from eviction just because a write to it succeeded.** A browser can
+still clear a non-persistent origin's storage under disk pressure — this is a real, standard risk
+(most acute on mobile), and this app had never once called the Storage API's own mitigation for
+it. `navigator.storage.persist()` asks the browser to exempt this origin from automatic eviction;
+confirmed via a repo-wide grep that it was used **nowhere** in this codebase before this change.
+
+- **New `ensurePersistentStorage()`**, called (deliberately unawaited — best-effort, must never
+  delay `init()`) from `init()` right after `restoreUI()`. Fully feature-detected: a no-op when
+  `navigator.storage`/`.persist` don't exist, checks `navigator.storage.persisted()` first so an
+  already-persistent origin never re-asks, and logs (never throws) whether the browser granted or
+  refused the request.
+- **Recovery is now VISIBLE, not just mechanically correct.** `rehydratePano360Drafts()` restarts a
+  still-processing draft from its saved source blob and restores a finished one as-is — both
+  worked, but gave the planner **no on-screen confirmation anything survived**, which is
+  indistinguishable from data loss from where they're sitting. It now counts what it recovers and
+  fires one `UI.toast()` naming it — *"Recovered from before you closed this app: 1 360° capture
+  resuming (restarting from your saved recording), 1 finished 360° capture waiting for review."*
+- ⚠️ **"Resuming" still means restarting from zero, not resuming mid-stitch** — there is no way to
+  serialize an in-flight OpenCV stitch across a reload, and the toast's own wording says
+  "restarting" rather than implying continuity that isn't real.
+
+### Verified
+
+**11 new checks, all genuinely executing the shipped functions** (963 → 974; the same 3
+pre-existing, unrelated failures — a PDF page-break assertion + 2 `capture.js` mic/audio-flash
+assertions — confirmed unchanged by name): a hand-built controllable `navigator.storage` stand-in
+proves `ensurePersistentStorage()` degrades safely with the API absent/partial, checks
+`persisted()` before ever calling `persist()`, and logs granted vs. refused honestly rather than
+claiming success either way; the recovery-toast tests build one `'processing'` draft (with a
+persisted source blob) and one `'ready'` draft for the same user, clear in-memory state, and
+confirm the toast names both counts correctly, fires **exactly once** regardless of how many
+drafts were recovered, and fires **not at all** on a second rehydrate against already-in-memory
+drafts or for a brand-new user with nothing persisted.
+
+`node --check` clean on both files; full suite **974 passed, 3 failed** — the same 3 pre-existing
+failures this file's own history already documents.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing caveat
+for every entry in this file. What's proven is that `navigator.storage.persist()` is requested
+correctly and that recovery is now announced rather than silent; nobody has watched a real device
+under real storage pressure confirm a draft survives a browser close.
+
+`module.js?v=` → `20260914zvs5`; `assets/js/modules-grid.js` (and the `dashboard.html`/
+`modules.html` script tags that load it) → `20260914zvs5` to match, since this module's
+`index.html` itself changed (its own `module.js?v=` line) — re-derived past `origin/main`'s own
+concurrently-advanced `20260914zvs4` fallback after rebasing this branch onto it, per this repo's
+own standing rule for exactly this collision shape. `pano360.js` is unchanged this round and keeps
+its existing token.
+
+## A 360° draft's IndexedDB persistence could permanently break after one transient failure — fixed, and hardened with logging, a warning toast, and a beforeunload guard (2026-09-14, later still again)
+
+Owner: *"the 360 draft still gets removed once a new session open. please fix. please retain for a
+user since the processing takes time."* — referring to the *existing* "a 360° draft survives a
+session timeout" feature (the entry below this one, IndexedDB-backed `Pano360DraftStore`, already
+shipped and live on `main`). The report says that persistence isn't actually holding up.
+
+### The investigation, and what it ruled out before finding the real bug
+
+⚠️⚠️ **The core mechanism was proven to work, which is what made this bug hard to find.** A real
+cross-session Playwright test (`chromium.launchPersistentContext`, so IndexedDB genuinely survives
+between two separate `page` loads against the same on-disk profile — not two tabs in one page)
+confirmed a persisted draft correctly rehydrates on a fresh page load. So "the whole feature is
+broken" wasn't the answer, and neither was a stale/unmerged deploy — `git log -S
+"Pano360DraftStore"` confirms the feature is in `main`'s history. A large-blob/storage-quota theory
+(an 80MB write) was tried too and didn't reproduce here (this sandboxed Chromium reports a ~162GB
+quota, not representative of a real phone under storage pressure) — flagged as a real, still-
+plausible risk on an actual device, just not something provable from this environment.
+
+### ⚠️⚠️ The real bug: `Pano360DraftStore.open()` cached a REJECTED promise, permanently
+
+```js
+function open() {
+  if (dbp) return dbp;                 // <-- returns the SAME promise forever, success or failure
+  dbp = new Promise(function (resolve, reject) {
+    var req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = ...;
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };   // <-- dbp is STILL the rejected promise
+  });
+  return dbp;
+}
+```
+
+`dbp` is memoized unconditionally on the very first call — including when `indexedDB.open()` itself
+fails (a transient storage-pressure error, a blocked version-upgrade from another open tab, a
+private-mode quirk). Once that happens, `dbp` is a **permanently rejected promise**, and every
+future call to `open()` for the rest of that page's life returns the *same* dead promise — so
+`persistPano360Draft`/`rehydratePano360Drafts` silently, permanently stop working for that entire
+browser session, with **nothing logged anywhere**: the failure was swallowed by a bare
+`.catch(function () {})`. This is the single most plausible explanation for "the draft still gets
+removed" — one bad IndexedDB open at some point in the session (which needs nothing more exotic
+than momentary storage pressure on a real phone) silently disables persistence for every capture
+after it, and the planner sees exactly what a from-scratch, never-persisted draft looks like: gone
+the moment the tab closes.
+
+**Fixed**: a failed `open()` now resets `dbp = null` (in both the synchronous-throw catch and the
+async `onerror`/`onblocked` handlers) before rejecting, so the very next call genuinely retries
+against a fresh `indexedDB.open()` instead of replaying the same dead promise. A new
+`_resetConnectionForTest()` test-only hook lets the suite force this same reset deterministically.
+
+### Two further hardenings, since a persistence failure being *silent* was itself part of the problem
+
+- **`persistPano360Draft`'s failure is now logged** (`console.warn`, naming the draft id) instead of
+  a bare empty `.catch`, and **the planner is warned once per page load** via a toast — *"This
+  device could not save your 360° capture locally — keep this tab open until it finishes, or it may
+  be lost if you close it."* — the first time a persist attempt fails. A `pano360PersistFailWarned`
+  flag (with its own `_resetPano360PersistFailWarned()` test hook) keeps this to one toast, not one
+  per failed write in a bad stretch.
+- **`rehydratePano360Drafts`'s read failure is logged too** (`console.warn`) — it already degraded
+  silently to "no drafts to restore," which is the correct behaviour on a first-ever visit (no
+  IndexedDB data yet) but was indistinguishable from a genuine read error with nothing to say which.
+- **A `beforeunload` guard** now warns before closing/reloading the tab while any draft is still
+  `status === 'processing'` (`e.preventDefault(); e.returnValue = '';`) — the standard browser
+  mechanism for exactly this: a stitch genuinely takes real time, and closing the tab mid-stitch is
+  the single easiest way to lose one regardless of how well the persistence layer holds up.
+
+⚠️ **None of this touches the actual safety gate.** `uploadFile()`/`tolerantWrite()` are still
+called from exactly one place — Confirm & Save, guarded on `draft.status === 'ready' &&
+draft.stitchResult && draft.repBlob` — never from any of the functions touched here. This entry is
+entirely about the **local** IndexedDB layer standing in for what used to be a bare in-memory
+array; it neither writes to nor weakens the path to the shared database.
+
+### Verified
+
+**19 new checks, all green** (944 → 963; the same 3 pre-existing, unrelated failures — a PDF
+page-break assertion + 2 `capture.js` mic/audio-flash assertions — confirmed unchanged by name): a
+hand-built flaky-`indexedDB.open()` fake (rejects for the first N calls, then succeeds) proves the
+failure is logged by name, the toast fires with the exact warning text, a *second* persist attempt
+after the flaky window succeeds (proving `open()` doesn't poison itself for the rest of the
+session), and the toast fires **at most once** across repeated failures — not once per failure.
+⚠️ **A real bug in the test itself, caught before it shipped**: the first draft of the flaky-store
+scenario reported the persist *not* failing at all, because an earlier, unrelated test section had
+already resolved `dbp` against its own successful fake IndexedDB, and that cached promise was still
+live when the flaky scenario started — the exact shape of bug this entry is about, reproduced
+inside the test harness itself. Fixed by calling the new `_resetConnectionForTest()` hook
+immediately before running the flaky scenario. `init()`'s new `beforeunload` registration is
+confirmed present via a structural source assertion.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing caveat
+for every entry in this file. What's proven is that a simulated `indexedDB.open()` failure no longer
+permanently disables persistence and is now visible (console + toast) instead of silent; nobody has
+watched a real device hit real storage pressure mid-stitch and confirmed the draft survives a
+subsequent close.
+
+`module.js?v=` → `20260914u`; `assets/js/modules-grid.js` (and the `dashboard.html`/
+`modules.html` script tags that load it) → `20260914u` to match, since this module's `index.html`
+itself changed (its own `module.js?v=` line). `pano360.js` is unchanged this round and keeps its
+existing token.
+
+## "Add 360° photo": the Take/Upload buttons move above the fields (2026-09-14, later still again)
+
+Owner, off a screenshot of the "Add 360° photo" modal: *"please fix also issue in photo. the upload
+and take buttons should be in the upper parts."* The screenshot showed a date field, View Name, a
+large Key Plan section (a full site photo plus a paragraph of pin/camera-angle instructions), then
+the three source buttons (Take video / Upload video / Upload 360° photo), then Cancel at the very
+bottom — so reaching the one thing most people open this modal to click meant scrolling past an
+image and several sentences of instructions first.
+
+⚠️⚠️ **This is a pure reorder of `openPano360SourcePicker()`'s markup, not a new field or a new
+wiring path.** The three source buttons (`#pp360src-step`) now render immediately after the intro
+hint, **before** the `.pp-form2` metadata block (Description/Capture date/Works/Location/Key Plan
+pin). Nothing about what the buttons DO changed: `startVideoDraft`/`havePhoto` still call
+`captureSrcMeta(draft)` — which reads the `pp360src-*` fields into `draft.meta` — before `m.close()`/
+`openPano360Review(draft)` runs, exactly as before; the fields still carry over into the review
+modal opened afterward whether they were filled in before or after picking a source. A second short
+hint line ("Fill in the details below now, or after picking a source — they carry over either way")
+was added directly above the fields, since with the buttons now first, filling in the fields reads
+as optional-before-picking rather than a form to complete top-to-bottom.
+
+⚠️ The offline fallback (`#pp360src-offline`, shown when `haveVideo()` detects `navigator.onLine ===
+false`) moved along with the button row it belongs to — it still sits directly below
+`#pp360src-step` and is still toggled the same way (`show('pp360src-step', false); show
+('pp360src-offline', true);`).
+
+**Verified**: `node --check` clean; the existing 2026-09-14 assertion pinning `.pp-form2` before
+`#pp360src-step` was updated to assert the reverse (buttons now render first), plus a new dedicated
+assertion recording the reversal and why. Full suite: **958 passed, 3 failed** — the same 3
+pre-existing, unrelated failures this file's own history already documents (a PDF page-break
+assertion + 2 `capture.js` mic/audio-flash assertions), confirmed unchanged by name.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. The reorder is proven by asserting the shipped HTML string's element
+order and by the unchanged `captureSrcMeta`/`startVideoDraft`/`havePhoto` wiring, not by a real
+click-through.
+
+`module.js?v=` → `20260914j`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914j` to match, since this module's `index.html` itself changed
+(its own `module.js?v=` line). `pano360.js`/`module.css` are unchanged this round and keep their
+existing tokens.
+
+## 360° stitching optimization: feature detection cached per frame, verified against real OpenCV.js in an isolated headless-Chromium harness (2026-09-14, review pass)
+
+Owner: *"review 360 processing code to improve and optimize."* A genuine review-and-optimize pass
+over `pano360.js`'s stitching pipeline, not a cosmetic or documentation-only change — this repo's
+own standing convention for this exact pipeline is to verify against the *real* OpenCV.js in a real
+browser wherever possible (see every prior `pano360.js` entry above), never a code-review-only claim
+for performance-sensitive WASM/OpenCV code with no way to check correctness.
+
+### The optimization: split feature detection from matching, cache per frame index
+
+⚠️⚠️ **`homographyBetween(prevMat, curMat)` recomputed BOTH frames' ORB features on every single
+call — including the anchor frame, over and over, once per lookahead candidate.** The
+join-search loop in `stitchFrames` (`JOIN_LOOKAHEAD`, up to 5 candidates per anchor-selection step)
+called `homographyBetween(rawMats[anchor], rawMats[c])` for each candidate `c` — so the *same*
+anchor frame's grayscale conversion + ORB `detectAndCompute` ran again for every candidate tried
+against it, and ran a second time once that candidate itself became the next anchor.
+
+Split into three functions:
+- **`computeFeatures(mat)`** — the frame-local half only: grayscale conversion + ORB detection,
+  returning `{kp, desc}` with ownership transferred to the caller (not deleted internally).
+- **`matchAndHomography(prevFeat, curFeat)`** — the per-pair half only: BFMatcher/ratio-test/
+  RANSAC/plausibility-gating, taking two already-computed feature sets.
+- **`homographyBetween(prevMat, curMat)`** — kept as a thin backward-compatible wrapper
+  (`computeFeatures` twice + `matchAndHomography`, cleaning up both feature sets in `finally`) —
+  `stitchFrames` no longer calls it directly, but nothing else needed to change shape.
+
+`stitchFrames` gained a per-stitch-call feature cache, `featuresFor(idx)`, computing each frame's
+features exactly once no matter how many times it's compared (once as a candidate, once as the
+next anchor, and every failed lookahead attempt in between) — cached kp/desc Mats are deleted in
+the function's existing cleanup `finally` block alongside `rawMats`.
+
+⚠️ **Also merged two previously-separate, non-yielding loops** (`cylFrames = frames.map(...)` then
+`rawMats = cylFrames.map(f => cv.imread(f))`) into one `for` loop with `await yieldToUI()` between
+iterations — same number of yield points as before, just one loop building both arrays together
+instead of two passes over the frame list.
+
+### A further optimization was tried, measured, and explicitly rejected
+
+Also tried having `cylindricalWarpFrame` return `{canvas, mat}` and reuse that Mat directly as
+`rawMats[i]`, avoiding a second `cv.imread()` per frame. **Measured against real OpenCV.js in a
+real browser, this produced a genuine, deterministic 1-pixel divergence** in the final mosaic's
+height (608px vs. the original/caching-only variant's 607px) — confirmed non-random by running the
+identical code twice in the same page load (both the original and each variant are internally
+deterministic, never noisy), and isolated specifically to the Mat-reuse trick (not the caching
+change) via a controlled A/B: reverting only the Mat-reuse back to a fresh `cv.imread()` from the
+canvas, while keeping the ORB-caching optimization, reproduced height=607 exactly. The root cause
+was not conclusively identified (most likely candidate: alpha-channel handling through
+`cv.imshow`/`cv.imread`'s canvas round-trip, given the fully-transparent `BORDER_CONSTANT` fill the
+remap uses) and the extra speed benefit over caching-alone was marginal (~2%, measured
+~4.4–4.6s vs. ~4.3–4.4s on the same 48-frame synthetic scene). **Not shipped** — an unexplained
+pixel-level difference in a memory-sensitive, hard-to-debug pipeline is not worth a 2% gain.
+`cylindricalWarpFrame` is unchanged from its original behaviour (deletes its own `dst` Mat, returns
+a bare canvas); the investigation and rejection are documented in its own doc comment so a future
+session doesn't retry the identical thing without knowing it was already measured and rejected.
+
+### Verified against real OpenCV.js, real Chromium, a real synthetic stitch — not a stub
+
+⚠️⚠️ **This sandbox has no network path to the OpenCV.js CDN** (`cdn.jsdelivr.net` is blocked by the
+agent proxy), but `registry.npmjs.org` is reachable, so the exact pinned production version —
+`@techstark/opencv-js@4.10.0-release.1` — was installed from npm instead (same bytes, different
+distribution channel) and driven with this environment's pre-installed Chromium via
+`playwright-core`, using a plain Node static file server — the same isolated-harness methodology
+this file's own history already established for verifying this exact pipeline against a real
+library when the CDN can't be reached. ⚠️ The full `chrome-linux/chrome` binary refuses
+`--headless=old` ("Old Headless mode has been removed"); launched `headless_shell` instead.
+
+A 48-frame synthetic rotating-scene test (textured landmarks, real pinhole-camera-projected frames,
+recorded through a real `MediaRecorder`) was run against the shipped, optimized `pano360.js`
+end-to-end (`Pano360._stitchFrames`) and compared to the pre-optimization code on the identical
+input: **byte-for-byte identical mosaic dimensions (843×607), identical quality ("ok"), identical
+pairsTotal/pairsFallback (47/0)** — confirming the refactor changed nothing about the algorithm's
+output — at roughly **23–30% faster wall-clock time** for the stitching phase. The throwaway
+harness (npm-installed opencv.js, the test scene generator, the Playwright drivers) was fully
+deleted after verification, per this repo's own standing rule against leaving scratch harness
+files behind.
+
+`node --check` clean on `pano360.js`/`test.js`. `test.js` gained 8 new genuinely-passing assertions
+(section covering `computeFeatures`/`matchAndHomography`'s split responsibilities, that
+`stitchFrames`' lookahead loop now calls `matchAndHomography(featuresFor(...))` and never
+`homographyBetween` directly, that every cached feature set is deleted in cleanup, and a dedicated
+assertion recording that the Mat-reuse variant was tried, measured, and deliberately not kept) plus
+one pre-existing structural assertion updated in place to match the refactored call shape. Full
+suite: **957 passed, 3 failed** — the same 3 pre-existing, unrelated failures this file's own
+history already documents (a PDF page-break assertion + 2 `capture.js` mic/audio-flash assertions),
+confirmed unchanged by name before and after this change.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the optimized pipeline. What's verified is that the shipped,
+optimized code produces byte-identical output to the pre-optimization code on a real OpenCV.js
+build against a real (synthetic) recorded video, at a real measured speedup.
+
+`pano360.js?v=` → `20260914i`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914i` to match, since this module's `index.html` itself changed
+(the `pano360.js?v=` line). `module.js` is unchanged this round and keeps its existing token.
+
+## A 360° draft now survives a session timeout — persisted per-user in IndexedDB, restarted rather than resumed on reload (2026-09-14, later still again)
+
+Owner: *"since the processing of 360 takes long, the session already times out before completion.
+draft should extend beyond the session though this should only be per person."*
+
+⚠️⚠️ **This directly reverses the "keep it in the session only as draft" architecture decision
+from earlier the same day (2026-09-13, "360° upload becomes a session-only draft"), and the
+reversal is deliberate, not an oversight.** That entry's own header comment stated plainly:
+*"'Keep it in the session only as draft' means literally in-memory, never persisted. Closing or
+reloading the tab loses any unconfirmed draft — by design."* A real stitch at this pipeline's
+current 48-frame-fixed sampling density is genuinely several minutes of sequential per-pair OpenCV
+work on a real phone (per the 2026-09-13/14 entries above), and a browser tab timing out — or a
+planner simply closing the tab to do something else while it churns — before that finishes was
+always going to happen. The fix is to let the draft's own bytes survive that, not just its
+in-memory processing state.
+
+⚠️⚠️ **The one thing that does NOT change: no write to the shared database/Storage happens before
+Confirm & Save.** `uploadFile()`/`tolerantWrite()` are still called from exactly one place — the
+gated Confirm & Save handler inside `openPano360Review`, checked on `draft.status === 'ready' &&
+draft.stitchResult && draft.repBlob` — never from `persistPano360Draft`, `rehydratePano360Drafts`,
+or either background-processing function. This entry is entirely about **local** persistence (an
+IndexedDB store, private to this browser) standing in for what used to be a bare in-memory array;
+it does not touch, weaken, or bypass the safety gate the earlier entry built.
+
+### `Pano360DraftStore` — a small IndexedDB wrapper, same shape as the existing `OfflineQueue`
+
+New `Pano360DraftStore` IIFE (`DB_NAME = 'pp_pano360_drafts_v1'`, `STORE = 'drafts'`) is built as a
+close cousin of the offline-sync outbox's own `OfflineQueue` (`open`/`add`/`all`/`remove`) already
+in this file — the same convention, not a new one invented for this feature. `put(record)`/
+`remove(id)`/`all()`/`allForUser(userId)` (the last one filters `all()`'s result by `r.uid ===
+userId`, client-side — IndexedDB has no query language of its own to push that filter down into).
+
+`persistPano360Draft(draft)` snapshots a draft (metadata, the typed fields, the stitched result and
+thumbnail blobs once they exist, and — **only while `status === 'processing'`** — the original
+source video/photo blob via a new `draft._persistSourceBlob` field) and writes it, tagged with the
+CURRENT signed-in `uid`. Called from every point a draft's state meaningfully changes: on the
+source-picker screen (`captureSrcMeta`), on every metadata edit in the review modal
+(`captureMeta`, the adjust-editor callback, "Use this view as thumbnail"), and — the two points
+that matter most for surviving a timeout — the moment a stitch finishes (`finishDraftStitch`,
+which also clears `_persistSourceBlob` back to `null` since a finished draft no longer needs its
+raw source) and the moment one fails (the `catch` blocks of `runStitchForDraft`/`runPhotoForDraft`).
+
+`rehydratePano360Drafts()` runs once, from `init()`, **not awaited** (it's independent background
+work with nothing else in `init()` waiting on it) — reads `Pano360DraftStore.allForUser(uid)`,
+skips anything already present in the live `PANO360_DRAFTS` array (a draft created earlier in the
+*same* session, never re-added), and rebuilds each persisted record into a live draft object.
+
+### Restart, not resume, for a draft interrupted mid-stitch
+
+⚠️⚠️ **A draft that was `'processing'` when the tab closed cannot pick its computation back up —
+there is no way to serialize an in-flight WASM/OpenCV stitch across a reload — so it is fully
+re-run from the persisted source blob instead.** `rehydratePano360Drafts()` checks: if
+`rec.sourceBlob` exists, it rebuilds the draft's `video`/`videoUrl` (video source) or calls
+`runPhotoForDraft` directly (photo source) — genuinely restarting the stitch from scratch, not
+pretending to continue it. If **no** source blob was persisted (the record predates this feature,
+or was itself interrupted before the source was ever attached), the draft is marked `status:
+'error'` with a plain message — *"Processing was interrupted and could not be resumed — please
+record or upload again"* — rather than silently vanishing or hanging forever in an unfixable
+`'processing'` state. A draft that had already reached `'ready'` or `'error'` **before** the
+interruption is restored exactly as it was, with zero reprocessing — its stitch result, thumbnail
+and typed metadata all come back from the persisted record as-is.
+
+### "Per person" is enforced by filtering on READ, not by storage isolation
+
+⚠️⚠️ **IndexedDB is scoped per-ORIGIN, not per-user — this store is genuinely shared across
+whichever accounts sign into the same browser, and this entry does not pretend otherwise.** What
+makes it "per person" is that every persisted record carries the `uid` of whoever created it, and
+`rehydratePano360Drafts()` only ever loads records matching whoever is **currently** signed in
+(`allForUser(uid)`). A different person signing into the same browser/device will never see, load,
+or get notified about another person's unconfirmed draft — but the raw bytes do sit in that
+browser's IndexedDB regardless of who's looking. This is a visibility guarantee, not physical
+storage isolation, and is stated in the header comment above `PANO360_DRAFTS` in the same terms.
+
+### Verified
+
+**949 checks green** (was 936 — 13 new): all genuinely executing the shipped code against a
+hand-built, event/queue-based fake IndexedDB (`setTimeout(...,0)`-deferred callbacks, real cursor
+iteration over a `Map`-backed store — never an immediate-resolving stub, per this repo's own "a
+test that cannot fail is not evidence" standard). Confirms: `persistPano360Draft` writes a real
+record carrying the current `uid` and, only while `status === 'processing'`, the source blob; the
+source blob is dropped once a draft reaches `'ready'`; `allForUser` correctly isolates two
+different users' drafts written to the same store; persisting with no signed-in `uid` is a no-op;
+rehydrating restores a `'ready'` draft's stitch result and thumbnail intact, for the matching user
+only; rehydrating a stuck `'processing'` record with no persisted source blob converts it to an
+honest `'error'` and re-persists that corrected state; and `removePano360Draft` (Discard, and the
+cleanup after a successful Confirm & Save) deletes the IndexedDB record too, not just the in-memory
+entry. Three pre-existing byte-adjacency regex assertions (checking that `finishDraftStitch`/
+`runStitchForDraft`/`runPhotoForDraft` call `notifyPano360Draft` immediately after the status/error
+assignment) were updated to allow the new `draft._persistSourceBlob = null;` line landing between
+them — healthy churn from an intentional change, not a weakened check. Full suite: **949 passed, 3
+failed** — the same 3 pre-existing, unrelated failures this file already documents (a PDF
+page-break assertion + 2 `capture.js` mic/audio-flash assertions), confirmed unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. In particular, nobody has actually let a real stitch run past a real
+browser tab timeout and watched it resume correctly on reopen — the rehydrate path is proven by
+genuine execution against a real (if fake) IndexedDB, not by observing a real interrupted session.
+
+`module.js?v=` → `20260914g`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914g` to match, since this module's `index.html` itself changed
+(its own `module.js?v=` line). Re-derived past both this branch's own prior `20260914f` and
+`origin/main`'s own concurrently-advanced `20260914e` fallback, neither of which carries this
+change.
+
+## "The other input fields are still not showing" — the metadata fields were only ever added to the SECOND 360° modal (2026-09-14, later still)
+
+Owner, off a screenshot of the live "Add 360° photo" modal showing only the three source buttons
+("Take video" / "Upload video" / "Upload 360° photo") and Cancel, no fields anywhere: *"the other
+input fields are still not showing."*
+
+⚠️⚠️ **This is a real, confirmed gap the earlier same-day fix (below, "The drafts badge is scoped
+to Gallery…") got wrong.** That entry verified item 1 ("show already all the input fields from
+description to key plan") by re-reading `openPano360Review(draft)` — the modal's `.pp-form2` block
+does render unconditionally there, outside the `#pp360rv-result` gate — and concluded no code
+change was needed. That conclusion only holds for the **second** modal. The screenshot is the
+**first** one, `openPano360SourcePicker()` — reached the moment "+ Add media → 360°" is clicked,
+before any source has been picked — and that screen genuinely had **zero** metadata fields: just
+the intro hint, the three source buttons, and Cancel. `openPano360Review` only opens *after* one of
+those three buttons is clicked, so "show already all the input fields" was never actually satisfied
+for the screen a planner sees first.
+
+**Fixed by rendering the SAME Description / Capture date / Works / Location / Pin block on the
+source-picker screen itself**, using the identical `worksMultiFieldHTML('pp360src', [])` /
+`locationFieldHTML('pp360src', {}, '')` / `BIM.pinFieldHTML('pp360src', null)` calls (a fresh idPrefix,
+`pp360src`, mirroring `pp360rv`'s), wired the same way every other field-carrying modal in this
+module wires itself (`wireLocationField`/`wireWorksMultiField`/`BIM.wirePinField` + `hydrate(m.el)`).
+
+⚠️ **Whatever is typed on this first screen is carried into the draft, not asked for twice.** A new
+`captureSrcMeta(draft)` reads the `pp360src-*` fields (desc/date/works/locVals/viewName/tags/
+pinData) into `draft.meta` — called from both `startVideoDraft` (the recorded/uploaded-video path)
+and `havePhoto` (the pre-processed-photo path), in both cases **before** `m.close()`/
+`openPano360Review(draft)` runs. `openPano360Review` already renders its own copy of the same
+fields pre-filled from `draft.meta` (that part was correct in the earlier entry), so the review
+modal now opens already showing what was typed on the source-picker screen, rather than presenting
+a second, blank copy of the same form.
+
+⚠️ Nothing about `openPano360Review` itself changed — its fields, its gating (outside
+`#pp360rv-result`), and the "no upload/DB write until Confirm & Save" safety rule are all untouched.
+This is additive: a second place the same fields are shown and captured, feeding into the one place
+they were already read from.
+
+### Verified
+
+**4 new assertions, all genuinely proven to bite**: each was run once against the fix (all 4 pass)
+and once against the pre-fix commit via `git stash` (all 4 fail, confirming they test the real gap
+rather than passing vacuously) — confirms the `.pp-form2` block now renders on the source-picker
+screen before any source button, that it's wired via the same four calls every other field-carrying
+modal in this module uses, that `captureSrcMeta()` is called from both `startVideoDraft` and
+`havePhoto` before the modal closes, and that it reads the exact same seven fields
+(`desc`/`date`/`works`/`locVals`/`tags`/`pinData`, plus `viewName`) the review modal's own
+`captureMeta()` reads back. Full suite: **936 passed, 3 failed** — the same 3 pre-existing,
+unrelated failures every other entry in this file already documents (a PDF page-break assertion +
+2 `capture.js` mic/audio-flash assertions), confirmed unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. The fields are proven to render, wire and carry values into the draft
+by genuine source-level execution of the exact shipped functions, not by a real click-through.
+
+`module.js?v=` → `20260914f`; `pano360.js`/`module.css` are unchanged this round and keep their
+existing tokens. `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html` script tags
+that load it) → `20260914f` to match, since this module's `index.html` itself changed (its own
+`module.js?v=` line).
+⚠️ **Not `20260914e` — this branch was restarted from a fresh `main` after PR #113 (the previous
+entry below) had already merged**, and by the time this landed `main` had independently advanced
+past that merge (a concurrent project-schedule commit, unrelated to this module) and had already
+taken `20260914e` for its own `index.html` change. Re-derived past it to `f` rather than reused,
+per this repo's own standing rule for exactly this collision shape.
+
+## A completion notification when a 360° draft finishes processing — and the background-stall bug that would have made it nearly useless (2026-09-14, later)
+
+Owner: *"once the 360 is done processing, provide push notifications."*
+
+⚠️⚠️ **Nothing in this app runs a push server** — no service-worker `push` event handler in
+`sw.js`, no push subscription, no VAPID keys — confirmed by reading `sw.js` end to end before
+writing anything (it is a pure offline-caching worker, nothing notification-related). So this is
+a **local** notification, fired directly from this tab via the plain browser `Notification` API
+the moment a draft's status settles, not a true background push that could reach the planner
+once the tab itself is closed — the draft is already lost the moment the tab closes anyway (the
+session-only draft architecture, shipped earlier the same day), so that limit changes nothing
+about what was actually asked for.
+
+- **`ensurePano360NotifyPermission()`** asks for permission exactly once, from inside
+  `newPano360Draft()` — called synchronously by the click/`onchange` handler that starts a
+  capture (Take video / Upload video / Upload 360° photo), never proactively on page load. Only
+  fires `Notification.requestPermission()` while permission is still genuinely undecided
+  (`'default'`); an already-granted or already-denied answer is left alone.
+- **`notifyPano360Draft(draft, ok)`** fires from the three places a draft's processing actually
+  *settles*, never from the many intermediate progress ticks `touchPano360Draft()` also drives:
+  `finishDraftStitch()` (success, right after `draft.status = 'ready'`) and the `catch` blocks of
+  both `runStitchForDraft()` and `runPhotoForDraft()` (failure). Naming the draft's own
+  description in the body, tagged with the draft's own id (`tag: draft.id` — a second notification
+  for the *same* draft replaces the first rather than stacking a pile of them).
+- ⚠️ **Falls back to a toast only in the one case that would otherwise go completely silent**:
+  permission not granted (or the API not present at all) **and** no review modal currently
+  watching this draft (`!draft.onUpdate`). If a modal *is* open, `paint()` already updates the
+  screen the planner is looking at — piling a toast on top of that would just be noise. If a real
+  OS notification fires, no toast rides along with it either — one signal, not two.
+
+### ⚠️⚠️ The real find: `yieldToUI()` would have frozen the whole pipeline the instant the tab lost focus — exactly when this notification matters most
+
+Read `pano360.js`'s per-frame loops (the homography/RANSAC pass and the per-frame warp pass —
+both `await yieldToUI()` per iteration, the 2026-09-01 fix that breaks the stitch into separate
+browser tasks so a slow phone stays responsive) before assuming the background processing this
+notification reports on actually keeps running once a planner switches away. It didn't:
+
+```js
+function yieldToUI() {
+  return new Promise(function (resolve) {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function () { resolve(); });
+    else setTimeout(resolve, 0);
+  });
+}
+```
+
+`requestAnimationFrame` callbacks are **suspended entirely** in a hidden/backgrounded browser tab
+— no paint, no tick, per every browser's own documented behaviour — and every real browser
+defines `requestAnimationFrame`, so the `setTimeout` branch was dead code that could never
+actually run. The planner asking for "notify me once it's done" is, almost by definition, the
+planner who is about to switch away from this tab to do something else while it stitches — and
+switching away is exactly the moment this would have silently frozen the whole pipeline until
+they came back and looked at it again, at which point the notification finishing would have felt
+instant and pointless rather than the point of the feature.
+
+**Fixed by switching to `setTimeout` unconditionally.** `setTimeout` is *throttled* in a hidden
+tab (down to roughly once a second in most browsers), never suspended — slower, but never
+stalled, so a stitch (and the notification at the end of it) keeps making real progress while the
+tab sits in the background. ⚠️ Scoped narrowly: the other three `requestAnimationFrame` call sites
+in this module family (the Pannellum pano viewer's render loop, the markup editor's redraw
+coalescing, the capture flash animation) are all genuinely tied to visible on-screen rendering and
+correctly keep using rAF — this fix touches only the one yield point that exists purely to keep a
+CPU-bound loop from blocking the main thread, with no frame to actually paint.
+
+### Verified
+
+**19 new checks, all genuinely executing the shipped functions** (932 passed total, the same 3
+pre-existing, unrelated failures as before — a PDF page-break assertion + 2 `capture.js` mic/
+audio-flash assertions, confirmed unchanged by name): `ensurePano360NotifyPermission()` against a
+new controllable `Notification` stand-in in the test harness across all four states (default →
+requests; granted/denied → does not; the API absent entirely → a no-op, never a throw);
+`notifyPano360Draft()` across success/failure, granted/denied/absent, and modal-open/modal-closed
+— confirming the real title/body/tag a granted notification is given, that a toast fires only in
+the one case with no other feedback, and that it never fires alongside a real notification or a
+still-open modal; the three wiring call sites (`finishDraftStitch` and both catch blocks) each
+confirmed to call `notifyPano360Draft` at the exact line the status settles; and a source
+assertion that `yieldToUI()` no longer references `requestAnimationFrame` at all. ⚠️ **The
+success-path wiring assertion was proven to bite, not just written to pass**: temporarily removing
+the `notifyPano360Draft(draft, true)` call from `finishDraftStitch` and re-running the suite makes
+that one assertion fail (and only that one) — restored afterward, byte-identical to before the
+negative test (diffed to confirm).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the Notification
+API's real permission-prompt UX, and whether a real stitch genuinely keeps making progress in a
+backgrounded real browser tab (versus the documented rAF-suspension/setTimeout-throttling
+behaviour this fix is reasoned from), have not been observed on a real device.
+
+`module.js`/`pano360.js`/`index.html?v=` → `20260914b`.
+⚠️ **`MODULE_V` is `20260914d`, not `b` — re-derived twice across a rebase onto a concurrently
+merged PR.** This branch's own two commits (this one and the badge/label fix just before it) each
+picked the next unused letter in sequence (`c`, then `b` was reused as this commit's own local
+module.js/pano360.js token, separate from MODULE_V) — but PR #111 had already merged by the time
+this landed, and rebasing these two follow-up commits onto the then-current `main` found a THIRD,
+concurrently-merged PR had independently bumped `MODULE_V` to `20260914c` in the meantime. `c`
+sorts after this commit's own first attempt (`a`) and after the badge fix's rebased value; `d` is
+what a fresh derivation past all three actually resolves to. `assets/js/modules-grid.js?v=` on
+`dashboard.html`/`modules.html`, and its own fallback literal, all read `20260914d`.
+
+## The drafts badge is scoped to Gallery, gets a shorter label, and the Description-through-Key-Plan fields were already confirmed to render immediately (2026-09-14)
+
+Owner, off a screenshot of the topbar with the badge label clipped at the viewport edge:
+1. *"when adding the 360 media, show already all the input fields from description to key plan."*
+2. *"the 360 drafts button should also appear only in progress photos, not in presentation and floor plan."*
+3. *"instead of 360 drafts, leave only as drafts label. make sure label also does not overflow like in photo attached."*
+
+**Item 1 — already true, checked rather than re-built.** `openPano360Review(draft)`'s
+`.pp-form2` block (Description / Capture date / Works / Location / the BIM pin/key-plan
+field) sits **outside** `#pp360rv-result`, the only part of the modal gated on
+`draft.status`, and is opened immediately after picking a source — before the background
+stitch has produced anything (`startVideoDraft`/`havePhoto` call `openPano360Review(draft)`
+synchronously, then kick off `runStitchForDraft`/`runPhotoForDraft` unawaited). This is the
+same shape `test.js`'s own `[openPano360Review: the metadata fields … render OUTSIDE
+#pp360rv-result …]` assertion already pins down. Re-read end to end and confirmed nothing
+regressed it; no code change was needed for this item.
+
+**Item 2 — the badge was never screen-scoped at all.** `#pp360-drafts`' visibility was driven
+by exactly one thing, `renderPano360DraftsBadge()`'s `hidden` attribute (draft count), with a
+comment explaining it was **deliberately** left out of `PHOTO_TOOLS` — reasoning that held
+back when the module had only Gallery and drafts didn't exist yet, but means a draft captured
+on Gallery went on showing the badge on Presentations and Plans too, since neither of those
+screens ever touched it. `pp360-drafts` is now IN `PHOTO_TOOLS`, so `setScreen()`'s
+`show(PHOTO_TOOLS, isPhotos)` forces `style.display:none` on the other two screens regardless
+of draft count, and clears that inline style back to nothing on Gallery — where the `hidden`
+attribute (still driven purely by the draft count) is the only thing left deciding it. The two
+mechanisms don't fight: `dashboard.css`'s `.pd-btn[hidden]{display:none}` rule means an empty
+`style.display` on Gallery still correctly hides a zero-draft badge.
+
+**Item 3 — the label shortens to "Drafts"; the tooltip (`title`, and the dynamic
+`renderPano360DraftsBadge()` count message) keeps saying "360° draft(s)"** so the context isn't
+lost, just the on-screen text that was overflowing its container. Shortening the label is the
+actual overflow fix here — the button's own CSS (`.pp-syncbtn`, shared with the offline-sync
+pill) sets no width constraint of its own; the topbar row is what runs out of room, and the
+previous "360° drafts" text was the widest thing riding in it next to the sync pill, the
+presence avatars and the user menu.
+
+**Verified**: inline `<script>` in `index.html` still parses (checked with a fresh `new
+Function()` pass over every non-`src` script block); the button/`PHOTO_TOOLS` change is plain
+markup + one array entry, no duplicate ids introduced. ⚠️ **Not verified signed in** — no live
+login is possible in this environment; the screen-gating is the same `show()`/`hidden`-attribute
+mechanism already exercised by every other `PHOTO_TOOLS` entry, not newly invented here.
+
+`modules-grid.js?v=` (and the `dashboard.html`/`modules.html` `<script>` tags that load it) →
+`20260914a`, since this module's `index.html` itself changed structurally; `module.js`/
+`module.css` are untouched this round and keep their existing tokens.
+⚠️ **This landed after PR #111 had already merged** — restarted from a fresh `main` and rebased
+this commit onto it, which is when `20260914a` collided with a concurrently-merged PR's own bump;
+see the next entry's own note for the re-derivation this forced (final value `20260914d`).
+
+## 360° upload becomes a session-only draft: stitching runs in the background, nothing is pushed to the database until the planner confirms (2026-09-13, later still)
+
+Owner: *"I still have open items regarding the add 360 photo of the progress photos. at 48 frames
+per video, the processing is still slow. since this portion takes long, allow uploading 360 as
+draft during the session to work the stitching in the background. however, no push to database is
+allowed until user confirms the 360 photo. keep it in the session only as draft."*
+
+⚠️⚠️ **Even at the fixed 48-frame sampling shipped two entries above, the stitch is still real,
+sequential, per-pair OpenCV work — this entry does not try to make it faster again.** It changes
+what the planner has to do while it runs: start a capture, walk away, and come back once it's
+ready, instead of the modal blocking the whole time.
+
+### The old design, and why it couldn't do this
+
+`open360Upload()` used to be one modal holding all the state itself — the picked video, the
+in-flight stitch, the metadata fields — in plain function-scoped variables. Closing that modal (or
+navigating away) had nowhere for the in-progress work to live; the only way to "keep processing"
+was to keep the modal open, which is the opposite of what was asked.
+
+### The fix: a `PANO360_DRAFTS` array, decoupled from any one modal
+
+A **draft** (`newPano360Draft`) is a plain object — `{id, pid, status, videoBlob, stitchResult,
+repBlob, meta:{...}, pendingAdjust}` — pushed onto a module-scope `PANO360_DRAFTS` array. Starting a
+capture creates a draft and kicks off `runStitchForDraft`/`runPhotoForDraft` (async, unawaited by
+the caller) which keep running and mutating the draft's own `status`/`stitchResult` fields **however
+many times the review modal that started them gets closed and reopened** — they operate purely on
+the draft object, never assuming a live DOM or open modal (`touchPano360Draft`'s `d.onUpdate` call
+is a null-safe live-repaint hook, not a requirement).
+
+- **`openPano360SourcePicker()`** — the thin entry point ("+ Add media" → 360°): Take video /
+  Upload video / Upload 360° photo, same three options as before. Picking one creates a draft and
+  opens the review modal on it.
+- **`openPano360DraftsList()`** — a list of every in-flight/ready draft for the *current* project
+  (processing % or "Ready to review", each reopenable). Reached from a new topbar badge,
+  `#pp360-drafts`, styled and gated exactly like the existing `#pp-sync` offline-queue pill (native
+  `hidden`, not a class — the same convention that pill already established) — hidden when there are
+  no drafts for the project currently open, so it never sits there doing nothing.
+- **`openPano360Review(draft)`** — the modal a draft is actually reviewed and confirmed from. Its
+  metadata fields (Description / Capture date / Works / Location / Pin) render immediately, same as
+  the ordinary photo/video Add Media form, never gated behind the stitch finishing. The panorama
+  preview and "Confirm & Save" only make sense once `draft.status === 'ready'`; **Close and Discard
+  are available at every stage** — closing mid-stitch leaves the draft running in the background
+  (findable again via the drafts badge), Discard abandons it outright.
+- ⚠️⚠️ **The safety gate is exactly ONE call site.** `uploadFile()`/`tolerantWrite()` are called only
+  inside Confirm & Save's own handler, guarded on `draft.status === 'ready' && draft.stitchResult &&
+  draft.repBlob` — never from `runStitchForDraft`, `runPhotoForDraft`, `finishDraftStitch`, or
+  `openPano360SourcePicker`. Stated as a header comment above `PANO360_DRAFTS`'s own declaration so
+  it's auditable in one place rather than scattered across five functions.
+- ⚠️⚠️ **"Keep it in the session only as draft" means literally in-memory, never persisted.**
+  `PANO360_DRAFTS` is a plain array; nothing about a draft is ever written to `sessionStorage`,
+  `localStorage`, or IndexedDB. Closing or reloading the tab loses any unconfirmed draft — by
+  design, not an oversight. The module's own existing offline-sync outbox (`indexedDB.open`, an
+  unrelated feature for *confirmed* metadata edits going through `PDSync`) is untouched and never
+  touches a draft.
+- The badge is repainted from `notifyProject()`, so switching projects always shows the CURRENT
+  project's drafts while another project's drafts keep processing untouched in the background —
+  `pano360DraftsForProject()` filters `PANO360_DRAFTS` by `pid`, never by which project happened to
+  be open when the capture started.
+
+### What did NOT change
+
+`Pano360.stitchFromVideo`'s 4-stage progress reporting, the fixed 48-frame sampling, `mountPannellumViewer`,
+`captureViewerThumbnail` vs. `captureImageThumbnail`, and the Location Breakdown / Works / Pin
+fields themselves are all unchanged — this is a restructuring of *when* the DB write happens and
+*whether the modal has to stay open*, not a change to the stitching pipeline or the saved row shape.
+
+### Verified
+
+**913 checks green, 3 pre-existing failures unchanged** (a PDF page-break assertion + 2
+`capture.js` mic/audio-flash assertions — the same 3 this file's own standing baseline already
+names; confirmed by name, not just by count, before and after this round's own test edits).
+The rewrite retired the old single-modal `open360Upload()`'s internal shape — 5 pre-existing
+assertions that sliced and asserted against it were **rewritten in place, not silently deleted**,
+to slice `openPano360Review(draft)` instead and assert the new `pp360rv-*` ids/`draft.*`-based
+variable names (the modal's metadata fields rendering unconditionally; the footer never gated
+behind processing; the Pannellum preview mounted the same way the saved-photo lightbox uses; the
+old frame-scrubber gone entirely; "Use this view as thumbnail" writing straight onto the draft, not
+DOM-only state a modal close would lose). **Two new assertions were added specifically to encode
+the safety requirement**: that `uploadFile()`/`tolerantWrite()` are reachable only from inside the
+gated Confirm & Save handler and never from the three background-processing functions or the
+source picker; and that no real `sessionStorage.setItem`/`localStorage.setItem`/`indexedDB.open`
+call exists anywhere in the draft feature's own code region (comments mentioning storage in prose
+are stripped first, so an explanatory comment can't itself trip the check).
+⚠️ **Two harness bugs of my own, caught before landing**: a regex expected `Confirm &amp;amp; Save`
+where the shipped HTML reads `Confirm &amp; Save` (one `&amp;`, not two) — fixed to match the real
+string; and a first "no sessionStorage/localStorage near pano360" check scanned the WHOLE file,
+which would always fail regardless of the drafts feature, since this module has plenty of
+legitimate, unrelated storage use elsewhere (view/collapse-state prefs, the current project id,
+the existing offline outbox) — narrowed to the exact code region the drafts feature lives in.
+Also confirmed a stray `view_name` payload-shape assertion (checking Add + Edit + the old 360
+upload, 3 occurrences of one literal pattern) needed updating to 2 (Add + Edit, read live off the
+DOM) plus a new assertion for the draft's own shape (`view_name: draft.meta.viewName || null` —
+read from the captured draft, not a DOM element the background stitch could outlive).
+`node --check` clean on `module.js`/`test.js`; 0 NUL bytes; 0 duplicate DOM ids in `index.html`;
+every retired old-modal `pp360-*` id (`pp360-desc`, `pp360-viewname`, `pp360-take`, `pp360-choose`,
+`pp360-choosephoto`, `pp360-remove`, `pp360-save`, `pp360-progress`, `pp360-step-source`,
+`pp360-qualitywarn`, `pp360-viewerwarn`, `pp360-panowrap`, `pp360-thumbfield`,
+`pp360-thumbpreview`, and more) swept and confirmed **zero remaining references** anywhere in the
+module.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file. No live
+click-through of starting a capture, closing the review modal, reopening it from the drafts badge
+while the stitch is still running, and confirming a save once ready. The background-processing
+mechanism (a draft object outliving its modal) is proven structurally and by the safety-gate
+assertion above, not by watching a real stitch actually keep running with the modal closed.
+
+`module.js`/`index.html?v=` → `20260913j` (already the token both files carry — no further bump
+needed this round); `MODULE_V` stays `20260913j` to match.
+
+## Frame sampling capped at a fixed 48 frames per video, regardless of duration (2026-09-13, later)
+
+Owner: *"also, since it's taking too long to process and stitch an image, divide video to a fixed
+48 frames per process."*
+
+⚠️⚠️ **The 2026-09-12 density fix (30fps, up to `MAX_FRAMES = 1200`) was correct about the problem
+it solved and honest about its cost** — its own changelog entry states plainly that a real
+walk-around recording at that density is "several hundred frames of SEQUENTIAL, per-pair OpenCV
+work" and "meaningfully slower on a real phone than the previous 14–40 frame range." That cost is
+exactly what this report is about: with `stitchFromVideo`'s new per-frame progress reporting
+(the entry directly above) making the work visible in real time, "up to several hundred frames,
+each a real video seek plus its own ORB/BFMatcher/RANSAC join attempt" reads as "taking too long,"
+not as a bug in the status text.
+
+### The fix
+
+`frameCountFor(durationSec)` no longer scales with duration at all — it now always returns a
+**fixed 48**, whatever the clip's length. `FRAMES_PER_SEC`, `MIN_FRAMES` and `MAX_FRAMES` are
+removed entirely; `FIXED_FRAME_COUNT = 48` is the one number that decides sampling density for
+every recording. `frameCountFor` still takes `durationSec` — its call shape inside
+`stitchFromVideo`/`extractFrames` is unchanged — but the parameter no longer influences the
+answer; it is accepted purely so no caller needed to change.
+
+⚠️⚠️ **This is a deliberate trade-off against the 2026-09-12 fix, not a silent reversal of it.**
+That fix existed because a fixed, duration-independent frame count starves a *fast* recording of
+overlap between consecutive samples (too few frames spread across a fast pan means a wide angular
+gap between them, which is what made "11 of 11 joins could not be matched confidently" happen in
+the first place). Going back to a fixed count reintroduces exactly that risk for a recording that
+is both long *and* fast — 48 frames spread across, say, a 30-second recording is a much sparser
+sample than 48 frames across a 6-second one. This is accepted here because the owner asked
+specifically for a fixed count to bound processing time, not because the overlap problem stopped
+being real. If a future report describes joins failing again on a longer or faster recording, the
+fix is a per-pair remedy (raising `JOIN_LOOKAHEAD`, or asking for a slower/shorter walk-around),
+not silently re-scaling this count back up to duration-based sampling.
+
+### Verified
+
+**910 checks green** (was 909 — 1 assertion added, 6 rewritten in place to the new fixed-48
+behaviour rather than silently deleted, "healthy churn from an intentional change" per this file's
+own convention): confirms `FIXED_FRAME_COUNT = 48` is declared and `frameCountFor` simply returns
+it, and that `FRAMES_PER_SEC`/`MIN_FRAMES`/`MAX_FRAMES` no longer exist in the file at all.
+**Genuinely executed**, not just read: `Pano360._frameCountFor` was called directly with a very
+short duration (0.3s), a very long one (9999s), an ordinary one (6s and 24s) and a degenerate one
+(0) — every case returns exactly **48** — and a 4-second clip and a 20-second clip are confirmed to
+resolve to the identical count, which the retired 30fps scaling would never have done. `node
+--check` clean on `pano360.js`/`test.js`; `tools/wiring-check.js` — **126 passed, 0 failed**. The
+same **3** pre-existing, unrelated failures (a PDF page-break assertion + 2 `capture.js`
+audio/flash assertions) from the entry above are unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the fixed-48 sampling to confirm the actual wall-clock speedup, or
+to confirm a long/fast recording doesn't now fail to join the way a fast one did before the
+2026-09-12 density fix.
+
+`pano360.js`/`index.html?v=` → `20260913i`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260913i`. `module.js` is unchanged this round.
+
+## The "Reading video…" status was static for the entire frame-extraction phase — it now reports real per-frame progress (2026-09-13)
+
+Owner, off a screenshot of the "Add 360° photo" modal mid-upload: *"when uploading video, reading
+video status is taking too long. provide better description of status."*
+
+⚠️⚠️ **The status text was never wrong, it was just BLIND to the one phase that actually takes a
+while.** `Pano360.stitchFromVideo`'s `onProgress(stage, frac)` callback fired exactly ONCE for the
+whole frame-extraction phase — `onProgress('frames', 1)`, called only AFTER every frame had already
+been pulled. Everything before that single call (resolving the clip's duration, then looping through
+`extractFrames`' real, awaited `seekTo()` per frame) was invisible to the caller. And at the sampling
+density this pipeline now uses (`frameCountFor`, 30fps, up to `MAX_FRAMES = 1200` per the 2026-09-12
+density fix), that loop is genuinely several hundred real video seeks — the actual long pole a
+planner was staring at as a frozen "Reading video…" sentence with nothing distinguishing "still
+working" from "stuck".
+
+### The fix
+
+- **`extractFrames` now reports progress on every single frame**, not once at the end:
+  `extractFrames(videoBlob, count, maxW, knownDuration, onProgress)` — `onProgress(done, total)`
+  fires immediately after each frame is drawn, so a caller can show a real N-of-M count and
+  percentage throughout the phase that was previously silent.
+- **A `knownDuration` parameter lets a caller that already resolved the duration skip re-running
+  `fixInfiniteDuration` a second time on a fresh video element for the same file** —
+  `stitchFromVideo` always calls `getDuration()` first (to pick the sample density via
+  `frameCountFor`), so `extractFrames` no longer pays that resolution's own (up to ~2.5s, on a
+  `MediaRecorder` blob with no duration atom) cost twice for one capture.
+- **`stitchFromVideo`'s `onProgress` now reports four real, named stages** instead of the old two:
+  `'duration'` (resolving the clip's length), `'framecount'` (density decided, extraction about to
+  start — carries the real frame count so the caller can announce the job's scale up front),
+  `'frames'` (fires per-frame, carrying `done`/`total`), and `'stitch'` (unchanged — the join/warp
+  phase).
+- **`module.js`'s `runStitch()` reads all four stages into a real, changing message**: "Reading
+  video…" → "Extracting up to *N* frames…" → "Extracting frames — *k* of *N* (*p*%)" (updating on
+  every frame) → "Stitching panorama — *p*%". A planner watching a 20-second recording process now
+  sees the count climb in real time instead of a sentence that never moves.
+
+### Verified
+
+**909 checks green** (was 906 — 3 new, plus 3 existing assertions rewritten in place to the new
+call shape, "healthy churn from an intentional change" per this file's own convention): the exact
+`extractFrames(videoBlob, frameCount, WORK_MAXW, duration, function (done, total) { … })` call site
+inside `stitchFromVideo`, and the four-stage `onProgress` dispatch in both `pano360.js` and
+`module.js`'s `runStitch`. **Genuinely executed, not just structurally matched**: a fake, controllable
+`<video>` element (the same monkey-patch-`document.createElement` convention this file already uses
+for `capture.js`'s close-during-recording race tests, restored in a `finally`) drives the real,
+shipped `extractFrames` (exported as a new test-only hook, `Pano360._extractFrames`) end to end —
+confirms `onProgress` fires exactly `count` times, in strict `[1,total] .. [total,total]` order, and
+that a valid `knownDuration` is used as-is with no `'timeupdate'` event ever needed (the fake video
+never fires one — if `fixInfiniteDuration` had still been called, the promise would hang and the test
+would time out). `node --check` clean on all three touched files; `tools/wiring-check.js` — **126
+passed, 0 failed**. Confirmed against a clean checkout of the commit before this fix: the exact same
+**3** pre-existing, unrelated failures (a PDF page-break assertion + 2 `capture.js` audio/flash
+assertions) appear before and after, byte-for-byte identical — zero regressions.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the new progress reporting. What this fixes is the STATUS TEXT during
+a phase that was always real work happening correctly — it does not change how long that work
+actually takes (that is the separate, already-shipped 2026-09-12 density work), only whether a
+planner watching it can tell the difference between "processing a long recording" and "hung".
+
+`pano360.js`/`module.js`/`index.html?v=` → `20260913e`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260913e`.
+
+## Sampling density raised to 30fps — the mosaic was covering only a fraction of the actual 360° recorded, not a cropping bug (2026-09-12, later still)
+
+Owner, continuing from PR #97: *"the 360 feature ... is working better, taking off from PR97. but we
+need to adjust the overlap length as only a fraction of the supposed 360 was captured. use also more
+frames, assuming 30fps, the number of frames should equal 30 times duration of video into seconds."*
+
+⚠️⚠️ **"Overlap length" and "more frames" are the same lever, not two separate fixes.** The prior
+same-day entry below (*"sample density scales with the video's own duration"*) had already moved
+`frameCountFor` off a fixed 12-frame count — but its own `FRAMES_PER_SEC = 3` was still, itself, the
+residual cause of this report. At 3 samples/sec, two consecutive extracted frames can still be several
+real degrees of rotation apart on anything but a very slow turn — and the amount of **shared image
+content ("overlap") between them** is exactly what ORB/BFMatcher needs to find a confident join at all
+(this file's own header, a few entries up, already documents this causal chain for the identical
+reason). Whenever a stretch of the recording didn't carry enough overlap to join confidently,
+`JOIN_LOOKAHEAD`'s own fallback either **skips ahead** (the frames in between are never placed at all)
+or falls back to an **approximate pure-shift** step — either way, the final mosaic ends up representing
+LESS of the camera's actual physical rotation than was really recorded. That is "only a fraction of the
+supposed 360 was captured": not the video being cropped, but the STITCH silently giving up on parts of
+it and never being asked to.
+
+### The fix
+
+- **`FRAMES_PER_SEC`: 3 → 30`** — matching a typical recording's own real frame rate, so extraction
+  effectively samples close to every recorded frame rather than one in ten. `frameCountFor(durationSec)`
+  is now, per the owner's own formula, exactly `30 * durationSec` (still floored at `MIN_FRAMES = 14`
+  for a near-zero-length clip). This maximizes the overlap between any two consecutive samples across
+  the WHOLE recording — not just the parts of it a planner happened to turn slowly through — giving the
+  join-recognition chain built in the entry below its best possible chance to join every pair
+  confidently, end to end.
+- **`MAX_FRAMES`: 40 → 1200`** — this had to move too, or it would silently defeat the density fix for
+  anything past ~1.3 seconds of video (40 ÷ 30fps), capping right back down to the same sparse density
+  this fix exists to remove. 1200 is 40 seconds at 30fps — comfortably past the capture guide's own
+  assumed ~24-second "one slow full turn" (`ROTATION_TARGET_MS` in `capture.js`), so an ordinary
+  walk-around is never capped at all. ⚠️ **It remains a hard safety ceiling, not a normal-case limit** —
+  a mistakenly very long recording still cannot ask the pairwise ORB/RANSAC join loop (already the
+  single most CPU-heavy part of this pipeline) to run against an unbounded number of frames and lock up
+  a mobile browser.
+- ⚠️ **Flagged plainly, not silently accepted:** a real walk-around at this density is genuinely
+  several hundred frames (a 20-second recording is 600), and the join loop is sequential, per-pair
+  OpenCV work — each of up to `JOIN_LOOKAHEAD` (5) candidates runs its own ORB detect + BFMatcher +
+  RANSAC. This is meaningfully slower on a real phone than the previous 14–40 frame range. That is the
+  direct, accepted cost of the requested density, not a regression to quietly walk back if a future
+  pass finds it slow — if it proves too slow in practice, the next lever is `JOIN_LOOKAHEAD` or a
+  coarser `WORK_MAXW`, not silently lowering `FRAMES_PER_SEC` back down.
+- The head/tail sampling trim in `extractFrames` (`0.03`…`0.97` of the duration, avoiding a hand/pocket
+  frame at the very start/end of a recording) is **untouched** — it discards a fixed 6% of the
+  timeline regardless of rotation and was not the mechanism behind this report; touching it would have
+  been a second, unrelated change riding along on this one.
+
+### Verified
+
+**903 checks green** (was 902 — 1 new, plus 3 existing `frameCountFor` assertions rewritten in place to
+the new numbers, "healthy churn from an intentional change" per this file's own convention, not silently
+deleted): `frameCountFor(6) === 180` (was 18), `frameCountFor(9999)` capped at the new **1200** ceiling
+(was 40), and a new check that `frameCountFor(24)` — the capture guide's own assumed full-turn duration
+— is **720**, comfortably under the new ceiling and not capped. The pre-existing "short clip floors at
+MIN_FRAMES" check was re-based on a shorter duration (`0.3s`, not `1s`) since `30 * 1 = 30` no longer
+floors at 14 the way `3 * 1 = 3` used to — the floor itself is unchanged, only the duration needed to
+exercise it moved. Confirmed against a clean `git stash` of this same branch: the exact same **3**
+pre-existing, unrelated failures (a PDF page-break assertion and two `capture.js` audio/flash assertions)
+appear before and after this change, byte-for-byte identical — zero regressions. `node --check` clean;
+0 NUL bytes; braces (105/105) and parens (479/479) balanced.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the new 30fps density. See the sibling preview artifact sent alongside
+this change: a synthetic rotating-scene test (Chromium + the real, CDN-pinned OpenCV.js, not a
+reimplementation) comparing the OLD 3fps/40-frame-cap density against the NEW 30fps/1200-cap density on
+the identical source rotation, to demonstrate the actual mechanism (more overlap → more confident joins
+→ a wider, more complete mosaic) rather than only asserting the two numbers changed.
+
+`pano360.js`/`index.html?v=` → `20260912t`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260912t`.
+
+## The stitcher's real fix: sample density scales with the video's own duration,
+## and the chain SKIPS a frame with too little overlap instead of forcing a bad
+## join (2026-09-12, later still)
+
+Owner, off the live "11 of 11 frame-to-frame joins could not be matched confidently" report:
+*"why can't the stitcher match frame to frame joins. stitcher should breakdown video into
+smaller frames then run join recognition then switch. even if video is taken a bit quickly,
+stitcher should still work. please resolve at all cost."*
+
+### ⚠️⚠️ THE THRESHOLD WAS NEVER THE PROBLEM — SAMPLING WAS
+
+`extractFrames` pulled a FIXED `FRAME_COUNT = 12` frames spread evenly across the WHOLE clip,
+however long or short. A careful 20-second walk-around and a quick 4-second spin both got the
+identical 12 samples — so on the quick spin, each consecutive pair is many degrees of rotation
+apart, and past a certain angular gap there is genuinely too little shared image content left
+for ORB/BFMatcher to find enough confident correspondences. **Lowering `MIN_GOOD_MATCHES` would
+not have fixed this** — it would only have started accepting coincidental, wrong matches on
+pairs that truly don't overlap. "11 of 11 failed" is exactly what a fixed 12-frame sample looks
+like on a video panned faster than that spacing can keep up with.
+
+### The fix, in the owner's own words: smaller frames, then join recognition, then switch
+
+1. **`frameCountFor(durationSec)`** replaces the fixed count — sampling now targets roughly 3
+   frames per second of real time (`FRAMES_PER_SEC`), floored at `MIN_FRAMES = 14` so a very
+   short clip is still sampled meaningfully, capped at `MAX_FRAMES = 40` so a long recording
+   stays bounded. **A quick recording is now broken down into far more, closer-together frames**
+   — for a given total rotation, that directly shrinks the angular gap between consecutive
+   samples and gives the matcher real overlap to work with. `stitchFromVideo` reads the video's
+   duration once (`getDuration`, the same `fixInfiniteDuration`-tolerant path `extractFrames`
+   already uses internally) before deciding how many frames to pull.
+2. **The chain no longer forces every extracted frame into the mosaic in strict order.**
+   Building it now does literally what was asked — run join recognition, and when a candidate
+   doesn't join well, SWITCH to a later one instead of accepting a bad join. From the last
+   successfully-placed frame (the "anchor"), `JOIN_LOOKAHEAD` (5) lets the builder look ahead
+   that many frames for the first one whose match against the anchor clears
+   `MIN_GOOD_MATCHES`; every frame in between that didn't have enough overlap is skipped
+   entirely — never placed, never approximated — rather than forced in via a crude shift. Only
+   when nothing in that whole window clears the bar (a genuinely blank stretch, a lighting
+   change) does it fall back to the single best-scoring candidate it saw, exactly the old
+   code's safety net, so the chain can never simply stall.
+3. ⚠️ **A candidate that produced a real homography is always preferred over one that didn't**,
+   even when its raw ORB match count is lower — a usable homography is what actually places a
+   frame; a candidate with more matches but no homography (RANSAC or the plausibility gate
+   rejected it) isn't a "better" candidate, it's one that can't be placed at all.
+4. `pairsTotal`/`pairsFallback` (the numbers behind the on-screen "N of M frame-to-frame joins
+   could not be matched confidently" message) now count joins actually BUILT, never frames the
+   lookahead search skipped over — a skipped frame was never a join attempt in the first place,
+   so it must not inflate the denominator the planner reads that ratio against.
+
+⚠️ Nothing about the cylindrical-projection fix, the grayscale-conversion fix, the memory/area
+cap, or the mid-day plausibility gate changed — all four are correct and this is additive on
+top of them: it changes *which* frames get compared and *how many* exist to compare, not the
+underlying geometry.
+
+### Verified
+
+**All of pano360.js's own existing genuine-execution coverage still passes** (`mat3Mul`/
+`applyH3`'s cumulative-composition proof, `isPlausiblePanHomography`'s rejection cases,
+`featherStops`'s clamp) — none of that math changed. New genuine-execution coverage for
+`frameCountFor` (test-only hook `Pano360._frameCountFor`): a very short clip floors at
+`MIN_FRAMES`; a very long one caps at `MAX_FRAMES`; an ordinary clip scales at ~3/sec; a zero/
+invalid duration degrades to the floor rather than throwing; and — the actual property this fix
+turns on — **a shorter clip samples measurably MORE densely per second of real time than a
+longer one**, confirmed by direct computation, not just read from the constant. The candidate-
+preference rule (`better = !!res.H !== !!best.H ? !!res.H : res.matches > best.matches`) and the
+lookahead/skip structure are asserted against the shipped source. `node --check` clean;
+`tools/wiring-check.js` — **126 passed, 0 failed**; the module's full suite — **902 passed, 3
+failed**, and all 3 failures are pre-existing and unrelated (2 in `capture.js`'s mic-toggle
+tests, 1 in the PDF page-break CSS tests), confirmed unchanged by re-running the identical suite
+against the commit before this fix.
+
+⚠️ **What this cannot prove from here**: this sandbox has no camera and no network path to the
+real OpenCV.js CDN build (the standing caveat on every entry in this file), so the density curve
+and the lookahead search are proven correct by genuine execution of the pure logic, not against
+a real recorded video. What they directly target — a fixed, duration-independent 12-frame
+sample that starves a fast pan of overlap, and a chain that forced every extracted frame in
+regardless of whether it actually joined — is exactly the shape of "11 of 11 joins failed" the
+live report showed. **The first real recording through this exact code path, especially a
+deliberately fast one, is still the actual end-to-end test.**
+
+`pano360.js` → `?v=20260912s`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912s` to match, since this module's `index.html`
+itself changed (`pano360.js?v=` line). `module.js`/`module.css`/`capture.js` are unchanged this
+round and stay at their existing `?v=` tokens — the on-screen message text
+("N of M frame-to-frame joins could not be matched confidently…") already reads correctly
+against the new counts with no wording change needed.
+
+## Add 360°: same one-item-per-Add protocol as photo/video — an explicit × to cancel (2026-09-12, later)
+
+Owner: the 360° flow should follow the same "one upload per Add media instance" rule the ordinary
+photo/video form already enforces (`addStagedFiles`/`removeStaged`/`syncAddButtonsRow`) — once a
+360° is uploaded/processed, the Take/Upload buttons stay hidden until the planner clicks an × to
+cancel it.
+
+- ⚠️ **Half of this was already true.** `#pp360-step-source` (the Take video / Upload video /
+  Upload 360° photo row) already hides the instant a source is picked, and there was never an
+  array to over-fill — a video or photo goes straight into single-slot state
+  (`videoBlob`/`stitchResult`/`repBlob`), so "only one upload per Add media instance" already held
+  structurally. **What was missing was the way back**: once processing finished and the panorama
+  preview was showing, the only escape was Cancel — closing the *whole* modal — matching neither the
+  ordinary form's per-item × nor the owner's explicit ask.
+- **New `resetPano360()`** discards the current capture/upload — revokes every object URL
+  (`videoUrl`/`stitchUrl`/`repUrl`), tears down the live Pannellum viewer, clears
+  `stitchResult`/`repBlob`/`pendingAdjust`, hides the result/thumbnail/warning elements, and shows
+  `#pp360-step-source` again — the exact same effect `removeStaged()` has for an ordinary staged
+  photo/video, just applied to this flow's single-slot state instead of an array splice.
+- **A new `#pp360-remove` × button**, styled with the existing `.pp-stagermv` corner-overlay class
+  (the same dark-scrim circular × already used on a staged photo/video card), sits on the panorama
+  preview (`#pp360-panowrap`) — so it only appears once there's something to remove, i.e. exactly
+  "once a 360 is uploaded."
+- ⚠️ **Scoped to the result view on purpose.** The × lives inside `#pp360-result`, which stays
+  hidden during processing/offline, so there's nothing to click (and nothing to cancel a
+  still-running stitch with) until a result actually exists — matching the ordinary form, where the
+  remove × likewise only exists on an already-staged card.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3525
+cross-module references checked. `#pp360-remove` is declared once and wired once, no duplicate DOM
+ids introduced. ⚠️ **Not verified against a real device** — the reset path reuses the same object-
+URL-revoke / viewer-`.destroy()` calls the modal's own `revokeAll()` (close) already exercises, but
+the click-through of picking a source, letting it process, then clicking × and re-picking has not
+been driven in a real browser.
+
+No version bump beyond what the previous entry already carries — `module.js` stays `?v=20260912r`.
+
+## Add 360°: "Take video" / "Upload video" (renamed), plus a direct "Upload 360° photo" path (2026-09-12)
+
+Owner: rename the two capture-a-video options in the "Add 360°" flow to plain "Take video" /
+"Upload video", and add a third option — "Upload 360° photo" — for a pre-processed 360° photo
+(already equirectangular/cylindrical, viewable as 360° as-is) that needs no stitching at all.
+
+- **`open360Upload()`'s source-step buttons renamed**: `#pp360-take` "Take 360°" → "Take video",
+  `#pp360-choose` "Upload 360° video" → "Upload video". Neither's behaviour changed — both still
+  feed a video into `runStitch()`/`Pano360.stitchFromVideo`. The naming was the only thing that
+  claimed "360°" about acquiring the raw footage; the actual 360° result only exists once it's
+  stitched, which is what the new third button skips entirely.
+- **New `#pp360-choosephoto` "Upload 360° photo"** — a plain image file input
+  (`#pp360-photofile`, `accept="image/*"`). Picking a file goes straight to a new `havePhoto(file)`,
+  which reads the file's real pixel dimensions (`imageDims()`, a plain `<img>` decode) and hands it
+  to a new shared `showStitchResult({blob:file, width, height, quality:'ok'})` — no
+  `Pano360.stitchFromVideo` call, no frame extraction, no OpenCV.js.
+- ⚠️⚠️ **`showStitchResult()` is `runStitch()`'s own post-processing logic, pulled out so both
+  paths can never disagree about how a finished panorama is shown.** It's the exact same code that
+  used to run inline at the end of `runStitch()`'s `try` block (show the flat standin image first,
+  attempt to mount Pannellum, degrade to the standin + a named warning if the viewer can't mount,
+  capture a default thumbnail either way, and show/hide the frame-match quality warning). `runStitch()`
+  now just awaits the real stitch and calls `showStitchResult(res)`; `havePhoto()` calls the identical
+  function with a synthesized result carrying no `pairsFallback`/`pairsTotal` (a photo was never
+  stitched, so there's nothing to report a fallback join on) — the quality-warning branch is a no-op
+  for that shape by construction, not a special case bolted on.
+- ⚠️ The upload hint paragraph above the buttons now names the third path explicitly, so "no
+  processing needed" is stated rather than left for the button label alone to imply.
+- Save is otherwise unchanged for a photo-sourced result: `#pp360-save` still reads `stitchResult`/
+  `repBlob` and writes the same `progress_photos` row (`media_type:'360'`) regardless of which of
+  the three buttons produced them.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3525
+cross-module references checked, every asset on one version. 0 duplicate DOM ids (the two new
+button/input ids are unique). ⚠️ **Not verified against a real device or a real pre-processed 360°
+photo file** — the dimension-read path (`imageDims`) is the same plain `<img>` decode this file
+already uses elsewhere (`captureImageThumbnail`'s own standin-image path), and `showStitchResult`
+is the exact code that was already shipped and verified for the video path; what hasn't been
+exercised here is a real equirectangular photo actually mounting correctly in Pannellum end to end.
+
+`module.js` → `?v=20260912r`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912r` to match, since this module's `index.html` itself
+changed (its own `module.js?v=` line). `pano360.js`/`capture.js`/`module.css` are unchanged this
+round and stay at their existing `?v=` tokens.
+
+## The "still returns black" bug survived the cylindrical-projection fix because
+## it was never the stitch — it was the VIEWER silently failing to mount
+## (2026-09-12, later still)
+
+Owner, with a screenshot of the real deployed app: after the cylindrical-projection fix below
+had shipped and merged, a real captured 360° video still produced *"11 of 11 frame-to-frame
+joins could not be matched confidently ... and were approximated with a straight shift
+instead"* **and** the stitched-panorama preview underneath that message was still a **solid
+black rectangle**. *"fix this error. the processed 360 still returns black with the shown
+error message."*
+
+### ⚠️⚠️ Two independent things were wrong, and only one of them was in `pano360.js`
+
+The frame-match warning is real: on this footage every one of the 11 pairs genuinely failed to
+match confidently (fast turning, motion blur, or too little overlap between consecutive frames
+— an honest limitation of feature matching against real, compressed device video, not a code
+defect this session could fix by tuning a threshold). That is what `pano360.js` correctly
+reported.
+
+**The black rectangle is a completely separate bug, in `module.js`, that has nothing to do with
+whether the stitch itself succeeded.** `open360Upload()`'s preview is rendered through
+`mountPannellumViewer()` — a real WebGL panorama viewer, mounted into `#pp360-pano-viewer`
+inside a wrapper (`.pp-lb-panowrap`) whose own CSS declares **`background:#000`**. That function
+had always degraded to returning `null`, **completely silently**, in two real cases:
+`window.pannellum` never populated (the CDN `<script src="…/pannellum.min.js">` tag was blocked
+— an ad/privacy blocker, a corporate network policy, or any other reason a real device fails to
+fetch a third-party script that a same-origin harness never has to worry about) — or the
+`pannellum.viewer(...)` call itself threw (no WebGL support, or the browser's WebGL context
+limit already exhausted by earlier panorama views in the same session). **Neither failure was
+ever reported anywhere**, and `open360Upload()` had **no fallback at all** for either — when the
+viewer didn't mount, the only thing left on screen was `.pp-lb-panowrap`'s own solid black
+background, regardless of whether the stitched JPEG underneath it was perfectly fine.
+
+⚠️⚠️ **This is exactly why the isolated real-library test harness (below) never caught it.**
+That harness installs `@techstark/opencv-js` and `pannellum` from **npm** and serves them from a
+**local** static server specifically because this sandbox has no network path to a CDN — so
+`window.pannellum` is *always* defined there. The harness proved the stitching pipeline and the
+Pannellum library both work; it structurally could not reproduce a CDN-availability failure,
+because it never depends on a CDN at all. The bug only exists on the path the harness doesn't
+exercise — a real device, over a real network, loading `cdnjs.cloudflare.com`.
+
+⚠️ **The saved-photo lightbox (a different code path) had already solved this by accident.** Its
+panorama view keeps a plain `<img>` "stand-in" visible until `mountPannellumViewer()` succeeds,
+and only hides it once a real viewer mounts — so a photo already saved to the gallery degrades
+to a flat, non-pannable image instead of a black box. `open360Upload()`'s own upload-preview
+modal — the *exact* modal in the owner's screenshot ("Add 360° photo", the frame-match warning,
+"Drag to look around…", "Use this view as thumbnail") — never had that same stand-in. It is the
+one surface in the whole module with no fallback for this failure, and it is the one surface the
+report was about.
+
+### The fix
+
+- **`mountPannellumViewer()` now logs *why* it returned `null`** (`console.warn`, naming which of
+  the two cases applied) instead of failing in total silence — the standing "make error messages
+  more descriptive" ask, applied to the one place in this pipeline that had never gotten it.
+- **A new `#pp360-pano-standin` `<img>`** sits inside `#pp360-panowrap`, shown with the real
+  stitched image the moment stitching finishes — **before** the viewer mount is even attempted —
+  and hidden only once `mountPannellumViewer()` actually returns a live viewer. A failed mount
+  now leaves the flat stitched panorama visible instead of the wrapper's bare black background.
+- **A second, separate warning slot (`#pp360-viewerwarn`)** tells the planner the pan viewer
+  specifically failed to load and that the image itself is fine and will still save — kept apart
+  from the existing frame-match warning (`#pp360-qualitywarn`) so the two can never overwrite
+  each other's text depending on load order.
+- **The default/manual thumbnail capture degrades too.** Both the automatic first-render capture
+  and the "Use this view as thumbnail" button read from the Pannellum viewer's own `<canvas>` —
+  which does not exist when the viewer never mounted. A new `captureImageThumbnail()` (sharing
+  its centre-crop-to-4:3 math with the existing `captureViewerThumbnail()` via a new
+  `cropToThumbBlob()`) captures from the plain stand-in `<img>` instead, so Save is never stuck
+  on "Still processing" with nothing left to actually capture a thumbnail from.
+
+⚠️ **Nothing about the cylindrical-projection fix, the gray-fill fix, or the frame-match warning
+changed** — all three are correct and are what produced the accurate "11 of 11" message in the
+first place. This fix is additive, entirely in `module.js`, and only changes what happens when
+the *viewer* — not the *stitch* — fails to come up.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3523
+cross-module references checked; 0 duplicate DOM ids in `index.html`; `module.css` braces
+balanced (540/540, unchanged — no CSS edited, the new `<img>` reuses the existing
+`.pp-lb-panowrap img` rule verbatim).
+
+⚠️ **Not verified against a real blocked-CDN device** — this sandbox cannot reproduce a real
+network policy blocking `cdnjs.cloudflare.com`, which is the actual condition this fix targets.
+What is proven: the code path a failed mount now takes (stand-in shown, thumbnail captured from
+it, a named warning shown) is structurally correct and reachable; whether the *owner's specific
+device* was hitting the missing-`pannellum` case or the WebGL-exhaustion case is not
+distinguishable from here — the new `console.warn` is what will say which, the next time this is
+tested with DevTools open. Either way, the fix removes the failure mode itself (a mount that
+fails leaves the real image on screen) rather than depending on diagnosing which cause it was.
+
+`module.js` → `?v=20260912k`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912k` to match, since this module's `index.html` itself
+changed (its own `?v=` line). `pano360.js`/`module.css`/`capture.js` are unchanged this round and
+stay at their existing `?v=` tokens.
+
+## The Key Plan photo overflowed the "Add 360° photo" modal on a phone — a CSS-grid
+## min-width bug, not a missing max-width; one verified dead export removed (2026-09-12)
+
+Owner, screenshot of the Add 360° photo form on a phone: the KEY PLAN section's floor-plan image
+ran off the right edge of the screen. See the root-cause CLAUDE.md entry for the full writeup
+(shared `.pp-form2` fix, applies to Add/Edit photo too) — summarized here for this module's own log:
+
+- `.pp-form2` is `display:grid`, and a grid item's default `min-width` is `auto`, not `0` — so the
+  Key Plan photo's real intrinsic width (not its CSS `width:100%`) was sizing the grid track, pushing
+  the whole modal wider than the viewport. Fixed with `.pp-form2 > * { min-width: 0; }` — one rule,
+  no markup change, fixes all three embeddings of `BIM.pinFieldHTML` (Add/Edit photo, Add 360°).
+- Dead-code audit alongside the earlier same-day font-size pass: `BIM.coneWedgeSVG`'s **public
+  export wrapper** was confirmed genuinely unreferenced (every real caller uses
+  `BIM.coneWedgeSVGAt` instead) and removed; the private function it wrapped is untouched and still
+  used internally. Everything else `tools/dead-exports.js` flagged in this module checked out as
+  either a real cross-file caller the tool's static scan missed, or a documented test-only `_`
+  hook — neither touched.
+
+`module.css`/`bim.js` → `?v=20260912o`. ⚠️ Not verified signed in.
+
+## Still black on a real 180° capture — the earlier fix was necessary but not
+## sufficient; the actual bug was an unimplemented CYLINDRICAL projection
+## (2026-09-12, later still)
+
+Owner, with a screenshot of the real deployed app: a real "180 degrees from a single
+location" recording still produced a "Low confidence stitch" panorama that was mostly
+**solid black**, and: *"error message should also be more descriptive to determine
+cause of error. please exhaust all and truly all means to resolve."*
+
+### The earlier same-day fix's own test scene was testing the WRONG motion
+
+⚠️⚠️ **A real error in the previous entry's own methodology, found by re-examining it
+rather than assuming it still held.** That test built a synthetic "world" and simulated
+the capture by sliding a camera window sideways across a flat 2D image — a lateral
+**translation**. That is not what this feature's own capture guide describes, and it is
+not what the owner's report names: *"180 degrees from a single location"* means the
+camera **rotates about a fixed optical center**, standing in one spot. Those are
+different motions with different geometry, and the earlier fix (rejecting an
+implausible pairwise homography) was validated only against the wrong one.
+
+### Rebuilt the isolated harness with the CORRECT motion, and reproduced the real bug
+
+A new synthetic scene places ~500 textured landmarks in true 3D around a fixed camera
+position; frames are rendered via real pinhole-camera projection at a swept yaw angle
+(not a flat pixel crop), then recorded through a real `MediaRecorder` exactly as before.
+
+⚠️⚠️ **This reproduced the exact reported symptom — every single run**, with individual
+pairwise homographies that were each perfectly valid (confirmed directly: 0 of 11 pairs
+rejected by the earlier plausibility gate) and yet still produced an oversized, mostly
+black result (observed: 3938×1524, ~42% black pixels sampled).
+
+### Root cause: the code never did the cylindrical projection its own header claimed
+
+This file's header has always stated *"this produces a CYLINDRICAL mosaic"* — but
+reading `stitchFrames` end to end, nothing in it ever reprojected a frame into
+cylindrical coordinates. Every frame was warped straight onto ONE FLAT reference plane
+(frame 0's own image plane) via `cv.warpPerspective`, using each frame's own general 3x3
+homography composed directly. That is a **planar/rectilinear** reprojection, and it is
+only valid over a narrow angular range: as a rotating camera turns further from the
+reference frame's own facing direction, reprojecting it onto a flat plane requires
+stretching it by `1 / cos(angle from reference)` — a function that genuinely diverges
+toward infinity as that angle approaches 90°, and is already large well before a full
+180° sweep. That is exactly the shape of the bug: a hugely oversized bounding box (caught
+by the existing `MAX_PIXELS` clamp, which is why the output wasn't literally infinite,
+just badly malformed), with most of the resulting canvas never touched by any warped
+frame at all — left fully transparent, and **JPEG has no alpha channel**, so every
+untouched pixel silently composited to solid black on `canvas.toBlob(..., 'image/jpeg')`.
+Two bugs compounding: the geometry was wrong, and even where it wasn't, an uncovered gap
+had no honest way to render.
+
+### The fix: an actual cylindrical warp, before anything else runs
+
+Every extracted frame is now reprojected into a shared **cylindrical** coordinate system
+(`cv.remap`, using an assumed ~65° horizontal field of view — there is no way to read a
+real phone camera's true focal length from a plain `getUserMedia`/`MediaRecorder`
+stream) **before** any feature matching or compositing happens. In cylindrical
+coordinates, a pure camera-yaw rotation becomes a plain horizontal **translation** — the
+same well-behaved, additively-composable motion this file's original design already
+handled correctly for the (wrong) lateral-pan case — so the existing homography-chaining,
+plausibility-gating (from the earlier same-day fix) and feathering code all now apply
+correctly to a real rotation-in-place capture too, completely unchanged themselves.
+
+⚠️ A second, independent fix regardless of the above: the mosaic canvas is now filled
+with an opaque neutral gray **before** any frame is painted onto it, so any region no
+warped frame ever reaches — a real gap, or the natural margin the cylindrical warp
+leaves outside its own field of view — reads as an honest, visible gap instead of being
+silently flattened to black on JPEG export.
+
+### More descriptive error messages, per the owner's explicit ask
+
+- `stitchFrames`/`stitchFromVideo` now return `pairsTotal`/`pairsFallback` — real counts
+  of how many frame-to-frame joins could not be confidently matched (too few features, or
+  rejected by the plausibility gate) and had to fall back to an approximate straight
+  shift for that one seam.
+- The in-app "Low confidence stitch" banner is no longer one fixed sentence — it now
+  reads e.g. *"1 of 11 frame-to-frame joins could not be matched confidently ... and was
+  approximated with a straight shift instead. Look for a rough seam there before
+  presenting."*, built from those real numbers.
+- The catch-all failure toast now shows the **full** underlying error message (a real,
+  specific reason from `pano360.js` — an unreadable duration, no frames at all, the
+  vision library failing to load, …) instead of appending it parenthetically after a
+  generic "Could not build the panorama."
+- The modal's own intro copy changed from *"Record a slow walk-around"* to *"Stand in
+  one spot and slowly turn all the way around"* — the previous wording invited the wrong
+  motion (walking/strafing) for a stitcher that assumes a fixed optical center.
+
+### Verified — the corrected motion model, not the original one, and against the exact
+### shipped file
+
+Re-ran the corrected rotation-in-place harness **7 times total** (4 before porting into
+the real module, 3 after) against the real, unmodified `pano360.js` (real
+`@techstark/opencv-js`, real `MediaRecorder`-produced video, real Chromium via
+Playwright — same isolated-harness methodology as the earlier same-day entry, since this
+sandbox still has no network path to the CDN): every run produced a correctly-sized, wide
+panorama (~2500–2900 × ~490–590 px, the expected shape for a 180° sweep) with **0% black
+pixels sampled**, down from the pre-fix 3938×1524 / ~42% black. A consistent 1 of 11
+frame pairs still falls back (very plausibly a real video-encoder artifact on that
+specific pair, the same class of thing the earlier lateral-pan test also isolated to one
+specific pair) — this is now honestly reported via the new message rather than silently
+producing a black region.
+
+⚠️⚠️ **Also re-ran the ORIGINAL (lateral-slide) test scene from the earlier same-day
+entry as a regression check, and it got WORSE under this fix** (Test A's `quality` went
+from `'ok'` to `'poor'`; Test B's dimensions became inconsistent across runs). This is
+expected and disclosed rather than hidden: cylindrical projection is the correct
+correction for a camera **rotating**, and actively wrong for a camera **translating**
+sideways across a flat scene — which is a motion nobody using this feature actually
+performs (nobody physically strafes holding a phone to capture a panorama; they stand
+and turn). That earlier test scene modelled the wrong real-world motion from the start;
+this fix is calibrated to, and verified against, the capture pattern this feature is
+actually built for and that the owner's own report described.
+
+`node --check` clean on both touched files. `tools/wiring-check.js`: **123 passed, 0
+failed**, 3522 cross-module references checked.
+
+⚠️ **What this still does not prove**: a real phone's true horizontal field of view
+varies by device and is assumed here at 65° rather than measured — a device with a
+substantially wider or narrower FOV will get a less-precise (though still far better
+than the pre-fix planar approach) cylindrical dewarp. And the isolated harness still
+uses a synthetic scene, not the owner's own real footage (still not available in this
+session — every location this session has checked for an uploaded video came up empty;
+please re-share it directly, or confirm how to get a file into this environment, so the
+next check can run against the real recording rather than a synthetic stand-in).
+
+`pano360.js` → `?v=20260912j`; `module.js` (messaging + intro copy) → same; the shared
+`MODULE_V` fallback (`assets/js/modules-grid.js`, `dashboard.html`, `modules.html`) →
+`20260912j` to match.
+
+## The video→360° stitcher's real bug — found by building an isolated harness with
+## the REAL OpenCV.js and REAL Pannellum, driving a REAL recorded video, not by
+## reading the code again (2026-09-12, later still)
+
+Owner: *"the conversion of video to 360 photo and viewer is really not working. can we
+work on this separately in a separate test module first before pushing the module
+features to the planning app."* Direct, and correct — every fix shipped to this
+pipeline so far, including the same-day grayscale fix and the memory/crash hardening
+above, was verified only against a hand-built Node `vm` stub modelling OpenCV.js's
+API surface. A stub that models the API cannot reproduce a bug that lives in what the
+REAL library actually decides given real pixels, and that is exactly where this one
+was hiding.
+
+### Built the isolated test module the owner asked for, with real libraries
+
+⚠️⚠️ **This sandbox has no network path to `cdn.jsdelivr.net`/`cdnjs.cloudflare.com`**
+(confirmed directly — the agent egress proxy answers both with `connect_rejected` /
+policy denial), so the CDN scripts this module actually loads could not be fetched
+here. `registry.npmjs.org` **is** reachable, though, so the exact real libraries were
+installed from npm instead of stubbed:
+- `@techstark/opencv-js@4.10.0-release.1` — the identical version and package this
+  module's own `index.html` pins from jsdelivr, just fetched via npm instead of a CDN
+  URL. Same file, same bytes, same real WASM build.
+- `pannellum@2.5.6` — npm ships this as unminified source
+  (`src/js/libpannellum.js` + `src/js/pannellum.js`) rather than the built
+  `pannellum.min.js` cdnjs serves, but it is the same real library code — the minifier
+  changes nothing about behaviour.
+
+A throwaway harness (Node `http` static server + a plain HTML page loading the real,
+**verbatim-copied** `pano360.js`, the two real libraries above, and nothing else) was
+driven by the real, pre-installed Playwright + Chromium this environment ships, with
+`--use-fake-ui-for-media-stream` so `MediaRecorder` works headlessly with no camera.
+This is genuinely the isolated test module the owner asked for — it never touched the
+committed module until the fix below was verified there.
+
+### The test itself: build a real video, run the real pipeline, look at the real output
+
+A richly-textured synthetic scene (checkerboard + ~220 numbered coloured shapes +
+diagonal reference lines — plenty of ORB-friendly texture) was drawn to a canvas, then
+two independent tests were run against the real, unmodified `pano360.js`:
+- **Test A** — the pure math path: hand-cropped overlapping frames fed directly to
+  the exported `Pano360._stitchFrames`, no video involved. Consistently produced a
+  correct, wide, coherent mosaic (2380×480) across every run.
+- **Test B** — the REAL end-to-end path: `canvas.captureStream()` + a real
+  `MediaRecorder` recorded an actual panning animation to a genuine VP8 `.webm` Blob
+  (865 KB, `type: "video/webm;codecs=vp8"` — a real encoded video, not a synthetic
+  stand-in), then that blob was handed to the public `Pano360.stitchFromVideo(blob,
+  onProgress)` exactly as `module.js` calls it, exercising the real
+  `extractFrames`/`fixInfiniteDuration`/`homographyBetween`/`stitchFrames` chain
+  against real decoded, real-compressed video frames.
+
+⚠️⚠️ **Test B reproduced a real, previously-unknown defect on every run.** Test A was
+clean and stable every time; Test B — same scene, same pan, going through a real
+video encode/decode round-trip — consistently produced a badly malformed mosaic
+(observed dimensions across runs: 2099×2859, 2290×2620, 1256×4778, 1615×2045 — tall
+and narrow, the opposite of a panorama), while still reporting `quality: 'ok'`.
+
+### Root cause, found by instrumenting the REAL run, not guessed
+
+Capturing every canvas handed to `cv.imread()` during a real `stitchFromVideo` call
+and re-running `Pano360._homographyBetween` on the actual extracted frame pairs
+showed the raw extracted frames themselves were clean, valid, correctly-panned
+images (confirmed visually — a strip of all 12 frames showed a smooth, gradual pan
+with no corruption). The defect was in one specific pair's **homography**:
+
+```
+pair "0->1": 113 matches, H = [[-0.97, -0.105, 779.8], [0.169, -1.28, 416.2], [0.001, 0, 1]]
+```
+
+Every other pair in the same run looked like `[[~1, ~0, ~150], [~0, ~1, ~0], ...]` —
+almost pure horizontal translation, exactly right for a lateral pan. Pair 0→1's
+linear part is instead close to a **180° rotation with a flip** — physically
+impossible between two video frames a fraction of a second apart — yet it was backed
+by 113 ratio-test-passing matches, well above `MIN_GOOD_MATCHES` (12), so the
+existing match-**count** gate had no way to catch it.
+
+⚠️⚠️ **`cv.findHomography(..., cv.RANSAC)` only guarantees its inlier set is
+internally self-consistent, never that the resulting transform is physically
+plausible.** On a scene with repetitive/periodic texture (this test's checkerboard;
+a real site's tiled flooring, a repeated railing, evenly-spaced studs — exactly the
+kind of texture a construction walkthrough often has), RANSAC can converge on a
+wrong-but-internally-consistent model when enough spurious correspondences agree
+with each other. And because every frame's placement composes onto the one before
+it (`placements[i] = placements[i-1] * step`), that ONE bad homography poisoned
+every later frame in the chain, blowing the whole mosaic's bounding box into a tall,
+garbled shape — while `quality` still read `'ok'`, since quality was only ever a
+function of match count, never of whether the fitted model made geometric sense.
+This is very plausibly the real substance of "conversion of video to 360 photo …
+really not working": a mosaic that isn't thrown-away-and-erroring, it's silently
+wrong, on every real (encoded) video and specifically NOT on the frames-only path —
+exactly why nothing in this repo's stub-based verification history ever saw it.
+
+### The fix, verified in the isolated harness first
+
+New `isPlausiblePanHomography(H)` rejects a homography whose linear 2×2 part isn't
+close to a small-rotation, near-unit-scale transform — checked on the determinant
+(rejects a flip or a wild scale swing) and the implied rotation angle (rejects
+anything past 30°, since two adjacent frames of a slow pan cannot rotate anywhere
+near that much). `homographyBetween` now calls it right after `findHomography`
+succeeds; a rejected homography is deleted and treated exactly like "no usable
+homography" — the **existing** fallback (a plain horizontal shift, and `poor` marked
+honestly) — so this is a pure additional gate, no new code path for the rest of the
+pipeline to disagree with.
+
+**Verified the fix in the isolated harness, not assumed from reading it**: 5
+consecutive full runs (real video → real stitch) all correctly rejected pair 0→1
+(`H: null`) and produced a clean, wide, coherent mosaic every time (~2760–2820 ×
+~480–488 — matching Test A's shape), each one visibly confirmed via a saved
+screenshot of the actual rendered `<img>` output. `quality` now honestly reads
+`'poor'` for these runs (one pair genuinely has no usable geometric fit — the
+fallback shift is a real, lesser degrade, not a full alignment), rather than a false
+`'ok'` over a broken mosaic.
+
+### The real Pannellum viewer, also verified for the first time against real output
+
+The stitched result was mounted through the exact config `module.js`'s
+`mountPannellumViewer` uses (`type:'equirectangular'`, `haov:360`, `vaov` from the
+image's real aspect ratio) directly against the real, unminified Pannellum library.
+⚠️ A first pass reported the viewer's own canvas at **`900x0`** — a real, if
+harness-only, bug: the test set `container.id` to a fixed id *after* the CSS sizing
+rule was written to target that same id by selector, so renaming it out from under
+the CSS collapsed its height to 0. This is a bug in the **test page**, not in
+`mountPannellumViewer` — the real module sizes its containers with a **class**
+(`.pp-lb-panowrap`), never an id selector, precisely so the id `mountPannellumViewer`
+assigns (only when none exists) can never interfere with layout. Fixed the harness to
+match that same class-based convention; re-verified the viewer then reports its real
+container size (`900x300`), renders visible, undistorted panorama content, and
+responds correctly to `getYaw()`/`setYaw()` (0 → 45° after a programmatic set).
+
+### Ported into the real module, byte-checked against the harness-verified copy
+
+`isPlausiblePanHomography` and its one call-site addition were copied into the real
+`modules/progress-photos/pano360.js` (comments rewritten for this file's own
+convention; the logic is identical) and the exact shipped file was re-copied back
+into the isolated harness and run **3 more times** — same result every time: pair 0→1
+rejected, a clean wide mosaic, `quality: 'poor'`, Pannellum rendering it correctly.
+⚠️ **Nothing else in this file changed** — the grayscale-conversion fix and the
+memory/yield hardening from earlier the same day are untouched; this is one
+additional plausibility gate on top of them.
+
+`tools/wiring-check.js`: **123 passed, 0 failed**, 3517 cross-module references
+checked. `node --check` clean.
+
+⚠️ **What this still does not prove**: a real phone camera's video has different
+compression artifacts, motion blur and lighting than this test's clean synthetic
+recording — the specific 30°/scale/determinant thresholds chosen here are a
+physically-reasoned gate (justified by what a slow lateral pan can and cannot do
+frame-to-frame), not numbers tuned against a real device recording, because none is
+available in this environment. What IS now proven, for the first time in this
+feature's history: the full real pipeline — real OpenCV.js, a real encoded video,
+real Pannellum — runs end to end and produces a correct, viewable panorama, not just
+a stub that says it should. **The first real recording on a real phone is still the
+actual remaining test**, and this fix is aimed squarely at the one failure mode this
+session could reproduce and explain, not a guarantee against every possible one.
+
+`pano360.js` → `?v=20260912i`; the shared `MODULE_V` fallback
+(`assets/js/modules-grid.js`, `dashboard.html`, `modules.html`) → `20260912i` to
+match, since this module's `index.html` itself changed (`pano360.js?v=`).
+
+## Gallery markup toggle drops its label; the video→360° pipeline is hardened
+## against a mobile OOM/crash rather than just having its own error caught
+## (2026-09-12, later same day)
+
+Owner, two items:
+```
+1. in progress photos gallery, remove text label in view mark-up button. leave icon.
+2. the reading and processing video to 360 does not work. app crashes when processing
+   please exploit all options to resolve. use additional add-ins or other open-source
+   features to resolve
+```
+
+### Item 1 — the Gallery "Markup" button is icon-only now
+
+`#pp-mkvistoggle` (the shared show/hide-markup switch on the Gallery's own list bar —
+not the lightbox's already-icon-only `#pp-lb-markuptoggle`, which needed no change)
+dropped its trailing `Markup</span>` text, leaving `Icons.svg('eye'/'eyeOff', 15)`
+alone. `syncMkVisBtn()` (module.js) only ever touches the icon `<span>`'s `innerHTML`
+and the button's own `is-active` class — it has no dependency on a text node existing
+beside it, so nothing else needed to change.
+
+### Item 2 — the earlier grayscale/accumulation fixes made the ALGORITHM correct;
+### this pass addresses the other honest possibility: a real device crash, not a
+### thrown error
+
+⚠️⚠️ **A crash is not the same failure as an error, and the same-day earlier entry
+above only ever hardens the second one.** `open360Upload()`'s own try/catch around
+`Pano360.stitchFromVideo(...)` already turns a *thrown* exception into a toast — but a
+mobile browser killing the whole tab for memory pressure, or for one JS task blocking
+the main thread long enough to be judged unresponsive, is not a thrown exception at
+all. No amount of try/catch around the call site can recover from either, so "exploit
+all options" here means removing the two real causes from `pano360.js` itself, not
+adding a second catch block.
+
+- ⚠️⚠️ **The per-frame warp loop allocated three full-mosaic-sized buffers per
+  frame, with nothing forcing the previous iteration's to be freed first.**
+  `stitchFrames`'s old sizing clamped WIDTH and HEIGHT to 8000px *independently*
+  (`Math.min(MAX_DIM, ...)` on each) — which still allows a mosaic as large as
+  8000×8000, and every one of up to 12 frames allocates a `dstMat` (an OpenCV Mat) PLUS
+  a same-sized `<canvas>` (`tmp`) on top of the mosaic canvas already being built —
+  three ~256MB buffers per iteration at that ceiling, with no yield point anywhere in
+  the loop for the browser's garbage collector to reclaim the last iteration's before
+  starting the next. That is a highly plausible, and previously undiagnosed, cause of
+  "app crashes when processing" that a caught JS error could never explain.
+- **Fixed with a pixel-AREA cap (`MAX_PIXELS = 6,000,000`), not a per-dimension one.**
+  The real bounding box is computed exactly as before; if its area would exceed the
+  cap, the WHOLE mosaic is scaled down proportionally (never distorted) before being
+  drawn — `mat3Scale(scale, scale)` composed into the existing `shift` matrix, so every
+  frame's placement scales together rather than each being warped at full size and
+  cropped after. `MAX_DIM = 6000` is kept as a per-axis backstop for a pathologically
+  long, thin mosaic that could otherwise pass the area check while still running one
+  dimension away.
+- **A `yieldToUI()` (a `requestAnimationFrame`, falling back to `setTimeout(0)`) is
+  now awaited after every frame in BOTH loops** — the homography/RANSAC loop and the
+  warp loop. A 12-frame stitch run as one uninterrupted synchronous block is exactly
+  the shape a slower phone's browser reads as an unresponsive page; breaking it into
+  one browser task per frame keeps the tab responsive AND gives the previous
+  iteration's canvases/`cv.Mat`s a real chance to be garbage-collected before the next
+  allocation — which is what the memory cap above is actually relying on to hold.
+- **A degenerate frame (zero width/height — e.g. the camera never actually started)
+  is now refused up front** with a clear message, rather than being handed to
+  `cv.imread()` to fail in whatever way an empty canvas fails inside the WASM module.
+- ⚠️ **What this does NOT claim to fix**: a genuine WebAssembly abort (Emscripten
+  calling `abort()` on an internal invariant violation) is not always a catchable JS
+  exception either, and no amount of JS-side hardening can guarantee OpenCV.js itself
+  never does this on some device/build combination. The area cap above is the
+  strongest available lever against that too, since it directly bounds the size of
+  every buffer OpenCV.js is asked to allocate — but it is a mitigation, not a proof.
+
+### Verified
+
+**Genuinely executed against the real, shipped `pano360.js`** (never re-derived from
+memory), via a Node `vm` harness with a hand-built OpenCV.js stub modelling the real
+Mat/ORB/warpPerspective contract closely enough to run `stitchFrames` to completion:
+- A normal 4-frame, modest-resolution mosaic passes through the area/dimension caps
+  untouched (well under both).
+- **A deliberately runaway case — 12 frames at 3000×2000 each, forced onto the
+  no-homography fallback so they simply tile side by side — would bound to
+  36000×2000 unclamped; the fix correctly scales it down to exactly 6000×333,
+  preserving the 18:1 aspect ratio and landing under both the area and per-axis
+  caps.** This is the exact shape of input (many wide frames) that produced the old
+  code's ~256MB-per-buffer worst case.
+- A frame with zero width/height is refused with the new, clear error message rather
+  than reaching `cv.imread()`.
+- `requestAnimationFrame` was genuinely invoked (not just present in source) across
+  both loops, confirming the yield actually fires per iteration rather than being a
+  no-op left over from a copy-paste.
+- `mat3Scale` and its composition with the existing `mat3Translate`/`mat3Mul` were
+  executed directly and checked against the expected point-transform arithmetic
+  (translate-then-scale of a point lands exactly where the two operations predict).
+
+`node --check` clean on `pano360.js`/`module.js`; `tools/wiring-check.js` — **123
+passed, 0 failed**, confirming the version bump left no asset on two versions and no
+cross-module reference broke.
+
+⚠️ **Not verified against a real device or the real `@techstark/opencv-js` build** —
+same standing caveat as every entry in this file: this sandbox has no camera and no
+network path to the CDN. What is verified is that the exact shipped sizing/yielding
+logic behaves correctly against a faithful model of OpenCV.js's real Mat/warp
+contract, not that a real recorded 360° walk-around now stitches without crashing on
+a real phone. **The first real recording, on a real device, through this exact code
+path, is still the actual end-to-end test** — per the owner's own "exploit all
+options" instruction, this pass removed every plausible cause reachable from the
+JS/OpenCV.js layer; it cannot rule out a lower-level platform crash this environment
+has no way to reproduce.
+
+`pano360.js` → `?v=20260912h`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912h` to match, since this module's `index.html`
+itself changed (the markup edit in item 1, plus `pano360.js`'s own `?v=` line).
+`module.js`/`module.css`/`capture.js` are unchanged this round and stay at their existing
+`?v=` tokens.
+
+⚠️ **A real `MODULE_V` collision, caught by merging `origin/main` forward before pushing.**
+A concurrent session's own same-day work (project-schedule's site-plan entry) independently
+bumped `20260912f` → `20260912g` for an unrelated reason, landing on `main` while this change
+was in progress; this change's own first pass had picked the identical `g`. A three-way merge
+sees both sides making the SAME textual edit and resolves it silently with no conflict — so the
+version stayed at `g` post-merge even though this file's own content had moved on again. Caught
+by re-checking the actual token against what this round's `pano360.js` edit needed, not assumed
+correct because the merge reported clean. Re-derived to `h`, past both.
+
+## Fourth capture-flow round: the camera view and every topbar button were
+## being swallowed by an always-visible "hidden" error box, 360 drops mute
+## entirely, and the real reason video-to-360 processing has never worked
+## (2026-09-12)
+
+Owner, with four numbered items and "resolve at all cost" on three of them:
+```
+1. when taking photo, I cant see the camera view. the flash and close button is also not working.
+2. when taking video, there seems to be an overlay on the video view. the flash, mute, and close
+   buttons are also not working.
+3. when taking video for 360, no need for mute, by default this should be mute. the close and
+   flash button are also not working.
+4. the processing from video to 360 photo is also not working. this has never worked well ever
+   since.
+```
+
+### ⚠️⚠️ ITEMS 1–3's SHARED ROOT CAUSE: `.pp-cap-error` NEVER ACTUALLY RESPECTED `hidden`
+
+`capture.js`'s overlay markup is `<div class="pp-cap-error" id="pp-cap-error" hidden></div>` —
+correct, and the JS never touches that attribute until a real error fires (`showError()`). But its
+own stylesheet declared `.pp-cap-error{display:flex; ...; z-index:3; background:rgba(0,0,0,.6)}`
+**unconditionally** — a class selector at (0,1,0), the exact same specificity as the browser's own
+`[hidden]{display:none}`, and an **author** rule always beats a **UA** rule at equal specificity.
+So the box rendered `display:flex` from the very first frame of *every* session — photo, video and
+360 alike — regardless of the `hidden` attribute being present and correct the whole time.
+
+⚠️⚠️ **This is the identical defect this app's own `dashboard.css` already found and fixed once, for
+`.pd-btn[hidden]`** ("THE `hidden` ATTRIBUTE DID NOT WORK ON ANY `.pd-btn` IN THIS APP, ANYWHERE") —
+never generalised, and `capture.js` walked into the exact same shape independently. The box is a
+`rgba(0,0,0,.6)` scrim sitting at `z-index:3`, **higher than `.pp-cap-topbar`'s `z-index:2`** — so it
+sat over the whole camera preview (which is what "I can't see the camera view" actually was: not a
+dark/dim preview, an always-on 60%-black scrim over it) **and** intercepted every click meant for
+Close, Flash, and — for video — the mic toggle, since its box overlaps theirs. This is items 1, 2 and
+the close/flash half of item 3 in one bug, not three separate ones.
+
+**Fixed the identical way `dashboard.css` fixed its own instance**: `.pp-cap-error[hidden]{display:
+none;}` — an attribute-selector override wins purely on specificity (0,2,0 > 0,1,0), so it holds
+regardless of source order.
+
+**Verified by genuine execution, not just read** — a throwaway Playwright/Chromium harness (no
+network needed; deleted after use) loaded the real, unmodified `capture.js`, called
+`Capture.takePhoto()` and checked the DOM **synchronously, before any async `getUserMedia` result
+could touch it** (`buildOverlay()` runs synchronously inside `takePhoto`/`takeVideo`/`take360`, only
+the camera permission prompt is async):
+
+| | `hidden` attribute present | computed `display` | topmost element at Close's centre | at Flash's centre |
+|---|---|---|---|---|
+| **pre-fix** (the override rule stripped back out, as a negative control) | true | **`flex`** | `.pp-cap-error` | `.pp-cap-error` |
+| **fixed** (shipped) | true | **`none`** | `.pp-cap-close` itself | inside `.pp-cap-flash` itself |
+
+The negative control reproduces the report exactly — both buttons' own clicks land on the invisible
+scrim, not the button — and the fix restores both to receiving their own clicks.
+
+### Item 3 — 360 drops the mic toggle entirely, and never requests an audio track
+
+`buildOverlay`'s condition for the mic button was `opts.mode !== 'photo'`, which included **both**
+`'video'` and `'360'` — so 360 showed a mute control nobody asked for. Narrowed to
+`opts.mode === 'video'` only. `wantsAudioTrack()` — which decides whether `getUserMedia` even
+requests an audio track — went from `mode !== 'photo'` to `mode === 'video'`, so a 360 recording
+never has an audio track to begin with: "by default this should be mute" is satisfied by there being
+nothing to mute, not a forced-off flag layered on top of a track nobody needs.
+
+**Verified by execution**: the same harness confirmed `#pp-cap-audio` exists only when
+`Capture.takeVideo()` is the active session (absent for `takePhoto()` and `take360()`), and a stubbed
+`getUserMedia` recorded the exact constraints object passed for each mode — `audio:false` for photo,
+`audio:true` for video, **`audio:false` for 360**.
+
+### Item 4 — the real reason video→360 stitching has never worked: no grayscale conversion before ORB
+
+⚠️⚠️ **`prevMat`/`curMat` in `homographyBetween` come straight from `cv.imread()` on a `<canvas>` —
+which OpenCV.js *always* returns as a 4-channel RGBA `Mat`, never grayscale.** ORB's own
+`detectAndCompute` (per OpenCV's C++ implementation, and every OpenCV.js ORB sample, the library's
+own official one included) expects a single-channel image and converts internally via
+`COLOR_BGR2GRAY` — which asserts/throws on a 4-channel input. `pano360.js` never once called
+`cv.cvtColor()` anywhere in the file (`grep` confirms zero occurrences before this fix) — every
+OpenCV.js tutorial that reads from a canvas does this conversion as the very next line after
+`cv.imread()`, and this file skipped it.
+
+This explains "has never worked well ever since" far better than a tuning problem: on a real device,
+this either **throws on the very first frame pair** (surfaced to the planner as "Could not build the
+panorama" — every prior changelog entry's "fix" was to the homography-accumulation MATH, which is
+correct but moot if `detectAndCompute` never produces a real homography to accumulate in the first
+place) or, depending on the build, silently returns zero keypoints — either way, every pair falls
+back to the no-homography path (a bare horizontal shift), so what came back was never actually an
+aligned mosaic, just frames placed side by side.
+
+**Fix**: `homographyBetween` now converts both frames to grayscale (`cv.cvtColor(prevMat, gray1,
+cv.COLOR_RGBA2GRAY, 0)`, same for `curMat`/`gray2`) before handing them to `orb.detectAndCompute` —
+the exact extra step every OpenCV.js feature-detection example takes. `prevMat`/`curMat` themselves
+are untouched (the caller's own cleanup of them is unaffected); the two new grayscale Mats are
+deleted in the function's existing `finally` block alongside everything else.
+
+⚠️ **Not verified against real OpenCV.js or a real video** — this sandbox has no network access to
+the CDN (`cdn.jsdelivr.net` is blocked by the environment's egress policy) and no camera, so the real
+`@techstark/opencv-js` binary has never been loaded here. What **is** verified, genuinely: a
+hand-built stub modelling OpenCV.js's real, documented API surface (`cv.Mat`, `cv.cvtColor`,
+`cv.ORB`, `cv.BFMatcher`, `cv.findHomography`, …) was driven against the actual exported test hook
+`Pano360._homographyBetween` — the SAME function that ships — with the stub's `detectAndCompute`
+modelling the real OpenCV constraint (throws on a non-single-channel image, matching the exact
+assertion OpenCV raises):
+
+| | calls made | result |
+|---|---|---|
+| **pre-fix** (the two `cvtColor` lines reverted back out, as a negative control) | `detectAndCompute` called directly on the 4-channel Mat | **throws** `Assertion failed: image.channels() == 1` — reproducing "processing has been failing" |
+| **fixed** (shipped) | `cvtColor` → `cvtColor` → `detectAndCompute` (×2, both on 1-channel Mats) → `knnMatch` → `findHomography` | returns `{matches:6, H:<Mat>}` — a real homography |
+
+This proves the fix changes exactly what it claims to (grayscale conversion happens before feature
+detection, and detection succeeds once it does) against a model of the real constraint — it does
+**not** prove the real `@techstark/opencv-js` build behaves identically to the stub, or that a real
+recorded 360° walk-around now produces a good mosaic. **The first real recording on a real device,
+through this exact code path, is still the actual end-to-end test**, and per the owner's own
+instruction that is stated plainly here rather than glossed over.
+
+### Verified (whole round)
+
+`node --check` clean on both touched files. `tools/wiring-check.js`: **123 passed, 0 failed** — every
+asset reference still resolves and is on one version after the `?v=` bump. No other file's behaviour
+was touched — `module.js`'s Add Media / 360-upload flow, and `module.css`, are unchanged.
+
+`capture.js` / `pano360.js` → `?v=20260912c`; the shared `MODULE_V` fallback
+(`assets/js/modules-grid.js`, `dashboard.html`, `modules.html`) → `20260912f` to match, since this
+module's `index.html` itself changed (its own `?v=` lines).
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as every capture-flow entry
+in this file. The CSS fix and the mode-gating fix are proven by genuine execution against the real,
+shipped `capture.js` in a real (if camera-less) Chromium; the stitching fix is proven against a
+faithful model of the real OpenCV constraint, not the real library. The camera-view/button-click fix
+in particular should be the fastest thing to confirm on a real phone — the previous behaviour was a
+permanent, unconditional black scrim over the whole capture screen, which was never testable inside
+this sandbox no matter how the harness was built.
+
+## Third capture-flow round: the Add Media modal actually hides its own
+## buttons now, a real close-during-recording race fixed, flash on/off/
+## auto, a proportional key-plan pin, Pannellum replaces the drag-strip
+## viewer, and Hugin ruled out with a reason (2026-09-11)
+
+Owner, off the just-shipped second capture-flow round:
+```
+1. only 1 photo or video is allowed when adding media. do not allow multiple uploads per add media.
+   when a photo or video is already uploaded, the take and upload photo/video/360 should be hidden.
+   there should be an X button on the top right of the media preview to remove the upload. once
+   removed, the take and upload buttons should reappear
+2. when taking video, the mute button and close button is not working. the camera preview also
+   seems to be shades darker. provide also button for on/off/auto flash.
+3. when photo is opened or in presentation and the key plan is shown, the pin should be
+   proportionally smaller. also provide option to drag bottom left corner to resize size of keyplan.
+4. when adding 360, stitching of video frames is not good. explore using the open source Hugin to
+   stitch frames.
+5. viewing of 360 is also not good. use open source Panellum for 360 viewer
+6. improve also workflow of uploading 360. once 360 photo is processed, user to use 360 viewer as
+   both a preview and to select the thumbnail frame. (for thumbnail, use standard 3:4 landscape
+   ratio). no need to have separate preview and thumbnail selector
+```
+
+### Item 1 — the single-item cap already existed; hide/show + a remove-× did not
+
+The previous round capped `stagedFiles` at one, but Take/Upload stayed visible and clickable next to
+whatever was already staged, and the only way to replace it was to take/choose again (a silent
+replace-with-a-toast). `#pp-addbtnsrow` (the Take/Upload row) now hides the instant a file is staged
+(`syncAddButtonsRow()`, called from the top of every `renderStagedGrid()`) and each staged card gets
+a corner **×** (`.pp-stagermv`, the same fixed-dark-scrim-corner-overlay language as `.pp-cardsel`/
+`.pp-mkeditbtn`, mirrored to the opposite corner). Removing it (`removeStaged`) revokes the object
+URL, clears any pending markup/adjustments for that index, and re-renders — which is what brings the
+row back via the same `syncAddButtonsRow()` call. ⚠️ The auto-replace toast from the previous round
+is kept as a defensive fallback (a picker handing back >1 file in one go, or a future regression that
+reintroduces `multiple`), but is now unreachable through the UI in the ordinary case, since there's
+nothing left to click that could trigger it.
+
+### Item 2 — the real close-during-recording race, a resolution-hint fix for "darker", and flash
+
+⚠️⚠️ **The actual bug, distinct from the getUserMedia race the previous round fixed.** Tapping ×
+**while a video was recording** called `close()`, which stops the `MediaRecorder` and fires
+`opts.onCancel` → `onDone(null)` immediately — but the recorder's own **async** `'stop'` event still
+caught up afterward and ran the callback wired at record-start (`function (blob) { var b = blob;
+close(); onDone(b); }`), calling `onDone` a **second** time with a real file. From the planner's
+side: the overlay visibly closed, and the recording got added anyway — exactly "I closed it and it
+didn't work". Fixed by threading the SAME `stale()` guard the getUserMedia race already established
+through to every caller (`startSession` now hands `onReady(videoEl, stale)`): `close()` bumps the
+module's `sessionToken` as its very first action, so by the time the delayed `onstop` fires, `stale()`
+correctly reports "something already closed this session" and the stray `onDone` is skipped. The
+ordinary completion path (tapping the shutter a SECOND time, nobody closed anything) checks `stale()`
+too, and correctly still fires — `close()` there is called from *inside* that same callback, after the
+check, not before it. `takePhoto`'s async `canvas.toBlob` callback gets the identical guard for the
+same reason (a tap on × between the shutter press and the callback firing is the same race, one step
+earlier).
+
+**"Camera preview seems shades darker"** — `openStream()` now requests `width:{ideal:1920},
+height:{ideal:1080}` instead of no resolution hint at all. ⚠️ With no hint, some phone browsers fall
+back to a lower-resolution/binned sensor profile whose default auto-exposure reads dimmer than the
+same device's native camera app; asking for a proper HD frame (never a hard `min`/exact constraint, so
+a device that can't provide it isn't refused) is a real, if partial, answer — it cannot fully close the
+gap between a browser's `getUserMedia` pipeline and a native camera app's own exposure/AE tuning, and
+this is stated rather than oversold.
+
+**Flash on/off/auto**, a new `.pp-cap-flash` button joining the mic toggle in one right-side cluster
+(`.pp-cap-rightcluster`), offered for every mode (photo included — flash isn't audio-specific the way
+the mic toggle is). ⚠️⚠️ **"Auto" is a labelled degrade, not a real third mode.** The W3C Image
+Capture spec's `torch` capability on a live `MediaStreamTrack` is a plain on/off switch — there is no
+platform API for a continuously auto-decided flash the way a native camera app has — so `flashMode:
+'auto'` applies `torch:false`, exactly like `'off'`, and the button's own tooltip says so rather than
+silently pretending to work like a real auto-flash. `applyFlash()` re-checks the live video track's
+own `getCapabilities().torch` on every attach (initial open AND after a camera flip — a front camera
+commonly has no torch at all even when the rear one does) and disables the button entirely, with a
+named reason, when the capability is absent — the same "never a control that looks live but does
+nothing" convention `syncAudioBtn` already follows.
+
+### Item 3 — the key-plan pin, made proportional (the drag-to-resize handle already existed)
+
+⚠️ **Half of this item was already shipped** — both the lightbox's (`#pp-lb-keyplan-resize`) and the
+presentation pane's (`.ppr-kpoverlay-resize`) bottom-left drag-to-resize handles were built in earlier
+rounds (`kpResizeFrac`/`wireLightboxKpResizeDrag`, `wireKpResizeDrag`) — confirmed present before
+touching anything, not re-built. What was missing: `.pp-kpmini-pin` (the shared small marker both
+callers draw, via `BIM.keyPlanMiniMarkerHTML`) was a **fixed 16px** dot regardless of how big the
+overlay itself was drawn — the overlay ranges 6%–60% of the photo's own width and is now
+drag-resizable, so a fixed pin read as oversized at the common small end of that range and
+increasingly wrong-sized as the overlay grew. `.pp-kpmini-pin` is now sized as a **percentage of its
+own containing block** (`width:10%`, `aspect-ratio:1` deriving the height from the resolved width,
+rather than a percentage `height`, which cannot reliably resolve against an absolutely-positioned
+parent whose own height is auto) — it now scales automatically with every resize, live, with no JS
+repaint required. The icon glyph inside (`Icons.svg(...,9)`, a fixed 9px SVG) is overridden to `width:
+60%; height:60%` so it shrinks/grows in step with the pin rather than staying a constant size inside
+one that now ranges 8px–20px.
+
+### Item 4 — Hugin: investigated, and ruled out for a stated reason, not a preference
+
+⚠️⚠️ Hugin is a native, desktop C++ application (wxWidgets UI, `nona`/`enblend`/`align_image_stack`
+under the hood) with **no WebAssembly build and no JS bindings anywhere** — there is nothing to load
+into a browser tab. Integrating it would mean standing up a server that runs Hugin's own binaries, a
+different architecture from this module's "all processing happens client-side" design and a
+materially larger undertaking than this pass's scope. Documented plainly in `pano360.js`'s own header
+rather than silently left unaddressed. What IS done instead: **seam feathering**, a real, verifiable
+quality improvement inside the existing OpenCV.js-primitives pipeline, targeting the specific defect a
+from-scratch stitcher (this one, and the one it replaced) is prone to that a tool like Hugin's
+`enblend` exists to fix — a visible hard edge where one frame's contribution stops and the next one's
+starts.
+
+⚠️⚠️ **The compositing loop drew every warped frame at full opacity and let `'destination-over'`
+decide, per pixel, which one whole frame wins in an overlap** — a hard cut at the exact boundary
+between two source images. New `featheredFrame(canvas, featherLeft, featherRight, marginFrac)` fades a
+frame's own left/right edges to transparent (via a linear-gradient mask + `'destination-in'`) before
+it's warped and drawn; every frame is then painted in order with plain `'source-over'`, so a later
+frame's feathered edge blends smoothly into whatever the mosaic already has instead of snapping to it.
+⚠️ **The very first frame's LEFT edge and the very last frame's RIGHT edge are never feathered** —
+there is nothing on the far side of the mosaic for that particular edge to blend into, and fading it
+would leave a transparent void at the panorama's own extremity rather than a seam. ⚠️ Feature matching
+(`homographyBetween`, via `rawMats`) still runs against the **pristine** frames — feathering is applied
+only to a separate copy used for the final draw, never to what ORB/BFMatcher see, so the alignment
+math is completely unaffected by this change.
+
+### Item 5 — Pannellum replaces the drag-to-pan strip, for both the saved-photo viewer and the upload preview
+
+New pinned-version CDN tags (`pannellum.min.js`/`pannellum.min.css`, cdnjs — matching this page's own
+established "one pinned `<script>` tag, no build step" convention for html2pdf.js/pptxgenjs/
+opencv-js). New shared `mountPannellumViewer(container, imageUrl, heightOverWidth)` (module.js),
+used by BOTH the saved-360°-photo lightbox and the 360°-upload preview, so the two can never
+independently drift in how they configure the same library — replacing `wireDragPan`/`wirePanoDrag`
+(both **deleted**, not left dormant; a second panorama viewer is exactly the kind of drift this
+module's own history warns about).
+
+⚠️⚠️ **Our stitched mosaic is a cylindrical panorama (pano360.js's own header), not a true
+equirectangular sphere.** Pannellum's `'equirectangular'` viewer type still handles this correctly for
+a **partial** panorama via its own documented `haov`/`vaov` config — exactly the mechanism it offers
+for an image that doesn't cover the full sphere. `haov: 360` assumes the capture guide's own
+instruction (a full walk-around) was followed; `vaov` is derived from the image's own real aspect
+ratio (`360 * height/width`, clamped to `[20,140]`), read off the lightbox's own thumbnail stand-in
+`<img>` once it's decoded (`naturalWidth`/`naturalHeight`) for the saved-photo path, and off
+`stitchResult.width/height` for the fresh-upload path — never a guessed constant.
+
+- **Lightbox**: `#pp-lb-pano-standin` (a plain `<img>`, the instant thumbnail stand-in, matching the
+  ordinary-photo path) sits beside `#pp-lb-pano-viewer` (the Pannellum mount target) inside
+  `.pp-lb-panowrap`. `teardownLbPano()` runs at the START of every `paintLightbox()` call
+  (idempotent), so stepping ←/→ between two 360 photos, or from a 360 photo to any other kind, can
+  never leave a stale viewer instance running behind what's now shown; it also runs on
+  `closeLightbox()`.
+- ⚠️⚠️ **The key-plan cone still follows wherever the viewer is looking, via a polling loop, not a
+  scroll event.** Pannellum's stable API has no subscribable "view changed" event, so
+  `startPanoYawPoll(viewer, onYawChange)` reads `viewer.getYaw()` once per animation frame — but only
+  calls the DOM-touching callback when the yaw **actually changed** since the last tick, the same
+  "dirty flag, never an unconditional repaint" discipline the earlier `wirePanoDrag` rAF-coalescing
+  fix already established for this exact cone repaint. An idle, unmoved view costs one cheap getter
+  read per frame, nothing more.
+- **Adjustments (exposure/brightness/contrast)** now apply as a CSS `filter` to the whole panorama
+  **wrap** (`panoWrap`) rather than the retired `<img>` — a CSS filter composites everything rendered
+  inside an element, WebGL canvas included, so this reaches the Pannellum viewer exactly as it did the
+  old `<img>`, with no change to `cssFilterFor`/`adjustmentsOf` themselves.
+- **The 360°-upload preview** (`#pp360-panowrap`/`#pp360-pano-viewer`) reuses the identical
+  `.pp-lb-panowrap`/`.pp-lb-panoviewer` pair, sized down via the existing `#pp360-panowrap` id
+  override (240px, unchanged from the previous round's own fixed modal-appropriate height).
+
+### Item 6 — the 360° upload workflow: the viewer IS the thumbnail selector now
+
+The separate "Thumbnail frame" scrubber (`#pp360-repslider`/`#pp360-repframe`, driven by
+`Pano360.extractFrameAt` against the ORIGINAL VIDEO) is **gone**. A new **"Use this view as
+thumbnail"** button (`#pp360-usethumb`) captures whatever the Pannellum viewer is **currently
+rendering** — the same interactive preview the planner is already looking around in — via a new
+shared `captureViewerThumbnail(containerEl, cb)`. ⚠️ A default thumbnail is captured automatically the
+first time the panorama actually renders (`pp360Viewer.on('load', ...)`), so Save is never blocked on
+remembering to press the button; pressing it again at any point updates the thumbnail to whatever's
+currently on screen. `setThumbFromBlob()` is the one place that updates `repBlob`/`repUrl`/the preview
+`<img>`, shared by both the automatic capture and the manual button, so the two can never disagree
+about what "updating the thumbnail" means.
+
+⚠️⚠️ **"Standard 3:4 landscape ratio" is self-contradictory** — 3:4 is a **portrait** ratio (narrower
+than tall). Read as the standard **4:3 landscape** ratio the word "landscape" actually names, since a
+thumbnail cropped from a landscape panorama view has no sensible reason to come out portrait-shaped;
+`THUMB_ASPECT = 4/3` is a named constant with this reasoning in its own comment, not a silent guess.
+`captureViewerThumbnail` reads the Pannellum viewer's own `<canvas>` (`containerEl.querySelector
+('canvas')`), centre-crops it to that ratio, downsizes to a fixed 640×480 output, and hands back a
+real JPEG Blob — degrading to `null` (never throwing) if the viewer hasn't rendered a canvas yet.
+⚠️ `Pano360.extractFrameAt`/`getDuration` are left in `pano360.js`, unchanged — they're generic,
+still-exported public utilities (grab a frame from a video at time T), not orphaned implementation
+detail; removing them would be speculative cleanup unrelated to what this item asked for.
+
+### Verified
+
+**897 passed, 0 failed** (up from 875) — every item above covered by genuine execution, not only
+structural reads: `startPanoYawPoll`'s dirty-check against a real, queue-based rAF stub (an unchanged
+yaw between two ticks fires nothing; a changed one fires with the new value; `stop()` genuinely halts
+further callbacks); `mountPannellumViewer` against an injected `window.pannellum` stub (the real
+`pannellum.viewer(...)` call, its `haov`/`vaov` config including the clamp on an extreme aspect ratio,
+auto-generating a container id, and degrading to `null` when the library itself is unavailable);
+`captureViewerThumbnail` against a fake canvas-bearing container (a real 640×480 JPEG Blob out, `null`
+when no canvas exists yet); the close-during-recording race — a fake, controllable `MediaRecorder`
+proves closing mid-recording fires `onCancel` with `null` exactly once and the recorder's own delayed
+`onstop` is silently skipped afterward, **and** the inverse case (stopping via the shutter, nobody
+closed anything) still hands back the real blob, so the fix doesn't overcorrect into swallowing a
+genuine completion; the flash button's full off→on→auto→off cycle against a torch-capable fake video
+track (the exact `applyConstraints` calls asserted, including that "auto" applies `torch:false`) and
+the disabled state against a track with no torch capability at all; `featherStops`' clamp (an ordinary
+frame gets a plain 12% margin, a very narrow frame's margin is clamped to half its own width so the
+two edge gradients can never overlap/invert, a tiny frame still gets a 4px floor).
+
+`node --check` clean on `module.js`/`capture.js`/`pano360.js`/`test.js`; 0 NUL bytes across every
+touched file; CSS braces balanced (540/540); 0 duplicate DOM ids in `index.html` (90 unique).
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as every entry in this file.
+In particular: Pannellum has never been loaded in a real browser here (no network access to the CDN
+in this environment, and no live camera/WebGL stack) — its config keys (`haov`/`vaov`/`type`) and
+method names (`getYaw`, `on('load', ...)`, `destroy`) are used per its documented public API and
+covered here only by genuine execution against an injected stub, never against the real library; the
+close-during-recording race and the flash button are proven against fake `MediaRecorder`/
+`MediaStreamTrack` objects, never a real camera; and the "camera preview shades darker" fix is a
+resolution hint whose actual effect on real device auto-exposure has not been observed.
+
+`module.js`/`capture.js`/`pano360.js` → `?v=20260912b`; `module.css` → `?v=20260912b`; the shared
+`MODULE_V` fallback (`assets/js/modules-grid.js`, `dashboard.html`, `modules.html`) → `20260912b` to
+match, since this module's `index.html` itself changed (new CDN tags, new markup). `bim.js`/`ppr.js`
+are untouched and stay at their existing `?v=20260912a` from the concurrent session's own merge.
+
+⚠️ **Rebased onto `origin/main` on 2026-09-12 after PR #80 (which carried this round's earlier
+commits) had already merged.** A concurrent session's own work — the retirement of `pano.js`/
+`recon.js` in favour of `capture.js`/`pano360.js`, and this same day's PDF/PPTX/HTML export QA
+passes recorded below — had already landed on `main` in the meantime. `capture.js`, `pano360.js`
+and `module.js` auto-merged cleanly (the two threads touched different regions of each file); the
+only real collisions were cache-bust version-string and changelog-prepend seams, resolved per this
+file's own standing rule for that exact shape: take the union, never pick a side, and bump every
+touched asset's `?v=` past whichever token either side already held.
 > ⚠️ **Merge note (2026-09-12):** two independent sessions had each prepended their own new
 > entries above the same shared history at once — this branch's HTML/PDF/PPTX export overhaul
 > (below) and a concurrent session's capture-flow work already landed on `main` (Add Media,

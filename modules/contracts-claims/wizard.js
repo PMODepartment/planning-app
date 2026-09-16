@@ -111,6 +111,19 @@ window.CCWizard = (function () {
           a step that silently is not there. */
     { key: 'affected', label: 'Affected work', sub: 'Which activities this touches',
       when: function () { return raisedAgainst(); } },
+    /* ⚠⚠ FILES. Owner 2026-09-15, looking at this very wizard: *"Where in the wizard can the
+       planner add attachments? Yes there is an existing bucket but it can't be accessed / there is
+       no path for planners to upload them."* There was none — the `contracts-claims` bucket has
+       existed since 2026-08-25 and its storage policies were already bucket-wide, but nothing in
+       this module ever offered a record an upload.
+       ⚠ ALL FOUR RECORD TYPES, and not for Package or BOQ: a package is a lot definition and a
+         BOQ run writes no record at all, so neither has anything for a file to hang off.
+       ⚠ BEFORE Review, because Review is a summary and a step after it reads as an afterthought.
+       ⚠ NOTHING IS UPLOADED HERE. The record has no id until finish() saves it, so the files are
+         staged and flushed afterwards — the panel says so on every staged row. That also keeps the
+         wizard's own promise: *"NOTHING IS WRITTEN UNTIL THE LAST STEP."* */
+    { key: 'files',   label: 'Files',    sub: 'Attach the paperwork — optional',
+      when: function () { return st.type !== 'BOQ' && st.type !== 'Package'; } },
     { key: 'review',  label: 'Review',   sub: 'Check, then save',
       when: function () { return st.type !== 'BOQ'; } }
   ];
@@ -295,13 +308,13 @@ window.CCWizard = (function () {
       return '<p class="ccw-hint">A package is a scope division <i>below</i> a project — a lot inside one ' +
         'contract that has <b>no project code of its own</b>. They come off the contract documents; record ' +
         'one here when you have the lot before the signed contract.</p>' +
-        '<p class="ccw-hint">⚠️ <b>Not</b> for two projects of one development. ' +
+        '<p class="ccw-hint pd-caution"><b>Not</b> for two projects of one development. ' +
         '<b>' + esc(String(D.pid() || 'AVR101')) + '</b> and a sibling like <b>AVR102</b> are separate ' +
         'projects — Procurement and Engineering hold them that way too — and they are consolidated for ' +
         'reporting on the <b>Portfolio Overview</b> under <b>Group by → Parent project</b>, which needs ' +
         'no package and changes no data.</p>' +
         pkgRowsHTML() +
-        '<p class="ccw-hint">⚠️ <b>Finish</b> is the contractual completion date. The schedule adds approved ' +
+        '<p class="ccw-hint pd-caution"><b>Finish</b> is the contractual completion date. The schedule adds approved ' +
         'EOT days to it to get a revised finish, so a package without one reports no revised finish and no ' +
         'liquidated-damages exposure.</p>';
     }
@@ -321,7 +334,7 @@ window.CCWizard = (function () {
         '(<b>' + esc(String(D.pid() || 'AVR101')) + '</b>) already names one contract lot, and the schedule, ' +
         'BOQ, procurement and engineering all file against the project directly.</p>' +
         '<p class="ccw-hint">A <b>package</b> is only for a division <i>below</i> a project — a lot inside ' +
-        '<i>this</i> contract that has no project code of its own. ⚠️ If the division you have in mind ' +
+        '<i>this</i> contract that has no project code of its own. If the division you have in mind ' +
         'already has its own code (<b>AVR102</b>), it is a <b>separate project</b>, not a package: create it ' +
         'in the projects list, and consolidate the two on the <b>Portfolio Overview</b> with ' +
         '<b>Group by → Parent project</b>.</p>' +
@@ -333,9 +346,9 @@ window.CCWizard = (function () {
         '<div id="ccw-pkgnew"' + (st.pkgId === NEWPKG ? '' : ' style="display:none;"') + '>' +
           pkgRowsHTML() +
           '<p class="ccw-hint">One contract can buy several lots — add a row for each, in one run. ' +
-          '⚠️ The contract record itself can cite only <b>one</b> package, so the row marked <b>★</b> is the one ' +
+          'The contract record itself can cite only <b>one</b> package, so the row marked <b>★</b> is the one ' +
           'it links to; the rest are created beside it.</p>' +
-          '<p class="ccw-hint">⚠️ Created only when you press <b>Save</b> on the last step — never before, so ' +
+          '<p class="ccw-hint pd-caution">Created only when you press <b>Save</b> on the last step — never before, so ' +
           'abandoning the wizard leaves no half-made package behind. If the contract then fails to save, ' +
           '<b>every</b> package this run created is rolled back.</p>' +
         '</div>';
@@ -585,14 +598,46 @@ window.CCWizard = (function () {
           : '<p class="ccw-hint"><b>Open importer</b> takes you to the file picker. Nothing is written ' +
             'until you accept the preview.</p>');
     }
-    return (false
-        ? ''
-        : '<p class="ccw-hint"><b>This step is optional — most contracts are recorded before the BOQ arrives.</b> ' +
-          'Press <b>Next</b> to skip it; nothing is lost, and the BOQ can be imported at any time from the ' +
-          '<b>BOQ tab</b>.</p>') +
-      '<p class="ccw-hint">A BOQ comes in whatever format the client uses, so the importer <b>proposes</b> a ' +
-      'column map and you accept or correct it — nothing is written until you do. It is stored as a ' +
-      '<b>revision</b>, so a re-issued or remeasured BOQ supersedes it without destroying what was tendered.</p>' +
+    /* ⚠⚠ IT ASKS NOW, INSTEAD OF ONLY EXPLAINING. Owner 2026-09-15: *"Check also the BOQ step
+       yes this is optional but if the planner opts to develop it already let's fix."* Until this
+       change a CONTRACT run's BOQ step was four paragraphs of prose and no control at all — the
+       only thing a planner could do on it was press Next. Someone who had the bill in hand had to
+       finish the wizard, find the BOQ tab and start again, which is the same "leave the wizard and
+       go find it" answer a previous round already rejected for the BOQ type (2026-08-27: *"I don't
+       understand the BOQ wizard. How will I add the BOQ then if this is the case?"*).
+       ⚠ STILL OPTIONAL, AND STILL THE DEFAULT. The owner's original point stands and is not being
+         reversed: a contract is recorded the week it is awarded and the priced BOQ arrives weeks
+         later, so "Not yet" is preselected and Next skips exactly as before. What changed is that
+         "I have it" is now expressible.
+       ⚠ IT HANDS OFF, IT DOES NOT ASK AGAIN. Neither branch duplicates the BOQ type's own fields:
+         `manual` reopens this very wizard as a BOQ run (where naming the BOQ, choosing the revision
+         and picking trades already live) and `import` opens the importer. A second name/revision
+         form here would be a third create-surface on one module, which is how they drift apart.
+       ⚠ AFTER THE CONTRACT IS SAVED, never before — see finish(). The contract may create the very
+         package the BOQ would be narrowed to, and a BOQ opened first would be scoped against
+         something that does not exist yet. */
+    var ctb = st.ctBoq || 'later';
+    return '<p class="ccw-hint"><b>Optional — most contracts are recorded before the BOQ arrives.</b> ' +
+        'Leave this on <b>Not yet</b> and nothing is lost; the BOQ can be loaded at any time from the ' +
+        '<b>BOQ tab</b>.</p>' +
+      '<div class="ccw-choice">' +
+        '<label class="ccw-opt' + (ctb === 'later' ? ' on' : '') + '">' +
+          '<input type="radio" name="ctboq" value="later"' + (ctb === 'later' ? ' checked' : '') + ' /> ' +
+          '<b>Not yet</b><span class="ccw-optsub">Record the contract now. This is the normal case on the ' +
+          'week of award.</span></label>' +
+        '<label class="ccw-opt' + (ctb === 'manual' ? ' on' : '') + '">' +
+          '<input type="radio" name="ctboq" value="manual"' + (ctb === 'manual' ? ' checked' : '') + ' /> ' +
+          '<b>Build it by hand</b><span class="ccw-optsub">From the class-code library. Each division becomes ' +
+          'its own trade section, with class codes already on every line.</span></label>' +
+        '<label class="ccw-opt' + (ctb === 'import' ? ' on' : '') + '">' +
+          '<input type="radio" name="ctboq" value="import"' + (ctb === 'import' ? ' checked' : '') + ' /> ' +
+          '<b>Import the client&#39;s workbook</b><span class="ccw-optsub">The importer <b>proposes</b> a column ' +
+          'map and you accept or correct it — nothing is written until you do.</span></label>' +
+      '</div>' +
+      (ctb === 'later' ? ''
+        : '<p class="ccw-hint">The contract is saved first, then ' +
+          (ctb === 'import' ? 'the <b>importer</b> opens.' : 'the <b>New BOQ</b> steps open, where you name it and pick its trades.') +
+          ' Stored as a <b>revision</b>, so a re-issue or remeasure supersedes it without destroying what was tendered.</p>') +
       /* ⚠️ THE QUESTION UNDER THE QUESTION, answered here because this is where it gets
          asked: *"There will be multiple progress billings in this project so what will
          happen?"* Nothing about billing depends on packages, and the old copy never said
@@ -601,13 +646,24 @@ window.CCWizard = (function () {
       '<p class="ccw-hint"><b>Progress billings.</b> The BOQ is imported <b>once</b>. Each progress billing is ' +
       'then a <b>billing period</b> on the BOQ tab — its own number, dates, PO and status — where you enter each ' +
       'line\'s <b>cumulative</b> % complete. Previous, this-period and to-date are derived from the period before ' +
-      'it, so they can never disagree, and POC and revenue fall out of the same figures. ⚠️ Each period records ' +
+      'it, so they can never disagree, and POC and revenue fall out of the same figures. Each period records ' +
       'which BOQ <b>revision</b> it was billed against, so a later remeasure cannot retroactively rewrite a ' +
       'billing already submitted.</p>' +
       (scope
         ? '<p class="ccw-hint">It will be loaded against <b>' + esc(scope) + '</b>.</p>'
         : '<p class="ccw-hint">It will be loaded against the <b>whole project</b> (' + esc(String(D.pid() || '')) +
           ') — the normal case, and what the billing reads. A package would only <b>narrow</b> it.</p>');
+  }
+
+  /* The panel is module.js's, handed over through `D` — see the note on `attPanelHTML` there.
+     ⚠️ `st.files` is the staged list and lives on the wizard's own state, so closing the wizard
+        discards it exactly as it discards every other unsaved answer. */
+  function stepFiles() {
+    return '<p class="ccw-hint">Optional. Attach what this record is evidenced by — the signed ' +
+      'contract, a client instruction, the cost back-up, a programme-impact report. ' +
+      '<b>Nothing is uploaded until you save</b>, and files can be added or removed later from the ' +
+      'record itself.</p>' +
+      '<div id="ccw-atts"></div>';
   }
 
   function stepReview() {
@@ -640,8 +696,18 @@ window.CCWizard = (function () {
       '</tbody></table>';
     if (creating) {
       h += clashHTML() +
-        '<p class="ccw-hint">⚠️ Saving creates ' + mk.length + ' package(s) and the record together. ' +
+        '<p class="ccw-hint pd-caution">Saving creates ' + mk.length + ' package(s) and the record together. ' +
         'If the package cannot be created — a duplicate code, most often — <b>nothing</b> is saved and you stay here.</p>';
+    }
+    /* ⚠ THE BOQ CHOICE BELONGS ON THE REVIEW, because Review is where a planner checks what
+       pressing Save will do — and on a Contract it may now do a second thing. A hand-off that
+       appears without warning reads as the wizard having gone wrong. Silent on 'Not yet',
+       which is the default and promises nothing. */
+    if (st.type === 'Contract' && st.ctBoq && st.ctBoq !== 'later') {
+      h += '<p class="ccw-hint">After saving, ' +
+        (st.ctBoq === 'import'
+          ? 'the <b>BOQ importer</b> opens. Nothing is written there until you accept the column map.'
+          : 'the <b>New BOQ</b> steps open, where you name it and pick its trades.') + '</p>';
     }
     if (st.type === 'BOQ') {
       h += '<p class="ccw-hint">Nothing is recorded for a BOQ-only run: go to the <b>BOQ tab</b> and import against ' +
@@ -684,7 +750,8 @@ window.CCWizard = (function () {
         : '<p class="ccw-hint">The activity picker is unavailable in this build.</p>');
   }
   var RENDER = { type: stepType, package: stepPackage, details: stepDetails, dates: stepDates,
-                 boq: stepBoq, codes: stepCodes, affected: stepAffected, review: stepReview };
+                 boq: stepBoq, codes: stepCodes, affected: stepAffected, files: stepFiles,
+                 review: stepReview };
 
   // ---- shell -----------------------------------------------------------------
   function paint() {
@@ -732,6 +799,23 @@ window.CCWizard = (function () {
   }
 
   function wireStep(key) {
+    /* ⚠ Mounted after paint() for the same reason the affected-work picker is: paint() replaces
+       #ccw-body wholesale, so the panel has to be drawn into a container that is already in the
+       document. `st.files` survives stepping Back and forward because it lives on the wizard's
+       state, not on the DOM. */
+    if (key === 'files') {
+      var box = ov.querySelector('#ccw-atts');
+      if (!box || !D.attPanelHTML) return;
+      st.files = st.files || [];
+      (function paintF() {
+        box.innerHTML = D.attPanelHTML(null, st.files);
+        D.attPanelWire(box, null,
+          function () { return st.files; },
+          function (a) { st.files = a; },
+          paintF);
+      })();
+      return;
+    }
     if (key === 'affected') {
       /* ⚠️ Mounted after paint() for the same reason the ladder is: the picker needs its container
          in the document, and paint() replaces #ccw-body wholesale on every step change. The live
@@ -782,6 +866,12 @@ window.CCWizard = (function () {
       return;
     }
     if (key === 'boq') {
+      /* ⚠ The Contract run's three radios. They REPAINT rather than only capture, because the
+         hint under them names what will happen next — a control whose explanation does not follow
+         it is the button-contradicts-its-own-step defect this wizard has already been fixed for. */
+      ov.querySelectorAll('input[name="ctboq"]').forEach(function (r) {
+        r.onchange = function () { st.ctBoq = r.value; paint(); };
+      });
       /* WARNING The path radios REPAINT, like the mode radios below and for the same reason: the
          fields differ per path (a new document asks for a name, a new revision does not) and the
          Trades step itself appears or disappears, so the rail has to be redrawn too. capture()
@@ -1075,9 +1165,9 @@ window.CCWizard = (function () {
       var ar = await D.saveAffected(newId, affIds);
       if (ar && ar.err) {
         affMsg = String(ar.err).indexOf('no-migration:') === 0
-          ? ' ⚠️ The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
+          ? ' The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
             ' NOT saved — run ' + String(ar.err).slice('no-migration:'.length) + ', then re-pick them on the record.'
-          : ' ⚠️ The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
+          : ' The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
             ' NOT saved: ' + ar.err;
       } else if (ar && ar.added) {
         affMsg = ' ' + ar.added + ' affected activit' + (ar.added === 1 ? 'y' : 'ies') + ' linked.';
@@ -1085,15 +1175,29 @@ window.CCWizard = (function () {
     } else if (affIds.length && !newId) {
       /* Defensive and honest: persistRecord returns the inserted row, but if a future change ever
          stops returning its id there is nothing to link to and the planner must be told. */
-      affMsg = ' ⚠️ The ' + affIds.length + ' affected activities could not be linked — the saved ' +
+      affMsg = ' The ' + affIds.length + ' affected activities could not be linked — the saved ' +
         'record returned no id. Re-pick them on the record.';
     }
+    /* ⚠ THE STAGED FILES, AFTER the record and never allowed to fail it — the same rule the
+       affected-work write above follows, and for the same reason: the row is the commercial
+       fact the planner came to save. attFlush reports per file and leaves the record standing;
+       anything that would not upload can be re-attached from the record itself.
+       ⚠ Uses `newId`, the same id the link write uses — not a second read of res.row. */
+    if (st.files && st.files.length && D.attFlush && newId) await D.attFlush(newId, st.files);
     close();
     UI.toast((madeIds.length
       ? 'Contract saved, and ' + madeIds.length + ' package(s) created.' : 'Record added.') + affMsg,
-      affMsg.indexOf('⚠️') >= 0 ? 'warn' : 'success');
+      affMsg.indexOf('') >= 0 ? 'warn' : 'success');
     if (D.warnDropped) D.warnDropped(res.dropped);
     D.done(t);
+    /* ⚠⚠ THE BOQ HAND-OFF, LAST. The contract row exists, its packages exist, the register has
+       been refreshed by D.done() — so whichever screen opens now is looking at a project that
+       already has the contract this BOQ belongs to. Opening either one earlier would scope it
+       against a package that had not been created yet.
+       ⚠ close() has already run several lines above, so neither surface opens underneath this
+         overlay. That is the same ordering the BOQ type's own import path documents. */
+    if (st.type === 'Contract' && st.ctBoq === 'import' && D.openBoqImport) D.openBoqImport();
+    else if (st.type === 'Contract' && st.ctBoq === 'manual' && D.openBoqWizard) D.openBoqWizard();
   }
 
   function close() { if (ov) { ov.remove(); ov = null; } }
@@ -1121,6 +1225,17 @@ window.CCWizard = (function () {
       /* The affected-activity selection. `affIds` is the state; `affPicker` is only the live
          handle, which dies with the DOM on every step change -- see wireStep('affected'). */
       affPicker: null, affIds: [],
+      /* ⚠ DECLARED HERE, not left to the step. The note on `pkgList` above records what
+         happens when a step reads state `open()` never initialised: a TypeError on first
+         paint, and a step that renders nothing. `wireStep('files')` guards with `|| []` as
+         well, but the guard is the belt and this is the braces — and it is also what makes
+         the staged list reset between records rather than carrying the last one's files
+         into the next wizard. */
+      files: [],
+      /* ⚠ Declared here for the reason the note on `pkgList` gives: a step that reads state
+         `open()` never initialised throws on first paint. 'later' is the default because the BOQ
+         step is optional and must stay that way. */
+      ctBoq: 'later',
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];

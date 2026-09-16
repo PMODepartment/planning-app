@@ -814,6 +814,43 @@ window.BOQ = (function () {
     return out;
   }
 
+  /* WHICH of these is this one? Owner, testing OPW101: *"The planner would have no idea if the
+     similar activities named which locations are they."* - 77 rows in the link dialog all reading
+     `Formworks`, with nothing to tell them apart.
+
+     ⚠️ THE NEAREST BRANCH IS NOT THE ANSWER. Measured on those exact 77, the last segment is `B3`,
+     `Z1`, `Z2`, `Z3`... - a bare zone number is as uninformative as the name it was meant to
+     disambiguate. What separates them is the chain MINUS the part they all share: every one begins
+     `Execution Phase › Structural Works`, so the common prefix is dropped and only the differing
+     tail is drawn - `B3`, `Ground Floor › Z1`, `2ND Floor › Z1`. Measured: 77 of 77 unique,
+     longest 17 characters.
+
+     ⚠️ Returned as a LIST parallel to `parts`, so the caller computes it ONCE. `ACTS.find` over
+     2,561 activities inside a 77-row map is ~15M comparisons per repaint, and this dialog repaints
+     on every keystroke in a Qty box.
+
+     A chain the summary rows do not name yields '' rather than a bare dotted code - a number that
+     looks like an address but is not one is worse than saying nothing. */
+  function whereLabels(parts) {
+    var acts = ACTS || [], byId = {};
+    acts.forEach(function (a) { byId[String(a.activity_id)] = a; });
+    var chains = (parts || []).map(function (p) {
+      var a = (p && p.activity_id != null) ? byId[String(p.activity_id)] : null;
+      return a ? wbsNamesOf(a) : [];
+    });
+    var real = chains.filter(function (c) { return c.length; });
+    var cut = 0;
+    if (real.length > 1) {
+      var min = Math.min.apply(null, real.map(function (c) { return c.length; }));
+      // never consume the LAST segment: two identical chains must still say where they are
+      while (cut < min - 1 && real.every(function (c) { return c[cut] === real[0][cut]; })) cut++;
+    }
+    return chains.map(function (c) {
+      // the last two are enough to place it; more is a path, not an address
+      return c.length ? c.slice(cut).slice(-2).join(' › ') : '';
+    });
+  }
+
   /* The saved WBS-branch → place table the schedule's Match-WBS-to-locations wizard writes
      (`location_levels.match`, keyed by branch NAME). Read-only here, and the single most useful
      thing this module can borrow: it is a planner's own confirmed statement that a branch IS a
@@ -868,6 +905,17 @@ window.BOQ = (function () {
     var r = curRev() || {};
     return revStatus(r) === 'draft' && r.origin === 'manual';
   }
+  /* ⚠️⚠️ WHETHER THE SECTIONS ARE TRADES IS A QUESTION ABOUT ORIGIN, NOT STATUS, and
+     conflating the two made a correct answer disappear at issue. `sheet` is written FROM the
+     Finance trade by addAuthoredLines ("SHEET = TRADE, not division") and is never rewritten;
+     `issueRev` writes only {status, is_current}, so `origin` stays 'manual' for ever. A bill
+     built here therefore has trades for sections whether it is a draft or issued — and the
+     procurement mapping is arguably MORE use once issued, which is when subcontracts are let.
+     ⚠️ Use `isManualDraft` for anything about EDITABILITY (which tabs exist, how a fault is
+     explained) and this for anything about WHAT THE SECTIONS ARE. On an import, or on a
+     database without 2026-09-07-boq-manual.sql, `origin` is absent and this is false — the
+     chip is then the client's own workbook tab and a trade lookup would miss every time. */
+  function isManualBill() { return (curRev() || {}).origin === 'manual'; }
   function subsFor() {
     if (!isManualDraft()) return SUBS;
     return [
@@ -1222,7 +1270,7 @@ window.BOQ = (function () {
       if (r.line_kind === 'heading') return;
       counts[r.sheet] = (counts[r.sheet] || 0) + 1;
     });
-    var word = isManualDraft() ? 'trade' : 'sheet';
+    var word = isManualBill() ? 'trade' : 'sheet';   // ⚠️ origin, not status — see isManualBill
     return '<div class="boq-trades">' +
       '<span class="boq-trades-lbl">By ' + word + '</span>' +
       '<button class="boq-trade' + (filt.sheet ? '' : ' on') + '" data-trade="">' +
@@ -1313,7 +1361,7 @@ window.BOQ = (function () {
       /* Same word as the trade bar above, for the same reason - "sheet" is the client's
          workbook tab and means nothing on a bill somebody typed. */
       '<select class="pd-select" id="boq-f-sheet"><option value="">' +
-        (isManualDraft() ? 'All trades' : 'All sheets') + '</option>' +
+        (isManualBill() ? 'All trades' : 'All sheets') + '</option>' +
         sheetList().map(function (s) { return '<option' + (filt.sheet === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') + '</select>' +
       '<select class="pd-select" id="boq-f-kind"><option value="">All line kinds</option>' +
         ['measured', 'lump_sum', 'provisional', 'excluded', 'heading'].map(function (k) {
@@ -1614,6 +1662,7 @@ window.BOQ = (function () {
      surface, or a failed write reads as a success. */
   var _allocRungOk = true;
   var _allocScopeOk = true;   // cleared once per session by the degrade above
+  var _allocLinkOk = true;    // 'link' needs 2026-09-14-boq-alloc-method-link.sql
   async function upsertAllocs(rows) {
     if (!rows.length) return { ok: true, dropped: '' };
     var strip = function (list) {
@@ -1635,8 +1684,26 @@ window.BOQ = (function () {
       }
       return null;
     };
-    var err = await send(_allocScopeOk ? (_allocRungOk ? rows : strip(rows))
-                                       : stripScope(_allocRungOk ? rows : strip(rows)));
+    /* ⚠️⚠️ 'link' NEEDS ITS OWN MIGRATION, SO IT NEEDS ITS OWN DEGRADE.
+       `method` is NOT NULL with a CHECK, so on a database where
+       2026-09-14-boq-alloc-method-link.sql has not been run, a 'link' row is refused with
+       23514 and THE WHOLE BATCH FAILS — exactly what the rung degrade above exists to
+       prevent for `matched_by`. It falls back to 'manual', which is what those rows said
+       before this fix, and reports it. ⚠️ Losing the distinction is a smaller harm than
+       refusing to record the allocation — the same trade the other two degrades make. */
+    var unlink = function (list) {
+      return list.map(function (p) {
+        if (p.method !== 'link') return p;
+        var c = Object.assign({}, p); c.method = 'manual'; return c;
+      });
+    };
+    var shape = function (list) {
+      var out = _allocRungOk ? list : strip(list);
+      if (!_allocScopeOk) out = stripScope(out);
+      if (!_allocLinkOk) out = unlink(out);
+      return out;
+    };
+    var err = await send(shape(rows));
     if (!err) return { ok: true, dropped: _allocRungOk ? '' : 'The match rung was not recorded — run migrations/2026-09-10-boq-match-rung.sql.' };
     var msg = String(err.message || err);
     if (_allocScopeOk && /\bscope\b/i.test(msg) && /PGRST204|schema cache|column/i.test(msg)) {
@@ -1654,6 +1721,15 @@ window.BOQ = (function () {
       var err2 = await send(strip(rows));
       if (!err2) return { ok: true, dropped: 'The match rung was not recorded — run migrations/2026-09-10-boq-match-rung.sql.' };
       return { ok: false, msg: String(err2.message || err2) };
+    }
+    /* ⚠️ Matched on the CONSTRAINT NAME and the value, never on 23514 alone — this table
+       carries other checks (the scope/activity_id exclusivity among them) and swallowing
+       one of those as "the migration is not run" would hide a real refusal. */
+    if (_allocLinkOk && /method/i.test(msg) && /check|23514|violates/i.test(msg)) {
+      _allocLinkOk = false;                                   // ⚠️ once per session, not per row
+      var err3 = await send(shape(rows));
+      if (!err3) return { ok: true, dropped: 'Links were recorded as "manual" — run migrations/2026-09-14-boq-alloc-method-link.sql to tell a link from a hand-made choice.' };
+      return { ok: false, msg: String(err3.message || err3) };
     }
     return { ok: false, msg: msg };
   }
@@ -1886,7 +1962,7 @@ window.BOQ = (function () {
         '<div class="boq-imp"><p class="cc-hint">Nothing is wrong: assigning a package <strong>narrows</strong> a BOQ ' +
         'to one lot, it is never required. This BOQ already belongs to the project, and the billing reads it either ' +
         'way. Most projects are a single lot and need no package.</p>' +
-        '<p class="cc-hint">⚠️ This tool will not create one from a sheet name. The workbook\'s sheets are the ' +
+        '<p class="cc-hint pd-caution">This tool will not create one from a sheet name. The workbook\'s sheets are the ' +
         'client\'s billing breakdown <em>within</em> a package (by trade here, by something else elsewhere) — they are ' +
         'not the packages themselves, and a lot minted from a tab name would later be cited in a claim nobody agreed ' +
         'to.</p></div>' +
@@ -1944,7 +2020,7 @@ window.BOQ = (function () {
             '<strong>' + money(chosen.reduce(function (a, x) { return a + x.total; }, 0)) + '</strong> will be ' +
             (target ? 'assigned to <strong>' + esc(pkgName(target)) + '</strong>.' : '<strong>unassigned</strong>.')
           : 'Nothing selected.') +
-        ' ⚠️ Re-assigning overwrites whatever those lines carry now — a sheet reading <em>mixed</em> is currently split ' +
+        ' Re-assigning overwrites whatever those lines carry now — a sheet reading <em>mixed</em> is currently split ' +
         'across lots, and applying here collapses it into one.</p>';
 
       body.querySelector('#ap-pkg').onchange = function () { target = this.value; paint(); };
@@ -2460,7 +2536,17 @@ window.BOQ = (function () {
     if (!ids.length) { PROJTOTAL = 0; return; }
     try {
       var rows = await PDb.selectAll(T_ITEM, function (q) { return q.in('revision_id', ids); },
-                                     'amount,line_kind,exclusion_note');
+                                     /* ⚠️⚠️ 'id' IS THE PAGING CURSOR AND MUST BE SELECTED.
+                                        PDb.selectAll reads its next cursor off the last
+                                        RETURNED ROW OBJECT — `page[page.length-1][k]` — and
+                                        then bails on `last == null`. A cursor column absent
+                                        from the projection is `undefined`, and `undefined ==
+                                        null` is TRUE, so the loop returned after one page:
+                                        this roll-up truncated at 1000 items, with no error
+                                        anywhere, and the figure it produces is a CONTRACT
+                                        TOTAL. Audited 2026-09-16; four more of these live in
+                                        modules/pormac/module.js. */
+                                     'id,amount,line_kind,exclusion_note');
       PROJTOTAL = rows.reduce(function (a, r) { return a + (moneyLine(r) ? Number(r.amount) : 0); }, 0);
     } catch (e) { PROJTOTAL = null; }   // a failed roll-up shows this document's figure, never a wrong one
   }
@@ -3186,15 +3272,26 @@ window.BOQ = (function () {
           var id = byRow[x.key]; if (!id) return;
           (alloc[x.code] || []).forEach(function (actId) {
             if (!actId) return;
+            /* ⚠️⚠️ 'link' and 'code', NOT 'manual' and nothing. These links exist BECAUSE the
+               activity carries this line's class code — scheduleSeedPlan groups on
+               `a.class_code` and on nothing else — so the code rung is what found them, and
+               qty is 0, so no split happened. The old pair asserted a human picked each one
+               and recorded no rung at all. */
             allocRows.push({ project_id: pid, boq_item_id: id, activity_id: String(actId),
-                             qty: 0, method: 'manual', accepted_by: UID });
+                             qty: 0, method: 'link', accepted_by: UID,
+                             matched_by: 'code', match_score: RUNG_SCORE.code || null });
           });
         });
+        /* ⚠️⚠️ THROUGH upsertAllocs, THE ONE WRITER — this path had its own bare upsert and
+           therefore NONE of the three un-run-migration degrades. Writing `matched_by` from here
+           would have failed outright on a database without 2026-09-10-boq-match-rung.sql, and
+           'link' would fail on one without 2026-09-14-boq-alloc-method-link.sql. The chunk loop
+           and its progress line stay: upsertAllocs batches at 300 internally and uses the same
+           onConflict pair, so handing it a 300-slice is a drop-in. */
         for (var a2 = 0; a2 < allocRows.length; a2 += 300) {
           say('Matching to the programme ' + (a2 + 1) + ' of ' + allocRows.length + '…');
-          var ar = await sb().from(T_ALLOC).upsert(allocRows.slice(a2, a2 + 300),
-                                                   { onConflict: 'boq_item_id,activity_id' });
-          if (ar.error) throw ar.error;
+          var ar = await upsertAllocs(allocRows.slice(a2, a2 + 300));
+          if (!ar.ok) throw new Error(ar.msg);
         }
       }
 
@@ -3732,7 +3829,14 @@ window.BOQ = (function () {
   /* The write half of pass B. ⚠️ Chunked and shortfall-aware through `tagRpc`, and it
      REPORTS rather than returns silently — see `reportTagged`. `onStep` drives the caller's
      own progress label; the loop is identical whichever button started it. */
-  async function applyTagPlan(plan, onStep) {
+  /* ⚠️⚠️ THE OVERWRITE FLAG IS A PARAMETER, AND IT USED TO BE A HARDCODED `false`.
+     That made this function unable to do the one job the Match-names screen exists for: an
+     activity qualifies for that screen when it carries **no code OR a code this bill does not
+     use** (2026-09-11 b1), and `boq_tag_activities` skips a row that already has a code unless
+     `p_overwrite` is true. So the screen offered 20 activities, wrote 0, and blamed RLS.
+     Measured on DEMO01: 0 of 20 before, and the RPC returns 1 for the same row with the flag on.
+     ⚠️ It still DEFAULTS to false, so every other caller keeps the safer behaviour. */
+  async function applyTagPlan(plan, onStep, overwrite) {
     var wrote = 0, wanted = 0, failed = [];
     for (var i = 0; i < plan.length; i++) {
       var p = plan[i];
@@ -3740,7 +3844,7 @@ window.BOQ = (function () {
       var ids = p.hits.map(function (x) { return x.a.activity_id; });
       wanted += ids.length;
       if (onStep) onStep(i + 1, plan.length);
-      try { wrote += await tagRpc(p.code, ids, false); }
+      try { wrote += await tagRpc(p.code, ids, !!overwrite); }
       catch (e) { failed.push(p.code + ': ' + (e.message || e)); }
     }
     return { wrote: wrote, wanted: wanted, failed: failed };
@@ -3768,9 +3872,16 @@ window.BOQ = (function () {
     m.el.querySelector('#nm-x').onclick = m.close;
 
     function counts() {
-      var n = 0, d = 0;
-      groups.forEach(function (g) { if (g.pick) { d++; n += g.acts.length; } });
-      return { decided: d, acts: n };
+      var n = 0, d = 0, rt = 0;
+      groups.forEach(function (g) {
+        if (!g.pick) return;
+        d++; n += g.acts.length;
+        /* ⚠️ A REPLACEMENT IS COUNTED SEPARATELY so the button can say so. Moving a code
+           moves money, and this write now overwrites — the planner should see that before
+           pressing it, not discover it afterwards. */
+        if (g.retag) rt += g.acts.length;
+      });
+      return { decided: d, acts: n, retag: rt };
     }
 
     function paint() {
@@ -3820,7 +3931,10 @@ window.BOQ = (function () {
       var go = foot.querySelector('#nm-go');
       /* One text node — `.pd-btn` is a flex row with a gap, so a word split across elements
          renders with the gap inside it. */
-      go.textContent = c.acts ? 'Tag ' + c.acts + ' activit' + (c.acts === 1 ? 'y' : 'ies') : 'Nothing chosen';
+      go.textContent = c.acts
+        ? 'Tag ' + c.acts + ' activit' + (c.acts === 1 ? 'y' : 'ies') +
+          (c.retag ? ' (' + c.retag + ' replace' + (c.retag === 1 ? 's' : '') + ' a code)' : '')
+        : 'Nothing chosen';
       foot.querySelector('#nm-c').onclick = m.close;
       if (c.acts) go.onclick = function () { run(go); };
     }
@@ -3829,7 +3943,11 @@ window.BOQ = (function () {
       btn.disabled = true;
       var plan = nameTagPlan(groups);
       try {
-        var r = await applyTagPlan(plan, function (i, n) { btn.textContent = 'Tagging ' + i + ' of ' + n + '…'; });
+        /* ⚠️⚠️ TRUE HERE, AND ONLY HERE. This screen names the code each row carries
+           today (see `boq-nm-had`), offers Skip as the decline, and the planner picks a line per
+           name — that IS the decision to replace it. Passing false made every one of those
+           decisions a no-op. The footer says how many rows are replacements before it runs. */
+        var r = await applyTagPlan(plan, function (i, n) { btn.textContent = 'Tagging ' + i + ' of ' + n + '…'; }, true);
         await refreshActs();
         m.close();
         reportTagged(r.wrote, r.wanted, r.failed);
@@ -3881,7 +3999,7 @@ window.BOQ = (function () {
         '<span class="cc-mini">Every code on this BOQ, matched at once</span></div>' +
         '<p class="cc-hint" style="margin-top:0;">' + plan.length + ' code(s) · <strong>' + total + '</strong> tag(s) ' +
         'at ≥' + (TAG_FLOOR * 100).toFixed(0) + '% confidence · <strong>' + withNone + '</strong> match nothing, left alone.<br>' +
-        '⚠️ Activities carrying another code are excluded — re-tagging is a per-code decision.</p>' +
+        'Activities carrying another code are excluded — re-tagging is a per-code decision.</p>' +
         '<div class="cc-tablewrap" style="max-height:38vh;overflow:auto;border:1px solid var(--pd-line);border-radius:var(--pd-radius);">' +
         '<table class="cc-table" style="min-width:0;"><thead><tr><th>Class code</th><th class="cc-desc">Item</th>' +
         '<th class="cc-r">BOQ lines</th><th class="cc-r">Would tag</th><th>How</th></tr></thead><tbody>' +
@@ -4051,9 +4169,13 @@ window.BOQ = (function () {
     return wrote;
   }
   /* ⚠️ THE SHORTFALL IS REPORTED, NEVER SWALLOWED. Fewer rows written than asked for has
-     exactly two causes and the planner can act on both: RLS refused the rows (they did not
-     import this schedule), or the activity id no longer exists (the schedule was
-     re-imported since this screen was opened). Saying "done" would hide both. */
+     THREE causes and the planner can act on all of them: the activity already carries a code and
+     the caller did not ask to overwrite, RLS refused the rows (they did not import this
+     schedule), or the activity id no longer exists (the schedule was re-imported since this
+     screen was opened). Saying "done" would hide all three.
+     ⚠️⚠️ THE FIRST ONE USED TO BE INVISIBLE AND IT WAS THE COMMON CASE. This comment said
+     "exactly two causes"; measured on DEMO01, every one of 20 activities was skipped for the
+     third reason while the message named the second. */
   function reportTagged(wrote, wanted, failed) {
     if (failed && failed.length) {
       UI.toast('Some codes failed — ' + failed.join(' | '), 'error');
@@ -4061,8 +4183,9 @@ window.BOQ = (function () {
     }
     if (!wanted) { UI.toast('Nothing to tag.', 'warn'); return; }
     if (wrote >= wanted) { UI.toast('Tagged ' + wrote + ' activit' + (wrote === 1 ? 'y' : 'ies') + '.', 'success'); return; }
-    UI.toast('Only ' + wrote + ' of ' + wanted + ' tagged — the rest were refused, usually because somebody else ' +
-      'imported this schedule. Nothing was skipped silently.', 'error');
+    UI.toast('Only ' + wrote + ' of ' + wanted + ' tagged — the rest were skipped. Either they already '
+      + 'carry a class code (this route only replaces one where you picked the line it should be), or '
+      + 'somebody else imported this schedule. Nothing was skipped silently.', 'error');
   }
   // ⚠️ WBSNAME is rebuilt by the same read, so it must be cleared with ACTS or a re-read after an
   //    import would keep naming branches the previous schedule's way.
@@ -4237,7 +4360,7 @@ window.BOQ = (function () {
       '<div class="boq-pick"><p class="cc-hint">' + esc(r.description || r.item_no || '') + '</p>' +
       '<input class="pd-input" id="pk-q" placeholder="Search code, division, group or item…" autocomplete="off" />' +
       '<div class="boq-picklist" id="pk-list"></div>' +
-      '<p class="cc-hint">⚠️ Never de-zero a code. <code>015051</code> (Gen Req › Earthmoving) is a different code ' +
+      '<p class="cc-hint pd-caution">Never de-zero a code. <code>015051</code> (Gen Req › Earthmoving) is a different code ' +
       'from <code>15051</code> (Metal Works › Railings) — the padded code is the key, which is why this is a ' +
       'picker and not a text box.</p></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="pk-cancel">Cancel</button></div>');
@@ -4810,7 +4933,12 @@ window.BOQ = (function () {
        screen admitting the button is not named well enough — and it is invisible on a phone. */
     h += '<div class="boq-filters">' +
       '<input class="pd-input" id="boq-a-q" placeholder="Search lines…" value="' + esc(filt.q) + '" />' +
-      (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-a-all">Code, tag and allocate…</button>' : '') +
+      /* ⚠️ THE SECOND `Code, tag and allocate…` IS GONE. Owner, 2026-09-11: *"There are two
+         buttons of code, tag, allocate let's consolidate."* This one and `boq-matchall` in the bar
+         called the SAME function under the SAME label, two inches apart - the identical complaint
+         the bar button's own note records from 2026-09-10 about `Match to schedule`, re-made by a
+         control I added while fixing it. The BAR keeps it: the run spans three tabs, so it belongs
+         to none of them, which is exactly why it lives up there. */
       '</div>';
 
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table"><thead><tr>' +
@@ -4825,8 +4953,22 @@ window.BOQ = (function () {
        and it was what this said. */
     if (!list.length) h += '<tr><td colspan="8" class="cc-mut" style="text-align:center;padding:30px;">' +
       'No line matches “' + esc(filt.q) + '”. Clear the search to see the worklist.</td></tr>';
-    list.slice(0, 300).forEach(function (r) {
+    /* ⚠️⚠️ THE CAP IS NAMED, AND WHAT IT HOLDS BACK IS REPORTED BELOW.
+       This was a bare `.slice(0, 300)`. Measured on a 903-line bill: exactly 300 rows
+       rendered, **Structural Works and Site Works got none at all**, and a line whose activity
+       was waiting to be linked could only be reached by guessing to type in the search box.
+       A planner reading this table saw a complete worklist that was two thirds absent.
+       ⚠️ The cap itself stays — the sort puts unallocated lines first, so the 300 shown
+       ARE the worklist — but a cap whose only signal is that the table stops is one nobody
+       can act on. Same rule the activity picker arrived at: say the number, and say how to
+       reach the rest. */
+    var ALLOC_ROW_CAP = 300;
+    var _capHidden = Math.max(0, list.length - ALLOC_ROW_CAP);
+    list.slice(0, ALLOC_ROW_CAP).forEach(function (r) {
       var al = allocOf(r.id), s = allocSum(al), qOn = hasQty(r), q = Number(r.qty) || 0, rem = q - s;
+      // One state per row, read by BOTH the Activities cell and the Method cell - two calls would
+      // let the two columns disagree about the same line.
+      var _st = lineLinkState(r);
       h += '<tr data-id="' + esc(r.id) + '">' +
         '<td class="cc-desc"><div class="cc-desc-txt">' + esc(r.description || '') + '</div>' +
           '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row + ' · ' + esc(r.unit || '') +
@@ -4854,7 +4996,7 @@ window.BOQ = (function () {
            item, and it was the majority of the owner's 122. The count is kept for the linked rows;
            the rest say which case they are in. */
         '<td class="cc-r">' + (function () {
-          var st = lineLinkState(r);
+          var st = _st;
           /* ⚠️ Checked BEFORE the count, because a project-scoped line HAS an allocation and would
              otherwise read "1" — a number that means "one activity", which is the one thing it is
              not. */
@@ -4877,12 +5019,31 @@ window.BOQ = (function () {
         /* ⚠️ The RUNG is what a planner needs here — "location" answers "can I trust this?" in a
            way "prorata" does not. Falls back to the split method on rows written before
            2026-09-10-boq-match-rung.sql, where `matched_by` is legitimately null. */
+        /* ⚠️ AND IT IS NOT BLANK WHEN THERE IS NOTHING LINKED YET. Owner, 2026-09-11: *"the table
+           tags a manual method but how does one tag it automatically, is there a button that I am
+           not sure it works?"* — the automatic path is the Link/Allocate dialog, which proposes a
+           match before you touch it, and `manual` appears only for a link picked by hand. A blank
+           cell is what made that look absent. It says `auto` ONLY where candidates actually exist,
+           so it never promises a proposal the dialog cannot make. */
         '<td>' + (al.length
           ? '<span class="boq-why">' + esc(al[0].matched_by || al[0].method || '') + '</span>'
-          : '') + '</td>' +
+          : (_st.kind === 'ready'
+            ? '<span class="cc-mut" title="Press ' + (qOn ? 'Allocate' : 'Link') + ' — the dialog ' +
+              'proposes a match before you touch it, and records the rung that found it. ' +
+              '“manual” appears only for a link you pick by hand.">auto</span>'
+            : '')) + '</td>' +
         (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-split="' + esc(r.id) + '">' + (qOn ? 'Allocate…' : 'Link…') + '</button></td>' : '') +
         '</tr>';
     });
+    /* ⚠️ Emitted INSIDE the table body, after the last row, so it cannot be mistaken for
+       a line of the bill: muted, spanning every column, naming the search as the way through. */
+    if (_capHidden) {
+      h += '<tr><td colspan="8" class="cc-mut" style="text-align:center;padding:14px;">' +
+        'Showing the first ' + ALLOC_ROW_CAP + ' of ' + list.length + ' lines \u2014 ' +
+        '<strong>' + _capHidden + ' more not shown</strong>. ' +
+        'Unallocated lines are listed first; use the search above to reach any line by code or description.' +
+        '</td></tr>';
+    }
     h += '</tbody></table></div>';
     return h;
   }
@@ -4911,7 +5072,6 @@ window.BOQ = (function () {
     var q = host.querySelector('#boq-a-q'), t = null;
     if (q) q.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { filt.q = q.value; render(); }, 200); });
     host.querySelectorAll('[data-split]').forEach(function (b) { b.onclick = function () { openSplit(b.dataset.split); }; });
-    var al = host.querySelector('#boq-a-all'); if (al) al.onclick = openMatchAll;
   }
 
   function openSplit(itemId) {
@@ -4949,10 +5109,24 @@ window.BOQ = (function () {
       '<button class="pd-btn pd-btn-primary" id="sp-go">Apply</button></div>');
     var body = m.el.querySelector('#sp-body');
 
+    /* How many distinct ACTIVITY NAMES could be this line, according to the Match-names screen?
+       ⚠️ Read from nameGroups(), the screen's own function, so the count in this dialog and the
+       rows on that screen cannot disagree. Once per dialog - see the note above openSplit. */
+    var _nameAlt = 0;
+    try {
+      var _cfOpen = codeFor(r);
+      if (_cfOpen) {
+        _nameAlt = nameGroups().filter(function (g) {
+          return g.cands.some(function (c2) { return String(c2.code) === String(_cfOpen.class_code); });
+        }).length;
+      }
+    } catch (e) { _nameAlt = 0; }
+
     function paint() {
       var q = Number(r.qty) || 0, s = prop.parts.reduce(function (a, p) { return a + (Number(p.qty) || 0); }, 0);
       var rem = q - s;
       var cf = codeFor(r), cfc = cf ? cf.class_code : '';
+      var _where = whereLabels(prop.parts);   // once per paint - see whereLabels()
       body.innerHTML =
         '<p class="cc-hint"><strong>' + esc(r.description || '') + '</strong><br>' +
         esc(r.sheet) + ' row ' + r.source_row + ' · ' + qtyStr(q) + ' ' + esc(r.unit || '') +
@@ -4995,8 +5169,19 @@ window.BOQ = (function () {
               'matched on <strong>name</strong> instead. Worth a look before you apply.</div>'
             : '')
           : '<div class="boq-alert warn">No activity on this project carries class code <code>' +
-          esc(cfc) + '</code>, and none is named like this line. Allocate by hand, or tag the ' +
-          'activities first.</div>') +
+          esc(cfc) + '</code>, and none is named like this line.' +
+          /* ⚠️ NOT A DEAD END WHEN ANOTHER SCREEN CAN ANSWER IT. This dialog gates on matchAct,
+             whose second rung needs an activity name longer than six characters - so a schedule
+             saying "Rebar" against a bill saying "Rebar Works" scores nothing here while the
+             Match-names screen offers all three Rebar lines. Measured on OPW101. */
+          (_nameAlt
+            ? ' <strong>' + _nameAlt + '</strong> activity name' + (_nameAlt === 1 ? '' : 's') +
+              ' on this schedule could be this line &mdash; they are shorter than the bill&rsquo;s ' +
+              'wording, so only a person can say which.' +
+              '<div style="margin-top:8px;"><button class="pd-btn pd-btn-primary" id="sp-names">' +
+              'Match names&hellip;</button></div>'
+            : ' Allocate by hand, or tag the activities first.') +
+          '</div>') +
         /* ⚠️ NO HEADER OVER AN EMPTY TABLE. With nothing allocated this drew ACTIVITY / QTY column
            headings above zero rows, directly on top of the button whose job is to create the first
            one — furniture for a table that does not exist. */
@@ -5005,6 +5190,8 @@ window.BOQ = (function () {
           : '') +
         prop.parts.map(function (p, i) {
           return '<tr><td><code>' + esc(p.activity_id) + '</code> <span class="cc-mini">' + esc(p.name || '') + '</span>' +
+            // WHERE it is - the whole point of the row when 77 of them share one name.
+            (_where[i] ? ' <span class="boq-where">' + esc(_where[i]) + '</span>' : '') +
             // ⚠️ Every proposed row says which rung found it. A bare list of activities is
             //    unauditable: "at 3rd Floor" and "2 of 3 item words" deserve different trust.
             (p.why ? ' <span class="boq-why">' + esc(p.why) + '</span>' : '') + '</td>' +
@@ -5083,6 +5270,10 @@ window.BOQ = (function () {
       });
       var pk = body.querySelector('#sp-pick');
       if (pk) pk.onclick = openPicker;
+      /* ⚠️ CLOSE, THEN OPEN. openNameMatch is a modal too, and this module has already paid for
+         stacking one on another - the planner ends up clicking a pane behind the top one. */
+      var nmb = body.querySelector('#sp-names');
+      if (nmb) nmb.onclick = function () { m.close(); openNameMatch(); };
       body.querySelectorAll('input[name="sp-scope"]').forEach(function (rd) {
         rd.onchange = function () {
           projScope = rd.value === 'project';
@@ -5201,7 +5392,11 @@ window.BOQ = (function () {
         var ins = await upsertAllocs(parts.map(function (p) {
           return { project_id: pid, boq_item_id: r.id, activity_id: p.activity_id,
                    scope: p.scope || 'activity',
-                   qty: Number(p.qty), method: prop.method || 'manual', accepted_by: UID,
+                   /* ⚠️⚠️ 'link', NOT 'manual'. proposeSplit returns method null at qty 0
+                      on purpose — nothing was split — and coercing that to 'manual' asserted a
+                      human picked it. Measured on DEMO01: 37 of 50 allocations claimed a hand
+                      decision while `matched_by` recorded the matcher that actually found them. */
+                   qty: Number(p.qty), method: prop.method || 'link', accepted_by: UID,
                    matched_by: (prop.method === 'manual' ? 'manual' : (p.rung || null)),
                    match_score: (prop.method === 'manual' ? null : (RUNG_SCORE[p.rung] || null)) };
         }));
@@ -5211,7 +5406,7 @@ window.BOQ = (function () {
       ALLOC = ALLOC.filter(function (a) { return a.boq_item_id !== r.id; })
         /* ⚠️ `scope` is mirrored, or the worklist would repaint the line as an ordinary activity
            allocation until the next full load — the screen disagreeing with what was just saved. */
-        .concat(parts.map(function (p) { return { boq_item_id: r.id, activity_id: p.activity_id, scope: p.scope || 'activity', qty: Number(p.qty), method: prop.method || 'manual', project_id: pid }; }));
+        .concat(parts.map(function (p) { return { boq_item_id: r.id, activity_id: p.activity_id, scope: p.scope || 'activity', qty: Number(p.qty), method: prop.method || 'link', project_id: pid }; }));
       UI.toast('Allocation applied.', 'success'); render();
     }
   }
@@ -5244,7 +5439,11 @@ window.BOQ = (function () {
     ok.forEach(function (x) {
       x.p.parts.forEach(function (p) {
         payload.push({ project_id: pid, boq_item_id: x.r.id, activity_id: p.activity_id,
-                       qty: Number(p.qty), method: x.p.method, accepted_by: UID,
+                       /* ⚠️ `|| 'link'` is insurance, not decoration: planAllocs filters on
+                          qtyLine so proposeSplit cannot return null here TODAY, but widening that
+                          filter to linkLine (as the worklist already was) would put a null into a
+                          NOT NULL column and fail the entire batch. */
+                       qty: Number(p.qty), method: x.p.method || 'link', accepted_by: UID,
                        matched_by: p.rung || null, match_score: RUNG_SCORE[p.rung] || null });
       });
     });
@@ -5329,7 +5528,10 @@ window.BOQ = (function () {
     }
     var cf = codeFor(r);
     if (!cf) return { kind: 'nocode' };
-    if (candidatesFor(r).length) return { kind: 'ready', n: candidatesFor(r).length };
+    /* ⚠️ ONCE. candidatesFor() filters every activity on the project, and calling it twice made a
+       122-line bill scan 2,561 activities 244 times to draw one table. */
+    var cand = candidatesFor(r);
+    if (cand.length) return { kind: 'ready', n: cand.length };
     var row = codeRow(cf.class_code);
     var trade = row && row.desc_l1 ? String(row.desc_l1).trim() : '';
     var counts = tradeActivityCounts();
@@ -5654,7 +5856,7 @@ window.BOQ = (function () {
         '<td class="cc-r">100.00%</td><td class="cc-r"><strong>' + pct(tot.poc, 4) + '</strong></td>' +
         '<td class="cc-r"><strong>' + money(tot.revenue) + '</strong></td></tr>';
       h += '</tbody></table>' +
-        '<p class="cc-hint">⚠️ These are the <em>certified</em> percentages — what the client has already paid ' +
+        '<p class="cc-hint pd-caution">These are the <em>certified</em> percentages — what the client has already paid ' +
         'against. The schedule\'s S-curve is <em>reported</em> progress, and the two must not be silently merged: ' +
         'their difference is the accrual shown above, never an error to correct in either direction.</p></div>';
     }
@@ -5707,7 +5909,7 @@ window.BOQ = (function () {
         'progress would push the other POC (decision #7) into a revenue figure — the one merge this module refuses.</p>';
     }
     if (mr.undated.length) {
-      h += '<p class="cc-hint">⚠️ <strong>' + mr.undated.length + ' billing period(s) fall in no month</strong> — ' +
+      h += '<p class="cc-hint pd-caution"><strong>' + mr.undated.length + ' billing period(s) fall in no month</strong> — ' +
         esc(mr.undated.map(function (u) { return u.p.billing_no; }).join(', ')) +
         ' — because the period end date is missing. Their revenue is excluded from the table above rather than guessed into a ' +
         'month, so the Total here is below Revenue to date until those dates are set.</p>';
@@ -5780,7 +5982,7 @@ window.BOQ = (function () {
       'Work is reported on the programme, certified by the client, then paid. The distance between the first two is ' +
       '<strong>accrued revenue</strong> — earned, not yet invoiceable. ' +
       (accrPct != null && accrPct < 0
-        ? '⚠️ Here it runs the <em>other</em> way: certification is ahead of reported progress, which is either ' +
+        ? 'Here it runs the <em>other</em> way: certification is ahead of reported progress, which is either ' +
           'front-loaded measurement, an advance, or a programme that has not been updated. Worth resolving before the ' +
           'next billing.'
         : 'Carry it as an unbilled receivable in the accrual, and it converts to AR at the next certification.') + '</p>';
@@ -5801,25 +6003,25 @@ window.BOQ = (function () {
         '<div class="boq-poc-cell"><span class="cc-mini">Not yet claimed</span>' +
           '<div class="boq-poc-v">' + (unclaimed == null ? '—' : money(unclaimed)) + '</div>' +
           '<span class="cc-mini">' + (unclaimed == null ? 'no accrual to split' : 'reported done, never submitted') + '</span></div>' +
-        '<div class="boq-poc-cell ' + (dsp.over ? 'bad' : '') + '"><span class="cc-mini">⚠️ Certified above claimed</span>' +
+        '<div class="boq-poc-cell ' + (dsp.over ? 'bad' : '') + '"><span class="cc-mini pd-caution-inline">Certified above claimed</span>' +
           '<div class="boq-poc-v">' + money(dsp.over) + '</div>' +
           '<span class="cc-mini">' + (dsp.nOver ? dsp.nOver + ' line(s) — check the entry' : 'none') + '</span></div>' +
         '</div>' +
         '<p class="cc-hint"><strong>Dispute is claimed minus certified, per line, on billing ' + esc(cur.billing_no) + '.</strong> ' +
         'Lines with no claimed figure recorded are read as <em>claimed = certified</em>, never as claimed-zero, so they ' +
         'add nothing to the dispute. ' + dsp.nClaims + ' line(s) carry a claimed figure. ' +
-        '⚠️ The two are <strong>not netted</strong>: certification above what was claimed is almost always a keying ' +
+        'The two are <strong>not netted</strong>: certification above what was claimed is almost always a keying ' +
         'error, and cancelling it against genuine disputes elsewhere would hide both.</p>';
     } else if (accrPct != null && accrPct > 0) {
       h += '<p class="cc-hint"><strong>No claimed figures recorded on this billing</strong>, so the accrual above cannot ' +
         'yet be split into <em>disputed</em> and <em>not yet submitted</em>. Enter Claimed % beside Certified % in the ' +
-        'Progress dialog and both appear here. ⚠️ Absent claims are read as <em>claimed = certified</em> — never as a ' +
+        'Progress dialog and both appear here. Absent claims are read as <em>claimed = certified</em> — never as a ' +
         'dispute of the whole amount.</p>';
     }
 
     /* ⚠️ THE HONEST LIMIT, ON SCREEN. Overstating what the number proves is how
        an accrual figure ends up in a report nobody can defend. */
-    h += '<p class="cc-hint">⚠️ <strong>The reported figure is the contractor\'s own.</strong> It is ' +
+    h += '<p class="cc-hint pd-caution"><strong>The reported figure is the contractor\'s own.</strong> It is ' +
       '<code>percent_complete</code> entered on the programme; nothing in this app records the client\'s verification ' +
       'of a schedule activity. So this accrual is <em>work claimed as done and not yet certified</em>, which includes ' +
       'anything the client would still knock off on inspection. ' +
@@ -5828,7 +6030,7 @@ window.BOQ = (function () {
       'simply unclaimed.</p>';
 
     h += (contract && Math.abs(contract - contractSum(ITEMS)) > 1
-        ? '<p class="cc-hint">⚠️ The certified figure is computed on the revision\'s stated contract total, which ' +
+        ? '<p class="cc-hint pd-caution">The certified figure is computed on the revision\'s stated contract total, which ' +
           'differs from the sum of its lines — see the reconciliation warning on the Items tab.</p>' : '') +
       '</div>';
     return h;
@@ -5850,7 +6052,7 @@ window.BOQ = (function () {
       '<label>Period end<input class="pd-input" id="np-e" type="date" /></label>' +
       '<label>PO no.<input class="pd-input" id="np-po" value="' + esc(rev.po_no || '') + '" /></label>' +
       '</div>' +
-      '<p class="cc-hint">⚠️ A billing period is <strong>not a calendar month</strong> — the real ones run 26th to 25th. ' +
+      '<p class="cc-hint pd-caution">A billing period is <strong>not a calendar month</strong> — the real ones run 26th to 25th. ' +
       'Cash Flow and the S-curve are monthly, so the mapping from a period to a month stays explicit rather than assumed.<br>' +
       'This period is billed against <strong>revision ' + esc(rev.rev_no || '?') + '</strong> and keeps that snapshot even if a ' +
       'later remeasure changes the BOQ.' +
@@ -5933,7 +6135,7 @@ window.BOQ = (function () {
       });
       sumEl.innerHTML = 'POC <strong>' + pct(t.poc, 4) + '</strong> · revenue <strong>' + money(t.revenue) + '</strong>' +
         (dsp ? ' · in dispute <strong>' + money(dsp) + '</strong> (' + dspN + ' line' + (dspN === 1 ? '' : 's') + ')' : '') +
-        (ovr ? ' · ⚠️ certified above claimed <strong>' + money(ovr) + '</strong>' : '');
+        (ovr ? ' · certified above claimed <strong>' + money(ovr) + '</strong>' : '');
       var list = lines.filter(function (r) { return !q || normKey([r.item_no, r.description, r.sheet].join(' ')).indexOf(normKey(q)) >= 0; });
       body.innerHTML =
         '<p class="cc-hint">Enter each line\'s <strong>cumulative</strong> relative % complete (0–100). %Wt. and Amt. below ' +
@@ -6064,8 +6266,124 @@ window.BOQ = (function () {
   function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; TRADEMAP = {}; clearTradeActs();
     ALLREVS = []; PROJTOTAL = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; WBSNAME = {}; LOCMATCH = null; SCHED = null; schedErr = null; PKGS = []; }
 
+  /* ==========================================================================================
+     THE COMMERCIAL SUMMARY — a LEAN read for the Dashboard tab (2026-09-16).
+
+     Owner, on the live Dashboard of a project with a contract and no claims:
+     *"Dashboard needs complete rework"*. It rendered two sentences and one number, because
+     EVERY block on it derived from the CLAIMS pipeline — `ccTimeHTML` returns '' outright with
+     no claims, the money table collapses, the legend suppresses — and the one non-claims block
+     (packages) was empty too. The contract half of a module called Contracts & Claims was a
+     single figure, while the BOQ two tabs away held the contract total, the certified POC and
+     the revenue actually billed.
+
+     ⚠️⚠️ A SECOND READ, NOT A SECOND IMPLEMENTATION. `periodTotals`, `contractSum` and
+     `sheetTotals` are pure over their arguments, so every figure here comes from the SAME
+     functions the Billing tab uses. Re-deriving POC for a dashboard is the hand-copied-S-curve
+     mistake this repo has already paid for (portfolio-overview, 2026-09-10 z1) and the reason
+     `assets/js/claims.js` exists at all.
+
+     ⚠️⚠️ AND IT IS LEAN ON PURPOSE. `load()` is ~8 round trips and pulls every one of a BOQ's
+     ~900 items with every column. The Dashboard is now the LANDING view, so paying that on every
+     module open would undo exactly what the Contract tab's lazy mount was built for. This reads
+     seven columns, the current revision(s), and ONE period.
+
+     ⚠️ IT TOUCHES NONE OF THIS MODULE'S STATE — no REVS / ITEMS / PERIODS / PROG assignment.
+     Opening the Dashboard must not change what the Contract tab's BOQ is showing.
+
+     ⚠️⚠️ EVERY ABSENT FIGURE IS null, NEVER 0. "not yet billed" and "0% certified" are opposite
+     claims about a project, and a failed read reports `err` rather than a confident zero — the
+     empty-read-as-a-legitimate-zero trap this very file has recorded twice (`ensureCodes`,
+     `ensureSugg`, where `[]` is truthy and cached a failure for the whole session).
+     ========================================================================================== */
+  async function commercialSummary(projectId) {
+    var out = {
+      state: 'none',            /* none | draft | issued | billed */
+      err: null, docs: 0, docName: null, revNo: null, issuedDate: null,
+      contract: null, poc: null, revenue: null, materials: null, labor: null,
+      periods: 0, lastBilling: null, lastDate: null
+    };
+    if (!projectId) return out;
+    try {
+      var docs = [];
+      /* tolerant, like every other schema addition here: no documents table simply means the
+         older flat shape, never an error on screen */
+      try {
+        docs = await PDb.selectAll('boq_documents', function (q) {
+          return q.eq('project_id', projectId).order('sort_order');
+        });
+      } catch (e) { docs = []; }
+      out.docs = docs.length;
+      out.docName = docs.length ? (docs[0].name || null) : null;
+
+      var revs = await PDb.selectAll(T_REV, function (q) { return q.eq('project_id', projectId); });
+      if (!revs.length) return out;                    /* 'none' — no BOQ on this project at all */
+
+      /* ⚠️⚠️ `is_current` IS FALSE ON EVERY DRAFT, enforced by the trigger. Measured live on
+         2026-09-14 (q): on a project whose revisions are all draft this is precisely why the
+         contract value reads zero. That is a STATE TO REPORT, not a zero to print. */
+      var current = revs.filter(function (r) { return r.is_current; });
+      if (!current.length) {
+        out.state = 'draft';
+        out.revNo = (revs.slice().sort(function (a, b) {
+          return String(b.rev_no || '').localeCompare(String(a.rev_no || ''), undefined, { numeric: true });
+        })[0] || {}).rev_no || null;
+        return out;
+      }
+
+      /* Across every document's current revision, which is the project-level figure — the same
+         rule `computeProjectTotal` applies once a project carries more than one BOQ. */
+      var ids = current.map(function (r) { return r.id; });
+      var newest = current.slice().sort(function (a, b) {
+        return String(b.issued_date || '').localeCompare(String(a.issued_date || ''));
+      })[0];
+      out.revNo = newest && newest.rev_no;
+      out.issuedDate = (newest && newest.issued_date) || null;
+
+      /* ⚠️ SEVEN COLUMNS. `moneyLine` needs line_kind / exclusion_note / amount, `periodTotals`
+         needs id and the material-labour split, `sheetTotals` needs sheet. Nothing else is read,
+         so a 900-line bill costs a fraction of what the Contract tab pays. */
+      var items = await PDb.selectAll(T_ITEM, function (q) { return q.in('revision_id', ids); },
+        'id,sheet,amount,line_kind,exclusion_note,mat_amount,lab_amount');
+      out.contract = contractSum(items);
+      out.state = 'issued';
+
+      var pers = [];
+      try { pers = await PDb.selectAll(T_PER, function (q) { return q.eq('project_id', projectId); }); }
+      catch (e) { pers = []; }
+      out.periods = pers.length;
+      if (!pers.length) return out;                    /* issued, nothing billed yet */
+
+      /* ⚠️ The LATEST period carries the TO-DATE figure — `rel_pct` is cumulative, which is why
+         the Billing tab derives "previous" by subtracting the prior period rather than summing. */
+      var last = pers.slice().sort(function (a, b) {
+        return String(a.period_end || '').localeCompare(String(b.period_end || ''));
+      }).pop();
+      out.lastBilling = last.billing_no || null;
+      out.lastDate = last.period_end || null;
+
+      var prog = await PDb.selectAll(T_PROG, function (q) { return q.eq('period_id', last.id); },
+        'id,boq_item_id,rel_pct');   /* ⚠️⚠️ 'id' IS THE PAGING CURSOR AND MUST BE SELECTED */
+      var rel = {};
+      prog.forEach(function (p) { rel[p.boq_item_id] = Number(p.rel_pct) || 0; });
+
+      var t = periodTotals(items, rel, out.contract);
+      out.poc = t.poc; out.revenue = t.revenue;
+      out.materials = t.materials; out.labor = t.labor;
+      out.state = 'billed';
+    } catch (e) {
+      /* ⚠️ Reported, never swallowed into zeros. The dashboard says the read failed. */
+      out.err = (e && e.message) || String(e);
+    }
+    return out;
+  }
+
   return {
     init: init, show: show, reset: reset, render: render,
+    /* ⚠️ The Dashboard tab reads the commercial position through THIS, not by loading the
+       whole BOQ: load() is ~8 round trips over every column of ~900 items, and the Dashboard
+       is the module's landing view. See the note on the function. */
+    commercialSummary: commercialSummary,
     /* ⚠ For the topbar's "export what?" chooser. Returns the CURRENT revision's rows under the
        filters on screen, or null when there is nothing -- so the chooser can grey the option
        rather than produce an empty sheet. It writes no file; the caller owns the workbook. */
@@ -6128,6 +6446,17 @@ window.BOQ = (function () {
       openNameMatch: openNameMatch,
       /* The three planners and the dry run that chains them — exported so a suite can assert the
          whole-BOQ preview equals what the three buttons would do, without a database. */
+      /* ⚠️⚠️ THE WRITE PATH, EXPORTED SO THE OVERWRITE FLAG IS TESTABLE BY EXECUTION.
+         `applyTagPlan` hardcoded `false` and the Match-names screen wrote nothing for a year
+         of already-coded activities (2026-09-14 k). That was found by driving the live app,
+         not by a test, because nothing here could reach the function. It can now.
+         ⚠️ Both names exist above; a name here that does NOT is the z6 outage exactly. */
+      applyTagPlan: applyTagPlan, reportTagged: reportTagged, tagRpc: tagRpc,
+      /* ⚠️⚠️ BOTH predicates, so a suite can prove they are DIFFERENT. They were one
+         function, and that is precisely how the procurement-trade answer came to vanish the
+         moment a bill was issued. Exported together because the bug is the relationship
+         between them, not either one alone. */
+      isManualDraft: isManualDraft, isManualBill: isManualBill,
       planCodeMap: planCodeMap, planTags: planTags, planAllocs: planAllocs,
       lineLinkState: lineLinkState, tradeActivityCounts: tradeActivityCounts,
       clearTradeActs: clearTradeActs, mergePickedParts: mergePickedParts,

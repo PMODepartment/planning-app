@@ -7,7 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
        2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) —
@@ -108,7 +109,7 @@
        vertical stacking's chips record (#EE3124 on #3D1A19 is 3.75:1, under AA). The lit state IS
        the filter, so a chip you cannot read is a filter you cannot check. */
     .sc-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-ink); font-weight:700; }
-    .sc-chip .n { font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:600; }
+    .sc-chip .n { font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:500; }
     .sc-chip.on .n { color:var(--pd-ink); opacity:.7; }
     .sc-chip .dot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--pd-muted); }
     .sc-chip.gr .dot { background:#C9A227; } .sc-chip.mw .dot { background:#4F8EF7; }
@@ -148,7 +149,7 @@
        rather than explained twice. */
     .sc-sheet tr.now td { background:var(--pd-red-light); }
     .sc-sheet tr.now td.k { font-weight:800; }
-    .sc-sheet td.k { font-weight:600; }
+    .sc-sheet td.k { font-weight:700; }
     .sc-sheet td.k small { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:500; }
     .sc-in { width:64px; height:30px; padding:0 7px; text-align:right; font:inherit;
       font-size:var(--pd-fs-sm); font-variant-numeric:tabular-nums; border:1px solid var(--pd-line);
@@ -242,7 +243,7 @@
     .sc-bd td.is-act { color:var(--pd-red); font-weight:700; }
     .sc-bd tbody tr.sc-bd-empty td { color:var(--pd-muted); font-style:italic; }
     .sc-per-row td { color:var(--pd-muted); }
-    .sc-per-row td:first-child { color:var(--pd-muted); font-weight:600; }
+    .sc-per-row td:first-child { color:var(--pd-muted); font-weight:500; }
 
     /* Does the curve read this sheet? ⚠️ Stated, because the tab and the mode are separate and a
        planner can otherwise fill this in for an hour without the chart moving. */
@@ -279,7 +280,7 @@
     .sc-matrix th.mo small { display:block; font-size:9px; font-weight:500; opacity:.75; }
     /* The trade column: sticky left, and the corner sticky in both axes. */
     .sc-matrix .k { position:sticky; left:0; z-index:1; background:var(--pd-card);
-      text-align:left; min-width:186px; max-width:186px; font-weight:600;
+      text-align:left; min-width:186px; max-width:186px; font-weight:700;
       border-right:2px solid var(--pd-line); overflow:hidden; text-overflow:ellipsis; }
     .sc-matrix thead .k { z-index:3; background:var(--pd-bg); }
     .sc-matrix tfoot .k { z-index:3; }
@@ -485,13 +486,15 @@
 <div class="sc-loading" id="sc-loading" style="display:none;"><div class="sc-spin"></div><span>Loading schedule…</span></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260910za"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260909n"></script>
+<script src="../../assets/js/config.js?v=20260915a"></script>
+<script src="../../assets/js/auth.js?v=20260915a"></script>
+<script src="../../assets/js/db.js?v=20260916c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/scurve.js?v=20260901a"></script>
-<script src="../../assets/js/ui.js?v=20260909s"></script>
-<script src="../../assets/js/icons.js?v=20260909ui"></script>
+<script src="../../assets/js/scurve.js?v=20260916r"></script>
+<script src="../../assets/js/ui.js?v=20260916u"></script>
+<script src="../../assets/js/notebook.js?v=20260915d"></script>
+<script src="../../assets/js/icons.js?v=20260915f"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <!-- ⚠️ The app's own spreadsheet layer (Tab/Enter/arrows, Ctrl+D, Excel paste). The manual matrix
@@ -635,7 +638,13 @@
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('sc-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()). S-Curve's engine is a
+    // per-project schedule curve (basis/mode/trade filters all keyed off one project's rows), and
+    // there is no single combined curve across projects — the empty-state message below says so
+    // rather than silently drawing a stale project's curve.
+    var portfolioScope = window.AppAuth && AppAuth.isPortfolioScope();
+    pid = portfolioScope ? null : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
@@ -693,6 +702,16 @@
     // and another monthly, and a global preference would open the second at the wrong grain.
     try { var _pv = localStorage.getItem('sc_period_' + pid); period = (_pv === 'quarter' || _pv === 'year') ? _pv : 'month'; } catch (e) { period = 'month'; }
     try { view = localStorage.getItem(viewKey()) === 'manual' ? 'manual' : 'curve'; } catch (e) { view = 'curve'; }
+    /* ⚠⚠ `?scView=manual` — FROM THE PORTFOLIO REGISTER (2026-09-16). The portfolio S-Curve's
+       Manual data tab lists which projects carry a hand-entered curve and opens one here, on the
+       tab that can actually edit it. Read AFTER the remembered view above so an explicit link
+       wins over what this planner last had open, and WRITTEN BACK to the same per-project key so
+       the choice sticks the way pressing the tab would — a deep link that un-remembers itself on
+       the next visit would be a third kind of state beside the two this module already keeps. */
+    try {
+      var _dl = new URLSearchParams(location.search).get('scView');
+      if (_dl === 'manual' || _dl === 'curve') { view = _dl; localStorage.setItem(viewKey(), view); }
+    } catch (e) { /* no URLSearchParams / no storage — the remembered view above still stands */ }
     // ⚠️ Reset with the project — a breakdown open on the previous project's Q3 is meaningless here.
     bdOpen = null; _costCo = null; _costCoKey = ''; _trSeries = null; _trSeriesKey = '';
     MAN = null; manMissing = false; manDirty = {};
@@ -1997,7 +2016,10 @@
           ? 'No cost is loaded on this schedule yet — none of its ' + d.nAct + ' activities carries a Planned IBB, so there is no money to curve.<br>' +
             'Load it in <b>Project Schedule → Cost Loading</b> (enlist → assign → distribute → apply), then come back. ' +
             'Meanwhile, <b>Duration</b> weighting works now.'
-        : (pid ? 'This project has no dated activities. Import or add a schedule first.' : 'Select a project.')) + '</div>';
+        : (pid ? 'This project has no dated activities. Import or add a schedule first.'
+              : (window.AppAuth && AppAuth.isPortfolioScope()
+                ? 'S-Curve is a per-project schedule curve — there is no single combined curve across every project. Pick a project from the selector above to see its S-Curve.'
+                : 'Select a project.'))) + '</div>';
       basisNote.textContent = ''; return;
     }
     /* ⚠️⚠️ THE SOURCE IS NAMED FIRST, before the weighting. A manual curve and a schedule-derived
@@ -2549,6 +2571,25 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 's-curve', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+
+    /* ⚠️⚠️ THE PORTFOLIO FACE OF THIS MODULE IS ITS OWN DASHBOARD NOW (owner, 2026-09-16:
+       *"those dashboards must be the landing page of each module when under the portfolio
+       view"*). Opened from the Portfolio sidebar (`#pd_scope=portfolio`, read once by
+       AppAuth) this page used to give S-Curve is a per-project schedule curve — there is no single combined curve across every project.
+       The cross-project view it was missing already existed — as a TAB on a page called
+       Portfolio Dashboard. It is `assets/js/portfolio-dash.js` now, and it is mounted here.
+       ⚠️ THE MODULE'S OWN init() IS SKIPPED from this point on, deliberately: it would read
+       the same tables a second time into a UI hidden underneath the dashboard. `takeOver`
+       therefore wires the topbar project <select> itself — picking a project there LEAVES
+       portfolio scope, which is the only way back out of it from this page.
+       ⚠️ Guarded on `PortfolioDash.has()` rather than on the script tag: if the layer fails
+       to load, the module falls through to its own behaviour instead of rendering nothing. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('scurve')) {
+      PortfolioDash.takeOver('scurve', { select: '#sc-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     document.getElementById('sc-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load().then(joinCollab); };
     document.getElementById('sc-refresh').onclick = function () { load(); };
     /* The tab strip. ⚠️ Wired here, beside every other control, because the buttons are static

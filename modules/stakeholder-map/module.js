@@ -523,7 +523,7 @@ window.StakeholderMap = (function () {
     //    localStorage, and the seg's `on` class is markup that does not know about it.
     setLayout(smLayout, true);
     switchView(curView);
-    if (pid) load();
+    if (pid || (window.AppAuth && AppAuth.isPortfolioScope())) load();
     joinCollab();
   }
 
@@ -540,7 +540,13 @@ window.StakeholderMap = (function () {
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = $('sm-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ Portfolio scope never falls back to a real project — see the
+    // identical note in risk-register/module.js's loadProjects(). `pid` stays
+    // null, which is what makes `load()` below query across every project
+    // instead of silently substituting the first one alphabetically.
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     sel.innerHTML = '<option value="">Select project…</option>' +
       projects.map(function (p) {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>';
@@ -568,15 +574,22 @@ window.StakeholderMap = (function () {
   }
 
   async function load() {
-    if (!pid) return;
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) return;
     // ⚠️ Keyset-paginated (PDb.selectAll) — a plain .select() truncates at 1000 rows
     // server-side with no error. Shaped as {data}/{error} so the offline-cache and
     // migration-hint branches below are untouched.
     var res;
-    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
-    catch (err) { res = { error: err }; }
+    try {
+      if (portfolio) {
+        var ids = await UI.allProjectIds();
+        res = { data: ids.length ? await PDb.selectAll(TABLE, function (q) { return q.in('project_id', ids); }) : [] };
+      } else {
+        res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) };
+      }
+    } catch (err) { res = { error: err }; }
     if (res.error) {
-      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
+      if (!portfolio && window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
       UI.toast(migrationHint(res.error), 'error'); return;
     }
     rows = res.data || [];
@@ -591,7 +604,7 @@ window.StakeholderMap = (function () {
     overlayPeople();
 
     sortRows();
-    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
+    if (!portfolio && window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
 
     // ⚠️ Two renders on purpose. The first paints the register straight away with
     // initials avatars; signing 85 photo URLs is a network round trip and making
@@ -1248,7 +1261,7 @@ window.StakeholderMap = (function () {
       '<p class="sm-help">Transcribed from “Criteria for Assessment” in <em>CSF101. OPS. Stakeholder Register</em>. Both axes are 1–4 — narrower than the risk register\'s 1–5, and deliberately so: a stakeholder is placed, not measured.</p>' +
       scaleTable('Table 1A — Impact rating', STK_IMPACT, null) +
       scaleTable('Table 1B — Influence rating', STK_INFLUENCE,
-        '⚠️ The controlled document numbers the influence scale 1–4 but leaves its descriptors blank. The wording above is the parallel phrasing of the impact scale, supplied here so two planners score the same way — it is not a transcription.') +
+        'The controlled document leaves this scale&rsquo;s descriptors blank. The wording above is supplied so two planners score alike &mdash; it is <b>not</b> a transcription.') +
       '</div>' +
 
       '<div class="pd-card"><h2>Priority level and response category</h2>' +
@@ -1267,8 +1280,8 @@ window.StakeholderMap = (function () {
 
       '<div class="pd-card"><h2>Impact / Influence map — the engagement approach</h2>' +
       '<p class="sm-help">Table 2 of the criteria sheet, and the classic Mendelow grid. ' +
-      '<strong>⚠️ It disagrees with the Response Category lookup on some cells, and the workbook keeps both.</strong> ' +
-      'Impact 3 × Influence 3 is 2nd Priority → <em>Keep Informed</em> by the lookup, and <em>Keep Satisfied</em> by this map. They are two different columns of the register (Q and AF), computed two different ways; this module shows both rather than inventing a single answer the source does not give. The Approach field can be overridden per stakeholder when a planner\'s judgement differs.</p>' +
+      '<strong>It disagrees with the Response Category lookup on some cells, and the workbook keeps both.</strong> ' +
+      'Impact 3 × Influence 3 is <em>Keep Informed</em> by the lookup and <em>Keep Satisfied</em> by this map — two columns computed two ways, so both are shown. Override Approach per stakeholder where your judgement differs.</p>' +
       '<div class="sm-refgrid">' + e.gridHTML({
         xMax: 4, yMax: 4, xLabel: 'Influence →', yLabel: 'Impact →',
         cls: function (x, y) { return 'sm-gm ' + approachClass(e.MENDELOW[y][x]); },
@@ -1288,7 +1301,7 @@ window.StakeholderMap = (function () {
       e.tbl('Gap → strategy → minimum frequency', ['Gap (target − current)', 'Strategy', 'Minimum frequency'],
         [['2 – 3', 'Catch up', 'Monthly'], ['1', 'Enhance', 'Every two months'],
          ['0', 'Maintain', 'Quarterly'], ['negative', 'N/A — target already met', '—']],
-        '⚠️ The BD workbook contradicts itself: its Guide sheet says Maintain = semi-annually and Enhance = quarterly, while the live cell formula — which the data actually follows — says the above. The live formula governs.') +
+        'The BD workbook contradicts itself: its Guide sheet says Maintain = semi-annually and Enhance = quarterly, while the live cell formula — which the data actually follows — says the above. The live formula governs.') +
       '</div>' +
 
       '<div class="pd-card"><h2>MCC Stakeholder Universe</h2>' +
@@ -1706,7 +1719,11 @@ window.StakeholderMap = (function () {
   }
 
   function openForm(r, fopts) {
-    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!pid) {
+      UI.toast((window.AppAuth && AppAuth.isPortfolioScope())
+        ? 'Portfolio is read-only — switch to a project to add or edit.' : 'Select a project first', 'warn');
+      return;
+    }
     var isNew = !r; r = r || {};
     var e = E();
     fopts = fopts || {};
@@ -2090,7 +2107,7 @@ window.StakeholderMap = (function () {
           '<span class="rcm-d-k">Priority level</span><span class="rcm-d-v"><span class="rcm-pill ' + e.priorityClass(pri) + '">' + pri + '</span></span>' +
           '<span class="rcm-d-k">Response (derived)</span><span class="rcm-d-v">' + Fmt.esc(derivedResp) + '</span>' +
           '<span class="rcm-d-k">Approach (derived)</span><span class="rcm-d-v">' + Fmt.esc(derivedAppr) + '</span>' +
-          (derivedResp !== derivedAppr ? '<span class="rcm-muted">⚠️ the workbook\'s two lookups disagree on this cell — both are shown, see Criteria</span>' : '')
+          (derivedResp !== derivedAppr ? '<span class="rcm-muted pd-caution-inline">the workbook\'s two lookups disagree on this cell — both are shown, see Criteria</span>' : '')
         : '<span class="rcm-muted">Set Impact and Influence to derive the priority level, response category and engagement approach.</span>';
       // Show the placeholder the blank override will fall back to.
       var rs = q('#f-resp'), ap = q('#f-appr');

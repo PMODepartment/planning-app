@@ -7,7 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Productivity Rates · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep the topbar
        rules in sync with those. 2026-08-30: modules gained a persistent
@@ -75,10 +76,17 @@
     .pr-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
     /* tables */
-    .pr-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
-    .pr-table th { background:var(--pd-bg); padding:8px 12px; text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
-    .pr-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
-    .pr-table tbody tr:hover { background:var(--pd-bg); }
+    /* ⚠⚠ THE APPROVED TABLE IS projects.html's, AND THIS IS NOT A SECOND COPY OF IT.
+       Owner 2026-09-16: *"We already have an approved UI of tables seen in projects.html. Let's
+       follow that universally"*, then *"check productivity rates module as well."* This block
+       declared its own width, type scale, header treatment, cell padding and hover — values a few
+       pixels away from the approved ones, which is precisely what made the app's tables read as
+       several different designs rather than one.
+       ⚠️ Each `.pr-table` now carries `pd-table pd-proj-table` IN ITS MARKUP and takes all of
+       that from dashboard.css.
+       ⚠️ Do NOT re-add width / font-size / padding / border / hover rules here: this <style>
+       block comes after dashboard.css, so at equal specificity they win and silently restore the
+       second design. */
     .pr-num { text-align:right; font-variant-numeric:tabular-nums; }
     .pr-mono { font-variant-numeric:tabular-nums; }
     .pr-sub { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
@@ -246,7 +254,7 @@
       <div id="pr-view-rates" style="display:none;"></div>
       <div id="pr-view-data" style="display:none;">
         <div class="pr-card" style="padding:0;overflow:auto;">
-          <table class="pr-table" id="pr-datatable"></table>
+          <table class="pd-table pd-proj-table pr-table" id="pr-datatable"></table>
         </div>
       </div>
     </div>
@@ -256,15 +264,17 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260910za"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260909n"></script>
+<script src="../../assets/js/config.js?v=20260915a"></script>
+<script src="../../assets/js/auth.js?v=20260915a"></script>
+<script src="../../assets/js/db.js?v=20260916c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260909s"></script>
-<script src="../../assets/js/icons.js?v=20260909ui"></script>
-<script src="../../assets/js/calendar.js?v=20260903a"></script>
+<script src="../../assets/js/ui.js?v=20260916u"></script>
+<script src="../../assets/js/notebook.js?v=20260915d"></script>
+<script src="../../assets/js/icons.js?v=20260915f"></script>
+<script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
 <script>
 // ============================================================================
 // Productivity Rates — Productivity Monitoring (per project).
@@ -490,6 +500,23 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 'productivity-rates', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+    /* ==== PORTFOLIO SCOPE IS THIS MODULE’S DASHBOARD =======================================
+       Owner 2026-09-15, looking at the Portfolio Dashboard’s view dropdown: *"there is a
+       dropdown that links to each module. that is wrong … the design of those dashboards must
+       be pushed to each module established on the left."* It was a second home for this module:
+       the sidebar already opens this page portfolio-wide, and the same rows were also a view of
+       a page called Portfolio Dashboard. That view now lives here — see portfolio-dash.js.
+       ⚠️ AFTER renderNav, not before it: this module renders its own sidebar from inside init()
+       (the other five do it in the auth callback), so returning any earlier would leave the page
+       with no sidebar — and the sidebar is how a planner leaves portfolio scope.
+       ⚠️ The rest of init() is skipped deliberately: it wires and then loads THIS module's own
+       cross-project read, into a UI that is hidden underneath the dashboard. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('productivity')) {
+      PortfolioDash.takeOver('productivity', { select: '#pr-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     document.getElementById('pr-project').onchange = function (e) {
       pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid);
       selAct = null; load().then(joinCollab);
@@ -529,12 +556,31 @@
       } catch (e) { /* no settings row yet: the project id IS the default mapping */ }
       WPS = await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', wpmId); });
     } catch (e) { if (!vendorErr) vendorErr = e; }
+    /* ⚠️⚠️ A PLAIN SELECT, NOT PDb.selectAll - the THIRD time this repo has had to say it.
+       selectAll pages with .order(key).gt(key, last) and needs a UNIQUE, NON-NULL cursor, and it
+       defaults that cursor to `id`. Both of these are aggregate VIEWS and neither has one:
+       vendor_qty_reconciliation groups by (project_id, work_package, unit) and
+       vendor_rate_library by (vendor_id, category, unit, resource_type).
+       ⚠️⚠️ MEASURED LIVE ON OPW101, 2026-09-12: every read returned 400
+       `42703 column vendor_qty_reconciliation.id does not exist`, and the catch below swallowed
+       it as "the migration has not run" - so RECON and RATELIB were ALWAYS EMPTY, on every
+       project, for everyone, since the day they were wired. The same shape as class_codes
+       (2026-09-07 e) and trade_map (2026-09-09 m2).
+       ⚠️ A composite key cannot be a keyset cursor, so there is nothing to pass as `key`:
+       one request each, ordered, with a ceiling well above what either view can produce. */
     try {
-      RECON = await PDb.selectAll('vendor_qty_reconciliation', function (q) { return q.eq('project_id', pid); });
-    } catch (e) { /* view arrives with the F2 migration */ }
+      var rc = await sb().from('vendor_qty_reconciliation').select('*')
+                         .eq('project_id', pid)
+                         .order('work_package').order('unit').limit(2000);
+      if (rc.error) throw rc.error;
+      RECON = rc.data || [];
+    } catch (e) { /* 42P01 until the F2 migration runs; anything else leaves it empty too */ }
     try {
-      RATELIB = await PDb.selectAll('vendor_rate_library', function (q) { return q; });
-    } catch (e) { /* view arrives with the F2 migration */ }
+      var rl = await sb().from('vendor_rate_library').select('*')
+                         .order('vendor_id').order('trade').order('unit').limit(5000);
+      if (rl.error) throw rl.error;
+      RATELIB = rl.data || [];
+    } catch (e) { /* 42P01 until the F2 migration runs; anything else leaves it empty too */ }
   }
   function vendorName(id) {
     if (!id) return null;
@@ -557,7 +603,12 @@
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('pr-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()), which is what
+    // load() reads to consolidate across every project instead of substituting one.
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
@@ -565,11 +616,21 @@
   }
 
   async function load() {
-    if (!pid) { acts = []; entriesByAct = {}; render(); return; }
+    // Portfolio scope: no single project is selected, but every project the
+    // planner can see is in scope — consolidate across all of them instead of
+    // refusing for lack of one project id. See AppAuth.isPortfolioScope().
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { acts = []; entriesByAct = {}; render(); return; }
     showLoading('Loading productivity data…');
     try {
-      var a = await sb().from('productivity_activities').select('*').eq('project_id', pid)
-        .order('sort_order', { ascending: true, nullsFirst: false }).order('name', { ascending: true });
+      var portfolioIds = null;
+      if (portfolio) {
+        portfolioIds = await (window.UI && UI.allProjectIds ? UI.allProjectIds() : Promise.resolve([]));
+        if (!portfolioIds.length) { acts = []; entriesByAct = {}; hideLoading(); render(); return; }
+      }
+      var aq = sb().from('productivity_activities').select('*');
+      aq = portfolio ? aq.in('project_id', portfolioIds) : aq.eq('project_id', pid);
+      var a = await aq.order('sort_order', { ascending: true, nullsFirst: false }).order('name', { ascending: true });
       if (a.error) throw a.error;
       acts = a.data || [];
       entriesByAct = {};
@@ -577,12 +638,18 @@
       // over a multi-year build passes PostgREST's 1000-row cap — and a truncated read would drop
       // whole months out of the rate/cumulative curves with no error to notice.
       // PDb.selectAll returns id order, so the by-period sort is re-applied per activity below.
-      var ents = await PDb.selectAll('productivity_entries', function (q) { return q.eq('project_id', pid); });
+      var ents = await PDb.selectAll('productivity_entries', function (q) {
+        return portfolio ? q.in('project_id', portfolioIds) : q.eq('project_id', pid);
+      });
       ents.forEach(function (row) { (entriesByAct[row.activity_id] = entriesByAct[row.activity_id] || []).push(row); });
       Object.keys(entriesByAct).forEach(function (k) {
         entriesByAct[k].sort(function (x, y) { return String(x.period || '').localeCompare(String(y.period || '')); });
       });
-      await loadVendorLayer();
+      // ⚠️ The vendor layer is inherently single-project (its WPM mapping comes from THIS
+      // project's own cash_flow_settings row) — skip it in portfolio scope rather than
+      // querying with a null project_id, which would either error or silently answer nothing.
+      if (!portfolio) await loadVendorLayer();
+      else { VENDORS = []; WPS = []; RECON = []; RATELIB = []; vendorErr = null; }
       cacheState();   // keep the offline read-cache current
     } catch (err) {
       hideLoading();
@@ -682,7 +749,7 @@
 
     h += '<div class="pd-card" style="padding:0;margin-bottom:14px;overflow:auto;">' +
       '<div class="pr-secthead">Rate library <span class="pr-sub">output per man-day, from real months — the basis for schedule durations</span></div>' +
-      '<table class="pr-table"><thead><tr><th>Vendor</th><th>Trade</th><th>Unit</th>' +
+      '<table class="pd-table pd-proj-table pr-table"><thead><tr><th>Vendor</th><th>Trade</th><th>Unit</th>' +
       '<th class="pr-num">Rate / man-day</th><th class="pr-num">Months</th><th class="pr-num">Projects</th><th>Range</th></tr></thead><tbody>';
     if (!RATELIB.length) {
       h += '<tr><td colspan="7" style="padding:22px;color:var(--pd-muted);">No rates yet. A row appears once a month records ' +
@@ -712,7 +779,7 @@
       'measured <em>for payment</em>; site output is measured <em>for progress</em>. Waste, remeasure, provisional sums ' +
       'and cut allowances separate them legitimately — the variance is the information, so it is reported and never ' +
       'reconciled away. Units are never converted: a mismatch shows as two rows.</p>' +
-      '<table class="pr-table"><thead><tr><th>Work package</th><th>Unit</th>' +
+      '<table class="pd-table pd-proj-table pr-table"><thead><tr><th>Work package</th><th>Unit</th>' +
       '<th class="pr-num">BOQ planned</th><th class="pr-num">Site actual</th><th class="pr-num">Variance</th>' +
       '<th class="pr-num">Man-days</th><th class="pr-num">Rate</th><th>Months</th></tr></thead><tbody>';
     if (!RECON.length) {
@@ -1186,7 +1253,7 @@
       '<p class="pr-hint">Found <strong>' + parsed.length + '</strong> activities · <strong>' + totalEntries + '</strong> monthly records. Review, then import into this project.' +
         (existing ? ' <strong>Note:</strong> this project already has ' + existing + ' activit' + (existing === 1 ? 'y' : 'ies') + ' — import <em>adds</em> new ones (it does not merge or replace).' : '') + '</p>' +
       '<div style="max-height:46vh;overflow:auto;border:1px solid var(--pd-line);border-radius:8px;">' +
-        '<table class="pr-table"><thead><tr><th>Activity</th><th>Resource</th><th>Unit</th><th>Subcontractor</th><th class="pr-num">Months</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+        '<table class="pd-table pd-proj-table pr-table"><thead><tr><th>Activity</th><th>Resource</th><th>Unit</th><th>Subcontractor</th><th class="pr-num">Months</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '</div>' +
       '<p class="pr-hint">Working days per month are set to reproduce the workbook’s own productivity rate where possible, otherwise the Philippine 6-day working calendar.</p>' +
       '<div style="text-align:right;margin-top:10px;"><button class="pd-btn" id="im-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="im-go">Import ' + parsed.length + ' activities</button></div>'

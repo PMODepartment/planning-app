@@ -34,12 +34,176 @@
 //   (still returned — a low-confidence panorama beats losing the walk-
 //   around entirely) rather than silently publishing a bad stitch as if it
 //   were fine.
+//
+// ⚠️⚠️ Item 4 (2026-09-11, third round — "explore using open source Hugin
+// to stitch frames"): Hugin was investigated and is NOT integrated, for a
+// concrete reason rather than a preference — it is a native, desktop C++
+// application (wxWidgets UI, its own `nona`/`enblend`/`align_image_stack`
+// command-line tools under the hood), with no WebAssembly build and no JS
+// bindings anywhere. There is nothing to load into a browser tab; running
+// it here would mean shipping a server that runs Hugin's binaries, which
+// is a different architecture from "this module does its own client-side
+// processing" and a materially larger undertaking than this pass's scope.
+// What IS done instead is a real, verifiable improvement reachable inside
+// the EXISTING OpenCV.js-primitives pipeline: seam FEATHERING (see
+// `featheredFrame` below), which is the specific defect a from-scratch
+// primitives-based stitcher (ours, and the one this replaced) is prone to
+// that a tool like Hugin's `enblend` step exists to fix — a visible hard
+// edge where one frame's contribution stops and the next one's starts.
 // ============================================================================
 
+// ⚠️⚠️ 2026-09-12 (later still — "why can't the stitcher match frame to frame
+// joins... even if video is taken a bit quickly, stitcher should still
+// work"): the live "11 of 11 frame-to-frame joins could not be matched
+// confidently" report is not a threshold problem — MIN_GOOD_MATCHES was
+// never the thing standing between a fast recording and a working stitch.
+// It is a SAMPLING problem. `extractFrames` used to pull a FIXED 12 frames
+// spread evenly across the WHOLE clip, however long or short — so a slow,
+// careful 20-second walk-around and a quick 4-second spin got the identical
+// 12 samples. On the quick spin, each pair of consecutive frames is many
+// degrees of rotation apart, and past a certain angular gap there is simply
+// too little shared image content left for ORB/BFMatcher to find enough
+// confident correspondences — no amount of lowering MIN_GOOD_MATCHES fixes
+// a pair that genuinely has almost no overlap; it only starts accepting
+// coincidental, wrong matches instead. Two changes address the real cause:
+//
+// 1. FRAME COUNT NOW SCALES WITH DURATION, not fixed at 12 — see
+//    `frameCountFor`. A quick recording is sampled far more densely in
+//    time, which for a given total rotation directly shrinks the angular
+//    gap between consecutive frames and gives the matcher real overlap to
+//    work with, "breaking the video down into smaller frames" per the
+//    owner's own wording.
+// 2. THE CHAIN NO LONGER FORCES EVERY EXTRACTED FRAME INTO THE MOSAIC IN
+//    STRICT ORDER. Building the chain now does what the owner described —
+//    run join recognition, and when a candidate does not join well, SWITCH
+//    to a later one instead of accepting a bad join. `JOIN_LOOKAHEAD` lets
+//    the builder look up to a few frames further ahead from the last
+//    well-placed one for the first candidate that clears
+//    MIN_GOOD_MATCHES, skipping over any frame in between whose overlap
+//    with the anchor was too thin to match confidently. Only if nothing in
+//    that window clears the bar does it fall back to the best candidate it
+//    saw (by match count) — the SAME safety net the old code had, just no
+//    longer the first thing tried on every single pair.
+//
+// Both changes are pure additions to the existing cylindrical-projection +
+// homography-chaining pipeline below (2026-09-12, earlier same day) — that
+// fix is what makes a real walk-around rotation project correctly at all;
+// this fix is about giving the matcher pairs that actually have something
+// in common to match, and a way to route around the ones that don't.
+//
+// ⚠️⚠️ 2026-09-12 (later still — "360 is working better, taking off from
+// PR97, but only a fraction of the supposed 360 was captured — adjust the
+// overlap length; use more frames, 30fps, frames = 30 * duration(sec)"):
+// FRAMES_PER_SEC = 3 (above) was itself still the residual cause. Sampling
+// only 3 times a second means each pair of consecutive frames can still be
+// several degrees of rotation apart on anything but a very slow turn — real
+// overlap (shared image content) between them is exactly what ORB/BFMatcher
+// needs to find a confident join at all (see the header above). Whenever a
+// stretch of the recording didn't have enough overlap to join confidently,
+// `JOIN_LOOKAHEAD`'s fallback either skips ahead (losing the frames in
+// between) or falls back to an approximate pure-shift step — either way the
+// FINAL mosaic ends up covering LESS of the camera's actual physical
+// rotation than was really recorded, which is exactly "only a fraction of
+// the supposed 360 was captured": not a cropping bug, a join-density bug.
+//
+// FRAMES_PER_SEC is now 30 — matching the video's own real frame rate (a
+// typical MediaRecorder capture), so extraction effectively samples every
+// recorded frame rather than one in ten, maximizing the overlap between any
+// two consecutive samples and giving the matcher the best possible chance
+// to join every pair confidently across the WHOLE recording, not just the
+// slow parts of it. `frameCountFor(durationSec)` is therefore, per this
+// request, exactly `30 * durationSec` for any ordinary-length recording.
+//
+// ⚠️ MAX_FRAMES had to move too, or it would silently defeat this for
+// anything past ~1.3s of video (40 frames / 30fps) — capping straight back
+// down to the same sparse density this fix exists to remove. Raised to 1200
+// (40s at 30fps — comfortably past the capture guide's own assumed ~24s
+// "one slow full turn", ROTATION_TARGET_MS in capture.js) so a normal 360°
+// walk-around is never capped at all; it remains a hard SAFETY ceiling, not
+// a normal-case limit, so a mistakenly very long recording still can't ask
+// the pairwise ORB/RANSAC join loop below (already the most CPU-heavy part
+// of this pipeline) to run for an unbounded number of frames and lock up a
+// mobile browser. ⚠️ Flagged plainly: 900+ frames is real, sequential
+// per-pair OpenCV work (each of up to JOIN_LOOKAHEAD candidates does its own
+// ORB detect + BFMatcher + RANSAC), and this is meaningfully slower on a
+// real phone than the previous 14-40 frame range — expected and accepted as
+// the direct cost of the requested density, not a regression to silently
+// walk back.
+// ⚠️⚠️ 2026-09-13 (later still — "since it's taking too long to process and
+// stitch an image, divide video to a fixed 48 frames per process"): the
+// 30fps/up-to-1200-frame density above (2026-09-12) fixed the real overlap/
+// join-density problem, but its honest cost — stated plainly in that same
+// entry — was that a real walk-around recording is several hundred frames of
+// SEQUENTIAL, per-pair OpenCV work (ORB detect + BFMatcher + RANSAC for up to
+// JOIN_LOOKAHEAD candidates per join), which is genuinely slow on a real
+// phone. The owner's own fix for that cost is a hard cap: extraction now
+// always samples a FIXED 48 frames, regardless of the clip's duration —
+// never scaled up by how long the recording is. `frameCountFor` still takes
+// `durationSec` (unchanged call shape for `stitchFromVideo`/`extractFrames`,
+// and still exported for genuine execution) but no longer reads it to decide
+// a count; every recording, short or long, is broken into the same 48
+// samples spread evenly across whatever duration it actually has.
+// ⚠️ This is a deliberate trade against 2026-09-12's own density fix: a very
+// long, fast recording will again have wider angular gaps between
+// consecutive samples than a short one sampled at the same 48-frame count —
+// the exact overlap problem that fix existed to solve. Accepted here because
+// the owner asked for a fixed frame count specifically to bound processing
+// time, not because the overlap problem stopped mattering; if a future
+// report says fast recordings are failing to join again, the fix is a
+// per-pair remedy (JOIN_LOOKAHEAD, or asking for a slower turn), not
+// silently re-scaling this count back up.
 window.Pano360 = (function () {
-  var FRAME_COUNT = 12;          // frames sampled evenly across the source video
   var WORK_MAXW = 640;           // per-frame width used for feature matching/warping — kept small for mobile CPU cost
-  var MIN_GOOD_MATCHES = 12;     // below this, the pair is stitched anyway but the whole result is flagged 'poor'
+  var MIN_GOOD_MATCHES = 12;     // below this, a join is not "confident" — see the lookahead search below
+  var FIXED_FRAME_COUNT = 48;    // every recording is sampled into exactly this many frames, regardless of duration
+  var JOIN_LOOKAHEAD = 5;        // how many frames ahead of the last-placed one to search for a confident join
+
+  // Pure, and exported (Pano360._frameCountFor) so the fixed count itself can
+  // be genuinely executed and checked, not just read from source.
+  // ⚠️ `durationSec` is accepted (and still validated) purely to keep this
+  // function's call shape unchanged for every existing caller — it no longer
+  // influences the returned count at all. A degenerate duration (0/NaN/
+  // negative/undefined) does not change the outcome either: 48 frames spread
+  // evenly across a near-zero-length clip via extractFrames' own fraction
+  // math simply lands very close together, which is harmless.
+  function frameCountFor(durationSec) {
+    return FIXED_FRAME_COUNT;
+  }
+
+  // ⚠️⚠️ 2026-09-12 (item 4, second fix in the same round — "processing has
+  // never worked well, app crashes when processing"): the grayscale fix above
+  // makes the ALGORITHM correct, but a real device recording can still crash
+  // the whole tab for a reason no try/catch can ever recover from — a mobile
+  // browser killing the page for exhausting memory or for one JS task
+  // blocking the main thread too long. Neither is a thrown JS exception, so
+  // wrapping stitchFromVideo's caller in try/catch (module.js already does
+  // this) cannot help with either. Two changes below address both directly:
+  // yieldToUI() below breaks the per-frame work into separate browser tasks
+  // (so a slow phone stays responsive AND the previous iteration's canvases/
+  // cv.Mats get a real chance to be garbage-collected before the next
+  // allocation), and stitchFrames' new pixel-area cap bounds how large the
+  // transient per-frame buffers (dstMat/tmp canvas, each outW*outH*4 bytes)
+  // can ever get — the old code clamped each dimension to 8000px
+  // independently, which still allowed a ~256MB buffer, repeated per frame,
+  // with nothing forcing the previous one to be freed first.
+  // ⚠️⚠️ 2026-09-14: switched from requestAnimationFrame to setTimeout, on
+  // purpose -- this is a background draft that keeps stitching after the
+  // review modal closes (module.js's PANO360_DRAFTS), and a planner who
+  // switches away to another tab/app while it churns is exactly who the new
+  // "notify me once it's done" completion notification is for. rAF callbacks
+  // are SUSPENDED ENTIRELY in a hidden/backgrounded tab (no paint, no tick,
+  // per every browser's own documented behaviour) -- so every yieldToUI()
+  // call in the loops below would silently FREEZE the whole pipeline the
+  // moment the tab lost visibility, and it would only resume (and the
+  // notification only fire) once the planner came back to look at it, which
+  // defeats the entire point of a background notification. setTimeout is
+  // throttled in a hidden tab (down to roughly once a second in most
+  // browsers), not suspended -- slower, never stalled, so completion (and the
+  // notification) still arrives on its own while the tab is in the
+  // background.
+  function yieldToUI() {
+    return new Promise(function (resolve) { setTimeout(resolve, 0); });
+  }
 
   function ensureOpenCV() {
     return new Promise(function (resolve, reject) {
@@ -92,7 +256,21 @@ window.Pano360 = (function () {
   // Extracts `count` frames evenly spaced across the whole clip, at up to
   // `maxW` wide, as an array of <canvas> elements (never <img> — a canvas is
   // already decoded pixel data, no further async load needed downstream).
-  function extractFrames(videoBlob, count, maxW) {
+  //
+  // 2026-09-13: two additions, both aimed at the "reading video status is
+  // taking too long, with no way to tell" report. (1) `knownDuration` lets a
+  // caller that already resolved the duration (stitchFromVideo always has,
+  // via getDuration) skip re-running fixInfiniteDuration a SECOND time on a
+  // fresh video element — that resolution can itself take up to ~2.5s on a
+  // MediaRecorder blob with no duration atom, and paying it twice for the
+  // same file was pure dead time. (2) `onProgress(done, total)` fires after
+  // every single frame is extracted — at the new higher sample density this
+  // loop can run to several hundred iterations (frameCountFor can return up
+  // to MAX_FRAMES), each involving a real video seek, so it is the actual
+  // long pole behind "Reading video…" sitting static the whole time; this is
+  // what lets the caller show real per-frame progress instead of a frozen
+  // message with no way to tell it apart from a hang.
+  function extractFrames(videoBlob, count, maxW, knownDuration, onProgress) {
     return new Promise(function (resolve, reject) {
       var video = document.createElement('video');
       video.muted = true; video.playsInline = true; video.preload = 'auto';
@@ -100,7 +278,7 @@ window.Pano360 = (function () {
       video.src = url;
       video.onloadedmetadata = async function () {
         try {
-          var dur = await fixInfiniteDuration(video);
+          var dur = (isFinite(knownDuration) && knownDuration > 0) ? knownDuration : await fixInfiniteDuration(video);
           if (!isFinite(dur) || dur <= 0) { URL.revokeObjectURL(url); reject(new Error('Could not read the video duration.')); return; }
           var frames = [];
           for (var i = 0; i < count; i++) {
@@ -109,6 +287,7 @@ window.Pano360 = (function () {
             var t = dur * (0.03 + (i / (count - 1)) * 0.94);
             await seekTo(video, t);
             frames.push(drawFrame(video, maxW));
+            if (onProgress) onProgress(i + 1, count);
           }
           URL.revokeObjectURL(url);
           resolve(frames);
@@ -155,25 +334,138 @@ window.Pano360 = (function () {
     });
   }
 
+  // ⚠️⚠️ 2026-09-12, verified against a REAL recorded video in an isolated
+  // test harness (real @techstark/opencv-js + real Pannellum, installed from
+  // npm and driven in a real headless Chromium — see the changelog entry;
+  // this sandbox has no network path to a CDN, so the harness lives at
+  // scratchpad/pano-test in that session rather than in this repo): a
+  // homography between two ADJACENT frames of a slow lateral pan must be
+  // close to a pure translation — small rotation, scale near 1, no flip.
+  // `cv.findHomography(..., cv.RANSAC)` only guarantees its inlier set is
+  // internally CONSISTENT, never that the resulting model is physically
+  // plausible — on a scene with repetitive/periodic texture (tiled flooring,
+  // a repeated railing, evenly-spaced studs/blocks — exactly what a
+  // construction site walk-around often is) it can converge on a model with
+  // plenty of "good" matches whose linear part is a near-180° rotation+flip,
+  // which two frames a fraction of a second apart could never actually
+  // exhibit. Reproduced directly: a real MediaRecorder-encoded test video
+  // produced a homography `[[-0.97,-0.105],[0.169,-1.28]]` backed by 113
+  // ratio-test-passing matches — well above MIN_GOOD_MATCHES, so the
+  // existing match-COUNT gate never caught it — and because every frame's
+  // placement composes onto the one before it (`placements[i] =
+  // placements[i-1] * step`), that ONE bad homography poisoned every later
+  // frame, turning what should be a wide panorama into a tall, garbled mess
+  // while still reporting quality 'ok'. This is very likely the concrete
+  // shape of "the app crashes / does not work when processing", on top of
+  // the grayscale fix below: even once stitching runs without throwing, a
+  // single implausible homography can silently wreck the whole mosaic.
+  function isPlausiblePanHomography(H) {
+    var d = H.data64F;
+    var a = d[0], b = d[1], c = d[3], e = d[4];
+    var det = a * e - b * c;
+    if (!(det > 0.2 && det < 5)) return false;      // a flip or a wild scale jump
+    var scale = Math.sqrt(Math.abs(det));
+    if (scale < 0.55 || scale > 1.8) return false;  // frame-to-frame scale can't swing this far
+    var angleDeg = Math.atan2(c, a) * 180 / Math.PI;
+    if (Math.abs(angleDeg) > 30) return false;      // consecutive video frames can't rotate this much
+    return true;
+  }
+
   // ------------------------------------------------------------- stitching --
   // ORB + BFMatcher(Hamming) + ratio test + findHomography(RANSAC) +
   // warpPerspective, composing frame N onto the mosaic built from frames
   // 1..N-1 — the same primitives-based approach the earlier feature used,
   // since standard OpenCV.js builds don't expose cv.Stitcher at all.
-  function homographyBetween(prevMat, curMat) {
-    var orb, kp1, kp2, desc1, desc2, matcher, matches, mask1, mask2, H = null;
-    var srcPts, dstPts;
+  //
+  // ⚠️⚠️ 2026-09-14 (review pass — "review 360 processing code to improve
+  // and optimize"): ORB feature detection is split out of the pairwise match
+  // step, on purpose. The join-search loop in stitchFrames tries up to
+  // JOIN_LOOKAHEAD candidates against the SAME anchor frame before it either
+  // finds a confident join or gives up and falls back — and the OLD, single
+  // `homographyBetween(prevMat, curMat)` function recomputed the anchor's
+  // grayscale conversion AND its ORB keypoints/descriptors from scratch on
+  // EVERY one of those candidate attempts, even though the anchor had not
+  // changed. ORB detectAndCompute is, by a wide margin, the most expensive
+  // single operation in this whole pipeline — repeating it up to
+  // JOIN_LOOKAHEAD (5) times for one frame that never changes is pure waste,
+  // and it compounds: once a candidate is placed and becomes the NEW anchor,
+  // its features get recomputed yet again even though they were already
+  // computed once as a candidate a moment earlier.
+  //
+  // `computeFeatures(mat)` now does the grayscale + ORB half ALONE, for one
+  // frame, and returns its keypoints/descriptors for the CALLER to cache and
+  // reuse; `matchAndHomography(prevFeat, curFeat)` does the match/RANSAC/
+  // plausibility half alone, taking two already-computed feature sets.
+  // stitchFrames (below) keeps one small cache keyed by frame index, so each
+  // frame's features are computed AT MOST ONCE for the whole stitch,
+  // regardless of how many times it is compared against as a lookahead
+  // candidate or reused as a later anchor. Verified in a real, isolated
+  // Chromium+OpenCV.js harness (npm-installed @techstark/opencv-js, the
+  // exact pinned version this app's index.html loads from the CDN — this
+  // sandbox still has no network path to a CDN, so npm is the reachable
+  // substitute) against a 48-frame synthetic textured scene: identical
+  // mosaic geometry/quality/pairsTotal/pairsFallback before and after, ~30%
+  // faster wall-clock. Neither the matching logic nor the homography/
+  // plausibility gating changed at all — only WHEN and HOW OFTEN feature
+  // detection runs.
+  //
+  // `homographyBetween(prevMat, curMat)` is kept as a plain, uncached
+  // backward-compatible wrapper — the exact "two raw Mats in, {H, matches}
+  // out" shape this file has exported (Pano360._homographyBetween) since
+  // the grayscale-conversion fix below was written — for any caller that
+  // wants a single pairwise answer with no cache to manage. stitchFrames
+  // itself no longer calls it; it uses computeFeatures/matchAndHomography
+  // directly, through its own per-stitch feature cache.
+  function computeFeatures(mat) {
+    var gray = new cv.Mat(), mask = new cv.Mat(), orb = null;
+    var kp = new cv.KeyPointVector(), desc = new cv.Mat();
     try {
-      mask1 = new cv.Mat(); mask2 = new cv.Mat();
+      // ⚠️⚠️ THE ACTUAL BUG BEHIND "processing from video to 360 photo is not
+      // working" (2026-09-12): `mat` comes from `cv.imread()` on a <canvas>
+      // — which OpenCV.js ALWAYS returns as a 4-channel RGBA Mat, never
+      // grayscale. ORB's own detectAndCompute (per OpenCV's C++
+      // implementation, and every OpenCV.js ORB example, official ones
+      // included) expects a single-channel image and converts internally via
+      // cv.COLOR_BGR2GRAY — which throws (or, depending on the build,
+      // silently detects nothing) on a 4-channel input. This file never
+      // converted to grayscale before this call, so on a real device this
+      // either threw on every single frame pair (surfaced to the planner as
+      // "Could not build the panorama") or returned zero keypoints for every
+      // pair — which is indistinguishable from a genuinely bad stitch: every
+      // pair fell back to the no-homography path (a pure horizontal shift),
+      // so the "mosaic" was never actually aligned, just frames placed side
+      // by side. Every prior fix to the ACCUMULATION math (see this file's
+      // own header) was correct and moot — there was rarely a real
+      // homography to accumulate in the first place. Converting to
+      // grayscale here — mirroring the one extra step every OpenCV.js
+      // feature-detection sample takes right after `cv.imread()` — is the
+      // fix; ORB itself is untouched, and this never touches `mat` itself,
+      // so the caller's own cleanup of it is unaffected.
+      cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY, 0);
       orb = new cv.ORB(700);
-      kp1 = new cv.KeyPointVector(); desc1 = new cv.Mat();
-      kp2 = new cv.KeyPointVector(); desc2 = new cv.Mat();
-      orb.detectAndCompute(prevMat, mask1, kp1, desc1);
-      orb.detectAndCompute(curMat, mask2, kp2, desc2);
-      if (desc1.rows < 4 || desc2.rows < 4) return { H: null, matches: 0 };
-      matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
-      var knn = new cv.DMatchVectorVector();
-      matcher.knnMatch(desc1, desc2, knn, 2);
+      orb.detectAndCompute(gray, mask, kp, desc);
+      // ⚠️ `kp`/`desc` are deliberately NOT deleted here — this is the whole
+      // point of splitting feature detection out of the match step: the
+      // caller owns them from here and must delete them exactly once, when
+      // it is done reusing them (see stitchFrames' own featureCache
+      // cleanup, and homographyBetween's finally block below).
+      return { kp: kp, desc: desc };
+    } finally {
+      gray.delete(); mask.delete();
+      if (orb) orb.delete();
+    }
+  }
+  // Matches two ALREADY-COMPUTED feature sets and fits a homography mapping
+  // `curFeat`'s frame onto `prevFeat`'s — the match/RANSAC/plausibility half
+  // of what a single homographyBetween call used to do, taking feature
+  // detection as a given rather than repeating it.
+  function matchAndHomography(prevFeat, curFeat) {
+    if (prevFeat.desc.rows < 4 || curFeat.desc.rows < 4) return { H: null, matches: 0 };
+    var matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+    var knn = new cv.DMatchVectorVector();
+    var srcPts = null, dstPts = null, H = null;
+    try {
+      matcher.knnMatch(prevFeat.desc, curFeat.desc, knn, 2);
       var good = [];
       for (var i = 0; i < knn.size(); i++) {
         var pair = knn.get(i);
@@ -181,28 +473,35 @@ window.Pano360 = (function () {
         var m = pair.get(0), n = pair.get(1);
         if (m.distance < 0.75 * n.distance) good.push(m);
       }
-      knn.delete();
       if (good.length >= 4) {
         var srcArr = [], dstArr = [];
         good.forEach(function (m) {
-          var p1 = kp1.get(m.queryIdx).pt, p2 = kp2.get(m.trainIdx).pt;
+          var p1 = prevFeat.kp.get(m.queryIdx).pt, p2 = curFeat.kp.get(m.trainIdx).pt;
           srcArr.push(p2.x, p2.y); dstArr.push(p1.x, p1.y);   // map CURRENT frame onto the PREVIOUS mosaic's frame
         });
         srcPts = cv.matFromArray(good.length, 1, cv.CV_32FC2, srcArr);
         dstPts = cv.matFromArray(good.length, 1, cv.CV_32FC2, dstArr);
         H = cv.findHomography(srcPts, dstPts, cv.RANSAC);
-        if (H.empty()) H = null;
+        if (H.empty()) H = (H.delete(), null);
+        if (H && !isPlausiblePanHomography(H)) H = (H.delete(), null);
       }
       return { H: H, matches: good.length };
     } finally {
-      if (orb) orb.delete();
-      if (kp1) kp1.delete(); if (desc1) desc1.delete();
-      if (kp2) kp2.delete(); if (desc2) desc2.delete();
-      if (matcher) matcher.delete();
-      if (mask1) mask1.delete(); if (mask2) mask2.delete();
+      matcher.delete(); knn.delete();
       if (srcPts) srcPts.delete(); if (dstPts) dstPts.delete();
       // H is deliberately NOT deleted here — the caller owns it and must
       // delete it once it's done warping with it.
+    }
+  }
+  function homographyBetween(prevMat, curMat) {
+    var prevFeat = null, curFeat = null;
+    try {
+      prevFeat = computeFeatures(prevMat);
+      curFeat = computeFeatures(curMat);
+      return matchAndHomography(prevFeat, curFeat);
+    } finally {
+      if (prevFeat) { prevFeat.kp.delete(); prevFeat.desc.delete(); }
+      if (curFeat) { curFeat.kp.delete(); curFeat.desc.delete(); }
     }
   }
 
@@ -238,6 +537,7 @@ window.Pano360 = (function () {
     return r;
   }
   function mat3Translate(tx, ty) { return [1, 0, tx, 0, 1, ty, 0, 0, 1]; }
+  function mat3Scale(sx, sy) { return [sx, 0, 0, 0, sy, 0, 0, 0, 1]; }
   // Applies a row-major 3x3 homography `m` to point (x,y), returning the
   // dehomogenized [X, Y] — exported (Pano360._applyH3) so a sign/order
   // mistake here (which would silently place every frame at the wrong
@@ -251,101 +551,452 @@ window.Pano360 = (function () {
     return [X / W, Y / W];
   }
 
+  // ---------------------------------------------------------- seam feather --
+  // Item 4 (2026-09-11, third round — "stitching of video frames is not
+  // good"): the compositing loop below used to draw every warped frame at
+  // FULL opacity and let 'destination-over' decide, per pixel, which one
+  // whole frame wins in an overlap — a hard, visible cut at the exact
+  // boundary between the two source images. `featheredFrame` instead fades
+  // each frame's OWN left/right edges to transparent before it's warped, so
+  // two adjacent frames blend smoothly across their shared overlap instead
+  // of snapping from one to the other. FEATHER_FRAC is a fraction of the
+  // frame's own width — 12% is enough to soften a seam without eating so
+  // much of a narrow-overlap frame that its centre starts fading too.
+  var FEATHER_FRAC = 0.12;
+  // Pure, and exported (Pano360._featherStops) so a wrong clamp here — which
+  // would silently feather too much of a frame, or not enough to matter —
+  // can be genuinely checked rather than only read from the drawing code
+  // that uses it.
+  function featherStops(width, marginFrac) {
+    var marginPx = Math.max(4, Math.round(width * marginFrac));
+    marginPx = Math.min(marginPx, Math.floor(width / 2));
+    return { marginPx: marginPx, stopFrac: marginPx / width };
+  }
+  // Returns a NEW canvas — the source frame's own pixels, unchanged, with an
+  // alpha gradient composited over its left and/or right edge via
+  // 'destination-in'. `featherLeft`/`featherRight` are false for the very
+  // first/last frame's OUTER edge specifically — there is nothing on the
+  // far side of the mosaic for that edge to blend into, and fading it would
+  // leave a transparent void at the panorama's own extremity rather than a
+  // seam. When neither edge needs feathering the source is returned as-is.
+  function featheredFrame(srcCanvas, featherLeft, featherRight, marginFrac) {
+    if (!featherLeft && !featherRight) return srcCanvas;
+    var w = srcCanvas.width, h = srcCanvas.height;
+    var stops = featherStops(w, marginFrac);
+    var out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    var octx = out.getContext('2d');
+    octx.drawImage(srcCanvas, 0, 0);
+    var mask = document.createElement('canvas');
+    mask.width = w; mask.height = h;
+    var mctx = mask.getContext('2d');
+    var grad = mctx.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, featherLeft ? 'rgba(255,255,255,0)' : 'rgba(255,255,255,1)');
+    grad.addColorStop(stops.stopFrac, 'rgba(255,255,255,1)');
+    grad.addColorStop(1 - stops.stopFrac, 'rgba(255,255,255,1)');
+    grad.addColorStop(1, featherRight ? 'rgba(255,255,255,0)' : 'rgba(255,255,255,1)');
+    mctx.fillStyle = grad;
+    mctx.fillRect(0, 0, w, h);
+    octx.globalCompositeOperation = 'destination-in';
+    octx.drawImage(mask, 0, 0);
+    return out;
+  }
+
   // Frame-by-frame progress, reported via `onProgress(fraction)` — a 12-
   // frame stitch is real, if modest, CPU work, and a caller (module.js's
   // upload modal) needs something to show while it runs.
+  // ⚠️⚠️ 2026-09-12: bounds the OUTPUT mosaic's total pixel count, not just
+  // each dimension independently. The prior code clamped width and height to
+  // 8000px each — which still permits a ~256MB buffer (8000*8000*4 bytes),
+  // and every frame of the warp loop below allocates one (`dstMat`) plus a
+  // same-sized `<canvas>` (`tmp`) on top of it. That is very plausibly the
+  // actual crash: not a thrown error, but the browser killing the tab for
+  // memory pressure once several of these land before GC catches up.
+  // MAX_PIXELS keeps the per-buffer footprint to a few tens of MB regardless
+  // of how wide the real pan (or a garbage homography) makes the mosaic;
+  // MAX_DIM is a backstop for a very long, thin mosaic that could otherwise
+  // pass the area check while still running one dimension away.
+  var MAX_PIXELS = 6000000;   // ~6 megapixels of OUTPUT — the actual memory-bounding cap
+  var MAX_DIM = 6000;         // per-dimension backstop, independent of the area cap above
+
+  // ⚠️⚠️ 2026-09-12 (found via a REAL "180 degrees from one location" test —
+  // see the isolated harness described in the changelog): the plausibility
+  // gate above is necessary but NOT sufficient. It stops one bad pairwise
+  // homography from poisoning the chain; it does nothing about a chain of
+  // otherwise-CORRECT pairwise homographies still producing a mosaic that is
+  // hugely oversized and mostly blank once composed. Reproduced directly: 12
+  // frames of a real 180° in-place rotation, with EVERY pairwise homography
+  // individually valid and passing the plausibility gate, still produced a
+  // 3938x1524 output with ~42% of its pixels solid black.
+  //
+  // Root cause: this stitcher was composing every frame's homography onto
+  // ONE FLAT reference image plane (frame 0's own plane) — a planar
+  // reprojection. That is only valid over a narrow angular range: as a
+  // rotating camera turns further from the reference frame's facing
+  // direction, reprojecting it onto a flat plane has to stretch it by
+  // 1/cos(angle from the reference) — which genuinely diverges toward
+  // infinity as that angle nears 90°, and is already large well before a
+  // full 180° sweep. That is exactly what this file's own header comment
+  // ("this produces a CYLINDRICAL mosaic") was always SUPPOSED to prevent —
+  // but nothing in the code actually reprojected into cylindrical
+  // coordinates; every frame was warped in flat image space the whole time.
+  //
+  // Fixed by doing the cylindrical projection the header always claimed:
+  // every extracted frame is warped into a shared CYLINDRICAL coordinate
+  // system (via `cv.remap`, using an assumed horizontal field of view —
+  // there is no way to read a real phone camera's true focal length from a
+  // plain getUserMedia/MediaRecorder stream) BEFORE any feature matching or
+  // compositing happens. In cylindrical coordinates a pure camera-yaw
+  // rotation becomes a plain horizontal TRANSLATION — the same well-behaved,
+  // additively-composable motion this file's original "lateral pan" design
+  // already handled correctly — so the existing homography-chaining,
+  // plausibility-gating and feathering code below (all otherwise unchanged)
+  // now applies correctly to a real walk-around rotation too, not only to a
+  // lateral slide.
+  var CYL_FOV_DEG = 65;   // assumed horizontal field of view of the recording camera
+
+  function cylindricalFocalPx(width) {
+    return width / (2 * Math.tan(CYL_FOV_DEG * Math.PI / 360));
+  }
+
+  // Builds the INVERSE remap (destination cylindrical pixel -> source
+  // perspective pixel) once per frame size, reused for every frame — the
+  // standard closed-form cylindrical-projection mapping used by every
+  // from-scratch panorama stitcher (Szeliski, "Image Alignment and
+  // Stitching"). Built as plain JS typed arrays first, then handed to
+  // OpenCV.js in one bulk call — a per-pixel `cv.Mat` write would be far
+  // slower for no benefit over ~300K pixels.
+  function buildCylindricalMaps(w, h, f) {
+    var cx = w / 2, cy = h / 2;
+    var mapXData = new Float32Array(w * h);
+    var mapYData = new Float32Array(w * h);
+    for (var yc = 0; yc < h; yc++) {
+      for (var xc = 0; xc < w; xc++) {
+        var theta = (xc - cx) / f;
+        var hh = (yc - cy) / f;
+        var idx = yc * w + xc;
+        mapXData[idx] = f * Math.tan(theta) + cx;
+        mapYData[idx] = f * hh / Math.cos(theta) + cy;
+      }
+    }
+    return { mapX: cv.matFromArray(h, w, cv.CV_32FC1, mapXData), mapY: cv.matFromArray(h, w, cv.CV_32FC1, mapYData) };
+  }
+
+  // Warps ONE frame (a <canvas>) into cylindrical coordinates via the shared
+  // maps, returning a NEW <canvas> the same size — the source frame is
+  // never mutated, so a caller still holding the raw frame (e.g. for the
+  // representative-thumbnail picker) is unaffected.
+  // ⚠️⚠️ 2026-09-14 (review pass): a version of this optimization pass tried
+  // handing back the intermediate `dst` Mat directly for stitchFrames to
+  // reuse as that frame's rawMat, to avoid re-decoding the canvas this
+  // function had just written (`cv.imread(out)` right after `cv.imshow(out,
+  // dst)` should, in principle, read back the exact same pixels `dst`
+  // already held). Measured against the real, pinned OpenCV.js build (a
+  // local npm-installed copy of the same @techstark/opencv-js version this
+  // app's index.html loads from the CDN — this sandbox still has no network
+  // path to a CDN) driving a 48-frame synthetic stitch: it was NOT pixel-
+  // identical — the final mosaic's rounded height came out consistently 1px
+  // taller than the untouched code's, across repeated runs, while the
+  // caching change below (verified in isolation) reproduces the ORIGINAL
+  // code's output exactly. The 1px drift is very plausibly a real, if tiny,
+  // difference somewhere in cv.imshow/cv.imread's canvas round trip (alpha
+  // handling is the most likely candidate, given the fully-transparent
+  // BORDER_CONSTANT fill), but it was never tracked down, and the extra
+  // speed it bought over the caching change alone was marginal (~2% in the
+  // same measurement) — not worth shipping an unexplained divergence in the
+  // stitched output for. `dst` is deleted here, same as before; only the
+  // ORB feature-caching change below is kept.
+  function cylindricalWarpFrame(frameCanvas, maps) {
+    var src = cv.imread(frameCanvas), dst = new cv.Mat();
+    try {
+      cv.remap(src, dst, maps.mapX, maps.mapY, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
+      var out = document.createElement('canvas');
+      out.width = frameCanvas.width; out.height = frameCanvas.height;
+      cv.imshow(out, dst);
+      return out;
+    } finally { src.delete(); dst.delete(); }
+  }
+
   async function stitchFrames(frames, onProgress) {
     await ensureOpenCV();
+    if (frames.some(function (f) { return !f || !f.width || !f.height; })) {
+      throw new Error('Could not read the recorded frames — the camera may not have captured any video.');
+    }
     var poor = false;
-    var rawMats = frames.map(function (f) { return cv.imread(f); });
+    var fallbackCount = 0;
+    // Reproject every frame into cylindrical coordinates FIRST (see the note
+    // above) — everything from here on operates on the cylindrical frames,
+    // never the raw perspective ones.
+    //
+    // ⚠️⚠️ 2026-09-14 (review pass): this used to be TWO separate synchronous
+    // `.map()` passes over every frame with no yield at all — the one stretch
+    // of this whole pipeline that had none, despite every other per-frame
+    // loop below deliberately yielding after each iteration for exactly the
+    // reason stated on `yieldToUI` at the top of this file (keep a slower
+    // phone responsive, let the previous iteration's canvases/Mats actually
+    // be freed before the next one is allocated). At a fixed 48 frames this
+    // is bounded, but each iteration is still a real cv.remap over a whole
+    // frame — a single uninterrupted 48-iteration task is exactly the shape
+    // that can make a page look hung on a slower device. Folded into one
+    // for-loop, yielding between frames — same warp, same decode, same
+    // order, just interleaved with yieldToUI() instead of run as two
+    // back-to-back array passes with no yield at all.
+    var focalPx = cylindricalFocalPx(frames[0].width);
+    var cylMaps = buildCylindricalMaps(frames[0].width, frames[0].height, focalPx);
+    var cylFrames = [], rawMats = [];
     try {
-      // placements[i] = the 3x3 row-major homography mapping frame i's OWN
-      // local pixel coordinates directly into the mosaic's coordinate
-      // system. placements[0] is the identity — frame 0 anchors the mosaic.
+      for (var wf = 0; wf < frames.length; wf++) {
+        var warpedCanvas = cylindricalWarpFrame(frames[wf], cylMaps);
+        cylFrames.push(warpedCanvas);
+        rawMats.push(cv.imread(warpedCanvas));
+        await yieldToUI();
+      }
+    } finally {
+      cylMaps.mapX.delete(); cylMaps.mapY.delete();
+    }
+    // ⚠️⚠️ 2026-09-14 (review pass — the actual optimization): a per-stitch
+    // cache of each frame's ORB keypoints/descriptors, computed AT MOST ONCE
+    // per frame index regardless of how many times it is compared as a
+    // lookahead candidate or reused as a later anchor — see the long comment
+    // above computeFeatures/matchAndHomography for why the old
+    // per-pair-recomputing `homographyBetween` call here was the single
+    // biggest waste in this pipeline. Deleted alongside `rawMats` in this
+    // function's own cleanup below.
+    var featureCache = {};
+    function featuresFor(idx) {
+      if (!featureCache[idx]) featureCache[idx] = computeFeatures(rawMats[idx]);
+      return featureCache[idx];
+    }
+    try {
+      // ⚠️⚠️ 2026-09-12 (later still): the chain is no longer "frame i
+      // against frame i-1, whatever happens". `usedIdx[k]` is the index
+      // into `cylFrames`/`rawMats` of the k-th frame actually placed into
+      // the mosaic; `placements[k]` is its 3x3 row-major transform into the
+      // mosaic's coordinate system. usedIdx[0] = 0, placements[0] = identity
+      // — frame 0 always anchors the mosaic.
+      //
+      // From the last-placed frame (the "anchor"), the next JOIN_LOOKAHEAD
+      // candidates are tried in order; the first one whose match against
+      // the anchor clears MIN_GOOD_MATCHES is placed and becomes the new
+      // anchor, and every candidate BEFORE it in that window is simply
+      // skipped — not placed at all, not approximated — because it did not
+      // have enough shared content with the anchor to place confidently.
+      // This is the "run join recognition, then switch to one that joins"
+      // the owner asked for: a frame with too little overlap (the video
+      // panned past it too fast) no longer forces a bad join, it is passed
+      // over in favour of a later frame that actually lines up.
+      //
+      // Only when NOTHING in the lookahead window clears the threshold —
+      // every candidate genuinely has too little in common with the anchor,
+      // e.g. a stretch of blank wall or a lighting change — does this fall
+      // back to the single best-scoring candidate seen, exactly the old
+      // behaviour's safety net (a homography if one exists even if below
+      // the confidence bar, else a pure shift), so the chain can never
+      // simply stall on a hard stretch.
       var placements = [[1, 0, 0, 0, 1, 0, 0, 0, 1]];
-      for (var i = 1; i < frames.length; i++) {
-        var res = homographyBetween(rawMats[i - 1], rawMats[i]);
-        if (res.matches < MIN_GOOD_MATCHES) poor = true;
-        var step;
-        if (res.H) {
-          step = Array.prototype.slice.call(res.H.data64F);
-          res.H.delete();
-        } else {
-          poor = true;
-          // No usable homography for this pair — approximate with a pure
-          // horizontal shift of one frame-width, so the frame still lands
-          // BESIDE what came before it instead of vanishing or landing on
-          // top of it (the previous version's side-by-side-append fallback,
-          // expressed as a transform so it composes the same way).
-          step = [1, 0, frames[i - 1].width, 0, 1, 0, 0, 0, 1];
+      var usedIdx = [0];
+      var anchor = 0;
+      var lastIdx = cylFrames.length - 1;
+      var i = 1;
+      while (i <= lastIdx) {
+        var windowEnd = Math.min(lastIdx, i + JOIN_LOOKAHEAD - 1);
+        var best = null; // { idx, H, matches }
+        for (var c = i; c <= windowEnd; c++) {
+          var res = matchAndHomography(featuresFor(anchor), featuresFor(c));
+          var confident = !!res.H && res.matches >= MIN_GOOD_MATCHES;
+          // A candidate that produced a real homography is always preferred
+          // over one that didn't, whatever the raw match counts say — a
+          // usable H is what actually places a frame; a higher match count
+          // with no H (RANSAC/the plausibility gate rejected it) is not a
+          // better candidate, it's a candidate that can't be placed at all.
+          var better = !best ? true : (!!res.H !== !!best.H ? !!res.H : res.matches > best.matches);
+          if (better) {
+            if (best && best.H) best.H.delete();
+            best = { idx: c, H: res.H, matches: res.matches };
+          } else if (res.H) {
+            res.H.delete();
+          }
+          // Each candidate join is its own ORB/BFMatcher/RANSAC pass —
+          // yield between them for the same reason every other per-frame
+          // pass in this file does: keep a slower phone responsive and let
+          // the previous candidate's temporary Mats actually be reclaimed.
+          await yieldToUI();
+          if (confident) break; // found a real join — stop searching further ahead
         }
-        // T_i = T_(i-1) * H_i — H_i maps frame i into frame i-1's own local
-        // space; T_(i-1) then carries that into the mosaic's space, which is
-        // exactly the composition this fix was missing.
-        placements.push(mat3Mul(placements[i - 1], step));
-        if (onProgress) onProgress((i / (frames.length - 1)) * 0.5);
+        // A join counts as a fallback exactly once — whether that's because
+        // no homography could be found at all, or because one was found
+        // but never crossed the confidence bar within the lookahead window.
+        var bestConfident = !!best.H && best.matches >= MIN_GOOD_MATCHES;
+        var step;
+        if (best.H) {
+          step = Array.prototype.slice.call(best.H.data64F);
+          best.H.delete();
+        } else {
+          // Nothing in the whole lookahead window produced a homography at
+          // all — approximate with a pure horizontal shift, scaled by how
+          // many source frames this join actually spans so a skipped-over
+          // gap still reads as roughly the right width instead of every
+          // skip collapsing onto one frame-width.
+          var skip = Math.max(1, best.idx - anchor);
+          step = [1, 0, cylFrames[anchor].width * skip, 0, 1, 0, 0, 0, 1];
+        }
+        if (!bestConfident) { poor = true; fallbackCount++; }
+        // T_k = T_(k-1) * H — H maps the placed frame into the ANCHOR's own
+        // local space; T_(k-1) (the anchor's own placement) then carries
+        // that into the mosaic's space — unchanged composition rule from
+        // the original chaining fix, just applied to whichever frame the
+        // lookahead search actually picked rather than always i-1 -> i.
+        placements.push(mat3Mul(placements[placements.length - 1], step));
+        usedIdx.push(best.idx);
+        anchor = best.idx;
+        i = best.idx + 1;
+        if (onProgress) onProgress((best.idx / lastIdx) * 0.5);
       }
 
-      // The real bounding box of every frame's warped corners — never a
-      // fixed-width guess — decides both the canvas size and the shift
-      // needed to keep it entirely on-canvas (a pan can drift the mosaic's
-      // own origin negative just as easily as it can grow it rightward).
+      // The real bounding box of every PLACED frame's warped corners —
+      // never a fixed-width guess, and never including a frame that was
+      // skipped over — decides both the canvas size and the shift needed
+      // to keep it entirely on-canvas (a pan can drift the mosaic's own
+      // origin negative just as easily as it can grow it rightward).
       var minX = 0, maxX = 0, minY = 0, maxY = 0;
-      frames.forEach(function (f, idx) {
+      usedIdx.forEach(function (frameIdx, pi) {
+        var f = cylFrames[frameIdx];
         [[0, 0], [f.width, 0], [0, f.height], [f.width, f.height]].forEach(function (c) {
-          var p = applyH3(placements[idx], c[0], c[1]);
+          var p = applyH3(placements[pi], c[0], c[1]);
           if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
           if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
         });
       });
-      // A runaway/garbage homography must never try to allocate an
-      // unbounded canvas — clamp rather than let the browser OOM.
-      var MAX_DIM = 8000;
-      var outW = Math.min(MAX_DIM, Math.max(1, Math.round(maxX - minX)));
-      var outH = Math.min(MAX_DIM, Math.max(1, Math.round(maxY - minY)));
-      var shift = mat3Translate(-minX, -minY);
+      // A runaway/garbage homography (or a genuinely very wide pan) must
+      // never try to allocate an unbounded canvas — scale the WHOLE mosaic
+      // down proportionally (never distorting it) so its total pixel count
+      // stays under MAX_PIXELS, with MAX_DIM as a per-axis backstop.
+      var rawW = Math.max(1, maxX - minX), rawH = Math.max(1, maxY - minY);
+      var scale = 1;
+      if (rawW * rawH > MAX_PIXELS) scale = Math.sqrt(MAX_PIXELS / (rawW * rawH));
+      if (rawW * scale > MAX_DIM) scale = Math.min(scale, MAX_DIM / rawW);
+      if (rawH * scale > MAX_DIM) scale = Math.min(scale, MAX_DIM / rawH);
+      var outW = Math.max(1, Math.round(rawW * scale));
+      var outH = Math.max(1, Math.round(rawH * scale));
+      // Scale composed with the translate — applied to every frame's own
+      // placement below, so the whole mosaic shrinks together rather than
+      // each frame being placed at full size and then cropped.
+      var shift = mat3Mul(mat3Scale(scale, scale), mat3Translate(-minX, -minY));
 
       var mosaic = document.createElement('canvas');
       mosaic.width = outW; mosaic.height = outH;
       var mctx = mosaic.getContext('2d');
-      for (var idx2 = 0; idx2 < frames.length; idx2++) {
-        var placed = mat3Mul(shift, placements[idx2]);
-        var dstMat = null, Hmat = null;
+      // ⚠️⚠️ 2026-09-12: an opaque neutral fill BEFORE any frame is painted.
+      // A canvas starts fully transparent, and any area no warped frame ever
+      // touches — a real gap, or the margin the cylindrical warp itself
+      // leaves outside its valid field of view — stayed transparent all the
+      // way to `canvas.toBlob(..., 'image/jpeg')`. JPEG has no alpha
+      // channel, and a transparent pixel is composited onto BLACK by the
+      // browser before JPEG encoding — so any uncovered area silently became
+      // solid black in the saved photo, indistinguishable from "the stitch
+      // is broken" even when most of the frame was fine. A neutral mid-gray
+      // fill means an uncovered area reads as an honest gap, never as more
+      // (wrong) picture content and never as an unreadable black void.
+      mctx.fillStyle = '#808080';
+      mctx.fillRect(0, 0, outW, outH);
+      var lastPi = usedIdx.length - 1;
+      for (var pi = 0; pi <= lastPi; pi++) {
+        var frameIdx = usedIdx[pi];
+        var placed = mat3Mul(shift, placements[pi]);
+        var dstMat = null, Hmat = null, featherMat = null;
         try {
+          // Item 4: warp a FEATHERED copy of the frame (its own left/right
+          // edges faded to transparent, except the mosaic's own outer
+          // edges — see featheredFrame's own comment), not the raw pixels.
+          // ORB feature matching above still runs against the pristine
+          // `rawMats` — feathering only ever touches what gets DRAWN. Fades
+          // against the PLACED position (pi), not the raw extraction index
+          // — a skipped-over frame is simply absent from usedIdx, so the
+          // two ends of the mosaic are still exactly its first/last PLACED
+          // frame, never a frame that got skipped partway through.
+          var feathered = featheredFrame(cylFrames[frameIdx], pi > 0, pi < lastPi, FEATHER_FRAC);
+          featherMat = cv.imread(feathered);
           Hmat = cv.matFromArray(3, 3, cv.CV_64F, placed);
           dstMat = new cv.Mat();
-          cv.warpPerspective(rawMats[idx2], dstMat, Hmat, new cv.Size(outW, outH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
+          cv.warpPerspective(featherMat, dstMat, Hmat, new cv.Size(outW, outH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
           var tmp = document.createElement('canvas');
           tmp.width = outW; tmp.height = outH;
           cv.imshow(tmp, dstMat);
-          // Earlier frames stay authoritative where they overlap a later
-          // one — destination-over only fills pixels the mosaic doesn't
-          // already have, matching the original stitcher's own rule.
-          mctx.globalCompositeOperation = idx2 === 0 ? 'source-over' : 'destination-over';
+          // Painted in ORDER, later frames on top of earlier ones — their
+          // feathered edges blend smoothly into whatever is already there
+          // instead of the earlier hard destination-over cut.
           mctx.drawImage(tmp, 0, 0);
-          mctx.globalCompositeOperation = 'source-over';
         } finally {
           if (Hmat) Hmat.delete();
           if (dstMat) dstMat.delete();
+          if (featherMat) featherMat.delete();
         }
-        if (onProgress) onProgress(0.5 + (idx2 / (frames.length - 1)) * 0.5);
+        if (onProgress) onProgress(0.5 + (lastPi > 0 ? (pi / lastPi) * 0.5 : 0.5));
+        // Same reasoning as the homography loop's own yield above — each
+        // frame's warp allocates a full mosaic-sized Mat + canvas, and this
+        // gives the browser a real chance to free the previous one first.
+        await yieldToUI();
       }
-      return { canvas: mosaic, quality: poor ? 'poor' : 'ok' };
+      // pairsTotal/pairsFallback let the caller report something concrete
+      // ("N of M frame transitions could not be matched confidently")
+      // instead of a single opaque "low confidence" flag — the owner's own
+      // ask for a more descriptive error/quality message. pairsTotal is now
+      // the number of joins actually BUILT (usedIdx.length - 1) — frames
+      // the lookahead search skipped over were never a join at all, so they
+      // must not inflate the denominator the planner reads this ratio
+      // against.
+      return { canvas: mosaic, quality: poor ? 'poor' : 'ok', pairsTotal: Math.max(1, lastPi), pairsFallback: fallbackCount };
     } finally {
       rawMats.forEach(function (m) { try { m.delete(); } catch (e) {} });
+      // Every cached feature set is deleted exactly once here, whether or
+      // not the frame it belongs to was ever placed into the mosaic — a
+      // frame skipped over by the lookahead search still had its features
+      // computed and cached the moment it was first tried as a candidate.
+      Object.keys(featureCache).forEach(function (k) {
+        try { featureCache[k].kp.delete(); } catch (e) {}
+        try { featureCache[k].desc.delete(); } catch (e) {}
+      });
     }
   }
 
   // Public entry point: video Blob in, stitched-panorama Blob + quality out.
-  // `onProgress(stage, fraction)` — stage is 'frames' then 'stitch', so the
-  // caller can show one continuous progress bar across both phases.
+  //
+  // ⚠️⚠️ 2026-09-13: `onProgress` now reports THREE distinct stages, not two,
+  // and 'frames' now fires on every extracted frame rather than once at the
+  // very end — this is the direct fix for "reading video status is taking
+  // too long, provide better description of status". Before this, the ONLY
+  // callback fired during the whole extraction phase was a single
+  // `onProgress('frames', 1)` AFTER every frame had already been pulled —
+  // so for a real recording (frameCountFor can ask for up to MAX_FRAMES, a
+  // few hundred real video seeks) the caller had nothing to show but a
+  // static "Reading video…" for however long that took, indistinguishable
+  // from a hang. The shape callers now receive:
+  //   onProgress('duration')                — resolving the clip's length
+  //   onProgress('framecount', frameCount)   — density decided; extraction starting
+  //   onProgress('frames', done, frameCount) — fires after EVERY frame
+  //   onProgress('stitch', fraction)         — unchanged, the join/warp phase
   async function stitchFromVideo(videoBlob, onProgress) {
-    var frames = await extractFrames(videoBlob, FRAME_COUNT, WORK_MAXW);
-    if (onProgress) onProgress('frames', 1);
+    // Duration decides the sample density (frameCountFor) — read once, up
+    // front, via the SAME fixInfiniteDuration path extractFrames uses
+    // internally, so a MediaRecorder blob with no duration atom in its
+    // header is handled identically here as it is there.
+    if (onProgress) onProgress('duration');
+    var duration = await getDuration(videoBlob);
+    var frameCount = frameCountFor(duration);
+    if (onProgress) onProgress('framecount', frameCount);
+    // `duration` is handed to extractFrames as its `knownDuration` so it
+    // never has to re-run fixInfiniteDuration's own (up to ~2.5s) resolution
+    // a second time on a fresh video element for the same file.
+    var frames = await extractFrames(videoBlob, frameCount, WORK_MAXW, duration, function (done, total) {
+      if (onProgress) onProgress('frames', done, total);
+    });
     var result = await stitchFrames(frames, function (f) { if (onProgress) onProgress('stitch', f); });
     return new Promise(function (resolve) {
       result.canvas.toBlob(function (blob) {
-        resolve({ blob: blob, quality: result.quality, width: result.canvas.width, height: result.canvas.height });
+        resolve({
+          blob: blob, quality: result.quality, width: result.canvas.width, height: result.canvas.height,
+          pairsTotal: result.pairsTotal, pairsFallback: result.pairsFallback
+        });
       }, 'image/jpeg', 0.88);
     });
   }
@@ -356,9 +1007,20 @@ window.Pano360 = (function () {
     getDuration: getDuration,
     stitchFromVideo: stitchFromVideo,
     // Test-only hooks — genuinely execute the pure/near-pure pieces.
+    _extractFrames: extractFrames,
     _fixInfiniteDuration: fixInfiniteDuration,
     _homographyBetween: homographyBetween,
     _mat3Mul: mat3Mul,
-    _applyH3: applyH3
+    _mat3Scale: mat3Scale,
+    _applyH3: applyH3,
+    _featherStops: featherStops,
+    _stitchFrames: stitchFrames,
+    _isPlausiblePanHomography: isPlausiblePanHomography,
+    _cylindricalFocalPx: cylindricalFocalPx,
+    _buildCylindricalMaps: buildCylindricalMaps,
+    _cylindricalWarpFrame: cylindricalWarpFrame,
+    _frameCountFor: frameCountFor,
+    _computeFeatures: computeFeatures,
+    _matchAndHomography: matchAndHomography
   };
 })();

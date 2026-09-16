@@ -7,8 +7,9 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
-  <link rel="stylesheet" href="module.css?v=20260911b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="module.css?v=20260916i" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
 </head>
 <body>
   <div class="pd-app">
@@ -34,15 +35,27 @@
           <select class="pd-select cc-project" id="cc-project" title="Project"></select>
         </div>
         <div class="cc-tabs pd-tabsrc" role="tablist">
-          <!-- ⚠️ THREE TABS, NOT SIX (2026-08-26). Owner: *"There are too many tabs to keep
-               track of."* Packages folded into Contract (a contract defines a package, so
-               one list keyed by package carries both); BOQ folded under Contract and PMI
-               under Claims — both keep their own screens, reached from inside the parent
-               tab instead of competing with it at the top level.
-               ⚠️ The tab count is load-bearing for the TITLE: module.css hid
-               `.cc-title-txt` below 1460px because "5 tabs need more room", so the sixth
-               tab is why the page had no title at all on a normal laptop. -->
-          <button class="cc-tab active" data-view="contract">Contract</button>
+          <!-- ⚠️ FOUR TABS (2026-09-16). Owner: *"let's just have a separate tab for the
+               dashboard."* The 2026-08-26 folding is UNTOUCHED and still holds: packages stay
+               inside Contract (a contract defines a package, so one list keyed by package
+               carries both), BOQ stays under Contract and PMI under Claims. Nothing is
+               un-folded here — this adds a read-only summary, it does not reopen the
+               *"there are too many tabs to keep track of"* problem.
+
+               ⚠️⚠️ AND THE OLD OBJECTION TO A FOURTH TAB IS STALE — CHECKED, NOT ASSUMED.
+               This comment used to warn that "the tab count is load-bearing for the TITLE",
+               because module.css once hid `.cc-title-txt` below 1460px on the grounds that
+               "5 tabs need more room". That was true of a STRIP OF LABELLED BUTTONS. Since
+               2026-09-03 the strip is converted by `UI.tabsToDropdown('.cc-tabs')` into ONE
+               trigger naming only the CURRENT screen, so its width is set by the longest
+               label that can BE current — "Claims / Change Order" — and "Dashboard" is
+               shorter, so a fourth entry costs ZERO width. The title text is hidden above
+               701px regardless by `.pd-title-hasdrop`, precisely because the trigger already
+               names the screen. Neither half of the old warning survives.
+               ⚠️ Dashboard is FIRST and is the landing view: the owner called this the
+               module's "front page" when the band was commissioned (2026-09-15 g). -->
+          <button class="cc-tab active" data-view="dashboard">Dashboard</button>
+          <button class="cc-tab" data-view="contract">Contract</button>
           <button class="cc-tab" data-view="claims">Claims / Change Order</button>
           <button class="cc-tab" data-view="eot">Extension of Time</button>
         </div>
@@ -92,27 +105,37 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="../../assets/js/config.js?v=20260910za"></script>
-  <script src="../../assets/js/auth.js?v=20260901b"></script>
-  <script src="../../assets/js/db.js?v=20260909n"></script>
+  <script src="../../assets/js/config.js?v=20260915a"></script>
+  <script src="../../assets/js/auth.js?v=20260915a"></script>
+  <script src="../../assets/js/db.js?v=20260916c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260909s"></script>
-  <script src="../../assets/js/icons.js?v=20260909ui"></script>
+  <script src="../../assets/js/ui.js?v=20260916u"></script>
+  <script src="../../assets/js/claims.js?v=20260915a"></script>
+  <script src="../../assets/js/notebook.js?v=20260915d"></script>
+  <script src="../../assets/js/icons.js?v=20260915f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <!-- boq.js must load BEFORE module.js's init runs (it is read as window.BOQ). -->
   <!-- locmatch.js first: boq.js and affected.js both call PDLoc, and the schedule loads it too. -->
   <script src="../../assets/js/locmatch.js?v=20260910z1"></script>
+  <!-- ⚠ attach.js BEFORE module.js: `PDAttach` is the attachment engine this module's own
+       att* delegates are built on (it was extracted out of module.js on 2026-09-15 so the
+       Project Schedule could use the same ordering rules rather than a second copy). The
+       instance is built lazily on first use, so strictly this only has to precede a click —
+       but a shared dependency listed after its consumer is how a load-order bug gets written
+       later by someone reading the order as the contract. -->
+  <script src="../../assets/js/attach.js?v=20260915b"></script>
   <script src="../../assets/js/co-insert.js?v=20260909r"></script>
   <script src="../../assets/js/xlgrid.js?v=20260907e"></script>
-  <script src="boq.js?v=20260911b2"></script>
-  <script src="pmi.js?v=20260908c"></script>
-  <script src="packages.js?v=20260909s"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
+  <script src="boq.js?v=20260916a"></script>
+  <script src="pmi.js?v=20260911uc"></script>
+  <script src="packages.js?v=20260916i"></script>
   <!-- affected.js before wizard.js and module.js: both read it as window.CCAffected. -->
   <script src="affected.js?v=20260911b"></script>
-  <script src="wizard.js?v=20260909r"></script>
-  <script src="module.js?v=20260909s"></script>
+  <script src="wizard.js?v=20260915c"></script>
+  <script src="module.js?v=20260916j"></script>
   <script>
     // Item 1 (2026-09-02): the topbar tab strip becomes ONE dropdown, and the
     // static module label beside it goes with it — the trigger already names
@@ -137,6 +160,25 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'contracts-claims', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
+
+      /* ==== PORTFOLIO SCOPE IS THIS MODULE’S DASHBOARD =======================================
+         Owner 2026-09-15, looking at the Portfolio Dashboard’s view dropdown: *"there is a
+         dropdown that links to each module. that is wrong … the design of those dashboards must
+         be pushed to each module established on the left."* It was a second home for this module:
+         the sidebar already opens this page portfolio-wide, and the same rows were also a view of
+         a page called Portfolio Dashboard. That view now lives here — see portfolio-dash.js.
+         ⚠️ THE MODULE’S OWN init() IS SKIPPED, deliberately. It would read this register a second
+         time, into a UI that is hidden underneath the dashboard — a duplicate cross-project fetch
+         on every project the planner can see, for nothing anybody can look at.
+         ⚠️ The project selector is wired by takeOver() for exactly that reason: skipping init()
+         skips the code that fills it, and without it there is no way to leave portfolio scope from
+         the page you are standing on. */
+      if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('contracts')) {
+        PortfolioDash.takeOver('contracts', { select: '#cc-project' }).catch(function (e) {
+          if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+        });
+        return;
+      }
       ContractsClaims.init(user, profile);
     });
   </script>

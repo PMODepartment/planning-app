@@ -22,6 +22,11 @@ window.APP_CONFIG = {
   // ---- App ----
   APP_NAME: 'Planners Dashboard',
   ORG: 'Megawide Construction Corporation',
+  // Shown on the landing page (home.html) under "Planning Suite". Bumped by
+  // Claude with each merged PR — the middle number (minor) is reserved for a
+  // deliberate release milestone; the last number (patch) is the per-PR count.
+  // Single source of truth: nothing else in the app reads or derives this.
+  VERSION: 'v1.0.1',
 
   // ---- Phase 1 modules (the module launcher reads this list) ----
   // `key`   — folder name under /modules and DB table prefix
@@ -175,13 +180,13 @@ window.APP_CONFIG = {
     // kept as light cross-module reads, not a shared editor — see each
     // module's own CLAUDE.md.
     { key: 'issues-lessons',    name: 'Issues and Concerns',                   path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
-      recent: { orderBy: 'date_raised', limit: 4, columns: ['title', 'date_raised', 'status', 'severity', 'department'] },
+      recent: { orderBy: 'date_raised', limit: 4, columns: ['title', 'date_raised', 'status', 'department'] },
       // ⚠️ A separate OPEN list rather than filtering `recent` in the panel: `recent` is capped at
       // the 4 newest entries, so on a register whose latest rows are all closed the panel would
       // have shown "nothing open" while the register carried a dozen open items.
       lists: [
         { key: 'open', orderBy: 'date_raised', dir: 'asc', limit: 5,
-          columns: ['title', 'date_raised', 'status', 'severity', 'department', 'champion'],
+          columns: ['title', 'date_raised', 'status', 'department', 'champion'],
           where: [{ column: 'status', values: ['Open', 'On Hold'] }] }
       ],
       metrics: [
@@ -189,13 +194,20 @@ window.APP_CONFIG = {
         { key: 'onHold',   agg: 'countWhere', column: 'status', values: ['On Hold'] },
         { key: 'closed',   agg: 'countWhere', column: 'status', values: ['Closed'] },
         { key: 'latest',   agg: 'max', column: 'date_raised' },
-        // ⚠️ Severity is counted only for rows that are still OPEN. A register's worth of CLOSED
-        // criticals is history, not a call to action, and adding them would make a well-run
-        // project look like a burning one.
-        { key: 'critical', agg: 'countWhere', column: 'severity', values: ['Critical'],
-          where: [{ column: 'status', values: ['Open', 'On Hold'] }] },
-        { key: 'high',     agg: 'countWhere', column: 'severity', values: ['High'],
-          where: [{ column: 'status', values: ['Open', 'On Hold'] }] }
+        /* ⚠⚠ `critical` AND `high` ARE GONE (2026-09-15) BECAUSE NOTHING CAN EVER SET THEM.
+           Owner: *"how are items classified as critical or high? if this is a dead end let's
+           remove."* It is a dead end, and here is the mechanism:
+             • `issues_lessons.severity` EXISTS in the schema (`Low | Medium | High | Critical`),
+               inherited from the Power Apps import this register was built from.
+             • The module that owns the register writes it NOWHERE. `severity` appears **0 times**
+               in `modules/issues-lessons/module.js` and `index.html` — there is no field on the
+               form, no column in the table, no filter.
+           So the only rows that could ever count were ones that arrived with a severity already on
+           them from an import; anything raised in the app is permanently uncounted. The dashboard
+           was showing two cells that read 0 forever and could not be acted on.
+           ⚠ The COLUMN is left in the database. It holds real imported values on the projects that
+             came from Power Apps, and dropping it would destroy them. What is removed is the claim
+             that the dashboard can report on it. */
       ] } },
     { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos',
       // ⚠️ The bucket is named HERE, by the module that owns it. The shell signs whatever bucket it
@@ -221,9 +233,72 @@ window.APP_CONFIG = {
         // ⚠️ The figure the dashboard's attention count uses. A record COUNT cannot answer "what is
         // outstanding": an unresolved claim is one with no date_resolved.
         { key: 'claimOpen', agg: 'countWhere', column: 'id',
-          where: [{ column: 'record_type', values: ['Claim'] }, { column: 'date_resolved', absent: true }] }
-      ] } },
+          where: [{ column: 'record_type', values: ['Claim'] }, { column: 'date_resolved', absent: true }] },
+        /* ⚠⚠ THE FOUR-STAGE PIPELINE IS COLUMNS, NOT STATUSES, and getting that backwards is the
+           easy mistake here. A claim moves Estimated → Submitted → Evaluated → Client Approved,
+           and each stage is its own COLUMN (`est_/sub_/eval_/approved_`, suffixed `_amount` for
+           money records and `_days` for EOT). `status` is a SEPARATE axis with its own vocabulary
+           — Pending | Approved | Disapproved | Cancelled (see the module's `STATUSES`). There is no
+           'Submitted' status and no 'Disputed' one.
+           ⚠ So "disputed" is reported as TWO figures, at the owner's choice (2026-09-15), because
+             one number cannot carry both meanings:
+               • `*Disap`  — what the client formally REJECTED: the submitted value of rows whose
+                 status is Disapproved. Reads 0 when a claim was approved at less than it asked for,
+                 which is the common case — hence the second figure.
+               • `*DecSub` − `*DecAppr` — the SHORTFALL: claimed but not certified, the module's own
+                 "In dispute" wording in BOQ.
+           ⚠ The shortfall pair counts DECIDED rows only (Approved + Disapproved). This is the rule
+             the module's own Recovery-rate KPI already uses, and its reason is written there: a
+             still-Pending claim is not a failure, and dividing by everything submitted reads as a
+             catastrophic ~0%% on a young register. Cancelled is excluded too — a withdrawn claim was
+             never adjudicated. The dashboard must not disagree with the module about this. */
+        { key: 'coSub',  agg: 'sumWhere', column: 'sub_amount',      where: [{ column: 'record_type', values: ['Change Order'] }] },
+        { key: 'coEval', agg: 'sumWhere', column: 'eval_amount',     where: [{ column: 'record_type', values: ['Change Order'] }] },
+        { key: 'coAppr', agg: 'sumWhere', column: 'approved_amount', where: [{ column: 'record_type', values: ['Change Order'] }] },
+        { key: 'coDisap', agg: 'sumWhere', column: 'sub_amount',
+          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Disapproved'] }] },
+        { key: 'coDecSub',  agg: 'sumWhere', column: 'sub_amount',
+          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Approved', 'Disapproved'] }] },
+        { key: 'coDecAppr', agg: 'sumWhere', column: 'approved_amount',
+          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Approved', 'Disapproved'] }] },
+        { key: 'clSub',  agg: 'sumWhere', column: 'sub_amount',      where: [{ column: 'record_type', values: ['Claim'] }] },
+        { key: 'clEval', agg: 'sumWhere', column: 'eval_amount',     where: [{ column: 'record_type', values: ['Claim'] }] },
+        { key: 'clAppr', agg: 'sumWhere', column: 'approved_amount', where: [{ column: 'record_type', values: ['Claim'] }] },
+        { key: 'clDisap', agg: 'sumWhere', column: 'sub_amount',
+          where: [{ column: 'record_type', values: ['Claim'] }, { column: 'status', values: ['Disapproved'] }] },
+        { key: 'clDecSub',  agg: 'sumWhere', column: 'sub_amount',
+          where: [{ column: 'record_type', values: ['Claim'] }, { column: 'status', values: ['Approved', 'Disapproved'] }] },
+        { key: 'clDecAppr', agg: 'sumWhere', column: 'approved_amount',
+          where: [{ column: 'record_type', values: ['Claim'] }, { column: 'status', values: ['Approved', 'Disapproved'] }] },
+        { key: 'eoSub',  agg: 'sumWhere', column: 'sub_days',      where: [{ column: 'record_type', values: ['EOT'] }] },
+        { key: 'eoEval', agg: 'sumWhere', column: 'eval_days',     where: [{ column: 'record_type', values: ['EOT'] }] },
+        { key: 'eoAppr', agg: 'sumWhere', column: 'approved_days', where: [{ column: 'record_type', values: ['EOT'] }] },
+        { key: 'eoDisap', agg: 'sumWhere', column: 'sub_days',
+          where: [{ column: 'record_type', values: ['EOT'] }, { column: 'status', values: ['Disapproved'] }] },
+        { key: 'eoDecSub',  agg: 'sumWhere', column: 'sub_days',
+          where: [{ column: 'record_type', values: ['EOT'] }, { column: 'status', values: ['Approved', 'Disapproved'] }] },
+        { key: 'eoDecAppr', agg: 'sumWhere', column: 'approved_days',
+          where: [{ column: 'record_type', values: ['EOT'] }, { column: 'status', values: ['Approved', 'Disapproved'] }] },
+        { key: 'eotN', agg: 'countWhere', column: 'id', where: [{ column: 'record_type', values: ['EOT'] }] }
+      ],
+      /* ⚠ The PACKAGES the contract is broken into, for the dashboard's "# of packages". They are
+         their own table, not a record_type — `contracts_claims.package_id` points AT them. The
+         companion-table mechanism is exactly for this: the module names a table and its columns,
+         and the shell fetches it alongside without knowing what a package is. */
+      sub: { table: 'packages', columns: ['code', 'name', 'status', 'contract_amount'] } } },
     { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: 'cash',       enabled: true, superAdminOnly: true, dash: { table: 'cash_flow_rollup', unit: 'periods' } },
+    // ⚠️ Pormac (2026-09-12) — an AI chat assistant. Runs inference IN THE
+    // BROWSER (WebLLM/WebGPU) so the module has no hosting cost, falling back
+    // to a shared free hosted model (supabase/functions/pormac-chat) on a
+    // device that can't run it locally. `enabled:true` here only controls
+    // whether the nav ROW is visible — actual USE is gated at runtime by
+    // `pormac_can_use()` (migrations/2026-09-12-pormac.sql): an admin toggles
+    // "everyone" vs "selected users only" from inside the module itself, no
+    // code change needed, which is the whole point of a configurable
+    // all-vs-selected access model. Everyone sees the row; only allowed users
+    // get past the module's own "not turned on for you yet" screen.
+    { key: 'pormac', name: 'Pormac', path: 'modules/pormac/index.html', icon: 'botChat', enabled: true,
+      dash: { table: 'pormac_conversations', unit: 'conversations' } },
     // ⚠️ RETIRED — these two moved to the ENGINEERING APP, which is now the single
     // source for both registers. The modules and their tables are still here, and the
     // rows in them are the pre-cutover originals: readable, but STALE the moment

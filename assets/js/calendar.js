@@ -126,7 +126,7 @@
       observe_special_days: true,
       note: 'Head-office, design and procurement work — engineering durations should not be counted on Saturdays the office does not work.' },
     { key: 'ph6x10', name: 'Extended shift (6-day, 10h)', hours_per_day: 10, days: 'mon,tue,wed,thu,fri,sat',
-      note: 'Accelerated works. ⚠️ Changes HOURS, not days — it shortens nothing on its own; it feeds resource capacity and cost.' },
+      note: 'Accelerated works. Changes HOURS, not days — it shortens nothing on its own; it feeds resource capacity and cost.' },
     { key: 'ph7',    name: 'Continuous works (7-day, 8h)', hours_per_day: 8, days: 'mon,tue,wed,thu,fri,sat,sun',
       note: 'Pours, dewatering, tunnelling and other work that cannot stop. Regular holidays are still non-working — untick nothing to change that.' }
   ];

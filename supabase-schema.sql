@@ -49,6 +49,12 @@ create table if not exists users (
   status      text default 'pending'
                 check (status in ('pending','approved','rejected')),
   projects    text[] default '{}',              -- assigned project ids
+  -- Per-user override of config.js MODULES[].superAdminOnly's role-based
+  -- default. NULL = no override (the historical behavior); a (possibly
+  -- empty) array = the exact module keys this user may see. See
+  -- migrations/2026-09-15-user-module-access.sql for the full reasoning —
+  -- this column is added to existing deployments via that migration.
+  module_access text[],
   last_login  timestamptz,
   created_at  timestamptz default now()
 );
@@ -743,6 +749,21 @@ create or replace function is_admin() returns boolean
   );
 $$;
 
+-- Helper: is the current user specifically a super_admin (not merely an
+-- admin)? `is_admin()` treats the two roles alike everywhere that is right —
+-- reading users, writing projects, most module tables. This is for the
+-- handful of places that are not: only a super_admin may act on another
+-- super_admin's account. See migrations/2026-09-16-users-protect-super-admin.sql.
+create or replace function is_super_admin() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from users u
+    where u.id = auth.uid()
+      and u.status = 'approved'
+      and u.role = 'super_admin'
+  );
+$$;
+
 create or replace function is_approved() returns boolean
   language sql stable security definer set search_path = public as $$
   select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved');
@@ -824,8 +845,16 @@ drop policy if exists users_self_read on users;
 create policy users_self_read on users for select using (auth.uid() = id or is_admin());
 drop policy if exists users_self_insert on users;
 create policy users_self_insert on users for insert with check (auth.uid() = id);
+-- ⚠️ An admin may update any user's row EXCEPT a super_admin's — that one
+-- needs a super_admin actor (or the row's own owner, unchanged). Checked on
+-- BOTH the row as it stands now (`using`, blocks demoting/editing an existing
+-- super_admin) and as it would read after the write (`with check`, blocks
+-- promoting someone else straight to super_admin). See migrations/2026-09-16-
+-- users-protect-super-admin.sql for why both are needed.
 drop policy if exists users_admin_update on users;
-create policy users_admin_update on users for update using (auth.uid() = id or is_admin());
+create policy users_admin_update on users for update
+  using (auth.uid() = id or (is_admin() and (role <> 'super_admin' or is_super_admin())))
+  with check (auth.uid() = id or (is_admin() and (role <> 'super_admin' or is_super_admin())));
 
 drop policy if exists projects_read on projects;
 create policy projects_read on projects for select using (is_admin() or can_access_project(id));
@@ -965,3 +994,83 @@ begin
 end $$;
 create index if not exists project_schedule_split_group_idx
   on project_schedule (project_id, split_group, split_seq);
+
+-- ---- Pormac (in-browser AI assistant) --------------------------------------
+-- Idempotent, per MODULE_CONTRACT section 8. Full rationale — why this is NOT
+-- given live access to the Procurement/Engineering apps' own databases, and
+-- reads their already-mirrored tables (wpm_work_packages, wpm_vendors,
+-- eng_design_progress) instead — lives in migrations/2026-09-12-pormac.sql.
+-- ⚠️ Available to every approved user — no per-user allow-list (owner's call,
+-- 2026-09-12; see migrations/2026-09-12-pormac.sql for the "originally shipped
+-- with a settings screen, removed same day" history). `pormac_can_use()` is
+-- kept under this name only because supabase/functions/pormac-chat calls it.
+create or replace function pormac_can_use() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select is_approved();
+$$;
+grant execute on function pormac_can_use() to authenticated;
+
+create table if not exists pormac_conversations (
+  id            uuid primary key default gen_random_uuid(),
+  project_id    text references projects(id),
+  title         text,
+  created_by    uuid references users(id),
+  created_at    timestamptz default now(),
+  updated_at    timestamptz default now()
+);
+create index if not exists idx_pormac_conv_owner on pormac_conversations (created_by, updated_at desc);
+
+create table if not exists pormac_messages (
+  id                uuid primary key default gen_random_uuid(),
+  conversation_id   uuid not null references pormac_conversations(id) on delete cascade,
+  role              text not null check (role in ('user', 'assistant', 'system')),
+  content           text not null,
+  model_tier        text,
+  context_used      text[],
+  created_at        timestamptz default now()
+);
+create index if not exists idx_pormac_msg_conv on pormac_messages (conversation_id, created_at);
+
+grant select, insert, update, delete on pormac_conversations to authenticated;
+grant select, insert on pormac_messages to authenticated;
+
+alter table pormac_conversations enable row level security;
+drop policy if exists pormac_conv_read on pormac_conversations;
+create policy pormac_conv_read on pormac_conversations for select
+  using (pormac_can_use() and (created_by = auth.uid() or is_admin()));
+drop policy if exists pormac_conv_ins on pormac_conversations;
+create policy pormac_conv_ins on pormac_conversations for insert
+  with check (pormac_can_use() and created_by = auth.uid() and (project_id is null or can_access_project(project_id)));
+drop policy if exists pormac_conv_upd on pormac_conversations;
+create policy pormac_conv_upd on pormac_conversations for update
+  using (pormac_can_use() and created_by = auth.uid())
+  with check (pormac_can_use() and created_by = auth.uid());
+drop policy if exists pormac_conv_del on pormac_conversations;
+create policy pormac_conv_del on pormac_conversations for delete
+  using (pormac_can_use() and created_by = auth.uid());
+
+alter table pormac_messages enable row level security;
+drop policy if exists pormac_msg_read on pormac_messages;
+create policy pormac_msg_read on pormac_messages for select
+  using (pormac_can_use() and exists (
+    select 1 from pormac_conversations c
+    where c.id = conversation_id and (c.created_by = auth.uid() or is_admin())
+  ));
+drop policy if exists pormac_msg_ins on pormac_messages;
+create policy pormac_msg_ins on pormac_messages for insert
+  with check (pormac_can_use() and exists (
+    select 1 from pormac_conversations c
+    where c.id = conversation_id and c.created_by = auth.uid()
+  ));
+
+create table if not exists pormac_usage (
+  user_id       uuid not null references users(id),
+  day           date not null default current_date,
+  remote_calls  int not null default 0,
+  primary key (user_id, day)
+);
+alter table pormac_usage enable row level security;
+grant select on pormac_usage to authenticated;
+drop policy if exists pormac_usage_read on pormac_usage;
+create policy pormac_usage_read on pormac_usage for select
+  using (user_id = auth.uid() or is_admin());

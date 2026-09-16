@@ -1,0 +1,113 @@
+/* Pormac — module-local styles. Shared tokens only (--pd-*), per MODULE_CONTRACT.md
+   §"Dark mode is automatic" — never a hard-coded light background here. */
+
+/* ---- Overall chrome ----
+   ⚠️⚠️ THE CHAT IS A DOCKED LAYOUT, AND IT NEEDS A DEFINITE HEIGHT TO BE ONE.
+   `.pd-content` is `flex:1; min-width:0` in the shared stylesheet with NO height,
+   so `height:100%` here resolved to `auto` — the thread grew with the
+   conversation, the page scrolled instead of the thread, and the composer drifted
+   further below the fold with every reply. Giving `.pd-content` a viewport height
+   (the same thing project-schedule does for its docked details panel) makes the
+   thread the one thing that scrolls and pins the composer where a planner can
+   always reach it, which is also what "history should be scrollable as needed"
+   asks for.
+   ⚠️ `flex:none` on the topbar is not optional: a flex item defaults to
+   `flex-shrink:1`, so in a height-constrained column the browser crushes the bar
+   below its own content and paints it over the chat (the 2026-09-10 z5 defect).
+   ⚠️ `100dvh` second so a browser that doesn't know it keeps the `100vh` above —
+   on a phone it keeps the composer clear of the collapsing URL bar. */
+.pd-content { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+.pd-content > .pd-topbar { flex: none; }
+.pmc-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 0; }
+.pmc-chrome { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: 880px; width: 100%; margin: 0 auto; padding: 0 16px 12px; }
+
+.pmc-tierbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: var(--pd-fs-xs, 11px); color: var(--pd-muted);
+  padding: 8px 2px; border-bottom: 1px solid var(--pd-line);
+}
+.pmc-tierbar .pmc-tierpill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px; border: 1px solid var(--pd-line);
+  background: var(--pd-card);
+}
+.pmc-tierbar .pmc-tierpill.busy .pmc-dot { background: var(--pd-warn, #C77700); }
+.pmc-tierpill .pmc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pd-ok, #1f8f4e); flex: none; }
+/* The Quality control and the reset button sit at the far end of the tier bar,
+   away from the state pill they modify.
+   ⚠️⚠️ EXACTLY ONE `margin-left:auto` IN THIS ROW. The first attempt kept the
+   older `.pmc-tierbar button.pd-btn-sm { margin-left:auto }` and tried to cancel
+   it with `.pmc-quality + button.pd-btn-sm { margin-left:0 }` — which is inert:
+   both selectors are two classes plus a type, so they tie on specificity and the
+   one declared LATER wins. Two auto margins then split the free space between
+   them, which is the "select floating in the middle" the comment claimed to have
+   fixed. It only looked right because the reset button is absent unless the
+   planner has been downgraded. The old rule is deleted rather than cancelled:
+   the select renders unconditionally, so it is the only anchor needed and the
+   button simply follows it. */
+.pmc-quality { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.pmc-quality .pd-select { width: auto; min-width: 132px; }
+
+/* ⚠️ Scope (project vs. portfolio-wide) is no longer a control on this bar —
+   removed 2026-09-14 (owner: "no need for the portfolio checkbox"). It is
+   derived once, on load, from how the module was opened (see module.js's
+   `loadProjects`/`setPortfolioAll`), and `#pmc-project` is hidden outright in
+   portfolio scope rather than left visible-but-disabled: there is nothing
+   left in the UI that could turn Portfolio back off, so a disabled select
+   would just be inert clutter. */
+.pmc-projctx { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+/* ⚠️ `margin-left: auto` pins it to the row's trailing edge — a destructive
+   control belongs at arm's length from the project picker it sits beside,
+   not adjacent enough to be a mis-click while switching projects.
+   ⚠️ `height` is explicit for the same reason `.pd-toolbar-right .pd-icon-btn`
+   states its own: an icon button with no height collapses to its bare glyph
+   and rides high in a row of 34px controls — `.pmc-clearbtn` sits outside
+   that toolbar class, so it needs the same fix repeated here. */
+.pmc-clearbtn { flex: none; margin-left: auto; width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; }
+
+@media (max-width: 700px) {
+  /* On a phone the bar is already wrapping; a control pinned right ends up
+     alone on its own line, so it simply follows the text instead. */
+  .pmc-quality { margin-left: 0; }
+}
+
+/* ---- Thread ---- */
+.pmc-thread {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px 2px 8px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.pmc-msg { max-width: 86%; display: flex; flex-direction: column; gap: 4px; }
+.pmc-msg.user { align-self: flex-end; align-items: flex-end; }
+/* Assistant messages carry the Pormac avatar, so that row is a ROW (avatar +
+   a bubble column) rather than the column every other message type uses. */
+.pmc-msg.assistant { align-self: flex-start; align-items: flex-end; flex-direction: row; gap: 8px; }
+.pmc-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex: none;
+  object-fit: cover; border: 1px solid var(--pd-line);
+}
+.pmc-msgcol { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start; }
+.pmc-bubble {
+  padding: 10px 14px; border-radius: var(--pd-radius-lg, 12px); line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+.pmc-msg.user .pmc-bubble { background: var(--pd-red); color: #fff; }
+.pmc-msg.assistant .pmc-bubble { background: var(--pd-card); border: 1px solid var(--pd-line); }
+.pmc-msg.system .pmc-bubble { background: transparent; border: 1px dashed var(--pd-line); color: var(--pd-muted); font-size: var(--pd-fs-xs, 11px); }
+.pmc-msg .pmc-meta { font-size: var(--pd-fs-micro, 10px); color: var(--pd-muted); padding: 0 2px; }
+.pmc-ctxchips { display: flex; gap: 4px; flex-wrap: wrap; padding: 0 2px; }
+.pmc-ctxchip {
+  font-size: var(--pd-fs-micro, 10px); padding: 1px 7px; border-radius: 999px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); color: var(--pd-muted);
+}
+.pmc-bubble .pmc-cursor { display: inline-block; width: 7px; height: 1em; background: var(--pd-muted); vertical-align: text-bottom; animation: pmc-blink 1s step-end infinite; }
+@keyframes pmc-blink { 50% { opacity: 0; } }
+
+/* ---- Composer ---- */
+.pmc-composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px 2px; border-top: 1px solid var(--pd-line); }
+.pmc-input { flex: 1; min-height: 40px; max-height: 160px; resize: none; }
+.pmc-hint { font-size: var(--pd-fs-micro, 10px); color: var(--pd-muted); padding: 0 2px 4px; text-align: center; }
+
+@media (max-width: 700px) {
+  .pmc-msg { max-width: 94%; }
+}

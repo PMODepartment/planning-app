@@ -1,5 +1,739 @@
 # Module: minutes-of-meeting
 
+## 2026-09-16 — A portfolio row opens its meeting, through this module's own history key — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+- A row in the cross-project action-item table links to
+  `#mom_view={"t":"meetings","v":"detail","m":<mom_id>}`. ⚠⚠ **That is not a new deep-link
+  protocol** — it is the hash `UI.bindHistoryState({ key: 'mom_view' })` already writes and restores
+  ("a link landing straight on this page with our key already in the hash restores that view"), so
+  the meeting opens through this module's OWN `apply()`. Inventing a `?meeting=` parameter would have
+  given the app two ways to open a meeting, one of which this module does not know about.
+- ⚠️ Safe against the boot order, checked rather than assumed: `momReset()` — the only thing that
+  clears `_momSel` — is called on a project switch and on Refresh, never in the normal boot path, and
+  `render()` guards on `!_momLoaded` with "Loading minutes…" instead of resetting the view. So the
+  restored `_momSel` survives the `load()` that follows and the meeting paints when the rows land.
+- ⚠️ The MEETING opens, not the action item: there is no single-item screen here — an action item
+  is a row inside its meeting's detail view, which is where a planner reads and answers it.
+- The portfolio group heading counts **action items**, not a bare number.
+
+## 2026-09-15 (b) — "Minutes by meeting" fits its card instead of scrolling, and the List/Calendar tab loses its whitespace
+
+Owner, two phone screenshots. (1) The Meetings Dashboard's "Minutes by Meeting" tile: *"reduce the
+bar width a bit instead making it scrollable"*. (2) The Meetings List toolbar's List/Calendar
+toggle: *"there is some whitespace. please fix."*
+
+### 1 — the chart was measured against the viewport, not guessed from it
+
+The previous fix (below) made `hbarSVG` render at its own true pixel width always — correct, and
+the reason "Minutes by Meeting" then needed `.il-dash-cardbody-scroll` to scroll at all: that tile
+passed a flat `width: 760`, sized for a wide desktop card, and a phone's card is nowhere near
+760px wide.
+
+⚠️⚠️ **The fix is not a smaller hard-coded number — a fixed number is exactly what was wrong the
+first time.** `host` (`renderMomDashboard`'s own `#il-mom-view` root, already in scope) is a plain
+block child of `.pd-main`, so its `clientWidth` already reflects the real available width —
+whatever the sidebar is doing (expanded, collapsed, or a mobile off-canvas drawer that consumes no
+flex width at all), at whatever viewport size. `meetingChartW = clamp(300, host.clientWidth - 40,
+760)` — `-40` covers the wide card's own `16px` side padding (32) plus a small buffer, and the
+760 ceiling keeps desktop exactly as it was. Passed into the SAME `hbarSVG` call, so the chart is
+sized to fit its card instead of overflowing it — nothing about how `hbarSVG` renders changed.
+
+### 2 — `.il-mom-browsebar > * { flex: 1 1 100%; }` had one child left, and it had a border
+
+⚠️⚠️ **A stale mobile rule, not a new bug.** That stretch-every-child-to-full-width rule was
+written when `.il-mom-browsebar` still held a search box worth stretching on a phone. The
+2026-09-03 round-2 pass moved Filter/Export/"+ Add meeting"/search out into the static top bar,
+leaving `.il-viewtoggle` — the List/Calendar toggle — as the row's **only** child, and nobody
+revisited the mobile override once that happened. `.il-viewtoggle` carries a real `border` (it's
+a two-button pill), so stretching it to `flex-basis: 100%` filled that bordered box with a visible
+blank strip to the right of the two icons: exactly the "whitespace" in the tab, on the phone width
+where the `@media (max-width: 700px)` rule applies.
+
+The rule is removed. `.il-viewtoggle` already declares `flex: none` (its own intrinsic two-button
+width) and `.il-mom-browsebar` already right-aligns it (`justify-content: flex-end`) — both hold at
+every width once the override stops fighting them.
+
+### Verified
+
+`node --check` clean on `module.js`; `module.css` brace balance holds (365/365); 0 NUL bytes across
+`module.js`/`module.css`/`index.html`; `node tools/wiring-check.js` — 136/136, 3,670 cross-module
+references, 0 failed.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the chart-width fix
+is reasoned from the CSS box model (`clientWidth` on a plain block child of `.pd-main`) and the
+whitespace fix from the cascade (an equal-specificity rule losing its only reason to exist), not
+observed rendered on a device.
+
+`module.css`/`module.js?v=` → `20260915b`. No `MODULE_V` bump — `index.html`'s structure is
+unchanged, only the two module-local asset versions moved.
+
+## 2026-09-15 — The dashboard's "Minutes by meeting" bar chart was scaling text to ~5px, and leaving the blank space behind
+
+Owner, off a phone screenshot of the Meetings Dashboard: *"minutes by meeting tile labels are not
+readable. there is also white space between bars and legend."*
+
+⚠️⚠️ **BOTH SYMPTOMS ARE ONE CAUSE.** `hbarSVG`'s returned `<svg>` set `width="100%"` (fluid, fills
+its container) against a `viewBox` whose own width is a fixed number — `380` for the Department/
+Responsible cards, **`760`** for "Minutes by meeting" specifically, so its bars would have more room
+on a wide desktop dashboard. A mismatch between the rendered width and the viewBox width forces the
+browser to scale the WHOLE viewBox uniformly to fit — bars, gaps and every `font-size="11"` text node
+alike — while the `height` **attribute** stayed the un-scaled value. On a ~340px phone the "Minutes by
+meeting" card's scale factor is 340/760 ≈ **0.447**: labels render at **~4.9px**, and because the SVG's
+own box height never shrank to match, the now-tinier content leaves roughly **70px of blank space**
+inside that box before the legend that follows it — measured by executing the shipped function
+(`git show HEAD`) against a fixture shaped like the screenshot (4 meetings). The Department/Responsible
+cards carry the identical defect, just milder, since their default width (380) is much closer to a
+typical phone's container width.
+
+**Fixed by rendering the chart at its own true pixel size, always.** `width`/`height` attributes now
+match `viewBox` 1:1 (`width="' + w + '"`, not `"100%"`), so a scale mismatch can never occur — text is
+always exactly `fs`px, on any screen, and the box height always exactly equals its real content height,
+so there is never blank space left over. ⚠️ **A chart now needing more room than its card scrolls
+horizontally instead** — `.il-dash-cardbody-scroll` gains `overflow-x: auto`, and `.il-dash-card` (a
+CSS grid item) gains `min-width: 0` so a wide, non-shrinking SVG can't force the whole grid track
+wider and push the page into horizontal scroll — the same `grid-item min-width:auto` trap this app's
+own history has recorded for `.pp-form2` images.
+
+**Verified:** the shipped `hbarSVG` sliced out of the file and executed against a before/after
+contrast — BEFORE (git HEAD): `width="100%"`, scale 0.447 on a 340px container, rendered font ≈4.9px,
+≈70px of dead space inside the box; AFTER: `width="760"` (or `"380"` for the sibling cards), scale
+always 1, font always 11px, box height always equals content height. `node --check` clean;
+`module.css` brace balance holds (366/366); 0 NUL bytes across all three touched files;
+`node tools/wiring-check.js` — 126/126, 0 version splits; `node tools/dead-hooks.js` unchanged against
+its documented 9-finding baseline.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the scale/geometry
+claims are proved by executing the real shipped function against a fixture, not observed rendered on
+a device. This module's own three dashboard bar charts (Department, Responsible, Meeting) share one
+`hbarSVG`, so all three are fixed together; `issues-lessons/module.js` carries its own, separately
+maintained copy of the same function (this app's convention — no shared chart runtime across modules)
+and is untouched, since it was not reported and was never passed a width wider than its default.
+
+`module.css`/`module.js?v=` → `20260915a`. No `MODULE_V` bump — `index.html`'s structure is
+unchanged, only the two module-local asset versions moved.
+
+## 2026-09-13 — Recurring becomes a tinted cycle-icon toggle, matching the star; the Meetings List drops its "Recurring" label for the same icon
+
+Owner, off the "+ Add meeting" screenshot: *"the recurring button is still off. to fix, beside the
+star, we could have a cycle fill as well. if filled meeting is recurring."* Then: *"in meetings
+list, no need to label the column as recurring. instead of checkbox, if meeting is recurring, just
+show the cycle icon."*
+
+**The "off" complaint was real, and it is the same defect the favorite field had before it became a
+star.** `#il-am-recur` was a bare `<input type="checkbox">` plus a text label — small, low-contrast
+chrome that reads as barely different from unticked at a glance, especially beside a 34px-tall
+title input and star. `amRecurBtnHTML(on)` replaces it with a button holding the new `repeat` icon
+(`assets/js/icons.js`), wired exactly like `amFavBtnHTML`/`wireFavBtn`: click toggles `data-on`,
+swaps its own `outerHTML`, re-hydrates the icon, and (unlike the star) also re-runs
+`updateAmScheduleVis()` since the recurring state still gates the Schedule tile and the Date/Venue
+row.
+
+⚠️⚠️ **"Filled" is a colour, not a second glyph.** Every icon in this app's shared set
+(`assets/js/icons.js`) is a stroke-only outline drawn through one `svg()` wrapper with `fill="none"`
+— there is no separate solid/filled variant of anything to swap in on click. The star already
+solved this the same way (★/☆ are two literal characters, but its `.on` state is still just a
+colour change to gold); the recurring toggle reuses that exact idiom — one icon, `.on` tints it
+`var(--pd-red)`, `:hover` (off state) tints `var(--pd-ink)`.
+
+⚠️⚠️ **A new `repeat` icon, deliberately NOT the existing `refresh` glyph.** `refresh` already
+means "reload the data on this screen" (the module's own topbar Reload button uses it) — reusing
+it for "this meeting recurs" would be the exact icon-overloading trap this app's own history
+records for `eye` vs `slides` (view vs present read as different verbs even though both involve a
+related motion). `repeat` is Feather's classic two-bracket-arrow loop glyph, visually distinct from
+`refresh`'s single circular double-arrow.
+
+**Three read sites updated from `.checked` to `dataset.on === '1'`** (`updateAmScheduleVis`,
+`saveAddMeeting`'s `isRecur`), since the state now lives on a button attribute, not a checkbox
+property. ⚠️⚠️ **`updateAmScheduleVis` re-queries `#il-am-recur` fresh on every call, rather than
+closing over a variable captured once** — the button's `outerHTML` is replaced on every click (same
+as the star), so a captured reference would point at a detached node after the first toggle. The
+same trap this app's own history already recorded for the star elsewhere (a stale reference to a
+swapped-out node reading its old, frozen state forever).
+
+⚠️ **`.il-am-checklabel` is deleted, not left dead.** It existed for exactly one thing — the
+recurring checkbox's `<label>` — which no longer renders; the two `:not(.il-am-checklabel)`
+exclusions on `.il-am-form .pd-field > label` (added 2026-09-12 (h), same day as the ghost-label
+fix) are simplified back to a bare selector, since nothing can match the excluded class any more.
+
+**The Meetings List column loses its text label and its checkbox.** The `<th>` renders empty (a
+`title` still names the column for a hover/screen reader); the `<td>` renders the same `repeat`
+icon — tinted `var(--pd-red)`, matching the toggle button's "on" colour — only when `r.recurring`,
+and nothing at all for a one-time meeting. Still read-only by construction, exactly as the checkbox
+was: nothing on this screen can toggle it; see `momHistorySectionHTML`/`createNextOccurrence` for
+the only way a meeting actually becomes recurring.
+
+### Verified
+`node --check` clean on `module.js` and `assets/js/icons.js`; CSS braces balanced (366/366);
+0 NUL bytes; `Icons.svg('repeat', 18)`/`Icons.names` confirmed to include the new glyph by loading
+the shipped file directly; every new class (`.il-mom-recic`, `.il-am-recurfield`,
+`.il-mom-recurbtn`) resolves to a rule in `module.css`; `node tools/wiring-check.js` — 126/126,
+0 version splits; `node tools/dead-hooks.js` — unchanged against its documented 9-finding baseline.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the toggle's click
+handler and the list's conditional icon are reasoned from the markup and CSS, not observed
+rendered or clicked on a device.
+
+`module.css`/`module.js?v=` → `20260913a`; shared `assets/js/icons.js?v=` → `20260913a` (23
+referencing pages); `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) →
+`20260913a`.
+
+## 2026-09-12 (h) — The Details tile's own ghost-label reservation, not the shared label/input rules, was the "very big" gap
+
+Owner, two phone screenshots of the same "+ Add meeting" form: *"space between recurring and
+meeting title is very big"* and *"the vertical gap between label and input box is still quite
+large as in first photo. second photo shows better tighter spacing between label and box."* The
+second photo is this module's Detail (edit) view on GPR101, offered as the tighter comparison.
+
+⚠️⚠️ **The shared label/input work done earlier the same day (parts (e)-(g), and the root-level
+"whole-app label/input pass") is NOT what's still wrong here — this is a THIRD, separate cause,
+local to the Add-meeting form alone.** `.il-am-form .pd-field > label:not(.il-am-checklabel) {
+min-height: 26px; line-height: 13px; }` (round 2, "guaranteed row alignment") reserves two lines'
+worth of height under every label in this ONE form, including the empty **ghost label**
+(`amGhostLabel()`, a bare `<label aria-hidden>` with no class, so it's caught by this same
+selector) that sits above the Favorite star, the Recurring checkbox, and — since item 7 the same
+day — the Regular/Irregular select, purely to keep each one level with a real label on the same
+row at desktop widths. Below 700px `.il-am-titlerow` can hold up to four such fields at once and a
+narrow phone can only fit the title with one or two of the icon-sized ones beside it before the
+rest wrap onto their own line — and a field alone on its own line still pays the FULL 26px
+reservation with nothing left to align with, which is exactly the "very big" gap between Recurring
+and the title above it. The same rule is also why every label in the form — real or ghost, on a
+row that never wraps at all — sits ~13px above its input with nothing visibly there: at this app's
+current `--pd-fs-micro` (10px) label size, 26px is roughly double what a single line actually
+needs.
+
+**Fix:** reset the reservation to a natural single-line label below 700px, rather than
+special-casing which rows still happen to pair up two-wide at a given width — because the ghost
+label is caught by the very same selector as the real ones, this single change also keeps the
+Favorite star's ghost label shrinking in step with Meeting title's real label whenever the two DO
+still share a line, so the alignment that still matters on a wider phone is unaffected. Scoped to
+`.il-am-form` only — the Detail/reporting form (`momFieldHTML`) never carried this reservation and
+was already tight, which is precisely why the owner's own second photo read as better.
+
+**Verified:** brace balance holds (363/363, was 361/361 — one rule + one media wrapper added);
+0 NUL bytes; `node tools/wiring-check.js` — 126/126, 0 version splits; `node tools/dead-hooks.js`
+unchanged against its documented 9-finding baseline (none of them this module's `.il-am-form`).
+⚠️ **Not verified signed in and no screenshot** — this session has no live login and no
+compositing/screenshot tool available; the fix is reasoned from the CSS cascade and the exact
+markup `openAddMeetingModal`/`amGhostLabel` emit (re-read fresh off `main`, not the stale copy this
+session started from), not observed rendered on a device.
+
+`module.css` → `?v=20260912r` (`module.js` unchanged, stays `?v=20260912l`). No shared asset
+touched, no `MODULE_V` bump.
+
+## 2026-09-12 (g) — `.il-timepair` stacks vertically on a phone, closing a real overflow the pairing fix (f) could not
+
+Owner, with a phone screenshot of the "+ Add meeting" recurring-series Schedule tile: an input box
+was overflowing past the screen edge. Full detail and the reasoning (a native `type="date"`/
+`type="time"` control's own rendering, squeezed to half a row at the mandatory 16px mobile font,
+needs more room than half a narrow phone screen gives) is in the root
+[`CLAUDE.md`](../../CLAUDE.md)'s matching entry.
+
+`.il-timepair` (f, below) correctly keeps a Start/End pair from splitting apart across a wrap —
+that fix is untouched. This is the other half: below 700px, the pair's own two fields now stack
+(`flex-direction: column`) instead of sitting side by side, so each one gets the full row width
+instead of being squeezed to half of it. Confirmed by elimination that no other date-pair row in
+the app shares this risk — every other one already wraps to full-width lines on a phone; this
+module's `.il-timepair` is the one place built to force two such controls onto one line.
+
+`module.css` → `?v=20260912p` (`module.js` unchanged, stays `?v=20260912l`).
+⚠️ **Not verified signed in.**
+
+## 2026-09-12 (f) — Every Start/End (and series-start/-end) pair gets `.il-timepair`
+
+Detail and verification in the root [`CLAUDE.md`](../../CLAUDE.md)'s matching entry — a shared-CSS
+change (`.pd-field label` sizing) plus this module's own markup. All ten places this module renders
+`type="time"` (or a series start/end date pair) alongside another field in one `.il-form-row` — the
+Add-meeting modal's two Schedule tiles, the one-time-meeting Date-and-Venue row, the Carry-over
+modal's both branches, and the Detail view's Schedule and Date-and-Venue tiles — now wrap the pair in
+`.il-timepair`, a `display:flex; flex-wrap:nowrap` box that counts as one item to the outer row. The
+row can still push the pair onto its own line on a narrow phone; the two fields inside it cannot be
+split from each other, which flex-wrap on the bare row was doing (Date+Start on one line, End
+orphaned on the next — the reported screenshot).
+
+⚠️ `module.js?v=20260912l`/`module.css?v=20260912l`.
+⚠️ **Not verified signed in** — argued from the flex model, not observed on a device.
+
+## 2026-09-12 (e) — The carry-over toast says "open minutes", not "actions"
+
+Owner: *"when carrying over meeting, there is a notification saying carried over X actions.
+instead of 'actions', use 'open minutes'."* `momCarryOver`'s success toast —
+*"Carried over N action(s) — M still linked to the register"* — is now *"Carried over N open
+minute(s)…"*, matching the module's own terminology throughout (these rows are this module's
+MINUTES, `mom_items`, and what's carried is specifically the still-**open** ones). The sibling
+"nothing left to carry" toast in the same function ("Every still-open action from those minutes
+has already been carried over.") is corrected the same way for consistency.
+
+### Verified
+`node --check` clean. Grepped every remaining `action` occurrence near `momCarryOver` — the three
+left are code comments, not user-facing strings.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment.
+
+`module.js?v=` → `20260912k` (`module.css` unchanged). No `MODULE_V` bump.
+
+## 2026-09-12 (d) — The recurring series gets its own editable Schedule group in the meeting view, and the carry-over modal splits into Schedule and Next Meeting
+
+Owner's three-item refinement of round (c). **No migration.**
+
+1. **"for recurring meetings, below meeting details, add the schedule input group including the
+   start date, end date (optional), start and finish time, frequency."** `momDetailHTML` gains a
+   **Schedule** tile directly below Details, for a recurring occurrence whose series is Regular —
+   Series start date, Series end date (optional), Start time, End time, Frequency (+ rule fields).
+   ⚠️⚠️ **This is the SERIES' own `mom_schedules` row, not the occurrence's own date/time** in the
+   "Date and Venue" tile beneath it — two different facts (when does the whole series run, vs when
+   is this one meeting). ⚠️ Shown only when the series is Regular (`momSch.frequency !==
+   'irregular'`) — an Irregular series has no series dates or frequency to edit, the same "no
+   schedule input group" rule already established for Irregular everywhere else in this feature; the
+   tile is simply absent rather than showing empty/disabled fields.
+   ⚠️⚠️ **`scheduleRuleFieldsHTML` gained an `idPrefix` argument, and it is not cosmetic.** This
+   tile's own rule fields (`il-mds-sf-weekday` etc.) sit permanently in the Detail view's DOM, and
+   the Carry-over modal — opened from that same Detail view's "Carry over to next meeting" button —
+   already renders rule fields at the default `il-sf-*` ids. Reusing the default prefix for this
+   third caller would have put two elements with the same id in the document AT THE SAME TIME the
+   moment that button is clicked — the exact duplicate-DOM-id defect this app's history polices for.
+   The two existing callers (Add-meeting modal, Carry-over modal) keep the default prefix — they are
+   mutually exclusive with each other, reached from different, never-simultaneous screens — only the
+   Detail tile passes `'il-mds-sf'`.
+   New `momSaveSchedTile(mom)` writes the tile's fields to `mom_schedules` (keyed on
+   `mom.schedule_id`), called from `momSaveHeader()` right after the occurrence's own
+   `meeting_minutes` write succeeds — a SEPARATE table, so a separate write, best-effort and never
+   folded into `momSaveHeader`'s own return value: the minute has already saved by the time it runs,
+   and a schedule-side failure must not read as "your minute did not save."
+2. **"for non-recurring, when carrying over meeting, ask for inputs in two input groups. first
+   input group is Schedule - including regular/irregular, series start date, series end date
+   (optional), start time, finish time, and frequency including weekdays every n weeks. second
+   input group is Next Meeting - date, start time, finish time - pre-fill these as per schedule."**
+   `openNextMeetingModal`'s promotion branch (no existing series) is relabelled into two headed
+   groups. ⚠️⚠️ **This reverses round (c)'s own item 2** ("a Regular series' time is not asked here
+   at all — it is silently carried from the seed meeting's own `start_time`/`end_time`"): the
+   Schedule group now asks for **Start time \*** / **End time \*** explicitly
+   (`il-nx-schedstart`/`-schedend`), required when Regular, matching the Add-meeting modal's own
+   Schedule tile. Irregular still hides the whole Schedule group beyond the regularity selector
+   itself — round (b)'s rule is unchanged.
+3. **"for recurring meetings, just need one group which is Next Meeting including date, start
+   time, finish time. pre-fill these as per recurring meetings schedule."** Both branches' trailing
+   date/time row gets an `<h4 class="il-mom-sechead">Next Meeting</h4>` heading. ⚠️ For the
+   promotion branch, this row's Start/End time fields (`il-nx-start`/`-end`) are no longer
+   conditionally hidden for Regular (round (c) hid them entirely and copied the seed's time in
+   silently) — they are now always shown, defaulting to the same value the Schedule group's own
+   time defaults to (`defStart`/`defEnd`, already derived from the seed), and stay independently
+   editable for this one occurrence — "pre-fill … as per schedule" read as a default value, not a
+   locked one.
+
+### Verified
+`node --check` clean; `module.css` unchanged this round (357/357 braces) — the new heading reuses
+the existing bare `.il-mom-sechead` rule (it has its own base styling independent of
+`.il-mom-sectile`, confirmed by reading the CSS, so no wrapping box was needed inside a modal);
+tag-balance of the touched functions counted by hand and cross-checked against a whole-file
+open/close tag count taken before and after the edit — identical proportional imbalance both times
+(a pre-existing quirk in the crude counting method itself, unrelated to this change), confirming no
+new mismatch was introduced. Every new id (`il-mds-sstart`, `il-mds-send`, `il-mds-schedstart`,
+`il-mds-schedend`, `il-mds-freq`, `il-mds-rulewrap`, `il-nx-schedstart`, `il-nx-schedend`) appears
+exactly where expected and none collide with the pre-existing `il-sf-*`/`il-nx-*` ids; the removed
+`il-nx-timewrap`/`il-nx-timeendwrap` ids have zero remaining references.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment. No live save of the
+Detail view's new Schedule tile, no live promotion of a plain meeting into a Regular series through
+the restructured Carry-over modal, against real data.
+
+`module.js?v=` → `20260912j` (`module.css` unchanged, stays `20260912h`). No `MODULE_V` bump — no
+shared asset touched.
+
+## 2026-09-12 (c) — Carry-over asks only for what differs; the Schedule tile gets its own time; Date and Venue merge in the meeting view
+
+Owner's four-item refinement of the previous round's Regular/Irregular work. **No migration.**
+
+1. **"if meeting is already recurring, when carrying over meeting, ask only for the next date and
+   time. other fields no need to ask, just copy the previous details including schedule, attendees,
+   title, agenda, open minutes."** `openNextMeetingModal`'s `isRecur` branch drops Title, Venue,
+   Meeting link and the Required/Optional attendee pickers entirely — it now asks for **Date, Start
+   time, End time** and nothing else. `createNextOccurrence` reads title/venue/link/attendees
+   straight off `sch`/`seed` instead of DOM inputs that no longer exist; the schedule itself
+   (`schedIdToUse`) is untouched, since this branch never touches `mom_schedules` at all.
+2. **"if meeting is not recurring, when carrying over meeting, ask for schedule: if regular or
+   irregular. if regular, ask for start date, end date, frequency as usual. ask also for next date.
+   if irregular, just ask for next date and time. other fields no need to ask, just copy previous
+   details including title, agenda, attendees, open minutes."** The `!isRecur` (promotion) branch
+   drops the same fields (Title/Venue/Link/Attendees). What remains: a **Schedule** select
+   (Regular/Irregular); **Regular** shows Series start date, Series end date, Frequency + rule
+   fields, plus a **Date** field for the next meeting — no time; **Irregular** shows only Date +
+   Start time + End time. ⚠️⚠️ A Regular series' time is not asked here at all — it is silently
+   carried from the seed meeting's own `start_time`/`end_time`, the same as venue/attendees, since a
+   Regular series' fixed meeting time is now captured once, on the schedule itself (item 3).
+3. **"the Schedule input group must only contain start and end dates, time, frequency and Must only
+   be for recurring meetings."** `openAddMeetingModal`'s `#il-am-schedtile` gains its own **Start
+   time \* / End time \*** fields (new ids `il-am-schedstart`/`il-am-schedend`, distinct from the
+   one-time-meeting row's `il-am-start`/`il-am-end`, which live in a different tile and would
+   otherwise collide) — required, validated in `validateAddMeeting`. ⚠️⚠️ **This reverses the
+   previous round's own reasoning** ("each occurrence's own start/end time is set on the meeting
+   itself, once it exists" — deleted along with the note paragraph that said so): a recurring
+   meeting happens at ONE fixed time every occurrence, so asking for it once, as part of defining
+   the series, is more honest than asking a fresh instance every time an occurrence is created.
+   `saveAddMeeting` reads `isRecur ? g('il-am-schedstart') : g('il-am-start')` (and the `-end`
+   equivalent) so the right field feeds both the schedule's own `start_time`/`end_time` and the
+   first occurrence's (item 5 from the previous round, unchanged).
+4. **"the date, planned start and finish time and actual start and finish time should be combined
+   with the venue group as date and venue."** `momDetailHTML`'s separate **Schedule** tile (Date,
+   Start time, End time, Actual start, Actual finish) and **Venue** tile (Venue, Location, Meeting
+   link, Recording) merge into one **Date and Venue** tile — no field, id, or writer changed, only
+   which box each renders inside. Unlike item 3, this is the per-MEETING Detail view, unconditional
+   on recurring/non-recurring — every meeting's own record shows one merged tile.
+
+### Verified
+`node --check` clean; CSS unchanged this round (357/357 braces, no edits to `module.css`); every new
+id (`il-am-schedstart`, `il-am-schedend`, `il-nx-schedwrap`, `il-nx-timewrap`, `il-nx-timeendwrap`,
+`il-nx-sstart`, `il-nx-send`) appears exactly once in the template it belongs to; `il-nx-date`/
+`il-nx-start`/`il-nx-end` appear twice in source but inside mutually-exclusive `isRecur` ternary
+branches, so at most one set ever renders into the DOM at once; repo-wide grep confirms zero
+remaining references to the removed `il-nx-title`/`il-nx-venue`/`il-nx-link`/`nx-req`/`nx-opt`.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment. No live carry-over
+(existing series, or promoting a plain meeting, regular or irregular) or "+ Add meeting" save against
+real data.
+
+`module.js?v=` → `20260912i` (`module.css` unchanged this round, stays `20260912h`). No `MODULE_V`
+bump — no shared asset touched.
+
+## 2026-09-12 (b) — Table-view drag, the item-level carry-over button retired, an icon-only Present toggle, required meeting type, a real first occurrence for a new series, and Regular/Irregular scheduling
+
+Owner's nine-item list, all against this module. **No migration.**
+
+1. **"in minutes list table view, allow drag to reorder."** `momItemsTableHTML(vis, canDrag)` now
+   takes the same `canDrag` test `momItemRowHTML` already computes (`!ro && !momFilterOn() &&
+   !_momReport`, now hoisted once in `momDetailHTML` so Card and Table can't disagree on it) and
+   emits a leading grip column — the same `momDragGripHTML`/`data-reorder-row` shape the Card view
+   already uses. ⚠️⚠️ `wireMinuteDrag(host, momId)` no longer requires a `.il-mi-cards` wrapper —
+   it now looks for `[data-reorder]`/`[data-reorder-row]` across the whole detail HOST, which
+   covers either view without caring which is on screen (Card and Table never render at once).
+2. **"in minutes list, remove the carry over button as this has been moved to the meeting."** The
+   item-level "Carry over…" button (`#il-mom-carrygo` → `openCarryOverModal`, which pulled
+   still-open minutes IN from another meeting) is deleted along with the modal function — "Carry
+   over to next meeting" in the toolbar (`#il-mom-carrynext`) is the one carry-over control now.
+   ⚠️ `momCarryable`/`momCarryOver` are untouched and still called from `createNextOccurrence` —
+   only the button and its own modal are gone, not the underlying carry mechanism.
+3. **"for the present button in the meeting, remove the text label. instead of eye icon, use
+   slides icon."** `#il-mom-report` drops `.il-mom-modetxt` and its Present/Exit text; a new
+   `slides` glyph (`assets/js/icons.js` — a presentation screen on a stand, distinct from `eye`,
+   which reads as "view/watch" rather than "present") replaces `eye`. `.il-mom-modebtn`'s CSS
+   collapses to the same 34×34 square every other icon-only toolbar button already uses, keeping
+   only the class name (so the active-state colour rule `.il-mom-report .il-mom-modebtn` still has
+   something to key on) — the `title`/`aria-label` still name the action in full.
+4. **"for adding new meeting, meeting type is required. meeting agenda is also required at least
+   1."** Agenda was *already* required (`validateAddMeeting`'s `agendaValuesOf(root).length`
+   check, unchanged). Meeting type (the Internal/External select, literally labelled "Meeting
+   type" — not "Meeting description", which is the free-text field mapped to the `meeting_type`
+   column) previously always carried a value with no blank option, so "required" was true only by
+   accident of a forced default. It now opens on a real blank `— Select —` option, validated in
+   `validateAddMeeting`.
+5. **"when creating a new recurring meeting, use the date of the first applicable meeting."**
+   ⚠️⚠️ **Before this, creating a recurring series inserted ONLY a `mom_schedules` row — no
+   occurrence at all.** Since the 2026-09-12(a) removal of the series page, `momUnifiedRows` shows
+   only a schedule's own occurrences, never a bare schedule row — so a brand-new series existed in
+   the database and was completely unreachable from the Meetings List, findable only by opening the
+   Calendar in the right month and clicking its dashed "planned" chip. `saveAddMeeting`'s recurring
+   branch now also inserts the FIRST real `meeting_minutes` occurrence, dated to
+   `schedNextOccurrence(schedule, schedule.start_date)` — never the raw typed "Series start date",
+   which is only a lower bound (`schedDatesInRange` finds dates ON OR AFTER it, not necessarily AT
+   it — a start date landing on a Tuesday is not itself a meeting date for a Wednesday-weekly
+   schedule). The agenda items collected in the modal are seeded onto this first occurrence through
+   a new `momSeedAgendaItems(momId, agenda)` helper, factored out of the non-recurring branch's
+   identical loop so there is one copy of "turn an agenda array into real `mom_items` rows," not two
+   subtly different ones.
+6. **"change the input group of venue to date and venue. for non-recurring meetings, the schedule
+   inputs are moved to this new group. for recurring meetings, the date and time in the date and
+   venue field stays in the meeting view."** In `openAddMeetingModal`: the "Venue" tile is renamed
+   **"Date and Venue"** and gains the Date/Start time/End time row — but only for a **one-time**
+   meeting (`#il-am-datetimewrap`, hidden the moment Recurring is checked). The old "Schedule" tile
+   (Series start/end date, Frequency, rule fields) now exists **only** while Recurring is checked
+   (`#il-am-schedtile`, hidden as a whole tile rather than field-by-field) — for a recurring series
+   there is no per-occurrence date/time question in this form at all; each occurrence's own
+   start/end time is set "in the meeting view" (`momDetailHTML`'s own Schedule tile) once it exists,
+   which is exactly item 5's newly-created first occurrence and every later one.
+7. **"when adding a recurring meeting, ask input from user if schedule will be regular or
+   irregular beside the recurring input. if irregular, no need for the schedule input group."** A
+   `Regular schedule | Irregular` select (`#il-am-regularity`) appears beside the Recurring checkbox
+   once it is ticked. Irregular hides `#il-am-schedtile` entirely (no Frequency, no rule fields, no
+   Series start/end date) and writes `mom_schedules.frequency = 'irregular'` with `start_date =
+   momToday()` — there is no cadence to store, only the fact that the meeting recurs on no fixed
+   pattern. ⚠️⚠️ `frequency` carries **no CHECK constraint** (`text not null default
+   'monthly_date'`), so `'irregular'` is a legitimate value to write, but `schedDatesInRange` had to
+   be taught it explicitly: without the guard, `'irregular'` would fall through to the `else` branch
+   and be silently treated as `monthly_date`, inventing a monthly cadence nobody asked for.
+   `schedDatesInRange` now returns `[]` for it (so `schedNextOccurrence` always answers `null`, and
+   the Calendar's planned-chip prediction correctly shows nothing to predict), and
+   `schedFrequencyLabel` reads "Irregular — no fixed schedule" instead of computing garbage off a
+   weekday/ordinal/day-of-month that was never set.
+8. **"when a non-recurring meeting is carried over, ask user if regular or irregular. if regular,
+   ask for schedule. if irregular, just ask for next meeting date and time. other details like
+   venue, attendees, agenda will be carried over along with the open minutes."** This is
+   `openNextMeetingModal`'s promotion path (`opts.seedMom` set, no `opts.schedId` — a plain
+   meeting's own "Carry over to next meeting" button). It gains the identical Regular/Irregular
+   select (`#il-nx-regularity`), which toggles `#il-nx-freqwrap`/`#il-nx-rulewrap` off for
+   Irregular — the same "no need for the schedule input group" rule as item 7, applied to promoting
+   an existing meeting rather than creating a fresh one. ⚠️⚠️ **The modal had no Start/End time
+   fields at all before this** — added (`#il-nx-start`/`#il-nx-end`, defaulting from the seed
+   meeting's own `start_time`/`end_time`) so "next meeting date and time" is something this screen
+   can actually ask for. Venue/link/attendees already defaulted from the seed; the seed's own
+   `meeting_minutes.agenda` (the topic-headline jsonb list, distinct from its `mom_items` rows —
+   those are what `momCarryOver` brings across separately as "the open minutes") now travels
+   forward onto the new occurrence too, the one thing in this list that was not already carried.
+9. **"when a recurring meeting is carried over, ask user for next meeting date. if recurring, use
+   the next date in sequence by default. carry over all other details including open minutes."**
+   ⚠️ **Already true before this pass** — `openNextMeetingModal`'s `isRecur` (`opts.schedId` set)
+   branch already defaults `Date` to `schedNextOccurrence(sch, momToday())` and already carries
+   venue/link/attendees from the schedule's last occurrence, with `momCarryOver(seed.id)` bringing
+   forward whatever is still open. It now additionally gets the Start/End time fields and the
+   agenda carry-over built for item 8 (both sit outside the `isRecur` branch, so they apply
+   uniformly), and — via item 7's fix — a schedule that happens to be Irregular now correctly falls
+   back to `plusDaysISO(seed.meeting_date, 7)` for its default next date (since
+   `schedNextOccurrence` answers `null` for it) instead of silently computing a monthly-cadence date
+   nobody set.
+
+### Verified
+`node --check` clean on `module.js`, `assets/js/icons.js`, `assets/js/modules-grid.js`; CSS brace
+balance holds (357/357) and every `/* … */` opened is closed (90/90); 0 NUL bytes across every
+touched file; every new dynamically-emitted id (`il-am-schedtile`, `il-am-datetimewrap`,
+`il-am-regwrap`, `il-am-regularity`, `il-nx-regularity`, `il-nx-freqwrap`, `il-nx-start`,
+`il-nx-end`) appears exactly once in the template it belongs to; repo-wide grep for
+`openCarryOverModal`/`il-am-recurwrap`/`il-am-datewrap`/`il-am-sstartwrap`/`il-am-sendwrap` —
+zero remaining references outside this changelog's own historical entries; `momCarryable`/
+`momCarryOver` confirmed still called from `createNextOccurrence` after the button removal.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment. No live drag in the
+Table view, no live creation of a first occurrence (regular or irregular), and no live "Carry over
+to next meeting" round-trip (either direction) against a real project.
+
+`module.css`/`module.js?v=` → `20260912f`; shared `assets/js/icons.js?v=` → `20260912f` (22
+referencing pages); `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) →
+`20260912f`.
+
+## 2026-09-12 — The Meetings List drops manual order, the Minutes list gets a real drag gesture, and recurring meetings stop having a second screen
+
+Owner's three items: (1) "for meeting list, no need to allow drag to reorder. by default, sort by
+date with favorite always at top"; (2) "for minutes list, allow drag to reorder"; (3) a full rewrite
+of the recurring-meeting workflow — a read-only Recurring tickbox on every Meetings List row, a
+meeting history table after the minutes, clicking a previous meeting opens it as an ordinary
+meeting, the Meetings List shows only the latest occurrence of a series, and a "carry over to next
+meeting" button that also promotes a non-recurring meeting into a recurring one.
+
+### 1 — Meetings List: back to column sort, favorites always on top
+
+The **⋮⋮** manual-order column shipped only hours earlier the same day (round 2, "in list mode,
+allow also drag to reorder") is gone: `momOrderCmp`/`momListDragTh`/`momWireReorder` are deleted,
+`momSortedRows` no longer has a `'manual'` branch, and the sort-header click handler no longer has
+a special case for it. The list is back to what it was before that round — click any column to sort
+it, favorites partitioned to the top of whichever sort is active — which is exactly what the owner
+asked for. ⚠️ `migrations/2026-09-11-mom-list-reorder.sql` (the `sort_order` columns on
+`meeting_minutes`/`mom_schedules`) is left in place as inert history rather than deleted or reverted
+— this repo does not rewrite a migration once it may have been run, and an unused nullable column
+costs nothing.
+
+### 2 — Minutes list: drag-to-reorder, converted to Pointer Events
+
+⚠️⚠️ **This ALREADY existed, and it already didn't work on touch.** `wireMinuteDrag`/
+`persistMinuteOrder` (2026-09-02) were pure HTML5 `draggable`/`ondragstart`/`ondragover`/`ondrop` —
+which never fires on a touch device at all, the same defect this app's history has now recorded and
+fixed twice this same day for Issues & Concerns / Lessons Learned. So "allow drag to reorder" reads
+as "make the drag that is already there actually work everywhere," not as a feature to build from
+nothing.
+
+Converted to Pointer Events (`pointerdown`/`pointermove`/`pointerup`/`pointercancel`), the identical
+mechanism and class names (`.il-draghandle`/`.il-reorderable`/`.il-dragging`/`.il-drop-before`/
+`.il-drop-after`, `data-reorder`/`data-reorder-row`) `issues-lessons/module.js`'s own
+`wireReorder`/`applyReorder` use — each module keeps its own copy per MODULE_CONTRACT.md, but the
+shapes now match exactly. `momDragGripHTML(id)` (already built earlier the same day for exactly this
+purpose) supplies the grip; `momItemRowHTML` puts `data-reorder-row` directly on the `.il-mi-card`
+itself rather than a separate grip-only target, so the whole card is the drop zone, not just the
+small glyph. The write is `applyMinuteReorder`, over `mom_items.seq` — `momVisibleItems(momId)` is
+the ordered set (drag is only offered while nothing filters the meeting's minutes, so this is always
+every minute, never a filtered subset whose seq math would leave hidden rows ambiguous), written
+sequentially rather than via `Promise.all` (the same rule "Get from issue" already follows for
+numbering writes — overlapping requests racing onto one sequence is worse than the small delay of
+writing in order).
+
+⚠️ `pointerup` and `pointercancel` are two separate handlers, not one that always commits — a cancel
+(the OS taking the gesture for something else) is exactly when a card is likely still marked from
+the last move, and has to abort with no write.
+
+### 3 — Recurring meetings: no more series page
+
+Owner: *"in meeting list, there is error in workflow regarding recurring and non-recurring
+meetings."* The error was architectural: a recurring schedule (`mom_schedules`) was its own kind of
+row in the unified Meetings List (`kind: 'series'`), opened onto its own screen
+(`momOpenSeries`/`renderSeriesPage`/`wireSeriesPage`) with its own CRUD
+(`scheduleFormSave`/`scheduleDelete`) and its own "+ Add a meeting" form
+(`scheduleCreateOccurrence`/`scheduleOccFormHTML`) — a second browsing surface next to the one that
+already existed for ordinary meetings, and every occurrence of a series lived only inside that
+second surface's own "Meetings held" table, never in the list itself.
+
+⚠️⚠️ **All four of those functions, and `scheduleFormHTML`/`scheduleOccFormHTML`, are deleted.**
+Every occurrence of a recurring schedule is a REAL `meeting_minutes` row now
+(`schedule_id` set), and it opens exactly like any other meeting — there is nothing left for a
+series page to do.
+
+- **A read-only Recurring tickbox column** in the Meetings List (`momUnifiedRows`'s `recurring`
+  field, `.il-mom-rectd`), a disabled checkbox — nothing on this screen can toggle it; the only way a
+  meeting becomes recurring is the promotion path below.
+- **`momUnifiedRows` shows only the LATEST occurrence per schedule** — a small map from
+  `schedule_id` to whichever of its meetings has the latest `meeting_date` — "from the meeting list,
+  details of the recurring meeting should just reflect the latest occurrence."
+- **`momHistorySectionHTML(mom)`** — a "Meeting history" table after the Minutes section, on a
+  recurring occurrence only (`isRecurOcc`). Every meeting under the same schedule
+  (`schedMeetingsOf`), current row named and non-clickable, every other row opening via
+  `momOpenMeeting` — "as a normal meeting," per the owner's own wording, since that is exactly what
+  `momOpenMeeting` already does for any row. "The history then shows all meetings linked including
+  the latest one" — the table lists every occurrence, current one included.
+- **"Carry over to next meeting"** — one icon button (`redo`) in the Detail toolbar, beside
+  Email/Distribute, gated on `mayEdit` like every other write control on the card.
+  `openNextMeetingModal(opts)` takes `{schedId}` (an existing series' own button, or a Calendar
+  planned-chip click, `presetDate` naming the exact day clicked) or `{seedMom}` (a plain meeting's
+  own button, no schedule yet). `createNextOccurrence` does the write:
+  - **`schedId` set** — inserts the next `meeting_minutes` row under that schedule, exactly as
+    `scheduleCreateOccurrence` used to.
+  - ⚠️⚠️ **`schedId` absent — "if current meeting is non-recurring, hitting the carry over button
+    will make the meeting a recurring one."** A brand-new `mom_schedules` row is inserted, anchored
+    on the SEED meeting's own date (`start_date: seed.meeting_date`, not today — so the series reads
+    as starting from the meeting that was just carried forward) and its default weekday derived from
+    that same date (`utcDow`), not a bare Monday. The seed meeting is then retroactively updated
+    (`schedule_id` set on it) — the promotion. Only then is the next occurrence inserted under the
+    new schedule.
+  - Both branches finish the same way `scheduleCreateOccurrence` did: `momOpenMeeting` (so
+    `momCarryOver` — which reads its fields off the Detail form's DOM — has a form to read),
+    `momPullIssues` quietly, then `momCarryOver(seed.id)` to bring forward whatever is still open.
+
+⚠️ `reRenderMomHost`/`momToggleFavorite` are simplified to `meeting_minutes` only — there is no
+second "kind" left to branch on, since `momUnifiedRows` only ever emits meeting rows now. The three
+list-export functions (`momExportListHTML`/`momExportListXLSX`/the PDF's `autoTable` body builder)
+that used to test `r.kind === 'series'` now test `r.recurring`, the field `momUnifiedRows` actually
+emits.
+
+### CSS
+
+`.il-mom-dragth`/`.il-mom-dragcell`/`.il-mom-sortnote`/`.il-mom-sortnote button` (the Meetings List's
+own manual-order chrome) are removed; the shared `.il-draghandle`/`.il-reorderable`/`.il-dragging`/
+`.il-drop-before`/`.il-drop-after` set survives unchanged, since the Minutes list's drag now uses it
+too. `.il-mi-card[draggable="true"]`/`.il-mi-draghandle` (HTML5-drag-specific) become
+`.il-mi-card.has-drag`/`.il-mi-card > .il-draghandle`; the card-specific `.is-dragging`/`.drop-before`/
+`.drop-after` rules are removed since `data-reorder-row` sits directly on the card and the shared
+2px drop-mark rules already cover it. New `.il-mom-rectd`/`.il-mom-opencell`,
+`.il-mom-history`/`.il-mom-histrow`/`.il-mom-histcur`/`.is-current`. ⚠️ The series page's own CSS
+(`.il-mom-seriescard`/`-seriesheadrow`/`-seriestitle`/`-seriesmeta`/`-seriesacts`/`-seriespast`,
+`.il-mom-recur`, `.il-mom-schedpasti`, `.il-mom-schedform`/`.il-mom-occform`/`-schedform-acts`) is
+removed with the functions that emitted it. ⚠️ Also removed: a whole block
+(`.il-mom-schedpanel`/`-schedhead`/`-schedbody`/`-schedlist`/`-schedright`/`-schedrow`/`-schedpast`/
+`-schedpasti`/`-schedform`/`-occform`/`-schedform-acts`) that was **already dead** before this
+change — an even earlier always-visible schedule panel superseded by the series page on 2026-09-02 —
+found and removed while touching this exact area, rather than left as rot.
+
+### Verified
+
+`node --check` clean on `module.js`; CSS brace balance holds (357/357) and every `/* … */` comment
+opened is closed (89/89); repo-wide grep for every deleted identifier
+(`momOpenSeries`/`renderSeriesPage`/`wireSeriesPage`/`scheduleFormSave`/`scheduleDelete`/
+`scheduleCreateOccurrence`/`scheduleFormHTML`/`scheduleOccFormHTML`/`momOrderCmp`/`momListDragTh`/
+`momWireReorder`/`_seriesSel`/`_schedFormOpen`/`_schedFormDraft`/`_schedOccOpen`/`_schedOccDraft`/
+`_momCameFromSeries`) — zero remaining references outside this changelog's own historical entries.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment. No live click-through
+of the promotion path (a plain meeting becoming a recurring series), the Meeting history table, or
+the Pointer-Events drag on the Minutes list against real data.
+
+`module.css`/`module.js?v=` → `20260912e`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260912e`.
+
+## 2026-09-11 (round 2) — The Meetings List gets manual drag-to-reorder, and the dashed divider becomes real tiles
+
+**Run `migrations/2026-09-11-mom-list-reorder.sql`.** Owner's two follow-ups on the same day's
+earlier round: (1) "in list mode, allow also drag to reorder"; (2) "the breaker as a dashed
+horizontal line is not enough. place each input group in separate tiles instead."
+
+### 1 — Manual order for the Meetings List, alongside its existing column sorts
+
+The List view already sorted by Title/Date/Attendees/Location/Minutes, defaulting to Date
+descending, with favorites always pinned to the top of whichever sort was active. There was
+nowhere for a planner's own, hand-picked order to live — dragging a row did nothing, because
+nothing recorded what "dragged" would even mean here.
+
+- A new **⋮⋮** column, leftmost, doubles as its own toggle: clicking its header switches the List
+  sort to `'manual'`. In that mode every row grows the same drag grip
+  (`momDragGripHTML`/`momWireReorder`) the Issues & Concerns / Lessons Learned register already
+  uses — Pointer Events, not HTML5 `draggable` (which never fires on a touch device at all), so one
+  gesture works for mouse, touch and pen. A note above the table ("Manual order — drag rows to
+  rearrange.") carries a **Sort by date instead** link back out.
+- ⚠️⚠️ **The List mixes TWO tables in one sequence** (`meeting_minutes` for standalone/recorded
+  meetings, `mom_schedules` for recurring series — `momUnifiedRows()`), so the new `sort_order`
+  column exists on **both** (`migrations/2026-09-11-mom-list-reorder.sql`, additive, idempotent) and
+  shares one numbering space by convention: dragging a meeting row past a series row renumbers both
+  tables together, spaced by 10 (the same idiom as `mom_items.seq` and
+  `2026-09-01-issues-lessons-reorder.sql`). A drag's write is per-row, addressed to whichever table
+  that row's `kind` says it belongs to.
+- ⚠️⚠️ **Manual order deliberately does NOT keep favorites pinned to the top**, the one place it
+  differs from every other List sort. Every other sort partitions into favorite/non-favorite halves
+  and sorts each with the same comparator (`momSortedRows`) — layering the pin OVER the sort. Doing
+  that here would mean a row dropped just above a favorite silently lands somewhere else instead;
+  the drop position lying about the result is a worse surprise than a starred row simply not
+  floating to the top while its order is being set by hand. The star still filters
+  (`_momBrowseF.fav`) and still renders; it just stops being an ordering rule for as long as manual
+  order is the active sort. Documented at length above `momSortedRows` in module.js, and in the
+  migration's own header comment.
+- ⚠️ Rows with no `sort_order` yet fall back to the List's own existing date-based order (newest
+  first) — `momOrderCmp` mirrors `issueOrderCmp`/`lessonOrderCmp`'s null-handling exactly, nulls
+  sorting after any explicitly ordered row.
+- ⚠️ A completed drag mutates the underlying `MOMS`/`SCHEDULES` array objects directly (not just the
+  transient sorted-row copy), or the very next repaint — anything that calls `renderBrowse()` again
+  before a reload — would silently snap the row back to its pre-drag position.
+- Verified by slicing `momOrderCmp`/`momSortedRows`/`momWireReorder` out of the shipped file and
+  executing them against DOM/table mocks (a `Function`-constructor closure standing in for
+  `document`/`SCHEDULES`/`MOMS`/`sb`/`renderBrowse`, the same technique used to verify
+  issues-lessons' equivalent below): a meeting dragged onto a series row writes **both** tables in
+  one pass, in the correct order, updates the in-memory rows, and calls `renderBrowse()` exactly
+  once; hovering the row being dragged marks nothing; a `pointercancel` clears every mark and commits
+  no write, even when a drop target was already highlighted at the moment of cancellation (a case
+  that failed on the first draft of this code — see the matching note in issues-lessons/CLAUDE.md,
+  the identical mistake made in both modules' drag code the same day and fixed the same way in both).
+- ⚠️ **Not verified signed in** — no drag has been run against a real project, and the migration has
+  not been run from here.
+
+### 2 — Six named sections, six tiles
+
+⚠️⚠️ **The dashed divider this replaces shipped the SAME DAY, hours earlier**, as the fix for a
+comment that had wrongly claimed the Detail view already carried it (see entry below). The owner,
+looking at that fix: "the breaker as a dashed horizontal line is not enough. place each input group
+in separate tiles instead." A dashed rule is still just a line running between two areas that
+otherwise look identical to the page around them; a box — its own border, its own background, its
+own margin — reads as a distinct block at a glance, which a line only does on close inspection.
+
+- New `.il-mom-sectile` (module.css): border + `--pd-radius-md` + `var(--pd-bg)` background + its
+  own top margin — lifted **verbatim** from `.il-mom-actions` (the Minutes section), which has been
+  boxed exactly this way since before this pass. One look for all six groups, not five sections
+  matching each other and a sixth (Minutes) that already happened to match by coincidence.
+- Details / Schedule / Venue / Attendees in `momDetailHTML`, and Details / Schedule / Venue /
+  Attendees / Agenda in `openAddMeetingModal` (the "+ Add meeting" modal — the two forms are meant
+  to "read as one system," per the modal's own long-standing comment, so both got the tile treatment
+  together rather than leaving one on the old dashed rule), are each now wrapped in their own
+  `<div class="il-mom-sectile">`. `.il-mom-agenda` (the Detail view's Agenda section, found by its
+  own id since `momApplySlides()` looks it up as `#il-mom-slide-agenda` to treat it as one whole
+  reporting-view slide) picked up the identical box styling in its own rule rather than being
+  wrapped a second time.
+- ⚠️ The old `.il-mom-slides .il-mom-agenda { border-top:0; ... }` override — needed only because a
+  dashed top border reads as "there is content above me," which is false once Agenda is its own
+  full-screen slide — is removed rather than adapted. `.il-mom-actions` has never zeroed its own box
+  while presenting, and the agenda tile now follows that same, already-established precedent: a
+  boxed section is just a boxed section, slide or not.
+- Verified by manual div-by-div balance inspection of every edited boundary (a `<div class="pd-field">
+  ...<div class="il-mi-val">...</div></div>` construct inside the conditional Notes block makes a
+  naive automated string-literal-extraction check unreliable on `momDetailHTML` specifically — it
+  reported a false imbalance that line-by-line reading disproved; `openAddMeetingModal`, simpler and
+  with no such nested conditional, cross-checked clean via the same automated method: 32 open / 32
+  close `<div>`, 5 open / 5 close `<h4>`, 5 `.il-mom-sectile` occurrences) and `node --check`.
+- ⚠️ **Not verified signed in.**
+
+`module.css`/`module.js` → `?v=20260911d`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260911d`.
+
 ## 2026-09-11 — A Card/Table switcher for the Minutes list, real section dividers, and the minute number stops being typed
 
 Owner's three items: (1) "when opening a meeting, the minutes are usually in tiles, provide also

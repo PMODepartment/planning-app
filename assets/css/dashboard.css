@@ -18,6 +18,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,700;0,800;1,400&display=swap');
 
 :root {
+  /* ⚠️⚠️ `html.pd-dark` (below) declares `color-scheme: dark` for its own
+     native-control chrome, and this file never declared the LIGHT half —
+     so a signed-in session running the app's own light theme (no
+     `.pd-dark` class) left the browser with no explicit scheme at all.
+     On a device set to iOS system Dark Mode, WebKit then falls back to the
+     OS preference for the parts of a `<select>`/date input it draws
+     natively, independently of the app's own light `--pd-card`/`--pd-ink`
+     — rendering near-white text on the authored white cell, i.e. exactly
+     "faint, thin, barely legible" against a background that is correctly
+     white. The app's theme is a CLASS (`theme.js` sets `html.pd-dark`),
+     never the OS media query, so this has nothing to do with `.pd-select`'s
+     own `color`/`background` declarations, which were already correct —
+     there was simply no signal telling native chrome which scheme the page
+     that DOES apply is using. `:root`'s (0,1,0) still loses to
+     `html.pd-dark`'s (0,1,1) when dark mode really is on, so this cannot
+     override the dark-mode declaration below. */
+  color-scheme: light;
   /* Brand palette */
   --pd-red: #EE3124;          /* Megawide Red (primary) */
   --pd-red-dark: #C42127;     /* Dark Red */
@@ -446,7 +463,24 @@ a:hover { text-decoration: underline; }
 .pd-app.pd-collapsed .pd-nav-sibling { justify-content: center; padding: 11px 0; gap: 0; font-size: 0; }
 .pd-app.pd-collapsed .pd-navtxt { display: none; }   /* wrapped labels (with sub-captions whose own font-size ignores the font-size:0 trick) */
 .pd-app.pd-collapsed .pd-navico { margin-right: 0; }
-.pd-app.pd-collapsed .pd-navsec { opacity: 0; height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; }
+/* ⚠️⚠️ THE LABEL FOLDS AWAY; THE GROUPING MUST NOT. The Portfolio rail is NINETEEN rows, and
+   collapsing it used to drop the Portfolio / Personal / System headings to nothing — so a
+   64px column of nineteen undifferentiated icons, with the three sections it is organised by
+   invisible. The heading becomes a rule instead: the words go, the boundary stays.
+   ⚠️ NOT `opacity: 0` any more. Opacity applies to the whole element, border included, so an
+   opacity-hidden heading cannot carry a visible divider — the text is collapsed by `font-size`
+   and `overflow` instead, which is also what lets the fold animate (see the transition below). */
+.pd-app.pd-collapsed .pd-navsec { height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden;
+  font-size: 0; color: transparent; margin: 8px 8px 7px;
+  /* ⚠️ NOT `var(--pd-line)`. Found by rendering it: that token is the LIGHT-theme divider
+     (rgb(220,219,219)) and this rail is #231F20 in both themes — a near-white rule on a
+     near-black column. The rail's own vocabulary is white-at-low-alpha (its hover is .06,
+     its scrollbar .16, the section label it replaces .3), and a divider must be quieter
+     than the text it stands in for. */
+  border-top: 1px solid rgba(255,255,255,.14); }
+/* ⚠️ A rule above the FIRST row would be a stroke separating the nav from the brand block,
+   which already has its own border. The first heading folds to nothing at all. */
+.pd-app.pd-collapsed .pd-sidebar nav .pd-navsec:first-child { border-top: 0; margin: 0; }
 /* ⚠ The icon rail drops the WORDS and keeps the mark. `.pd-brand-logo` is already `none`
    globally; it is named here so the rail's intent survives if that default ever changes. */
 .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: none; }
@@ -717,6 +751,14 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
 
 /* ---- Forms ---- */
 .pd-field { margin-bottom: 14px; }
+/* ⚠️⚠️ WAS --pd-fs-sm (12.5px) → --pd-fs-xs (11px) on 2026-09-12's first pass, "make
+   labels and inputs smaller, more minimalist". Dropped a further rung on the SAME
+   request repeated the same day — --pd-fs-micro (10px), the smallest rung this app's
+   own scale defines. Label and input stay EQUAL to each other on desktop; `.pd-label`
+   (below) moves with it for the same reason. */
+/* ⚠ Moves with `.pd-label` — they are the same idiom and the rule above says so in its own note.
+   Letting one of the two follow the scale and not the other is how a form comes to carry two label
+   sizes that nobody chose. */
 .pd-field label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
   text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
@@ -725,6 +767,25 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
      the BUTTON down to 7px to match, which is the same observation reached from the other
      end — someone had already decided these should agree. Both are --pd-radius-md now. */
   width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  /* ⚠⚠ --pd-fs-sm, WHICH IS WHAT THE SCALE ITSELF DESIGNATES FOR A CONTROL. The token's own
+     comment reads `--pd-fs-sm: 12.5px  /* button, input, select, secondary body *​/` — so an input
+     at --pd-fs-micro (10px, defined as "UPPERCASE label, caption, count badge") was a departure
+     from the scale, not an expression of it.
+     ⚠⚠ AND THE CODEBASE HAD ALREADY VOTED. Owner 2026-09-15: *"the font size ... is too small for
+     the window size"*. Measured before changing anything: **42 rules across 14 files** already
+     override this declaration upward — 22 to --pd-fs-sm and 20 to --pd-fs-base — in cash-flow,
+     contracts-claims, equipment-loading, issues-lessons, manpower-loading, portfolio-overview,
+     productivity-rates, progress-photos, project-schedule, resource-loading, risk-register,
+     s-curve, stakeholder-map and this file. A default that every second form has to undo is not a
+     default; the modules were patching around it one at a time.
+     ⚠ The phone `!important` floor below still pins the INPUT at --pd-fs-tap (16px) so iOS never
+     zooms on focus — that is unaffected and must stay.
+     ⚠⚠ THIS DECLARATION IS THE DEFAULT, NOT AN OVERRIDE, and a cleanup pass deleted it once for
+     exactly that reason: the sweep that removed the 22 now-redundant `font-size:var(--pd-fs-sm)`
+     overrides could not tell the rule that DEFINES the size from the rules that were merely
+     repeating it, so it took this one too and every input in the app fell back to the browser's
+     13.33px default. Caught by measuring after the sweep rather than trusting it. Do not let a
+     future cleanup treat this line as redundant. */
   font-size: var(--pd-fs-sm); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
 /* ⚠️⚠️ AN INPUT, A DATE INPUT AND A SELECT WITH IDENTICAL PADDING AND FONT-SIZE STILL
@@ -831,6 +892,15 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; font-weight: 700; }
 .pd-nt-portfolio [data-ico], .pd-nt-portfolio svg { color: var(--pd-red); flex: none; }
 .pd-nt-portfolio.sel [data-ico], .pd-nt-portfolio.sel svg { color: #fff; }
+/* Two-line row (2026-09-16) — "Portfolio" over "every project you can see", matching
+   the closed trigger's own wording (enhanceProjectSelect/renderSwitcher) so the row
+   you pick Portfolio from reads exactly like the state it puts you in. Mirrors
+   .pd-nt-proj-txt directly below: same gap/weight rhythm, its own name so a future
+   change to one cannot silently reshape the other. */
+.pd-nt-portfolio-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
+.pd-nt-portfolio-txt strong { font-weight: 700; }
+.pd-nt-portfolio-txt small { display: block; font-size: var(--pd-fs-micro); font-weight: 400; color: var(--pd-muted); }
+.pd-nt-portfolio.sel .pd-nt-portfolio-txt small { color: rgba(255,255,255,.82); }
 .pd-nt-list { padding: 4px 0; }
 .pd-nt-ghlabel { padding: 9px 10px 4px; font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
 .pd-nt-ghlabel-none { font-style: italic; text-transform: none; }
@@ -973,7 +1043,16 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 /* Form label used outside .pd-field (cash-flow's tabbed Assumptions, resource-loading).
    ⚠️ Same values as `.pd-field label` on purpose -- two label styles that drift apart is
       how one dialog ends up looking like a different product. */
-.pd-label { display: block; font-size: var(--pd-fs-sm); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
+/* ⚠⚠ --pd-fs-xs, NOT micro. `--pd-fs-micro` is defined as "UPPERCASE label, caption, count badge"
+   — and `.pd-label` is overwhelmingly used for SENTENCE-CASE field names ("Activity ID", "Activity
+   Name *", "Class Code (Finance)"). Measured in the Edit Activity modal, 47 labels, every one of
+   them sentence case and rendering at 10px. Uppercase micro-labels are a different idiom and keep
+   their own rules (`.pd-sec-head`, `.ps-form-sec`, `.pd-mini-l` …), which are untouched here. */
+.pd-label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
+/* ⚠ The helper text inside a label was the worst of it: `<small>` with no size of its own takes
+   the browser's 0.83em, which on a 10px label MEASURED 8.3px — below every token in the scale.
+   Pinned to micro so it is at least on it, and still a step below the label it qualifies. */
+.pd-label small, .pd-field label small { font-size: var(--pd-fs-micro); }
 
 /* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
 .pd-autosave { font-size: var(--pd-fs-xs); font-weight: 500; padding: 3px 9px; border-radius: var(--pd-radius-pill);
@@ -1213,6 +1292,20 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-note { margin-top: 16px; padding: 14px 16px; background: var(--pd-bg); border-left: 3px solid var(--pd-red);
   border-radius: var(--pd-radius-md); color: var(--pd-muted); font-size: var(--pd-fs-base); }
 
+/* A caution the planner has to read — carried by the DESIGN SYSTEM, not by a warning sign typed
+   into the middle of the sentence. Owner, 2026-09-11: *"Some of the tooltips are self explanatory
+   and doesn't really make the app professional."* A scan found 83 pictographs sitting inside
+   shipped copy: that is the voice of a code comment, and this repo writes those on purpose — but in
+   comments, where the next developer reads them, never in the product.
+   ⚠️ --pd-warn IS NOT THE TEXT COLOUR (#C77700 = 3.46:1 on white, under AA). --pd-warn-text is the
+   accessible one; the raw token is only ever the rule and the tint. */
+.pd-caution { border-left: 3px solid var(--pd-warn-line); background: var(--pd-warn-bg);
+  color: var(--pd-warn-text); border-radius: var(--pd-radius); padding: 8px 12px; margin: 8px 0;
+  font-size: var(--pd-fs-sm); line-height: 1.5; }
+.pd-caution code, .pd-caution b, .pd-caution strong, .pd-caution em, .pd-caution i { color: inherit; }
+/* For a chip or a table cell, where a block would break the row it sits in. */
+.pd-caution-inline { color: var(--pd-warn-text); font-weight: 700; }
+
 /* portfolio rollup header (Program / Workspace tabs) */
 .pd-rollup-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .pd-rollup-kind { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .05em; font-weight: 700;
@@ -1333,7 +1426,18 @@ body { overflow-x: clip; }
   .pd-app.pd-collapsed .pd-sidebar nav a,
   .pd-app.pd-collapsed .pd-nav-sibling { justify-content: flex-start; padding: 12px; gap: 10px; font-size: var(--pd-fs-base); }
   .pd-app.pd-collapsed .pd-navtxt { display: flex; }
-  .pd-app.pd-collapsed .pd-navsec { display: block; }
+  /* ⚠️⚠️ THIS ROW USED TO RESTORE `display` AND NOTHING ELSE, which was not enough: the desktop
+     rule above also zeroes height, padding and (now) font-size, and none of that is reset by a
+     `display`. So the mobile drawer has been rendering its Portfolio / Personal / System headings
+     at zero height and zero opacity — present in the DOM, invisible on screen. Found by changing
+     the desktop rule and checking what the drawer inherits from it. Every property the collapsed
+     rule takes away is handed back here, because on mobile `.pd-collapsed` is a FULL drawer. */
+  /* ⚠️ The values are `.pd-sidebar .pd-navsec`'s own, restated — the drawer must look exactly
+     like the expanded desktop rail, not approximately like it. */
+  .pd-app.pd-collapsed .pd-navsec { display: block; opacity: 1; height: auto; overflow: visible;
+    font-size: var(--pd-fs-micro); color: rgba(255,255,255,.3);
+    border-top: 0; margin: 0; padding: 16px 8px 4px; }
+  .pd-app.pd-collapsed .pd-sidebar nav .pd-navsec:first-child { padding-top: 0; }
   .pd-app.pd-collapsed .pd-navico { margin-right: 10px; }
   /* ⚠⚠ THE DRAWER SHOWS THE SAME LOCKUP AS THE DESKTOP RAIL, which inverts both of these
      rules. They previously restored the WORDMARK and suppressed the mark, because on mobile
@@ -1402,6 +1506,19 @@ body { overflow-x: clip; }
   .pd-input, .pd-select, .pd-textarea, .pd-input-sm,
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="hidden"]),
   select, textarea { font-size: var(--pd-fs-tap) !important; }
+  /* ⚠️⚠️ REVERSED 2026-09-12, LATER THE SAME DAY — this used to raise the label to match
+     the 16px input floor ("input text the same size as its label"). A fresh "reduce size
+     of both label and input text… make more minimalistic" pass, aimed straight at a phone
+     screenshot, makes that the wrong trade now: the INPUT genuinely cannot shrink below
+     16px (the guard above is a platform fact, not a preference — iOS zooms), but the
+     LABEL carries no such constraint at all. A label is never focused and never receives
+     a caret; only a focusable form control triggers the zoom. So the two are decoupled on
+     mobile: the input stays pinned at --pd-fs-tap for iOS safety, and the label drops to
+     the SAME small rung the desktop rule now uses (--pd-fs-micro), rather than being
+     dragged up to meet an input it cannot follow down. This is the only way to make a
+     mobile form actually read smaller without reintroducing the zoom-on-focus bug the
+     original --pd-fs-tap floor exists to prevent. */
+  .pd-field label, .pd-label { font-size: var(--pd-fs-micro); }
   /* ⚠️ And the same fields measured 22–35px tall, under the 44px this block already enforces on
      `.pd-btn`. A control you cannot reliably hit is not fixed by being legible. `min-height`,
      never `height`: a textarea must still grow, which is why it is not in this list. */
@@ -1410,6 +1527,21 @@ body { overflow-x: clip; }
   select { min-height: var(--pd-tap); }
   .pd-input, .pd-select, .pd-textarea { padding: 10px 12px; }
   .pd-input-sm { height: 40px; padding: 8px 10px; }
+  /* ⚠️⚠️ `input[type="date"]`/`input[type="time"]` are NOT a plain text box on iOS Safari —
+     they are a native compound control, and their own intrinsic sizing answers to the
+     platform's UI, not to the `padding`/`min-height` two lines above, until that native
+     chrome is reset. Left alone, the visible field can render far taller than this app's
+     own 44px minimum with the locale-formatted value centred deep inside it — which reads
+     on screen as a wide gap between the label and the value, because nothing marks where
+     the field's own edge actually sits. `appearance:none` hands the box back to this
+     file's own border/background/padding/min-height, which is the standard fix for this
+     exact iOS symptom; the platform's tap-to-open picker is tied to the `type` attribute
+     itself and is unaffected by it. Desktop is untouched — every browser tested here
+     (Chromium) already renders these controls at the padding/min-height above with no
+     reset needed, so this is scoped to the one platform that does not. */
+  input[type="date"], input[type="time"], input[type="datetime-local"] {
+    -webkit-appearance: none; appearance: none;
+  }
 
   /* ⚠️ The phone-width `.pd-home-head h2` / `.pd-modulebar h1` shrink to 14px
      that stood here is GONE, not converted: the type scale has no 14px rung, so
@@ -1662,6 +1794,14 @@ body { overflow-x: clip; }
 @media (min-width: 701px) {
   .pd-modulebar > h1 .pd-title-hasdrop { display: none; }
 }
+/* ⚠⚠ AT EVERY WIDTH, and that is the difference from the rule above. `UI.tabsToDropdown()`
+   adds `.pd-h1-hasdropico` only when its caller passed `opts.icon`, i.e. when the dropdown
+   trigger carries the module's mark itself — at which point the <h1> beside it is a duplicate
+   ICON as well as duplicate text, and there is nothing left in it worth a row at any size.
+   ⚠ The whole element, never the text alone: a text-only hide is what leaves a bare icon
+   stranded on its own line (see the long note above, and issues-lessons/module.css's "REMOVED"
+   block). Nothing is stranded by removing the element. */
+.pd-modulebar > h1.pd-h1-hasdropico { display: none; }
 .pd-modulebar > [class$="-tabs"] {
   display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
 }
@@ -2110,4 +2250,109 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 @media (prefers-reduced-motion: reduce) {
   .pd-sidebar, .pd-sidebar nav a, .pd-nav-sibling,
   .pd-sidebar-foot, .pd-sidebar .pd-navsec { transition: none; }
+}
+
+/* ==========================================================================
+   Personal notebook (PDNotes, assets/js/notebook.js)
+   Owner 2026-09-15: *"a personal notebook in the app that saves … like a sticky
+   note that doesn't close when moving through pages."*
+
+   ⚠️ z-index 55 is chosen, not arbitrary: it sits ABOVE page content and BELOW
+   the mobile nav scrim (60) and the open off-canvas sidebar (70), so opening the
+   navigation correctly dims and covers the notebook rather than fighting it. It
+   is far below the modal (900) and the toast (1000) — a dialog must cover a
+   notebook, and a toast must cover both.
+   ========================================================================== */
+.pd-nb { position: fixed; right: 18px; bottom: 18px; z-index: 55;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+
+.pd-nb-fab { display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 14px; border-radius: var(--pd-radius-pill);
+  background: var(--pd-card); color: var(--pd-ink);
+  border: 1px solid var(--pd-line); box-shadow: var(--pd-shadow-md);
+  font-size: var(--pd-fs-sm); font-weight: 500; cursor: pointer; }
+.pd-nb-fab:hover { border-color: var(--pd-muted); }
+.pd-nb.open .pd-nb-fab { border-color: var(--pd-red); }
+.pd-nb-fab-ico { font-size: var(--pd-fs-md); line-height: 1; }
+
+/* ⚠️⚠️ THE PANEL'S VISIBILITY IS DRIVEN BY `.pd-nb.open`, AND `display` DEFERS TO
+   `[hidden]` — because the first cut set `panel.hidden = true` and NOTHING HAPPENED.
+   `.pd-nb-panel { display:flex }` is specificity (0,1,0), exactly equal to the user
+   agent's own `[hidden] { display:none }`, and an author rule beats the UA default at
+   equal specificity. So the notebook could be opened and never closed.
+   ⚠️ This file already records that exact defect for `.il-icondd-menu` and `.pd-btn`
+   (see the note above `[hidden]` handling, and the 2026-09-09 u2 entry that fixed it
+   app-wide) — and this is the same mistake made again, one stylesheet later. Both
+   guards are kept deliberately: the CLASS is what opens it, the `:not([hidden])` is
+   what stops the rule ever out-ranking the attribute again. */
+.pd-nb-panel { display: none; }
+.pd-nb.open .pd-nb-panel:not([hidden]) { display: flex; }
+.pd-nb-panel { width: 380px; max-width: calc(100vw - 36px);
+  /* ⚠️ min() against vh so a short window cannot push the FAB off screen — the
+     control that closes the panel must always be reachable. */
+  height: min(60vh, 520px);
+  /* ⚠️⚠️ NO `display` HERE. It used to say `display:flex`, and because this block sits
+     AFTER the two rules above at the SAME specificity (0,1,0) it won on source order and the
+     panel could never close — the open/closed rules above were correct and simply outranked.
+     Adding a rule is not the same as removing the one that fights it. `flex-direction` is
+     harmless on a `display:none` box and applies the moment `.open` turns it into a flex row. */
+  flex-direction: column;
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius-lg); box-shadow: var(--pd-shadow-lg);
+  overflow: hidden; }
+
+.pd-nb-head { display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: 9px 10px; border-bottom: 1px solid var(--pd-line); }
+.pd-nb-head b { font-size: var(--pd-fs-base); }
+/* ⚠️ The `margin-right:auto` that pushes the buttons right lives HERE, not on the <b>, because
+   this element sits between them and is the one that may grow. It is empty (and so zero-width)
+   whenever the note list is on screen — the list names the note in that case. */
+.pd-nb-cur { flex: 1 1 auto; min-width: 0; margin-right: auto; font-size: var(--pd-fs-xs);
+  color: var(--pd-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-nb-status { font-size: var(--pd-fs-micro); color: var(--pd-muted); margin-right: 4px; }
+/* The note-list fold. A quiet chevron, not a .pd-btn: it is chrome for the panel it sits in,
+   and a third button-shaped control beside + New and Delete would read as a third action. */
+.pd-nb-sidet { background: none; border: 0; padding: 0 3px; cursor: pointer; line-height: 1;
+  font-size: var(--pd-fs-md); color: var(--pd-muted); }
+.pd-nb-sidet:hover { color: var(--pd-ink); }
+
+.pd-nb-body { flex: 1 1 auto; min-height: 0; display: flex; }
+.pd-nb-side { flex: 0 0 132px; min-width: 0; overflow-y: auto;
+  border-right: 1px solid var(--pd-line); background: var(--pd-bg); }
+/* ⚠️⚠️ (0,2,0) against `.pd-nb-side`'s (0,1,0), and the base rule declares NO `display` of its
+   own — so there is nothing here for this to tie with. That is the whole lesson of the panel
+   two rules above, where an author `display:flex` beat the UA's `[hidden]{display:none}` at
+   equal specificity and the drawer would not close. Do not add a `display` to `.pd-nb-side`. */
+.pd-nb.sidehid .pd-nb-side { display: none; }
+.pd-nb-list { list-style: none; margin: 0; padding: 0; }
+.pd-nb-item { display: flex; flex-direction: column; gap: 2px; cursor: pointer;
+  padding: 7px 9px; border-bottom: 1px solid var(--pd-line); }
+.pd-nb-item:hover { background: var(--pd-card); }
+/* Tint + a brand rail for the selected note — the app's own settled treatment
+   for a selected row, never a solid red fill (see the 2026-09-14 zvs entry). */
+.pd-nb-item.on { background: var(--pd-card); box-shadow: inset 3px 0 0 var(--pd-red); }
+.pd-nb-t { font-size: var(--pd-fs-xs); font-weight: 500; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.pd-nb-t i { color: var(--pd-muted); font-style: italic; font-weight: 400; }
+.pd-nb-when { font-size: var(--pd-fs-micro); color: var(--pd-muted); }
+
+.pd-nb-ed { flex: 1 1 auto; min-width: 0; resize: none; border: 0; outline: none;
+  padding: 10px 11px; background: var(--pd-card); color: var(--pd-ink);
+  font-family: inherit; font-size: var(--pd-fs-sm); line-height: 1.5; }
+.pd-nb-ed:disabled { color: var(--pd-muted); }
+
+.pd-nb-msg { margin: 0; padding: 14px 12px; font-size: var(--pd-fs-xs); color: var(--pd-ink); }
+.pd-nb-mut { color: var(--pd-muted); }
+.pd-nb-foot { flex: 0 0 auto; margin: 0; padding: 6px 10px;
+  border-top: 1px solid var(--pd-line); background: var(--pd-bg);
+  font-size: var(--pd-fs-micro); color: var(--pd-muted); }
+
+@media (max-width: 700px) {
+  .pd-nb { right: 12px; bottom: 12px; left: 12px; align-items: stretch; }
+  .pd-nb-panel { width: auto; max-width: none; height: min(70vh, 560px); }
+  .pd-nb-fab { align-self: flex-end; min-height: var(--pd-tap); }
+  /* A 132px list beside an editor is unusable on a phone; the list gets its own
+     row across the top instead of a column that squeezes the writing area. */
+  .pd-nb-body { flex-direction: column; }
+  .pd-nb-side { flex: 0 0 96px; border-right: 0; border-bottom: 1px solid var(--pd-line); }
 }

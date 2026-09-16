@@ -1,3 +1,1332 @@
+## 2026-09-16 — The portfolio gantt: today was never a line, and the grain is chosen rather than guessed — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+Owner: *"Project schedule portfolio level needs complete rework. UI bugged out completely. Double
+check the graph as well. is this supposed to be a gantt chart? Let's also have a toggle for year,
+quarterly, monthly viewing"*, and *"the toolbars isn't necessary since these are unusable not until
+a project is selected."*
+
+- **The "bugged out" UI was `.ps-toolbar` still on screen.** `takeOver()` set `hidden` on it, and
+  `.ps-toolbar { display: flex }` (this module's own stylesheet) beats the UA `[hidden]` rule
+  outright. Actions / Add activity / WBS / Split were drawing over the dashboard the whole time.
+  Fixed in the layer with a class, so every module is covered at once.
+- ⚠⚠ **"Today" was a stack of 18px stubs, not a line.** `.po-sh-now` was emitted inside every
+  `.po-sh-track` plus once in the axis, so it broke at every row gutter and group heading — a bar
+  could not be read against a date, which is most of what a gantt is for. It is one continuous line
+  on a grid layer over the whole plot now, with period gridlines beside it.
+- ⚠️ **The label column's width existed twice** (a 230px axis margin, a 220px label flex-basis) and
+  only the eye ever checked they agreed. One custom property feeds the axis, the grid and the label.
+- **Auto | Year | Quarter | Month.** ⚠️ Quarters and years anchor on the CALENDAR: stepping
+  `i % every` from the window's first month labelled Feb/May/Aug/Nov as "quarters" whenever the
+  earliest contract began in February.
+- ⚠️ **The plot widens from the tick count** — the first attempt was a flat `min-width:1600px`,
+  which at month grain measured **95 of 96 labels overlapping their neighbour**.
+- It IS a gantt, deliberately at PROGRAMME level: one bar per project (contract window rail, live
+  programme bar with its POC fill, the overrun past contract finish, a forecast-finish marker),
+  never per activity.
+
+## 2026-09-16 (m) — Portfolio scope draws a cross-project Gantt, and stops drawing nothing
+
+Owner, Phase E of the portfolio plan: *"the portfolio view of the schedule needs work as well."*
+Opened from the Portfolio sidebar this module drew **nothing at all** — 2026-09-14 set `pid` to null
+here on purpose and attempted no cross-project consolidation, so the row led to an empty page.
+
+### Where it lives, and why not in this file
+
+The dashboard is an eleventh `def()` in `assets/js/portfolio-dash.js`, beside the ten the owner moved
+into their own modules on 2026-09-15 and 2026-09-16 — **not** a new tab in `portfolio-overview`.
+
+⚠️⚠️ **The plan said to re-point `PORTFOLIO_TAB['project-schedule']`, and that map was REMOVED on
+2026-09-14.** Each module now opens portfolio-wide itself via `#pd_scope=portfolio`, so the plan's own
+step was stale. Followed the owner's more recent direction rather than the written step, and said so.
+
+This page's contribution is 23 lines: the stylesheet, the script, and one branch after
+`UI.renderNav(...)`.
+
+```js
+if (window.AppAuth && AppAuth.isPortfolioScope() &&
+    window.PortfolioDash && PortfolioDash.has('schedule')) {
+  PortfolioDash.takeOver('schedule', { select: '#ps-project' }).catch(...);
+  return;
+}
+```
+
+⚠️ **After `renderNav`, before `renderHeader()` and everything under it.** The shell and sidebar must
+be up — a planner has to be able to leave the page — and **everything below is skipped deliberately**:
+this module's wiring and `load()` are built around one project id, and running them with none is how a
+hidden UI issues reads nobody can look at.
+⚠️ `takeOver()` wires the project `<select>` itself, because skipping this block skips the line that
+fills it. Without it there is no way out of portfolio scope from the page you are standing on.
+Measured: **7 options** present after mount.
+
+### ⚠️⚠️ NO ACTIVITY ROWS. NONE.
+
+Every bar comes from roll-up columns already on the project row plus `start_date` / `end_date` and
+`forecast_finish`. `PROJ` is in memory, so the view costs **no read**. This matters on the day the
+portfolio S-Curve timed out (root (j), `57014`, combinatorial in the project count): this view has no
+such surface.
+
+### What it refuses to guess
+
+- ⚠️ **A stale roll-up is marked.** `schedule_updated_at` is written when this module is opened, so an
+  untouched project carries a plausible bar built on old numbers. Past `STALE_DAYS = 45` it says so,
+  on the row and in the KPI strip.
+- ⚠️ **No roll-up → a NAMED row, never a bar guessed from contract dates.** Counted in the coverage
+  line rather than dropped.
+- ⚠️ **Today, not a data date** — the data date is `localStorage` **per browser** and not
+  portfolio-wide (2026-09-14 h, still open). The note says which was used.
+- ⚠️ Grouping is `PDProgram`, and **a group of one gets no heading**: *"a heading above a single
+  project invents a hierarchy that is not there."*
+
+### ⚠️⚠️ A CROSS-CLOSURE CALL, AND A SIGNATURE BUG — ONE FOUND BY RUNNING, ONE BY READING
+
+- The month axis called **`cfMonthLabel`**, which lives only inside the **cash-flow** dashboard's own
+  `setup()` closure. It parses; it throws at render. **`wiring-check` 139/139 cannot see it** — it
+  enumerates globals, and this is neither. Now `moLabel` at module scope beside `pd` / `today`, which
+  were moved there for the identical fault a day earlier. ⚠️ The tell was that the **KPI strip
+  rendered correctly and the rows did not**.
+- **`PDProgram.labelFor` takes a PROJECT, not a key** — it derives the key itself. I passed the key,
+  so it derived a key from a key. Caught by **reading `program.js`**, not by running: the wrong call
+  still returns a string.
+
+### Verified
+
+`tools/test-portfolio-dash.js` **186/186** (was 184). ⚠️ An existing assertion pinned the layer at
+**ten** dashboards and correctly failed — **retargeted to eleven and named**, not weakened.
+`test-portfolio` 99/99, `wiring-check` 139/139, this page's 3.3MB inline script parses.
+
+⚠️⚠️ **A cross-closure sweep that bites**: re-injecting `cfMonthLabel` makes it report; clean
+otherwise.
+
+**Rendered in an iframe** at 1400px light, 1400px dark and 390px, transitions killed first, against a
+fixture whose every answer is hand-derivable — AVR101+AVR102 a real pair, OPW101 a group of one,
+BAU101 past its contract finish, SLN101 with no roll-up, GPR101 ~200 days stale:
+**0 errors**; KPIs `6 / 5 of 6 / 1 / 1`; **one** group heading and none above the three singles;
+5 bars, 1 overrun; the un-rolled-up project named, not drawn; bars inside their tracks at every width;
+no sideways scroll; and the overrun resolving `rgb(196,33,39)` light against `rgb(255,138,128)` dark,
+which is what proves the relocated stylesheet is in the cascade.
+⚠️ The module's own UI is **hidden, not removed** — its script has already bound handlers to those
+nodes. ⚠️ One of my own assertions was wrong rather than the code: it read `#main`'s `display`, but the
+dashboard mounts *inside* `#main`.
+
+⚠️ **Not verified signed in** — the fixture is hand-built; no real portfolio has been drawn.
+⚠️ Harness gitignored and **deleted before committing**.
+
+`portfolio-dash.js` / `portfolio-dash.css` → `?v=20260916n`; `MODULE_V` → `20260916n`, sort-checked
+past `20260916j`, `20260916k` and the `20260916m` a concurrent session chose for the same assets
+in the same minute — see root (n).
+⚠️ **The working tree was on a stale base and would have deleted four dashboards** — see root (m).
+
+## 2026-09-16 (k) — The Summary is rebuilt around a verdict, and seven figures it already computed
+
+Owner: *"Check the summary page live it needs UI improvements overhaul"*, then, asked whether KPI
+cards were the right shape at all: *"Let's brainstorm."*
+
+### ⚠️⚠️ WHAT WAS WRONG WAS THE RANKING, NOT THE FIGURES
+
+Measured on the shipped page at 1400px **before a line was changed**:
+
+| | |
+|---|---|
+| KPI cards | **six**, laid out **5 + 1** — a **746px trailing gap** with a lone Health card in it |
+| charts | **zero**, anywhere on the page |
+| detail rows | **eighteen, in four sections, all drawn with the identical `.ps-smy-row`** — so a 64-day slip reads exactly like a schedule-quality metric |
+| section headings | **11px — the same size as their own content**, so nothing outranks anything |
+
+⚠️⚠️ **`summaryData()` IS BYTE-IDENTICAL TO BEFORE — 7850 chars, compared programmatically rather
+than asserted.** The arithmetic was already right; what the page lacked was a shape that says which
+number matters. Every change here is presentation.
+
+⚠️ **The principle is this repo's own.** The Portfolio Overview went through exactly this on
+2026-09-16 (e) and recorded it in one line — *"What was there reported LEVELS … A level is not a
+decision."* So: **one verdict, then the evidence, then the detail.**
+
+1. a **verdict line** — the finish position as a sentence, not assembled by the reader
+2. **four cards, not six** — each triggering a different action
+3. a **curve**, because *"are we catching up or falling further behind"* is a question no count can
+   answer at any size
+4. what is **driving** the finish, ranked — not a count of critical activities
+5. **milestones on a time axis**, so overdue sits visibly left of today
+6. trades, look-ahead and health as **supporting detail**
+
+### ⚠️⚠️ SEVEN FIGURES THE PAGE ALREADY COMPUTED AND NEVER PRINTED
+
+`cpm.start` (the programme had **no start date on screen**), `ms.achieved`, `counts.done`,
+`counts.acts`, `counts.total`, `ms.total` and the trade count. Found by grepping the old renderer for
+each: **0 uses**. Computing a figure and not printing it is the cheapest kind of waste — the work is
+already done. *"14 of 120 achieved"* is also what makes *"3 overdue"* mean anything.
+
+### The decisions worth keeping
+
+- ⚠️⚠️ **THE CURVE COMES FROM `PDScurve`, THE SHARED ENGINE.** `portfolio-overview` carried a
+  hand-copied copy of this maths until 2026-09-10 (z1) and its own log records what that cost. The
+  S-Curve module, the project Dashboard panel and this page now read one engine. ⚠️ It returns null
+  rather than throwing when the engine is absent, because `scurve.js` is one more script tag that can
+  fail to load.
+- ⚠️⚠️ **The actual series is CLIPPED AT THE DATA DATE, and it has to be** — `PDScurve` pads the
+  series to the full programme span, so drawing it unclipped would show a flat "actual" line running
+  into the future, which reads as *work stopped* rather than *not yet reported*.
+- ⚠️⚠️ **Two EXPLICIT tracks, not `auto-fit`.** Measured at 1400px: `auto-fit` built **three** tracks
+  for two columns of content, stranding the third. The same 5+1 defect the six cards had, one level
+  down.
+- ⚠️⚠️ **The verdict tint is composited over `--pd-card`, NOT over the page ground** — a tint measured
+  against the wrong surface is how a "passing" contrast figure ships unreadable. Same reasoning as the
+  BOQ status pills.
+- ⚠️ **`.ps-smy` cap 1180 → 1320px.** With a curve and a two-column body the old cap starved both.
+- ⚠️⚠️ **NO BASELINE AT ALL IS A DIFFERENT ANSWER FROM "NOTHING HAS SLIPPED", kept verbatim from
+  2026-09-15 (v).** That entry exists because the page told a project with 2,561 unbaselined
+  activities that nothing had slipped. The rebuild does not get to quietly re-introduce it.
+
+### ⚠️ One real gap found by the class audit, and one false positive
+
+Auditing every `ps-smy-*` class emitted against every one with a CSS rule: **`ps-smy-col` was emitted
+four times with no rule at all.** Not broken — the track is `minmax(0,1fr)`, which is the deliberate
+shrink guard — but a grid child defaults to `min-width:auto`, so the day one of those wrappers holds
+a flex row it would widen past its column on a long activity name. `.ps-smy-col { min-width:0 }`
+closes it and stops the class reading as emitted-but-unstyled to the next audit.
+
+⚠️ `ps-smy-v-` is flagged by the same audit and is **correct**: it is `'ps-smy-v-' + vTone`, a
+concatenated prefix, and all four assignments of `vTone` are `good` / `bad` / `none`, each with a
+rule. The trailing-hyphen shape is the false positive `tools/dead-hooks.js` already documents.
+
+### Verified
+
+Inline `<script>` **parses** — 1 block, which is the check that matters here, because a 50k-line
+module dies whole on one syntax error and brace-balance cannot see it. `<style>` braces
+**2298 / 2298**; `function` keywords 7122 → **7139**; 0 NUL, pure LF. `wiring-check` **139/139**
+(`scurve.js` resolves and every asset is on one version); `dead-hooks` **9**, the documented baseline.
+The concurrent session's suites re-run on the integrated tree: `portfolio-dash` **184/0**,
+`portfolio-overview` **99/0**.
+
+⚠️⚠️ **MY OWN PARSE CHECKER WAS WRONG FIRST, and it reproduced this repo's documented 16/14 false
+positive.** A global `<script>` regex left to run over text it had already consumed matched the
+literal `<script` **inside the JS strings that build the print and export stylesheets**, opened bogus
+overlapping blocks and reported two parse failures in correct code. It reported them **identically on
+HEAD**, which is the only reason I did not chase them. Fixed by resuming the scan *after* each block
+it closes — which is also the browser's own rule. It now finds **1** block, not 3.
+
+⚠️ **Not verified signed in**, and ⚠️ **no committed suite covers `summaryData`** — the 30 assertions
+the 2026-09-15 (s) entry cites were scratch files and are not in the repo, the same gap
+`contracts-claims` had before `test-boq.js` was written. The function is unchanged here, so this
+change does not widen that gap, but it does not close it either.
+
+⚠️ **Carved.** This work was uncommitted in the same file as the concurrent session's unpushed
+portfolio-scope work (`takeOver('schedule')`). Established first that my Summary code makes **zero**
+references to `PortfolioDash`, then removed their three blocks and **restored their own newer
+`db.js` token**, which the working tree had reverted. Their work is untouched on disk.
+
+`MODULE_V` → `20260916k`. ⚠️ **Not `j`** — the concurrent session took that while this was in flight,
+and the token is re-derived from what `origin/main` actually has **after** integrating, never guessed
+before. `scurve.js` keeps `?v=20260901a`: it is newly referenced here, not changed.
+
+## 2026-09-15 (w) — `fitDist`: one framing rule, and it finally knows the canvas's shape
+
+Owner: *“The presets view also do not view properly and I cannot see the ground”*.
+
+### ⚠⚠ THE CAMERA STOOD THE SAME DISTANCE OFF WHATEVER SHAPE THE CANVAS WAS
+`var d = Math.max(span * 2.6, tall * 1.9) + 1.5` — no aspect term. Tuned at the card's own
+698 × 503 (aspect ~1.39); measured live at a 1900px viewport the canvas is **1752 × 503, aspect
+3.48**, and the model filled **19% of the frame**. A `PerspectiveCamera`'s `fov` is **vertical**, so
+a wider canvas sees more at the same distance — keeping the distance throws the extra width away.
+- **`fitDist(aspect)`**, asked by `place()`, by `r0` and by `resize()`. ⚠ Three copies of a framing
+  rule is three chances for the viewpoint buttons, the opening view and a resized card to disagree.
+- ⚠ Vertical term aspect-**independent**; horizontal term scales **inversely** with aspect.
+- ⚠⚠ Returns today's value **exactly** at `VS3_REF_ASPECT`, so nothing moves at the shape it was
+  tuned for.
+- ⚠ `resize()` re-derives `r0` and **scales `rot.r` by the same ratio** rather than resetting it —
+  `rot.r` is where the planner left the camera.
+
+### Verified by execution (the shipped formula run as the control)
+Reference aspect **identical** (37%→37%, 56%→56%); at the measured 3.48 the 1-storey card goes
+**19% → 41%** and the 3-storey **56% → 68%**; a narrow 0.80 card **pulls back** (17.1 → 28.6) so it
+still fits. Every case asserted to fit both axes. `node --check` PARSE OK; **2,074 → 2,075
+functions, 0 lost**; 0 NUL bytes.
+
+### ⚠⚠ Not verified signed in
+The browser session signed out mid-task, so **no rendered frame was seen** — the arithmetic is
+proven, the picture is not.
+⚠ **“I cannot see the ground” is a different question and is deliberately not answered here:** the
+grade plate belongs to the **site** model, and a per-trade tower card has never drawn one. Whether
+it should is a design decision.
+
+### ⚠ The toolbar asks were shipped by a concurrent session
+`.ps-vstack` now carries `border-top:1px solid var(--pd-line)` (the delineation the owner asked for
+twice), and labels moved inside the segments as `.ps-vs-seglab` / `.ps-vs-rowlab`. I had drafted a
+`.ps-vs-grp`-based labelling and **discarded it unshipped** — a second labelling idiom over one bar
+is exactly the drift this file keeps recording. ⚠ And measuring first is what kept it small:
+**nothing in that toolbar clipped** (every chip `scrollWidth === clientWidth`, nothing past a bar's
+edge); the defect was a missing boundary.
+
+`MODULE_V` → `20260915w`.
+
+## 2026-09-15 (j) — The Summary told a project with no baseline that nothing had slipped
+
+Owner, with the Summary open on OPW101 and six numbered points. One of them is a defect and the
+rest are the page saying too much, or too little.
+
+### ⚠️⚠️ 1 · "WHAT DOES THIS SECTION PROVIDE?" — NOTHING, AND WORSE THAN NOTHING
+
+Owner, of *Biggest slips against Baseline 21-Aug-26 · 2561 activities carry no baseline*. On that
+project **2,561 of 2,561 activities carry no baseline**, so the section printed **"Nothing is
+finishing later than its baseline."** — beside a **Behind baseline 0 · 0 ahead · 0 on time** card.
+
+Every one of those reads as good news. The truth is that **not one figure on the page can be
+measured against a baseline at all**, which is itself the finding and the thing to act on. A screen
+that answers *"nothing has slipped"* to *"nothing can be measured"* is worse than one that says
+nothing, because a reader acts on it.
+
+- The empty state now names the situation and where to fix it (**Actions ▾ Baselines…**).
+- The **Behind baseline** card shows an **em dash**, not a zero: three zeros read as three
+  measurements.
+- ⚠️ The test is that **nothing resolved**, not that `noBL` is merely non-zero. A programme where
+  most activities carry a baseline and a handful do not is the ordinary case, and the count in the
+  section note already reports it. Only the all-or-nothing case changes.
+
+### ⚠️ 2 · The look-ahead was counts with nothing to act on
+
+Owner: *"Look ahead seem to be useful but doesn't add much value."* Right — *"241 starting"* over a
+2,561-activity programme says nothing about **which** 241. Each window now also reports how many of
+that work is **on the critical path**, which is the one cut that changes what you do next, and it
+costs nothing: `_critical` is already on the row from `ensureCPM`.
+⚠️ Counted **once per activity**, not once per edge — a 5-day task inside a 42-day window both
+starts and finishes in it, and is one piece of critical work rather than two.
+
+### 3 · Schedule Health — unchanged, as agreed
+
+### 4 · Progress by trade: `0% 1750` was one run of digits
+
+Two different quantities printed as one. They are now two right-aligned columns of their own —
+`0%` and `1,750 acts` — with `tabular-nums` so a column of percentages lines up, and the count says
+what it counts. On a phone both drop their fixed reservation, since the track wraps below them.
+
+### 5 · The footnote loses its third sentence
+
+Owner: *"too lengthy and the last sentence doesn't provide any value."* Correct — *"Everything here
+is derived from the schedule as it stands; nothing on this page changes it"* reassures about
+something nobody suspected, and a read-only page saying it is read-only is the screen explaining
+itself rather than reporting.
+⚠️ **The other two stay, and are load-bearing:** without the first a reader takes the percentage
+for a mean; without the second they take the variance for a comparison against the *current* plan,
+which measures nothing.
+
+### 6 · The header, and the Print button
+
+*"As of 01-Feb-27 · baseline Baseline 21-Aug-26 · 2561 activities, 0 milestones"* →
+**"As of 01-Feb-27 · 2,561 activities · 0 milestones · Baseline 21-Aug-26"**.
+⚠️ `baseline Baseline 21-Aug-26` was a **stutter**, because a baseline here is user-named and the
+name usually already begins with that word. The label is printed as it stands and prefixed only
+when it does not say so itself (the `BL0` fallback). Counts gain thousands separators — 2,561 reads
+and 2561 does not.
+⚠️ **Print is gone at the owner's request, and its handler went with it.** Ctrl+P does the same
+thing, and a handler bound to an id nothing renders is the `#pk-boq` shape this repo has shipped
+once already. The `@media print` rules stay: the page still prints, it just no longer carries a
+button to do it.
+
+### ⚠️⚠️ 0 · The data-date notice is dismissible, and the key carries the date
+
+Owner: *"The yellow notification warning needs to be dismissible as well. This doesn't have to be
+shown all the time."* Fair — once read, repeating it every visit is noise.
+
+But the hazard is real and does not go away: the data date is per **browser** and drives 62 call
+sites including the CPM. So *dismissed* means **"I have acknowledged THIS pinned date"**, not
+"never tell me again" — `smyWarnKey()` includes the data date, so **re-pinning a different one
+brings the warning back**. A permanent dismissal would let a planner silently inherit somebody
+else's "now" and never be told.
+
+### Verified
+
+**30 assertions, 0 failing**, `summaryData` sliced out by name and executed over a fixture shaped
+like OPW101 — 2,561 activities, 0 milestones, **no baseline anywhere** — with **HEAD run beside it
+as the control**: HEAD's windows carry no critical figure, HEAD has no no-baseline branch, HEAD
+carries the Print button and the third sentence, and HEAD runs the percentage and the count
+together. Starts, finishes, progress, the trade split and health are all asserted **unchanged**.
+The previous suite still passes **34/34**.
+
+**Rendered at 1400px** against the module's own stylesheet — ⚠️ inside an **iframe**, because the
+pane is ~344px and the phone media query applies to it; and ⚠️ taking the **one real `<style>`
+block**, since the regex returns three here and two are JS strings that build the print stylesheets.
+Header exact, no Print button, warning background resolving to `rgba(199,119,0,0.12)` (a **colour**,
+so the sheet is provably in the cascade), dismiss **24×24** and not overlapping the text, trade
+percentages right-aligned at one x and counts at another, look-ahead rows reading
+*"241 starting · 161 finishing 30 critical"*, and **no horizontal page scroll**.
+
+**The dismiss was clicked, through the real handler:** warning gone and the key written; re-pinning
+the data date to 15-Mar-27 **brings it back**; returning to 01-Feb-27 keeps it dismissed.
+⚠️ Measured at 20×20 first — under WCAG 2.5.8 AA's 24px target — and raised.
+⚠️ A harness fault worth recording: the first render threw `t_ is not defined` because I had not
+sliced that one-line helper. A missing slice reads exactly like a missing function in the code.
+
+`wiring-check` 136/136; inline script parses (3.34MB); `ps-smy-bv` and `ps-smy-print` are gone from
+the CSS and the JS, not left dead.
+⚠️ **Not verified signed in** — the fixture is shaped like OPW101, but no live project has been
+summarised.
+
+`MODULE_V` → `20260915s`, sort-checked.
+
+
+## 2026-09-15 (i) — A class code that lost its leading zero resolves again
+
+**Run `migrations/2026-09-15-class-code-pad.sql`.** Owner: *"let's fix the class code leading
+zeroes."* The item 2026-09-15 (f) reported and refused to guess at.
+
+### ⚠️⚠️ THE MIGRATION'S RULE IS NOT BEING BROKEN — IT IS BEING INVERTED
+
+`2026-08-21-class-codes.sql` forbids **de-zeroing**, because the de-zeroed space is not unique:
+`015051` (Gen Req › Earthmoving) collides with `15051` (Metal Works › Railings), and `017151` with
+`17151`. That is a rule about **stripping** a zero, or about padding a value that is **already a real
+code**. `ccKeyOf` does neither: the raw value is looked up first at **both** levels, and the padded
+form is consulted only when the raw resolves to nothing — i.e. only for a value that is already
+broken. `15051` resolves, so `15051` is never touched.
+
+⚠️ **Measured against the seeded chart, not argued:** every code at either level is 5 or 6 characters
+— **there is no 4-character code anywhere** — and of the 221 de-zeroed forms that are not themselves
+real, **221 pad to exactly one real code and 0 are ambiguous**. A collision still stores `''` and
+resolves to nothing rather than guessing.
+
+### ⚠️⚠️ AND THE WRITER WAS FIXED FIVE DAYS AGO
+
+`CLASS_CODE_DB` — `+ Library` in the Schedule Builder — held Finance's L2 group chart **with the
+leading zeros stripped** until **2026-09-10 (z4)** padded all 43 entries. Everything pushed from the
+library before that date carries the de-zeroed code; the library is correct now. So this is a bounded
+read-time repair of existing rows, not a licence for new ones, and the push is deliberately untouched.
+
+### ⚠️ It fixes the SCREEN. The migration fixes the DATA.
+
+`boq_allocations` gates on `project_schedule.class_code`, and the BOQ allocator matches an activity's
+**stored** code against a bill line's — so a padded code still misses there until the migration runs.
+`ccodeCellHtml` therefore marks it: a **dotted underline** and the stored value in the tooltip.
+⚠️ **Not a colour.** The code shown *is* the right code; red means *not in the chart at either
+level*, and blurring those two is the confusion the owner had to ask about on 2026-09-15 (f).
+
+### Verified
+
+**45 assertions, 0 failing**, the resolver sliced out by name and executed over the real chart with
+**HEAD as the control**: `3050 → 03050 Rebar`, `4050 → 04050 Formworks`, `5050 → 05050 Concrete`,
+`6050 → 06050 Precast Works`, and **HEAD resolves none of the four at either level** — the red tags
+from the screenshot, reproduced. Both collision pairs stay distinct and unpadded; **901 real codes
+resolve exactly as on HEAD** with none flagged; `ccGroupOf` still answers for the allocator; and
+⚠️ **an unloaded chart pads nothing and calls nothing unknown**. Inline script parses (3.3MB).
+⚠️ **Not verified signed in**, and the migration has not been run.
+
+`MODULE_V` → `20260915q`, sort-checked.
+
+
+## 2026-09-15 (h) — A Summary view, derived from the engines that already exist
+
+Owner: *"a dashboard summary view for the module for reporting purposes."* A fourth entry in the
+title menu: **Summary**.
+
+- ⚠️⚠️ **NOT "Dashboard" and NOT "Reporting view"** — the first is the project-level page (which
+  already carries a Project Schedule panel), the second is a LAYOUT MODE in this module that strips
+  the chrome off the Gantt. A third thing needs a third name.
+- ⚠️ It revives what the **Planner Cockpit** was removed for on 2026-09-02 (*"a monitoring surface,
+  not schedule development"*). That reasoning holds for a monitoring view among the BUILDING views;
+  this one derives everything and offers nowhere to act.
+- ⚠️⚠️ **It computes nothing of its own** — `computeHealth`, `ensureCPM`, `dispStart`/`dispFin`,
+  `blPrimaryLabel`, `isWbs`/`isMile`/`isChangeOrder`, `today()`. This module has already shipped a 3D
+  view that disagreed with the 2D view of the same data; a summary with its own arithmetic would be
+  a second opinion presented as a report. `summaryData()` is pure over `rows` + `today()` so it can
+  be sliced and executed; the renderer only formats what it returns.
+- **Duration-weighted progress** (a mean makes a 1-day activity worth a 200-day one — 14.7% vs 25%
+  on the fixture), **variance against the primary baseline's finish** with the no-baseline rows
+  counted, **undated milestones counted not dropped**, the **look-ahead from the data date**, a
+  **named bucket** for activities with no trade, and `null` rather than `0%` for a trade with no dates.
+- ⚠️⚠️ **The data-date warning is the point.** It is per-BROWSER localStorage driving 62 call
+  sites including the CPM (flagged 2026-09-14 h, still unfixed), so two planners can read different
+  figures with nothing saying so. Stated on screen when pinned.
+- ⚠️ `ps-longdoc` is set for this tab, or `.pd-content { height:100vh }` pins it and the lower half
+  is unreachable — the 2026-09-14 (w) defect.
+- ⚠️ Rendered **on entry only**: recomputing on every grid edit would cost a CPM pass per keystroke
+  for a view nobody is looking at.
+
+### ⚠️⚠️ A class collision only rendering could find
+
+**`.ps-sum` is already the WBS summary BAR**, and it is `position:absolute`. The panel inherited it,
+fell out of flow and rendered as a 56px sliver over an empty page — while the DOM was complete and
+every count assertion passed. Renamed `ps-smy-*`; the `ps-sum*` set is asserted back to **exactly**
+HEAD's nine names.
+
+**34 assertions**, `summaryData()` sliced out by name and executed over a hand-computed programme.
+⚠️ Three were MINE being wrong — a mis-count, a tie that made "worst slip" prove nothing, and a
+forecast date used where the baseline belonged, which is the very mistake the figure exists to
+prevent. Rendered at 1280px and 390px: 6 KPIs, 5 bars, 15 rows, no horizontal scroll either width.
+⚠️ Not verified signed in. `MODULE_V` → `20260915p`.
+
+## 2026-09-15 (g) — Activity attachments, in the form's Notes section
+
+**Run `migrations/2026-09-15-schedule-attachments.sql`.** Owner: *"attachments on activities in the
+Schedule module, in the Notes section."*
+
+⚠️ **A correction to what the ask assumed:** the "Notes section" here is the last section of the Edit
+Activity modal and it held exactly one thing, a Remarks textarea. The **Notebook / Files tabs were
+never built** — `renderDetails()` handles ten tabs and none is notes; all that survived were two
+orphan comment headers and `migrations/add_notebook_files.sql`, whose `notebook` and `files` jsonb
+columns **nothing in this module reads** (checked: all four `.files` hits are DOM `FileList`). Those
+two comment headers are now replaced by the real thing; the dead columns are reported, not dropped.
+
+- **`PDAttach` (assets/js/attach.js), an instance — not a copy.** The three ordering rules live once.
+- ⚠️⚠️ **`activity_id`, never the row uuid** — an import reinserts every row. And `activity_name` is
+  stored beside it as a tell-tale, because a *regenerated* schedule reissues the same id space to
+  different work (2026-09-14 t). `attStale()` reports a mismatch and re-points nothing.
+- ⚠️⚠️ **Renaming the Activity ID carries the files across**, scoped to `project_id` + the old id.
+- ⚠️ **One project-scoped read** (`PDAttach.loadProject`), never `.in(activity_id, …)` — 16,000
+  activities do not fit in a URL — and through `PDb.selectAll`, because the 1000-row cap is silent.
+- ⚠️ `_attStaged` is reset on **every** form open, or files chosen for a cancelled save would be
+  flushed onto the next activity opened.
+- ⚠️ No grid indicator and no unused `attCount` helper: saved column order is positional, so a new
+  column is its own change.
+
+### ⚠️⚠️ Two bugs `node --check` could not see, both found by running it
+
+- **`canWrite()`** — a variable, not a function. Throws on the first paint. Fourth instance here.
+- **`loadProject` was never exported from `attach.js`**, and the caller's try/catch **swallowed** it,
+  so the panel rendered empty for ever and looked right.
+
+**21 assertions, 0 failing**, executing the sliced functions against the module's real neighbours.
+⚠️ Contrast bases pinned to SHAs — both of today's suites went green on both sides the moment their
+commits landed. ⚠️ Not verified signed in; the migration has not been run.
+`MODULE_V` → `20260915l`; `attach.js` → `?v=20260915b`.
+
+## 2026-09-15 (f) — The Class Code cell prints a code and nothing else
+
+Owner, off an OPW101 screenshot: *"Some class codes are correct with only having a number within
+them and others have a number and series of characters. It should only be the number that is
+reflected in the class codes."*
+
+`ccodeCellHtml` appended the Finance description after the tag on both resolving branches —
+`'<span class="ps-cctag">' + code + '</span> ' + desc`. The cell now emits the tag alone.
+
+- ⚠️⚠️ **THE MISSING SPACE WAS THE FLEX ANONYMOUS-ITEM TRAP, third occurrence in this repo.**
+  `.ps-cell` is `display:flex`, so the trailing text node became an anonymous flex item and the
+  browser stripped its leading space — the source really did contain it and the screen really could
+  not show it. Same mechanism as the sidebar brand gap and `Use 0 activit ies`. Emitting one element
+  instead of two means the trap cannot recur here.
+- ⚠️ **Nothing is lost.** `ttl` already carried `code — L1 › L2 › L3`, and the task row now matches
+  `sumCcodeHtml` beneath it, which has always printed the code alone. At `--c-ccode: 190px` the
+  description was being ellipsised on most rows regardless.
+- ⚠️⚠️ **The rows that LOOKED right were the broken ones.** Reproduced against HEAD: the bare-number
+  rows (`3050`…`9050`) were taking the **`unknown`** branch — not in the chart at either level, which
+  is why they render red — while `10050`+ took the **`group`** branch and resolved correctly. The
+  break falls between the 4-digit and 5-digit codes, i.e. OPW101's stored codes are missing a leading
+  zero the chart has (`03050`).
+  ⚠️ **Not fixed, and not safely fixable in a render function:** `2026-08-21-class-codes.sql` records
+  that de-zeroing collides genuinely different items (`015051` Earthmoving with `15051` Railings), so
+  both forms can be real codes. It needs the chart compared against the project's stored values.
+- **Verified** by slicing `ccodeCellHtml` out of the shipped file **by name** and executing it over
+  all four outcomes with **HEAD as the control**: 4/4 pass on the fix, **2/4 fail on HEAD** — exactly
+  the item and group cases the owner photographed. Each case asserts the cell contains **no letters**,
+  which is the literal requirement, and that the tooltip still leads with the code.
+  ⚠️ Not verified signed in. `MODULE_V` → `20260915j`, sort-checked.
+
+## 2026-09-15 (e) — The site draws every floor from its own plan, and the labels were mirrored under it — ethanrobles10
+
+Owner, with the per-tower card and the site view side by side: *"how come in this view, the per
+floor configuration is defined. However in the site view, there is no defined configuration or
+defined floor plans per floor and look at the labels."*
+
+Two faults in one screenshot, and they are unrelated to each other.
+
+### ⚠️⚠️ ONE: THE SITE WAS DRAWING EVERY FLOOR FROM THE TOWER'S SITE OUTLINE
+The floor-by-floor site model emits one cell per (tower, floor) and every one of them carries the
+same `c.label` — the tower. So `_vsZpPolysOf(sitePlan, label)` answered with the tower's single
+traced site shape thirteen times over, and the building came out an extruded prism. **The floors
+were never consulted at all**, even though their plans were sitting in the same map the per-tower
+card reads, which is exactly why the owner could see them in one view and not the other.
+
+⚠️ The floor's own plan is now **fitted into the tower's place** (`_vsZpFitPolys`): the plan's
+bounding box is centred inside the tower's — its traced site footprint where it has one, its wrap
+slot where it does not. Two facts have to survive that, and both do: WHERE the building stands (the
+site trace) and WHAT SHAPE the floor is (the floor trace).
+⚠️ **CONTAIN, NEVER STRETCH.** The two are different drawings at different scales, and stretching a
+floor plan to fill a site footprint would invent a floor nobody drew — the one thing this view
+exists not to do. A plan proportionally deeper than its footprint sits narrower than it instead.
+⚠️ Each sheet's own `ar` divides the depth before anything is compared, or a floor drawn on a wide
+sheet and one drawn on a tall sheet stop being the same building.
+⚠️ **After the colour decision, deliberately**: `fill` is already settled from the tower's site
+polygon, so a floor plan cannot repaint a tower and delete the channel that says which building this
+is. And a project with no floor plans traced keeps exactly the prisms it has today.
+
+### ⚠️⚠️ TWO: THE LABEL'S RING WAS THE TOWER'S MIRROR IMAGE
+Yesterday's fix gave each floor name its tower's footprint ring and projected it per frame. The ring
+was read straight out of the plan: `[(u - 0.5) * plateW, (v - 0.5) * plateD]`. But `_vs3PolyMesh`
+lays a traced ring down with `rotation.x = -PI/2`, which sends the shape's **+Y to world −Z** — so
+the mesh stands at the mirror of those coordinates in depth. The names were being anchored to where
+the tower **would** be if the site were flipped: right side of the property, wrong place on it, and
+under perspective that lands a name low and squashed rather than obviously somewhere else. A tower
+traced near the middle of the sheet barely moved; the one traced off-centre was **42 px** out.
+⚠️ **A label's ring must be the coordinates the MESH is built in, not the coordinates the plan is
+stored in.** One minus sign, with the reason written beside it.
+
+### ⚠️⚠️ AND THE HARNESS COULD NOT HAVE CAUGHT IT, WHICH IS THE REAL LESSON
+Yesterday's test worked out where a tower stands by **repeating the builder's own plate-to-world
+formula** — the same formula that had the sign error — so it made the identical mistake and agreed
+with itself: 51 assertions, 0 failures, over a view that was visibly wrong. A test that recomputes
+what the code computes only proves the code is self-consistent.
+⚠️ So the fakes now **record geometry**: `Shape` keeps its ring, `ExtrudeGeometry` its shapes and
+depth, `BoxGeometry` its dimensions, and every `Mesh` is remembered with its `userData.key`. Every
+position the test checks is read back off the mesh the builder actually made — shape points, its own
+rotation, its own position — and nothing is derived twice.
+
+### Verified
+- **52 assertions in node, 0 failed**, executing the shipped `_vs3Build` on a site of three towers
+  (two traced, one untraced with no levelled work) and five floor plans:
+  - floor 2's L-shaped plan is drawn as **six corners**, floor 1's rectangle as four, and B1 — which
+    has no plan traced — keeps the tower's site footprint;
+  - the fitted floor stays **inside its own tower's** traced footprint, and Tower B's copy of floor 2
+    is drawn at Tower B rather than on top of Tower A's;
+  - the plan's proportions survive the move (contain, not stretch) to within 2%;
+  - every floor name lands within **1 px** of the leftmost projection of **its own floor's mesh** at
+    that floor's own mid-height, over **15 camera angles** — measured at 0.00 px across and down.
+- ⚠️ **GATE**: the previous commit fails 15 of those same assertions, off by up to **42 px across
+  and 26 px down**.
+- **Real three.js r128, in a browser**, measured against the meshes' own vertex buffers and world
+  matrices: every name is within **0.36 px** of its floor's leftmost drawn vertex at eight azimuths
+  (previous commit: **42 px inside** the building at 90°, **39 px outside** it at 270°), and the
+  rendered frame shows each tower stepping floor by floor instead of standing as one prism.
+- The single-building path is untouched and proven so in the same run; `test-lsm` **702/702** and
+  `wiring-check` **126/126** pass unchanged. MODULE_V → `20260915f`.
+- ⚠️ **Not verified signed in.** The plan store is stood in for by a fixture in the harness; what is
+  proven is that the builder asks the floor for its plan, places it on the right tower, and names it
+  where it stands.
+
+## 2026-09-15 (d) — The pane stops being capped to the viewport; the time bar sticks instead
+
+Owner: *"the main screen can't even be seen without having to select the expand button"*, then
+*"let's do the pane cap next."*
+
+### ⚠️⚠️ WHY THE CAP WAS THE CAUSE
+
+`_vs3Build` sizes a building from its **width** — `clamp(320, width × 0.72, 520)` — never from the
+pane. So every card is 320–520px tall whatever the pane allows. `_vsApplyPane` capped the pane at
+`innerHeight − paneTop − 16`, and **every pixel of chrome above the pane came straight out of that
+number**. On the owner's screen it left ~475px for a stack of five ~420px cards, which
+`.ps-vs-body` then scrolled internally: one card at a time, through a slot. That is the report.
+
+**Measured, 1440×900, five cards:**
+
+| | pane height | body scrolls internally | what you see |
+|---|---:|---|---|
+| capped (as shipped) | **475px** | **yes** | one card, clipped |
+| uncapped | **986px** | no | every card at full height |
+
+The page grows instead, which this view is already set up for: `.ps-longdoc` is on in vertical
+stacking (see `_psSyncLongDoc`) precisely so `.pd-content` may exceed one screen.
+
+### ⚠️⚠️ THE NOTE THAT SAID STICKY COULD NOT DO THIS WAS RIGHT — AND ITS PREMISE WAS THE CAP
+
+The rule the cap replaced carried a measured finding, verbatim:
+
+> *"Sticky is bounded by its containing block, and the time bar is the LAST child of the pane — the
+> container's bottom edge IS the bar's bottom edge, so it has zero travel and the rule silently never
+> fires. Measured: the bar scrolled away exactly as before at scrollY 0/300/600."*
+
+That was taken **while the pane was capped**. A capped pane is never taller than the screen, so its
+bottom edge is always on screen and a bottom-sticky child has nothing to stick to. The conclusion
+followed from the cap, not from sticky — so removing the cap changes the answer. It was re-measured
+rather than inherited, and the original finding is **credited in the rule's own comment**, not
+deleted: it was correct, and a later reader needs to know why it no longer applies.
+
+**Measured with the cap gone:** `position` computes to `sticky`; the bar sits at the viewport's
+bottom edge at scrollY 0, 300, 600 and 900, then rides down to its resting place at the end of the
+page. Reachable at every stop, in both themes, at 1440×900 and 1280×720 (pane 1412px there).
+
+⚠️ Fixed positioning is still wrong, for the reason the original note gives: out of flow, it would
+overlap the last building rather than ending the pane.
+⚠️ `z-index:2` and the existing card background, because the bar now passes **over** the buildings
+while stuck.
+
+### What went with the cap
+
+`_vsApplyPane` and `--ps-vs-paneh` are gone, along with all three call sites — the resize listener,
+the notice-dismiss handler, and the tail of `renderVStack`. Each existed only to re-measure a cap
+that no longer exists.
+
+⚠️ **A function left behind writing a custom property no rule reads is the exact shape of the dead
+`--ps-vs-fith` this file already documents** (the Fit button wrote it for weeks; no selector ever read
+it). Removing the writer with the reader is the whole point.
+
+⚠️ **One stale claim corrected in place:** the Fit-button note said *"What DOES fit the stack is the
+pane's own `--ps-vs-paneh` max-height, and that half is live and stays."* It does not, as of this
+commit. Left uncorrected it would have sent the next reader looking for a live mechanism that had
+been deleted — which is precisely the failure that note was written to prevent.
+
+### ⚠️⚠️ A harness fault worth more than this change: `<style>` matches THREE blocks in this file
+
+`re.findall(r'<style>([\s\S]*?)</style>')` returns **three** matches here: the real stylesheet
+(376,101 bytes) and **two JavaScript string literals** inside the inline `<script>` that build the
+print/export stylesheets. Joining them appends ~3.7 KB of JavaScript — concatenation operators, an
+unterminated string, unbalanced braces — after the CSS.
+
+**The consequence is silent and total: every rule appended after that point is dropped.** The rule
+under test in this pass came back `position: static` and looked like proof that sticky could not
+work. It had simply never been parsed. Two defences, both now in the harness generator:
+
+- **Filter on the JS tell** (`"' +" not in block`) and assert exactly one block survives.
+- **Put any candidate rule in its own `<style>` element**, which parses independently and cannot be
+  swallowed by whatever the previous block ends with.
+
+⚠️ Earlier harnesses this week joined all three blocks too. Their measurements stand — the real
+stylesheet is block 0 and parses first — but the CSS byte counts quoted in those entries are ~3.7 KB
+too high, and anything they appended after `__CSS__` was cosmetic (a guide line, an `h4`).
+
+⚠️ **And one harness bug of the same family:** `var top = …` at global scope does not shadow
+`window.top` — it *is* `window.top`, which is not writable, so the arithmetic yielded `NaN`, the cap
+was set to `NaNpx`, and the "capped" arm was indistinguishable from the uncapped one. The shipped
+`_vsApplyPane` was never affected: its `top` is a function-local.
+
+### Verified
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance on the **real block only**, no
+duplicate ids, no orphaned `return`, `_vsApplyPane` gone with every call site, no code line mentioning
+the cap variable (only the three comments that explain the history), and `.ps-vs-tl` carrying
+`position:sticky; bottom:0; z-index:2` with an opaque background.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915d`, sort-checked against `20260915c`.
+
+## 2026-09-15 (c) — The notices become one line, and the two filter rows become one
+
+Owner, on a 3-tower / 5-trade / 609-activity project: *"UI in this situation needs a big rework. the
+main screen can't even be seen without having to select the expand button."* Then: *"The notification
+needs a big rework as well its too lengthy and the text itself is not professional."* Then: *"The
+Towers toolbar and trades toolbar can be in the same level."*
+
+### ⚠️⚠️ THE THREE ARE ONE PROBLEM: THE CHROME HAD EATEN THE DRAWING
+
+Measured in a browser at 1440×900, on the owner's project shape, against the shipped build:
+
+| block | before | after |
+|---|---:|---:|
+| module toolbar | 36 | 36 |
+| filter rows | **50** (2 rows) | **26** (1 row) |
+| model bar | 32 | 32 |
+| **the notice** | **103** | **31** |
+| card header + meter | 46 | 46 |
+| per-card view bar | 32 | 32 |
+| caption | 29 | 29 |
+| timeline card | 107 | 107 |
+| **chrome total** | **435** | **339** |
+| **left for the drawing** | **427** | **523** |
+
+**−96px of chrome, and the drawing gains all of it.** On the owner's own screenshot the notice was
+taller still (~157px: their project also trips the *branch is a grouping* cause, which adds a fourth
+bullet), so the saving there is larger than the 72px measured here.
+
+### The notice: one line, with the diagnosis behind a disclosure
+
+`_vsWarnWrap(key, html)` is now `_vsWarnWrap(key, summary, detail)`. The summary is one line; the
+detail sits in a `<details>` that is **shut by default**. Measured: **31px shut, 135px open.**
+
+⚠️⚠️ **Collapsed, not cut.** Every line of that detail was written from a real diagnosis on a real
+project — 4PH Strevi, 692 of 15,834 rows unplaced, 76 of them from a single missing `RD` alias — and
+deleting it would cost the next planner that investigation again. It is one click away.
+
+⚠️ **`<details>`/`<summary>`, not a button and a handler.** The disclosure is native: no wiring, no
+state to lose across the repaint that `renderVStack` performs on every control, and keyboard-operable
+without any code of ours. The dismiss `×` stays a sibling of the `<details>`, so it is not part of the
+summary's hit area — hit-tested to confirm.
+
+⚠️ **The register changed, not just the length.** Out: *"is the usual culprit"*, *"so either:"*,
+*"or leave them here"*, *"That is deliberate"*, *"which is exactly what a floor doing all its zones at
+once would look like"*. In: the count and the fact, then the causes as a numbered list, then the exact
+path to the fix. Where a sentence explained **why a design decision was taken**, it moved into the
+code comments — which is where it belongs and where it now stays.
+
+⚠️ **The assign control stays in the summary on the `alltower` notice.** It is the fix; a fix shut
+behind a disclosure is a fix nobody applies. Only the explanation folds away.
+
+### Towers and Trades share one row
+
+Both are now fragments emitted into a single `.ps-vs-chips`, separated by a `.ps-tb-div` — the same
+way `.ps-tb-row` has always kept unrelated groups apart in one line. Each keeps its label.
+
+⚠️ **They wrap as one list, not as two locked groups.** A group that could not be split would jump to
+the next line whole and leave a half-empty row above it. The two labels and the rule are what say
+where one filter ends.
+
+⚠️ The divider is emitted only with a left neighbour: on a single-tower project `towerChips` is empty
+and the row is the trades filter alone, exactly as before. `.ps-vs-twchips` now matches no element and
+says so in its own rule.
+
+### Verified
+
+CSS and the module toolbar extracted from the shipped file verbatim; the toolbar sliced by div-depth
+matching. Both themes at 1440×900 and 1900×1000. Notice 31px shut / 135px open in both themes, the
+`color-mix` hairline resolving to 25% alpha on the dark ground; one filter row carrying both labels
+and the divider; no horizontal scroll; the dismiss button hit-tests to itself.
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance, no duplicate ids, no orphaned
+`return`, the disclosure opens and closes exactly once, all four notices go through the wrapper, the
+`nolevel` list and its four items close, and neither chip fragment opens a `<div>` it does not close.
+
+⚠️ **Two gates of my own were wrong before they were right, and both are the same shape as bugs this
+file already records:** the register check searched all 3.3 MB and failed on *"That is deliberate"* in
+a code comment 600 lines away about a save dialog; and a source-size cap failed because this change
+**added** code comments while shortening the delivered text. Source bytes are the wrong proxy for a
+rendered height. Both are now scoped or replaced, with the reason written next to them.
+
+### ⚠️ What is still spending the budget, and is untouched here
+
+The drawing has 523px at 1440×900 — better, not solved. The remaining blocks, largest first: the
+**timeline card at 107px**, the **card header + meter at 46px**, the **per-card view bar at 32px**.
+And structurally, `_vsApplyPane` caps the pane at `innerHeight − paneTop − 16`, so every pixel of
+chrome above it still comes straight out of the buildings. Letting the pane exceed the viewport (the
+page already grows — see `.ps-longdoc`) is the lever that does not require trimming anything else.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915c`, sort-checked against `20260915b`.
+
+## 2026-09-15 (b) — One left edge and one right edge for the whole module
+
+Owner: *"I think we can still improve the UI. The sides are not aligned with each other."*
+
+### ⚠️⚠️ FOUR DIFFERENT EDGES IN ONE MODULE, AND NONE OF THEM WAS THE TOOLBAR'S
+
+`.ps-toolbar` and its `.ps-tb-row` carry **no horizontal padding**, so `.pd-main`'s 12px *is* the
+module's edge and the toolbar sits directly on it. Every full-width panel pane was adding an inset of
+its own on top of that. Measured at 1440px before changing anything, against the toolbar row:
+
+| row | left | Δ | right | Δ |
+|---|---|---|---|---|
+| `.pd-main` content edge | 12 | 0 | 1428 | 0 |
+| `.ps-tb-row` — the toolbar | 12 | — | 1428 | — |
+| `.ps-vs-chips` — trades | 26 | **+14** | | |
+| `.ps-vs-bar` — model | 26 | **+14** | | |
+| `.ps-vs-viewport` — the buildings | 26 | **+14** | 1414 | **−14** |
+| `.ps-vs-caption` — the key | 28 | **+16** | | |
+| `.ps-flowline` | 26 | **+14** | 1414 | **−14** |
+| `.ps-progress` | | **−4** (8px where the others used 14) | | |
+
+The caption's extra 2px was inherited from `.ps-actlegend`'s shape when it was written yesterday —
+the house idiom for a caption strip, and 2px off the edge everything else sits on.
+
+All five are now `0`. Horizontal padding only: **the vertical padding is untouched**, because only the
+sides were the complaint and the top padding is what spaces each pane from its own divider.
+
+⚠️ **The phone breakpoint goes to 0 as well.** `.ps-vstack` had `padding:8px 8px 18px` under
+`@media (max-width:700px)`; re-adding an inset there would reintroduce the misalignment at exactly the
+width where the screen can least afford the pixels. Only the vertical padding tightens now.
+
+⚠️ **`.ps-network` needed nothing** — it draws its own full border at the pane edge and was already on
+the module's line.
+
+### Verified
+
+**The toolbar markup is sliced out of the shipped file verbatim**, by div-depth matching, not
+reproduced — it is the thing everything else has to line up *with*, so a hand-made stand-in would
+have been measuring against a guess. CSS is the shipped `<style>` block, also verbatim.
+
+After, at 1440px light and 1024px dark: **every row's left edge equals the toolbar's** (Δ 0), and every
+row that is full-width by construction — the buildings viewport, the flowline pane, `.pd-main` itself
+— **ends on the toolbar's right edge** (Δ 0). The trades row, the model bar and the caption end short
+of it because their content is shorter than the width, which is not a misalignment.
+
+Computed horizontal padding, read back from the rendered page: `.ps-toolbar`, `.ps-vstack`,
+`.ps-flowline`, `.ps-progress` and `.ps-vs-caption` all `0px / 0px`.
+
+⚠️ **One measurement in the harness is void and is not being relied on:** `#ps-view-schedule` is a
+flex column, so the `.ps-progress` stub collapses to zero width there and its box coordinates are
+meaningless. Its computed padding is the evidence for that pane, and it reads `0px / 0px`.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915b`, sort-checked against `20260915a`.
+
+## 2026-09-15 (a) — Consolidated is gone, and the reason it was redundant is the feature nobody wired
+
+Owner: *"The consolidated button in the vertical stacking seem to be no longer needed since its
+function has been the same with the other buttons as well."*
+
+### ⚠️⚠️ THE OWNER IS RIGHT ABOUT THE SCREEN, AND THIS FILE ALREADY KNEW WHY
+
+Consolidated's one distinguishing feature — splitting each level into a cell per trade, so a single
+building compares the trades side by side — **has never rendered.** `_vsRowTradeCells` and
+`_vsTowerSVG`'s `tradeSplit` parameter are fully implemented and committed; **no call site has ever
+passed them**, in the 2D path or the 3D one. The 2026-09-04 entry in this file recorded exactly that
+and left it: *"the ask here was level 1, and wiring it is a feature change nobody asked for. Worth a
+decision."*
+
+So what the button actually drew was one brand-red card with **a single cell per level**, and because
+`_vsMixTrades` is true whenever a trade-combining scope holds more than one trade, Detail was pinned
+to level 1 — no zones either. A picture carrying nothing the per-trade cards do not carry better.
+That is the redundancy the owner is reporting, and it is a symptom of the unwired split, not of the
+view being a bad idea.
+
+**The decision was put to the owner directly on 2026-09-15 — remove, or wire the split — and they
+chose remove.** ⚠️ Wiring it remains a live option and everything it needs is still in the file; see
+the note now at the head of `_vsRowTradeCells`.
+
+### What went
+
+| | |
+|---|---|
+| the button | `data-vssc="all"` |
+| the render branch | the `'all'` arm of the scope chain in `renderVStack` |
+| the mix-trades term | `_vsMixTrades` now covers `tower` and `site` only |
+| the PDF caption arm | `Consolidated — one building` |
+| four comment parentheticals | *"(per tower, consolidated)"* → *"(per tower, site)"* |
+
+⚠️ **No migration, and the reason is worth recording:** `_vsScope` is a plain module variable that is
+**never persisted** — it resets to `'trade'` on every load — and it is only ever assigned from
+`b.dataset.vssc`. Removing the only button carrying that value removes the only way in, so no
+fallback guard was written for a state nothing can produce.
+
+### ⚠️⚠️ The Model segment goes with it on a single-tower project
+
+`Per tower` needs more than one tower and `Site` needs a tower breakdown *and* a traced plan — so on
+a single-tower project Consolidated was the **second of two** options, and removing it would leave a
+segment labelled MODEL naming a question with one answer. That is the thing the Towers chip row
+already refuses to do (*"a row reading 'All towers · Tower 1' is two controls for a question with one
+answer"*), so the segment is emitted only when more than one scope is on offer.
+
+⚠️ **Deliberately NOT the disabled-select treatment the one-tower case got elsewhere.** That control
+had something to say — from the drawing alone a reader could not tell whether one building was one
+tower or every tower merged. Here each card is titled with its trade and carries its trade's colour
+dot, so the view names itself.
+
+⚠️ **And the divider went with the segment.** The rule between Model and 2D/3D was unconditional; with
+neither the segment nor the site call-to-action emitted, a single-tower bar would have opened on a
+vertical stroke separating nothing.
+
+### Two things found while removing it
+
+- ⚠️ **The PDF caption had no `site` arm** and fell through to *"One building per trade"* — a sheet
+  naming a view it is not showing, one line above a comment that rails against exactly that (*"a
+  document that misstates its own subject, and it is the copy that leaves the building"*). Fixed
+  here rather than left beside its own warning.
+- ⚠️ **A comment quoting the removed comparison tripped the gate written to find it.** Same shape as
+  the quoted `id="…"` that fooled the duplicate-id gate on 2026-09-09. The comment is reworded and
+  says why it does not spell the expression out.
+
+### Verified
+
+**Slice-and-execute against the shipped file**, never a reimplementation: the four emission
+expressions (`_scopeBtns`, `_scopeN`, the segment, the divider) were cut out of `index.html` by
+anchor and run under stubbed `towerNames` / `_vsSitePlan()`:
+
+| project shape | buttons | Model segment | leading divider |
+|---|---|---|---|
+| 1 tower | `trade` | **no** | **no** |
+| 1 tower + site plan | `trade` | no | no |
+| 3 towers, no plan | `trade`, `tower` | yes | yes |
+| 3 towers + site plan | `trade`, `tower`, `site` | yes | yes |
+
+Asserted as invariants, not just as rows: the segment appears **exactly when** there is more than one
+option, and the divider **never** appears without something to its left.
+
+**Rendered in a browser**, both themes, 1024px and 1440px, all three shapes: no bar opens on a
+divider, every bar's first child is flush with the bar's own left edge, the word *Consolidated*
+appears nowhere, and nothing overflows.
+
+Static gates green: inline script parses (3.30 MB), CSS braces balance comments-stripped, no
+duplicate ids, no orphaned `return`, nothing tests or assigns the removed scope, and
+`_vsRowTradeCells` / `tradeSplit` are asserted **present** — they are kept on purpose.
+
+⚠️ **Not verified signed in.** ⚠️ The `#ps-actlegend` tick/untick report from 2026-09-14 is still open.
+
+`MODULE_V` → `20260915a`, sort-checked against `20260914zvs4`.
+
+## 2026-09-14 (z2) — The key goes under the figure, not one row below the toolbar
+
+Owner, on the caption that shipped an hour earlier: *"This should be relocated so that the toolbars
+are grouped. Legend should be relocated to another location."*
+
+### ⚠️⚠️ THE FIRST MOVE FIXED THE WRONG HALF
+
+`829f488` took the legend out of `.ps-vs-bar` and put it in a `.ps-vs-caption` **directly beneath**
+it. That answered *"a proper location than the toolbar itself"* literally and missed what the
+arrangement was doing: a reader coming down the pane still met **controls, controls, then a line of
+prose** before any content. The header was three bands deep, and a strip parked between the last
+control and the first building reads as part of the header no matter what it is called.
+
+Owner's phrasing has both halves in it — *"so that the toolbars are grouped"* is about what the
+caption was **separating**, not about where it should go.
+
+**So it is a footer.** `.ps-vs-pane` is a flex column, and the caption is now its middle child:
+
+```
+.ps-vs-pane  =  [ .ps-vs-body (the scroller)  |  .ps-vs-caption  |  the timeline card ]
+```
+
+- **A figure's caption goes under the figure.** The key describes the fills and the DONE pills in the
+  buildings; it now sits under them.
+- ⚠️ **Above the timeline card, not below it.** That card is a *control* — drag the handle to walk the
+  programme. Putting the key under it would separate the key from what it keys **by a control**,
+  which is the arrangement this move exists to undo.
+- ⚠️ **Pinned, not scrolled.** It is a sibling of `.ps-vs-body`, not a child, so the buildings scroll
+  past it. Measured: `body.scrollTop` 0 → 400 while the caption moved **0px**. Same reasoning the
+  existing note gives for keeping the toolbars outside the scroller, applied to the other end.
+
+### The rule moved to the other edge
+
+As a header strip the caption deliberately had **no** border — it sat 10px under the pane's own rule
+and a second hairline read as a stack of boxes. As a footer it is the only thing separating a line of
+grey text from the drawing above it, so it now carries `border-top`. Measured `1px solid
+rgb(220,219,219)` light and `1px solid rgba(255,255,255,.12)` dark — the token follows the theme.
+
+⚠️ **`flex:0 0 auto` is load-bearing.** `.ps-vs-pane` is a flex column whose body is `1 1 auto`;
+without it this strip would share the leftover height and the key would stretch down the pane.
+
+### Verified
+
+Harness CSS is the shipped `<style>` block **extracted verbatim** (376,190 bytes), asserted to carry
+every rule under test first. Both themes, 1024px and 1440px, 4 and 11 trades, with and without the
+Towers row and the compare basis:
+
+| | result |
+|---|---|
+| Trades row → control bar | **10px**, every case |
+| control bar → the pane | **10px** — nothing between the toolbars and the content |
+| caption below the stage | **true**, every case |
+| caption above the timeline | **true**, every case |
+| caption a sibling of the bar (i.e. still in the header) | **false**, every case |
+| caption movement while the body scrolls 400px | **0px** |
+| caption lines / overflow / page h-scroll | 1 / none / none |
+
+Static gates green: inline script parses (3.29 MB), CSS braces balance comments-stripped, no
+duplicate ids, no orphaned `return`, `caption` built before use and emitted **exactly once** — a gate
+added because the obvious way to move a string is to paste it and forget to delete the original, and
+the symptom would be the key rendering twice.
+
+⚠️ **Not verified signed in.** Measured on the real CSS with reproduced markup; no live project
+opened. ⚠️ The tick/untick report against `#ps-actlegend` from the previous entry is still open and
+untouched by this change.
+
+`MODULE_V` → `20260914zvs4`, sort-checked against `20260914zvs3`.
+
+## 2026-09-14 (z) — An even rhythm, a caption instead of a toolbar, and a legend four views thought they were hiding
+
+Owner: *"The Toolbar, Trades, and Model toolbars UI needs more work. There is a bigger space between
+the toolbar and trades toolbar and a smaller gap between the trades toolbar and model toolbar. If we
+can also relocate the legend and tooltip to a proper location than the toolbar itself. Let's check
+for other views for consistency"*, and then, on a screenshot of the stacking view: *"Is this supposed
+to be shown when vertical stacking is opened?"*
+
+### ⚠️⚠️ THE ANSWER TO THAT QUESTION IS NO, AND FOUR RULES ALREADY SAID SO — TO A CLASS THAT NO LONGER EXISTS
+
+The Gantt's colour legend (`#ps-actlegend`) was showing under the stacking pane, which has no Gantt
+in it. Every full-width panel view carries a rule that reads *"hide the legend"*:
+
+```
+#ps-view-schedule.ps-net-mode      .ps-legend { display:none; }
+#ps-view-schedule.ps-flowline-mode .ps-legend,
+#ps-view-schedule.ps-vstack-mode   .ps-legend,     (twice — the file has two copies)
+#ps-view-schedule.ps-progress-mode .ps-legend { display:none !important; }
+```
+
+**`.ps-legend` is not in the markup and has not been since 2026-08-17**, when the bar-mark key was
+folded into the activity legend and its wrapper was deleted. The note on `.ps-actlegend .lg` records
+that exact deletion — *"this rule stopped matching anything"* — because that rule **was** retargeted
+at the time. These five lines were not. So for four weeks every panel view (network, flowline,
+progress, stacking) left the colour legend sitting under a pane it describes nothing in.
+
+Retargeted to `.ps-actlegend`. **Measured in a browser, both themes:** `display:none` under all four
+modes, `block` with no mode on — asserted **both ways**, because a rule that hides it everywhere
+would pass a one-sided test and break the Gantt.
+
+⚠️ **The `@media print` rule and the ≤700px rule still name `.ps-legend` and are equally dead — left
+alone on purpose.** Both of those still have a Gantt on screen, and a coloured chart printed without
+its key is a worse page than one with it. Retarget them with a decision about print, not as tidying.
+
+### ⚠️⚠️ `marksLegendHTML()` HAS RETURNED `undefined` SINCE bf7c846 — A BARE `return`
+
+The owner's screenshot shows the literal word **"undefined"** in the legend strip. Cause:
+
+```js
+function marksLegendHTML() {
+  return                                          // ← ASI terminates the statement HERE
+    '<span class="lg lg-lsmoff">…' + …            // ← an orphaned expression, never returned
+}
+```
+
+`bf7c846` turned `var MARKS_LEGEND_HTML =\n  '<span…` into `return\n  '<span…`. Legal as an
+assignment, fatal as a return: automatic semicolon insertion ends the statement at the newline, the
+function returns `undefined`, and `'…' + undefined` prints the word. **Four legend entries — WBS
+summary, the BL0 planned-dates rail, Milestone and Data date — have been missing from the legend
+since that commit.**
+
+⚠️ **Nothing caught it because the orphan still PARSES.** `node --check` is green on that function
+either way; a syntax gate cannot see this. Proven by slicing the function out of the shipped file and
+executing it, before and after — the base pinned to a **SHA**, not `HEAD:`, which becomes
+self-comparison the moment this work commits:
+
+| | `typeof` | length | WBS summary | BL0 rail | Milestone | Data date |
+|---|---|---|---|---|---|---|
+| d403f7f | `undefined` | — | ✗ | ✗ | ✗ | ✗ |
+| now | `string` | 491 | ✓ | ✓ | ✓ | ✓ |
+
+A new static gate fails on any `return` left alone on a line with a continuation under it.
+
+### The rhythm: 15px above the trades row, 0px below it
+
+Measured before changing anything. `.ps-vs-chips` carried **no bottom margin at all**, so the trade
+filter and the control bar were touching while a 15px gap sat above them — the asymmetry the owner
+reported, in both directions at once. Both are **10px** now, and `.ps-vs-twchips`' private 6px is
+gone so the Towers row takes the same gap as its sibling.
+
+⚠️ **The gap above the rule is deliberately left larger** (12px: the toolbar's 8px margin plus the
+pane's 4px). That one separates the *module's* toolbar from the pane — a section break, not a sibling
+gap — and equalising it would erase the very distinction the rule was added to draw this morning.
+
+**Measured, both themes, 1024px and 1440px, at 4 / 7 / 11 trades, with and without the Towers row and
+the compare basis — 10 combinations:** Towers→Trades **10px**, Trades→bar **10px**, bar→caption
+**8px**, caption→stage **10px**, in every one. No bar overflow, no caption overflow, no page
+horizontal scroll. The bar takes two lines at 1024px, as it did before; the caption never takes more
+than one.
+
+### A caption is not a toolbar, and the legend was in the wrong one
+
+Owner: *"relocate the legend and tooltip to a proper location than the toolbar itself."* New
+`.ps-vs-caption` sits under the bar and over the buildings. **The split is by kind, not by length:** a
+toolbar holds what you press, a caption holds what you read.
+
+- **Moved:** the fill / ✓ DONE key (with its tooltip), the compare slip colours, the activity count.
+- **Kept in the bar:** the **Planned marker colour picker**. It is an input; demoting a live control
+  to a caption strip is the same mistake pointing the other way.
+
+⚠️ No border on the caption. The pane's own rule already draws one 10px above it, and a second
+hairline turns a two-row header into a stack of boxes — it is set apart by being quieter, not by
+another line.
+
+⚠️ **A change of behaviour, taken deliberately and easy to veto:** the caption is **not** hidden in
+Reporting view. That view is the one people are *shown*, and a chart of hatched fills and coloured
+DONE pills without its key is the one place the key cannot be spared.
+
+⚠️ **And that same reporting rule was missing its own target.** It reads
+`body.ps-reporting .ps-vs-bar .ps-vs-note`, and its comment says it hides *"the stacking bar's own
+field labels"* — but this morning's weld moved those labels **inside** their segments as
+`.ps-vs-seglab`. From that commit until this one it hid the legend instead, which is the opposite of
+what it says. `.ps-vs-seglab` added.
+
+### The other views, for consistency
+
+`.ps-flowline` and `.ps-progress` now carry the same `1px solid var(--pd-line)` top divider and 4px
+margin as `.ps-vstack` — they replace the split the same way, and without a line the module toolbar
+and the pane's own toolbar read as one run of controls. `.ps-network` is the exception and keeps its
+own full border. Verified: all three report `1px solid rgb(220,219,219) / margin-top 4px`.
+
+⚠️ **The progress pane keeps its 4px/8px padding**, not the stacking pane's 10px/14px: it *is* the
+scroller (`overflow:auto`), so its padding sits inside the scrolled area and a bigger top pad becomes
+dead space that scrolls away. The border and the margin were what had to match.
+
+### Verified
+
+Harness CSS is the shipped `<style>` block **extracted verbatim** (375,690 bytes), asserted to carry
+every rule under test before a single measurement is taken. All static gates green: the inline script
+parses (3.29 MB), CSS braces balance comments-stripped, no duplicate static ids, no orphaned
+`return`, the bar and the caption each close their own `<div>`.
+
+⚠️ **Not verified signed in.** The layout was measured on its real CSS with reproduced markup, and
+`marksLegendHTML` was executed from the shipped source — but no live project was opened.
+
+⚠️ **One symptom in the owner's report is not explained yet:** *"when i tick/untick colour activities
+by the legend pane disappears."* The handler is `renderActLegend(); renderGantt();`, and neither sets
+`display:none` on a project with rows — so this is not accounted for by anything above. It stops
+mattering in the stacking view now that the pane is hidden there at all; if it also happens in the
+ordinary Gantt view it is a separate defect and still open.
+
+`MODULE_V` → `20260914zvs3`, sort-checked against `20260914zvs2`.
+
+## 2026-09-14 (w) — The two things that really were clipping, and the five toolbars that were not
+
+Owner: *“Side panel clips as well when page is scrolled”*, *“The buttons are still clipping let's
+make sure that the UI for the toolbars are professional looking”*, *“UI still clips i refreshed the
+in-app browser”*.
+
+### ⚠⚠ THE TOOLBARS DO NOT CLIP — MEASURED BEFORE CHANGING ANYTHING
+`.pd-topbar` (9 controls), `.pd-modulebar` (33), `.ps-toolbar` (65), `.ps-vs-bar` (19) and
+`.ps-vs-chips` (5): **0 elements whose content overflows their own box, 0 past their bar's right
+edge, 0 bars scrolling horizontally, and no horizontal page scroll.** Redesigning five working bars
+would have been a large change aimed at the wrong thing.
+
+### ⚠⚠ 1 · THE 3D CANVAS WAS 1117px WIDE IN A 698px BOX WITH `overflow:hidden`
+419px of every building, cut off. `_vs3Build` returns `resize()` as a **capability on purpose** —
+*“a WebGL canvas does not reflow … the owner (or the modal) knows when the box changed”*. The focus
+window calls it; **the inline cards had nobody to call it**, so a canvas built at one pane width kept
+that drawing buffer for ever.
+- New `_vs3WatchSize()` — a **`ResizeObserver` on `#ps-vstack`**. ⚠ Not a window `resize` listener:
+  the pane also narrows when the **sidebar collapses**, which fires no window resize.
+- ⚠⚠ **Width only.** `resize()` computes the canvas height *from* the width, so acting on a height
+  change would be the observer reacting to its own effect — an endless loop.
+- ⚠ 120ms debounce (every pass reallocates a drawing buffer), one observer for the page's life,
+  registered when the first card is pushed to `_vs3Scenes`, and never disconnected — it reads
+  `_vs3Scenes`, which a repaint empties, so with no cards it costs one comparison.
+
+### ⚠⚠ 2 · `.ps-longdoc` WAS SET FROM THE TAB, AND THREE MODES ALSO SCROLL THE PAGE
+With Vertical Stacking on the page was **1,327px inside a `.pd-app` of 900px**, and a sticky box
+cannot travel outside its containing block — so the sidebar scrolled away and its top was cut off.
+Vertical Stacking, Activity Progress and Flowline each replace the split with a long document;
+`switchTab` only knew about the Setup and Cost Loading **tabs**. Same cause as 2026-09-11 (a7).
+- ⚠⚠ **One writer** (`_psSyncLongDoc`), because four things decide the class and a second writer
+  would undo the first. ⚠ The tab is read back off the element `switchTab` stamped it on, never
+  held in a parallel variable.
+
+### Verified
+- `_psSyncLongDoc` sliced and executed over **8 states: 8/8 correct**; ⚠⚠ the negative build with
+  the `panel ||` term removed **fails exactly the 3 panel cases** and passes the other 5.
+- The resize watcher driven against a fake `ResizeObserver`: **7 assertions**, the load-bearing one
+  being that a height-only change schedules **nothing**.
+- ⚠ A harness bug of my own, recorded: `new Function` runs its body in **global scope**, so the
+  test's own closure variable was invisible inside it.
+- `node --check` PARSE OK; **2,054 → 2,056 functions, 0 lost**.
+- **Re-verified on the deployed build** after a cache-busting reload: 1 `barChart` / 1 `trendingUp`,
+  no Towers row, 4 groups / 0 orphaned labels, 0 clipped elements, header **122px → 97px** at 1280.
+  ⚠ The owner's first screenshots were a **cached page** — the module page is loaded at its own URL,
+  so `MODULE_V` busts the link from the dashboard grid and not a direct reload.
+
+`MODULE_V` → `20260914x` — the third collision of the session, caught the same way: by `curl`,
+not by git, since both sides writing one string conflicts on nothing.
+
+## 2026-09-14 (u) — The duplicate toolbar glyph, `_vsTowerOf` answering a floor, and a label torn off its control
+
+Owner: *“1. These two icons are the same. let's fix  2. Vertical stacking UI looks messy, let's
+fix”*, then *“make sure that the UI is easily understandable, no functions are compromised, and
+everything looks clean and no clipping”*, then *“Ui still needs some work”* with a third screenshot.
+
+### 1 · `#ps-progressbtn` and `#ps-flowbtn` both drew `trendingUp`
+Both are **icon-only** (`.ps-icobtn`, no text), so the glyph was the only thing telling them apart —
+the 2026-09-14 (c) defect exactly. Activity Progress → **`barChart`**; Flowline keeps `trendingUp`,
+since a flowline is literally a rising trend line.
+⚠ **An existing glyph** — `barChart` is in `icons.js` already and used 0 times here, so `icons.js`
+(21 pages) is untouched. ⚠ The live DOM scan also found `ps-actionsbtn`/`ps-vstackbtn` sharing `box`
+and `ps-analyzebtn`/`ps-crit` sharing `risk`; **both left alone on purpose** — those carry text
+labels (*Actions ▾*, *Analyze ▾*) or are a menu item echoing its own parent menu's icon, so the
+glyph is not the only separator and the defect class does not apply.
+
+### ⚠⚠ 2 · THE TOWER WAS BEING READ OFF THE FLOOR LEVEL
+```js
+var id  = _vsTowerLevelId();            // no tower level -> falls back to LOC_LEVELS[0] = Floor
+var v   = id ? r.location[id] : '';     // -> “F1”
+var raw = String(v || r.location[VS_LOC_TOWER] || '').trim();   // the literal key never reached
+```
+Measured live on DEMO01: `LOC_LEVELS` is **Floor, Zone** — no tower level — while every row's
+`location` carries `“tower”: “Tower 1”`. So the picker offered **“All towers / F1 / F2 / F3”**, and
+selecting a “tower” filtered to a floor.
+- New **`_vsTowerLevelNamedId()`** — the name-matched level id, or `''`. ⚠ It cannot be folded into
+  `_vsTowerLevelId`, which must always name some level because it drives the band axis; that
+  fallback is correct there and wrong as an answer to *“is there a tower level at all?”*
+- ⚠ Precedence is now **named level → reserved `tower` key → `LOC_LEVELS[0]`**. A project with a
+  real tower level is unchanged (and there the push writes both from one `towerLabel()` call, so
+  they agree by construction); an import with no literal key is byte-identical.
+- ⚠ **Read-time only** — no row is written, matching the `locTowerToken` precedent directly above it.
+
+### ⚠⚠ 3 · A WRAP FELL BETWEEN A LABEL AND THE CONTROL IT NAMES
+Reproduced at **1280px**: `Show` at `top:244`, its `Finish|Start` segment at `top:277`. `.ps-vs-bar`
+is `flex-wrap:wrap` and packs items one at a time, so the label and its control are two independent
+items and the wrap can land between them. Each pair is now one **`.ps-vs-grp`** (`inline-flex`,
+`flex-wrap:nowrap`, `flex:0 0 auto`) — the pair moves as a unit or not at all. The `.il-timepair`
+fix, same cause.
+- ⚠⚠ **Two direct-child selectors had to be widened or a feature would have broken silently:**
+  `body.ps-reporting .ps-vs-bar > .ps-vs-note` (reporting view hides the field labels) and
+  `.ps-vs-bar > .ps-vs-note { min-width:0 }`. Nesting the notes one level deeper makes `>` stop
+  matching. Both changed to descendant — same set, same behaviour.
+  ⚠ `.ps-vs-twchips > .ps-vs-note` is deliberately untouched: that label lives in the tower chip
+  row, not in the bar, and is not nested by this change.
+- ⚠ Internal `gap:8px` matches the bar's own, so this changes what can **wrap** and nothing about
+  spacing. ⚠ Four groups: Detail (+ the axis name it describes), Dates, Show, Zoom.
+
+### Measured before touching anything
+| width | Towers | Trades | `.ps-vs-bar` | header total | clipped children | page scrolls X |
+|---|---|---|---|---|---|---|
+| 1440 | 25 | 25 | 72 (2 rows) | 122px | **0** | **no** |
+| 1280 | 25 | 25 | 72 (2 rows) | 122px | **0** | **no** |
+| 846 | 38 | 38 | 162 (4 rows) | 238px | **0** | **no** |
+
+⚠ **Nothing clips anywhere**, so the complaint is density and raggedness rather than overflow.
+⚠ **My first row count was my own artefact** — clustering the bar's children on a 6px tolerance
+separated each segmented control from its 18px label and reported **8** rows where there are **4**;
+re-clustered on vertical centres it is 4 at 846px and 2 at desktop. ⚠ The five short `.ps-vs-note`
+elements are control **labels** (*Detail, Zone, Dates, Show, Zoom*), not prose. **15 controls, none
+removed.**
+
+### Verified
+- **28 assertions**: every `.ps-icobtn`'s `data-ico` resolved through the shipped `icons.js` and
+  grouped by the **drawn geometry**, plus a check that each name resolves at all (a typo renders an
+  empty box, silently) and that each button really is icon-only. ⚠⚠ **The negative build bites**,
+  naming the pair: *ps-progressbtn (trendingUp) + ps-flowbtn (trendingUp)*.
+- **Slice-and-execute on `_vsTowerOf`** over four shapes with the pre-fix copy as the control:
+  DEMO01 `“F1” → “Tower 1”`, and **identical** on the other three.
+- `node --check` PARSE OK (3.28M chars, one inline block); **2,052 → 2,053 functions, 0 lost**; 0 NUL
+  bytes; 4 groups opened and 4 closed.
+- ⚠ **Three of my own checks were wrong first:** python's `/tmp` is not bash's on this machine;
+  `grep -c $'\x00'` reported **50,355** lines (the empty-pattern trap — counted in python instead);
+  and two content anchors matched 2 and 5 times, because `.ps-vs-note` is **declared twice** in this
+  stylesheet and `>+</button>` appears on **five** buttons. The patch script aborts before writing on
+  a bad anchor count, so nothing was half-applied.
+- ⚠ **Not re-verified signed in on a multi-tower project.** DEMO01 has one tower, so the branch this
+  fix most changes — several real towers under a `Floor › Zone` breakdown — is proved by execution
+  against fixtures, not observed live.
+
+`MODULE_V` → `20260914v`. ⚠⚠ Re-derived **twice**: past the `20260914t` a concurrent session had
+already deployed, and then past `20260914u` — which that session had **independently picked too**.
+The rebase merged cleanly precisely *because* both sides wrote the same string, so nothing flagged
+it; caught by `curl`-ing the deployed page rather than trusting the local file.
+
+## 2026-09-14 (t) — The end-to-end run redone with Auto-trace actually pressed
+
+Owner: *“Let's redo the whole process from scratch. Make sure that the zone and trade sequence is
+followed”*, then: *“the auto-trace logic should be clicked”*. Rebuilt on **DEMO01** (sandbox), owner
+choosing to replace what was there. **No shipped file changed** — this is a live run and what it found.
+
+### ⚠️⚠️ THE EARLIER RUN NEVER PRESSED AUTO-TRACE, AND THE DEFAULTS HIDE THAT
+Measured on the old DEMO01 before touching it: **50 tasks, 19 with no predecessor**, and Mobilization,
+Excavation and Rebar **all starting on the same day** — the project start. The zone graph was empty.
+
+The takt dialog's own defaults are why that is easy to ship: **“start together” is ticked for every
+trade** and **zones-at-once is 2 of 2**. Accept them and every trade begins on day one with both zones
+in parallel — a schedule that looks generated and encodes no sequence at all. Set to one zone at a time
+and each trade one level behind, the same eleven codes produce **48 zone links** where there were 0.
+
+⚠️ **And the setup itself had never been saved.** DEMO01 had **no `schedule_builder` row** — confirmed
+twice, and absent from the list of eleven projects that have one. So `cfg.links` / `cfg.actLinks` from
+that run never existed to be followed. It is saved this time before generating.
+
+### What was rebuilt, and what it proves
+11 class codes → 4 trades × 3 floors × 2 zones → **66 activities, 106 rows**, then a BOQ seeded from
+the programme: **21 lines (11 leaves + 10 headings) and 66 allocations**.
+
+**43 assertions against the LIVE pushed schedule, 0 failing** — not the preview, the rows in the table:
+
+| | checks |
+|---|---|
+| **zone sequence** — Z2 never starts before Z1 finishes, same trade+floor | 12 |
+| **floor sequence** — F(n+1)·Z1 after F(n)·Z1 | 8 |
+| **trade handoff** — GR→SW→ST→AR, each trailing the one before | 3 |
+| **code chain inside a zone** — the declared order, e.g. Masonry→Plastering→Tiling→Ceiling→Painting | 18 |
+| every task carries a floor and a zone · exactly one true start | 2 |
+
+Plus 6 on the hand-off: every leaf line linked, every coded activity linked, no orphan, and the
+provenance honest.
+
+### ⚠️⚠️ A NEW DEFECT THE REBUILD EXPOSED: REGENERATING RE-POINTS STALE LINKS, SILENTLY
+After clearing the schedule and pushing again, of the **50 allocations left behind: 26 were orphaned
+and 24 were NOT — they had silently re-attached to different work.** `boq_allocations.activity_id` is
+text keyed on the planner's Activity ID, deliberately (an import reinserts every row, so a uuid link
+would be destroyed — the `schedule-document-links` rule). But a **regenerated** schedule reissues the
+same generated ID space (`SB100000`, `SB300003`…) to different activities, so a stale link does not
+break, it **lands on whatever now holds that id**. ⚠️ A broken link is visible; this is not — the
+allocation still resolves, still reports a quantity, and names work nobody allocated it to.
+**Reported, not fixed:** the honest answer is probably to clear or revalidate a project's allocations
+when its schedule is regenerated, and that is a decision about somebody's data rather than a bug fix.
+
+### Two older questions closed by the same run
+- ⚠️ **The Elevators question** (2026-09-14 c, *“why is elevator not part of any WBS”*) is
+  **answered**: `AL900001 Passenger Elevator`, `MP900002` and `OT900003` carried `location: {}` —
+  **no location value at all**, the first of the two candidate causes named then and unresolvable
+  without data. They were trades with no floors, falling into the `__all__` bucket. Giving all four
+  trades floors and zones produces **0 activities with no location** this time.
+- **The #5 fix was exercised in production on its first real run:** all 66 allocations read
+  `method=link · matched_by=code · score=0.1 · qty=0`. Before today every one would have claimed
+  `method=manual` with no rung recorded.
+
+⚠️ **Nothing here is a code change**, and the sequence figures are from the live database rather than
+the preview pane. The BOQ lines carry no quantities yet, so nothing rolls up — which is what
+`qty = 0` links mean.
+
 ## The changelog is archived by month (2026-09-07) — fmlozano
 
 Owner: *"finish the consolidation."* This file was **1,031 KB / 14,693 lines** — unreadable, and
@@ -6,12 +1335,2796 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 - ⚠️ **No duplication here.** The doubling that hit the root `CLAUDE.md` (a merge that kept both
   whole logs) never touched this file: **398 entries, 398 unique**. It only looked otherwise when
-  the splitter treated `### Verified` and `### The fix` as entry headings — entries are dated
+  the splitter treated `### ⚠️⚠️ AND THIS FILE ITSELF HELD A NUL BYTE
+Counting headings to check for merge-doubling returned *417 headings, 1 distinct* — impossible,
+and the tell that `grep` had switched to **binary mode**: `file` called this changelog **data**.
+One NUL at line 416, inside the entry **about a NUL byte**, where `tower + '\0' + level` was
+written with the raw control character rather than the escape. Third time in this repo.
+Replaced: **NUL 1 → 0**, the file is *UTF-8 text* again, and the honest count is **417
+headings / 345 distinct** (the repeats are sub-headings like `### Verified`, which is expected).
+⚠️ Every audit that has grepped this file since it appeared was reading nothing.
+
+### Verified` and `### The fix` as entry headings — entries are dated
   headings, sub-sections are not.
 - Verified against the pre-change file: unique dated headings **398 → 398, 0 lost**.
 - Nothing was summarised. Read `changelog/2026-08.md` and friends for anything older.
 
 ---
+
+### Ink on the tint, welded labels, and a name for the trades row (2026-09-14) — fmlozano
+
+Owner, on the colour pass that shipped hours earlier: *"still needs work"*, then *"Placement of the
+trades buttons need work."*
+
+### ⚠️⚠️ The first cut swapped five red FILLS for five red TEXTS, and that is why it was not enough
+
+`25d8cbc` took `.ps-vs-seg > button.on` from a solid `--pd-red` fill to
+`background:var(--pd-red-light); color:var(--pd-red-dark)`, borrowed from the shared
+`.pd-seg-multi`. The fills went, the **count of red marks in the row did not** — five active rungs,
+five red words. The owner's "still needs work" was exactly right.
+
+⚠️ **And `.pd-seg-multi` was the wrong sibling to copy.** That pattern is for **multi-select**
+groups; every segment in this bar is single-select, and the shared file's single-select pattern
+(`.pd-seg > button.on`) is a solid red fill — which is what we were leaving. Neither shared pattern
+was designed for *five single-selects in one row*.
+
+**The right precedent was one row above, in this very pane.** `.ps-vs-chip.on` had already settled
+it, and its own note says so: *"INK on the red tint, not brand red as text … the red stays as the
+border and the tint, which carry the state without being the text."* The chips had been ink-on-tint
+since 2026-09-02 and the segments disagreed with them, in the same pane, at the same moment.
+
+So the active rung is now `background:var(--pd-red-light); color:var(--pd-ink)` plus the 2px red
+underline — **the underline is the only red left in an active control.**
+
+**Measured in a browser, both themes:**
+
+| | first cut (red text) | now (ink) |
+|---|---|---|
+| red fills anywhere in the pane | 0 | **0** |
+| red **texts** anywhere in the pane | 5 | **0** |
+| active contrast, light | 5.11:1 | **14.25:1** |
+| active contrast, dark | 6.76:1 | **13.45:1** |
+| chip and segment active state | disagreed | **identical** (`#FDECEA` / `#231F20`) |
+
+⚠️ **No `html.pd-dark` ink override is needed, and the one the first cut added is gone rather than
+merely unused** — `--pd-ink` is itself theme-remapped (`#231F20` / `#F0EFEF`), which is the whole
+reason ink works here where `--pd-red-dark` needed a `#FF8A80` override.
+
+### Four labels that floated beside their controls are now welded inside them
+
+Detail, Dates, Show and Zoom were free-standing grey words next to their segments, so the row read
+as eleven loose things rather than five named controls — and `.ps-vs-grp` existed purely to stop a
+label being wrapped away from the control it names (see its own note). New `.ps-vs-seglab` puts each
+label **inside** the segment's border on the quiet surface; `Model` gains one too, and the scope
+segment finally says what it is.
+
+⚠️ Shape taken from the shared `.pd-seg-lab` (risk-register and stakeholder-map already use it) so
+the two read as one idiom, but not reusing the class: it is sized for `.pd-seg`'s 34px rung and this
+bar's segments are shorter. Same values, different sizing.
+
+⚠️ **Zoom's two buttons stopped being loose `.pd-btn`s** and became a real segment, so the bar has
+one kind of control rather than two. `#ps-vs-zout` / `#ps-vs-zin` are preserved — they are what
+`wireVStack` binds to.
+
+⚠️ The site card's own **Show** was welded too. It is a different surface (inside the card, because
+it changes what the model *is* rather than where the camera is), but leaving one "Show" floating
+while welding the other is the inconsistency that gets reported next.
+
+### The trades row now says what it is
+
+Owner: *"Placement of the trades buttons need work."* It sat at the top of the pane as an
+**unlabelled** row of pills directly above a dense control bar, so nothing distinguished a *filter*
+from more toolbar.
+
+⚠️ **Its sibling already had a label and it did not.** The Towers row has carried one since
+2026-09-13 for precisely this reason — its comment reads *"the two rows now look alike and a reader
+has to be able to tell which one they are ticking."* The trades row never got the same treatment.
+Both now use `.ps-vs-rowlab`: the welded label's typography, without a border to sit inside.
+
+Kept on its own row rather than folded into the bar: a project can carry ten trades, and a filter
+behind a click is not what this owner wants (direct controls over nested menus).
+
+### Verified
+
+Rendered in a browser against a harness whose CSS is the **shipped `<style>` block extracted
+verbatim**, in both themes. Zero red fills and zero red texts in the whole pane; six welded labels
+present (Trades, Model, Detail, Dates, Show, Zoom); the divider intact; no bar overflow and no page
+horizontal scroll at 1180px and 1400px.
+
+`<span>` tags in the generated bar balance 34/34 — the four welds each replaced a
+`<note/><seg>` pair with a `<seg><lab/>` pair, which keeps the existing closers correct, and the
+Zoom weld replaced a whole `.ps-vs-grp` including its closer. Inline script parses.
+
+⚠️ **Not verified signed in.** The bar was measured on its real CSS with reproduced markup, not
+against live data — so the wrap behaviour at a real trade count (this project has four; ten would
+wrap sooner) is inferred, not seen.
+
+`MODULE_V` → `20260914zvs2`, sort-checked against `20260914zvs`.
+### Five solid red blocks in one bar, and a pane with no edge above it (2026-09-14) — fmlozano
+
+Owner: *"toolbar UI needs to be properly reworked. Main toolbar does not [have] a divider with the
+vertical stacking toolbar."* Plus: verify the side-panel clipping **on all modes**.
+
+### ⚠️⚠️ The bar was not too big. It had five maximum-emphasis marks and no entry point
+
+`.ps-vs-seg > button.on` was `background:var(--pd-red); color:#fff` — and this bar carries **five
+segmented controls that each always show exactly one active button**: scope, 2D/3D, Detail, Dates,
+Show. So the row rendered **five solid brand-red blocks at once**, every time, whatever the planner
+had chosen. Nothing was wrong with any one of them; with five things shouting, none of them is
+emphasis. That is what reads as "a wall of controls", and it is why the earlier passes that removed
+*words* from this bar did not fix the feeling — the noise was never the word count.
+
+**Measured in a browser, before and after, on the shipped stylesheet:**
+
+| | before | after |
+|---|---|---|
+| controls in the pane with a solid brand-red fill | **5** | **0** |
+| active-state contrast, light | **4.12:1** — below AA | **5.11:1** |
+| active-state contrast, dark | **4.12:1** | **6.76:1** |
+| `.ps-vstack` top border | `0px none` | `1px solid var(--pd-line)` |
+
+⚠️ **The old state also failed AA.** White on `#EE3124` is 4.12:1, under the 4.5 threshold for
+normal text — so this was never only a taste question. `dashboard.css`'s own token comment already
+said as much about brand red at this size; the segmented control had just never been held to it.
+
+⚠️ **THE TREATMENT IS THE APP'S OWN, NOT A NEW ONE.** `.pd-seg-multi > button.on` in the shared
+`dashboard.css` settled this already: the tint carries the state, a 2px red underline keeps the
+brand cue, the ink stays readable, and dark mode overrides the ink to `#FF8A80` because
+`--pd-red-dark` is only **2.64:1** on the dark tint. Those exact values are reused here, and the
+suite asserts the two rules still agree — if they ever diverge, the app is back to two different
+segmented-active states, which is the inconsistency this removes. Copied rather than shared as a
+class because `.ps-vs-seg` has its own sizing and overflow.
+
+⚠️ `--pd-red-light` **is** theme-remapped (`#FDECEA` light / `#3D1A19` dark), so the tint follows
+the theme. A fixed light tint here would have been the `.ps-fmt` *"why is there light colors?"* bug
+all over again.
+
+⚠️ **The scrubber keeps its solid red, deliberately.** `.ps-vs-fz-scrub .ps-vs-seg button.on` sits
+on the focus window's **scrim over the 3D stage**, not on a card — a tint designed to read against
+`--pd-card` all but disappears there. It is also more specific, so it wins without `!important`.
+Documented in place so the next pass does not "finish the job".
+
+### The divider
+
+`.ps-vstack` was padding and nothing else, so the pane's trade chips began 12px under the module
+toolbar with no edge between them and the two bars read as one three-row control block. It now
+carries `border-top:1px solid var(--pd-line); margin-top:4px; padding-top:14px`.
+
+⚠️ **On the pane, not under the toolbar.** `.ps-toolbar` is shared by every view in this module
+(grid, network, progress, flow line); a bottom border there would rule off views that have no
+second bar to be divided *from*. The pane that introduces its own toolbar is what owes the reader
+an edge.
+
+### Verifying the clipping on all modes — and the one that was never a bug
+
+The previous pass (`f494c81`) fixed a sticky sidebar and a 3D canvas 419px wider than its box, and
+its note said *"four things decide the class now"*. Enumerating from the source rather than from
+that function: there are **four** `ps-*-mode` classes, and `_psSyncLongDoc` names **three**.
+
+**`ps-net-mode` is the missing one, and withholding the class is correct.** It hides `.ps-split`
+exactly like the other three, so it looks like a fourth long document — but its own rule gives
+`.ps-network` `flex:1 1 auto; min-height:0; overflow:hidden`, which **fills the viewport and clips
+internally instead of growing the page**. `.ps-longdoc` exists only to let `.pd-content` grow so a
+sticky sidebar has travel; a pane that never grows does not need it, and giving it the class would
+switch `.pd-content` to `height:auto` for a view that wants to be exactly one viewport tall.
+Asserted **both ways**: the class is withheld, *and* the CSS that makes withholding it correct is
+still present — so if `overflow:hidden` is ever removed from that rule, the suite fails and says why.
+
+All **15** mode × tab states executed against the sliced `_psSyncLongDoc`; 15/15 as expected.
+
+### ⚠️ Found, named, not fixed: this file declares the same rules twice
+
+Measured: **14 rule lines are byte-identical** across two interleaved regions (~1529-1810 and
+~1829-2262) — `.ps-vstack`, `.ps-vs-bar`, `.ps-vs-note`, `.ps-vs-chips`, `.ps-vs-chip`,
+`.ps-vs-chip.on`, `.ps-vs-dot`, `.ps-vs-towerh` and friends. They are identical **today**, so
+nothing renders wrong; the hazard is entirely for the next editor, who can change one of them, see
+no effect, and conclude the CSS is not loading.
+
+Not deduplicated here: the regions are interleaved rather than one pasted block (the later one also
+carries rules the earlier never had), so reconciling them is its own careful diff and not something
+to do inside a toolbar change. A warning block now sits at the head of the earlier region naming
+every affected rule, and the divider is deliberately declared **after both copies** — the suite
+asserts that ordering, because a new property added to the earlier copy would work today only
+because the later copy happens not to set it.
+
+### Verified
+
+**33 assertions** executing `_psSyncLongDoc` sliced from the shipped file and parsing the shipped
+`<style>` blocks, with a **contrast build pinned to `f494c81`** (not `HEAD:`, which stops being the
+pre-change state the moment this commits) failing **11** of them — exactly the active-state and
+divider groups. Section A passes in both builds, correctly: it verifies existing behaviour rather
+than new.
+
+Browser measurements taken against a harness whose CSS is the **shipped `<style>` block extracted
+verbatim**, not re-typed — the last time a control was verified against a hand-copied shell, two of
+the host's own rules never applied and it passed on a layout that overlapped in the real app.
+
+⚠️ **Two measurement traps hit and corrected in the doing.** (1) Reading `getComputedStyle` in the
+same JS turn as a class change returned stale values. (2) More seriously, **a hidden Browser pane
+serves stale computed styles, not just void geometry** — it reported the dark tint on a light-themed
+root while `--pd-red-light` on the same element computed to `#FDECEA`. The dark figures above were
+taken while visible; the light ones are arithmetic on the token values, and they agree with both the
+browser's dark reading and `dashboard.css`'s own recorded 5.11 / 2.64.
+
+⚠️ The raw `{`/`}` count in this file does not balance and **never did** — one `{` inside a CSS
+comment. With comments stripped it balances exactly (2172 → 2174, +2 open, +2 close). The
+comments-stripped count is the honest gate; the suite asserts the raw imbalance is still exactly
+one, so nobody chases it as a regression.
+
+⚠️ **Not verified signed in** — no project loaded, so the bar was measured on its real CSS with
+reproduced markup rather than against live data.
+
+`MODULE_V` → `20260914zvs`. ⚠️ Sort-checked against the current `20260914x`: a natural-looking
+`20260914vsbar` would have sorted **backwards** (`v` < `x`), which is the regression this repo has
+already had once.
+### The typical set carries real chart codes, and a strange code is flagged (2026-09-14) — fmlozano
+
+Owner, after the DEMO01 end-to-end run: *“Both — re-seed and flag”*.
+
+### ⚠️⚠️ “LOAD TYPICAL SET” SEEDED CODES THAT RESOLVE TO NOTHING
+It staged `MOB`, `EXC`, `BACKFILL`, `REBAR`, `FORM`, `POUR`, `MAS`, `PLA`, `TILE`, `CEIL`,
+`PAINT` — **0 of 11 exist in Finance's 702-row `class_codes` chart**, which holds
+`03051 Rebar Works`, `04051 Formworks`, `05051 Ready Mix Concrete` and so on.
+`boq_allocations` gates on `class_code`, so **a programme built from the typical set could never
+be linked to a BOQ line**. Measured end to end on DEMO01: every code had to be hand-edited before
+anything would match, and that is what forced every workaround in that run.
+
+- **Re-seeded with real Level-3 codes.** ⚠️ Each one's chart TRADE agrees with the row's builder
+  group (01051 General Requirement/GR, 02051 Site Works/SW, 03051 Structural/ST,
+  10101 Architectural/AR), verified against the live chart — all 11 present and active.
+- ⚠️ **The NAMES are unchanged.** They are what the planner reads; renaming them would change
+  every existing habit for no gain. Only the codes moved.
+
+### ⚠️ AND ANY CODE THE CHART DOES NOT KNOW IS NOW MARKED
+The re-seed fixes the seed; it does nothing for `+ Library` or a typed code. The Code column now
+tones a cell the chart cannot resolve, with the consequence in its tooltip, and a counted line
+above the grid: *“**3** of these codes are not in the class-code chart, so a BOQ line can never
+match them.”* Nothing said this until the planner reached Contracts & Claims and found every line
+reporting “not scheduled”.
+
+### ⚠️⚠️ THE GUARD IS THE IMPORTANT HALF
+With the chart not yet loaded `ccByCode` answers null for **everything**, so an unguarded test
+would mark a perfectly good programme as entirely unmatchable. It says nothing until the chart is
+in memory, and nothing about a blank code — *not chosen yet* is a different state from *wrong*.
+A false accusation is worse than no warning.
+
+### Verified
+**702 assertions, 0 failing** (686 before). **Three negative builds, all bite:** dropping the
+chart-loaded guard fails **2** (it accuses a good code), restoring the mnemonics fails **1**,
+dropping the blank-code check fails **2**. The flag is sliced out of the shipped file and
+executed, not re-typed. `node --check` clean, **0 functions lost**, wiring-check 126/0.
+⚠️ The seeded codes are asserted on the SOURCE; they have not been pushed through a new project
+since the change.
+
+### The overflow button became the overflow, and a legend that called a pinned date "today" (2026-09-14) — fmlozano
+
+Owner, two reports off the live OPW101 screen: *"More toolbar options spills over to two rows in the
+toolbar. Let's make sure that this doesn't happen in this resolution"*, and *"Can we check the data
+date label what does this cover?"*
+
+### ⚠️⚠️ THE OVERFLOW CONTROL WAS NOT COUNTED WHILE DECIDING HOW MUCH TO OVERFLOW
+`#ps-tb-more` ships `hidden`, and `_tbFit` only revealed it **after** the shed loop had finished. So
+through every comparison in that loop it cost **zero width**: the loop stopped the moment the row
+fitted *without* it, and then revealing it pushed it onto a second row. The control that exists to
+prevent a two-row toolbar was the thing on the second row.
+
+**Measured on the shipped markup, icons hydrated, inside iframes at true viewport widths** (the
+toolbar has 1400px media queries, so a container-width fixture would get the wrong control set):
+
+| viewport | before | after |
+|---|---|---|
+| 1280 | 1 row, 7 shed | 1 row, 7 shed |
+| **1366** | **2 rows (78px), 5 shed** | **1 row (36px), 6 shed** |
+| **1410** | **2 rows (78px), 3 shed** | **1 row (36px), 4 shed** |
+| **1512** | **2 rows (78px), 1 shed** | **1 row (36px), 2 shed** |
+| 1600 / 1920 | 1 row, nothing shed | 1 row, nothing shed |
+
+⚠️ **A band of laptop widths, not one resolution.** ⚠️ **The fix is minimal:** each broken width
+sheds exactly ONE more control, and the wide windows are untouched — the button is hidden for the
+first measurement, so a window that needs no overflow still sheds nothing, and is revealed **before**
+the loop only once the row is known not to fit.
+
+### ⚠️⚠️ AND THE LEGEND CALLED A PINNED DATE "today"
+`today()` is `dataDate || wallToday()`, so *"Data date (today)"* was hardcoded and **false whenever a
+data date is pinned** — the owner's own screen read "(today)" beside a badge saying **01-Feb-27**.
+Now `(pinned)` or `(today)`, decided from `dataDate`.
+
+⚠️⚠️ **THE FIRST CUT OF THAT FIX WAS INERT, AND THE SUITE IS WHAT CAUGHT IT.** The label lived in
+`var MARKS_LEGEND_HTML = '…'` — evaluated **once at module load**, which is before
+`loadDataDate()` reads the pinned date out of localStorage. A ternary there sees `dataDate === null`
+for ever, so the label would still always have said "(today)": a change that looks like a fix,
+renders green, and does nothing. It is a **function** now, called per render, with a comment saying
+why it must stay one. ⚠️ A negative build turning it back into a constant fails **3**.
+
+### What the data date actually covers, since it was asked
+`today()` has **62 call sites** — `recomputeCPM`, `rebuild`, `range`, `plannedPOC` (so SPI, EVM and
+the S-curve), `repLookahead` / `repPackages` / `runReport`, `thrValue`, the `usage*` charts,
+`renderBlList` / `renderScnList` / `_snapSummary`, and `rowMatches`. It is the module's single
+"as of" date.
+⚠️⚠️ **And it is stored per BROWSER, not per project**: `ddKey()` is `'ps_datadate_' + pid` in
+localStorage and **nothing writes it to any table** (checked for insert/update/upsert). So two
+planners on the same project can hold different data dates and every figure above differs between
+them, with nothing on screen saying so. **Reported, not changed** — making it shared is a schema
+decision.
+
+### Verified
+**686 assertions, 0 failing** (675 before). **Three negative builds, all bite:** the reveal moved
+back after the loop fails **2**, a hardcoded "(today)" fails **2**, the load-time constant fails
+**3**. ⚠️ The toolbar's own proof is the measurement above — the pre-fix run on the real file IS
+the negative build. ⚠️ **One of my own assertions crashed instead of failing** (a `[^)]*` that
+cannot cross the `)` inside `' (pinned)'`, then dereferenced a null match) — third time in this
+suite; guarded and the pattern fixed. ⚠️ **Not verified signed in** — no session available.
+
+### A floor name stands on its tower's own silhouette, not on a world-space guess (2026-09-14 c) — ethanrobles10
+
+Owner, with a screenshot of the site view and two columns of names floating clear of both towers:
+*"For the vertical stacking, see the image attached and look at the labels. Pls revise, wherein the
+labels are closer to the towers itself."*
+
+### ⚠️⚠️ "LEFT" WAS BEING ANSWERED IN THE WRONG SPACE, AND THAT IS THE WHOLE GAP
+Yesterday's anchor was the footprint's **smallest world X at its mean Z**, picked because
+`.ps-vs3-lab` is drawn with its RIGHT edge on the anchor (`translate(-100%, -50%)`) and therefore
+hangs to the anchor's left. The reasoning only holds if −X is left **on screen** — and this view
+orbits. At the default iso azimuth (π/4) the −X face projects to the **right** of the building, so
+every name was pinned to its tower's far side and then hung backwards across it. The gap in the
+screenshot is the width of the tower the label had to reach over, and it breathes as the model turns.
+
+⚠️ **So the anchor is chosen per frame, in screen space.** A site floor label now carries its
+tower's whole **footprint ring**, and `placeLabels` projects that ring at the floor's own height and
+takes the **leftmost projection** — the silhouette edge beside it, whichever way the model faces.
+That is the rule the single-building path has always used on the plate's four corners; the site's
+floors simply bring their own ring instead of the plate's. One rule, two footprints.
+
+⚠️ **The ring is the CONVEX HULL, taken once at build time** (`_vs3Hull`, monotone chain, collinear
+points dropped). A traced outline is a list of quads and can carry forty-odd points, and this ring is
+projected on every camera move — but only a hull vertex can ever be the leftmost, so a rectangle
+traced as a grid of quads costs four projections, not forty. An untraced tower keeps the wrap slot's
+four corners, which is what its block is extruded on.
+
+⚠️ The stand-off is now **one named number**, `LAB_GAP = 6`px, instead of a `- 9` buried in the
+style write. Everything that used to widen the gap was the wrong anchor, not this number.
+
+### Verified
+⚠️ **Executed, not linted** — `_vs3Build` is sliced out by name and run twice: once against a fake
+three.js in node, and once **against real three.js r128 in a browser**, on a site of three towers
+(two traced, one untraced with no levelled work).
+- **51 assertions** in the node harness, 0 failed: the site builds; Tower A names **B1**, Tower B
+  names its **own** 1 and 2, the untraced tower contributes no floor name, the Grade line is named
+  once, and `_vs3Hull` reduces a quad grid to four corners, drops an L's reflex corner, survives a
+  degenerate line and a non-finite point.
+- **The measurement, over 15 camera angles** (12 azimuths plus two elevations): every name's anchor
+  lands within **7% of the tower's width** of that tower's screen-left edge. ⚠️ GATE: the previous
+  commit's builder fails 14 of those same assertions, drifting to **95%** of the width — the label
+  anchored on the far side of the tower, which is the screenshot.
+- **Real three.js, at the default iso**: names stand **0.3–3.1 px** off each tower's left edge
+  (was 21–29 px), and across eight azimuths the worst case is **6%** of the tower width (was
+  13% → **98%** at 180°).
+- The single-building path is untouched and proven so in the same run: its storey names carry no
+  footprint, still fall back to the plate's corners, and still land at the plate's edge.
+- `test-lsm.js` **675/675** and `wiring-check` **126/126** pass unchanged.
+- ⚠️ **Not verified signed in, and not seen as pixels.** The desktop pane would not capture a WebGL
+  frame this session, so what is proven is where each label element is positioned relative to its
+  own tower's projected outline — measured, in a real renderer — not how the finished frame looks.
+
+### The toolbar face names the preset, and two icon-only buttons stop being identical (2026-09-14) — fmlozano
+
+Owner, two reports off the live OPW101 screen: *"In the toolbar when LSM is selected let's have the
+toolbar name dropdown also be named LSM not Tower > etc applies the same for other Presets"*, and,
+with a screenshot of the two buttons side by side, *"These two icons are identical might cause
+confusion"*.
+
+### The face said which DIMENSIONS, not which PRESET
+With LSM picked the grouping button read **"Tower › … › Unit (4)"** — the dimensions that
+preset happens to use, which is not what the planner chose. The Group menu was already highlighting
+LSM correctly, so the information existed; the face just never asked for it.
+
+- ⚠️⚠️ **The presets moved into ONE function, `groupPresets()`, rather than the face getting its own
+  copy.** The menu decides which preset is active and now the face names it, so two copies would be
+  two opinions about the same question — the drift this module has already paid for with the
+  S-curve maths and the identity matcher. `renderGroupMenu` reads it; the suite asserts it does,
+  so a second copy fails a test rather than shipping.
+- ⚠️⚠️ **The LSM preset only counts as live when the LAYOUT is on.** The same dims with the mode
+  off is an ordinary location-led grouping, and calling that "LSM" would be a lie — the name
+  refers to the layout, not the dimension list. `setGroupBys` already drops the mode when the
+  grouping stops being location-led, so the two cannot disagree.
+- ⚠️ **The full path still goes on the button's title**, so naming the preset hides nothing.
+
+### ⚠️⚠️ TWO ADJACENT ICON-ONLY BUTTONS DREW THE SAME GLYPH
+`#ps-lsmbtn` and `#ps-outlinebtn` sit next to each other and **both** carried `data-ico="layers"`.
+Neither has a label, so the icon was the only thing telling them apart. Worse than the same glyph on
+a labelled button (`#ps-groupbtn` also uses `layers`, but reads "WBS" beside it).
+
+Outline takes **`listView`** — three lines with leading bullet dots, which is literally what an
+outline is, and unmistakable against stacked diamonds. LSM keeps `layers`: stacked storeys is apt,
+and it matches the Group menu where the LSM preset lives.
+⚠️ **An existing glyph, deliberately.** Adding one to `icons.js` would bump a SHARED asset across
+21 pages for a two-button problem. ⚠️ Chosen by reading the path data, not the name: `org` sounds
+like a hierarchy and is actually a **buildings** shape (house outline plus window dots), which beside
+a tower schedule would have been worse than the duplicate.
+
+### Verified
+**675 assertions, 0 failing** (660 before). ⚠️⚠️ **The face block is CUT OUT OF THE SHIPPED
+`populateGroupSelect` AND EXECUTED**, never re-typed — this suite has already been caught passing a
+negative build because an assertion re-stated a condition instead of running it. **Two negative
+builds bite:** dropping the mode gate fails **2** (the same dims with the layout off wrongly read
+"LSM"), and stopping the face adopting the name fails **5**.
+⚠️ **The suite caught this change**: two assertions pinned to where the presets lived failed when
+they moved. **Retargeted, not weakened** — every property still asserted, plus a new one (the menu
+must read the single source).
+Both glyphs rendered against the real `icons.js`: **both present, geometry differs, both 15px**, so a
+misspelt name could not pass as a fix.
+⚠️ **Not verified signed in** — the Browser pane's session was lost and Claude in Chrome is not
+connected, so neither the face nor the icons have been seen on a loaded project.
+
+### The floor labels crashed the site view: a collector declared after the loop that fills it (2026-09-14 b) — ethanrobles10
+
+Owner, with a screenshot of the site view reading *"Could not draw this building in 3D: Cannot read
+properties of undefined (reading 'push')"*: *"what is this error"*
+
+### ⚠️⚠️ MY OWN, SHIPPED AN HOUR EARLIER
+`floorLabs` is the collector the cell loop fills with one entry per floor, so that `buildLabels` can
+put a name beside each tower. I declared it where the thing that READS it lives —
+`var labWrap = null, labs = [], floorLabs = [];`, three hundred lines below the loop — and `var`
+hoists the binding **without the assignment**. So `floorLabs.push(...)` in the loop ran against
+`undefined`, threw, and the whole scene was caught by the build's own guard and replaced with that
+message. The massing view was unaffected (its cells carry no `floor`, so the branch never ran), which
+is exactly why the screenshot shows it under **Floor by floor**.
+
+⚠️ **A collector belongs above the code that collects into it, not beside the code that reads it.**
+Moved to just above `model.disp.forEach`, with the reason written where the old declaration was.
+
+### ⚠️⚠️ AND THE REAL LESSON: NOTHING I HAD COULD SEE IT
+The model harness tests `_vsSiteFloorModel`, which is correct and was never the problem. The source
+lints check that the call sites exist, and they did. A use-before-assignment inside a 900-line
+function is invisible to both — **the only check that catches it is running the function.**
+
+So `_vs3Build` is now executed in the harness, sliced verbatim, against a fake three.js and a fake
+DOM: 20 constructors, ~20 module helpers, and a site model of three towers — one traced with four
+floors, one traced with two, and one untraced with no levelled work, so the run covers the polygon
+path and the wrap-box path, a spanning band and a single-rung band.
+
+⚠️ **Gated the only way that means anything here**: the same harness runs the PREVIOUS commit's copy
+of `_vs3Build` and asserts it throws — and that the message matches
+`Cannot read properties of undefined (reading 'push')`, the words in the owner's screenshot. A
+regression test for a crash has to fail on the crash.
+
+### Verified
+- **12 assertions**, executing the shipped builder:
+  - the site view **builds without throwing** and returns a scene with a `dispose`;
+  - a label layer is added to the host, and it names **B1, 1, 2, 3** — and Tower 2's own **1** and
+    **2** as well, six floor labels rather than four, which is the per-tower labelling working;
+  - the **Grade** line is named;
+  - the untraced tower contributes no floor name (it has no levels to name);
+  - every floor label carries its tower in the `title`, so two floors called "1" can be told apart;
+  - every slice registers separately in `_vsCells`, and the registry names the **floor**, not the row.
+  - ⚠️ GATE: the previous commit's builder throws, with the owner's exact message.
+- The model, focus-window, tower-filter and window lints still pass unchanged (63 / 24 / 33 / 23).
+- ⚠️ **Not verified signed in.** A fake renderer draws no pixels: what is proven is that the code path
+  completes and produces the labels, not how it looks. The screenshot's error should simply be gone.
+
+### Every tower names its own floors, and the site gets a grade plate (2026-09-14 a) — ethanrobles10
+
+Owner: *"what's better if you just attach the labels of the ground floor, 2nd floor etc just beside to
+each tower. Remove the lines you just created in the recent prompt. In addition, can you create a
+plate that identifies the grade line or the ground line."*
+
+### ⚠️ THE LINES ARE GONE, AND THEY WERE THE WRONG ANSWER TO THE RIGHT PROBLEM
+Rules across the whole plate let one column of names at the left edge reach a tower at the right —
+and turned the view into a cage to do it. The problem was never that the names were hard to follow;
+it was that they belonged to no tower in particular. Deleted.
+
+### ⚠️⚠️ EACH FLOOR CARRIES ITS OWN ANCHOR NOW
+`placeLabels` pins a label to the leftmost projected corner of the plate, which is right for a single
+building — the names sit against the wall they name. A label may now carry `ax`/`az` and be projected
+**there** instead, so a tower's floor names stand beside that tower.
+
+- ⚠️ **The anchor is the footprint's LEFT edge**, not its centre: `.ps-vs3-lab` is drawn with its
+  RIGHT edge on the anchor (`transform: translate(-100%, -50%)`), so a centre anchor would lay every
+  name across the left half of the building it names.
+- ⚠️ It is the traced footprint's leftmost point where one exists and the wrap slot's left edge where
+  it does not — the same two answers the geometry itself uses, so a label cannot end up beside a
+  building that is somewhere else.
+- ⚠️⚠️ **The thinning rule had to learn about columns.** It hid any label within 17px of one already
+  shown — right with one building and one column, and on a site it would have deleted every tower's
+  names but the first, because two towers' floors at the same height are two different labels that
+  belong side by side. It now compares the column too (60px: wider than a floor name, narrower than
+  the gap between two buildings).
+
+### ⚠️⚠️ THE TOWERS ARE ALIGNED AT GRADE, WHICH IS WHAT MAKES A GRADE PLATE POSSIBLE
+Banding each tower from its own lowest level upwards put a two-basement tower's ground floor two
+slices higher than a no-basement tower's — so any line drawn as "the ground" would have been true of
+one building and a lie about the other. **Every cell is placed on ONE site-wide ladder instead**:
+`belowMax` rungs of basement below the line, `aboveMax` above it, and a tower occupies the rungs it
+actually has.
+
+- A tower with no basement starts **at** grade with nothing under it, which is what a building with
+  no basement looks like in section; a one-basement tower hangs one rung below the line, level with
+  the two-basement tower's B1 rather than beside its B2.
+- ⚠️ **`cellH` is gone.** Every tower spans the same ladder, so the proportions come out of how many
+  rungs a tower has — the same fact `cellH` used to compute a ratio from, without a second number
+  that could disagree with the bands.
+- ⚠️ A band may now be **several rungs deep** (`band.span`), which is how a tower whose work carries
+  no level at all is drawn: one undivided solid spanning the above-grade run rather than being cut
+  into floors it does not have.
+
+### ⚠️ AND THE PLATE ITSELF
+The row-based grade rule could never fire on the site — it is ONE row, so `groundAt < storeys` is
+false. The model states `groundY` as a fraction of the storey instead, and the plate is drawn there.
+
+- ⚠️ **The shape of the SITE, not a square.** On a single building the plane is a square a little
+  larger than the plate because the building sits in the middle of it; a site is as wide as the
+  property, so the datum takes the plate's own proportions.
+- ⚠️ **With an edge.** A translucent plane seen edge-on from an isometric camera is nearly invisible
+  — which is the angle this view opens at. The line round it is the difference between a plate you
+  can see and one that is technically there.
+- ⚠️ And it is **named** "Grade", through the same label path as everything else.
+
+### Verified
+- **63 assertions** driving the shipped model, sliced verbatim (harness gitignored, deleted), over a
+  site of four towers: two basements + three floors, one basement + two floors, **no basement** + two
+  floors, and one whose work carries no level at all.
+  - ⚠️ **The claim the plate rests on, measured**: all three towers' ground floors are on the **same
+    rung**, and so are their second floors; the one-basement tower's B1 is level with the
+    two-basement tower's B1 (not its B2); the no-basement tower has nothing below rung 2, so its
+    lowest rung IS grade.
+  - The ladder is 5 rungs with 2 below, so grade sits exactly two fifths up; every cell bands against
+    all 5; the unlevelled tower starts at grade and spans all 3 above-grade rungs while a real floor
+    spans exactly 1.
+  - A site with **no basements at all** puts grade at 0 and the ladder at the tallest run.
+  - Keys stay distinct and name the floor, slots stay per tower, the footprint lookup still resolves,
+    and `cellH` is gone.
+- Source checks in the same run: the span reaches `SHb` and the slice placement; the grade plate
+  reads `model.groundY`, is the shape of the site, carries an edge and is named; each floor collects
+  an anchor at its footprint's left edge and is placed there; the thinning compares the column; the
+  level lines and the single shared name column are both gone; and the file carries no control bytes.
+- ⚠️ **Gated against the previous commit**: the lines were there, the names were one shared column,
+  the towers were banded from their own base, and there was no site grade plate.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no WebGL frame has been seen — what is
+  proven is the ladder, the anchors and the wiring. First things to check on the real project: the
+  floor names should stand beside **each** tower, and the grade plate should pass through the base of
+  every tower that has no basement and through the underside of every ground floor that does.
+
+### Level rules across the whole site, so a floor name reaches the towers on the right (2026-09-13 k) — ethanrobles10
+
+Owner, with a screenshot of the floor-by-floor site: *"can you add like lines that would extend all
+throughout the end. bc you have one label that is just situated at the left, therefore towers on the
+right, their floors cannot be seen."*
+
+⚠️⚠️ **THE LABELS ARE A COLUMN AT ONE EDGE.** `placeLabels` pins each name to the leftmost projected
+corner of the plate, which is right for a single building — the labels sit against the wall they
+name. On the site the buildings are spread across the whole plate, so "8th Floor" at the left edge
+names nothing a planner can follow to a tower standing at the right. A rule at every floor
+**boundary**, the full width and depth of the site, is the section drawing's own answer: the band
+between two lines is that floor, wherever on the site you are looking.
+
+- ⚠️ **Boundaries, not label heights.** A line through the middle of a slice would cut in half the
+  floor it is naming. The label sits between its two lines, which is what "between these levels"
+  means on paper — and it is what makes the rules usable as a scale rather than as decoration.
+- ⚠️ **A closed loop at each level, not one line.** In an isometric view a single edge reads as a
+  line going away from you; four read as a plane at that height, which is what a storey level IS.
+- ⚠️ **Not pushed to `picks`.** It is a rule, not a thing to click, and in the raycast it would let a
+  planner select a line instead of the floor behind it.
+- ⚠️ **Only where the model has floors to line up** (`model.floorLabels`). The massing view has none,
+  and a grid over nothing is furniture.
+- ⚠️ Drawn a little past the plate (1.06), so the rule clears the buildings standing on its edge
+  rather than dying into their corners.
+
+### ⚠️ WHY THIS WORKS FOR EVERY TOWER AND NOT JUST THE TALLEST
+The rules are at `SH * i / n` for the tallest tower's `n` floors. A shorter tower is `SH * (N/maxN)`
+tall and cut into `N`, so its slices are `SH / maxN` — **the same spacing**. Every tower's floor
+boundaries therefore land exactly on these lines, which is what makes one column of names on the left
+readable against a tower on the right. Measured, not assumed: see below.
+
+### Verified
+- **102 assertions** driving the shipped block, sliced verbatim, against a fake three.js that records
+  what was built (harness gitignored, deleted), with the owner's own fourteen floors:
+  - the massing view and an empty floor list draw **no** rules at all;
+  - one translucent `LineSegments` is added, with a rule at every floor boundary including the ground
+    and the top — `(n + 1) x 4` segments;
+  - every level is **flat** (one Y for all eight of its vertices), **closes on itself**, and spans the
+    full width and depth of the site;
+  - the rules climb from 0 to `SH` and are **evenly spaced**;
+  - ⚠️ every one of the fourteen labels sits **strictly between its two rules**, never on one — the
+    label arithmetic is read out of the shipped `buildLabels` rather than retyped;
+  - ⚠️ and a 1-, 2-, 7- and 14-floor tower all have **every** slice boundary landing exactly on a
+    rule, which is the claim the whole feature rests on.
+- ⚠️ **Gated against the previous commit**: no level lines existed, and the floor labels already did.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no WebGL frame has been seen. What is
+  proven is the geometry: where the lines are, that they close, and that every tower's floors land on
+  them. First thing to check on the real project: follow "8th Floor" from the label across to the
+  purple tower on the right.
+
+### The site's floors are slices inside each tower, not rows across the property (2026-09-13 h) — ethanrobles10
+
+Owner, with two screenshots: *"nothing happened, still the same problem!!! The 2nd pic view is
+already ok, just add the labeling and identity of the floors."*
+
+### ⚠️⚠️ THE ROWS WERE THE MISTAKE, AND CAPPING THE CELLS WAS NEVER GOING TO FIX IT
+`_vsSiteFloorModel` made one row per LEVEL across the whole site. That is what produced the picture
+they rejected twice: if a row is a storey **of the site**, then everything on it is laid out on the
+site's plate, and anything without a traced footprint is drawn as a share of the property — a slab,
+once per floor. The previous commit capped how big that share could be, which made the slabs smaller
+and left them exactly where they were. **The shape was wrong, not the size.**
+
+The second screenshot is the massing view, and the owner says it is right: two solids standing on
+their own footprints. So the site stays **one row with one solid per tower**, and the floors become
+**slices inside each solid**.
+
+- ⚠️⚠️ One cell per **(tower, floor)**, every slice of a tower sharing that tower's footprint and
+  stacked up its own height by `band`. That is the mechanism the Consolidated fix already uses to
+  stack trades inside one storey, pointed at floors instead — so the footprint stays true, no two
+  slices are coplanar, and each floor keeps its own progress, dates and click.
+- ⚠️ `c.band` is the floor's index within **its own tower**. Read off the cell's position in the row
+  instead, eight towers of thirteen floors would band each slice against 104.
+- ⚠️ `c.slot` is the **tower's** wrap slot, and `model.slotN` shapes the grid from the tower count.
+  Without both, an untraced tower's thirteen floors would be scattered across thirteen squares of
+  the wrap grid instead of standing in one place.
+- ⚠️ `c.label` stays the TOWER name — it is what the footprint is looked up by on the site plan and
+  what the colour is keyed on. The floor travels beside it in `c.floor`, and the key builder puts
+  both in the cell's id: without that every slice of a tower shares one id and clicking any floor
+  opens the same one.
+- ⚠️ A tower whose work carries **no level** is still a building, drawn as one undivided solid. A
+  tower missing from the site because nobody typed floors on its activities is a worse answer than a
+  tower with no floors drawn on it.
+
+### ⚠️ EVERY FLOOR IS THE SAME HEIGHT ACROSS THE SITE, AND IT FALLS OUT
+A tower's solid is `SH x cellH` tall with `cellH = N / maxN`, and it is cut into N slices — so one
+slice is `SH / maxN` whatever tower it belongs to. An eight-storey tower beside a forty-storey one is
+eight of the same floors, not eight taller ones. Nothing computes that; it is what the two existing
+rules already say when you put them together.
+
+### ⚠️ THE LABELS
+`model.disp` carries one entry on the site — "— Site —" — so labelling from the rows would print that
+word once and nothing else. The model hands over the floor names instead, and `buildLabels` places
+them with the same arithmetic the slices use: floor `i` of `n` sits at `SH * (i + 0.5) / n`.
+
+⚠️⚠️ **They are the TALLEST tower's names, and the footer says so.** Every tower's slices line up by
+index — that is what the equal slice height buys — but the NAMES can only come from one tower, and
+printing "8th Floor" beside a tower whose schedule calls it something else would be this view
+inventing a floor.
+
+### Verified
+- **56 assertions** driving the shipped model, sliced verbatim (harness gitignored, deleted), against
+  Tower 1 (a basement and three floors), Tower 2 (two floors), a tower whose work carries no level at
+  all, and a tower outside the list: **one row, and it is the site**; Tower 1 comes out as four cells
+  banded 0..3 bottom-up with the basement at 0; Tower 2 bands against its own two, not the row; the
+  unlevelled tower is one undivided solid and is not dropped; every cell keeps the tower as its label
+  so the footprint still resolves; **a Tower 1 floor and a Tower 2 floor are the same height to
+  1e-12**; every cell has a distinct key and the key names the floor; every floor of a tower shares
+  one slot and the towers have different ones; the labels are the tallest tower's, as many as it has
+  floors, and the model says whose they are.
+- Source checks in the same run: the band, slot, grid, registry, readout and label hooks are all
+  wired; both renderers still go through the one decision point; a site cell can still never fall
+  back to the site outline; and the file carries no control bytes.
+- ⚠️ **Gated against the previous commit**: the floors WERE the rows, there were no per-cell bands,
+  no floor labels, and slots were per cell.
+- ⚠️ **Not verified signed in, and this is the third attempt at this picture.** The anon key has no
+  grants, so what is proven is the model — the cells, the bands, the heights, the keys and the label
+  arithmetic — and not a WebGL frame. The thing to check is the one the screenshots showed: switch to
+  **Floor by floor** and the towers should look exactly as they do in the second screenshot, each cut
+  into its own floors, with the floor names down the side. If a slab the size of the site is still
+  there, it is a tower with no traced footprint and it will be standing in one place, not repeated
+  per floor.
+
+### A tower is never the site: the floor-by-floor view stops drawing property-sized slabs (2026-09-13 g) — ethanrobles10
+
+Owner, with a screenshot of what shipped an hour earlier: *"NO. i was thinking that when clicking
+show the floors in the site view, the floors per tower would show. but not like this shown in the
+pic. Literally, it is just like how you show an individual tower, but instead multiple towers. not
+like a singular plate that would cover the whole site plan."*
+
+They are right, and the picture is unmistakable: two slender towers standing inside a stack of huge
+translucent slabs, one per floor, each the size of the whole property. **Two separate faults made
+them, and both come from the site borrowing rules written for a floor.**
+
+### ⚠️⚠️ FAULT ONE — THE WHOLE-FLOOR FALLBACK, APPLIED TO THE SITE
+```
+if (!_pg && _plate && n === 1) { _pg = _vsZpOutlineOf(_plate); }
+```
+On a floor this is right and load-bearing: one cell on a storey IS that floor, so it takes the
+floor's own outline instead of a wrap-grid box. On the SITE the plate is the site development plan,
+and **its outline is the property boundary** — so every row where only one tower had work drew that
+tower as a slab covering the entire site. Once per floor. Now gated on `!model.site`: **a tower is
+never the site.**
+
+### ⚠️⚠️ FAULT TWO — THE WRAP SLOT IS A SHARE OF THE PLATE
+A cell with no traced outline falls back to its slot in the wrap grid, `plate / cols` across. On a
+floor that is exactly right — a zone really is a share of its storey. On the site it is half the
+property, one storey tall, drawn again on every floor: the flat wide slabs in the screenshot, which
+are the towers nobody has traced a footprint for yet (this project has **1 of 8** traced).
+
+`model.cellSpan` now caps an untraced site cell at `1 / (towers + 2)` of the plate, to a maximum of
+0.26 — a building, not a share of the property. Eight towers get a tenth of the site each, three get
+a fifth.
+
+- ⚠️ **Only when there is no traced outline.** A footprint somebody drew is the drawing; capping that
+  would be this view inventing a size for a building that has one.
+- ⚠️ **The slot still decides WHERE it stands**, so an untraced tower keeps its place on the wrap
+  grid and the footer's *"not where they stand on site"* warning stays true. Only the size changes.
+- ⚠️ Applied to **both** site models. The massing view had the same two faults; one solid per tower
+  simply made a property-sized slab look less obviously wrong than forty of them do.
+
+### Verified
+- **50 assertions** on the shipped site models, sliced verbatim (harness gitignored, deleted) — the
+  43 from the model itself plus: both models expose a cap in `(0, 0.26]`; three towers get a fifth
+  each and eight a tenth; two are capped rather than taking a quarter each; the cap is applied only
+  to a cell with no traced outline; and a site cell can never fall back to the site outline.
+- ⚠️ **Two harness bugs found before they became false passes**: the fixture asked for towers with no
+  activities (the model correctly returned null, and the assertion read it as a missing cap), and the
+  expected value for eight towers was written as 0.125 when the rule gives 0.1. Both were the test
+  being wrong about the code, not the code.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so the fix has not been seen on the
+  project in the screenshot. First thing to check is exactly what the screenshot showed: switch to
+  **Floor by floor** and there should be no slab wider than a building — the untraced towers should
+  read as plain blocks standing beside the traced ones, not as plates under them.
+
+### The site view reads floor by floor, not just as massing (2026-09-13 f) — ethanrobles10
+
+Owner: *"can you show the per floor basis in the site view 3D perspective?"*
+
+### ⚠️⚠️ THE SITE WAS ONE ROW, AND EVERY TOWER WAS ONE SOLID
+`_vsSiteModel` puts every tower in a single row and gives each a `cellH` share of the tallest. That
+is a **massing** study — where the buildings stand and how tall they are — and it cannot show the one
+thing a site plan is usually read for on a Monday: **which floors are done, tower by tower**. A new
+`_vsSiteFloorModel` draws the same site with every tower stacked on its own traced footprint, one
+block per floor, each shaded by its own progress.
+
+### ⚠️⚠️ THE ROWS ARE THE LEVEL NAMES, NOT STOREY NUMBERS
+This is the decision the whole model turns on. Numbering each tower's storeys 1..n and pairing them
+by index would line up a 40-storey tower's 8th with an 8-storey tower's 8th **by accident**, and put
+a podium level beside a typical floor with nothing saying they were different. With the level NAMES
+as rows, "8th Floor" is one row and every tower that has an 8th floor puts a block on it, over its
+own footprint — which is what makes the picture comparable across towers.
+
+- ⚠️ Ordered by the **same `_vsOrderLevels` + `levelRank`** the per-tower model uses, so the site and
+  the towers beside it cannot disagree about what is above grade or what order floors come in. The
+  grade line works here exactly as it does there.
+- ⚠️ **A gap is a fact, not a guess.** A row where a tower has no block is a floor that tower has no
+  work on. Two towers whose schedules name their floors differently will **interleave** rather than
+  align — that is the schedule's own shape, and the footer says so rather than smoothing it over.
+- ⚠️⚠️ **NO `cellH`.** Each row is one storey tall, so a tower with eight floors occupies eight rows
+  and one with forty occupies forty: **the heights come out proportional on their own**, from the
+  same fact the massing model has to compute a ratio for. One less number to keep true.
+- ⚠️ Cells are emitted in the SITE's tower order, not the order activities happened to arrive: a
+  tower's colour is assigned from its position in that list, and a row that reordered them would
+  repaint the buildings from floor to floor.
+- ⚠️ `plateFor` returns the site plan on every row, so each tower's block is its traced footprint —
+  the same hook the massing model uses, and the reason the footprints, outlines, colours and picking
+  all work here with no further changes.
+
+### ⚠️ THE CONTROL IS ON THE CARD, AND THERE IS ONE DECISION POINT
+A **Show: Whole towers | Floor by floor** segment lives on the site card itself. Not the toolbar's
+Detail control: that means depth through the location axis (Level › Zone › Unit), and the site's rows
+are towers — borrowing it would have given one control two meanings depending on a scope three
+controls away. This one is only on screen where it applies and says what it does in words.
+
+⚠️ `_vsSiteModelFor()` is the single place the choice is made, and **both** the card and the focus
+window go through it. A second `if (_vsSiteFloors)` at the other call site is exactly how a full
+screen ends up showing a different drawing from the card it was opened from.
+
+⚠️ Session state, like `_vsScope` and unlike the 2D/3D toggle: a remembered "floor by floor" is how
+somebody opens this next week and reports the site duplicated into forty rows they did not ask for.
+
+### ⚠️⚠️ A NUL BYTE, WRITTEN INTO THE MODULE
+The first cut keyed "have I counted this tower's level yet" on `tower + '\0' + level`. The escape
+**landed in the file as a real control byte** — `grep` began reporting `modules/project-schedule/
+index.html` as a binary file, and an HTML document carrying a NUL is invalid. Replaced with a nested
+map (`seen[tower][level]`), which needs no delimiter at all and so cannot be wrong about what a tower
+name may contain. The harness now checks the whole file for control bytes.
+
+### Verified
+- **43 assertions** driving the shipped `_vsSiteFloorModel` and `_vsSiteModelFor`, sliced verbatim
+  (harness gitignored, deleted), against a fixture of Tower 1 (B1 + three floors), Tower 2 (two
+  floors), a tower with no work, project-wide work with no floor, and a tower outside the list:
+  rows come out `3,2,1,B1` with the basement below grade and `groundAt` at 3; level 1 carries both
+  towers and level 3 only Tower 1; the tower with no work never appears and nor does the one outside
+  the list; cells carry their activities and their tower colour; **the cell order follows the tower
+  list, not the data**; project-wide work is excluded without losing anything else; the storey counts
+  count each level once; `plateFor` is the site plan on every row; the cell key matches the shared
+  format; **there is no `cellH`**; and every empty case returns null rather than an empty drawing.
+- Source checks in the same run: both renderers go through `_vsSiteModelFor` and the massing model is
+  reached **only** through it; the Show control is emitted and wired; the footer describes the mode
+  it is in; the toggle is not persisted; and ⚠️ **the file contains no control bytes**.
+- ⚠️ **Gated against the previous commit**: no floor model, the site drawn as one row, no Show
+  control.
+- **Measured in a browser** against the shipped stylesheets: the control sits inside the card above
+  the viewpoint bar and the mount, on one line, with the selected button in brand red against white.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real site has been drawn floor by
+  floor: what is proven is the model — its rows, cells, ordering and hooks — not a WebGL stack of
+  forty rows. First thing to check: switch to **Floor by floor** on a two-tower project and the
+  taller tower should stand over the shorter one by exactly the number of floors its schedule
+  carries, each block on its own footprint.
+
+### The site plan expands to full screen, like every other card (2026-09-13 c) — ethanrobles10
+
+Owner: *"add a full screen also for the site"*
+
+The site development plan was the one card in the Vertical Stacking without the expand affordance —
+and it is the card that needs the room most: a whole site at card width is eight buildings in a strip
+a few hundred pixels wide. It now opens the same focus window every other card does, with the same
+orbit, the same zoom, the same planned-vs-actual compare and the same playback scrubber.
+
+### ⚠️⚠️ THE SITE IS A DIFFERENT MODEL, NOT A DIFFERENT CAMERA ON THE SAME ONE
+This is the whole of why it was not simply a matter of emitting the button. `_vs3FocusBuild` built
+its model with `_vsTowerModel(list, null)` — which stacks ONE building's storeys. The site is
+`_vsSiteModel(list, towers)`, which places every tower where the site plan says it stands, each as
+tall as its own storey count. Handing the site card to the tower builder would have filled the window
+with one merged building and **no sign that anything was wrong** — the window would have looked
+perfectly normal and described a project that does not exist.
+
+- `_vsFocusReg(name, color, list, prefix, site)` takes the tower names, and `_vs3FocusBuild(…, T,
+  siteTowers)` chooses the builder from them.
+- ⚠️⚠️ **BOTH 3D build paths pass it.** The window builds its scenes twice: once on open, and again
+  on every scrub frame of the playback (the camera is kept, the scenes are disposed and rebuilt). A
+  `card.site` passed to the first and forgotten in the second would have opened correctly and then
+  turned into a single tower the moment the planner dragged the timeline — the kind of divergence
+  that hides longest, because it only appears after an interaction.
+- ⚠️ **The towers are carried on the CARD, not read from `_vsScope` at open time**, and copied rather
+  than referenced: the focus window outlives the render that opened it, so a scope or a filter
+  changed behind the modal would otherwise make the next scrub frame rebuild a different drawing.
+- ⚠️ It registers with the **filtered** `towerNames`, so expanding the site shows exactly the towers
+  currently ticked in the checklist — the window and the card it came from agree.
+- ⚠️ **A 2D guard, for a state that cannot be reached today.** The site has no honest section — two
+  towers north and south of each other occupy the same place in an elevation — so the expand button
+  is only emitted on the 3D site card. The guard is kept because the only thing making that true is
+  one `if` in another function.
+
+### ⚠️ And the expand button stays on the right when the head wraps
+At narrow widths `.ps-vs-towerh` wraps, and the button was landing at the LEFT of the new line, where
+it reads as a stray control rather than as the card's own corner affordance. Felt first on the site
+card — whose subtitle, *"2 of 8 towers placed · N activities · N% complete"*, is the longest in the
+view — but it is every card's behaviour at that width, so the fix is on the shared rule.
+
+### Verified
+- **24 assertions** driving the shipped `_vsFocusReg` and `_vs3FocusBuild`, sliced verbatim (harness
+  gitignored, deleted): an ordinary card registers with `site: null` and builds a **tower** model;
+  the site card registers with its towers and builds a **site** model, handed the right names; the
+  towers are **copied**, not referenced (mutating the caller's array afterwards does not reach the
+  card); an empty tower list is treated as no site; and in compare mode the build happens at the
+  pane's basis with the module's basis put back afterwards.
+- ⚠️ A trap the harness itself hit first: the model stubs have to be defined **inside** the evaluated
+  body, or they close over the harness's own `_vsBasis` instead of the one the sliced builder swaps —
+  and the basis assertion then passes or fails on the harness rather than on the code.
+- Source checks in the same run: the site card registers with `towerNames`; **both** 3D build paths
+  pass `card.site` and none is left without it; the 2D guard is present; the card keeps its meter and
+  footer.
+- ⚠️ **Gated against the previous commit**, where the site card had no expand button, `_vsFocusReg`
+  took no site and `_vs3FocusBuild` knew only the tower model.
+- **Measured in a browser** against the shipped stylesheets: the button is 26 × 26, the same size as
+  a trade card's, sits inside the header, is right-aligned to the card edge, carries its glyph and
+  its `aria-label`, and is hidden until hover exactly as the others are.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so the site has not actually been opened
+  full screen on a real project: what is proven is which model the window builds and with what, not a
+  WebGL site drawn at full width. First thing to check: expand the site card and scrub the timeline —
+  it must stay a site through every frame, not collapse into one tower.
+
+### The stacking comes back to the Project Schedule, and the towers become a checklist (2026-09-13 b) — ethanrobles10
+
+Owner: *"nevermind, put the vertical stacking in the project schedule tab. I just wanted you to have
+a simpler UI dedicated for the 3D vertical stacking. In addition, when selecting which towers'
+vertical stacking to be displayed, also have an option where only towers 1 and 2 are displayed etc by
+having like a checklist for each tower."*
+
+### ⚠️⚠️ THE TAB IS REVERTED — THE ASK WAS ABOUT THE BAR, NOT ABOUT A PLACE
+Yesterday's *"a separate tab entirely dedicated for 3D views, since this sub-module is getting
+heavy"* was read as a routing problem and answered with a destination. It was a **density** problem:
+the pane's own bar is the thing that is heavy. A tab is a place; the complaint was about what is in
+the place. `#ps-vstack` is back inside `#ps-view-schedule`, the menu entry and `#ps-view-3d` are
+gone, and the toolbar button toggles the view again exactly as it did.
+
+⚠️ Three things from that pass **survived on purpose**, because they answer the owner's other
+question and have nothing to do with where the pane lives:
+
+- **The first open lands in 3D**, and — ⚠️ **only if the planner has never chosen** — because
+  `_vs3D` is remembered in `localStorage` (`ps_vs3d`), and forcing it every session would quietly
+  undo a deliberate preference for the 2D section on every reload. A null key means nobody has
+  picked yet, which is the only case this may answer.
+- **The first open lands on the Site scope when a site plan has been traced**, which is the owner's
+  *"how can i see the 2 towers based on their arrangement?"* answered without them finding anything.
+- **The "Draw the site plan…" button** where the Site button cannot be offered.
+
+### ⚠️⚠️ THE TOWERS WERE A `<select>`, WHICH COULD NOT EXPRESS WHAT WAS ASKED FOR
+One tower or all of them — never two. The **trades**, three inches below, were already a row of
+tick-able chips: the same kind of question, answered two different ways, and the dropdown could not
+say "Tower 1 and Tower 2" at all. The towers are now a chip row of the same shape, and the bar is one
+control lighter, which is the other half of *"simpler UI"*.
+
+- ⚠️⚠️ **`_vsTower` IS DERIVED from the selection, never maintained beside it.** It is read in a
+  dozen places — card titles, the no-tower bucket, the focus window, the PDF caption — so a second
+  field answering "which tower" is exactly how a card ends up titled Tower 1 while drawing Tower 2.
+  One ticked reads as that tower's name (every existing label keeps working untouched); two or more
+  read as `'ALL'` with the subset doing the filtering.
+- ⚠️ **Empty means ALL, never "none".** "All towers" CLEARS the list rather than ticking every box,
+  so the cleared state and the all-ticked state cannot drift apart — and a filter that can be emptied
+  into showing nothing is one a planner can get stuck in.
+- ⚠️⚠️ **The chip list is built from `_twAll`, never from the filtered `towerNames`.** Building it
+  from the towers currently shown would delete the chips for the towers currently hidden, leaving a
+  planner who ticked two with no way back to the other six — the controls that could bring them back
+  having just been filtered off the screen. This is the trap in the whole feature.
+- ⚠️ **Both the activities and the tower list narrow**, or "Tower 1 and Tower 2" would still draw
+  eight cards, six of them empty.
+- ⚠️ Picking towers switches the scope to **Per tower** (side by side) — the rule the old "All
+  towers" option already carried, and the only scope that draws one model per tower — **except on
+  the Site**, where the whole point is one picture of where the towers stand, and forcing the scope
+  would throw a planner off the arrangement the moment they narrowed it to two.
+- ⚠️ **The PDF caption names the towers actually shown.** `_vsTower` reads `'ALL'` whenever the
+  selection is not exactly one, which is right for filtering and wrong for a caption: a PDF headed
+  "All towers" over a drawing of Tower 1 and Tower 2 misstates its own subject, and it is the copy
+  that leaves the building.
+- ⚠️ The row is emitted only when there is more than one thing to choose between, and a single-tower
+  project is still pinned to its one tower — through the SELECTION, since `_vsTower` is derived and
+  assigning it alone would be overwritten on the next render.
+
+### Verified
+- **33 assertions** driving the shipped filter block, cut verbatim out of `renderVStack` and run
+  against a fixture of 8 towers plus 3 untowered activities (harness gitignored, deleted): nothing
+  ticked is every tower; one ticked behaves exactly as the old single-select including the label;
+  **"only towers 1 and 2" gives 4 activities, 2 models and leaves the other six chips on screen**;
+  three out of order come back in project order; the no-tower bucket works alone and beside a tower;
+  a stale pick from another project is dropped and cannot filter the view to nothing; all eight
+  ticked is the same picture as none; and the helpers toggle back to ALL rather than to none.
+- **31 assertions** reading the shipped file: the tab is gone completely (no menu entry, no
+  container, no `_vs3TabEnter`, nothing in `switchTab`) while the pane's own 2D/3D toggle is
+  untouched; the pane is inside the schedule view again and starts hidden; the toolbar button and
+  `_setView` drive it as before; the three deliberate survivors are in place; and every piece of the
+  checklist is wired.
+- ⚠️ **Gated against the previous commit**, where the tab existed, the pane was not in the schedule
+  view, and the towers were a single-select with no `_vsTowerSel` at all.
+- **Layout measured in a browser** against the shipped stylesheets: the tower row sits above the
+  trade row above the bar, nine chips fit one line at 1200px, ticked and unticked chips differ in
+  background (not by colour alone — `aria-pressed` carries the state), and the count note reads
+  "2 of 8 towers shown side by side".
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real project has been filtered to
+  two towers in the app. First thing to check: tick Tower 1 and Tower 2 — two cards, side by side,
+  and the other six chips still there to tick back on.
+
+### 3D Views is a destination of its own, and the site arrangement is what it opens on (2026-09-13 a) — ethanrobles10
+
+Owner: *"how can i see the 2 towers based on their arrangement? Meaning the site dev plan should also
+be seen in the vertical stacking. Better yet, there should be a separate tab entirely dedicated for
+3D views, since this sub-module is getting heavy."*
+
+### ⚠️⚠️ THE SITE VIEW ALREADY EXISTED, THREE LEVELS DOWN, AND THAT IS WHY THE TWO ASKS ARE ONE CHANGE
+The answer to the first question was a button called **Site** — inside a scope segment, inside the
+toolbar of a pane, which was itself behind **one unlabelled icon** among fourteen in the Project
+Schedule's toolbar, and only ever visible while that pane happened to be open. It drew exactly what
+was asked for and nobody could find it. Giving the 3D views a destination is what makes the site
+arrangement reachable; building the tab without moving the site view into the light would have missed
+the point of the question.
+
+### THE TAB
+`data-tab="vs3d"` in the view menu, `#ps-view-3d` beside `#ps-view-builder` and `#ps-view-costload`,
+and `#ps-vstack` moved into it — **markup moved, id unchanged**, because every renderer, the focus
+window and the scene registry all address `#ps-vstack` and moving markup is safe in a way renaming is
+not.
+
+- ⚠️ **The Vertical Stacking was a TOGGLE OVER the schedule** — a full-width panel that replaced the
+  grid and the Gantt while still living inside `#ps-view-schedule`, with CSS hiding the panes around
+  it. It is not a way of looking at the schedule table; it is a different question about the same
+  project, and it now has the same standing as the schedule and the cost.
+- ⚠️⚠️ **Leaving the tab turns the pane OFF.** `switchTab` calls `setVStackMode(false)` on the way
+  out, or the WebGL contexts stay live behind a hidden view — a card that is not on screen still
+  holds a canvas and a render loop.
+- ⚠️ **Entering calls `setVStackMode(true)`, not the pane's internals.** That function registers the
+  scenes, kicks the location-levels refetch and runs the entry animation; two ways to turn one pane
+  on is how a view ends up half initialised.
+- ⚠️ **The old toolbar button still works — it comes here now.** It is the door every planner on this
+  project already knows, and a shortcut that lands you where the thing moved to is kinder than one
+  that vanished. Anything else still asking for the "stacking" view (a remembered view key, a deep
+  link) is routed the same way rather than being told no.
+- ⚠️ The tab scrolls the PAGE (`ps-longdoc`), like the setup and the cost table: its cards are as tall
+  as the buildings in them, and a pane scrolling inside a 100vh box would put a second scrollbar
+  beside the one the planner is already using.
+
+### ⚠️ WHAT THE TAB OPENS ON
+- **In 3D.** `_vs3D` defaults to the 2D card and is remembered across a session, so a tab called
+  "3D Views" would otherwise have opened on a SECTION drawing — a contradiction with its own name.
+  Set **once**, not on every entry: a planner who deliberately switches to 2D in here has to be able
+  to leave and come back to it.
+- **On the Site scope, when a plan has been traced.** That is the owner's first question answered
+  without them having to find anything. `renderVStack` re-checks the gate
+  (`towerNames.length > 1 && _vsSitePlan()`) and falls back to Per trade on its own, so this can
+  never strand a planner on a scope with nothing in it.
+
+### ⚠️⚠️ AND WHEN THERE IS NO PLAN, A WAY TO GO AND DRAW ONE
+On a multi-tower project with nothing traced, the Site button is **absent** — it would draw every
+tower at the same place on a guessed grid, which says something false about where the buildings
+stand — and until now the screen said nothing about why, or what to do instead. A **Draw the site
+plan…** button now sits in that gap.
+
+⚠️ It is not a disabled Site button wearing a different face: it is a live control that goes to the
+step that owns the drawing (`switchTab('builder')` then `gotoStep('Floors & Zones')` — that order,
+because switchTab is what calls `ScheduleBuilder.open()` and gotoStep re-renders the panel it has
+just built). When the answer is "nobody has drawn it yet", the only honest control is one that takes
+you to where it gets drawn.
+
+### Verified
+- **The shipped `switchTab` driven in a browser**, sliced verbatim and run against the real view
+  containers with the rest stubbed and recorded. Across `schedule → builder → vs3d → schedule → vs3d
+  → costload → vs3d`: exactly one view visible at every step; on **vs3d** the pane is shown, the
+  toolbar hidden, `ps-longdoc` set, the title reads **3D Views**, and the calls are
+  `_vs3TabEnter → setVStackMode:true`; on the way out to **either** other tab the calls begin
+  `setVStackMode:false` and the pane is hidden. The old tabs are unchanged — `renderGantt` on
+  schedule, `ScheduleBuilder.open` on builder, `CostLoading.open` on costload.
+- **26 assertions reading the shipped file** (harness gitignored, deleted): one `#ps-vstack` and it
+  is inside `#ps-view-3d` and no longer inside `#ps-view-schedule`; switchTab shows the view, enters
+  the pane, turns it off on leaving, names the tab and sets `ps-longdoc`; the toolbar button and the
+  "stacking" view key both route to the tab and nothing still toggles it as a layout; `_vs3TabEnter`
+  forces 3D, lands on the site under a plan and is a one-shot; the CTA is emitted only when there are
+  towers and no plan, and is wired to the setup step; the Site button is still gated on a real plan.
+- ⚠️ **Gated against the previous commit**: there was no `vs3d` tab, the pane lived inside
+  `#ps-view-schedule`, the toolbar button toggled a layout, and there was no route to a site plan
+  from the stacking at all.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so the tab has not been opened on a real
+  project: what is proven is the switching, not a WebGL scene drawn inside the new container. First
+  thing to check: open **3D Views** on the eight-tower job — it should arrive on the site
+  arrangement, and the towers already traced should stand where you put them.
+
+### Seventeen towers fit, and they are legible: the layout grid is chosen, not assumed (2026-09-12 p) — ethanrobles10
+
+Owner: *"bruh you just defeated the purpose of the zoom out… my point is that there should be more
+space to add all towers!!! what happens if there are 17 towers that we need to place. …or propose
+something wherein in the default size of footprint per tower, make the space smaller so when it
+comes to the site plan, your current size now fits."*
+
+### ⚠️⚠️ THE ZOOM CANNOT MAKE SPACE, AND SHIPPING IT AS IF IT COULD WAS THE MISTAKE
+Nothing in this app carries a dimension. The sheet is `ZP_W` x `h` of nothing in particular, so a
+bigger sheet with proportionally bigger towers on it is **the same drawing at a different number** —
+there is no absolute size for "more room" to be measured against. **"More space" can only ever mean
+"smaller footprints relative to the sheet."** That is the only lever there is, and the owner named it
+themselves in the second half of the message.
+
+So the zoom-out stays — it was asked for, and stepping back from a sheet you are zoomed into is worth
+having — but the margin now **says what it is**: *"off the site plan — every area lives on the
+sheet."* A grey band around the paper reads as room until you try to use it.
+
+### ⚠️⚠️ THE GRID IS CHOSEN AGAINST THE ACTUAL FOOTPRINTS, NOT ASSUMED TO BE SQUARE
+`cols = ceil(sqrt(n))` is only right on a square sheet holding square buildings. On a 3:2 sheet it
+wastes a third of the paper and shrinks every tower to pay for it. `zpSiteGrid` now tries every
+`(cols, rows)` that can hold `n` and keeps the one that brings the footprints in **largest** —
+scored on the **smallest** of them, so the winner treats the worst-off tower best rather than
+flattering the average. `n` is capped at 96 and cols runs to n: a few thousand divisions, once, on a
+button press.
+
+What it picks, measured (17 towers, wide 3:2 sheet):
+
+| footprints | square rule | chosen |
+|---|---|---|
+| wide slabs 700 x 150 | 5 x 4 | **3 x 6** |
+| tall slabs 180 x 520 | 5 x 4 | **9 x 2** |
+| square-ish 250 x 250 | 5 x 4 | **6 x 3** (18 cells, 1 spare) |
+
+### ⚠️ AND THE SLOT FRACTION RISES WITH THE TOWER COUNT
+`zpSiteSlotFrac(n) = clamp(0.34 + 0.02n, 0.34, 0.62)`.
+
+With two towers the cells are enormous, and a footprint filling two thirds of one would be a floor
+plan rather than a site plan — so it takes **38%** and the rest is street. With seventeen the cells
+are small, and holding to 38% would put seventeen specks on a sheet nobody could read — so it takes
+**62%**, which is as much of a small cell as can be given away while still leaving a gap between
+neighbours.
+
+Measured against the previous commit, seventeen towers of 400 x 250:
+
+| | previous | now |
+|---|---|---|
+| each tower arrives | 76 x 48 | **124 x 78** |
+| they cover | 9.9% of the sheet | **26.4%** |
+| grid | 5 x 4 | 5 x 4 (this fixture; other shapes differ — see the table above) |
+| overlaps, brought in one at a time | 0 | 0 |
+
+⚠️ Note the direction: the towers got **bigger**, not smaller. "Fitting more towers" was never about
+shrinking them — it is about every tower having a place of its own, which the grid now guarantees
+before the first one arrives. Shrinking them further would only have made seventeen unreadable specks
+in the middle of an empty sheet.
+
+### ⚠️ Smaller things that came with it
+- The footprint's bounding box is measured **once**, by `zpSitePlaceFootprints`, and used both to
+  choose the grid and to place the shape. Two measurements of one building are two chances to
+  disagree about how big it is.
+- `n` counts **what is already on the sheet** as well as what is arriving, so a project that grows
+  past its own tower list still gets a cell per footprint. The wrap-onto-an-occupied-cell fallback is
+  gone; it cannot be reached, and if it ever were it reuses the last cell rather than dropping the
+  tower.
+- The site window's scale note now says what sets the size: *"Footprints are sized so that every
+  tower in the project has a place of its own — the more towers, the smaller each one arrives."*
+
+### Verified
+- **737 assertions** driving the shipped code, sliced verbatim (harness gitignored, deleted).
+  The new suite runs **2, 5, 9, 17, 25, 40 and 64 towers across three sheet shapes** (wide, square,
+  tall) with four different footprint aspects mixed together, and for each: every tower placed, **no
+  overlapping pairs**, all on the sheet, all still turnable at all 25 angles, a cell for each, the
+  smallest still legible against its own cell, the biggest still leaving a street, and every
+  proportion intact. Plus seventeen brought in **one at a time**, which is how a planner actually
+  traces them: seventeen places, no overlaps, all the same size, all locked.
+- ⚠️ **The grid is INFERRED from where the footprints landed** — distinct centre columns and rows —
+  not read back out of `zpSiteGrid`. Asking the chooser what it chose and then checking the
+  footprints against that would be the code marking its own homework.
+- ⚠️ **Gated against the previous commit**: the 17-tower comparison above is that gate's output.
+- 68 assertions on the view maths and 23 on the window's call sites still pass unchanged.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no seventeen-tower project has been
+  laid out in the app. First thing to check: on a project with many towers, they should arrive in a
+  grid that uses the sheet's shape — not a square block in the middle of it.
+
+### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12 n) — ethanrobles10
+
+Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there
+should be like a maximum of 50 or 25% zoom out."*
+
+### ⚠️⚠️ THE GRID WAS SIZED BY THE PRESS, NOT BY THE PROJECT — AND THAT IS THE WHOLE COMPLAINT
+`zpSitePlaceFootprints` built its layout grid from `found.length`: how many footprints were being
+brought in **at that moment**. On the owner's eight-tower job only Tower 1 had a traced floor plan,
+so the button read *"Bring in 1 tower footprint"*, `n` was 1, and that one tower was handed a
+**one-cell grid — the whole sheet as its cell**. Measured against the previous code:
+
+| | previous | now |
+|---|---|---|
+| Tower 1 arriving alone on an 8-tower job | **353 × 236** on a 1000 × 620 sheet | **127 × 78** |
+| the same tower when all eight arrive at once | 118 wide | 118 wide |
+| ⚠️ so the same site plan carried the same tower at | **two different scales** (353 vs 118) | one |
+| bringing the eight in one at a time | **all eight in cell 4, 28 overlapping pairs** | eight cells, 0 overlaps |
+
+That last row is the one that mattered most and I had not predicted it: the cell index came from the
+footprint's position in **this press's** list, so every tower brought in on its own landed in the
+same cell, on top of the last. A planner adding each tower as they traced it would have stacked all
+eight on one spot.
+
+- ⚠️ The grid is now sized by **`opts.total`** — `SUBJ.codes.length`, the subject's own list of tower
+  names (the setup's chips plus whatever the schedule carries). The first tower to arrive already
+  sits in the space it will still be in when all eight are there.
+- ⚠️ **A new arrival takes a FREE cell.** What is already on the sheet is passed in as `opts.busy`; a
+  cell counts as taken if any existing area's centre falls in it. Bringing in the fourth tower after
+  arranging three must not drop it on one of them.
+- ⚠️ Past the last free cell it **wraps rather than refusing**: a sheet with every cell taken is still
+  better served by a footprint the planner can see and drag than by one that silently never arrived.
+- ⚠️ `total` is capped at 64, so a malformed tower list cannot ask for an 8000-cell grid.
+
+### ⚠️ THE VIEW STEPS BACK PAST THE SHEET NOW — 25% TO 1200%
+Zooming out past 100% used to be refused, on the grounds that the whole sheet already IS everything
+there is. True of the **drawing**, and beside the point for someone arranging eight towers who wants
+to see the sheet whole with room around it to judge the arrangement by. `ZP_ZMIN = 0.25`.
+
+- ⚠️⚠️ **The sheet is drawn as a PAGE from here on.** The moment the view is bigger than the sheet,
+  "where does the paper end" stops being obvious — the stage's own edge used to be the answer.
+  A `.zpw-sheet` rect marks the edge and a `.zpw-off` path dims everything outside it.
+- ⚠️⚠️ **`fill:none` on that rect, and that is not a detail**: the svg sits ABOVE the plan image, so a
+  filled rectangle the size of the sheet would hide the very drawing the planner attached to trace
+  over. The paper is marked by its edge and by the margin being dimmed, never by being painted.
+- ⚠️ **The margin is somewhere to look from, not somewhere to build.** Nothing can be drawn or
+  dragged off the sheet — every stored coordinate is in sheet units — so `ptOnSheet()` now guards the
+  tracing and marker clicks. `ptOf` clamps, which is right for a drag (a shape pushed at the edge
+  should stop there) and wrong for a click, where it would drop a corner on the nearest edge,
+  somewhere the planner did not click. Ignored silently: at 25% the margin is most of the window and
+  a warning per stray click would be a stream of them.
+- ⚠️ **Below 100% the sheet is CENTRED in the view**, not pinned to the corner the clamp would have
+  put it in — that is what makes zooming out read as stepping back from the paper rather than as the
+  drawing sliding away.
+- ⚠️ The backdrop image is transformed at **any** zoom that is not 1, not just above it: zoomed out,
+  `V.x` is negative and the image has to shrink and move right by exactly what the trace does, or the
+  plan would part company with the zones drawn on it. **Measured in a browser**: at 25% the image
+  lands on the sheet rect to within 1.5px on all four edges.
+- ⚠️ `Fit` is now a point in the MIDDLE of the range rather than one end of it, so it is live whenever
+  the view is not at 100%, in either direction.
+
+### Verified
+- **563 assertions** driving the shipped placement and rotation code, sliced verbatim (harness
+  gitignored, deleted), including the new grid: a lone arrival on an 8-tower job fits a 1-of-8 cell;
+  one-at-a-time and all-at-once give the **same size**; eight towers brought in one by one take eight
+  different cells with **zero overlapping pairs**, all on the sheet and all still turnable at all 25
+  angles.
+- ⚠️ **Gated against the previous commit**: the same suite fails **12** assertions there — the table
+  above is that gate's output, including the 28 overlapping pairs.
+- **68 assertions** on the view maths (`zView` / `zSet` / `zFit` / `ptOf`, sliced verbatim): at 0.75,
+  0.5 and 0.25 the view is bigger than the sheet, the sheet is centred to 1e-9 with equal margins on
+  both sides, the whole sheet is inside the view, the aspect is unchanged, the stage centre is still
+  the sheet centre, a click in the margin clamps onto the paper; Fit from 25% restores exactly; the
+  cursor anchor still holds when zooming back in from 25%; a tall sheet behaves the same.
+- **Measured in a browser** against the shipped stylesheets: at 25% the sheet is 0.2495 of the stage
+  width and 0.2493 of its height, centred, the image lands exactly on it, and the dim path covers the
+  stage with the sheet punched out; at 100% the sheet rect lands on the stage's own edges.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real site plan has been zoomed out
+  or had a second tower imported into a free cell. First thing to check on a real project: trace one
+  tower of eight, bring it in, and it should arrive small and in the top-left cell — not filling the
+  middle of the sheet.
+
+### Orient redraws the window it changed, and the sharing panel stops shutting on every tick (2026-09-12 m) — ethanrobles10
+
+Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i
+close that is when it rotates. In addition, for individual tower footprints, applying that footprint
+to other floors, when checking other floors it always closes the options of other floors."*
+
+### ⚠️⚠️ ONE WORD: `render()` WHERE IT HAD TO BE `paint()`
+Three handlers in the floor-plan window — **Orient's turn buttons, its − / + buttons, and Bring in N
+tower footprints** — ended `commit(); render();`.
+
+`render()` is the **setup step's** render. It rebuilds the trade list, the tower bar and the floor
+rows **behind** this modal and never touches the window. So the points genuinely rotated, `commit()`
+genuinely saved them, and the drawing on screen was simply never redrawn — until the window was
+closed (closing calls `render()`, which rebuilds the step from the saved points) and opened again.
+Hence the owner's exact words: *"every time i close that is when it rotates."*
+
+- ⚠️ **Every other gesture in this window already called `paint()`** — drawing, dragging, undo,
+  delete, paste, the palette, the grid. These three were the odd ones out, and the two newest of them
+  were the ones a planner uses most on a site plan.
+- ⚠️ The repaint is also what redraws the **selection and the Orient buttons' own enabled state**, so
+  a window that skipped it was stale in more than one way, not just late.
+- ⚠️ `_close(); render();` at the end of the window is correct and stays: closing it does have to
+  refresh the Site plan button's count on the step behind.
+
+### ⚠️⚠️ A `<details>` REBUILT BY A REPAINT COMES BACK CLOSED
+Ticking a floor in **Also use this plan on other floors…** has to repaint — the summary counts the
+floors sharing the plan, and the "has its own" warning on each floor is part of the list — and
+`paint()` rewrites `wrap.innerHTML` wholesale. The panel was emitted as a bare
+`<details class="zpw-apply">`, so every tick rebuilt it **shut**. A planner ticking four floors
+re-opened it four times, and the fourth tick looked like it had undone the third.
+
+- Its open state now lives on `_zpWin.apply` and is written back into the markup, with `ontoggle`
+  recording it — the same fix the sheet fold above it already had.
+- ⚠️⚠️ **AND THE MODAL'S SCROLL, which was the other half of what the owner saw.** The sharing panel
+  is at the BOTTOM of a window that scrolls inside `.pd-modal`; replacing the contents resets
+  `scrollTop`, so every tick also threw them back to the top of the window, away from the very
+  control they were repeating. `paint()` now saves the scroll before the write and restores it after
+  — after `innerHTML`, before `wire()`, because the browser clamps `scrollTop` to the content that is
+  actually there.
+
+### Verified
+- **In a browser, on the mechanism**: a container repainted from a state object, driven with a real
+  click on the summary and a real `onchange` per tick. **With the fix**: the panel is still open after
+  three ticks and the scroll holds at 156. **Without it**: the panel is shut after the FIRST tick and
+  the scroll drops 156 → 104. That is the owner's report, reproduced and then closed.
+  ⚠️ It reproduces the mechanism — a rewritten `innerHTML`, the state flag, the `ontoggle` — not the
+  module itself, which cannot be opened without a signed-in session.
+- ⚠️ A trap worth recording: **`toggle` is queued, not synchronous.** The first cut of that harness
+  set `.open = true` in script and repainted in the same task, so the flag had not been written yet
+  and the "fixed" case looked broken. A real click and one turn of the event loop is the only honest
+  way to drive it.
+- **23 assertions reading the shipped `openPlate` source** (harness gitignored, deleted): no gesture
+  that changes the drawing ends in `render()`; both `data-zprot` and `data-zpscale` repaint and do
+  not re-render the step; the import handler repaints; both `<details>` carry their state into the
+  markup, write it back on toggle, and are initialised on the window object; the scroll is saved
+  before the write and restored between `innerHTML` and `wire()`.
+  ⚠️ Block comments are stripped as a whole before that scan — the notes explaining this fix contain
+  the word `render()` in prose, and a line-by-line filter reported them as the bug.
+- ⚠️ **Gated against HEAD**: the previous version ends three drawing gestures in `render()`, emits
+  `<details class="zpw-apply">` with no state, and never touches `scrollTop`.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real footprint has been turned in
+  the app. What is proven is the call sites and the repaint mechanism. First thing to check on a real
+  project: press Orient ↷90 on a footprint and it should turn **under your cursor**, with no need to
+  close anything.
+
+### The zoom control reaches the 3D stacking; migrated footprints arrive smaller, turnable, and with their corners fixed (2026-09-12 k) — ethanrobles10
+
+Owner: *"the zoom control should also work on the vertical stacking 3d view and also, when the per
+tower footprints are migrated, the default scale of the site plan should be way less. what if the
+footprint of tower 1 is so big it is unable to be rotated? Also the migration of the footprints of
+the tower, the users should not be able to edit the corner points of the footprint. It was already
+defined. Meaning the only thing users are able to do are rotate the orientation and change
+locations. that is it."*
+
+### ⚠️ THE 3D VIEW ALREADY DOLLIED — NOTHING ON IT SAID SO
+`cv.onwheel` has always moved `rot.r`, and it is unchanged. What was missing was any affordance: a
+WebGL canvas has no scrollbar, no handle and nothing that looks zoomable, so the only statement that
+it could be zoomed was the words "scroll to zoom" in small grey text under the card — a manual, not a
+control. The same `.ps-zoomctl` the plan window uses is now built in `_vs3Build`, so it is on **every**
+3D scene: the cards, the four panes of the focus window, and the Site view.
+
+- ⚠️⚠️ **ONE CLASS FOR BOTH DRAWINGS.** `.zpw-zoom` / `.zpw-zpct` were renamed `.ps-zoomctl` /
+  `.ps-zoomctl-pct` rather than copied. It is the same question asked of a different drawing, and
+  two controls that looked different would be two things to learn.
+- ⚠️⚠️ **ONE CLAMP.** `RMIN` / `RMAX` and `clampR()` replace the pair of limits that had been written
+  out twice (the wheel and `setCam`). The buttons drive `rot.r` through the same function, so they
+  can never offer a framing the wheel cannot reach, or stop short of one it can. **Measured**: the
+  wheel and the buttons land on exactly the same two limits, on three model sizes.
+- ⚠️ **`Fit` is `r0`** — this model's own default framing, not a number typed in here.
+- ⚠️ **The readout is a RATIO of that default**, not a distance: "160%" means closer than the view
+  the card opens at, which a planner can act on. Scene units mean nothing they can see, and they
+  differ between a 3-storey model and a 40-storey one.
+- ⚠️ **Synced from `applyRot`, not from the wheel handler.** The distance also changes on a restored
+  camera, on a linked pane following this one, and on the buttons themselves; a readout wired to one
+  of those three paths would sit there being wrong after the other two. It is why the four linked
+  panes of the focus window all read the same number.
+- ⚠️ `stopPropagation` on `pointerdown` as well as on click: the buttons sit ON the canvas, and the
+  canvas starts an orbit on pointerdown — without it, pressing "+" would also turn the building.
+- ⚠️ Removed in `dispose()`, beside the label layer and for the same reason: it is DOM this scene put
+  on the host, and every repaint of this view disposes its scenes.
+
+### ⚠️ THE DEFAULT SCALE: 0.62 OF A CELL → 0.38
+A site plan is a **larger scale** than the floor plans it is built from — a tower that filled its own
+sheet is a small object on a site. At two thirds of a cell the sheet read as a floor plan of four big
+rooms, and the planner's first job was shrinking every footprint before they could start arranging.
+Small is also the cheaper mistake: pressing + a few times is one gesture, dragging four overlapping
+towers apart is not.
+
+### ⚠️⚠️ "WHAT IF THE FOOTPRINT IS SO BIG IT IS UNABLE TO BE ROTATED?" — TWO WAYS IN, ONE CLOSED, ONE GUARDED
+A shape's bounding box **grows as it turns**: a w x h rectangle at 45° needs `(w + h) / √2` each way.
+`zpRotatePts` refuses a turn whose result will not fit the sheet, so a footprint can genuinely become
+unturnable.
+
+- ⚠️ **On IMPORT it could not, and measurement says so.** Even at 0.62, a slot is at most
+  `0.62 x 0.62` of a cell and every angle still cleared the sheet. The import path was already safe;
+  saying otherwise would have been claiming a fix for a bug that was not there.
+- ⚠️⚠️ **The way in is the `+` BUTTON, and it was wide open.** Measured against the shipped code at
+  HEAD: a footprint of an ordinary 2:1 tower, grown with eleven presses of `+`, reaches 988 x 494 on
+  a 1000 x 620 sheet and **22 of 25 angles are then refused — including every quarter turn**. The
+  planner would not find out until a turn they expected simply would not go.
+- ⚠️ **`zpTurnable(pts, h)`**: every rotation of a shape fits inside the circle through its own
+  corners, so the whole question is whether the **diagonal** of its bounding box clears the shorter
+  side of the sheet. Import now caps the diagonal at `0.92 x min(ZP_W, siteH)` — it shrinks nothing
+  that already fits — and `+` refuses the press that would take a **locked** area past it, at the
+  point of growth, where the reason is still legible.
+- ⚠️ **Only locked areas are guarded.** A hand-traced one may legitimately fill the sheet — the site
+  outline drawn around the towers is supposed to.
+- ⚠️ The rotate refusal now names the fix ("press − to make it smaller first"), because the fix is one
+  button away and the planner is already looking at it.
+
+### ⚠️⚠️ A MIGRATED FOOTPRINT'S CORNERS ARE THE FLOOR PLAN'S, AND ARE NOT EDITABLE HERE
+Owner: *"It was already defined."* A corner dragged on the site plan would make it disagree with the
+floor plan it was taken from — silently, with no way to tell afterwards which of the two drawings is
+the building. `zpSitePlaceFootprints` marks every area it places `lock: 1`.
+
+- ⚠️⚠️ **The enforcement is that paint() draws no handles**, and that is the right place for it:
+  every corner gesture in this window — drag a corner, alt-click to remove one, click a midpoint to
+  add one — reaches its corner through one of those two circles. No circles, no gesture. The body
+  still drags, so moving is untouched, and **Orient** still turns it. The pointer handler checks
+  `lock` too, so that anything drawing a handle in future cannot quietly re-open the corners.
+- ⚠️⚠️ **The lock survives `zpNormPoly`.** That function rebuilds every area from scratch on load and
+  returned exactly `{id, code, pts}` — a flag it did not copy would have been gone on the next
+  reload, and a footprint that came back editable after a refresh is invisible until somebody drags a
+  corner. **Verified** across the save/load round trip, and that a hand-traced area gains no lock.
+- ⚠️ **Copy and Duplicate are refused on one.** A copy is written back as an ordinary area carrying
+  the same tower name — a SECOND outline of one building, which is what this whole feature exists to
+  prevent, and the "already on the site" check would then read the tower as done while one of the two
+  drawings belongs to nobody. **Delete stays**, or a mistaken import could not be undone.
+- ⚠️ **Resize (− / +) stays**, and that is a judgement against the letter of *"that is it"*: a uniform
+  scale does not change the outline, it is the only way to say one tower is bigger than another on a
+  plan where every footprint arrives at the same width, and the window's own scale note tells the
+  planner to use it. The shape — which is what *"already defined"* is about — cannot be touched.
+- ⚠️ Said in three places, because a planner reaching for a corner that is not there needs the answer
+  where they are looking: a **dashed** outline when selected (a traced area shows its corners, this
+  one has none to show), an SVG `<title>` on the shape itself, and its own line under the stage.
+
+### Verified
+- **538 assertions** driving the shipped `zpSitePlaceFootprints` / `zpTowerPlate` / `zpRotatePts` /
+  `zpScalePts` / `zpTurnable` / `zpNormPoly`, sliced verbatim (harness gitignored, deleted): all 25
+  angles on all four footprint shapes, area preserved and landing on the sheet each time; 24
+  consecutive 15° turns never stick; every footprint's diagonal clears the sheet; every one fits its
+  0.38 slot with its **own aspect** intact (7.5:1, 1:1, 1:3, 3:2); `lock: 1` on every migrated area
+  and through normalize; a tall sheet and a multi-piece footprint behave; and a locked footprint
+  grown with `+` until the guard stops it is **still turnable at all 25 angles**, on three sheet
+  shapes.
+- ⚠️ **Sanity-gated against HEAD**: the same harness run on the previous code fails 14 assertions
+  (the slot sizes and every lock), and the growth gate above reports the 22-refused-angles state that
+  the new guard prevents. A test that passes on both versions proves nothing.
+- **42 assertions** on the 3D zoom, slicing `clampR`, the three button handlers and the `zoomUI`
+  readout out of `_vs3Build` and running them against stub buttons: opens at 100% with Fit disabled,
+  `+` and `−` stop exactly at `RMIN`/`RMAX` and disable themselves there, the readout crosses 100%
+  the right way, Fit returns to `r0` exactly, and **the wheel reaches the same two limits and no
+  further** — on three model sizes.
+- **Layout measured in a browser** against the shipped stylesheets: the control sits inside the 3D
+  mount and inside the plan stage, the same size in both; a locked area's outline computes to dashed
+  `12px, 7px` where a traced one computes to `none`.
+- ⚠️⚠️ **Not verified signed in.** The anon key has no grants, so no real footprint has been imported,
+  locked, turned or grown in the app, and no three.js scene has been built — the zoom control's DOM
+  and clamp are proven, a canvas with a building on it is not. First things to check on a real
+  project: that a footprint brought in shows no corner dots, and that `+` on the 3D card moves the
+  camera in and the readout with it.
+
+
+### The plan window zooms like a CAD drawing, and the step behind it sheds three rows (2026-09-12 j) — ethanrobles10
+
+Owner: *"make the space allotted for the site plan bigger. meaning it should be similar to autocad,
+wheren you can zoom in zoom out. And also, simplify the UI pls, refer to the screenshot."*
+
+### ⚠️⚠️ THE STAGE WAS ALREADY HUGE — IT JUST WOULD NOT FIT ON THE SCREEN
+`.zpw-stage` was `width:100%` with the sheet's aspect, so on a 1180px modal it computed to roughly
+1136 x 704. `.pd-modal` is capped at `max-height:90vh` and scrolls past it, so the drawing the window
+exists for was the part you had to scroll to — and widening the modal could not have helped: every
+extra pixel of width bought 0.62 more pixels of height the modal could not show.
+
+- ⚠️⚠️ **The width is now capped by the height that actually fits**:
+  `width:min(100%, calc(var(--zpvh) * var(--zpar)))` with `--zpvh: max(300px, calc(90vh - 360px))`.
+  The whole sheet is on screen at once, and getting closer is the zoom's job rather than the
+  scrollbar's.
+- ⚠️ **90vh, not 100vh** — the sum that has to fit is the MODAL's, and the modal is the thing capped
+  at 90vh. The 360px is this window's own chrome measured on the **site** plan, which is the taller
+  subject (it carries the scale note); a budget that fitted the floor plan and not the site plan
+  would scroll on exactly the drawing this was asked for.
+- ⚠️ **The box keeps the sheet's aspect in BOTH dimensions.** The svg is stretched over it with
+  `preserveAspectRatio="none"`, so a box of any other shape silently distorts every trace and
+  `ptOf()` stops agreeing with what is drawn. `--zpar` is written by paint() from the sheet's own
+  height; the literal in the CSS is only a fallback.
+- The modal itself went `min(1180px, 96vw)` to `min(1560px, 97vw)`, which is what lets a wide sheet
+  use the height once the height is the constraint.
+
+### ⚠️⚠️ THE ZOOM IS A WINDOW ON THE SHEET, IN PLAN UNITS — NOT A TRANSFORM OVER THE DRAWING
+`_zpWin.zk / zx / zy` is the zoom and the top-left corner of what is visible, **in the same units
+every traced point is already stored in**. The svg's `viewBox` IS that window, so there is no second
+coordinate system to keep in step and nothing to convert on the way out.
+
+- ⚠️⚠️ **`ptOf()` was the only thing that had to change.** Every pointer position in this window —
+  tracing a corner, dragging a shape, dragging a vertex, dropping the front marker — asks that one
+  function where the cursor is in plan units. Adding the view offset there made every gesture work
+  zoomed, with no gesture rewritten.
+- ⚠️⚠️ **Clamped to the sheet, unlike AutoCAD.** Model space is infinite, so panning into nothing is
+  harmless there; a plate is ZP_W x h and nothing exists outside it, so panning past the edge could
+  only lose the drawing off-screen and leave a planner staring at blank paper. Zooming out past the
+  whole sheet is refused for the same reason — that view already IS everything there is. Cap 12x.
+- ⚠️ **The wheel zooms on the CURSOR** (`zSet(k, ax, ay)` holds the anchor point still), which is what
+  makes it a magnifier rather than a slider: zooming in on a corner arrives at that corner, not at
+  the middle of the sheet. The plus/minus buttons anchor on the middle, because they have no cursor.
+- ⚠️ **Pan is a background drag, and only once zoomed in** — at 100% the whole sheet is already on
+  screen, so a drag that moved nothing would read as broken. Middle-button drag pans at any zoom,
+  which is the habit AutoCAD leaves people with. Shapes and the marker stopPropagation on their own
+  `pointerdown`, so dragging one still moves it; panning only ever sees a press on empty paper. Not
+  while tracing or placing — those are pointer modes of their own, and a left drag that panned
+  mid-trace would swallow the click meant to be a corner.
+- ⚠️ **Every annotation is sized on SCREEN, not in plan units.** Line weights hold through
+  `vector-effect:non-scaling-stroke`; handle radii are divided by the zoom in paint(); labels use
+  `--zs` (1/zoom) written on the svg. A 3-unit stroke at 6x is a fat band that swallows a small zone,
+  and a handle that grew with the zoom would cover the very corner you zoomed in to reach.
+- ⚠️ **The control sits ON the stage**, not in a toolbar row: it is a control for the VIEW, and the
+  edit row it would otherwise live in is not emitted at all until the sheet has a zone to draw — so a
+  planner zooming in to place their first corner would have had no control at all.
+- ⚠️ The pan rewrites the `viewBox` live and repaints once on release. A full `paint()` per
+  pointermove rebuilds every control in the window underneath the cursor, and the pan judders.
+
+### ⚠️ THE WINDOW'S OWN SETUP ROWS ARE FOLDED
+Which image is underneath, how the sheet is shaped and which way the building faces are answered once
+and then carried for the life of the drawing — and they cost ~90px of stage on every repaint. Folded
+into one `<details>`, **open on a blank sheet** (attaching the plan really is the first move there)
+and shut once anything is drawn.
+
+- ⚠️ **The summary carries the STATE**, not just a name: sheet shape, image attached or not, where the
+  front is. A fold that hides the facts as well as the controls is one you have to open to find out
+  whether you need to open it.
+- ⚠️ **The Floor-shape brush moved OUT of that fold** and onto the end of the palette row. It is a
+  brush, and it had been sitting in a row of controls for the front marker, which is not a brush at
+  all. The earlier note about keeping it out of the zone palette was protecting the DISTINCTION, not
+  the row — a dashed swatch behind the words "Floor shape", after a divider, cannot be misread as a
+  zone somebody forgot they named.
+- ⚠️ `<details>` keeps its contents in the DOM when shut, so every id inside stays wired exactly as it
+  was. The open/shut state lives on `_zpWin.more`, or every repaint — and this window repaints on
+  every gesture — would spring it open under the planner's hands.
+
+### ⚠️⚠️ `.sbld-mini` IS `width:62px`, AND IT HAD CAUGHT TWO MORE CONTROLS
+The owner's screenshot shows it: **"Site plan 1/8" wrapped onto two lines inside a 30px-tall button**,
+so the one number that button exists to report was cut in half, and the **Activity level** select read
+**"Aut"** where it had to read "Auto (deepest defined)". That class is sized for the two-character
+number inputs it was written for — the same trap already recorded in this file for the copy-from-trade
+select on 2026-09-03. Measured after the fix: the site-plan button is 111px wide with
+`scrollHeight === clientHeight`; the old one is 62px with `scrollHeight 36 > clientHeight 29`.
+
+- New `.sbld-twbtn` (auto width, `white-space:nowrap`) for the tower bar; `width:auto` on the select.
+- ⚠️ **Rename / Copy from… / Delete went behind one ⋯ menu.** They are all "…this tower", all
+  occasional, and three of them in a row read as three more primary actions beside the two that ARE
+  primary — adding a tower, and the site plan. Delete names the tower in its label, because it is the
+  destructive one and a menu row reading just "Delete" does not say what it takes with it.
+- ⚠️ The menu closes on the next press outside; the listener removes ITSELF once the step re-renders
+  and its element is detached, rather than leaving one dead handler behind per render.
+- ⚠️ **Quick-generate and copy-from-trade folded into one "Quick setup" panel**, open exactly when
+  this tower and trade have no floors — the only moment either is the next thing to do. Two rows of
+  controls that stood above the floors a planner had already typed, on every render, for the life of
+  the project.
+- ⚠️ The Activity level row's worked example moved into the select's `title`: a sentence about what
+  four options mean, read once, that sat on that row forever.
+
+### ⚠️ A CSS BLOCK THAT ONLY WORKED BY ACCIDENT
+`.sbld-towerbar {` opened its declaration block, three unrelated `.sbld-towerbar-note` rules were
+written INSIDE it, and its own `padding`/`border` closed the block ten lines later. It rendered only
+because CSS nesting happens to be supported and the note really is a descendant of the bar — in a
+browser without nesting every note rule was dropped and the drift warning lost its styling. Written
+out flat.
+
+### Verified
+- **39 assertions** against `zView` / `zSet` / `zFit` / `ptOf`, sliced verbatim out of the shipped
+  file and driven in node (harness gitignored, deleted): the wheel anchor holds the point under the
+  cursor **exactly** where the clamp does not bite, and stays on the sheet where it does; the view
+  never leaves the sheet at any zoom or anchor, including a tall sheet; the zoom clamps at 1 and 12;
+  the window is always the sheet over k with the **aspect unchanged**; `ptOf` never returns an
+  off-sheet point; 100px of screen is worth a quarter of the plan at 4x; Fit restores exactly.
+- **Layout measured in a browser** against the shipped stylesheets (`dashboard.css` and the module's
+  own `<style>`, both sliced verbatim into a gitignored harness, deleted): at 1440x900 the whole
+  window is **782px against an 810px cap — it fits**; the stage is 725.8 x 450, an aspect of 1.6129
+  against the sheet's 1.6129; the zoom control sits inside the stage; the ⋯ menu opens below the bar
+  and fully on screen; and the two button measurements above.
+- ⚠️⚠️ **Not verified signed in.** The anon key has no grants, so no real plate has been opened: what
+  is proven is the view arithmetic and the CSS layout, not a drag on a real traced zone at 6x. The
+  first thing to check on a real project is that dragging a corner while zoomed lands it under the
+  cursor.
+
+### The site plan is BUILT from the towers' own floor plans; all that is left is arranging and orienting (2026-09-12 g) — ethanrobles10
+
+Owner: *"the pre-requisites first is to establish the per tower floor plan. meaning once the per tower
+floor plan has been established, in the site plan, the resulting shapes from the per tower is migrated
+into the site plan. And therefore just arrangement is just required and orientation. But obviously,
+the site plan should have a larger scale since you are arranging the footprint / layout established on
+per tower."*
+
+### ⚠️⚠️ THIS REPLACES RE-TRACING, WHICH WAS THE SITE PLAN'S REAL COST
+As shipped yesterday the site plan was a blank sheet with the tower names as brushes. So a planner who
+had already drawn every tower's floors was asked to draw each tower **again**, freehand, at site scale
+— a second outline of the same building, by hand, which can only disagree with the first. The owner is
+describing the right dependency: the floor plans are the **prerequisite**, and the site plan is their
+**arrangement**.
+
+**`Bring in N tower footprints`** now leads the site window's tool row. It derives each tower's
+footprint from that tower's own floor plans, places them on the site sheet, and leaves the two things
+only a person knows: **where each one stands, and which way it faces**.
+
+- ⚠️ **The largest traced plate is the tower's footprint** — the same rule `zpBareShape` uses for a
+  floor several trades traced, and for the same reason: the slab is at least as big as the biggest
+  thing anyone drew on it, and a trade that traced only a core is a subset of that floor, not a rival
+  claim about it. A **podium** is therefore the footprint of a tower that has one, which is exactly
+  what a site plan wants.
+- ⚠️ Across **every** trade, because zoning is per trade and the tower is one building.
+- ⚠️ The plate's **outline**, not its zones — explicit `*floor*` areas when any were drawn, otherwise
+  the zones together, which ARE the floor's footprint. Mirrors `_vsZpOutlineOf` so the site view and
+  the stacking read one shape.
+- ⚠️⚠️ **It ADDS, it never replaces.** A planner who has arranged three towers and then traces the
+  fourth's floor plan must be able to bring that one in **without losing the arrangement** — so an area
+  whose code is already on the site is left exactly where it is, and the button reports what it
+  skipped. Replacing would silently undo the arranging this whole feature exists to make the only
+  remaining work.
+- ⚠️ A tower with no floor plan yet is **named in the toast**, never silently absent, and the button
+  says how many it can bring in **before** it is pressed — so a half-traced project is not discovered
+  by pressing it and getting two of four.
+
+### ⚠️⚠️ ORIENTING DID NOT EXIST AT ALL, WHICH IS HALF THE OWNER'S ASK
+Moving a shape already worked (drag it). There was **no way to turn one** — so a tower that faces the
+road at an angle could only be re-traced corner by corner at that angle, which is precisely the work
+importing the footprint is meant to remove. A new **Orient** group on the selection:
+
+- `↶90 ↶ ↷ ↷90` — quarter turns and 15°. Both, because a tower is usually square to the site **or**
+  set at an angle to a road, and six clicks of 15° to reach a right angle is not a control.
+- `− +` — uniform resize, ⚠️ **uniform because the app carries no dimensions**: a tower's outline is
+  only its PROPORTIONS, and scaling x and y separately would throw away the one true thing about it.
+- ⚠️ **Rotation is about the shape's own centre, never the sheet's.** Turning about the sheet would
+  send a tower across the site as well as turning it, so "orient" and "arrange" would stop being two
+  independent actions and every rotation would need a compensating drag.
+- ⚠️ **Not snapped to the grid.** The snap exists so adjacent zones MEET; a rotated corner lands
+  wherever the angle puts it, and snapping it would deform the outline a little more on every click
+  until a rectangle was no longer a rectangle.
+- ⚠️ **A shape pushed off the sheet is TRANSLATED back, never squashed** — clamping each point
+  independently is what turns a rotated rectangle into a trapezoid. One that cannot fit at all is
+  **refused with a reason** rather than silently mangled.
+- ⚠️ **Not gated to the site plan.** A zone traced at the wrong angle on a floor plan is the same
+  problem, and a control that exists on one subject and not the other is one more rule to remember.
+
+### ⚠️⚠️ "A LARGER SCALE" IS A DEFAULT, NOT A MEASUREMENT, AND THE WINDOW SAYS SO
+This is the part that could quietly become a lie. **Plan units are square on every sheet** — a sheet is
+`ZP_W` across by `h` down in the SAME unit — which is what makes the migration a *copy* rather than a
+projection: a footprint's bbox is genuinely its proportions, and the points carry over under **one
+uniform scale**. Scaling x and y to "fill the slot" would stretch a tower into a shape nobody drew.
+
+But nothing in this app stores a **dimension**, so nothing here can know that Tower A is really wider
+than Tower B — only that each is the shape it was traced as. Every tower therefore arrives at the same
+footprint **width**, and the window carries a note saying that in as many words: *"each tower keeps its
+own shape, not its size relative to the others… This is an arrangement, never a survey."* Claiming a
+relative size would be inventing a survey, and a planner reading sizes off this drawing would be
+reading something the app never stated.
+
+⚠️ They are laid out on a coarse grid at **0.62 of a cell**, so two towers side by side arrive with a
+street between them rather than touching edges the planner has to pull apart before they can arrange
+anything.
+
+### Verified
+A gitignored harness (deleted) driving the **shipped** `zpRotatePts` / `zpScalePts` / `zpFitBack` /
+`zpTowerPlate` / `zpPlateOutline` / `zpSitePlaceFootprints`, sliced verbatim — **38 assertions**.
+
+| Checked | Result |
+|---|---|
+| Rotation | a quarter turn swaps w/h, the **centre does not move**, area preserved exactly, four turns return the original, 15° preserves area (not snapped, not deformed) |
+| ⚠️ Off-sheet | translated back **and not deformed** (area unchanged, bbox still the rotated one); one that cannot fit is **refused**, not clamped |
+| Scaling | both sides halve, **aspect untouched**, area goes as k², centre holds; past the sheet and down to nothing are both refused |
+| Footprint | the **podium** wins over the typical floor, across **every** trade; an explicit outline wins over the zones; zones ARE the footprint when no outline was drawn; a tower with no plan reads null |
+| ⚠️ The migration | 2:1, 1:3 and square all arrive with their **own aspect intact**; every point on the sheet; separated, not stacked; each inside its slot |
+| Missing plans | named, not dropped; nothing invented |
+| A multi-piece footprint | both pieces arrive under **one** scale — same size as each other, and the **same distance apart in proportion** |
+
+⚠️ **Not verified signed in, and this is the caveat that matters most here.** The anon key has no
+grants, so no real floor plan has been read and no footprint has ever landed on a real site sheet. What
+is proven is the geometry — the derivation rule, the proportion preservation, the clamping and the
+refusals. What has not been seen is the button pressed on a project with real traced floors. Trace one
+tower's floor plan, open **Site plan…**, and the first thing to check is that the footprint that
+arrives is the shape you drew.
+
+### The setup detects its own towers, and "apply this plan to other floors" stops crossing buildings (2026-09-12 e) — ethanrobles10
+
+Owner, on yesterday's site plan: *"but the schedule setup should detect, if the project has multiple
+towers or not."* Then, separately: *"for the option of for example defining a floor plan, and applying
+it to other floors. The other floors detected must be applicable to that tower only. Right now it
+displays all other floors of all towers. fix"*
+
+### 1. ⚠️⚠️ `multiTower()` COULD NOT ANSWER THE QUESTION IT IS NAMED FOR
+It is `towerList().length > 1`, and `towerList()` falls back to `blankTowers()` — **one invented
+"Tower 1"** — on a setup nobody has opened. So an imported four-tower schedule reported *one tower*,
+which reads identically to a planner who genuinely has one.
+
+That is not a cosmetic gap, it is the exact state in which yesterday's site plan **silently fails**:
+the tower bar offers one chip called `Tower 1`, the planner traces the whole site as `Tower 1`, and the
+Vertical Stacking — which knows the schedule's own `Tower A`..`Tower D` — finds nothing. Invisible
+until the Site view comes up empty.
+
+`towerReality()` asks **both sources** and returns one verdict:
+
+| | source | on an untouched setup |
+|---|---|---|
+| `nNamed` | `cfg.towers` **only** — never `blankTowers()` | **0**, not 1 |
+| `inSchedule` | the tower values the execution activities carry | 4 |
+| `multi` | either says so | **true** |
+| `drift` | the schedule knows towers the setup has not named | **true** |
+
+⚠️ `multi` is true when **either** source says so: a planner who has named four towers but not pushed
+has a multi-tower project, and so does one whose imported schedule holds four nobody has named.
+Taking only the setup's word is the bug; taking only the schedule's breaks the ordinary forward path.
+
+### 2. ⚠️⚠️ THE TWO SIDES DISAGREED ABOUT WHICH LEVEL EVEN IS THE TOWER
+Writing the detection surfaced a second, older problem. There were already two rules:
+
+- `sbDimsFromLevels` (setup): the first level is a tower **only on four levels or more**;
+- `_vsTowerLevelId` (stacking): a level **named** tower/building/block, else the first.
+
+So on a `Tower › Level › Zone` project — three levels, the first literally called *Tower* — the
+stacking has towers and this side had **none**. Detection that disagrees with the thing it is detecting
+*for* is worse than no detection, and the site plan's whole value is that the names match.
+
+**So the names come from `_vsTowerOf` verbatim** — the stacking's own function, not a second reading of
+the same rows. ⚠️ **But the gate is this side's, and deliberately conservative:** `_vsTowerOf` falls
+back to the first location level whatever it is, so on a single-building project whose only level is
+*Level* it would report "5th Floor", "6th Floor"… as towers, and this step would announce a
+fifteen-tower project and offer a site plan for it. A tower axis is credible when a level is **named**
+for one, or when the breakdown is deep enough that the first level cannot be the storey.
+
+### 3. What the tower bar now does
+- **The `Site plan…` button is absent on a single-tower project.** A "master site development plan
+  showing all towers" on a one-tower job is a drawing of one building, which the floor plans already
+  describe — and the stacking's Site view is hidden there for the same reason. An offered control that
+  leads nowhere is the looks-live-does-nothing failure this module keeps recording.
+- **It counts against EVERY tower the project has**, named here *and* known only to the schedule.
+  Counting against `towerList()` alone would report `1/1 traced` on the very project whose site plan
+  names nothing the stacking can find.
+- **The drift case is reported with the names**, in the warn surface, telling the planner to add them
+  with **+ Tower** so the names match. The single-tower line is a plain statement, not a warning — one
+  tower is an ordinary project, and it exists only so the missing button is explained rather than
+  merely absent.
+- **The site plan's brush list is both sources too**, de-duplicated by the same normaliser the plan is
+  matched with, with the schedule's own names last (the planner's chosen names are the ones they look
+  for first). Otherwise the planner is offered the one invented `Tower 1` and paints the whole site
+  with it.
+
+### 4. ⚠️⚠️ THE APPLY LIST WAS SHOWING EVERY TOWER'S FLOORS, AND THE LABELS COLLIDED
+On a four-tower job every trade's floor list holds every tower's floors, so *"also use this plan on…"*
+offered **forty tick boxes of which thirty were other buildings** — and ticking one silently gave Tower
+A's 5th floor Tower D's outline. Worse, **every tower has an `F5`**, so the list read as ten identical
+rows with nothing saying which building any of them belonged to.
+
+- Scoped by `towerIdOf`, which is what `floorsOfTower` already uses — one reading of "which tower is
+  this floor in", not a second written here.
+- ⚠️ **It is the TICK LIST that is scoped, not `zpUsers`.** That one COUNTS what actually shares the
+  plate, and a setup from before this fix may genuinely share one across towers. Reporting *"shared by
+  6 floors"* when six floors share it stays true; what changes is that you can no longer create that
+  state by accident.
+- The panel summary and the window header **name the tower** on a multi-tower job, because a list that
+  silently shows a subset reads as a bug. The empty state says the scoping is deliberate rather than
+  implying this trade has no other floor anywhere.
+- ⚠️ **Single-tower projects are unaffected**, asserted: `towerIdOf` defaults every floor to the first
+  tower, so they all still share, and the header does not mention a tower at all.
+
+### Verified
+A gitignored harness (deleted) driving the **shipped** `sbExecActs` / `sbHasTowerAxis` /
+`sbTowersInSchedule` / `towerReality` / `zpSubjFloor` / `locTowerToken`, sliced verbatim.
+
+| Checked | Result |
+|---|---|
+| An untouched setup | reads single-tower, and `nNamed` is **0** — `blankTowers()` does not count as a finding |
+| **The bug**: an imported 4-tower schedule nobody has named | all four read, `multi` **true**, all four reported unnamed, **drift flagged** |
+| The forward path (named here, nothing pushed) | multi-tower from the setup alone, **no drift** |
+| Names that match | no drift; a partial match names **only** what is missing |
+| ⚠️ `Tower › Level › Zone` (3 levels, first named Tower) | **is** a tower axis and both towers are read — the old four-level rule read **none** |
+| Four levels, none named | still a tower axis (the depth rule) |
+| ⚠️ `Level › Zone` | **not** a tower axis — floors are not towers, and the project reads single-tower |
+| ⚠️ The apply list | only Tower A's own floor offered; **Tower B and C's are not** — this was the bug |
+| | Tower B sees only Tower B; a tower with one floor offers nothing |
+| Single-tower | both floors still share, and the header names no tower |
+
+⚠️ **Not verified signed in.** The anon key has no grants, so nothing has been run against a real
+project: no tower has been read off a live schedule, and the drift line has never been seen. What is
+proven is the two-source verdict, the axis gate, the name join and the scoping. On the real project the
+thing to read first is the line under the tower chips — it says what was detected.
+
+### The master site development plan: one drawing for where the towers stand (2026-09-12 d) — ethanrobles10
+
+Owner: *"if defined the floor plan of each tower, then there should be like a master site
+development plan to showcase all towers. and then link that schedule to the vertical stacking.
+propose how and where you would define the plan showcasing the site dev plan (showing all towers
+orientation and location)."*
+
+### ⚠️⚠️ WHERE IT IS DEFINED: on the TOWER BAR, in Floors & Zones
+**Schedule Setup → Floors & Zones → the `Site plan…` button beside the tower chips.**
+
+That bar is the only place in the app that enumerates the project's towers, and the site plan is a
+statement *about that list* — where each of those towers stands and which way it faces. Put anywhere
+else it would be orphaned from the names it has to use. It is deliberately **not** on a floor row,
+which is where a floor plan lives: a floor plan is per trade and per floor; a site plan is one
+drawing for the whole project, and filing it beside the towers is what makes that difference visible
+instead of something to be explained. The button counts what is traced against the towers that exist
+(`Site plan 3/4`), so a project that has grown a fourth tower reads as incomplete without anyone
+opening it.
+
+### ⚠️⚠️ HOW IT IS STORED: as one more plate, not a second store
+`cfg.zonePlan` already is *"drawings, and what points at them"* — `{ plate: {id: …}, of: {key: id} }`.
+The site plan is one more plate, pointed at by a reserved key (`ZP_SITE_ID = 'site'`) exactly as the
+un-levelled band is by `'nolev'`, and **every polygon's `code` is a TOWER name instead of a zone
+code**. Nothing in the schema, the normaliser, the save path or the garbage collector had to learn
+about it, and it inherits the image upload, the presets, undo, copy/paste, the grid, the sheet
+proportions and the colour bag for free.
+
+- A separate `cfg.sitePlan` was the obvious alternative and it is the wrong one: a second normaliser,
+  a second GC rule, a second set of tracing gestures to keep in step, and two places for "the drawing
+  of this project" to live.
+- The one thing a site plan genuinely does not share with a floor plan is **the trade** — floor plans
+  are per trade (`zpByLabelOf`), a site plan is a fact about the project. That is expressed by the
+  key it is filed under, not by a separate store.
+- ⚠️ `*site*` is a **protocol key, not a label**, same rule as `ZP_NOLEV_KEY`. Both sides name the
+  constant and point at each other.
+
+### ⚠️⚠️ ONE TRACING WINDOW, TWO SUBJECTS — never two windows
+The floor plan and the site plan are the same gesture over the same structure: attach a drawing,
+trace named areas, name which is which. Copying `openZonePlan` would have duplicated ~900 lines whose
+second copy starts drifting on the first bug fixed in only one of them — a failure this module has
+already recorded twice. So everything that depends on *what* is being traced is named in a subject
+descriptor (`zpSubjFloor` / `zpSubjSite`) and the window reads that instead of `floor` and `tr`:
+
+| | Floor plan | Site plan |
+|---|---|---|
+| `key` (what `zonePlan.of` files it under) | the floor's id | `'site'` |
+| `codes` (the paintable areas) | that floor's zones | the project's towers |
+| sharing panel / trace-over | yes | **absent** — there is one site plan |
+| outline row | "floor outline" | "site boundary" |
+
+⚠️ `SUBJ.key`, not `floor.id`, is what `commit()` assigns — that one line is what makes the plate a
+fact about the project rather than about a floor.
+
+### The link into the Vertical Stacking
+A **Site** scope button joins Per trade / Per tower / Consolidated, and draws one card: every tower
+at its traced footprint, **as tall as its own storey count**, shaded by its own progress, on the same
+as-of scrubber as everything else.
+
+⚠️⚠️ **The site view is a MODEL, not a second renderer.** `_vs3Build` already draws N named cells at
+their traced positions on a plate, shades each by its own progress, registers them for the
+click-through and outlines them on hover. A site plan is that exact picture with the plate set to the
+site drawing and the cells named after towers. A bespoke site renderer would have needed its own
+camera, tones, picking, compare edges and as-of handling — every one of them a chance to disagree
+with the tower views about the same project. `_vsSiteModel` is `_vsTowerModel`-shaped and carries the
+three hooks a site actually differs by:
+
+- `plateFor` — the site plan instead of a floor's (`_vs3Build` now asks the model, falling back to
+  the floor lookup, so the override is one line at each of two call sites);
+- `cellH` — **the one structural addition**. On a floor every cell is a zone of the same storey, so
+  they are all one storey tall. On the site the cells are towers, and a 14-storey tower drawn the
+  same height as a 40-storey one says something false about the project. `cellH` is a *multiplier*,
+  so `SH` stays the single unit of height; it is 1 everywhere else, where the maths is the identity.
+- `rowCells` — the towers, in the module's own tower order, in the module's own tower colours
+  (`_vsTowerColor`, which already existed — a duplicate I wrote was caught and removed).
+
+⚠️ Storey counts come from the **schedule**, not from the setup's floor list: the site view stands
+beside the tower views and those are drawn from the schedule too. A tower whose setup says forty
+floors but whose schedule carries eight would otherwise be drawn forty tall and eight tall in two
+views of one project.
+
+⚠️ **The button is absent when there is no site plan**, not disabled-looking-live: a Site view with
+nothing traced is every tower at the same place on a guessed grid, which is a picture that lies about
+where the buildings stand. Same for a single-tower project — the site *is* the tower there.
+
+⚠️ **3D only, and it says so.** The 2D card is a SECTION; two towers north and south of each other
+occupy the same place in an elevation. That is the same reason the 2D card has never drawn a floor
+plan.
+
+⚠️ The footer names the one thing a reader cannot see: **a tower the plan does not name keeps its
+slot on the wrap grid**, so it is on the site, in the wrong place, looking exactly like one that was
+traced. That is the most misleading thing this view can do, so `_vsSiteFit` counts it and the footer
+prints it.
+
+### Verified
+Two node harnesses (gitignored, deleted) driving the **shipped** code sliced verbatim — the builder
+chain (`zpNormAll` → `zpSiteOf` → `zpShapeOfBag`) and the stacking chain (`_vsSitePolysOf` /
+`_vsSiteBoundary` / `_vsSiteFit`), plus the `zoneMesh` geometry.
+
+| Checked | Result |
+|---|---|
+| Storage | a site plan round-trips as a plate; points normalised 0..1; the sheet's aspect travels with it; a colour resolves for every area; tower names survive verbatim |
+| "No plan" | no `zonePlan`, an empty plate, a bag with no site pointer and a null config all return **null** — one answer, not four |
+| ⚠️ Normalise + GC | the site plate **survives** (it is pointed at) alongside a floor plate, and an orphan plate is **still collected** — the reserved key does not defeat the GC |
+| The name join | case and spacing normalised away; an untraced tower returns null; **the site boundary is never returned as a tower** |
+| The fit verdict | 2 of 3 placed, the unplaced one named, the boundary not counted as a traced area, "nothing matches" distinct from "no plan" |
+| A tall sheet | proportions preserved rather than squared |
+| `cellH = 1` | **identity** — floor cards and Consolidated bands land at exactly the pre-change heights |
+| `cellH < 1` | a 14-storey tower is 0.35 of a 40-storey one, **both standing on the ground**, progress filling upward inside each tower |
+
+⚠️ **Not verified signed in, and this is the big one.** The anon key has no grants, so nothing here
+has been run against a real project: the tracing window has not been opened on the site subject, no
+site plan has been saved or read back, and the 3D site card has never been rendered. What is proven
+is the storage contract, the name join, the fit arithmetic and the geometry — the wiring between them
+is argued, not measured. Open **Floors & Zones → Site plan…**, trace one area per tower, **save**,
+then check the Vertical Stacking's Site button appears; the footer under the model is the thing to
+read first.
+
+⚠️ Also unverified: the icon. `data-ico="map"` does not exist in the shared set (it would have
+rendered nothing) — caught before shipping and changed to `compass`, which does.
+
+### The geometry audit, and the suite stops living in a temp folder (2026-09-12) — fmlozano
+
+Overnight audit, agenda item 5 — the geometry half of the UI audit: hunting the `zh` defect class
+(a row height derived in one place while bars are positioned from another) in Progress, Vertical
+Stacking, Network and the rest. **No shipped file changed.**
+
+### ⚠️⚠️ THE CLASS CANNOT RECUR IN MOST OF THIS FILE, AND THE REASON IS STRUCTURAL
+Not *"I looked and it seemed fine"*. Every site that positions something at `index × height` was
+enumerated and classified:
+
+| where | why it is safe |
+|---|---|
+| the Gantt (8 sites) | all read the **one** `ROWH`; `zh` closed the derivation gap |
+| **Progress** | bars are `.ps-prog-track` inside a `<td>` — **in flow**, so a bar cannot leave its row |
+| 4 SVG chart renderers | one local `rowH` per function feeds **both** the label `<text>` and the bar |
+| WBS Manager | `WBS_ROWH = 34` vs `.ps-wbs-row { height:34px; box-sizing:border-box }`, no gap on the container |
+| `--c-plus` | the CSS reads `var(--c-plus)` itself, so it cannot drift from the value it mirrors |
+| Vertical Stacking 3D | labels are **projected from the scene per frame**, not a fixed-constant pair |
+
+The LSM lanes are the one genuinely composed case: the budget (`_lsmRowH`) and the placement
+(`_lsmBarsHTML`) are **two expressions over the same four constants**. Lane *i* lands at
+`top + 4 + 11i`, the bar is 6px and the rail ends 9px in, so the last element bottoms at
+`top + 11n + 2` against a row of `top + 11n + 8` — **6px of slack**.
+
+### The suite proved the parts and never the whole
+It already asserted a lane's internals (`bar 6 + 1 air + rail 2 == LSM_LANE_H`, read out of the
+**shipped CSS**) and that lane bands do not overlap each other. Neither asks the question the
+owner's screenshot asked: **does the last lane still land inside the row?** That is the `zh` symptom
+verbatim — *ROWH 31 where the lanes needed 74, 20 of 58 bars outside their own row*.
+**43 new assertions** answer it for every lane count `1..LSM_LANE_MAX`, and **both sides are
+executed**: the budget by calling `_lsmRowH()`, the placement by parsing `_lsmBarsHTML()`'s real
+output, the heights out of the real CSS.
+
+### ⚠️⚠️ THE FIRST CUT OF THOSE ASSERTIONS WAS WORTHLESS, FOR THE FOURTH TIME IN THIS SUITE
+It recomputed the budget **from the constants** instead of calling `_lsmRowH()` — so a negative
+build that broke `_lsmRowH` outright left it **green**. Asserting on a copy of the thing under test
+is the trap this file has now recorded four times (the `setGroupBys` guard, the `_declaredParallel`
+substring, the hand-written `tr` fixture, and this). Rewritten to execute, it **bites**:
+
+| negative build | result |
+|---|---|
+| `_lsmRowH` drops the lane GAP from its budget | **14 fail** — *"5 lane(s) lowest bottom 54px of the 53px granted"*, rising to 87 of 80 at 8 lanes |
+| the placement drifts 12px down | **14 fail**, at every lane count |
+| the CSS bar grows 6px → 14px | **1 fail**, caught by the existing composition assertion |
+| the placement drifts **4px** down | **passes, correctly** — see below |
+
+⚠️ **The sensitivity is stated rather than overclaimed:** the check catches a budget error and a
+placement drift **beyond the row's 6px slack**. A drift *within* the slack is a misalignment, not a
+spill, and this assertion is blind to it by design — that is the flowline's 2px-label shape, which
+has its own maxDrift-0 check.
+
+### ⚠️⚠️ AND THE SUITE ITSELF WAS THE LARGEST RISK IN THE ROOM
+**660 assertions covering the whole LSM feature existed only in a session TEMP directory.** Not
+gitignored — checked, there is no rule for it — just never committed, so every future session
+would rebuild it from nothing while the loop's own rules require proving each change with it.
+It is now **`modules/project-schedule/test-lsm.js`**, which is the convention this repo already
+follows for `progress-photos/test.js`, `risk-register/test-rcm.js` and
+`stakeholder-map/test-directory.js`: Node-only, `require('fs')` and nothing else, loaded by **no**
+page — so nothing a planner sees changes and no `MODULE_V` bump is owed.
+⚠️ Its header now carries the **pinned base SHA** and the exact two commands, because the pin has
+already been overwritten once mid-feature and three assertions quietly became self-comparison.
+
+**660 assertions on the working tree, 27 against the pinned base `4d82fd4`, 0 failing.** The base is
+missing **35 functions and 17 constants**, which the run prints — so a base that has stopped being
+a contrast says so out loud.
+
+### The last four font-weight 600 in the app (2026-09-12) — fmlozano
+
+Overnight audit, agenda item 3 — the UI audit. Two values this repo has previously driven to
+zero were re-counted. `--pd-ok` / `--pd-warn` / `--pd-bad` used as a TEXT colour: **0**, so that fix
+held. `font-weight: 600`: **four declarations, all in this file**, all `.ps-vs3-*`.
+
+⚠️⚠️ **These are exactly the four the 2026-09-10 (ug) entry deferred**, with the reason stated
+there: *"That file holds another session's uncommitted flowline work and is deliberately untouched;
+they land when it does."* It landed. There is no Gotham Semibold (Brandbook 2026 p.29 names Thin /
+Regular / Medium / Bold / Black), so a 600 addresses a cut of the primary face that does not exist.
+
+### Each one decided against a decision the app has ALREADY made, not against taste
+The (v4) rule is 600 → 700, **except** where that flattens a 600/700 pair — the inversion
+that sweep caught itself creating in ten places.
+
+| | was | now | why |
+|---|---|---|---|
+| `.ps-vs3-more > summary` | 600 | **500** | it is styled as a button, and `.pd-btn` is **500**. Convergence, not a choice. |
+| `.ps-vs3-foot .lead b` | 600 | **700** | emphasis inside a parent that declares no weight |
+| `.ps-vs3-help p b` | 600 | **700** | same |
+| `.ps-vs3-lab.nolev` | 600 | **500** | ⚠️⚠️ base `.ps-vs3-lab` is **700**. Folding this up would make the two states **identical** — an ordinary storey label is bold, the band that is not a storey is lighter, italic and muted. At 500 the distinction is WIDER than it was at 600, and both ends are now real Gotham cuts. |
+
+### ⚠️ Measured in a browser, not eyeballed — and a colour, not only a weight
+A render harness at the repo root (gitignored, and **deleted afterwards**) inlined `dashboard.css`
+plus this file's own `<style>` blocks and reported:
+
+```
+summary 500 | footLeadB 700 | helpPB 700 | labBase 700 | labNolev 500
+hierarchyPreserved: true | nolevItalic: "italic"
+```
+
+Then the dark-mode remap, which is where a colour whose only definition sits in a light-mode block
+shows up:
+
+```
+coloursThatDidNotRemap: []   weightsUnchangedByTheme: true
+light  labBase rgb(35,31,32)    labNolev rgb(90,88,88)     bg rgb(255,255,255)
+dark   labBase rgb(240,239,239) labNolev rgb(185,183,183)  bg rgb(43,44,43)
+```
+
+And the contrast ratios, since a weight change that quietly lands on an unreadable pair is not a fix:
+
+| | light | dark |
+|---|---|---|
+| `.ps-vs3-lab` | **16.30** | **12.22** |
+| `.ps-vs3-lab.nolev` | **7.07** | **7.02** |
+| `.ps-vs3-more > summary` | **16.30** | **12.22** |
+
+**Lowest reading 7.02 — all six clear AA (4.5) and AAA (7.0).**
+
+### Verified
+`node --check` PARSE OK on the inline block; **0 functions lost, 0 added**; **0 `font-weight: 600`
+declarations anywhere in the app** — every remaining grep hit is prose (the `dashboard.css`
+comment stating the rule, two code comments, four changelog lines). `MODULE_V` → `20260912b`,
+sort-checked against `20260912a`.
+⚠️ **Not verified signed in** — the Chrome bridge has been down since the `zh` fix; these are
+real browser measurements against the shipped stylesheets, not a loaded project.
+
+### Audit sweep: the cold-open class, and a harness that could hide it (2026-09-12) — fmlozano
+
+Overnight audit, agenda item 2 — hunting the defect CLASS behind tonight's two biggest finds.
+**No shipped file changed.**
+
+### ⚠️⚠️ THE CHECKER IS HARDENED, BECAUSE IT WAS HIDING EXACTLY THIS
+The suite's EXPORTS block used `typeof X === 'function' ? X : function () {}` for two cache
+clearers. `_clearLsmDeclCat` is called only by `psSetupChanged`, which no probe runs, so the link
+pass never pulled it in — and `M.clearDeclCat()` was a **no-op**. The warmed catalogue leaked
+between scenarios and a fixture reported `null` for a storey it had just declared.
+
+Both fallbacks now go through `_mustFn(name, fn)`, which returns the real function or one that
+**throws, naming what was never linked**. Self-tested: un-linking `_clearLsmDeclCat` now produces
+`HARNESS: _clearLsmDeclCat was never linked, so this call would have been a silent no-op` where it
+previously passed 617 assertions clean.
+⚠️ A no-op fallback in a harness is a stub wearing a different hat.
+
+### The cold-open sweep — every cross-closure read, checked
+| Export | reads `cfg` | cold-open reader | verdict |
+|---|---|---|---|
+| `locCatalogue` | yes | `locCatalogueFor` | closed |
+| `zonePlanByLabel` / `zonePlanFront` | yes | `zonePlanFetch` | closed |
+| `tradeHandoff` | yes | `tradeHandoffFor` | closed (tonight) |
+| `tradeLabels` | no — constants | n/a | safe |
+| `invalidateLocCache` | no | n/a | safe |
+| **`setupGroupDims`** | yes | **none** | **documented + guarded, see below** |
+| **`setupOrderLabels`** | yes | none | **dead end, see below** |
+
+### ⚠️ `setupGroupDims` is NOT a silent failure, and that is the finding
+It has no `...For(pid)` reader, so on a cold open the grid's default grouping does not follow the
+setup's structure. But this is **already known to the code**: `_adoptSetupGrouping()` exists for it,
+carries three guards (planner has not chosen, dims differ, grouping is still the plain `wbs` tree),
+and the comment states the fallback outright — *"Until then the plain WBS tree stands, which is
+the same behaviour as before."*
+
+It could now be closed properly, because `locCatalogueFor` already proves a cfg-free read of the
+same row is possible. **Deliberately not done autonomously:** it would re-group the grid a moment
+after first paint, and whether that is better than a stable-but-plain default is the owner's call,
+not a defect to be fixed overnight.
+
+### ⚠️⚠️ `setupOrderLabels` IS A DEAD END
+Exported by `ScheduleBuilder`, **zero callers anywhere in the repo**. It returns the setup's
+structure as labels (`cfg.wbsOrder.map(dimLabelOf)`) — the makings of a "your setup says
+Tower → Trade → Level" hint in the Group menu, which is the one place that would want it.
+Left in place rather than removed: other sessions edit this repo live and may be mid-flight on it.
+Fifth instance of the declared-but-unwired shape here, after `openLocAdopt`, `fillDown`'s
+change-order branch, `cfg.floorLag` and `cfg.tradeLeads` — the last of which was wired yesterday.
+
+### Verified
+**617 assertions against the working tree, 27 against the pinned base, 0 failing. 30 negative
+builds, all bite.** `wiring-check` 123/123 (3,527 cross-module references across 74 files),
+`dead-hooks` identical to the pinned base, `scan` self-test clean.
+⚠️ `tools/dead-hooks.js` finds dead CSS classes but not dead cross-closure EXPORTS, which is how
+`setupOrderLabels` survived. Extending it is the obvious next tooling job.
+
+### ONE SCALE for the storey axis — and a live bug it removes (2026-09-12 a) — fmlozano
+
+Overnight audit, agenda item 1. It turned out to be bigger than "make the declared order
+trustworthy": the declared order was **being used as the axis today, and it is wrong**.
+
+### ⚠️⚠️ THE BUG THAT WAS LIVE
+`_lsmRankOf` read: *if the setup declares more than one floor, the declared order IS the axis;
+otherwise use `levelRank`.* All or nothing. And `catalogueFrom` concatenates the **per-trade** floor
+lists, so on OPW101 the "declared axis" reads
+
+    F1, B3, B2, B1, Ground Floor, 2ND…
+
+— `F1` belongs to a trade listed before the one carrying the basements, so **the first floor sat
+below the third basement**. Any planner who opened the Schedule Setup tab and then went to the LSM
+got that axis; anyone who did not got the correct one. Measured, not deduced: `levelRank` reads
+every one of those names right (`F1` → 1, `B3` → -3, `Ground Floor` → 0).
+
+### The fix: one scale, and the declaration only PLACES
+`levelRank` is now the axis, always. The Schedule Setup is consulted **only** where the heuristic
+answers `null` — "Podium 2", "Amenity Deck", names no regex will cover — and such a storey is
+placed **between its declared neighbours**, interpolated onto the same scale.
+
+- ⚠️⚠️ **Within the trade's own list, never the concatenation.** The per-trade list is the only
+  ordered thing in the setup ("floors bottom-up PER TRADE"), so catalogue entries now carry `tr`,
+  the trade whose list they came from.
+- ⚠️ **Nothing the heuristic already ranks can move.** That property is what makes this safe to
+  turn on for every project at once, and it is asserted directly.
+- ⚠️ **No interpolated value may land on a real rank**, or two storeys collapse to one ordinal.
+- ⚠️ A storey with **no rankable neighbour either side** stays off the axis: the declaration says
+  nothing about where it sits either, and the flowline's footnote is the honest answer.
+- The basis is now `heuristic` or **`assisted`**, and the Rate strip says *"N of them placed from
+  your Schedule Setup floor list because no floor name rule covers them."*
+
+### What it gains
+The demo project's **"Podium 2"** used to drop off the axis entirely — out of the rate fit and
+out of the flowline. It is now placed between Ground Floor and the 3rd, and **all 19 storeys** are
+on the chart. That assertion in the suite now says the OPPOSITE of what it said yesterday, which is
+the honest record of a contract that changed.
+
+### ⚠️⚠️ THREE FAULTS IN THE CHECKER, ALL FOUND BY NEGATIVE BUILDS
+1. **The harness was silently STUBBING a real function.** `_clearLsmDeclCat` is called only by
+   `psSetupChanged`, which no probe runs, so the link pass never pulled it in — and the EXPORTS
+   line falls back to `function () {}` when a name is missing. `M.clearDeclCat()` did **nothing**,
+   the warmed catalogue leaked between scenarios, and a fixture reported `null` for a storey it had
+   just declared. **A no-op fallback in a harness is the same fault as a stub.**
+2. **A fixture that could not discriminate.** With the unrankable storey sitting between its right
+   neighbours, per-trade and cross-trade interpolation give the same answer, so two negative builds
+   passed. The discriminating shape puts it at the END of its trade's list, where the next entry in
+   the concatenation is a different building level.
+3. **A fixture that bypassed the code under test.** The catalogue fixtures hand-write `tr`, so
+   dropping the tag from `catalogueFrom` changed nothing. `catalogueFrom` is now **sliced and run**.
+
+### Verified
+**617 assertions against the working tree, 27 against the pinned base, 0 failing. 30 negative
+builds, all bite** — including the declared order restored as the axis (**9** fail), placement
+removed (**11**), the collision guard removed, interpolation across the concatenation, and the trade
+tag dropped.
+`node --check` PARSE OK, 0 functions lost, 81 insertions / 20 deletions.
+`MODULE_V` → `20260912a`, sort-checked against `20260911zj`.
+
+⚠️ **Not verified signed in** — the Chrome bridge is still down. The OPW101 axis fix is the
+one thing here I would most want to see on the real project.
+
+### A demo project, end to end through the whole LSM chain (2026-09-12) — fmlozano
+
+Owner: *"Let's test it on a demo project"*. The Chrome bridge was still down, so the demo is built
+**offline in the shape the Schedule Setup pushes one** and dated **the way `autoTrace` links one**
+— each following trade trailing the leading one by that category's declared levels, counted
+within the category and clamped to its top. Nothing was written to any real project.
+
+**19 storeys** (4 basements, 2 podium, 12 typical, 1 roof), **5 trades**, the same declared handoff
+shape One Portwood uses.
+
+### What the chain did
+- **Floors matched:** all **19** storeys resolved to the Setup's floor list and carried their
+  category (`B4` basement, `Podium 2` podium, `Roof Deck` roof).
+- **Trades matched:** `seq.basis` **declared**, five lanes, General Requirements first, MEPF last.
+- ⚠️⚠️ **ZERO handoff findings**, which is the correct answer for a schedule dated to the
+  generator's own links — and `nUnkinded` **0**, so nothing went unchecked.
+- ⚠️⚠️ **The converse holds:** dragging ONE storey three weeks early is caught, and the finding
+  names the trade that moved (`MEPF Works`) and the category whose rule it broke (`typical`).
+- The strip stops saying either of the two sentences that were false on OPW101.
+
+### ⚠️⚠️ A REAL COST OF THE zj DECISION, NOW MEASURED
+Because `zj` deliberately does **not** take the floor ORDER from the cold-open catalogue, the axis
+is still `levelRank`'s heuristic — and the heuristic cannot rank every name a planner uses. On
+this demo it drops exactly one storey: **"Podium 2"**. The declared order *would* have placed it.
+
+So the deferred work now has evidence behind it: **making the declared order trustworthy is worth
+doing**, and the way to do it is to take the spine from the trade whose floor list actually covers
+the building rather than from whichever trade is first in `GROUPS`. Recorded, not taken, because it
+changes the axis on every project and deserves its own verification.
+
+### ⚠️ And another branch the link pass could not see
+`_lsmKindWord` / `LSM_KIND_LABEL` are reached **only when a lead finding actually RENDERS**, which
+the probe never does. The demo scenario is what surfaced them. Same family as the three "reaching a
+branch is not reaching every line in it" notes above.
+
+**594 assertions against the working tree, 27 against the pinned base, 0 failing.** No shipped file
+changed in this round.
+
+### Where the One Portwood clashes come from: the closed loop holds (2026-09-12) — fmlozano
+
+Owner: *"let's test end-to-end the clash detection as well. The schedule in One Portwood is
+developed from the Schedule Setup, let's see how the clashes originated so that we can test if
+there are errors in the sequence/process in schedule setup."* **No code changed** — this entry
+records the verification and its answer.
+
+### ⚠️⚠️ THE DETECTOR AND THE GENERATOR AIM AT THE SAME FLOOR
+`autoTrace` chooses the predecessor it links to with
+
+    si = pk[Math.min(ord + L - 1, pk.length - 1)]
+
+and the clash detector measures against
+
+    var tr = pk[Math.min(ordK + L - 1, pk.length - 1)];
+
+Both expressions are **lifted out of the shipped source and RUN** over every
+(floors-in-category 1—30 × lead 1—8 × ordinal) combination — **3,720 cases,
+0 differ**, including the ones that hit the clamp at the top of a category.
+
+Then the property that follows from it, demonstrated rather than argued: a schedule built to the
+generator's own links raises **zero** handoff findings across **918 storey-pairs** — and a single
+storey dragged three days earlier **is** caught, so it is not a test that cannot fail.
+
+### What that means for One Portwood
+**The Schedule Setup's sequencing process is not what produced those clashes.** A schedule the
+setup generates is handoff-clash-free by construction. So a handoff finding on OPW101 says the
+**dates have drifted from the declaration since the push** — hand edits, a re-schedule, or
+calendar moves — not that the setup answered wrongly.
+⚠️ The same-storey overlaps are a different matter: they rest on trade ORDER, not on the
+handoff, and `autoTrace` does not prevent two trades sharing a storey. Those are real reports.
+
+### The declared configuration, read off the live app
+| Leading trade | whole-trade | basement | podium | typical | roof |
+|---|---|---|---|---|---|
+| General Requirements | **start together** | — | — | start together | — |
+| Site Works | — | 1 | 1 | 1 | 1 |
+| Structural Works | — | 4 | 4 | 4 | 4 |
+| Architectural Works | — | 1 | 1 | 1 | 1 |
+| MEPF Works | nothing declared | | | | |
+
+### End to end on that configuration
+The whole cold-open path now runs in the suite against **One Portwood's real 18 floors, their real
+categories and this real handoff table**, through the shipped `.then(…)` wiring: the first read
+is empty (and asserted to be — that is what triggers the fetch), the second carries all **18**
+categories, the order is asserted **not** to have been taken, the handoff arrives, and the exact
+finding that was wrong on screen — *"F1 Site Works before General Requirements"* — is
+suppressed.
+
+### Verified
+**572 assertions against the working tree, 27 against the pinned base, 0 failing. 25 negative
+builds, all 25 bite.**
+⚠️ Deployment confirmed by fetching the live file: `zh`, `zi` and `zj` are all served.
+⚠️⚠️ **Third occurrence of "a negative build must report, not explode":** the negative that
+rewrites the detector's target line left the new comparison with nothing to run, and it **crashed**
+on `A[-1].f` instead of failing. Guarded.
+⚠️ **Still not re-measured signed in:** the Chrome bridge dropped after the `zh` row-height fix
+was verified live and did not come back, so the OPW101 numbers under `zj`'s per-category arithmetic
+are not yet read off the real project.
+
+### A correction to zi: the warmed catalogue supplies the CATEGORY, not the ORDER (2026-09-12 zj) — fmlozano
+
+⚠️⚠️ **A REGRESSION I ALMOST SHIPPED IN THE FIX ONE ENTRY ABOVE, caught by reading my own diff
+against the live data I had just measured.** Recorded in full because the near-miss is the lesson.
+
+`zi` made `_lsmDecl` read the cold-open catalogue for everything — including the **declared floor
+order**. But `catalogueFrom`'s own contract is *"floors bottom-up **per trade**"*, and `_lsmDecl`
+treats **first-seen across trades** as the building order. Measured on OPW101, the catalogue reads:
+
+    F1, B3, B2, B1, Ground Floor, 2ND Floor, 3RD Floor, …
+
+`F1` belongs to a trade listed before the one carrying the basements, so it lands **below B3**. That
+order was unreachable on a cold open before `zi`, so the fault was latent; `zi` would have activated
+it on **every project at once** and silently reordered charts that are correct today.
+
+**Narrowed.** The warm now supplies the **category** — which is what the per-category handoff
+needs and which has no ordering question — while the **order** keeps exactly the source it had.
+Two separate reads inside `_lsmDecl`, and the warm no longer drops the rate memo, because the axis
+does not move.
+
+⚠️ **Making the declared order trustworthy is its own change and its own decision**, and it is
+NOT taken here. It would want the spine to come from the trade whose floor list actually covers the
+building, rather than from whichever trade happens to be first in `GROUPS`.
+
+### Verified
+**542 assertions against the working tree, 27 against the pinned base, 0 failing.**
+⚠️⚠️ **25 negative builds, all 25 bite** — including two written specifically to guard this
+decision: taking the order from the warmed catalogue fails, and letting the warm drop the rate memo
+fails.
+`node --check` PARSE OK, 0 functions lost. `MODULE_V` → `20260911zj`.
+
+⚠️ **Still not re-measured live**: the Chrome bridge dropped part-way through the end-to-end
+session, after the `zh` row-height fix was verified signed-in but before `zi`/`zj` were deployed.
+
+### The declaration was never READ on a cold open (2026-09-11 zi) — fmlozano
+
+Owner: *"let's test the LSM end-to-end... let's see how the clashes originated"*. Driving the
+**live, signed-in** app on **OPW101 — One Portwood Residences** (2,561 activities) found two
+defects, and the first one disabled most of the last three days' work.
+
+### 1. ⚠️⚠️ TWO SENTENCES ON SCREEN WERE BOTH FALSE
+The clash strip said *"17 storeys are not in your Schedule Setup's floor list"* and *"No
+cross-trade handoff is declared in this project's Schedule Setup"*. Measured:
+
+| | |
+|---|---|
+| `ScheduleBuilder.locCatalogue()` (what `_lsmDecl` reads) | **0 floors** |
+| `locCatalogueFor(pid)` (the cold-open reader) | **18 floors, each with its category** |
+| Level values on the activities matching the setup's floor list | **18 of 18, exactly** |
+| trades carrying a declared handoff | **4** |
+
+**The naming was never the problem; the read was.** `cfg` is only populated once the Schedule Setup
+TAB has been opened, and nobody opens it on the way to a chart — so on every cold open the
+declared floor ORDER fell back to the `levelRank` heuristic AND every storey came back with no
+category, which means the per-category handoff **could never fire**. I wired `tradeHandoffFor`'s
+cold open and left its prerequisite without one.
+
+Fixed with the same pattern: `_lsmDeclWarm()`, once per project, not awaited, invalidating **both**
+the rate (the axis moves) and the clashes. ⚠️ The warmed catalogue lives in `_lsmDeclCat`, **not**
+in `_lsmDeclMemo`, which `_clearLsmRateMemo` wipes every frame — the `_lsmLeadMemo` lesson.
+
+⚠️⚠️ **The suite caught this as a REGRESSION IN MY OWN FIX, and how it did is the point.**
+`_lsmDecl` wraps its whole body in `try/catch`, so the unlinked `_lsmDeclCat` did not fail the link
+pass — it degraded **silently** to the heuristic basis, and four assertions failed with
+`"heuristic"` and no other clue. **Third appearance of that trap.**
+
+### 2. ⚠️⚠️ "START TOGETHER" WAS BEING CONTRADICTED ON SCREEN
+One Portwood's declared sequence, read off the live setup:
+
+| Leading trade | whole-trade | basement | podium | typical | roof |
+|---|---|---|---|---|---|
+| General Requirements | **start together** | — | — | start together | — |
+| Site Works | — | 1 | 1 | 1 | 1 |
+| Structural Works | — | 4 | 4 | 4 | 4 |
+| Architectural Works | — | 1 | 1 | 1 | 1 |
+| MEPF Works | nothing declared | | | | |
+
+The planner marked **General Requirements parallel**, and the strip still reported
+*"F1 — Site Works before General Requirements, 25 wd"*. The same-storey overlap class knew
+nothing about `tradeParallel`. **A chart contradicting an answer given two screens away is worse
+than not checking at all.**
+⚠️ Suppressed now — but **only for the trade that actually follows**, exactly as the handoff
+does, so a parallel answer cannot excuse an overlap between trades three apart; and per category,
+so "start together on the basements" does not excuse a typical floor.
+
+### Verified
+**539 assertions against the working tree, 27 against the pinned base, 0 failing.**
+⚠️⚠️ **23 negative builds, each reverting one decision, all 23 bite.**
+⚠️ One of them **passed at first**: the assertion matched `_declaredParallel(...)` anywhere on
+the line, so `if (false && _declaredParallel(...))` satisfied it. **Third time a substring assertion
+has been satisfied by dead code here** — it now requires the call to BE the condition.
+`node --check` PARSE OK, 0 functions lost, 61 insertions / 3 deletions.
+`MODULE_V` → `20260911zi`.
+
+### A restored LSM mode came back at the PLAIN row height (2026-09-11 zh) — fmlozano
+
+Owner, with a screenshot: *"the width of the rows is too big that the gantt bars in the WBS do not
+align properly with the WBS row in the grid itself. Is this intended?"* ⚠️⚠️ **No.** The height is
+intended; the fact that it never arrives is not. First defect found by driving the LIVE, SIGNED-IN
+app rather than a harness.
+
+### Measured on OPW101, signed in, on a cold load
+`ps_lsmrows` = `1`, the grouping location-led, **58 LSM bars drawn** — and:
+
+| | |
+|---|---|
+| `ROWH` | **31** (the plain height) |
+| what the lanes need | **74** |
+| bars sitting outside their own row | **20 of 58** |
+| toolbar button lit | **no** |
+
+Calling `applyRowZoom(false)` by hand corrected it to 74 with **0 spills** and perfect grid/Gantt
+row tops (0, 74, 148, 222, 296), which is what proved the geometry was never wrong — only stale.
+
+### Why
+`applyRowZoom` is called **once** by init, and at that moment no project has loaded: `groupBys` is
+empty so `_lsmShaped()` is false, and there are no rows for `catList()` to find lanes in. So the
+height is computed for a mode that is on and a chart that does not exist yet — and **nothing
+re-derives it** once the rows and the grouping arrive. Every other path that changes the height
+(density, zoom, the toggle) calls `applyRowZoom` itself; **restoring the flag from localStorage
+calls nothing**, because no toggle ever ran.
+
+### The fix
+Re-derived at **`doRender`**, the one choke point every grid+Gantt build funnels through, one line
+after `DL = displayList()` so the grouping and the rows are both settled:
+
+    if (typeof rowHFor === 'function' && rowHFor(_rowZoom) !== ROWH) applyRowZoom(false);
+    _lsmPaintBtn();
+
+⚠️ **Guarded**, so a frame that changes nothing does not touch the CSS variables; `catList` is
+memoised on a cheap key, so the test itself is nearly free.
+⚠️ **And the toolbar now says the mode is on.** A restored `_lsmRows` lit nothing, so the chart
+was in LSM while the button that turns it off looked idle. `_lsmPaintBtn` is now the **one writer**
+for that class and `_lsmFinish` keeps no inline copy.
+
+### Verified
+**518 assertions against the working tree, 27 against the pinned base, 0 failing.** The guard is
+**cut out of `doRender` and executed**: a stale 31→74 calls `applyRowZoom` once, an unchanged
+74→74 calls it zero times. **Three negative builds bite** — guard removed (**5** fail),
+guard made unconditional (**5**), button paint dropped (**1**).
+`node --check` PARSE OK, 0 functions lost, 25 insertions / 2 deletions.
+`MODULE_V` → `20260911zh`.
+
+⚠️ **What is still by design:** the row really is `pad + lanes × pitch`, so eight keyed
+trades really do make a ~96px row. The lever is **"Key trades…"**, and `_lsmFinish` already says
+so in its toast. What this fixes is the row not being that height in the first place.
+
+### The handoff becomes PER FLOOR CATEGORY (2026-09-11 zg) — fmlozano
+
+Owner: *"Wire the per-floor-kind handoff next"* — the limitation named at the end of the previous
+entry, where only `tradeBatchKind`'s **typical** value was applied.
+
+### 1. ⚠️⚠️ NO SECOND MATCHER WAS ADDED, AND THAT WAS THE WHOLE QUESTION
+Matching an LSM storey to a Schedule Setup floor is the hard part, and this module already has two
+places that do it (the WBS match table and `_lsmDecl`'s rank basis). A third would be a third thing
+that can disagree about which floor *"5th Floor"* is.
+
+It turned out not to be needed: **`catalogueFrom` has always put `kind: floorKind(f)` on every floor
+entry**, and `_lsmDecl` already resolves a storey's words to one of those entries. So the category
+costs **one line** in a loop that was already running. The base contrast asserts both halves of
+that: the base already carries `kind: floorKind(f)`, and has nothing on the Gantt side reading it.
+
+### 2. ⚠️⚠️ THE ARITHMETIC CHANGED, NOT JUST THE NUMBER
+`autoTrace` counts the lead **within the category**: `ord` is the following trade's ordinal among
+**its own floors of that category**, and it indexes into the leading trade's floors of that same
+category — so a basement is never counted among the typical floors. Yesterday's pass counted across
+the whole building, which was wrong the moment two categories existed.
+
+⚠️⚠️ **And it CLAMPS to the top of the category** — `si = pk[Math.min(ord + L - 1, pk.length - 1)]`.
+Yesterday's pass **skipped** the top L-1 storeys, on the reasoning that the leading trade "runs out
+of floors to be ahead on". That was a second reading of the planner's declaration, and the schedule
+`autoTrace` actually generates uses the first: B's top floor really does wait for A's top floor of
+that category. **Corrected to follow `autoTrace` exactly**, because the generator is the definition
+of what the answer means — the `_vsTowerModel` rule, and the previous version under-reported.
+
+### 3. ⚠️⚠️ "START TOGETHER" IS AN ANSWER, AND IT SUPPRESSES THE FINDING
+The setup's handoff question is a **checkbox and a number** per category: *start together*, else
+*N level(s) behind*. `autoTrace` draws **no** trailing link for a category marked parallel, and none
+at all for a leading trade marked parallel outright. Reporting a handoff the planner explicitly said
+does not exist is the same fault as inventing one — so `cfg.tradeParallelKind` / `cfg.tradeParallel`
+are read, through a `parallelKindOf` split out of `parallelKind` exactly as `declaredBatchOf` was
+split out of `batchKind`. **Both splits are proved behaviour-identical by execution**, over all 80
+(cfg, trade, category) combinations: 0 differ.
+
+### 4. ⚠️ THE KINDLESS ANSWERS STAY WHERE THEY WERE
+`cfg.tradeBatch` and the legacy `cfg.tradeLeads` predate floor categories, and `batchKind` has always
+folded them into **typical** alone (every other category defaults to 1). Lifting them across all four
+would silently rewrite what those projects declared, so they are applied to typical and nowhere else
+— in `declaredBatchOf` and again in the pass, both asserted, and both with a negative build.
+
+### 5. ⚠️⚠️ A STOREY WITH NO DECLARED CATEGORY IS NOT CHECKED, AND IS COUNTED
+A storey in the schedule but not in the setup's floor list has no category, so no rule applies.
+Guessing *typical* would measure a basement against the tower's number; silence would let
+*"0 handoff findings"* read as *"nothing is early"* when part of the building was never examined.
+So the strip says: *"2 storeys are not in your Schedule Setup's floor list, so no floor category
+applies to them and the handoff was not checked there."* Same principle as the flowline's footnote
+for unrankable locations.
+
+### 6. What the planner sees
+The chip now names the category and uses the setup's own words —
+*"Architectural Works **1 basement level behind** Structural Works"* beside
+*"Architectural Works **3 typical levels behind** Structural Works"*, the **same pair** on the same
+chart, reading differently because the planner answered them differently. The tooltip adds
+*"Counted among the basement floors only, the way the setup traces it."*
+
+### Verified
+**507 assertions against the working tree, 27 against the pinned base `4d82fd4`, 0 failing.**
+
+⚠️⚠️ **Fifteen negative builds, each reverting ONE decision, and every one bites:**
+pass unreachable (**14** fail), `floorLead` as evidence (**6**), `batchKind` drifted (**1**),
+`parallelKind` drifted (**1**), lead applied to any pair (**1**), the leading trade marked (**1**),
+one spelling only (**3**), legacy pair ignored (**3**), **counted across the building** (**8**),
+**typical's number for every category** (**4**), **"start together" ignored** (**2**),
+**whole-trade parallel ignored** (**2**), **unknown category guessed as typical** (**3**),
+**kindless pair crossing categories** (**2**), **kindless batch lifted to every category** (**3**).
+
+⚠️⚠️ **Two faults in the CHECKER, both found by those negative builds and both worth recording:**
+- The nested handoff shape was read with raw dots, so a negative build that drops a trade's entry
+  **crashed** the suite on `undefined.kind` instead of failing it — hiding every assertion after it
+  and reporting a detected regression as a broken checker. Second time in this feature.
+- The kindless-per-pair fixture **did not discriminate**: with the basements starting late, lifting
+  the per-pair number onto them produced no finding either way, so `n14` **passed**. The fixture now
+  starts the basements early enough that the bug shows.
+
+**Rendered and measured** (gated on `visibilityState` + `clientWidth`): three chips, two of them the
+same trade pair on different categories, computing `dashed 3px rgb(196, 33, 39)` against the plain
+chip's `solid 1px rgba(196, 33, 39, .28)`; the flowline's handoff mark `stroke-dasharray 5px, 3px`
+against the four plain marks' `none`; no horizontal page scroll.
+⚠️ The strip and flowline were rendered from the shipped renderers over a **fabricated** clash
+model — the arithmetic is proved by the suite, the browser proves the categories are legible.
+
+⚠️ **Not verified signed in.** No real project has been measured against its own Schedule Setup.
+
+`node --check` PARSE OK; 0 functions lost; NUL 0, CR 0, braces and comment markers balanced;
+166 insertions / 62 deletions. `MODULE_V` → `20260911zg`, sort-checked against `zf`.
+
+### The declared cross-trade handoff, wired into the clash detection (2026-09-11 zf) — fmlozano
+
+Owner: *"Wire cfg.tradeLeads into the clash detection"* — taking up the standing invitation left at
+the end of slice 3, where `cfg.tradeLeads` was named as declared-but-unread.
+
+### 1. ⚠️⚠️ `cfg.tradeLeads` ALONE WOULD HAVE BEEN A DEAD END, AND THAT IS THE FINDING
+It is the **legacy** per-pair field. `autoTrace` stopped reading it on **2026-08-13** (commit
+`a404f83`) when the auto-trace question changed from *"how many floors between <A> and <B>"* to
+*"how many floors at a time does <A> do before the next trade follows"*, and **nothing has written
+it since**. On every project set up after that date it is `{}`. Wiring only that field would have
+shipped a check that can never fire on a current project — a dead end of a subtler kind than the
+three this module's audit already records.
+
+So the **whole declared chain** is read, most specific first:
+
+| Source | What it is | Still authored? |
+|---|---|---|
+| `cfg.tradeLeads['ST>AR']` | the legacy **per-pair** answer | no — but present on pre-Aug-13 setups |
+| `cfg.tradeBatchKind[t].typical` / `cfg.tradeBatch[t]` | the current **per-leading-trade** answer | yes, in the auto-trace dialog |
+
+⚠️ The key shape `prev + '>' + next` was **read off `a404f83`**, the last commit that consumed
+it — not guessed from the field name.
+
+### 2. ⚠️⚠️ `cfg.floorLead` IS DELIBERATELY NOT EVIDENCE
+`blank()` writes `floorLead: 4` to **every** setup whether or not a planner ever touched it. Treating
+it as a declaration would measure most projects in the database against a number nobody chose, and
+put a red chip on trades for violating it. **No declaration, no handoff finding for that pair.**
+Same rule as slice 3's *"an inferred order is labelled inferred"*, one step further: an invented
+number is not labelled, it is **not used**.
+
+### 3. One reader, not two
+`batchKind` had the chain inline and must always answer a number (the generator has to link
+something). The clash detector needs the opposite — to know when **nothing** was declared. So
+`declaredBatchOf(cfg, trade)` was **split out of** `batchKind`, which now calls it.
+⚠️ Behaviour-identical, and the suite **executes both** over all 80 (cfg, trade, floor-kind)
+combinations rather than trusting the comment: **0 differ**.
+
+⚠️ THE MATCHING LIVES ON THE BUILDER'S SIDE, where `cfg` is owned — the `zonePlanByLabel` rule.
+`cfg` keys trades by GROUP CODE (`ST`), the Gantt knows them as the label on `work`. The new
+`ScheduleBuilder.tradeHandoff()` emits **every spelling a trade can reach the grid by** (canonical
+`GWORK`, the setup's short `GLABEL`, the raw code) — the two-spellings problem `WORK_ORDER`
+documents, where a silent miss reads as *"nothing declared"*, which is a worse answer than an error.
+
+### 4. What it reports
+A **second class of finding**, beside the same-storey overlap: *the following trade climbed closer
+than the handoff you declared*. B on storey `k` is compared against A's finish on storey
+`k + L - 1`.
+
+- ⚠️⚠️ **A per-TRADE lead applies only to the trade that actually FOLLOWS.** The setup asks about
+  A and its immediate successor, so applying `lead[A]` to Structural→Tiles would invent a
+  constraint nobody stated. A per-PAIR `tradeLeads` answer names both trades, so it applies to that
+  pair whatever the gap.
+- ⚠️⚠️ **A storey the leading trade never reaches is not a violation.** Near the top, A simply runs
+  out of floors to be ahead on. Without this the check would put a chip on the last L-1 storeys of
+  every pair on every project — noise that teaches a planner to ignore the strip.
+- ⚠️ **Only the following trade is marked**, an explicit departure from the same-storey rule
+  (which marks both because either could be out of place). Here the pair is on *different* storeys
+  and the finding is specifically *"B started early"*; marking A would redden a trade that is exactly
+  where the planner said it would be.
+- ⚠️ **Only on the declared basis.** The handoff is declared per trade, so it applies only when
+  the lanes ARE trades (`catCfg().field === 'work'`). Colour by an Activity Code and the pass does
+  not run, rather than matching trade names against code values and finding nothing.
+- ⚠️ It derives **nothing of its own**: storey ordinals and per-storey spans come from
+  `_lsmRate`, the sequence from `_lsmSeq` — the `_vsTowerModel` rule again.
+
+### 5. The cold open, and the memo that must NOT be cleared per frame
+`ScheduleBuilder` holds a cfg only once the Schedule Setup **tab** has been opened this session, and
+nobody opens it on the way to a chart. So `tradeHandoffFor(pid)` reads the saved setup directly —
+the WBS matcher's own pattern, once per project, not awaited, the open setup winning over the most
+recently edited one.
+⚠️⚠️ **`_lsmLeadMemo` is deliberately absent from `_clearLsmRateMemo`'s per-frame list.** A
+per-frame clear would overwrite the fetched answer with the empty synchronous one on the very next
+repaint. It is invalidated by `psSetupChanged` — when the setup actually changes — and nowhere else.
+
+### 6. ⚠️⚠️ THE LINK PASS CAUGHT THE NEW DEPENDENCY, TWICE
+`_lsmClash` gained a call to `_lsmLead`, and the suite died with `_lsmLead is not defined` rather
+than passing quietly — which is the entire reason it refuses to stub. Then it died again on
+`pid is not defined`, because the probe reached `_lsmLeadWarm` with the LSM mode **off**, and the
+function tests `_lsmAggOn()` before it ever mentions `pid`. **Reaching a branch is not the same as
+reaching every line in it** — the third appearance of that trap in this feature.
+
+### Verified
+**475 assertions against the working tree, 23 against the pinned base `4d82fd4`, 0 failing.**
+
+⚠️⚠️ **Eight negative builds, each reverting ONE decision, and every one bites:** the pass made
+unreachable (**9** fail), `floorLead` treated as evidence (**5**), `batchKind` drifted by one
+(**2**), the top-of-building guard removed (**1**), a per-trade lead applied to any pair (**1**),
+the leading trade marked too (**1**), only the canonical spelling keyed (**3**), the legacy per-pair
+field ignored (**3**).
+
+The base contrast proves the dead end it closes: `tradeLeads` appears on **exactly two lines** there
+— `blank()` and `normalize()` — and **nothing ever indexes into it**.
+
+**Rendered** at the shipped CSS, gated on `visibilityState` + `clientWidth`, both classes measured:
+the handoff chip computes `dashed 3px rgb(196, 33, 39)` against the overlap chip's
+`solid 1px rgba(196, 33, 39, .28)`; the flowline's handoff mark computes
+`stroke-dasharray 5px, 3px` against the plain mark's `none`, same colour and width. Label reads
+*"2 clashes (1 vs declared handoff)"*, chip reads *"3rd Floor · Architectural Works 3 floors behind
+Structural Works · 12 wd"*, no horizontal page scroll.
+⚠️ **A second colour was deliberately not used.** The deck calls both *"possible pitfalls"* and
+ranks neither above the other; a second hue would claim a severity order it does not make.
+⚠️ The strip and flowline were rendered from the shipped renderers over a **fabricated** clash
+model (`setClash`) — the detector's arithmetic is proved by the suite, the browser proves the two
+classes are distinguishable.
+
+⚠️ **Not verified signed in.** No real project has been measured against its own Schedule Setup.
+
+⚠️ **Not applied per floor kind.** `cfg.tradeBatchKind` can say *basement 1, typical 6, roof 2*,
+and only the **typical** value is used, because the LSM's storeys come from the location breakdown
+and not from the setup's floor list — there is no matching between the two yet. Wiring that is the
+next standing invitation.
+
+`node --check` PARSE OK; 0 functions lost; NUL 0, CR 0, braces and comment markers balanced.
+`MODULE_V` → `20260911zf`, sort-checked against `ze`.
+
+### "Keep the Activity › Location preset" — and the comment that had become false (2026-09-11 ze) — fmlozano
+
+Owner, on the preset I offered to drop: **"Keep the Activity › Location preset"**. It stays, and
+the suite now says so in the assertion's own words rather than leaving it to be re-litigated.
+
+⚠️⚠️ **Confirming that surfaced a real defect of my own making.** The comment above the Flowline
+button in the toolbar markup still read *"It is NOT the Group menu's 'LSM' preset, which is
+Activity › Location — the transpose of this layout"*. That was true when it was written and the
+previous commit made it **false**: the preset now carries `lsm: true` and calls `setLsmRows(true)`,
+so both doors open the same layout. A comment that confidently describes the opposite of what the
+code does is worse than no comment — it is what the next reader trusts.
+
+Corrected, and **asserted so it cannot come back**: the suite now fails if the source contains
+either of the two old collision warnings. A negative build restoring the old sentence fails 1.
+
+**399 assertions against the working tree, 15 against the pinned base, 0 failing.** `node --check`
+PARSE OK; comment markers balanced 75/75; 6 insertions / 3 deletions, comments only — **no
+behaviour change**. `MODULE_V` → `20260911ze`.
+
+### The Group menu's "LSM" preset IS the LSM layout now (2026-09-11 zd) — fmlozano
+
+Owner: *"Should we toggle the LSM through the group → LSM preset?"* I recommended **no** and was
+**overruled** — *"Make the preset the toggle"*. Recording both, because the reasoning that
+survived contact is the useful part.
+
+### Why I said no, and what was actually true
+1. The preset's dims were `['act'] + locDims` — the **transpose** of what the layout needs.
+2. A preset that sets a grouping cannot arrange the other three prerequisites (colour key on, lanes
+   keyed, collapse to the **floor** level), so it would look like the LSM and not be it.
+3. `setGroupBys` has **twelve** call sites; coupling a mode to it means every one of them can now
+   turn the mode off.
+
+⚠️⚠️ **(2) was already mostly solved and I had not checked before answering.** The
+`_lsmShaped()` guard from the row-height hotfix already withholds the tall row height the moment
+the grouping stops being location-led. That made the owner's call **cheaper than I estimated**, and
+I said so before implementing. Check the code before arguing from it.
+
+### What shipped
+- The preset is now `{ name: 'LSM', dims: locDims, lsm: true }` — **location-led**, so the hint
+  printed under it is true again. `lsm: true` is read by the click handler; it is not a dimension.
+- Picking it calls **`setLsmRows(true)`**, which arranges the grouping itself through `_lsmArrange`.
+  ⚠️ The preset **hands over** rather than setting dims and leaving the mode to catch up — one
+  writer for that arrangement, which is why `_lsmArrange` was extracted in slice 5.
+- ⚠️⚠️ **The mode leaves with the grouping.** Now that a preset can turn LSM on, every other
+  grouping action has to be able to turn it off — done **once** inside `setGroupBys`, which catches
+  all twelve callers (presets, the level up/down/remove/add editors, the LBS wizard) instead of each
+  of them remembering. It clears the flag, the persisted key and the lit toolbar button, and
+  re-derives the row height.
+  ⚠️ It cannot fight `_lsmArrange`, which sets a **location-led** grouping: turning the mode on can
+  never turn it off. And with **no location levels** `_lsmArrange` toasts and never reaches
+  `setGroupBys`, so the mode is not switched off underneath its own empty state. Both asserted.
+- ⚠️⚠️ **The old dims are renamed, not deleted.** `['act'] + locDims` is a real grouping somebody
+  may be using today — Activity over its locations — and silently removing it to free up a name
+  would be a worse trade than one more row in this menu. It is now called
+  **"Activity › Location"**, which is what it is.
+- The LSM-rows tooltip no longer warns about a collision between two controls called LSM. There
+  isn't one any more.
+
+### ⚠️⚠️ The suite caught its own test being worthless
+The first cut of these assertions **re-typed** the guard's condition into the checker and asserted on
+that. A negative build with the shipped `if (!_locLed)` replaced by `if (false)` **passed all
+fifteen** — the statements were still in the source and the arithmetic under test was the suite's
+own copy. The block is now **cut out of `setGroupBys` and executed**, with a stubbed
+`localStorage` / `getElementById` / `applyRowZoom` recording what it touched. The same negative build
+now fails **7** assertions; a second negative that reverts the preset to its old dims fails **3**.
+*A test that cannot fail is not evidence* — and it had to be demonstrated, not assumed.
+
+### Verified
+**397 assertions against the working tree, 15 against the pinned base `4d82fd4`, 0 failing.**
+The base contrast bites on this change specifically: the base's preset **is** the activity-led
+transpose, has no `lsm: true`, no "Activity › Location" entry, and its `setGroupBys` knows nothing
+about an LSM mode.
+`node --check` on the extracted inline script: **PARSE OK**. Function set vs base: **0 lost**,
+31 added. NUL 0, CR 0, braces balanced. Diff: **50 insertions, 4 deletions**.
+
+⚠️ **Not verified signed in.** This is a menu path that needs a loaded project; the guard is proved
+by executing the shipped block, not by clicking it. `MODULE_V` → `20260911zd`, sort-checked
+against `zc`.
+
+### The flowline chart: the deck's own form, and one model behind both views (2026-09-11 zc) — fmlozano
+
+Owner: *"Let's proceed with slice 5"*. The last of the five, and the shape the deck's earlier slides
+are actually drawn in — time across, **location up**, each trade a diagonal whose slope is its
+production rate.
+
+### 1. ⚠️⚠️ IT DERIVES NOTHING OF ITS OWN
+Storey ordinals, per-storey spans, the trade sequence, the rates and the clashes all come from
+`_lsmRate` / `_lsmSeq` / `_lsmClash` — **the same model the LSM rows read**. `_lsmRate` now
+hands out `ord`, `byKey`, `label`, `name`, `serAnc` and the window it measured in, alongside the fit
+it already produced.
+
+This is the `_vsTowerModel` rule, applied before it could be broken: this module has already
+shipped a 3D view that put a floor somewhere else than the 2D view of the same data, *"with no way
+to tell which is right"*. The suite now **forbids** the renderer from containing `levelRank(`,
+`_lsmFit(` or `_lsmAgg(` at all.
+
+⚠️ One consequence worth stating: `p.byRank` keeps the **whole span** now, not just the earliest
+start. The fit only needs the start; the chart needs both edges for the band and both baseline
+edges beside it.
+
+### 2. What the deck asks for, and what it gets
+- **A band per trade**, down the starts and back up the finishes — the work itself — with
+  the centre line carrying the slope and the slope figure printed at its head. ⚠️ That figure is
+  **the Rate strip's own**, not a second calculation.
+- ⚠️⚠️ **BLOCK TASKS.** *"Non-linear activities, where the crew is stationary, are represented by
+  block tasks."* A trade that never leaves one storey has no slope, and a near-vertical polyline
+  would claim one — so it draws as a rectangle.
+- ⚠️⚠️ **UNRANKABLE LOCATIONS ARE NOT PLOTTED AT ZERO.** *"Ground Reservoir"*, *"Podium Amenities"*
+  — these carry work but are not storeys, and drawing them at the foot of the building would
+  invent a position for them. They are **named in a footnote** instead.
+- **Baseline dashed, actual solid**, the BL/ACT convention the Vertical Stacking settled, so the two
+  views read the same way. Clash marks land on the storey they happen on. The data-date line is the
+  same one the Gantt draws.
+- ⚠️ It shares the Gantt's **own day width** (`DAYW[zoom] * ganttScale`), so the existing zoom and
+  Ctrl+wheel drive it rather than a second time scale.
+- ⚠️ **One section per tower.** The ordinals are per series, so two buildings are never drawn on
+  one axis — the same rule the rate fits under.
+- ⚠️ Three distinct **empty states** (no breakdown / no storey resolves / no keyed trade), the rule
+  the stacking arrived at after four reports.
+
+### 3. ⚠️⚠️ THE 2px MISALIGNMENT THE HARNESS CAUGHT
+The storey labels are their own non-scrolling column beside the SVG — they must stay put while
+the dates pan, and an SVG child cannot be `position:sticky`. So the two sides are laid out from the
+same row height and the same top spacer, and the CSS note beside `.ps-fl-wrap` promises they agree.
+
+They did not. This app is `box-sizing:border-box`, so the spacer's 2px bottom border sits **inside**
+its height — and I had subtracted it as well, making the column 32px where the SVG's header
+band is 34. **Measured: label centres 43/65/87… against the SVG's 45/67/89…** Every storey
+label rode 2px above its own row.
+⚠️ Fixed, and re-measured to **maxDrift 0** — and the check is now the stronger one: the
+polyline **dots** sit on exactly the same six y values as the labels, so the axis and the plotted
+points are proved to agree rather than merely both looking plausible.
+
+### 4. The door, and the two things called "LSM"
+A **Flowline** button in the Gantt toolbar, beside LSM rows, going through `_setView` like Progress
+and Stacking and toggling back to the saved layout the same way; it sheds with them on a narrow bar.
+⚠️⚠️ It arranges the same prerequisites the rows do, **through the same `_lsmArrange`** —
+extracted in this slice precisely so there is not a second copy that forgets the floor-level
+collapse. What it does **not** do is turn `_lsmRows` on: the row layout and this chart are two
+readings of one model, not one feature.
+
+⚠️⚠️ **AND THE GROUP MENU'S "LSM" PRESET IS A DIFFERENT THING.** It is `['act'] + locDims` —
+*Activity › Location*, the transpose — and it predates any of this work. Two controls
+called LSM that do different things is a genuine trap; the LSM-rows button's tooltip now says so
+outright. **Renaming that preset is the owner's call and is deliberately not taken here.**
+
+### Verified
+**368 assertions against the working tree, 11 against the pinned base, 0 failing.**
+
+⚠️⚠️ **A CORRECTION TO THE CONTRAST ITSELF, WHICH IS THE MOST IMPORTANT LINE HERE.** The pinned
+`BASE_SHA` had been **overwritten** at some point during the five slices and pointed at
+`621a33bc` — a commit that already contained slices 1–4. So the contrast had quietly become
+**partly self-comparison**: three assertions that should have proved slice 1's work was new were
+passing against a base that already had it. Re-pinned to `4d82fd4`, the commit before slice 1, and
+the contrast is honest again: the base is missing **30 LSM functions and 14 constants**.
+This is the [[contrast-build-pin-the-base]] trap in a form the memory did not anticipate — not
+`HEAD` drifting, but the pin file itself being rewritten.
+
+Rendered at 1440×900 with both stylesheets inlined, transitions off, gated on `visibilityState`
++ `clientWidth`: one section, a 148px axis, **six storey labels roof-first**, an 1623×174 SVG,
+**8 bands / 8 centre lines / 8 dashed baselines**, 4 clash marks, the data-date line, slope labels
+reading *"Structural · 8.6 wd/floor"*, band fill `#2F6FBF` at opacity **0.20**, baseline dash
+`4px, 3px`, and no horizontal page scroll.
+
+⚠️ **Not verified signed in.** No real project has been through the flowline; the chart is
+rendered by executing the shipped `renderFlowline` against a stub document and a fabricated tower.
+⚠️ The **block-task** and **unrankable-footnote** paths are asserted on the shipped source but were
+not exercised in the browser — the fixture has neither.
+
+`MODULE_V` → `20260911zc`, sort-checked against `za`/`zb`.
+⚠️ Integrated by committing the module file FIRST and rebasing before touching the version or the
+logs, so the two incoming commits (which do not touch this module at all) could not conflict with
+them. `index.html` is byte-identical across the rebase.
+
+### The five slices are done
+Layout, production rate, clash detection, the data-date line, and the flowline. What is still not
+built, and was named as out of scope at the start: the deck's **restricted time-location windows**
+(*"restricted areas do not allow the planning of tasks in a given time and distance window"*), which
+need a new store and a new authoring surface. ⚠️ And the standing invitation from slice 3:
+`cfg.tradeLeads` is still declared and unread — wire it and a clash could be measured against
+the planner's declared floors-behind rather than only against trade order.
+
+### ⚠️⚠️ HOTFIX: ticking LSM stretched 2,561 rows, and the layout had almost no door (2026-09-11 z5) — fmlozano
+
+Owner, from the live site on OPW101: *"Ticking LSM widens the with of the rows why is that"*, and
+just before it: *"How does the planner access the LSM? Is it by selecting the 'LSM' in the
+presets?"* Both are fair, and the second question's honest answer was **no, and almost nobody would
+find it**.
+
+### 1. ⚠️⚠️ THE COLLAPSE WENT TO THE WRONG LEVEL — that is the whole of the "wider rows"
+`expandToLevel(n)` collapses every node at `ddepth >= n - 1`. `setLsmRows` called
+`expandToLevel(locDims.length)`, so on OPW101's **Tower › Level › Zone › Unit**
+breakdown that is `expandToLevel(4)` — which collapses only the **Units**. The Tower, Level and
+Zone rows stayed open, and every activity carrying no Unit value was lifted by the dissolve and
+stayed on screen as a leaf.
+
+Then the row height did what it was told: `pad + lanes × pitch`, with 8 trades keyed, is ~96px
+— applied to **2,561 rows** instead of about thirty floors. The owner saw tall rows full of
+single activities ("Fire Rated Metal Doors", "Railings", "Latex Paint") and was right to ask.
+
+The floor rows have to be the **deepest visible** ones, so the collapse level is the floor's own
+depth: `ddepth >= fi` ⇒ `n = fi + 1`. On that breakdown the floor is the second dimension, so
+**2, not 4**.
+⚠️ An activity with no value at the floor level is still lifted to the tower and still visible
+— correctly: it genuinely sits on no storey.
+
+### 2. ⚠️⚠️ AND THE HEIGHT IS NOW ONLY EARNED BY AN LSM-SHAPED GROUPING
+`ROWH` is uniform by construction — `renderWindow` slices on `floor(scrollTop / ROWH)` and every
+bar sits at `i * ROWH` — so the lane budget cannot be given to the floor rows alone. That is
+fine when the rows ARE floors and wrong the moment they are not, which is exactly what happened
+above. `_lsmShaped()` gates it: the mode on **and** every grouping dimension a `loc:` one.
+
+So changing the grouping now drops the rows back to their normal height even with the mode on,
+which is the honest behaviour — the lanes are only ever drawn on location group rows anyway.
+⚠️ It also gates `_viewKey()`, so the View button never reads "LSM" over a plain WBS tree.
+
+⚠️ And the toast now **names the lane count and the resulting row height**, with a pointer to
+*Key trades…*: "the rows got taller" is always answered by "because there are N trades keyed",
+and the lever was two controls away with nothing connecting them.
+
+### 3. ⚠️⚠️ THE DOOR: A TOOLBAR BUTTON, NOT A CHECKBOX INSIDE THE LEGEND
+The only way in was a checkbox in the Legend head — which is itself hidden until *"Colour
+activities by"* is ticked, and which can be folded away entirely. That is the
+built-with-no-door shape this module has now recorded four times, and I walked into it again.
+
+`#ps-lsmbtn` sits on the toolbar beside **Vertical Stacking** and **Activity Progress**, because that
+is where this module's other view switches live — the owner moved them there deliberately on
+2026-09-02 (*"still under the view button when we have already separated this entirely to the
+toolbar"*) — and it **toggles**, the way those two do. It joins `_TB_SHED` so it sheds with them
+in compact mode, and `_VIEW_LABEL` gains `lsm`, so the View button's face names it.
+⚠️ It is NOT routed through `_setView`: LSM is a **row layout inside the split**, not one of the
+full-width panels that replace it, so it toggles its own flag and repaints the View face itself.
+⚠️ `_paintViewBtn()` only — **not** `renderLayoutMenu()`, which is declared in the init/wiring
+scope and not at module scope. Calling it from there is the exact ReferenceError this file already
+records for `closeMenus`, and a try/catch round it would have hidden the fault rather than avoided
+it. The menu rebuilds itself on open.
+
+### 4. ⚠️ THE NAME COLLISION, NAMED RATHER THAN SILENTLY RESOLVED
+The Group menu has a preset called **"LSM"** — `['act'] + locDims`, i.e. Activity ›
+Location. That is the **transpose** of this layout and a legitimate view in its own right, and the
+owner named those three presets himself on 2026-09-11. So it is **left alone**: renaming another
+person's naming without asking is not a fix. The new button's tooltip states the difference in as
+many words, and this is flagged as the owner's call.
+
+### 5. ⚠️ One floor-level rule, two callers
+`stkDefaultLevel` already resolved "which location level is the storeys" by name test. The collapse
+needs the same answer — if the two disagreed the rows would collapse to one level while the rate
+and the clashes were computed on another, and nothing on screen would say so. Extracted to
+`_locFloorLevelId()` and called from both, rather than copied.
+
+### Verified
+**323 assertions against the working tree, 0 failing.**
+
+⚠️⚠️ **TWO CONTRAST BASES, and that is the point.** The `contrast-build-pin-the-base` trap bit
+immediately: the natural base had moved past slices 1–4, so *"BASE has no LSM lane CSS"* started
+failing — correctly, because the base now contains them. So:
+- against the **pre-LSM** commit `4d82fd4`: **11 assertions**, none of the feature exists;
+- against the **immediate predecessor** `621a33b`: **9 checks**, each specific to this fix — the
+  predecessor **has** `expandToLevel(locDims.length)` and gates the height on
+  `_lsmRows` alone; this file collapses at `_fi + 1` and gates on `_lsmShaped()`; and
+  `_locFloorLevelId`, `_lsmShaped`, `ps-lsmbtn` and the `lsm` view label are all absent from it.
+
+The collapse arithmetic is **executed, not described**: with Tower/Level/Zone/Unit, the floor
+resolves to Level, its index is 1, `n` is 2, and at that level the Tower row stays open while the
+Level rows collapse. The old value is asserted to have left the Level rows **expanded**, which is
+the reported bug. The guard is executed across four groupings: location-only is shaped;
+`['wbs']` is not; `['act','loc:a']` — the preset named "LSM" — is not; and mode-off never
+is, with the row height reading **34px** in each unshaped case and the full lane budget only in the
+shaped one.
+⚠️ The icon name was checked against the set before shipping (`layers` exists and is already used
+19 times here) — an unknown `data-ico` renders an **empty button**, which this log records.
+
+⚠️ **Not verified signed in**, and this one genuinely wants it: the report came off the live site,
+and what I can prove here is the arithmetic and the gate, not OPW101's own row count after the fix.
+That is the first thing to check.
+
+`MODULE_V` → `20260911z5`. ⚠️ Integrated by re-applying the anchored patch onto the
+fast-forwarded base (their three commits touch Progress Photos only) — byte-identical result.
+
+### Still to come
+Slice 5, the flowline / time-location chart, is **deliberately not in this commit**: shipping a new
+view on top of a layout that was stretching every row would have compounded the fault rather than
+fixed it.
 
 ### The data-date line gains a grip, each storey says where it had got to — and the line stops eating clicks (2026-09-11 z4) — fmlozano
 

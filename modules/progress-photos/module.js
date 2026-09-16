@@ -267,11 +267,36 @@ window.ProgressPhotos = (function () {
   }
 
   // ------------------------------------------------------------------ init ---
+  // ⚠️⚠️ 2026-09-14, later still yet again (again): "the video still gets
+  // removed once a new session opens" -- persisting the draft's source blob
+  // (see Pano360DraftStore below) only helps if the browser actually KEEPS
+  // that IndexedDB data. By default this origin's storage is "best-effort" --
+  // a browser under disk pressure is free to silently evict it, and that is
+  // indistinguishable from the planner's own perspective from "my capture is
+  // just gone." `navigator.storage.persist()` asks the browser to exempt this
+  // origin from that automatic eviction. It is a REQUEST, not a guarantee --
+  // support and the criteria a browser applies (installed-as-app, site
+  // engagement, an explicit permission prompt, or simply "not supported at
+  // all" on some mobile browsers) vary, so this can silently do nothing on
+  // some devices. It is still strictly better than never asking at all, and
+  // costs nothing when unsupported (feature-detected, wrapped in try/catch,
+  // never blocks anything else in init()).
+  async function ensurePersistentStorage() {
+    try {
+      if (!navigator.storage || !navigator.storage.persist) return;
+      var already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+      if (already) return;
+      var granted = await navigator.storage.persist();
+      console.info('[progress-photos] Persistent storage ' + (granted ? 'granted' : 'was not granted') + ' for this device.');
+    } catch (e) { /* best-effort only -- never fatal to init() */ }
+  }
+
   async function init(user, prof) {
     profile = prof; uid = user.id;
     canWrite = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
     pid = sessionStorage.getItem('pd_project') || '';
     restoreUI();
+    ensurePersistentStorage();   // deliberately not awaited -- best-effort, must not delay init()
 
     await fillProjects();
     wire();
@@ -282,7 +307,27 @@ window.ProgressPhotos = (function () {
                             // LOC_LEVELS/SCHED_ACTS are ready — see its own comment there for why.
     try { fillFilterOptions(); } catch (e) { console.error(e); }
     await refreshQueueBadge();
+    // Reconnect this user's own 360° drafts (see the big comment above
+    // PANO360_DRAFTS) -- deliberately not awaited, since it's independent
+    // background work that must not delay the rest of init().
+    rehydratePano360Drafts();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
+    // ⚠️⚠️ 2026-09-14, later still yet again: persisting a still-processing
+    // draft's SOURCE means the recording survives an accidental close/
+    // navigate -- but "survives" here means "the WASM stitch restarts from
+    // scratch next time", never "keeps going in the background of a closed
+    // tab" (nothing can do that). Losing that CPU time (and the planner's
+    // patience) to a stray back-button tap is worth a native "leave this
+    // page?" prompt while at least one draft is genuinely still stitching --
+    // exactly the standard browsers already offer for "you have unsaved
+    // changes", pointed at the one condition where leaving costs real time
+    // rather than real data.
+    window.addEventListener('beforeunload', function (e) {
+      if (PANO360_DRAFTS.some(function (d) { return d.status === 'processing'; })) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
     joinCollab();
   }
 
@@ -572,27 +617,21 @@ window.ProgressPhotos = (function () {
     return LOC_LEVELS.map(function (l) { return values[l.id]; }).filter(Boolean).join(' › ');
   }
 
-  // The schedule activity that's "current" for a set of picked location
-  // values: prefer In Progress (earliest start), else the next Not Started,
-  // else whatever's there. Matches any activity whose OWN location agrees on
-  // every level actually specified in `values` — an activity with additional
-  // levels set (more specific) still matches, so stopping the picker early
-  // (e.g. just Tower + Level, no Zone) still surfaces something.
-  function resolveActivity(values) {
-    var keys = Object.keys(values || {}).filter(function (k) { return values[k]; });
-    if (!keys.length) return null;
-    var cands = SCHED_ACTS.filter(function (a) {
-      var loc = a.location || {};
-      return keys.every(function (k) { return (loc[k] || '') === values[k]; });
-    });
-    if (!cands.length) return null;
-    var pick = cands.filter(function (a) { return (a.status || '') === 'In Progress'; })
-      .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
-    if (!pick) pick = cands.filter(function (a) { return (a.status || '') === 'Not Started'; })
-      .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
-    if (!pick) pick = cands[0];
-    return { id: pick.activity_id, name: pick.activity_name };
-  }
+  // ⚠️ 2026-09-16 fix: this module used to also resolve "the schedule
+  // activity that's current for this location" here and silently save it as
+  // the photo's own activity_id/activity_name — regardless of what Works
+  // value the planner actually picked. That is what produced a photo tagged
+  // "Rebar" for a location whose SCHEDULE happens to have Rebar in progress,
+  // even when the planner selected a completely different Works value (or
+  // none at all). The photo's activity must come from the photo itself — the
+  // Works picker — never be inferred from location alone. See
+  // worksActivityIdFor()/works_activity_ids, which already trace the real,
+  // planner-chosen Works value(s) back to a schedule activity id; that is now
+  // the ONLY source for a photo's activity_id/activity_name (see the three
+  // save handlers below). The removed function (`resolveActivity`) is not
+  // needed for anything else — grepped, its only callers were this file's own
+  // "Current activity" hint (also removed, see paintLocCtx) and the three
+  // save payloads.
 
   // Most recent photo captured at (a superset of) this set of location values.
   function lastCaptureAt(values) {
@@ -610,16 +649,31 @@ window.ProgressPhotos = (function () {
     var projects = await PDb.getProjects();
     projects = projects.filter(function (p) { return AppAuth.canAccessProject(profile, p.id); });
     if (!projects.length) { sel.innerHTML = '<option value="">No projects</option>'; return; }
-    if (!pid || !projects.some(function (p) { return p.id === pid; })) pid = projects[0].id;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT. Arriving here via
+    // the Portfolio sidebar (`#pd_scope=portfolio`, read once by AppAuth), `pid`
+    // stays null on purpose -- the alternative is exactly the reported bug:
+    // silently substituting the first project alphabetically and showing ITS
+    // real name in the selector as if it were correctly scoped. `pid === null`
+    // is also what `load()` reads below to switch the gallery from one project
+    // to every project this planner can see, and what already gates
+    // `openUpload`/`open360Upload`/most write paths off (see there).
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (portfolio) {
+      pid = null;
+    } else if (!pid || !projects.some(function (p) { return p.id === pid; })) {
+      pid = projects[0].id;
+    }
     sel.innerHTML = projects.map(function (p) {
       return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' +
              Fmt.esc(p.name || p.id) + '</option>';
     }).join('');
-    UI.enhanceProjectSelect(sel);   // shared searchable project picker
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker -- shows "Portfolio" when scoped
     var cur = projects.filter(function (p) { return p.id === pid; })[0];
-    projName = cur ? (cur.name || cur.id) : pid;
-    sessionStorage.setItem('pd_project', pid);
-    sessionStorage.setItem('pd_project_name', projName);
+    projName = cur ? (cur.name || cur.id) : (portfolio ? 'Portfolio' : pid);
+    if (!portfolio) {
+      sessionStorage.setItem('pd_project', pid);
+      sessionStorage.setItem('pd_project_name', projName);
+    }
     notifyProject();
   }
 
@@ -627,6 +681,12 @@ window.ProgressPhotos = (function () {
     projectListeners.forEach(function (fn) {
       try { fn(pid, projName); } catch (e) { console.error(e); }
     });
+    // A draft belongs to the project it was started on and keeps
+    // processing in the background regardless of which project is
+    // currently selected -- but the badge itself must only ever count
+    // THIS project's drafts, so it has to repaint on every project switch,
+    // not just when a draft's own state changes.
+    renderPano360DraftsBadge();
   }
 
   // ⚠️ 2026-09-04: three real, independently-diagnosed problems stacked here,
@@ -784,6 +844,7 @@ window.ProgressPhotos = (function () {
     $('pp-refresh').onclick = function () { load(); };
     if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
     if ($('pp-genthumbs')) $('pp-genthumbs').onclick = function () { backfillThumbnails(); };
+    if ($('pp360-drafts')) $('pp360-drafts').onclick = function () { openPano360DraftsList(); };
     wireSelBar();
     wireLightboxMagnifier();
     wireLightboxKpResizeDrag();
@@ -833,14 +894,26 @@ window.ProgressPhotos = (function () {
   async function load() {
     var host = $('pp-view');
     host.innerHTML = '<div class="pp-empty">Loading photos…</div>';
-    if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project to see its photos.</div>'; return; }
+    // Portfolio scope: no single project is selected, but every project the
+    // planner can see is in scope — consolidate across all of them instead of
+    // refusing for lack of one project id. See AppAuth.isPortfolioScope().
+    var portfolio = window.AppAuth && AppAuth.isPortfolioScope();
+    if (!pid && !portfolio) { host.innerHTML = '<div class="pp-empty">Select a project to see its photos.</div>'; return; }
+
+    var portfolioIds = null;
+    if (portfolio) {
+      portfolioIds = await (window.UI && UI.allProjectIds ? UI.allProjectIds() : Promise.resolve([]));
+      if (!portfolioIds.length) { host.innerHTML = '<div class="pp-empty">No projects available.</div>'; return; }
+    }
 
     // Keyset-paginate (a single select caps at 1000; a project's photo library can exceed
     // that, silently hiding photos from the grid, PPR picker and bulk actions), then restore
     // the taken_at-desc / sort_order ordering.
     var all = [], last = null;
     while (true) {
-      var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+      var q = sb().from(TABLE).select('*');
+      q = portfolio ? q.in('project_id', portfolioIds) : q.eq('project_id', pid);
+      q = q.order('id', { ascending: true }).limit(1000);
       if (last) q = q.gt('id', last);
       var res = await q;
       if (res.error) {
@@ -865,7 +938,7 @@ window.ProgressPhotos = (function () {
       return sa - sb2;
     });
     rows = all;
-    if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);   // keep the offline cache current
+    if (window.PDSync && !portfolio) PDSync.cachePut('pp:' + pid, rows);   // keep the offline cache current
 
     // ⚠️ Real perf fix, the other half of signAll()'s own comment: this used
     // to AWAIT signAll() (a Storage round-trip signing every path in the
@@ -2491,7 +2564,7 @@ window.ProgressPhotos = (function () {
     if (usage.photoIds.length) {
       var pluralPhoto = usage.photoIds.length === 1;
       var pluralPpr = usage.pprIds.length === 1;
-      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true">⚠</span><span>' +
+      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true"></span><span>' +
         (pluralPhoto ? 'This photo is' : usage.photoIds.length + ' of ' + (ids.length === 1 ? 'this photo' : ids.length + ' selected photos') + ' are') +
         ' used in ' + usage.pprIds.length + ' presentation' + (pluralPpr ? '' : 's') + '. Deleting ' +
         (pluralPhoto ? 'it' : 'them') + ' will remove ' + (pluralPhoto ? 'it' : 'them') +
@@ -2571,7 +2644,7 @@ window.ProgressPhotos = (function () {
     if (usage.photoIds.length) {
       var pluralPhoto = usage.photoIds.length === 1;
       var pluralPpr = usage.pprIds.length === 1;
-      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true">⚠</span><span>' +
+      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true"></span><span>' +
         (pluralPhoto ? 'One of the photos is' : usage.photoIds.length + ' of the photos are') +
         ' used in ' + usage.pprIds.length + ' presentation' + (pluralPpr ? '' : 's') + '. Deleting ' +
         (pluralPhoto ? 'it' : 'them') + ' will remove ' + (pluralPhoto ? 'it' : 'them') +
@@ -2669,6 +2742,7 @@ window.ProgressPhotos = (function () {
   function closeLightbox() {
     $('pp-lightbox').hidden = true;
     var vidEl = $('pp-lb-video'); if (vidEl) { vidEl.pause(); vidEl.src = ''; }
+    teardownLbPano();
   }
   function stepLightbox(d) {
     if (!lightboxIds.length) return;
@@ -2697,8 +2771,15 @@ window.ProgressPhotos = (function () {
     // available" -- media_type stays '360' for both, distinguishing it
     // from an ordinary photo only in which element shows it.
     var isPano = r.media_type === '360';
-    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video'), panoWrap = $('pp-lb-panowrap'), panoImg = $('pp-lb-pano');
+    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video'), panoWrap = $('pp-lb-panowrap');
+    // Item 5 (2026-09-11, third round): the panorama is now shown through a
+    // real Pannellum viewer, mounted into #pp-lb-pano-viewer once the
+    // full-resolution image resolves below; #pp-lb-pano-standin is the
+    // plain thumbnail-backed <img> that stands in the instant the lightbox
+    // opens, exactly like the ordinary-photo path already does.
+    var panoStandin = $('pp-lb-pano-standin'), panoViewerEl = $('pp-lb-pano-viewer');
     lightboxPanoHeadingDeg = 0;   // a fresh photo/step always resets the followed heading
+    teardownLbPano();            // never leave a stale viewer/yaw-poll running past this photo
     if (isVideo) {
       if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
       if (panoWrap) panoWrap.hidden = true;
@@ -2706,8 +2787,9 @@ window.ProgressPhotos = (function () {
     } else if (isPano) {
       if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
       if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
-      if (panoWrap) { panoWrap.hidden = false; panoWrap.scrollLeft = 0; }
-      if (panoImg) panoImg.src = u || '';   // the representative frame stands in until the wide panorama is signed
+      if (panoWrap) panoWrap.hidden = false;
+      if (panoViewerEl) panoViewerEl.innerHTML = '';
+      if (panoStandin) { panoStandin.hidden = false; panoStandin.src = u || ''; }   // stands in until the viewer mounts, below
     } else {
       if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
       if (panoWrap) panoWrap.hidden = true;
@@ -2737,13 +2819,39 @@ window.ProgressPhotos = (function () {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
       u = full;
       if (isVideo) { if (vidEl) vidEl.src = full; }
-      else if (isPano) { if (panoImg) panoImg.src = full; }
+      else if (isPano) {
+        if (panoStandin) panoStandin.src = full;
+        // Pannellum needs the image's real aspect ratio for `vaov` (see
+        // mountPannellumViewer's own comment) — read off the stand-in
+        // <img> we just pointed at the same full-res file, once it has
+        // actually decoded (a cache hit resolves this synchronously via
+        // `.complete`; a cold load waits for `onload`).
+        var mountNow = function () {
+          if (lightboxIds[lightboxAt] !== openedId) return;   // the lightbox moved on before this resolved
+          if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
+          var hOverW = (panoStandin && panoStandin.naturalWidth) ? (panoStandin.naturalHeight / panoStandin.naturalWidth) : 0.35;
+          if (panoViewerEl) {
+            lbPanoViewer = mountPannellumViewer(panoViewerEl, full, hOverW);
+            if (lbPanoViewer) {
+              if (panoStandin) panoStandin.hidden = true;
+              lbPanoStopYawPoll = startPanoYawPoll(lbPanoViewer, function (yaw) {
+                lightboxPanoHeadingDeg = yaw;
+                var rr = byId(lightboxIds[lightboxAt]);
+                if (rr && rr.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(rr);
+              });
+            }
+          }
+        };
+        if (panoStandin) { if (panoStandin.complete) mountNow(); else panoStandin.onload = mountNow; }
+      }
       else { if (imgEl) imgEl.src = full; }
     });
     // Item 5 (overnight batch): exposure/brightness/contrast now render
-    // live via CSS filter on video too, not just photos -- CSS `filter`
-    // applies to a <video> element exactly the same way it does an <img>.
-    var adjFilterEl = isVideo ? vidEl : (isPano ? panoImg : imgEl);
+    // live via CSS filter -- applied to the whole panorama WRAP for a 360
+    // row (a CSS filter composites everything rendered inside an element,
+    // WebGL canvas included, so this reaches the Pannellum viewer exactly
+    // as it did the old <img>), and to the <video>/<img> directly otherwise.
+    var adjFilterEl = isVideo ? vidEl : (isPano ? panoWrap : imgEl);
     if (adjFilterEl) adjFilterEl.style.filter = cssFilterFor(adjustmentsOf(r));
     $('pp-lb-cap').innerHTML =
       '<strong>' + Fmt.esc(r.view_name || r.description || 'Progress photo') + '</strong>' +
@@ -2794,7 +2902,7 @@ window.ProgressPhotos = (function () {
       adjBtn.onclick = function () {
         openAdjustEditor(u, r.adjustments || {}, async function (newAdj) {
           r.adjustments = newAdj;
-          var filterEl = isVideo ? vidEl : (isPano ? panoImg : imgEl);
+          var filterEl = isVideo ? vidEl : (isPano ? panoWrap : imgEl);
           if (filterEl) filterEl.style.filter = cssFilterFor(newAdj);
           var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: { adjustments: newAdj, updated_at: new Date().toISOString() } });
           if (!w.ok) UI.toast(w.error && w.error.message || 'Could not save adjustments', 'error');
@@ -2974,65 +3082,129 @@ window.ProgressPhotos = (function () {
     }
     setShown(true);
   }
-  // Item 4: drag-to-pan for the 360° viewer -- .pp-lb-panowrap is a plain
-  // overflow-x:auto strip (native touch swipe for free); this adds
-  // click-and-drag for a mouse and, on every scroll however it happened,
-  // updates lightboxPanoHeadingDeg and re-paints the key-plan cone so it
-  // keeps following the direction actually on screen.
-  // Item 7 (performance): the cone repaint is coalesced to at most once per
-  // animation frame, the same "raw high-frequency input event -> a dirty
-  // flag + a single rAF-driven repaint" discipline this app's own 360°
-  // cylindrical-viewer history already established -- a touch-scrolled
-  // strip firing its native 'scroll' event doesn't need a full
-  // BIM.coneWedgeSVGAt()+innerHTML rebuild for every one of them. The
-  // pointermove handler only WRITES scrollLeft; it never calls the repaint
-  // itself, since that write already fires the 'scroll' listener below.
-  // Generic drag-to-pan for an overflow-x:auto strip — pulled out of
-  // wirePanoDrag() below (2026-09-11, second round item 5: "preview should
-  // be navigable or operable as 360") so the 360°-upload modal's own
-  // stitched-panorama preview can reuse the EXACT same pan gesture the
-  // saved-photo lightbox viewer already has, rather than a second,
-  // independently-behaved widget. `onScrollFrac(frac)` is optional and, when
-  // given, is called at most once per animation frame with the strip's
-  // current scroll position as a 0..1 fraction — the same "raw high-frequency
-  // input -> a dirty flag + a single rAF-driven callback" discipline this
-  // app's own 360° viewer history already established, now shared rather
-  // than reimplemented per caller.
-  function wireDragPan(wrap, onScrollFrac) {
-    if (!wrap) return;
-    var dragging = false, startX = 0, startScroll = 0, rafId = null;
-    function fire() {
-      rafId = null;
-      if (!onScrollFrac) return;
-      var maxScroll = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
-      onScrollFrac(wrap.scrollLeft / maxScroll);
+  // ============================================================================
+  // Item 5 (2026-09-11, third round): "viewing of 360 is also not good, use
+  // Pannellum for 360 viewer" -- REPLACES the earlier plain drag-to-pan
+  // strip (wireDragPan/wirePanoDrag, both deleted, not left dormant — a
+  // second panorama viewer is exactly the kind of drift this file's own
+  // history warns about) with a real WebGL panorama viewer, shared by both
+  // the saved-360°-photo lightbox and the 360°-upload preview (item 6)
+  // through this ONE mount function, so the two can never independently
+  // drift in how they configure the same library.
+  //
+  // ⚠️ Our stitched mosaic is a CYLINDRICAL panorama (pano360.js's own
+  // header comment), not a true equirectangular sphere. Pannellum's
+  // 'equirectangular' type still handles this correctly for a PARTIAL
+  // panorama via its own documented `haov`/`vaov` (horizontal/vertical
+  // angle of view) config -- exactly the mechanism it offers for an image
+  // that doesn't cover the full sphere. `haov: 360` assumes the capture
+  // guide's own instruction (a full walk-around) was followed; `vaov` is
+  // derived from the image's own aspect ratio, treating pixels as
+  // uniformly-spaced degrees in both directions -- the same assumption an
+  // equirectangular projection already makes, and the same "read a real
+  // property instead of a guessed constant" discipline this app's other
+  // pin/cone geometry already follows.
+  function mountPannellumViewer(container, imageUrl, heightOverWidth) {
+    if (!container) return null;
+    // ⚠️⚠️ 2026-09-12 (second pass): this used to degrade to `null`
+    // completely silently on either failure below -- which is exactly why a
+    // reported "the processed 360 still returns black" bug went unexplained:
+    // the caller had no way to tell "the viewer legitimately isn't needed
+    // here" apart from "it just failed", and nothing in the console named
+    // which. `window.pannellum` being undefined here means the CDN
+    // <script> tag never actually populated the global -- a blocked
+    // request, an ad/privacy blocker, or (rarely) a load race -- and is a
+    // real, previously-unreported failure mode on a real device even
+    // though it never reproduces in a controlled/offline test harness.
+    if (!window.pannellum) {
+      console.warn('[progress-photos] Pannellum did not load (window.pannellum is undefined) -- ' +
+        'the interactive 360° pan viewer cannot mount. Falling back to a flat image preview.');
+      return null;
     }
-    function onScrollChange() {
-      if (rafId) return;
-      rafId = requestAnimationFrame(fire);
+    if (!container.id) container.id = 'pp-pnlm-' + Math.random().toString(36).slice(2);
+    var vaov = Math.min(140, Math.max(20, 360 * (heightOverWidth || 0.35)));
+    try {
+      return pannellum.viewer(container.id, {
+        type: 'equirectangular', panorama: imageUrl, haov: 360, vaov: vaov,
+        autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: false, compass: false,
+        minHfov: 30, maxHfov: 120, hfov: 100
+      });
+    } catch (e) {
+      console.warn('[progress-photos] Pannellum viewer() threw while mounting (no WebGL support, or the ' +
+        'browser\'s WebGL context limit is already exhausted) -- falling back to a flat image preview.', e);
+      return null;
     }
-    wrap.addEventListener('pointerdown', function (e) {
-      dragging = true; startX = e.clientX; startScroll = wrap.scrollLeft;
-      try { wrap.setPointerCapture(e.pointerId); } catch (err) {}
-    });
-    wrap.addEventListener('pointermove', function (e) {
-      if (!dragging) return;
-      wrap.scrollLeft = startScroll - (e.clientX - startX);
-    });
-    wrap.addEventListener('pointerup', function () { dragging = false; });
-    wrap.addEventListener('pointercancel', function () { dragging = false; });
-    wrap.addEventListener('scroll', onScrollChange);
   }
-  // Item 4: drag-to-pan for the LIGHTBOX's 360° viewer specifically — wires
-  // the shared wireDragPan() onto #pp-lb-panowrap and, on every scroll
-  // however it happened, updates lightboxPanoHeadingDeg and re-paints the
-  // key-plan cone so it keeps following the direction actually on screen.
-  function wirePanoDrag() {
-    wireDragPan($('pp-lb-panowrap'), function (frac) {
-      lightboxPanoHeadingDeg = frac * 360;
-      var r = byId(lightboxIds[lightboxAt]);
-      if (r && r.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(r);
-    });
+  // Item 4 (original): the key-plan cone still follows wherever the 360°
+  // viewer is currently looking. Pannellum's stable API has no continuous
+  // "view changed" event to subscribe to, so this polls `viewer.getYaw()`
+  // once per animation frame -- but only calls the DOM-touching callback
+  // when the yaw actually CHANGED since the last tick, the same "dirty
+  // flag, not an unconditional repaint" discipline item 7's own performance
+  // pass already established for this exact cone repaint (see that entry's
+  // rAF-coalescing note) -- an idle, unmoved view costs nothing beyond one
+  // cheap getter read per frame while the panorama is open.
+  function startPanoYawPoll(viewer, onYawChange) {
+    var raf = null, lastYaw = null;
+    function tick() {
+      var yaw = null;
+      try { yaw = viewer.getYaw(); } catch (e) {}
+      if (yaw != null && yaw !== lastYaw) { lastYaw = yaw; onYawChange(yaw); }
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } };
+  }
+  // Item 6 (2026-09-11, third round): "use the 360 viewer as both a
+  // preview and to select the thumbnail frame ... no need to have a
+  // separate preview and thumbnail selector" -- captures whatever the
+  // Pannellum viewer is CURRENTLY rendering, cropped to a fixed aspect
+  // ratio, as a real image Blob. Shared by open360Upload's own "Use this
+  // view as thumbnail" button and its automatic first-render capture.
+  // ⚠️ "standard 3:4 landscape ratio" is self-contradictory (3:4 is a
+  // PORTRAIT ratio) -- read as the standard 4:3 LANDSCAPE ratio the word
+  // "landscape" actually names; a thumbnail cropped from a landscape
+  // panorama view has no sensible reason to come out portrait-shaped.
+  var THUMB_ASPECT = 4 / 3;
+  // Shared centre-crop-to-4:3 math, pulled out so captureViewerThumbnail
+  // (source: the Pannellum viewer's own live <canvas>) and
+  // captureImageThumbnail (source: a plain <img>, the fallback used when
+  // the WebGL viewer itself never mounted -- see mountPannellumViewer's own
+  // comment) can never disagree about how the crop is framed.
+  function cropToThumbBlob(src, sw, sh, cb) {
+    try {
+      var cropW = sw, cropH = Math.round(sw / THUMB_ASPECT);
+      if (cropH > sh) { cropH = sh; cropW = Math.round(sh * THUMB_ASPECT); }
+      var sx = Math.round((sw - cropW) / 2), sy = Math.round((sh - cropH) / 2);
+      var out = document.createElement('canvas');
+      out.width = 640; out.height = Math.round(640 / THUMB_ASPECT);
+      var ctx = out.getContext('2d');
+      ctx.drawImage(src, sx, sy, cropW, cropH, 0, 0, out.width, out.height);
+      out.toBlob(function (blob) { cb(blob); }, 'image/jpeg', 0.85);
+    } catch (e) { cb(null); }
+  }
+  function captureViewerThumbnail(containerEl, cb) {
+    var srcCanvas = containerEl && containerEl.querySelector('canvas');
+    if (!srcCanvas || !srcCanvas.width) { cb(null); return; }
+    cropToThumbBlob(srcCanvas, srcCanvas.width, srcCanvas.height, cb);
+  }
+  // ⚠️⚠️ 2026-09-12 (second pass): the flat-preview fallback's own thumbnail
+  // source -- open360Upload's own automatic-first-thumbnail capture and its
+  // "Use this view as thumbnail" button both need SOMETHING to draw from
+  // when the WebGL viewer never mounted, or Save is stuck forever on
+  // "Still processing" with nothing to actually capture.
+  function captureImageThumbnail(imgEl, cb) {
+    if (!imgEl || !imgEl.naturalWidth) { cb(null); return; }
+    cropToThumbBlob(imgEl, imgEl.naturalWidth, imgEl.naturalHeight, cb);
+  }
+  var lbPanoViewer = null, lbPanoStopYawPoll = null;
+  // Torn down at the START of every paintLightbox() call (idempotent — a
+  // no-op when nothing is mounted), so stepping ←/→ between two 360 photos,
+  // or from a 360 photo to any other kind, can never leave a stale viewer
+  // instance or a stray yaw-poll rAF loop running behind what's now shown.
+  function teardownLbPano() {
+    if (lbPanoStopYawPoll) { lbPanoStopYawPoll(); lbPanoStopYawPoll = null; }
+    if (lbPanoViewer) { try { lbPanoViewer.destroy(); } catch (e) {} lbPanoViewer = null; }
   }
   // Round-2 item 4: drag the overlay's bottom-left corner to resize it —
   // pinned top/right, so only the WIDTH needs to change; the <img>'s own
@@ -5265,16 +5437,23 @@ window.ProgressPhotos = (function () {
     var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
     return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
+  // ⚠️ 2026-09-16: this used to also print "Current activity: <strong>Rebar
+  // Works</strong>" here — whichever schedule activity happens to be
+  // In-Progress/Not-Started AT THIS LOCATION, entirely independent of the
+  // photo actually being added. It read as though the photo had already been
+  // tagged with that activity (and, until this same fix, it silently WAS —
+  // see the save handlers' activity_id/activity_name). Removed outright:
+  // location alone must never imply or assign an activity. The one thing
+  // worth keeping is the reference photo below, which is just a prior shot
+  // for framing comparison, not an activity assignment.
   function paintLocCtx(idPrefix) {
     var ctx = $(idPrefix + '-actctx');
     var values = currentLocValues(idPrefix);
     var hasAny = Object.keys(values).length > 0;
     if (!ctx) return;
     if (!hasAny) { ctx.innerHTML = ''; return; }
-    var act = resolveActivity(values), last = lastCaptureAt(values);
+    var last = lastCaptureAt(values);
     var html = '';
-    if (act) html += '<div class="pp-actline">Current activity: <strong>' + Fmt.esc(act.name || act.id) + '</strong></div>';
-    else html += '<div class="pp-actline pp-muted">No active schedule activity found for this location.</div>';
     if (last) {
       // A small reference thumbnail never needed full-resolution — using
       // the (already-cheap, already-cached) thumbnail here instead of
@@ -5355,7 +5534,11 @@ window.ProgressPhotos = (function () {
       '<div class="pd-modal-header"><h3>Add a ' + nounSingular + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<p class="pp-hint">One ' + nounSingular + ' per add — take or choose another to replace it.</p>' +
+        // Item 1 (2026-09-11, third round): the buttons row itself now hides
+        // once a file is staged (see renderStagedGrid's syncAddButtonsRow),
+        // so the hint no longer describes an auto-replace — it describes
+        // the new remove-then-add-again flow.
+        '<p class="pp-hint" id="pp-addhint">One ' + nounSingular + ' per add — remove the current one to choose another.</p>' +
         '<div class="pd-field" id="pp-filesfield"><label>' + nounPlural + '</label>' +
           // Item 1: "provide separate buttons for take photo/video and
           // upload photo/video" -- Take opens the in-app camera overlay
@@ -5373,7 +5556,12 @@ window.ProgressPhotos = (function () {
           // opens the ordinary file/photo picker for both kinds, where
           // `multiple` genuinely lets several files be picked in one go.
           // "Take" (capture.js) is the one deliberately single-shot path.
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
+          // Item 1 (2026-09-11, third round): this whole row is HIDDEN the
+          // moment a file is staged (renderStagedGrid), and reappears only
+          // once the staged item is removed via the card's own × button —
+          // "do not allow multiple uploads per add media" is now enforced
+          // by there being nothing left to click, not just by replacing.
+          '<div id="pp-addbtnsrow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
             '<button type="button" class="pd-btn" id="pp-take">Take ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
             '<button type="button" class="pd-btn" id="pp-choosefiles">Upload ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
           '</div>' +
@@ -5412,8 +5600,16 @@ window.ProgressPhotos = (function () {
     // entirely), which is the reported "the preview for the video ... is
     // not working". Every staged file now gets a real object URL and a
     // real preview element, image or video.
+    // Item 1 (2026-09-11, third round): the Take/Upload row is hidden while
+    // a file is staged, and reappears once the staged item is removed —
+    // hides/shows the SAME element every render so it can never drift out
+    // of sync with `stagedFiles.length`.
+    function syncAddButtonsRow() {
+      var row = $('pp-addbtnsrow'); if (row) row.style.display = stagedFiles.length ? 'none' : 'flex';
+    }
     function renderStagedGrid() {
       var grid = $('pp-stagedgrid'); if (!grid) return;
+      syncAddButtonsRow();
       grid.innerHTML = stagedFiles.map(function (f, i) {
         if (stagedUrls[i] === undefined) stagedUrls[i] = URL.createObjectURL(f);
         var url = stagedUrls[i];
@@ -5424,7 +5620,11 @@ window.ProgressPhotos = (function () {
         // Item 5: "extend feature of adjusting photo to videos and 360 ...
         // no need for mark-up for video" -- Adjust is offered for every
         // staged file; Markup only for a real image.
+        // Item 1 (2026-09-11, third round): a corner × removes the staged
+        // item — same fixed dark-scrim corner-overlay language as
+        // .pp-cardsel (top-left) / .pp-mkeditbtn, mirrored to the top-right.
         return '<figure class="pp-card" data-staged="' + i + '">' +
+          '<button type="button" class="pp-stagermv" data-removestage="' + i + '" title="Remove this ' + nounSingular + '" aria-label="Remove">×</button>' +
           '<div class="pp-cardimg">' + media + '</div>' +
           '<div class="pp-cardactions">' +
             (fIsVideo ? '' : '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>') +
@@ -5445,6 +5645,21 @@ window.ProgressPhotos = (function () {
           openAdjustEditor(stagedUrls[i], pendingAdjust[i] || {}, function (adj) { pendingAdjust[i] = adj; }, fIsVideo);
         };
       });
+      Array.prototype.forEach.call(grid.querySelectorAll('[data-removestage]'), function (b) {
+        b.onclick = function () { removeStaged(+this.dataset.removestage); };
+      });
+    }
+    // Item 1 (2026-09-11, third round): removing the (only) staged item
+    // clears its object URL and any pending markup/adjustments for it, then
+    // re-renders — which is what brings the Take/Upload row back via
+    // syncAddButtonsRow() at the top of renderStagedGrid().
+    function removeStaged(i) {
+      if (stagedUrls[i]) { try { URL.revokeObjectURL(stagedUrls[i]); } catch (e) {} }
+      stagedFiles.splice(i, 1);
+      stagedUrls.splice(i, 1);
+      pendingMarkup = {};
+      pendingAdjust = {};
+      renderStagedGrid();
     }
     function addStagedFiles(list) {
       var incoming = Array.prototype.slice.call(list || []);
@@ -5497,7 +5712,6 @@ window.ProgressPhotos = (function () {
       var reqErr = requiredFieldsMissing('pp');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
-      var act = resolveActivity(locVals);
       // Item 6: Works is a multi-select again; Trade is the UNION of every
       // chosen Works value's own derived trade. `trades`/`works_multi` are
       // the real array columns; `trade`/`works` stay populated too as the
@@ -5519,8 +5733,12 @@ window.ProgressPhotos = (function () {
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         view_name: viewNameEl ? viewNameEl.value.trim() : null,
-        activity_id: act ? act.id : null,
-        activity_name: act ? act.name : null,
+        // 2026-09-16 fix: activity_id/activity_name now trace the photo's
+        // OWN Works selection (same "first of the array" convention as
+        // trade/works above), never a schedule activity inferred from
+        // location alone — see the removed resolveActivity().
+        activity_id: worksActivityIdFor(worksList[0]) || null,
+        activity_name: worksList[0] || null,
         tags: readCodeTags('pp'),
         media_type: kind
       };
@@ -5585,223 +5803,908 @@ window.ProgressPhotos = (function () {
   }
 
   // ============================================================================
-  // Item 3: "add option to add 360 ... use the same form as when adding
-  // photo video. except when take video is clicked, provide guides on
-  // camera to take the video for processing to 360. provide preview of
-  // processed 360 photo. in case app is offline, prompt user to save video
-  // to gallery for upload later on. when adding the key plan, ask user for
-  // representative photo frame and ask for the location, angle, direction
-  // of that specific frame to match. the representative frame will also be
-  // the thumbnail in previews."
+  // "allow uploading 360 as draft during the session to work the stitching
+  // in the background. however, no push to database is allowed until user
+  // confirms the 360 photo. keep it in the session only as draft"
   //
-  // ⚠️ Deliberately its own flow, not a third mtype inside openUpload's
-  // batch pipeline: a 360° capture is ONE video in, ONE stitched-panorama
-  // row out -- fundamentally a different shape from N files -> N rows.
-  // The row still lands in `progress_photos` (media_type:'360'), never a
-  // second panorama table -- see pano360.js's own header comment for why.
+  // ⚠️⚠️ SAFETY GATE, stated once so it is easy to audit: `uploadFile()` /
+  // `tolerantWrite()` are called from EXACTLY ONE place in this whole draft
+  // flow -- the "Confirm & Save" handler inside openPano360Review(), guarded
+  // on `draft.status === 'ready'`. Starting a capture
+  // (openPano360SourcePicker) and background-stitching it
+  // (runStitchForDraft/runPhotoForDraft/finishDraftStitch) never touch
+  // Storage or the shared database. This invariant is unchanged by the
+  // persistence added below.
+  //
+  // Architecture: a "draft" is decoupled from any one modal's lifecycle --
+  // starting a capture creates a draft and kicks off background processing,
+  // then immediately opens a review modal; closing that modal WITHOUT
+  // confirming leaves the draft processing/ready in the background (a
+  // topbar badge, mirroring #pp-sync's own "hidden unless there is
+  // something to show" pattern, lists every draft for the current project
+  // and can reopen any of them). Only the explicit Confirm & Save action on
+  // a READY draft ever writes to Storage/the database.
+  //
+  // ⚠️⚠️ 2026-09-14, later still: "since it's taking too long to process, the
+  // session already times out before completion. draft should extend beyond
+  // the session though this should only be per person." Reverses the
+  // "kept in memory only, closing the tab loses it, by design" decision the
+  // original build made -- a real stitch can genuinely outlast a browser
+  // session (an auth-session timeout redirecting to login, or simply
+  // closing the tab), and losing the whole recording over that is exactly
+  // the "long processing" complaint this feature already exists to soften.
+  // A draft's own bytes (the source video/photo, the stitched result once
+  // there is one, the thumbnail, and the typed metadata) are now ALSO kept
+  // in a per-browser IndexedDB store (Pano360DraftStore, below) and
+  // reloaded on the next `init()` via rehydratePano360Drafts(). This is
+  // ADDITIVE to the safety gate above, never a way around it -- IndexedDB is
+  // local browser storage, not the shared Supabase database, so nothing
+  // here lets a draft reach the shared table before Confirm & Save.
+  // ⚠️⚠️ "PER PERSON" is enforced by FILTERING ON READ, not by storage
+  // isolation. Every persisted record carries the `uid` that created it,
+  // and rehydratePano360Drafts() only ever loads/shows/notifies about
+  // records whose `uid` matches whoever is CURRENTLY signed in on this
+  // device. A different person signing into the same shared browser never
+  // sees someone else's in-progress capture appear -- their own drafts (if
+  // any) simply sit untouched in the same local database until they sign
+  // back in themselves.
   // ============================================================================
+  var PANO360_DRAFTS = [];
+  var _pano360DraftSeq = 0;
+  function pano360DraftsForProject() { return PANO360_DRAFTS.filter(function (d) { return d.pid === pid; }); }
+  function findPano360Draft(id) {
+    for (var i = 0; i < PANO360_DRAFTS.length; i++) if (PANO360_DRAFTS[i].id === id) return PANO360_DRAFTS[i];
+    return null;
+  }
+  // ⚠️⚠️ 2026-09-14: "once the 360 is done processing, provide push
+  // notifications" -- a draft can take a real while to stitch, and the
+  // whole point of running it in the background is that the planner is free
+  // to close the review modal and go do something else while it churns.
+  // Nothing in this app runs a push server (no service-worker `push` event,
+  // no VAPID keys) -- this is a LOCAL notification, fired directly from
+  // this tab via the plain browser Notification API, not a true background
+  // push that can reach the planner once the tab itself is closed. Asking
+  // for permission is done here, at the moment a capture actually starts
+  // (called synchronously from the click/onchange handler that creates the
+  // draft), rather than proactively on page load -- tying the prompt to the
+  // one action that will actually use it is both the better UX and what
+  // gives the ask its best chance of surviving whatever gesture-adjacent
+  // rules a given browser enforces around it.
+  function ensurePano360NotifyPermission() {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission === 'default') {
+      try { Notification.requestPermission(); } catch (e) {}
+    }
+  }
+  // Fired exactly once per draft, at the moment it finishes (finishDraftStitch,
+  // on success) or fails for good (the catch blocks in runStitchForDraft/
+  // runPhotoForDraft) -- never from the many intermediate progress ticks
+  // touchPano360Draft() also drives. Always tries the real OS notification
+  // first; when it's unavailable or not granted, a toast covers the one case
+  // that would otherwise go completely silent -- no review modal open on
+  // this draft to show the result live via paint(). If a modal IS open,
+  // paint() already updates the screen the planner is looking at, so no
+  // extra toast is piled on top of it.
+  function notifyPano360Draft(draft, ok) {
+    var label = (draft.meta && draft.meta.desc) ? draft.meta.desc :
+      (draft.source === 'photo' ? 'Your 360° photo' : 'Your 360° video');
+    var body = ok
+      ? label + ' finished stitching and is ready to review.'
+      : label + ' could not be stitched (' + (draft.error || 'an unknown error') + ').';
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        var n = new Notification(ok ? '360° photo ready' : '360° photo failed', {
+          body: body, tag: draft.id, icon: '../../assets/img/favicon-icon.png?v=20260903a'
+        });
+        n.onclick = function () { try { window.focus(); } catch (e) {} try { n.close(); } catch (e) {} };
+      } catch (e) {}
+    } else if (!draft.onUpdate) {
+      UI.toast(body, ok ? 'ok' : 'error');
+    }
+  }
+  function newPano360Draft(source) {
+    _pano360DraftSeq++;
+    ensurePano360NotifyPermission();
+    var d = {
+      id: 'pano360draft_' + Date.now() + '_' + _pano360DraftSeq,
+      pid: pid,
+      source: source,               // 'video' | 'photo'
+      status: 'processing',         // 'processing' | 'ready' | 'error'
+      progressMsg: 'Processing…',
+      error: null,
+      video: null, videoUrl: null,
+      stitchResult: null, stitchUrl: null,   // { blob, quality, width, height }
+      repBlob: null, repUrl: null,           // thumbnail frame -- becomes thumb_url
+      pendingAdjust: {},                      // keyed 0 (a single item, same convention as the old single-slot flow)
+      meta: { desc: '', date: new Date().toISOString().slice(0, 10), works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+      onUpdate: null,                         // set by whichever review modal is currently watching this draft, if any
+      _persistSourceBlob: null                // the ORIGINAL video/photo file -- kept only while status==='processing', so an interrupted stitch can be restarted after a reload without re-recording; see persistPano360Draft()
+    };
+    PANO360_DRAFTS.push(d);
+    renderPano360DraftsBadge();
+    return d;
+  }
+  // Called by every background step (progress ticks, stitch finishing,
+  // errors) -- repaints whichever review modal is currently open on this
+  // draft (if any; `onUpdate` is null while the draft is just sitting in the
+  // background with no modal watching it) and keeps the topbar badge count
+  // current either way.
+  function touchPano360Draft(d) {
+    if (d.onUpdate) { try { d.onUpdate(d); } catch (e) {} }
+    renderPano360DraftsBadge();
+  }
+  function removePano360Draft(d) {
+    var i = PANO360_DRAFTS.indexOf(d);
+    if (i >= 0) PANO360_DRAFTS.splice(i, 1);
+    [d.videoUrl, d.stitchUrl, d.repUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
+    // Covers both a deliberate Discard and a successful Confirm & Save (the
+    // one call site that follows a real DB write) -- either way, once a
+    // draft leaves PANO360_DRAFTS it must also leave the local persistence
+    // store, or it would reappear on the next rehydrate.
+    Pano360DraftStore.remove(d.id).catch(function () {});
+    renderPano360DraftsBadge();
+  }
+  // Mirrors #pp-sync's own established convention exactly (module.js/
+  // index.html's "Offline capture queue -- visible on every screen"): a
+  // plain `hidden` attribute, driven purely by this function, never added to
+  // the PHOTO_TOOLS array (which would let setScreen's own show() flash it
+  // visible on a screen switch regardless of how many drafts actually
+  // exist).
+  function renderPano360DraftsBadge() {
+    var btn = $('pp360-drafts');
+    if (!btn) return;
+    var n = pano360DraftsForProject().length;
+    btn.hidden = !n;
+    if (n) btn.title = n + ' 360° draft' + (n === 1 ? '' : 's') + ' processing or awaiting review';
+  }
+
+  // ------------------------------------------------- 360° draft persistence -
+  // Same shape/convention as the OfflineQueue IIFE above (open/put/remove/
+  // all) -- a plain, dedicated IndexedDB database, never sessionStorage/
+  // localStorage (neither can hold a Blob without a lossy base64 round
+  // trip, and a stitched panorama or a source video is exactly the kind of
+  // thing that would make that expensive). See the big header comment
+  // above PANO360_DRAFTS for what this is for and the "per person" rule.
+  var Pano360DraftStore = (function () {
+    var DB_NAME = 'pp_pano360_drafts_v1', STORE = 'drafts', dbp = null;
+    // ⚠️⚠️ 2026-09-14, later still yet again: `dbp` used to be memoized
+    // UNCONDITIONALLY on the first call, including a REJECTED promise — so
+    // one transient `indexedDB.open()` failure (a momentary storage-pressure
+    // hiccup, a blocked upgrade, a private-mode restriction that clears once
+    // the user grants persistence) permanently broke persistence for the
+    // rest of the page's life: every later `put`/`all`/`remove` chained onto
+    // the same already-rejected promise and short-circuited straight to
+    // `.catch()` with no retry, ever. That is a plausible real cause of "the
+    // draft gets removed" reports that this file's own earlier fake-
+    // IndexedDB tests could never catch (a mock that always resolves has no
+    // failure to memoize). `dbp` is now only cached on SUCCESS; a failed open
+    // clears it so the very next persist attempt gets a fresh try instead of
+    // inheriting a permanently-poisoned promise.
+    function open() {
+      if (dbp) return dbp;
+      dbp = new Promise(function (resolve, reject) {
+        var req;
+        try { req = indexedDB.open(DB_NAME, 1); }
+        catch (e) { dbp = null; reject(e); return; }
+        req.onupgradeneeded = function () {
+          var d = req.result;
+          if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'id' });
+        };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { dbp = null; reject(req.error); };
+        req.onblocked = function () { dbp = null; reject(new Error('IndexedDB open was blocked by another tab')); };
+      });
+      return dbp;
+    }
+    function put(record) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx = d.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(record);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      }); });
+    }
+    function remove(id) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx = d.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(id);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      }); });
+    }
+    function all() {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var out = [];
+        var req = d.transaction(STORE, 'readonly').objectStore(STORE).openCursor();
+        req.onsuccess = function (e) {
+          var cur = e.target.result;
+          if (cur) { out.push(cur.value); cur.continue(); } else resolve(out);
+        };
+        req.onerror = function () { reject(req.error); };
+      }); });
+    }
+    // ⚠️⚠️ "Per person": filtered here, client-side, after a plain `all()` --
+    // not by a separate database per user, and not by an IndexedDB index
+    // (this store is small -- a handful of drafts at most -- so the extra
+    // index/query machinery isn't worth it, matching OfflineQueue's own
+    // queuedCountFor(), which filters its own `all()` result in JS too).
+    function allForUser(userId) {
+      return all().then(function (list) { return list.filter(function (r) { return r.uid === userId; }); });
+    }
+    return {
+      put: put, remove: remove, all: all, allForUser: allForUser,
+      // Test-only: forces the NEXT open() to call indexedDB.open() again
+      // instead of reusing whatever `dbp` a previous (real) connection in
+      // this same test run already resolved to — needed to genuinely
+      // exercise the "does open() retry after a failure" fix in isolation,
+      // since a real page only ever calls open() with a fresh, unconnected
+      // `dbp` in the first place.
+      _resetConnectionForTest: function () { dbp = null; }
+    };
+  })();
+
+  // Snapshots a draft's current, structured-clone-safe state into
+  // IndexedDB. Called at every point the draft's own state actually
+  // SETTLES -- created, metadata captured, stitched, errored, thumbnail
+  // captured, adjustments changed -- never from the many intermediate
+  // progress ticks touchPano360Draft() drives (a 48-frame stitch reports
+  // progress dozens of times; the source blob never changes mid-stitch, so
+  // persisting it once up front is enough to resume from).
+  function persistPano360Draft(draft) {
+    if (!uid || typeof indexedDB === 'undefined') return;
+    var res = draft.stitchResult;
+    var rec = {
+      id: draft.id, pid: draft.pid, uid: uid, source: draft.source,
+      status: draft.status, error: draft.error, meta: draft.meta,
+      // The source video/photo is only worth keeping while there is
+      // something to resume TOWARD -- once a draft is 'ready' or 'error' the
+      // stitched result (or the failure) is the fact that matters, and
+      // keeping a large video blob around forever would just waste space.
+      sourceBlob: draft.status === 'processing' ? (draft._persistSourceBlob || null) : null,
+      stitchBlob: res ? res.blob : null,
+      stitchWidth: res ? res.width : null, stitchHeight: res ? res.height : null,
+      stitchQuality: res ? res.quality : null,
+      pairsFallback: res ? res.pairsFallback : null, pairsTotal: res ? res.pairsTotal : null,
+      repBlob: draft.repBlob || null,
+      pendingAdjust: draft.pendingAdjust || {},
+      updatedAt: Date.now()
+    };
+    // ⚠️⚠️ A failed write here used to be completely silent -- the whole
+    // point of this feature is "survives a session ending while it's
+    // processing," so a write that never actually lands (a real device's
+    // storage quota, a private-mode restriction, a transient IndexedDB
+    // error) must not fail quietly. Logged every time (for whoever's
+    // actually debugging a report like this), toasted at most ONCE per
+    // session (never per progress tick -- a 48-frame stitch calls this
+    // dozens of times and a failing write fails the same way every time) so
+    // the planner has an actual chance to notice their draft may not
+    // survive closing the tab, rather than discovering it's gone later.
+    Pano360DraftStore.put(rec).catch(function (e) {
+      console.warn('[progress-photos] Could not persist 360° draft ' + draft.id + ' to local storage:', e);
+      if (!pano360PersistFailWarned) {
+        pano360PersistFailWarned = true;
+        UI.toast('This device could not save your 360° capture locally -- keep this tab open until it finishes, or it may be lost if you close it.', 'warn');
+      }
+    });
+  }
+  var pano360PersistFailWarned = false;   // toast the storage-failure warning at most once per page load
+
+  // Reconnects this signed-in user's own in-progress/finished-but-
+  // unconfirmed 360° drafts after a reload or a fresh login -- called once
+  // from init(), right after `uid` is known. ⚠️⚠️ A draft still mid-stitch is
+  // genuinely RESTARTED, not resumed from wherever it left off -- there is
+  // no way to pick a half-finished WASM computation back up across a page
+  // reload. What survives is the ORIGINAL recording, so the planner never
+  // has to re-record; the CPU time already spent on the interrupted attempt
+  // does not. A draft that had already reached 'ready' or 'error' before the
+  // reload is restored exactly as it was, with no reprocessing at all.
+  async function rehydratePano360Drafts() {
+    if (!uid || typeof indexedDB === 'undefined') return;
+    var records;
+    try { records = await Pano360DraftStore.allForUser(uid); } catch (e) { console.warn('[progress-photos] Could not read persisted 360° drafts:', e); return; }
+    var resuming = 0, restored = 0;   // for the recovery toast below -- see its own comment
+    records.forEach(function (rec) {
+      if (findPano360Draft(rec.id)) return;
+      var d = {
+        id: rec.id, pid: rec.pid, source: rec.source, status: rec.status,
+        progressMsg: rec.status === 'processing' ? 'Resuming…' : null,
+        error: rec.error || null,
+        video: null, videoUrl: null,
+        stitchResult: null, stitchUrl: null,
+        repBlob: rec.repBlob || null, repUrl: null,
+        pendingAdjust: rec.pendingAdjust || {},
+        meta: rec.meta || { desc: '', date: new Date().toISOString().slice(0, 10), works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+        onUpdate: null,
+        _persistSourceBlob: null
+      };
+      if (rec.repBlob) { try { d.repUrl = URL.createObjectURL(rec.repBlob); } catch (e) {} }
+      if (rec.stitchBlob) {
+        d.stitchResult = {
+          blob: rec.stitchBlob, width: rec.stitchWidth, height: rec.stitchHeight,
+          quality: rec.stitchQuality, pairsFallback: rec.pairsFallback, pairsTotal: rec.pairsTotal
+        };
+        try { d.stitchUrl = URL.createObjectURL(rec.stitchBlob); } catch (e) {}
+      }
+      PANO360_DRAFTS.push(d);
+      if (d.status === 'processing') {
+        if (rec.sourceBlob) {
+          resuming++;
+          d._persistSourceBlob = rec.sourceBlob;
+          if (d.source === 'video') {
+            d.video = rec.sourceBlob;
+            try { d.videoUrl = URL.createObjectURL(rec.sourceBlob); } catch (e) {}
+            runStitchForDraft(d);
+          } else {
+            runPhotoForDraft(d, rec.sourceBlob);
+          }
+        } else {
+          // Nothing left to resume from -- leaving this at 'processing'
+          // forever with no way for it to ever settle would be worse than
+          // an honest failure the planner can Discard.
+          d.status = 'error';
+          d.error = 'Processing was interrupted and could not be resumed -- please record or upload again';
+          persistPano360Draft(d);
+        }
+      } else {
+        restored++;
+      }
+    });
+    // ⚠️⚠️ 2026-09-14, later still yet again (again): recovering a draft used
+    // to be completely silent -- the ONLY sign it survived was the small
+    // topbar "N drafts" badge, which a planner reopening the app after
+    // closing it mid-capture has no particular reason to go looking for.
+    // From their side that is indistinguishable from "my video is just
+    // gone" -- which is exactly what was reported, even though the source
+    // was in fact being persisted correctly the whole time. A direct toast,
+    // fired once per app open (never per draft), says plainly that nothing
+    // was lost and that a still-processing one is being restarted -- the
+    // one thing recovery cannot do (see the RESTARTED-not-resumed note atop
+    // this function) and so the one thing worth being upfront about.
+    if (resuming || restored) {
+      var bits = [];
+      if (resuming) bits.push(resuming + ' 360° capture' + (resuming === 1 ? '' : 's') + ' resuming (restarting from your saved recording)');
+      if (restored) bits.push(restored + ' finished 360° capture' + (restored === 1 ? '' : 's') + ' waiting for review');
+      UI.toast('Recovered from before you closed this app: ' + bits.join(', ') + '.', 'ok');
+    }
+    renderPano360DraftsBadge();
+  }
+
+  // A pre-processed 360° photo (already equirectangular/cylindrical --
+  // viewable as-is) skips capture and stitching entirely: it IS the
+  // panorama, so the only thing needed before finishDraftStitch() is its
+  // own real pixel dimensions (mountPannellumViewer needs the aspect ratio,
+  // same as a stitched result's res.width/res.height).
+  function imageDims(file) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        resolve({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 });
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve({ width: 0, height: 0 }); };
+      img.src = url;
+    });
+  }
+
+  // Shared by both sources of a finished panorama image -- a video that was
+  // just stitched (runStitchForDraft) and a pre-processed 360° photo
+  // uploaded directly (runPhotoForDraft) -- one place decides how the
+  // result is recorded on the draft, so the two paths can never disagree.
+  // ⚠️ Background-safe: this runs whether or not a review modal is open on
+  // this draft, so it captures a DEFAULT thumbnail itself (off an
+  // off-DOM <img>, via captureImageThumbnail -- unlike a live Pannellum
+  // viewer's <canvas>, a plain <img> works with nothing mounted anywhere),
+  // rather than relying on a modal's own `load` listener that may not exist.
+  // A still-open review modal can always replace it later via
+  // "Use this view as thumbnail".
+  function finishDraftStitch(draft, res) {
+    draft.stitchResult = res;
+    draft.stitchUrl = URL.createObjectURL(res.blob);
+    draft.status = 'ready';
+    draft.progressMsg = null;
+    draft._persistSourceBlob = null; // the source is no longer needed to resume anything -- the stitched result is what matters from here
+    notifyPano360Draft(draft, true);
+    persistPano360Draft(draft);
+    var img = new Image();
+    img.onload = function () {
+      captureImageThumbnail(img, function (blob) {
+        if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); persistPano360Draft(draft); }
+        touchPano360Draft(draft);
+      });
+    };
+    img.onerror = function () { touchPano360Draft(draft); };
+    img.src = draft.stitchUrl;
+    touchPano360Draft(draft);
+  }
+
+  // ⚠️⚠️ 2026-09-13: "since it's taking too long to process and stitch an
+  // image, allow uploading 360 as draft during the session to work the
+  // stitching in the background." Runs to completion regardless of whether
+  // any modal is open -- it never touches the DOM, only `draft` state plus
+  // `touchPano360Draft`, which is itself a no-op repaint when nothing is
+  // watching. Reports the same four real stages pano360.js provides
+  // (duration / framecount / frames-per-frame / stitch) as `draft.progressMsg`,
+  // so a review modal reopened mid-stitch shows real, current progress
+  // rather than a frozen "Processing…".
+  async function runStitchForDraft(draft) {
+    draft.progressMsg = 'Reading video…';
+    touchPano360Draft(draft);
+    try {
+      var res = await Pano360.stitchFromVideo(draft.video, function (stage, a, b) {
+        if (stage === 'duration') {
+          draft.progressMsg = 'Reading video…';
+        } else if (stage === 'framecount') {
+          draft.progressMsg = 'Extracting up to ' + a + ' frame' + (a === 1 ? '' : 's') + '…';
+        } else if (stage === 'frames') {
+          draft.progressMsg = 'Extracting frames — ' + a + ' of ' + b + ' (' + Math.round((a / b) * 100) + '%)';
+        } else {
+          draft.progressMsg = 'Stitching panorama — ' + Math.round(a * 100) + '%';
+        }
+        touchPano360Draft(draft);
+      });
+      finishDraftStitch(draft, res);
+    } catch (err) {
+      draft.status = 'error';
+      draft.error = (err && err.message) ? err.message : 'an unknown error';
+      draft._persistSourceBlob = null;
+      notifyPano360Draft(draft, false);
+      persistPano360Draft(draft);
+      touchPano360Draft(draft);
+    }
+  }
+  async function runPhotoForDraft(draft, file) {
+    draft.progressMsg = 'Reading photo…';
+    touchPano360Draft(draft);
+    try {
+      var dims = await imageDims(file);
+      finishDraftStitch(draft, { blob: file, width: dims.width, height: dims.height, quality: 'ok' });
+    } catch (err) {
+      draft.status = 'error';
+      draft.error = (err && err.message) ? err.message : 'an unknown error';
+      draft._persistSourceBlob = null;
+      notifyPano360Draft(draft, false);
+      persistPano360Draft(draft);
+      touchPano360Draft(draft);
+    }
+  }
+
+  // Thin entry point -- "+ Add media" > 360° dispatches here exactly as
+  // before; all the real work moved into the source picker below.
   function open360Upload() {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    openPano360SourcePicker();
+  }
+
+  // Step 1: pick a source (record / upload video / upload a finished photo).
+  // On success this creates a draft (persisted locally, per-user, so it
+  // survives a reload -- see the header comment above), starts its
+  // background processing (which never writes to Storage/the shared DB --
+  // see that same comment), and immediately opens the review modal for it --
+  // the review modal is what shows live progress and is the ONLY place a
+  // draft can ever be confirmed and saved.
+  function openPano360SourcePicker() {
     if (_uploadModalOpen) return;
     _uploadModalOpen = true;
-    var today = new Date().toISOString().slice(0, 10);
-    var videoBlob = null, videoUrl = null;
-    var stitchResult = null, stitchUrl = null;   // { blob, quality, width, height }
-    var repBlob = null, repUrl = null;           // representative frame -- becomes thumb_url
-    var pendingAdjust = {};                       // item 5: Adjust applies to 360 too, keyed 0 (a single item)
-    var repTimer = null;
-
-    function revokeAll() {
-      [videoUrl, stitchUrl, repUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
-      if (window.Capture && Capture.close) Capture.close();
-      _uploadModalOpen = false;
-    }
+    function close() { _uploadModalOpen = false; }
 
     var html =
       '<div class="pd-modal-header"><h3>Add 360° photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form" id="pp360-body">' +
-        '<p class="pp-hint">Record a slow walk-around, or upload a video already recorded, and it will be ' +
-          'processed into a single 360° panorama.</p>' +
-        '<div id="pp360-step-source" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
-          '<button type="button" class="pd-btn" id="pp360-take">Take 360°</button>' +
-          '<button type="button" class="pd-btn" id="pp360-choose">Upload 360° video</button>' +
-          '<input class="pd-input" type="file" id="pp360-file" hidden accept="video/*" />' +
+      '<div class="pp-form" id="pp360src-body">' +
+        '<p class="pp-hint">Stand in one spot and slowly turn all the way around (or through the angle you want), ' +
+          'or upload a video already recorded the same way -- it will be processed into a single 360° panorama in ' +
+          'the background, so you can keep working while it stitches. Already have a finished 360° photo ' +
+          '(equirectangular or similar, ready to view as-is)? Upload it directly -- it skips processing entirely.</p>' +
+        '<div id="pp360src-step" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px;">' +
+          '<button type="button" class="pd-btn pd-btn-primary" id="pp360src-take">Take video</button>' +
+          '<button type="button" class="pd-btn" id="pp360src-choose">Upload video</button>' +
+          '<button type="button" class="pd-btn" id="pp360src-choosephoto">Upload 360° photo</button>' +
+          '<input class="pd-input" type="file" id="pp360src-file" hidden accept="video/*" />' +
+          '<input class="pd-input" type="file" id="pp360src-photofile" hidden accept="image/*" />' +
         '</div>' +
-        '<div id="pp360-offline" hidden>' +
+        '<div id="pp360src-offline" hidden>' +
           '<p class="pp-hint">You are offline right now, so this video cannot be processed and uploaded from here. ' +
             'Save it to your device\'s gallery and add it as a 360° photo once you are back online.</p>' +
-          '<a id="pp360-savelocal" class="pd-btn pd-btn-primary" download="360-capture.webm">Save video to gallery</a> ' +
-          '<button type="button" class="pd-btn" id="pp360-offlineclose">Close</button>' +
+          '<a id="pp360src-savelocal" class="pd-btn pd-btn-primary" download="360-capture.webm">Save video to gallery</a> ' +
+          '<button type="button" class="pd-btn" id="pp360src-offlineclose">Close</button>' +
         '</div>' +
-        '<div id="pp360-progress" hidden><div class="pp-progress" id="pp360-prog"></div></div>' +
-        // Item 5 (2026-09-11, second round): "show already all the input
-        // fields as with adding photos or videos" -- the previous version
-        // nested Description/Date/Works/Location/Pin inside #pp360-result,
-        // hidden until the stitch finished. They are now their own block,
-        // rendered from the moment the modal opens, exactly like the
-        // ordinary photo/video Add Media form -- only the PREVIEW itself
-        // (which obviously cannot exist before processing) still waits.
-        '<div id="pp360-result" hidden>' +
-          '<div id="pp360-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);">' +
-            'Low confidence stitch -- the video may not have had enough overlap between frames. Review before presenting.</div>' +
-          // Item 5: "preview should be navigable or operable as 360, dont
-          // just show a panoramic still photo" -- reuses the SAME
-          // drag-to-pan strip the saved-360°-photo lightbox viewer already
-          // uses (wireDragPan, factored out of wirePanoDrag below), rather
-          // than a second, differently-behaved preview widget.
-          '<div class="pp-lb-panowrap" id="pp360-panowrap" style="border-radius:var(--pd-radius);">' +
-            '<img class="pp-lb-pano" id="pp360-pano" alt="Processed 360° preview" />' +
-          '</div>' +
-          '<p class="pp-hint">Drag to look around the stitched panorama.</p>' +
-          '<div style="margin:6px 0;"><button type="button" class="pd-btn" id="pp360-adjust">Adjust</button></div>' +
-          '<div class="pd-field"><label>Thumbnail frame ' +
-            '<span class="pd-muted" style="font-weight:400;">(defaults to the last frame of your walk-around)</span></label>' +
-            '<input type="range" id="pp360-repslider" min="0" max="1" step="0.01" value="1" style="width:100%;" />' +
-            '<img id="pp360-repframe" alt="Thumbnail frame" style="max-width:220px;display:block;margin-top:6px;" />' +
-          '</div>' +
-        '</div>' +
+        '<p class="pp-hint">Fill in the details below now, or after picking a source -- they carry over either way.</p>' +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
-            '<input class="pd-input" id="pp360-desc" placeholder="e.g. Model Unit" /></div>' +
+            '<input class="pd-input" id="pp360src-desc" placeholder="e.g. Model Unit" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
-            '<input class="pd-input" type="date" id="pp360-date" value="' + today + '" required /></div>' +
-          worksMultiFieldHTML('pp360', []) +
-          locationFieldHTML('pp360', {}) +
-          (window.BIM ? BIM.pinFieldHTML('pp360', null) : '') +
+            '<input class="pd-input" type="date" id="pp360src-date" value="' + Fmt.esc(new Date().toISOString().slice(0, 10)) + '" required /></div>' +
+          worksMultiFieldHTML('pp360src', []) +
+          locationFieldHTML('pp360src', {}, '') +
+          (window.BIM ? BIM.pinFieldHTML('pp360src', null) : '') +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
-        '<button class="pd-btn" data-close>Cancel</button>' +
-        '<button class="pd-btn pd-btn-primary" id="pp360-save">Save 360° photo</button></div>';
+        '<button class="pd-btn" data-close>Cancel</button></div>';
 
-    var m = openModal(html, 640, revokeAll);
-    wireLocationField('pp360');
-    wireWorksMultiField('pp360');
-    if (window.BIM) BIM.wirePinField('pp360');
+    var m = openModal(html, 640, close);
+    wireLocationField('pp360src');
+    wireWorksMultiField('pp360src');
+    if (window.BIM) BIM.wirePinField('pp360src');
     hydrate(m.el);
 
     function show(id, on) { var el = $(id); if (el) el.hidden = !on; }
+
+    // Carries whatever was typed on THIS screen into the draft's own meta,
+    // before the review modal (which reads draft.meta to pre-fill its own
+    // copies of these same fields) ever opens -- so the fields are genuinely
+    // filled in once, not typed twice. Also persists (see persistPano360Draft)
+    // so a reload right after picking a source doesn't lose what was typed.
+    function captureSrcMeta(draft) {
+      var descEl = $('pp360src-desc'); if (descEl) draft.meta.desc = descEl.value.trim();
+      var dateEl = $('pp360src-date'); if (dateEl && dateEl.value) draft.meta.date = dateEl.value;
+      draft.meta.works = readWorksMulti('pp360src');
+      draft.meta.locVals = currentLocValues('pp360src');
+      draft.meta.viewName = ($('pp360src-viewname') ? $('pp360src-viewname').value.trim() : '') || draft.meta.viewName;
+      draft.meta.tags = readCodeTags('pp360src');
+      if (window.BIM) draft.meta.pinData = BIM.readPinField('pp360src');
+      persistPano360Draft(draft);
+    }
+
+    function startVideoDraft(blob) {
+      var draft = newPano360Draft('video');
+      draft.video = blob;
+      draft.videoUrl = URL.createObjectURL(blob);
+      draft._persistSourceBlob = blob;
+      captureSrcMeta(draft);
+      m.close();
+      openPano360Review(draft);
+      runStitchForDraft(draft);
+    }
 
     // "in case app is offline, prompt user to save video to gallery for
     // upload later on" -- checked the moment a video is actually acquired
     // (recording or picking a file both work fine offline; it is the
     // upload/processing-then-upload round trip that cannot).
     function haveVideo(blob) {
-      videoBlob = blob;
-      videoUrl = URL.createObjectURL(blob);
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        show('pp360-step-source', false);
-        var a = $('pp360-savelocal');
-        if (a) { a.href = videoUrl; a.download = '360-capture' + (/mp4/.test(blob.type || '') ? '.mp4' : '.webm'); }
-        show('pp360-offline', true);
+        show('pp360src-step', false);
+        var a = $('pp360src-savelocal');
+        if (a) {
+          var url = URL.createObjectURL(blob);
+          a.href = url;
+          a.download = '360-capture' + (/mp4/.test(blob.type || '') ? '.mp4' : '.webm');
+        }
+        show('pp360src-offline', true);
         return;
       }
-      runStitch();
+      startVideoDraft(blob);
     }
 
-    async function runStitch() {
-      show('pp360-step-source', false);
-      show('pp360-progress', true);
-      var prog = $('pp360-prog'); if (prog) prog.textContent = 'Reading video…';
-      try {
-        var res = await Pano360.stitchFromVideo(videoBlob, function (stage, frac) {
-          if (!prog) return;
-          prog.textContent = (stage === 'frames' ? 'Reading frames…' : 'Stitching panorama…') + ' ' + Math.round(frac * 100) + '%';
-        });
-        stitchResult = res;
-        stitchUrl = URL.createObjectURL(res.blob);
-        show('pp360-progress', false);
-        show('pp360-result', true);
-        var img = $('pp360-pano'); if (img) img.src = stitchUrl;
-        wireDragPan($('pp360-panowrap'));
-        var warn = $('pp360-qualitywarn'); if (warn) warn.hidden = res.quality !== 'poor';
-        // Item 5 (2026-09-11, second round): "the 360 preview should also
-        // be the basis of the thumbnail where in last frame will be used
-        // as thumbnail" -- the scrubber now defaults to the END of the
-        // walk-around (was the midpoint) rather than requiring the planner
-        // to pick one; it stays adjustable in case the very last instant is
-        // blurry (the camera still moving as recording stopped).
-        var dur = await Pano360.getDuration(videoBlob);
-        var slider = $('pp360-repslider');
-        if (slider) { slider.max = String(Math.max(0.01, dur)); slider.value = String(dur); }
-        updateRepFrame(dur);
-      } catch (err) {
-        show('pp360-progress', false);
-        UI.toast('Could not build the panorama' + (err && err.message ? ' (' + err.message + ')' : ''), 'error');
-        show('pp360-step-source', true);
-      }
+    function havePhoto(file) {
+      var draft = newPano360Draft('photo');
+      draft._persistSourceBlob = file;
+      captureSrcMeta(draft);
+      m.close();
+      openPano360Review(draft);
+      runPhotoForDraft(draft, file);
     }
 
-    async function updateRepFrame(atSeconds) {
-      try {
-        var blob = await Pano360.extractFrameAt(videoBlob, atSeconds, 640);
-        if (repUrl) { try { URL.revokeObjectURL(repUrl); } catch (e) {} }
-        repBlob = blob;
-        repUrl = URL.createObjectURL(blob);
-        var img = $('pp360-repframe'); if (img) img.src = repUrl;
-      } catch (e) { /* the video is still fine — the scrubber just has nothing new to show this tick */ }
-    }
-
-    if ($('pp360-choose')) $('pp360-choose').onclick = function () { var el = $('pp360-file'); if (el) el.click(); };
-    if ($('pp360-file')) $('pp360-file').onchange = function () {
+    if ($('pp360src-choose')) $('pp360src-choose').onclick = function () { var el = $('pp360src-file'); if (el) el.click(); };
+    if ($('pp360src-file')) $('pp360src-file').onchange = function () {
       var f = this.files && this.files[0];
       this.value = '';
       if (f) haveVideo(f);
     };
-    if ($('pp360-take')) $('pp360-take').onclick = function () {
+    if ($('pp360src-choosephoto')) $('pp360src-choosephoto').onclick = function () { var el = $('pp360src-photofile'); if (el) el.click(); };
+    if ($('pp360src-photofile')) $('pp360src-photofile').onchange = function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (f) havePhoto(f);
+    };
+    if ($('pp360src-take')) $('pp360src-take').onclick = function () {
       if (!window.Capture) { UI.toast('In-app camera capture is not available on this device — upload a video instead', 'warn'); return; }
       Capture.take360(function (blob) { if (blob) haveVideo(blob); });
     };
-    if ($('pp360-offlineclose')) $('pp360-offlineclose').onclick = function () { m.close(); };
-    if ($('pp360-repslider')) {
-      $('pp360-repslider').oninput = function () {
-        var t = +this.value;
-        clearTimeout(repTimer);
-        repTimer = setTimeout(function () { updateRepFrame(t); }, 150);
-      };
+    if ($('pp360src-offlineclose')) $('pp360src-offlineclose').onclick = function () { m.close(); };
+  }
+
+  // Reached from the topbar "N drafts" badge -- lists every 360° draft for
+  // the CURRENT project (a draft for a different project keeps processing
+  // untouched in the background; see renderPano360DraftsBadge). Opening one
+  // hands off to the same openPano360Review() the source picker itself
+  // opens, so there is exactly one review UI regardless of how a draft was
+  // reached.
+  function openPano360DraftsList() {
+    if (_uploadModalOpen) return;
+    _uploadModalOpen = true;
+    function close() { _uploadModalOpen = false; }
+
+    function statusLabel(d) {
+      if (d.status === 'processing') return d.progressMsg || 'Processing…';
+      if (d.status === 'error') return 'Failed: ' + (d.error || 'an unknown error');
+      return 'Ready to review';
     }
-    // Item 5: Adjust extends to 360 -- previewed against the stitched
-    // panorama image, saved onto the row exactly like a photo's adjustments.
-    if ($('pp360-adjust')) $('pp360-adjust').onclick = function () {
-      if (!stitchUrl) return;
-      openAdjustEditor(stitchUrl, pendingAdjust[0] || {}, function (adj) { pendingAdjust[0] = adj; });
+    function rowHTML(d) {
+      return '<div class="pp-form2" data-draft="' + Fmt.esc(d.id) + '" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--pd-line);">' +
+        '<div><strong>' + (d.source === 'photo' ? '360° photo' : '360° video') + '</strong>' +
+          '<div class="pp-hint">' + Fmt.esc(statusLabel(d)) + '</div></div>' +
+        '<div style="display:flex;gap:6px;">' +
+          '<button type="button" class="pd-btn" data-act="open">Open</button>' +
+          '<button type="button" class="pd-btn pd-btn-danger" data-act="discard">Discard</button>' +
+        '</div>' +
+      '</div>';
+    }
+    function render() {
+      var body = $('pp360list-body');
+      if (!body) return;
+      var drafts = pano360DraftsForProject();
+      body.innerHTML = drafts.length ? drafts.map(rowHTML).join('')
+        : '<p class="pp-hint">No 360° captures in progress right now.</p>';
+      Array.prototype.forEach.call(body.querySelectorAll('[data-act="open"]'), function (b) {
+        b.onclick = function () {
+          var id = b.closest('[data-draft]').getAttribute('data-draft');
+          var d = findPano360Draft(id);
+          if (!d) return;
+          m.close();
+          openPano360Review(d);
+        };
+      });
+      Array.prototype.forEach.call(body.querySelectorAll('[data-act="discard"]'), function (b) {
+        b.onclick = function () {
+          var id = b.closest('[data-draft]').getAttribute('data-draft');
+          var d = findPano360Draft(id);
+          if (!d) return;
+          removePano360Draft(d);
+          render();
+        };
+      });
+    }
+
+    var html =
+      '<div class="pd-modal-header"><h3>360° drafts</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form" id="pp360list-body"></div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Close</button></div>';
+
+    var m = openModal(html, 560, close);
+    render();
+  }
+
+  // Step 2: review/confirm a draft. Safe to open, close and reopen any
+  // number of times while the draft keeps processing (or sits ready) in the
+  // background -- closing this modal (× / Cancel / backdrop / a real
+  // Confirm & Save) NEVER writes to the database except via the one gated
+  // handler at the very bottom of this function.
+  function openPano360Review(draft) {
+    if (_uploadModalOpen) return;
+    _uploadModalOpen = true;
+
+    var pp360Viewer = null;
+
+    // Pulls whatever the planner has typed/picked back into the draft's OWN
+    // meta object -- the in-memory draft, then persisted (see
+    // persistPano360Draft) to this browser's own local IndexedDB store, so
+    // closing this modal mid-background-stitch, or to go do something else
+    // (even closing the tab), loses nothing typed and saves nothing to the
+    // shared database either.
+    function captureMeta() {
+      var descEl = $('pp360rv-desc'); if (descEl) draft.meta.desc = descEl.value.trim();
+      var dateEl = $('pp360rv-date'); if (dateEl) draft.meta.date = dateEl.value;
+      var viewNameEl = $('pp360rv-viewname'); if (viewNameEl) draft.meta.viewName = viewNameEl.value.trim();
+      draft.meta.works = readWorksMulti('pp360rv');
+      draft.meta.locVals = currentLocValues('pp360rv');
+      draft.meta.tags = readCodeTags('pp360rv');
+      if (window.BIM) draft.meta.pinData = BIM.readPinField('pp360rv');
+      persistPano360Draft(draft);
+    }
+
+    function closeReview() {
+      captureMeta();
+      if (pp360Viewer) { try { pp360Viewer.destroy(); } catch (e) {} pp360Viewer = null; }
+      draft.onUpdate = null;
+      _uploadModalOpen = false;
+    }
+
+    function paintThumb() {
+      var field = $('pp360rv-thumbfield');
+      var img = $('pp360rv-thumbpreview');
+      if (draft.repUrl) {
+        if (img) img.src = draft.repUrl;
+        if (field) field.hidden = false;
+      } else if (field) {
+        field.hidden = true;
+      }
+    }
+
+    function mountViewerIfReady() {
+      var viewerEl = $('pp360rv-pano-viewer');
+      var standinEl = $('pp360rv-pano-standin');
+      if (!viewerEl || !draft.stitchUrl) return;
+      if (standinEl) { standinEl.src = draft.stitchUrl; standinEl.hidden = false; }
+      if (pp360Viewer) { try { pp360Viewer.destroy(); } catch (e) {} pp360Viewer = null; }
+      var res = draft.stitchResult;
+      var hOverW = (res && res.width && res.height) ? (res.height / res.width) : 0.35;
+      pp360Viewer = mountPannellumViewer(viewerEl, draft.stitchUrl, hOverW);
+      if (pp360Viewer && pp360Viewer.on) {
+        if (standinEl) standinEl.hidden = true;
+        if (!draft.repUrl) {
+          pp360Viewer.on('load', function () {
+            captureViewerThumbnail(viewerEl, function (blob) {
+              if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); }
+              paintThumb();
+            });
+          });
+        }
+      } else {
+        var vwarn = $('pp360rv-viewerwarn');
+        if (vwarn) {
+          vwarn.hidden = false;
+          vwarn.textContent = 'The interactive 360° pan viewer could not load on this device (a blocked ' +
+            'script, or no WebGL support) -- showing a flat preview instead. The stitched image itself is ' +
+            'unaffected and will still save normally.';
+        }
+        if (standinEl && !draft.repUrl) {
+          if (standinEl.complete && standinEl.naturalWidth) {
+            captureImageThumbnail(standinEl, function (blob) { if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); } paintThumb(); });
+          } else {
+            standinEl.onload = function () {
+              captureImageThumbnail(standinEl, function (blob) { if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); } paintThumb(); });
+            };
+          }
+        }
+      }
+    }
+
+    function paint() {
+      var procEl = $('pp360rv-progress');
+      var resultEl = $('pp360rv-result');
+      var errEl = $('pp360rv-error');
+      var saveBtn = $('pp360rv-save');
+      if (procEl) procEl.hidden = draft.status !== 'processing';
+      if (draft.status === 'processing') { var pm = $('pp360rv-prog'); if (pm) pm.textContent = draft.progressMsg || 'Processing…'; }
+      if (errEl) errEl.hidden = draft.status !== 'error';
+      if (errEl && draft.status === 'error') errEl.textContent = 'Could not build the 360° panorama: ' + (draft.error || 'an unknown error');
+      if (resultEl) resultEl.hidden = draft.status !== 'ready';
+      if (saveBtn) saveBtn.disabled = draft.status !== 'ready';
+      if (draft.status === 'ready') {
+        mountViewerIfReady();
+        paintThumb();
+        var warn = $('pp360rv-qualitywarn');
+        if (warn) {
+          var res = draft.stitchResult;
+          if (res && res.quality === 'poor' && res.pairsFallback) {
+            warn.hidden = false;
+            warn.textContent = res.pairsFallback + ' of ' + res.pairsTotal + ' frame-to-frame join' +
+              (res.pairsFallback === 1 ? '' : 's') + ' could not be matched confidently (the video moved too ' +
+              'fast, or that stretch had too little to match against) and ' + (res.pairsFallback === 1 ? 'was' : 'were') +
+              ' approximated with a straight shift instead. Look for a rough seam there before presenting.';
+          } else {
+            warn.hidden = true;
+          }
+        }
+      }
+    }
+
+    var html =
+      '<div class="pd-modal-header"><h3>Review 360° photo</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form" id="pp360rv-body">' +
+        '<div id="pp360rv-progress"><p class="pp-hint" id="pp360rv-prog">Processing…</p></div>' +
+        '<div id="pp360rv-error" class="pp-hint" hidden style="color:var(--pd-bad);"></div>' +
+        '<div id="pp360rv-result" hidden>' +
+          '<div id="pp360rv-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);"></div>' +
+          '<div id="pp360rv-viewerwarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);"></div>' +
+          '<div class="pp-lb-panowrap" id="pp360rv-panowrap" style="border-radius:var(--pd-radius);">' +
+            '<img id="pp360rv-pano-standin" alt="Stitched panorama preview" hidden />' +
+            '<div id="pp360rv-pano-viewer" class="pp-lb-panoviewer"></div>' +
+          '</div>' +
+          '<p class="pp-hint">Drag to look around the stitched panorama, then frame the view you want as the thumbnail below.</p>' +
+          '<div style="margin:6px 0;display:flex;gap:8px;flex-wrap:wrap;">' +
+            '<button type="button" class="pd-btn" id="pp360rv-adjust">Adjust</button>' +
+            '<button type="button" class="pd-btn" id="pp360rv-usethumb">Use this view as thumbnail</button>' +
+          '</div>' +
+          '<div class="pd-field" id="pp360rv-thumbfield" hidden><label>Thumbnail</label>' +
+            '<img id="pp360rv-thumbpreview" alt="Selected thumbnail" style="max-width:200px;display:block;border-radius:var(--pd-radius);" />' +
+          '</div>' +
+        '</div>' +
+        '<div class="pp-form2">' +
+          '<div class="pd-field"><label>Description</label>' +
+            '<input class="pd-input" id="pp360rv-desc" placeholder="e.g. Model Unit" value="' + Fmt.esc(draft.meta.desc || '') + '" /></div>' +
+          '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+            '<input class="pd-input" type="date" id="pp360rv-date" value="' + Fmt.esc(draft.meta.date || '') + '" required /></div>' +
+          worksMultiFieldHTML('pp360rv', draft.meta.works || []) +
+          locationFieldHTML('pp360rv', draft.meta.locVals || {}, draft.meta.viewName || '') +
+          (window.BIM ? BIM.pinFieldHTML('pp360rv', draft.meta.pinData || null) : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" data-close>Close</button>' +
+        '<button class="pd-btn pd-btn-danger" id="pp360rv-discard">Discard</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp360rv-save">Confirm &amp; Save</button></div>';
+
+    var m = openModal(html, 640, closeReview);
+    wireLocationField('pp360rv');
+    wireWorksMultiField('pp360rv');
+    if (window.BIM) BIM.wirePinField('pp360rv');
+    hydrate(m.el);
+
+    draft.onUpdate = paint;
+    paint();
+
+    if ($('pp360rv-adjust')) $('pp360rv-adjust').onclick = function () {
+      if (!draft.stitchUrl) return;
+      openAdjustEditor(draft.stitchUrl, draft.pendingAdjust[0] || {}, function (adj) { draft.pendingAdjust[0] = adj; persistPano360Draft(draft); });
+    };
+    if ($('pp360rv-usethumb')) $('pp360rv-usethumb').onclick = function () {
+      if (pp360Viewer) {
+        var viewerEl = $('pp360rv-pano-viewer');
+        if (!viewerEl) return;
+        captureViewerThumbnail(viewerEl, function (blob) {
+          if (!blob) { UI.toast('Could not capture the current view — try again', 'warn'); return; }
+          draft.repBlob = blob;
+          if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
+          draft.repUrl = URL.createObjectURL(blob);
+          persistPano360Draft(draft);
+          paintThumb();
+        });
+      } else {
+        var standinEl = $('pp360rv-pano-standin');
+        captureImageThumbnail(standinEl, function (blob) {
+          if (!blob) { UI.toast('Could not capture the panorama — try again', 'warn'); return; }
+          draft.repBlob = blob;
+          if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
+          draft.repUrl = URL.createObjectURL(blob);
+          persistPano360Draft(draft);
+          paintThumb();
+        });
+      }
+    };
+    if ($('pp360rv-discard')) $('pp360rv-discard').onclick = function () {
+      removePano360Draft(draft);
+      m.close();
     };
 
-    $('pp360-save').onclick = async function () {
-      if (!stitchResult || !repBlob) { UI.toast('Still processing the panorama — please wait', 'warn'); return; }
-      var reqErr = requiredFieldsMissing('pp360');
+    // ⚠️⚠️ THE ONLY CODE PATH IN THE WHOLE 360° DRAFT FLOW ALLOWED TO CALL
+    // uploadFile()/tolerantWrite() -- guarded on `draft.status === 'ready'`.
+    // This is the explicit owner requirement: "no push to database is
+    // allowed until user confirms the 360 photo."
+    $('pp360rv-save').onclick = async function () {
+      if (draft.status !== 'ready' || !draft.stitchResult || !draft.repBlob) {
+        UI.toast('Still processing the panorama — please wait', 'warn');
+        return;
+      }
+      captureMeta();
+      var reqErr = requiredFieldsMissing('pp360rv');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
-      var locVals = currentLocValues('pp360');
-      var act = resolveActivity(locVals);
-      var worksList = readWorksMulti('pp360');
+      var locVals = draft.meta.locVals || {};
+      var worksList = draft.meta.works || [];
       var tradeList = deriveTradesForWorksList(worksList);
-      var pinData = window.BIM ? BIM.readPinField('pp360') : null;
-      var viewNameEl = $('pp360-viewname');
+      var pinData = draft.meta.pinData;
       try {
-        var stitchFile = blobToFile(stitchResult.blob, 'photo');
+        var stitchFile = blobToFile(draft.stitchResult.blob, 'photo');
         var mainPath = await uploadFile(stitchFile);
-        var repFile = blobToFile(repBlob, 'photo');
+        var repFile = blobToFile(draft.repBlob, 'photo');
         var thumbPath = await uploadFile(repFile);
         var row = {
           project_id: pid, created_by: uid, title: stitchFile.name,
           photo_url: mainPath, thumb_url: thumbPath, media_type: '360',
-          description: $('pp360-desc').value.trim(),
-          taken_at: $('pp360-date').value || null,
+          description: draft.meta.desc || '',
+          taken_at: draft.meta.date || null,
           trades: tradeList, works_multi: worksList,
           works_activity_ids: worksActivityIdsFor(worksList),
           trade: tradeList[0] || null, works: worksList[0] || null,
           location: locBreadcrumb(locVals) || null, location_values: locVals,
-          view_name: viewNameEl ? viewNameEl.value.trim() : null,
-          activity_id: act ? act.id : null, activity_name: act ? act.name : null,
-          tags: readCodeTags('pp360')
+          view_name: draft.meta.viewName || null,
+          // 2026-09-16 fix: traced from the picked Works value, never from
+          // location alone — see the removed resolveActivity().
+          activity_id: worksActivityIdFor(worksList[0]) || null,
+          activity_name: worksList[0] || null,
+          tags: draft.meta.tags || []
         };
-        if (pendingAdjust[0] && !adjustmentsAreDefault(pendingAdjust[0])) row.adjustments = pendingAdjust[0];
+        if (draft.pendingAdjust[0] && !adjustmentsAreDefault(draft.pendingAdjust[0])) row.adjustments = draft.pendingAdjust[0];
         var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
         if (!w.ok) { UI.toast(w.error && w.error.message || 'Could not save the 360° photo', 'error'); this.disabled = false; return; }
+        removePano360Draft(draft);
         m.close();
-        UI.toast('360° photo saved' + (stitchResult.quality === 'poor' ? ' (low confidence stitch)' : ''), 'ok');
+        UI.toast('360° photo saved' + (draft.stitchResult.quality === 'poor' ? ' (low confidence stitch)' : ''), 'ok');
         await load();
         if (pinData && window.BIM && BIM.savePinForItem && w.id) {
           await BIM.savePinForItem('photo', w.id, pinData);
@@ -6315,7 +7218,6 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
       var locVals = currentLocValues('pp-e');
-      var act = resolveActivity(locVals);
       var worksList = readWorksMulti('pp-e');
       var tradeList = deriveTradesForWorksList(worksList);
       var pinData = window.BIM ? BIM.readPinField('pp-e') : null;   // read before the modal closes
@@ -6331,8 +7233,10 @@ window.ProgressPhotos = (function () {
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         view_name: viewNameEl ? viewNameEl.value.trim() : null,
-        activity_id: act ? act.id : null,
-        activity_name: act ? act.name : null,
+        // 2026-09-16 fix: traced from the picked Works value, never from
+        // location alone — see the removed resolveActivity().
+        activity_id: worksActivityIdFor(worksList[0]) || null,
+        activity_name: worksList[0] || null,
         tags: readCodeTags('pp-e'),
         updated_at: new Date().toISOString()
       };
@@ -6770,12 +7674,35 @@ window.ProgressPhotos = (function () {
     _setCanWrite: function (v) { canWrite = v; },
     _favBtnHTML: function (r) { return favBtnHTML(r); },
     _toggleFavorite: function (r) { return toggleFavorite(r); },
-    // Test-only hook for the 360 pano-drag rAF coalescing fix (2026-09-11
-    // performance pass) — genuinely EXECUTES wirePanoDrag() so a test can
-    // prove the scroll-driven cone repaint really coalesces into at most
-    // one requestAnimationFrame callback per burst, rather than only
-    // reading the source. Reads `$('pp-lb-panowrap')` exactly as the real
-    // call site does; a test wires a fake element into that id first.
-    _wirePanoDrag: function () { return wirePanoDrag(); }
+    // Test-only hooks for the Pannellum 360° viewer (2026-09-11, third
+    // round) — genuinely EXECUTE the real, shipped functions (never a
+    // re-description of them) against an injected `window.pannellum`
+    // stub/a fake canvas-bearing container, the same convention as every
+    // other hook above.
+    _mountPannellumViewer: function (container, url, hOverW) { return mountPannellumViewer(container, url, hOverW); },
+    _captureViewerThumbnail: function (containerEl, cb) { return captureViewerThumbnail(containerEl, cb); },
+    _startPanoYawPoll: function (viewer, onYawChange) { return startPanoYawPoll(viewer, onYawChange); },
+    // Test-only hooks for the 360° draft completion notification (2026-09-14)
+    // — both functions are pure enough (touch only `Notification`/`UI.toast`
+    // and their own argument) to expose directly, no closure state to
+    // save/restore.
+    _ensurePano360NotifyPermission: function () { return ensurePano360NotifyPermission(); },
+    _notifyPano360Draft: function (draft, ok) { return notifyPano360Draft(draft, ok); },
+    // Test-only hooks for the 360° draft per-user persistence (2026-09-14,
+    // later still) — genuinely execute the real, shipped functions against
+    // an injected fake IndexedDB (see test.js), never a re-description.
+    _newPano360Draft: function (source) { return newPano360Draft(source); },
+    _persistPano360Draft: function (draft) { return persistPano360Draft(draft); },
+    _rehydratePano360Drafts: function () { return rehydratePano360Drafts(); },
+    _removePano360Draft: function (d) { return removePano360Draft(d); },
+    _findPano360Draft: function (id) { return findPano360Draft(id); },
+    _pano360Drafts: function () { return PANO360_DRAFTS; },
+    _Pano360DraftStore: Pano360DraftStore,
+    _setUid: function (v) { uid = v; },
+    // Test-only: lets a real-failure test reset the "warn once per page
+    // load" latch deterministically, instead of depending on being the
+    // first test in the file to ever trigger a persist failure.
+    _resetPano360PersistFailWarned: function () { pano360PersistFailWarned = false; },
+    _ensurePersistentStorage: function () { return ensurePersistentStorage(); }
   };
 })();

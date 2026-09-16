@@ -7,7 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -161,11 +162,11 @@
     .cf-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
     .cf-dp-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
     .cf-dp-row { display:grid; grid-template-columns:1.3fr 1fr 1fr 0.9fr 1.1fr 1.2fr 1fr auto; gap:6px; align-items:center; margin-bottom:6px; }
-    .cf-dp-row .pd-input, .cf-dp-row .pd-select { padding:5px 7px; font-size:var(--pd-fs-sm); }
+    .cf-dp-row .pd-input, .cf-dp-row .pd-select { padding:5px 7px; }
     .cf-dp-amt { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-muted); text-align:right; white-space:nowrap; }
     #cf-dp-sum { color:var(--pd-ink); }
     .cf-act-row { display:grid; grid-template-columns:1fr 1fr 1.1fr 1.1fr 1.6fr auto; gap:6px; align-items:center; margin-bottom:6px; }
-    .cf-act-row .pd-input, .cf-act-row .pd-select { padding:5px 7px; font-size:var(--pd-fs-sm); }
+    .cf-act-row .pd-input, .cf-act-row .pd-select { padding:5px 7px; }
     .cf-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
     .cf-table th { padding:7px 12px; text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
     .cf-table td { padding:7px 12px; border-bottom:1px solid var(--pd-line); }
@@ -174,7 +175,7 @@
     .cf-hint { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:3px; }
     /* data-date control */
     .cf-dd-lbl { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-    .cf-dd-lbl .pd-input { padding:5px 7px; font-size:var(--pd-fs-sm); }
+    .cf-dd-lbl .pd-input { padding:5px 7px; }
 
     /* alert banners */
     .cf-alert { display:flex; gap:10px; align-items:flex-start; padding:11px 14px; border-radius:var(--pd-radius-md); margin-bottom:14px; font-size:var(--pd-fs-base); border:1px solid var(--pd-line); background:var(--pd-card); }
@@ -207,15 +208,15 @@
 
     /* trade-package rows */
     .cf-tr-row { display:grid; grid-template-columns:1.4fr 1fr 0.9fr 0.9fr 0.8fr 0.8fr auto; gap:6px; align-items:center; margin-bottom:6px; }
-    .cf-tr-row .pd-input, .cf-tr-row .pd-select { padding:5px 7px; font-size:var(--pd-fs-sm); }
+    .cf-tr-row .pd-input, .cf-tr-row .pd-select { padding:5px 7px; }
     .cf-tr-row .cf-tr-tt { white-space:nowrap; }
     #cf-tr-sum { color:var(--pd-ink); }
     /* per-trade DP tranche sub-panel */
     .cf-tr-sub { margin:0 0 12px 14px; padding:9px 11px; border-left:3px solid var(--pd-red); background:var(--pd-bg); border-radius:0 6px 6px 0; }
     .cf-trt-row { display:grid; grid-template-columns:1.1fr 0.9fr 0.7fr 1fr 1fr 0.8fr auto auto; gap:6px; align-items:center; margin-bottom:6px; }
-    .cf-trt-row .pd-input, .cf-trt-row .pd-select { padding:5px 7px; font-size:var(--pd-fs-sm); }
+    .cf-trt-row .pd-input, .cf-trt-row .pd-select { padding:5px 7px; }
     .cf-bm-row { display:grid; grid-template-columns:1.6fr 0.9fr 0.8fr 1fr 1.1fr auto auto; gap:6px; align-items:center; margin-bottom:6px; }
-    .cf-bm-row .pd-input, .cf-bm-row .pd-select { padding:5px 7px; font-size:var(--pd-fs-sm); }
+    .cf-bm-row .pd-input, .cf-bm-row .pd-select { padding:5px 7px; }
 
     /* sidebar-less shell (matches Project Schedule) */
 
@@ -391,12 +392,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260910za"></script>
-<script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260909n"></script>
+<script src="../../assets/js/config.js?v=20260915a"></script>
+<script src="../../assets/js/auth.js?v=20260915a"></script>
+<script src="../../assets/js/db.js?v=20260916c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260909s"></script>
-<script src="../../assets/js/icons.js?v=20260909ui"></script>
+<script src="../../assets/js/ui.js?v=20260916u"></script>
+<script src="../../assets/js/notebook.js?v=20260915d"></script>
+<script src="../../assets/js/icons.js?v=20260915f"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script>
@@ -570,7 +573,15 @@
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('cf-project');
-    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    // ⚠️⚠️ PORTFOLIO SCOPE NEVER FALLS BACK TO A REAL PROJECT — arriving via the Portfolio
+    // sidebar, pid stays null on purpose (see AppAuth.isPortfolioScope()). Cash Flow is a
+    // derived per-project financial projection (one contract, one schedule S-curve, one
+    // WPM mirror) — there is no honest way to sum several projects' projections into one
+    // without risking a wrong funding-need number, so loadAll() shows an explanatory
+    // placeholder instead of a real projection while nothing is selected.
+    pid = (window.AppAuth && AppAuth.isPortfolioScope())
+      ? null
+      : (sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null);
     var cur = projects.find(function (p) { return p.id === pid; });
     projName = cur ? (cur.name || cur.id) : '';
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
@@ -578,6 +589,7 @@
     }).join('');
     UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (pid) loadAll().then(joinCollab);
+    else render();
   }
 
   async function loadSettings() {
@@ -707,7 +719,9 @@
     wpRows = []; wpmStatus = 'loading'; wpmMsg = ''; wpmSyncedAt = null;
     var wpmPid = settings.wpm_project_id;
     if (!wpmPid) { wpmStatus = 'no-map'; wpmMsg = 'No WPM project id mapped'; return; }
-    var cols = 'wp_no,description,trade,approved_budget_bcb,awarded_cost,total_awarded,dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at';
+    // ⚠️ `id` FIRST: it is the paging cursor `selectAll` reads off the last returned row.
+    // A cols list without it made the read below stop after 1000 rows, with no error.
+    var cols = 'id,wp_no,description,trade,approved_budget_bcb,awarded_cost,total_awarded,dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at';
     // ⚠️ Paginated: this mirror is the ENTIRE cash-out side of the projection, so a bare select
     // capping at 1000 rows would silently understate cash out — and therefore the net cash flow
     // and the peak funding need — with no error and a plausible-looking number.
@@ -1236,7 +1250,15 @@
       bc.title = noCost ? 'Schedule has no cost loaded (Planned IBB) — cost-load the schedule to enable cost-weighting.' : '';
     }
     var host = document.getElementById('cf-body');
-    if (!pid) { host.innerHTML = '<div class="cf-empty">Select a project.</div>'; return; }
+    if (!pid) {
+      // Portfolio scope: no honest way to sum several projects' own cash-flow projections
+      // (each has its own contract, S-curve and WPM mirror) into one figure without risking
+      // a wrong funding-need number — say so plainly rather than fabricate a total.
+      host.innerHTML = (window.AppAuth && AppAuth.isPortfolioScope())
+        ? '<div class="cf-empty">Cash Flow is a per-project projection (one contract, one schedule, one WPM mirror) — there is no single combined figure to show across every project. Pick a project from the selector above to see its cash-flow projection.</div>'
+        : '<div class="cf-empty">Select a project.</div>';
+      return;
+    }
     if (!model || model.empty) {
       host.innerHTML = '<div class="cf-empty">Nothing to project yet. This module derives cash-in from the <b>Project Schedule</b> and cash-out from <b>WPM</b> work packages. Add a schedule and set the contract value under <b>Assumptions</b>.</div>';
       return;
@@ -1856,12 +1878,12 @@
     var billingPane =
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Progress Billing Basis</label>' +
         '<select class="pd-select" id="s-billing-basis" style="max-width:220px;"><option value="poc"' + (s.billing_basis !== 'milestone' ? ' selected' : '') + '>% POC (schedule S-curve)</option><option value="milestone"' + (s.billing_basis === 'milestone' ? ' selected' : '') + '>Milestone (lump sums)</option></select></div>' +
-        '<div class="cf-hint">Milestone billing certifies a fixed amount when a schedule milestone is reached — e.g. "Structural Foundation ₱33M". <b>When selected, it replaces both the S-curve and trade packages above.</b> Amounts should sum to Contract IBB. <b id="cf-bm-sum"></b></div>' +
+        '<div class="cf-hint">Certifies a fixed amount when a schedule milestone is reached. <b>Replaces both the S-curve and the trade packages above.</b> Amounts should sum to Contract IBB. <b id="cf-bm-sum"></b></div>' +
         '<div class="cf-dp-head" style="justify-content:flex-end;"><button type="button" class="cf-btn-sm" id="cf-bm-add">+ Add milestone</button></div>' +
         '<div id="cf-bm-list"></div></div>' +
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Cash-In Trade Packages</label>' +
         '<button type="button" class="cf-btn-sm" id="cf-tr-add">+ Add package</button></div>' +
-        '<div class="cf-hint">Split the contract into trades (ST / AR / MEPF …), each billing its own share over the schedule S-curve with its own DP / retention / terms. <b>When any package exists it replaces the contract-level cash-in and the DP tranches above are ignored.</b> Shares should sum to Contract IBB. <b id="cf-tr-sum"></b></div>' +
+        '<div class="cf-hint">Split the contract into trades (ST / AR / MEPF …), each with its own share, DP, retention and terms. <b>Any package replaces the contract-level cash-in, and the DP tranches above are ignored.</b> Shares should sum to Contract IBB. <b id="cf-tr-sum"></b></div>' +
         '<div id="cf-tr-list"></div></div>';
 
     form.innerHTML =
@@ -2382,6 +2404,25 @@
     UI.renderNav(document.getElementById('side-nav'), 'project', {
       active: 'cash-flow', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
     });
+
+    /* ⚠️⚠️ THE PORTFOLIO FACE OF THIS MODULE IS ITS OWN DASHBOARD NOW (owner, 2026-09-16:
+       *"those dashboards must be the landing page of each module when under the portfolio
+       view"*). Opened from the Portfolio sidebar (`#pd_scope=portfolio`, read once by
+       AppAuth) this page used to give Cash Flow is a per-project projection … there is no single combined figure to show across every project.
+       The cross-project view it was missing already existed — as a TAB on a page called
+       Portfolio Dashboard. It is `assets/js/portfolio-dash.js` now, and it is mounted here.
+       ⚠️ THE MODULE'S OWN init() IS SKIPPED from this point on, deliberately: it would read
+       the same tables a second time into a UI hidden underneath the dashboard. `takeOver`
+       therefore wires the topbar project <select> itself — picking a project there LEAVES
+       portfolio scope, which is the only way back out of it from this page.
+       ⚠️ Guarded on `PortfolioDash.has()` rather than on the script tag: if the layer fails
+       to load, the module falls through to its own behaviour instead of rendering nothing. */
+    if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('cashflow')) {
+      PortfolioDash.takeOver('cashflow', { select: '#cf-project' }).catch(function (e) {
+        if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+      });
+      return;
+    }
     document.getElementById('cf-project').onchange = function (e) { pid = e.target.value || null; if (pid) { sessionStorage.setItem('pd_project', pid); var o = e.target.selectedOptions[0]; projName = o ? o.textContent : ''; } loadAll().then(joinCollab); };
     document.getElementById('cf-refresh').onclick = function () { loadAll(true); };
     document.getElementById('cf-datadate').onchange = function (e) { setDataDate(e.target.value); loadAll(true); };

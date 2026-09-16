@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Projects — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260916u" />
 </head>
 <body>
   <div class="pd-app">
@@ -39,7 +39,7 @@
       <!-- Straight to the projects. A group head is a TAG used for filtering and
            optional grouping - never a folder to open before reaching a project. -->
       <div class="pd-main">
-        <!-- Portfolio Dashboard / Personal Dashboard are reached from the sidebar
+        <!-- Portfolio Dashboard / My Work are reached from the sidebar
              (and, in portfolio mode, the topbar switcher) — no landing tiles here;
              this page goes straight to the projects. -->
         <section class="pd-proj-pane">
@@ -91,12 +91,13 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260910za"></script>
-  <script src="assets/js/auth.js?v=20260901b"></script>
-  <script src="assets/js/db.js?v=20260909n"></script>
+  <script src="assets/js/config.js?v=20260915a"></script>
+  <script src="assets/js/auth.js?v=20260915a"></script>
+  <script src="assets/js/db.js?v=20260916c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/ui.js?v=20260909s"></script>
-  <script src="assets/js/icons.js?v=20260909ui"></script>
+  <script src="assets/js/ui.js?v=20260916u"></script>
+  <script src="assets/js/notebook.js?v=20260915d"></script>
+  <script src="assets/js/icons.js?v=20260915f"></script>
   <script>
   (function () {
     // A project carries ONE group_head_id. There is no tree: sorting, filtering
@@ -469,18 +470,39 @@
 
     // ---- Delete confirmations (admin) ----
     // Both deletes are hard and unguarded by any undo, so the id must be typed
-    // to arm the button. The DB refuses a non-empty project / an in-use group
-    // head and returns a message naming what's blocking — shown verbatim.
+    // to arm the button.
+    // ⚠️ THE OLD SENTENCE HERE SAID "the DB refuses a non-empty project ... and
+    // returns a message naming what's blocking". That is still true of the GROUP
+    // HEAD delete and is NO LONGER TRUE of the project delete: since
+    // 2026-09-16-delete-project-purge.sql, admin_delete_project() purges instead
+    // of refusing. Corrected rather than left standing — this file has had to
+    // correct a comment that described the opposite of the code before.
+    //
+    // opts.preview (optional) — a function returning a promise of
+    // [{ table_name, row_count, class }]. WITH IT ABSENT THE BEHAVIOUR IS
+    // BYTE-IDENTICAL to before, which is what keeps the group-head path
+    // untouched; `armed` starts true there and the only gate is the typed id.
     function confirmDelete(opts) {
       var m = UI.modal(
         '<h2 style="margin-top:0;">' + Fmt.esc(opts.title) + '</h2>' +
         '<p style="color:var(--pd-muted);">' + opts.body + '</p>' +
+        (opts.preview
+          ? '<div id="d-prev" style="margin:10px 0;font-size:var(--pd-fs-sm);color:var(--pd-muted);">' +
+              'Checking what will be deleted…</div>'
+          : '') +
         '<div class="pd-field"><label>Type <b>' + Fmt.esc(opts.id) + '</b> to confirm</label>' +
-        '<input class="pd-input" id="d-echo" autocomplete="off"></div>' +
+        '<input class="pd-input" id="d-echo" autocomplete="off"' + (opts.preview ? ' disabled' : '') + '></div>' +
         '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="d-cancel">Cancel</button> ' +
         '<button class="pd-btn pd-btn-danger" id="d-go" disabled>Delete permanently</button></div>');
       var echo = m.el.querySelector('#d-echo'), go = m.el.querySelector('#d-go');
-      echo.oninput = function () { go.disabled = echo.value.trim() !== opts.id; };
+      // ⚠️ A preview that has not answered yet, or that FAILED, leaves this false
+      // and the button can never arm. That is the one place this change refuses
+      // to "just remove the guard": it is not a refusal to delete, it is a
+      // refusal to let somebody delete blind when the blast radius could not be
+      // read. Everything else about the old gate is gone.
+      var armed = !opts.preview;
+      function sync() { go.disabled = !armed || echo.value.trim() !== opts.id; }
+      echo.oninput = sync;
       m.el.querySelector('#d-cancel').onclick = m.close;
       go.onclick = async function () {
         go.disabled = true;
@@ -490,18 +512,75 @@
           await reloadData();
         } catch (e) { UI.toast(e.message, 'error'); go.disabled = false; }
       };
+      if (opts.preview) {
+        var host = m.el.querySelector('#d-prev');
+        opts.preview().then(function (rows) {
+          if (!m.el.isConnected) return;   // closed while the read was out
+          host.innerHTML = previewHTML(rows);
+          var total = (rows || []).reduce(function (a, r) {
+            return a + (r.class === 'unlink' ? 0 : Number(r.row_count) || 0); }, 0);
+          go.textContent = 'Delete permanently (' + nfmt(total) + ' row' + (total === 1 ? '' : 's') + ')';
+          armed = true; echo.disabled = false; echo.focus(); sync();
+        }).catch(function (e) {
+          if (!m.el.isConnected) return;
+          host.innerHTML = '<b style="color:var(--pd-bad-text);">Could not read what this would delete.</b> ' +
+            Fmt.esc(e.message || String(e)) +
+            '<br>The delete is not armed — nothing here will be removed. ' +
+            'If the database has not had <code>2026-09-16-delete-project-purge.sql</code> run yet, run it and reopen this.';
+        });
+      }
       echo.focus();
+    }
+
+    // Thousands separators: 2,561 reads and 2561 does not. Local because Fmt
+    // carries money/date/esc and no plain integer formatter.
+    function nfmt(n) { return Number(n || 0).toLocaleString(); }
+
+    // The two sections of the preview. ⚠️ SORTED BY COUNT, biggest first — the
+    // row that matters is the one holding thousands of activities, and an
+    // alphabetical list buries it. ⚠️ The "kept" section is the visible proof
+    // that private notebook entries survive, so it renders even when it is the
+    // only thing there is.
+    function previewHTML(rows) {
+      rows = rows || [];
+      var del = rows.filter(function (r) { return r.class !== 'unlink'; });
+      var keep = rows.filter(function (r) { return r.class === 'unlink'; });
+      var byCount = function (a, b) { return (Number(b.row_count) || 0) - (Number(a.row_count) || 0); };
+      del.sort(byCount); keep.sort(byCount);
+      function list(rs) {
+        return '<ul style="margin:4px 0 0;padding-left:18px;">' + rs.map(function (r) {
+          return '<li>' + Fmt.esc(r.table_name) + ' — ' + nfmt(r.row_count) + '</li>';
+        }).join('') + '</ul>';
+      }
+      var out = '';
+      out += '<b style="color:var(--pd-bad-text);">Deleted permanently</b>';
+      out += del.length ? list(del)
+        : '<div style="margin:4px 0 0;">Nothing — this project holds no module data.</div>';
+      if (keep.length) {
+        out += '<div style="margin-top:8px;"><b>Kept, unlinked from this project</b>' + list(keep) + '</div>';
+      }
+      return out;
     }
 
     function deleteProjectModal(p, parent) {
       confirmDelete({
         id: p.id, parent: parent, title: 'Delete project ' + Fmt.esc(p.id) + '?',
-        body: 'This cannot be undone. It is refused while the project still holds <b>real work</b> — a ' +
-              'schedule, baseline, register, risk or cash-flow record — and the error names what is ' +
-              'blocking. Working calendars, audit history and derived data (S-curve, roll-ups) are ' +
-              'cleared automatically and never block. To keep the history instead, <b>Archive</b> ' +
-              '(hides it from active use).',
+        // ⚠️⚠️ THIS COPY WAS REWRITTEN ON 2026-09-16 BECAUSE IT HAD BECOME FALSE.
+        // It used to promise "It is refused while the project still holds real
+        // work ... and the error names what is blocking". Nothing is refused any
+        // more: admin_delete_project() purges. Leaving that sentence would have
+        // told an admin the app would stop them, one click before it did not.
+        body: '<b>This deletes everything listed below and cannot be undone.</b> Every schedule ' +
+              'activity, baseline, register, risk, photo record and cash-flow row for this project ' +
+              'goes with it.<br><br>' +
+              'Notebook entries are <b>kept</b> and simply unlinked — they are private notes, ' +
+              'not project data.<br><br>' +
+              '⚠️ <b>Files in storage are NOT removed</b> (drawings, progress photos, attachments). ' +
+              'They stay in their buckets and stay billed; clearing them needs a separate step.<br><br>' +
+              'To keep the history instead, <b>Archive</b> — it hides the project from active use and ' +
+              'is reversible.',
         ok: 'Project deleted',
+        preview: function () { return PDb.previewProjectDelete(p.id); },
         run: function () { return PDb.deleteProject(p.id); },
       });
     }

@@ -36,8 +36,24 @@
     // memory for a display order.
     async selectAll(table, apply, cols, key) {
       var out = [], last = null, PAGE = 1000, k = key || 'id';
+      // ⚠️⚠️ THE CURSOR COLUMN IS FORCED INTO THE PROJECTION, even when the caller did not ask for
+      // it. The loop below reads its next cursor off the last RETURNED ROW OBJECT, so a cursor
+      // absent from `cols` is `undefined`, `undefined == null` is true, and the terminator returns
+      // after ONE page -- 1000 rows, silently, with no error and a plausible smaller number.
+      // Found live 2026-09-16: four PorMac reads (work packages, vendors, engineering progress)
+      // and a BOQ roll-up that was computing a CONTRACT TOTAL from the first 1000 items.
+      // ⚠️⚠️ `supabase/functions/sync-wpm`'s own `readAll` has forced `id` in since it was written,
+      // for this exact reason -- the browser side simply never did. Fixing it here, once, is why
+      // no caller has to remember: ask for the columns you want and paging still works.
+      // ⚠️ Skipped when `cols` is absent (`'*'` already carries it) or already names the cursor,
+      // so `moduleMetrics` (which seeds `want = { id: 1 }`) is unchanged.
+      var need = '*';
+      if (cols) {
+        var hasK = String(cols).split(',').some(function (c) { return c.trim() === k; });
+        need = hasK ? cols : k + ',' + cols;
+      }
       for (;;) {
-        var q = sb().from(table).select(cols || '*');
+        var q = sb().from(table).select(need);
         if (typeof apply === 'function') q = apply(q);
         q = q.order(k, { ascending: true }).limit(PAGE);
         if (last) q = q.gt(k, last);
@@ -49,7 +65,10 @@
         // page is ambiguous (it may or may not be the last).
         if (page.length < PAGE) return out;
         last = page[page.length - 1][k];
-        // Defensive: a table whose key is not unique would loop forever otherwise.
+        // Defensive: a table whose key is not unique would loop forever otherwise. ⚠️ This can no
+        // longer be reached by a projection that omitted the cursor -- `need` above guarantees the
+        // column is selected -- so reaching it now means the column is genuinely NULL in the data,
+        // i.e. the caller named a `key` that is not a primary key.
         if (last == null) return out;
       }
     },
@@ -131,11 +150,33 @@
       });
       if (error) throw error;
     },
-    // Hard delete. The RPC refuses if ANY module row still references the
-    // project and names what's blocking — surface error.message to the admin.
+    // ⚠️⚠️ HARD DELETE, AND SINCE 2026-09-16 IT NO LONGER REFUSES — IT PURGES.
+    // This comment used to read "the RPC refuses if ANY module row still
+    // references the project and names what's blocking", which was true and is
+    // now false: admin_delete_project() deletes every project-scoped row it can
+    // find and then the project. A comment that confidently describes the
+    // opposite of the code is worse than none, so it is corrected here rather
+    // than left for the next reader to trust.
+    //
+    // ⚠️ It can still throw, and the message is still worth surfacing verbatim:
+    // 'Not authorized', 'Project % not found', or — the one that matters — a
+    // purge that could not finish, which NAMES the tables and guarantees
+    // nothing was deleted (the whole function body is one transaction).
     async deleteProject(id) {
       var { error } = await sb().rpc('admin_delete_project', { target: id });
       if (error) throw error;
+    },
+    // What deleteProject() is about to do, read BEFORE the button is armed.
+    // ⚠️ The RPC already existed, was already granted, and had ZERO callers — its
+    // own comment said "the projects.html modal can call this to preview before
+    // it arms the button." It never did. This is that caller, not new SQL.
+    // Rows come back as { table_name, row_count, class } where class is
+    // 'delete' (the rows go) or 'unlink' (the rows stay, their project_id is
+    // cleared — user_notes and packages.planners_project_id today).
+    async previewProjectDelete(id) {
+      var { data, error } = await sb().rpc('admin_project_delete_preview', { target: id });
+      if (error) throw error;
+      return data || [];
     },
 
     // ---- Group Heads (the flat tag that replaced the workspace tree) ----
@@ -214,8 +255,13 @@
     //     { key:'finish', agg:'max', column:'end_date' },
     //     { key:'poc',    agg:'wavg', column:'percent_complete', weight:'duration_days' } ] }
     //
+    // ⚠️ `projectId` may be a single id (the normal, single-project case — dashboard.html's
+    // tile) OR an array of ids (a portfolio-wide read across every project the caller can
+    // see, e.g. Pormac's "Portfolio (all projects)" scope). A single-element array reads
+    // identically to a bare id, so no existing caller's behaviour changes.
     async moduleMetrics(spec, projectId) {
-      if (!spec || !spec.table || !projectId || (!(spec.metrics && spec.metrics.length) && !spec.recent)) return {};
+      var ids = Array.isArray(projectId) ? projectId.filter(Boolean) : (projectId ? [projectId] : []);
+      if (!spec || !spec.table || !ids.length || (!(spec.metrics && spec.metrics.length) && !spec.recent)) return {};
       var col = spec.projectCol || 'project_id';
       // Only what the spec asked for — plus id, which selectAll paginates on.
       var want = { id: 1 };
@@ -247,7 +293,7 @@
       }
       var rows;
       try {
-        rows = await PDb.selectAll(spec.table, function (q) { return q.eq(col, projectId); },
+        rows = await PDb.selectAll(spec.table, function (q) { return ids.length === 1 ? q.eq(col, ids[0]) : q.in(col, ids); },
           Object.keys(want).join(','));
       } catch (e) {
         // A metric spec naming a column the project's database does not have yet is a spec/migration
@@ -661,6 +707,31 @@
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
     },
+  };
+
+  /* ⚠️ NAMES THE CAUSE OF A FAILED READ, and it is shared because two screens ask the same
+     question of the same tables.
+     ⚠️⚠️ IT DIAGNOSES, IT DOES NOT PRESCRIBE — changed 2026-09-16 after the owner hit a live
+     timeout on the portfolio S-Curve and was told to *"narrow the project filter"* on a module
+     page that HAS no project filter. The advice was written when the only caller was the
+     Portfolio Dashboard, which does have one. A shared helper cannot know what control the
+     screen it is printed on carries, so the caller appends the advice and this states the fact. "Load failed." covered a statement timeout, an un-run
+     migration and an RLS refusal alike — three different problems, none of them actionable
+     from one sentence. It lived in `portfolio-overview` as `scErrText`; when the Portfolio
+     S-Curve moved out to `portfolio-dash.js` (2026-09-16) the Overview still needed it for
+     its own schedule read, and the choice was one copy here or two copies drifting apart.
+     ⚠️ Codes, not message matching first: `code` is what PostgREST/Postgres actually return,
+     and the regexes are only the fallback for drivers that flatten the error to a string. */
+  PDb.errText = function (e) {
+    var code = (e && (e.code || e.status)) || '';
+    var msg = (e && (e.message || e.msg)) || String(e || '');
+    if (code === '57014' || /statement timeout|canceling statement/i.test(msg))
+      return 'the database cancelled the read on a timeout (57014)';
+    if (code === 'PGRST202' || /Could not find the function/i.test(msg))
+      return 'the roll-up function is not deployed — run migrations/2026-07-20-schedule-scurve-agg.sql';
+    if (code === '42501' || /permission denied/i.test(msg))
+      return 'permission denied on the schedule read';
+    return msg || 'unknown error';
   };
 
   window.PDb = PDb;

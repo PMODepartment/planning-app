@@ -1,5 +1,52 @@
 # Module: stakeholder-map
 
+## The table adopts the approved density, and stops becoming cards on a phone (2026-09-16) — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+Owner: *"We already have an approved UI of tables seen in projects.html. Let's follow that
+universally."* Then: *"Check the Risk register and stakeholder map table UI as well."*
+
+`.sm-table` was already on the shared `.pd-table` base but **not on the approved DENSITY**; it
+carries `.pd-proj-table` now.
+
+⚠⚠ **The ≤900px card conversion is REMOVED**, for the same reason as Risk Register's — the owner
+rejected that shape for Issues & Concerns on 2026-09-11 (*"maintain table view even in mobile view
+and just allow scroll"*). The overrides were written `.pd-table.sm-table` / `.sm-table td`
+precisely to outrank the shared nowrap-scroller phone rule. Do not reinstate them.
+
+⚠️ The modal's photo-well / single-column grid stacking at that width is KEPT: that is a form
+layout, and has nothing to do with turning table rows into cards.
+
+⚠️ The look now comes from `.pd-table .pd-proj-table` in dashboard.css, claimed **by name in the
+markup**, rather than being restated here. Do NOT re-add width / font-size / padding / border /
+hover rules for this table: this stylesheet loads after dashboard.css, so at equal specificity they
+win and silently restore the second design.
+
+
+## 2026-09-12 (later) — Label rung dropped one further, to match the app-wide `--pd-fs-micro` size
+
+Part of a second, same-day app-wide label/input sizing pass — see root [`CLAUDE.md`](../../CLAUDE.md).
+The shared `.pd-field label` rule dropped a further rung to `--pd-fs-micro` (10px), the smallest size
+this app's scale defines. This module's own `.pd-modal-body .pd-field > label` / `.pp-formhost
+.pd-field > label` override (the person page and the register's add/edit modal) moves with it, so it
+does not end up one rung above the app-wide rule again.
+
+`module.css?v=20260912p` on both referencing pages (`index.html`, `person.html`); `module.js`
+unchanged, stays `20260911ud`.
+
+## 2026-09-12 — Label size brought onto the shared `--pd-fs-sm` rung
+
+Part of an app-wide label/input sizing pass — see root [`CLAUDE.md`](../../CLAUDE.md). This module's
+own `.pd-modal-body .pd-field > label` / `.pp-formhost .pd-field > label` override (the person page
+and the register's add/edit modal) sat at `--pd-fs-xs` (11px) against the input's `--pd-fs-sm`
+(12.5px) — the same mismatch fixed app-wide. Raised to `--pd-fs-sm`; the deliberate "small muted
+label, value below it" layout from (y5) is unchanged, only the size.
+
+`module.css?v=20260912l` on both referencing pages (`index.html`, `person.html`); `module.js`
+unchanged, stays `20260911ud`.
+
 ## 2026-09-10 (y5) — The form takes the read view's shape; one Save becomes two scoped ones
 
 - ⚠️⚠️ **`.sm-frow` was the whole layout.** 18 of them, `display:flex`, two or three controls per row.
