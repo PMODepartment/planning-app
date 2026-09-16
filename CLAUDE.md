@@ -102,6 +102,110 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (d) — Dropdown text on iPhone was faint because the page never told the browser it was light
+
+Owner, with a screenshot of the Users page on an iPhone: the Role and Department `<select>`
+dropdowns showed their text ("admin", "planner") extremely faint, thin and low-contrast against the
+white cell — legible on desktop, not on the phone.
+
+### ⚠️⚠️ THE PAGE DECLARED DARK MODE'S NATIVE-CONTROL SCHEME AND NEVER DECLARED LIGHT'S
+
+`html.pd-dark { color-scheme: dark; }` has existed since dark mode shipped, with a comment naming
+exactly why: `color-scheme` tells the browser which palette to use for the parts of a `<select>`,
+date picker or scrollbar it draws **natively** rather than from author CSS. `:root` — the state the
+app is in whenever `.pd-dark` is not present — declared no `color-scheme` at all.
+
+This app's theme is a **class**, set by `theme.js`, and has nothing to do with the OS's own dark-mode
+setting. So a session with the app rendering **light** (white card, `--pd-ink` near-black text, no
+`.pd-dark` class) on a phone whose **iOS system appearance is Dark** left the browser with no signal
+either way for the one thing it does not take from `--pd-card`/`--pd-ink`: the native chrome of the
+`<select>` itself. WebKit falls back to the OS preference for that — rendering the box's own text in
+something close to white, **on top of the app's own correctly-white cell**. That is "faint, thin,
+barely legible against the white background" exactly: not a broken colour token (`--pd-ink` is a
+solid `#231F20` and always was), a missing signal for the one surface the token cannot reach.
+
+⚠️ **`:root { color-scheme: light; }` cannot un-set dark mode when dark mode is genuinely on** —
+`:root` is a pseudo-class, specificity `(0,1,0)`; `html.pd-dark` is element+class, `(0,1,1)`, so the
+dark declaration keeps winning on specificity alone, in either source order. Verified by inspection of
+both rules' selectors rather than assumed.
+
+⚠️ Nothing about `.pd-select`'s own `color`/`background`/`padding` needed to change — those already
+resolve to the correct light-theme tokens and were never the problem; only the native-chrome signal
+was missing, for every `<select>` and date/time input on the page, on any device whose OS appearance
+disagrees with the app's own current theme.
+
+### Verified
+
+Brace balance on `dashboard.css` holds (577/577), 0 NUL bytes. `node tools/wiring-check.js` —
+**139 passed, 0 failed**, 3,710 cross-module references, every asset on one version. `admin.html`'s
+inline script still parses.
+⚠️ **Not verified signed in, and not verified on a real iPhone** — no live login or real iOS device is
+reachable from this environment; the fix is argued from the CSS cascade and the standard meaning of
+`color-scheme`, which is exactly the mechanism the dark-mode block already relies on for the same
+controls in the other direction.
+
+`dashboard.css?v=` → `20260916a` (31 pages, shared, sort-checked). No `MODULE_V` bump — a shared
+stylesheet token-only change, no module `index.html` changed structurally.
+
+### 2026-09-16 (c) — An admin can no longer touch a super_admin's account, and the row still says who they are
+
+**Run `migrations/2026-09-16-users-protect-super-admin.sql`.** Owner, on the Users page: *"if I am
+an admin, I should not be able to change the access of super_admin but I should be able to see who
+are super_admin."*
+
+⚠️ **The second half was already true and needed no change.** `users_self_read` is `auth.uid() = id
+or is_admin()`, and `is_admin()` covers both `admin` and `super_admin` — a plain admin already reads
+every super_admin's row in full, and the Access column (2026-09-15) already states it in words
+("+ all modules"). What was missing was the first half.
+
+⚠️⚠️ **`users_admin_update` treated the two admin roles alike, and that is the gap.** It was the same
+`auth.uid() = id or is_admin()` — no distinction — so a plain admin could change a super_admin's
+role, status, department, projects or module access through the identical write every control on
+this page already uses (`PDb.updateUser`, `assets/js/db.js` — its only caller anywhere in the app is
+this one page). **This brings UPDATE into line with a rule DELETE already has**:
+`admin_delete_user()` has said since it was written "only a super_admin may delete a super_admin";
+UPDATE was the one action on the same row left open.
+
+⚠️⚠️ **New `is_super_admin()`, and `users_admin_update` checked on BOTH sides of the write — dropping
+either half re-opens exactly one gap.** `using` reads the row's CURRENT role, so a plain admin cannot
+edit an existing super_admin's row down to something else (the new role alone would satisfy a
+check that only looked forward). `with check` reads the row's NEW role, so a plain admin cannot
+promote an ordinary user straight to super_admin (the old role alone would satisfy a check that only
+looked backward). Both together, or one gap survives.
+
+⚠️⚠️ **THE WHOLE ROW IS LOCKED, NOT A COLUMN LIST.** A policy has no per-column granularity without a
+trigger, and "department saves but role silently doesn't" is a worse experience than one rule: a
+super_admin's row is untouchable by anyone but a super_admin (or the row's own owner —
+`auth.uid() = id` is unchanged). `admin.html` locks every control on such a row for a plain admin
+viewer — Role, Department, Approve/Reject, Modules, Delete — all with the same `title`, rather than
+guessing which columns "count" as access. ⚠️ Also fixed in passing: the Role `<select>` used to
+**drop `super_admin` from its own option list** whenever the viewer could not grant it — including on
+a row that already **is** super_admin, so the control had no option matching the current value and a
+browser would silently show the first one instead. It is included (and the whole select disabled)
+whenever the row's own role is already super_admin, so the dropdown states the truth even locked.
+
+⚠️ **The client lock is a courtesy, not the enforcement.** Without the DB-side policy change, a
+disabled control would just mean the write goes on to hit RLS's `using` clause, gets silently
+excluded, and returns 200/0-rows-changed with no error — the "PostgREST answers a filtered UPDATE
+with success and nothing changed" trap this repo has already paid for once
+(`boq_tag_activities`). The migration is what actually stops it; the UI change stops it from looking
+like it worked.
+
+**Verified:** the migration's own object (`is_super_admin`) is now tracked —
+`node migrations/gen-verify.js` regenerated cleanly (also picking up two functions
+`2026-09-16-delete-project-purge.sql` superseded that had not been re-synced since); `node --check`
+on the extracted inline script; 0 duplicate ids in `admin.html`; brace-balance holds (49/49);
+`node tools/wiring-check.js` — 139 passed, 0 failed, 3,710 cross-module references, every asset on
+one version. No `?v=`/`MODULE_V` bump — `admin.html` is fetched at its own URL with no shared asset
+changed.
+⚠️ **`supabase-build.sql` was again NOT regenerated** — `node migrations/gen-build.js` reports it
+~474 lines behind the migrations directory for reasons unrelated to this change (this repo's own
+2026-09-15 (zb) entry made the same call for the same reason); folding that drift into this diff
+would be the wrong trade.
+⚠️ **Not verified signed in** — no live login is possible in this environment; the RLS policy change
+is argued from the policy text and this repo's existing `admin_delete_user()` precedent, not observed
+refusing a real write.
+
 ### 2026-09-16 (b) — The delete is verified against the live database, and the PREVIEW gets the timeout I left off
 
 **Run `migrations/2026-09-16-preview-timeout.sql`.** Owner ran both of (a)'s migrations, then the
