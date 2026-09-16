@@ -1,3 +1,238 @@
+## 2026-09-16 (z) — Floor by floor: a tower is not the box its corners fall in
+
+Owner, with the two site readings side by side again: *"look at the 3d vertical stacking view
+looking at site and then look at the floor by floor view. FIX"*.
+
+Entry (y) below closed the **lookup** — every tower was handed the same floor plan. This closes the
+**geometry**, which was wrong independently and would have kept the towers moving even once each
+one was reading its own drawing.
+
+### ⚠️⚠️ FAULT 1 — AN AXIS-ALIGNED BOUNDING BOX IS NOT A BUILDING
+
+`_vsZpFitPolys` fitted the floor plan into the **bounding box** of the tower's traced site
+footprint. A site plan is traced over a property, and **a property is almost never square to the
+sheet** — the owner's own site plate is a turned quadrilateral. So a slab tower laid along a
+boundary at 30° has a box that is:
+
+| | the slab | its bounding box |
+|---|---|---|
+| long side | 0.50 | 0.49 |
+| short side | **0.12** | **0.35**, ~3× |
+| heading | 30° | none — it is square to the sheet |
+
+The floor was drawn **square to the sheet, three times too deep, and centred where the slab is
+not** — while *Whole towers*, two clicks away, drew the thin angled slab the planner traced. That is
+the *"positioning and configuration"*: not a shape that moved, a shape that was never the tower's.
+
+⚠️ **So the target is the tower's MINIMUM-AREA RECTANGLE** — centre, extents **and heading**
+(`_vsZpMinRect`). Rotating calipers over the convex hull: the minimum-area rectangle always has a
+side flush with a hull edge, so trying each hull edge is **exact and not a search**. For a tower
+traced square to the sheet it **is** the bounding box, so every project that never noticed this
+keeps byte-for-byte the drawing it has — asserted, not assumed.
+⚠️ Computed in the plate's **metric** space (`u × plateW`, `v × plateD`); rotating 0..1
+coordinates whose two axes are different real lengths would shear the tower.
+⚠️ A plan sheet carries no compass, so the plan takes whichever **quarter turn** fits the tower
+better. A quarter turn, never a stretch — a stretch would invent a floor nobody drew.
+
+### ⚠️⚠️ FAULT 2 — EVERY FLOOR WAS FITTED ON ITS OWN, SO NO BUILDING HAD A SETBACK
+
+Each slice was scaled to fill the tower's box by itself. A penthouse traced at **half** the podium
+was blown up until it filled the **same footprint** — and, on a box whose proportions differ from
+the plan's, came out **deeper than the podium under it**. Thirteen floors, one shape: an extruded
+prism again, which is the exact thing reading the floor plans on 2026-09-15 existed to stop.
+
+⚠️⚠️ **And it made this card disagree with the PER-TOWER card about one building.** That card
+extrudes every floor at its own traced coordinates, so the setback is there. Two views of one
+project, two different buildings — the failure this module's site view was written under a standing
+rule not to commit.
+
+⚠️ So **one transform serves a whole tower**: `_vsZpPlanBox` accumulates that tower's floors into
+one source box (in proportional units, depth over each sheet's own `ar`, so a podium traced on a
+wide sheet and a typical floor on a tall one are still the same building), the **largest** floor
+fills the footprint, and every other floor keeps its own size and offset inside it. The relationship
+between the floors is the planner's drawing, not this function's.
+⚠️ Memoised per tower on the row: the site is one row holding every (tower, floor) cell, so the
+row's own cells are exactly the floors to measure.
+
+### Proved by execution, and gated against a base that must reproduce both
+
+**New `modules/project-schedule/test-sitefit.js` — 25 assertions, 0 failing.** Every function
+sliced out of the shipped `index.html` **by name** and run: `_vsZpMinRect`, `_vsZpPlanBox`,
+`_vsZpFitPolys`, `_vsZpOutlineOf`, `_vs3Hull`. Fixture: a 0.5 × 0.12 slab turned 30°, a podium
+plan and a setback plan traced at half its length.
+
+- the rectangle's short side is **the slab (0.24 plate units), not its box (0.70)**
+- every drawn point lands **inside the traced slab**, heading and all
+- the setback stays **0.5 × the podium's length and 1.0 × its depth**, as drawn
+- a tower square to the sheet is drawn **identically** to the old path — the degrade, asserted
+- an untraced tower's **wrap slot** is unchanged and still axis-aligned
+- a portrait-drawn plan is **turned**, and still lands on the slab
+
+⚠️ **The contrast block runs the same fixtures against pinned `f48cf766`** and requires it to
+reproduce **both** faults: the floor spills outside the traced slab, and the setback comes out
+deeper than the podium. A suite that passes on both files proves nothing.
+
+⚠️ `makeSlicer` moved out of `test-zoneplan.js` into **`test-slice.js`**, shared. A second copy
+is how two suites start disagreeing about what "the shipped function" means.
+
+`wiring-check` **139/139**, `test-lsm` **702/702**, `test-builder` **101/101**,
+`test-zoneplan` **27/27**, `test-sitefit` **25/25**, `scan` self-test clean, `dead-hooks` at its
+documented baseline. The inline script parses (1 block), pure LF.
+
+⚠️ **Not verified signed in.** The anon key has no grants and DEMO01 needs a login, so this is
+proved by execution against fixtures and by a rendered before/after of the shipped function — not
+seen on the owner's own project. **First thing to check:** switch to *Floor by floor* and each
+tower should stand on the footprint it has in *Whole towers*, at the same angle, cut into its floors.
+
+`MODULE_V` → `20260916z`, re-derived from what `origin/main` actually serves
+(`20260916s`) — `y` is this session's own uncommitted bump and ships with it.
+
+## 2026-09-16 (y) — Floor by floor drew every tower from one tower's plan
+
+Owner, with the site view in **Whole towers** and **Floor by floor** side by side: *"what happened
+here? look at the positioning and configuration of the towers. something happened when choosing
+floor by floor."*
+
+### ⚠️⚠️ THE FLOOR-PLAN MAP HAD NO TOWER IN IT
+
+`zpByLabelOf` keys a traced floor plan by `trade|floor`, and by the bare `floor` for a card that
+spans trades. **Nothing in that map is a tower.** A `Tower › Level › Zone` breakdown gives every
+tower a floor called `F1` — which is the ordinary shape, and the shape of the owner's own project —
+so the keys collide, and the two tie-breakers make it worse rather than obvious:
+
+| key | rule | what a two-tower project gets |
+|---|---|---|
+| trade + floor | `if (!out[k])` — **first wins** | whichever tower is first in `cfg.zoning`'s floor list |
+| bare floor | `zpBareShape` — **largest wins** | whichever tower traced the biggest `F1` |
+
+The site view passes **`trade: null`** (a site holds every trade), so it can read only the bare key.
+**Every tower's every floor was therefore drawn from the largest plan anywhere on the project.**
+
+⚠️ **Measured, executed, not read** — the shipped `zpByLabelOf` sliced out and run on two towers
+whose own `F1` plans are 0.2 and 0.8 of the sheet wide: the bare key answers **0.8 for both**, with
+`sources = 2`, and the trade key answers **0.2 for both**.
+
+### ⚠️ WHY ONLY *FLOOR BY FLOOR* SHOWED IT
+
+**Whole towers** draws each tower from the **site development plan**, whose areas are keyed by
+**tower name** and so are unique — those footprints were right all along. **Floor by floor**
+(2026-09-15 e) redraws every slice from the **floor** plan, fitted into that tower's own box. So one
+switch replaced two correct, different footprints with one shared shape, contained-and-centred into
+each tower's box — which shrinks it toward that centre. That is the owner's *"positioning and
+configuration"*: the shape changed **and** the drawn block moved inward from the footprint it used
+to fill.
+
+⚠️ It is the identical collapse the **trade** key was added to fix on 2026-09-10 (*"THE MAP
+COLLAPSED EVERY TRADE ONTO ONE FLOOR NAME"*), one dimension over — latent from that day, and
+invisible until the site learned to read floor plans at all.
+
+### The fix: the tower is part of the key, and part of the question
+
+- **`zpByLabelOf` emits a tower-qualified key** for the floor alone and for the floor under a trade.
+  ⚠️ The tower segment carries an `@` so a two-segment tower key can never be read as a trade key on
+  a project with a tower named after a trade.
+- ⚠️⚠️ **The tower name is resolved from `c.towers`, NEVER through `towerIdOf`/`towerLabel`.** Those
+  read the **loaded** `cfg`, and this function takes a config as an argument precisely so the
+  cold-open path can read a setup nobody has opened — the trap already recorded for `locCatalogue`
+  on 2026-09-04. `towerIdOf`'s own rule is restated in place: a floor naming no tower is the first
+  tower's.
+- **`_vsZpFor(levelValue, trade, tower)`**, precedence tower+trade → tower → trade → bare.
+- ⚠️⚠️ **AND A TOWER WITH NO PLAN OF ITS OWN DOES NOT BORROW ONE.** Falling through to the bare key
+  whenever the tower key misses would keep the defect alive for exactly the project where only some
+  towers are traced — which is most of them, most of the time. So once **any** tower has a plan for
+  a floor name, the tower is a real dimension of the answer and a tower without one has **no** plan.
+  When **no** tower key exists for it (a setup with no towers, or a map built before this existed)
+  the bare key still serves, byte-for-byte as before.
+- ⚠️ **Largest-wins is kept, but WITHIN one tower** — several trades traced that tower's own floor
+  and the card spanning them is still one building. It is never applied across towers.
+- ⚠️ The un-levelled band is **one plate for the config**, not one per tower, so the tower is not
+  part of its key. Asserted.
+- ⚠️ **`_vsZpLabels` now reads the LAST segment.** It is what the footer prints as *"the plan is
+  filed under…"*, and from the first separator a three-segment key would have printed a trade name
+  and a pipe to a planner as the name of a floor.
+- ⚠️ The index of which towers own a plan for a floor is built **once per map and cached on the map,
+  non-enumerably**: the plan memo is cleared from four places, and a fifth module-level memo beside
+  it is how `_lsmLeadMemo` nearly went stale. `Object.keys` never sees it, so nothing downstream
+  moved.
+
+### The footer stops giving the wrong remedy
+
+`_vsPlanFit` could say *"traced, but under another trade"* and had no way to say *"traced, but on
+another tower"* — the map could not be asked. It can now, and the two are **different screens'
+worth of work**, so naming the wrong one sends the planner on exactly the wasted trip that message
+exists to prevent. The tower case is named **first**, because when both are true it is the one that
+matters: the floor names line up fine, the plan just belongs to a different building.
+
+### Verified
+
+**New `modules/project-schedule/test-zoneplan.js` — 27 assertions, 0 failing**, every function
+sliced out of the shipped file **by name** and executed (the builder half through the real
+`zpNormAll` / `zpShapeOfBag` / `zpColorOfBag`, the lookup half through the real `_vsZpFor`). It
+refuses to stub: a name the file does not define as a function is a link failure, not something to
+fill in.
+
+⚠️⚠️ **GATED AGAINST A PINNED SHA (`8c0fd9fb`), and the gate bites**: run on the same fixtures, the
+base emits **no** tower key, has no tower index, and hands **both towers the same 0.8 shape** — the
+reported defect, reproduced. A suite that passes on both files proves nothing, and `HEAD` is not a
+base: it stops being the pre-change state the moment this commits.
+
+Also asserted: the untraced tower gets **null**, not its neighbour's plan; a setup with no towers
+emits no tower key and is unchanged; the short trade spelling (`Structural`) resolves as well as the
+canonical one; largest-wins survives within a tower **with its `sources` note** and never across
+towers; and the un-levelled band answers whichever tower asks.
+
+⚠️ **One of my own expectations was wrong before the code was**, and it is recorded in the suite: I
+asserted that a tower the setup never named should fall through to the bare key so the card keeps a
+building. It should not — on a multi-tower project the bare key **is** another building's outline,
+so borrowing it for an unknown tower reintroduces the bug silently in the one case nobody is
+watching. It draws the wrap guess instead, and the footer names the tower.
+
+`wiring-check` **139/139**, `dead-hooks` at its documented baseline, `scan` self-test clean,
+`test-lsm` **702/702**, `test-builder` **101/101**, `portfolio-dash` **252/252**,
+`portfolio-overview` **99/99**. The inline script parses (1 block — ⚠️ the scanner resumes **after**
+each block it closes, or the literal opening tag inside the print-stylesheet strings opens bogus
+blocks and reports failures in correct code), 0 functions lost, 0 NUL, pure LF.
+
+⚠️ **Not verified signed in.** The anon key has no grants, so the map is proved by execution against
+fixtures and the fix has not been seen on the owner's own DEMO01. **The first thing to check is the
+one in the screenshots:** switch to *Floor by floor* and each tower should keep the footprint it has
+in *Whole towers*, cut into its own floors.
+
+`MODULE_V` → `20260916y`, re-derived from what `origin/main` and the live site actually serve
+(`20260916s`) **after** rebasing onto 23 incoming commits, never guessed before.
+
+### ⚠️ ALSO IN THIS COMMIT: the Schedule Setup work from earlier in this session
+
+It was finished and green but uncommitted when the site-view report arrived, so it ships here rather
+than being stranded. Named rather than swept in silently.
+
+- **Auto-trace gains three per-trade sequencing answers**, each read by `autoTrace` itself:
+  **`zoneOrder`** (the sequence the zones are worked in, rather than the order they were typed),
+  **`zoneZigzag`** (the crew carries on from where it finished — the next floor is worked in
+  reverse — instead of walking back to zone A every storey), and **`floorGate`**: `cell`, the
+  existing behaviour, where a zone may start as soon as the SAME zone below is done, against
+  `floor`, where the whole storey below has to finish first.
+- ⚠️⚠️ **`cfg.floorLag` IS FINALLY READ.** This log recorded it on 2026-09-11 as the third
+  declared-but-unwired field in this module — *"it occurs exactly TWICE, in `blank()` and in
+  `normalize()`, and is never read"* — so the cure/lag days a planner typed between a floor and the
+  floor above went nowhere. `floorLagOf` reads it, clamped to 0–365.
+- **A step manual**, `SB_MANUAL` + `sbManualFor`/`sbManualHTML`: one page per step, each answering
+  the same four questions (what it is for, what to do, what to watch out for, when it is done),
+  replacing an instructions modal that described all ten steps in one scroll.
+  ⚠️ The suite asserts the rail's own step list against it in **both directions** — every step the
+  rail can show has a page, and no page names a step that does not exist — because the rail is built
+  at runtime and has been renumbered twice.
+- **`sbAtSay`** — a plain-English readout under the takt dialog saying what the current settings
+  will actually do, rebuilt on every change rather than simulating the algorithm separately.
+- **New `modules/project-schedule/test-builder.js` — 101 assertions, 0 failing**, every function
+  sliced out of the shipped file by name and executed.
+  ⚠️⚠️ **And one guard added today rather than left as it was:** a renamed or dropped `SB_MANUAL`
+  key made the "auto-trace replaces every link" assertion **throw** on `.watch` of undefined, which
+  takes the whole suite down with a TypeError and reports nothing about the hundred assertions after
+  it. Guarded, and proved by mutation: renaming that key now **fails 4 assertions and names all
+  four** instead of dying. A suite must fail on a regression, not fall over on one — the death looks
+  like a broken checker, and it is the checker that then gets edited.
+
 ## 2026-09-16 — The portfolio gantt: today was never a line, and the grain is chosen rather than guessed — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
