@@ -1433,3 +1433,40 @@ html.pd-dark .pmi-chtab tr.pmi-ch-cleared td { background:rgba(78,209,139,.08); 
 .pmi-holder { color:var(--pd-muted); font-weight:700; }
 /* "Cleared" as a positive statement. Same green the cost build-up uses for a closing figure. */
 .cc-ok { color:var(--pd-ok-text); font-weight:700; }
+
+/* ---- Dashboard: the commercial position (2026-09-16) ------------------------------------
+   Owner, on a ₱3.67B contract with no claims raised: *"Dashboard needs complete rework"* —
+   the tab rendered two sentences, because every block on it derived from the claims pipeline.
+   The subject is the CONTRACT now, with the pipeline as one section of it.
+
+   ⚠️ FOUR RULES, because the four cards use the SHARED `.pd-kpi` / `.pd-kpis` component rather
+   than a module-local copy — the 2026-09-10 (w2) convergence. Six classes I would otherwise
+   have invented do not exist.
+   ⚠️ Tokens only; nothing here carries a literal colour, so dark mode follows for free. */
+.cc-dash-verdict {
+  font-size: var(--pd-fs-md); line-height: 1.5; margin: 0 0 12px; padding: 12px 14px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); background: var(--pd-card);
+}
+/* ⚠️ `<i>` is italic by default and this is a statement of fact, not an aside. */
+.cc-dash-comm {
+  display: block; font-style: normal; color: var(--pd-muted);
+  font-size: var(--pd-fs-sm); margin-top: 2px;
+}
+/* ⚠️⚠️ display:contents SO THE CARD INSIDE IS THE GRID ITEM of `.pd-kpis`, not this wrapper.
+   The wrapper exists only to give the async fill something stable to replace; left as an
+   ordinary div it would become the grid item and the card inside it would stop sharing the
+   strip's own sizing, so the Certified card would be the one card that did not line up. */
+#cc-dash-certcard { display: contents; }
+.cc-dash-facts {
+  list-style: none; margin: 0 0 10px; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 18px;
+}
+/* ⚠️ min-width:0 on the grid child: a flex row inside a grid item defaults to min-width:auto,
+   so a long counterparty name would widen its column past the track. The same guard the
+   Schedule Summary's own columns carry, and the trap this repo has shipped twice. */
+.cc-dash-facts li {
+  display: flex; justify-content: space-between; gap: 10px; min-width: 0;
+  padding: 5px 0; border-bottom: 1px solid var(--pd-line);
+}
+.cc-dash-facts span { color: var(--pd-muted); font-size: var(--pd-fs-sm); }
+.cc-dash-facts b { font-weight: 700; font-size: var(--pd-fs-sm); text-align: right; overflow-wrap: anywhere; }

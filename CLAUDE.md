@@ -200,7 +200,45 @@ new SQL has not been executed. The per-trade panel will say the migration is mis
 ⚠️ `(l)` was skipped: as a changelog label and a cache token it is too easily read as a `1`.
 
 `portfolio-dash.js` + `portfolio-dash.css` at `?v=20260916m`; `MODULE_V` → `20260916m`.
+### 2026-09-16 (l) — Contracts & Claims: the dashboard rebuilt around the contract, not the disputes
 
+Owner: *"Contracts & Claims Dashboard needs complete rework"*, then ***"Both, commercial first"***.
+Module detail in [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+### ⚠️⚠️ EVERY BLOCK ON THE TAB DERIVED FROM THE CLAIMS PIPELINE
+
+So on OPW101 — a **₱3.67B contract with nothing raised against it**, the state a project is in for
+most of its life — the whole page rendered **two sentences and one number**, then ~700px of nothing.
+The BOQ two tabs away held the contract total, the certified POC and the revenue actually billed.
+The subject is the **contract** now, with the pipeline as one section of it: a verdict line, four
+cards on the shared `UI.kpi` strip, the contract record's own facts, the packages, then the pipeline.
+⚠️ **"None raised" is an answer, not an absence** — a clean register reads as *no exposure*, stated
+as good news, rather than three empty states apologising for having nothing to show.
+
+⚠️⚠️ **`BOQ.commercialSummary()` is a second READ, not a second implementation.** POC and revenue come
+from the Billing tab's own pure functions (`periodTotals`, `contractSum`), never re-derived — the
+hand-copied-S-curve mistake this repo has already paid for. And it is lean by design: seven columns,
+the current revision(s) and one period, against a `load()` that is ~8 round trips over every column of
+~900 items. The Dashboard is the landing view, so it is filled **after** first paint, guarded on
+`_loadGen`, and touches none of the module's state.
+
+### ⚠️⚠️ A CONTRACT TOTAL THAT HAD BEEN TRUNCATING AT 1000 ITEMS, SILENTLY
+
+`PDb.selectAll` reads its next cursor **off the last returned row object** and bails on
+`last == null`. A cursor column absent from the **projection** is `undefined`, and `undefined == null`
+is true — so the loop returns after one page, with no error. `computeProjectTotal` selected
+`'amount,line_kind,exclusion_note'` with no `id`. Fixed.
+
+⚠️ **`tools/selectall-key.js` cannot catch this class** — it checks that the RELATION has an id
+column (103 sites, 0 broken), not that the projection includes it. An audit of every explicit-`cols`
+call site found **four more in `modules/pormac/module.js`** (:732, :734, :752, :768), left for its own
+session.
+
+Verified in a six-case harness against the real CSS: all six BOQ states render their own figures,
+**0 text truncations** asserted on `scrollWidth > clientWidth` (the fix for `.pd-kpi-sub` cutting
+`"₱632,924,530 of ₱3,670,000,00…"` mid-figure), and contrast measured in both themes — `--pd-ok`
+4.12:1 / 7.11:1 and `--pd-warn` **3.46:1** / 6.14:1 against a 20px/800 value, which is a 3:1 large-text
+threshold and exactly why those two are surface tokens and never small text.
 ### 2026-09-16 (k) — The Schedule Summary is rebuilt around a verdict, and seven figures it already computed
 
 Owner: *"Check the summary page live it needs UI improvements overhaul"*, then, asked whether KPI

@@ -1,5 +1,115 @@
 # Module: contracts-claims
 
+## 2026-09-16 (i) — The dashboard rebuilt around the contract, and a roll-up that had been truncating at 1000 items
+
+Owner: *"Contracts & Claims Dashboard needs complete rework"*, and when asked whether that meant the
+commercial side or the claims side: ***"Both, commercial first"*** — the larger of the two answers.
+
+### ⚠️⚠️ THE PAGE HAD NO SUBJECT WHENEVER ITS ONLY SUBJECT WAS EMPTY
+
+Every block on the tab derived from the CLAIMS pipeline. `ccTimeHTML()` returns `''` outright with no
+claims; `ccMoneyTable()` collapses to one sentence; the legend suppresses itself — and the one
+non-claims block (packages) was empty too. On OPW101 — a **₱3.67B contract with nothing raised
+against it**, which is the state a project is in for most of its life — the whole tab rendered
+**two sentences and one number**, then ~700px of nothing. Meanwhile the BOQ two tabs away held the
+contract total, the certified POC and the revenue actually billed. A register is not only its disputes.
+
+### The tab now reads as one sequence, contract first
+
+1. a **verdict line** — the contract, who it is with, and what has been certified
+2. **four cards** on the shared `UI.kpi` / `UI.kpis` strip — contract value, certified to date,
+   claims exposure, time granted
+3. the **contract record's own facts** — reference, counterparty, signed date, value; all of which
+   the old dashboard computed nothing from and never showed
+4. the **packages**, unchanged (lifted out to `ccDashPkgHTML` so the page reads as a sequence)
+5. the **pipeline**, with a positive answer when there is none
+
+⚠️ **"None raised" is an answer, not an absence.** On a clean register the honest reading is *no
+exposure* — good news, stated as such — not three empty states apologising for having nothing to show.
+
+⚠️ **Exposure is pending + shortfall**, the same pair the portfolio view ranks projects by. Reporting
+only one understates the position in whichever direction that project happens to sit.
+
+### `BOQ.commercialSummary()` — a SECOND READ, NOT A SECOND IMPLEMENTATION
+
+⚠️⚠️ Every figure comes from the **same pure functions the Billing tab uses** — `periodTotals`,
+`contractSum`, `moneyLine`. Re-deriving POC for a dashboard is the hand-copied-S-curve mistake this
+repo has already paid for, and the reason `assets/js/claims.js` exists at all.
+
+⚠️⚠️ And it is **lean on purpose**. `load()` is ~8 round trips over every column of ~900 items, and
+the Dashboard is the module's LANDING view — paying that on every open would undo exactly what the
+Contract tab's lazy mount was built for. This reads **seven columns, the current revision(s), and ONE
+period**, assigns none of the module's state (`REVS` / `ITEMS` / `PERIODS` / `PROG` are untouched), and
+is **not awaited**: the page is readable from `rows` and `PKGS` before it lands, and the fill re-checks
+`_loadGen` after its await so a superseded project cannot paint over the new one.
+
+⚠️⚠️ **Every absent figure names its state; none of them is 0.** No BOQ / a draft BOQ (which bills
+nothing, by the trigger, so `is_current` is false on every revision) / issued but unbilled / the read
+failed. "Not yet billed" and "0% certified" are opposite claims about a project.
+
+### ⚠️⚠️ THE ROLL-UP THAT HAD BEEN TRUNCATING AT 1000 ITEMS, SILENTLY
+
+Found while writing the lean read, because I was about to copy it. `PDb.selectAll` paginates on a
+keyset cursor it reads **off the last returned ROW OBJECT** — `last = page[page.length-1][k]` — and
+then bails on `if (last == null) return out;`. A cursor column **absent from the projection** is
+`undefined`, and `undefined == null` is **true**, so the loop returns after the first page.
+
+`computeProjectTotal` (boq.js:2539) selected `'amount,line_kind,exclusion_note'` with **no `id`**. On a
+project whose current-revision BOQ items exceed 1000, it was computing a **CONTRACT TOTAL** from the
+first 1000 lines — no error, no warning, a plausible smaller number. Fixed, and the new lean reads
+select `id` for the same reason.
+
+⚠️ **`tools/selectall-key.js` cannot catch this.** It verifies the RELATION has an id column (103 call
+sites, 0 broken) — not that the **projection** includes it. A one-off audit of all explicit-`cols` call
+sites found **four more of exactly this bug in `modules/pormac/module.js`** (:732, :734, :752, :768),
+left for its own session rather than touched from here.
+
+### ⚠️⚠️ WHAT THE HARNESS GOT WRONG BEFORE IT GOT ANYTHING RIGHT
+
+Six cases rendered against the real `dashboard.css` + `module.css`. Four defects, three of them in the
+harness itself — which is the point of writing one down rather than trusting it:
+
+- **The harness was reporting one case six times.** `ccDashFill` resolves its targets with
+  `getElementById`, which returns the FIRST match in the document. Case 0 deliberately kept the real
+  id, so **every later case's fill landed on case 0** — case 0 showed case 5's figures and cases 1–5
+  stayed frozen on the pre-fill placeholder. Now every case is renamed after its own fill, and the
+  shipped `#cc-dash-certcard{display:contents}` rule is proven by **reading the computed value** while
+  the id is still real (`"contents"` × 6) rather than by leaving the id on.
+- **"THE PIPELINE" printed twice** — real, in the module. `ccMoneyTable` opens with its own
+  `cc-dash-h` in BOTH branches; the new heading above it was a duplicate. Removed. (12 → 6.)
+- **`function sub() { [native code] }` under three pipeline cards** — a harness artefact. The module's
+  local `kpi(label, value, sub, cls)` is **four positional args**; the shared `UI.kpi` takes
+  `(label, value, {sub, cls})`. Substituting one for the other made `opts.sub` read the legacy
+  `String.prototype.sub` off the string. The harness was inventing a bug that is not in the module.
+- **`.pd-kpi-sub` is `white-space:nowrap; text-overflow:ellipsis`** — real, and the worst of the four.
+  At a 235px card the sub-lines were not shortened but **CUT MID-FIGURE**:
+  `"₱632,924,530 of ₱3,670,000,00…"` reads as a *different number*, not as a truncation. Every sub is
+  now short-form money (`₱632.92M of ₱3.67B · billing 7`), the full sentence moved to the card's
+  `title`, and the whole page is asserted on `scrollWidth > clientWidth`: **0 truncated** across every
+  label, value and sub in all six cases.
+
+### Measured, not assumed
+
+| | light | dark |
+|---|---|---|
+| `--pd-ok` value on card | **4.12:1** | **7.11:1** |
+| `--pd-warn` value on card | **3.46:1** | **6.14:1** |
+| `.pd-kpi-sub` | **7.07:1** | **7.02:1** |
+
+The values are 20px/800 — **large text, a 3:1 threshold** — which both status tokens clear; the subs
+are 11px and clear the 4.5:1 normal-text threshold. ⚠️ `--pd-warn` at **3.46:1** is exactly why these
+are surface tokens and must never be used as small text.
+
+All six states verified end to end in both themes: `17.2%` billed / draft / issued-unbilled / no BOQ /
+read failed / populated-with-claims, each showing its own figures. Case 5 arithmetic checked by hand:
+exposure ₱78.5M = ₱38.0M pending + ₱40.5M shortfall (23.9 + 16.6), 120d granted, 45d outstanding.
+
+Cache tokens bumped in `index.html`: `module.css` → `20260916h`, `boq.js` → `20260916a`,
+`module.js` → `20260916j` (all three sort-checked forward).
+
+⚠️ **Not clicked through signed in.** The harness stubs `BOQ.commercialSummary`; the lean read itself
+has not been run against Supabase.
+
 ## 2026-09-16 (h) — The dashboard gets its own tab, and a cache token I forgot an hour earlier
 
 Owner, with a screenshot of the live OPW101 Contract tab: *"Let's improve the dashboard for the
