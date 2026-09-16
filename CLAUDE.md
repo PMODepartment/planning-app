@@ -102,6 +102,105 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (m) — The portfolio S-Curve gets periodic bars, and a month you can click open
+
+Owner: *"for the s-curve, pls provide breakdowns. and periodic values that are in the form of a bar
+chart. And allow users to click a specific month to know the breakdowns (for example per trade, but
+if not applicable put others)."*
+
+⚠️ **THIS IS THE PORTFOLIO S-CURVE.** The single-project one has had periodic bars and a
+click-for-trade-breakdown since 2026-09-10; what had none of it was the cross-project curve that
+became `s-curve`'s landing page this morning. Both screens now answer the same question the same
+way — and the bars are spelled with the same two colours and the same "planned behind, actual in
+front" rule, so a planner learns one key, not two.
+
+### ⚠️⚠️ THE BARS ARE THE LINE, AND THAT IS NOT A FIGURE OF SPEECH
+
+Month *n* = cumulative *n* − cumulative *n−1*, off the same array the curve is drawn from. So they
+**cannot** drift from it, and there is no second pass over the schedule to keep in step with the
+first. A test asserts the bars sum back to the final cumulative percentage; breaking the
+subtraction turns it red.
+
+- ⚠️ **Their own right-hand axis**, and only **55 %** of the plot height. A month's production is a
+  tenth the size of a cumulative figure, so sharing the left axis draws every bar as a sliver on the
+  floor — and at full height (measured in the preview) the tallest bar crossed the 100 % gridline,
+  which made two unrelated scales look like one.
+- ⚠️ **The data-date month gets no actual bar.** `scComputeFromAgg` pins that month's cumulative
+  actual to overall percent complete, so the step into it absorbs the entire discrepancy between the
+  modelled curve and reality. That is what a cumulative line should do; as a bar it is a wrong claim
+  about one month. Same rule, same reason, as the single-project chart.
+
+### ⚠️ Click any month — the hit target is the whole column
+
+A month whose bar is two pixels tall (or absent) is exactly the month worth asking about, and a
+two-pixel target cannot be hit, so the band is the full height of the plot. Clicking the open month
+closes it: the band **is** the toggle, so there is no second control to find.
+
+**Two dimensions, one renderer.** *By trade* is what was asked for and is the default. *By project*
+comes free — the per-project aggregates the curve already fetched are exactly that answer — and it
+is what a portfolio is usually asked about anyway.
+
+⚠️⚠️ **TWO COLUMNS THAT ARE ROUTINELY CONFUSED, AND THE HEADER SAYS SO.** *This month* is points of
+the **portfolio's** percentage; *Own %* is how far along that trade or project is in **its own**
+scope. A trade at 100 % of itself that is 4 % of the portfolio contributes **4 points, not 100**,
+and a reader given only the second number would read a finished portfolio.
+
+### ⚠️ Per trade needs a migration — **run `migrations/2026-09-16-scurve-trade-agg.sql`**
+
+The monthly roll-up has never carried a trade dimension, and the only client-side way to split a
+month by trade is the raw activities — a third of a million rows across twenty-one projects, which
+is precisely the read the server-side aggregate exists to avoid. So there is a second aggregate that
+groups by trade, **fanned out one project at a time** for the reason this morning's timeout
+established. It is lazy (a planner who never opens a breakdown never pays for it) and cached.
+
+- ⚠️ **One probe, then fan out.** A function that is not deployed answers `PGRST202` for *every*
+  project; asking twenty-one times to learn one deployment fact is twenty wasted round trips.
+- ⚠️⚠️ **Not deployed is not an error, and the panel still answers.** It falls through to *by
+  project*, flips the toggle so the control and the content agree, and names the file to run.
+- ⚠️ **"if not applicable put others" → `No trade set`.** This app already has a name for that
+  bucket — the S-Curve module's own `UNTRADED` — and the SQL spells it identically on purpose. Two
+  names for one bucket across two screens over one schedule is the drift this repo keeps paying for.
+  Untagged work is bucketed, never dropped: it is still work, and a breakdown that omits it would
+  not add up to the curve above it.
+
+### ⚠️⚠️ THE PANEL CHECKS ITSELF, OUT LOUD — and the preview is what found it
+
+*This month* is points of the portfolio, so the column **must** sum to the figure in the header.
+But the trade split and the curve come from **two different aggregates** over the same rows, so
+"they agree" is an assumption about two pieces of SQL, not a fact of one. In the preview a header
+reading **10.4 %** sat above a Total reading **17.1 %** and nothing on screen remarked on it. It
+now says the breakdown does not reconcile and that the rows should be read as a shape rather than as
+figures — and still renders them, because what is lost is the check, not the data.
+
+### Also fixed, from the same screenshot as this morning
+
+Three more *"narrow the project filter"* strings in this view — the chart note, the Actual-only note
+and the disabled Forecast toggle's title — all naming a control a module page does not have.
+
+### Verified
+
+- `tools/test-portfolio-dash.js` **252/252** (was 184). New: the bars sum back to the line and never
+  go negative; one hit target per month **on the axis** (asserted against the axis length, not a
+  literal — the axis runs to today, so a fixed count would have been a test with an expiry date);
+  clicking opens, naming the month, and clicking again closes; both breakdowns' **Total equals the
+  header**; a trade spanning two projects is **one row**; untagged lands in `No trade set`; the
+  missing-RPC path names the migration, renders by-project anyway and stops after **one** probe; and
+  a deliberately inconsistent split raises the reconciliation warning.
+- ⚠️ **Mutation-checked:** stop subtracting the previous month → 3 red; measure points against the
+  row instead of the portfolio → 2 red; stop merging a trade across projects → 1 red.
+- ⚠️ **Rendered and clicked in a real browser** against fixtures: the bars draw, the axis reads
+  `per month`, clicking August opens the panel, and both dimensions' totals match the header exactly
+  (10.4 % / 9 %). Two layout faults were found that way and fixed — the right axis was drawn past
+  the viewBox (`per month` rendered as `Pe`), and the bars were scaled to fill the plot.
+- `test-portfolio` **99/99**, `wiring-check` **139/139**, `test-lsm` **702/702**, `dead-hooks`
+  unchanged.
+
+⚠️ **Not verified against real data** — the anon key has no grants, so the fixtures are mine and the
+new SQL has not been executed. The per-trade panel will say the migration is missing until it is run.
+⚠️ `(l)` was skipped: as a changelog label and a cache token it is too easily read as a `1`.
+
+`portfolio-dash.js` + `portfolio-dash.css` at `?v=20260916m`; `MODULE_V` → `20260916m`.
+
 ### 2026-09-16 (k) — The Schedule Summary is rebuilt around a verdict, and seven figures it already computed
 
 Owner: *"Check the summary page live it needs UI improvements overhaul"*, then, asked whether KPI

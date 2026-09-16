@@ -76,13 +76,27 @@ function makeDom() {
 
   /* ids and `data-` buttons found in a markup string become addressable nodes. */
   function index(html) {
+    ['band', 'av', 'sc', 'shv', 'lay', 'dim'].forEach(function (k) {
+      if (html.indexOf('data-' + (k === 'band' ? 'mi' : k) + '="') >= 0) buttons[k] = [];
+    });
     const idRe = /\sid="([^"]+)"/g;
     let m;
     while ((m = idRe.exec(html))) if (!byId[m[1]]) byId[m[1]] = el('div');
+    /* ⚠️ The S-Curve's month hit targets are <rect>s, not buttons, and on purpose: the target is
+       the whole column so a month with a two-pixel bar is still clickable. */
+    const rectRe = /<rect([^>]*)>/g;
+    while ((m = rectRe.exec(html))) {
+      const mi = /data-mi="(\d+)"/.exec(m[1]);
+      if (!mi) continue;
+      const r = el('rect');
+      r.dataset.mi = mi[1];
+      if (/\sclass="[^"]*\bon\b/.test(m[1])) r.classList.add('on');
+      (buttons.band = buttons.band || []).push(r);
+    }
     const btnRe = /<button([^>]*)>/g;
     while ((m = btnRe.exec(html))) {
       const attrs = m[1];
-      const d = /data-(av|sc|shv|lay)="([^"]*)"/.exec(attrs);
+      const d = /data-(av|sc|shv|lay|dim)="([^"]*)"/.exec(attrs);
       if (!d) continue;
       const b = el('button');
       b.dataset[d[1]] = d[2];
@@ -95,9 +109,10 @@ function makeDom() {
 
   function query(root, sel) {
     sel = String(sel).trim();
+    if (sel === '.po-sc-band') return buttons.band || [];
     let m = /^#([\w-]+)\s+button$/.exec(sel);
     if (m) {
-      const kind = m[1] === 'po-eq-avail' ? 'av' : null;
+      const kind = m[1] === 'po-eq-avail' ? 'av' : m[1] === 'po-bd-dim' ? 'dim' : null;
       return kind ? (buttons[kind] || []) : [];
     }
     m = /^button\[data-(\w+)\]$/.exec(sel);
@@ -206,6 +221,13 @@ function fakeNetwork(win, fixtures) {
         var a = fixtures.agg[args && args.p_id];
         if (a === undefined) return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'no fixture' } });
         return Promise.resolve(a.error ? { data: null, error: a.error } : { data: a, error: null });
+      }
+      if (name === 'schedule_scurve_trade_agg') {
+        if (!fixtures.trade || fixtures.trade === 'missing') {
+          return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
+        }
+        var t = fixtures.trade[args && args.p_id];
+        return Promise.resolve(t ? { data: t, error: null } : { data: { trades: [] }, error: null });
       }
       if (fixtures.rpc && (name in fixtures.rpc)) return Promise.resolve(fixtures.rpc[name]);
       return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
@@ -340,6 +362,175 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
     has(chart, '1 of 2', tag + 'partial: and says over how many projects it is drawn');
     has(chart, 'Avesta Residences', tag + 'partial: the missing project is NAMED, not counted');
     ok((win._toasts || []).some(t => t[0] === 'warn'), tag + 'partial: and a warning is raised');
+  }
+
+
+  /* ======================================================= the periodic bars and the breakdown
+     Owner 2026-09-16: *"pls provide breakdowns. and periodic values that are in the form of a bar
+     chart. And allow users to click a specific month to know the breakdowns (for example per
+     trade, but if not applicable put others)."* */
+
+  /* Two trades on P1, one of them untagged in the data; P2 is single-trade. */
+  const TRADE_P1 = { totDur: 40, doneDur: 24, nAct: 3, trades: [
+    { trade: 'Structural', totDur: 30, doneDur: 18, nAct: 2,
+      months: [{ key: '2026-01', pd: 15, ad: 8 }, { key: '2026-02', pd: 30, ad: 18 }] },
+    { trade: 'No trade set', totDur: 10, doneDur: 6, nAct: 1,
+      months: [{ key: '2026-01', pd: 5, ad: 2 }, { key: '2026-02', pd: 10, ad: 6 }] }
+  ] };
+  const TRADE_P2 = { totDur: 60, doneDur: 24, nAct: 4, trades: [
+    { trade: 'Structural', totDur: 60, doneDur: 24, nAct: 4,
+      months: [{ key: '2026-01', pd: 20, ad: 8 }, { key: '2026-02', pd: 40, ad: 16 },
+               { key: '2026-03', pd: 60, ad: 24 }] }
+  ] };
+
+  async function scurvePage(tradeFixture) {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, {
+      tables: {}, agg: { P1: AGG_P1, P2: AGG_P2 }, trade: tradeFixture,
+      schedule: { P1: [], P2: [] }
+    });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    const m = await mountView(win, 'scurve');
+    return { win, api: m.api, chart: () => win.document.getElementById('po-sc-chart').innerHTML,
+             bd: () => win.document.getElementById('po-sc-bd') };
+  }
+
+  /* ---- the bars ------------------------------------------------------------------ */
+  {
+    const s2 = await scurvePage(null);
+    const chart = s2.chart();
+    has(chart, 'class="po-barp"', tag + 'bars: a planned bar per month is drawn');
+    has(chart, 'class="po-bara"', tag + 'bars: and an actual one');
+    has(chart, 'per month', tag + 'bars: on their own right-hand axis, labelled');
+    has(chart, 'Planned this month', tag + 'bars: and named in the legend');
+    /* ⚠️⚠️ THE INVARIANT THAT MATTERS: the bars are the line. Period n = cumulative n − n−1, so
+       they must sum back to the final cumulative percentage — if they ever do not, one of the
+       two was computed a second way. */
+    const b = s2.api._bars();
+    ok(!!(b && b.perP), tag + 'bars: the periodic arrays exist');
+    if (b && b.perP) {
+      const sum = b.perP.reduce((t, v) => t + (v || 0), 0);
+      const d = s2.api._data();
+      const RT = d.rollup.TOT || 1;
+      const last = d.rollup.plannedC[d.rollup.plannedC.length - 1] / RT * 100;
+      ok(Math.abs(sum - last) < 0.01,
+         tag + 'bars: the periodic bars sum back to the cumulative line (' +
+         Math.round(sum * 10) / 10 + ' vs ' + Math.round(last * 10) / 10 + ')');
+      ok(b.perP.every(v => v == null || v >= 0), tag + 'bars: no month has negative production');
+    }
+  }
+
+  /* ---- clicking a month ----------------------------------------------------------- */
+  {
+    const s2 = await scurvePage(null);
+    const bands = s2.win.document.querySelectorAll('.po-sc-band');
+    /* ⚠️ One band per month ON THE AXIS, and the axis runs to TODAY, not to the last activity —
+       a curve that stops before now cannot show that nothing has happened since. Asserting a
+       literal count here would have been a test with an expiry date. */
+    eq(bands.length, s2.api._bars().keys.length, tag + 'click: one hit target per month on the axis');
+    ok(bands.length >= 3, tag + 'click: and the axis covers at least the three months of data');
+    ok(bands.every(b => typeof b.onclick === 'function'), tag + 'click: each is wired');
+    eq(s2.bd().style.display, 'none', tag + 'click: the panel starts hidden');
+    bands[1].onclick();
+    eq(s2.api._bd().i, 1, tag + 'click: the clicked month is the open one');
+    eq(s2.bd().style.display, '', tag + 'click: and the panel opens');
+    has(s2.bd().innerHTML, 'February 2026', tag + 'click: naming the month that was clicked');
+    /* ⚠️ The band is the toggle — clicking the open month closes it, so there is no second
+       control to find and nothing left open the planner did not ask for. */
+    s2.win.document.querySelectorAll('.po-sc-band')[1].onclick();
+    eq(s2.api._bd().i, null, tag + 'click: clicking the open month closes it again');
+    eq(s2.bd().style.display, 'none', tag + 'click: and the panel goes away');
+  }
+
+  /* ---- by project: free, and it adds up ------------------------------------------- */
+  {
+    const s2 = await scurvePage(null);
+    s2.win.document.querySelectorAll('.po-sc-band')[1].onclick();
+    s2.win.document.querySelectorAll('#po-bd-dim button').filter(b => b.dataset.dim === 'project')[0].onclick();
+    const html = s2.bd().innerHTML;
+    has(html, 'Avesta Residences', tag + 'by project: both projects are listed');
+    has(html, 'Bayfront Tower', tag + 'by project: including the second');
+    has(html, '% of the portfolio', tag + 'by project: each row states its share of the whole');
+    /* ⚠️⚠️ THE CHECK THE PANEL EXISTS FOR. "This month" is points of the PORTFOLIO, so the column
+       must sum to the portfolio figure in the header — otherwise the breakdown is explaining a
+       different number from the one the chart drew. Feb: P1 20/100 + P2 20/100 = 20%. */
+    const b = s2.api._bars();
+    const monthP = Math.round(b.perP[1] * 10) / 10;
+    has(html, 'portfolio this month: planned <b>' + monthP + '%',
+        tag + 'by project: the header states the portfolio figure for the month');
+    const foot = /<tfoot>[\s\S]*?<\/tfoot>/.exec(html)[0];
+    has(foot, monthP + '%', tag + 'by project: and the Total row equals it — the column adds up');
+  }
+
+  /* ---- by trade: the second aggregate, and the untagged bucket -------------------- */
+  {
+    const s2 = await scurvePage({ P1: TRADE_P1, P2: TRADE_P2 });
+    s2.win.document.querySelectorAll('.po-sc-band')[1].onclick();
+    await new Promise(r => setTimeout(r, 0));
+    const html = s2.bd().innerHTML;
+    has(html, 'by trade', tag + 'by trade: it is the default dimension, as asked');
+    has(html, 'Structural', tag + 'by trade: the trade is named');
+    /* ⚠️ "if not applicable put others" — this app already HAS a name for that bucket and the
+       trade aggregate spells it identically to the S-Curve module\'s own `UNTRADED`. Two names
+       for one bucket across two screens over one schedule is the drift to avoid. */
+    has(html, 'No trade set', tag + 'by trade: untagged work lands in one honest bucket, not dropped');
+    /* ⚠️ Structural spans BOTH projects and must be ONE row of 90 duration-days, not two. */
+    eq((html.match(/>Structural</g) || []).length, 1, tag + 'by trade: a trade on two projects is one row');
+    const b = s2.api._bars();
+    const monthP = Math.round(b.perP[1] * 10) / 10;
+    const foot = /<tfoot>[\s\S]*?<\/tfoot>/.exec(html)[0];
+    has(foot, monthP + '%', tag + 'by trade: the Total equals the portfolio figure, same as by project');
+    eq((s2.win._rpcs || []).filter(r => r[0] === 'schedule_scurve_trade_agg').length, 2,
+       tag + 'by trade: one trade aggregate per project — the same fan-out as the curve');
+    ok(!/does not reconcile/.test(html),
+       tag + 'by trade: a split that agrees with the curve raises no reconciliation warning');
+  }
+
+  /* ---- ⚠️⚠️ AND WHEN THE TWO AGGREGATES DISAGREE, THE PANEL SAYS SO ----------------
+     The trade split and the curve are two different RPCs over the same rows, so "they agree" is
+     an assumption about two pieces of SQL. Found in the live preview: a header reading 10.4%
+     above a Total reading 17.1%, with nothing on screen remarking on it. */
+  {
+    const wrong = { P1: { totDur: 40, doneDur: 24, nAct: 3, trades: [
+      { trade: 'Structural', totDur: 40, doneDur: 24, nAct: 3,
+        months: [{ key: '2026-01', pd: 20, ad: 10 }, { key: '2026-02', pd: 40, ad: 24 }] } ] },
+      /* P2's split claims twice the production of P2's own curve for February. */
+      P2: { totDur: 60, doneDur: 24, nAct: 4, trades: [
+      { trade: 'Structural', totDur: 60, doneDur: 24, nAct: 4,
+        months: [{ key: '2026-01', pd: 20, ad: 8 }, { key: '2026-02', pd: 60, ad: 16 },
+                 { key: '2026-03', pd: 60, ad: 24 }] } ] } };
+    const s3 = await scurvePage(wrong);
+    s3.win.document.querySelectorAll('.po-sc-band')[1].onclick();
+    await new Promise(r => setTimeout(r, 0));
+    const h3 = s3.bd().innerHTML;
+    has(h3, 'does not reconcile', tag + 'drift: the panel says its total does not match the chart');
+    has(h3, 'Read it as a shape', tag + 'drift: and says what the numbers are still good for');
+    /* ⚠️ Still RENDERED. The rows are the best available reading of the month; what is lost is
+       the check, and blanking the table would lose both. */
+    has(h3, 'Structural', tag + 'drift: the breakdown is still shown, not blanked');
+  }
+
+  /* ---- by trade with the migration not run ---------------------------------------- */
+  {
+    const s2 = await scurvePage('missing');
+    s2.win.document.querySelectorAll('.po-sc-band')[1].onclick();
+    await new Promise(r => setTimeout(r, 0));
+    const html = s2.bd().innerHTML;
+    has(html, '2026-09-16-scurve-trade-agg.sql', tag + 'no-rpc: it names the migration to run');
+    /* ⚠️⚠️ AND IT STILL ANSWERS. A panel that shows only a sentence about SQL is a broken panel;
+       the breakdown that needs nothing is rendered underneath, and the toggle flips with it so
+       the control and the content agree. */
+    has(html, 'Avesta Residences', tag + 'no-rpc: the by-project table is rendered anyway');
+    has(html, '<tfoot>', tag + 'no-rpc: with its own total, so the month is still explained');
+    eq(s2.api._bd().dim, 'project', tag + 'no-rpc: and the toggle flips to the one that answered');
+    has(html, 'By project', tag + 'no-rpc: both dimensions stay on offer');
+    ok(!/Could not/.test(html), tag + 'no-rpc: an un-run migration is a deployment fact, not an error');
+    /* ⚠️ ONE probe settles it. A function that is not deployed answers PGRST202 for every
+       project, and asking twenty more times is twenty more round trips for the same answer. */
+    eq((s2.win._rpcs || []).filter(r => r[0] === 'schedule_scurve_trade_agg').length, 1,
+       tag + 'no-rpc: it stops after the first PGRST202 instead of asking every project');
+    s2.win.document.querySelectorAll('#po-bd-dim button').filter(b => b.dataset.dim === 'project')[0].onclick();
+    has(s2.bd().innerHTML, 'Avesta Residences', tag + 'no-rpc: and by project draws');
   }
 
   /* ---- ⚠️ EVERY project failing still names them and paints nothing --------------- */
@@ -536,6 +727,21 @@ HOSTS.forEach(function (h) {
   ok(html.indexOf('id="' + h.sel.slice(1) + '"') >= 0,
      h.dir + ': the select ' + h.sel + ' it hands to takeOver exists in its own markup');
 });
+
+/* ⚠️ The panel tells a planner to run a migration BY NAME. If that file is not in the repo the
+   instruction is unfollowable, and nothing else would catch the typo. */
+{
+  ok(fs.existsSync(path.join(ROOT, 'migrations', '2026-09-16-scurve-trade-agg.sql')),
+     'the migration the breakdown names exists in the repo');
+  const sql = fs.readFileSync(path.join(ROOT, 'migrations', '2026-09-16-scurve-trade-agg.sql'), 'utf8');
+  ok(/create or replace function schedule_scurve_trade_agg\(p_id text\)/.test(sql),
+     'and it defines the function the client calls, with the signature it calls it by');
+  ok(/'No trade set'/.test(sql), "and buckets untagged work under the S-Curve module's own label");
+  /* ⚠️⚠️ AND IT IS SINGLE-PROJECT. A `_multi` here would re-introduce the statement that was
+     cancelled at the timeout this morning. */
+  ok(!/schedule_scurve_trade_agg_multi/.test(sql), 'and offers no multi-project variant to time out');
+  ok(/!~\* 'wbs\|summary'/.test(sql), 'and uses the same leaf rule as the curve it explains');
+}
 
 /* ============================================================= 4 · the Dashboard is empty of them */
 {

@@ -706,3 +706,42 @@ fall-through if `portfolio-dash.js` ever fails to load.
 Verified: `tools/test-portfolio-dash.js` 184/184, including that `schedule_scurve_agg_multi` is never
 called, that the combined planned curve never goes backwards, and that a partial read still draws.
 ⚠️ **Not verified signed in** — the timeout only reproduces against the owner’s own 21 projects.
+
+---
+
+## The portfolio curve gets periodic bars and a clickable month (2026-09-16 m) — eprobles
+
+Owner: *"pls provide breakdowns. and periodic values that are in the form of a bar chart. And allow
+users to click a specific month to know the breakdowns (for example per trade, but if not applicable
+put others)."*
+
+⚠️ **THIS MODULE'S OWN CURVE ALREADY HAD ALL THREE** (2026-09-10). What did not was the PORTFOLIO
+curve that became this page's landing view in portfolio scope — so the two now answer the same
+question the same way, with the same bar colours and the same "planned behind, actual in front"
+rule. `assets/js/portfolio-dash.js`; the root log has the detail.
+
+- **Bars** are cumulative *n* − *n−1* off the same array the curve is drawn from, so they cannot
+  drift from it. Their own right-hand axis, 55 % of the plot height, and ⚠️ **no actual bar on the
+  data-date month** — the same reason already recorded here for this module's own chart: that
+  month's cumulative actual is pinned to overall percent complete, so the step into it absorbs the
+  whole discrepancy between the model and reality, which is not a month's production.
+- **Click a month** for the split: **by trade** (what was asked for, and the default) or **by
+  project** (free — the per-project aggregates the curve already fetched ARE that answer).
+- ⚠️ **Per trade needs `migrations/2026-09-16-scurve-trade-agg.sql`.** The monthly roll-up carries no
+  trade and never has, and splitting a portfolio month client-side would mean a third of a million
+  activity rows — the read the server-side aggregate exists to avoid. The new aggregate is fanned
+  out one project at a time (for the reason this morning's timeout established), lazily, and cached.
+  Untagged work lands in **`No trade set`** — this module's own `UNTRADED` label, spelled identically
+  in the SQL on purpose, because two names for one bucket across two screens is the drift this repo
+  keeps paying for.
+- ⚠️ **Not deployed is not an error.** The panel falls through to *by project*, flips the toggle so
+  the control and the content agree, and names the file to run.
+- ⚠️⚠️ **The panel reconciles itself out loud.** The split and the curve come from two different
+  aggregates over the same rows, so "they agree" is an assumption about two pieces of SQL, not a
+  fact of one. If the Total does not match the header the panel says so and tells the reader to take
+  the rows as a shape. Found in the preview, where a header of 10.4 % sat above a Total of 17.1 %
+  and nothing on screen remarked on it.
+
+Verified: `tools/test-portfolio-dash.js` **252/252**, mutation-checked three ways, and rendered and
+clicked in a real browser against fixtures (both dimensions' totals matched the header exactly).
+⚠️ **Not verified against real data** — the new SQL has not been executed from here.

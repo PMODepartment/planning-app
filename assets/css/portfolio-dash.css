@@ -266,6 +266,61 @@
        a toggle that vanishes reads as a missing feature, one that is visibly off reads
        as "not available for this data", which is the true statement. */
     .po-sc-series .pd-seg > button[disabled] { opacity:.55; cursor:not-allowed; }
+    /* ---- The periodic bars, and the month a planner can click -------------------------------
+       Owner 2026-09-16: *"periodic values that are in the form of a bar chart … allow users to
+       click a specific month to know the breakdowns"*.
+       ⚠️ THE SAME TWO COLOURS AS THE CUMULATIVE LINES, so a reader learns one key and not two:
+       planned is the neutral ink, actual is brand red. Spelled the same way the single-project
+       S-Curve spells its own bars (`.sc-barp` / `.sc-bara`, modules/s-curve) — one idiom for one
+       chart shape across two screens.
+       ⚠️ Planned is the PALE one and sits behind: a month under plan should show the plan
+       standing behind it, not two bars competing for the slot. */
+    .po-barp { fill:var(--pd-dark); opacity:.20; }
+    html.pd-dark .po-barp { fill:#c7ccd1; opacity:.22; }
+    .po-bara { fill:var(--pd-red); opacity:.85; }
+    .sw2-barp { background:var(--pd-dark); opacity:.3; }
+    html.pd-dark .sw2-barp { background:#c7ccd1; }
+    .sw2-bara { background:var(--pd-red); opacity:.85; }
+    /* ⚠️ The bars get their OWN right-hand axis. A month's production is a tenth the size of a
+       cumulative figure, so sharing the left axis would draw every bar as a sliver on the floor. */
+    .po-ylab3 { fill:var(--pd-muted); font-size:10px; text-anchor:start; }
+    .po-ylab3-t { font-size:9px; font-weight:700; text-anchor:end; }
+    /* ⚠️⚠️ THE HIT TARGET IS THE WHOLE COLUMN, NOT THE BAR. A month whose bar is two pixels tall
+       (or absent altogether) is exactly the month a planner most wants to ask about, and a
+       two-pixel target cannot be hit. Transparent until hovered, so it never competes with the
+       chart it sits on top of. */
+    .po-svg-click { cursor:default; }
+    .po-sc-band { fill:var(--pd-ink); opacity:0; cursor:pointer; }
+    .po-sc-band:hover { opacity:.05; }
+    .po-sc-band.on { opacity:.09; }
+    html.pd-dark .po-sc-band { fill:#fff; }
+
+    /* ---- What a clicked month is made of ----------------------------------------------------
+       ⚠️ A panel UNDER the chart, not a modal: the question it answers is "what is inside THAT
+       month", and a dialog over the chart hides the month being asked about. */
+    .po-sc-bd { margin-top:16px; }
+    .po-bd-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+    .po-bd-head h3 { margin:0; text-transform:none; font-size:15px; }
+    .po-bd-sum { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    .po-bd-sum b { color:var(--pd-ink); }
+    .po-bd-head #po-bd-x { margin-left:auto; }
+    .po-bd-note { margin-top:10px; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.55; }
+    .po-bd-note code { font-size:.94em; }
+    .po-bd-table td.k small { display:block; font-weight:400; color:var(--pd-muted); font-size:var(--pd-fs-xs); }
+    /* ⚠️ Actual is tinted in the table exactly as it is on the chart, so the two read as one
+       answer rather than as two tables that happen to be near each other. */
+    .po-bd-table .is-act { color:var(--pd-red); }
+    /* ⚠️ DIMMED, NOT DROPPED. A trade that did nothing in this month is an ANSWER to "what was
+       this month made of" — hiding it turns a complete list into a filtered one with nothing
+       saying so, and the Total row would then look wrong against the header. */
+    .po-bd-quiet td { opacity:.55; }
+    .po-bd-table tfoot td { font-weight:700; border-top:2px solid var(--pd-line); }
+    /* ⚠️ The panel saying its own total does not match the chart above it. Warn tone, not error:
+       the numbers are still the best available reading of the month — what is lost is the check. */
+    .po-bd-warn { margin-top:10px; padding:9px 12px; border-radius:var(--pd-radius-md,8px);
+                  background:color-mix(in srgb, var(--pd-warn) 12%, transparent);
+                  border:1px solid color-mix(in srgb, var(--pd-warn) 40%, transparent);
+                  font-size:var(--pd-fs-sm); line-height:1.5; color:var(--pd-ink); }
     /* The project legend can be long, so it wraps and sits under the style legend. */
     .po-legend-proj { margin-top:6px; }
     /* ---- Stakeholder directory (portfolio-level authoring) ---- */

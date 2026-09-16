@@ -728,7 +728,11 @@
       "<div class=\"po-card\">",
       "  <h3 style=\"text-transform:none;font-size:15px;\">Portfolio S-Curve — Planned vs Actual (duration-weighted, across selected projects)</h3>",
       "  <div id=\"po-sc-chart\"></div>",
-      "</div>"
+      "</div>",
+      "<!-- What a clicked month is MADE OF. A panel under the chart, not a modal: the question",
+      "     it answers is \"what is inside THAT month\", and covering the chart hides the month",
+      "     being asked about. Hidden until a month is clicked. -->",
+      "<div class=\"po-card po-sc-bd\" id=\"po-sc-bd\" style=\"display:none;\"></div>"
     ].join('\n'),
     setup: function () {
     function isWbsRow(r) { return r.activity_type === 'WBS Summary'; }
@@ -843,7 +847,10 @@
       var axis = [], labels = [];
       for (var k = lo; k <= hi; k++) { axis.push(k); labels.push(new Date(Math.floor(k / 12), k % 12, 1)); }
 
-      var W = 1000, H = 340, padL = 40, padR = 14, padT = 14, padB = 30, n = axis.length;
+      /* ⚠️ padR carries the BARS' own axis, which lives outside the plot. At the old 14 its
+         labels were drawn past the viewBox and simply were not there — measured in the preview,
+         where "per month" rendered as "Pe". */
+      var W = 1000, H = 340, padL = 40, padR = 48, padT = 14, padB = 30, n = axis.length;
       function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
       function y(pct) { return padT + (1 - pct / 100) * (H - padT - padB); }
 
@@ -882,6 +889,62 @@
         }).join('');
       }
 
+      /* ================================================================= THE PERIODIC BARS
+         Owner 2026-09-16: *"periodic values that are in the form of a bar chart"*.
+         ⚠️⚠️ THE BARS ARE THE PORTFOLIO'S, NOT ONE PROJECT'S. The lines can be N projects each on
+         its own 0–100 % scale (percent of ITS OWN total, because duration units are not
+         comparable across projects) — but a histogram of N different denominators stacked in one
+         slot would be adding percentages of different things. So the bars are the combined
+         roll-up, in points of the PORTFOLIO's total, which is one denominator and adds up.
+         ⚠️ Their own right-hand axis: a month's production is a tenth the size of a cumulative
+         figure, and sharing the left axis would draw every bar as a sliver on the floor. */
+      var roll = scData.rollup, bars = '', perP = null, perA = null, perMax = 0;
+      if (roll && !roll.empty) {
+        var RT = roll.TOT || 1;
+        var rollP = scOnAxis(roll, roll.plannedC.map(function (v) { return v == null ? null : v / RT * 100; }), axis, null, null);
+        var rollAHi = axis.indexOf(scMonthKey(roll.months[roll.ti]));
+        var rollA = scOnAxis(roll, roll.actualC.map(function (v) { return v == null ? null : v / RT * 100; }), axis, null, rollAHi < 0 ? null : rollAHi);
+        perP = scPeriodic(rollP); perA = scPeriodic(rollA);
+        /* ⚠️⚠️ THE DATA-DATE MONTH GETS NO ACTUAL BAR, and the reason is on file in the
+           single-project module: `scComputeFromAgg` pins that month's cumulative actual to the
+           project's overall percent complete, so the step into it absorbs the whole discrepancy
+           between the modelled curve and reality. That is what you want a cumulative line to do
+           and is NOT a month's production; drawn as a bar it is a wrong claim about one month. */
+        if (rollAHi >= 0) perA[rollAHi] = null;
+        [perP, perA].forEach(function (arr) { arr.forEach(function (v) { if (v != null && v > perMax) perMax = v; }); });
+        if (perMax > 0) {
+          /* ⚠️⚠️ THE BARS GET BARELY HALF THE HEIGHT, AND THAT IS A JUDGEMENT ABOUT READING, NOT
+             SPACE. Scaled to fill the plot they are the loudest thing on it and the eye reads a
+             month-by-month histogram as the headline — but this card's subject is the cumulative
+             curve, and the bars answer a second question underneath it. Measured in the preview
+             at 0.92 the tallest bar crossed the 100% gridline, which also made two unrelated
+             scales look like one. */
+          var yb = function (v) { return (H - padB) - (v / perMax) * (H - padT - padB) * 0.55; };
+          var pitch = n > 1 ? (W - padL - padR) / (n - 1) : (W - padL - padR);
+          var bw = Math.max(1.5, Math.min(14, pitch * 0.62)), bwA = Math.max(1, bw * 0.56);
+          var bar = function (i, v, cls, wdt) {
+            if (v == null || !(v > 0)) return '';
+            var h = (H - padB) - yb(v);
+            if (!(h > 0.4)) return '';
+            return '<rect class="' + cls + '" x="' + (x(i) - wdt / 2) + '" y="' + yb(v) +
+              '" width="' + wdt + '" height="' + h + '" rx="1"></rect>';
+          };
+          for (var bi = 0; bi < n; bi++) {
+            // Planned behind and wider, actual in front and narrower — so a month under plan
+            // shows the plan standing behind it rather than the two competing for the slot.
+            bars += bar(bi, perP[bi], 'po-barp', bw) + bar(bi, perA[bi], 'po-bara', bwA);
+          }
+          [0, 0.5, 1].forEach(function (f) {
+            bars += '<text x="' + (W - padR + 5) + '" y="' + (yb(perMax * f) + 3) + '" class="po-ylab3">' +
+              (Math.round(perMax * f * 10) / 10) + '%</text>';
+          });
+          // ⚠️ Right-anchored at the very edge: left-anchored beside the numbers it ran past the
+          //    viewBox and rendered as "per mont" — measured, not guessed.
+          bars += '<text x="' + (W - 3) + '" y="' + (padT - 3) + '" class="po-ylab3 po-ylab3-t">per month</text>';
+        }
+      }
+      scBars = { perP: perP, perA: perA, keys: axis.map(scKeyOf), labels: labels };
+
       var lines = '';
       per.forEach(function (p, pi) {
         var d = p.d, c = scColor(pi), T = d.TOT || 1;
@@ -902,6 +965,8 @@
           ';border-width:2px;"></span>' + esc(p.name) + '</span>';
       }).join('');
       var styleLegend =
+        '<span class="po-lg2"><span class="sw2 sw2-barp"></span>Planned this month</span>' +
+        '<span class="po-lg2"><span class="sw2 sw2-bara"></span>Actual this month</span>' +
         '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;border-style:dashed;"></span>Baseline</span>' +
         '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;"></span>Actual</span>' +
         '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;border-style:dotted;"></span>Forecast</span>';
@@ -911,7 +976,7 @@
             var lbl = ['Baseline', 'Actual', 'Forecast'][i];
             var off = (kk === 'fc' && !anyFc);
             return '<button type="button" data-sc="' + kk + '"' +
-              (off ? ' disabled title="The combined portfolio roll-up carries no forecast — narrow the filter to ' + SC_FULL_MAX + ' projects or fewer for per-project curves."' : '') +
+              (off ? ' disabled title="The combined portfolio roll-up carries no forecast — it is a monthly aggregate with no SPI stretch in it."' : '') +
               (sel[kk] && !off ? ' class="on"' : '') + '>' + lbl + '</button>';
           }).join('') +
         '</div></div>';
@@ -923,12 +988,12 @@
          to read them. Neither case silently drops a project. */
       var note = scData.rollupOnly
         ? '<div class="po-sc-note">One <b>combined</b> curve across <b>' + (scData.nProjects || per.length) +
-          '</b> projects, computed on the database rather than read row by row. Narrow the project filter to <b>' +
-          SC_FULL_MAX + ' projects or fewer</b> to compare each project\'s own curve.</div>'
+          '</b> projects, computed on the database rather than read row by row. ' +
+          'Open one project from the selector above for its own curve, or click any month for the ' +
+          '<b>breakdown</b> of what went into it.</div>'
         : (!scSeriesSel && per.length > SC_FULL_MAX)
         ? '<div class="po-sc-note">Showing <b>Actual</b> only — ' + per.length +
-          ' projects × 3 series is too many lines to read. Turn Baseline or Forecast back on to add them, ' +
-          'or narrow the project filter.</div>'
+          ' projects × 3 series is too many lines to read. Turn Baseline or Forecast back on to add them.</div>'
         : '';
 
       /* ⚠️⚠️ A PARTIAL CURVE MUST SAY IT IS PARTIAL, ON THE CHART. A portfolio curve missing
@@ -939,8 +1004,21 @@
           '</b> projects — ' + esc(scNameList(scData.failedNames)) + ' could not be read. This is ' +
           'not the whole portfolio.</div>'
         : '';
+      /* ⚠️⚠️ ONE INVISIBLE BAND PER MONTH, FULL HEIGHT — not a hit target on the bar itself. A
+         month whose bar is 2px tall (or absent) is exactly the month a planner most wants to ask
+         about, and a 2px target cannot be hit. The band is the whole column. */
+      var bands = '';
+      var bwHit = n > 1 ? (W - padL - padR) / (n - 1) : (W - padL - padR);
+      for (var hi2 = 0; hi2 < n; hi2++) {
+        bands += '<rect class="po-sc-band' + (scBdOpen === hi2 ? ' on' : '') + '" data-mi="' + hi2 +
+          '" x="' + (x(hi2) - bwHit / 2) + '" y="' + padT + '" width="' + bwHit +
+          '" height="' + (H - padT - padB) + '"><title>' +
+          esc(labels[hi2].toLocaleDateString('en-US', { month: 'long', year: 'numeric' })) +
+          ' — click for the breakdown</title></rect>';
+      }
       host.innerHTML =
-        '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg">' + grid + todayL + lines + xlab + '</svg>' +
+        '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg po-svg-click">' + grid + bars + todayL +
+          lines + xlab + bands + '</svg>' +
         toggles + short + note +
         '<div class="po-legend2">' + styleLegend + '</div>' +
         '<div class="po-legend2 po-legend-proj">' + projLegend + '</div>';
@@ -953,6 +1031,9 @@
           scSeriesSel[b.dataset.sc] = !b.classList.contains('on');
           scRenderChart();
         };
+      });
+      Array.prototype.forEach.call(host.querySelectorAll('.po-sc-band'), function (b) {
+        b.onclick = function () { scOpenBd(+b.dataset.mi); };
       });
     }
 
@@ -1014,6 +1095,118 @@
     function scNames(failed, nameOf) {
       return scNameList(failed.map(function (f) { return nameOf[f.id] || f.id; }));
     }
+
+    /* =========================================================================================
+       PERIODIC VALUES — owner 2026-09-16: *"periodic values that are in the form of a bar chart"*.
+       ⚠️⚠️ DERIVED, NEVER RE-SUMMED. Month n = cumulative n − cumulative n−1, off the same arrays
+       the curve is drawn from. Two consequences worth stating: the bars ALWAYS add back up to the
+       line (they cannot drift from it, because they ARE it), and there is no second pass over the
+       schedule to keep in step with the first. Same rule the single-project S-Curve applies.
+       ⚠️ `null` stays null. A month a series does not cover is not a month of zero production, and
+       an absent bar and a zero-height bar mean different things. ======================= */
+    function scPeriodic(cum) {
+      var out = [], prev = null;
+      for (var i = 0; i < cum.length; i++) {
+        var v = cum[i];
+        if (v == null) { out.push(null); continue; }
+        out.push(Math.max(0, v - (prev == null ? 0 : prev)));
+        prev = v;
+      }
+      return out;
+    }
+
+    /* One month-key axis shared by the chart and by every breakdown drawn under it. */
+    function scKeyOf(k) { return Math.floor(k / 12) + '-' + String((k % 12) + 1).padStart(2, '0'); }
+
+    /* ⚠️⚠️ THE ONE CARRY-FORWARD RULE, and it is shared on purpose. `scMergeAggs` and every
+       breakdown below put a per-entity month series onto a shared axis, and they must all read an
+       absent month the same way: BEFORE the entity starts it is genuinely 0; AFTER it finishes its
+       cumulative figure HOLDS. Two copies of this is how one of them starts dipping. */
+    function scCarry(months, axisKeys) {
+      var by = {};
+      (months || []).forEach(function (m) { by[m.key] = m; });
+      var pd = [], ad = [], last = { pd: 0, ad: 0 };
+      axisKeys.forEach(function (k) {
+        var m = by[k];
+        if (m) last = { pd: +m.pd || 0, ad: +m.ad || 0 };
+        pd.push(last.pd); ad.push(last.ad);
+      });
+      return { pd: pd, ad: ad };
+    }
+
+    /* ============================== the per-TRADE source, fetched only if it is asked for ====
+       Owner 2026-09-16: *"click a specific month to know the breakdowns (for example per trade…)"*
+       ⚠️⚠️ THE MONTHLY ROLL-UP CARRIES NO TRADE — it never has (see scComputeFromAgg). The only
+       client-side way to split a month by trade is the raw activities, which across twenty-one
+       projects is a third of a million rows: precisely the read the server-side aggregate exists
+       to avoid. So there is a second aggregate that groups by trade,
+       `migrations/2026-09-16-scurve-trade-agg.sql`, fanned out per project exactly as the curve is.
+       ⚠️ LAZY, AND CACHED. A planner who never opens a breakdown never pays for it; one who opens
+       three pays once. ⚠️ Not deployed is a NAMED state, not an error: the panel says which
+       migration to run and the by-project breakdown — which needs nothing — still answers. */
+    var scTrade = null;           // null | 'loading' | 'missing' | { entries: [...] }
+    var scTradeErr = null;
+    async function fetchTradeAggForIds(ids) {
+      var got = [], missing = false, err = null, queue = ids.slice();
+      /* ⚠️⚠️ ONE PROBE FIRST, THEN FAN OUT. A function that is not deployed answers PGRST202 for
+         EVERY project, so firing twenty-one calls to learn one deployment fact is twenty wasted
+         round trips — and on a slow link twenty seconds before the panel can say the one useful
+         sentence it has. The probe is a real read, so nothing is paid twice. */
+      if (queue.length) {
+        var first = queue.shift();
+        try {
+          var r0 = await sb().rpc('schedule_scurve_trade_agg', { p_id: first });
+          if (r0.error) throw r0.error;
+          if (r0.data && r0.data.trades) got.push(r0.data);
+        } catch (e0) {
+          if (String((e0 && e0.code) || '') === 'PGRST202' || /Could not find the function/i.test(String(e0 && e0.message))) {
+            return { aggs: [], missing: true, err: null };
+          }
+          err = e0;
+        }
+      }
+      async function worker() {
+        while (queue.length) {
+          var id = queue.shift();
+          try {
+            var r = await sb().rpc('schedule_scurve_trade_agg', { p_id: id });
+            if (r.error) throw r.error;
+            if (r.data && r.data.trades) got.push(r.data);
+          } catch (e) {
+            /* ⚠️ A function that is not deployed answers PGRST202 for EVERY project, so one
+               such answer settles it — there is no point asking twenty more times. */
+            if (String((e && e.code) || '') === 'PGRST202' || /Could not find the function/i.test(String(e && e.message))) {
+              missing = true; queue.length = 0; return;
+            }
+            if (!err) err = e;
+          }
+        }
+      }
+      var ws = [];
+      for (var i = 0; i < Math.min(SC_AGG_CONC, ids.length); i++) ws.push(worker());
+      await Promise.all(ws);
+      return { aggs: got, missing: missing, err: err };
+    }
+
+    /* Sum N projects' per-trade splits into one list of trades. ⚠️ Through scCarry, like every
+       other merge here: a trade present on one project and not another must hold, not dip. */
+    function scMergeTrades(aggs, axisKeys) {
+      var byTrade = {};
+      aggs.forEach(function (a) {
+        (a.trades || []).forEach(function (t) {
+          var e = byTrade[t.trade] || (byTrade[t.trade] = {
+            name: t.trade, totDur: 0, doneDur: 0, nAct: 0,
+            pd: axisKeys.map(function () { return 0; }), ad: axisKeys.map(function () { return 0; })
+          });
+          e.totDur += +t.totDur || 0; e.doneDur += +t.doneDur || 0; e.nAct += +t.nAct || 0;
+          var c = scCarry(t.months, axisKeys);
+          for (var i = 0; i < axisKeys.length; i++) { e.pd[i] += c.pd[i]; e.ad[i] += c.ad[i]; }
+        });
+      });
+      return Object.keys(byTrade).map(function (k) { return byTrade[k]; })
+        .sort(function (a, b) { return b.totDur - a.totDur; });
+    }
+
     function scMergeAggs(list) {
       if (!list.length) return null;
       var keys = {};
@@ -1022,13 +1215,15 @@
       if (!axis.length) return null;
       var acc = axis.map(function () { return { pd: 0, pc: 0, ad: 0, ac: 0 }; });
       list.forEach(function (a) {
-        var by = {};
+        /* ⚠️ Through the shared scCarry — see it for why an absent month is not a zero. The cost
+           columns keep their own tiny carry because the trade aggregate has no money in it. */
+        var c = scCarry(a.agg.months, axis), by = {}, lastC = { pc: 0, ac: 0 };
         (a.agg.months || []).forEach(function (m) { by[m.key] = m; });
-        var last = { pd: 0, pc: 0, ad: 0, ac: 0 };
         axis.forEach(function (k, i) {
           var m = by[k];
-          if (m) last = { pd: +m.pd || 0, pc: +m.pc || 0, ad: +m.ad || 0, ac: +m.ac || 0 };
-          acc[i].pd += last.pd; acc[i].pc += last.pc; acc[i].ad += last.ad; acc[i].ac += last.ac;
+          if (m) lastC = { pc: +m.pc || 0, ac: +m.ac || 0 };
+          acc[i].pd += c.pd[i]; acc[i].ad += c.ad[i];
+          acc[i].pc += lastC.pc; acc[i].ac += lastC.ac;
         });
       });
       function total(f) {
@@ -1068,6 +1263,215 @@
       return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: a.nAct || 0 };
     }
 
+
+    /* =========================================================================================
+       WHAT A CLICKED MONTH IS MADE OF
+       Owner 2026-09-16: *"allow users to click a specific month to know the breakdowns (for
+       example per trade, but if not applicable put others)"*.
+
+       ⚠️⚠️ TWO COLUMNS THAT ARE ROUTINELY CONFUSED, AND THE HEADER SAYS SO. **This month** is
+       points of the PORTFOLIO's percentage — it sums to the portfolio's own figure for that
+       month, which is the check. **Own %** is how far along that project or trade is in its own
+       scope. A trade at 100 % of itself on a portfolio where it is 4 % of the work contributes 4
+       points, not 100, and a reader given only the second number would read a finished portfolio.
+
+       ⚠️ TWO DIMENSIONS, ONE RENDERER. By project needs nothing (the per-project aggregates are
+       already in hand from the curve's own fan-out); by trade needs the second aggregate. Both
+       reduce to {name, totDur, pd[], ad[]} on the shared axis, so there is one table and one set
+       of sums rather than two that can disagree.
+       ========================================================================================= */
+    var scBdOpen = null;          // the month index currently expanded, or null
+    var scBdDim = 'trade';        // 'trade' | 'project' — the owner asked for trade first
+    var scBars = null;            // the periodic arrays the chart last drew, shared with the panel
+
+    function scCloseBd() {
+      scBdOpen = null;
+      var el = document.getElementById('po-sc-bd');
+      if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+      scRenderChart();
+    }
+
+    function scOpenBd(i) {
+      // ⚠️ Clicking the open month CLOSES it — the band is the toggle, so there is no second
+      //    control to find and nothing left open that the planner did not ask for.
+      if (scBdOpen === i) { scCloseBd(); return; }
+      scBdOpen = i;
+      scRenderChart();
+      scRenderBd();
+      if (scBdDim === 'trade') scEnsureTrade();
+    }
+
+    /* Fetch the trade split once, then repaint whatever is open. */
+    function scEnsureTrade() {
+      if (scTrade && scTrade !== 'loading') return;
+      if (scTrade === 'loading') return;
+      scTrade = 'loading';
+      var ids = (scLoadedIds || []).slice();
+      fetchTradeAggForIds(ids).then(function (r) {
+        scTrade = r.missing ? 'missing' : { aggs: r.aggs };
+        scTradeErr = r.err || null;
+        if (scBdOpen != null) scRenderBd();
+      }).catch(function (e) {
+        scTrade = 'missing'; scTradeErr = e;
+        if (scBdOpen != null) scRenderBd();
+      });
+    }
+
+    /* The by-PROJECT rows, straight off the aggregates the curve already fetched. */
+    function scBdProjects(axisKeys) {
+      var nameOf = {};
+      PROJ.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
+      return scAggs.map(function (a) {
+        var c = scCarry(a.agg.months, axisKeys);
+        return { name: nameOf[a.id] || a.id, totDur: +a.agg.totDur || 0,
+                 doneDur: +a.agg.doneDur || 0, nAct: +a.agg.nAct || 0, pd: c.pd, ad: c.ad };
+      }).sort(function (x2, y2) { return y2.totDur - x2.totDur; });
+    }
+
+    /* ⚠️ The header is built in ONE place because three branches render it — the trade table, the
+       project table and the not-deployed fallback. Three copies of a header carrying the figure
+       every column below it has to add up to is three chances for one of them to say something
+       different from the other two. */
+    function scRenderBdHead(when, monthP, monthA, r1) {
+      return '<div class="po-bd-head"><h3>' + esc(when) + ' — by ' +
+          (scBdDim === 'trade' ? 'trade' : 'project') + '</h3>' +
+        '<span class="po-bd-sum">portfolio this month: planned <b>' + (r1(monthP) == null ? '—' : r1(monthP) + '%') +
+          '</b> · actual <b>' + (r1(monthA) == null ? '—' : r1(monthA) + '%') + '</b></span>' +
+        '<div class="pd-seg" id="po-bd-dim" role="group" aria-label="Breakdown">' +
+          '<button type="button" data-dim="trade"' + (scBdDim === 'trade' ? ' class="on"' : '') + '>By trade</button>' +
+          '<button type="button" data-dim="project"' + (scBdDim === 'project' ? ' class="on"' : '') + '>By project</button>' +
+        '</div>' +
+        '<button class="pd-btn pd-btn-sm" id="po-bd-x">Close</button></div>';
+    }
+    function scTradeMissingMsg() {
+      return 'Showing <b>by project</b>: the per-trade split needs ' +
+        '<code>migrations/2026-09-16-scurve-trade-agg.sql</code>, which is not deployed on this ' +
+        'database yet. Run it in the Supabase SQL editor and <b>By trade</b> will answer too.' +
+        (scTradeErr ? ' (' + esc(PDb.errText(scTradeErr)) + ')' : '');
+    }
+
+    function scRenderBd() {
+      var card = document.getElementById('po-sc-bd');
+      if (!card || scBdOpen == null || !scBars) return;
+      var i = scBdOpen, axisKeys = scBars.keys;
+      if (i < 0 || i >= axisKeys.length) { scCloseBd(); return; }
+      card.style.display = '';
+      var when = scBars.labels[i].toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      var monthP = scBars.perP ? scBars.perP[i] : null;
+      var monthA = scBars.perA ? scBars.perA[i] : null;
+      var r1 = function (v) { return v == null ? null : Math.round(v * 10) / 10; };
+
+      var head = scRenderBdHead(when, monthP, monthA, r1);
+
+      function wire() {
+        Array.prototype.forEach.call(card.querySelectorAll('#po-bd-dim button'), function (b) {
+          b.onclick = function () {
+            scBdDim = b.dataset.dim;
+            scRenderBd();
+            if (scBdDim === 'trade') scEnsureTrade();
+          };
+        });
+        var x2 = document.getElementById('po-bd-x');
+        if (x2) x2.onclick = scCloseBd;
+        if (window.Icons && Icons.hydrate) Icons.hydrate(card);
+      }
+
+      /* ⚠️ The trade split is a NAMED state machine, not a truthy check: 'loading' and 'not
+         deployed' read completely differently to a planner and an unguarded `if (!scTrade)`
+         would print the same thing for both. */
+      if (scBdDim === 'trade' && scTrade !== null && typeof scTrade === 'object') {
+        var rows = scMergeTrades(scTrade.aggs || [], axisKeys);
+        card.innerHTML = head + scBdTable(rows, i, monthP, monthA, 'Trade');
+        wire(); return;
+      }
+      /* ⚠️⚠️ A PANEL THAT ANSWERS NOTHING IS A BROKEN PANEL. If the trade split is not deployed,
+         fall THROUGH to the breakdown that needs nothing rather than leaving a planner holding a
+         sentence about SQL. The toggle flips with it, so the control and the content agree —
+         showing projects under a lit "By trade" button would be its own small lie. */
+      if (scBdDim === 'trade' && scTrade === 'missing') {
+        scBdDim = 'project';
+        card.innerHTML = scRenderBdHead(when, monthP, monthA, r1) +
+          '<div class="po-bd-note">' + scTradeMissingMsg() + '</div>' +
+          scBdTable(scBdProjects(axisKeys), i, monthP, monthA, 'Project');
+        wire(); return;
+      }
+      if (scBdDim === 'trade') {
+        // Only 'loading' reaches here — 'missing' fell through to the project table above.
+        card.innerHTML = head + '<div class="po-bd-note">Reading the trade split of ' +
+          (scLoadedIds || []).length + ' project(s)…</div>';
+        wire(); return;
+      }
+      card.innerHTML = head + scBdTable(scBdProjects(axisKeys), i, monthP, monthA, 'Project');
+      wire();
+    }
+
+    /* ⚠️ ONE TABLE FOR BOTH DIMENSIONS. Whatever is being split, the questions are the same four,
+       and a second near-identical renderer is how two views of one month start disagreeing. */
+    function scBdTable(rows, i, monthP, monthA, what) {
+      /* ⚠️⚠️ THE PANEL CHECKS ITSELF, OUT LOUD. "This month" is points of the portfolio, so the
+         column MUST sum to the figure in the header — that is the whole claim the table makes.
+         The by-trade rows come from a DIFFERENT aggregate than the curve (two RPCs over the same
+         rows), so "they agree" is an assumption about two pieces of SQL, not a fact of one. If
+         they ever drift — a leaf rule edited on one side, a trade re-tagged between the two reads
+         — the honest thing is to SAY the total does not reconcile, not to print two numbers that
+         contradict each other and leave the reader to pick one. Caught in the preview, where a
+         header of 10.4% sat above a total of 17.1% and nothing on screen remarked on it. */
+      var TOT = rows.reduce(function (t, r) { return t + (r.totDur || 0); }, 0);
+      if (!rows.length || !(TOT > 0)) {
+        return '<div class="po-bd-note">Nothing to break down for this month.</div>';
+      }
+      var out = rows.map(function (r) {
+        var prevP = i > 0 ? r.pd[i - 1] : 0, prevA = i > 0 ? r.ad[i - 1] : 0;
+        return {
+          name: r.name,
+          share: r.totDur / TOT * 100,
+          // points of the PORTFOLIO — the denominator is the whole, which is what makes these sum
+          ptsP: Math.max(0, (r.pd[i] - prevP)) / TOT * 100,
+          ptsA: Math.max(0, (r.ad[i] - prevA)) / TOT * 100,
+          ownP: r.totDur ? r.pd[i] / r.totDur * 100 : null,
+          ownA: r.totDur ? r.ad[i] / r.totDur * 100 : null,
+          nAct: r.nAct || 0
+        };
+      }).sort(function (a, b) { return (b.ptsP + b.ptsA) - (a.ptsP + a.ptsA); });
+      var r1 = function (v) { return v == null ? '—' : (Math.round(v * 10) / 10) + '%'; };
+      var sumP = out.reduce(function (t, r) { return t + r.ptsP; }, 0);
+      var sumA = out.reduce(function (t, r) { return t + r.ptsA; }, 0);
+      // 0.05 pp — below a tenth of a point nothing on screen can differ, so that is rounding.
+      var drift = (monthP != null && Math.abs(sumP - monthP) > 0.05) ||
+                  (monthA != null && Math.abs(sumA - monthA) > 0.05);
+      var body = out.map(function (r) {
+        var zero = !(r.ptsP > 0.05 || r.ptsA > 0.05);
+        return '<tr' + (zero ? ' class="po-bd-quiet"' : '') + '><td class="k">' + esc(r.name) +
+          '<small>' + (Math.round(r.share * 10) / 10) + '% of the portfolio' +
+          (r.nAct ? ' · ' + r.nAct + ' activit' + (r.nAct === 1 ? 'y' : 'ies') : '') + '</small></td>' +
+          '<td class="num">' + r1(r.ptsP) + '</td>' +
+          '<td class="num is-act">' + r1(r.ptsA) + '</td>' +
+          '<td class="num">' + r1(r.ownP) + '</td>' +
+          '<td class="num is-act">' + r1(r.ownA) + '</td></tr>';
+      }).join('');
+      return '<div style="overflow-x:auto;"><table class="po-table po-bd-table">' +
+        '<thead><tr><th>' + esc(what) + '</th>' +
+          '<th class="num" title="Points of the PORTFOLIO&#39;s percentage this ' + esc(what.toLowerCase()) +
+            ' added in this month — these sum to the portfolio figure above">This month planned</th>' +
+          '<th class="num" title="Same, for work actually done">This month actual</th>' +
+          '<th class="num" title="How far along it is in its OWN scope, cumulative to this month">Own % planned</th>' +
+          '<th class="num" title="Same, actual">Own % actual</th></tr></thead>' +
+        '<tbody>' + body + '</tbody>' +
+        '<tfoot><tr><td class="k">Total</td><td class="num">' + r1(sumP) + '</td>' +
+          '<td class="num is-act">' + r1(sumA) + '</td><td class="num">—</td><td class="num">—</td></tr></tfoot>' +
+        '</table></div>' +
+        (drift
+          ? '<div class="po-bd-warn">\u26A0 This breakdown sums to <b>' + (Math.round(sumP * 10) / 10) +
+            '%</b> planned, against the <b>' + (Math.round(monthP * 10) / 10) + '%</b> the chart drew for ' +
+            'the same month — it does not reconcile. Read it as a shape, not as figures: the split and ' +
+            'the curve come from two different aggregates and one of them is out of step.</div>'
+          : '') +
+        '<div class="po-bd-note"><b>This month</b> is points of the portfolio\'s own percentage — the ' +
+        'column adds up to the portfolio figure in the header, which is the check. <b>Own %</b> is how ' +
+        'far along that ' + esc(what.toLowerCase()) + ' is in its own scope: one at 100% of itself that ' +
+        'is 4% of the portfolio contributes 4 points, not 100.</div>';
+    }
+
     function scRenderKpis(d) {
       var host = document.getElementById('po-sc-kpis');
       if (d.empty) { host.innerHTML = ''; return; }
@@ -1077,7 +1481,7 @@
         kpi2('Planned to date', r1(d.plannedPct) + '%') + kpi2('Actual to date', r1(d.actualPct) + '%') +
         kpi2('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? '--pd-ok' : '--pd-bad');
     }
-    var scLoadedIds = null;
+    var scLoadedIds = null, scAggs = [];
     /* ⚠️ A monotonic load token. Two overlapping loads used to BOTH paint, and whichever
        finished LAST committed scData / scLoadedIds — which is how a superseded 21-project
        load left its "Loading schedules across 21 project(s)…" on screen while the filter
@@ -1112,7 +1516,11 @@
         });
         if (gen !== _scGen) return;                       // superseded — do not paint
         aggFailed = ra.failed || [];
-        var merged = scMergeAggs(ra.aggs || []);
+        /* ⚠️ KEPT, not discarded after the merge: the by-project breakdown of any month is
+           already sitting in these, so it costs no second read. */
+        scAggs = ra.aggs || [];
+        scTrade = null; scTradeErr = null;     // a new scope invalidates the trade split
+        var merged = scMergeAggs(scAggs);
         if (merged) roll = scComputeFromAgg(merged);
         /* ⚠️ Only an EMPTY result is an error. A partial one draws, and says so below — a curve
            over eighteen of twenty-one projects beats an error message over all of them. */
@@ -1165,6 +1573,11 @@
                  nRead: ids.length - failed.length, failed: failed,
                  failedNames: failed.map(function (f) { return nameOf[f.id] || f.id; }) };
       scLoadedIds = ids;
+      // ⚠️ A new scope means a new axis; a month index from the old one points at a different
+      //    month, or at none. Close rather than repaint something nobody asked to see.
+      scBdOpen = null;
+      var _bd = document.getElementById('po-sc-bd');
+      if (_bd) { _bd.style.display = 'none'; _bd.innerHTML = ''; }
 
       if (!per.length) {
         /* ⚠️ NAMES THE PROJECTS, not just a count. Reading one project at a time is what makes
@@ -1189,7 +1602,8 @@
       /* ⚠️ Test seam, same contract as `_setProjects`: the merged curve read back rather than
          reached for inside the closure, so the carry-forward can be asserted on numbers instead
          of on the shape of an SVG path. */
-      return { load: loadScurve, _data: function () { return scData; } };
+      return { load: loadScurve, _data: function () { return scData; },
+               _bars: function () { return scBars; }, _bd: function () { return { i: scBdOpen, dim: scBdDim }; } };
     }
   });
 
