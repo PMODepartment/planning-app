@@ -848,7 +848,24 @@ window.ProgressPhotos = (function () {
     wireSelBar();
     wireLightboxMagnifier();
     wireLightboxKpResizeDrag();
-    wirePanoDrag();
+    // ⚠️⚠️ 2026-09-16 HOTFIX: `wirePanoDrag()` was called here but the
+    // function itself was deleted on 2026-09-11 (third round) — superseded
+    // by the real Pannellum viewer, mounted per-instance via
+    // mountPannellumViewer() wherever a 360 photo is actually opened, never
+    // wired globally. The call site was left behind, and it threw a
+    // ReferenceError SYNCHRONOUSLY inside wire(), which init() calls with no
+    // try/catch and no await — so the throw rejected init()'s own promise
+    // and silently skipped EVERYTHING after it: applyTileScale(),
+    // syncChrome(), load() (the photo grid never rendered — #pp-view stayed
+    // completely empty), loadSchedule() (SCHED_ACTS/LOC_LEVELS never
+    // populated — the exact reason Works/Location had nothing to offer in
+    // the Add Media modal) and fillFilterOptions() (the Trade/Works filter
+    // selects stayed stuck at their single blank placeholder option).
+    // Confirmed live on the deployed site (module.js?v=20260916z1, Avesta
+    // Residences/AVR101): console threw "wirePanoDrag is not defined" at
+    // init(), #pp-view.innerHTML was empty, and #pp-f-trade/#pp-f-works both
+    // had exactly 1 option. This one stray call broke the WHOLE module for
+    // every project, not just this one's Works dropdown.
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -2944,8 +2961,12 @@ window.ProgressPhotos = (function () {
   var lightboxKeyPlanVisible = false;
   // Item 4: how far (in degrees) the 360° viewer has been panned away from
   // its opening position — reset to 0 whenever a photo opens/steps, updated
-  // live by wirePanoDrag() below, and read by paintKeyPlanOverlay() so the
-  // key-plan cone rotates to keep following the direction actually on screen.
+  // live by startPanoYawPoll()'s callback (see paintLightbox), and read by
+  // paintKeyPlanOverlay() so the key-plan cone rotates to keep following the
+  // direction actually on screen. ⚠️ Was "wirePanoDrag() below" until the
+  // 2026-09-16 hotfix — that function was deleted on 2026-09-11 (superseded
+  // by the real Pannellum viewer's own yaw polling) and this comment simply
+  // never got updated to match.
   var lightboxPanoHeadingDeg = 0;
   // Round-2 item 3 (2026-09-02): the lightbox's magnifier — replaces the
   // zoom in/out buttons item 10 added ("zoom is only for... the image pop-up
