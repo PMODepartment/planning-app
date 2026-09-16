@@ -148,8 +148,14 @@
         _ntIco('project', 14) + '<span class="pd-nt-proj-txt"><strong>' + esc(p.id + ' — ' + (p.name || p.id)) + '</strong>' +
         (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></div>';
     }
+    // ⚠️ Same "Portfolio" + "every project you can see" wording as the closed
+    // trigger (enhanceProjectSelect's syncBtn / renderSwitcher's mainLabel/
+    // subLabel, above) — owner, 2026-09-16: "always use this type of dropdown
+    // when portfolio is selected". The row you PICK Portfolio from should read
+    // exactly like the state it puts you in, not merely share one word with it.
     var portfolioRow = '<div class="pd-nt-portfolio' + (opts.portfolioActive ? ' sel' : '') + '" data-nt-portfolio="1">' +
-      _ntIco('barChart', 15) + '<span>Portfolio</span></div>';
+      _ntIco('barChart', 15) + '<span class="pd-nt-portfolio-txt"><strong>Portfolio</strong>' +
+      '<small>every project you can see</small></span></div>';
     var q = (opts.search || '').trim().toLowerCase(), body;
     if (q) {
       var matches = P.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; }).sort(_ntByName);
@@ -238,6 +244,19 @@
   async function allProjectIds() {
     if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
     return (_pdProjCache || []).map(function (p) { return p.id; });
+  }
+  // ---- Portfolio scope: a project's own row, by id ---------------------------
+  // The companion read to allProjectIds() — a module consolidating across the
+  // portfolio needs to know WHICH id is which, e.g. to group a list by project
+  // (owner, 2026-09-16: "for consolidated data in portfolio, if in list group by
+  // project"). Shares the exact same cache/read as allProjectIds() and the
+  // project-selector popover, so a module's grouping can never name a project
+  // differently from what the selector itself calls it.
+  async function projectsById() {
+    if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
+    var map = {};
+    (_pdProjCache || []).forEach(function (p) { map[p.id] = p; });
+    return map;
   }
 
   // ---- Project selector (shared group-head browser) ------------------------
@@ -576,11 +595,21 @@
     // pname before this runs) gets it for free.
     var mainLabel = mode === 'portfolio' ? 'Portfolio'
       : (pid && opts.pname ? pid + ' — ' + opts.pname : (opts.pname || 'Select a project'));
+    // ⚠️⚠️ PORTFOLIO'S SUBTITLE IS FIXED TEXT, MATCHING enhanceProjectSelect's OWN
+    // portfolio-scope trigger VERBATIM (owner, 2026-09-16: "always use this type of
+    // dropdown when portfolio is selected"). Before this, this shell-page topbar
+    // switcher showed a bare "Portfolio" with no subtitle at all while the
+    // per-module project selector (enhanceProjectSelect, above) showed "Portfolio"
+    // over "every project you can see" — two different readings of the same state,
+    // depending only on which of the two selector components a given page happens
+    // to use. `opts.ghLabel` still wins outside Portfolio mode (a project's own
+    // address/group-head subtitle, or its async-fetched placeholder).
+    var subLabel = mode === 'portfolio' ? 'every project you can see' : opts.ghLabel;
     mount.innerHTML =
       '<button class="pd-projsw-btn" type="button">' +
         '<span class="pd-projsw-ic" data-ico="' + (mode === 'portfolio' ? 'barChart' : 'project') + '" data-ico-size="16"></span>' +
         '<span class="pd-projsw-txt"><strong>' + esc(mainLabel) + '</strong>' +
-          (opts.ghLabel ? '<small>' + esc(opts.ghLabel) + '</small>' : '<small class="pd-projsw-sub"></small>') + '</span>' +
+          (subLabel ? '<small>' + esc(subLabel) + '</small>' : '<small class="pd-projsw-sub"></small>') + '</span>' +
         '<span class="pd-projsw-caret" data-ico="chevronDown" data-ico-size="13"></span>' +
       '</button>' +
       '<div class="pd-projsw-menu"></div>';
@@ -1115,5 +1144,6 @@
                 renderNav: renderNav, renderSwitcher: renderSwitcher,
                 renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
                 wireFilterToggle: wireFilterToggle, allProjectIds: allProjectIds,
+                projectsById: projectsById,
                 kpi: kpi, kpis: kpis };
 })();
