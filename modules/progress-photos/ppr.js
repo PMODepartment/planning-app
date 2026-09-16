@@ -2462,7 +2462,16 @@ window.PPR = (function () {
     // ~66px is no longer spoken for — net header height is still
     // substantially SHORTER than before this removal.
     'header{background:#fff;color:#231F20}' +
-    'header .hdrbody{padding:18px 22px 14px}' +
+    // ⚠️ Real defect found live (2026-09-14): `<header>` has no width cap of
+    // its own, so its text sat flush against the browser's own left edge
+    // while `.wrap`/`.pagegroup` below it are centered in a 1180px column —
+    // on any window wider than ~1180px the header visibly did not line up
+    // with the report content or footer under it. `.hdrbody` now shares
+    // `.wrap`'s own max-width+centering formula (never a second, guessed
+    // number), so the header's text starts and ends at the exact same x as
+    // every page card below it. `<header>`'s own white background is left
+    // full-bleed (unchanged) — only its TEXT is now aligned to the column.
+    'header .hdrbody{max-width:1180px;margin:0 auto;padding:18px 22px 14px}' +
     'header h1{margin:0;font-size:21px;letter-spacing:.01em;font-weight:700}' +
     'header p{margin:3px 0 0;font-size:13px;color:#6b6b6b;line-height:1.3}' +
     // Meeting-type accent — same role as the PPTX cover's bold red
@@ -2474,8 +2483,14 @@ window.PPR = (function () {
     // positioned after every slide, which only ever landed on the LAST
     // physical page (Thank You). `.pagegroup` wraps one `.slide` + its own
     // footer as a single page-break unit; the footer stays a real SIBLING of
-    // `.slide` (never nested inside its bordered card), so it keeps the
-    // identical "full-bleed bar below the card" look this already had.
+    // `.slide` (never nested inside its bordered card).
+    //
+    // ⚠️ This base "card + separate footer strip" look is what the PDF export
+    // still uses (unchanged, approved — `exportPdf()` shares this same
+    // EXPORT_CSS). The offline HTML export's OWN look is overridden by
+    // `EXPORT_PAGECARD_CSS`, below — appended only to `offlineHTML()`'s own
+    // `<style>` tag, never to the PDF capture's — so a PDF-visual change here
+    // can never happen by editing the HTML-only presentation.
     '.pagegroup{position:relative}' +
     '.slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:12px 14px;margin-bottom:10px;position:relative}' +
     // `break-inside:avoid` is a backstop against a `.pagegroup` ever being
@@ -2582,7 +2597,66 @@ window.PPR = (function () {
   // width collapse from 552px to 1116px (full row) and back. Kept as a
   // SEPARATE fragment, appended only to the offline-HTML export's own CSS —
   // never to the PDF capture's `wrap` in exportPdf().
-  var EXPORT_MOBILE_CSS = '@media (max-width:820px){.pair,.pair.single{grid-template-columns:1fr}.kpimg{width:110px}}';
+  //
+  // ⚠️⚠️ A second, distinct real bug found the same way (2026-09-14 live
+  // print test): a bare `@media (max-width:820px)` — with no `screen`
+  // qualifier — ALSO matches during PRINT, and a standard PORTRAIT A4/Letter
+  // page's usable content width is under 820px (~717px, well under a
+  // LANDSCAPE page's ~1062px). So printing (or "Save as PDF") the saved
+  // offline HTML file in the browser's own default portrait orientation
+  // silently collapsed Previous/Current to one column too — measured live:
+  // `.pair`'s own `grid-template-columns` computed a single `648px` track
+  // (not two) at a 714px-wide print/portrait simulation, exactly like the
+  // 366px-window PDF case above. That roughly doubled the printed
+  // content-page's height (588px → 1285px in a real generated export),
+  // which combined with the standalone `<header>` sitting ABOVE `.pagegroup`
+  // (outside its own `break-inside:avoid` unit) pushed the whole unit past
+  // one printed page — and since honoring "avoid" is then impossible, the
+  // browser breaks INSIDE it, landing the footer alone on page 2 while the
+  // now-stacked photos fill page 1. That is the exact "header + photos on
+  // page 1, footer pushed to page 2" defect reported live. `screen and` is
+  // the fix: it scopes this breakpoint to on-screen viewing ONLY (an actual
+  // phone browser), so it can never fire during print/PDF regardless of
+  // paper size or orientation — confirmed live: with the qualifier added,
+  // the SAME 714px-wide print simulation keeps `.pair` at two real tracks,
+  // and `<header>` + the first `.pagegroup` (photos + footer together) then
+  // measure well under a full page's height at both portrait and landscape
+  // print widths, so the footer stays on the same page as its own slide.
+  var EXPORT_MOBILE_CSS = '@media screen and (max-width:820px){.pair,.pair.single{grid-template-columns:1fr}.kpimg{width:110px}}';
+
+  // ⚠️⚠️ Real defect found live (2026-09-14), reported directly against a
+  // generated sample: EXPORT_CSS's own base `.slide`/`<footer>` styling —
+  // "each page's `.slide` has its own bordered card, and its footer is a
+  // plain, un-boxed sibling below it" — was designed to read as "a full-bleed
+  // bar below the card". Seen live, it reads the opposite way: a rounded,
+  // bordered card immediately followed by a separate flat white strip, with
+  // a visible gap between them, looks like two disconnected fragments rather
+  // than one complete page — exactly "the footer is detached from its
+  // content" the owner flagged, on both the content page and the Thank You
+  // page alike.
+  //
+  // ⚠️ HTML-EXPORT-ONLY, deliberately kept out of EXPORT_CSS itself. The PDF
+  // export shares EXPORT_CSS byte-for-byte and is already approved/signed
+  // off with the base "card + separate footer" look — moving the fix into
+  // EXPORT_CSS directly would silently change the PDF's own appearance too,
+  // which the owner explicitly ruled out. Same convention as
+  // EXPORT_MOBILE_CSS/EXPORT_PDF_CSS just above: a small override fragment,
+  // appended only to `offlineHTML()`'s own `<style>` tag, never to
+  // `exportPdf()`'s `wrap`.
+  //
+  // The fix: move the white background/border/radius from `.slide` onto
+  // `.pagegroup` (the actual page unit) instead, and clear them off `.slide`
+  // — so the footer, still a plain sibling of `.slide` inside the same
+  // `.pagegroup`, now sits flush inside that SAME bordered card as its
+  // bottom section, with `overflow:hidden` clipping its square corners to
+  // the card's own radius. `.pagegroup` also carries the visible gap between
+  // one report page and the next (`margin-bottom`) — a real gap there is
+  // correct, since those genuinely are two different pages; nothing any
+  // longer separates a page's own content from its own footer.
+  var EXPORT_PAGECARD_CSS =
+    '.pagegroup{background:#fff;border:1px solid #DCDBDB;border-radius:4px;overflow:hidden;margin-bottom:16px}' +
+    '.slide{background:transparent;border:0;margin-bottom:0}' +
+    '@media print{.pagegroup{border:0}}';
 
   // ⚠️ PDF-capture-only override (2026-09-11/12) — see `layoutPagegroups()`'s
   // own comment for the root cause: html2pdf.js@0.10.1's pagebreak-CSS
@@ -2604,7 +2678,7 @@ window.PPR = (function () {
     return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
       '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
       '<title>' + esc(projName || pid) + ' — ' + esc(longDate(p.ppr_date)) + '</title>' +
-      '<style>' + EXPORT_CSS + EXPORT_MOBILE_CSS + '</style></head><body>' +
+      '<style>' + EXPORT_CSS + EXPORT_MOBILE_CSS + EXPORT_PAGECARD_CSS + '</style></head><body>' +
       slidesBodyHTML(p, s, imgs, logo, tagline) +
       '</body></html>';
   }

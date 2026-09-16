@@ -165,6 +165,8 @@ function callSites() {
         }
         out.push({
           file: rel,
+          // for the cols-VARIABLE resolver: where to look, and how far up is still this call
+          src: src, index: m.index,
           line: src.slice(0, m.index).split('\n').length,
           table: tm ? tm[1] : null,
           raw: a0.slice(0, 40),
@@ -205,6 +207,66 @@ function callSites() {
    people to skip the report. What earns the exit code instead is `forcesCursor()` below: if that
    guard ever leaves `db.js`, every site in this list silently truncates again. */
 
+/* ---- resolving a cols VARIABLE, the shape that survived even the projection check ----
+
+   ⚠️ `cash-flow` builds its cols list into a local and passes the local — and on the fallback
+   path passes `cols.replace(',trade', '')`. Both read as "dynamic" to a checker that looks only
+   at the argument, so both sat in the unreadable list where nobody could tell a fixed site from
+   a broken one. They are static in every sense that matters; only the argument slice is not.
+
+   ⚠️⚠️ THIS IS PROXIMITY, NOT SCOPE ANALYSIS, and it is deliberately timid: a WRONG resolution
+   reports a broken site as fine, which is the one failure this file must not have. Three
+   conditions, all required —
+     1. a `var`/`let`/`const` DECLARATION holding one string literal. A bare `x = …`, and
+        therefore any function PARAMETER, is never resolved;
+     2. within `NEAR` lines above the call, so an identically named local in another function
+        further up the file cannot be mistaken for this one;
+     3. no other assignment to that name between the declaration and the call.
+   Anything else stays unreadable, which is the honest answer. */
+var NEAR = 40;
+function declLiteral(name, src, before) {
+  // ⚠️ Built from REGEX LITERALS via `.source`, never from backslashes typed inside a string:
+  // `'\s'` written one layer short is `'\s'`, which is silently the letter `s`, and the
+  // resulting checker still parses and still runs. One quote character at a time, too, so no
+  // escaped quote class is needed either.
+  var hit = null;
+  ["'", '"'].forEach(function (q) {
+    var re = new RegExp(/\b(?:var|let|const)\s+/.source + name + /\s*=\s*/.source +
+                        q + '([^' + q + ']*)' + q, 'g');
+    var m;
+    while ((m = re.exec(src))) {
+      if (m.index >= before) break;
+      if (!hit || m.index > hit.index) hit = m;
+    }
+  });
+  if (!hit) return null;
+  var lines = src.slice(hit.index, before).split('\n').length - 1;
+  if (lines > NEAR) return null;
+  // ⚠️ `(?![=>])` so `cols === x` and `cols => …` are not read as assignments. Without it every
+  // comparison standing between the declaration and the call would disqualify a readable site.
+  var between = src.slice(hit.index + hit[0].length, before);
+  if (new RegExp(/\b/.source + name + /\s*=(?![=>])/.source).test(between)) return null;
+  return { text: hit[1], line: src.slice(0, hit.index).split('\n').length, away: lines };
+}
+
+// `ident`, or `ident` followed by any number of `.replace('a','b')` with LITERAL arguments.
+// The replaces are applied with the real `String.prototype.replace`, so what comes out is what
+// the browser sends — including that a string argument replaces only the FIRST match.
+function resolveCols(expr, ctx) {
+  if (!ctx || !ctx.src) return null;
+  var m = /^([A-Za-z_$][\w$]*)((?:\s*\.replace\(\s*'[^']*'\s*,\s*'[^']*'\s*\))*)\s*$/.exec(expr);
+  if (!m) return null;
+  var d = declLiteral(m[1], ctx.src, ctx.index);
+  if (!d) return null;
+  var text = d.text, rr = /\.replace\(\s*'([^']*)'\s*,\s*'([^']*)'\s*\)/g, r;
+  while ((r = rr.exec(m[2]))) text = text.replace(r[1], r[2]);
+  return { text: text, via: m[1] + ' declared ' + d.away + ' line(s) above (line ' + d.line + ')' };
+}
+
+// The offset `callSites` hands the resolver, rebuilt for the self-tests so they drive the real
+// `resolveCols` rather than a retyped copy of it.
+function _ctx(src, needle) { return { src: src, index: src.indexOf(needle) }; }
+
 // The `cols` argument, when it can be read statically. A runtime expression
 // (`Object.keys(want).join(',')`) cannot be, and is reported as unreadable rather than as a pass.
 // ⚠️ TWO SHAPES THAT LOOK DYNAMIC AND ARE NOT, both of which this file reported wrongly on its
@@ -214,7 +276,7 @@ function callSites() {
 //      cols string is passed, and the raw slice then begins with `/* ... */`.
 //   2. a CONCATENATED literal. `portfolio-overview` splits a 14-column list over two lines with
 //      `'…,' + '…'`, which is still entirely static.
-function colsOf(arg) {
+function colsOf(arg, ctx) {
   var t = String(arg || '')
     .replace(/\/\*[\s\S]*?\*\//g, ' ')       // block comments
     .replace(/^\s*\/\/[^\n]*$/gm, ' ')       // line comments
@@ -223,6 +285,13 @@ function colsOf(arg) {
   // a `+`-chain of string literals is static: join them and carry on
   var parts = t.split('+').map(function (x) { return x.trim(); });
   var lits = parts.map(function (x) { return /^['"]([^'"]*)['"]$/.exec(x); });
+  if (!lits.every(Boolean)) {
+    // ⚠️ Re-ENTERS colsOf with the resolved literal instead of re-parsing it here. A
+    // second copy of the name-splitting is a second thing to drift, which is the trap
+    // the self-tests above exist to close.
+    var res = resolveCols(t, ctx);
+    if (res) { var r = colsOf("'" + res.text + "'"); r.via = res.via; return r; }
+  }
   if (!lits.every(Boolean)) return { kind: 'dynamic', raw: t.replace(/\s+/g, ' ').slice(0, 52) };
   var text = lits.map(function (m) { return m[1]; }).join('');
   // A PostgREST select list may carry aliases (`a:b`) and embedded resources (`p:projects(name)`).
@@ -288,7 +357,25 @@ function selfTest() {
     ['spaces around the names are tolerated',
       colsOf("'id, amount, sheet'").names.indexOf('id') === 0],
     ['an embedded resource is not mistaken for a column name',
-      colsOf("'id,proj:projects(name)'").names.join('|') === 'id|proj']
+      colsOf("'id,proj:projects(name)'").names.join('|') === 'id|proj'],
+    // ---- the cols VARIABLE. ⚠️ Same rule again: these drive the real `colsOf`/`resolveCols`,
+    // and `_ctx` builds the offset the way `callSites` does, off the `selectAll(` itself.
+    ['a cols variable declared just above is resolved',
+      colsOf('cols', _ctx("var cols = 'id,wp_no,trade';\nawait PDb.selectAll(T, f, cols);", 'selectAll(')).names.indexOf('id') === 0],
+    ['a .replace() on it is APPLIED, not guessed (the cash-flow fallback)',
+      colsOf("cols.replace(',trade', '')", _ctx("var cols = 'id,wp_no,trade';\nawait PDb.selectAll(T, f, cols.replace(',trade', ''));", 'selectAll(')).text === 'id,wp_no'],
+    ['a replace that strips the CURSOR is caught, not excused',
+      colsOf("cols.replace('id,', '')", _ctx("var cols = 'id,wp_no,trade';\nawait PDb.selectAll(T, f, cols.replace('id,', ''));", 'selectAll(')).names.indexOf('id') === -1],
+    ['a PARAMETER is never resolved (no var/let/const, so no binding to trust)',
+      colsOf('cols', _ctx("function read(cols) {\n  return PDb.selectAll(T, f, cols);\n}", 'selectAll(')).kind === 'dynamic'],
+    ['a declaration BELOW the call is not resolved',
+      colsOf('cols', _ctx("await PDb.selectAll(T, f, cols);\nvar cols = 'id,wp_no';", 'selectAll(')).kind === 'dynamic'],
+    ['a reassignment between the declaration and the call disqualifies it',
+      colsOf('cols', _ctx("var cols = 'id,wp_no';\ncols = other;\nawait PDb.selectAll(T, f, cols);", 'selectAll(')).kind === 'dynamic'],
+    ['a comparison between them does NOT disqualify it',
+      colsOf('cols', _ctx("var cols = 'id,wp_no';\nif (cols === x) y();\nawait PDb.selectAll(T, f, cols);", 'selectAll(')).names.indexOf('id') === 0],
+    ['a declaration further than NEAR lines above is out of reach',
+      colsOf('cols', _ctx("var cols = 'id,wp_no';\n" + '\n'.repeat(NEAR + 2) + "await PDb.selectAll(T, f, cols);", 'selectAll(')).kind === 'dynamic']
     // (`forcesCursor` is deliberately NOT a self-test: a self-test failure aborts before the
     //  report, and the whole value of that check is naming the sites it just broke.)
   ];
@@ -348,11 +435,12 @@ if (dynamic.length) {
 
 /* ---- the projection side: does the cols list carry the cursor? ---- */
 var guard = forcesCursor();
-var thin = [], dynCols = [];
+var thin = [], dynCols = [], resolved = [];
 sites.forEach(function (s) {
-  var c = colsOf(s.colsArg);
+  var c = colsOf(s.colsArg, { src: s.src, index: s.index });
   if (c.kind === 'star') return;
   if (c.kind === 'dynamic') { dynCols.push({ site: s, raw: c.raw }); return; }
+  if (c.via) resolved.push({ site: s, c: c });
   if (c.names.indexOf(s.keyName) === -1) thin.push({ site: s, c: c });
 });
 
@@ -375,6 +463,17 @@ if (thin.length) {
       '  Advisory, not a failure. Any code that pages WITHOUT going through selectAll -- the\n' +
       '  Edge Functions roll their own -- gets no such protection and must select its cursor.'
     : '  THESE ARE LIVE TRUNCATIONS: the guard that was covering them is gone.');
+  console.log('');
+}
+// Not a finding — the opposite. Printed so that a site read through a variable cannot drop
+// out of the report altogether, which is how the cash-flow pair stayed invisible through
+// the round that was meant to catch exactly it.
+if (resolved.length) {
+  console.log('=== ' + resolved.length + ' cols list(s) read through a VARIABLE (resolved) ===');
+  resolved.forEach(function (r) {
+    console.log('  ' + r.site.file + ':' + r.site.line + '   ' + r.c.via);
+    console.log('      -> ' + r.c.text.slice(0, 58));
+  });
   console.log('');
 }
 if (dynCols.length) {

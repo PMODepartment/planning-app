@@ -7,10 +7,10 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916r" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -4357,10 +4357,63 @@
     .sbld-zord { display:flex; flex-direction:column; gap:4px; }
     .sbld-zord-item { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 8px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); font-size:var(--pd-fs-base); font-weight:700; }
     .sbld-zord-btns { display:flex; gap:4px; }
+    /* ---- the auto-trace answers that are CHOICES, and the sentence they add up to -----------
+       ⚠️ A pick-one on its own line, not a control on a row with a label opposite it: these read
+       as sentences ("...the whole floor below is finished") and splitting the sentence across a
+       justified row makes the reader assemble it. */
+    .sbld-at-opt { display:flex; align-items:flex-start; gap:7px; padding:4px 0; font-size:var(--pd-fs-base);
+                   line-height:1.45; cursor:pointer; }
+    .sbld-at-opt input { margin-top:2px; flex:none; }
+    .sbld-at-opt .sbld-hint { font-weight:400; }
+    /* ⚠️⚠️ THE READBACK. Twenty-four boxes across four trades is not a plan anybody can hold in
+       their head, so the dialog says the flow back in words and the planner checks the INTENT.
+       Quiet by design — it is a confirmation, not a heading. */
+    .sbld-at-say { margin-top:9px; padding-top:8px; border-top:1px dashed var(--pd-line);
+                   font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
+    .sbld-at-say:empty { display:none; }
+    .sbld-at-say b { color:var(--pd-ink); }
     .sbld-help-btn { width:30px; height:30px; padding:0; border-radius:50%; font-weight:700; font-size:var(--pd-fs-body); flex:none; justify-content:center; line-height:1; }
     .sbld-help-body h4 { margin:14px 0 6px; font-size:var(--pd-fs-base); color:var(--pd-ink); }
     .sbld-help-body p, .sbld-help-body li { font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
     .sbld-help-body ul { margin:4px 0 4px 18px; padding:0; }
+    /* ---- The step manual behind the "?" ------------------------------------------------------
+       ⚠️ A RAIL AND A PAGE, not one long scroll. The old help was ten bullets in a column, so a
+       planner on step 3 scrolled past nine steps they were not on. The rail is the builder's own
+       rail at a smaller size, deliberately: the thing you click in the manual should look like the
+       thing you click in the wizard. */
+    .sbld-man-body { display:flex; align-items:stretch; max-height:70vh; }
+    .sbld-man-rail { flex:none; width:196px; overflow:auto; padding:10px 8px; border-right:1px solid var(--pd-line);
+                     background:var(--pd-bg); display:flex; flex-direction:column; gap:3px; }
+    .sbld-man-step { display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:7px 9px;
+                     border:1px solid transparent; border-radius:var(--pd-radius); background:transparent;
+                     cursor:pointer; color:var(--pd-muted); font-size:var(--pd-fs-sm); font-weight:700; }
+    .sbld-man-step:hover { background:var(--pd-card); color:var(--pd-ink); }
+    .sbld-man-step.on { background:var(--pd-card); border-color:var(--pd-line); color:var(--pd-ink); }
+    .sbld-man-step .sbld-step-n { flex:none; }
+    .sbld-man-page { flex:1; min-width:0; overflow:auto; padding:16px 18px; }
+    .sbld-man-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+    .sbld-man-n { flex:none; width:26px; height:26px; border-radius:50%; background:var(--pd-red); color:#fff;
+                  display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; }
+    .sbld-man-why { margin:0 0 4px; font-size:var(--pd-fs-base); color:var(--pd-ink); line-height:1.55; }
+    .sbld-help-body h5 { margin:14px 0 5px; font-size:var(--pd-fs-sm); text-transform:uppercase;
+                         letter-spacing:.04em; color:var(--pd-muted); }
+    .sbld-man-how { margin:0 0 0 18px; padding:0; }
+    .sbld-man-how li { margin-bottom:5px; }
+    .sbld-man-watch { margin:0 0 0 18px; padding:0; list-style:none; }
+    .sbld-man-watch li { margin-bottom:5px; text-indent:-18px; padding-left:18px; }
+    /* ⚠️ "Done when" is the question people actually have — can I move on — so it is the one
+       block with a background, at the bottom where the eye lands after reading. */
+    .sbld-man-done { margin-top:14px; padding:9px 12px; border-radius:var(--pd-radius-md);
+                     background:var(--pd-bg); border:1px solid var(--pd-line);
+                     font-size:var(--pd-fs-sm); color:var(--pd-ink); line-height:1.5; }
+    @media (max-width: 700px) {
+      /* The rail becomes a scrolling strip along the top — a 196px column beside a page on a
+         phone leaves neither of them readable. */
+      .sbld-man-body { flex-direction:column; max-height:78vh; }
+      .sbld-man-rail { width:auto; flex-direction:row; overflow-x:auto; border-right:none;
+                       border-bottom:1px solid var(--pd-line); }
+      .sbld-man-step { width:auto; flex:none; white-space:nowrap; }
+    }
     .sbld-help-body kbd { display:inline-block; padding:1px 6px; border:1px solid var(--pd-line); border-bottom-width:2px; border-radius:var(--pd-radius); background:var(--pd-bg); font:600 11px/1.4 monospace; color:var(--pd-ink); }
     .sbld-tb-sep2 { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
     /* Copied cells — Excel's marching ants, so a Ctrl+C is visibly a Ctrl+C. Drawn as an inset
@@ -5336,8 +5389,8 @@
        2026-09-10 (z1) and its own log records what that cost. The S-Curve module, the project
        Dashboard panel and this page now read one engine. -->
   <script src="../../assets/js/scurve.js?v=20260916r"></script>
-  <script src="../../assets/js/portfolio-dash.js?v=20260916r"></script>
-<script src="../../assets/js/ui.js?v=20260916q"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
+<script src="../../assets/js/ui.js?v=20260916v"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
@@ -8058,7 +8111,7 @@
       var list = [];
       try {
         list = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
-          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at');
+          'id,wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at');
       } catch (e) { list = []; }
       // Trade order then WP number, so every picker and report shows packages in the order
       // they are actually procured rather than in mirror-id order.
@@ -8361,7 +8414,7 @@
       var mirror;
       try {
         mirror = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
-          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
+          'id,wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
       } catch (e) { return; }   // a partial read must not be mirrored as the truth
       // ⚠️ Never synced, or this project has no work packages yet — leave the branch
       // exactly as it is. Reading "no rows" as "delete everything" is how a failed or
@@ -16799,56 +16852,86 @@
        than the zones drawn on it can only be stated by drawing it. */
     return out.length ? out : plate.polys;
   }
-  /* ==== A FLOOR'S OWN PLAN, PUT WHERE ITS TOWER STANDS ON THE SITE ========================
+  /* ==== A FLOOR'S OWN PLAN, FOR A TOWER THE SITE PLAN DOES NOT NAME =======================
      Owner 2026-09-15, with the per-tower card beside the site view: *"how come in this view, the
      per floor configuration is defined. However in the site view, there is no defined
      configuration or defined floor plans per floor."*
 
-     ⚠️⚠️ THE SITE WAS DRAWING EVERY FLOOR FROM THE TOWER'S SITE FOOTPRINT. On the site plan a
-     tower is ONE traced shape, and the floor-by-floor model hands every slice of that tower the
-     same `c.label` — so `_vsZpPolysOf(sitePlan, tower)` answered with that one outline thirteen
-     times and the building came out an extruded prism. The floors were never consulted. The plans
-     the planner traced per floor were sitting in the same map the per-tower card reads.
+     ⚠️⚠️ AND THE ANSWER TO THAT WAS NOT THIS. Fitting a floor plan into a tower's traced site
+     footprint was tried twice on 2026-09-16 — into its bounding box, then onto its minimum-area
+     rectangle — and rejected both times by the owner in the same words: *"the configuration of
+     the tower is not the same and the location is not the same"*. It cannot be made to work,
+     because the shape being placed was never that tower's footprint: a site plan is traced
+     building by building, an outline at grade, and a floor plan is traced room by room on another
+     sheet at another scale with a core and a notch in it. A traced tower therefore keeps its own
+     site footprint in both readings of the site — see the call site in `_vs3Build`.
 
-     ⚠️ So the floor's own plan is fitted INTO the tower's place. Two facts have to survive that:
-     WHERE the building stands (the site trace) and WHAT SHAPE the floor is (the floor trace).
-     Fitting the plan's bounding box into the tower's, centred, keeps both.
-     ⚠️ CONTAIN, NEVER STRETCH. The two traces are different drawings at different scales, and
-     stretching a floor plan to fill a site footprint would invent a floor that is not the shape
-     anybody drew — the one thing this view exists to avoid. A plan that is proportionally deeper
-     than its site footprint therefore sits narrower than that footprint rather than distorting.
+     ⚠️ WHAT IS LEFT FOR THIS FUNCTION is the silence: a tower the site plan does not name has no
+     footprint to keep. It stands on a WRAP SLOT — a box the size of its share of the grid, which
+     is a guess and says so in the footer — and there the floor's own plan is strictly better than
+     a box and can contradict nothing.
+     ⚠️⚠️ ONE TRANSFORM SERVES THE WHOLE TOWER, never one per floor. Scaling each floor to fill
+     the slot on its own blows a setback penthouse up to the size of the podium under it and
+     centres both on the same point: every floor comes out the same footprint, which is a picture
+     that says the building has no setbacks — and it made this card disagree with the PER-TOWER
+     card, which draws each floor at its own traced coordinates. `_vsZpPlanBox` accumulates the
+     tower's floors into one source box, the largest floor fills the slot, and every other floor
+     keeps its own size and offset inside it.
+     ⚠️ CONTAIN, NEVER STRETCH. Stretching a plan to fill the slot would invent a floor that is
+     not the shape anybody drew — the one thing this view exists to avoid. A plan proportionally
+     deeper than its slot sits narrower than it rather than distorting.
      ⚠️ The sheets carry their own aspect, so depth is divided by the floor sheet's `ar` before it
      is compared with anything: a floor drawn on a wide sheet and one drawn on a tall sheet are the
-     same building, and only `ar` says so.
+     same building, and only `ar` says so. That is also what lets several floors share one box.
      ⚠️ Points come back in the SITE plate's own 0..1 coordinates, because that is what
      `_vs3PolyMesh` extrudes — this helper never touches world units, so the flip that function
      applies to the depth axis stays its business and cannot be applied twice. */
-  function _vsZpFitPolys(floorPlate, box, plateW, plateD) {
+  function _vsZpPlanBox(floorPlate, into) {
+    var polys = _vsZpOutlineOf(floorPlate);
+    var b = into || { u0: null, u1: null, v0: null, v1: null };
+    if (!polys || !polys.length) return b;
+    var ar = (+floorPlate.ar > 0.05 && +floorPlate.ar < 20) ? +floorPlate.ar : (1000 / 620);
+    polys.forEach(function (q) {
+      (q.pts || []).forEach(function (p) {
+        var pu = p[0], pv = p[1] / ar;
+        if (b.u0 === null || pu < b.u0) b.u0 = pu;
+        if (b.u1 === null || pu > b.u1) b.u1 = pu;
+        if (b.v0 === null || pv < b.v0) b.v0 = pv;
+        if (b.v1 === null || pv > b.v1) b.v1 = pv;
+      });
+    });
+    return b;
+  }
+  function _vsZpFitPolys(floorPlate, box, plateW, plateD, src) {
     var polys = _vsZpOutlineOf(floorPlate);
     if (!polys || !polys.length) return null;
     var arF = (+floorPlate.ar > 0.05 && +floorPlate.ar < 20) ? +floorPlate.ar : (1000 / 620);
-    var u0 = null, u1 = null, v0 = null, v1 = null;
-    polys.forEach(function (q) {
-      (q.pts || []).forEach(function (p) {
-        if (u0 === null || p[0] < u0) u0 = p[0];
-        if (u1 === null || p[0] > u1) u1 = p[0];
-        if (v0 === null || p[1] < v0) v0 = p[1];
-        if (v1 === null || p[1] > v1) v1 = p[1];
-      });
-    });
-    if (u0 === null) return null;
-    // The plan's own proportions: its sheet is 1 wide and 1/ar deep.
-    var fw = u1 - u0, fd = (v1 - v0) / arF;
+    /* ⚠️⚠️ ONE SOURCE BOX FOR THE WHOLE TOWER, when the caller has one. See the note at the
+       call site: scaling each floor off its OWN extent is what flattened every setback. */
+    var sb = (src && src.u0 !== null && src.u0 !== undefined) ? src : _vsZpPlanBox(floorPlate, null);
+    if (!sb || sb.u0 === null) return null;
+    var fw = sb.u1 - sb.u0, fd = sb.v1 - sb.v0;
+    if (!(fw > 1e-6) || !(fd > 1e-6)) return null;
+    /* The target: the wrap slot this tower stands in, in the plate’s metric space. ⚠️ Axis-aligned,
+       and rightly — a wrap slot has no heading to keep. The only caller left is the one for a tower
+       the site plan does not name; a traced tower keeps its own footprint and never comes here. */
     var tw = (box.u1 - box.u0) * plateW, td = (box.v1 - box.v0) * plateD;
-    if (!(fw > 1e-6) || !(fd > 1e-6) || !(tw > 1e-6) || !(td > 1e-6)) return null;
-    var s = Math.min(tw / fw, td / fd);
-    var cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
-    var tu = (box.u0 + box.u1) / 2, tv = (box.v0 + box.v1) / 2;
+    var cx = (box.u0 + box.u1) / 2 * plateW, cy = (box.v0 + box.v1) / 2 * plateD;
+    if (!(tw > 1e-6) || !(td > 1e-6)) return null;
+    /* ⚠️ WHICH WAY ROUND THE PLAN FACES. A plan sheet carries no compass, and a plan drawn
+       landscape dropped into a portrait slot would otherwise be shrunk to the width of that slot’s
+       short side. It takes the quarter turn that fits better — a quarter turn, never a stretch.
+       ⚠️ Decided from the TOWER’S source box, so every floor of a tower turns the same way. */
+    var sA = Math.min(tw / fw, td / fd), sB = Math.min(tw / fd, td / fw), turn = sB > sA;
+    var s = turn ? sB : sA;
+    var cu2 = (sb.u0 + sb.u1) / 2, cv2 = (sb.v0 + sb.v1) / 2;
     return polys.map(function (q) {
       return {
         code: q.code, color: q.color,
         pts: (q.pts || []).map(function (p) {
-          return [tu + (p[0] - cu) * s / plateW, tv + ((p[1] - cv) / arF) * s / plateD];
+          var a = (p[0] - cu2) * s, b2 = (p[1] / arF - cv2) * s;
+          if (turn) { var t = a; a = -b2; b2 = t; }
+          return [(cx + a) / plateW, (cy + b2) / plateD];
         })
       };
     });
@@ -16863,7 +16946,10 @@
   function _vsZpLabels(map) {
     var out = [], seen = {};
     Object.keys(map || {}).forEach(function (k) {
-      var i = k.indexOf('|'), lab = i >= 0 ? k.slice(i + 1) : k;
+      // ⚠️ THE LAST SEGMENT, not the first: a key is `floor`, `trade|floor` or
+      // `@tower|trade|floor`, and the floor is always last. Reading from the FIRST separator
+      // would print `structural works|level 3` to a planner as the name of a floor.
+      var i = k.lastIndexOf('|'), lab = i >= 0 ? k.slice(i + 1) : k;
       if (lab && !seen[lab]) { seen[lab] = 1; out.push(lab); }
     });
     return out;
@@ -16872,16 +16958,68 @@
      not a question with one answer — the Architectural card must be given Architectural's Level 3.
      A card that spans trades (per tower, site) passes none and falls back to the bare key,
      which the builder only emits when every trade that named that floor agrees about it. */
-  function _vsZpFor(levelValue, trade) {
+  /* ==== WHICH TOWERS HAVE A PLAN FOR ONE FLOOR NAME ===================================
+     ⚠️⚠️ Built ONCE per map and cached ON the map, non-enumerably, so it cannot get out of step
+     with it: `_vsZpMemo` is cleared from four places, and a fifth module-level memo beside it is
+     exactly how `_lsmLeadMemo` nearly went stale. `Object.keys` never sees it, so `_vsZpLabels`
+     and `_vsPlanFit` are untouched. */
+  function _vsZpTowersOf(all, k) {
+    if (!all) return null;
+    var idx = all.__vsTw;
+    if (!idx) {
+      idx = {};
+      Object.keys(all).forEach(function (key) {
+        if (key.charAt(0) !== '@') return;
+        var a = key.indexOf('|'); if (a < 0) return;
+        var tw = key.slice(1, a), lab = key.slice(key.lastIndexOf('|') + 1);
+        if (!idx[lab]) idx[lab] = {};
+        idx[lab][tw] = 1;
+      });
+      try { Object.defineProperty(all, '__vsTw', { value: idx, enumerable: false, configurable: true }); }
+      catch (e) { /* frozen map: the scan is cheap enough to repeat */ }
+    }
+    return idx[k] || null;
+  }
+  /* ==== THE PLAN FOR ONE STOREY ==========================================================
+     ⚠️⚠️ THE TRADE IS PART OF THE QUESTION. Zoning is per trade, so "the plan for Level 3" is
+     not a question with one answer — the Architectural card must be given Architectural's Level 3.
+
+     ⚠️⚠️ AND SO IS THE TOWER. Owner 2026-09-16, with the site view in both modes side by side:
+     *"look at the positioning and configuration of the towers. something happened when choosing
+     floor by floor."* It had: a `Tower › Level › Zone` breakdown gives every tower a floor called
+     `F1`, this map was keyed by that name alone, and the site view (which passes no trade and can
+     only read the bare key) was therefore drawing EVERY tower from whichever tower traced the
+     largest `F1`. Whole-towers looked right only because it reads the SITE plan, whose areas are
+     keyed by tower name and so are unique. The identical collapse the trade key was added to fix
+     on 2026-09-10, one dimension over — see zpByLabelOf.
+
+     ⚠️⚠️ AND A TOWER WITH NO PLAN OF ITS OWN MUST NOT BORROW ONE. Falling through to the bare key
+     whenever the tower key misses would keep the bug alive for exactly the project where only some
+     towers are traced. So: once ANY tower has a plan for this floor name, the tower is a real
+     dimension of the answer and a tower without one has no plan. When NO tower key exists for it
+     — a setup with no towers, or a map built before this existed — the bare key still serves,
+     which is byte-for-byte the old behaviour.
+     ⚠️ A tower the SETUP never named (the drift `towerReality` reports) also falls through, which
+     is the same tolerant degrade: a guessed layout beats a card that has lost its floor plans. */
+  function _vsZpFor(levelValue, trade, tower) {
     var all = _vsZpAll();
     var tk = _vsZpNorm(trade);
-    // ⚠️ The band has no floor label to match on, so it is looked up by the protocol key.
+    var wk = _vsZpNorm(tower);
+    // ⚠️ The band has no floor label to match on, so it is looked up by the protocol key. It is
+    // one plate for the config rather than one per tower, so the tower is not part of its key.
     if (levelValue === VS_NOLEV) return (tk && all[tk + '|' + _VS_ZP_NOLEV]) || all[_VS_ZP_NOLEV] || null;
     var k = _vsZpNorm(levelValue);
     if (!k) return null;
+    if (wk) {
+      if (tk && all['@' + wk + '|' + tk + '|' + k]) return all['@' + wk + '|' + tk + '|' + k];
+      if (all['@' + wk + '|' + k]) return all['@' + wk + '|' + k];
+      var owners = _vsZpTowersOf(all, k);
+      if (owners && !owners[wk]) return null;          // traced per tower, and not for this one
+    }
     if (tk && all[tk + '|' + k]) return all[tk + '|' + k];
     return all[k] || null;
   }
+
   // The polygons traced for one zone on that plan, or null. ⚠️ A zone traced in two pieces
   // keeps both: the 3D card extrudes each, so an area split by a core is drawn as it was traced.
   function _vsZpPolysOf(plate, label) {
@@ -16956,9 +17094,9 @@
      pixel-for-pixel unchanged.
      ⚠️ A zone the plan does not name keeps its cell at the MEAN traced width and sits after the
      traced ones, so a half-traced floor degrades instead of losing zones. */
-  function _vsPlanLay(cells, levelValue, plotW, trade) {
+  function _vsPlanLay(cells, levelValue, plotW, trade, tower) {
     if (!cells || cells.length < 2) return null;
-    var plate = _vsZpFor(levelValue, trade);
+    var plate = _vsZpFor(levelValue, trade, tower);
     if (!plate) return null;
     var met = cells.map(function (c) {
       var p = c && c.label ? _vsZpPolysOf(plate, c.label) : null;
@@ -17324,7 +17462,7 @@
     var VS_PLATE = 2;
     var _arAt = null;
     for (var _ai = 0; _ai < model.disp.length && _arAt == null; _ai++) {
-      var _ap = model.plateFor ? model.plateFor(model.disp[_ai]) : _vsZpFor(model.disp[_ai], model.trade);
+      var _ap = model.plateFor ? model.plateFor(model.disp[_ai]) : _vsZpFor(model.disp[_ai], model.trade, model.tower);
       if (_ap) _arAt = (+_ap.ar > 0.05 && +_ap.ar < 20) ? +_ap.ar : (1000 / 620);
     }
     var PW = _arAt ? VS_PLATE : PLATE.cols * CELL;
@@ -17348,7 +17486,7 @@
          towers, so the plate is the site development plan rather than a floor's. One override, so
          everything downstream — the outline fallback, the zone colour, the compare mark, the
          picking — works on the site exactly as it works on a floor. */
-      var _plate = model.plateFor ? model.plateFor(v) : _vsZpFor(v, model.trade);
+      var _plate = model.plateFor ? model.plateFor(v) : _vsZpFor(v, model.trade, model.tower);
       // ⚠️ Slots are per SLOT, not per cell: on the site's floor model every floor of a tower
       // shares that tower's slot, so an untraced tower stands in one place instead of having its
       // thirteen floors scattered across thirteen squares of the wrap grid.
@@ -17356,6 +17494,36 @@
       // The storey's Y: top of the list is the highest floor, so invert the index.
       var y = (storeys - 1 - li) * (SH + GAPY);
       var isNo = (v === VS_NOLEV);
+      /* ==== ONE SCALE PER TOWER, FOR ALL OF ITS FLOORS ==================================
+         ⚠️⚠️ A SETBACK IS A FACT ABOUT THE BUILDING, and fitting each floor to the tower’s box
+         on its own erases it: a penthouse traced at a third of the podium’s size is scaled up
+         until it fills the same footprint, and the tower comes out a prism again — the very thing
+         reading the floor plans was meant to stop. Worse, it made this card disagree with the
+         PER-TOWER card about one building: that one extrudes every floor at its own traced
+         coordinates, so the setback is there.
+         So the tower’s floors are measured TOGETHER, once, and every floor of it is placed by that
+         single transform — the largest floor fills the tower’s footprint and the rest keep their
+         own size and their own offset within it.
+         ⚠️ Per ROW and memoised per tower: the site is one row holding every (tower, floor) cell,
+         so the row’s own cells are exactly the floors to measure, and a tower’s box is built on
+         the first slice of it that asks and reused by the rest.
+         ⚠️ In PROPORTIONAL units (depth over the sheet’s `ar`) so a podium traced on a wide sheet
+         and a typical floor traced on a tall one are still the same building — the same rule
+         `_vsZpFitPolys` compares with, and the reason the two can share one box at all. */
+      var _twSrcMemo = {};
+      function _twSrc(lab) {
+        if (!model.siteFloors) return null;
+        var k = lab || '*';
+        if (k in _twSrcMemo) return _twSrcMemo[k];
+        var b = { u0: null, u1: null, v0: null, v1: null };
+        cells.forEach(function (c2) {
+          if ((c2.label || '*') !== k || !c2.floor) return;
+          var pl = _vsZpFor(c2.floor, model.trade, c2.label);
+          if (pl) _vsZpPlanBox(pl, b);
+        });
+        _twSrcMemo[k] = (b.u0 === null) ? null : b;
+        return _twSrcMemo[k];
+      }
       cells.forEach(function (c, ci) {
         var p = slots[(c.slot == null ? ci : c.slot)] || { row: 0, col: 0, cols: 1, rows: 1 };
         // The cell's share of the plate, less a hairline so neighbouring zones read as separate.
@@ -17461,44 +17629,52 @@
         }
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
-        /* ==== ON THE SITE, A FLOOR IS DRAWN FROM ITS OWN PLAN ==============================
+        /* ==== THE SITE PLAN WINS WHERE IT SPEAKS; THE FLOOR PLAN FILLS THE SILENCE =========
            Owner 2026-09-15: *"in the site view, there is no defined configuration or defined
-           floor plans per floor."* And there was not: every slice of a tower carried the tower's
-           SITE outline, because that is what `c.label` matches on the site plan. The floor's own
-           plan — the one the per-tower card draws, traced under Floors & Zones › Plan — is fitted
-           into the tower's place instead, so the site says what each floor IS as well as where it
-           stands. See _vsZpFitPolys for what "fitted" means and what it refuses to do.
-           ⚠️ THE TARGET IS THE TOWER'S OWN BOX: its traced site footprint where it has one, its
-           wrap slot where it does not. Either way the floor lands on the tower, not on the site.
-           ⚠️ AFTER the colour decision, deliberately. `fill` is already settled from the tower's
-           site polygon, so a floor plan cannot repaint a tower and delete the channel that says
-           which building this is.
-           ⚠️ Nothing found leaves `_pg` exactly as it was: a project with no floor plans traced
-           keeps the prisms it has today rather than losing its towers. */
-        if (model.siteFloors && c.floor) {
-          var _tb = null;
-          if (_pg && _pg.length) {
-            var _b = [null, null, null, null];
-            _pg.forEach(function (q3) {
-              (q3.pts || []).forEach(function (p3) {
-                if (_b[0] === null || p3[0] < _b[0]) _b[0] = p3[0];
-                if (_b[1] === null || p3[0] > _b[1]) _b[1] = p3[0];
-                if (_b[2] === null || p3[1] < _b[2]) _b[2] = p3[1];
-                if (_b[3] === null || p3[1] > _b[3]) _b[3] = p3[1];
-              });
-            });
-            if (_b[0] !== null) _tb = { u0: _b[0], u1: _b[1], v0: _b[2], v1: _b[3] };
-          }
-          /* ⚠️ The wrap slot, in the PLATE's own coordinates — and the depth axis is inverted on
+           floor plans per floor."* — so every slice of a tower was redrawn from that floor’s own
+           plan, fitted into the tower’s place.
+           Owner 2026-09-16, three times, the last with the two readings side by side:
+           *"The configuration of the tower is not the same and the location is not the same. why?"*
+
+           ⚠️⚠️ BECAUSE A FLOOR PLAN AND A SITE TRACE ARE TWO DIFFERENT DRAWINGS OF ONE BUILDING,
+           AND NO AMOUNT OF FITTING MAKES ONE INTO THE OTHER. A site plan is traced building by
+           building — an outline at grade, a rectangle on the owner’s own project. A floor plan is
+           traced room by room, on a different sheet, at a different scale, with a core and a notch
+           in it. Placing the second where the first says is not a smaller error than the last two
+           attempts at it (the bounding box, then the oriented rectangle, both this same day): it
+           is the SAME error, because the shape being placed was never the tower’s footprint.
+           Two clicks apart, one building was a rectangle and an L, in two places. The card’s own
+           footer has said *"Every tower is placed as you traced it"* the whole time, and the Floor
+           by floor button has promised *"on its own footprint"*. Both were untrue.
+
+           ⚠️⚠️ SO THE TOWER’S TRACED SITE FOOTPRINT IS THE TOWER, IN BOTH READINGS. Whole towers
+           and Floor by floor now differ in exactly the thing their names differ in: whether the
+           solid is cut into storeys. Same outline, same place, same size, same heading. What a
+           floor contributes here is what a SITE view can honestly show of it — that it exists,
+           its name, its progress, its dates and its click — and not a shape from another drawing.
+           ⚠️ WHERE TO SEE A FLOOR’S SHAPE: **Per tower**, one control away, whose whole job is
+           *"what does this building look like"* and which extrudes every floor at its own traced
+           coordinates. That is the answer to 2026-09-15, in the view that can carry it.
+
+           ⚠️ AND THE FLOOR PLAN STILL FILLS A SILENCE. A tower the site plan does not name has no
+           footprint to keep — it stands on a wrap slot, a box the size of its share of the grid,
+           and there the floor’s own plan is strictly better than a box and can contradict nothing.
+           `!_pg` is the whole test: a traced tower never reaches this. */
+        if (model.siteFloors && c.floor && !_pg) {
+          /* ⚠️ The wrap slot, in the PLATE’s own coordinates — and the depth axis is inverted on
              the way in, because `_vs3PolyMesh` inverts it on the way out (rotation.x = -PI/2 sends
-             a shape's +Y to world −Z). Handing it an un-inverted box would fit the floor plan into
+             a shape’s +Y to world −Z). Handing it an un-inverted box would fit the floor plan into
              the mirror image of the slot its own block is drawn in. */
-          if (!_tb) {
-            _tb = { u0: (x - exW / 2) / plateW + 0.5, u1: (x + exW / 2) / plateW + 0.5,
-                    v0: 0.5 - (z + exD / 2) / plateD, v1: 0.5 - (z - exD / 2) / plateD };
-          }
-          var _fpl = _vsZpFor(c.floor, model.trade);
-          var _fpg = _fpl ? _vsZpFitPolys(_fpl, _tb, plateW, plateD) : null;
+          var _tb = { u0: (x - exW / 2) / plateW + 0.5, u1: (x + exW / 2) / plateW + 0.5,
+                      v0: 0.5 - (z + exD / 2) / plateD, v1: 0.5 - (z - exD / 2) / plateD };
+          /* ⚠️⚠️ THE TOWER IS THE CELL’S, not the model’s. A site card holds every tower, so
+             `model.tower` is null here and the lookup would fall back to the bare floor key — which
+             is the very collapse this argument exists to close (see _vsZpFor). `c.label` IS the
+             tower on both site models. */
+          var _fpl = _vsZpFor(c.floor, model.trade, c.label);
+          /* ⚠️ ONE TRANSFORM FOR THE TOWER’S FLOORS, so a setback stays a setback inside the slot
+             rather than every floor being blown up to fill it — see `_twSrc`. */
+          var _fpg = _fpl ? _vsZpFitPolys(_fpl, _tb, plateW, plateD, _twSrc(c.label)) : null;
           if (_fpg && _fpg.length) _pg = _fpg;
         }
         /* ==== A FLOOR LABEL BESIDE ITS OWN TOWER =========================================
@@ -18352,7 +18528,7 @@
      ⚠️ Counted over the storeys this card is actually SHOWING, not over the setup, so a filtered
      or single-tower card reports what is in front of the planner. */
   function _vsPlanFit(model) {
-    var out = { state: 'none', hit: 0, n: 0, miss: [], have: [], other: [], trade: null, merged: 0 };
+    var out = { state: 'none', hit: 0, n: 0, miss: [], have: [], other: [], otherTower: [], trade: null, tower: null, merged: 0 };
     var all;
     try { all = _vsZpAll() || {}; } catch (e) { all = {}; }
     // ⚠️ FLOOR LABELS, not raw keys: the map is keyed `trade|floor`, and this list is printed
@@ -18364,6 +18540,9 @@
     // it — a fit computed against another trade's plan would print a verdict about a building
     // that is not on screen.
     var _tr = model && model.trade;
+    // ⚠️ And its own tower, for the same reason — a fit computed against another tower's plan
+    // would print a verdict about a building that is not on screen.
+    var _tw = model && model.tower;
     var disp = (model && model.disp) || [];
     disp.forEach(function (v) {
       /* ⚠️ The un-levelled band counts ONLY once it has a plan of its own. It is not a storey, so
@@ -18372,7 +18551,7 @@
       /* ⚠️ Resolved ONCE. It used to be called twice per storey — a lookup that now has to report
          whether the answer came from several trades' plans, and a second call would throw that
          away. */
-      var _pl = _vsZpFor(v, _tr);
+      var _pl = _vsZpFor(v, _tr, _tw);
       if (v === VS_NOLEV && !_pl) return;
       out.n++;
       if (_pl) { out.hit++; if (+_pl.sources > 1) out.merged++; return; }
@@ -18382,10 +18561,18 @@
          served as this card's plan, which is the bug the owner reported. A planner sent to draw
          a plan they have already drawn (on the other trade's floors) is the same wasted trip the
          name-mismatch message was written to prevent. */
+      /* ⚠️⚠️ "TRACED UNDER ANOTHER TRADE" AND "TRACED ON ANOTHER TOWER" ARE DIFFERENT
+         ANSWERS, and until the map carried the tower the second could not be asked — it was
+         silently served as this card's plan. The remedies are different (open the other trade and
+         draw it there, vs trace this tower's own floors), so naming the wrong one sends the
+         planner on exactly the wasted trip this message exists to prevent. */
+      var _own = _vsZpTowersOf(all, _vsZpNorm(v));
+      if (_tw && _own && !_own[_vsZpNorm(_tw)]) { if (out.otherTower.length < 4) out.otherTower.push(String(v)); return; }
       var _lk = '|' + _vsZpNorm(v);
       if (Object.keys(all).some(function (k) { return k.slice(-_lk.length) === _lk; })) out.other.push(String(v));
     });
     out.trade = _tr || null;
+    out.tower = _tw || null;
     out.state = out.hit ? (out.hit < out.n ? 'partial' : 'all') : 'nomatch';
     return out;
   }
@@ -18481,6 +18668,18 @@
     } else if (_fit.state === 'partial') {
       lay = _multi + '<b>' + _fit.hit + ' of ' + _fit.n + ' storeys are drawn as you traced them</b>; the rest ' + _guess +
         ' \u2014 no plan resolves for ' + esc(_fit.miss.join(', ')) + (_fit.miss.length >= 4 ? '\u2026' : '') + '. ';
+    } else if (_fit.otherTower.length && _fit.state !== 'all') {
+      /* ⚠️⚠️ NAMED BEFORE THE TRADE CASE, because when both are true this is the one that
+         matters: the plan exists and the floor names line up — it belongs to a DIFFERENT BUILDING.
+         Owner 2026-09-16: every tower on a `Tower › Level › Zone` project has an `F1`, and this
+         card used to be handed whichever tower traced the largest one without a word. */
+      lay = '<b>A floor plan is traced for ' + _fit.otherTower.length + ' of these storeys, but on another tower</b>' +
+        (_fit.tower ? ' — this card is <b>' + esc(_fit.tower) + '</b>' : '') +
+        '. Floors are kept <b>per tower</b> in <b>Schedule Setup › Floors &amp; Zones</b>, so a plan drawn on ' +
+        'another tower’s floors is not this tower’s plan — and it is no longer borrowed, because a ' +
+        'building drawn from a neighbour’s outline is a picture that says something false. Pick this ' +
+        'tower on the tower bar and trace its floors, or use <b>Copy … floors/zones</b> and re-trace. ' +
+        'Until then the positions are a guess ' + _guess + '. ';
     } else if (_fit.other.length && _fit.state !== 'all') {
       /* ⚠️ This case is named BEFORE the name-mismatch one, because when both are true this is
          the actionable half: the floor names line up fine, they are just filed under another
@@ -18861,6 +19060,11 @@
       var _tv = _vsTradeOf(list[_ti]);
       if (_tr === null) _tr = _tv; else if (_tr !== _tv) { _trOne = false; break; }
     }
+    var _tw = null, _twOne = true;
+    for (var _wi = 0; _wi < list.length; _wi++) {
+      var _wv = _vsTowerOf(list[_wi]);
+      if (_tw === null) _tw = _wv; else if (_tw !== _wv) { _twOne = false; break; }
+    }
     return { byLevel: byLevel, levels: levels, disp: disp, groundAt: groundAt, detail: detail,
       above: above, below: below, rowCells: rowCells, cellKey: cellKey,
       /* ⚠️ THE RENDERERS HAVE TO KNOW A ROW IS SPLIT BY TRADE, not just how many cells it has. A
@@ -18868,7 +19072,13 @@
          gives each of them the floor's own outline and separates them in height instead of
          putting them in plan slots they do not occupy. See the band in _vs3Build. */
       tradeSplit: !!tradeSplit,
-      trade: _trOne ? _tr : null };
+      trade: _trOne ? _tr : null,
+      /* ⚠⚠ AND WHICH TOWER, derived the same way and for the same reason. Floor plans are kept
+         per trade AND per tower (see zpByLabelOf), so a card that is one building must ask for that
+         building's plans — otherwise a `Tower › Level › Zone` project, where every tower has an
+         `F1`, draws them all from whichever tower traced the largest one. A card spanning towers
+         has no single answer and gets null, which sends the lookup to the bare key. */
+      tower: _twOne ? _tw : null };
   }
   function _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit) {
     // ⚠️ Bands by the AXIS level (the floor), never by LOC_LEVELS[0] — that is the tower on a
@@ -18915,7 +19125,7 @@
          what the owner hit: the zones were traced, the default view is 2D, and nothing about the
          layout showed up. ⚠️ Null on an untraced storey, and the equal-share path below is then
          byte-for-byte what it always was. */
-      var _lay = _vsPlanLay(cells, v, plotW, _m.trade);
+      var _lay = _vsPlanLay(cells, v, plotW, _m.trade, _m.tower);
       if (_lay) cells = _lay.order.map(function (i) { return cells[i]; });
       var fcwU = plotW / (cells.length || 1);
       cells.forEach(function (c, ci) {
@@ -33178,7 +33388,7 @@
       } catch (e) {}
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'agroup', 'agroup2', 'agroup3', 'agroup4', 'floor', 'zone', 'unit'], phases: {},
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, floorGate: {}, zoneZigzag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'agroup', 'agroup2', 'agroup3', 'agroup4', 'floor', 'zone', 'unit'], phases: {},
       // ⚠️ Two bags, both empty: a plate is created only when a cell is actually painted, so a
       // brand-new setup truthfully reports "no layout defined" rather than an empty 2 x 2 grid.
       zonePlan: { kind: {}, floor: {} } }; }
@@ -33270,7 +33480,21 @@
       d.tradeParallelKind = (c.tradeParallelKind && typeof c.tradeParallelKind === 'object') ? c.tradeParallelKind : {};  // per-leading-trade, per floor-kind: start together
       d.zoneSimul = (c.zoneSimul && typeof c.zoneSimul === 'object') ? c.zoneSimul : {};  // per-trade: how many zones run at once per floor (0 = all/parallel)
       d.unitSimul = (c.unitSimul && typeof c.unitSimul === 'object') ? c.unitSimul : {};  // per-trade: how many units run at once per zone (0 = all/parallel)
+      /* ⚠️⚠️ `floorLag` IS READ NOW (2026-09-16). It sat in blank() and normalize() and nowhere
+         else for months — the third declared-but-unwired field in this module — while the
+         auto-trace dialog's own copy claimed it built "vertical progression with the cure lag".
+         It is the lag on the floor→floor link, which is what that sentence always meant. */
       d.floorLag = (c.floorLag && typeof c.floorLag === 'object') ? c.floorLag : {};      // per-trade: cure/lag days between a floor and the floor above
+      /* ⚠️ THE TWO QUESTIONS THE ZONE SEQUENCE COULD NOT ANSWER BEFORE (2026-09-16).
+         `floorGate` — 'cell' (default, unchanged): a zone may start as soon as the SAME zone below
+         is done, so each zone climbs its own column. 'floor': nothing on a floor starts until the
+         whole floor below is finished. That is the single biggest fork in a takt plan and the
+         dialog never asked it; every setup built so far assumed the first.
+         `zoneZigzag` — the crew walks back to zone A on every floor (default), or carries on from
+         where it finished and works the next floor in reverse. Real crews do the second; modelled
+         as the first, the plan books travel time nobody spends. */
+      d.floorGate = (c.floorGate && typeof c.floorGate === 'object') ? c.floorGate : {};  // per-trade: 'cell' (zone column) | 'floor' (finish the floor below first)
+      d.zoneZigzag = (c.zoneZigzag && typeof c.zoneZigzag === 'object') ? c.zoneZigzag : {};  // per-trade: reverse the zone order on alternate floors
       d.zoneOrder = (c.zoneOrder && typeof c.zoneOrder === 'object') ? c.zoneOrder : {};  // per-trade: ordered list of zone codes (the sequence zones are worked in)
       d.locLevel = (['auto', 'floor', 'zone', 'unit'].indexOf(c.locLevel) >= 0) ? c.locLevel : 'auto';  // global activity/takt leaf level
       // ---- Lifecycle phases (the step beside the Execution Phase) ---------------------------
@@ -33616,33 +33840,160 @@
       });
     }
 
-    // Instructions & shortcuts reference (the "?" button, top-right of the builder)
+    /* =============================================================================================
+       THE MANUAL BEHIND THE "?" — ONE PAGE PER STEP
+       Owner 2026-09-16: *"in the question mark or guide, can you provide a quick manual dedicated
+       for each step that users are able to refer to."*
+
+       ⚠️⚠️ WHAT WAS WRONG WITH THE OLD ONE: it was a single <ul> of ten bullets covering every step
+       at once, so a planner stuck on step 3 read nine paragraphs about steps they were not on to
+       find the one they were. It also described only the BUILD path — an import opened the same
+       modal and was told about Floors & Zones, Stacking and Generate, none of which it has.
+
+       ⚠️ SO IT OPENS ON THE STEP YOU ARE STANDING ON, and its rail is the rail of the mode you are
+       in. Same shape every time: what the step is FOR, what to DO, what to WATCH, and DONE WHEN —
+       the last one being the question people actually have ("can I move on?").
+       ⚠️ Keyed by the step TITLE, not by index. The rail is built at runtime from the mode and has
+       been renumbered twice (twelve steps to eight when five merged into Repetition); an index here
+       would have silently pointed at the wrong page both times.
+       ============================================================================================= */
+    var SB_MANUAL = {
+      'Start': {
+        why: 'Pick how this schedule comes into being: from a file somebody already made, or built here from the building itself.',
+        how: ['<b>Import</b> an existing programme from Excel or P6 when one exists — nothing is written until the last step, so it is safe to walk through and look.',
+              '<b>Build new</b> when there is no programme yet: you describe the activities, the floors and how the work repeats, and the schedule is generated.'],
+        watch: ['The two paths have <b>different steps</b>. Switching mode later keeps what you typed but changes the rail.'],
+        done: 'A mode is chosen and the rail below it has filled in.'
+      },
+      'Working calendars': {
+        why: 'Which days count as work. Every duration in this setup is in WORKING days, so this decides what a 5-day activity means on a calendar.',
+        how: ['Set the working week and the daily hours.', 'Add the holidays this project observes.',
+              'Add <b>seasons</b> (a rainy season, a shutdown) if they change what is workable.'],
+        watch: ['⚠️ Get this right <b>before</b> durations: changing the week afterwards moves every date in the generated schedule.'],
+        done: 'The week, the holidays and any seasons match how this site actually works.'
+      },
+      'Activities': {
+        why: 'The list of work that repeats through the building — one row per class code, with how long it takes in one place.',
+        how: ['Press <b>+ Library</b> to load the standard class codes, tick the ones this project uses, then <b>←</b> to bring them in.',
+              'Or download the <b>template</b>, fill it in Excel and upload it.',
+              'Set each row\u2019s <b>trade</b>, <b>scope</b> and its <b>Interior / Exterior</b> duration.',
+              '<b>Scope</b> is what the duration is FOR: <i>per zone</i>, <i>per floor</i>, or <i>whole project</i>. A whole-project duration is split down automatically.'],
+        watch: ['⚠️ <b>Codes must be distinct.</b> Two rows with the same code cannot be told apart in the sequencing steps, which makes them unusable.',
+                'The grid is a spreadsheet: drag to select, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd>, <kbd>Ctrl+D</kbd> to fill down, <kbd>Delete</kbd> to clear. Paste blocks straight from Excel.'],
+        done: 'Every activity you intend to programme has a code, a trade, a scope and a duration.'
+      },
+      'Floors & Zones': {
+        why: 'The places the work happens — the Location Breakdown Structure. This is what the activities get repeated ACROSS.',
+        how: ['Per trade, add the <b>floors</b> (including basements — set each floor\u2019s category).',
+              'Split a floor into <b>zones</b>, and a zone into <b>units</b>, only as far as you actually sequence.',
+              'Use the same <b>zone codes</b> on every floor where they mean the same place.'],
+        watch: ['⚠️⚠️ <b>Zone codes are how floors line up.</b> \u201cA\u201d on floor 2 follows \u201cA\u201d on floor 1 because the codes match — spell one of them differently and the column breaks.',
+                'A floor with no zones is fine. It is treated as one place.',
+                '⚠️ Do not add a level you will not sequence: every extra level multiplies the activities the push writes.'],
+        done: 'Each trade\u2019s floors exist, in the right order, with zone codes that match across floors.'
+      },
+      'Structure': {
+        why: 'Two views of one breakdown. <b>5PMLC</b> is the project\u2019s live branch tree; <b>Construction Library</b> is the places and groupings that end up inside its Execution Phase.',
+        how: ['Open <b>5PMLC</b> first to see what the project already has.',
+              'Use <b>Construction Library</b> to shape how the generated activities will be grouped.'],
+        watch: ['⚠️ 5PMLC edits the <b>live</b> tree immediately; the Library edits this setup\u2019s draft. They are different things on one screen.',
+                'The push creates the branches this setup needs and reuses the ones already there — it does not duplicate them.'],
+        done: 'You can see where the generated activities are going to land.'
+      },
+      'Repetition': {
+        why: 'How the building repeats — the tabs across the top are five questions about one subject: which towers interface, in what order the locations are built, in what order the trades run inside a location, what applies where, and what the result looks like stacked up.',
+        how: ['<b>Tower links</b> — how the towers meet in time (a shared podium, one tower handing off to another). Skip it on a single-tower job.',
+              '<b>Zone sequence</b> — which location follows which. Use <b>Auto-trace</b> (below) rather than drawing it by hand.',
+              '<b>Trade sequence</b> — how the class codes run inside one location. <b>Auto-chain</b> links a trade\u2019s codes back-to-back with the relationship in the dropdown beside it.',
+              '<b>Scope per zone</b> — tick which activities apply to each location. Everything applies everywhere until you say otherwise.',
+              '<b>Stacking</b> — read-only: the vertical stack per trade, each zone with its number and completion date.'],
+        watch: ['<b>Linking by hand</b> (Zone and Trade sequence): click one or more <b>sources</b> (red outline) \u2192 <b>right-click</b> to confirm \u2192 click one or more <b>destinations</b> (blue dashed) \u2192 <b>right-click</b> again \u2192 pick the relationship (FS / SS / FF / SF) and lag. Every source links to every destination.',
+                '<b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> and <b style="color:#e08a1e">successors</b>. Click an arrow to edit or unlink it. <b>Reset selection</b> cancels.',
+                '⚠️⚠️ <b>Auto-trace replaces every link</b> in Zone sequence. Run it FIRST, then adjust by hand — not the other way round.'],
+        done: 'A trade you pick on Stacking climbs the building the way you would describe it out loud.'
+      },
+      'Project phases': {
+        why: 'The lifecycle either side of construction — Initiation, Planning, Close-out — as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.',
+        how: ['Turn on the phases this project reports.', 'Add each phase\u2019s activities and how long they take.'],
+        watch: ['⚠️ Do not re-type construction work here. It is generated from the steps above and would be counted twice.'],
+        done: 'The phases this project reports on exist, or are deliberately left off.'
+      },
+      'Generate': {
+        why: 'Build the schedule from everything above, look at it, then push it into the live Project Schedule.',
+        how: ['Press <b>Generate</b> and read the preview — activity count, dates, the WBS it will create.',
+              'Go back and fix anything that reads wrong; the preview stays here until you push.',
+              'Push it into the Project Schedule when the preview is right.'],
+        watch: ['⚠️⚠️ The push is the only step that <b>writes</b>. Everything before it is a draft.',
+                'The count at the top of the builder says how many activities are ready to push and how many are already in the schedule.'],
+        done: 'The preview matches what you meant, and it is pushed.'
+      },
+      /* ---- the import path -------------------------------------------------------------- */
+      'Activities & phases': {
+        why: 'Read the file and decide which branch of it is which lifecycle phase. Nothing is written yet.',
+        how: ['Check the parse: the activity count, the dates, the branches.', 'File each top branch under a phase.',
+              'Exclude anything that should not come across.'],
+        watch: ['⚠️⚠️ Which branch is the <b>Execution Phase</b> decides what every later step reads. Get it right here.'],
+        done: 'Every branch is filed, and the count of what is coming in looks right.'
+      },
+      'Relationships': {
+        why: 'Whether to keep the logic that came with the file, or drop it and sequence the work here.',
+        how: ['Keep the file\u2019s relationships when the programme is trusted.', 'Drop them when the file is a list of activities rather than a plan.'],
+        watch: ['⚠️ An excluded activity\u2019s links go with it — that is why this step comes after the activity set is settled.'],
+        done: 'The logic coming in is the logic you want.'
+      },
+      'Review & import': {
+        why: 'The last look before anything is written.',
+        how: ['Read what is about to be inserted — counts, dates, the structure it creates.', 'Import.'],
+        watch: ['⚠️⚠️ This is the <b>only</b> step on the import path that writes to the schedule.'],
+        done: 'The schedule holds the programme, and the counts match the review.'
+      }
+    };
+    /* ⚠️ The fallback exists because the rail is built at runtime: a step added without a manual
+       page must say so plainly rather than open an empty modal that reads as a broken feature. */
+    function sbManualFor(t) {
+      return SB_MANUAL[t] || { why: 'No manual page for this step yet.', how: [], watch: [], done: '' };
+    }
+    function sbManualHTML(i) {
+      var st = STEPS[i]; if (!st) return '';
+      var m2 = sbManualFor(st.t);
+      function list(cls, items) {
+        return items && items.length ? '<ul class="' + cls + '">' + items.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul>' : '';
+      }
+      return '<div class="sbld-man-head"><span class="sbld-man-n">' + (i + 1) + '</span>' +
+          '<div><h4 style="margin:0;">' + e2(st.t) + '</h4><span class="sbld-hint">' + e2(st.s || '') + '</span></div></div>' +
+        '<p class="sbld-man-why">' + m2.why + '</p>' +
+        (m2.how && m2.how.length ? '<h5>What to do</h5><ol class="sbld-man-how">' + m2.how.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ol>' : '') +
+        (m2.watch && m2.watch.length ? '<h5>Watch out</h5>' + list('sbld-man-watch', m2.watch) : '') +
+        (m2.done ? '<div class="sbld-man-done"><b>Done when</b> ' + m2.done + '</div>' : '');
+    }
+
+    // The "?" button, top-right of the builder. Opens on the step you are standing on.
     function openHelp() {
+      var sel = Math.max(0, Math.min(step, STEPS.length - 1));
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
-      ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Schedule Setup — instructions &amp; shortcuts</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
-        '<div class="sbld-help-body" style="padding:16px;max-height:70vh;overflow:auto;">' +
-        '<h4>The ' + STEPS.length + ' steps</h4><ul>' +
-        '<li><b>' + _stepNo('Activities') + ' · Activities</b> — a spreadsheet of your class codes (code · name · trade · <b>scope</b> · interior/exterior durations) beside a holding list of all codes. Click/drag to select cells, type or double-click to edit, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd> copy &amp; paste (paste one cell into a selection to fill), <kbd>Ctrl+D</kbd> fill-down, <kbd>Delete</kbd> to clear; paste blocks from Excel. <b>&larr;/&rarr;</b> load/remove codes between the list and the build. Press <b>+ Library</b> to load the standard class-code library into the list, tick codes and press <b>&larr;</b> to add them, then <b>Save</b>. <b>Scope</b> (per zone / per floor / whole project) auto-splits a duration down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
-        '<li><b>' + _stepNo('Floors & Zones') + ' · Floors &amp; Zones</b> — per trade, define floors (and basements) and split each into zones/units.</li>' +
-        '<li><b>' + _stepNo('Tower links') + ' · Tower links</b> — how the towers interface in time (a shared podium, one tower handing off to another).</li>' +
-        '<li><b>' + _stepNo('Zone sequence') + ' · Zone sequence</b> — connect the zones (which location follows which). Just topology — blocks are equal size here. <b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> (what drives it) and <b style="color:#e08a1e">successors</b> (what it drives).</li>' +
-        '<li><b>' + _stepNo('Trade sequence') + ' · Trade sequence</b> — connect the class codes within each trade (how they run inside a zone). Edit the enlarged <b>Int/Ext</b> durations inline. <b>Click any bar</b> to highlight its predecessors/successors.</li>' +
-        '<li><b>' + _stepNo('Scope per zone') + ' · Scope per zone</b> — tick which activities apply to each location.</li>' +
-        '<li><b>' + _stepNo('Stacking') + ' · Stacking</b> — the vertical stacking per trade: each zone with its number and completion date.</li>' +
-        '<li><b>' + _stepNo('Project phases') + ' · Project phases</b> — the lifecycle either side of construction (Initiation / Planning / Close-out), as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.</li>' +
-        '<li><b>' + _stepNo('Structure') + ' · Structure</b> — two views of one breakdown: <b>5PMLC</b> is the project\'s live branch tree (its own step until today, and the WBS Manager screen before that), and <b>Construction Library</b> is the places and groupings that end up inside its Execution Phase. The push creates the branches this setup needs and reuses the ones already there.</li>' +
-        '<li><b>' + _stepNo('Generate') + ' · Generate</b> — build the schedule and push it into the live Project Schedule.</li></ul>' +
-        '<h4>Linking (steps ' + _stepNo('Zone sequence') + ' &amp; ' + _stepNo('Trade sequence') + ') — pick, then confirm</h4><ol>' +
-        '<li><b>Click</b> one or more <b>source</b> blocks/nodes (red outline). Click again to deselect.</li>' +
-        '<li><b>Right-click</b> anywhere in the linking area to <b>confirm the sources</b>.</li>' +
-        '<li><b>Click</b> one or more <b>destination</b> blocks/nodes (blue dashed outline).</li>' +
-        '<li><b>Right-click</b> again to confirm.</li>' +
-        '<li>A dialog asks the <b>relationship (FS / SS / FF / SF)</b> and <b>lag</b> — every source is linked to every destination.</li>' +
-        '</ol><p><b>Reset selection</b> cancels; <b>click an arrow</b> to edit its type/lag or unlink. <b>SS</b> lines two bars up at the same start; <b>FS</b> steps the next bar over.</p>' +
-        '<h4>Auto-trace (step ' + _stepNo('Zone sequence') + ')</h4><p><b>Auto-trace logic</b> first asks a few takt questions per trade — how many <b>zones</b> run at once per floor, how many <b>units</b> at once per zone, and how many <b>floors</b> it finishes before the next trade follows — then builds the whole takt flow for you (sequencing whatever isn\'t simultaneous). It replaces the current links.</p>' +
-        '<h4>Auto-chain (step ' + _stepNo('Trade sequence') + ')</h4><p><b>Auto-chain</b> links a trade\'s class codes back-to-back using the relationship picked in the dropdown beside it (FS / SS / FF / SF).</p>' +
-        '</div><div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" data-x>Got it</button></div></div>';
+      ov.innerHTML = '<div class="pd-modal sbld-man" style="max-width:760px;">' +
+        '<div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Schedule Setup \u2014 step manual</h3>' +
+          '<button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div class="sbld-man-body">' +
+          '<div class="sbld-man-rail" id="sbld-man-rail"></div>' +
+          '<div class="sbld-help-body sbld-man-page" id="sbld-man-page"></div>' +
+        '</div>' +
+        '<div class="pd-modal-footer"><span class="sbld-hint" style="margin-right:auto;">Opens on the step you are on. Pick any step to read its page.</span>' +
+          '<button class="pd-btn pd-btn-primary" data-x>Got it</button></div></div>';
       document.body.appendChild(ov);
+      var rail = ov.querySelector('#sbld-man-rail'), page = ov.querySelector('#sbld-man-page');
+      function draw() {
+        rail.innerHTML = STEPS.map(function (st, i) {
+          return '<button class="sbld-man-step' + (i === sel ? ' on' : '') + '" data-mstep="' + i + '">' +
+            '<span class="sbld-step-n">' + (i + 1) + '</span><span class="sbld-step-t">' + e2(st.t) + '</span></button>';
+        }).join('');
+        page.innerHTML = sbManualHTML(sel);
+        page.scrollTop = 0;
+        Array.prototype.forEach.call(rail.querySelectorAll('[data-mstep]'), function (b) {
+          b.onclick = function () { sel = +b.dataset.mstep; draw(); };
+        });
+      }
+      draw();
       function close() { ov.remove(); }
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
@@ -34514,6 +34865,32 @@
       return out;
     }
     function parallelKind(prev, k) { return parallelKindOf(cfg, prev, k); }
+    /* ⚠️⚠️ ONE DEFINITION OF "THE ORDER THIS TRADE WORKS A FLOOR IN", read by the vertical chain,
+       the intra-floor chain and the readback sentence in the dialog. It used to exist only inside
+       the intra-floor loop, which is why the floor→floor link could not know which zone a crew
+       actually finished on — and therefore could not gate on it.
+       ⚠️ `ord` is the floor's ordinal WITHIN ITS TOWER, not its index in floorsOf(): zig-zag has to
+       alternate up each tower separately, or a two-tower project flips the wrong floors. */
+    function zoneGroupsOfFloor(tr, f, ord) {
+      var groups = [], byZone = {};
+      leavesOfFloor(tr, f).forEach(function (l) {
+        var zk = l.zone ? (l.zone.code || l.zone.id) : '_';
+        if (!(zk in byZone)) { byZone[zk] = groups.length; groups.push({ zk: zk, uids: [] }); }
+        groups[byZone[zk]].uids.push(l.uid);
+      });
+      var zord = (cfg.zoneOrder && cfg.zoneOrder[tr]) || [];
+      if (zord.length) groups.sort(function (a, b) {
+        var ra = zord.indexOf(a.zk), rb = zord.indexOf(b.zk);
+        return (ra < 0 ? 999 : ra) - (rb < 0 ? 999 : rb);
+      });
+      // ⚠️ Odd floors only — the first floor of a tower is always worked in the declared order, or
+      //    the answer to "in what order are the zones worked?" would be false on floor 1.
+      if (cfg.zoneZigzag && cfg.zoneZigzag[tr] && (ord % 2) === 1) groups.reverse();
+      return groups;
+    }
+    function floorGateOf(tr) { return (cfg.floorGate && cfg.floorGate[tr] === 'floor') ? 'floor' : 'cell'; }
+    function floorLagOf(tr) { return Math.max(0, Math.min(365, +((cfg.floorLag || {})[tr]) || 0)); }
+
     // Takt / location-based logic: each trade climbs its own floors cell-by-cell (matched by zone+unit
     // code), and a following trade stays a configurable number of floors BEHIND the one before it.
     function autoTrace() {
@@ -34534,16 +34911,29 @@
       // B's basement — see the note at the top of the tower work. Each tower is chained within
       // itself; with one tower this is byte-for-byte the previous behaviour.
       present.forEach(function (tr) {
-        var fl = floorsOf(tr);
+        var fl = floorsOf(tr), gate = floorGateOf(tr), lag = floorLagOf(tr);
         towerList().forEach(function (tw) {
           // Indices INTO fl, so idx[] lookups (which are keyed by that index) still line up.
           var own = []; fl.forEach(function (f, i) { if (towerIdOf(f) === tw.id) own.push(i); });
           for (var k = 1; k < own.length; k++) {
             var iPrev = own[k - 1], iCur = own[k];
-            Object.keys(idx[tr][iCur]).forEach(function (ck) {
-              var pv = idx[tr][iPrev][ck] || firstOf(idx[tr][iPrev]);
-              if (pv) tryLink(pv, idx[tr][iCur][ck], 'FS', 0);
-            });
+            if (gate === 'floor') {
+              /* ⚠️⚠️ THE WHOLE FLOOR BELOW GATES THE WHOLE FLOOR ABOVE, and the endpoints are the
+                 zones the crew actually finishes and starts on — the LAST of the floor below in its
+                 worked order, the FIRST of the floor above in its own. With zig-zag on, those two
+                 are the same zone, which is the point of zig-zag: no walk back.
+                 ⚠️ ONE link per floor pair, not one per cell. Gating every cell on the same
+                 predecessor draws N identical arrows saying one thing. */
+              var gPrev = zoneGroupsOfFloor(tr, fl[iPrev], k - 1), gCur = zoneGroupsOfFloor(tr, fl[iCur], k);
+              var lastG = gPrev[gPrev.length - 1], firstG = gCur[0];
+              var a = lastG && lastG.uids[lastG.uids.length - 1], b = firstG && firstG.uids[0];
+              if (a && b) tryLink(a, b, 'FS', lag);
+            } else {
+              Object.keys(idx[tr][iCur]).forEach(function (ck) {
+                var pv = idx[tr][iPrev][ck] || firstOf(idx[tr][iPrev]);
+                if (pv) tryLink(pv, idx[tr][iCur][ck], 'FS', lag);
+              });
+            }
           }
         });
       });
@@ -34555,11 +34945,12 @@
       present.forEach(function (tr) {
         var zS = Math.max(0, +cfg.zoneSimul[tr] || 0), uS = Math.max(0, +cfg.unitSimul[tr] || 0);
         if (!zS && !uS) return;
-        var zord = cfg.zoneOrder[tr] || [];
-        floorsOf(tr).forEach(function (f) {
-          var groups = [], byZone = {};   // per-zone {zk, uids}, in listed order
-          leavesOfFloor(tr, f).forEach(function (l) { var zk = l.zone ? (l.zone.code || l.zone.id) : '_'; if (!(zk in byZone)) { byZone[zk] = groups.length; groups.push({ zk: zk, uids: [] }); } groups[byZone[zk]].uids.push(l.uid); });
-          if (zord.length) groups.sort(function (a, b) { var ra = zord.indexOf(a.zk), rb = zord.indexOf(b.zk); return (ra < 0 ? 999 : ra) - (rb < 0 ? 999 : rb); });
+        // ⚠️ The floor's ordinal WITHIN ITS TOWER is what zig-zag alternates on, so it is computed
+        //    here rather than taken from the index in floorsOf().
+        var fl2 = floorsOf(tr), ordOf = {}, seenTw = {};
+        fl2.forEach(function (f, i) { var tw = towerIdOf(f); ordOf[i] = (seenTw[tw] = (seenTw[tw] == null ? 0 : seenTw[tw] + 1)); });
+        fl2.forEach(function (f, fi) {
+          var groups = zoneGroupsOfFloor(tr, f, ordOf[fi]);   // per-zone {zk, uids}, in WORKED order
           var order = groups.map(function (g) { return g.uids; });
           if (uS > 0) order.forEach(function (uids) { for (var j = uS; j < uids.length; j++) tryLink(uids[j - uS], uids[j]); });          // units within a zone
           if (zS > 0 && zS < order.length) for (var i = zS; i < order.length; i++) { var p = order[i - zS], c = order[i]; if (p.length && c.length) tryLink(p[p.length - 1], c[0]); }   // zones within a floor
@@ -34622,18 +35013,48 @@
           }).join('');
           qs.push('<div class="sbld-at-q sbld-at-qcol"><label style="margin-bottom:4px;">Handoff from <b style="color:' + gc(prev) + '">' + e2(GLABEL[prev]) + '</b> <span class="sbld-hint">(per floor category — how far behind this trade follows)</span></label>' + krows + '</div>');
         }
-        // (c) zones simultaneous per floor
-        if (zoneable) {
-          var zv = (cfg.zoneSimul[tr] != null && +cfg.zoneSimul[tr] > 0) ? cfg.zoneSimul[tr] : mZ;
-          qs.push('<div class="sbld-at-q"><label>How many <b>zones</b> run <b>at the same time</b> per floor? <span class="sbld-hint">(of ' + mZ + ' — ' + mZ + ' = all at once)</span></label>' + num('zone', tr, zv, mZ, 1) + '</div>');
-        }
-        // (d) zone order — the sequence zones are worked in (reorderable list)
+        /* ==================================================================================
+           THE ZONE BLOCK — owner 2026-09-16: *"significantly improve the questions being asked
+           for better linking especially on zone sequence. Make it more effective yet concise."*
+
+           ⚠️⚠️ TWO OF THESE FOUR WERE NEVER ASKED, AND THEY ARE THE TWO THAT DECIDE THE SHAPE:
+           what gates the floor above, and whether the crew walks back. Everything the dialog
+           asked before was about how much runs at once — a question about WIDTH, when the
+           complaint was about the FLOW.
+           ⚠️ Every one is a pick-one, not a number to reason about, except the two that are
+           genuinely quantities (how many at once, how many days). A takt question phrased as an
+           integer between 1 and N makes the planner do the translation the dialog should be
+           doing. ================================================================== */
         if (zoneable) {
           var zl = zonesOf(tr);
-          qs.push('<div class="sbld-at-q sbld-at-qcol"><label style="margin-bottom:4px;">In what <b>order</b> are the zones worked? <span class="sbld-hint">(top = first)</span></label>' +
+          qs.push('<div class="sbld-at-q sbld-at-qcol"><label style="margin-bottom:4px;">Zones, in the <b>order worked</b> <span class="sbld-hint">(top first)</span></label>' +
             '<div class="sbld-zord" data-atzord="' + e2(tr) + '">' + zl.map(function (c) {
               return '<div class="sbld-zord-item" data-zk="' + e2(c) + '"><span class="sbld-zord-lab">' + e2(c) + '</span><span class="sbld-zord-btns"><button class="pd-btn sbld-zbtn" data-zup type="button">↑</button><button class="pd-btn sbld-zbtn" data-zdown type="button">↓</button></span></div>';
-            }).join('') + '</div></div>');
+            }).join('') + '</div>' +
+            /* ⚠️ The crew does not teleport back to zone A. Modelled as a walk-back the plan books
+               travel nobody spends; with zig-zag the floor above starts where the floor below
+               finished, which is what the crew actually does. */
+            '<label class="sbld-at-opt"><input type="checkbox" data-atkind="zig" data-attr="' + e2(tr) + '"' +
+              (cfg.zoneZigzag[tr] ? ' checked' : '') + '> Zig-zag: work the next floor <b>in reverse</b>, so the crew carries on from where it finished</label>' +
+            '</div>');
+
+          var zv = (cfg.zoneSimul[tr] != null && +cfg.zoneSimul[tr] > 0) ? cfg.zoneSimul[tr] : mZ;
+          qs.push('<div class="sbld-at-q"><label><b>Zones at once</b>, per floor <span class="sbld-hint">(1 = a takt train, ' + mZ + ' = all together)</span></label>' + num('zone', tr, zv, mZ, 1) + '</div>');
+        }
+        /* ⚠️⚠️ THE FORK THE DIALOG NEVER PUT TO ANYBODY. Every setup built before today assumed
+           the first answer — a zone may start as soon as the SAME zone below is done — because
+           that is what `autoTrace` hard-coded. It is the right answer for a structural frame and
+           the wrong one for a trade that needs the deck clear, and the difference is weeks. */
+        if (nF > 1) {
+          var gate = (cfg.floorGate[tr] === 'floor') ? 'floor' : 'cell';
+          qs.push('<div class="sbld-at-q sbld-at-qcol"><label style="margin-bottom:4px;">Moving up a floor, this trade can start when…</label>' +
+            '<label class="sbld-at-opt"><input type="radio" name="gate-' + e2(tr) + '" data-atkind="gate" data-attr="' + e2(tr) + '" value="cell"' + (gate === 'cell' ? ' checked' : '') + '> …the <b>same zone below</b> is done <span class="sbld-hint">— each zone climbs its own column</span></label>' +
+            '<label class="sbld-at-opt"><input type="radio" name="gate-' + e2(tr) + '" data-atkind="gate" data-attr="' + e2(tr) + '" value="floor"' + (gate === 'floor' ? ' checked' : '') + '> …the <b>whole floor below</b> is finished <span class="sbld-hint">— one floor at a time</span></label>' +
+            '</div>');
+          /* ⚠️ `floorLag` existed in cfg for months and was never read, while this dialog's own
+             blurb promised "vertical progression with the cure lag". Asked now, applied now. */
+          qs.push('<div class="sbld-at-q"><label><b>Wait</b> before the floor above <span class="sbld-hint">(days — curing, stripping, drying; 0 = none)</span></label>' +
+            num('lag', tr, floorLagOf(tr), 365, 0) + '</div>');
         }
         // (e) units simultaneous per zone
         if ((lvl === 'auto' || lvl === 'unit') && mU > 1) {
@@ -34641,18 +35062,52 @@
           qs.push('<div class="sbld-at-q"><label>How many <b>units</b> run <b>at the same time</b> per zone? <span class="sbld-hint">(of ' + mU + ' — ' + mU + ' = all at once)</span></label>' + num('unit', tr, uv, mU, 1) + '</div>');
         }
         if (!qs.length) return '';
-        return '<div class="sbld-at-sec"><div class="sbld-at-tr" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + qs.join('') + '</div>';
+        /* ⚠️⚠️ THE READBACK IS THE POINT OF "MORE EFFECTIVE". Six controls across four trades is
+           twenty-four answers, and nobody can hold the resulting flow in their head — so the
+           dialog says it back as a sentence, live, and the planner checks the INTENT instead of
+           simulating the algorithm. It is rebuilt on every change by sbAtSay(). */
+        return '<div class="sbld-at-sec" data-atsec="' + e2(tr) + '"><div class="sbld-at-tr" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + qs.join('') +
+          '<div class="sbld-at-say" data-atsay="' + e2(tr) + '"></div></div>';
       }).filter(Boolean).join('');
       if (!sections) sections = '<p class="sbld-hint">Nothing to configure — add more floors/zones/units (step 2) or a second trade to shape the takt flow. Auto-trace will just chain the floors vertically.</p>';
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
-      ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace logic — takt questions</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
-        '<div style="padding:16px;max-height:72vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">Each trade is asked only what applies to how <b>it</b> flows through the building. Auto-trace then builds the whole takt logic — vertical progression with the cure lag, zones/units sequenced in the answered order and batch, and each trade trailing the one before it. <b>This replaces the current links.</b></p>' +
+      ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace — how does the work flow?</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div style="padding:16px;max-height:72vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">Each trade is asked only what applies to how <b>it</b> flows through the building. The <b>So:</b> line under each trade is the flow your answers describe \u2014 read that, not the boxes. <b>This replaces the current links.</b></p>' +
         sections + '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbld-at-go">Generate logic</button></div></div>';
       document.body.appendChild(ov);
       function close() { ov.remove(); }
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+      /* Reads the DIALOG, not cfg — the sentence has to describe what is on screen right now,
+         including answers not yet saved. One source, so it cannot describe a different plan
+         from the one the button is about to build. */
+      function sbAtSay() {
+        Array.prototype.forEach.call(ov.querySelectorAll('[data-atsay]'), function (el) {
+          var tr = el.getAttribute('data-atsay'), bits = [];
+          var zlist = ov.querySelector('[data-atzord="' + tr + '"]');
+          var zs = ov.querySelector('input[data-atkind="zone"][data-attr="' + tr + '"]');
+          var zig = ov.querySelector('input[data-atkind="zig"][data-attr="' + tr + '"]');
+          var lag = ov.querySelector('input[data-atkind="lag"][data-attr="' + tr + '"]');
+          var gate = ov.querySelector('input[data-atkind="gate"][data-attr="' + tr + '"]:checked');
+          if (zlist) {
+            var order = Array.prototype.map.call(zlist.querySelectorAll('.sbld-zord-item'), function (it) { return it.dataset.zk; });
+            var n = zs ? Math.max(1, +zs.value || 1) : 1;
+            bits.push(n >= order.length
+              ? 'all ' + order.length + ' zones together'
+              : (n === 1 ? 'one zone at a time, ' + order.join(' → ') : n + ' zones at a time, ' + order.join(' → ')));
+            if (zig && zig.checked) bits.push('reversing each floor');
+          }
+          if (gate) bits.push(gate.value === 'floor' ? 'the floor above waits for the whole floor below' : 'each zone climbs its own column');
+          var lv = lag ? Math.max(0, +lag.value || 0) : 0;
+          if (lv) bits.push('+' + lv + 'd before the floor above');
+          el.innerHTML = bits.length ? '<b>So:</b> ' + e2(bits.join(' · ')) : '';
+        });
+      }
+      ov.addEventListener('input', sbAtSay);
+      ov.addEventListener('change', sbAtSay);
+      ov.addEventListener('click', function (e) { if (e.target.closest('[data-zup],[data-zdown]')) setTimeout(sbAtSay, 0); });
+      sbAtSay();
       // zone-order reorder buttons — move the item up/down in the DOM (read back on save)
       // Ticking "start at the same time" dims the floors-behind row (it no longer applies).
       ov.querySelectorAll('input[data-atkind="pkind"]').forEach(function (cb) { cb.onchange = function () {
@@ -34667,8 +35122,13 @@
           var kind = inp.dataset.atkind, target = inp.dataset.attr, fk = inp.dataset.kind;
           if (kind === 'pkind') { (cfg.tradeParallelKind[target] = cfg.tradeParallelKind[target] || {})[fk] = inp.checked; if (fk === 'typical') cfg.tradeParallel[target] = inp.checked; return; }
           if (kind === 'bkind') { var bv = Math.max(1, Math.min(60, +inp.value || 1)); (cfg.tradeBatchKind[target] = cfg.tradeBatchKind[target] || {})[fk] = bv; if (fk === 'typical') cfg.tradeBatch[target] = bv; return; }
+          if (kind === 'zig') { cfg.zoneZigzag[target] = inp.checked; return; }
+          // ⚠️ Radios: only the CHECKED one is an answer. Reading every radio would let the
+          //    unchecked sibling overwrite the chosen one, depending on DOM order.
+          if (kind === 'gate') { if (inp.checked) cfg.floorGate[target] = (inp.value === 'floor' ? 'floor' : 'cell'); return; }
           var v = +inp.value;
-          if (kind === 'zone') cfg.zoneSimul[target] = Math.max(1, v || 1);                   // zones at once
+          if (kind === 'lag') cfg.floorLag[target] = Math.max(0, Math.min(365, v || 0));      // cure/wait before the floor above
+          else if (kind === 'zone') cfg.zoneSimul[target] = Math.max(1, v || 1);                   // zones at once
           else if (kind === 'unit') cfg.unitSimul[target] = Math.max(1, v || 1);                   // units at once
         });
         ov.querySelectorAll('[data-atzord]').forEach(function (list) { cfg.zoneOrder[list.dataset.atzord] = Array.prototype.map.call(list.querySelectorAll('.sbld-zord-item'), function (it) { return it.dataset.zk; }); });
@@ -37989,7 +38449,41 @@
         }
         return { ar: best.ar, polys: best.polys, sources: shapes.length };
       }
-      var bare = {};
+      /* ==== AND BY TOWER, NOT BY FLOOR NAME ALONE =======================================
+         Owner 2026-09-16, with the site view in Whole towers and Floor by floor side by side:
+         *"look at the positioning and configuration of the towers. something happened when
+         choosing floor by floor."*
+
+         ⚠️⚠️ THE SAME COLLAPSE AS THE TRADE ONE ABOVE, ONE DIMENSION OVER. A `Tower › Level ›
+         Zone` breakdown gives EVERY tower a floor called `F1`, and this map was keyed by the
+         floor name alone — so the bare key answered with the LARGEST `F1` traced anywhere on the
+         project and the per-trade key answered with whichever tower came first in `cfg.zoning`.
+         Measured on a two-tower fixture: a tower whose own F1 is 0.2 of the sheet wide was handed
+         a 0.8-wide plan belonging to the other tower.
+
+         ⚠️ It stayed invisible until the site learned to read floor plans at all (2026-09-15 e).
+         Whole towers draws each tower from the SITE plan, whose areas are keyed by TOWER NAME and
+         so are unique; Floor by floor redraws every slice from the floor plan, and every tower
+         took one shape — different footprint, different size, and a plan contained-and-centred
+         into each tower's own box shrinks toward that centre, which reads as the towers moving.
+
+         ⚠️⚠️ THE TOWER NAME IS RESOLVED FROM `c.towers`, NEVER THROUGH `towerIdOf`/`towerLabel`.
+         Those read the LOADED `cfg`, and this function takes a config as an argument precisely so
+         the cold-open path can read a setup nobody has opened — the trap already recorded for
+         `locCatalogue` on 2026-09-04. Same rule as `towerIdOf`'s, spelled out here: a floor naming
+         no tower belongs to the first one.
+         ⚠️ A setup with NO towers emits no tower key at all. There is only one building there, the
+         bare key is already unambiguous, and an invented "Tower 1" could only mismatch whatever the
+         schedule's activities happen to carry. */
+      function zpTowerKeyOf(f) {
+        var tl = (c.towers && c.towers.length) ? c.towers : null;
+        if (!tl) return '';
+        var want = f && f.towerId, t = null;
+        for (var i = 0; i < tl.length; i++) if (tl[i] && tl[i].id === want) { t = tl[i]; break; }
+        if (!t) t = tl[0];
+        return zpNormCode(t.name || t.code || 'Tower');
+      }
+      var bare = {}, bareTw = {};
       Object.keys(c.zoning || {}).forEach(function (g) {
         var z = c.zoning[g];
         if (!z || !z.floors) return;
@@ -37999,10 +38493,22 @@
           var p = _pid ? bag.plate[_pid] : null;
           if (!p || !p.polys.length) return;
           var shape = shapeOf(p);
+          var twk = zpTowerKeyOf(f);
           [f.name, f.code].forEach(function (lab) {
             var k = zpNormCode(lab);
             if (!k) return;
             tks.forEach(function (tk) { if (!out[tk + '|' + k]) out[tk + '|' + k] = shape; });
+            /* ⚠️ THE TOWER SEGMENT CARRIES AN `@`, so a two-segment `@tower|floor` key can never
+               be read as a `trade|floor` one on a project with a tower named after a trade. */
+            if (twk) {
+              tks.forEach(function (tk) {
+                var kk = '@' + twk + '|' + tk + '|' + k;
+                if (!out[kk]) out[kk] = shape;
+              });
+              var bk = '@' + twk + '|' + k;
+              if (!bareTw[bk]) bareTw[bk] = { pids: [], shapes: [] };
+              if (bareTw[bk].pids.indexOf(_pid) < 0) { bareTw[bk].pids.push(_pid); bareTw[bk].shapes.push(shape); }
+            }
             // ⚠️ Every distinct plate this floor name resolves to, across trades — see zpBareShape.
             if (!bare[k]) bare[k] = { pids: [], shapes: [] };
             if (bare[k].pids.indexOf(_pid) < 0) { bare[k].pids.push(_pid); bare[k].shapes.push(shape); }
@@ -38011,6 +38517,13 @@
       });
       Object.keys(bare).forEach(function (k) {
         var b = bare[k];
+        if (b && b.shapes.length) out[k] = zpBareShape(b.shapes);
+      });
+      /* ⚠️ The same "largest wins" rule, but WITHIN one tower: several trades traced that tower's
+         own floor and the card that spans them is still one building. It is never applied across
+         towers, which is the whole of this fix. */
+      Object.keys(bareTw).forEach(function (k) {
+        var b = bareTw[k];
         if (b && b.shapes.length) out[k] = zpBareShape(b.shapes);
       });
       /* The un-levelled band's own plan, filed under the protocol key rather than a floor label —

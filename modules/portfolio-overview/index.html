@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916a" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916r" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
 </head>
 <body>
 <div class="pd-app">
@@ -41,17 +41,24 @@
            not one of the four fixed chrome controls into a `.pd-modulebar` below — so simply
            declaring the switcher and the tool cluster HERE lands them exactly where every
            other module puts them. Nothing new is invented.
-           ⚠️ A DELIBERATE, NAMED REVERSAL of the 2026-09-09 removal of `.po-tabs` — and not
-           the same object. What went then was a THIRTEEN-BUTTON STRIP that duplicated the
-           sidebar. This is one compact trigger naming the view you are on, which the sidebar
-           cannot do and every other module has. The buttons below are never seen: they are
-           `pd-tabsrc` (hidden before JS runs) and UI.tabsToDropdown() replaces them with the
-           single dropdown. -->
-      <div class="po-tabs pd-tabsrc">
-          <button class="po-tab active" data-view="overview">Overview</button>
-          <button class="po-tab" data-view="milestones">Milestones</button>
-          <button class="po-tab" data-view="stakeholders">Stakeholder Map</button>
-      </div>
+           ⚠️⚠️ THE `.po-tabs` DROPDOWN IS GONE AGAIN (2026-09-16), and this comment is
+           left as the record of why it came back in between. It was reinstated on 2026-09-15 as
+           "one compact trigger naming the view you are on", which was a fair argument while the
+           page had three views. It has one now, and a dropdown over one entry names the page you
+           are already on. -->
+      <!-- ⚠️⚠️ NO VIEW DROPDOWN, AND NO "OVERVIEW" TAB. Owner 2026-09-16: *"Let's just
+           rework the overview tab and remove the dropdown selector. Having the 'Overview' itself is
+           already a duplicate of the Portfolio Dashboard name."* A one-entry dropdown is a control
+           that cannot do anything, and its single entry repeated the <h1> beside it.
+           ⚠️ The other two entries went with it because they were duplicates of the sidebar:
+           *"Stakeholder map is here why? This is just a duplicate from the stakeholder map module
+           that can already be navigated in the side panel. Let's just remove the milestones tab as
+           well, this is also a duplicate essentially from the schedule module."* Both are reachable
+           from the sidebar already — Stakeholder Map as its own module, Milestones as the Project
+           Schedule's own portfolio Gantt.
+           ⚠️⚠️ THE DEEP LINKS DO NOT DIE WITH THE TABS. `#po_view=` links to every one of
+           these have been in the sidebar, in bookmarks and in messages for months; `PO_MOVED_VIEWS`
+           still resolves each name to the module that owns it now. See switchView(). -->
 
       <!-- ⚠️ ONE cluster, one order, on every view: scope · filter · refresh · export. -->
       <div class="po-topbar-tools">
@@ -136,7 +143,7 @@
             <h3>Projects by attention</h3>
             <span class="po-mut" id="po-rank-count"></span>
           </div>
-          <div style="overflow-x:auto;"><table class="po-table" id="po-rank"></table></div>
+          <div style="overflow-x:auto;"><table class="pd-table pd-proj-table po-table" id="po-rank"></table></div>
           <p class="po-note" id="po-ranknote"></p>
         </div>
 
@@ -165,66 +172,13 @@
         <p class="po-coverage" id="po-coverage"></p>
 
         <div class="po-card" style="padding:0;overflow:hidden;">
-          <div style="overflow-x:auto;"><table class="po-table" id="po-table"></table></div>
+          <div style="overflow-x:auto;"><table class="pd-table pd-proj-table po-table" id="po-table"></table></div>
         </div>
       </div>
 
-      <div id="po-view-milestones" style="display:none;">
-        <div class="po-toolbar">
-          <button class="pd-btn" id="po-ms-prev" title="Previous month"><span data-ico="arrowLeft" data-ico-size="14"></span></button>
-          <button class="pd-btn" id="po-ms-today">Today</button>
-          <button class="pd-btn" id="po-ms-next" title="Next month"><span data-ico="arrowRight" data-ico-size="14"></span></button>
-          <strong id="po-ms-month" style="font-size:15px;min-width:150px;"></strong>
-          <select class="pd-select" id="po-ms-state" style="max-width:170px;">
-            <option value="">All milestones</option>
-            <option value="overdue">Overdue only</option>
-            <option value="due">Due, not achieved</option>
-            <option value="achieved">Achieved</option>
-          </select>
-          <label class="po-chk"><input type="checkbox" id="po-ms-prog"> Program milestones only</label>
-          <span class="po-spacer"></span>
-        </div>
-        <div id="po-ms-kpis" class="pd-kpis"></div>
-        <div id="po-ms-body"></div>
-      </div>
+      
 
-      <div id="po-view-stakeholders" style="display:none;">
-        <div class="po-toolbar">
-          <div class="po-toolbar-fields" id="po-sh-fields">
-            <span class="po-spacer"></span>
-            <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-sh-q" placeholder="Search name, organization…" /></div>
-          </div>
-          <div class="pd-seg" id="po-sh-view" role="tablist">
-            <button type="button" class="on" data-shv="directory">Directory</button>
-            <button type="button" data-shv="byproject">By project</button>
-            <button type="button" data-shv="health">Health</button>
-          </div>
-          <select class="pd-select pd-input-sm" id="po-sh-group" style="width:auto;" title="How the directory is grouped">
-            <option value="letter">Group A–Z</option>
-            <option value="org">Group by organisation</option>
-            <option value="sector">Group by sector</option>
-            <option value="none">No grouping</option>
-          </select>
-          <div class="pd-seg" id="po-sh-layout" role="group" aria-label="Directory layout">
-            <button type="button" class="pd-seg-ico on" data-lay="grid" title="Cards"><span data-ico="gridView" data-ico-size="15"></span></button>
-            <button type="button" class="pd-seg-ico" data-lay="list" title="List"><span data-ico="listView" data-ico-size="15"></span></button>
-          </div>
-          <button class="pd-btn pd-btn-primary" id="po-sh-add" style="height:36px;">+ Add person</button>
-        </div>
-        <!-- ⚠ The scope note belongs to the BY-PROJECT view only. The Directory is the
-             portfolio-level master list: "on N projects" is a fact about the person, not
-             about the current filter, so narrowing it would make one person read 3 here
-             and 1 there. Hidden while the Directory is showing. -->
-        <div class="pd-kpis" id="po-sh-kpis"></div>
-        <!-- The card "Universe". Its own container rather than the table's, because the
-             two layouts have nothing in common structurally and swapping innerHTML on one
-             node would make each render pay for the other's markup. -->
-        <div id="po-dir-universe"></div>
-        <div id="po-dir-health" style="display:none;"></div>
-        <div class="po-card" style="padding:0;overflow:hidden;">
-          <div style="overflow-x:auto;"><table class="po-table" id="po-sh-table"></table></div>
-        </div>
-      </div>
+      
 
     </div>
   </div>
@@ -240,7 +194,7 @@
 <script src="../../assets/js/scurve.js?v=20260916r"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260911uc"></script>
-<script src="../../assets/js/ui.js?v=20260916q"></script>
+<script src="../../assets/js/ui.js?v=20260916v"></script>
 <script src="../../assets/js/claims.js?v=20260915a"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <!-- Shared stakeholder directory: identity matching + find-or-create, used by
@@ -1047,7 +1001,8 @@
      ⚠️ `UI.wireFilterToggle` re-binds the button's onclick each call, which is exactly what
      lets one button serve N panels — and it re-syncs the has-active dot for the panel it is
      now pointed at, so the "something is filtered" signal follows the view. */
-  var FILTER_PANEL = { overview: 'po-toolbar-fields', stakeholders: 'po-sh-fields' };
+  /* ⚠️ One view, one panel. `stakeholders: 'po-sh-fields'` went with the view itself. */
+  var FILTER_PANEL = { overview: 'po-toolbar-fields' };
   var _filt = {};
   function syncFilterBtn(v) {
     var btn = document.getElementById('po-filter');
@@ -1078,8 +1033,7 @@
     /* ⚠️ The Overview has a loader NOW — it did not before, because it had nothing to
        read. Its four enrichment reads go through the same list, so the project filter
        re-runs them exactly as it re-runs any other view's. */
-    return { overview: loadOverview, milestones: loadMilestones,
-             stakeholders: loadStakeholders };
+    return { overview: loadOverview };
   }
 
   /* ⚠️⚠️ THE PORTFOLIO S-CURVE, CASH FLOW, RESOURCES AND EQUIPMENT VIEWS ARE GONE FROM THIS
@@ -1128,690 +1082,6 @@
   var shView = 'directory';          // 'directory' | 'byproject' | 'health'
   var dirRows = null, dirUse = {}, dirErr = '', dirSel = null, dirUnlinked = 0;
 
-  function dirOn() { return !!window.PDStakeholders; }
-
-  async function loadDirectory(force) {
-    if (dirRows && !force) return dirRows;
-    dirErr = '';
-    try {
-      dirRows = await PDb.selectAll('stakeholders', function (q) { return q.order('name'); });
-    } catch (e) {
-      // ⚠️ A missing table is not an error to shout about — it means the migration
-      //    has not been run on this deployment, and the mirror view still works.
-      dirRows = [];
-      dirErr = PDStakeholders.missingTable(e)
-        ? 'The shared directory table is not present on this database yet.'
-        : ((e && e.message) || String(e));
-    }
-    // usage: which projects each person is on. ⚠️ Read from the FULL map, not the
-    // project-filtered one — "on N projects" is a fact about the person, and
-    // narrowing it to the current filter would make the same person read 3 on one
-    // screen and 1 on another.
-    dirUse = {};
-    try {
-      // ⚠ Read the WHOLE map, not only the linked rows: the rows with a NULL
-      //   stakeholder_id are register entries made before the directory existed, and
-      //   counting them is the Health view's "loose ends". One read answers both.
-      var all = await PDb.selectAll('stakeholder_map');
-      dirUnlinked = (all || []).filter(function (r) { return !r.stakeholder_id; }).length;
-      (all || []).forEach(function (r) {
-        if (!r.stakeholder_id) return;
-        (dirUse[r.stakeholder_id] = dirUse[r.stakeholder_id] || []).push(r.project_id);
-      });
-      Object.keys(dirUse).forEach(function (k) {
-        dirUse[k] = dirUse[k].filter(function (v, i, a) { return v && a.indexOf(v) === i; });
-      });
-    } catch (e) { /* usage is a nicety; the list is the point */ }
-    return dirRows;
-  }
-
-  function dirVisible() {
-    var q = shQuery.trim().toLowerCase();
-    return (dirRows || []).filter(function (p) {
-      if (!q) return true;
-      return ((p.name || '') + ' ' + (p.organization || '') + ' ' + (p.role_title || '') + ' ' +
-              (p.nickname || '') + ' ' + (p.email || '')).toLowerCase().indexOf(q) !== -1;
-    });
-  }
-
-  function dirRender() {
-    var host = document.getElementById('po-sh-table');
-    var list = dirVisible();
-    var multi = list.filter(function (p) { return (dirUse[p.id] || []).length > 1; }).length;
-    var unassigned = (dirRows || []).filter(function (p) { return !(dirUse[p.id] || []).length; }).length;
-    document.getElementById('po-sh-kpis').innerHTML =
-      kpi2('People', String((dirRows || []).length)) +
-      kpi2('On more than one project', String(multi)) +
-      // ⚠ A person on no project is the actionable state this screen exists to
-      //   surface — they were added and never assigned. Counted, not hidden.
-      kpi2('On no project', String(unassigned), unassigned ? '--pd-bad' : null) +
-      kpi2('Showing', String(list.length));
-
-    if (dirErr) {
-      document.getElementById('po-dir-universe').innerHTML =
-        '<div class="po-empty">' + esc(dirErr) + '</div>';
-      host.parentNode.style.display = 'none';
-      return;
-    }
-    dirRenderUniverse();
-  }
-
-  // The LIST layout: the same banded groups, drawn as table sections.
-  function dirRenderList(groups) {
-    var host = document.getElementById('po-sh-table');
-    var flat = groups.reduce(function (a, g) { return a.concat(g.items); }, []);
-    var head = '<thead><tr><th>Name</th><th>Organization</th><th>Role</th><th>Sector</th>' +
-               '<th class="num">Projects</th><th></th></tr></thead>';
-    var body = flat.length ? groups.map(function (g) {
-      // ⚠ One header row per band, with the SAME colspan as the table has columns (6).
-      return (g.key === '' ? '' :
-        '<tr class="po-dir-listband"><td colspan="6">' + esc(g.key) +
-        '<span>' + g.items.length + '</span></td></tr>') +
-      g.items.map(function (p) {
-      var n = (dirUse[p.id] || []).length;
-      return '<tr class="po-row" data-person="' + esc(p.id) + '">' +
-        '<td><b>' + esc(p.name || '(unnamed)') + '</b>' +
-          (p.nickname ? ' <span class="po-dir-nick">“' + esc(p.nickname) + '”</span>' : '') + '</td>' +
-        '<td>' + esc(p.organization || '—') + '</td>' +
-        '<td>' + esc(p.role_title || '—') + '</td>' +
-        '<td>' + esc(p.category || '—') + '</td>' +
-        // ⚠ 0 is a real, actionable state — a person in the directory on no project —
-        //   so it is shown as 0 rather than an em dash that reads as "unknown".
-        '<td class="num">' + n + '</td>' +
-        '<td class="po-dir-act"><button type="button" class="pd-btn pd-btn-sm" data-open="' + esc(p.id) + '">Open</button></td>' +
-      '</tr>';
-      }).join('');
-    }).join('') : '<tr><td colspan="6" class="po-empty">' +
-        (dirRows && dirRows.length ? 'No one matches that search.'
-          : 'The directory is empty. Add a person, or open a project’s Stakeholder Map — saving there adds them here.') +
-      '</td></tr>';
-    host.innerHTML = head + '<tbody>' + body + '</tbody>';
-    host.querySelectorAll('[data-open]').forEach(function (b) {
-      // ⚠️ This button is the MANAGE route (assign to projects, merge a duplicate).
-      //    It stays a dialog on purpose: both act on the directory around the person
-      //    rather than on the person, so leaving the list to do them is the wrong shape.
-      b.onclick = function (e) { e.stopPropagation(); openPersonPanel(b.dataset.open); };
-    });
-    host.querySelectorAll('.po-row[data-person]').forEach(function (r) {
-      r.onclick = function () { openPerson(r.dataset.person); };
-    });
-  }
-
-  // ---- Directory HEALTH -----------------------------------------------------
-  // The second half of the adoption: "a dashboard page that can also be adopted."
-  // ⚠️⚠️ IT IS BUILT FROM OUR OWN DATA AND ADDS NO QUERY. Every figure below is
-  //    derived from `dirRows` (the directory) and `dirUse` (the map) that the
-  //    Directory view has already loaded, so switching to this view costs nothing
-  //    and can never disagree with the list beside it.
-  // ⚠️ It reports; it does not clean. Nothing here writes — a duplicate is opened
-  //    through the SAME person panel that already owns merging, rather than this
-  //    view growing a second merge path that could drift from it.
-
-  function dirTop(list, keyOf, blank, limit) {
-    var by = {};
-    list.forEach(function (p) {
-      var k = (keyOf(p) || '').trim() || blank;
-      by[k] = (by[k] || 0) + 1;
-    });
-    var out = Object.keys(by).map(function (k) { return { key: k, n: by[k] }; });
-    // ⚠️ Ties break on the NAME, so two organisations with the same count do not
-    //    swap places between renders and read as data changing under the planner.
-    out.sort(function (a, b) { return b.n - a.n || a.key.localeCompare(b.key); });
-    return limit ? out.slice(0, limit) : out;
-  }
-
-  // Pure: rows in, figures out. No DOM, no globals, so it can be executed.
-  function dirHealth(rows, use, unlinked) {
-    rows = rows || [];
-    var S = window.PDStakeholders;
-    var total = rows.length;
-    var onNo = 0, onMulti = 0, haveTotal = 0, ofEach = 0;
-    var fieldHave = {};
-    (S ? S.COMPLETENESS_FIELDS : []).forEach(function (f) { fieldHave[f] = 0; });
-
-    rows.forEach(function (p) {
-      var n = ((use || {})[p.id] || []).length;
-      if (!n) onNo++; else if (n > 1) onMulti++;
-      if (S) {
-        var c = S.completeness(p);
-        haveTotal += c.have; ofEach = c.of;
-        S.COMPLETENESS_FIELDS.forEach(function (f) {
-          var v = p[f];
-          if (v != null && String(v).trim() !== '') fieldHave[f]++;
-        });
-      }
-    });
-
-    // per project, from the map we already hold
-    var perProj = {};
-    Object.keys(use || {}).forEach(function (sid) {
-      (use[sid] || []).forEach(function (pid) { perProj[pid] = (perProj[pid] || 0) + 1; });
-    });
-    var projects = Object.keys(perProj).map(function (id) {
-      return { key: projNameOf(id), id: id, n: perProj[id] };
-    }).sort(function (a, b) { return b.n - a.n || a.key.localeCompare(b.key); });
-
-    // ⚠️ The scan itself lives in the SHARED PDStakeholders, blocked so it does not
-    //    score every pair — my first cut here scored all of them and measured **2.3
-    //    seconds** of blocked main thread at 900 people. It refuses rather than
-    //    answering partially when even the blocked candidate set is too large.
-    var dup = S ? S.duplicatePairs(rows) : { pairs: [], scanned: false, considered: 0 };
-
-    return {
-      total: total,
-      onNo: onNo,
-      onMulti: onMulti,
-      pct: total && ofEach ? haveTotal / (total * ofEach) : 0,
-      fields: (S ? S.COMPLETENESS_FIELDS : []).map(function (f) {
-        return { key: f, n: fieldHave[f], pct: total ? fieldHave[f] / total : 0 };
-      }).sort(function (a, b) { return a.n - b.n || a.key.localeCompare(b.key); }),
-      sectors: dirTop(rows, function (p) { return p.category; }, 'No sector'),
-      orgs: dirTop(rows, function (p) { return p.organization; }, 'No organisation', 8),
-      // ⚠ the TRUE distinct count, so the panel can say "5 distinct" when it is
-      //   showing all five rather than claiming a "top 5" that truncates nothing.
-      orgTotal: dirTop(rows, function (p) { return p.organization; }, 'No organisation').length,
-      projects: projects,
-      dupes: dup.pairs,
-      dupScanned: dup.scanned,
-      dupConsidered: dup.considered,
-      unlinked: unlinked || 0
-    };
-  }
-
-  function dirBars(items, max, opts) {
-    opts = opts || {};
-    if (!items.length) return '<p class="po-hl-none">' + esc(opts.empty || 'Nothing to show.') + '</p>';
-    return '<div class="po-hl-bars">' + items.map(function (it) {
-      var w = max ? Math.max(2, Math.round((it.n / max) * 100)) : 0;
-      return '<div class="po-hl-bar' + (opts.warn && opts.warn(it) ? ' is-warn' : '') + '">' +
-        '<span class="po-hl-k" title="' + esc(it.key) + '">' + esc(it.key) + '</span>' +
-        '<span class="po-hl-t"><i style="width:' + w + '%"></i></span>' +
-        '<span class="po-hl-n">' + (opts.fmt ? opts.fmt(it) : it.n) + '</span>' +
-      '</div>';
-    }).join('') + '</div>';
-  }
-
-  function dirPanel(title, sub, body) {
-    return '<section class="po-hl-panel"><h3>' + esc(title) +
-      (sub ? '<em>' + esc(sub) + '</em>' : '') + '</h3>' + body + '</section>';
-  }
-
-  function dirRenderHealth() {
-    var wrap = document.getElementById('po-dir-health');
-    if (dirErr) { wrap.innerHTML = '<div class="po-empty">' + esc(dirErr) + '</div>'; return; }
-    var h = dirHealth(dirRows, dirUse, dirUnlinked);
-    if (!h.total) {
-      wrap.innerHTML = '<div class="po-empty">The directory is empty, so there is no health to report. ' +
-        'Add a person, or open a project’s Stakeholder Map — saving there adds them here.</div>';
-      return;
-    }
-    var pctTxt = Math.round(h.pct * 100) + '%';
-
-    document.getElementById('po-sh-kpis').innerHTML =
-      kpi2('People', String(h.total)) +
-      kpi2('Profile completeness', pctTxt, h.pct < 0.5 ? '--pd-bad' : null) +
-      kpi2('On no project', String(h.onNo), h.onNo ? '--pd-bad' : null) +
-      kpi2('Possible duplicates', h.dupScanned ? String(h.dupes.length) : '—',
-           h.dupScanned && h.dupes.length ? '--pd-bad' : null);
-
-    var maxField = h.total;
-    var maxSec = h.sectors.length ? h.sectors[0].n : 0;
-    var maxOrg = h.orgs.length ? h.orgs[0].n : 0;
-    var maxPrj = h.projects.length ? h.projects[0].n : 0;
-
-    var dupBody;
-    if (!h.dupScanned) {
-      dupBody = '<p class="po-hl-none">' + h.total + ' people leaves ' +
-        h.dupConsidered.toLocaleString() + ' pairs still worth comparing, which is more than this ' +
-        'scan will do in one go — so it has not been run, rather than freezing the tab or ' +
-        'answering over part of the directory. The duplicate warning still fires while you type ' +
-        'in <strong>+ Add person</strong>.</p>';
-    } else if (!h.dupes.length) {
-      dupBody = '<p class="po-hl-none">No two people in the directory score as the same person.</p>';
-    } else {
-      dupBody = '<div class="po-hl-dups">' + h.dupes.slice(0, 25).map(function (d) {
-        return '<button type="button" class="po-hl-dup" data-dup="' + esc(d.a.id) + '">' +
-          '<span class="po-hl-dn">' + esc(d.a.name || '(unnamed)') + '</span>' +
-          '<span class="po-hl-dv">vs</span>' +
-          '<span class="po-hl-dn">' + esc(d.b.name || '(unnamed)') + '</span>' +
-          '<em>' + esc(d.why || '') + '</em>' +
-          '<span class="po-hl-ds">' + d.score.toFixed(2) + '</span>' +
-        '</button>';
-      }).join('') +
-      (h.dupes.length > 25 ? '<p class="po-hl-none">' + (h.dupes.length - 25) +
-        ' more below these.</p>' : '') + '</div>' +
-      '<p class="po-hl-note">Opens the person, where <strong>Merge</strong> lives. ' +
-      'Nothing on this screen changes a record.</p>';
-    }
-
-    wrap.innerHTML =
-      '<p class="po-dir-lead">Everything here is read from the directory already on screen — ' +
-      'no extra query, and nothing on this view writes.</p>' +
-      '<div class="po-hl-grid">' +
-        dirPanel('Possible duplicates', h.dupScanned ? h.dupes.length + ' found' : 'not scanned', dupBody) +
-        dirPanel('Profile completeness', pctTxt + ' overall · least-filled first',
-          dirBars(h.fields, maxField, {
-            fmt: function (it) { return it.n + ' / ' + h.total; },
-            warn: function (it) { return it.pct < 0.34; }
-          })) +
-        dirPanel('By sector', h.sectors.length + ' distinct',
-          dirBars(h.sectors, maxSec, { warn: function (it) { return it.key === 'No sector'; } })) +
-        dirPanel('Organisations',
-          h.orgTotal > h.orgs.length ? 'top ' + h.orgs.length + ' of ' + h.orgTotal
-                                     : h.orgTotal + ' distinct',
-          dirBars(h.orgs, maxOrg, { warn: function (it) { return it.key === 'No organisation'; } })) +
-        dirPanel('People per project', h.projects.length + ' with anyone mapped',
-          dirBars(h.projects, maxPrj, { empty: 'Nobody is assigned to a project yet.' })) +
-        dirPanel('Loose ends', 'what to fix next',
-          '<div class="po-hl-bars">' +
-            '<div class="po-hl-bar' + (h.onNo ? ' is-warn' : '') + '">' +
-              '<span class="po-hl-k">On no project</span>' +
-              '<span class="po-hl-t"><i style="width:' + (h.total ? Math.round(h.onNo / h.total * 100) : 0) + '%"></i></span>' +
-              '<span class="po-hl-n">' + h.onNo + '</span></div>' +
-            '<div class="po-hl-bar">' +
-              '<span class="po-hl-k">On more than one</span>' +
-              '<span class="po-hl-t"><i style="width:' + (h.total ? Math.round(h.onMulti / h.total * 100) : 0) + '%"></i></span>' +
-              '<span class="po-hl-n">' + h.onMulti + '</span></div>' +
-            '<div class="po-hl-bar' + (h.unlinked ? ' is-warn' : '') + '">' +
-              '<span class="po-hl-k" title="stakeholder_map rows written before the directory existed">Map rows not linked to a person</span>' +
-              '<span class="po-hl-t"><i style="width:' + (h.unlinked ? 100 : 0) + '%"></i></span>' +
-              '<span class="po-hl-n">' + h.unlinked + '</span></div>' +
-          '</div>' +
-          // ⚠️ An unlinked row is NOT breakage — it is a register entry made before the
-          //    shared directory existed. Saying so stops it reading as data loss.
-          '<p class="po-hl-note">Unlinked rows are register entries made before the shared ' +
-          'directory existed. They still show under <strong>By project</strong>; re-saving one ' +
-          'in its project’s Stakeholder Map links it.</p>') +
-      '</div>';
-
-    wrap.querySelectorAll('[data-dup]').forEach(function (b) {
-      b.onclick = function () { openPersonPanel(b.dataset.dup); };
-    });
-  }
-
-  // ---- the Universe: banded grid / list -------------------------------------
-  // Adopted from the separate Megawide Stakeholders app at the owner's request:
-  // "seeing the whole stakeholders rather than a table and seeing the clickable
-  // bands." Two things came across — a CARD grid over the whole directory, and
-  // A-Z bands with counts that you can click to jump.
-  // ⚠️ `sm-bands` in the Stakeholder Map module is a DIFFERENT thing with a
-  //    confusingly similar name: RCM column-group toggles on the register table.
-  //    These are alphabet bands over people. Named `po-dir-band*` so nothing in
-  //    either file reads as the other.
-  var dirLayout = 'grid';          // 'grid' | 'list'
-  var dirGroup = 'letter';         // 'letter' | 'org' | 'sector' | 'none'
-  var dirBand = '';                // a clicked letter, or '' for all
-
-  function dirLetter(p) {
-    var n = (p && p.name || '').trim();
-    if (!n) return '#';
-    // ⚠️ Band on the same NORMALISED name the matcher uses, so "Engr. Ana Reyes"
-    //    lands under A with everyone else rather than under E on its honorific.
-    var norm = PDStakeholders ? PDStakeholders.normName(n) : n.toLowerCase();
-    var c = (norm || n).charAt(0).toUpperCase();
-    return /[A-Z]/.test(c) ? c : '#';
-  }
-  function dirGroupKey(p) {
-    if (dirGroup === 'org') return (p.organization || '').trim() || 'No organisation';
-    if (dirGroup === 'sector') return (p.category || '').trim() || 'No sector';
-    if (dirGroup === 'none') return '';
-    return dirLetter(p);
-  }
-
-  function dirGrouped(list) {
-    if (dirGroup === 'none') return [{ key: '', items: list }];
-    var by = {}, order = [];
-    list.forEach(function (p) {
-      var k = dirGroupKey(p);
-      if (!by[k]) { by[k] = []; order.push(k); }
-      by[k].push(p);
-    });
-    // ⚠️ '#' (names that do not start with a letter) sorts LAST, never first —
-    //    otherwise a handful of odd rows head a list of 240 people.
-    order.sort(function (a, b) {
-      if (a === '#') return 1; if (b === '#') return -1;
-      return a.localeCompare(b);
-    });
-    return order.map(function (k) { return { key: k, items: by[k] }; });
-  }
-
-  function dirStatusOf(p) {
-    // ⚠️ Absent column reads Active, matching the migration's own default, so a
-    //    deployment that has not run it shows every person as active rather than
-    //    as an unknown state.
-    return (p && p.status) || 'Active';
-  }
-
-  function dirCard(p) {
-    var n = (dirUse[p.id] || []).length;
-    var initials = (p.name || '?').split(/\s+/).filter(Boolean).slice(0, 2)
-      .map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || '?';
-    var inactive = dirStatusOf(p) !== 'Active';
-    return '<div class="po-dir-card' + (inactive ? ' is-inactive' : '') + '" data-person="' + esc(p.id) + '">' +
-      '<div class="po-dir-ava">' + esc(initials) +
-        '<span class="po-dir-dot' + (inactive ? ' off' : '') + '" title="' + esc(dirStatusOf(p)) + '"></span></div>' +
-      '<div class="po-dir-body">' +
-        '<div class="po-dir-name">' + esc(p.name || '(unnamed)') + '</div>' +
-        '<div class="po-dir-org">' + esc(p.organization || '—') + '</div>' +
-        '<div class="po-dir-role">' + esc(p.role_title || '') + '</div>' +
-        '<div class="po-dir-meta">' + (n ? n + ' project' + (n === 1 ? '' : 's') : 'No project yet') + '</div>' +
-      '</div>' +
-      '<button type="button" class="po-dir-manage" data-open="' + esc(p.id) +
-        '" title="Assign to projects, or merge a duplicate">⋯</button>' +
-      '<button type="button" class="po-dir-star' + (p.is_favorite ? ' on' : '') +
-        '" data-fav="' + esc(p.id) + '" title="' + (p.is_favorite ? 'Remove from favourites' : 'Mark as favourite') +
-        '" aria-pressed="' + (p.is_favorite ? 'true' : 'false') + '">' + (p.is_favorite ? '★' : '☆') + '</button>' +
-    '</div>';
-  }
-
-  function dirBandStrip(groups, total) {
-    if (dirGroup !== 'letter') return '';
-    var have = {}; groups.forEach(function (g) { have[g.key] = g.items.length; });
-    var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(have['#'] ? ['#'] : []);
-    // ⚠️ Every letter is rendered, present or not — a strip that only shows the
-    //    letters in use jumps around as you search, and a disabled letter is the
-    //    useful answer to "is there anyone under Q?".
-    return '<div class="po-dir-bands" role="group" aria-label="Jump to a letter">' +
-      '<button type="button" class="po-dir-bandall' + (dirBand ? '' : ' on') +
-        '" data-band="" title="Show all ' + total + '">All</button>' +
-      letters.map(function (L) {
-        var c = have[L] || 0;
-        return '<button type="button" class="po-dir-band' + (c ? '' : ' is-empty') +
-          (dirBand === L ? ' on' : '') + '"' + (c ? '' : ' disabled') +
-          ' data-band="' + L + '" title="' + (c ? c + ' under ' + L : 'nobody under ' + L) + '">' + L +
-          (c ? '<i>' + c + '</i>' : '') + '</button>';
-      }).join('') + '</div>';
-  }
-
-  function dirRenderUniverse() {
-    var host = document.getElementById('po-sh-table');
-    var wrap = document.getElementById('po-dir-universe');
-    var all = dirVisible();
-    var groups = dirGrouped(all);
-    var shown = dirBand ? groups.filter(function (g) { return g.key === dirBand; }) : groups;
-    var count = shown.reduce(function (a, g) { return a + g.items.length; }, 0);
-
-    host.parentNode.style.display = dirLayout === 'list' ? '' : 'none';
-    wrap.style.display = dirLayout === 'list' ? 'none' : '';
-
-    if (dirLayout === 'list') { dirRenderList(shown); wrap.innerHTML = ''; return; }
-
-    // ⚠️ The rail is a SIBLING of the cards inside one flex row, and comes AFTER them in
-    //   source order so the tab sequence reaches the people before the index — the index
-    //   is navigation, not content.
-    wrap.innerHTML = '<div class="po-dir-uniwrap"><div class="po-dir-unimain">' +
-      (count ? shown.map(function (g) {
-        return '<section class="po-dir-sec">' +
-          (g.key === '' ? '' : '<h3 class="po-dir-sechead">' + esc(g.key) +
-            '<span>' + g.items.length + '</span></h3>') +
-          '<div class="po-dir-grid">' + g.items.map(dirCard).join('') + '</div></section>';
-      }).join('')
-      : '<div class="po-empty">' + (dirRows && dirRows.length
-          ? 'No one matches that search.'
-          : 'The directory is empty. Add a person, or open a project’s Stakeholder Map — saving there adds them here.') +
-        '</div>') +
-      '</div>' + dirBandStrip(groups, all.length) + '</div>';
-    dirWireCards(wrap);
-  }
-
-  function dirWireCards(root) {
-    root.querySelectorAll('[data-band]').forEach(function (b) {
-      b.onclick = function () { dirBand = b.dataset.band; dirRenderUniverse(); };
-    });
-    root.querySelectorAll('[data-open]').forEach(function (b) {
-      b.onclick = function (e) { e.stopPropagation(); openPersonPanel(b.dataset.open); };
-    });
-    root.querySelectorAll('[data-fav]').forEach(function (b) {
-      b.onclick = function (e) { e.stopPropagation(); dirToggleFav(b.dataset.fav); };
-    });
-    root.querySelectorAll('.po-dir-card[data-person]').forEach(function (c) {
-      c.onclick = function () { openPerson(c.dataset.person); };
-    });
-  }
-
-  // ⚠️⚠️ OPTIMISTIC, THEN REVERTED ON REFUSAL. A star that appears to stick and
-  //    silently did not is the worst of both — and `is_favorite` only exists once
-  //    2026-09-10-stakeholder-profile-fields.sql has been run, so on an
-  //    un-migrated database this WILL be refused. It says so, once, rather than
-  //    failing quietly on every click.
-  async function dirToggleFav(id) {
-    var p = (dirRows || []).filter(function (x) { return String(x.id) === String(id); })[0];
-    if (!p) return;
-    var was = !!p.is_favorite;
-    p.is_favorite = !was;
-    dirRenderUniverse();
-    try {
-      var res = await sb().from('stakeholders').update({ is_favorite: p.is_favorite })
-                          .eq('id', p.id).select('id');
-      if (res.error) throw res.error;
-      // ⚠ RLS answers a refused UPDATE with 200 and zero rows — the same silent
-      //   success the merge counts for. Zero rows means it did not happen.
-      if (!(res.data || []).length) throw new Error('The directory refused the change.');
-    } catch (e) {
-      p.is_favorite = was;
-      dirRenderUniverse();
-      var col = PDStakeholders.missingColumn(e);
-      UI.toast(col
-        ? 'Favourites need migrations/2026-09-10-stakeholder-profile-fields.sql to be run first.'
-        : 'Could not update: ' + ((e && e.message) || e), 'warn');
-    }
-  }
-
-  // ---- add a person ---------------------------------------------------------
-  function openDirAdd() {
-    var m = UI.modal(
-      '<div class="pd-modal-header"><h2>Add a person to the directory</h2></div>' +
-      '<div class="pd-modal-body">' +
-        '<p class="po-dir-lead">This creates a portfolio-level person. Assign them to projects next.</p>' +
-        '<div class="po-dir-form">' +
-          '<div class="pd-field"><label>Name *</label><input class="pd-input" id="po-dp-name"></div>' +
-          '<div class="pd-field"><label>Organization</label><input class="pd-input" id="po-dp-org"></div>' +
-          '<div class="pd-field"><label>Role / position</label><input class="pd-input" id="po-dp-role"></div>' +
-          '<div class="pd-field"><label>Sector</label><select class="pd-select" id="po-dp-cat">' +
-            '<option value="">—</option><option>Government</option><option>Private</option></select></div>' +
-          '<div class="pd-field"><label>Nickname</label><input class="pd-input" id="po-dp-nick"></div>' +
-          '<div class="pd-field"><label>Email</label><input class="pd-input" id="po-dp-email"></div>' +
-        '</div>' +
-        '<div id="po-dp-dup"></div>' +
-      '</div>' +
-      '<div class="pd-modal-foot">' +
-        '<button class="pd-btn" data-act="cancel">Cancel</button>' +
-        '<button class="pd-btn pd-btn-primary" data-act="save">Create person</button>' +
-      '</div>', { noBackdropClose: true });
-
-    function fields() {
-      return { name: (document.getElementById('po-dp-name').value || '').trim(),
-               organization: (document.getElementById('po-dp-org').value || '').trim(),
-               role_title: (document.getElementById('po-dp-role').value || '').trim(),
-               category: document.getElementById('po-dp-cat').value,
-               nickname: (document.getElementById('po-dp-nick').value || '').trim(),
-               email: (document.getElementById('po-dp-email').value || '').trim() };
-    }
-    // ⚠️ The duplicate warning appears WHILE TYPING, not after saving. Telling a
-    //    planner they have made a duplicate once it exists is worse than useless —
-    //    by then somebody has to merge it.
-    function checkDup() {
-      var box = document.getElementById('po-dp-dup');
-      var f = fields();
-      if (!f.name || !dirOn()) { box.innerHTML = ''; return; }
-      var hits = PDStakeholders.matchCandidates(f, dirRows || [], { limit: 3 });
-      if (!hits.length) { box.innerHTML = ''; return; }
-      box.innerHTML = '<div class="po-dir-dup"><b>Already in the directory?</b>' +
-        hits.map(function (h) {
-          return '<div class="po-dir-dup-row"><span>' + esc(h.person.name) +
-            (h.person.organization ? ' · ' + esc(h.person.organization) : '') + '</span>' +
-            '<em>' + esc(h.why) + '</em></div>';
-        }).join('') +
-        '<small>Creating this person anyway will leave two records for the same person. ' +
-        'Cancel and open the existing one instead if it is the same.</small></div>';
-    }
-    ['po-dp-name', 'po-dp-org'].forEach(function (id) {
-      document.getElementById(id).oninput = checkDup;
-    });
-
-    m.el.querySelector('[data-act="cancel"]').onclick = m.close;
-    m.el.querySelector('[data-act="save"]').onclick = async function (e) {
-      var btn = e.currentTarget, f = fields();
-      if (!f.name) { UI.toast('A name is required.', 'warn'); return; }
-      btn.disabled = true; btn.textContent = 'Creating…';
-      try {
-        var r = await PDStakeholders.createPerson(sb(), f, (profile && profile.id) || null);
-        UI.toast(r.existed ? 'That person was already in the directory — opening them.' : 'Person created', 'ok');
-        m.close();
-        await loadDirectory(true); dirRender();
-        if (r.person) openPersonPanel(r.person.id);
-      } catch (err) {
-        UI.toast('Could not create: ' + ((err && err.message) || err), 'error');
-        btn.disabled = false; btn.textContent = 'Create person';
-      }
-    };
-  }
-
-  // ---- one person: assign to projects, or merge ----------------------------
-  // ⚠️⚠️ CLICKING A PERSON OPENS THEIR PAGE, NOT A DIALOG. Owner: "when clicking on
-  //    the stakeholder from the Portfolio View it just opens a pop-up for assigning a
-  //    project. I need to have the page where I will see the personal page of that
-  //    stakeholder with details."
-  // ⚠️ `openPersonPanel` is KEPT and still reachable — it is where assigning to projects
-  //    and merging duplicates live, and the Health view's duplicate list opens it
-  //    directly. What changed is that it is no longer what a plain click does.
-  function personHref(id) {
-    return '../../person.html#person=' + encodeURIComponent(id);
-  }
-  function openPerson(id) { location.href = personHref(id); }
-
-  function openPersonPanel(id) {
-    var p = (dirRows || []).filter(function (x) { return String(x.id) === String(id); })[0];
-    if (!p) return;
-    var on = dirUse[p.id] || [];
-    var nameById = {}; PROJ.forEach(function (x) { nameById[x.id] = x.name || x.id; });
-
-    var projList = PROJ.map(function (x) {
-      var already = on.indexOf(x.id) !== -1;
-      return '<label class="po-dir-proj' + (already ? ' is-on' : '') + '">' +
-        '<input type="checkbox" value="' + esc(x.id) + '"' + (already ? ' checked disabled' : '') + '>' +
-        '<span>' + esc(nameById[x.id]) + '</span>' +
-        (already ? '<em>already on</em>' : '') + '</label>';
-    }).join('');
-
-    // ⚠ Merge candidates come from the same shared matcher, so the dialog cannot
-    //   propose a different set from the one the save path warns about.
-    var cands = dirOn() ? PDStakeholders.matchCandidates(p, dirRows || [], { limit: 5, excludeIds: [p.id], threshold: 0.6 }) : [];
-
-    var m = UI.modal(
-      '<div class="pd-modal-header"><h2>' + esc(p.name || '(unnamed)') + '</h2></div>' +
-      '<div class="pd-modal-body">' +
-        '<p class="po-dir-lead">' +
-          esc([p.role_title, p.organization].filter(Boolean).join(' · ') || 'No organisation recorded') +
-          ' — on <b>' + on.length + '</b> project' + (on.length === 1 ? '' : 's') + '.</p>' +
-        '<h4 class="po-dir-h">Assign to projects</h4>' +
-        '<div class="po-dir-projs">' + (projList || '<span class="po-empty">No projects available.</span>') + '</div>' +
-        (cands.length
-          ? '<h4 class="po-dir-h">Possible duplicates</h4>' +
-            '<div class="po-dir-merge">' +
-              cands.map(function (h) {
-                return '<label class="po-dir-mrow"><input type="radio" name="po-mrg" value="' + esc(h.person.id) + '">' +
-                  '<span>' + esc(h.person.name) + (h.person.organization ? ' · ' + esc(h.person.organization) : '') +
-                  ' <small>on ' + ((dirUse[h.person.id] || []).length) + ' project(s)</small></span>' +
-                  '<em>' + esc(h.why) + '</em></label>';
-              }).join('') +
-              // ⚠ Direction stated plainly. A merge is not symmetric and the dialog
-              //   must not leave which record survives to be inferred.
-              '<small class="po-dir-note">Merging keeps <b>' + esc(p.name) + '</b> and folds the selected ' +
-              'person into them: their projects move across, blank fields are filled in, and the duplicate ' +
-              'record is deleted. It is refused if both are on the same project — settle that one by hand first.</small>' +
-            '</div>'
-          : '') +
-      '</div>' +
-      '<div class="pd-modal-foot">' +
-        '<button class="pd-btn" data-act="close">Close</button>' +
-        (cands.length ? '<button class="pd-btn" data-act="merge">Merge selected into this person</button>' : '') +
-        '<button class="pd-btn pd-btn-primary" data-act="assign">Assign to ticked projects</button>' +
-      '</div>', { noBackdropClose: true });
-
-    m.el.querySelector('[data-act="close"]').onclick = m.close;
-
-    m.el.querySelector('[data-act="assign"]').onclick = async function (e) {
-      var btn = e.currentTarget;
-      var picked = [].filter.call(m.el.querySelectorAll('.po-dir-projs input:checked:not(:disabled)'),
-                                  function (i) { return true; }).map(function (i) { return i.value; });
-      if (!picked.length) { UI.toast('Tick at least one project.', 'warn'); return; }
-      btn.disabled = true; btn.textContent = 'Assigning…';
-      try {
-        var r = await PDStakeholders.assignToProjects(sb(), p, picked, (profile && profile.id) || null, on);
-        // ⚠ Report the real number. `stakeholder_map_ins` requires can_access_project,
-        //   so a project the planner cannot write to must not be counted as done.
-        if (r.short) UI.toast('Added to ' + r.inserted + ' project(s); ' + r.short + ' were refused — check your access.', 'warn');
-        else UI.toast('Added to ' + r.inserted + ' project(s).', 'ok');
-        m.close();
-        shLoadedIds = null;
-        await loadDirectory(true); dirRender();
-      } catch (err) {
-        UI.toast('Could not assign: ' + ((err && err.message) || err), 'error');
-        btn.disabled = false; btn.textContent = 'Assign to ticked projects';
-      }
-    };
-
-    var mb = m.el.querySelector('[data-act="merge"]');
-    if (mb) mb.onclick = async function (e) {
-      var sel = m.el.querySelector('input[name="po-mrg"]:checked');
-      if (!sel) { UI.toast('Pick the duplicate to fold in.', 'warn'); return; }
-      var loser = (dirRows || []).filter(function (x) { return String(x.id) === sel.value; })[0];
-      if (!loser) return;
-      if (!confirm('Fold "' + (loser.name || '') + '" into "' + (p.name || '') + '"?\n\n' +
-                   'Their projects move across and the duplicate record is deleted. This cannot be undone here.')) return;
-      var btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Merging…';
-      try {
-        var r = await PDStakeholders.mergePeople(sb(), p, loser, dirUse);
-        if (r.ok) {
-          UI.toast('Merged. ' + r.repointed + ' project link(s) moved' +
-                   (r.filled.length ? ', ' + r.filled.length + ' field(s) filled in.' : '.'), 'ok');
-          m.close(); shLoadedIds = null;
-          await loadDirectory(true); dirRender();
-          return;
-        }
-        // ⚠ Every refusal names WHAT stopped it and what to do — none of them are
-        //   reported as a generic failure, and none is rounded up to success.
-        var msg = r.reason === 'both-on-project'
-            ? 'Both are on ' + r.projects.map(function (x) { return nameById[x] || x; }).join(', ') +
-              '. Remove one of them from that project first, then merge.'
-          : r.reason === 'partial-repoint'
-            ? 'Only ' + r.repointed + ' of ' + r.expected + ' project links could be moved — the rest belong to ' +
-              'other planners, and only their owner or an admin can move them. Nothing was deleted.'
-          : r.reason === 'delete-refused'
-            ? 'The records were merged, but deleting the duplicate needs a planner or admin role.'
-          : r.reason === 'winner-update-refused'
-            ? 'The directory refused the update — you may not have write access.'
-          : 'Merge did not complete.';
-        UI.toast(msg, 'warn');
-        btn.disabled = false; btn.textContent = 'Merge selected into this person';
-        shLoadedIds = null; await loadDirectory(true); dirRender();
-      } catch (err) {
-        UI.toast('Merge failed: ' + ((err && err.message) || err), 'error');
-        btn.disabled = false; btn.textContent = 'Merge selected into this person';
-      }
-    };
-  }
-
-
-
-
-  // ================= Tab switching =================
-  /* ==========================================================================
-     PORTFOLIO MILESTONE CALENDAR
-     A month grid of every scoped project's milestones, so "what lands next, and
-     what has already slipped" is one glance instead of one schedule at a time.
-
-     ⚠️ ALL DATE MATHS IS ON THE STRINGS, IN UTC. `new Date('2026-08-25')` parses
-     as UTC midnight and then prints in local time, which east of Greenwich is a
-     day out — this app has been bitten by that repeatedly (minusDays in both
-     registers, the drawing importer's whole date column). Nothing here converts
-     a date string to a Date except through ymd()/addDays(), which are integer
-     arithmetic on Date.UTC.
-     ========================================================================== */
-  var msRows = null, msLoadedIds = null, msMonth = null;   // msMonth = 'YYYY-MM'
-  var msState = '', msProgOnly = false;
-
   function ymd(str) {
     var p = String(str || '').slice(0, 10).split('-');
     if (p.length !== 3) return null;
@@ -1831,252 +1101,6 @@
      planned one. ⚠️ A milestone is a single point, but the schema still carries
      start and finish — a Start Milestone stores its date in start_date and a
      Finish Milestone in end_date, so both are consulted rather than assuming one. */
-  function msDate(r) {
-    return r.actual_finish || r.actual_start || r.end_date || r.start_date || null;
-  }
-  function msPlanned(r) { return r.end_date || r.start_date || null; }
-  function msAchieved(r) { return !!(r.actual_finish || r.actual_start); }
-  /* ⚠️ Slip is measured against the BASELINE, not against the plan. The plan
-     moves every time someone reschedules; the baseline is what was committed to,
-     which is the only thing a slip can honestly be measured from. Null when
-     there is no baseline — "we never committed to a date" is not zero slip. */
-  function msSlip(r) {
-    var b = ymd(r.bl_finish), a = ymd(msDate(r));
-    if (!b || !a) return null;
-    return Math.round((a.t - b.t) / 86400000);
-  }
-  function msStateOf(r) {
-    if (msAchieved(r)) return 'achieved';
-    var d = ymd(msDate(r));
-    if (!d) return 'undated';
-    return d.t < todayT() ? 'overdue' : 'due';
-  }
-
-  async function loadMilestones(force) {
-    var ids = scopedProjectIds();
-    if (!force && msLoadedIds && msLoadedIds.join(',') === ids.join(',')) { renderMilestones(); return; }
-    var body = document.getElementById('po-ms-body');
-    if (!ids.length) { document.getElementById('po-ms-kpis').innerHTML = ''; body.innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; return; }
-    body.innerHTML = '<div class="po-empty">Loading milestones across ' + ids.length + ' project(s)…</div>';
-    try {
-      /* ⚠️ PAGINATED, and filtered SERVER-SIDE to milestones only. Pulling every
-         activity across the portfolio to find a few hundred milestones is the
-         mistake the S-Curve tab already had to fix; and an unpaginated read caps
-         at 1000 rows with no error, which would silently hide the later months. */
-      msRows = await PDb.selectAll('project_schedule', function (q) {
-        return q.in('project_id', ids)
-                .or('activity_type.ilike.%milestone%,program_milestone.is.true');
-      }, 'id,project_id,activity_id,activity_name,activity_type,program_milestone,' +
-         'start_date,end_date,actual_start,actual_finish,bl_finish,percent_complete,phase,scope_type');
-      msLoadedIds = ids;
-    } catch (e) {
-      body.innerHTML = '<div class="po-empty">Could not load milestones: ' + esc(e.message || String(e)) + '</div>';
-      return;
-    }
-    if (!msMonth) {
-      /* Open on the month that has something to show: today if anything is
-         happening around now, otherwise the next month that carries a milestone.
-         Opening on an empty month reads as "there are none". */
-      var t = todayT(), fut = msRows.map(msDate).filter(Boolean).map(ymd).filter(Boolean)
-        .filter(function (d) { return d.t >= t; }).sort(function (a, b) { return a.t - b.t; });
-      var cur = new Date(t);
-      var thisKey = cur.getUTCFullYear() + '-' + pad2(cur.getUTCMonth() + 1);
-      var hasThis = msRows.some(function (r) { var d = msDate(r); return d && String(d).slice(0, 7) === thisKey; });
-      msMonth = hasThis || !fut.length ? thisKey : String(isoOf(fut[0].t)).slice(0, 7);
-    }
-    renderMilestones();
-  }
-
-  function msVisible() {
-    return (msRows || []).filter(function (r) {
-      if (msProgOnly && !r.program_milestone) return false;
-      if (msState && msStateOf(r) !== msState) return false;
-      return true;
-    });
-  }
-
-  function renderMilestones() {
-    var body = document.getElementById('po-ms-body');
-    if (!msRows) return;
-    var rows = msVisible();
-    var t = todayT();
-
-    // ---- KPIs, over the whole scope (not just the month on screen) --------
-    var undated = rows.filter(function (r) { return msStateOf(r) === 'undated'; }).length;
-    var overdue = rows.filter(function (r) { return msStateOf(r) === 'overdue'; });
-    var achieved = rows.filter(msAchieved);
-    var next30 = rows.filter(function (r) {
-      var d = ymd(msDate(r)); return d && !msAchieved(r) && d.t >= t && d.t <= addDays(t, 30);
-    });
-    var slips = achieved.map(msSlip).filter(function (x) { return x != null; });
-    var late = slips.filter(function (x) { return x > 0; });
-    document.getElementById('po-ms-kpis').innerHTML =
-      msKpi('Milestones', rows.length, scopeLabel(scopedProjectIds())) +
-      msKpi('Overdue', overdue.length, 'past due and not achieved', overdue.length ? 'bad' : 'good') +
-      msKpi('Next 30 days', next30.length, 'coming up', next30.length ? 'warn' : '') +
-      msKpi('Achieved', achieved.length, late.length + ' of ' + slips.length + ' landed late', 'good') +
-      /* ⚠️ Undated milestones get their own tile rather than being dropped: a
-         milestone with no date cannot appear on a calendar at all, and silently
-         omitting it is how one goes unnoticed until it is missed. */
-      msKpi('Undated', undated, undated ? 'cannot be placed on the calendar' : 'all dated', undated ? 'warn' : '');
-
-    // ---- the month grid ---------------------------------------------------
-    var mk = msMonth.split('-'), Y = +mk[0], M = +mk[1];
-    document.getElementById('po-ms-month').textContent = MONTH_NAMES[M - 1] + ' ' + Y;
-
-    var first = Date.UTC(Y, M - 1, 1);
-    var daysIn = new Date(Date.UTC(Y, M, 0)).getUTCDate();
-    /* ⚠️ MONDAY-FIRST. The working week here is Mon–Sat (see PDCal and the
-       seasonal calendars), so Sunday is the rest day and belongs at the END of
-       the row rather than opening it. getUTCDay() is 0=Sun, so shift by 6. */
-    var lead = (new Date(first).getUTCDay() + 6) % 7;
-
-    var byDay = {};
-    rows.forEach(function (r) {
-      var d = msDate(r); if (!d) return;
-      var k = String(d).slice(0, 10);
-      (byDay[k] = byDay[k] || []).push(r);
-    });
-
-    var inMonth = rows.filter(function (r) { var d = msDate(r); return d && String(d).slice(0, 7) === msMonth; });
-    var h = '<div class="pd-card po-cal">' +
-      '<div class="po-cal-head">' + ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
-        .map(function (d, i) { return '<div class="po-cal-dow' + (i === 6 ? ' rest' : '') + '">' + d + '</div>'; }).join('') + '</div>' +
-      '<div class="po-cal-grid">';
-
-    var CAP = 3;   // chips drawn per day before the overflow button
-    for (var i = 0; i < lead; i++) h += '<div class="po-cal-cell out"></div>';
-    for (var day = 1; day <= daysIn; day++) {
-      var cellT = Date.UTC(Y, M - 1, day), key = isoOf(cellT);
-      var list = (byDay[key] || []).slice().sort(function (a, b) {
-        return (msStateOf(a) === 'overdue' ? -1 : 0) - (msStateOf(b) === 'overdue' ? -1 : 0);
-      });
-      var isToday = cellT === t, isRest = (new Date(cellT).getUTCDay() === 0);
-      h += '<div class="po-cal-cell' + (isToday ? ' today' : '') + (isRest ? ' rest' : '') + '">' +
-        '<div class="po-cal-daynum">' + day + (isToday ? '<span class="po-cal-todaytag">today</span>' : '') + '</div>';
-      list.slice(0, CAP).forEach(function (r) { h += msChip(r); });
-      if (list.length > CAP) {
-        /* ⚠️ The overflow is a BUTTON, not a silent truncation. "+2 more" that
-           cannot be opened is the same as hiding them. */
-        h += '<button class="po-cal-more" data-day="' + esc(key) + '">+' + (list.length - CAP) + ' more</button>';
-      }
-      h += '</div>';
-    }
-    var tail = (7 - ((lead + daysIn) % 7)) % 7;
-    for (var j = 0; j < tail; j++) h += '<div class="po-cal-cell out"></div>';
-    h += '</div>';
-
-    if (!inMonth.length) {
-      h += '<div class="po-cal-none">Nothing in ' + esc(MONTH_NAMES[M - 1] + ' ' + Y) +
-        (rows.length ? ' — use the arrows, or Today, to move.' : '.') + '</div>';
-    }
-    h += '</div>';
-
-    // ---- an agenda under the grid, because a chip cannot show everything ---
-    var agenda = inMonth.slice().sort(function (a, b) {
-      return String(msDate(a)).localeCompare(String(msDate(b))) ||
-             String(projNameOf(a.project_id)).localeCompare(String(projNameOf(b.project_id)));
-    });
-    if (agenda.length) {
-      h += '<div class="pd-card po-tablecard" style="margin-top:14px;overflow:auto;">' +
-        '<table class="po-table"><thead><tr><th>Date</th><th>Project</th><th>Milestone</th>' +
-        '<th>Phase</th><th>State</th><th class="num">Slip vs baseline</th></tr></thead><tbody>' +
-        agenda.map(function (r) {
-          var st = msStateOf(r), sl = msSlip(r);
-          return '<tr><td class="po-nowrap">' + esc(String(msDate(r)).slice(0, 10)) + '</td>' +
-            '<td>' + esc(projNameOf(r.project_id)) + '</td>' +
-            '<td><strong>' + esc(r.activity_name || r.activity_id || '(unnamed)') + '</strong>' +
-              (r.program_milestone ? ' <span class="po-ms-prog">program</span>' : '') +
-              (r.scope_type === 'change_order' ? ' <span class="po-ms-co">change order</span>' : '') + '</td>' +
-            '<td>' + esc(r.phase || '') + '</td>' +
-            '<td><span class="po-ms-state ' + st + '">' + msStateLabel(st) + '</span>' +
-              (msAchieved(r) && msPlanned(r) ? '<div class="po-ms-sub">planned ' + esc(String(msPlanned(r)).slice(0, 10)) + '</div>' : '') + '</td>' +
-            '<td class="num">' + (sl == null
-              ? '<span class="po-ms-sub">no baseline</span>'
-              : '<span class="po-ms-slip ' + (sl > 0 ? 'late' : sl < 0 ? 'early' : '') + '">' + (sl > 0 ? '+' : '') + sl + 'd</span>') + '</td></tr>';
-        }).join('') +
-        '</tbody></table></div>';
-    }
-
-    body.innerHTML = h;
-    if (window.Icons) Icons.hydrate(body);
-    body.querySelectorAll('[data-day]').forEach(function (b) {
-      b.onclick = function () { openMsDay(b.dataset.day, byDay[b.dataset.day] || []); };
-    });
-    body.querySelectorAll('[data-msid]').forEach(function (b) {
-      b.onclick = function () {
-        var r = (msRows || []).find(function (x) { return String(x.id) === b.dataset.msid; });
-        if (r) openMsDay(String(msDate(r)).slice(0, 10), [r]);
-      };
-    });
-  }
-
-  function msStateLabel(st) {
-    return { achieved: 'Achieved', overdue: 'Overdue', due: 'Due', undated: 'No date' }[st] || st;
-  }
-  function msChip(r) {
-    var st = msStateOf(r);
-    return '<button class="po-cal-chip ' + st + '" data-msid="' + esc(r.id) + '" title="' +
-      esc(projNameOf(r.project_id) + ' — ' + (r.activity_name || r.activity_id || '')) + '">' +
-      '<span class="po-cal-chip-p">' + esc(projShort(r.project_id)) + '</span>' +
-      esc(r.activity_name || r.activity_id || '(unnamed)') + '</button>';
-  }
-  /* The milestone strip's own card, onto the same shared component. ⚠️ Its `good|warn|bad`
-     vocabulary maps to the shared variants rather than keeping a second palette
-     (`--po-ms-*`) that says the same three things. */
-  var MS_VARIANT = { good: 'pd-kpi-ok', warn: 'pd-kpi-warn', bad: 'pd-kpi-bad' };
-  function msKpi(l, v, sub, cls) {
-    return UI.kpi(l, v, { sub: sub || '', cls: MS_VARIANT[cls] || '' });
-  }
-  function projNameOf(id) {
-    var p = (PROJ || []).find(function (x) { return String(x.id) === String(id); });
-    return (p && (p.name || p.id)) || id;
-  }
-  function projShort(id) { return String(id || '').slice(0, 8); }
-
-  /* One day's milestones in full — the overflow target, and the chip target.
-     ⚠️ Read-only: this is the portfolio view, and a milestone is owned by its
-     project's schedule. Editing it here would put two writers on one row. */
-  function openMsDay(dayKey, list) {
-    var m = UI.modal('<h2 style="margin-top:0;">' + esc(dayKey) + '</h2>' +
-      '<p class="po-ms-sub" style="margin-top:-6px;">' + list.length + ' milestone' + (list.length === 1 ? '' : 's') +
-      ' across the scoped projects. Read-only — open the project schedule to change one.</p>' +
-      '<div class="po-ms-daylist">' +
-      list.map(function (r) {
-        var st = msStateOf(r), sl = msSlip(r);
-        return '<div class="po-ms-dayrow">' +
-          '<div><strong>' + esc(r.activity_name || r.activity_id || '(unnamed)') + '</strong>' +
-            (r.program_milestone ? ' <span class="po-ms-prog">program</span>' : '') + '</div>' +
-          '<div class="po-ms-sub">' + esc(projNameOf(r.project_id)) +
-            (r.phase ? ' · ' + esc(r.phase) : '') + '</div>' +
-          '<div><span class="po-ms-state ' + st + '">' + msStateLabel(st) + '</span>' +
-            (sl == null ? '' : ' <span class="po-ms-slip ' + (sl > 0 ? 'late' : sl < 0 ? 'early' : '') + '">' +
-              (sl > 0 ? '+' : '') + sl + 'd vs baseline</span>') + '</div>' +
-          (msAchieved(r) && msPlanned(r) ? '<div class="po-ms-sub">planned ' + esc(String(msPlanned(r)).slice(0, 10)) +
-            ' · actual ' + esc(String(msDate(r)).slice(0, 10)) + '</div>' : '') +
-          '</div>';
-      }).join('') + '</div>' +
-      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="msd-x">Close</button></div>');
-    m.el.querySelector('#msd-x').onclick = m.close;
-  }
-
-  function msShiftMonth(n) {
-    var k = msMonth.split('-'), Y = +k[0], M = +k[1] - 1 + n;
-    var d = new Date(Date.UTC(Y, M, 1));
-    msMonth = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1);
-    renderMilestones();
-  }
-  function wireMilestones() {
-    document.getElementById('po-ms-prev').onclick = function () { msShiftMonth(-1); };
-    document.getElementById('po-ms-next').onclick = function () { msShiftMonth(1); };
-    document.getElementById('po-ms-today').onclick = function () {
-      var n = new Date(todayT());
-      msMonth = n.getUTCFullYear() + '-' + pad2(n.getUTCMonth() + 1); renderMilestones();
-    };
-    document.getElementById('po-ms-state').onchange = function (e) { msState = e.target.value; renderMilestones(); };
-    document.getElementById('po-ms-prog').onchange = function (e) { msProgOnly = e.target.checked; renderMilestones(); };
-  }
-
   // ⚠⚠ THE ROLE GATE MOVED IN HERE FROM THE TAB STRIP, AND IT IS STRICTLY STRONGER.
   //    It used to be a loop that set `hidden` on five `.po-tab` buttons — which never
   //    stopped anyone typing the `#po_view=` hash, because the hash goes straight to
@@ -2086,6 +1110,9 @@
   // ⚠️ The module KEY each of those five views belongs to — needed so this gate can go
   // through `AppAuth.moduleVisible` (2026-09-15) rather than the bare role check, which
   // is what lets admin.html's per-user Modules override reach this page too.
+  /* ⚠️ `stakeholders` keeps its entry even though the view is gone: the gate runs BEFORE
+     `PO_MOVED_VIEWS` (deliberately — see the note there), so this is what still stops a planner
+     who cannot see Stakeholder Map from being redirected into it by an old `#po_view=` link. */
   var PO_SUPERADMIN_MODULE_KEY = {
     risk: 'risk-register', stakeholders: 'stakeholder-map', equipment: 'equipment-loading',
     cashflow: 'cash-flow', productivity: 'productivity-rates'
@@ -2121,7 +1148,20 @@
     // ⚠️ The second wave, 2026-09-16 — the four heaviest, each with its own chart or
     //    server-side aggregate. Same redirect, same reason.
     scurve: 's-curve', cashflow: 'cash-flow', resources: 'resource-loading',
-    equipment: 'equipment-loading'
+    equipment: 'equipment-loading',
+    /* ⚠️⚠️ THE LAST TWO, 2026-09-16 — and these are the ones the note above said would
+       NOT move. Owner, looking at the page: *"Stakeholder map is here why? This is just a
+       duplicate from the stakeholder map module that can already be navigated in the side panel.
+       Let's just remove the milestones tab as well, this is also a duplicate essentially from
+       the schedule module."*
+       ⚠️ The read-only objection above does not apply to a REDIRECT. It was an argument against
+       MOUNTING the authoring directory inside `stakeholder-map` under `#pd_scope=portfolio`,
+       where every "+ Add person" would raise a read-only toast. Sending a planner to that module
+       is not that: the module opens in its own scope and its writes land, exactly as they do when
+       the sidebar takes them there.
+       ⚠️ Milestones resolves to `project-schedule`, whose portfolio view is a cross-project
+       Gantt of the same dates — the "essentially a duplicate" the owner named. */
+    stakeholders: 'stakeholder-map', milestones: 'project-schedule'
   };
 
   function switchView(v) {
@@ -2131,14 +1171,9 @@
     /* ⚠️ Flip `.active` on the hidden source button and the dropdown's trigger re-labels
        itself — UI.tabsToDropdown watches these with a MutationObserver. Writing the
        trigger's text directly would be a second place that has to know the view names. */
-    var strip = document.querySelector('.po-tabs');
-    if (strip) strip.querySelectorAll('button[data-view]').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.view === v);
-    });
-    wireMilestones();
-    document.getElementById('po-view-overview').style.display = v === 'overview' ? '' : 'none';
-    document.getElementById('po-view-milestones').style.display = v === 'milestones' ? '' : 'none';
-    document.getElementById('po-view-stakeholders').style.display = v === 'stakeholders' ? '' : 'none';
+    /* ⚠️ Nothing left to toggle — the Overview IS the page. Kept as an assignment rather
+       than deleted so a stray `#po_view=overview` still lands on something visible. */
+    document.getElementById('po-view-overview').style.display = '';
     // ⚠️ Through viewLoaders() — the same list renderCurrent() reads, so a new view cannot
     //    be wired for arrival and forgotten when the project filter changes (or vice versa).
     var f = viewLoaders()[v];
@@ -2185,92 +1220,6 @@
   // IMPACT and `interest` actually stores INFLUENCE (a historical naming mismatch documented
   // there). Reading them any other way here would silently disagree with the module.
   var shRows = null, shLoadedIds = null, shQuery = '';
-  function shImpact(r) { return (r.influence != null && r.influence !== '') ? +r.influence : null; }
-  function shInfluence(r) { return (r.interest != null && r.interest !== '') ? +r.interest : null; }
-  function shApproach(r) {
-    if (r.mgmt_approach) return r.mgmt_approach;   // a planner's own judgement overrides the grid
-    var i = shImpact(r), f = shInfluence(r);
-    return (i && f && window.MCCRCM && MCCRCM.stkApproach) ? (MCCRCM.stkApproach(i, f) || '') : '';
-  }
-  async function loadStakeholders(force) {
-    // ⚠ The Directory does not depend on the project filter, so it is loaded and
-    //   rendered on its own path rather than being squeezed through the scoped one.
-    document.getElementById('po-sh-add').hidden = shView !== 'directory';
-    document.getElementById('po-sh-group').hidden = shView !== 'directory';
-    document.getElementById('po-sh-layout').style.display = shView === 'directory' ? '' : 'none';
-    // ⚠ Health draws in its own container, so BOTH the universe and the table are put
-    //   away for it — otherwise whichever the Directory left showing stays on screen
-    //   under the dashboard.
-    var hl = document.getElementById('po-dir-health');
-    hl.style.display = shView === 'health' ? '' : 'none';
-    if (shView !== 'health') hl.innerHTML = '';
-    if (shView !== 'directory') {
-      var uni = document.getElementById('po-dir-universe');
-      if (uni) { uni.innerHTML = ''; uni.style.display = 'none'; }
-      document.getElementById('po-sh-table').parentNode.style.display =
-        shView === 'health' ? 'none' : '';
-    }
-    if (shView === 'health') {
-      // ⚠ Health is a read of the DIRECTORY, so it loads the same rows the Directory
-      //   loads — and reuses them when they are already in hand.
-      hl.innerHTML = '<div class="po-empty">Reading the directory\u2026</div>';
-      document.getElementById('po-sh-kpis').innerHTML = '';
-      await loadDirectory(force);
-      dirRenderHealth();
-      return;
-    }
-    if (shView === 'directory') {
-      var host = document.getElementById('po-sh-table');
-      if (!dirRows || force) host.innerHTML = '<tbody><tr><td class="po-empty">Loading the directory\u2026</td></tr></tbody>';
-      await loadDirectory(force);
-      dirRender();
-      return;
-    }
-    var ids = scopedProjectIds();
-    if (!force && shLoadedIds && shLoadedIds.join(',') === ids.join(',')) return;
-    var tbl = document.getElementById('po-sh-table'), kpis = document.getElementById('po-sh-kpis');
-    if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
-    tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the stakeholder maps of ' + ids.length + ' project(s)…</td></tr></tbody>';
-    kpis.innerHTML = '';
-    try {
-      shRows = await PDb.selectAll('stakeholder_map', function (q) { return q.in('project_id', ids); });
-    } catch (e) {
-      var msg = (e && e.message) || String(e);
-      tbl.innerHTML = '<tbody><tr><td class="po-empty">' + esc(msg) + '</td></tr></tbody>';
-      return;
-    }
-    shLoadedIds = ids;
-    shRender();
-  }
-  function shVisible() {
-    var q = shQuery.trim().toLowerCase();
-    return (shRows || []).filter(function (r) {
-      if (q && ((r.name || '') + ' ' + (r.organization || '') + ' ' + (r.category || '')).toLowerCase().indexOf(q) < 0) return false;
-      return true;
-    });
-  }
-  function shRender() {
-    var list = shVisible();
-    var mc = list.filter(function (r) { return shApproach(r) === 'Manage Closely'; }).length;
-    var ks = list.filter(function (r) { return shApproach(r) === 'Keep Satisfied'; }).length;
-    var projSet = {}; list.forEach(function (r) { projSet[r.project_id] = 1; });
-    document.getElementById('po-sh-kpis').innerHTML =
-      kpi2('Stakeholders', String(list.length)) + kpi2('Manage Closely', String(mc), mc ? '--pd-bad' : null) +
-      kpi2('Keep Satisfied', String(ks)) + kpi2('Projects', String(Object.keys(projSet).length));
-    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
-    var sorted = list.slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
-    var head = '<thead><tr><th>Project</th><th>Name</th><th>Organization</th><th>Sector</th><th>Approach</th><th>Primary responsible</th></tr></thead>';
-    var body = sorted.length ? sorted.map(function (r) {
-      var ap = shApproach(r);
-      return '<tr><td>' + esc(nameById[r.project_id] || r.project_id) + '</td>' +
-        '<td>' + esc(r.name || '(unnamed)') + '</td>' +
-        '<td>' + esc(r.organization || '—') + '</td>' +
-        '<td>' + esc(r.category || '—') + '</td>' +
-        '<td>' + (ap ? statePill(ap, ap === 'Manage Closely' ? 'bad' : ap === 'Keep Satisfied' ? 'warn' : 'muted') : '—') + '</td>' +
-        '<td>' + esc(r.primary_responsible || '—') + '</td></tr>';
-    }).join('') : '<tr><td colspan="6" class="po-empty">No stakeholders match the current filter.</td></tr>';
-    document.getElementById('po-sh-table').innerHTML = head + '<tbody>' + body + '</tbody>';
-  }
 
 
 
@@ -2318,53 +1267,17 @@
        `html.pd-js .pd-tabsrc` rule, so the raw strip is never on screen either way.
        ⚠️ `opts.icon` is NOT passed — this page keeps its own <h1>, and the 2026-09-04 rule is
        that only a module whose title is hidden outright supplies the icon to the dropdown. */
-    (function () {
-      var strip = document.querySelector('.po-tabs');
-      if (!strip) return;
-      strip.querySelectorAll('button[data-view]').forEach(function (b) {
-        if (!poViewAllowed(b.dataset.view)) {
-          b.parentNode.removeChild(b); return;
-        }
-        b.onclick = function () { switchView(b.dataset.view); histView.push(); };
-      });
-      if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.po-tabs');
-    })();
+    /* ⚠️ The tab strip is gone (see the markup note above), so there is nothing to wire and
+       nothing for `UI.tabsToDropdown` to convert. `switchView` survives as the DEEP-LINK RESOLVER
+       that `#po_view=` arrives through — removing it would break links that are months old. */
 
     document.getElementById('po-refresh').onclick = refreshCurrent;
-    // ⚠ One search box drives both views, so it must dispatch on the current view
-    //   rather than always calling the mirror renderer.
-    document.getElementById('po-sh-q').oninput = function (e) {
-      shQuery = e.target.value;
-      if (shView === 'directory') dirRender();
-      // ⚠ Health is a portfolio-wide read of the whole directory, so the search box
-      //   does not narrow it — a completeness figure over the rows matching a search
-      //   is not the directory's completeness.
-      else if (shView !== 'health') shRender();
-    };
-    document.getElementById('po-sh-add').onclick = openDirAdd;
-    document.getElementById('po-sh-group').onchange = function (e) {
-      dirGroup = e.target.value;
-      dirBand = '';           // ⚠ a band from the old grouping means nothing in the new one
-      dirRenderUniverse();
-    };
-    document.querySelectorAll('#po-sh-layout [data-lay]').forEach(function (b) {
-      b.onclick = function () {
-        dirLayout = b.dataset.lay;
-        document.querySelectorAll('#po-sh-layout [data-lay]').forEach(function (x) {
-          x.classList.toggle('on', x === b);
-        });
-        dirRenderUniverse();
-      };
-    });
-    document.querySelectorAll('#po-sh-view [data-shv]').forEach(function (b) {
-      b.onclick = function () {
-        shView = b.dataset.shv;
-        document.querySelectorAll('#po-sh-view [data-shv]').forEach(function (x) {
-          x.classList.toggle('on', x === b);
-        });
-        loadStakeholders(false);
-      };
-    });
+    /* ⚠️ The Stakeholder Map's own controls (search, group-by, layout, the directory/matrix
+       switch and "+ Add person") went with the view, and so did every renderer behind them.
+       ⚠️⚠️ THEIR NAMES ARE DELIBERATELY NOT WRITTEN HERE. `test-portfolio.js` asserts that
+       each one "does not occur in this page at all any more" by counting occurrences in the
+       source, and a comment naming them is an occurrence — it would keep that check red forever,
+       or worse, teach the next person to relax the check. */
     try {
       var res = await Promise.all([PDb.getProjects(), PDb.getGroupHeads()]);
       PROJ = res[0]; GH = res[1];

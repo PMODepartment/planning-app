@@ -93,6 +93,16 @@ function makeDom() {
       if (/\sclass="[^"]*\bon\b/.test(m[1])) r.classList.add('on');
       (buttons.band = buttons.band || []).push(r);
     }
+    /* The Project Schedule grain toggle (Auto | Year | Quarter | Month). Registered like the
+       other `data-*` button groups so its clicks can be exercised rather than described. */
+    if (html.indexOf('data-g="') >= 0) buttons.grain = [];
+    const grainRe = /<button data-g="([a-z]+)"([^>]*)>/g;
+    while ((m = grainRe.exec(html))) {
+      const g = el('button');
+      g.dataset.g = m[1];
+      if (/class="[^"]*\bon\b/.test(m[2])) g.classList.add('on');
+      (buttons.grain = buttons.grain || []).push(g);
+    }
     const btnRe = /<button([^>]*)>/g;
     while ((m = btnRe.exec(html))) {
       const attrs = m[1];
@@ -111,12 +121,19 @@ function makeDom() {
      innerHTML assignment and stored ON THE NODE, so a re-render replaces them rather than
      accumulating, and two grouped tables on one page cannot see each other's. */
   function grpRows(html) {
-    const out = [], re = /<tr class="po-grp" data-pgrp="([^"]*)"/g;
+    /* ⚠⚠ A CLASS LIST, NOT ONE CLASS. This read `class="po-grp"` exactly, and the group
+       heading now carries the approved `pd-group-row` treatment beside its own hook
+       (`class="pd-group-row po-grp"`) — so the old regex matched ZERO rows and every group
+       assertion below went looking at an empty list. A harness that can only see one spelling of
+       a class reports a renderer as broken the first time anybody adds a second class to it. */
+    const out = [], re = /<tr class="([^"]*)" data-pgrp="([^"]*)"/g;
     let m;
     while ((m = re.exec(html))) {
+      const classes = m[1].split(/\s+/);
+      if (classes.indexOf('po-grp') < 0) continue;
       const r = el('tr');
-      r.dataset.pgrp = m[1];
-      r.classList.add('po-grp');
+      r.dataset.pgrp = m[2];
+      classes.forEach(function (c) { if (c) r.classList.add(c); });
       out.push(r);
     }
     return out;
@@ -133,7 +150,8 @@ function makeDom() {
     if (sel === '.po-sc-band') return buttons.band || [];
     let m = /^#([\w-]+)\s+button$/.exec(sel);
     if (m) {
-      const kind = m[1] === 'po-eq-avail' ? 'av' : m[1] === 'po-bd-dim' ? 'dim' : null;
+      const kind = m[1] === 'po-eq-avail' ? 'av' : m[1] === 'po-bd-dim' ? 'dim'
+                 : m[1] === 'po-sh-grain' ? 'grain' : null;
       return kind ? (buttons[kind] || []) : [];
     }
     m = /^button\[data-(\w+)\]$/.exec(sel);
@@ -143,11 +161,21 @@ function makeDom() {
     }
     if (sel === '.pd-main') return [doc._main];
     if (sel === '.pd-modulebar') return doc._modulebar ? [doc._modulebar] : [];
+    /* ⚠ `.pd-content` is what `buildBar` inserts the portfolio module bar BEFORE. Without it
+       here, buildBar found no host, returned null and did nothing — and every assertion about
+       the bar would have been passing against a bar that was never built. */
+    if (sel === '.pd-content') return doc._content ? [doc._content] : [];
     if (/^#[\w-]+$/.test(sel)) return byId[sel.slice(1)] ? [byId[sel.slice(1)]] : [];
     return [];
   }
 
   const doc = {
+    /* ⚠ A REAL `body`. `takeOver()` marks the PAGE (`body.classList.add('po-dash-page')`) because
+       `.pd-modulebar` does not exist yet when it runs on a cached session -- see the note there.
+       Without a body here the suite crashed rather than covering it, which is the good failure:
+       a fake DOM that quietly answers everything lets a renderer reaching for a node nobody
+       provides look healthy. */
+    body: el('body'),
     getElementById(id) { return byId[id] || null; },
     createElement(tag) { return el(tag); },
     querySelector(sel) { return query(null, sel)[0] || null; },
@@ -798,6 +826,137 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
        tag + 'is: collapsing one project leaves the others');
   }
 
+  /* ==== 2026-09-16 · ONE TABLE DESIGN, AND ROWS THAT OPEN ====================================
+     Owner, off five screenshots: *"There are different table formats seen throughout the modules.
+     We already have an approved UI of tables seen in projects.html. Let's follow that
+     universally"*, and *"I want to be able to open those specific meetings/items from the table
+     as well from the portfolio view, not just a viewing page."*
+     ⚠ These assert the MARKUP, because the markup is where the approved design is now claimed
+     from (dashboard.css owns the look; the table just has to ask for it by name). A test that
+     asserted padding would be testing the stylesheet, which is not this file's job. */
+  {
+    const every = probe.PortfolioDash.keys();
+    every.forEach(function (k) {
+      const mk = String(probe.PortfolioDash._markup ? probe.PortfolioDash._markup(k) : '');
+      if (mk.indexOf('<table') < 0) return;          // not every view has a table
+      const tables = mk.match(/<table class="([^"]*)"/g) || [];
+      ok(tables.length > 0 && tables.every(function (t) {
+        return /\bpd-table\b/.test(t) && /\bpd-proj-table\b/.test(t);
+      }), tag + 'table: "' + k + '" asks for the approved treatment by name');
+    });
+  }
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: { issues_lessons: [
+      { id: 'i1', project_id: 'P1', description: 'Zulu', status: 'Open', date_presented: '2026-01-01' },
+      { id: 'i2', project_id: 'P1', description: 'Yankee', status: 'Open', date_presented: '2026-02-01' }
+    ] } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(win, 'issues');
+    const t = win.document.getElementById('po-is-table').innerHTML;
+    has(t, 'class="pd-group-row po-grp"', tag + 'group: the heading carries the approved row class');
+    has(t, '<span class="pd-ghchip">', tag + 'group: and the tinted red-bordered chip');
+    has(t, '<span class="pd-ghcount">2 issues</span>', tag + 'group: and a count that names what it counts');
+    /* ⚠ The NOUN, not a bare number — and a different noun per register. */
+    ok(!/pd-ghcount">2<\/span>/.test(t), tag + 'group: never a naked number beside a project name');
+    has(t, 'data-open-pid="P1"', tag + 'open: an issue row says which project it belongs to');
+    has(t, 'data-open-to="?openIssue=i1"', tag + 'open: and deep-links to that issue by id');
+    has(t, 'class="pd-proj-row"', tag + 'open: an openable row looks openable (the approved hover/pointer)');
+  }
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {
+      meeting_minutes: [{ id: 'M9', project_id: 'P1', title: 'Weekly PPR', meeting_date: '2026-09-14' }],
+      mom_items: [{ id: 'a1', project_id: 'P1', mom_id: 'M9', action_item: 'Do the thing', status: 'Open' }]
+    } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(win, 'meetings');
+    const t = win.document.getElementById('po-mm-table').innerHTML;
+    has(t, '<span class="pd-ghcount">1 action item</span>', tag + 'group: Meetings counts action items, not issues');
+    /* ⚠⚠ THE HASH IS THE MODULE'S OWN. `UI.bindHistoryState({key:'mom_view'})` restores
+       `{t,v,m}` out of the hash on load, so this link opens the meeting through the module's own
+       apply() — asserting the exact encoded shape is what stops it drifting into a private
+       protocol the module does not answer. */
+    has(t, 'data-open-to="#mom_view=' + encodeURIComponent(JSON.stringify({ t: 'meetings', v: 'detail', m: 'M9' })),
+        tag + 'open: a meeting row deep-links through the module\u2019s OWN history key');
+  }
+
+  /* ==== 2026-09-16 · THE S-CURVE'S MANUAL DATA TAB =========================================
+     Owner: *"there is a manual data tab that is clickable that doesn't work."* It was static
+     markup wired by the module's own init(), which a portfolio open deliberately skips. */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {
+      scurve_manual: [
+        { id: 'r1', project_id: 'P1', trade: 'Structural',   month: '2026-01-01', kind: 'planned',  pct: 8, updated_at: '2026-09-02T00:00:00Z' },
+        { id: 'r2', project_id: 'P1', trade: 'Architectural', month: '2026-03-01', kind: 'actual',  pct: 6, updated_at: '2026-09-05T00:00:00Z' }
+      ],
+      scurve_manual_meta: [{ project_id: 'P1', planned_locked: true }]
+    }, agg: { P1: AGG_P1, P2: AGG_P2 }, schedule: { P1: [], P2: [] } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    const m = await mountView(win, 'scurve');
+    has(probe.PortfolioDash._markup('scurve'), 'id="po-sc-pane-manual"',
+        tag + 'scurve: the portfolio view has a Manual data pane of its own');
+    ok(typeof m.api.bar === 'function',
+       tag + 'scurve: and hands takeOver a bar builder — the tabs cannot be built by the view alone');
+
+    /* Build the bar the way takeOver does, then press Manual data. */
+    const bar = win.document._el('div');
+    const tabsHost = win.document._el('div');
+    win.document._byId['po-bar-tabs'] = tabsHost;
+    bar.querySelector = function () { return tabsHost; };
+    m.api.bar(bar);
+    has(tabsHost.innerHTML, 'data-scv="manual"', tag + 'scurve: the bar carries Curve | Manual data');
+
+    const pane = win.document.getElementById('po-sc-pane-manual');
+    const tbl = win.document.getElementById('po-scm-table');
+    ok(pane && tbl, tag + 'scurve: both panes are addressable');
+  }
+
+  /* ==== 2026-09-16 · THE PROJECT SCHEDULE GANTT ============================================
+     Owner: *"is this supposed to be a gantt chart? Let's also have a toggle for year, quarterly,
+     monthly viewing as well."* */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {} });
+    /* The shared PROJECTS fixture carries no schedule roll-up, and without one this view draws
+       its "no project in scope carries a roll-up yet" empty state -- so the axis, the grid and the
+       today line would all be absent and every assertion below would be testing the empty state.
+       These two span 2020->2027, which is what makes a year/quarter/month toggle mean anything. */
+    win.PortfolioDash._setProjects([
+      { id: 'P1', name: 'Avesta Residences', start_date: '2020-01-15', end_date: '2026-06-30',
+        schedule_start: '2020-02-01', schedule_finish: '2026-09-30', forecast_finish: '2026-11-01',
+        schedule_progress: 62, schedule_updated_at: '2026-09-10' },
+      { id: 'P2', name: 'Bayfront Tower', start_date: '2022-03-01', end_date: '2027-12-31',
+        schedule_start: '2022-04-01', schedule_finish: '2027-11-30', forecast_finish: '2027-12-15',
+        schedule_progress: 20, schedule_updated_at: '2026-09-12' }
+    ], []);
+    await mountView(win, 'schedule');
+    const host = win.document.getElementById('po-sh-gantt');
+    const grain = win.document.querySelectorAll('#po-sh-grain button');
+    eq(grain.length, 4, tag + 'gantt: Auto | Year | Quarter | Month');
+    const press = function (g) {
+      grain.filter(function (b) { return b.dataset.g === g; })[0].onclick();
+      return host.innerHTML;
+    };
+    /* ⚠⚠ EXACTLY ONE "today" line, drawn over the whole plot. It used to be emitted once per
+       row INSIDE an 18px-tall track plus once in the 18px axis, so today was a stack of
+       disconnected stubs rather than a line a bar could be read against. */
+    [['year', '>2020<'], ['quarter', ">Q1 '20<"], ['month', ">Jan '20<"]].forEach(function (pair) {
+      const html = press(pair[0]);
+      has(html, pair[1], tag + 'gantt: the ' + pair[0] + ' grain labels real ' + pair[0] + 's');
+      eq((html.match(/class="po-sh-now"/g) || []).length, 1,
+         tag + 'gantt: ' + pair[0] + ' — ONE continuous today line, never a stub per row');
+      ok(/class="po-sh-gl"/.test(html), tag + 'gantt: ' + pair[0] + ' — and gridlines to read bars against');
+      ok(/min-width:max\(100%,\d+px\)/.test(html),
+         tag + 'gantt: ' + pair[0] + ' — the plot is widened from the TICK COUNT, not a constant');
+    });
+    /* Quarters start in Jan/Apr/Jul/Oct — not wherever the earliest contract happened to begin. */
+    const q = press('quarter');
+    ok(q.indexOf(">Q2 '20<") >= 0 && q.indexOf(">Q1 '20<") >= 0,
+       tag + 'gantt: quarters are anchored on the calendar, so a Q label is a real Q');
+  }
+
   /* ---- takeOver(): the module steps aside, and keeps its way out ------------------ */
   {
     const win = buildPage(dashSrc, assetsDir);
@@ -824,7 +983,30 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
     sel.selectedIndex = 0;
     sel.onchange.call(sel);
     ok(left, tag + 'takeOver: choosing a project LEAVES portfolio scope');
+    /* ==== THE DUPLICATED TITLE BAR (2026-09-16) ==============================================
+       Owner: *"Title bar has bugged out completely it duplicated. Check across all modules."*
+       ⚠⚠ THE MODULE BAR IS NOT IN ANY MODULE'S MARKUP -- `UI.initModuleTopbar()` CREATES it on
+       DOMContentLoaded, and takeOver() runs from `AppAuth.requireLogin`'s callback, which races
+       it. On a cached session the callback wins, so hiding `.pd-modulebar` BY ELEMENT reaches
+       nothing and the bar is built afterwards, unhidden, above the dashboard's own bar.
+       ⚠ So what is asserted is the BODY class, not the element: it is the only one of the two
+       that is still true when the bar is built late. `doc._modulebar` is deliberately left unset
+       below to reproduce exactly that ordering. */
+    ok(doc.body.classList.contains('po-dash-page'),
+       tag + 'takeOver: the PAGE is marked, so a module bar built later is born hidden');
     eq(win.sessionStorage.getItem('pd_project'), 'P1', tag + 'takeOver: and remembers which one');
+  }
+  {
+    /* The cached-session order, reproduced: NO `.pd-modulebar` exists when takeOver runs. */
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {}, rpc: { portfolio_resource_summary: { data: [], error: null } } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    const doc = win.document;
+    doc._main = doc._el('div');
+    doc._modulebar = null;                       // <- built later by initModuleTopbar, as in life
+    await win.PortfolioDash.takeOver('resources', {});
+    ok(doc.body.classList.contains('po-dash-page'),
+       tag + 'takeOver: marks the page even when there is no module bar YET to hide');
   }
 }
 

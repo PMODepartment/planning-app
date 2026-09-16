@@ -62,7 +62,7 @@
         ? '<a class="pd-usermenu-link" href="' + base + 'my-work.html">' + mIco('clipboard') + 'My Work</a>'
         : '') +
       (isAdmin
-        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('settings') + 'Admin</a>'
+        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('users') + 'Users</a>'
         : '');
 
     mount.innerHTML =
@@ -148,8 +148,14 @@
         _ntIco('project', 14) + '<span class="pd-nt-proj-txt"><strong>' + esc(p.id + ' — ' + (p.name || p.id)) + '</strong>' +
         (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></div>';
     }
+    // ⚠️ Same "Portfolio" + "every project you can see" wording as the closed
+    // trigger (enhanceProjectSelect's syncBtn / renderSwitcher's mainLabel/
+    // subLabel, above) — owner, 2026-09-16: "always use this type of dropdown
+    // when portfolio is selected". The row you PICK Portfolio from should read
+    // exactly like the state it puts you in, not merely share one word with it.
     var portfolioRow = '<div class="pd-nt-portfolio' + (opts.portfolioActive ? ' sel' : '') + '" data-nt-portfolio="1">' +
-      _ntIco('barChart', 15) + '<span>Portfolio</span></div>';
+      _ntIco('barChart', 15) + '<span class="pd-nt-portfolio-txt"><strong>Portfolio</strong>' +
+      '<small>every project you can see</small></span></div>';
     var q = (opts.search || '').trim().toLowerCase(), body;
     if (q) {
       var matches = P.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; }).sort(_ntByName);
@@ -238,6 +244,19 @@
   async function allProjectIds() {
     if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
     return (_pdProjCache || []).map(function (p) { return p.id; });
+  }
+  // ---- Portfolio scope: a project's own row, by id ---------------------------
+  // The companion read to allProjectIds() — a module consolidating across the
+  // portfolio needs to know WHICH id is which, e.g. to group a list by project
+  // (owner, 2026-09-16: "for consolidated data in portfolio, if in list group by
+  // project"). Shares the exact same cache/read as allProjectIds() and the
+  // project-selector popover, so a module's grouping can never name a project
+  // differently from what the selector itself calls it.
+  async function projectsById() {
+    if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
+    var map = {};
+    (_pdProjCache || []).forEach(function (p) { map[p.id] = p; });
+    return map;
   }
 
   // ---- Project selector (shared group-head browser) ------------------------
@@ -505,14 +524,17 @@
             /* ⚠️ "Users", NOT "Admin" — owner 2026-09-15: *"for admin keep only user
                management and rename to Users."* admin.html dropped its Projects tab the
                same change (projects.html already owns that, group heads included), so
-               the page is user management now and the label says so.
+               the page is user management now and the label says so. A later owner ask
+               ("change also the icon of users to users") swapped the glyph too, from the
+               gear (`settings`) to the people pair (`users`) — the popup menu's matching
+               link (renderUserBar, above) carries the identical icon.
                ⚠️ THE KEY `admin` IS DELIBERATELY UNCHANGED — same call as the My Work
                row's `personal-dashboard` key just above: `cls('admin')` here and the
                `active: 'admin'` admin.html itself passes to renderNav must keep matching
                each other, and the filename/href stays `admin.html` so nothing that
-               already links here breaks. Only the visible word moved. */
+               already links here breaks. Only the visible word and the icon moved. */
             '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Users">' +
-              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Users</span></a>'
+              '<span class="pd-navico" data-ico="users"></span><span class="pd-navtxt">Users</span></a>'
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled && visible(m); });
@@ -576,11 +598,21 @@
     // pname before this runs) gets it for free.
     var mainLabel = mode === 'portfolio' ? 'Portfolio'
       : (pid && opts.pname ? pid + ' — ' + opts.pname : (opts.pname || 'Select a project'));
+    // ⚠️⚠️ PORTFOLIO'S SUBTITLE IS FIXED TEXT, MATCHING enhanceProjectSelect's OWN
+    // portfolio-scope trigger VERBATIM (owner, 2026-09-16: "always use this type of
+    // dropdown when portfolio is selected"). Before this, this shell-page topbar
+    // switcher showed a bare "Portfolio" with no subtitle at all while the
+    // per-module project selector (enhanceProjectSelect, above) showed "Portfolio"
+    // over "every project you can see" — two different readings of the same state,
+    // depending only on which of the two selector components a given page happens
+    // to use. `opts.ghLabel` still wins outside Portfolio mode (a project's own
+    // address/group-head subtitle, or its async-fetched placeholder).
+    var subLabel = mode === 'portfolio' ? 'every project you can see' : opts.ghLabel;
     mount.innerHTML =
       '<button class="pd-projsw-btn" type="button">' +
         '<span class="pd-projsw-ic" data-ico="' + (mode === 'portfolio' ? 'barChart' : 'project') + '" data-ico-size="16"></span>' +
         '<span class="pd-projsw-txt"><strong>' + esc(mainLabel) + '</strong>' +
-          (opts.ghLabel ? '<small>' + esc(opts.ghLabel) + '</small>' : '<small class="pd-projsw-sub"></small>') + '</span>' +
+          (subLabel ? '<small>' + esc(subLabel) + '</small>' : '<small class="pd-projsw-sub"></small>') + '</span>' +
         '<span class="pd-projsw-caret" data-ico="chevronDown" data-ico-size="13"></span>' +
       '</button>' +
       '<div class="pd-projsw-menu"></div>';
@@ -839,6 +871,23 @@
       // no separate icon row left to be "alone" — see `.pd-h1-hasdrop`.
       var h1 = titleTxt.closest('h1');
       if (h1) h1.classList.add('pd-h1-hasdrop');
+      /* ⚠⚠ AN ICON-CARRYING TRIGGER MAKES THE WHOLE <h1> REDUNDANT, NOT JUST ITS TEXT — AND
+         THIS IS THE "DUPLICATED LOGO" THE OWNER REPORTED ON ISSUES & CONCERNS (2026-09-16).
+         `.pd-title-hasdrop` hides the title TEXT above 700px, on the reasoning that the trigger
+         already names the screen. True — but when the caller also passes `opts.icon` the trigger
+         names the screen AND carries the module's mark, so what is left of the <h1> is a second
+         copy of that same mark sitting beside it: two clipboards, then "Issues & Concerns ▾".
+         Issues had been papering over this in its own JS (switchScreen() sets the <h1> to
+         `display:none` on every screen), which is why it only ever showed where switchScreen does
+         not run — the portfolio view, and the moment before auth resolves on a normal load.
+         ⚠ Hiding the WHOLE element is the safe shape, and deliberately so: hiding the text alone
+         is what once left "an icon alone on a line" with the trigger's label on the next, a defect
+         this repo fixed once and its own comments forbid bringing back. With the element gone
+         there is no orphan row to leave behind, at any width.
+         ⚠ Only two callers pass an icon today (Issues & Concerns, Progress Photos) and Progress
+         Photos has no <h1> at all — so this is one module's duplicate mark, removed at the cause
+         rather than worked around a third time. */
+      if (h1 && opts && opts.icon) h1.classList.add('pd-h1-hasdropico');
     }
 
     var wrap = document.createElement('div');
@@ -1115,5 +1164,6 @@
                 renderNav: renderNav, renderSwitcher: renderSwitcher,
                 renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
                 wireFilterToggle: wireFilterToggle, allProjectIds: allProjectIds,
+                projectsById: projectsById,
                 kpi: kpi, kpis: kpis };
 })();
