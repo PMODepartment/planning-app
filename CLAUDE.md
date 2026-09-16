@@ -102,6 +102,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (y) — A code owner with no commits was gating the module he never wrote
+
+Owner: *"There is a commit that is always blocked by yohanmay for rachellelungsod's account.
+Let's remove this"* — the HOTFIX PR on `module/progress-photos` sat unmerged with `@yohanmay`
+auto-requested as reviewer.
+
+`.github/CODEOWNERS:15` read `/modules/progress-photos/ @PMODepartment @yohanmay`, so every PR
+touching that folder requested his review. The history says the review was never coming:
+
+| account | commits in `modules/progress-photos/` | commits anywhere in repo |
+|---|---|---|
+| `yohanmay` | 0 | **0** |
+| `rachellelungsod` | **42** | 49 |
+
+`git log --all --author=yohan` returns nothing — the assignment was recorded, never acted on. The
+mirror image is just as stale: `ONBOARDING.md` assigns Rachelle to `contracts-claims`, where she
+has **0** commits, while she has in fact built Progress Photos on `module/progress-photos` since
+it started.
+
+Dropped `@yohanmay` from both files. The CODEOWNERS line is now `@PMODepartment` alone, matching
+Risk Register and the Phase 2 rows, and the tracker row reads Unassigned. No replacement was
+named — and naming Rachelle would not have unblocked her anyway, because GitHub does not let a
+code owner approve their own PR.
+
+⚠️ **CODEOWNERS only auto-requests a reviewer; by itself it cannot block a merge.** If the PR is
+genuinely unmergeable rather than merely waiting, a branch-protection rule on `main` is requiring
+code-owner approval. That rule lives in GitHub repo settings, not in this repo, and this commit
+does not touch it.
+
 ### 2026-09-16 (x) — The sidebar's and profile menu's "Admin" link is renamed Users, with a matching icon
 
 Owner: *"also, when clicking on profile, there is button for admin, change this to users. for the
