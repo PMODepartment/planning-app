@@ -1,6 +1,66 @@
 # Module: contracts-claims
 
-## 2026-09-16 — The dashboard becomes a fourth tab, and reconnecting it found it had been dead
+## 2026-09-16 (b) — The dashboard tiles become a table, and each type gets a "Group" expand
+
+Owner, on the tab shipped hours earlier: *"the dashboard tiles look very ugly, provide me sample
+look if table or chart."* Shown both (a `.pd-table` and a `.cc-ages`-style bar treatment, neither
+committed — throwaway harnesses, deleted). Owner picked the table shape and specified it directly:
+*"columns should be for submission, submitted, evaluated, approved, disputed. include also status.
+provide group button to expand breakdown of claims/change order details."*
+
+### What changed
+
+`ccBlock` — the five-tile `.cc-kpis` grid per type (Submitted / Evaluated / Approved / Disapproved
+/ Shortfall) — is **deleted**, not left orphaned; its only three callers now call the replacement,
+so nothing keeps referencing it. New `ccTypeGroupHTML(label, list, subK, evK, apK, fmt, goto)`
+renders one `.pd-table` per type (Change Orders / Cost Claims / Extension of Time):
+
+- **One group row per type**, bold (`.pd-grp`, the shared class this app already uses for a
+  table's own subtotal rows), showing the type's totals across all six columns.
+- **One row per record underneath**, collapsed by default (`.pd-collapsed`, the same shared
+  class), revealed by clicking the group row — `wireDashGroups` is the one handler for all three
+  tables, toggling a caret between ▸/▾.
+- **Columns: Submission · Submitted · Evaluated · Approved · Disputed · Status.**
+  - ⚠️⚠️ **Submission ≠ Submitted.** Submission is the record's identity — `descOf(r)` (reference +
+    description, the same helper the Contract/Claims/EOT tables already use) plus the date it was
+    submitted underneath, in `.cc-mini`. Submitted is the pipeline **amount**. Two different
+    existing fields (`reference_no`/`description`/`date_submitted` vs. `sub_amount`), not one
+    column typed twice.
+  - ⚠️⚠️ **Disputed is the old Shortfall, renamed and moved to where it earns its place.** The
+    owner dropped Shortfall as a tile two messages earlier ("no need for shortfall") and then asked
+    for a "disputed" column here — not a contradiction: a tile reading "₱350,000 shortfall" with no
+    record behind it was noise; "which record is disputed, and by how much" is exactly what a row
+    is for. Same arithmetic, `PDClaims.shortfall(sub, approved)`, now run **per record** as well as
+    for the group's total. ⚠️ A still-Pending record reads **"—"**, never 0 — `PDClaims.isDecided(r)`
+    gates it, or an unresolved claim would read as though it had already been argued down to
+    nothing.
+  - **Status** is the existing `.cc-st`/`STATUS_CLS` pill this module's own record tables already
+    use — Pending red, Approved green, Disapproved red, Cancelled muted — so a planner reading this
+    table and the Claims tab underneath it sees the identical treatment. The group row's Status
+    cell is a plain-text breakdown ("1 pending · 1 approved"), since a group spanning two different
+    statuses cannot honestly wear one pill.
+- **The "View →" links from 2026-09-16 (a) are unchanged** — they sit in the same `.cc-dash-h`
+  header, above the table now instead of above a tile grid.
+
+⚠️ **"With the client" (`ccTimeHTML`) is untouched** — still `.cc-kpis` tiles and the aging bars.
+This round only replaced the three per-type blocks the owner called ugly; that section wasn't
+raised and its own tiles are few enough (4) not to read as a wall.
+
+### Verified
+
+`node --check` clean; `module.css` braces balanced (647/647). Rendered in the same real-Chromium
+harness as (a) — git-ignored, deleted before this commit — driven through `_internals`: all three
+tables render collapsed by default with correct group totals and status breakdowns; clicking each
+group row reveals exactly its own records (6 of 6 after clicking all three, 0 before) with the
+right per-record Disputed value (a dash on every Pending record, a real figure on every
+Approved/Disapproved one, matching the arithmetic by hand); confirmed in both themes — every
+colour in the new table resolves through a token, nothing hardcoded.
+⚠️ Not verified signed in — fixture data through `_internals`, not a live project.
+
+`module.css` / `module.js` → `?v=20260916g`. No `MODULE_V` bump — `index.html`'s structure (tab
+count, script list) is unchanged from (a).
+
+## 2026-09-16 (a) — The dashboard becomes a fourth tab, and reconnecting it found it had been dead
 
 Owner: *"aside from contracts, claims and change orders, and eot. add also a dashboard."* Asked
 whether it should be the landing tab: *"it need not be the landing tab."* Contract stays the

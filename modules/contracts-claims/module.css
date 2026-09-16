@@ -144,9 +144,9 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 
 /* ---- The register's own dashboard — its own tab since 2026-09-16, a Contract-tab band before
    that (see the long comment above ccDashHTML() in module.js for the reversal and why it had
-   been unreachable in between). ⚠ Built from the module's OWN idioms (`.cc-kpis` / `.cc-kpi`),
-   not the project dashboard's `.pd-mini-*`. The two screens report the same figures in the same
-   order, but each should look like the page it is on rather than importing the other's furniture. */
+   been unreachable in between). ⚠ The "With the client" section below still uses the module's own
+   `.cc-kpis` / `.cc-kpi` tiles; the three type blocks moved off tiles onto `.cc-dashtbl`
+   (owner: "the dashboard tiles look very ugly") — see the comment above ccTypeGroupHTML(). */
 .cc-dash { margin-bottom: 14px; }
 .cc-dash-h { display:flex; align-items:baseline; gap:8px; margin:14px 0 6px;
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
@@ -160,6 +160,14 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
   font: inherit; text-transform:none; letter-spacing:normal; font-weight:600;
   color:var(--pd-red); white-space:nowrap; }
 .cc-dash-goto:hover { text-decoration:underline; }
+/* ---- The per-type table (ccTypeGroupHTML, module.js) — a `.pd-table` with one group row
+   (`.cc-dashgrp`, reusing the shared `.pd-grp` bold-row treatment) and its records collapsed under
+   it (`.pd-collapsed`, the same shared class every other collapsible table in this app uses). ---- */
+.cc-dashtbl { margin: 0 0 14px; }
+.cc-dashgrp { cursor: pointer; }
+.cc-dashcaret { display:inline-block; width:10px; font-size:10px; color:var(--pd-muted); }
+.cc-dashrow > td { font-size: var(--pd-fs-sm); }
+.cc-dashrow .cc-desc-txt { font-weight: 500; -webkit-line-clamp: 1; }
 /* How much of the contract value the packages account for. */
 .cc-dash-bar { height:6px; border-radius:99px; background:var(--pd-line); overflow:hidden; margin-bottom:8px; }
 .cc-dash-bar > i { display:block; height:100%; background:var(--pd-red); }

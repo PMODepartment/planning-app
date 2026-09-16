@@ -317,6 +317,7 @@ window.ContractsClaims = (function () {
       if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
       host.innerHTML = ccDashHTML();
       wireDashGoto(host);
+      wireDashGroups(host);
       if (window.Icons && Icons.hydrate) Icons.hydrate(host);
       return;
     }
@@ -461,33 +462,84 @@ window.ContractsClaims = (function () {
       };
     });
   }
-  function ccBlock(label, nRec, list, subK, evK, apK, fmt, goto) {
-    /* ⚠️⚠️ THE RULES MOVED TO PDClaims (assets/js/claims.js) ON 2026-09-15, UNCHANGED. Decided =
-       Approved + Disapproved (Cancelled was never adjudicated); shortfall clamped at 0. They are
-       there because the project dashboard's panel and the portfolio view apply exactly the same
-       rules to the same register, and three copies is how three screens come to describe it
-       differently — which is the one thing this band was written not to do. */
+  /* ==========================================================================================
+     A TYPE'S TABLE, NOT A TILE GRID (2026-09-16). Owner: *"the dashboard tiles look very ugly"*,
+     then, choosing the table over a bar-chart alternative: *"columns should be for submission,
+     submitted, evaluated, approved, disputed. include also status. provide group button to
+     expand breakdown of claims/change order details."*
+     Replaces `ccBlock`'s five-tile `.cc-kpis` grid (now dead — deleted, not left orphaned).
+
+     ⚠️⚠️ "SUBMISSION" IS THE RECORD'S IDENTITY, "SUBMITTED" IS ITS AMOUNT — two different
+       columns for two different existing fields (`descOf(r)`/`date_submitted` vs. `sub_amount`),
+       not a typo repeating one column twice. Every other register table in this module already
+       makes that split (a Description column, then the pipeline amounts); this one just makes
+       "Submission" carry the date too, since that is what a claims meeting actually asks first.
+     ⚠️⚠️ "DISPUTED" IS THE OLD "SHORTFALL", RENAMED AND MOVED TO WHERE IT EARNS ITS PLACE. The
+       owner asked to drop Shortfall as a tile ("no need for shortfall") and then asked for a
+       "disputed" column here — not a contradiction: a tile claiming "₱350,000 shortfall" with no
+       record behind it was noise, but "which record is disputed and by how much" is exactly what
+       a table row is for. Same arithmetic (`PDClaims.shortfall`), only decided records carry a
+       value — a still-Pending record reads "—", not 0, or a claim awaiting a decision would look
+       like it had already been fought over.
+     ⚠️⚠️ ONE TYPE, ONE GROUP ROW, COLLAPSED BY DEFAULT. `PDClaims` already treats a whole type
+       (Change Orders / Cost Claims / EOT) as one population everywhere else on this page — the
+       group row is that same population, not a fourth way of totalling it. Detail rows carry
+       `data-grp` back to it; `wireDashGroups` is the one handler that opens or closes them, so a
+       reader can scan three totals first and only expand the type they came to check. */
+  function ccTypeGroupHTML(label, list, subK, evK, apK, fmt, goto) {
     var sum = PDClaims.sum;
-    var decided = PDClaims.decided(list);
-    var disapRows = list.filter(PDClaims.isDisapproved);
     var short = PDClaims.shortfallOf(list, subK, apK);
-    /* ⚠ A COMPUTED ZERO IS A ZERO; ONLY AN EMPTY BLOCK IS A DASH. `sum` over an empty list
-       returns 0, so formatting every falsy value as '—' printed a dash where the project
-       dashboard prints '0d' — two screens describing the same register differently, which is
-       the one thing this band was written not to do. With records present every figure is
-       numeric; with none, the whole block reads '—'. */
     var f = list.length ? fmt : function () { return '—'; };
+    var gid = 'ccg-' + label.replace(/[^a-z0-9]+/gi, '').toLowerCase();
+
+    var counts = {};
+    list.forEach(function (r) { var s = statusOf(r) || 'Pending'; counts[s] = (counts[s] || 0) + 1; });
+    var statusSummary = Object.keys(counts).map(function (s) { return counts[s] + ' ' + s.toLowerCase(); }).join(' · ') || '—';
+
+    var rowsHtml = list.map(function (r) {
+      var st = statusOf(r);
+      /* Per-record disputed: only a DECIDED record has actually been argued over. */
+      var disp = PDClaims.isDecided(r) ? PDClaims.shortfall(r[subK], r[apK]) : null;
+      return '<tr class="cc-dashrow pd-collapsed" data-grp="' + gid + '">' +
+        '<td class="cc-desc"><div class="cc-desc-txt" title="' + esc(descOf(r)) + '">' + esc(descOf(r)) + '</div>' +
+          (r.date_submitted ? '<div class="cc-mini">Submitted ' + fmtDate(r.date_submitted) + '</div>' : '') + '</td>' +
+        '<td class="cc-r">' + fmt(Number(r[subK]) || 0) + '</td>' +
+        '<td class="cc-r">' + fmt(Number(r[evK]) || 0) + '</td>' +
+        '<td class="cc-r">' + fmt(Number(r[apK]) || 0) + '</td>' +
+        '<td class="cc-r">' + (disp == null ? '<span class="cc-mut">—</span>' : fmt(disp)) + '</td>' +
+        '<td><span class="cc-st ' + (STATUS_CLS[st] || '') + '">' + esc(st || '—') + '</span></td>' +
+        '</tr>';
+    }).join('');
+
     return '<div class="cc-dash-h">' + esc(label) +
-        (nRec ? ' <span class="cc-mini">' + nRec + ' record' + (nRec === 1 ? '' : 's') + '</span>' : '') +
+        (list.length ? ' <span class="cc-mini">' + list.length + ' record' + (list.length === 1 ? '' : 's') + '</span>' : '') +
         (goto ? dashGotoBtn(goto) : '') + '</div>' +
-      '<div class="cc-kpis">' +
-        kpi('Submitted', f(sum(list, subK)), 'as claimed') +
-        kpi('Evaluated', f(sum(list, evK)), 'after review') +
-        kpi('Approved', f(sum(list, apK)), 'client approved', sum(list, apK) ? 'good' : '') +
-        kpi('Disapproved', f(sum(disapRows, subK)), 'rejected outright', disapRows.length ? 'bad' : '') +
-        kpi('Shortfall', f(short), decided.length ? 'claimed not certified' : 'nothing decided yet',
-            short ? 'warn' : '') +
-      '</div>';
+      '<table class="pd-table cc-dashtbl"><thead><tr>' +
+        '<th>Submission</th><th class="cc-r">Submitted</th><th class="cc-r">Evaluated</th>' +
+        '<th class="cc-r">Approved</th><th class="cc-r">Disputed</th><th>Status</th>' +
+      '</tr></thead><tbody>' +
+        '<tr class="pd-grp cc-dashgrp"' + (list.length ? ' data-grptoggle="' + gid + '"' : '') + '>' +
+          '<td>' + (list.length ? '<span class="cc-dashcaret">&#9656;</span> ' : '') + esc(label) + '</td>' +
+          '<td class="cc-r">' + f(sum(list, subK)) + '</td>' +
+          '<td class="cc-r">' + f(sum(list, evK)) + '</td>' +
+          '<td class="cc-r">' + f(sum(list, apK)) + '</td>' +
+          '<td class="cc-r">' + f(short) + '</td>' +
+          '<td class="cc-mini">' + esc(statusSummary) + '</td>' +
+        '</tr>' +
+        rowsHtml +
+      '</tbody></table>';
+  }
+  function wireDashGroups(host) {
+    host.querySelectorAll('[data-grptoggle]').forEach(function (tr) {
+      tr.onclick = function () {
+        var gid = tr.dataset.grptoggle, opening = tr.classList.toggle('open');
+        host.querySelectorAll('tr[data-grp="' + gid + '"]').forEach(function (row) {
+          row.classList.toggle('pd-collapsed', !opening);
+        });
+        var caret = tr.querySelector('.cc-dashcaret');
+        if (caret) caret.innerHTML = opening ? '&#9662;' : '&#9656;';
+      };
+    });
   }
   function ccDashHTML() {
     var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
@@ -528,17 +580,17 @@ window.ContractsClaims = (function () {
               'One of the two is wrong — the package amounts or the contract record.</p>' : '')
         : '<p class="cc-hint">No package breakdown yet. Packages are set up from the Contract tab, and every ' +
           'change order, claim and extension of time can then be raised against one.</p>') +
-      ccBlock('Change orders', of('Change Order').length, of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money,
+      ccTypeGroupHTML('Change orders', of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money,
         { tab: 'claims', type: 'Change Order', label: 'change orders' }) +
-      ccBlock('Cost claims', of('Claim').length, of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money,
+      ccTypeGroupHTML('Cost claims', of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money,
         { tab: 'claims', type: 'Claim', label: 'cost claims' }) +
-      ccBlock('Extension of time', of('EOT').length, of('EOT'), 'sub_days', 'eval_days', 'approved_days', days,
+      ccTypeGroupHTML('Extension of time', of('EOT'), 'sub_days', 'eval_days', 'approved_days', days,
         { tab: 'eot', label: 'extension of time' }) +
       ccTimeHTML() +
       '<p class="cc-hint">Submitted, evaluated and approved are the pipeline columns on each record. ' +
-        '<b>Disapproved</b> is what the client rejected outright; <b>shortfall</b> is submitted minus approved ' +
-        'across decided records — claimed, not certified. Records still pending a decision count in neither. ' +
-        'This summary covers the whole register and does not move with the filters.</p>' +
+        '<b>Disputed</b> is submitted minus approved on a decided record — claimed, not certified; a ' +
+        'record still Pending reads a dash rather than a claim nobody has ruled on yet. Click a type’s ' +
+        'row to expand its records. This summary covers the whole register and does not move with the filters.</p>' +
       '</div>';
   }
 
