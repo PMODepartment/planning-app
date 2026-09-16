@@ -103,6 +103,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (d7) — A write control stops being shown in a scope that cannot write
+
+Owner: *"some buttons in the toolbars are not working for portfolio view, probably since these
+buttons only work for project-level, which defeats the purpose of showing the buttons in the first
+place."*
+
+### ⚠️⚠️ THE WRITES WERE ALREADY REFUSED — THE UI JUST DID NOT AGREE
+
+`wrapWritesForPortfolio` (auth.js) has blocked every insert/update/upsert/delete at the Supabase
+chokepoint whenever the portfolio flag is set since that flag existed. So *+ Add stakeholder* in
+portfolio scope could only ever raise a toast explaining it would not work — and Stakeholder Map's
+`openForm()` literally did: *"Portfolio is read-only — switch to a project to add or edit."* A
+control whose entire behaviour is to say "not here" should not be there.
+
+### The mechanism: a class on `<html>`, not a sweep over the buttons
+
+`auth.js` puts **`pd-portfolio`** on the document at script load, and dashboard.css hides anything
+marked **`data-project-only`**.
+
+⚠️⚠️ **A ONE-SHOT `querySelectorAll` WOULD HAVE BEEN THE SAME BUG AS (u).** Module chrome is
+built at wildly different times — `UI.initModuleTopbar()` on DOMContentLoaded, module renderers on
+every repaint, `PortfolioDash.takeOver()` from an auth callback that races both. A sweep hides
+whatever exists at that instant and misses everything drawn afterwards; that exact race produced
+the duplicated title bar earlier today. A class on the document is already in force whenever a
+control is finally created — **verified with a button deliberately created after `auth.js` had
+run**, which is hidden on arrival.
+
+⚠️ `display:none !important`, never the `hidden` attribute — `[hidden]` is a UA rule and any
+author `display` beats it, which is how `.pd-modulebar { display:flex }` survived being hidden for
+weeks. Third place that trap is now written down.
+
+### What got marked, and what deliberately did not
+
+| module | marked | left alone |
+|---|---|---|
+| **Manpower Loading** | Add, Derive, Seed, Import | Export, Refresh — it HAS a portfolio view (its own Portfolio tab) and both mean something across it |
+| **Stakeholder Map** | Add | layout toggle, filter, Export — it READS across the portfolio |
+| **Pormac** | *nothing* | — |
+| `_template` | its Add | — |
+
+⚠️⚠️ **PORMAC NEEDED NO CHANGE, AND SAYING SO MATTERS.** It was on my own list of three
+suspects; reading it showed a module that already handles the scope properly — it is a Q&A screen
+where portfolio scope simply widens the answer's basis, it hides the project select itself, and both
+its controls (Clear, Send) are meaningful with no project selected. Changing it would have been work
+that looked like progress.
+
+⚠️ The template is marked because it is the skeleton module developers copy — and the checker is
+what noticed: it flagged `_template`'s `btn-add`, which is precisely where the convention needs to
+be taught.
+
+### Guarded, in three parts
+
+`tools/toolbar-order.js` now fails on a write-shaped control (`-add|-new|-import|-seed|-derive`)
+that is unmarked **in a module whose bar survives portfolio scope**, and on either half of the
+mechanism going missing. ⚠️ Modules that mount a portfolio dashboard are **exempt** —
+`takeOver` hides their whole cluster, so marking their buttons would be noise. ⚠️ Retired modules
+(`drawing-register`, `material-submittal`, `enabled: false`) are skipped: nothing can navigate to
+them, and marking unreachable code is churn.
+
+**Verified.** Measured in a real browser in both scopes: with `pd_portfolio` set, `<html>` carries
+the class and Add/Derive/Seed/Import are hidden **including the late-created one**, while
+Export/Refresh stay; without it, no class and all seven visible. All three halves of the guard
+negative-tested — unmarking Stakeholder Map's Add, removing the `classList.toggle` from auth.js,
+and deleting the CSS rule each fail by name.
+`wiring-check` 139/0; `test-portfolio-dash` 381/0; `portfolio-overview` 166/0; `toolbar-order` 15
+bars / 0 out of order / 0 private export controls / 0 unguarded write controls; `dark-remap` 0
+findings; three touched pages parse with 0 duplicate ids.
+`auth.js` → `20260916a`; `dashboard.css` → `20260916y`.
+⚠️ **Not verified signed in.**
+
 ### 2026-09-16 (c7) — One export control: the better of two implementations promoted, the bespoke one deleted
 
 Owner: *"I've noticed across multiple modules there are different UI's for export. Let's make this

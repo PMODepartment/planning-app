@@ -231,4 +231,53 @@ const uiSrc = fs.readFileSync(path.join(ROOT, 'assets', 'js', 'ui.js'), 'utf8');
   if (uiSrc.indexOf(fn + ': ' + fn) < 0) { exBad++; console.log('  BAD ui.js does not export ' + fn); }
 });
 console.log('export-ui:     ' + exBad + ' private export control(s)');
-if (bad || exBad) process.exit(1);
+
+/* ==== A WRITE CONTROL IN A SCOPE THAT CANNOT WRITE ===========================================
+   Owner 2026-09-16: *"some buttons in the toolbars are not working for portfolio view, probably
+   since these buttons only work for project-level, which defeats the purpose of showing the
+   buttons in the first place."*
+   Portfolio scope is READ-ONLY at the Supabase chokepoint (auth.js wraps `.from()`), so an Add /
+   Import / Seed / Derive shown there can only raise a toast saying it will not work.
+   ⚠️⚠️ ONLY THE MODULES WHOSE BAR SURVIVES ARE CHECKED. A module that mounts a portfolio dashboard
+   has its whole tool cluster hidden by `PortfolioDash.takeOver`, so marking its buttons would be
+   noise. The ones that matter are exactly those that stay on screen with no project selected.
+   ⚠️ And a RETIRED module is skipped: drawing-register and material-submittal moved to the
+   Engineering App and are `enabled: false`, so nothing can navigate to them. Marking their buttons
+   would be churn in code nobody can reach. */
+const WRITEY = /-(add|new|import|seed|derive)$/;
+const cfg = fs.readFileSync(path.join(ROOT, 'assets', 'js', 'config.js'), 'utf8');
+function enabled(dir) {
+  const m = new RegExp("key: '" + dir + "'[\\s\\S]{0,400}?enabled: (true|false)").exec(cfg);
+  return !m || m[1] === 'true';      // absent from the registry -> assume live and check it
+}
+let scopeBad = 0, scopeChecked = 0;
+for (const d of dirs) {
+  const fp = path.join(ROOT, 'modules', d, 'index.html');
+  const html = fs.readFileSync(fp, 'utf8');
+  if (/PortfolioDash\.takeOver/.test(html)) continue;   // its whole bar is hidden
+  if (!enabled(d)) continue;
+  const cluster = clusterOf(html);
+  if (cluster === null) continue;
+  scopeChecked++;
+  const re = /<button\b([^>]*)>/g;
+  let b;
+  while ((b = re.exec(cluster))) {
+    const id = /id="([^"]+)"/.exec(b[1]);
+    if (!id || !WRITEY.test(id[1])) continue;
+    if (/data-project-only/.test(b[1])) continue;
+    scopeBad++;
+    console.log('  BAD ' + d.padEnd(20) + id[1] + ' writes to one project but is shown in portfolio scope');
+  }
+}
+/* The mechanism itself must still be there, or every marking above is inert. */
+const authSrc = fs.readFileSync(path.join(ROOT, 'assets', 'js', 'auth.js'), 'utf8');
+const dashCss = fs.readFileSync(path.join(ROOT, 'assets', 'css', 'dashboard.css'), 'utf8');
+if (!/classList\.toggle\('pd-portfolio'/.test(authSrc)) {
+  scopeBad++; console.log('  BAD auth.js no longer marks <html> with pd-portfolio');
+}
+if (!/html\.pd-portfolio \[data-project-only\][^}]*display:\s*none\s*!important/.test(dashCss)) {
+  scopeBad++; console.log('  BAD dashboard.css no longer hides [data-project-only] in portfolio scope');
+}
+console.log('project-only:  ' + scopeChecked + ' module bar(s) live in portfolio scope, ' +
+            scopeBad + ' unguarded write control(s)');
+if (bad || exBad || scopeBad) process.exit(1);

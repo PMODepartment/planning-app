@@ -2193,6 +2193,19 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 /* The trigger reads as pressed while its menu is open, like every other toggle in the bar. */
 .pd-modulebar .pd-iconmenu-btn.is-active { background: var(--pd-bg); border-color: var(--pd-line); }
 
+/* ==== A CONTROL THAT NEEDS ONE PROJECT, IN A SCOPE THAT HAS NONE ============================
+   `auth.js` puts `pd-portfolio` on <html> whenever the planner is in portfolio scope. Anything
+   marked `data-project-only` is a control that can act on exactly one project — add, edit, import,
+   seed, derive — and portfolio scope is READ-ONLY at the Supabase chokepoint, so those controls
+   could only ever raise a toast saying so. Owner: *"this defeats the purpose of showing the
+   buttons in the first place."*
+   ⚠️ `display:none !important`, never the `hidden` attribute: `[hidden]` is a UA rule and any
+   author `display` beats it, which is how `.pd-modulebar { display:flex }` survived being hidden
+   for weeks. Same trap, written down in three places now.
+   ⚠️ The attribute goes on the OUTERMOST element of the control — a wrapper if it has one —
+   so a menu's trigger and its panel disappear together. */
+html.pd-portfolio [data-project-only] { display: none !important; }
+
 .pd-filttoggle {
   position: relative; height: 34px; width: 34px; padding: 0; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
