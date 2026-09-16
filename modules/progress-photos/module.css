@@ -690,6 +690,57 @@
 }
 .pp-syncbtn:hover { background: var(--pd-red); color: #fff; }
 
+/* ---- Pending uploads panel --------------------------------------------- */
+/* Opened from the #pp-sync topbar pill above, which used to call flushQueue()
+   directly with no visible result at all. Every colour here is a shared
+   --pd-* token, so dark mode is free — none of these are a new light surface
+   needing its own dark-mode override. */
+.pp-pending { min-width: 0; }
+.pp-pending-summary { margin-bottom: 10px; }
+.pp-pending-summarytext { font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 600; }
+.pp-pending-empty {
+  display: flex; align-items: center; gap: 8px; color: var(--pd-ok);
+  font-size: var(--pd-fs-base); padding: 6px 0;
+}
+.pp-pending-overallbar, .pp-pending-bar {
+  height: 6px; border-radius: 4px; background: var(--pd-line); overflow: hidden; margin-top: 6px;
+}
+.pp-pending-overallbar-fill, .pp-pending-bar-fill {
+  height: 100%; background: var(--pd-red); border-radius: 4px; transition: width .18s ease;
+}
+.pp-pending-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.pp-pending-syncstate { display: flex; align-items: center; gap: 5px; font-size: var(--pd-fs-sm); color: var(--pd-muted); }
+.pp-pending-syncstate svg { animation: pp-pending-spin 1s linear infinite; }
+@keyframes pp-pending-spin { to { transform: rotate(360deg); } }
+.pp-pending-list { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
+.pp-pending-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  background: var(--pd-card); padding: 10px;
+}
+.pp-pending-icon {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: var(--pd-radius);
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--pd-red) 10%, var(--pd-card)); color: var(--pd-red);
+}
+.pp-pending-info { flex: 1 1 auto; min-width: 0; }
+.pp-pending-name { font-weight: 600; font-size: var(--pd-fs-base); color: var(--pd-ink); overflow-wrap: anywhere; }
+.pp-pending-meta { font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 2px; }
+.pp-pending-status { font-size: var(--pd-fs-sm); color: var(--pd-ink); margin-top: 4px; }
+.pp-pending-error {
+  font-size: var(--pd-fs-xs); color: var(--pd-bad-text); margin-top: 4px;
+  background: color-mix(in srgb, var(--pd-bad) 12%, var(--pd-card)); padding: 4px 6px; border-radius: 4px;
+}
+.pp-pending-rowactions { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
+.pp-pending-item.pp-pending-completed { opacity: .6; }
+.pp-pending-item.pp-pending-failed { border-color: var(--pd-bad); }
+.pp-pending-item.pp-pending-cancelled { border-color: var(--pd-warn); }
+@media (max-width: 700px) {
+  .pp-pending-item { flex-wrap: wrap; }
+  .pp-pending-rowactions { flex-direction: row; flex: 1 1 100%; }
+  .pp-pending-rowactions .pd-btn { min-height: 44px; flex: 1 1 auto; }
+}
+
 /* ---- Photos-page Location Breakdown filter (one select per level) -------- */
 /* display:contents so the injected <select>s flow as if they were direct
    children of .pp-filters (already flex-wrap), picking up its .pd-select
