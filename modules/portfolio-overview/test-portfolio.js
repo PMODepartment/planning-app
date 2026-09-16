@@ -98,9 +98,8 @@ function dispatchSandbox(viewName) {
 
 const VIEW_LOADER = {
   scurve: 'loadScurve', cashflow: 'loadCashflow', resources: 'loadResources',
-  equipment: 'loadEquipment', milestones: 'loadMilestones', risk: 'loadRisks',
-  stakeholders: 'loadStakeholders', issues: 'loadIssues', meetings: 'loadMeetings',
-  contracts: 'loadContracts', photos: 'loadPhotos', productivity: 'loadProductivity'
+  equipment: 'loadEquipment', milestones: 'loadMilestones',
+  stakeholders: 'loadStakeholders'
 };
 
 Object.keys(VIEW_LOADER).forEach(function (v) {
@@ -142,7 +141,19 @@ Object.keys(VIEW_LOADER).forEach(function (v) {
   const keys = Object.keys(new Function(sliceFn(JS, 'viewLoaders') +
     '\nreturn viewLoaders.toString();')().match(/\{[\s\S]*\}/)[0]
     .split('\n').join(' ').match(/(\w+):/g).reduce(function (a, k) { a[k.slice(0, -1)] = 1; return a; }, {}));
-  eq(keys.length, 12, 'viewLoaders names all twelve lazy views');
+  eq(keys.length, 6, 'viewLoaders names the six lazy views this page still hosts');
+  /* ⚠️⚠️ AND NOT THE SIX THAT MOVED. Owner 2026-09-15: the dropdown was a second home for six
+     modules, and their dashboards now live in the modules themselves
+     (assets/js/portfolio-dash.js). A loader left behind here would be a second copy of a
+     renderer that is no longer on this page — the drift the move exists to end. */
+  ['risk', 'issues', 'meetings', 'contracts', 'photos', 'productivity'].forEach(function (k) {
+    ok(keys.indexOf(k) < 0, 'viewLoaders no longer names "' + k + '" — it moved to its module');
+  });
+  /* ⚠️ A deep link to one of them must still resolve, to the module that owns it now. */
+  const MOVED = new Function('return ' + /var PO_MOVED_VIEWS = (\{[\s\S]*?\});/.exec(JS)[1])();
+  eq(Object.keys(MOVED).length, 6, 'all six moved views still resolve from an old #po_view= link');
+  eq(MOVED.risk, 'risk-register', 'and they name the module that hosts them');
+  ok(/location\.replace\(/.test(sw), 'switchView redirects rather than pushing a dead tab onto Back');
 }
 
 /* -- the contrast: on the pinned base the same gesture reaches NO loader ---- */
@@ -403,12 +414,18 @@ function report() {
   /* B6: one funnel for thirteen views, and every panel it names must exist. */
   const FP = JSON.parse(JSON.stringify(
     new Function('return ' + /var FILTER_PANEL = (\{[\s\S]*?\});/.exec(CODE)[1])()));
-  eq(Object.keys(FP).length, 5, 'filter: five views declare a panel');
+  eq(Object.keys(FP).length, 3, 'filter: three views declare a panel — risk and issues took theirs with them');
   Object.keys(FP).forEach(k =>
     ok(new RegExp('id="' + FP[k] + '"').test(html), 'filter: panel ' + FP[k] + ' exists in the markup'));
   eq((html.match(/class="pd-filttoggle"/g) || []).length, 1, 'filter: exactly ONE funnel in the markup');
-  ok(/\.po-topbar-tools \.pd-filttoggle\[hidden\]/.test(html),
+  /* ⚠️⚠️ READ FROM THE STYLESHEET, NOT THE PAGE. The whole <style> block moved to
+     assets/css/portfolio-dash.css on 2026-09-15, because the six dashboards that now live in their
+     own modules are drawn with these classes and a module cannot reach a <style> block inside
+     another page. Asserting against the HTML here would have passed only until somebody looked. */
+  const PODCSS = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'css', 'portfolio-dash.css'), 'utf8');
+  ok(/\.po-topbar-tools \.pd-filttoggle\[hidden\]/.test(PODCSS),
      'filter: the [hidden] specificity tie is handled (inline-flex ties the UA rule)');
+  ok(/portfolio-dash\.css/.test(html), 'and the page links the stylesheet those rules moved into');
 
   /* B9: the series switch is the app's own multi-select segment, not loose checkboxes. */
   const chart = sliceFn(JS, 'scRenderChart');

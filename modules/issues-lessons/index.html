@@ -9,6 +9,7 @@
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915f" />
   <link rel="stylesheet" href="module.css?v=20260911d" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260915x" />
 </head>
 <body>
   <div class="pd-app">
@@ -201,6 +202,7 @@
        failed to load rather than throwing. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260915x"></script>
   <script src="module.js?v=20260914u"></script>
   <script>
     // Issues & Concerns / Lessons Learned / Dashboard as a Project-Schedule-style
@@ -238,6 +240,25 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'issues-lessons', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
+
+      /* ==== PORTFOLIO SCOPE IS THIS MODULE’S DASHBOARD =======================================
+         Owner 2026-09-15, looking at the Portfolio Dashboard’s view dropdown: *"there is a
+         dropdown that links to each module. that is wrong … the design of those dashboards must
+         be pushed to each module established on the left."* It was a second home for this module:
+         the sidebar already opens this page portfolio-wide, and the same rows were also a view of
+         a page called Portfolio Dashboard. That view now lives here — see portfolio-dash.js.
+         ⚠️ THE MODULE’S OWN init() IS SKIPPED, deliberately. It would read this register a second
+         time, into a UI that is hidden underneath the dashboard — a duplicate cross-project fetch
+         on every project the planner can see, for nothing anybody can look at.
+         ⚠️ The project selector is wired by takeOver() for exactly that reason: skipping init()
+         skips the code that fills it, and without it there is no way to leave portfolio scope from
+         the page you are standing on. */
+      if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('issues')) {
+        PortfolioDash.takeOver('issues', { select: '#il-project' }).catch(function (e) {
+          if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+        });
+        return;
+      }
       IssuesLessons.init(user, profile);
     });
   </script>

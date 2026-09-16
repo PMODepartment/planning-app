@@ -102,6 +102,143 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-15 (za) — Admin: what a role's project list actually means, and Group Heads move onto this page
+
+Owner: *"in Users, provide information about difference in user assignments. provide also super admin
+with access to all modules. in projects, please add also way to add and assign group heads."*
+
+### ⚠️⚠️ THE PROJECTS COLUMN WAS BACKWARDS FOR ADMIN AND SUPER_ADMIN
+
+`can_access_project()` (SQL) and its client mirror `AppAuth.canAccessProject()` both grant `admin` and
+`super_admin` **every** project regardless of what sits in `users.projects` — checked against both
+definitions, not assumed. So an admin whose array happened to be empty showed **"—"** in the Projects
+column, which reads as *no access*, when the truth was the opposite. The column (renamed **Access**)
+now states what the role actually grants: `admin`/`super_admin` read **"All projects"**; planner/user/
+viewer keep the literal chip list, because that array is the real boundary for them. The **Projects**
+button — which only ever writes that same inert array — is hidden for the two full-access roles rather
+than left on screen doing nothing; it reappears the moment a role drops to planner/user/viewer.
+
+### The super_admin-only module set, made visible instead of left implicit
+
+`config.js`'s `superAdminOnly` flag already hides a module from everyone but `super_admin` — verified
+across all three places that gate it (`ui.js` `renderNav`, `modules-grid.js`, `dashboard.html`'s tile
+grid) plus `portfolio-overview`'s own five-tab list, all consistent. So super_admin already had access
+to every module; nothing there needed changing. What was missing was saying so: the Access column now
+reads off `APP_CONFIG.MODULES.filter(m => m.superAdminOnly)` — never a hardcoded list, so it cannot
+drift from what actually gates — and shows super_admin **"+ all modules"**, while every other role gets
+**"N modules hidden"** naming which ones in the tooltip.
+
+### Group Heads get a second entry point, not a second implementation
+
+Group Heads (`group_heads` / `projects.group_head_id` — the flat tag that replaced the old workspace
+tree, see `assets/js/db.js`) had exactly one screen, `projects.html`'s own **Manage Group Heads**
+modal. Admin's Projects tab now carries the same actions — reorder, edit, retire, delete, and a
+**Group Head** select right in **Edit project** — built against the identical `PDb.getGroupHeads` /
+`createGroupHead` / `updateGroupHead` / `deleteGroupHead` calls `projects.html` already uses, so there
+is one table being managed from two screens rather than two notions of what a group head is.
+⚠️ An inactive group head still lists when it is a project's *current* value, or the select would
+silently reassign the project the moment it is opened. ⚠️ The list inside **Manage Group Heads**
+redraws itself after any of its own nested Edit/Delete/reorder actions — those only know to call the
+page's `loadProjects()`, so the open list is tracked (`ghmOpen`) and repainted from there rather than
+needing every nested action to know about it directly.
+
+No migration — `group_heads` and `projects.group_head_id` already exist and are already read/written
+by `projects.html` in production; this is UI only, reusing what is already deployed.
+
+Verified: the inline script parses (`new Function`); no new/changed element id collides with an
+existing one; `RESTRICTED_MODULES`, `ghOptions`, `ghNameOf`, `countForGh` checked by hand against the
+shipped `PDb`/`AppAuth`/`config.js` shapes rather than guessed.
+⚠️ **Not verified signed in** — no live login is possible in this environment.
+
+No shared asset changed, so no `?v=` bump and no `MODULE_V` bump — `admin.html` is fetched at its own
+URL and is not a module page.
+
+⚠️ **Re-lettered `(z)` → `(za)` when this branch merged.** A concurrent session had already taken
+`2026-09-15 (z)` on `main` for the Portfolio Dashboard's Phase B entry, so both sides prepended a
+different entry under one letter. Every letter `a`–`z` is spent for this date; `za` is the next,
+matching how 2026-09-07 and 2026-09-10 continued past `z`. The collision changes nothing about the
+work — it is a changelog label, and no `?v=` or `MODULE_V` token was involved, which is why it
+conflicted quietly rather than failing anything.
+### 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
+
+Owner, with the Portfolio Dashboard's view dropdown open: *"there is a dashboard module, and there is
+a dropdown that links to each module. that is wrong. The idea of each dashboard (e.g. s-curve, risk
+register etc.), the design of those dashboards must be pushed to each module established on the
+left."* Module detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+### ⚠️⚠️ THE DROPDOWN WAS A SECOND SIDEBAR
+
+Since 2026-09-14 the sidebar already opens every module's **own page** in portfolio scope
+(`#pd_scope=portfolio`, read once by `AppAuth` into a per-tab flag). So "Risk Register" existed
+twice: once as the module, and once as a view of a page called Portfolio Dashboard. Two screens over
+the same rows, two renderers to keep in step — the duplication this repo has paid for with the
+S-curve maths, the location normaliser and the change-order insert.
+
+**New `assets/js/portfolio-dash.js`** holds the six moved dashboards — Risk Register, Issues &
+Concerns, Meetings, Contracts & Claims, Progress Photos, Productivity Rates — and each module mounts
+its own when it is opened portfolio-wide. **New `assets/css/portfolio-dash.css`** is the Portfolio
+Dashboard's `<style>` block, moved out whole: a module cannot reach a `<style>` inside another page,
+and splitting out "just the classes the six need" has to be re-judged every time a renderer gains a
+class.
+
+⚠️ **MOVED, NOT COPIED.** `portfolio-overview` no longer carries those six panes, loaders, tab
+buttons or filter panels, and the test asserts each `load*` is gone. A second copy is how the two
+screens drift apart again, which is the fault this change exists to end.
+
+### ⚠️ Three decisions that shaped it
+
+- **The module's own `init()` is SKIPPED in portfolio scope.** It would read the same register a
+  second time — a cross-project fetch over every project the planner can see — into a UI hidden
+  underneath the dashboard. ⚠️ So `takeOver()` wires the topbar project selector itself: skipping
+  `init()` skips the code that fills it, and without it there is no way to leave portfolio scope from
+  the page you are standing on.
+- **The module's own UI is HIDDEN, not removed.** Its script has already bound handlers to those
+  nodes; tearing them out would turn every one into a null dereference.
+- ⚠️⚠️ **The Stakeholder Map did NOT move.** Its portfolio view carries an authoring directory (+ Add
+  person, assign, merge) and **writes are refused at the shared Supabase chokepoint while the
+  portfolio flag is set**. Moving it would have silently broken the one thing it does. It stays on
+  the Dashboard with the Overview, Milestones (no module at all), S-Curve, Cash Flow, Resources and
+  Equipment.
+
+⚠️ **A deep link must not die with the tab.** `#po_view=risk` and its five siblings still resolve —
+`switchView` redirects to the module that owns the view now, **after** the super-admin gate, with
+`location.replace` so a tab that no longer exists does not sit in the Back history.
+
+### ⚠️⚠️ TWO REAL FAULTS, BOTH FOUND BY RUNNING THE CODE RATHER THAN READING IT
+
+1. **The Meetings dashboard's date helpers were left behind.** It asks `pd(due) < today()` to decide
+   what is overdue, and both lived in the Portfolio Dashboard's closure three thousand lines from the
+   renderer they drive. The harness threw `pd is not defined`; a lint would have seen nothing.
+2. **`Icons.paint` does not exist** — the API is `Icons.hydrate`. My own scaffolding, in four places,
+   caught by `tools/wiring-check.js`, which exists for exactly this and was worth its own commit.
+
+### Verified
+
+- **89 assertions** executing the shared layer against a narrow fake DOM, with the **real
+  `claims.js` and `mcc-rcm.js`** loaded rather than stubbed — two of these dashboards derive their
+  numbers through those helpers, and a stub of a rule is a second copy of that rule. Every view
+  renders from fixtures: the risk KPIs count two risks and rank 1st Priority first through the real
+  5×5 lookup; the meetings worklist lists the open action item and **leaves the closed one out**;
+  `takeOver` hides the module's own UI and the module bar and mounts the dashboard in `.pd-main`.
+- ⚠️ **GATE:** the same harness reads `origin/main`'s own copies and asserts the opposite — the six
+  *were* panes of the Portfolio Dashboard, their loaders ran there, the dropdown carried all six, and
+  **no module mounted a dashboard of its own**.
+- Every module page asserted to load the layer, load the styles, mount its own key and gate on
+  portfolio scope.
+- `test-portfolio.js` **86/86** (updated to the new contract), `wiring-check` **139/139**,
+  `test-lsm` **702/702**, every touched page's inline script parses.
+
+⚠️ **Not verified signed in** — no dashboard has been mounted against a live project, and the
+selector's escape route has never been clicked. That is the first thing to try: open Risk Register
+from the Portfolio sidebar.
+⚠️ **Still to come:** S-Curve, Cash Flow, Resources and Equipment — the four heaviest renderers, each
+with its own chart or server-side aggregate. They move on their own.
+
+New `assets/js/portfolio-dash.js` + `assets/css/portfolio-dash.css` at `?v=20260915x`;
+`MODULE_V` → `20260915x`.
+
+
 ### 2026-09-15 (w) — A 3D card framed for a shape its canvas no longer had
 
 Owner: *"The presets view also do not view properly and I cannot see the ground"*, with the
@@ -217,60 +354,6 @@ markup and CSS that live in the HTML outside it.
 
 `wiring-check` 136/136, `dead-hooks` 0 findings in this module. Harness deleted before committing.
 ⚠️ **Not verified signed in.** `MODULE_V` → `20260915v`, sort-checked.
-
-### 2026-09-15 (z2) — Admin: what a role's project list actually means, and Group Heads move onto this page
-
-⚠️ Re-lettered from `(z)` on merge — `(z)` collided with a concurrent session's own entry above
-(*"Phase B finished"*), the same reused-letter shape this file records repeatedly. Content unchanged.
-
-Owner: *"in Users, provide information about difference in user assignments. provide also super admin
-with access to all modules. in projects, please add also way to add and assign group heads."*
-
-### ⚠️⚠️ THE PROJECTS COLUMN WAS BACKWARDS FOR ADMIN AND SUPER_ADMIN
-
-`can_access_project()` (SQL) and its client mirror `AppAuth.canAccessProject()` both grant `admin` and
-`super_admin` **every** project regardless of what sits in `users.projects` — checked against both
-definitions, not assumed. So an admin whose array happened to be empty showed **"—"** in the Projects
-column, which reads as *no access*, when the truth was the opposite. The column (renamed **Access**)
-now states what the role actually grants: `admin`/`super_admin` read **"All projects"**; planner/user/
-viewer keep the literal chip list, because that array is the real boundary for them. The **Projects**
-button — which only ever writes that same inert array — is hidden for the two full-access roles rather
-than left on screen doing nothing; it reappears the moment a role drops to planner/user/viewer.
-
-### The super_admin-only module set, made visible instead of left implicit
-
-`config.js`'s `superAdminOnly` flag already hides a module from everyone but `super_admin` — verified
-across all three places that gate it (`ui.js` `renderNav`, `modules-grid.js`, `dashboard.html`'s tile
-grid) plus `portfolio-overview`'s own five-tab list, all consistent. So super_admin already had access
-to every module; nothing there needed changing. What was missing was saying so: the Access column now
-reads off `APP_CONFIG.MODULES.filter(m => m.superAdminOnly)` — never a hardcoded list, so it cannot
-drift from what actually gates — and shows super_admin **"+ all modules"**, while every other role gets
-**"N modules hidden"** naming which ones in the tooltip.
-
-### Group Heads get a second entry point, not a second implementation
-
-Group Heads (`group_heads` / `projects.group_head_id` — the flat tag that replaced the old workspace
-tree, see `assets/js/db.js`) had exactly one screen, `projects.html`'s own **Manage Group Heads**
-modal. Admin's Projects tab now carries the same actions — reorder, edit, retire, delete, and a
-**Group Head** select right in **Edit project** — built against the identical `PDb.getGroupHeads` /
-`createGroupHead` / `updateGroupHead` / `deleteGroupHead` calls `projects.html` already uses, so there
-is one table being managed from two screens rather than two notions of what a group head is.
-⚠️ An inactive group head still lists when it is a project's *current* value, or the select would
-silently reassign the project the moment it is opened. ⚠️ The list inside **Manage Group Heads**
-redraws itself after any of its own nested Edit/Delete/reorder actions — those only know to call the
-page's `loadProjects()`, so the open list is tracked (`ghmOpen`) and repainted from there rather than
-needing every nested action to know about it directly.
-
-No migration — `group_heads` and `projects.group_head_id` already exist and are already read/written
-by `projects.html` in production; this is UI only, reusing what is already deployed.
-
-Verified: the inline script parses (`new Function`); no new/changed element id collides with an
-existing one; `RESTRICTED_MODULES`, `ghOptions`, `ghNameOf`, `countForGh` checked by hand against the
-shipped `PDb`/`AppAuth`/`config.js` shapes rather than guessed.
-⚠️ **Not verified signed in** — no live login is possible in this environment.
-
-No shared asset changed, so no `?v=` bump and no `MODULE_V` bump — `admin.html` is fetched at its own
-URL and is not a module page.
 
 ### 2026-09-15 (y) — The measurement query returned section 5 and nothing else, seven times over
 

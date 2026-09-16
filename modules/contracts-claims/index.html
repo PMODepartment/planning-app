@@ -9,6 +9,7 @@
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260915f" />
   <link rel="stylesheet" href="module.css?v=20260915g" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260915x" />
 </head>
 <body>
   <div class="pd-app">
@@ -115,6 +116,7 @@
   <script src="../../assets/js/attach.js?v=20260915b"></script>
   <script src="../../assets/js/co-insert.js?v=20260909r"></script>
   <script src="../../assets/js/xlgrid.js?v=20260907e"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260915x"></script>
   <script src="boq.js?v=20260914s"></script>
   <script src="pmi.js?v=20260911uc"></script>
   <script src="packages.js?v=20260911uc"></script>
@@ -146,6 +148,25 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'contracts-claims', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
+
+      /* ==== PORTFOLIO SCOPE IS THIS MODULE’S DASHBOARD =======================================
+         Owner 2026-09-15, looking at the Portfolio Dashboard’s view dropdown: *"there is a
+         dropdown that links to each module. that is wrong … the design of those dashboards must
+         be pushed to each module established on the left."* It was a second home for this module:
+         the sidebar already opens this page portfolio-wide, and the same rows were also a view of
+         a page called Portfolio Dashboard. That view now lives here — see portfolio-dash.js.
+         ⚠️ THE MODULE’S OWN init() IS SKIPPED, deliberately. It would read this register a second
+         time, into a UI that is hidden underneath the dashboard — a duplicate cross-project fetch
+         on every project the planner can see, for nothing anybody can look at.
+         ⚠️ The project selector is wired by takeOver() for exactly that reason: skipping init()
+         skips the code that fills it, and without it there is no way to leave portfolio scope from
+         the page you are standing on. */
+      if (window.AppAuth && AppAuth.isPortfolioScope() && window.PortfolioDash && PortfolioDash.has('contracts')) {
+        PortfolioDash.takeOver('contracts', { select: '#cc-project' }).catch(function (e) {
+          if (window.UI && UI.toast) UI.toast('Could not draw the portfolio view: ' + (e.message || e), 'error');
+        });
+        return;
+      }
       ContractsClaims.init(user, profile);
     });
   </script>
