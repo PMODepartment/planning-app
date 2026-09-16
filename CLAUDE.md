@@ -103,6 +103,59 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (z3) — The Portfolio Dashboard's failing reads: one phantom column and two statements the database cancelled
+
+Owner, off the live page: the Open Issues column was a row of **`?`**, Behind plan read
+*"unavailable — the database cancelled the read on a timeout (57014)"*, and both milestone blocks
+were blank. Three reads, and ⚠️ **two different causes — which is why guessing "it is the timeout"
+would have fixed one and left the other.**
+
+### ⚠️⚠️ THE `?` WAS NOT A TIMEOUT. `issues_lessons` HAS NO `priority` COLUMN
+
+`issCell()` renders a **failed** read as `?`, a loading one as `…` and a real zero as `—`. The read
+asked for `'id,project_id,status,priority'` — and there is no `priority` on that table. Not in
+`supabase-schema.sql`, not in any migration, and nothing else in the app reads such a field (the
+column is `severity`). PostgREST answers an unknown column with **42703**, so this read threw
+**every time, on every project count, from the day it was written**. The projection is now exactly
+what `openIssues()` consumes: `project_id` to group by, `status` to test, `id` for the paging cursor.
+
+### ⚠️⚠️ AND THE OTHER TWO WERE THE SHAPE THIS REPO HAS ALREADY FIXED ONCE
+
+`project_schedule` is the biggest table in the app, and the milestone read asked for **eighteen
+projects at once** while filtering `activity_type.ilike.%milestone%`. A leading-wildcard ILIKE
+cannot use an index, so the only way to answer was a sequential scan over every activity of every
+project in scope. The behind-plan RPC had the same shape — `p_ids: ids` walks all eighteen in one
+statement. Both were cancelled at the ~8s `statement_timeout`.
+
+⚠️ The fix is not new: the portfolio S-Curve hit exactly this, on the same table, on the same day,
+and was rewritten to call its aggregate **once per project** because
+`project_schedule_proj_id_idx (project_id, id)` is an indexed range scan **for one project**. That
+loop existed only inside `PDScurve`, specialised to the agg payload. It is **`PDb.fanOut`** now —
+the same loop with nothing assumed about the answer, so a table read and an RPC can both use it,
+with bounded concurrency (eighteen simultaneous statements is how one slow read becomes eighteen).
+
+⚠️ **A project that fails no longer blanks the page.** Every failure is collected and named, the
+rest still draw, and only a TOTAL failure throws — which is what still surfaces a genuinely absent
+RPC by name rather than as a silent empty state. Telling a planner to *"narrow the project filter
+and try again"*, as the old error did, was asking them to work around the bug.
+
+⚠️ **Nothing else in the app has either shape** — checked: no other `project_schedule` read spans
+ids (`boq.js` already uses `.eq`), and no other projection names `priority`.
+
+**Verified.** `portfolio-overview` **147 passed, 0 failed** (was 128), and the new assertions were
+**negative-tested rather than trusted**: putting `priority` back fails with
+*"the issues read asks only for columns issues_lessons really has — priority"*, putting `p_ids: ids`
+back fails two status assertions, and restoring goes green. ⚠️ The column check reads the columns out
+of `supabase-schema.sql` rather than a list retyped in the test — a test carrying its own idea of
+the schema agrees with itself while the app disagrees with Postgres.
+⚠️⚠️ One new assertion was **caught being wrong and fixed**: it looked ±400 characters either side of
+every mention of `project_schedule`, which swept in the comments explaining the fix and the
+legitimate `issues_lessons` read below them, failing a correct file. It reads the call sites now.
+`wiring-check` 139/0; `test-portfolio-dash` 351/0; `toolbar-order` 15/0; `selectall-key` 99 safe /
+0 broken. `db.js` → `20260916d`.
+⚠️ **Not verified signed in** — the owner has run both outstanding migrations, so this is the pass
+worth re-opening the live page for.
+
 ### 2026-09-16 (z2) — The 360° viewer was never loading: Pannellum 2.5.6 is a 404 on cdnjs
 
 Owner: *"check if the fix works on the deployed site"* → *"yes, bump pannellum to 2.5.7"*.
@@ -142,6 +195,7 @@ Fixing the crash is what made the older fault audible.
 Both tags moved to 2.5.7, verified 200 for JS and CSS before editing. Neither carries an SRI
 `integrity` attribute, so the version swap needed no hash update, and no `?v=` bump applies — the CDN
 URL is its own cache key.
+
 
 ### 2026-09-16 (z1) — The Progress Photos hotfix is merged, and the cache-bust token that would have hidden it
 

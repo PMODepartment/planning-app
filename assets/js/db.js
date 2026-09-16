@@ -73,6 +73,52 @@
       }
     },
 
+    /* ==== A CROSS-PROJECT READ, SPLIT ONE PROJECT AT A TIME ==================================
+       ⚠️⚠️ NEVER `.in('project_id', ids)` ON A BIG TABLE. The index those reads live or die
+       by is `project_schedule_proj_id_idx (project_id, id)`, and its own migration says what it is
+       for in as many words: *"(where project_id = ? and id > ? order by id) — an indexed range scan
+       per page."* ONE project. Across eighteen ids there is no single range to scan, the plan
+       degenerates to a sequential scan, and the statement runs past the ~8s `statement_timeout` —
+       PostgREST answers `57014`, and the page shows "unavailable" or a row of `?`.
+       ⚠️ THIS IS NOT A NEW IDEA HERE. The portfolio S-Curve hit exactly this on 2026-09-16 and
+       was rewritten to call its aggregate once per project; `PDScurve.fanOutAgg` is that loop,
+       specialised to the agg payload. This is the same loop with nothing assumed about the answer,
+       so a table read and an RPC can both use it.
+       ⚠️ PARTIAL RESULTS ARE THE POINT. One project failing must not fail the page: every
+       failure is collected and NAMED, and the caller decides — the convention across this app is to
+       draw what came back and say how many did not, and to throw only when NOTHING did.
+       ⚠️ Bounded concurrency, not `Promise.all`. Eighteen simultaneous statements is how you
+       turn one slow read into eighteen, and Supabase pools connections. */
+    async fanOut(ids, callOne, opts) {
+      opts = opts || {};
+      var list = (ids || []).slice();
+      var conc = Math.min(opts.concurrency || 4, list.length);
+      var results = [], failed = [], done = 0, queue = list.slice();
+      async function worker() {
+        while (queue.length) {
+          var id = queue.shift();
+          try { results.push({ id: id, value: await callOne(id) }); }
+          catch (e) { failed.push({ id: id, err: e }); }
+          done++;
+          if (opts.onProgress) opts.onProgress(done, list.length);
+        }
+      }
+      var ws = [];
+      for (var i = 0; i < conc; i++) ws.push(worker());
+      await Promise.all(ws);
+      return { results: results, failed: failed };
+    },
+    /* Flatten a fanOut of ROW ARRAYS into one array, carrying how many projects could not be read.
+       ⚠️ `_failed` is a non-enumerable-ish tag on the array rather than a wrapper object, so
+       every existing consumer that treats this as a plain list keeps working unchanged. */
+    fanOutRows(r) {
+      var rows = [];
+      r.results.forEach(function (x) { rows = rows.concat(x.value || []); });
+      rows._failed = r.failed.length;
+      rows._failedIds = r.failed.map(function (f) { return f.id; });
+      return rows;
+    },
+
     // ---- Projects (shared across all modules) ----
     async getProjects() {
       var { data, error } = await sb()

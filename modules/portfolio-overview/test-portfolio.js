@@ -67,6 +67,70 @@ try {
   console.log('NOTE: contrast base ' + BASE_SHA + ' unavailable (' + e.message.split('\n')[0] + ')');
 }
 
+/* ============================== 0 · THE READS THAT WERE FAILING (2026-09-16) ==================
+   Owner, off the live page: the Open Issues column was a row of `?`, Behind plan said
+   *"unavailable — the database cancelled the read on a timeout (57014)"*, and both milestone
+   blocks were blank. Three separate reads, two separate causes. */
+{
+  /* --- a. the phantom column ------------------------------------------------------------
+     `issues_lessons` has no `priority`. PostgREST answers an unknown column with 42703, so that
+     read threw EVERY time — and issCell() renders a failed read as `?`. A typo, not a timeout.
+     ⚠️ Asserted against the REPO SQL, not against a list retyped here: a test that carries its
+     own idea of the schema agrees with itself while the app disagrees with Postgres. */
+  const SQL = fs.readFileSync(path.join(__dirname, '..', '..', 'supabase-schema.sql'), 'utf8');
+  const ddl = /create table if not exists issues_lessons\s*\(([\s\S]*?)\n\);/.exec(SQL);
+  ok(!!ddl, 'issues_lessons DDL found in supabase-schema.sql');
+  const cols = new Set((ddl ? ddl[1] : '').split('\n')
+    .map(l => (/^\s{2,}([a-z_]+)\s/.exec(l) || [])[1]).filter(Boolean));
+  ok(cols.has('status') && cols.has('project_id'), 'and it names the columns the Overview reads');
+  ok(!cols.has('priority'), 'issues_lessons has NO `priority` column — the bug this pins');
+
+  const iss = /settle\('iss',[\s\S]*?\)\);/.exec(JS);
+  ok(!!iss, 'the issues read is still there');
+  const proj = /'([a-z_,]+)'\s*\)\);/.exec(iss ? iss[0] : '');
+  const asked = proj ? proj[1].split(',') : [];
+  ok(asked.length > 0, 'and it names an explicit projection');
+  asked.forEach(c => ok(cols.has(c),
+    'the issues read asks only for columns issues_lessons really has — "' + c + '"'));
+}
+{
+  /* --- b. the two reads that were cancelled at the 8s statement_timeout -------------------
+     `project_schedule` is the biggest table in the app, and a leading-wildcard ILIKE over
+     eighteen projects at once cannot use an index. Both now go one project at a time through
+     `PDb.fanOut`, the same shape `project_schedule_proj_id_idx (project_id, id)` exists for. */
+  const ms = /settle\('ms',[\s\S]*?\n    \}\)\(\)\);/.exec(JS);
+  ok(!!ms, 'the milestone read is still there');
+  if (ms) {
+    ok(/PDb\.fanOut\(ids,/.test(ms[0]), 'ms: reads one project at a time');
+    ok(/q\.eq\('project_id', id\)/.test(ms[0]), 'ms: and scopes each call with .eq, not .in');
+    ok(!/\.in\('project_id', ids\)/.test(ms[0]), 'ms: the cross-project .in is gone');
+    /* ⚠️ A project that fails must not blank the page — only a TOTAL failure throws. */
+    ok(/if \(!r\.results\.length && r\.failed\.length\) throw/.test(ms[0]),
+       'ms: one project failing leaves the rest drawn');
+  }
+  const st = /settle\('status',[\s\S]*?\n    \}\)\(\)\);/.exec(JS);
+  ok(!!st, 'the behind-plan read is still there');
+  if (st) {
+    ok(/PDb\.fanOut\(ids,/.test(st[0]), 'status: fans the RPC out per project');
+    ok(/p_ids: \[id\]/.test(st[0]), 'status: and hands it ONE id, not the whole list');
+    ok(!/p_ids: ids/.test(st[0]), 'status: the all-ids call that timed out is gone');
+  }
+  /* ⚠️⚠️ AND NO READ ANYWHERE ON THIS PAGE MAY GO BACK TO `.in('project_id', ids)` AGAINST
+     `project_schedule`. That is the shape that produced 57014; naming the table keeps the check
+     specific enough to stay true (the small per-record tables are fine with `.in`). */
+  /* ⚠️ THE CALL SITE, NOT A CHARACTER WINDOW. The first version of this check looked ±400
+     characters either side of every mention of the table — which swept in the COMMENTS that
+     explain the fix and the perfectly legitimate `issues_lessons` read sitting just below them,
+     and failed a correct file. A proximity test over prose is not a test of code. */
+  const calls = [...JS.matchAll(/(?:selectAll|from)\(\s*'project_schedule'/g)];
+  ok(calls.length > 0, 'the page still reads project_schedule somewhere');
+  calls.forEach((c, i) => {
+    const body = JS.slice(c.index, c.index + 400);
+    ok(!/\.in\('project_id',\s*ids\)/.test(body),
+       'project_schedule read #' + (i + 1) + ' does not use .in(project_id, ids)');
+  });
+}
+
 /* ============================================================ 1 · the dispatch
    A1: the project filter must re-run the ACTIVE view, not just repaint Overview. */
 function dispatchSandbox(viewName) {

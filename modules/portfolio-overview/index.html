@@ -187,7 +187,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260916c"></script>
+<script src="../../assets/js/db.js?v=20260916d"></script>
 <!-- ⚠️ BACK, and deliberately. This page dropped the curve engine on 2026-09-16 (g) when the
      S-Curve pane moved into its own module. D4 draws the portfolio curve here again - through
      PDScurve's own fan-out, so there is no second copy of the maths and no second RPC. -->
@@ -335,18 +335,54 @@
        migrations/2026-09-15-scurve-status-per-project.sql for why this is not an
        extension of the curve RPC. Absent (un-migrated) it degrades: the behind-plan
        column and card say so by name instead of showing a wrong number. */
-    settle('status', sb().rpc('schedule_scurve_status', { p_ids: ids }).then(function (r) {
-      if (r.error) throw r.error;
+    settle('status', (async function () {
+      /* ⚠️⚠️ FANNED OUT FOR THE SAME REASON AS THE MILESTONE READ ABOVE. The RPC takes a
+         LIST of ids, and handed all eighteen it walks every activity of every project in one
+         statement — cancelled at the timeout, which reached the owner as *"Behind plan is
+         unavailable — the database cancelled the read on a timeout (57014); narrow the project
+         filter and try again."* Telling a planner to narrow the filter is asking them to work
+         around the bug.
+         ⚠️ `p_ids: [id]` — the same RPC, the same SQL, one project's worth of work per call.
+         ⚠️ A project that fails is skipped, not fatal: `behindPP()` already returns null for a
+         project with no row, and the column renders that as a dash. Only a TOTAL failure throws,
+         which is what still surfaces a genuinely absent RPC by name. */
+      var r = await PDb.fanOut(ids, function (id) {
+        return sb().rpc('schedule_scurve_status', { p_ids: [id] }).then(function (res) {
+          if (res.error) throw res.error;
+          return res.data || [];
+        });
+      });
+      if (!r.results.length && r.failed.length) throw r.failed[0].err;
       var by = {};
-      (r.data || []).forEach(function (row) { by[row.project_id] = row; });
+      r.results.forEach(function (x) {
+        (x.value || []).forEach(function (row) { by[row.project_id] = row; });
+      });
       return by;
-    }));
+    })());
 
     settle('claims', PDb.selectAll('contracts_claims', function (q) { return q.in('project_id', ids); }));
 
-    settle('ms', PDb.selectAll('project_schedule', function (q) {
-      return q.in('project_id', ids).or('activity_type.ilike.%milestone%,program_milestone.is.true');
-    }, 'id,project_id,activity_name,activity_type,program_milestone,start_date,end_date,actual_finish,percent_complete'));
+    /* ⚠️⚠️ ONE PROJECT AT A TIME — THIS READ WAS BEING CANCELLED AT THE 8s TIMEOUT.
+       `project_schedule` is the biggest table in the app (16k–40k rows on a large programme), and
+       this asked for eighteen projects at once AND filtered with `activity_type.ilike.%milestone%`.
+       A leading-wildcard ILIKE cannot use an index, so the only way to answer it was a sequential
+       scan over every activity of every project in scope — `57014`, and the owner's *"the milestone
+       read failed"* with `What lands next` and `Milestones due in 30 days` both blank.
+       ⚠️ Per project the planner is `project_schedule_proj_id_idx (project_id, id)` — an indexed
+       range scan — and the ILIKE then runs over one project's activities instead of the portfolio's.
+       Same SQL, same rows back, a shape the index can serve. Exactly the fix the portfolio S-Curve
+       needed for the same table on the same day; `PDb.fanOut` is that loop, generalised.
+       ⚠️ A project that fails no longer fails the page: the rest still draw and the count is
+       carried on the array, for the coverage line to report. Only a TOTAL failure throws. */
+    settle('ms', (async function () {
+      var r = await PDb.fanOut(ids, function (id) {
+        return PDb.selectAll('project_schedule', function (q) {
+          return q.eq('project_id', id).or('activity_type.ilike.%milestone%,program_milestone.is.true');
+        }, 'id,project_id,activity_name,activity_type,program_milestone,start_date,end_date,actual_finish,percent_complete');
+      });
+      if (!r.results.length && r.failed.length) throw r.failed[0].err;
+      return PDb.fanOutRows(r);
+    })());
 
     /* ⚠⚠ ONE AGGREGATE CALL PER PROJECT, through the SHARED fan-out in PDScurve — never
        `schedule_scurve_agg_multi`. That one CROSS JOINs its month series against its leaf
@@ -366,8 +402,19 @@
                drawn: r.aggs.length, failed: r.failed.length };
     })());
 
+    /* ⚠️⚠️ `priority` IS NOT A COLUMN OF `issues_lessons`, AND ASKING FOR IT FAILED THE WHOLE
+       READ. PostgREST answers an unknown column with `42703`, so this read threw EVERY time, on
+       every project count, from the day it was written — and `issCell()` renders a failed read as
+       `?`. That is the row of question marks in the Open Issues column the owner reported
+       (2026-09-16), and it is a typo, not a timeout: the table has `severity`, never `priority`,
+       nothing else in the app reads such a field, and no migration ever added one.
+       ⚠️ The projection is now exactly what `openIssues()` consumes — `project_id` to group by
+       and `status` to test — plus `id`, which `PDb.selectAll` needs as its paging cursor.
+       ⚠️ This read is deliberately NOT fanned out per project like the two below:
+       `issues_lessons` is one row per issue, not per activity, so `.in()` over eighteen ids is a
+       cheap indexed read. Splitting it would buy eighteen round trips and nothing else. */
     settle('iss', PDb.selectAll('issues_lessons', function (q) { return q.in('project_id', ids); },
-      'id,project_id,status,priority'));
+      'id,project_id,status'));
   }
 
   /* ---- per-project derivations ------------------------------------------ */
