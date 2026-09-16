@@ -76,6 +76,44 @@
     var m = String(k || '').match(/^(\d{4})-(\d{2})$/);
     return m ? MABBR[+m[2] - 1] + " '" + m[1].slice(2) : String(k || '');
   }
+  /* ⚠️⚠️ ONE grouping rule for every cross-project table here. Owner, of the Meetings and
+     Issues portfolio views: *"we should group the meetings / issues and concerns per project
+     first then sorted by meeting date."* Two copies of "group these rows by project" is how two
+     views start disagreeing about what a project is and in what order they come — the drift this
+     file already exists to end for the six dashboards it holds.
+     ⚠️ By PROJECT, not by `PDProgram` parent: the ask is per project, and the Overview's own
+     table is the place that rolls AVR101 + AVR102 up into one programme. Grouping differently in
+     two places would be worse than not grouping at all.
+     ⚠️ Groups are ordered by the project NAME the planner reads, not by id and not by row count —
+     a list whose order changes as rows are filtered is one nobody can scan twice. */
+  function groupByProject(rows, pidOf, nameById) {
+    var by = {};
+    rows.forEach(function (r) {
+      var pid = pidOf(r);
+      (by[pid] || (by[pid] = { pid: pid, name: nameById[pid] || pid, rows: [] })).rows.push(r);
+    });
+    return Object.keys(by).map(function (k) { return by[k]; })
+      .sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  }
+  /* The group header row. ⚠️ `.po-grp` is the Overview's own grouped-table idiom, reused rather
+     than re-invented — including its caret, because `.po-grp td` already declares
+     `cursor:pointer` and a pointer over something that does not respond is a lie. */
+  function groupHeadRow(g, cols, open) {
+    return '<tr class="po-grp" data-pgrp="' + esc(g.pid) + '"><td colspan="' + cols + '">' +
+      '<span class="po-grp-name"><span class="po-caret">' + (open ? '\u25be' : '\u25b8') + '</span>' +
+      esc(g.name) + ' <span class="po-mut" style="font-weight:400;">' + g.rows.length + '</span>' +
+      '</span></td></tr>';
+  }
+  /* One binder for the caret, so neither view has to remember how a group toggles. */
+  function wireGroupToggle(table, collapsed, rerender) {
+    table.querySelectorAll('.po-grp[data-pgrp]').forEach(function (g) {
+      g.onclick = function () {
+        var k = g.dataset.pgrp;
+        if (collapsed[k]) delete collapsed[k]; else collapsed[k] = 1;
+        rerender();
+      };
+    });
+  }
   var KPI_VARIANT = { '--pd-ok': 'pd-kpi-ok', '--pd-warn': 'pd-kpi-warn', '--pd-bad': 'pd-kpi-bad' };
   function kpi2(l, v, cls) {
     var variant = cls ? KPI_VARIANT[cls] : '';
@@ -233,6 +271,9 @@
     setup: function () {
     // ================= Portfolio Issues & Concerns (cross-project) =================
     var isRows = null, isLoadedIds = null, isQuery = '', isStatus = '';
+    /* ⚠️ Per view, and NOT persisted: a group a planner collapsed to read one project must
+       not still be collapsed tomorrow, hiding rows they never chose to hide. */
+    var isCollapsed = {};
     // Aging matches the module's own rule: only meaningful while the issue is still open.
     function isAgingDays(r) {
       if (!r.date_presented || (r.status || 'Open') === 'Closed') return null;
@@ -274,18 +315,35 @@
         kpi2('Open', String(open), open ? '--pd-bad' : null) + kpi2('On Hold', String(hold)) +
         kpi2('Aging > 30 days', String(over30), over30 ? '--pd-bad' : null) + kpi2('Projects', String(Object.keys(projSet).length));
       var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
-      var sorted = list.slice().sort(function (a, b) { var x = isAgingDays(a), y = isAgingDays(b); return (y == null ? -1 : y) - (x == null ? -1 : x); });
-      var head = '<thead><tr><th>Project</th><th>Issue</th><th>Department</th><th>Champion</th><th>Status</th><th class="num">Aging</th></tr></thead>';
-      var body = sorted.length ? sorted.map(function (r) {
-        var age = isAgingDays(r), st = r.status || 'Open';
-        return '<tr><td>' + esc(nameById[r.project_id] || r.project_id) + '</td>' +
-          '<td>' + esc(clip(r.description, 90) || '(no issue text)') + '</td>' +
-          '<td>' + esc(r.department || '—') + '</td>' +
-          '<td>' + esc(r.champion || '—') + '</td>' +
-          '<td>' + statePill(st, st === 'Open' ? 'bad' : st === 'On Hold' ? 'warn' : 'muted') + '</td>' +
-          '<td class="num">' + (age == null ? '—' : age + 'd') + '</td></tr>';
-      }).join('') : '<tr><td colspan="6" class="po-empty">No issues match the current filter.</td></tr>';
-      document.getElementById('po-is-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+      /* ⚠️ The PROJECT column is gone: it repeated the group heading on every row, which is the
+         whole reason the flat table read as a wall. 6 columns -> 5. */
+      var head = '<thead><tr><th>Issue</th><th>Department</th><th>Champion</th><th>Status</th><th class="num">Aging</th></tr></thead>';
+      var groups = groupByProject(list, function (r) { return r.project_id; }, nameById);
+      var body = '';
+      groups.forEach(function (g) {
+        var open = !isCollapsed[g.pid];
+        body += groupHeadRow(g, 5, open);
+        if (!open) return;
+        /* ⚠️ Oldest first WITHIN the project — aging is this register's own measure of what has
+           been sitting longest, and it is null once an issue is closed, so a closed row sorts
+           last rather than pretending to be new. */
+        g.rows.slice().sort(function (a, b) {
+          var x = isAgingDays(a), y = isAgingDays(b);
+          return (y == null ? -1 : y) - (x == null ? -1 : x);
+        }).forEach(function (r) {
+          var age = isAgingDays(r), st = r.status || 'Open';
+          body += '<tr>' +
+            '<td>' + esc(clip(r.description, 90) || '(no issue text)') + '</td>' +
+            '<td>' + esc(r.department || '—') + '</td>' +
+            '<td>' + esc(r.champion || '—') + '</td>' +
+            '<td>' + statePill(st, st === 'Open' ? 'bad' : st === 'On Hold' ? 'warn' : 'muted') + '</td>' +
+            '<td class="num">' + (age == null ? '—' : age + 'd') + '</td></tr>';
+        });
+      });
+      if (!groups.length) body = '<tr><td colspan="5" class="po-empty">No issues match the current filter.</td></tr>';
+      var t = document.getElementById('po-is-table');
+      t.innerHTML = head + '<tbody>' + body + '</tbody>';
+      wireGroupToggle(t, isCollapsed, isRender);
     }
       // ⚠️ Wired here rather than by the host page: these two lines lived in the Portfolio
       //    Dashboard’s auth block, three thousand lines from the renderer they drive.
@@ -300,7 +358,16 @@
     title: "Meetings",
     needs: [],
     markup: [
-      "        <p style=\"font-size:12px;color:var(--pd-muted);margin:0 0 12px;\">Open action items — Closed items are left out, this is a worklist.</p>",
+      "        <div class=\"po-toolbar\">",
+      "          <div class=\"po-toolbar-fields\" id=\"po-mm-fields\">",
+      "            <select class=\"pd-select\" id=\"po-mm-status\" style=\"max-width:170px;\">",
+      "              <option value=\"open\">Open items</option><option value=\"overdue\">Overdue only</option><option value=\"closed\">Closed</option><option value=\"\">All statuses</option>",
+      "            </select>",
+      "            <span class=\"po-spacer\"></span>",
+      "            <div class=\"po-search\"><span data-ico=\"search\" data-ico-size=\"15\"></span><input class=\"pd-input\" id=\"po-mm-q\" placeholder=\"Search action, owner, meeting…\" /></div>",
+      "          </div>",
+      "        </div>",
+      "        <p style=\"font-size:12px;color:var(--pd-muted);margin:0 0 12px;\" id=\"po-mm-note\"></p>",
       "        <div class=\"pd-kpis\" id=\"po-mm-kpis\"></div>",
       "        <div class=\"po-card\" style=\"padding:0;overflow:hidden;\">",
       "          <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-mm-table\"></table></div>",
@@ -313,6 +380,10 @@
     // Meeting module itself does. This is a cross-project WORKLIST, not the register of record —
     // the module stays authoritative for a raised action's true status.
     var mmItems = null, mmMoms = null, mmLoadedIds = null;
+    /* ⚠️ Defaults to OPEN, so the view opens on exactly what it showed before this filter
+       existed — a worklist. The other three states are now reachable rather than hard-coded
+       out of the page. */
+    var mmStatus = 'open', mmQuery = '', mmCollapsed = {};
     async function loadMeetings(force) {
       var ids = scopedProjectIds();
       if (!force && mmLoadedIds && mmLoadedIds.join(',') === ids.join(',')) return;
@@ -334,29 +405,85 @@
       mmLoadedIds = ids;
       mmRender();
     }
+    function mmIsLate(it) { return !!(it.due_date && pd(it.due_date) < today()); }
+    /* ⚠️ "Overdue" is DERIVED (a due date in the past on an item that is not closed), not a
+       stored status — the register has no such value. Reading it off `status` would report
+       nothing, which is the silent-empty-filter fault this repo keeps recording. */
+    function mmVisible() {
+      var q = mmQuery.trim().toLowerCase();
+      var momById = {}; (mmMoms || []).forEach(function (m) { momById[m.id] = m; });
+      return (mmItems || []).filter(function (it) {
+        var closed = (it.status || 'Open') === 'Closed';
+        if (mmStatus === 'open' && closed) return false;
+        if (mmStatus === 'closed' && !closed) return false;
+        if (mmStatus === 'overdue' && (closed || !mmIsLate(it))) return false;
+        if (q) {
+          var m = momById[it.mom_id];
+          var hay = ((it.action_item || '') + ' ' + (it.description || '') + ' ' +
+                     (it.owner || '') + ' ' + ((m && m.title) || '')).toLowerCase();
+          if (hay.indexOf(q) < 0) return false;
+        }
+        return true;
+      });
+    }
     function mmRender() {
       var momById = {}; (mmMoms || []).forEach(function (m) { momById[m.id] = m; });
-      var open = (mmItems || []).filter(function (it) { return (it.status || 'Open') !== 'Closed'; });
-      var overdue = open.filter(function (it) { return it.due_date && pd(it.due_date) < today(); });
+      var list = mmVisible();
+      /* ⚠️ The KPI strip counts the WHOLE portfolio, never the filtered list: a strip that moved
+         with the filter would be reporting the filter rather than the portfolio. The table below
+         says what is being shown. Same rule the Contracts & Claims summary band already follows. */
+      var allOpen = (mmItems || []).filter(function (it) { return (it.status || 'Open') !== 'Closed'; });
+      var overdue = allOpen.filter(mmIsLate);
       var draftMoms = (mmMoms || []).filter(function (m) { return !m.is_distributed; }).length;
       document.getElementById('po-mm-kpis').innerHTML =
         kpi2('Meetings recorded', String((mmMoms || []).length)) + kpi2('Draft minutes', String(draftMoms)) +
-        kpi2('Open action items', String(open.length)) + kpi2('Overdue', String(overdue.length), overdue.length ? '--pd-bad' : null);
+        kpi2('Open action items', String(allOpen.length)) + kpi2('Overdue', String(overdue.length), overdue.length ? '--pd-bad' : null);
+
       var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
-      var sorted = open.slice().sort(function (a, b) { var x = a.due_date || '9999', y = b.due_date || '9999'; return x.localeCompare(y); });
-      var head = '<thead><tr><th>Project</th><th>Meeting</th><th>Action item</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>';
-      var body = sorted.length ? sorted.map(function (it) {
-        var m = momById[it.mom_id];
-        var late = !!(it.due_date && pd(it.due_date) < today());
-        return '<tr><td>' + esc(nameById[it.project_id] || it.project_id) + '</td>' +
-          '<td>' + esc((m && m.title) || '—') + (m && m.meeting_date ? ' <span style="color:var(--pd-muted);">· ' + esc(Fmt.date(m.meeting_date)) + '</span>' : '') + '</td>' +
-          '<td>' + esc(clip(it.action_item || it.description, 90) || '(no action text)') + '</td>' +
-          '<td>' + esc(it.owner || '—') + '</td>' +
-          '<td>' + (it.due_date ? Fmt.date(it.due_date) : '—') + '</td>' +
-          '<td>' + statePill(late ? 'Overdue' : (it.status || 'Open'), late ? 'bad' : 'warn') + '</td></tr>';
-      }).join('') : '<tr><td colspan="6" class="po-empty">No open action items across the selected projects.</td></tr>';
-      document.getElementById('po-mm-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+      /* ⚠️ The PROJECT column is gone — it repeated the group heading on every row. 6 -> 5. */
+      var head = '<thead><tr><th>Meeting</th><th>Action item</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>';
+      var groups = groupByProject(list, function (it) { return it.project_id; }, nameById);
+      var body = '';
+      groups.forEach(function (g) {
+        var open = !mmCollapsed[g.pid];
+        body += groupHeadRow(g, 5, open);
+        if (!open) return;
+        /* ⚠️ MEETING DATE, newest first — the owner's own ask. A meeting with no date sorts last
+           rather than to the top, which is where an empty string would put it. Ties inside one
+           meeting fall back to the due date, so the oldest commitment leads. */
+        g.rows.slice().sort(function (a, b) {
+          var ma = momById[a.mom_id], mb = momById[b.mom_id];
+          var da = (ma && ma.meeting_date) || '', db = (mb && mb.meeting_date) || '';
+          if (da !== db) return (db || '0000').localeCompare(da || '0000');
+          return (a.due_date || '9999').localeCompare(b.due_date || '9999');
+        }).forEach(function (it) {
+          var m = momById[it.mom_id];
+          var late = mmIsLate(it), closed = (it.status || 'Open') === 'Closed';
+          body += '<tr>' +
+            '<td>' + esc((m && m.title) || '—') + (m && m.meeting_date ? ' <span style="color:var(--pd-muted);">· ' + esc(Fmt.date(m.meeting_date)) + '</span>' : '') + '</td>' +
+            '<td>' + esc(clip(it.action_item || it.description, 90) || '(no action text)') + '</td>' +
+            '<td>' + esc(it.owner || '—') + '</td>' +
+            '<td>' + (it.due_date ? Fmt.date(it.due_date) : '—') + '</td>' +
+            '<td>' + statePill(closed ? 'Closed' : late ? 'Overdue' : (it.status || 'Open'),
+                               closed ? 'muted' : late ? 'bad' : 'warn') + '</td></tr>';
+        });
+      });
+      if (!groups.length) body = '<tr><td colspan="5" class="po-empty">Nothing matches the current filter.</td></tr>';
+      var t = document.getElementById('po-mm-table');
+      t.innerHTML = head + '<tbody>' + body + '</tbody>';
+      wireGroupToggle(t, mmCollapsed, mmRender);
+
+      /* ⚠️ The note follows the FILTER. It used to state "Closed items are left out" as a fixed
+         fact; with the filter it would have been false three settings out of four. */
+      var NOTE = { open: 'Open action items, grouped by project and newest meeting first — closed items are left out.',
+                   overdue: 'Open action items past their due date, grouped by project.',
+                   closed: 'Closed action items, grouped by project.',
+                   '': 'Every action item, grouped by project and newest meeting first.' };
+      document.getElementById('po-mm-note').textContent =
+        NOTE[mmStatus] + ' Showing ' + list.length + ' of ' + (mmItems || []).length + '.';
     }
+      document.getElementById('po-mm-status').onchange = function (e) { mmStatus = e.target.value; mmRender(); };
+      document.getElementById('po-mm-q').oninput = function (e) { mmQuery = e.target.value; mmRender(); };
       return { load: loadMeetings };
     }
   });

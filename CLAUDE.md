@@ -102,6 +102,123 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (q) — Meetings and Issues group per project, Meetings gets the filter it never had, and the portfolio Dashboard stops opening one project
+
+Owner, with three screenshots: *"I want to improve the UI for the Meetings and Issues and Concerns
+modules for portfolio level … group the meetings / issues and concerns per project first then sorted
+by meeting date. I also need a filter for the status."* And, of the third: *"portfolio view but
+previews the project level dashboard. This page is accessible when coming from a different module
+and coming back to the dashboard module navigated to the sidepanel."*
+
+### ⚠️⚠️ THE THIRD SCREENSHOT IS A REAL DEFECT, AND THE OWNER'S REPRO IS EXACTLY RIGHT
+
+`dashboard.html` headed **"Portfolio · every project you can see"** and then rendering One Portwood's
+own POC, SPI, CPI and S-Curve. Measured: **`isPortfolioScope` occurs 0 times in `dashboard.html`** —
+the page had never checked.
+
+The route in is the one the owner describes. `ui.js` says a **module page always renders its sidebar
+under `mode:'project'`** whatever nav family linked to it, and in that mode the Dashboard row is a
+plain `dashboard.html`. So from any module opened portfolio-wide, the sidebar's own Dashboard row
+led out of the portfolio and into whichever project `pd_project` happened to hold.
+
+**Fixed in two places, and both are needed:**
+- ⚠️⚠️ **The page guards itself**, before it draws anything. Fixing the link alone leaves the bare
+  URL, a bookmark and the Back button landing on the same wrong page; this catches every route in.
+- ⚠️ **The sidebar row stops pointing there while the scope is portfolio**, so the normal path never
+  shows the redirect at all.
+- ⚠️ `location.replace`, so a page nobody meant to open does not sit in the Back history and bounce
+  the planner straight out of the portfolio again. ⚠️ It cannot trap anyone: picking a real project
+  calls `AppAuth.setPortfolioScope(false)` from the shared selector.
+- ⚠️ **Three identifiers in my first draft did not exist**, caught by checking the source rather than
+  by shipping: the export is `ModulesGrid.MODULE_V` and not `.version()`; `poBase` is assigned only
+  inside `renderNav`'s **portfolio** branch, so it is `undefined` in the project branch where the row
+  is built; and there is no `isPortfolio()` helper. That is the `cfMonthLabel` family again, and this
+  time it was caught before it ran.
+
+### ⚠️ A CORRECTION TO THE ASK: Issues & Concerns ALREADY HAD A STATUS FILTER
+
+All statuses / Open / On Hold / Closed, plus a search — in `.po-toolbar` at the top of that view. The
+screenshot is scrolled past it. So the status filter was built for **Meetings**, which genuinely had
+none, and Issues keeps the one it has. Saying so rather than building a second one.
+
+### Grouped per project, sorted by date inside the group
+
+- ⚠️⚠️ **ONE shared `groupByProject`**, called by both views. Two copies of *"group these rows by
+  project"* is how two screens start disagreeing about what a project is and in what order they come
+  — the drift this file exists to end for the ten dashboards it holds.
+- ⚠️ **By PROJECT, not by `PDProgram` parent.** The ask is per project, and the Overview's table is
+  the place that rolls AVR101 + AVR102 into one programme. Grouping differently in two places would
+  be worse than not grouping at all.
+- ⚠️ Groups ordered by the **name a planner reads**, never by id or row count: a list whose order
+  changes as rows are filtered is one nobody can scan twice.
+- ⚠️⚠️ **The PROJECT column is DELETED from both tables** — it repeated the group heading on every
+  row, which is most of why the flat table read as a wall. Six columns become five.
+- **Meetings sorts by MEETING DATE, newest first**, which is the owner's own words; ties inside one
+  meeting fall back to the due date so the oldest commitment leads. ⚠️ A meeting with no date sorts
+  **last** rather than to the top, where an empty string would put it.
+- **Issues keeps its own measure** — longest-open first, by aging, which is null once an issue is
+  closed so a closed row sorts last rather than pretending to be new.
+- ⚠️ `.po-grp` is the Overview's existing grouped-table idiom, **reused rather than re-invented**,
+  caret included — `.po-grp td` already declares `cursor:pointer`, and a pointer over something that
+  does not respond is a lie. So the headings collapse. ⚠️ Per view and **not persisted**: a group
+  collapsed to read one project must not still be collapsed tomorrow, hiding rows nobody chose to
+  hide.
+
+### The Meetings filter
+
+Open (the default) / Overdue only / Closed / All, plus a search over action, owner and meeting title.
+- ⚠️ **It opens on exactly what it showed before the filter existed** — a worklist. The other three
+  states are now reachable rather than hard-coded out of the page.
+- ⚠️⚠️ **"Overdue" is DERIVED** — a due date in the past on an item that is not closed. There is no
+  such stored status, and reading it off `status` would return nothing: the silent-empty-filter
+  fault this repo keeps recording.
+- ⚠️ **The KPI strip counts the whole portfolio, never the filtered list.** A strip that moved with
+  the filter would be reporting the filter rather than the portfolio; the note under it says what is
+  being shown (*"Showing 5 of 6"*). Same rule the Contracts & Claims summary band already follows.
+- ⚠️ **The intro sentence now follows the filter.** It stated *"Closed items are left out"* as a
+  fixed fact, which would have been false in three of the four settings.
+
+### Verified
+
+**289 assertions, 0 failing** (`tools/test-portfolio-dash.js`, was 254) — the views **mounted** and
+driven, not read. ⚠️ The fixture is built so **neither naive answer passes**: the older meeting is
+listed first in the input and its action sorts first alphabetically, so a renderer that kept input
+order *or* sorted by name would fail the ordering assertion. Plus: the four filter states, the
+derived Overdue, the search, the KPI strip still counting 4 while the table shows 1, a project whose
+rows are all filtered out **dropping its heading too**, and collapsing one group leaving the others.
+
+**12 assertions on the scope fix**, executing the **shipped `renderNav`** against a window stub and
+the guard itself: in portfolio scope the row goes to the portfolio dashboard and is cache-busted, in
+project scope it is byte-identical to before, the guard redirects only in portfolio scope, uses
+`replace` and returns so nothing renders underneath.
+⚠️ **Both contrasts bite.** Against `origin/main` the scope suite fails **3** — the row goes to
+`dashboard.html` and there is no guard, which is the screenshot reproduced. A second contrast asserts
+`origin/main` has no `groupByProject`, still carries a `<th>Project</th>`, and has no `po-mm-status`.
+⚠️ **The suite's own gate could not cover this** — it returns early on the base — so the grouping
+contrast is explicit rather than assumed.
+
+⚠️ **Two of my own assertions were wrong rather than the code**: a non-greedy regex stopped at the
+caret's closing `</span>` and never reached the project name, so both ordering checks compared
+`-1 < -1`. Corrected to index the table, which is unambiguous now the Project column is gone.
+⚠️ **The suite's fake DOM had to learn about the grouped heading rows**, or the collapse would have
+been asserted on a handler nothing bound — scoped to the node that received the markup, since its
+`query()` otherwise ignores its root and two grouped tables on one page would see each other's rows.
+
+**Rendered in a browser**, both views, 1400px light, 1400px dark and 390px: **0 errors**, three
+headings in project-name order, **no Project column**, five data rows, the note reading *"Open action
+items, grouped by project and newest meeting first — closed items are left out. Showing 5 of 6."*,
+`cursor:pointer` honoured, collapsing one group taking the table from 5 data rows to 3 while the
+other headings stay, and no sideways scroll at 390px. ⚠️ The heading resolves
+`rgb(244,244,244)` light against `rgb(28,28,28)` dark — a **colour**, which is what proves the shared
+stylesheet is in the cascade rather than the harness reporting tidy geometry on unstyled markup.
+
+`wiring-check` 139/139, every asset on one version, both touched scripts parse.
+⚠️ **Not verified signed in** — the fixtures are hand-built, so no real register has been grouped.
+
+`portfolio-dash.js` → `?v=20260916q` (12 pages); **`ui.js` → `?v=20260916q` (23 pages, shared)**.
+⚠️ **No `MODULE_V` bump** — no module's `index.html` changed structurally, only version query
+strings, and bumping would invalidate every module page's cache for nothing.
+
 ### 2026-09-16 (p) — The Portfolio Overview answers "what lands next", and three CSS rules that styled nothing are removed
 
 Phase D5 of the portfolio plan, and the last piece of Phase D. The Overview ranked projects by

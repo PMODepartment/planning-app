@@ -539,7 +539,15 @@
       mods = mods.filter(function (m) { return m.key !== 'pormac'; });
       html = '<div class="pd-navsec">Project</div>' +
         (pormacMod ? modRow(pormacMod) : '') +
-        '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
+        /* ⚠️ In PORTFOLIO scope this row must not point at the project dashboard. A module
+           page always renders this nav under mode:'project' (see the note at the top of this
+           function), so without this the Dashboard row led out of the portfolio and into
+           whichever project `pd_project` last held. dashboard.html guards itself as well; this
+           is what stops the redirect ever being seen. */
+        '<a href="' + (window.AppAuth && AppAuth.isPortfolioScope()
+            ? base + 'modules/portfolio-overview/index.html' +
+              (window.ModulesGrid && ModulesGrid.MODULE_V ? '?v=' + encodeURIComponent(ModulesGrid.MODULE_V) : '')
+            : base + 'dashboard.html') + '"' + cls('dashboard') + ' title="Dashboard">' +
           '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard</span></a>' +
         mods.map(modRow).join('');
     }

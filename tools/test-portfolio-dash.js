@@ -64,7 +64,7 @@ function makeDom() {
       /* ⚠️ Assigning innerHTML REGISTERS the ids inside it. That is the one browser behaviour
          these renderers depend on and a plain string property would not give: every view writes
          its markup once and then addresses the nodes inside it by id. */
-      set innerHTML(v) { node._html = String(v == null ? '' : v); index(node._html); },
+      set innerHTML(v) { node._html = String(v == null ? '' : v); index(node._html); node._grps = grpRows(node._html); },
       get innerHTML() { return node._html || ''; },
       querySelectorAll(sel) { return query(node, sel); },
       querySelector(sel) { return query(node, sel)[0] || null; }
@@ -107,8 +107,29 @@ function makeDom() {
   }
   const buttons = Object.create(null);
 
+  /* The grouped-table heading rows (`<tr class="po-grp" data-pgrp="…">`). ⚠️ Rebuilt on every
+     innerHTML assignment and stored ON THE NODE, so a re-render replaces them rather than
+     accumulating, and two grouped tables on one page cannot see each other's. */
+  function grpRows(html) {
+    const out = [], re = /<tr class="po-grp" data-pgrp="([^"]*)"/g;
+    let m;
+    while ((m = re.exec(html))) {
+      const r = el('tr');
+      r.dataset.pgrp = m[1];
+      r.classList.add('po-grp');
+      out.push(r);
+    }
+    return out;
+  }
+
   function query(root, sel) {
     sel = String(sel).trim();
+    /* ⚠️ Answered from the ROOT, unlike everything below it: these are per-table. */
+    if (/^\.po-grp(\[data-pgrp\])?$/.test(sel)) return (root && root._grps) || [];
+    if (/^#([\w-]+)\s+\.po-grp$/.test(sel)) {
+      const host = byId[/^#([\w-]+)/.exec(sel)[1]];
+      return (host && host._grps) || [];
+    }
     if (sel === '.po-sc-band') return buttons.band || [];
     let m = /^#([\w-]+)\s+button$/.exec(sel);
     if (m) {
@@ -653,6 +674,130 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
        tag + 'mount: the filter row is opened — a module has no funnel button to bind it to');
   }
 
+  /* ---- grouped per project, and sorted by date INSIDE the group ------------------- */
+  /* Owner: *"we should group the meetings / issues and concerns per project first then sorted
+     by meeting date."* \u26a0\u26a0 The fixture is built so the ORDER IS NOT THE INPUT ORDER and not
+     alphabetical-by-action either — otherwise the sort could be right by accident. */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {
+      meeting_minutes: [
+        { id: 'm1', project_id: 'P2', title: 'Kickoff',  meeting_date: '2026-01-10', is_distributed: true },
+        { id: 'm2', project_id: 'P1', title: 'Weekly 1', meeting_date: '2026-02-01', is_distributed: true },
+        { id: 'm3', project_id: 'P1', title: 'Weekly 9', meeting_date: '2026-09-01', is_distributed: true }
+      ],
+      mom_items: [
+        // P1, OLD meeting — must sort AFTER the newer meeting's item
+        { id: 'a1', project_id: 'P1', mom_id: 'm2', action_item: 'Aardvark old-meeting', status: 'Open' },
+        // P1, NEW meeting
+        { id: 'a2', project_id: 'P1', mom_id: 'm3', action_item: 'Zulu new-meeting', status: 'Open' },
+        // P2 — a different project entirely
+        { id: 'a3', project_id: 'P2', mom_id: 'm1', action_item: 'Bravo other-project', status: 'Open' },
+        // closed: out of the default worklist, reachable through the filter
+        { id: 'a4', project_id: 'P1', mom_id: 'm3', action_item: 'Charlie closed', status: 'Closed' },
+        // overdue: a past due date on an open item
+        { id: 'a5', project_id: 'P2', mom_id: 'm1', action_item: 'Delta overdue', status: 'Open', due_date: '2020-01-01' }
+      ]
+    } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(win, 'meetings');
+    const tbl = () => win.document.getElementById('po-mm-table').innerHTML;
+    const note = () => win.document.getElementById('po-mm-note').textContent;
+
+    /* one heading per project, ordered by the NAME a planner reads */
+    has(tbl(), 'po-grp', tag + 'mm: rows are grouped per project');
+    /* ⚠ With the Project column gone the name occurs ONLY in the heading, so indexing the
+       table is indexing the headings. */
+    ok(tbl().indexOf('Avesta') >= 0 && tbl().indexOf('Avesta') < tbl().indexOf('Bayfront'),
+       tag + 'mm: groups are ordered by project name');
+    /* \u26a0 the PROJECT column is gone — it repeated the heading on every row */
+    ok(!/<th>Project<\/th>/.test(tbl()), tag + 'mm: the repeated Project column is gone');
+
+    /* \u26a0\u26a0 newest MEETING first inside a project — the input order has the old one first,
+       and the alphabet would put Aardvark before Zulu, so both naive answers are excluded. */
+    const iZulu = tbl().indexOf('Zulu new-meeting'), iAard = tbl().indexOf('Aardvark old-meeting');
+    ok(iZulu >= 0 && iAard >= 0 && iZulu < iAard,
+       tag + 'mm: inside a project the NEWEST meeting leads — not input order, not alphabetical');
+
+    /* the default is the worklist this view has always been */
+    ok(!/Charlie closed/.test(tbl()), tag + 'mm: closed items are out by default');
+    has(note(), 'closed items are left out', tag + 'mm: and the note says so');
+
+    /* \u26a0 the status control actually filters, and "Overdue" is DERIVED */
+    const st = win.document.getElementById('po-mm-status');
+    ok(typeof st.onchange === 'function', tag + 'mm: the status select is wired');
+    st.value = 'closed'; st.onchange({ target: st });
+    ok(/Charlie closed/.test(tbl()) && !/Zulu new-meeting/.test(tbl()),
+       tag + 'mm: Closed shows only closed items');
+    st.value = 'overdue'; st.onchange({ target: st });
+    ok(/Delta overdue/.test(tbl()) && !/Zulu new-meeting/.test(tbl()),
+       tag + 'mm: Overdue is derived from a past due date, not read off status');
+    st.value = ''; st.onchange({ target: st });
+    ok(/Charlie closed/.test(tbl()) && /Zulu new-meeting/.test(tbl()),
+       tag + 'mm: All shows both');
+
+    /* \u26a0 the KPI strip counts the PORTFOLIO, never the filtered list */
+    st.value = 'overdue'; st.onchange({ target: st });
+    has(win.document.getElementById('po-mm-kpis').innerHTML, '>4<',
+        tag + 'mm: the KPI strip still counts all 4 open items while the table shows 1');
+
+    /* the search */
+    st.value = ''; st.onchange({ target: st });
+    const q = win.document.getElementById('po-mm-q');
+    ok(typeof q.oninput === 'function', tag + 'mm: the search is wired');
+    q.value = 'aardvark'; q.oninput({ target: q });
+    ok(/Aardvark old-meeting/.test(tbl()) && !/Zulu new-meeting/.test(tbl()),
+       tag + 'mm: search narrows, case-insensitively');
+    q.value = ''; q.oninput({ target: q });
+
+    /* \u26a0 a group collapses, and the caret is what does it */
+    const grp = win.document.querySelectorAll('#po-mm-table .po-grp')[0];
+    ok(grp && typeof grp.onclick === 'function', tag + 'mm: the group heading is clickable');
+    grp.onclick();
+    ok(!/Zulu new-meeting/.test(tbl()) && /Bravo other-project/.test(tbl()),
+       tag + 'mm: collapsing one project hides ITS rows and leaves the others');
+  }
+
+  /* ---- Issues: the same grouping, and the status filter it already had ------------ */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: { issues_lessons: [
+      { id: 'i1', project_id: 'P2', description: 'Bravo other-project', status: 'Open',   date_presented: '2026-01-01' },
+      { id: 'i2', project_id: 'P1', description: 'Zulu newer',          status: 'Open',   date_presented: '2026-08-01' },
+      { id: 'i3', project_id: 'P1', description: 'Aardvark older',      status: 'Open',   date_presented: '2026-01-01' },
+      { id: 'i4', project_id: 'P1', description: 'Charlie closed',      status: 'Closed', date_presented: '2026-01-01' }
+    ] } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(win, 'issues');
+    const tbl = () => win.document.getElementById('po-is-table').innerHTML;
+
+    has(tbl(), 'po-grp', tag + 'is: rows are grouped per project');
+    ok(!/<th>Project<\/th>/.test(tbl()), tag + 'is: the repeated Project column is gone');
+    ok(tbl().indexOf('Avesta') >= 0 && tbl().indexOf('Avesta') < tbl().indexOf('Bayfront'),
+       tag + 'is: groups ordered by project name');
+
+    /* \u26a0 oldest-open first inside the project: aging is this register's own measure, and the
+       alphabet would put Aardvark first for the wrong reason — so the fixture makes the OLDER
+       issue the alphabetically-first one, and the assertion still requires it to lead. */
+    const iAard = tbl().indexOf('Aardvark older'), iZulu = tbl().indexOf('Zulu newer');
+    ok(iAard >= 0 && iZulu >= 0 && iAard < iZulu, tag + 'is: the longest-open issue leads its project');
+
+    /* the status filter was ALREADY here — assert it still works after the regrouping */
+    const st = win.document.getElementById('po-is-status');
+    ok(typeof st.onchange === 'function', tag + 'is: the status select is still wired');
+    st.value = 'Closed'; st.onchange({ target: st });
+    ok(/Charlie closed/.test(tbl()) && !/Zulu newer/.test(tbl()), tag + 'is: Closed filters to closed');
+    /* \u26a0 a project with nothing matching must not leave an empty heading behind */
+    ok(!/Bayfront/.test(tbl()), tag + 'is: a project with no matching row drops its heading too');
+    st.value = ''; st.onchange({ target: st });
+
+    const grp = win.document.querySelectorAll('#po-is-table .po-grp')[0];
+    ok(grp && typeof grp.onclick === 'function', tag + 'is: the group heading is clickable');
+    grp.onclick();
+    ok(!/Zulu newer/.test(tbl()) && /Bravo other-project/.test(tbl()),
+       tag + 'is: collapsing one project leaves the others');
+  }
+
   /* ---- takeOver(): the module steps aside, and keeps its way out ------------------ */
   {
     const win = buildPage(dashSrc, assetsDir);
@@ -756,6 +901,26 @@ HOSTS.forEach(function (h) {
   });
   ok(po.indexOf('assets/js/scurve.js') < 0,
      'portfolio-overview no longer loads the S-curve engine it stopped using');
+}
+
+/* ============ 5 · the grouping is NEW — an explicit contrast, because the gate above
+      returns early and never reaches a view assertion ============================== */
+{
+  var baseDash = '';
+  try {
+    baseDash = cp.execSync('git show origin/main:assets/js/portfolio-dash.js',
+      { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  } catch (e) { baseDash = ''; }
+  if (baseDash) {
+    ok(baseDash.indexOf('function groupByProject') < 0,
+       'CONTRAST: origin/main has no groupByProject — the grouping above is new');
+    ok(/<th>Project<\/th>/.test(baseDash),
+       'CONTRAST: and its portfolio tables still repeat a Project column on every row');
+    ok(baseDash.indexOf('po-mm-status') < 0,
+       'CONTRAST: and Meetings had no status filter at all');
+  } else {
+    ok(false, 'CONTRAST: could not read origin/main:assets/js/portfolio-dash.js');
+  }
 }
 
 /* ===================================================================== run, then gate */
