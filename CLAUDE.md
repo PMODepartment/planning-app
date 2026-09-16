@@ -103,6 +103,46 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-16 (z2) — The 360° viewer was never loading: Pannellum 2.5.6 is a 404 on cdnjs
+
+Owner: *"check if the fix works on the deployed site"* → *"yes, bump pannellum to 2.5.7"*.
+
+Verifying the `wirePanoDrag()` hotfix on the live site turned up a second, older fault. The console
+said it plainly once `init()` got far enough to reach it:
+
+> `[progress-photos] Pannellum did not load (window.pannellum is undefined) -- the interactive 360°
+> pan viewer cannot mount. Falling back to a flat image preview.`
+
+`modules/progress-photos/index.html` pinned **2.5.6** at line 18 (CSS) and line 395 (JS). Both are
+404s. cdnjs reports its pannellum version as **2.5.7**; 2.5.6 is simply not there.
+
+| URL | status |
+|---|---|
+| `…/pannellum/2.5.6/pannellum.min.js` | **404** |
+| `…/pannellum/2.5.6/pannellum.min.css` | **404** |
+| `…/pannellum/2.5.7/pannellum.min.js` | 200 |
+| `…/pannellum/2.5.7/pannellum.min.css` | 200 |
+| `…/html2pdf.js/0.10.1/…` — control, same CDN | 200 |
+
+### ⚠️ Why the control row is the entire argument
+
+"A script didn't load" has a dozen boring explanations — sandbox policy, CDN outage, blocked origin.
+Every one of them was ruled out in the page itself: `supabase`, `html2pdf`, `PptxGenJS` and `cv` all
+resolved, and **html2pdf comes from cdnjs too**. One library out of five failing, from a CDN that was
+demonstrably serving the other four to the same document, is a bad URL and nothing else.
+
+### ⚠️⚠️ This is what the hotfix deleted `wirePanoDrag()` in favour of
+
+`wirePanoDrag()` was removed on 2026-09-11 as "superseded by the real Pannellum viewer". It was
+superseded by a library that 404s. Between 09-11 and today, 360° photos had **no pan viewer at all** —
+not the old drag handler, not Pannellum, just the flat-image fallback. The 09-16 crash hid this:
+`init()` threw before anything could even try to mount a viewer, so the warning never got logged.
+Fixing the crash is what made the older fault audible.
+
+Both tags moved to 2.5.7, verified 200 for JS and CSS before editing. Neither carries an SRI
+`integrity` attribute, so the version swap needed no hash update, and no `?v=` bump applies — the CDN
+URL is its own cache key.
+
 ### 2026-09-16 (z1) — The Progress Photos hotfix is merged, and the cache-bust token that would have hidden it
 
 Owner: *"Can you preview if there are any pull requests from the progress photos and merge it"* — then
