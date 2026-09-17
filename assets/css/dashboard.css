@@ -1060,6 +1060,50 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
   padding: 9px 10px; }
 .pd-table tr:hover td { background: var(--pd-red-light); }
 
+/* ---- Portfolio provenance: the project a consolidated row came from --------
+   Two shapes, both fed by UI.projectTagHTML / UI.projectGroupRowHTML (ui.js),
+   so the four modules that consolidate across projects (Meetings, Issues &
+   Concerns, Contracts & Claims, Progress Photos) mark a row the SAME way.
+   Owner (2026-09-15): group a list by project; mark everything else with the
+   project code.
+
+   ⚠️⚠️ THE TINT IS A NEUTRAL rgba, NEVER A LIGHT-MODE HEX. A colour whose only
+   definition sits in a light-mode block keeps its light value on a dark ground
+   — the bug `tools/dark-remap.js` exists to catch. rgba(128,128,128,a)
+   composites correctly over whatever surface it lands on in EITHER theme, which
+   is the same reasoning the `.cca-*` separators already use, and it also keeps
+   this marker out of the red/green/amber the status pills own: provenance is
+   not a state. */
+.pd-projtag { display: inline-flex; align-items: center; flex: none; max-width: 100%;
+  padding: 1px 6px; border-radius: var(--pd-radius); background: rgba(128, 128, 128, .16);
+  font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .03em;
+  color: var(--pd-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The group header inside a grouped <table>. ⚠️ `tr:hover td` above paints
+   every row on hover — a header that lit up like a row would read as clickable,
+   and it is not, so it opts out explicitly rather than by accident of source
+   order. */
+/* ⚠️ Deliberately NOT scoped to `.pd-table` — Contracts & Claims' register is a
+   `.cc-table`, and a header band that lit up on hover in one module and not the
+   other would be the drift these shared rules exist to prevent. Specificity
+   (0,3,2) clears `.pd-table tr:hover td` (0,2,2) on its own. */
+tr.pd-projgrouprow:hover > td.pd-projgroupcell { background: rgba(128, 128, 128, .10); }
+/* ⚠️⚠️ THE CELL STAYS A TABLE CELL. The flex row is the <div> INSIDE it — a
+   `display:flex` on the <td> itself takes the cell out of the table box model
+   and the browser silently ignores its `colspan`, which measured as a 342px
+   band inside a 1398px table with nothing wrong in the markup. */
+.pd-projgrouprow > td.pd-projgroupcell { background: rgba(128, 128, 128, .10);
+  border-bottom: 1px solid var(--pd-line); padding: 7px 10px; }
+.pd-projgroup { display: flex; align-items: baseline; gap: 8px; }
+.pd-projgroup-code { font-size: var(--pd-fs-xs); font-weight: 800; letter-spacing: .04em;
+  color: var(--pd-ink); white-space: nowrap; }
+.pd-projgroup-name { font-size: var(--pd-fs-xs); font-weight: 400; color: var(--pd-muted);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The count sits at the far end of the band, where every other "N of M" in
+   this app already puts it. */
+.pd-projgroup-n { margin-left: auto; flex: none; font-size: var(--pd-fs-micro);
+  font-weight: 700; color: var(--pd-muted); }
+
 /* ---- Auth pages ---- */
 .pd-auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .pd-auth-card { width: 100%; max-width: 380px; }
