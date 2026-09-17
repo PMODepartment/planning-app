@@ -1,3 +1,335 @@
+## 2026-09-17 (zy) — The Activities step: a class-code list you can scan, and two delete buttons that had never worked
+
+Owner, four items on Schedule Setup → Activities: *"no need for the delete selected rows button.
+user will just use the right button arrow to move the selected class code back to the class code
+list. no need also for the add row. instead, user can add activity from the all class code list but
+class code will be left blank. activities without class code are identified as custom activities"*,
+*"in all class codes list, improve look and make more minimalist. group by trade with collapse and
+expand option. no need to make these labels bold"*, *"remove download template and upload excel
+buttons. no need for this"*, and *"For class code list, when clicking + Library, sort by class
+code."*
+
+### ⚠️⚠️ TWO OF THE THINGS REMOVED HAD NO HANDLER AT ALL
+
+`#b-delrows` — **Delete selected rows** — occurred **exactly once in this 55k-line file: in the
+markup**. No `onclick`, no delegated listener, nothing. So the button the owner asked to remove has
+never removed a row, on any project, since it was written. The `→` shuttle they named as the
+replacement is not a workaround; it is and always was the only working route.
+
+⚠️ **And the per-row trash column was dead the same way.** Every row emitted
+`<button class="sbld-del" data-del="<r>">`, and `data-del` also occurred once in that function — in
+the markup — with every `[data-del]` handler in the file scoped to a *different* list
+(`listEl.querySelectorAll`, `list.querySelectorAll`, …). The owner did not ask for that one, and it
+is removed anyway: leaving a trash icon on every row that does nothing, immediately after being told
+`→` is how a row leaves the build, is half a job. **Reported here rather than done quietly** — if
+that column was meant to work, this is the entry to push back on.
+
+Both removals take the trailing action column with them, so the grid goes **9 header cells / 9 body
+cells → 8 / 8** — measured on both sides, because a header and a body that disagree by one is the
+column-misalignment defect `cellcount.py` exists for.
+
+### ⚠️⚠️ THE ADD CONTROL MOVED, AND WHERE IT LANDS IS A JUDGEMENT WORTH STATING
+
+*"user can add activity from the all class code list"* — so **+ Custom** sits in that list's own
+header. What it adds is a row in the **build grid**, not an entry in the list, and that is the one
+place this reading is not literal. A catalog entry is a plain `<button>` with no editable field, so
+a blank one renders as *"(unnamed)"* with no way to name it: the planner would have to tick it and
+shuttle it in before they could type a single character. Landing straight in the grid with the
+**name cell** focused is the same gesture in one step.
+
+⚠️ **The name cell, not the first cell.** The old `+ Add row` focused `[data-i="<id>"]` — the first
+match, which is the **Code** cell — and a custom activity's code is deliberately blank, so the caret
+landed in the one field the planner is not going to fill.
+
+⚠️ **"Identified as custom activities" is the Code cell's own placeholder**, `custom`, muted. Nothing
+is stored for it, so it cannot go stale, and it disappears the instant a code is typed. It also needs
+no change to either warning on this step: `_seedCodeUnknown` and `offChartCount` both already return
+early on a blank code (`if (!k) return false` / `k && !ccLevelOf(k)`), so a custom activity has never
+been accused of carrying an unrecognised one. Measured on a fixture holding all three states —
+`03051` (known), `""` (custom), `ZZZZZ` (off-chart): **exactly one cell marked, and it is `ZZZZZ`.**
+
+### The list: grouped by trade, and denser than the flat one it replaces
+
+The item was a two-line card — **bold** name over `CODE · Trade` — with a 4px trade-coloured rail and
+a 1px border on **every** row, so 197 codes rendered as 197 boxes. Under a trade heading both the
+per-row trade label and the per-row colour rail restate the heading, so the colour moved **to** the
+heading and the row became one plain line: muted tabular code, then name at **weight 400**, which is
+the owner's *"no need to make these labels bold"* — and is also the honest reading, since every row
+bold is no emphasis at all.
+
+**Measured in a browser against the shipped stylesheet, on the REAL 197-entry `CLASS_CODE_DB` loaded
+through the shipped `loadClassCodeLibrary`:**
+
+| | before | after |
+|---|---|---|
+| row height | 43px | **25px** |
+| list content height | 9,439px | **5,014px** |
+| **screens of scrolling** | **20.7** | **11.0** |
+| with every group folded | — | **188px** |
+| codes visible at the pane's 320px default | 8 | **15** |
+
+⚠️ That is 7 headings **added** and the list still 47% shorter. The groups come out in the app's own
+`GROUPS` order with counts **17 / 15 / 5 / 101 / 46 / 5 / 8 = 197**, and every one of the seven
+measured **code-ascending**. A trade with no codes gets no heading at all; a trade the list has never
+heard of still gets one, last — an unknown trade is the one thing in this list worth seeing.
+
+⚠️ **The heading is sticky**, matching `.pp-grid-head`'s own convention rather than inventing a
+second one: measured mid-scroll, **exactly one** heading pinned at the list's top edge, reading
+*Structural (5)*. Without it a 197-row wall says nothing about where you are.
+
+⚠️ **Folding is a way of READING the list, so it never touches `cfg` and never calls `markDirty()`** —
+a collapsed trade is not an unsaved change. It is module scope rather than `localStorage`: `render()`
+rebuilds the pane wholesale so the state must outlive a render, but a list folded to read one trade
+today should not still be folded tomorrow, hiding codes nobody chose to hide. **Default open**, which
+is what the flat list already showed — the owner asked for the *option* to collapse.
+
+### ⚠️⚠️ SORTING THE VIEW WOULD HAVE BEEN WORSE THAN NOT SORTING
+
+`←` concatenates **`cfg.catalog`'s own order** into the build, and this step's own hint says *"Row
+order is the fallback sequence"*. So a renderer that sorted only what it drew would show the planner
+a sorted list, and load it scrambled. `sortCatalog()` sorts the **array**: trade first (the list is
+grouped by trade, so a flat code sequence cannot survive grouping anyway), then code, blank codes
+last within their trade. **Measured: what is on screen is the order `←` loads them in.**
+
+⚠️ **Codes compare as STRINGS, never as numbers.** `'01050'` must not become `1050` — this table's own
+note forbids de-zeroing outright, because the de-zeroed space is not unique (`015051` collides with
+`15051`).
+
+⚠️ **`normalize()` runs it too**, which is the half the owner's wording does not cover: sorting only
+inside `+ Library` would leave a setup **saved before this change** rendering in whatever order it was
+saved until the planner happened to press that button. `sortCatalog(list)` takes an array so it can
+sort a config `normalize` has not assigned to `cfg` yet.
+
+⚠️ This supersedes `loadBoqCodes`' own chart-order sort for what is **on screen**; that sort is kept,
+because it still gives the insert a deterministic order.
+
+### The CSV pair went with its four functions
+
+`actTemplateCsv`, `parseCsv`, `importActivities` and `uploadActivities` were a closed chain whose only
+two entry points were the two buttons removed — **deleted, not left unreferenced**, since a renderer
+nothing calls reads as working code to every tool. ⚠️ The template's own sample rows carried
+`MOB`/`EXC`/`REBAR` — mnemonics, not chart codes, the exact defect `Load typical set` was corrected
+for on 2026-09-14; they go with it rather than outliving it. Pasting a block straight out of Excel
+into the grid is untouched and is the shorter route those buttons were competing with.
+
+### Verified
+
+**New `modules/project-schedule/test-actsetup.js` — 47 assertions, 0 failing.** `stActivities`,
+`xlCellCtl`, `gc` and `sortCatalog` are sliced out of the shipped file **by name** and executed; a
+slice that comes back null **aborts** rather than being stubbed, because a harness that substitutes
+its own copy of the function under test measures the harness.
+
+⚠️⚠️ **The fake host returns `null` for an id the emitted markup does not carry**, which is what a
+real browser does — so a handler left wired to a removed button throws in the suite exactly as it
+would on the page. That is why the wiring is *executed* rather than grepped, and `1.10` asserts the
+count of such misses is **0**.
+
+⚠️⚠️ **Contrast pinned to the SHA `d0da7cd`, never to `HEAD`** (which becomes self-comparison the
+moment this commits, and this repo has been caught that way twice): the same suite against the
+pre-change file **fails 28** — every removed control still present, no grouping, no `custom`
+placeholder, and the `+ Custom` click adding nothing.
+
+**Browser measurement** against the shipped `<style>` block and the real `dashboard.css`, at 1440 and
+1100px, light and dark, with transitions disabled: every figure in the table above; **0 items clipped,
+0 items outside the pane** at 320px *and* at a hand-dragged 220px; the heading's rail resolving to the
+trade's real `GCOLOR` (`#8a5cd1` for GR); **every sampled colour differing between themes** (heading
+background `rgb(244,244,244)` → `rgb(28,28,28)`, code ink → `rgb(185,183,183)`, name ink →
+`rgb(240,239,239)`), which is what proves the stylesheet is genuinely in the cascade rather than the
+harness reporting tidy geometry on unstyled markup; folding one group taking its 3 rows to 0 while its
+siblings keep theirs and its own heading stays.
+
+⚠️ **The header did NOT get taller for the third button**, which was the thing worth checking:
+measured **2 rows / 63px before and after**, identical. A first pass reported *4 rows* — an artefact
+of counting distinct `top` values, where a text span and a button of different heights on one centred
+flex line differ by a few pixels. Re-counted by vertical **centre** with a tolerance, which is the
+same correction this repo's module-bar pass had to make.
+
+⚠️⚠️ **And the first harness reported a horizontal page scroll that does not exist.** It omitted
+`.pd-main` / `.pd-content`, whose `min-width:0` is the only thing stopping the 1,022px grid blowing
+the page out — **the exact omission the contracts-claims harness is already on file for.** With the
+real ancestors: `pageScrollsX: false` on **both** builds, and the grid scrolling inside its own box as
+it always has.
+
+⚠️ A third harness fault, recorded because it accused correct code: `querySelector` returned a **fresh**
+stub each call, so the handler the renderer had assigned was on an object the test then discarded, and
+`btn.onclick()` came back *"not a function"*. Memoised by id, as a real DOM does.
+
+`test-lsm` **684/684** · `test-builder` 99/1 · `test-syntax` 4/4 · `test-cpm` 28/0 · `test-autotrace`
+32/0 · `zoneplan` 27 · `towerseq` 48 · `critwbs` 26 · `health` 30 · `shapeedit` 36 · `sitefit` 31 ·
+`wbsfile` 28 · `zoneoverlap` 56 — **every one identical on this build and on `d0da7cd`**, including
+`test-builder`'s single pre-existing failure, which is not mine. `wiring-check` 139/0 · `dead-hooks`
+**9, the documented baseline, unchanged** · `dark-remap` 0 findings · `toolbar-order` 15 bars / 0 out
+of order · `loc-key-agree` clean · inline `<script>` parses · **0 NUL bytes** · CSS brace delta
+identical to the merge base.
+
+⚠️ **NOT VERIFIED SIGNED IN.** Nothing here has been driven against a real project: the renderer is
+executed against fixtures and the real 197-code chart, never against a saved `schedule_builder` row.
+The first things to try are **+ Library** (the list should come back grouped and code-sorted),
+**+ Custom** (the caret should land in Activity name, with `custom` showing in Code), and **→** with a
+range selected — that last one is the route that now has no competitor.
+
+⚠️ **Fixed in passing: this file held a literal NUL byte** — `\0` written as the raw control character
+in prose describing the "no value at this level" sentinel — so `grep` had switched to binary mode and
+answered *"Binary file matches"* for every search of this changelog. **Third time this repo has been
+bitten by that**, and the 2026-09-14 entry that fixed the last one warns about it in as many words.
+Replaced with the escape; 1 → 0.
+
+`MODULE_V` → `20260917zzg`. ⚠️ Re-derived from `origin/main` **after** merging its ten commits, not
+guessed before — main had reached `zzf` while this was in flight. One conflict, in the grid CSS, and
+it resolved as a **union**: main's `background: transparent` on the cell controls (a real fix — an
+opaque control hides every mark this grid paints on the `<td>`) kept whole, beside this change's
+deletion of the now-unmatchable `.xl-rowact` rules. Every removal in the merged file was then audited
+line by line against `origin/main` and is one of this change's own.
+
+
+## 2026-09-17 (zx) — Repetition loses a tab it was drawing twice, and Scope per zone names the work
+
+Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
+clicking next, user should move from tower sequence to Zone Sequence, etc. before moving to next
+step"*, *"under scope per zone, instead of class codes, provide activity name"*, and *"no need for
+the vertical stacking in repetition step, move this to the generate step"*.
+
+### ⚠️⚠️ ITEM 2 WAS ALREADY BUILT, AND SAYING SO IS WORTH MORE THAN RE-BUILDING IT
+
+The footer's Next/Back has walked this step's tabs since 2026-09-17 (t) — `stepTabs(<step title>)`
+drives the button's label *and* its handler, so it cannot say one thing and do another. Executed
+rather than read: the shipped walker, sliced out of `render()`'s footer block and driven, goes
+**Tower Sequence → Zone sequence → Trade sequence → Scope per zone → Generate**, with Back landing
+on the step's *last* view so Back-then-Next cannot show two different screens.
+
+⚠️ What CAN look like the reported behaviour: the selected view is remembered
+(`ps_steptab_Repetition`), so clicking **Repetition in the rail** while the remembered view is the
+last one leaves Next with nowhere to go but Generate. Entering through Next always lands on the
+first view (`_enterStep(i, false)`), so the walk is complete every time it is *walked*. That is
+deliberate and is left alone; removing the fifth tab narrows the window anyway.
+
+### ⚠️⚠️ THE STACKING TAB WAS A SECOND COPY OF A DRAWING THE GENERATE STEP ALREADY MAKES
+
+`stGenerate` renders `_genBasisPanel` → `_genStackCards` → `stackTowerSVG` for **both** bases, side
+by side — the vertical stacking, on the Generate step, since 2026-09-17 (q). The Repetition tab drew
+the same buildings **one basis at a time behind a `<select>`**, in the step that describes how the
+building *repeats* rather than the step that shows what it *produces*.
+
+⚠⚠ **AND THE ENGINE WAS NEVER TOUCHED, WHICH IS WHY THE TAB WAS A SECOND COPY AT ALL.**
+`stackTowerSVG`, `zonesOfFloorStk`, `openStackUnits` and `_genStackCards` are unchanged and live on
+Generate. What the tab owned was a **shell** around them: chips, a basis `<select>`, the zoom and a
+how-panel.
+
+⚠⚠ **THAT SHELL IS KEPT, PARKED AND WIRED TO NOTHING — A REVERSAL OF THIS ENTRY'S FIRST CUT.**
+Owner 2026-09-17: *"make sure not yet to delete the code for stacking and just keep it in repo. this
+will be used later on in the generate step."* So `stStacking` and `var stackBasis` are back, verbatim,
+out of `STEP_TABS` and out of every call path. The part worth keeping is the **basis `<select>`**:
+Generate draws Internal and External side by side and has no way to look at one at a time, and that
+control is the only thing the tab could do that Generate cannot.
+⚠ This file's own rule — *a renderer nothing calls is the one the next editor wires back up beside
+the real thing* — is answered rather than waved off. The suite asserts the function **exists**, has
+**exactly one occurrence** (its own declaration, no call site), and is **not back in `STEP_TABS`**,
+which is the one place it must not return to.
+⚠⚠ **And parked is not preserved unless it still RUNS.** A separate suite wires it to a host and
+**executes** it — it draws its heading, both towers, the basis `<select>` with the current basis
+marked, and every control it emits is wired. So the day somebody revives it they get a working
+screen rather than a `ReferenceError`. `stackBasis` is kept for exactly that reason: deleting the
+state while keeping the function would have left a landmine on its first line.
+
+⚠️ **What the tab had and Generate did not, came across.** The **zoom** (`stackZoom`, which `stackTowerSVG`
+already read and Generate had no control for) and the notes that make a cell discoverable — a zone
+completes when its last unit does, a cell marked *"N units ▾"* is clickable, superstructure sits
+above the grade line. A clickable cell with nothing saying it is clickable is a feature nobody finds.
+⚠️ The basis `<select>` did **not** come across, and it is the one thing the parked renderer still
+holds that Generate has no answer for.
+⚠️ **One zoom for both panels**, because `stackTowerSVG` reads one variable: comparing Internal
+against External at two different cell widths is comparing two pictures rather than two schedules.
+⚠️ `stackBasis` is read by **nothing on screen** — Generate shows both bases at once — but it is
+kept beside the parked renderer, which does read it.
+⚠️ A browser holding `stack` in `ps_steptab_Repetition` is safe by construction: `stepTabKey`
+validates the stored key against the list and falls back to the first tab. Asserted, not assumed.
+
+### Tower links → Tower Sequence
+
+"Tower links" named a MECHANISM (a link between two towers) while its three siblings are named for
+the QUESTION they answer. ⚠️ `STEP_ALIAS` keeps the old title resolving — `_stepNo` answers an
+**empty string** for a name it cannot find, and a blank where a step number belongs reads as a
+broken reference. `'Stacking'` now aliases to **Generate**, which is where the stacking is.
+⚠️ The renderer stays `stTowerLinks`: it writes `cfg.towerLinks`, and renaming the function without
+renaming the field would leave the two disagreeing for no gain.
+
+### ⚠️⚠️ SCOPE PER ZONE: THE NAME, AND ONE SPECIFICITY TRAP THAT COST THE WHOLE FIX
+
+The header was `a.code || a.name` — a column of `03101` that nobody can read without the Finance
+chart open beside it, on the one grid whose entire job is deciding whether **that work** happens in
+**that place**. It is `a.name || a.code` now, with the code leading the tooltip.
+
+⚠️⚠️ **A name is wider than a five-digit code, so the header has to wrap — and the first rule I
+wrote did not.** `th.sbld-scope-col` is **(0,1,1)**; the base is
+`table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at **(0,1,2)**, which wins. That is
+not a harmless no-op: the `max-width` still applied while the `white-space` did not, so the header
+was capped **and** unwrappable and **three of eleven names rendered clipped**. Measured in a
+browser against the shipped stylesheets; reading the rule would never have shown it.
+`table.sbld-tbl th.sbld-scope-col` is (0,2,2) and wins.
+
+⚠️⚠️ **And the harness lied first, in the flattering direction.** Its `@import` strip was
+`/@import[^;]*;/` — and the Google Fonts URL **contains semicolons** (`wght@0,400;0,500;…`), so it
+cut inside the URL, left garbage that swallowed the following `:root` block, and every `--pd-*`
+token resolved to nothing. It measured an **unstyled** table at the browser's 16px default and
+reported widths ~35% too large. Caught by asserting a token (`--pd-fs-sm` came back empty), not by
+looking at the numbers, which were internally consistent and wrong.
+
+**Measured, 12 locations × N activities, panel 1096px, both builds:**
+
+| activities | header | code build | name build | clipped |
+|---|---|---|---|---|
+| 11 (the typical set) | 31 → **76px** | 1096 — fits | **1096 — fits** | 0 |
+| 12 | | 1096 — fits | 1185 — scrolls | 0 |
+| 16 | | 1139 — *already* scrolls | 1512 — scrolls | 0 |
+| 20 | | 1389 — *already* scrolls | 1876 — scrolls | 0 |
+
+⚠️ **The cost, stated rather than hidden:** above ~11 activities in one trade the table scrolls
+inside its own `.sbld-tablewrap` where codes did not. At 112px a column is already three lines for
+the longest name, and fitting 16 names in 1096px needs ~66px a column — about eight characters, too
+narrow for a name. So the scroll is **inherent to the ask**, not a tuning choice. Nothing is ever
+clipped, and the **page** never scrolls sideways at any count tested.
+⚠️ `vertical-align:bottom`, or a one-line name floats above a three-line neighbour and the header
+reads as a ragged edge rather than a row.
+
+### Verified
+
+**52 assertions across two suites, 0 failing**, every one executing code sliced out of the shipped
+file — and **every claim carries a contrast build against HEAD that bites**: HEAD has five tabs
+ending in Stacking and walks through it; HEAD renders `03101` as the label and no name; HEAD's
+`stGenerate` emits no zoom button; HEAD has `stStacking` and `stackBasis`.
+⚠️ **`stGenerate` is EXECUTED against a fake DOM**, not grepped — `node --check` cannot see a
+ReferenceError, which is this module's own z6 lesson. It runs clean, draws two basis panels with
+stacking in both, wires both zoom buttons, and **zoom 2× genuinely widens the SVG** (viewBox
+414 → 674), so the control is not merely bound to a variable nothing reads.
+⚠️ The titles checked against `_stepNo` are **read out of the source**, not from a list typed in the
+test: **14 call sites, 0 blanks**, and `_stepNo('Stacking')` no longer occurs anywhere.
+Rendered at 1180px against the real `dashboard.css` + the module's own `<style>` block, with the
+cascade proved by a **colour** (ink `rgb(35,31,32)` = `--pd-ink`, type 12.5px = `--pd-fs-sm`) rather
+than by tidy geometry on unstyled markup.
+
+`wiring-check` **139/139**; `toolbar-order` 15 bars / 0 out of order; `dark-remap` 0 findings;
+`dead-hooks` **byte-identical to HEAD**; `test-autotrace` 32/0, `test-cpm` 28/0, `test-towerseq`
+48/0, `test-syntax` 4/0, `test-critwbs` 26/0, `test-health` 30/0, `test-zoneoverlap` 56/0; the
+3.58MB inline block parses; CSS braces balanced (+3/+3, all three from the `{}` quoted inside the
+new comment); 0 NUL bytes; no duplicate ids among the ids touched.
+⚠️ **`test-builder` is 99/1 on `origin/main`'s OWN copy of the file** — a manual page for
+`Structure`, a step the 2026-09-17 merge retired. Pre-existing; left alone rather than folded in.
+⚠⚠ **And a correction: `test-lsm` was never failing — I was calling it wrong.** It takes the file
+to check as `process.argv[2]`; run bare it throws `ERR_INVALID_ARG_TYPE` on `readFileSync(undefined)`,
+which reads exactly like a broken suite. Invoked properly: **676 assertions, 0 failed** on the merged
+tree and identically on `origin/main`.
+
+⚠️ **Not verified signed in.** No real setup has been opened: the walk, the scope grid and the
+Generate step are the shipped renderers executed against fixtures, not a live project.
+
+⚠⚠ `MODULE_V` → `20260917zzd`, and it took TWO re-derivations. `zw` was the highest token on
+any remote head when this was written; by the time it merged, main had run `zx` → `zy` → `zz` →
+`zza` across six commits — **including `20260917zx`, the exact token this branch had picked**. A
+version collision does not conflict on its own (two different values merge cleanly), so the loser's
+bytes would have shipped under a token a browser already holds. `zzb` is past main's `zza`, and is
+sort-checked as a plain string because `zx` sorts *before* `zza` — “take theirs” would have been
+worse than the collision.
+
 ## 2026-09-17 (zv) — Overlapping zones become an error the module can measure; the plan window opens on a zoneless floor with something to draw with; the building is stated in words
 
 Owner, on the Schedule Setup's Floors & Zones step: *"improve the overall UI, starting from defining
@@ -290,7 +622,7 @@ that tower's WBS branch, and it makes the stacking draw preliminaries as if they
 - ⚠️ The Floors & Zones chip row shows it as a **dead, dashed chip reading "project-wide"** rather than
   dropping it. A planner who used it in step 1 and cannot find it here has to be told why, once, where
   they are looking — the emptiest possible bug report is *"I set up the floors and nothing happened"*.
-- ⚠️ `dimKey` already returns the ` ` "no value at this level" sentinel for a null tower, so the
+- ⚠️ `dimKey` already returns the `\0` "no value at this level" sentinel for a null tower, so the
   pushed row attaches to its parent and builds no tower branch. That path is unchanged.
 
 ### Verified

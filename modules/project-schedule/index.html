@@ -4133,6 +4133,18 @@
       max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:var(--pd-fs-base); font-weight:700; margin-bottom:8px; }
     .sbld-scope-col, .sbld-scope-row { cursor:pointer; user-select:none; }
+    /* The Scope-per-zone header holds an activity NAME now (see stScope), so it has to wrap.
+       ⚠⚠ `table.sbld-tbl` IS LOAD-BEARING IN THIS SELECTOR. The base rule is
+       `table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at (0,1,2); a plain
+       `th.sbld-scope-col` is (0,1,1) and LOSES — and that is not a harmless no-op, because the
+       max-width WOULD still have applied while the nowrap did not, leaving the header capped and
+       unwrappable with three of eleven names rendered clipped. Measured in a browser, not read.
+       ⚠ `vertical-align:bottom` lands a one-line name level with a three-line neighbour's last
+       line, so the row of names reads as one row rather than a ragged top edge.
+       ⚠ 112px is where a real 11-code trade still fits the panel without scrolling; above ~11
+       activities the table scrolls inside its own `.sbld-tablewrap` — which a name-width column
+       cannot avoid, and which the page never inherits. */
+    table.sbld-tbl th.sbld-scope-col { white-space:normal; max-width:112px; vertical-align:bottom; line-height:1.25; }
     .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }
     /* step — the borrowed WBS tree. The group keeps the toolbar's own look (it IS the WBS Manager's
        toolbar), but it is laid out here as a wrapping row inside the step panel rather than as part
@@ -4516,6 +4528,12 @@
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     /* push modal — WBS structure editor */
+    /* The push dialog's form labels — “Start date”, “Contract package”, “WBS structure”. Written
+       inline four times at a literal 12px, which is not a rung: --pd-fs-sm (12.5px) is the scale's
+       designated control size and is what they are now. */
+    .sbld-pushlbl { display:block; font-size:var(--pd-fs-sm); font-weight:700; margin:12px 0 4px; }
+    .sbld-pushlbl.tight { margin:0 0 4px; }
+    .sbld-pushlbl em { font-weight:400; font-style:normal; color:var(--pd-muted); }
     .sbld-wbsrows { display:flex; flex-direction:column; gap:5px; }
     .sbld-wbsrow { display:flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); font-size:var(--pd-fs-base); }
     .sbld-wbslvl { display:inline-block; min-width:22px; text-align:center; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); }
@@ -4556,7 +4574,11 @@
     table.sbld-xl td.xl-num input { text-align:right; font-variant-numeric:tabular-nums; }
     /* ⚠ `.xl-rowact` deleted with the dead per-row trash column it styled — a rule that can no
        longer match reads as working styling to everyone who finds it. */
-    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
+    /* ⚠⚠ `background: transparent`, NOT `--pd-card`. See the note above: an opaque control hides
+       every mark this grid paints on the CELL — the selection, the bad-code tint and the copy
+       marquee are all drawn on the <td>, behind its children. The first painted ancestor is the
+       panel's own surface, so an unmarked cell is unchanged. */
+    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:transparent; color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
     /* ⚠️ The shared focus ring is `outline-offset:2px`, which OVERLAPS the neighbouring cell in a
        table this dense. Pulled inside for grid cells only - the ring is still 2px and still the
        same colour, it just draws within the cell it belongs to. */
@@ -4669,6 +4691,10 @@
        intends to cost-load. Uses the warn token pair, never `--pd-warn` as a text colour. */
     .sbld-xl td.xl-cell.sbld-badcode { background:var(--pd-warn-bg); color:var(--pd-warn-text);
       box-shadow:inset 2px 0 0 var(--pd-warn-line); font-weight:700; }
+    /* ⚠ The CELL's colour does not reach the control: the generic rule above sets
+       `color: var(--pd-ink)` on every input, which wins over inheritance. The weight does reach
+       it (`font: inherit`), which is why the code read bold-but-black. */
+    .sbld-xl td.xl-cell.sbld-badcode input { color:var(--pd-warn-text); }
     /* Step-3 tower relationships — one readable sentence per row. */
     /* The Tower-links form. See the note in stTowerLinks: these are labelled, auto-width
        controls laid out as a sentence, never `.sbld-mini`. */
@@ -24755,7 +24781,11 @@
      zoom can still make the row taller, never shorter than the lanes need. ⚠️ And it
      goes through rowHFor so `applyRowZoom` stays THE ONE PLACE row height is set — see its
      note just below. */
-  function _lsmRowH() { return LSM_PAD + _lsmLaneCount() * (LSM_LANE_H + LSM_LANE_GAP); }
+  /* ⚠⚠ ONE LANE, because the row draws ONE bar. This was `_lsmLaneCount()` lanes, which is
+     what made an LSM row eight times taller than an ordinary one — the “ticking LSM widens the
+     rows” report. With the trades merged into a single bar there is nothing for the other lanes
+     to hold, and the height follows the drawing rather than the lane budget. */
+  function _lsmRowH() { return LSM_PAD + (LSM_LANE_H + LSM_LANE_GAP); }
   /* ⚠️⚠️ THE HEIGHT IS ONLY EARNED BY AN LSM-SHAPED GROUPING. `ROWH` is uniform
      by construction (renderWindow slices on `floor(scrollTop / ROWH)` and every bar sits at
      `i * ROWH`), so the lane budget cannot be given to the floor rows alone. That is fine when the
@@ -26537,8 +26567,45 @@
     out.sort(function (p, q) { return p.lane - q.lane; });
     return out.length ? out : null;
   }
-  /* The LSM row: one lane per keyed trade, each a bar from its first start to its last finish on
-     this location, notched where the trade left the floor and came back.
+  /* ---- Fold the per-trade buckets into ONE bar for the row ------------------------------------
+     See the note on the owner's choice above `_lsmBarsHTML`. Takes `_lsmAgg`'s output and returns
+     an array of ONE bucket in the same shape, so the renderer's gap/clash/baseline drawing is
+     unchanged — it simply has one bar to draw instead of N. */
+  function _lsmMergeAgg(agg) {
+    if (!agg || !agg.length) return agg;
+    var iv = [], vals = [], wd = 0, we = 0, n = 0, bs = null, bf = null, over = 0, cal = null;
+    for (var i = 0; i < agg.length; i++) {
+      var b = agg[i];
+      if (cal == null) cal = b.cal;
+      for (var j = 0; j < b.runs.length; j++) iv.push([b.runs[j][0], b.runs[j][1]]);
+      /* ⚠ The overflow bucket carries no trade NAME (that is the point of it), so it contributes
+         its span and its count and nothing to the colour or the trade list. */
+      if (b.over) over += (b.overCount || 0); else if (b.value) vals.push(b.value);
+      wd += b.wd || 0; we += b.we || 0; n += b.n || 0;
+      if (b.bs && (!bs || +b.bs < +bs)) bs = b.bs;
+      if (b.bf && (!bf || +b.bf > +bf)) bf = b.bf;
+    }
+    if (!iv.length) return null;
+    iv.sort(function (p, q) { return p[0] - q[0] || p[1] - q[1]; });
+    /* The SAME fold `_lsmAgg` uses, through the SAME `_lsmIdleGap`. */
+    var runs = [iv[0].slice()];
+    for (var k = 1; k < iv.length; k++) {
+      var cur = runs[runs.length - 1], nx = iv[k];
+      if (!_lsmIdleGap(cur[1], nx[0], cal)) { if (nx[1] > cur[1]) cur[1] = nx[1]; }
+      else runs.push(nx.slice());
+    }
+    var one = (vals.length === 1 && !over) ? agg.filter(function (x) { return !x.over; })[0] : null;
+    return [{
+      merged: true, values: vals, overCount: over,
+      value: one ? one.value : null, lane: 0,
+      color: one ? one.color : null, tex: one ? one.tex : 0, over: false,
+      cal: cal, runs: runs, s: new Date(runs[0][0]), f: new Date(runs[runs.length - 1][1]),
+      wd: wd, we: we, n: n, bs: bs, bf: bf,
+      pct: wd > 0 ? Math.max(0, Math.min(100, Math.round(we / wd))) : 0
+    }];
+  }
+  /* The LSM row: ONE bar per storey, from the first start to the last finish of every trade on it,
+     notched where the whole storey went quiet.
      ⚠️ NO BRACKET AND NO COMPOSITION STRIP ON AN LSM ROW. The row IS the floor and the
      lanes ARE the reading; a roll-up bracket drawn over them would be a second, coarser answer to
      the same question in the same space. The branch's span and roll-up % are still in the grid's
@@ -26940,7 +27007,9 @@
     return '<div class="ps-lsmrate"><span class="ps-lsmrate-lbl" title="Read off the staircase: how fast each trade climbs the building \u2014 the deck\u2019s &quot;12 working day cycle per floor&quot; and &quot;2 floors per month&quot;. Hover a chip for the fit.">Rate</span>' + h + '</div>';
   }
   function _lsmBarsHTML(r, min, dayw, top) {
-    var agg = r._glsm; if (!agg || !agg.length) return '';
+    /* ⚠ Folded HERE, not in `_lsmAgg`: the per-trade buckets are what the Rate strip and the
+       clash engine read, so they must survive. Only what is DRAWN merges. */
+    var agg = _lsmMergeAgg(r._glsm); if (!agg || !agg.length) return '';
     var pitch = LSM_LANE_H + LSM_LANE_GAP, y0 = top + Math.round(LSM_PAD / 2), out = '';
     var showBl = !!_gset.baseline, loc = r._graw || r.activity_name || '';
     /* The storey's state AT THE DATA DATE, printed beside the line.
@@ -26992,7 +27061,14 @@
         var _rk = _lsmRankOf(loc);
         if (_rk != null) _step = _R.steps[(r._danc || []).join('\u0001') + '\u0002' + b.value + '\u0002' + _rk];
       }
-      var tip = b.value + ' \u2014 ' + loc + ': ' + span + ', ' + b.pct + '%, ' +
+      /* ⚠ The merged bar has no single trade, so it lists them. `_step` (this storey's cycle
+         against the one below) is a PER-TRADE figure and is only stated when the storey happens
+         to hold exactly one — averaging it across trades would invent a number. */
+      var _who = b.merged
+        ? ((b.values.length ? b.values.join(', ') : 'no keyed trade') +
+           (b.overCount ? ' +' + b.overCount + ' more' : ''))
+        : b.value;
+      var tip = _who + ' \u2014 ' + loc + ': ' + span + ', ' + b.pct + '%, ' +
         b.n + ' activit' + (b.n === 1 ? 'y' : 'ies') + brk +
         (_step != null ? (' \u2014 started ' + _step + ' ' + (_R.wd ? 'working' : 'calendar') +
                           ' day' + (_step === 1 ? '' : 's') + ' after the storey below') : '');
@@ -27002,12 +27078,30 @@
          being marked is a STRETCH of the bar, not the whole of it. */
       var _cl = '';
       if (_lsmRows) {
-        var _ck = (r._danc || []).join('\u0001') + '\u0002' + b.value + '\u0002' + _rk;
-        /* ⚠ The same flag as the strip, read here rather than in a second place: a bar
+        /* ⚠⚠ EVERY TRADE ON THE STOREY, because the bar is now one bar. The marks are keyed
+           per trade, so a merged bar has to gather them all — otherwise folding the bars would
+           quietly drop the very overlaps the clash engine exists to show.
+           ⚠ The same flag as the strip, read here rather than in a second place: a bar
            still marked while the strip said “hidden” is the kind of half-applied toggle this
            file keeps recording. */
-        var _cm = (_rk == null || !_lsmClashShow) ? null : _lsmClash().marks[_ck];
-        if (_cm) {
+        var _vals = b.merged ? b.values : [b.value];
+        var _cm = [], _seen = {};
+        if (_rk != null && _lsmClashShow) {
+          for (var _vi = 0; _vi < _vals.length; _vi++) {
+            var _ck = (r._danc || []).join('\u0001') + '\u0002' + _vals[_vi] + '\u0002' + _rk;
+            var _one = _lsmClash().marks[_ck];
+            /* ⚠ Deduped by span. The SAME overlap is recorded against BOTH trades in it, so on a
+               merged bar the two marks land at identical coordinates - two absolutely-positioned
+               divs with the same gradient at the same offset, visually one mark and twice the DOM.
+               Keyed on the span, so two DIFFERENT stretches still both draw. */
+            if (_one) for (var _oi = 0; _oi < _one.length; _oi++) {
+              var _mk = +_one[_oi].s + String.fromCharCode(124) + +_one[_oi].f;
+              if (_seen[_mk]) continue;
+              _seen[_mk] = 1; _cm.push(_one[_oi]);
+            }
+          }
+        }
+        if (_cm.length) {
           for (var _q = 0; _q < _cm.length; _q++) {
             var _cx = Math.round(dayDiff(b.s, _cm[_q].s) * dayw);
             var _cw = Math.max(Math.round((dayDiff(_cm[_q].s, _cm[_q].f) + 1) * dayw), 2);
@@ -31697,15 +31791,15 @@
     var topBranches = (WBS_NODES || []).filter(function (n) { return !n.parent_id && !n.is_package_root; });
 
     var m = UI.modal('<h2 style="margin-top:0;">File existing work under a contract package</h2>' +
-      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">Work planned before this project was ' +
+      '<p class="sbld-hint" style="margin-top:0;">Work planned before this project was ' +
       'split into contract packages belongs to no lot, so it appears in no package total. This files it, and ' +
       'moves its top-level branches under the package\'s own row so the grid reads contract-first.</p>' +
-      '<label style="display:block;font-size:12px;font-weight:700;margin:10px 0 4px;">Contract package</label>' +
+      '<label class="sbld-pushlbl">Contract package</label>' +
       '<select class="pd-select" id="fp-pkg" style="width:100%;">' +
         PACKAGES.map(function (k) {
           return '<option value="' + esc(k.id) + '">' + esc((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
         }).join('') + '</select>' +
-      '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">What to file</label>' +
+      '<label class="sbld-pushlbl">What to file</label>' +
       '<select class="pd-select" id="fp-scope" style="width:100%;">' +
         '<option value="unassigned">Everything not yet in a package</option>' +
         '<option value="branch">One WBS branch and everything under it</option>' +
@@ -31715,7 +31809,7 @@
           '<option value="">— Choose a branch —</option>' +
           topBranches.map(function (n) { return '<option value="' + esc(n.id) + '">' + esc(n.name || 'WBS') + '</option>'; }).join('') +
         '</select></div>' +
-      '<div id="fp-what" style="margin:12px 0;font-size:13px;"></div>' +
+      '<div id="fp-what" style="margin:12px 0;font-size:var(--pd-fs-base);"></div>' +
       '<div style="text-align:right;"><button class="pd-btn" id="fp-x">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="fp-go">File</button></div>');
 
@@ -31732,7 +31826,7 @@
       what.innerHTML = '<strong>' + c.acts.length + '</strong> activity/activities and <strong>' + c.branches.length +
         '</strong> WBS branch(es) will be filed under <strong>' + esc(nm) + '</strong>' +
         (c.tops.length ? ', and <strong>' + c.tops.length + '</strong> top-level branch(es) will move under its row.' : '.') +
-        '<div style="color:var(--pd-muted);font-size:12px;margin-top:6px;">' +
+        '<div class="sbld-hint" style="margin-top:6px;">' +
         'Work already filed under a <em>different</em> package is never touched. Only top-level branches move — ' +
         'deeper ones are re-tagged where they are. Nothing is deleted, and no dates or progress change.</div>';
     }
@@ -34706,7 +34800,7 @@
        were stacked in one column, distinguished by a prefix on the label, so a twenty-storey tower
        beside a six-storey podium read as one twenty-six-storey building with two F1s in it.
        ⚠️ 'ALL' is kept and is still reachable, because a link ACROSS towers is legitimate here (the
-       Tower links step states the coarse relationship; this is the fine one) and a filter that could
+       Tower Sequence step states the coarse relationship; this is the fine one) and a filter that could
        not be turned off would remove a real capability rather than tidy it. */
     var seqTower = 'ALL';     // Zone-sequence: which tower is shown ('ALL' = every tower, for cross-tower links)
     var seqOptsOpen = false;  // the folded "View options" panel — a var, because a <details> is rebuilt on every render
@@ -34760,7 +34854,7 @@
           /* ⚠️ The row still NAMES its tower whenever more than one could be on screen — which is now
              only when the filter is off. The original note is kept because its reasoning still holds
              and is what 'All towers' exists for: a zone-level link across towers is legitimate here
-             (the Tower links step states the coarse relationship; this is the fine one), so the
+             (the Tower Sequence step states the coarse relationship; this is the fine one), so the
              filter defaults to showing everything and hides nothing permanently. */
           var _twPfx = (multiTower() && seqTower === 'ALL') ? ((towerById(towerIdOf(f)) || {}).code || towerLabel(towerIdOf(f))) + ' · ' : '';
           return '<div class="sbld-twr-floor"><span class="sbld-twr-lab" title="' + e2(towerLabel(towerIdOf(f))) + '">' + e2(_twPfx + (f.code || f.name || 'F')) + '</span><div class="sbld-twr-trade">' + nodes.map(function (n) { return towerNode(tr, n); }).join('') + '</div></div>';
@@ -35492,16 +35586,16 @@
         done: 'You can see where the generated activities are going to land.'
       },
       'Repetition': {
-        why: 'How the building repeats — the tabs across the top are five questions about one subject: which towers interface, in what order the locations are built, in what order the trades run inside a location, what applies where, and what the result looks like stacked up.',
-        how: ['<b>Tower links</b> — how the towers meet in time (a shared podium, one tower handing off to another). Skip it on a single-tower job.',
+        why: 'How the building repeats — the tabs across the top are four questions about one subject: which towers interface, in what order the locations are built, in what order the trades run inside a location, and what applies where. What that produces is drawn on the Generate step.',
+        how: ['<b>Tower Sequence</b> — how the towers meet in time (a shared podium, one tower handing off to another). Skip it on a single-tower job.',
               '<b>Zone sequence</b> — which location follows which. Use <b>Auto-trace</b> (below) rather than drawing it by hand.',
               '<b>Trade sequence</b> — how the class codes run inside one location. <b>Auto-chain</b> links a trade\u2019s codes back-to-back with the relationship in the dropdown beside it.',
               '<b>Scope per zone</b> — tick which activities apply to each location. Everything applies everywhere until you say otherwise.',
-              '<b>Stacking</b> — read-only: the vertical stack per trade, each zone with its number and completion date.'],
+              '<b>Next</b> walks these four in order before it leaves the step — the button names the view it is about to open.'],
         watch: ['<b>Linking by hand</b> (Zone and Trade sequence): click one or more <b>sources</b> (red outline) \u2192 <b>right-click</b> to confirm \u2192 click one or more <b>destinations</b> (blue dashed) \u2192 <b>right-click</b> again \u2192 pick the relationship (FS / SS / FF / SF) and lag. Every source links to every destination.',
                 '<b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> and <b style="color:#e08a1e">successors</b>. Click an arrow to edit or unlink it. <b>Reset selection</b> cancels.',
                 '⚠️⚠️ <b>Auto-trace replaces every link</b> in Zone sequence. Run it FIRST, then adjust by hand — not the other way round.'],
-        done: 'A trade you pick on Stacking climbs the building the way you would describe it out loud.'
+        done: 'The vertical stacking on the Generate step climbs the building the way you would describe it out loud.'
       },
       'Project phases': {
         why: 'The lifecycle either side of construction — Initiation, Planning, Close-out — as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.',
@@ -36880,11 +36974,16 @@
     /* ⚠ A retired title must still resolve: `_stepNo` answers an EMPTY STRING for a name it
        cannot find, and a blank where a step number should be reads as a broken reference rather
        than a renamed step. `Structure` and `Construction Library` are the two retired here. */
-    var STEP_ALIAS = { 'Tower links': 'Repetition', 'Zone sequence': 'Repetition',
+    /* ⚠ A retired or renamed view title must still resolve to a NUMBER. `_stepNo` answers an
+       empty string for a name it cannot find, and a blank where a step number belongs reads as a
+       broken reference — so 'Tower links' is kept beside its new name, and 'Stacking' now points
+       at Generate, which is where the vertical stacking actually is. */
+    var STEP_ALIAS = { 'Tower Sequence': 'Repetition', 'Tower links': 'Repetition',
+                       'Zone sequence': 'Repetition',
                        'Structure': 'Project phases', '5PMLC': 'Project phases',
                        'Construction Library': 'Activities',
                        'Trade sequence': 'Repetition', 'Scope per zone': 'Repetition',
-                       'Stacking': 'Repetition' };
+                       'Stacking': 'Generate' };
     function _stepNo(t) {
       var names = STEPS.map(function (x) { return x.t; });
       var i = names.indexOf(t);
@@ -36974,7 +37073,7 @@
          empty state, untouched. The only thing that changed is where the planner clicks to reach
          them. `_stepNo` aliases their titles onto this step, so the 27 cross-references elsewhere
          ("set in step 7 · Zone sequence") keep resolving to a real number — they are inside it. */
-      { t: 'Repetition', s: 'Towers, zones, trades, stacking', fn: stRepetition },
+      { t: 'Repetition', s: 'Towers, zones, trades, scope', fn: stRepetition },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
     /* The import path. ⚠️ THE ORDER IS THE DATA-CHECKING ORDER, and it is not arbitrary:
@@ -37096,14 +37195,29 @@
         { k: 'lib',  t: 'Construction Library', sub: 'places, groupings and items', fn: function (h) { stLibrary(h, true); } }
       ],
       /* ⚠ Repetition draws its own tab strip (see `stRepetition`) — only the SELECTION lives
-         here, so the footer's Next/Back walk these five before moving on to Generate. No `sub`
+         here, so the footer's Next/Back walk these four before moving on to Generate. No `sub`
          on these: the pill strip has nowhere to put one, and an unread field reads as a bug. */
+      /* ⚠⚠ STACKING IS NOT A TAB HERE ANY MORE. Owner 2026-09-17: *“no need for the
+         vertical stacking in repetition step, move this to the generate step”*. The drawing was
+         already ON the Generate step — `_genStackCards` puts one building per (tower × trade)
+         inside each basis panel — so this tab was a SECOND copy of the same picture, one basis
+         at a time, in the step that describes how the building repeats rather than the step that
+         shows what it produces. What only the tab had (the zoom, and the notes about a clickable
+         “N units” cell) moved to Generate with it.
+         ⚠ `stStacking` and `stackBasis` are **kept, parked and wired to nothing**, at the owner's
+         request — they are intended for further work on the Generate step. See the PARKED block
+         above `stStacking` itself; the suite asserts it stays out of this list.
+         ⚠ A browser that remembers `stack` in `ps_steptab_Repetition` is safe: `stepTabKey`
+         validates the stored key against this list and falls back to the first tab. */
       'Repetition': [
-        { k: 'towers', t: 'Tower links',    fn: function (h) { return stTowerLinks(h); } },
+        /* ⚠ “Tower links” was the name of a MECHANISM (a link between two towers); the other
+           three tabs are named for the QUESTION they answer. Owner 2026-09-17: *“rename tower
+           links to Tower Sequence”*. `STEP_ALIAS` keeps the old title resolving to a step number,
+           so nothing that still says “Tower links” prints a blank where a number belongs. */
+        { k: 'towers', t: 'Tower Sequence', fn: function (h) { return stTowerLinks(h); } },
         { k: 'zones',  t: 'Zone sequence',  fn: function (h) { return stSequence(h); } },
         { k: 'trades', t: 'Trade sequence', fn: function (h) { return stTradeSeq(h); } },
-        { k: 'scope',  t: 'Scope per zone', fn: function (h) { return stScope(h); } },
-        { k: 'stack',  t: 'Stacking',       fn: function (h) { return stStacking(h); } }
+        { k: 'scope',  t: 'Scope per zone', fn: function (h) { return stScope(h); } }
       ]
     };
     var _stepTabSel = {};
@@ -37207,18 +37321,18 @@
        on screen are a window, not the total. */
     function _sbldWbsCount() { return (WBS_NODES || []).filter(Boolean).length; }
     /* ==========================================================================================
-       REPETITION — the five views that describe how the building repeats.
+       REPETITION — the four views that describe how the building repeats.
        ⚠️ Each sub-view renders its OWN heading (they all open with `_stepNo(<their title>)`), which
        the alias resolves to this step's number — so the heading reads "6 · Zone sequence" and the
        planner is never told a number that does not exist. Nothing below this line was rewritten. */
     /* ⚠⚠ THE LIST AND THE SELECTED KEY BOTH LIVE IN `STEP_TABS` NOW. They used to be a
        private `REP_TABS` + `_repView` pair, which is exactly why the footer's Next skipped the
-       four views after Tower links: the walker reads `stepTabs(<step title>)` and this step was
+       views after the first: the walker reads `stepTabs(<step title>)` and this step was
        not in it. Keeping a private copy in step with a shared one is the bug that writes itself,
        so there is no copy — this renders whatever the walker is pointing at.
        ⚠ The view is remembered across reloads now (`stepTabKey` persists it), which the pills
        never did. That matches Activities, and coming back to the step you left is the behaviour
-       a five-view step wants. */
+       a multi-view step wants. */
     function stRepetition(host) {
       var T = stepTabs('Repetition'), k = stepTabKey('Repetition');
       var cur = T.filter(function (x) { return x.k === k; })[0] || T[0];
@@ -39740,14 +39854,16 @@
       });
       return { added: added, removed: removed, skipped: skipped };
     }
-    // ---- Step 3: how the towers interface -------------------------------------------------
+    // ---- Repetition › Tower Sequence: how the towers interface ---------------------------
+    // ⚠ The renderer keeps the name `stTowerLinks`: it edits `cfg.towerLinks`, and renaming the
+    // function without renaming the field it writes would leave the two disagreeing for no gain.
     // Reads as sentences, not as a matrix: "Tower B starts after Tower A · Podium L4, +0d". A
     // relationship a planner cannot read back in words is one they cannot check.
     var VS_TL_TYPES = [['FS', 'starts after'], ['SS', 'starts with'], ['FF', 'finishes with'], ['SF', 'finishes before']];
     function _tlWord(t) { var o = VS_TL_TYPES.filter(function (x) { return x[0] === t; })[0]; return o ? o[1] : 'starts after'; }
     function stTowerLinks(host) {
       var list = towerList();
-      var head = '<h2>' + _stepNo('Tower links') + ' · How the towers interface</h2>';
+      var head = '<h2>' + _stepNo('Tower Sequence') + ' · Tower Sequence — how the towers interface</h2>';
       if (list.length < 2) {
         host.innerHTML = head +
           /* The empty state already says which tower exists and that towers run in parallel; this
@@ -44034,16 +44150,30 @@
       usedGroups().forEach(function (tr) {
         var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
         if (!tlocs.length || !acts.length) return;
-        var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th class="sbld-scope-col" data-tr="' + tr + '" data-act="' + a.id + '" title="' + e2(a.name) + ' — click to toggle this activity for every location">' + e2(a.code || a.name) + '</th>'; }).join('') + '</tr>';
+        /* ⚠⚠ THE ACTIVITY NAME IS THE HEADER, NOT ITS CLASS CODE. Owner 2026-09-17:
+           *“under scope per zone, instead of class codes, provide activity name”*. A column of
+           `03101` is unreadable without the chart open beside it, and this grid's whole job is
+           deciding whether THAT WORK happens in THAT PLACE — a question nobody can answer from a
+           five-digit number. The code is not lost: it leads the tooltip, where it is one hover away
+           and still the value every other screen keys on.
+           ⚠ `.sbld-scope-col` wraps at a capped width rather than inheriting the table's
+           `white-space:nowrap`: an unwrapped “Structural Concrete Works — Columns” column is ~230px,
+           and eleven of those put the last checkbox a screen and a half to the right of its row
+           label. Wrapped, the column is the width of its longest WORD. */
+        var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th class="sbld-scope-col" data-tr="' + tr + '" data-act="' + a.id + '" title="' + (a.code ? e2(a.code) + ' · ' : '') + e2(a.name) + ' — click to toggle this activity for every location">' + e2(a.name || a.code) + '</th>'; }).join('') + '</tr>';
         var body = tocs(tlocs, acts);
         sections += '<h3 class="sbld-sech"><span class="sbld-dot" style="background:' + gc(tr) + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
       });
       function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td class="sbld-scope-row" data-tr="' + l.trade + '" data-uid="' + l.uid + '" title="Click to toggle every activity at ' + e2(locLabel(l)) + '">' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
       host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2>' +
         '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations.</p>' +
+        /* ⚠ The column header is the activity NAME now, so the two sentences that name the
+           control had to follow it — “activity header” said nothing about what is in it, and the
+           class code has nowhere else to be announced now that it is on hover. */
         _sbldHow('<p>All on by default — untick where a trade doesn\'t occur.</p>' +
-          '<p>Click an <b>activity header</b> to toggle that activity across every location, or a ' +
-          '<b>location label</b> to toggle all of its activities.</p>') +
+          '<p>Click an <b>activity name</b> in the header to toggle that activity across every ' +
+          'location, or a <b>location label</b> to toggle all of its activities.</p>' +
+          '<p>Hover a name for its <b>class code</b>.</p>') +
         '<div class="sbld-sec-actions"><button class="pd-btn" id="b-all">All on</button><button class="pd-btn" id="b-none">All off</button></div>' +
         (sections || '<div class="sbld-empty">Assign activities to trades (step ' + _stepNo('Activities') + ') and give those trades floors/zones (step ' + _stepNo('Floors & Zones') + ').</div>');
       host.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.onchange = function () { var key = c.dataset.uid + '|' + c.dataset.act; if (c.checked) delete cfg.scopeOff[key]; else cfg.scopeOff[key] = true; markDirty(); }; });
@@ -44168,7 +44298,10 @@
       function win(st, fi) { return (st && fi) ? (fmtD(st) + ' → ' + fmtD(fi)) : '—'; }
       var execRow = '<div class="sbld-phcard is-exec">' +
         '<div class="sbld-phhead"><span class="sbld-phname">' + e2(PHASE_LABELS.construction) + '</span>' +
-        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Stacking') + '</span></div>' +
+        /* ⚠ Named by the STEP, not by a view inside it: 'Stacking' is no longer one of
+           Repetition's tabs, and a title the alias has to rescue is a reference waiting to read
+           as a blank. */
+        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Repetition') + '</span></div>' +
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
           ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
         phWbsBlock('construction') + '</div>';
@@ -45190,7 +45323,7 @@
           ' cross-tower activity link' + (twList.length === 1 ? '' : 's') +
           ' — each is set to "whole tower", because which floor a tower hands off FROM is a decision about the podium that the relationships do not state.');
       } else if (out.towers.length > 1) {
-        rep.notes.push('No relationship in the programme crosses from one tower to another, so the towers are left starting together on the Tower links step.');
+        rep.notes.push('No relationship in the programme crosses from one tower to another, so the towers are left starting together on the Tower Sequence step.');
       }
 
       /* ---- Scope per zone ----------------------------------------------------------------------
@@ -46418,7 +46551,7 @@
       // clears the whole project and its inserts carry no package_id, so offering a package there
       // would promise scoping the import does not do.
       var pkgHtml = (imp.kind === 'xlsx' && (PACKAGES || []).length)
-        ? '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Contract package</label>' +
+        ? '<label class="sbld-pushlbl">Contract package</label>' +
           '<select class="pd-select" id="b-imppkg" style="width:100%;max-width:420px;">' +
           '<option value="">— No package (assign later in the grid) —</option>' +
           (PACKAGES || []).map(function (k) { return '<option value="' + e2(k.id) + '"' + (imp.pkgId === k.id ? ' selected' : '') + '>' + e2((k.code ? k.code + ' — ' : '') + k.name) + '</option>'; }).join('') +
@@ -46627,9 +46760,25 @@
       _stkUnits = {};   // repopulated by stackTowerSVG below
       host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate &amp; preview — Internal vs External</h2>' +
         '<p class="sbld-lede">Both schedules are built from the same zoning and links, each using its own durations: <b>Internal</b> (target) and <b>External</b> (contract).</p>' +
+        /* ⚠⚠ THE STACKING'S OWN MECHANICS LIVE HERE NOW, because this is the only place the
+           stacking is drawn. They came off the retired Repetition › Stacking tab verbatim, minus
+           the two sentences that described that tab rather than the drawing (“nothing is edited
+           here”, and picking a basis — both bases are on screen at once). A clickable cell with
+           nothing saying it is clickable is a feature nobody finds.
+           ⚠ They sit in the step's OWN `_sbldHow` rather than a second one beside it: main moved
+           this step's lede into that panel in the same round, and two disclosure panels stacked on
+           one step is the shape this wizard spent the day removing. */
         _sbldHow('<p>Each column is that basis’s building, one cell per zone, showing when the zone ' +
-          'completes.</p>') +
+          'completes. A zone completes when its <b>last unit</b> does.</p>' +
+          '<p>A cell marked <b>“N units ▾”</b> is clickable — it opens each unit’s own date. ' +
+          'Superstructure sits above the grade line, basements below.</p>' +
+          '<p>Pick a <b>tower</b> and a <b>trade</b> to focus both columns at once, and <b>zoom</b> ' +
+          'in if a floor’s dates are cramped.</p>') +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Project start&nbsp; <input class="pd-input" type="date" id="b-start" value="' + e2(cfg.startDate) + '" style="height:30px;"></label>' +
+        /* ⚠ One zoom for BOTH panels — `stackTowerSVG` reads `stackZoom`, so the two bases are
+           always drawn at the same cell width. Comparing Internal against External at two
+           different scales is comparing two pictures rather than two schedules. */
+        '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-stkzout" title="Narrower cells">−</button><button class="pd-btn sbld-zbtn" id="b-stkzin" title="Wider cells — more room for dates">+</button></span>' +
         '<button class="pd-btn" id="b-csv-int">CSV · Internal</button><button class="pd-btn" id="b-csv-ext">CSV · External</button></div>' +
         towerChips + tradeChips +
         '<div class="sbld-gen2">' + _genBasisPanel(gInt, 'Internal', 'var(--pd-ok)') + _genBasisPanel(gExt, 'External', 'var(--pd-red)') + '</div>' +
@@ -46652,6 +46801,10 @@
       host.querySelector('#b-csv-ext').onclick = function () { exportCsv(gExt, 'external'); };
       host.querySelectorAll('[data-gtr]').forEach(function (b) { b.onclick = function () { stackTrade = b.dataset.gtr; render(); }; });
       host.querySelectorAll('[data-gtw]').forEach(function (b) { b.onclick = function () { stackTower = b.dataset.gtw; render(); }; });
+      /* ⚠ Same clamps the retired tab used (0.6 – 4, rounded to a tenth), so a planner who had
+         zoomed in there finds the control behaving identically here. */
+      var _zo = host.querySelector('#b-stkzout'); if (_zo) _zo.onclick = function () { stackZoom = Math.max(0.6, Math.round((stackZoom - 0.2) * 10) / 10); render(); };
+      var _zi = host.querySelector('#b-stkzin'); if (_zi) _zi.onclick = function () { stackZoom = Math.min(4, Math.round((stackZoom + 0.2) * 10) / 10); render(); };
       /* The unit drill-down the stacking cards offer, wired here too so a cell behaves the same
          way on this step as it does on the Stacking tab. */
       host.querySelectorAll('.sbld-stkcell').forEach(function (c) { c.onclick = function () { openStackUnits(c.dataset.zk); }; });
@@ -46661,8 +46814,12 @@
     // ---- Step (Stacking): vertical stacking — one building model per trade, each zone labelled with its zone
     // number and its COMPLETION date (from the generated schedule). Superstructure above the grade line,
     // basements below — same tower layout as step 2, but filled with dates instead of empty cells.
+    /* ⚠ `stackBasis` is READ ONLY BY THE PARKED `stStacking` BELOW — nothing on screen writes it
+       today, because the Generate step draws Internal and External side by side and has no basis to
+       choose between. It is kept because the parked renderer is kept: deleting the state and leaving
+       the function would give whoever revives it a `ReferenceError` on line one. */
     var stackBasis = 'int';
-    var stackZoom = 1;   // step-6 stacking: cell-width multiplier so many-unit floors still show the date
+    var stackZoom = 1;   // stacking: cell-width multiplier so many-unit floors still show the date
     var stackTrade = 'ALL';   // step-6 stacking: which trade's tower(s) are shown ('ALL' = every trade)
     var stackTower = 'ALL';   // step-6 stacking: which PROJECT tower is shown ('ALL' = every tower)
     var _stkUnits = {};  // zone key -> {trade, floor, zone, units:[{code,fin}]} for the unit drill-down
@@ -46728,6 +46885,25 @@
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
     }
+    /* ==========================================================================================
+       PARKED — KEPT ON PURPOSE, WIRED TO NOTHING. DO NOT DELETE.
+       Owner 2026-09-17: *“make sure not yet to delete the code for stacking and just keep it in
+       repo. this will be used later on in the generate step.”*
+
+       ⚠⚠ THIS IS A SHELL, NOT THE STACKING. The drawing itself — `stackTowerSVG`,
+       `zonesOfFloorStk`, `openStackUnits`, `_genStackCards` — was never removed and is LIVE on the
+       Generate step, one card per (tower × trade) inside each basis panel. What is parked here is
+       the retired Repetition › Stacking TAB's own chrome around it, and the one thing Generate does
+       not have: a **basis `<select>`**, which shows Internal or External one at a time instead of
+       both side by side. That control is why this is worth keeping rather than re-deriving.
+
+       ⚠ It is deliberately NOT in `STEP_TABS`. This file's own rule is that a renderer nothing
+       calls reads as working code to every tool — so the rule is answered rather than ignored: the
+       suite asserts this function EXISTS and has ZERO call sites, and fails if anyone wires it back
+       onto Repetition, which is the one place it must not go back to.
+       ⚠ Every name it calls was checked against the current file when it was parked, so it can be
+       revived without a ReferenceError — `stackBasis` above is kept for exactly that reason.
+       ========================================================================================== */
     function stStacking(host) {
       if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps ' + _stepNo('Activities') + '–' + _stepNo('Scope per zone') + ' first (activities + per-trade floors/zones + scope).</div>'; return; }
       var g = generate(stackBasis);
@@ -46812,10 +46988,10 @@
       // none is defined, ask the user to pick a start date.
       var ddSet = !!dataDate, ddISO = ddSet ? iso2(dataDate) : (cfg.startDate || iso2(wallToday()));
       var startBlock = ddSet
-        ? '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Start date</label>' +
+        ? '<label class="sbld-pushlbl">Start date</label>' +
           '<input class="pd-input" type="date" id="sbpush-start" value="' + e2(ddISO) + '" readonly style="width:100%;height:34px;background:var(--pd-bg);">' +
           '<p class="sbld-hint" style="margin:4px 0 0;">Using the project <b>Data Date</b> (' + e2(ddISO) + '). Change it via the Data Date badge on the schedule toolbar.</p>'
-        : '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Start date <span style="color:var(--pd-red);">*</span></label>' +
+        : '<label class="sbld-pushlbl">Start date <span style="color:var(--pd-red);">*</span></label>' +
           '<input class="pd-input" type="date" id="sbpush-start" value="' + e2(ddISO) + '" style="width:100%;height:34px;">' +
           '<p class="sbld-hint" style="margin:4px 0 0;">No project <b>Data Date</b> is set — choose the date the schedule should start from.</p>';
       // Which contract package this push lands in. ⚠️ Shown even when there is only one
@@ -46824,7 +47000,7 @@
       // owner could not see.
       var pkgSel = curPkgId || '';
       var pkgBlock = !(PACKAGES || []).length ? '' :
-        '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Contract package</label>' +
+        '<label class="sbld-pushlbl">Contract package</label>' +
         '<select class="pd-select" id="sbpush-pkg" style="width:100%;">' +
           (PACKAGES || []).map(function (k) {
             return '<option value="' + e2(k.id) + '"' + (String(pkgSel) === String(k.id) ? ' selected' : '') + '>' +
@@ -46835,7 +47011,7 @@
         '<p class="sbld-hint" id="sbpush-pkghint" style="margin:4px 0 0;"></p>';
       // (the WBS picker was removed — a builder push always files under Execution Phase)
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 500;
-      ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+      ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3>Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:16px;">' +
         '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + gI.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule with their <b>relationships</b> (FS/SS/FF/SF + lag) as predecessors. Nothing is replaced.</p>' +
         // ⚠️ Stated before the push, not only in the summary after it. A push that quietly created
@@ -46928,16 +47104,19 @@
           if (ad >= 0 && absMaxDepth() <= ad) return false;
           return true;
         }
+        /* A grouping rung is only OFFERED when some item is filed that deep — see the note above. */
+        function offered(d) { var ad = absDimDepth(d); return ad < 0 || ad < absMaxDepth(); }
+        var vis = work.filter(offered);
         var lvl = 0;
-        host.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">WBS structure <span style="font-weight:400;color:var(--pd-muted);">(drag order with ↑/↓; tick to include)</span></div>' +
-          '<div class="sbld-wbsrows">' + work.map(function (d, i) {
+        host.innerHTML = '<div class="sbld-pushlbl tight">WBS structure <em>(drag order with ↑/↓; tick to include)</em></div>' +
+          '<div class="sbld-wbsrows">' + vis.map(function (d, i) {
             var on = incl[d], build = willBuild(d); if (build) lvl++;
             var skipped = on && !build;
             return '<div class="sbld-wbsrow"' + (skipped ? ' style="opacity:.6;"' : '') + '><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
               '<span class="sbld-wbslvl">' + (build ? 'L' + lvl : '—') + '</span> ' + e2(dimLabelOf(d)) +
               (skipped ? '<span class="sbld-hint" style="margin:0;">skipped — ' + e2(_dimSkipWhy(d)) + '</span>' : '') + '</label>' +
               '<button class="pd-btn sbld-wbsmv" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
-              '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === work.length - 1 ? ' disabled' : '') + '>↓</button></div>';
+              '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === vis.length - 1 ? ' disabled' : '') + '>↓</button></div>';
           }).join('') + '</div>' +
           /* ⚠️ NAME THE TOP OF THE TREE, not just the chain. The order line alone reads as a list of
              things that will be present, and a planner who wants trade branches under the Execution
@@ -46949,8 +47128,11 @@
           (lvl ? '<p class="sbld-hint" style="margin:2px 0 0;opacity:.8;">Directly under the Execution Phase you will see <b>' +
             e2(dimLabelOf(work.filter(willBuild)[0])) + '</b> branches; everything below it nests inside them. Drag with ↑/↓ to change what leads.</p>' : '');
         host.querySelectorAll('[data-dim]').forEach(function (c) { c.onchange = function () { incl[c.dataset.dim] = c.checked; renderStruct(); }; });
-        host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; var t = work[i - 1]; work[i - 1] = work[i]; work[i] = t; renderStruct(); }; });
-        host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; var t = work[i + 1]; work[i + 1] = work[i]; work[i] = t; renderStruct(); }; });
+        /* ⚠ Swap by IDENTITY in `work`, not by the rendered index: hidden rungs still sit in
+           `work`, so a positional swap would move one of them instead of the row that was clicked. */
+        function swap(x, y) { var a = work.indexOf(x), b2 = work.indexOf(y); var t = work[a]; work[a] = work[b2]; work[b2] = t; renderStruct(); }
+        host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; swap(vis[i - 1], vis[i]); }; });
+        host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; swap(vis[i], vis[i + 1]); }; });
       }
       renderStruct();
       function close() { ov.remove(); }

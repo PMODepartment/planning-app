@@ -104,6 +104,373 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ai) — Schedule Setup ▸ Activities: two delete buttons that had never worked, and a class-code list you can scan
+
+Owner's four items on that step. Detail, every ⚠️ decision and the measurements:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zy)`. Module only —
+no migration, no shared asset changed.
+
+### ⚠️⚠️ THE TWO CONTROLS ASKED ABOUT WERE DEAD, AND SO WAS A THIRD NOBODY MENTIONED
+
+*"no need for the delete selected rows button. user will just use the right button arrow."*
+`#b-delrows` occurred **exactly once in the file — in the markup — with no handler anywhere**, so
+*Delete selected rows* has never removed a row on any project. The `→` shuttle the owner named as the
+replacement is not a workaround; it was always the only working route. ⚠️ **And the per-row trash
+column was dead in the same way** — `data-del` emitted per row, every `[data-del]` handler in the file
+scoped to a different list. Not asked for, removed anyway: a trash icon on every row that does nothing
+is worse to leave behind than to take out, one click after being told `→` is how a row leaves.
+**Reported rather than done quietly**, so it can be pushed back on. The grid goes **9 header cells / 9
+body cells → 8 / 8**, measured on both sides — a header and a body disagreeing by one is the
+column-misalignment defect this repo has a checker for.
+
+### ⚠️ The add control moved into the class-code list, and adds a row with no code
+
+*"user can add activity from the all class code list but class code will be left blank. activities
+without class code are identified as custom activities."* **+ Custom** sits in that list's header and
+adds a row to the **build**, not to the list — a catalog entry is a plain button with no editable
+field, so a blank one would render as *"(unnamed)"* with no way to name it. ⚠️ It focuses the **name**
+cell; the old `+ Add row` focused the first match, which is the **Code** cell — the one field a custom
+activity is not going to have. The identification is that cell's own placeholder, `custom`: nothing
+stored, so nothing can go stale, and **both** off-chart warnings already ignored a blank code, so a
+custom activity has never been accused of carrying an unrecognised one.
+
+### The list is grouped, collapsible, and shorter than the flat one it replaces
+
+Measured in a browser against the shipped stylesheet on the **real 197-entry chart**, loaded through
+the shipped loader: row height **43 → 25px**, list content **9,439 → 5,014px**, **20.7 → 11.0 screens
+of scrolling**, **8 → 15 codes visible** at the pane's default width — with **seven trade headings
+added**. Every group folded, the whole library is **188px**. Names go from weight **700 → 400** (*"no
+need to make these labels bold"* — and every row bold is no emphasis at all), and the per-row trade
+label goes because it restated the heading it now sits under. Counts **17/15/5/101/46/5/8 = 197**, each
+group code-ascending, heading sticky with exactly one pinned mid-scroll.
+
+⚠️ **Folding never touches `cfg` and never calls `markDirty()`** — a collapsed trade is not an unsaved
+change — and it is module scope rather than `localStorage`: it must outlive a render, but a list folded
+to read one trade today must not still be folded tomorrow, hiding codes nobody chose to hide.
+
+### ⚠️⚠️ SORTING THE VIEW WOULD HAVE BEEN WORSE THAN NOT SORTING
+
+*"when clicking + Library, sort by class code."* `←` concatenates **`cfg.catalog`'s own order** into
+the build, and this step's own hint says *"Row order is the fallback sequence"* — so a renderer that
+sorted only what it drew would show a sorted list and load it scrambled. `sortCatalog()` sorts the
+**array**, so what is on screen is the order `←` loads them in. ⚠️ Codes compare as **strings, never
+numbers**: `'01050'` must not become `1050`, because the de-zeroed space is not unique (`015051`
+collides with `15051`) — this table's own note forbids it outright. ⚠️ `normalize()` runs it too, which
+the owner's wording does not cover: sorting only inside the button would leave a setup **saved before
+this change** unsorted until somebody happened to press it.
+
+The **Download template / Upload CSV** pair went with all four of its functions (`actTemplateCsv`,
+`parseCsv`, `importActivities`, `uploadActivities`) — a closed chain whose only entry points were those
+buttons. ⚠️ Its sample rows carried `MOB`/`EXC`/`REBAR`, mnemonics rather than chart codes, which is
+the exact defect *Load typical set* was corrected for; they go rather than outlive it. Pasting from
+Excel into the grid is untouched.
+
+### Verified
+
+**New `modules/project-schedule/test-actsetup.js` — 47 assertions, 0 failing**, the shipped renderer
+sliced **by name** and executed. ⚠️⚠️ The fake host returns `null` for an id the markup does not carry,
+which is what a browser does — so a handler left wired to a removed button throws in the suite exactly
+as it would on the page; the wiring is executed, not grepped. ⚠️⚠️ **Contrast pinned to the SHA
+`d0da7cd`, never `HEAD`: it fails 28.** Every other project-schedule suite is **identical on this build
+and on that base** (`test-lsm` 684/0, and `test-builder`'s single failure is pre-existing, not mine).
+`wiring-check` 139/0 · `dead-hooks` 9, the documented baseline · `dark-remap` 0 · `toolbar-order`
+15/0 · `loc-key-agree` clean · inline script parses · 0 NUL bytes.
+
+⚠️ **Three harness faults, each of which accused correct code**, recorded because two of them are on
+file here already: a missing `.pd-main`/`.pd-content` reported a horizontal page scroll that does not
+exist (**the contracts-claims harness's own documented omission** — with the real ancestors,
+`pageScrollsX: false` on *both* builds); counting header rows by `top` reported 4 where there are 2,
+the centred-flex-line artefact the module-bar pass had to correct; and a `querySelector` returning a
+fresh stub each call made a correctly-wired button read as unwired. The header measured **2 rows / 63px
+before and after** — the third button cost nothing.
+
+⚠️ **NOT VERIFIED SIGNED IN** — fixtures and the real 197-code chart, never a saved `schedule_builder`
+row.
+
+⚠️ Fixed in passing: `modules/project-schedule/CLAUDE.md` held a **literal NUL byte**, so `grep`
+answered *"Binary file matches"* for every search of that changelog. Third occurrence in this repo, and
+the 2026-09-14 entry that fixed the last one warns about it in as many words.
+
+⚠️⚠️ And a process note: **a `git stash -q` in a throwaway guard swallowed this entire change**, and
+`git status` came back clean with the work gone. Caught within seconds by reading `git diff --stat`
+rather than the command's own output, and recovered from `stash@{0}`. **This log already records that
+exact failure, in bold, from 2026-09-17 (q)** — *"the lesson is not 'check the diff', it is do not
+stash in a shared clone at all"* — and I did it anyway.
+
+`MODULE_V` → `20260917zzg`. ⚠️ Re-derived from `origin/main` **after** merging its ten commits, not
+guessed before: main had reached `zzf` while this was in flight, and a token that sorts earlier than one
+a browser already holds is worse than a collision. One conflict, in the grid CSS, resolved as a
+**union** — main's `background: transparent` on the cell controls kept whole beside this change's
+deletion of the now-unmatchable `.xl-rowact` rules — and every removal in the merged file was then
+audited line by line against `origin/main`.
+
+### 2026-09-17 (ah) — The grid's controls were painting over every highlight; the Grouping rungs stop appearing when there is nothing to group
+
+Three owner reports in one pass: *"These groupings should only appear when there is a grouping
+available"*, *"Let's include the pop-up window in the UI sweep"*, and *"The highlight UI is not
+working properly. Its clipping."*
+
+### ⚠️⚠️ ONE CAUSE, THREE SYMPTOMS: THE INPUTS WERE OPAQUE
+
+`table.sbld-xl input, select` carried `background: var(--pd-card)`. Every mark this grid makes is
+painted on the **`<td>`**, behind its children — so the control covered all of them:
+
+- PDGrid's selection, `.pdg-sel { box-shadow: inset 0 0 0 9999px rgba(238,49,36,.22) }`
+- the bad-code marking, `.sbld-badcode { background: var(--pd-warn-bg) }`
+- the copy marquee's marching ants, a `background-image` on the cell
+
+**Measured before the fix:** the cell computed to `rgba(199,119,0,0.12)` at **43px** tall while its
+input computed to opaque `rgb(255,255,255)` at **24px**. So the mark was hidden behind the text and
+survived only as a **19px strip below it** — which is exactly the reported "clipping": a highlight
+that reads as a band under the row instead of a filled cell.
+
+⚠️ **Transparent costs nothing here, and that was checked rather than assumed.** Walking up from the
+cell: `td`, `tr`, `tbody`, `table.sbld-xl` and `.sbld-xlwrap` are all `rgba(0,0,0,0)`; the first
+painted ancestor is the panel's own white. An unmarked cell is pixel-identical, and the marked ones
+finally show.
+
+⚠️ A second, smaller half: the cell's **colour** never reached the text either. The generic rule sets
+`color: var(--pd-ink)` on every input, which beats inheritance — so a bad code rendered bold (the
+weight *does* arrive, via `font: inherit`) but in ordinary ink. `.sbld-badcode input` carries the warn
+colour now. **Verified after:** input background `rgba(0,0,0,0)`, colour `rgb(138,83,0)` matching the
+cell, and a `.pdg-sel` cell's input no longer covers the selection.
+
+### A Grouping rung only appears when there is a grouping for it
+
+`agroup`…`agroup4` are the four rungs of the Construction Library's grouping path. On a project that
+groups nothing they were four rows that can never build — `willBuild` already returned false for them
+— sitting above the summary line as inert controls.
+
+⚠️ **The rows are hidden; the state is not.** `cfg.wbsOrder` is rebuilt from `work`/`incl`, never from
+the rendered rows, so a rung ticked in a saved setup keeps its tick and simply reappears the day the
+project has a grouping that deep. Hiding a row cannot silently drop it — which is the thing worth
+checking before hiding anything in a dialog that writes settings.
+
+⚠️⚠️ **And the ↑/↓ indices had to follow.** They were positions in `work`. With rows hidden, a swap
+keyed on the rendered index would have moved a different dim, and swapping with a *hidden* neighbour
+would have looked like a button that does nothing. They swap by **identity** now — the nearest visible
+dim, located in `work` — so hidden rungs stay where they are and every arrow moves the row it is on.
+
+⚠️ **Tower is deliberately not hidden by this.** It shows with its own *"skipped — this project has
+one tower, so it would be a level with a single branch"* note, which is a fact about the project worth
+reading. A grouping rung has no such story: it is simply not part of this project's structure.
+
+### The pop-ups join the UI sweep
+
+The 4.1 scanner only walked the **step renderers**, so a dialog opened *from* a step was never covered
+by it. Both are now at **0 off-scale inline font-sizes**:
+
+- `openPushModal` — five: `12px` four times (not a rung; `--pd-fs-sm` is 12.5) and `16px` once.
+- `openFileUnderPackage` — four more.
+
+⚠️⚠️ **The `16px` was fighting a rule that already exists.** `.pd-modal-header > h3` is `font: inherit`
+in `dashboard.css` precisely so a modal title takes the header's own `--pd-fs-lg`/700 — the inline
+literal overrode it and pinned this one dialog to a number that will not follow the token. Deleted, not
+re-tokenised.
+
+⚠️ **Six hand-written copies of one label, five of them agreeing.** The same
+`display:block;font-size:12px;font-weight:700;margin:12px 0 4px` block appears across three dialogs.
+The sixth says `margin:10px 0 4px` — two pixels of top margin is the only thing that kept it out of an
+exact-string sweep, which is this whole problem in miniature. All six are `.sbld-pushlbl` now.
+
+### Floors & Zones: measured, and it is already clean
+
+Asked for a sweep, and on the objective checks there is nothing left to sweep: `stLevels` has **0
+off-scale inline font-sizes** (the two `<select>`s were fixed in *(aa)*), and its CSS families —
+`.sbld-lvl*`, `.sbld-flr*`, `.sbld-zn*`, `.zpw-*`, `.sbld-twr*` — are **50 type-bearing rules with 0
+off-scale**. The one flagged value is `.zpw-mark text` at `calc(22px * var(--zs,1))`, which is **SVG
+text** and the scale's documented exemption (font-size in user units). `.sbld-twmore > summary` at 800
+was looked at and left: it is the glyph inside a 30×30 icon button, not body text. **Said plainly
+rather than sweeping something to look busy** — what the owner is seeing there is not visible to these
+checks, and is asked about instead.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · inline scripts parse · CSS brace balance identical to pinned
+`9884985` · 0 off-scale font-size rules and 0 off-scale inline sizes across the Setup and both
+dialogs. The highlight fix is a browser measurement before and after, not a reading of the CSS.
+`modules-grid.js` `?v=` → `20260917zzf`.
+
+### 2026-09-17 (ah) — One bar per storey: the LSM row folds every trade into a single merged bar
+
+⚠️ Re-lettered from `(ag)` on rebase: a concurrent session landed its own 2026-09-17 `(ag)` (below)
+first. Both entries kept in full; this one bumped past it rather than either side guessing, per the
+rule in this file’s header.
+
+Owner: *"The gantt bar still doesn't fold into one gantt bar to show the LSM. Let's fix."* Asked which
+of three shapes he meant, he chose **one bar per storey, all trades merged** over keeping a lane per
+trade.
+
+### ⚠️⚠️ THE PER-TRADE BUCKETS STAY — ONLY THE DRAWING MERGES
+
+`_lsmAgg` still returns one bucket per keyed trade, because the Rate strip (`_lsmRate`) and the entire
+clash engine (`_lsmClash`) are **derived from them**: a clash *is* one trade overlapping another on a
+storey. Merging the data would have deleted the feature whose toggle was fixed in the commit
+immediately before this one. `_lsmMergeAgg` folds the buckets at **render** time and hands the
+renderer an array of one.
+
+What the merged bar carries, executed against a four-trade storey:
+
+| | |
+|---|---|
+| bars drawn | **1** (was 4) |
+| span | earliest start → latest finish across every trade |
+| activities | every one counted |
+| % complete | duration-weighted across trades — the same weights `_gpct` uses |
+| colour | the trade's colour when a storey holds exactly **one**; neutral when mixed, the rule `_gcat` already applies |
+| per-trade buckets | **untouched**, 3 of 3 still there for Rate and Clash |
+
+⚠️ **A notch now means more than it did.** It used to mean *"this trade left the floor and came
+back"*; it means *"nothing was happening on this storey"*. On the suite's fixture that is true twice
+where only one notch showed before — after Plastering's first visit and before Windows arrives. The
+weekend gaps between Structural, Exterior Masonry and Plastering are **not** notches, because the
+merge re-folds through the **same `_lsmIdleGap`** the aggregator uses, and that rule needs a real idle
+*working* day. The gap rule is reused, never re-derived.
+
+⚠️ **The clash marks survive the merge.** They are keyed per trade, so a merged bar gathers them from
+every trade on the storey — otherwise folding the bars would quietly drop the very overlaps the clash
+engine exists to show. They are then **deduped by span**: the same overlap is recorded against *both*
+trades in it, so on one bar the two marks land at identical coordinates — two absolutely-positioned
+divs with the same 45° gradient at the same offset, visually one mark and twice the DOM. Two
+*different* stretches still both draw.
+
+### The row is one lane tall, which is the "widens the rows" report
+
+`_lsmRowH` was `LSM_PAD + _lsmLaneCount() * (LSM_LANE_H + LSM_LANE_GAP)` — eight lanes' worth of height
+on every row because the row drew a bar per trade. With one merged bar there is nothing for the other
+seven to hold, so it is `LSM_PAD + (LSM_LANE_H + LSM_LANE_GAP)`: **96px → 19px**.
+
+⚠️ A consequence worth stating rather than hiding: the lane-budget **floor no longer bites**. A
+one-lane LSM row is *shorter* than an ordinary row, so `rowHFor` returns the ordinary height. That is
+correct, not a regression — the floor existed to stop eight lanes being crushed into a compact row,
+and there is nothing left to crush. The tests assert it explicitly so a change back to lanes fails
+there loudly.
+
+### Seven assertions retargeted, and why that is not rubber-stamping
+
+Seven checks asserted the per-trade lane rendering: four on row height, one on bar count, one on notch
+count, one on clash marks. **None of them was wrong** — they described behaviour that was correct
+until the owner chose a different chart. Each now asserts what ships and says what it used to say, and
+the two that changed *meaning* rather than just *number* (the notches, the clash marks) carry the
+reasoning above. ⚠️ My own first expectation in the merge proof was also wrong — I predicted 2 runs
+where the code produces 3, because I forgot the merge **keeps** each trade's internal notch as well as
+adding the cross-trade ones. The code was stricter than I assumed; the check was corrected, not the
+code.
+
+**Verified:** `test-lsm` **683/683** · a standalone proof executes the shipped `_lsmAgg` and
+`_lsmMergeAgg` on a four-trade storey and checks all ten properties above · the pinned-base contrast
+against `4d82fd4` still runs and is still loud (`20/53 fns, 7/21 vars`) · `test-syntax` 4/4 ·
+`wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline scripts parse ·
+CSS brace balance identical to pinned `d0da7cd`. `modules-grid.js` `?v=` → `20260917zze`.
+
+### 2026-09-17 (ag) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
+
+⚠⚠ **Re-lettered `(aa)` → `(ab)` → `(ad)` → `(ae)` across three merges, AND re-versioned `20260917zx` →
+`20260917zzd` — the same two-sessions-one-token collision this log has now recorded six times, both
+halves of it at once, and the letter half FOUR times in a row: main independently reached for `(aa)`,
+then `(ab)`, then `(ad)`. ⚠⚠ So the letter is now derived from the MERGED file at the end — the
+free suffix is computed from every `### 2026-09-17 (…)` heading present after resolving, rather
+than chosen when the entry is written. A letter picked up front is stale the moment anyone else
+lands an entry the same day, and on a busy day that is every single merge.**
+Every letter `a`–`z` was already spent for this date, so both sides independently reached for
+`(aa)`; and main's `04b92972` had independently taken `20260917zx` for `MODULE_V` while this was
+in flight. ⚠ The version half is the dangerous one and it does **not** conflict on its own — it
+is a different value on each side, so git merges it happily and the loser's bytes ship under a
+token a browser already holds. Re-derived to `zzb`, past main's own `zza`, and sort-checked as a
+plain string rather than assumed: `zx` sorts *before* `zza`, so “take theirs” would have been
+worse than a collision.
+
+Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
+clicking next, user should move from tower sequence to Zone Sequence, etc. before moving to next
+step"*, *"under scope per zone, instead of class codes, provide activity name"*, and *"no need for
+the vertical stacking in repetition step, move this to the generate step"*. Module work — the full
+entry is in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zx)`.
+Logged here for the `MODULE_V` bump and the three things that generalise:
+
+⚠️⚠️ **ITEM 2 WAS ALREADY BUILT, AND THE HONEST ANSWER WAS WORTH MORE THAN A REBUILD.** The footer's
+Next/Back has walked this step's tabs since `(t)` this morning — `stepTabs(<step title>)` drives the
+button's label *and* its handler, so it cannot say one thing and do another. Executed rather than
+read: the shipped walker, sliced out of `render()`'s footer block and driven, goes **Tower Sequence
+→ Zone sequence → Trade sequence → Scope per zone → Generate**. ⚠️ What *can* look like the
+complaint: the selected view is remembered, so reaching the step by clicking the **rail** while the
+remembered view is the last one leaves Next with nowhere to go but the next step. Entering through
+Next always lands on the first view, so the walk is complete every time it is *walked*. Recorded
+rather than "fixed" on a guess.
+
+⚠️⚠️ **A SPECIFICITY TIE THAT FAILED IN THE WORST HALF-WAY STATE.** The Scope-per-zone header now
+holds an activity name, so it has to wrap — and `th.sbld-scope-col` is **(0,1,1)** against the base
+`table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at **(0,1,2)**. That is not a harmless
+no-op: the `max-width` in the same rule **did** apply while the `white-space` did not, so the header
+was capped *and* unwrappable and **three of eleven names rendered clipped**. Only measuring found it.
+This file has recorded the *equal*-specificity version of this trap repeatedly (`[hidden]` losing to
+an author `display`); the unequal one is nastier, because half the rule still lands and the result
+looks deliberate.
+
+⚠️⚠️ **`/@import[^;]*;/` IS A BROKEN WAY TO STRIP AN @IMPORT, AND IT MADE THE HARNESS LIE.**
+`dashboard.css`'s Google Fonts URL **contains semicolons** (`wght@0,400;0,500;…`), so that regex cuts
+inside the URL and leaves garbage that swallows the following `:root` block — every `--pd-*` token
+then resolves to nothing and the harness measures an **unstyled** page at the browser's 16px default,
+reporting widths ~35% too large. Internally consistent, and wrong. Caught by asserting a token
+(`--pd-fs-sm` came back empty), not by reading the numbers. **Strip to end of line**, and any harness
+in this repo that inlines `dashboard.css` should assert a token before it reports a measurement.
+
+⚠⚠ **AND THE STACKING RENDERER IS KEPT, NOT DELETED — A REVERSAL, AT THE OWNER'S REQUEST.**
+*"make sure not yet to delete the code for stacking and just keep it in repo. this will be used later
+on in the generate step."* Worth being precise about what was ever at stake: the **drawing engine**
+(`stackTowerSVG`, `zonesOfFloorStk`, `openStackUnits`, `_genStackCards`) was never touched and is
+live on Generate today. What the retired tab owned was a **shell** around it — and that shell is now
+back, verbatim, parked out of `STEP_TABS` and out of every call path. The part worth keeping is its
+**basis `<select>`**, which shows Internal or External one at a time; Generate draws both side by
+side and has no way to do that.
+⚠ This repo's rule that *a renderer nothing calls is the one the next editor wires back up beside
+the real thing* is answered rather than waved off: the suite asserts the function exists, has exactly
+**one occurrence** (its declaration, no call site), and is **not back in `STEP_TABS`**.
+⚠⚠ **Parked is not preserved unless it still runs.** A separate suite wires it to a host and
+**executes** it, so a revival gets a working screen rather than a `ReferenceError` — which is also
+why `var stackBasis` came back with it rather than being left deleted under a function that reads it.
+
+⚠️ **Reported, not fixed** — pre-existing and confirmed on `origin/main`'s own copy rather than
+waved past: `modules/project-schedule/CLAUDE.md` holds **one NUL byte** (offset 30,736, inside an
+earlier entry), which makes `grep` treat the whole changelog as binary — the same trap 2026-09-14
+recorded and evidently not gone; and `test-builder` is **99/1** on a manual page for `Structure`, a
+step this morning's merge retired.
+
+⚠⚠ **A CORRECTION TO MY OWN REPORTING: `test-lsm` was never failing — I was calling it wrong.**
+It takes the file to check as `process.argv[2]`, and a bare `node test-lsm.js` throws
+`ERR_INVALID_ARG_TYPE` on `readFileSync(undefined)`. I ran it bare across every sweep and reported
+the crash as a pre-existing failure. Invoked properly it is **676 assertions, 0 failed** on the
+merged tree and identically on `origin/main`. A suite that needs an argument and is run without one
+reads exactly like a broken suite — which is how it got carried through three of this entry's
+verification passes unchallenged.
+
+**Verified:** 65 assertions across three suites, 0 failing, every one executing code sliced out of
+the shipped file, with contrasts pinned to `origin/main` (once this branch is committed, `HEAD` IS
+the change and every contrast becomes self-comparison — which is exactly what started happening, and
+how it was caught). ⚠️ `stGenerate` is
+**executed** against a fake DOM — `node --check` cannot see a ReferenceError, which is this module's
+own z6 lesson — drawing both bases' stacking, wiring both zoom buttons, and **zoom 2× genuinely
+widening the SVG** (viewBox 414 → 674), so the control is not merely bound to a variable nothing
+reads. Rendered at 1180px against the real stylesheets with the cascade proved by a **colour**
+(ink `rgb(35,31,32)` = `--pd-ink`) rather than by tidy geometry on unstyled markup.
+`wiring-check` **139/139**, `toolbar-order` 15 bars / 0 out of order, `dark-remap` 0 findings,
+`dead-hooks` **byte-identical to HEAD**, seven module suites green, the 3.58MB inline block parses,
+CSS braces balanced, 0 NUL bytes in the touched source.
+⚠️ **Not verified signed in.**
+
+⚠⚠ **AND I DESTROYED THE RESOLUTION ONCE, WITH `git checkout origin/main -- <file>`.** Mid-merge,
+to answer a side question (is `test-builder`'s one failure main's or mine?), I checked main's copy
+of two files into the worktree. That command does not just read — it **stages that ref's copy and
+marks the path resolved**, so both resolutions were silently gone and `git status` showed a tidy
+`M` rather than `UU`. Caught by grepping for my own four changes instead of assuming, recovered
+with `git merge --abort` (the branch tip was committed, so nothing was lost) and replayed from the
+content-anchored resolution scripts. **To read another ref during a merge, use
+`git show <ref>:<path> > /tmp/copy` and test the copy.** The answer was worth having — that failure
+is a manual page for `Structure`, and it is **99/1 on main's own copy of the file**, so it is
+pre-existing and neither this change's nor the merge's.
+
+`MODULE_V` → `20260917zzd`, re-derived from what `origin/main` actually carries **after**
+integrating (`zza`) rather than guessed at beforehand — which is the rule that keeps failing to stick.
+No shared asset changed.
+
 ### 2026-09-17 (af) — The clash toggle has never fired: two handlers, overlapping selectors, and `onclick =` replaces
 
 Owner's item 5.2: *"Let's also add the option not to show the clashes."*
@@ -461,7 +828,7 @@ computing to weight 600 · 419 elements Gotham / 0 Arial. Every width above is a
 taken behind a control assertion — the grid's declared inline width (1062px) against its rendered
 width (1063px) — because `visibilityState` read `hidden` while layout was live, and a gate on
 visibility alone would have discarded good numbers just as a gate on nothing would have accepted
-void ones. `modules-grid.js` `?v=` → `20260917zzb`.
+void ones. `modules-grid.js` `?v=` → `20260917zzd`.
 
 ### 2026-09-17 (aa) — The last five Setup ledes stop being instructions, and the wizard is fully on the type scale
 
