@@ -6590,7 +6590,8 @@
             return '<span class="ps-cal-hol' + (kind === 'r' ? ' is-recur' : '') +
                 (_lbl ? ' is-named' : '') + '">' +
                 '<button class="ps-cal-holname" data-lblhol="' + esc(h) + '" title="' +
-                esc(PDCal.holidayWhen(h) + (_lbl ? ' — click to rename' : ' — click to name this day')) + '">' +
+                esc((_lbl ? _lbl + ' · ' : '') + PDCal.holidayWhen(h) +
+                    (_lbl ? ' — click to rename' : ' — click to name this day')) + '">' +
                 esc(PDCal.holidayLabel(h, draft.extra_holiday_labels)) + '</button>' +
                 '<button data-rmhol="' + esc(h) + '" title="Remove">✕</button></span>';
             }).join('');
@@ -43742,7 +43743,7 @@
                 : '<span class="sbld-hint">No calendar is marked as the project default yet, so an unassigned activity falls back to the <b>Philippine 6-day, 8-hour</b> week.</span>') +
           '<button class="pd-btn pd-btn-primary" id="b-calwiz"><span data-ico="plus" data-ico-size="14"></span> New calendar — guided</button>' +
         '</div>' +
-        '<p class="sbld-hint">' + n + ' calendar' + (n === 1 ? '' : 's') + ' on this project. The guided route asks where the site is and builds the wet/dry working week for you; the editor below is the same one the rest of the module uses, for fine-tuning and for assigning a calendar to activities.</p>' +
+        '<p class="sbld-hint">The guided route asks where the site is and builds the wet/dry working week from that.</p>' +
         '<div id="sbld-cal-host"></div>';
       var wb = host.querySelector('#b-calwiz');
       if (wb) wb.onclick = function () { openCalendarWizard(function () { render(); }); };

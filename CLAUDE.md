@@ -104,6 +104,77 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (z) — A named holiday was cut at 25 characters and the tooltip answered with the date
+
+Owner: *"Next is working calendars first"* — page one of the rail, done properly this time. The first
+4.1 pass rendered this step with `renderCalendarsInto` **stubbed out**, so the half of the page that
+carries the most text was never measured at all.
+
+### ⚠️⚠️ THE HOLIDAY NAME FEATURE SHIPPED WITH ITS OWN LABEL UNREACHABLE
+
+`.ps-cal-holname` is `max-width:22ch` + `nowrap` + `overflow:hidden` + `text-overflow:ellipsis`, and
+the chip's `title` was `PDCal.holidayWhen(h)` — **the date**. So the name a planner just typed is the
+one thing the chip cannot show in full, and hovering it answers a different question.
+
+Measured in the browser against the shipped stylesheet, with a chip carrying the shipped class:
+
+| | |
+|---|---|
+| name | `Typhoon Egay site shutdown — Cavite` (35 chars) |
+| rendered | `Typhoon Egay site shutdow…` (**25 chars fit**, `scrollWidth` 226 vs `clientWidth` 164) |
+| lost | `n — Cavite` |
+| tooltip said | `21 Aug 2026 — click to rename` |
+
+⚠️ This is mine, from entry *(t)*: the labels feature added the name to the chip and left the tooltip
+as it was. The title now leads with the name when there is one, then the date — because the chip that
+shows a NAME is precisely the chip whose DATE is no longer on screen, and the cut half has to live
+somewhere. Both still come from `PDCal`, so the tooltip cannot disagree with the text.
+
+### The step's third paragraph
+
+It read: *"N calendars on this project. The guided route asks where the site is and builds the wet/dry
+working week for you; the editor below is the same one the rest of the module uses, for fine-tuning
+and for assigning a calendar to activities."* The count is printed again by the editor's own
+`.ps-cal-count` directly below it; *"the same one the rest of the module uses"* is a fact about this
+codebase rather than about the planner's project. What survives is the half a button labelled
+**"guided"** cannot say by itself: *"The guided route asks where the site is and builds the wet/dry
+working week from that."*
+
+### ⚠️ A CORRECTION: THIS SCANNER HAS BEEN COUNTING THE WRONG COMPONENTS
+
+Entries *(u)* through *(x)* reported Setup figures — *"7 mixed 700/800 families"*, *"14 truncating
+rules"* — from a scanner whose scope regex was `.sbld-|.pscl-|.calwiz-|.zpw-|.pph-`. **`.pscl-*` is
+`curveSpark`, a cost sparkline, and `.pph-*` is the print head. Neither is in the Setup wizard.** The
+Setup's actual second family is `.ps-cal-*`, the calendar editor embedded by this very step, and it
+was missing. Corrected scope, corrected figures:
+
+| | reported before | actually |
+|---|---|---|
+| mixed 700/800 families | 7 | **3** (`.sbld-man`, `.sbld-twr`, `.sbld-xl`) |
+| weight declarations | 700×73 · 800×24 | **700×64 · 800×17** |
+| truncating rules | 14 | **13** |
+
+Four of the seven "mixed families" I had been carrying as an open question were `.pscl-*` — a
+component on a different screen. The three that remain are real and still belong to pages not yet
+reviewed. ⚠️ The `.pscl-tbl th` at 800 that *(x)* recorded as a possible third table-header treatment
+in the Setup **is not in the Setup**; that observation is withdrawn.
+
+### Sound as it stands
+
+The calendar editor is **entirely on the type scale** — 14 type-bearing `.ps-cal-*` rules, 0 off-scale,
+and its own header row (`.ps-cal-yr th`, micro/uppercase) is the app's label convention. Nothing on
+this page overflows.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline
+scripts parse · CSS brace balance unchanged · rendered against the shipped stylesheet with the
+shipped renderers, including `renderCalendarsInto` this time. The 25-character cut above is a
+browser measurement, not a reading of the CSS. ⚠️ **The holiday chip itself could not be rendered in
+the harness** — `draft` is local to `renderCalendarsInto` and only set by a click, so the editor stays
+on its "Pick a calendar to edit" state; the truncation was measured on an element carrying the
+shipped class, which tests the rule, and the tooltip change is a source-level fix that this harness
+cannot exercise. Said plainly rather than implied. `modules-grid.js` `?v=` → `20260917zp`, past the
+`zo` a concurrent session had just taken.
+
 ### 2026-09-17 (y) — The Project Schedule stops using the browser's own dialogs, in all 104 places
 
 ⚠️ Re-lettered from `(w)` to `(x)` to `(y)` across two merges: two concurrent sessions each
