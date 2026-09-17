@@ -104,6 +104,79 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (aj) — Repetition's two long selects were in a 62px box, and the "How to use" pane left a quarter of the page empty
+
+Owner: *"Repetition step needs the UI sweep too"*, then *"the how to use collapsed panes are
+unnecessarily wrapped. Let's maximize the space of the page/pane"*.
+
+### ⚠️ The Floors & Zones lesson, applied as a hunt rather than a look
+
+*(ai)* found that the floor row's defect was **geometry**, invisible to the type scanners. So this
+pass started by hunting that shape everywhere: **every flex row in the Setup that holds a
+`.pd-input`/`.pd-select`**, and whether anything overrides the `width:100%` those inherit. Ten
+containers hold one; nine have no override. Repetition's own — `.sbld-tlform` — is the one that
+**does**, and its note already explains why (*"labelled, auto-width controls laid out as a sentence,
+never `.sbld-mini`"*). So Repetition's controls were not that bug. They were the other one.
+
+### ⚠️⚠️ `.sbld-mini` IS `width: 62px`, AND TWO OF THE THREE HELD A SENTENCE
+
+Measured in the browser against the shipped class, with 48px of usable width inside it:
+
+| control | longest option | needs | short by |
+|---|---|---|---|
+| `b-seqcopy` (Trade sequence) | "Copy Structural Works sequence from…" | 259px | **211px** |
+| `b-stackbasis` (Stacking) | "External (contract)" | 122px | **74px** |
+| `b-autotype` (Trade sequence) | "FS" | 16px | — fits |
+
+So two of the three showed about seven characters of their own label, and the third is exactly what
+`.sbld-mini` exists for. ⚠️ **This file has already reached for this fix once** — the Activity-level
+picker in Floors & Zones carries a note reading *"NOT `.sbld-mini`, WHICH IS `width:62px` … `width:auto`
+lets a `<select>` size to its longest option"* (owner 2026-09-12, with a screenshot). `.sbld-selauto`
+names it so the fourth instance does not have to rediscover it.
+
+⚠️ And `b-seqcopy` got a **shorter label**, not a wider box. Unconstrained it wanted **311px** on the
+longest trade name — but the option read *"Copy **Structural Works** sequence from…"* inside a section
+that is already per-trade, and its own `title` already says *"this trade's sequence"*. It is
+*"Copy sequence from…"* now, which fits comfortably. The control did not need the space; the label
+needed the words removed.
+
+### The "How to use this step" pane was capped at 78ch
+
+Measured at `--pd-fs-sm`: one `ch` is 8px, so `max-width: 78ch` is **645px inside a 913px panel** —
+**268px, about 29% of the width, unused**, and a two-sentence paragraph wrapping to two lines where it
+had room for one.
+
+⚠️ **A cap is kept, not removed.** 78ch came from the prose measure (45–90 characters is the readable
+range) and that reasoning is sound *for prose* — but this pane is a disclosure of **mechanics**, a
+list of keystrokes and click sequences that is scanned rather than read, and with no cap at all an
+ultrawide monitor would hand it 200-character lines. **110ch is 880px:** it uses 100% of the panel
+here (910 of 913, unused 3px, the sample paragraph down to one line) and still caps at 910px on an
+1800px panel.
+
+### ⚠️ The pane that made "has the library updated?" unanswerable
+
+Owner, separately: *"Let's check if the all class codes have reflected the updated class code
+library."* The heading reads **"All class codes (172)"** and the number is `cfg.catalog.length` —
+**this project's holding list**, seeded by `+ Library` or `+ From BOQ` and added to by anything sent
+out of the build. It is not the library, and it does not follow one.
+
+A heading promising *"All"* is exactly what makes that question unanswerable from the screen. It reads
+**"Holding list (172)"** now, with a title saying where its contents come from and that it is not the
+whole chart.
+
+**For the record, the library itself:** `CLASS_CODE_DB` holds **197** Level-2 groups and template_1164
+holds the **same 197** — the eight the template drops are the eight the module never had, which is why
+entry *(x)* changed no module code. What still carries the retired rows is the item-level `class_codes`
+table, and `migrations/2026-09-17-class-code-template-1164.sql` **has not been run**. ⚠️ Could not
+confirm that against the live table: `class_codes` is behind RLS and returns **401** to the publishable
+key. The migration's own verification block is the check — `select count(*) from class_codes where
+active` should read **466**.
+
+**Verified:** `test-lsm` 683/683 · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0
+findings · inline scripts parse · CSS brace balance identical to pinned `0fbd2fa` · Setup still at 0
+off-scale font-size rules. Every width above is a browser measurement against the shipped classes.
+`modules-grid.js` `?v=` → `20260917zzh`.
+
 ### 2026-09-17 (ai) — Floors & Zones: every control in the floor row was asking for the whole row
 
 Owner, with a screenshot of OPW101: *"UI sweep for floors & zones. multiple clipping and unnecessary

@@ -3561,7 +3561,17 @@
        ⚠️ `<details>` and not a JS panel on purpose: the open/closed state is the browser's, it
        needs no handler in the step's own bind pass (a step that forgot one would have an unopenable
        summary), and it re-renders closed like the rest of the panel. */
-    .sbld-how { margin:0 0 16px; max-width:78ch; font-size:var(--pd-fs-sm); }
+    /* ⚠⚠ 78ch WAS LEAVING A QUARTER OF THE PANE EMPTY. Owner 2026-09-17: *“the how to use
+       collapsed panes are unnecessarily wrapped — let's maximize the space of the page/pane”*.
+       Measured at `--pd-fs-sm`: one ch is 8px, so 78ch is 645px inside a 913px panel — 268px,
+       about 29% of the width, unused, and a two-sentence paragraph wrapping to two lines where it
+       had room for one and a half.
+       ⚠ A cap is KEPT rather than removed. 78ch came from the prose measure (45–90 characters is
+       the readable range) and that reasoning is sound for prose — but this pane is a disclosure of
+       MECHANICS, a list of keystrokes and click sequences that is scanned rather than read, and
+       with no cap at all an ultrawide monitor would give it 200-character lines. 110ch is 880px:
+       it uses 96% of the panel here and still has a ceiling there. */
+    .sbld-how { margin:0 0 16px; max-width:110ch; font-size:var(--pd-fs-sm); }
     .sbld-how > summary { cursor:pointer; color:var(--pd-red); font-weight:700; font-size:var(--pd-fs-sm);
       list-style:none; display:inline-flex; align-items:center; gap:5px; padding:2px 0;
       -webkit-tap-highlight-color:transparent; }
@@ -4606,6 +4616,11 @@
     .sbld-linklbl { fill:var(--pd-muted); pointer-events:none; }
     .sbld-zbtn { width:28px; height:28px; padding:0; font-size:var(--pd-fs-md); font-weight:700; justify-content:center; line-height:1; }
     .sbld-mini { width:62px; height:30px; padding:2px 6px; font-size:var(--pd-fs-sm); font-weight:700; }
+    /* ⚠⚠ THE SIBLING OF `.sbld-mini` FOR A CONTROL WHOSE LABEL IS A SENTENCE. `.sbld-mini` is
+       62px — correct for the two-character FS/SS/FF/SF picker it was built for, and 211px short
+       of “Copy Structural Works sequence from…”. `width:auto` lets a <select> size to its own
+       longest option; `max-width` stops one long trade name from taking the whole row. */
+    .sbld-selauto { width:auto; max-width:260px; height:30px; padding:2px 6px; font-size:var(--pd-fs-sm); }
     .sbld-at-q { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); }
     .sbld-at-q:last-child { border-bottom:none; }
     .sbld-at-sec { margin:0 0 14px; padding:10px 12px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
@@ -38678,7 +38693,7 @@
           '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
       }).join('');
       var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
-        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
+        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span title="Class codes parked for this project — loaded with + Library or + From BOQ, plus anything sent out of the build. This is not the whole chart.">Holding list (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
         /* ⚠️ The BOQ button is FIRST and primary. It loads the codes this project is actually
            priced on — a few dozen — where + Library loads the whole 197-entry chart; and its codes
            are the ones that resolve as a `class_code` (see loadBoqCodes). Offering the general
@@ -38913,7 +38928,7 @@
         var srcs = [['all', 'All levels (default)']].concat(KIND_ORDER.filter(kindHasOwn).map(function (k) { return [k, KIND_LABEL[k]]; }))
           .filter(function (o) { return o[0] !== uiSeqKind; });
         var copy = srcs.length
-          ? '<select class="pd-select sbld-mini" id="b-seqcopy" title="Copy this trade\'s sequence from another level type"><option value="">Copy ' + e2(GLABEL[tr]) + ' sequence from…</option>' +
+          ? '<select class="pd-select sbld-selauto" id="b-seqcopy" title="Copy this trade\'s sequence from another level type"><option value="">Copy sequence from…</option>' +
             srcs.map(function (o) { return '<option value="' + o[0] + '">' + e2(o[1]) + '</option>'; }).join('') + '</select>'
           : '';
         var noKinds = !kindsInProject().length;
@@ -46901,7 +46916,7 @@
           '<br><br>Pick a <b>tower</b> and a <b>trade</b> to focus, and switch between <b>Internal</b> (target) and <b>External</b> (contract) durations. Nothing is edited here — it is the read-back before the push in step ' + _stepNo('Generate') + '.') +
         towerChips + tradeChips +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
-        '<select class="pd-select sbld-mini" id="b-stackbasis">' +
+        '<select class="pd-select sbld-selauto" id="b-stackbasis">' +
         [['int', 'Internal (target)'], ['ext', 'External (contract)']].map(function (o) { return '<option value="' + o[0] + '"' + (stackBasis === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
         '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-stkzout" title="Narrower cells">−</button><button class="pd-btn sbld-zbtn" id="b-stkzin" title="Wider cells — more room for dates">+</button></span>' +
