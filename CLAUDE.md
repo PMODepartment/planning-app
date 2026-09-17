@@ -104,6 +104,66 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (aa) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
+
+⚠️ Lettered `(aa)`: every letter `a`–`z` is spent for this date in this file.
+
+Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
+clicking next, user should move from tower sequence to Zone Sequence, etc. before moving to next
+step"*, *"under scope per zone, instead of class codes, provide activity name"*, and *"no need for
+the vertical stacking in repetition step, move this to the generate step"*. Module work — the full
+entry is in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zx)`.
+Logged here for the `MODULE_V` bump and the three things that generalise:
+
+⚠️⚠️ **ITEM 2 WAS ALREADY BUILT, AND THE HONEST ANSWER WAS WORTH MORE THAN A REBUILD.** The footer's
+Next/Back has walked this step's tabs since `(t)` this morning — `stepTabs(<step title>)` drives the
+button's label *and* its handler, so it cannot say one thing and do another. Executed rather than
+read: the shipped walker, sliced out of `render()`'s footer block and driven, goes **Tower Sequence
+→ Zone sequence → Trade sequence → Scope per zone → Generate**. ⚠️ What *can* look like the
+complaint: the selected view is remembered, so reaching the step by clicking the **rail** while the
+remembered view is the last one leaves Next with nowhere to go but the next step. Entering through
+Next always lands on the first view, so the walk is complete every time it is *walked*. Recorded
+rather than "fixed" on a guess.
+
+⚠️⚠️ **A SPECIFICITY TIE THAT FAILED IN THE WORST HALF-WAY STATE.** The Scope-per-zone header now
+holds an activity name, so it has to wrap — and `th.sbld-scope-col` is **(0,1,1)** against the base
+`table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at **(0,1,2)**. That is not a harmless
+no-op: the `max-width` in the same rule **did** apply while the `white-space` did not, so the header
+was capped *and* unwrappable and **three of eleven names rendered clipped**. Only measuring found it.
+This file has recorded the *equal*-specificity version of this trap repeatedly (`[hidden]` losing to
+an author `display`); the unequal one is nastier, because half the rule still lands and the result
+looks deliberate.
+
+⚠️⚠️ **`/@import[^;]*;/` IS A BROKEN WAY TO STRIP AN @IMPORT, AND IT MADE THE HARNESS LIE.**
+`dashboard.css`'s Google Fonts URL **contains semicolons** (`wght@0,400;0,500;…`), so that regex cuts
+inside the URL and leaves garbage that swallows the following `:root` block — every `--pd-*` token
+then resolves to nothing and the harness measures an **unstyled** page at the browser's 16px default,
+reporting widths ~35% too large. Internally consistent, and wrong. Caught by asserting a token
+(`--pd-fs-sm` came back empty), not by reading the numbers. **Strip to end of line**, and any harness
+in this repo that inlines `dashboard.css` should assert a token before it reports a measurement.
+
+⚠️ **Reported, not fixed** — both pre-existing, both confirmed identical on HEAD rather than waved
+past: `modules/project-schedule/CLAUDE.md` holds **one NUL byte** (offset 30,736, inside an earlier
+entry), which makes `grep` treat the whole changelog as binary — the same trap 2026-09-14 recorded
+and evidently not gone; and `test-builder` is **99/1** on a manual page for `Structure`, a step this
+morning's merge retired.
+
+**Verified:** 52 assertions across two suites, 0 failing, every one executing code sliced out of the
+shipped file, each with a contrast build against HEAD that bites (HEAD has five tabs ending in
+Stacking; HEAD renders `03101` as the label; HEAD's `stGenerate` emits no zoom). ⚠️ `stGenerate` is
+**executed** against a fake DOM — `node --check` cannot see a ReferenceError, which is this module's
+own z6 lesson — drawing both bases' stacking, wiring both zoom buttons, and **zoom 2× genuinely
+widening the SVG** (viewBox 414 → 674), so the control is not merely bound to a variable nothing
+reads. Rendered at 1180px against the real stylesheets with the cascade proved by a **colour**
+(ink `rgb(35,31,32)` = `--pd-ink`) rather than by tidy geometry on unstyled markup.
+`wiring-check` **139/139**, `toolbar-order` 15 bars / 0 out of order, `dark-remap` 0 findings,
+`dead-hooks` **byte-identical to HEAD**, seven module suites green, the 3.58MB inline block parses,
+CSS braces balanced, 0 NUL bytes in the touched source.
+⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260917zx`, re-derived from the highest token on **any** remote head (`zw`) and
+sort-checked as a plain string. No shared asset changed.
+
 ### 2026-09-17 (t) — "Whole branches are missing" from the WBS tree: Hide empty groups was deleting the structure
 
 Owner, on the Project Schedule grouped by **WBS tree (default)**: *"the WBS Tree (default) bugged out

@@ -1,3 +1,122 @@
+## 2026-09-17 (zx) — Repetition loses a tab it was drawing twice, and Scope per zone names the work
+
+Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
+clicking next, user should move from tower sequence to Zone Sequence, etc. before moving to next
+step"*, *"under scope per zone, instead of class codes, provide activity name"*, and *"no need for
+the vertical stacking in repetition step, move this to the generate step"*.
+
+### ⚠️⚠️ ITEM 2 WAS ALREADY BUILT, AND SAYING SO IS WORTH MORE THAN RE-BUILDING IT
+
+The footer's Next/Back has walked this step's tabs since 2026-09-17 (t) — `stepTabs(<step title>)`
+drives the button's label *and* its handler, so it cannot say one thing and do another. Executed
+rather than read: the shipped walker, sliced out of `render()`'s footer block and driven, goes
+**Tower Sequence → Zone sequence → Trade sequence → Scope per zone → Generate**, with Back landing
+on the step's *last* view so Back-then-Next cannot show two different screens.
+
+⚠️ What CAN look like the reported behaviour: the selected view is remembered
+(`ps_steptab_Repetition`), so clicking **Repetition in the rail** while the remembered view is the
+last one leaves Next with nowhere to go but Generate. Entering through Next always lands on the
+first view (`_enterStep(i, false)`), so the walk is complete every time it is *walked*. That is
+deliberate and is left alone; removing the fifth tab narrows the window anyway.
+
+### ⚠️⚠️ THE STACKING TAB WAS A SECOND COPY OF A DRAWING THE GENERATE STEP ALREADY MAKES
+
+`stGenerate` renders `_genBasisPanel` → `_genStackCards` → `stackTowerSVG` for **both** bases, side
+by side — the vertical stacking, on the Generate step, since 2026-09-17 (q). The Repetition tab drew
+the same buildings **one basis at a time behind a `<select>`**, in the step that describes how the
+building *repeats* rather than the step that shows what it *produces*. So this is a deletion, not a
+move: 61 lines of `stStacking` and `var stackBasis` are **gone**, not left unreferenced — a renderer
+nothing calls is the one the next editor wires back up beside the real thing.
+
+⚠️ **What was only on the tab came with it.** The **zoom** (`stackZoom`, which `stackTowerSVG`
+already read and Generate had no control for) and the notes that make a cell discoverable — a zone
+completes when its last unit does, a cell marked *"N units ▾"* is clickable, superstructure sits
+above the grade line. A clickable cell with nothing saying it is clickable is a feature nobody finds.
+⚠️ **One zoom for both panels**, because `stackTowerSVG` reads one variable: comparing Internal
+against External at two different cell widths is comparing two pictures rather than two schedules.
+⚠️ `stackBasis` did **not** come with it — Generate shows both bases at once, so there is nothing
+left to choose between.
+⚠️ A browser holding `stack` in `ps_steptab_Repetition` is safe by construction: `stepTabKey`
+validates the stored key against the list and falls back to the first tab. Asserted, not assumed.
+
+### Tower links → Tower Sequence
+
+"Tower links" named a MECHANISM (a link between two towers) while its three siblings are named for
+the QUESTION they answer. ⚠️ `STEP_ALIAS` keeps the old title resolving — `_stepNo` answers an
+**empty string** for a name it cannot find, and a blank where a step number belongs reads as a
+broken reference. `'Stacking'` now aliases to **Generate**, which is where the stacking is.
+⚠️ The renderer stays `stTowerLinks`: it writes `cfg.towerLinks`, and renaming the function without
+renaming the field would leave the two disagreeing for no gain.
+
+### ⚠️⚠️ SCOPE PER ZONE: THE NAME, AND ONE SPECIFICITY TRAP THAT COST THE WHOLE FIX
+
+The header was `a.code || a.name` — a column of `03101` that nobody can read without the Finance
+chart open beside it, on the one grid whose entire job is deciding whether **that work** happens in
+**that place**. It is `a.name || a.code` now, with the code leading the tooltip.
+
+⚠️⚠️ **A name is wider than a five-digit code, so the header has to wrap — and the first rule I
+wrote did not.** `th.sbld-scope-col` is **(0,1,1)**; the base is
+`table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at **(0,1,2)**, which wins. That is
+not a harmless no-op: the `max-width` still applied while the `white-space` did not, so the header
+was capped **and** unwrappable and **three of eleven names rendered clipped**. Measured in a
+browser against the shipped stylesheets; reading the rule would never have shown it.
+`table.sbld-tbl th.sbld-scope-col` is (0,2,2) and wins.
+
+⚠️⚠️ **And the harness lied first, in the flattering direction.** Its `@import` strip was
+`/@import[^;]*;/` — and the Google Fonts URL **contains semicolons** (`wght@0,400;0,500;…`), so it
+cut inside the URL, left garbage that swallowed the following `:root` block, and every `--pd-*`
+token resolved to nothing. It measured an **unstyled** table at the browser's 16px default and
+reported widths ~35% too large. Caught by asserting a token (`--pd-fs-sm` came back empty), not by
+looking at the numbers, which were internally consistent and wrong.
+
+**Measured, 12 locations × N activities, panel 1096px, both builds:**
+
+| activities | header | code build | name build | clipped |
+|---|---|---|---|---|
+| 11 (the typical set) | 31 → **76px** | 1096 — fits | **1096 — fits** | 0 |
+| 12 | | 1096 — fits | 1185 — scrolls | 0 |
+| 16 | | 1139 — *already* scrolls | 1512 — scrolls | 0 |
+| 20 | | 1389 — *already* scrolls | 1876 — scrolls | 0 |
+
+⚠️ **The cost, stated rather than hidden:** above ~11 activities in one trade the table scrolls
+inside its own `.sbld-tablewrap` where codes did not. At 112px a column is already three lines for
+the longest name, and fitting 16 names in 1096px needs ~66px a column — about eight characters, too
+narrow for a name. So the scroll is **inherent to the ask**, not a tuning choice. Nothing is ever
+clipped, and the **page** never scrolls sideways at any count tested.
+⚠️ `vertical-align:bottom`, or a one-line name floats above a three-line neighbour and the header
+reads as a ragged edge rather than a row.
+
+### Verified
+
+**52 assertions across two suites, 0 failing**, every one executing code sliced out of the shipped
+file — and **every claim carries a contrast build against HEAD that bites**: HEAD has five tabs
+ending in Stacking and walks through it; HEAD renders `03101` as the label and no name; HEAD's
+`stGenerate` emits no zoom button; HEAD has `stStacking` and `stackBasis`.
+⚠️ **`stGenerate` is EXECUTED against a fake DOM**, not grepped — `node --check` cannot see a
+ReferenceError, which is this module's own z6 lesson. It runs clean, draws two basis panels with
+stacking in both, wires both zoom buttons, and **zoom 2× genuinely widens the SVG** (viewBox
+414 → 674), so the control is not merely bound to a variable nothing reads.
+⚠️ The titles checked against `_stepNo` are **read out of the source**, not from a list typed in the
+test: **14 call sites, 0 blanks**, and `_stepNo('Stacking')` no longer occurs anywhere.
+Rendered at 1180px against the real `dashboard.css` + the module's own `<style>` block, with the
+cascade proved by a **colour** (ink `rgb(35,31,32)` = `--pd-ink`, type 12.5px = `--pd-fs-sm`) rather
+than by tidy geometry on unstyled markup.
+
+`wiring-check` **139/139**; `toolbar-order` 15 bars / 0 out of order; `dark-remap` 0 findings;
+`dead-hooks` **byte-identical to HEAD**; `test-autotrace` 32/0, `test-cpm` 28/0, `test-towerseq`
+48/0, `test-syntax` 4/0, `test-critwbs` 26/0, `test-health` 30/0, `test-zoneoverlap` 56/0; the
+3.58MB inline block parses; CSS braces balanced (+3/+3, all three from the `{}` quoted inside the
+new comment); 0 NUL bytes; no duplicate ids among the ids touched.
+⚠️ **`test-builder` 99/1 and `test-lsm` fail IDENTICALLY on HEAD** — the first on a manual page for
+`Structure`, a step the 2026-09-17 merge retired; the second wants a path argument. Checked against
+HEAD rather than waved past, and left alone rather than folded into this change.
+
+⚠️ **Not verified signed in.** No real setup has been opened: the walk, the scope grid and the
+Generate step are the shipped renderers executed against fixtures, not a live project.
+
+`MODULE_V` → `20260917zx`, re-derived from the highest token on **any** remote head (`zw`) and
+sort-checked as a plain string, after the four collisions this log has already recorded.
+
 ## 2026-09-17 (zv) — Overlapping zones become an error the module can measure; the plan window opens on a zoneless floor with something to draw with; the building is stated in words
 
 Owner, on the Schedule Setup's Floors & Zones step: *"improve the overall UI, starting from defining
