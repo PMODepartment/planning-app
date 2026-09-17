@@ -1603,6 +1603,69 @@ identically in Manpower, Risk Register and Productivity Rates, and the chip's **
 Shared assets bumped: `portfolio-dash.js`/`.css` → `20260916s`, `ui.js` → `20260916r`,
 `dashboard.css` → `20260916b`, `issues-lessons/module.js` → `20260916a`,
 `risk-register`/`stakeholder-map` `module.css` → `20260916a`.
+### 2026-09-16 (e7) — The dropdown text was still unreadable because it was disabled, not because of the theme
+
+⚠️ **Re-lettered `(t)` → `(e7)` on merge — both sides independently picked `(t)` for 2026-09-16.**
+This entry was written and pushed before the concurrent session's own, unrelated `(t)` ("One table
+design across the app…") had merged; both landed under the same letter with no conflict on the
+letter itself (only on the surrounding CSS/HTML lines), which is exactly the trap this file's own
+header warns about. Resolved as the union — both entries kept whole, main's `(t)` unchanged, this
+one moved to the next free letter in the block it was building on top of (`…a5, a6, a7, b7, c7,
+d7` — `e7` continues that sequence without colliding with anything already in use for the date).
+
+Owner: *"the unreadable texts in dropdown still was not fixed. please fix."* Correct — (d)'s
+`color-scheme: light` fix was real and is still right, but it was answering a different question.
+
+#### ⚠️⚠️ THE CONTROL THE OWNER WAS LOOKING AT WAS `disabled`, AND NOTHING IN THIS FILE STYLED THAT STATE
+
+Measured before touching anything: **zero** `:disabled` rules exist for `.pd-select`, `.pd-input` or
+`.pd-textarea` anywhere in `dashboard.css` — the only `:disabled` rule in the whole file is
+`.pd-nb-ed:disabled` on the unrelated notebook editor. So a disabled control fell straight through to
+the **browser's own** disabled rendering, with none of this app's own `color`/`background` reaching it.
+
+On WebKit — every iPhone — that native rendering dims a disabled control's text through
+**`-webkit-text-fill-color`**, not through `color`, and applies its own `opacity` on top. `color:
+var(--pd-ink)` on `.pd-select` (line 789) has never had any effect on a disabled one; the (d) fix's
+`color-scheme: light` has even less to do with it — that property tells the browser which PALETTE to
+use for an *enabled* control's native chrome on a theme mismatch, not how a *disabled* control's own
+text is painted.
+
+And the very control the report describes now has a disabled state to trip on it: `admin.html`'s
+Role and Department `<select>` (2026-09-16 (c)'s `lockAttr`, `<select ... disabled title="Only a
+super_admin can change a super_admin's account">`) is disabled precisely whenever a plain admin views
+a super_admin's row — which is exactly the screen that was screenshotted. The same gap was reachable
+on five other module pages that already carry a `disabled` `.pd-select` (stakeholder-map,
+risk-register, project-schedule, issues-lessons, progress-photos) — this was never admin-only, only
+admin.html was the one anyone had looked at.
+
+⚠️ `opacity: 1` and `-webkit-text-fill-color` are both required, and `color` alone is not enough —
+this is the standard, well-documented WebKit gap for disabled/read-only form controls, and it is
+exactly what made the earlier `color-scheme` fix look like it "did nothing": it was correct and
+irrelevant to what was actually on screen.
+
+```css
+.pd-input:disabled, .pd-select:disabled, .pd-textarea:disabled {
+  opacity: 1; -webkit-text-fill-color: var(--pd-muted); color: var(--pd-muted);
+  background: var(--pd-line); cursor: not-allowed;
+}
+```
+
+`--pd-muted` / `--pd-line` are the same tokens `.pd-field label` and every border already use, so a
+locked control now reads as *muted*, not merely as the same white box with invisible text.
+
+### Verified
+
+Brace balance holds on `dashboard.css` (578/578), 0 NUL bytes. `node tools/wiring-check.js` —
+**139 passed, 0 failed**, 3,852 cross-module references, every asset on one version. `admin.html`'s
+inline script still parses.
+⚠️ **Not verified signed in, and not verified on a real iPhone** — no live login or real iOS device is
+reachable from this environment; the fix targets the documented, standard WebKit mechanism for a
+disabled control's text (`-webkit-text-fill-color` + `opacity`), the same class of iOS-only override
+this file already carries for `input[type="date"]`.
+
+`dashboard.css?v=` → `20260917za` (29 pages, shared, re-derived past both this branch's own `20260916t`
+and the `20260917z` main had reached by the time this merged — sort-checked past both). No
+`MODULE_V` bump — a shared stylesheet token-only change, no module `index.html` changed structurally.
 
 ### 2026-09-16 (s) — The last five cursor-less reads, and the two the checker could not see at all
 
