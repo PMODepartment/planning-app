@@ -107,6 +107,48 @@ window.ContractsClaims = (function () {
   /* A3's tail. Loaded tolerantly — `packages` arrives with
      2026-08-19-packages.sql, and until it is run the picker is simply absent. */
   var PKGS = [];
+  /* ==== WHO IS CHASING EACH RECORD ===========================================================
+     Owner 2026-09-17: the ageing band could say a record had been with the client for 45 days and
+     the register could say what it was worth, but nothing said WHOSE it was. "2 pending, oldest 45
+     days" is a fact; "Alvarez has two, the older 45 days" is an instruction.
+     ⚠️ `PDb.getPeople()` — the `app_people()` RPC — never `getAllUsers()`, which under
+     `users_self_read` returns ONLY YOUR OWN ROW to a non-admin, so a picker built on it silently
+     offers a one-person list to every planner. That note is on `getPeople` itself.
+     ⚠️ Empty when the migration has not been run, and the form falls back to free text
+     rather than losing the field. Same tolerance the roster itself applies. */
+  var PEOPLE = [];
+  function peopleNamesOf(ids) {
+    if (!ids || !ids.length) return [];
+    var by = {};
+    PEOPLE.forEach(function (p) { by[String(p.id)] = p.name; });
+    return ids.map(function (id) { return by[String(id)]; }).filter(Boolean);
+  }
+  /* The text half of the pair the migration describes: resolved names, plus anyone named who has
+     no account. ⚠️ issues-lessons and minutes-of-meeting each hold their own copy of this
+     function. A third copy is not the answer and this one is deliberately the smallest that works;
+     converging all three belongs in its own change, not in a feature. */
+  function ownerText(ids, extra) {
+    var parts = peopleNamesOf(ids);
+    var t = (extra || '').trim();
+    if (t && parts.indexOf(t) < 0) parts.push(t);
+    return parts.join('; ');
+  }
+  function ownerOf(r) { return ownerText(r && r.owner_ids, r && r.owner) || ''; }
+  /* ⚠️⚠️ THE INVERSE, AND IT IS LOAD-BEARING. `owner` on a saved record is ALREADY
+     `ownerText(owner_ids, extra)`. Seeding the free-text box with that whole string instead of just
+     the typed extra makes every save re-prepend the resolved names onto an already-name-bearing
+     string — "Alvarez; Alvarez; Cruz" after three edits. That exact bug was reported on the Issues
+     register's champion field and then reproduced when the pattern was copied to Minutes of
+     Meeting; it is not being introduced a third time. */
+  function ownerExtraOf(r) {
+    if (!r) return '';
+    var named = {};
+    peopleNamesOf(r.owner_ids).forEach(function (n) { named[n] = 1; });
+    return String(r.owner || '').split(';')
+      .map(function (x) { return x.trim(); })
+      .filter(function (x) { return x && !named[x]; })
+      .join('; ');
+  }
   /* Every project id in the app — read once, used only to refuse a package that restates
      a project (see wizard.js's `codeConflict`). Tolerant like PKGS: a failed read leaves
      it empty and the guard simply finds fewer conflicts, never a false one. */
@@ -756,13 +798,17 @@ window.ContractsClaims = (function () {
         : '<p class="cc-hint">No contract record yet. <b>+ Add</b> records the contract, and its ' +
           'value becomes the basis every claim and change order is measured against.</p>') +
 
+      ccProgrammeHTML(pk, eots) +
+
       ccDashPkgHTML(pk, pkAmt, ctVal, base, money) +
 
       /* ⚠ NO HEADING HERE. `ccMoneyTable` opens with its own `cc-dash-h` "The pipeline" in
          BOTH of its branches, so adding one printed the heading TWICE — measured in the
          harness, on every case. */
       ccMoneyTable() +
+      ccTrendHTML(PDClaims.claimsOnly(rows).filter(function (r) { return PDClaims.typeOf(r) !== 'EOT'; })) +
       ccTimeHTML() +
+      ccWhoHTML(PDClaims.claimsOnly(rows)) +
       /* ⚠️⚠️ THIS GLOSSARY USED TO BE A PARAGRAPH UNDER THE TABLE. Owner 2026-09-17:
          *"the highlighted UI needs fixing — these are tooltips and not necessarily to be shown in
          the main page."* Four sentences of definitions, printed on every visit, below the figures
@@ -777,6 +823,171 @@ window.ContractsClaims = (function () {
         ? '<p class="cc-mini cc-dash-scope">Whole register — this summary does not move with the filters.</p>'
         : '') +
       '</div>';
+  }
+
+  /* ==== WHO IS CHASING WHAT ==================================================================
+     Owner 2026-09-17. The ageing band says a record has been with the client for 45 days; the
+     register says what it is worth. Neither says whose it is, so the one question a weekly
+     commercial meeting actually asks — *who is picking this up* — had no answer on the page.
+     ⚠️⚠️ UNASSIGNED IS A ROW, NOT AN OMISSION, and it sorts FIRST. A worklist that lists
+     the four people who have work and quietly leaves out the six records nobody owns is describing
+     a tidier project than the one that exists; the whole value of this band is spotting the pile
+     with no name on it.
+     ⚠️ PENDING ONLY. A decided record needs nobody to chase it, and including settled work
+     would make the busiest-looking person the one who has finished the most. */
+  function ccWhoHTML(claimish) {
+    var pend = claimish.filter(PDClaims.isPending);
+    if (!pend.length) return '';
+    var AMT = ['eval_amount', 'sub_amount'];
+    var by = {}, order = [];
+    pend.forEach(function (r) {
+      var k = ownerOf(r) || ' none';
+      if (!by[k]) { by[k] = { key: k, name: k === ' none' ? 'Nobody assigned' : k, n: 0, val: 0, oldest: 0 }; order.push(k); }
+      var g = by[k];
+      g.n++;
+      var age = PDClaims.agingOf(r, PDClaims.todayISO());
+      if (age != null && age > g.oldest) g.oldest = age;
+    });
+    /* Value per owner, through the same key list the headline and the bars use.
+       ⚠️ EOT records are counted in `n` but excluded from `val`: they carry DAYS, and adding a
+          day count into a peso total is the one mistake this module's key-pair convention exists
+          to make impossible. */
+    order.forEach(function (k) {
+      var mine = pend.filter(function (r) {
+        return (ownerOf(r) || ' none') === k && PDClaims.typeOf(r) !== 'EOT';
+      });
+      by[k].val = PDClaims.pendingValue(mine, 'eval_amount', 'sub_amount') || 0;
+    });
+    var list = order.map(function (k) { return by[k]; }).sort(function (a, b) {
+      if ((a.key === ' none') !== (b.key === ' none')) return a.key === ' none' ? -1 : 1;
+      return b.val - a.val || b.oldest - a.oldest;
+    });
+    return '<div class="cc-dash-h">Who is chasing what ' +
+        '<span class="cc-mini">' + pend.length + ' record' + (pend.length === 1 ? '' : 's') +
+        ' still open</span></div>' +
+      '<div style="overflow-x:auto;"><table class="pd-table pd-proj-table cc-who">' +
+      '<thead><tr><th>Responsible</th><th class="cc-r">Records</th><th class="cc-r">Value pending</th>' +
+      '<th class="cc-r">Oldest</th></tr></thead><tbody>' +
+      list.map(function (g) {
+        var tone = g.oldest > 90 ? ' cc-v-bad' : (g.oldest > 60 ? ' cc-v-warn' : '');
+        return '<tr' + (g.key === ' none' ? ' class="cc-who-none"' : '') + '>' +
+          '<td>' + esc(g.name) + '</td>' +
+          '<td class="cc-r">' + g.n + '</td>' +
+          '<td class="cc-r">' + (g.val ? money(g.val) : '—') + '</td>' +
+          '<td class="cc-r' + tone + '">' + (g.oldest ? g.oldest + 'd' : '—') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  /* ==== THE TIME POSITION, WHICH THIS PAGE ONLY EVER HALF-STATED ==============================
+     Owner 2026-09-17: *"time, properly — claimed vs granted vs outstanding, against contract
+     duration."* The KPI strip said *Time granted: None* and the pipeline table carried the EOT
+     day counts, but nothing said what any of it MEANS: 30 days is either trivial or a crisis
+     depending on whether the contract runs for 1,090 days or 60, and the page never said which.
+     ⚠️⚠️ THIS IS THE TIME ANALOGUE OF THE REVISED CONTRACT SUM, and it is built the same
+     way: the signed completion date stays where a reader expects it, and the REVISED one —
+     original + granted days — is stated beside it. Approved extensions have moved the contractual
+     completion date; a page that shows only the original is describing a contract that no longer
+     exists.
+     ⚠️ THE DATES COME FROM THE PACKAGES, which is where a contract's own start and finish
+     live (see the hint on the record form: *"the contract's own start and finish live on the
+     package it defines"*). Latest package finish is the contract completion. With no package dates
+     the day counts still print and the ratio and revised date do NOT — an extension expressed as a
+     percentage of an unknown duration is a number with no meaning. */
+  function ccProgrammeHTML(pk, eots) {
+    if (!eots.length) return '';
+    var dec = PDClaims.decided(eots);
+    var granted = PDClaims.sum(dec, 'approved_days');
+    var refused = PDClaims.sum(dec, 'sub_days') - granted;
+    var pendD = PDClaims.pendingValue(eots, 'eval_days', 'sub_days') || 0;
+    /* ⚠️ `sub_days` across every EOT, decided or not — what has been ASKED for in total. The
+       pipeline table above splits it by stage; this is the one-line total that stage table cannot
+       give without adding its columns up in your head. */
+    var claimed = PDClaims.sum(eots, 'sub_days');
+
+    var starts = pk.map(function (k) { return k.start_date; }).filter(Boolean).sort();
+    var ends = pk.map(function (k) { return k.end_date; }).filter(Boolean).sort();
+    var s0 = starts[0], e0 = ends[ends.length - 1];
+    var durn = (s0 && e0) ? PDClaims.daysBetween(s0, e0) : null;
+    var revised = null;
+    if (e0 && granted) {
+      var d = new Date(e0 + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + granted);
+      revised = d.toISOString().slice(0, 10);
+    }
+    function li(label, val, cls) {
+      return '<li><span>' + label + '</span><b' + (cls ? ' class="' + cls + '"' : '') + '>' + val + '</b></li>';
+    }
+    var dayTxt = function (v) { return v ? num(v) + 'd' : '—'; };
+    return '<div class="cc-dash-h">The programme ' +
+        '<span class="cc-mini">what has been claimed in time, and what has been granted</span></div>' +
+      '<ul class="cc-dash-facts">' +
+        (e0 ? li('Contract completion', esc(Fmt.date(e0))) : '') +
+        li('Claimed', dayTxt(claimed)) +
+        li('Granted', dayTxt(granted), granted ? 'cc-v-good' : '') +
+        (refused > 0 ? li('Refused', dayTxt(refused), 'cc-v-bad') : '') +
+        li('Still with the client', dayTxt(pendD), pendD ? 'cc-v-warn' : '') +
+        (revised ? li('Revised completion', esc(Fmt.date(revised)), 'cc-v-good') : '') +
+        (durn && granted
+          ? li('Extension so far', (Math.round(granted / durn * 1000) / 10) + '% of ' + num(durn) + 'd')
+          : '') +
+      '</ul>' +
+      (e0 ? '' : '<p class="cc-mini">No package carries a finish date, so the extension cannot be ' +
+        'stated against the contract duration. Package dates are set on the Contract tab.</p>');
+  }
+
+  /* ==== IS IT GETTING BETTER OR WORSE? =======================================================
+     Owner 2026-09-17: everything on this page was a SNAPSHOT. *"Claims exposure ₱20.70M"* does not
+     say whether that is up or down, which is the first thing anyone asks about a commercial
+     position — and the second is *since when*.
+     ⚠️⚠️ DERIVED FROM THE DATES ALREADY STORED, not from a snapshot table. `date_submitted`
+     says when a record went to the client and `date_approved` / `date_evaluated` say when it came
+     back, so the position on any past date is computable from rows already in memory. No migration,
+     no nightly job, and no risk of a history that disagrees with the register it came from.
+     ⚠️ The RULE lives in `PDClaims.exposureSeries`, not here — the portfolio view ranks
+     projects on this same pair, and a trend computed locally is how this screen and that one come
+     to tell different stories about the same register. */
+  function ccTrendHTML(cash) {
+    if (!cash.length) return '';
+    var AMT = ['eval_amount', 'sub_amount'];
+    var series = PDClaims.exposureSeries(cash, 12, AMT, 'sub_amount', 'approved_amount');
+    var now = series[series.length - 1], first = series[0];
+    /* ⚠️ NOTHING TO SAY IF NOTHING EVER HAPPENED. A flat line of twelve zeros is not a trend;
+       it is a register with no dated history, and drawing it would imply we had looked and found
+       stability. */
+    if (!series.some(function (x) { return x.total > 0; })) return '';
+    var peak = Math.max.apply(null, series.map(function (x) { return x.total; }).concat([1]));
+    var delta = now.total - first.total;
+    var dTxt = Math.abs(delta) < 1 ? 'level over the year'
+      : (delta > 0 ? 'up ' : 'down ') + Fmt.moneyShort(Math.abs(delta)) + ' since ' + first.label;
+    var dCls = Math.abs(delta) < 1 ? '' : (delta > 0 ? ' cc-v-bad' : ' cc-v-good');
+    var bars = series.map(function (x) {
+      /* ⚠️ A MONTH WITH NOTHING OUTSTANDING DRAWS NOTHING, not a 1px stub. A minimum height
+         would make "we were clear that month" look like "a little was outstanding". */
+      var h = x.total > 0 ? Math.max(3, Math.round(x.total / peak * 100)) : 0;
+      var sh = x.total > 0 ? Math.round(x.shortfall / x.total * 100) : 0;
+      return '<li class="cc-tr-col" title="' + esc(x.label + ' — ' + money(x.total) +
+          ' exposed (' + money(x.pending) + ' pending, ' + money(x.shortfall) + ' cut)') + '">' +
+        '<span class="cc-tr-bar" style="height:' + h + '%">' +
+          (sh ? '<i style="height:' + sh + '%"></i>' : '') + '</span>' +
+        '<span class="cc-tr-l">' + esc(x.label.slice(0, 3)) + '</span></li>';
+    }).join('');
+    /* ⚠️ A record decided with NO decision date cannot be placed in time, so it is left out
+       and said so — the same discipline the ageing band applies to a pending record that was never
+       submitted. A chart that silently drops rows is worse than one that admits it. */
+    var undated = now.undated
+      ? ' · <b>' + now.undated + '</b> decided record' + (now.undated === 1 ? '' : 's') +
+        ' carry no decision date and are not in this chart'
+      : '';
+    return '<div class="cc-dash-h">Exposure over the last 12 months ' +
+        '<span class="cc-mini"><b class="' + dCls.trim() + '">' + esc(dTxt) + '</b></span></div>' +
+      '<ul class="cc-trend">' + bars + '</ul>' +
+      '<p class="cc-mini cc-tr-note">Pending plus shortfall at each month end, derived from the ' +
+        /* ⚠️ "The RED part", not "the darker part" — measured on screen, the shortfall is
+           `--pd-red` on `--pd-warn` amber, which is brighter, not darker. A legend that describes
+           the wrong half sends the reader looking for something that is not there. */
+        'submitted and decided dates on each record. The red part of a column is the shortfall' +
+        undated + '.</p>';
   }
 
   /* The packages block, lifted out of ccDashHTML unchanged so the rebuilt dashboard reads as one
@@ -1100,10 +1311,22 @@ window.ContractsClaims = (function () {
         store is a genuine failure and still stops the save loudly — silently discarding
         money is the one outcome worse than an error. The retry is bounded, and it names
         the migration either way so the schema still gets fixed. */
+  /* ⚠️⚠️ EMPTY, NOT ONLY NULL — AND THE DIFFERENCE IS A BROKEN SAVE. This dropped a column
+     the database does not have ONLY when its value was `null`, and refused the save otherwise, on
+     the sound reasoning that silently discarding a claim's figure is worse than refusing. The
+     Responsible field (2026-09-17) sends `owner_ids: []` and `owner: ''` when nobody is assigned —
+     neither of which is `null` — so on a database without that migration EVERY save would have
+     failed, including the overwhelming majority that never touched the new field.
+     ⚠️ An empty array and an empty string carry no information, so dropping them loses
+     nothing and the old reasoning does not apply. A value that was actually ENTERED still refuses,
+     with `recordFailMsg` naming the migration to run — that half is unchanged and deliberate. */
+  function _isEmptyVal(v) {
+    return v === null || v === '' || (Array.isArray(v) && v.length === 0);
+  }
   function _dropMissingNull(payload, err) {
     var m = /(?:column|find the)\s+'?"?([a-z_]+)"?'?\s+(?:column\s+)?of/i.exec(err && err.message || '');
     var col = m && m[1];
-    if (!col || !(col in payload) || payload[col] !== null) return null;
+    if (!col || !(col in payload) || !_isEmptyVal(payload[col])) return null;
     var next = Object.assign({}, payload); delete next[col];
     return next;
   }
@@ -1152,7 +1375,13 @@ window.ContractsClaims = (function () {
         contract save silently dropped its package link, the register listed every contract
         as "not linked to a package", and the toast sent whoever read it to a migration
         that was already applied and would have changed nothing. */
-  var COL_MIGRATION = { package_id: 'migrations/2026-08-25-package-adoption.sql' };
+  var COL_MIGRATION = {
+    package_id: 'migrations/2026-08-25-package-adoption.sql',
+    /* ⚠️ Both of these, not just one: `owner_ids` and `owner` arrive together and a planner told
+       to run a migration for one and then again for the other would rightly lose patience. */
+    owner_ids: 'migrations/2026-09-17-contracts-claims-owner.sql',
+    owner:     'migrations/2026-09-17-contracts-claims-owner.sql'
+  };
   var DEFAULT_MIGRATION = 'migrations/2026-07-20-contracts-claims-full.sql';
   function migrationsFor(cols) {
     var seen = {};
@@ -1571,6 +1800,26 @@ window.ContractsClaims = (function () {
             '</p>' + CCAffected.pickerHTML() +
           '</div>'
         : '') +
+      /* ==== RESPONSIBLE ====================================================================
+         ⚠️⚠️ ONE PERSON IN THE FORM, AN ARRAY IN THE COLUMN, and that is deliberate rather
+         than an oversight. `owner_ids` is `uuid[]` because a claim genuinely can be run by two
+         people and a single-uuid column would drop the second on the first save — the reasoning is
+         on the migration. The FORM offers one, because that is what this register's records
+         actually have, and a chips picker for a field that holds one name is ceremony. When two
+         becomes normal, the picker changes and the schema does not.
+         ⚠️ The free-text box beside it is not a fallback for a missing roster — it is for a
+         person who will never have an account: a consultant QS, the client's own surveyor. Both are
+         written on save so the id half and the text half cannot disagree. */
+      '<div class="cc-sec">Responsible</div>' +
+      '<label>Who is chasing this<select id="cc-f-own"><option value="">— nobody yet —</option>' +
+        PEOPLE.map(function (p) {
+          var on = (e.owner_ids || []).map(String).indexOf(String(p.id)) >= 0;
+          return '<option value="' + esc(p.id) + '"' + (on ? ' selected' : '') + '>' + esc(p.name) +
+                 (p.department ? ' · ' + esc(p.department) : '') + '</option>';
+        }).join('') +
+      '</select></label>' +
+      '<label>… or a name with no account<input id="cc-f-ownx" type="text" placeholder="e.g. the consultant QS" value="' +
+        esc(ownerExtraOf(e)) + '" /></label>' +
       '<label class="cc-wide">Remarks<textarea id="cc-f-rem">' + esc(e.remarks || '') + '</textarea></label>' +
       /* ⚠⚠ FILES ON EVERY TYPE, no `data-only`. Owner 2026-09-15: *"an attach a file feature in
          the contracts, claims, eot, and change order"* — all four. A signed contract, a variation
@@ -1817,6 +2066,11 @@ window.ContractsClaims = (function () {
         date_submitted: t === 'Contract' ? null : v('cc-f-subd'),
         date_evaluated: t === 'Contract' ? null : v('cc-f-evald'),
         date_approved: t === 'Contract' ? null : v('cc-f-apprd'),
+        /* ⚠️ BOTH HALVES, ALWAYS — see the migration. The ids are what a worklist query can act
+           on; the text is what a printed sheet shows and is the only home for a person with no
+           account. Writing one without the other is how they come to disagree. */
+        owner_ids: (function () { var id = v('cc-f-own'); return id ? [id] : []; })(),
+        owner: ownerText(v('cc-f-own') ? [v('cc-f-own')] : [], v('cc-f-ownx')),
         remarks: v('cc-f-rem'), updated_at: new Date().toISOString()
       };
       // Only the pipeline belonging to this type is written; the other is nulled
@@ -2155,6 +2409,11 @@ window.ContractsClaims = (function () {
     } else {
       PKGS = [];
     }
+    /* ⚠️ The people roster, for the Responsible field. `PDb.getPeople()` caches for the page's
+       lifetime, so this is one RPC per session however many times a project is switched, and it
+       returns `[]` rather than throwing when the migration that defines `app_people()` has not been
+       run — the form then falls back to the free-text box beside the picker. */
+    try { PEOPLE = await PDb.getPeople(); } catch (e) { PEOPLE = []; }
     // Cheap (a few dozen rows) and read once per project switch, so the wizard's
     // per-keystroke conflict check never touches the network. Skipped in portfolio scope —
     // the wizard (raising a new record) is not reachable there anyway, since writes are blocked.

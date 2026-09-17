@@ -1,5 +1,87 @@
 # Module: contracts-claims
 
+## 2026-09-17 (c) — Trend, the time position, and who is chasing what
+
+**Run `migrations/2026-09-17-contracts-claims-owner.sql`.** The owner picked items 2, 3 and 4 off
+the suggestion list from (b).
+
+### 2 · Is it getting better or worse?
+Every figure on this page was a **snapshot**. *"Claims exposure ₱20.70M"* does not say whether that
+is up or down, which is the first thing anyone asks about a commercial position — and the second is
+*since when*.
+
+⚠️⚠️ **Derived from the dates the register already stores — no new table, no nightly job, no
+migration.** `date_submitted` says when a record went to the client and `date_approved` /
+`date_evaluated` say when it came back, so the position on any past date is computable from rows
+already in memory. A snapshot table would be a second source of truth that can disagree with the
+register it came from.
+
+⚠️ **A decided record with NO decision date is undatable, and is EXCLUDED and COUNTED** — the same
+discipline the ageing band applies to a pending record that was never submitted. Assuming a date
+would draw a confident wrong line. The note under the chart says how many were left out.
+
+⚠️ **Month ENDS, not month starts.** A record submitted on the 3rd and decided on the 20th of the
+same month never exists at either month start, and a series built on starts would draw a flat line
+through a month that was actually busy.
+
+The rule lives in `PDClaims.exposureSeries`, not in the module — the portfolio view ranks projects
+on this same pair, and a trend computed locally is how two screens come to tell different stories
+about one register.
+
+### 3 · The time position, which the page only ever half-stated
+The KPI strip said *Time granted: None* and the pipeline table carried the EOT day counts, but
+nothing said what any of it MEANT: 30 days is trivial or a crisis depending on whether the contract
+runs for 1,090 days or 60.
+
+⚠️ **This is the time analogue of the revised contract sum from (b), and it is built the same
+way**: the signed completion date stays where a reader expects it, and the revised one — original +
+granted — is stated beside it. Approved extensions have moved the contractual completion date; a
+page that shows only the original describes a contract that no longer exists. Verified in a harness:
+completion 2027-04-23 + 30d granted = **revised 2027-05-23**, and 30 of a 569-day contract = **5.3%**.
+
+⚠️ The dates come from the **packages**, which is where a contract's own start and finish live.
+With no package dates the day counts still print and the ratio and revised date do not — an
+extension expressed as a percentage of an unknown duration is a number with no meaning.
+
+### 4 · Who is chasing what
+⚠️⚠️ **"Unassigned" is a ROW, and it sorts FIRST.** A worklist that names the people who have work
+and quietly omits the records nobody owns is describing a tidier project than the one that exists —
+spotting the pile with no name on it is the whole value of the band.
+
+⚠️ **Pending only.** A decided record needs nobody to chase it, and including settled work would
+make the busiest-looking person the one who has finished the most. ⚠️ EOT records are counted in the
+record count but excluded from the money column: they carry DAYS, and adding a day count into a peso
+total is the mistake this module's key-pair convention exists to make impossible.
+
+### The two things that could have broken every save
+⚠️⚠️ **`_dropMissingNull` dropped only `null`.** The Responsible field sends `owner_ids: []` and
+`owner: ''` when nobody is assigned — neither of which is `null` — so on a database without the new
+migration **every save would have failed**, including the overwhelming majority that never touched
+the new field. It now drops EMPTY values (`null`, `''`, `[]`), which carry no information. A value
+that was actually entered still refuses, with the toast naming the migration; ⚠️ `0` is a figure,
+not an absence, and is still never dropped.
+
+⚠️⚠️ **`ownerExtraOf` is the inverse of `ownerText`, and it is load-bearing.** `owner` as stored
+is already `ownerText(ids, extra)`; seeding the form's free-text box with that whole string makes
+every save re-prepend the resolved names — *"Alvarez; Alvarez; Cruz"* after three edits. That exact
+bug was reported on the Issues register's champion field and then reproduced when the pattern was
+copied to Minutes of Meeting. It is not being introduced a third time.
+
+### Tests
+`tools/test-claims.js` **40 passed, 0 failed** (was 15) — the trend derivation, including the
+undatable record, the `eval` over `sub` key order, month ends, February in a leap year and the year
+boundary. `modules/contracts-claims/test-record.js` **24 passed, 0 failed**, new — the save gate and
+the name round trip, both sliced from `module.js` rather than retyped.
+
+⚠️ Negative-tested. Restoring the null-only gate and the naive extra turns **7** assertions red, and
+the round-trip failures print the literal *"Alvarez; Alvarez; Alvarez; The consultant QS"*.
+
+All three bands verified rendering in a browser from the shipped functions. ⚠️ One wording fix came
+out of looking at it: the legend said *"the darker part of a column is the shortfall"*, and the
+shortfall is `--pd-red` on `--pd-warn` amber — brighter, not darker.
+
+`claims.js` → `?v=20260917b`; module → `?v=20260917c`.
+
 ## 2026-09-17 (b) — The dashboard states the revised contract sum, and names the record to chase
 
 Owner: *"Contracts & Claims dashboard for project-level needs to be improved. Please suggest both
