@@ -3543,6 +3543,19 @@
     .sbld-step.on { background:var(--pd-card); border-color:var(--pd-line); box-shadow:var(--pd-shadow); }
     .sbld-step-n { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); color:var(--pd-muted); font-size:var(--pd-fs-sm); font-weight:700; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--pd-line); }
     .sbld-step.on .sbld-step-n { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    /* A step whose prerequisites are not met yet. ⚠️ OPACITY AND CURSOR ONLY: `.on` and
+       `.locked` are both one class on the same element, so any property both set would be decided
+       by source order rather than by meaning — and a step can be BOTH (delete every activity
+       while standing on Generate), where the active state must still read as active. */
+    .sbld-step.locked { opacity:.55; cursor:not-allowed; }
+    .sbld-step.locked.on { opacity:1; }
+    /* ⚠️ The reason rides in its own column beside the Next button rather than as a third child
+       of .sbld-foot, which is `justify-content:space-between` — a third child there would land
+       BETWEEN Back and Next. */
+    .sbld-nextwrap { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+    /* ⚠️ --pd-warn-text, never --pd-warn: that one is a SURFACE colour and measures 3.46:1 on
+       white, under AA for text this size. */
+    .sbld-blockwhy { font-size:var(--pd-fs-xs); color:var(--pd-warn-text); text-align:right; max-width:46ch; line-height:1.35; }
     .sbld-step-t { font-size:var(--pd-fs-base); font-weight:700; line-height:1.25; }
     .sbld-step-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     /* ⚠️ min-width:0 is load-bearing — this is the 1fr grid child, and without it wide step content
@@ -12026,7 +12039,7 @@
     });
     // ⚠️ THE MENU NO LONGER OFFERS THE EDITOR, ONLY THE WAY TO IT. Owner 2026-09-02: the location
     // breakdown *setup* belongs to the Schedule Setup's Floors & Zones step and nowhere else — the
-    // levels are what steps 2–7 and the push are built on, so defining them from a grouping menu on
+    // levels are what the later steps and the push are built on, so defining them from a grouping menu on
     // another screen put the same decision in two places. This note is the signpost that replaces it.
     if (!locDims.length) h += '<div class="ps-gm-note">No location levels defined yet — define them in <strong>Schedule Setup › Floors &amp; Zones</strong> to group by location.</div>';
     h += '<div class="ps-gm-sec">View</div>' +
@@ -35821,7 +35834,7 @@
         watch: ['The two paths have <b>different steps</b>. Switching mode later keeps what you typed but changes the rail.'],
         done: 'A mode is chosen and the rail below it has filled in.'
       },
-      'Working calendars': {
+      'Calendars': {
         why: 'Which days count as work. Every duration in this setup is in WORKING days, so this decides what a 5-day activity means on a calendar.',
         how: ['Set the working week and the daily hours.', 'Add the holidays this project observes.',
               'Add <b>seasons</b> (a rainy season, a shutdown) if they change what is workable.'],
@@ -35848,25 +35861,35 @@
                 '⚠️ Do not add a level you will not sequence: every extra level multiplies the activities the push writes.'],
         done: 'Each trade\u2019s floors exist, in the right order, with zone codes that match across floors.'
       },
-      'Structure': {
-        why: 'Two views of one breakdown. <b>5PMLC</b> is the project\u2019s live branch tree; <b>Construction Library</b> is the places and groupings that end up inside its Execution Phase.',
-        how: ['Open <b>5PMLC</b> first to see what the project already has.',
-              'Use <b>Construction Library</b> to shape how the generated activities will be grouped.'],
-        watch: ['⚠️ 5PMLC edits the <b>live</b> tree immediately; the Library edits this setup\u2019s draft. They are different things on one screen.',
-                'The push creates the branches this setup needs and reuses the ones already there — it does not duplicate them.'],
-        done: 'You can see where the generated activities are going to land.'
+      'Towers': {
+        why: 'How many buildings this project has, and — where there is more than one — where each of them stands. A floor is laid out per (trade, tower), so this list is what the next step hangs everything off.',
+        how: ['Press <b>+ Tower</b> once per building, giving each a name and a short code.',
+              'A tower that <b>repeats</b> another: name it here, then fill it in from the original with <b>Tower options › Copy floors from another tower…</b> once that one is laid out.',
+              'With more than one tower, open <b>Site plan…</b> and trace one area per tower on the site drawing.'],
+        watch: ['⚠️ The <b>short code</b> is built into every generated activity id and location label — keep it short and unique.',
+                '⚠️ There is no separate "tower type" field. Copying one tower into another is how a repeated type is expressed.',
+                '⚠️ The site plan joins on the tower <b>names</b>: an area traced under a name no tower carries draws nothing in the Vertical Stacking.',
+                'A schedule that already carries towers this setup has never named is reported on the bar — add them with <b>+ Tower</b> so the names match.'],
+        done: 'Every building on this project is named, and on a multi-tower job each one is traced on the site plan.'
       },
-      'Repetition': {
-        why: 'How the building repeats — the tabs across the top are four questions about one subject: which towers interface, in what order the locations are built, in what order the trades run inside a location, and what applies where. What that produces is drawn on the Generate step.',
+      'Location Sequence': {
+        why: 'Where the work goes next — which tower hands off to which, and in what order the locations inside a tower are built. What that produces is drawn on the Generate step.',
         how: ['<b>Tower Sequence</b> — how the towers meet in time (a shared podium, one tower handing off to another). Skip it on a single-tower job.',
-              '<b>Zone sequence</b> — which location follows which. Use <b>Auto-trace</b> (below) rather than drawing it by hand.',
-              '<b>Trade sequence</b> — how the class codes run inside one location. <b>Auto-chain</b> links a trade\u2019s codes back-to-back with the relationship in the dropdown beside it.',
-              '<b>Scope per zone</b> — tick which activities apply to each location. Everything applies everywhere until you say otherwise.',
-              '<b>Next</b> walks these four in order before it leaves the step — the button names the view it is about to open.'],
-        watch: ['<b>Linking by hand</b> (Zone and Trade sequence): click one or more <b>sources</b> (red outline) \u2192 <b>right-click</b> to confirm \u2192 click one or more <b>destinations</b> (blue dashed) \u2192 <b>right-click</b> again \u2192 pick the relationship (FS / SS / FF / SF) and lag. Every source links to every destination.',
+              '<b>Zone sequence</b> — which location follows which. Use <b>Auto-trace</b> rather than drawing it by hand.',
+              '<b>Next</b> walks both views before it leaves the step — the button names the view it is about to open.'],
+        watch: ['<b>Linking by hand</b>: click one or more <b>sources</b> (red outline) → <b>right-click</b> to confirm → click one or more <b>destinations</b> (blue dashed) → <b>right-click</b> again → pick the relationship (FS / SS / FF / SF) and lag. Every source links to every destination.',
                 '<b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> and <b style="color:#e08a1e">successors</b>. Click an arrow to edit or unlink it. <b>Reset selection</b> cancels.',
                 '⚠️⚠️ <b>Auto-trace replaces every link</b> in Zone sequence. Run it FIRST, then adjust by hand — not the other way round.'],
         done: 'The vertical stacking on the Generate step climbs the building the way you would describe it out loud.'
+      },
+      'Activity Sequence': {
+        why: 'What order the work happens in once it is inside a place — how the class codes run through one location, and which of them apply where.',
+        how: ['<b>Trade sequence</b> — how the class codes run inside one location. <b>Auto-chain</b> links a trade’s codes back-to-back with the relationship in the dropdown beside it.',
+              '<b>Scope per zone</b> — tick which activities apply to each location. Everything applies everywhere until you say otherwise.',
+              '<b>Next</b> walks both views before it leaves the step.'],
+        watch: ['The sequence <b>and</b> the durations are per <b>level type</b> (basement / podium / typical / roof deck) — a duration typed while a category is selected applies to that category only.',
+                '<b>Linking by hand</b> works exactly as it does in Location Sequence: sources → right-click → destinations → right-click → relationship and lag.'],
+        done: 'Each trade’s codes run in the order they are actually built, and nothing is scheduled somewhere it does not happen.'
       },
       'Project phases': {
         why: 'The lifecycle either side of construction — Initiation, Planning, Close-out — as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.',
@@ -37255,11 +37278,16 @@
        empty string for a name it cannot find, and a blank where a step number belongs reads as a
        broken reference — so 'Tower links' is kept beside its new name, and 'Stacking' now points
        at Generate, which is where the vertical stacking actually is. */
-    var STEP_ALIAS = { 'Tower Sequence': 'Repetition', 'Tower links': 'Repetition',
-                       'Zone sequence': 'Repetition',
+    /* ⚠ Every retired or renamed title on the left resolves to the step that CONTAINS it now.
+       'Repetition' split in two on 2026-09-17, so its four view titles go to whichever of the
+       two took them; 'Working calendars' was renamed; 'Stacking' moved to Generate. */
+    var STEP_ALIAS = { 'Working calendars': 'Calendars',
+                       'Repetition': 'Location Sequence',
+                       'Tower Sequence': 'Location Sequence', 'Tower links': 'Location Sequence',
+                       'Zone sequence': 'Location Sequence',
+                       'Trade sequence': 'Activity Sequence', 'Scope per zone': 'Activity Sequence',
                        'Structure': 'Project phases', '5PMLC': 'Project phases',
                        'Construction Library': 'Activities',
-                       'Trade sequence': 'Repetition', 'Scope per zone': 'Repetition',
                        'Stacking': 'Generate' };
     function _stepNo(t) {
       var names = STEPS.map(function (x) { return x.t; });
@@ -37283,74 +37311,45 @@
        of thing that reads fine and breaks one caller. */
     var STEPS = [];
     var STEP_START = { t: 'Start', s: 'Import, or build new', fn: stStart };
-    // The generation path. ⚠ It was ten steps and is SIX — Structure merged into Project Phases
-    // and the Library became a tab of Activities. Count it here, never in prose.
+    /* ⚠️⚠️ NINE STEPS, AND THE SHAPE IS THE OWNER'S OWN (2026-09-17). Two changes, each
+       undoing a merge that had put two different questions on one screen:
+         • TOWERS came OUT of Floors & Zones. "How many buildings are there, and where do they
+           stand" is a statement about the project; "what is inside this one" is a statement about
+           one building. See stTowers.
+         • REPETITION SPLIT IN TWO. Its four views were Tower Sequence, Zone sequence, Trade
+           sequence and Scope per zone — the first two are about WHERE the work goes next, the
+           last two about WHAT ORDER the work happens in inside a place. Location Sequence and
+           Activity Sequence.
+       ⚠️ Nothing indexes these by number: `_stepNo(title)` looks them up by TITLE and every
+       cross-reference in the module goes through it, so all the "see step 7" text renumbers
+       itself. `STEP_ALIAS` keeps every retired or renamed title resolving to a real number. */
     var STEPS_NEW = [
-      /* ⚠️⚠️ THE WBS STEP IS GONE FROM HERE — IT IS A VIEW OF `Structure` NOW.
-         Owner 2026-09-08: *"can you merge the WBS in step 2 into step 6— Call the view for the
-         step 2 as 5PMLC, and step 6 as Construction Library."* See stTabbed for the whole
-         rationale, for what the merge COSTS, and for what "updated live" can honestly mean when
-         one view edits the live tree and the other edits this setup's draft.
-         ⚠️ The reasoning that put it first is kept below rather than deleted, because it is still
-         true about the TREE and it is why 5PMLC is the merged step's DEFAULT view: arriving at the
-         step still shows what already exists before anything new is described. What changed is
-         that it no longer costs a rail entry of its own to say so.
-         ⚠️ Old deep links keep working: gotoStep('WBS') and gotoStep('Library') resolve to this
-         step and select the matching view (see the public gotoStep).
-
-         --- the original note, on why the tree came first ---
-         Owner 2026-09-03: *"Is WBS really at the end of
-         the Schedule Setup? or this should be at the beginning? Let's think about this."*
-
-         Thinking about it, the answer turns on something specific to THIS step: unlike every other
-         step, it is not data entry. Steps 3-11 fill in `cfg` and the Generate step reads `cfg`; the
-         WBS step edits the LIVE `wbs_nodes` tree directly, and the push reads that tree AT PUSH
-         TIME, not at step time. So its position cannot break anything either way, which means the
-         position is purely a question of WHEN A PLANNER WANTS TO LOOK — and the answer to that is
-         plainly "before I start typing", for three reasons:
-           • it is the project's EXISTING structure. Everything else in the wizard describes work to
-             be added; this is the only step that shows what is already there.
-           • the IMPORT path already checks branches first (STEPS_IMP step 1 is "Activities & phases",
-             which is filing each of the file's branches under a phase). Two paths through the same
-             module answering the same question in opposite orders is not a design, it is an
-             accident of when each was written.
-           • it is where the five lifecycle phases live, and "Project phases" (step 11) edits what
-             goes inside three of them. Reading the tree first is what makes that step legible.
-         ⚠️ WHAT THIS IS NOT: a claim that the tree is an INPUT to generation. The push still
-         creates the trade › tower › floor › zone branches it needs and reuses any that match, so a
-         nearly-empty tree here is the normal state on a new project — stWbs says so in as many
-         words, because a planner arriving at an empty step 2 would otherwise think it was broken.
-         ⚠️ Nothing indexes these steps by number: `_stepNo(title)` looks them up by TITLE and every
-         cross-reference in the module goes through it, so all the "see step 7" text renumbered
-         itself. Verified by grep for `_stepNo(` — there is no numeric step literal anywhere. */
       /* ⚠️ BEFORE THE ACTIVITIES, and that ordering is the point (see stCalendars): every
          duration typed in the next step is a count of WORKING days, so the calendar is the unit
          those numbers are expressed in. Set afterwards, everything already typed silently meant
-         something else while it was being typed. */
-      { t: 'Working calendars', s: 'Which days are workable', fn: stCalendars },
+         something else while it was being typed.
+         ⚠️ Renamed from "Working calendars" at the owner's request — the rail is read at a glance
+         and the first word is the one that has to carry it. `STEP_ALIAS` keeps the old title
+         resolving, because a blank where a step number belongs reads as a broken reference. */
+      { t: 'Calendars', s: 'Which days are workable', fn: stCalendars },
       /* ⚠⚠ SECOND, AND THIS REVERSES WHAT THIS FILE USED TO ARGUE. The note that used to sit
          above the Structure step said the merged step could not lead, because one of its two
          views would be empty on a new project. That was true of the **Construction Library**,
          which has moved to the Activities step. What is left — the lifecycle phases and the tree
          they produce — is a structural decision a planner can make before a single activity
-         exists, so it can lead. Owner 2026-09-17: *“move this step after working calendars”*. */
+         exists, so it can lead. */
       { t: 'Project phases', s: 'Lifecycle + the WBS tree', fn: stPhasesStep },
       { t: 'Activities', s: 'Class-code list + Construction Library', fn: stActivitiesStep },
-      { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stLevels },
-      /* ⚠️ AFTER both, not before. The Construction Library view is a READ of the places and the
-         items plus the two ways to fill them from the WBS — put in front of them it would be an
-         empty screen on a new project, which is the opposite of orienting anybody. That is also
-         why the merged step sits HERE and not at position 2: of its two views, only 5PMLC could
-      /* ⚠️⚠️ FIVE STEPS BECAME ONE. Tower links, Zone sequence, Trade sequence, Scope per zone and
-         Stacking all answer the same question — how does the building REPEAT — and four of the five
-         are inert on a project with one tower and no zones. They were five rail entries of nothing,
-         and the rail's LENGTH is what makes this wizard look big before a word of it is read: 12
-         steps down to 8.
-         ⚠️ They are TABS, not a merge: each keeps its own renderer, its own heading and its own
-         empty state, untouched. The only thing that changed is where the planner clicks to reach
-         them. `_stepNo` aliases their titles onto this step, so the 27 cross-references elsewhere
-         ("set in step 7 · Zone sequence") keep resolving to a real number — they are inside it. */
-      { t: 'Repetition', s: 'Towers, zones, trades, scope', fn: stRepetition },
+      /* ⚠️ THE TOWERS BEFORE WHAT IS IN THEM. A floor is laid out per (trade, tower), so the tower
+         list is the prerequisite for the next step rather than a control on top of it — which is
+         exactly what `_stepReady` enforces. */
+      { t: 'Towers', s: 'How many, and the site plan', fn: stTowers },
+      { t: 'Floors & Zones', s: 'Floors, zones and units', fn: stLevels },
+      /* ⚠️ Both sequence steps need somewhere for the work to be, which is why they sit after the
+         places rather than beside the activities: a zone sequence with no zones is an empty screen
+         and a scope-per-zone grid with no zones has no columns. */
+      { t: 'Location Sequence', s: 'Tower and zone sequence', fn: stLocSeq },
+      { t: 'Activity Sequence', s: 'Trade sequence and scope', fn: stActSeq },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
     /* The import path. ⚠️ THE ORDER IS THE DATA-CHECKING ORDER, and it is not arbitrary:
@@ -37377,6 +37376,43 @@
     /* ⚠️ Called at the top of every render(), before the rail is drawn. `step` is clamped rather
        than reset: switching mode with a high step index would otherwise index past the end of the
        new list and STEPS[step].fn would throw. */
+    /* ⚠️⚠️ PREREQUISITE GATING. Returns the reason a step cannot be entered yet, or ''.
+
+       ⚠️⚠️ IT BLOCKS ONLY WHAT IS UNREACHABLE IN PRINCIPLE, never what is merely unanswered.
+       A project whose only trade is project-wide (General Requirements carries no tower, floor or
+       zone — see LOCLESS) has no floors and never will, so gating Location Sequence on "has
+       floors" would strand it short of Generate for ever. That is why the floors test runs only
+       when the project HAS location-bearing trades.
+
+       ⚠️ 'new' path only. An import writes the schedule from a file and its steps do not depend
+       on each other this way; and with no cfg there is nothing to measure. */
+    function _stepReady(title) {
+      if (mode !== 'new' || !cfg) return '';
+      var nAct = (cfg.activities || []).length;
+      /* ⚠️ Location Sequence is in this group too — with no activities there is nothing to
+         sequence — and it cannot strand the project-wide-only case, which HAS activities and is
+         let through by the floors test below. */
+      if (title === 'Floors & Zones' || title === 'Location Sequence' ||
+          title === 'Activity Sequence' || title === 'Generate') {
+        if (!nAct) return 'Add at least one activity in step ' + _stepNo('Activities') + ' · Activities first.';
+      }
+      if (title === 'Location Sequence') {
+        var loc = [];
+        try { loc = locGroups(); } catch (e) {}
+        if (loc.length) {
+          var nFloor = 0;
+          loc.forEach(function (g) { try { nFloor += (floorsOf(g) || []).length; } catch (e) {} });
+          if (!nFloor) return 'Add floors for at least one trade in step ' + _stepNo('Floors & Zones') + ' · Floors & Zones first.';
+        }
+      }
+      return '';
+    }
+    /* The first step at or before i that cannot be entered, or -1.
+       ⚠️ k starts at 1: Start is the path chooser and must always be reachable. */
+    function _firstBlockedUpTo(i) {
+      for (var k = 1; k <= i && k < STEPS.length; k++) if (_stepReady(STEPS[k].t)) return k;
+      return -1;
+    }
     function sbSyncSteps() {
       var list = [STEP_START].concat(mode === 'import' ? STEPS_IMP : (mode === 'new' ? STEPS_NEW : []));
       STEPS.length = 0;
@@ -37541,13 +37577,14 @@
          above `stStacking` itself; the suite asserts it stays out of this list.
          ⚠ A browser that remembers `stack` in `ps_steptab_Repetition` is safe: `stepTabKey`
          validates the stored key against this list and falls back to the first tab. */
-      'Repetition': [
-        /* ⚠ “Tower links” was the name of a MECHANISM (a link between two towers); the other
-           three tabs are named for the QUESTION they answer. Owner 2026-09-17: *“rename tower
-           links to Tower Sequence”*. `STEP_ALIAS` keeps the old title resolving to a step number,
-           so nothing that still says “Tower links” prints a blank where a number belongs. */
+      /* ⚠ “Tower links” was the name of a MECHANISM (a link between two towers); every other
+         tab is named for the QUESTION it answers. `STEP_ALIAS` keeps the old title resolving to a
+         step number, so nothing that still says “Tower links” prints a blank where one belongs. */
+      'Location Sequence': [
         { k: 'towers', t: 'Tower Sequence', fn: function (h) { return stTowerLinks(h); } },
-        { k: 'zones',  t: 'Zone sequence',  fn: function (h) { return stSequence(h); } },
+        { k: 'zones',  t: 'Zone sequence',  fn: function (h) { return stSequence(h); } }
+      ],
+      'Activity Sequence': [
         { k: 'trades', t: 'Trade sequence', fn: function (h) { return stTradeSeq(h); } },
         { k: 'scope',  t: 'Scope per zone', fn: function (h) { return stScope(h); } }
       ]
@@ -37665,21 +37702,32 @@
        ⚠ The view is remembered across reloads now (`stepTabKey` persists it), which the pills
        never did. That matches Activities, and coming back to the step you left is the behaviour
        a multi-view step wants. */
-    function stRepetition(host) {
-      var T = stepTabs('Repetition'), k = stepTabKey('Repetition');
+    /* ⚠⚠ ONE PILL STRIP, TWO STEPS. `Repetition` held four views — Tower Sequence, Zone
+       sequence, Trade sequence, Scope per zone — and the owner split them on 2026-09-17 into
+       **Location Sequence** (where the work goes next) and **Activity Sequence** (what order the
+       work happens in inside a place). They are two different questions and were answered on one
+       screen; what they share is the shape of the control, so this takes the step TITLE rather
+       than being copied twice.
+       ⚠ Each sub-view still renders its OWN heading, opening with `_stepNo(<its own title>)`,
+       which `STEP_ALIAS` resolves to whichever step now contains it — so a heading never prints
+       a blank where a number belongs. Nothing inside the four views was rewritten. */
+    function stPillStep(host, title) {
+      var T = stepTabs(title), k = stepTabKey(title);
       var cur = T.filter(function (x) { return x.k === k; })[0] || T[0];
       host.innerHTML =
         '<div class="sbld-reptabs">' +
           T.map(function (x) {
             return '<button type="button" class="pd-btn sbld-reptab' + (x.k === cur.k ? ' on' : '') +
-              '" data-rep="' + x.k + '">' + e2(x.t) + '</button>';
+              '" data-rep="' + e2(x.k) + '">' + e2(x.t) + '</button>';
           }).join('') +
         '</div><div id="sbld-repbody"></div>';
       host.querySelectorAll('[data-rep]').forEach(function (b) {
-        b.onclick = function () { setStepTab('Repetition', b.dataset.rep); };
+        b.onclick = function () { setStepTab(title, b.dataset.rep); };
       });
       cur.fn(host.querySelector('#sbld-repbody'));
     }
+    function stLocSeq(host) { stPillStep(host, 'Location Sequence'); }
+    function stActSeq(host) { stPillStep(host, 'Activity Sequence'); }
     /* ==========================================================================================
        THE LIBRARY — the project's places on the left, its activity groupings on the right.
 
@@ -39564,7 +39612,7 @@
       var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS : [];
       var names = lv.map(function (l) { return String(l.name || '').trim(); }).filter(Boolean);
       var body = names.length
-        ? '<span class="sbld-hint">This project breaks location down as <b>' + e2(names.join(' › ')) + '</b>. Steps 2–7 and the pushed schedule all use these names.</span>'
+        ? '<span class="sbld-hint">This project breaks location down as <b>' + e2(names.join(' › ')) + '</b>. Every later step and the pushed schedule use these names.</span>'
         : '<span class="sbld-hint">This project has <b>no location breakdown yet</b>. Define it first and the builder will use your names — otherwise the first push creates <b>' +
           e2([DIM_LABEL.floor, DIM_LABEL.zone, DIM_LABEL.unit].join(' › ')) + '</b> for you.</span>';
       /* ⚠️ THE WHOLE BREAKDOWN LIVES HERE NOW (owner 2026-09-02: "let's also have the location
@@ -40011,7 +40059,14 @@
     }
     // The tower strip for step 2. One tower reads as a single quiet chip (nothing new to learn);
     // two or more turn it into a real selector. Floors below are filtered to the active tower.
-    function _towerBar() {
+    /* ⚠⚠ TWO STEPS DRAW THIS BAR, AND ONLY ONE OF THEM OWNS IT. `opts.manage` is the Towers
+       step (step 5): the chips plus + Tower, the site plan, the ⋯ menu and the detection notes.
+       Floors & Zones passes nothing and gets the CHIPS ALONE — there it is a selector, saying
+       which tower's floors are on screen, and offering + Tower / Delete beside a floor list would
+       be two steps each claiming to own the tower list. The note under the chips names the step
+       that does, rather than leaving the missing buttons to be discovered. */
+    function _towerBar(opts) {
+      var manage = !!(opts && opts.manage);
       var list = towerList(), act = activeTower();
       /* ⚠️⚠️ THE STEP DETECTS, IT DOES NOT ASSUME. Owner 2026-09-12: *"the schedule setup should
          detect, if the project has multiple towers or not."* `towerList()` alone cannot answer
@@ -40025,7 +40080,7 @@
           return '<button class="sbld-chip' + (t.id === act ? ' on' : '') + '" data-twsel="' + e2(t.id) + '" title="' +
             e2((t.code ? t.code + ' — ' : '') + (t.name || '')) + '">' + e2(t.name || t.code || 'Tower') + '</button>';
         }).join('') +
-        '<button class="pd-btn sbld-twbtn" id="b-twadd" title="Add another tower">+ Tower</button>' +
+        (manage ? '<button class="pd-btn sbld-twbtn" id="b-twadd" title="Add another tower">+ Tower</button>' : '') +
         /* ==== WHERE THE SITE PLAN IS DEFINED ==============================================
            ⚠️⚠️ ON THE TOWER BAR, and that is the answer to the owner's *"propose how and where
            you would define the plan"*. This bar is the only place in the app that enumerates the
@@ -40043,7 +40098,7 @@
            line beside it says what was detected.
            ⚠️ The button counts what is traced against the towers that exist, so a project that
            has grown a fourth tower reads "3/4" without anyone opening it. */
-        (TR.multi ? (function () {
+        (manage && TR.multi ? (function () {
           var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
           /* ⚠️ Counted against EVERY tower the project has — the ones named here and the ones only
              the schedule knows about. Counting against `towerList()` alone would report "1/1 traced"
@@ -40072,13 +40127,13 @@
            The ids are unchanged, so every handler is wired exactly as it was.
            ⚠️ Delete names the tower in the label, because it is the destructive one and a menu row
            reading just "Delete" is a row that does not say what it will take with it. */
-        '<details class="sbld-twmore"><summary title="' + e2('Rename, copy into or delete ' + towerLabel(act)) + '">Tower options</summary>' +
+        (manage ? '<details class="sbld-twmore"><summary title="' + e2('Rename, copy into or delete ' + towerLabel(act)) + '">Tower options</summary>' +
           '<div class="sbld-twmenu">' +
             '<button class="pd-btn" id="b-twren" title="Rename the active tower">Rename…</button>' +
             (list.length > 1 ? '<button class="pd-btn" id="b-twcopy" title="Copy another tower\'s floors, zones, units and sequencing into this one">Copy floors from another tower…</button>' : '') +
             (list.length > 1 ? '<button class="pd-btn sbld-del" id="b-twdel" title="Delete the active tower and its floors">' + e2('Delete ' + towerLabel(act)) + '</button>' : '') +
           '</div>' +
-        '</details>' +
+        '</details>' : '') +
         /* ==== WHAT WAS DETECTED, SAID OUT LOUD ============================================
            ⚠️⚠️ THE DRIFT CASE IS THE ONE WORTH INTERRUPTING FOR. A schedule carrying towers this
            setup has never named is the exact state in which the site plan's name join fails — the
@@ -40088,7 +40143,9 @@
            ⚠️ The single-tower line is a STATEMENT, not a warning: one tower is a perfectly ordinary
            project, and it exists only so the missing Site plan button is explained rather than
            merely absent. */
-        (TR.drift
+        (!manage
+          ? '<span class="sbld-towerbar-note">Which tower’s floors are on screen. Towers are added, renamed and laid out on the site plan in step <b>' + _stepNo('Towers') + ' · Towers</b>.</span>'
+          : TR.drift
           ? '<span class="sbld-towerbar-note warn" title="These are the values the schedule’s activities carry on the tower level of the Location Breakdown.">' +
             '⚠️ The schedule carries <b>' + TR.inSchedule.length + ' tower' + (TR.inSchedule.length === 1 ? '' : 's') +
             '</b>, and <b>' + TR.unnamed.length + '</b> ' + (TR.unnamed.length === 1 ? 'is' : 'are') + ' not named here: <b>' +
@@ -40103,6 +40160,155 @@
                 ' towers</b> in the schedule.</span>'
               : ''))) +
         '</div>';
+    }
+    /* ==== THE TOWER BAR'S HANDLERS — SHARED BY TWO STEPS ==============================
+       ⚠⚠ EXTRACTED, NOT COPIED. Owner 2026-09-17 split the location work into a Towers step
+       (how many towers there are, and the site plan) and a Floors & Zones step (what is inside
+       one). Both draw `_towerBar`, so both need its wiring — and two copies of it is exactly how
+       one of them ends up with a dead + Tower button. The Towers step passes `manage:true` and
+       gets every control; Floors & Zones passes nothing and gets the selector chips alone, so the
+       handlers below simply find no element for what was not drawn (every one is guarded).
+       ⚠ `ctx.tr` is the ACTIVE TRADE and is null on the Towers step, which has none — so the
+       copy dialog offers “Every trade” only there rather than naming a trade nobody chose. */
+    function _twBarWire(host, ctx) {
+      ctx = ctx || {};
+      var _twAct = ctx.act || activeTower();
+      var tr = ctx.tr || null;
+      host.querySelectorAll('[data-twsel]').forEach(function (b) { b.onclick = function () { uiTower = b.dataset.twsel; render(); }; });
+      /* ⚠️ A <details> stays open until something shuts it. Every action inside this one re-renders
+         the step — except walking away from it, so a menu opened by mistake would hang over the
+         floor list for the rest of the session. The next press outside closes it.
+         ⚠️ The listener removes ITSELF once the step has re-rendered and its element is detached,
+         rather than being left to accumulate one dead handler per render. */
+      var _twMore = host.querySelector('.sbld-twmore');
+      if (_twMore) {
+        var _twOut = function (ev) {
+          if (!document.body.contains(_twMore)) { document.removeEventListener('pointerdown', _twOut); return; }
+          if (!_twMore.open || _twMore.contains(ev.target)) return;
+          _twMore.open = false;
+        };
+        document.addEventListener('pointerdown', _twOut);
+      }
+      /* ==== THE TOWER, ASKED FOR IN ONE FORM ===========================================
+         ⚠️⚠️ TWO `prompt()`s BECAME ONE DIALOG. Owner 2026-09-17: *"when adding towers, floors,
+         UI usually gives browser pop-up. instead of browser pop-up create an app pop-up window
+         where user can input the fields."* Adding a tower asked for the name, closed, then asked
+         for the code in a second box whose only clue about what a code is for was the sentence
+         it was titled with. The two fields belong to one object and are now asked as one.
+         ⚠️ The code is REQUIRED here, where it was silently defaulted before: it is what every
+         generated activity id and every location label is built from, so a blank one produced
+         codes with a hole in them and nobody found out until the push. */
+      function _twFields(t, n) {
+        return [
+          { k: 'name', label: 'Tower name', value: (t && t.name) || ('Tower ' + n), required: true,
+            placeholder: 'Tower ' + n, hint: 'What the planners call it — shown on the tower bar, in the stacking and on the site plan.' },
+          { k: 'code', label: 'Short code', value: (t && t.code) || ('T' + n), required: true,
+            placeholder: 'T' + n, hint: 'Two or three characters. It is built into generated activity codes and location labels, so keep it short and unique.' }
+        ];
+      }
+      var _twAdd = host.querySelector('#b-twadd');
+      if (_twAdd) _twAdd.onclick = function () {
+        var n = towerList().length + 1;
+        psAsk({ title: 'Add a tower', ok: 'Add tower',
+          note: 'Each tower keeps its own floors, zones and zone sequencing. Nothing is copied into it — use <b>Copy from…</b> afterwards if this tower repeats another.',
+          fields: _twFields(null, n),
+          validate: function (v) {
+            var k = String(v.code).trim().toLowerCase();
+            return towerList().some(function (t) { return String(t.code || '').trim().toLowerCase() === k; })
+              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
+          }
+        }, function (v) {
+          var t = { id: uidv(), code: String(v.code).trim(), name: String(v.name).trim() };
+          cfg.towers = towerList().concat([t]); uiTower = t.id; markDirty(); render();
+        });
+      };
+      var _twRen = host.querySelector('#b-twren');
+      if (_twRen) _twRen.onclick = function () {
+        var t = towerById(_twAct); if (!t) return;
+        psAsk({ title: 'Rename ' + towerLabel(_twAct), ok: 'Rename',
+          fields: _twFields(t, towerList().length),
+          validate: function (v) {
+            var k = String(v.code).trim().toLowerCase();
+            return towerList().some(function (o) { return o.id !== t.id && String(o.code || '').trim().toLowerCase() === k; })
+              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
+          }
+        }, function (v) {
+          t.name = String(v.name).trim() || t.name; t.code = String(v.code).trim() || t.code;
+          markDirty(); render();
+        });
+      };
+      function _twCopyDlg() {
+        var others = towerList().filter(function (t) { return t.id !== _twAct; });
+        if (!others.length) return;
+        /* ⚠️⚠️ A LIST TO PICK FROM, NOT A NUMBER TO TYPE. This was a `prompt()` holding a
+           hand-numbered menu — "1) Tower A / 2) Tower B … Type a number:" — which is a <select>
+           rendered in text, with a typo for every way of getting it wrong and no way to tell the
+           planner what each tower actually holds. The counts are on the options now.
+           ⚠️ AND THE WARNING IS IN THE SAME DIALOG. It used to be a SECOND browser box after the
+           number was typed; the thing it warns about (this replaces everything here) is the whole
+           reason the planner is being asked, so it belongs beside the question. */
+        var _trHas = GROUPS.filter(function (g) { return !locless(g) && floorsOfTower(g, others[0].id).length; });
+        psAsk({ title: 'Copy another tower into ' + towerLabel(_twAct),
+          wide: true,
+          ok: 'Copy and replace', danger: true,
+          text: 'The floors, zones and units of the tower you pick are copied in with fresh ids, so the two towers are independent afterwards.',
+          note: '⚠️ This <b>REPLACES</b> what is currently under <b>' + e2(towerLabel(_twAct)) +
+            '</b> for the trades you copy. It cannot be undone. A trade you do <b>not</b> copy is left exactly as it is.',
+          fields: [
+            { k: 'src', label: 'Copy from', type: 'select', value: others[0].id,
+              options: others.map(function (t) {
+                var n = 0, ntr = 0;
+                GROUPS.forEach(function (g) {
+                  if (locless(g)) return;
+                  var c = floorsOfTower(g, t.id).length; if (c) { ntr++; n += c; }
+                });
+                return [t.id, (t.name || t.code) + ' — ' + n + ' floor' + (n === 1 ? '' : 's') +
+                  ' across ' + ntr + ' trade' + (ntr === 1 ? '' : 's')];
+              }),
+              hint: 'The floor count is every trade\u2019s floors added together — most towers are laid out the same for all of them, so it is usually the storey count times the number of trades.' },
+            { k: 'what', label: 'Which trades', type: 'select', value: 'all',
+              options: [['all', 'Every trade — the whole tower']].concat(tr ? [[tr, 'Only ' + GLABEL[tr]]] : []),
+              hint: 'Every trade is the usual answer: a tower that repeats another repeats it for all of them. One trade is for filling in the trade you are working on without touching the rest.' },
+            { k: 'seq', label: 'Bring the zone sequence with it', type: 'checkbox', value: true,
+              hint: 'The links between the copied zones are rebuilt against the copies, so the new tower flows the way the old one does. Turn it off to copy the places and sequence them yourself.' }
+          ]
+        }, function (v) {
+          var s2 = others.filter(function (t) { return t.id === v.src; })[0];
+          if (!s2) { UI.toast('No tower picked.', 'warn'); return; }
+          var r = copyTower(s2.id, _twAct, { groups: (v.what === 'all' ? null : [v.what]), links: !!v.seq });
+          /* ⚠️ pruneLinks, which this handler never called: the destination tower's own floors are
+             REPLACED, so every link that pointed at one of them now points at a leaf that no longer
+             exists. They were left in cfg.links to be discovered at Generate. */
+          pruneLinks(); markDirty(); render();
+          UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') +
+            (v.what === 'all' ? '' : ' of ' + GLABEL[v.what]) +
+            (v.seq ? ' and ' + r.links + ' zone link' + (r.links === 1 ? '' : 's') : '') +
+            ' from ' + (s2.name || s2.code) + '.', 'success');
+        });
+      }
+      var _twCopy = host.querySelector('#b-twcopy');
+      if (_twCopy) _twCopy.onclick = _twCopyDlg;
+      var _twCopy2 = host.querySelector('#b-twcopy2');
+      if (_twCopy2) _twCopy2.onclick = _twCopyDlg;
+      var _twDel = host.querySelector('#b-twdel');
+      if (_twDel) _twDel.onclick = function () {
+        if (towerList().length < 2) return;
+        var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, _twAct).length; });
+        psConfirm('Delete ' + towerLabel(_twAct) +
+          (n ? ' and its ' + n + ' floor' + (n === 1 ? '' : 's') : '') + '?', function () {
+          GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return towerIdOf(f) !== _twAct; }); });
+          cfg.towers = towerList().filter(function (t) { return t.id !== _twAct; });
+          cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return k.from !== _twAct && k.to !== _twAct; });
+          uiTower = towerList()[0].id;
+          pruneLinks(); markDirty(); render();
+        }, { title: 'Delete this tower?', ok: 'Delete the tower',
+             note: 'This cannot be undone. Every trade’s floors under this tower go with it.' });
+      };
+
+      /* ⚠ The site plan opens from this bar too, so its handler belongs with the bar rather
+         than with whichever step happened to draw it first. */
+      var _sb = host.querySelector('#b-siteplan');
+      if (_sb) _sb.onclick = function () { openSitePlan(); };
     }
     // Copy one tower's LOCATIONS and its SEQUENCING into another (owner request). Floors/zones/units
     // are deep-copied with fresh ids via cloneFloors, so the two towers are independent afterwards.
@@ -40302,7 +40508,7 @@
         host.innerHTML = head +
           /* The empty state already says which tower exists and that towers run in parallel; this
              line only has to say what would make the step do something. */
-          '<p class="sbld-lede">Nothing to link with one tower. Add a second in step ' + _stepNo('Floors & Zones') + '.</p>' +
+          '<p class="sbld-lede">Nothing to link with one tower. Add a second in step ' + _stepNo('Towers') + ' · Towers.</p>' +
           '<div class="sbld-empty">Only <b>' + e2(towerLabel(list[0].id)) + '</b> is defined. Towers run in parallel until a relationship is stated here.</div>';
         return;
       }
@@ -43827,6 +44033,88 @@
       paint();
       loadImg();
     }
+    /* ==========================================================================================
+       TOWERS — how many buildings, and where each one stands.
+       Owner 2026-09-17: *"Step 5: Towers — Definition of towers (Identification of how many type of
+       towers there are and how many towers per type), include here also definition of site
+       development if applicable"*.
+       ⚠️⚠️ IT WAS A BAR ON TOP OF THE FLOORS STEP, and that is why it needed its own. Adding a
+       tower, renaming one, copying one into another and drawing the site plan are all statements
+       about the PROJECT; laying out floors and zones is a statement about ONE tower. They were on
+       one screen, so the tower controls read as chrome above the thing the planner was actually
+       doing — and the site plan, which is the whole site, sat in the corner of a step titled after
+       a single building.
+       ⚠️ THERE IS NO "TOWER TYPE" FIELD, and inventing one would be a schema change with a
+       migration behind it. What the model has is a flat list plus "Copy floors from another
+       tower…", which is how a repeated tower is expressed today: name it, then take the layout
+       from the one it repeats. The How panel says so rather than leaving it to be discovered.
+       ⚠️ The bar is drawn with manage:true — see _towerBar. Floors & Zones draws the same bar
+       without it and gets the selector chips alone, so there is one tower list and one step that
+       owns it. */
+    function stTowers(host) {
+      var TR = towerReality(), list = towerList(), act = activeTower();
+      var loc = locGroups();
+      /* Floors already laid out under a tower, across every trade that HAS a location — locless
+         trades (General Requirements) are project-wide and carry no tower, so counting them here
+         would report floors that can never exist. */
+      function nFloors(id) {
+        var n = 0; loc.forEach(function (g) { n += floorsOfTower(g, id).length; }); return n;
+      }
+      var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
+      var body = list.map(function (t) {
+        var n = nFloors(t.id);
+        return '<tr' + (t.id === act ? ' class="on"' : '') + '>' +
+          '<td><b>' + e2(t.name || t.code || 'Tower') + '</b>' +
+            (t.id === act ? ' <span class="sbld-hint">· selected</span>' : '') + '</td>' +
+          '<td>' + e2(t.code || '—') + '</td>' +
+          '<td>' + (n ? n + ' floor' + (n === 1 ? '' : 's') + ' laid out'
+                      : '<span class="sbld-hint">nothing laid out yet</span>') + '</td>' +
+        '</tr>';
+      }).join('');
+      host.innerHTML = '<h2>' + _stepNo('Towers') + ' · Towers</h2>' +
+        '<p class="sbld-lede">How many buildings this project has — and, where there is more than one, ' +
+        'where each of them stands.</p>' +
+        _sbldHow('<p>Press <b>+ Tower</b> once per building. A tower that <b>repeats</b> another is ' +
+          'named here and then filled in from it with <b>Tower options › Copy floors from another ' +
+          'tower…</b> — that is how a tower &quot;type&quot; is expressed; there is no separate type field.</p>' +
+          '<p>The <b>short code</b> is built into every generated activity id and location label, so ' +
+          'keep it short and unique.</p>' +
+          '<p>With more than one tower, <b>Site plan…</b> is where you trace one area per tower on the ' +
+          'site drawing. The Vertical Stacking’s Site view is built from it, and it joins on the ' +
+          'tower NAMES — so an area traced under a name no tower carries draws nothing.</p>') +
+        _towerBar({ manage: true }) +
+        '<div class="sbld-tablewrap"><table class="sbld-tbl">' +
+          '<thead><tr><th>Tower</th><th>Short code</th><th>Floors</th></tr></thead>' +
+          '<tbody>' + body + '</tbody>' +
+        '</table></div>' +
+        '<p class="sbld-hint">' +
+          (list.length === 1
+            ? 'One tower. Everything in step ' + _stepNo('Floors & Zones') + ' applies to it, and no site plan is needed — the site is the tower.'
+            : list.length + ' towers. Each keeps its own floors, zones and zone sequencing; pick one above and lay it out in step ' + _stepNo('Floors & Zones') + '.') +
+        '</p>' +
+        /* ⚠️ The site-plan panel is drawn only where a site plan MEANS something. On a single-tower
+           project it would be a drawing of one building, which the floor plans already are — the
+           same reason the button itself is withheld and the Vertical Stacking hides its Site view. */
+        (TR.multi
+          ? '<h3 class="sbld-sech">Site development plan</h3>' +
+            '<p class="sbld-hint">' +
+              (_sp
+                ? 'Traced' + (_sp.img ? ' over an attached drawing' : ', with no drawing attached') +
+                  '. Re-open it with <b>Site plan</b> on the bar above.'
+                : 'Not traced yet. <b>Site plan…</b> on the bar above opens the editor: attach the site drawing, then trace one area per tower and name it after that tower.') +
+            '</p>'
+          : '');
+      /* ⚠️ Selecting a tower from the table as well as from the chips: the table is the thing a
+         planner is reading on this step, and a row that names a tower and cannot select it reads
+         as broken. Bound by POSITION against the same list the rows were built from. */
+      host.querySelectorAll('.sbld-tbl tbody tr').forEach(function (tr2, i) {
+        var t = list[i]; if (!t) return;
+        tr2.style.cursor = 'pointer';
+        tr2.title = 'Select ' + (t.name || t.code || 'this tower');
+        tr2.onclick = function () { uiTower = t.id; render(); };
+      });
+      _twBarWire(host, { act: act, tr: null });
+    }
     function stLevels(host) {
       /* ⚠️⚠️ THE TRADES THAT HAVE A LOCATION, not every trade in use — see LOCLESS. Owner
          2026-09-17: *"general requirements should have no tower, floor, or zones."* A chip for
@@ -44278,8 +44566,6 @@
          ⚠️ The attribute selector it used to query is deliberately NOT spelled out here:
          `test-zoneoverlap` asserts that form appears nowhere in this file, and a suite that
          failed on its own explanation is a suite somebody deletes rather than fixes. */
-      var _sb = host.querySelector("#b-siteplan");
-      if (_sb) _sb.onclick = function () { openSitePlan(); };
       _locBarWire(host);
       var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () {
         // Changing the activity level changes every leaf uid, so links can't survive it — confirm first.
@@ -44295,136 +44581,7 @@
       };
       // ⚠️ Counts and codes are per TOWER, so adding F1 to Tower B does not become F21 because Tower
       // A already has twenty floors.
-      host.querySelectorAll('[data-twsel]').forEach(function (b) { b.onclick = function () { uiTower = b.dataset.twsel; render(); }; });
-      /* ⚠️ A <details> stays open until something shuts it. Every action inside this one re-renders
-         the step — except walking away from it, so a menu opened by mistake would hang over the
-         floor list for the rest of the session. The next press outside closes it.
-         ⚠️ The listener removes ITSELF once the step has re-rendered and its element is detached,
-         rather than being left to accumulate one dead handler per render. */
-      var _twMore = host.querySelector('.sbld-twmore');
-      if (_twMore) {
-        var _twOut = function (ev) {
-          if (!document.body.contains(_twMore)) { document.removeEventListener('pointerdown', _twOut); return; }
-          if (!_twMore.open || _twMore.contains(ev.target)) return;
-          _twMore.open = false;
-        };
-        document.addEventListener('pointerdown', _twOut);
-      }
-      /* ==== THE TOWER, ASKED FOR IN ONE FORM ===========================================
-         ⚠️⚠️ TWO `prompt()`s BECAME ONE DIALOG. Owner 2026-09-17: *"when adding towers, floors,
-         UI usually gives browser pop-up. instead of browser pop-up create an app pop-up window
-         where user can input the fields."* Adding a tower asked for the name, closed, then asked
-         for the code in a second box whose only clue about what a code is for was the sentence
-         it was titled with. The two fields belong to one object and are now asked as one.
-         ⚠️ The code is REQUIRED here, where it was silently defaulted before: it is what every
-         generated activity id and every location label is built from, so a blank one produced
-         codes with a hole in them and nobody found out until the push. */
-      function _twFields(t, n) {
-        return [
-          { k: 'name', label: 'Tower name', value: (t && t.name) || ('Tower ' + n), required: true,
-            placeholder: 'Tower ' + n, hint: 'What the planners call it — shown on the tower bar, in the stacking and on the site plan.' },
-          { k: 'code', label: 'Short code', value: (t && t.code) || ('T' + n), required: true,
-            placeholder: 'T' + n, hint: 'Two or three characters. It is built into generated activity codes and location labels, so keep it short and unique.' }
-        ];
-      }
-      var _twAdd = host.querySelector('#b-twadd');
-      if (_twAdd) _twAdd.onclick = function () {
-        var n = towerList().length + 1;
-        psAsk({ title: 'Add a tower', ok: 'Add tower',
-          note: 'Each tower keeps its own floors, zones and zone sequencing. Nothing is copied into it — use <b>Copy from…</b> afterwards if this tower repeats another.',
-          fields: _twFields(null, n),
-          validate: function (v) {
-            var k = String(v.code).trim().toLowerCase();
-            return towerList().some(function (t) { return String(t.code || '').trim().toLowerCase() === k; })
-              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
-          }
-        }, function (v) {
-          var t = { id: uidv(), code: String(v.code).trim(), name: String(v.name).trim() };
-          cfg.towers = towerList().concat([t]); uiTower = t.id; markDirty(); render();
-        });
-      };
-      var _twRen = host.querySelector('#b-twren');
-      if (_twRen) _twRen.onclick = function () {
-        var t = towerById(_twAct); if (!t) return;
-        psAsk({ title: 'Rename ' + towerLabel(_twAct), ok: 'Rename',
-          fields: _twFields(t, towerList().length),
-          validate: function (v) {
-            var k = String(v.code).trim().toLowerCase();
-            return towerList().some(function (o) { return o.id !== t.id && String(o.code || '').trim().toLowerCase() === k; })
-              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
-          }
-        }, function (v) {
-          t.name = String(v.name).trim() || t.name; t.code = String(v.code).trim() || t.code;
-          markDirty(); render();
-        });
-      };
-      function _twCopyDlg() {
-        var others = towerList().filter(function (t) { return t.id !== _twAct; });
-        if (!others.length) return;
-        /* ⚠️⚠️ A LIST TO PICK FROM, NOT A NUMBER TO TYPE. This was a `prompt()` holding a
-           hand-numbered menu — "1) Tower A / 2) Tower B … Type a number:" — which is a <select>
-           rendered in text, with a typo for every way of getting it wrong and no way to tell the
-           planner what each tower actually holds. The counts are on the options now.
-           ⚠️ AND THE WARNING IS IN THE SAME DIALOG. It used to be a SECOND browser box after the
-           number was typed; the thing it warns about (this replaces everything here) is the whole
-           reason the planner is being asked, so it belongs beside the question. */
-        var _trHas = GROUPS.filter(function (g) { return !locless(g) && floorsOfTower(g, others[0].id).length; });
-        psAsk({ title: 'Copy another tower into ' + towerLabel(_twAct),
-          wide: true,
-          ok: 'Copy and replace', danger: true,
-          text: 'The floors, zones and units of the tower you pick are copied in with fresh ids, so the two towers are independent afterwards.',
-          note: '⚠️ This <b>REPLACES</b> what is currently under <b>' + e2(towerLabel(_twAct)) +
-            '</b> for the trades you copy. It cannot be undone. A trade you do <b>not</b> copy is left exactly as it is.',
-          fields: [
-            { k: 'src', label: 'Copy from', type: 'select', value: others[0].id,
-              options: others.map(function (t) {
-                var n = 0, ntr = 0;
-                GROUPS.forEach(function (g) {
-                  if (locless(g)) return;
-                  var c = floorsOfTower(g, t.id).length; if (c) { ntr++; n += c; }
-                });
-                return [t.id, (t.name || t.code) + ' — ' + n + ' floor' + (n === 1 ? '' : 's') +
-                  ' across ' + ntr + ' trade' + (ntr === 1 ? '' : 's')];
-              }),
-              hint: 'The floor count is every trade\u2019s floors added together — most towers are laid out the same for all of them, so it is usually the storey count times the number of trades.' },
-            { k: 'what', label: 'Which trades', type: 'select', value: 'all',
-              options: [['all', 'Every trade — the whole tower'], [tr, 'Only ' + GLABEL[tr]]],
-              hint: 'Every trade is the usual answer: a tower that repeats another repeats it for all of them. One trade is for filling in the trade you are working on without touching the rest.' },
-            { k: 'seq', label: 'Bring the zone sequence with it', type: 'checkbox', value: true,
-              hint: 'The links between the copied zones are rebuilt against the copies, so the new tower flows the way the old one does. Turn it off to copy the places and sequence them yourself.' }
-          ]
-        }, function (v) {
-          var s2 = others.filter(function (t) { return t.id === v.src; })[0];
-          if (!s2) { UI.toast('No tower picked.', 'warn'); return; }
-          var r = copyTower(s2.id, _twAct, { groups: (v.what === 'all' ? null : [v.what]), links: !!v.seq });
-          /* ⚠️ pruneLinks, which this handler never called: the destination tower's own floors are
-             REPLACED, so every link that pointed at one of them now points at a leaf that no longer
-             exists. They were left in cfg.links to be discovered at Generate. */
-          pruneLinks(); markDirty(); render();
-          UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') +
-            (v.what === 'all' ? '' : ' of ' + GLABEL[tr]) +
-            (v.seq ? ' and ' + r.links + ' zone link' + (r.links === 1 ? '' : 's') : '') +
-            ' from ' + (s2.name || s2.code) + '.', 'success');
-        });
-      }
-      var _twCopy = host.querySelector('#b-twcopy');
-      if (_twCopy) _twCopy.onclick = _twCopyDlg;
-      var _twCopy2 = host.querySelector('#b-twcopy2');
-      if (_twCopy2) _twCopy2.onclick = _twCopyDlg;
-      var _twDel = host.querySelector('#b-twdel');
-      if (_twDel) _twDel.onclick = function () {
-        if (towerList().length < 2) return;
-        var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, _twAct).length; });
-        psConfirm('Delete ' + towerLabel(_twAct) +
-          (n ? ' and its ' + n + ' floor' + (n === 1 ? '' : 's') : '') + '?', function () {
-          GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return towerIdOf(f) !== _twAct; }); });
-          cfg.towers = towerList().filter(function (t) { return t.id !== _twAct; });
-          cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return k.from !== _twAct && k.to !== _twAct; });
-          uiTower = towerList()[0].id;
-          pruneLinks(); markDirty(); render();
-        }, { title: 'Delete this tower?', ok: 'Delete the tower',
-             note: 'This cannot be undone. Every trade’s floors under this tower go with it.' });
-      };
+      _twBarWire(host, { act: _twAct, tr: tr });
       /* ==== ADDING A STOREY, AS A FORM =================================================
          ⚠️⚠️ Owner 2026-09-17: *"when adding towers, floors … create an app pop-up window where
          user can input the fields"*, and the same prompt's *"improve the process flow of defining
@@ -48161,7 +48318,7 @@
     }
     async function ensureLocLevels() {
       // ⚠️ Named after the builder's own level labels, so a project that gets its Location Breakdown
-      // FROM a push ends up with the same words the planner saw in steps 2 and 7 — not a fixed
+      // FROM a push ends up with the same words the planner saw in Floors & Zones — not a fixed
       // "Location / Zone / Unit" trio that then reads differently everywhere else.
       var wanted = [DIM_LABEL.floor, DIM_LABEL.zone];
       if (locList().some(function (l) { return l.unit; })) wanted.push(DIM_LABEL.unit);
@@ -49221,10 +49378,22 @@
       // capture scroll positions of any scrollable panes before the panel is rebuilt
       var _scroll = null;
       if (_prevStep === step) { _scroll = {}; SCROLL_SEL.forEach(function (sel) { _scroll[sel] = Array.prototype.map.call(panel.querySelectorAll(sel), function (el) { return [el.scrollTop, el.scrollLeft]; }); }); }
-      rail.innerHTML = STEPS.map(function (s, i) { return '<button class="sbld-step ' + (i === step ? 'on' : '') + '" data-step="' + i + '" title="' + e2((i + 1) + '. ' + s.t + ' — ' + s.s) + '"><span class="sbld-step-n">' + (i + 1) + '</span><span><span class="sbld-step-t">' + e2(s.t) + '</span><br><span class="sbld-step-s">' + e2(s.s) + '</span></span></button>'; }).join('');
+      rail.innerHTML = STEPS.map(function (s, i) { var _why = _stepReady(s.t); return '<button class="sbld-step ' + (i === step ? 'on' : '') + (_why ? ' locked' : '') + '" data-step="' + i + '" title="' + e2((i + 1) + '. ' + s.t + ' — ' + s.s + (_why ? ' — ' + _why : '')) + '"><span class="sbld-step-n">' + (i + 1) + '</span><span><span class="sbld-step-t">' + e2(s.t) + '</span><br><span class="sbld-step-s">' + e2(s.s) + '</span></span></button>'; }).join('');
       // The rail was just replaced; re-apply the minimise state so a repaint cannot expand it.
       sbldMinSync();
-      rail.querySelectorAll('[data-step]').forEach(function (b) { b.onclick = function () { step = +b.dataset.step; render(); }; });
+      /* ⚠️⚠️ THIS IS THE SCHEDULE SETUP RAIL (it calls render()). Cost Loading has its own
+         rail with an identical selector that calls paint() — do not patch both from one match. */
+      rail.querySelectorAll('[data-step]').forEach(function (b) { b.onclick = function () {
+        var _i = +b.dataset.step;
+        /* ⚠️ Going BACKWARDS is never blocked — a planner must always be able to return and
+           answer what is missing. A forward jump into (or past) a blocked step lands on the step
+           BEFORE the block, so the thing to do next is on screen rather than refused. */
+        if (_i > step) {
+          var _blk = _firstBlockedUpTo(_i);
+          if (_blk >= 0) { if (window.UI) UI.toast(_stepReady(STEPS[_blk].t), 'warn'); _i = Math.max(0, _blk - 1); }
+        }
+        step = _i; render();
+      }; });
       STEPS[step].fn(panel);
       var foot = document.createElement('div'); foot.className = 'sbld-foot';
       // ⚠️ NO "Save setup" AT THE END OF AN IMPORT. There is nothing in cfg to save on that path,
@@ -49236,13 +49405,18 @@
       if (_tabs) { var _tk = stepTabKey(STEPS[step].t);
         for (var _z = 0; _z < _tabs.length; _z++) if (_tabs[_z].k === _tk) _ti = _z; }
       var _nextTab = (_tabs && _ti >= 0 && _ti < _tabs.length - 1) ? _tabs[_ti + 1] : null;
+      /* ⚠️ Computed ONCE and read by the label, the disabled state and the handler, so the
+         button cannot say one thing and do another. A tab walk within this step is never blocked:
+         the prerequisite belongs to the next STEP, not to the next view of this one. */
+      var _nextBlock = (!_nextTab && step < STEPS.length - 1) ? _stepReady(STEPS[step + 1].t) : '';
       var _prevTab = (_tabs && _ti > 0) ? _tabs[_ti - 1] : null;
       var _canBack = step > 0 || !!_prevTab;
       foot.innerHTML = '<button class="pd-btn" id="b-prev"' + (_canBack ? '' : ' disabled') + '>← ' +
           (_prevTab ? e2(_prevTab.t) : 'Back') + '</button>' +
         ((_nextTab || step < STEPS.length - 1)
-          ? '<button class="pd-btn pd-btn-primary" id="b-next">' +
-            (_nextTab ? e2(_nextTab.t) : 'Next') + ' →</button>'
+          ? '<div class="sbld-nextwrap"><button class="pd-btn pd-btn-primary" id="b-next"' + (_nextBlock ? ' disabled title="' + e2(_nextBlock) + '"' : '') + '>' +
+            (_nextTab ? e2(_nextTab.t) : 'Next') + ' →</button>' +
+            (_nextBlock ? '<span class="sbld-blockwhy">' + e2(_nextBlock) + '</span>' : '') + '</div>'
           : (mode === 'import' ? '' : '<button class="pd-btn pd-btn-primary" id="b-savefoot">Save setup</button>'));
       panel.appendChild(foot);
       /* ⚠ Moving INTO a step from the other direction lands on the right end of its tabs:
@@ -49260,6 +49434,9 @@
       };
       var nx = foot.querySelector('#b-next'); if (nx) nx.onclick = function () {
         if (_nextTab) { setStepTab(STEPS[step].t, _nextTab.k); return; }
+        /* ⚠️ Guarded as well as disabled: the button is rebuilt on every render and a
+           disabled attribute is one repaint away from being the only thing standing here. */
+        if (_nextBlock) { if (window.UI) UI.toast(_nextBlock, 'warn'); return; }
         if (step < STEPS.length - 1) _enterStep(step + 1, false);
       };
       var sf = foot.querySelector('#b-savefoot'); if (sf) sf.onclick = save;
@@ -49339,11 +49516,21 @@
            Quiet, because this function renders itself. */
         /* ⚠ The three phases aliases carry NO tab: Project Phases is one page again, so there
            is nothing to select and asking for one would be wiring that does nothing. */
+        /* ⚠ The sequence titles land on the right STEP **and** select the right TAB — a deep
+           link asking for 'Zone sequence' that opened Location Sequence on Tower Sequence would
+           be a link that half works, which is harder to notice than one that does not. */
         var _al = { 'WBS':       { st: 'Project phases' },
                     '5PMLC':     { st: 'Project phases' },
                     'Structure': { st: 'Project phases' },
                     'Library':   { st: 'Activities', tab: 'lib' },
-                    'Construction Library': { st: 'Activities', tab: 'lib' } };
+                    'Construction Library': { st: 'Activities', tab: 'lib' },
+                    'Working calendars': { st: 'Calendars' },
+                    'Repetition':     { st: 'Location Sequence' },
+                    'Tower links':    { st: 'Location Sequence', tab: 'towers' },
+                    'Tower Sequence': { st: 'Location Sequence', tab: 'towers' },
+                    'Zone sequence':  { st: 'Location Sequence', tab: 'zones' },
+                    'Trade sequence': { st: 'Activity Sequence', tab: 'trades' },
+                    'Scope per zone': { st: 'Activity Sequence', tab: 'scope' } };
         if (_al[title]) {
           if (_al[title].tab) setStepTabQuiet(_al[title].st, _al[title].tab);
           title = _al[title].st;

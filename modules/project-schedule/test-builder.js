@@ -92,7 +92,10 @@ function sliceVar(name) {
     ok(typeof m2.done === 'string' && m2.done.length > 10, 'manual: "' + t + '" says when it is done');
   });
   /* ⚠️ The two steps where getting it wrong is expensive must carry a warning, not just a how-to. */
-  ['Floors & Zones', 'Repetition', 'Generate', 'Review & import'].forEach(function (t) {
+  /* ⚠ RETARGETED, not dropped: 'Repetition' split into Location Sequence and Activity Sequence
+     on 2026-09-17, and 'Towers' is new. Every step where getting it wrong is expensive still has
+     to carry a warning, so the list follows the rail rather than being shortened to suit it. */
+  ['Towers', 'Floors & Zones', 'Location Sequence', 'Activity Sequence', 'Generate', 'Review & import'].forEach(function (t) {
     ok(manual[t] && manual[t].watch && manual[t].watch.length, 'manual: "' + t + '" carries a watch-out');
   });
   /* ⚠️⚠️ Auto-trace REPLACES every link, and a planner who learns that afterwards has lost work. */
@@ -100,9 +103,11 @@ function sliceVar(name) {
      line THROW on 'watch' of undefined, which takes the whole suite down with a TypeError and
      reports nothing about the 100 assertions after it. A suite must FAIL on a regression, not
      die on one — the death looks like a broken checker and gets the checker edited. */
-  const _rep = manual['Repetition'];
+  /* ⚠ The warning followed the Zone sequence view into Location Sequence — that is the step
+     that now owns Auto-trace, so that is the page that has to carry it. */
+  const _rep = manual['Location Sequence'];
   ok(!!_rep && /replaces every link/i.test((_rep.watch || []).join(' ')),
-     'manual: Repetition warns that auto-trace replaces every link');
+     'manual: Location Sequence warns that auto-trace replaces every link');
 
   /* The renderer runs, against the shipped slices. */
   const api = new Function('STEPS,e2,' + 'SB_MANUAL',
@@ -285,6 +290,137 @@ function lagOf(links, from, to) { const k = links.find(x => x.from === from && x
   const blank = src.slice(src.indexOf('function blank() { return { startDate'), src.indexOf('phases: {},'));
   ok(/floorGate: \{\}/.test(blank) && /zoneZigzag: \{\}/.test(blank),
      'round trip: both start empty on a new setup');
+}
+
+/* =================================================== 6 · prerequisite gating, executed
+   Owner: *"Users are unable to proceed the next step without defining the pre-requisites or
+   preceding steps."*
+
+   ⚠️⚠️ NOTHING HERE IS STUBBED. _stepReady, _firstBlockedUpTo, locGroups, usedGroups,
+      locless and floorsOf are all sliced out of the shipped file and run; only cfg, mode and
+      STEPS — the scenario's own inputs — are supplied. Stubbing locGroups would have made the
+      project-wide case below a test of the stub rather than of the rule. */
+{
+  /* The rail's own step titles, read out of the shipped STEPS_NEW rather than re-typed, so the
+     fixture cannot drift from the rail. */
+  const newBlock = src.slice(src.indexOf('var STEPS_NEW = ['), src.indexOf('var STEPS_IMP = ['));
+  const titles = [...newBlock.matchAll(/\{ t: '((?:[^'\\]|\\.)*)'/g)].map(m => m[1].replace(/\\'/g, "'"));
+  ok(titles.length === 8, 'gating: the new-path rail has 8 steps after Start (' + titles.length + ')');
+  const STEPS = [{ t: 'Start', s: '' }].concat(titles.map(x => ({ t: x, s: '' })));
+
+  const GROUPS_SRC = src.match(/var GROUPS = \[[^\]]*\];/)[0];
+  const LOCLESS_SRC = src.match(/var LOCLESS = \{[^}]*\};/)[0];
+
+  function run(mode, cfg) {
+    const body = GROUPS_SRC + '\n' + LOCLESS_SRC + '\n' +
+      sliceFn('locless') + '\n' + sliceFn('usedGroups') + '\n' + sliceFn('locGroups') + '\n' +
+      sliceFn('floorsOf') + '\n' + sliceFn('_stepNo') + '\n' +
+      sliceFn('_stepReady') + '\n' + sliceFn('_firstBlockedUpTo') + '\n' +
+      'return { ready: _stepReady, firstBlocked: _firstBlockedUpTo };';
+    return new Function('mode,cfg,STEPS,STEP_ALIAS', body)(mode, cfg, STEPS, {});
+  }
+  const act = g => ({ code: 'X', name: 'x', group: g });
+  const zoned = (tr, n) => ({ [tr]: { floors: Array.from({ length: n }, (_, i) => ({ id: 'f' + i })) } });
+
+  /* ---- the import path is not gated at all ---------------------------------------------- */
+  {
+    const r = run('import', { activities: [], zoning: {} });
+    eq(r.ready('Generate'), '', 'gating: the import path writes from a file and is never gated');
+    eq(r.ready('Floors & Zones'), '', 'gating: nor is any other step on it');
+  }
+  /* ---- no cfg yet ------------------------------------------------------------------------ */
+  eq(run('new', null).ready('Generate'), '', 'gating: with no cfg there is nothing to measure');
+
+  /* ---- no activities: everything downstream of Activities is unanswerable ---------------- */
+  {
+    const r = run('new', { activities: [], zoning: {} });
+    ['Floors & Zones', 'Location Sequence', 'Activity Sequence', 'Generate'].forEach(function (s2) {
+      ok(/Activities first\./.test(r.ready(s2)), 'gating: "' + s2 + '" is blocked with no activities');
+    });
+    ['Calendars', 'Project phases', 'Activities', 'Towers'].forEach(function (s2) {
+      eq(r.ready(s2), '', 'gating: "' + s2 + '" is NOT blocked — it is at or before Activities');
+    });
+    ok(/step \d/.test(r.ready('Generate')),
+       'gating: the reason names a step NUMBER, resolved through _stepNo rather than hard-coded');
+    eq(r.firstBlocked(8), 5, 'gating: the first blocked step is Floors & Zones (index 5)');
+    eq(r.firstBlocked(4), -1, 'gating: nothing before Floors & Zones is blocked');
+  }
+
+  /* ---- activities, a location-bearing trade, floors typed ------------------------------- */
+  {
+    const r = run('new', { activities: [act('ST')], zoning: zoned('ST', 3) });
+    eq(r.ready('Location Sequence'), '', 'gating: floors typed → Location Sequence is open');
+    eq(r.ready('Generate'), '', 'gating: and so is Generate');
+    eq(r.firstBlocked(8), -1, 'gating: a complete setup blocks nothing');
+  }
+  /* ---- activities, a location-bearing trade, NO floors anywhere -------------------------- */
+  {
+    const r = run('new', { activities: [act('ST')], zoning: { ST: { floors: [] } } });
+    ok(/Floors & Zones first\./.test(r.ready('Location Sequence')),
+       'gating: location-bearing trades with no floors → Location Sequence is blocked');
+    eq(r.ready('Generate'), '', 'gating: Generate is NOT blocked by missing floors — only by no activities');
+    eq(r.firstBlocked(8), 6, 'gating: the block is Location Sequence (index 6)');
+  }
+  /* ---- ⚠⚠ THE CASE THE WHOLE RULE TURNS ON: project-wide work only ------------------------
+     General Requirements carries no tower, floor or zone (LOCLESS), so this project has no floors
+     and never will. Gating on "has floors" would strand it short of Generate for ever. */
+  {
+    const r = run('new', { activities: [act('GR')], zoning: {} });
+    eq(r.ready('Location Sequence'), '',
+       'gating: a project whose only trade is project-wide is NOT blocked — it can never type a floor');
+    eq(r.ready('Generate'), '', 'gating: and it can still reach Generate');
+    eq(r.firstBlocked(8), -1, 'gating: nothing at all is blocked for it');
+  }
+  /* ---- a trade with no zoning entry at all: counted as 0 floors, never a throw ------------ */
+  {
+    const r = run('new', { activities: [act('ST')], zoning: {} });
+    ok(/Floors & Zones first\./.test(r.ready('Location Sequence')),
+       'gating: a trade with no zoning entry reads as no floors rather than throwing');
+  }
+  /* ---- Start is always reachable --------------------------------------------------------- */
+  {
+    const r = run('new', { activities: [], zoning: {} });
+    eq(r.ready('Start'), '', 'gating: Start is the path chooser and is never blocked');
+    eq(r.firstBlocked(0), -1, 'gating: _firstBlockedUpTo starts at k=1, so Start can never be the block');
+  }
+
+  /* ---- the wiring: the rail, the footer and the handler all read the one predicate -------- */
+  const code = scan.clean('x.js', src);
+  ok(/var _why = _stepReady\(s\.t\);/.test(code), 'gating: the rail marks a blocked step');
+  ok(/\(_why \? ' locked' : ''\)/.test(code), 'gating: … with the locked class');
+  ok(/var _blk = _firstBlockedUpTo\(_i\);/.test(code),
+     'gating: a forward rail jump is checked against every step in between, not just the target');
+  ok(/_i = Math\.max\(0, _blk - 1\);/.test(code),
+     'gating: … and lands on the step BEFORE the block, never on the blocked step itself');
+  ok(/if \(_i > step\) \{/.test(code), 'gating: going backwards is never blocked');
+  ok(/var _nextBlock = \(!_nextTab && step < STEPS\.length - 1\) \? _stepReady\(STEPS\[step \+ 1\]\.t\) : '';/.test(code),
+     'gating: the footer computes the block ONCE, and a tab walk within a step is never blocked');
+  ok(/id="b-next"' \+ \(_nextBlock \? ' disabled/.test(code), 'gating: Next is disabled when blocked');
+  ok(/if \(_nextBlock\) \{ if \(window\.UI\) UI\.toast\(_nextBlock, 'warn'\); return; \}/.test(code),
+     'gating: … and the handler guards it too, since the attribute is one repaint from being alone');
+  ok(/\.sbld-step\.locked \{/.test(src) && /\.sbld-step\.locked\.on \{/.test(src),
+     'gating: the locked style exists and yields to the active state');
+  ok(/--pd-warn-text/.test(src.slice(src.indexOf('.sbld-blockwhy'), src.indexOf('.sbld-blockwhy') + 200)),
+     'gating: the reason uses --pd-warn-text, never the 3.46:1 surface --pd-warn');
+
+  /* ---- ⚠⚠ THE CONTRAST, pinned to a SHA and not to HEAD, which becomes self-comparison ---- */
+  {
+    const BASE = '6047d600';
+    let base = null;
+    try {
+      base = require('child_process').execSync('git show ' + BASE + ':modules/project-schedule/index.html',
+        { cwd: __dirname + '/../..', maxBuffer: 1 << 28, encoding: 'utf8' });
+    } catch (e) { /* not a checkout — the gate is skipped and says so */ }
+    if (base == null) {
+      console.log('  (contrast skipped: ' + BASE + ' not reachable from here)');
+    } else {
+      ok(base.indexOf('function _stepReady(') < 0, 'contrast: the pinned base has no _stepReady at all');
+      ok(base.indexOf('_firstBlockedUpTo') < 0, 'contrast: nor _firstBlockedUpTo');
+      ok(base.indexOf('sbld-blockwhy') < 0, 'contrast: nor the blocked-reason style');
+      ok(/rail\.querySelectorAll\('\[data-step\]'\)\.forEach\(function \(b\) \{ b\.onclick = function \(\) \{ step = \+b\.dataset\.step; render\(\); \}; \}\);/.test(base),
+         'contrast: the base jumps to any step unconditionally — the behaviour this replaces');
+    }
+  }
 }
 
 console.log('');
