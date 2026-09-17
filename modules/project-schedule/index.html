@@ -3549,7 +3549,18 @@
        (.sbld-canvaswrap / .sbld-xlwrap) handles its own overflow. */
     .sbld-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:20px; min-height:55vh; min-width:0; }
     .sbld-panel h2 { margin:0 0 4px; font-size:var(--pd-fs-lg); }
-    .sbld-panel .sbld-lede { margin:0 0 10px; color:var(--pd-muted); font-size:var(--pd-fs-base); max-width:70ch; }
+    /* ⚠⚠ NO CAP, FOR THE SAME REASON `.sbld-how` HAS NONE. This was `max-width:70ch` (602px),
+       which fills **43%** of the owner's 1398px panel — visibly narrower than everything around it,
+       and the other half of the “unnecessary wrapping” he reported on the step screenshots.
+       ⚠ THE ARGUMENT FOR KEEPING IT WAS PUT AND DECLINED. A one-sentence purpose line is genuinely
+       prose, where the How pane is a scanned list of mechanics, so 70ch had a better case here
+       than there — which is exactly why it was raised rather than swept, and why it changes only
+       on the owner's word. The panel is the constraint now.
+       ⚠ Scanned the whole stylesheet for the same shape rather than waiting for a third report:
+       four rules cap in `ch`, and the other three stay. `.ps-smy-note` and `.ps-smy-vs` belong to
+       the schedule SUMMARY view (emitted by `sect`/`card`/`smyMsStrip`), not to the Setup;
+       `.ps-cal-holname` is the holiday chip's deliberate 22ch truncation, which carries a title. */
+    .sbld-panel .sbld-lede { margin:0 0 10px; color:var(--pd-muted); font-size:var(--pd-fs-base); }
     /* ---- "How to use this step" (the disclosure) -------------------------------------------
        Owner 2026-09-03: *"on the schedule setup, please make the instructions more direct and
        concise. the text takes too much space."* Step 8's lede alone ran to ~150 words and pushed

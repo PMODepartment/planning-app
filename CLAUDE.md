@@ -104,6 +104,33 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (am) — The step lede loses its cap too
+
+Owner: *"the lede too"* — after *(al)* removed the cap from  and reported that
+ was still , filling **43%** of his 1398px panel.
+
+⚠ The case for keeping it was put in *(al)* and declined: a one-sentence purpose line is genuinely
+prose, where the How pane is a scanned list of mechanics, so 70ch had a better argument here than
+there. That is why it was raised rather than swept, and why it changed only on the owner’s word.
+
+**Measured at four panel widths** — 1440 / 1100 / 913 / 772 — the lede and the How pane now both fill
+**100%** of the content box at every one, and the Zone-sequence lede (*“Which location follows which.
+Topology only …”*) drops from two lines to **one** at 913px and above.
+
+⚠⚠ **Scanned the whole stylesheet for the same shape rather than waiting for a third report.** Four
+rules cap in ; the other three stay, and here is why:  and  belong to
+the schedule **summary** view (emitted by  /  / ), not to the Setup, and
+ is the holiday chip’s deliberate 22ch truncation — which carries a title, added in
+*(z)* for exactly that reason.
+
+**Verified:**  683/683 ·  4/4 ·  139/0 ·  9
+(baseline) ·  0 findings · inline scripts parse.   → .
+
+⚠ Also confirmed this turn: the class-code migration **is applied** — the owner ran
+ and got **466**, which is the expected post-state.
+The earlier  did mean “already matches the template”, and the absolute count is what
+settled it rather than the assumption.
+
 ### 2026-09-17 (al) — The "How to use this step" cap was tuned on the wrong viewport, twice
 
 Owner, after *(aj)* raised it from 78ch to 110ch: *"how to's still need UI rework unnecessary
