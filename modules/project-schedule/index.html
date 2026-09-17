@@ -34026,7 +34026,7 @@
        ⚠ Keyed by group CODE, which cannot collide — a catalog entry sits under exactly one
        trade — and shut is the non-default, so an unseen trade is open rather than hidden. */
     var holdShut = {};
-    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
+    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Internal (d)', w: 90, num: true }, { k: 'durExt', label: 'External (d)', w: 90, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
     // activity the push creates. Everything the builder produces lands in the EXECUTION phase, so
@@ -34570,7 +34570,7 @@
     var autoChainType = 'FS';  // step-4 Auto-chain relationship type (FS / SS / FF / SF)
     var tradeView = 'flow';    // step-4 right pane: 'flow' (equal blocks) | 'gantt' (time-scaled)
     var tradeScale = 'month';  // step-4 Gantt time axis: 'day' | 'week' | 'month' | 'year'
-    var tradeBasis = 'int';    // step-4 Gantt duration basis: 'int' (interior) | 'ext' (exterior)
+    var tradeBasis = 'int';    // step-4 Gantt duration basis: 'int' (internal) | 'ext' (external)
     var tgZoom = 2.2;          // step-4 Gantt px-per-day (set by scale presets, fine-tuned by +/-)
     var TG_PPD = { day: 18, week: 8, month: 2.2, year: 0.6 };
     var seqZoom = 3;      // Zone-sequence flow diagram: block size / column spacing (zoom +/- and Ctrl+scroll)
@@ -34621,7 +34621,7 @@
     function isActFocus(id) { return actFocus && actFocus === id; }
     /* ⚠ The trade-sequence grid’s own cursor is gone with its engine too — PDGrid keeps its
        own focus per attached table, so the two grids no longer need a cursor each. */
-    var T4_COLS = [{ k: 'code', label: 'Code', w: 100 }, { k: 'name', label: 'Activity name', w: 190 }, { k: 'durInt', label: 'Interior (d)', w: 84, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 84, num: true }];
+    var T4_COLS = [{ k: 'code', label: 'Code', w: 100 }, { k: 'name', label: 'Activity name', w: 190 }, { k: 'durInt', label: 'Internal (d)', w: 84, num: true }, { k: 'durExt', label: 'External (d)', w: 84, num: true }];
     // Tower display nodes for one floor at the current collapse level. Each node carries ALL its
     // descendant leaf uids (so a collapsed node links/highlights its whole group). L1 is handled at
     // the trade level (whole-trade node), so this covers L2–L4.
@@ -35363,7 +35363,7 @@
         why: 'The list of work that repeats through the building — one row per class code, with how long it takes in one place.',
         how: ['Press <b>+ Library</b> to load the standard class codes, tick the ones this project uses, then <b>←</b> to bring them in.',
               'Or download the <b>template</b>, fill it in Excel and upload it.',
-              'Set each row\u2019s <b>trade</b>, <b>scope</b> and its <b>Interior / Exterior</b> duration.',
+              'Set each row\u2019s <b>trade</b>, <b>scope</b> and its <b>Internal / External</b> duration.',
               '<b>Scope</b> is what the duration is FOR: <i>per zone</i>, <i>per floor</i>, or <i>whole project</i>. A whole-project duration is split down automatically.'],
         watch: ['⚠️ <b>Codes must be distinct.</b> Two rows with the same code cannot be told apart in the sequencing steps, which makes them unusable.',
                 'The grid is a spreadsheet: drag to select, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd>, <kbd>Ctrl+D</kbd> to fill down, <kbd>Delete</kbd> to clear. Paste blocks straight from Excel.'],
@@ -35596,9 +35596,9 @@
     function usedGroups() { var seen = {}; cfg.activities.forEach(function (a) { if (a.group) seen[a.group] = 1; }); return GROUPS.filter(function (g) { return seen[g]; }); }
     function included(uid, aid) { return !cfg.scopeOff[uid + '|' + aid]; }
     // ⚠⚠ CROSS-BASIS FALLBACK — this is the "only Allied Services was migrated" bug.
-    // Step 1 has two duration columns (Interior / Exterior) and the push runs on ONE of them. A row is
+    // Step 1 has two duration columns (Internal / External) and the push runs on ONE of them. A row is
     // dropped from generate() when its duration for the CHOSEN basis is 0, so a planner who filled only
-    // the Interior column and then pushed lost every activity — except the trades whose rows happened
+    // the Internal column and then pushed lost every activity — except the trades whose rows happened
     // to carry both numbers, which is why the survivor looked arbitrary (Allied Services).
     // normActivity() already MEANT to mirror one column onto the other, but its guard was
     // `a.durExt != null`, and all three paths that CREATE a row (catalog import, the paste handler,
@@ -35630,7 +35630,7 @@
       if (!a) return 0;
       var fk = durKindOf(a, kind);
       // Per COLUMN: this level type's own number if it typed one, otherwise the default's. A category
-      // that specialises only its Interior duration still inherits the default Exterior one.
+      // that specialises only its Internal duration still inherits the default External one.
       function pick(col) { var v = fk ? Math.max(0, +fk[col] || 0) : 0; return v > 0 ? v : Math.max(0, +a[col] || 0); }
       var want = pick(basis === 'ext' ? 'durExt' : 'durInt');
       if (want > 0) return want;
@@ -35831,7 +35831,7 @@
       var out = {}; acts.forEach(function (a) { out[a.id] = st(a.id); }); return out;
     }
     // Longest-path total duration (days) of a trade's linked class codes for the given basis
-    // (int = interior, ext = exterior) — the finish day of the latest-finishing code.
+    // (int = internal, ext = external) — the finish day of the latest-finishing code.
     function tradeTotalDays(tr, basis) {
       var acts = tradeActs(tr); if (!acts.length) return 0;
       var starts = actDayStarts(tr, basis), max = 0;
@@ -36729,7 +36729,7 @@
       var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
       // ⚠️ DIAGNOSTIC — why a trade might be silently absent from the push. A row is dropped above when
       // effDur() is 0, i.e. the activity has NO duration for the CHOSEN BASIS (Internal vs External).
-      // So a planner who filled only the Interior column, then pushed "External", gets an empty push —
+      // So a planner who filled only the Internal column, then pushed "External", gets an empty push —
       // and someone who filled only one trade's durations gets "only <that trade> was pushed" (the
       // reported Allied-Services-only surprise). Report which USED trades produced 0 rows and which
       // activities were dropped for a zero duration on this basis, so the push can say so out loud.
@@ -38450,14 +38450,36 @@
          library holds that trade, and it does not.
          ⚠ An unrecognised group falls into Others rather than vanishing — a catalog entry that
          matched no heading would be loaded, invisible, and impossible to tick. */
+      /* ⚠⚠ ORDERED BY CLASS CODE INSIDE EACH TRADE (owner 2026-09-17: *"For class code
+         list, when clicking + Library, sort by class code"*). It is deliberately NOT a sort
+         applied by `+ Library`: `CLASS_CODE_DB` is already code-ordered, so sorting at that one
+         loader would be a no-op there and would leave the list in arrival order for every OTHER
+         way a code reaches it — `+ From BOQ`, `+ Custom`, and a row returned by the shuttle's
+         `→`. Sorting where the list is BUILT is the one place that covers all four.
+         ⚠ Compared as a STRING, never as a number: a class code is `03050`, and the leading zero
+         is significant — `ccKeyOf` pads to resolve one, and `2026-08-21-class-codes.sql` records
+         that de-zeroing collides genuinely different items. A numeric compare would also put
+         `3050` and `03050` on top of each other.
+         ⚠ A BLANK code sorts LAST, not first. The list is "sorted by class code", and leading it
+         with the entries that have none would bury the codes the planner came to read. It also
+         keeps `+ Custom`'s entry where it has always landed — the end of its trade — so the
+         create's own "open the heading and tick it" step reaches it exactly as before. */
+      function holdCmp(a, b) {
+        var ca = String(a.code || ''), cb = String(b.code || '');
+        if (!ca !== !cb) return ca ? -1 : 1;
+        if (ca !== cb) return ca < cb ? -1 : 1;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      }
       function holdGroups() {
         var by = {};
         cfg.catalog.forEach(function (a) {
           var g = GLABEL[a.group] ? a.group : 'OT';
           (by[g] = by[g] || []).push(a);
         });
+        /* ⚠ `by[g]` is a fresh array built by push, so sorting it reorders the DISPLAY and never
+           `cfg.catalog` itself — which is what the shuttle filters over, and what is saved. */
         return GROUPS.filter(function (g) { return by[g] && by[g].length; })
-                     .map(function (g) { return { g: g, items: by[g] }; });
+                     .map(function (g) { return { g: g, items: by[g].slice().sort(holdCmp) }; });
       }
       var holdItems = holdGroups().map(function (grp) {
         var shut = !!holdShut[grp.g], lab = GLABEL[grp.g] || grp.g;
@@ -38505,7 +38527,7 @@
         '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       /* ⚠ Both suppressed under `noHead`. The lede enumerated “code, name, trade, scope and its
-         interior/exterior duration” — which is the grid's own column headers, read out in prose
+         internal/external duration” — which is the grid's own column headers, read out in prose
          directly above the grid. Kept when this view is opened on its own. */
       host.innerHTML = (noHead ? '' :
         '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
@@ -38640,7 +38662,10 @@
       });
       host.querySelector('#b-load').onclick = function () {
         if (!catSel.length) { UI.toast('Tick one or more class codes in the list first.', 'warn'); return; }
-        var take = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) >= 0; });
+        /* ⚠ Sorted with the list's OWN comparator, so rows arrive in the grid in the order the
+           planner just read them in. Without it the list would be code-ordered and the arrival
+           `cfg.catalog`-ordered — two orders for one gesture. */
+        var take = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) >= 0; }).sort(holdCmp);
         cfg.catalog = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) < 0; });
         cfg.activities = cfg.activities.concat(take); catSel = []; markDirty(); render();
       };
@@ -38771,7 +38796,7 @@
             : '<span class="sbld-hint">Showing the default &mdash; the first edit gives <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> its own sequence, and any duration typed here applies to <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels only.</span>');
         return '<div class="sbld-seqkind"><span class="sbld-seqkind-l">Level type</span>' + btns + copy + state + '</div>';
       })();
-      // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Interior / Exterior) with
+      // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Internal / External) with
       // multi-cell copy/paste, so a column of durations can be pasted straight from Excel. LINKING is
       // done on the schedule BARS on the right via the View/Edit toggle (mirrors step 3) — the old
       // per-row ▸ column is gone.
@@ -38808,13 +38833,13 @@
         ['FS', 'SS', 'FF', 'SF'].map(function (o) { return '<option value="' + o + '"' + (autoChainType === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' +
         '<button class="pd-btn" id="b-alinkmgr">Links (' + countTradeLinks(tr) + ')</button>' +
         '<details class="sbld-viewopts"' + (actOptsOpen ? ' open' : '') + '><summary>View options — ' +
-          (tradeView === 'gantt' ? 'Gantt, ' + tradeScale + ', ' + (tradeBasis === 'ext' ? 'exterior' : 'interior') : 'flow') +
+          (tradeView === 'gantt' ? 'Gantt, ' + tradeScale + ', ' + (tradeBasis === 'ext' ? 'external' : 'internal') : 'flow') +
           ', ' + (seqLayout === 'stack' ? 'stacked' : 'split') + '</summary><div class="sbld-viewoptsb">' +
           '<span class="sbld-quick">View ' +
           [['flow', 'Flow'], ['gantt', 'Gantt']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (tradeView === v[0] ? ' on' : '') + '" data-tview="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
           (tradeView === 'gantt' ?
             '<span class="sbld-quick">Scale ' + ['day', 'week', 'month', 'year'].map(function (sc) { return '<button class="pd-btn sbld-scbtn' + (tradeScale === sc ? ' on' : '') + '" data-tscale="' + sc + '">' + sc.charAt(0).toUpperCase() + sc.slice(1) + '</button>'; }).join('') + '</span>' +
-            '<span class="sbld-quick">Dur ' + [['int', 'Interior'], ['ext', 'Exterior']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
+            '<span class="sbld-quick">Dur ' + [['int', 'Internal'], ['ext', 'External']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
           '<span class="sbld-quick">Layout ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
           '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-azout">−</button><button class="pd-btn sbld-zbtn" id="b-azin">+</button></span>' +
         '</div></details>' +
@@ -38881,7 +38906,7 @@
       host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; actOptsOpen = true; render(); }; });
       var _avo = host.querySelector('.sbld-viewopts');
       if (_avo) _avo.addEventListener('toggle', function () { actOptsOpen = _avo.open; });
-      // Excel-style class-code grid (edit Code/Name/Interior/Exterior; multi-cell copy/paste).
+      // Excel-style class-code grid (edit Code/Name/Internal/External; multi-cell copy/paste).
       // Linking is on the schedule bars (View/Edit toggle), not a per-row column.
       /* ⚠ `t4Set` already takes (activity, field, text), so this grid needed no new setter —
          only the id→activity lookup PDGrid’s contract implies. It writes per-KIND durations

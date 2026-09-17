@@ -104,6 +104,39 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (zzc) — "Interior/Exterior" was the odd one out, and the class-code list is ordered by code
+
+Owner, four asks on Schedule Setup → **Activities**; two are in this commit and two are named as not
+built. Module work — the full entry is in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzc)`. Logged here
+for the `MODULE_V` bump and the one finding worth carrying past this module:
+
+⚠️⚠️ **GREPPING BEFORE RENAMING TURNED AN ASK INTO A CONSISTENCY FIX.** *"the duration interior and
+exterior … should be internal and external. apply for whole schedule module"* — and the Generate
+step, the stacking basis select, the trade totals and the push hint **already said Internal/External**.
+Only the Activities grid, the trade-sequence grid and the prose around them disagreed, so the rename
+brings two screens onto the vocabulary the rest of the module already used rather than imposing a new
+one. ⚠️ Display only, established rather than assumed: the keys are `durInt`/`durExt` and
+`'int'`/`'ext'`, and `xlCellCtl` shows the duration columns are numeric **text inputs** — only the
+trade, scope and contract columns use a label as a value, so a label change there cannot reach a
+cell's contents. Nine of the 14 edits are **comments**: a comment naming a word no longer on any
+screen sends the next reader hunting for it.
+
+⚠️ **And the sort went where the list is BUILT, not into the loader that was named.** `CLASS_CODE_DB`
+is already code-ordered 197 of 197, so sorting inside `+ Library` would be a no-op there *and* would
+leave the list in arrival order for `+ From BOQ`, `+ Custom` and rows returned by the shuttle.
+⚠️ Compared as a **string**: `03050`'s leading zero is significant, and this repo already records
+that de-zeroing collides genuinely different items.
+
+**Verified:** `holdCmp`/`holdGroups` sliced out of the shipped file and executed (5/0); the 3.59MB
+inline script parses; `wiring-check` **139/0**; `dead-hooks` at its documented 9-finding baseline;
+0 NUL, 0 CR; eleven module suites green. ⚠️ `test-lsm` (28) and `test-builder` (1) fail
+**byte-identically on HEAD** — the LSM set is stale rather than broken, still slicing for the
+Flowline the owner had deleted. ⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260917zzc`, sort-checked past the `20260917zzb` `origin/main` actually serves. No
+shared asset changed.
+
 ### 2026-09-17 (zx) — The Activities step loses four controls, two of which had never been wired, and the class-code list is grouped by trade
 
 Owner, three asks on Schedule Setup → **Activities**. Module work — the full entry, every ⚠️ decision

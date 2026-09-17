@@ -1,3 +1,90 @@
+## 2026-09-17 (zzc) — Internal/External everywhere, and the class-code list is ordered by code
+
+Owner, four asks on Schedule Setup → **Activities**. Two of the four are in this commit; the other
+two are named at the bottom rather than half-built.
+
+### 3 · ⚠️⚠️ "Interior/Exterior" was the ODD ONE OUT, not the convention
+
+Owner: *"In activities, label for the duration interior and exterior. this should be internal and
+external. apply for whole schedule module."* Grepping before renaming turned this into a consistency
+fix rather than an invention: the **Generate** step, the stacking basis select, the trade totals and
+the push hint **already** say Internal/External. Only the Activities grid, the trade-sequence grid
+and the prose around them said Interior/Exterior — so the rename brings two screens onto the
+vocabulary the rest of the module already uses.
+
+⚠️ **Display only, and that was established rather than assumed.** No stored value or key carries
+those words: the columns are `durInt`/`durExt`, the bases are `'int'`/`'ext'`. And `xlCellCtl` shows
+the two duration columns are plain numeric **text inputs** — only `col.trade`, `col.scope` and
+`col.contract` use the label as a value — so a label change there cannot reach a cell's contents.
+
+14 content-anchored edits: `XL_COLS`, `T4_COLS`, the rail step blurb, the step-4 caption and its
+basis buttons, plus **nine comments** that named the old labels. A comment sending the next reader
+looking for a word no longer on any screen is the shape this file has already paid for twice.
+
+⚠️ The 14 surviving `Interior|Exterior` hits are **left alone and are unrelated**: wet-season and
+site-exposure prose in the calendar, geometry comments about polygon interiors, the `'Exterior
+Masonry'` trade-name fixtures in `test-lsm`, and the class-code names `'PC Exterior Walls'` /
+`'PC Interior Walls'` / `'LD Exterior Lighting Works'`.
+
+### 1 · The library list is ordered by class code, inside each trade
+
+Owner: *"For class code list, when clicking + Library, sort by class code."*
+
+⚠️⚠️ **It is deliberately NOT a sort applied by `+ Library`.** Measured: `CLASS_CODE_DB` is **already
+code-ordered, 197 of 197**, so sorting at that one loader would be a no-op there *and* would leave
+the list in arrival order for every **other** way a code reaches it — `+ From BOQ`, `+ Custom`, and a
+row returned by the shuttle's `→`. Sorting where the list is **built** (`holdGroups`) is the one
+place that covers all four.
+
+- ⚠️ **Compared as a STRING, never as a number.** A class code is `03050` and the leading zero is
+  significant — `ccKeyOf` pads to resolve one, and `2026-08-21-class-codes.sql` records that
+  de-zeroing collides genuinely different items (`015051` Earthmoving with `15051` Railings). A
+  numeric compare would put those two on top of each other.
+- ⚠️ **A blank code sorts LAST.** The list is *"sorted by class code"*, and leading it with the
+  entries that have none would bury the codes the planner came to read. It also keeps `+ Custom`'s
+  new entry where it has always landed — the end of its trade — so that create's own "open the
+  heading and tick it" step reaches it exactly as before.
+- ⚠️ **`cfg.catalog` is not mutated.** `by[g]` is a fresh array built by push, and it is `.slice()`d
+  before sorting, so what is reordered is the **display** and never the list the shuttle filters over
+  or the setup saves.
+- ⚠️ `#b-load` sorts its `take` with **the same comparator**, so rows arrive in the grid in the order
+  the planner just read them in. Without it the list would be code-ordered and the arrival
+  `cfg.catalog`-ordered — two orders for one gesture.
+
+### Verified
+
+`holdCmp` and `holdGroups` **sliced out of the shipped file and executed** — 5 assertions, 0 failing:
+`015051 · 03050 · 04050 · 15051 · (blank)` inside one trade, `cfg.catalog`'s own order byte-identical
+afterwards, an unrecognised group still falling into Others, empty trades still emitting no heading,
+and `015051` vs `15051` kept apart rather than numerically collapsed.
+
+The 3.59MB inline script **parses** (1 block); `wiring-check` **139/0**; `dead-hooks` at its
+documented **9**-finding baseline; 0 NUL bytes and 0 CR, byte-counted. Module suites all green:
+zoneplan 27, zoneoverlap 56, wbsfile 33, towerseq 48, shapeedit 36, sitefit 31, syntax 4, critwbs 26,
+health 30, cpm 28, autotrace 32.
+
+⚠️ `test-lsm` (28) and `test-builder` (1) fail **byte-identically on HEAD and on this tree**. The LSM
+set is **stale, not broken** — the Flowline was deleted at the owner's explicit request on
+2026-09-17 (q) and the suite still slices for it. Retiring those assertions is named as its own
+change rather than folded into this one.
+
+⚠️ **Not verified signed in.** No class code has been ticked and no row shuttled on a live project.
+
+### ⚠️ NOT DONE, and deliberately not half-built
+
+- **Drag and drop from the class-code list into the build.** It has to funnel into **one** shared
+  move function with `#b-load` rather than a second write path, and it has to survive the repaint
+  `render()` performs on every tick — handlers re-attached per render, as the existing ones are.
+  HTML5 DnD does not fire on touch, so tick + `←` stays as the additive gesture rather than being
+  replaced.
+- **Reducing the Activities grid's type scale.** ⚠️ `.sbld-xl` is shared by `#b-xl` **and** `#b-t4`,
+  and 2026-09-17 (x) records `table.sbld-xl thead th` as a **deliberate** third table-header
+  treatment ("arguably right as a spreadsheet") — so it may shrink, and it must not be converted to
+  the uppercase/muted `.pd-table th` convention. Any new size lands on a `--pd-fs-*` rung, and never
+  on `font-weight: 600`, which this app carries **0** of.
+
+`MODULE_V` → `20260917zzc`, sort-checked past the `20260917zzb` `origin/main` actually serves.
+
 ## 2026-09-17 (zx) — The Activities step sheds four controls, two of which had never worked, and the library becomes a list you can read
 
 Owner, on Schedule Setup → **Activities**: *"no need for the delete selected rows button. user will
