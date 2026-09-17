@@ -3135,9 +3135,24 @@ window.ProgressPhotos = (function () {
     if (!container.id) container.id = 'pp-pnlm-' + Math.random().toString(36).slice(2);
     var vaov = Math.min(140, Math.max(20, 360 * (heightOverWidth || 0.35)));
     try {
+      // ⚠️ 2026-09-16 (viewer improvement): fullscreen turned ON. Both
+      // callers of this function mount into a genuinely cramped box for
+      // actually looking around a panorama -- the "Add 360°" review flow's
+      // own preview is a fixed 240px-tall strip (`#pp360-panowrap`
+      // overrides the lightbox's larger sizing on purpose, see that CSS
+      // rule's own comment), and even the lightbox's own viewport-relative
+      // box is still constrained by this app's modal chrome around it.
+      // Pannellum's fullscreen control drives the standard browser
+      // Fullscreen API on this element specifically, which is a
+      // browser-level compositing layer independent of the surrounding
+      // DOM's own z-index/overflow -- it works the same whether this
+      // viewer sits inside a small preview box or a full-viewport modal,
+      // and gives a planner a real way to inspect a capture at its actual
+      // size instead of being capped by whichever container happened to
+      // mount it.
       return pannellum.viewer(container.id, {
         type: 'equirectangular', panorama: imageUrl, haov: 360, vaov: vaov,
-        autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: false, compass: false,
+        autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: true, compass: false,
         minHfov: 30, maxHfov: 120, hfov: 100
       });
     } catch (e) {
@@ -6110,7 +6125,7 @@ window.ProgressPhotos = (function () {
   // IndexedDB. Called at every point the draft's own state actually
   // SETTLES -- created, metadata captured, stitched, errored, thumbnail
   // captured, adjustments changed -- never from the many intermediate
-  // progress ticks touchPano360Draft() drives (a 48-frame stitch reports
+  // progress ticks touchPano360Draft() drives (a many-frame stitch reports
   // progress dozens of times; the source blob never changes mid-stitch, so
   // persisting it once up front is enough to resume from).
   function persistPano360Draft(draft) {
@@ -6148,7 +6163,7 @@ window.ProgressPhotos = (function () {
     // storage quota, a private-mode restriction, a transient IndexedDB
     // error) must not fail quietly. Logged every time (for whoever's
     // actually debugging a report like this), toasted at most ONCE per
-    // session (never per progress tick -- a 48-frame stitch calls this
+    // session (never per progress tick -- a many-frame stitch calls this
     // dozens of times and a failing write fails the same way every time) so
     // the planner has an actual chance to notice their draft may not
     // survive closing the tab, rather than discovering it's gone later.

@@ -1,5 +1,139 @@
 # Module: progress-photos
 
+## 2026-09-16 — 72 frames, a signed-feathering bug fixed server-side, the cylindrical-warp gap documented (not fixed), and the panorama viewer gets a real fullscreen control
+
+Owner: *"also, use 72 frames instead of 48. audit to improve correctness. improve also panorama
+viewer."* Three asks, all against the server-side 360° pipeline
+(`supabase/functions/pano360-process/`) that the entry directly below this one moved stitching
+into — the client side now only extracts frames and uploads them; the worker does the actual
+alignment/compositing.
+
+### 1 · 72 frames, not 48
+
+`FIXED_FRAME_COUNT` in `pano360.js` → **72**. ⚠️⚠️ **This constant no longer governs the pipeline's
+real cost.** Since the same-day server-side move, the client's job path
+(`uploadJobFrames`/`extractFrames`) only extracts and uploads JPEGs — cheap, no per-pair
+ORB/BFMatcher/RANSAC on the device. Raising the count buys back overlap/join density on the
+server at a small, fixed client-side cost (72 JPEG extractions instead of 48), not the
+"several hundred frames of sequential OpenCV work" the pre-server-move architecture would have
+made this. `Pano360.stitchFromVideo` (the full local stitch) still exists and is still governed
+by this constant, but nothing on the shipped job path calls it today.
+
+### 2 · Correctness audit of the server pipeline
+
+**Found and fixed: a signed feathering-direction bug in `pasteFrame()`.** The compositor blends
+a new frame's edge into the growing mosaic over a `featherPx`-wide band — but the code always
+feathered the frame's **left** edge, regardless of which way the frame actually moved relative
+to the frame before it. That's correct for the ordinary case (a rightward pan, where the new
+frame's left edge is the one overlapping existing content) and silently wrong whenever a pair's
+alignment offset (`offsets[cursor-1].dx`) came out negative — a leftward pan, a momentary
+backward wobble mid-recording, or a mirrored/front-facing capture — where the overlap is on the
+frame's **right** edge instead. Feathering the wrong edge there means blending a strip of the
+frame that has no shared content with what it's supposedly blending into: a visible seam or a
+soft double-exposure ghost right where the two frames actually meet.
+
+Fixed by making `pasteFrame`'s `featherPx` **signed**: positive still means "feather the left
+`featherPx` columns" (the original, still-correct default); negative means "feather the right
+`|featherPx|` columns instead." The caller in `index.ts`'s compositing step now derives the sign
+from the real alignment offset of the pair being pasted — `pairDx < 0 ? -featherMag : featherMag`
+— rather than assuming every frame overlaps on its left.
+
+⚠️⚠️ **Verified against the pre-fix formula, not just asserted correct.** `test.mjs`'s new `[8d]`
+section builds a canvas with known "existing" and "new frame" pixel values, feeds
+`pasteFrame` a negative `featherPx`, and confirms: the far column reads pure new-frame value, the
+near column blends fully back to the existing content, and an in-between column is a genuine
+partial blend strictly between the two — proving the right-edge feather geometry is correct, not
+just that *some* value came out. It then replays the **exact pre-fix formula** inline
+(`if (featherPx > 0 && x < featherPx) a = x / featherPx;` — no right-edge branch at all) against
+the identical negative-`featherPx` input and confirms it produces a **different, wrong** result
+(a hard cut with no feathering) — so the fix is shown to change real behavior on the exact input
+class it targets, not merely to leave old behavior alone. A second `[8d]` case confirms the
+unchanged positive-`featherPx` (left-edge) path still feathers correctly. `[8e]` is a structural
+check (via `readFileSync`, since `index.ts` is Deno-only and can't run in this Node suite)
+confirming the compositor genuinely reads `offsets[cursor-1]`, derives the sign from `pairDx`, and
+calls `pasteFrame` with the derived value — never the bare, unsigned magnitude.
+
+**Documented, not fixed: the server pipeline has no cylindrical reprojection step.** The client
+pipeline (`pano360.js`) hit and fixed this exact bug class on 2026-09-12 — a camera rotating
+about a fixed point (this app's own "stand and turn" capture guidance) is a rotation, not a
+lateral translation, and reprojecting rotated frames onto one flat plane via a plain pixel shift
+produces a badly malformed, largely-black mosaic past a few degrees of rotation. The server
+pipeline (`stitch-core.mjs`/`index.ts`) does the same kind of pure-translation alignment/
+compositing on raw, un-warped perspective frames, with no reprojection step at all — the
+identical architectural gap, one module over.
+
+⚠️⚠️ **Deliberately NOT implemented from scratch this round.** A correct cylindrical remap needs
+real per-pixel trigonometry (a destination column's contribution is `atan(tan(HFOV/2) * ...)`-
+shaped, not a linear scale across the frame — an error this session's own reasoning caught and
+corrected while drafting the audit comment, which is itself the argument for not shipping an
+unverified version). This environment has: no Deno runtime to execute `index.ts` directly, no
+real recorded 360° video/image fixtures for this specific pipeline, and no way to render a
+mosaic and visually confirm a remap is geometrically correct rather than subtly wrong in a way
+that only shows up on a real capture. Shipping unverified reprojection math into a pipeline whose
+whole job is producing a visually-coherent panorama is exactly the class of mistake this
+codebase's own engineering culture treats as worse than not shipping a fix at all. The gap is
+documented at length in a new header comment in `stitch-core.mjs` (cross-referenced from
+`index.ts`'s own compositing step) naming the 2026-09-12 client-side precedent and instructing
+whoever picks this up next to build an isolated, Deno/Node-free harness with a synthetic
+rotating-camera test scene — the same methodology the 2026-09-12 client fix used — before trusting
+any cylindrical-warp arithmetic. `[8f]` in `test.mjs` asserts the header states there is no
+reprojection step, names the 2026-09-12 precedent, and states why a from-scratch remap wasn't
+shipped — so the gap can't quietly disappear from the record on the next edit to this file either.
+
+### 3 · Panorama viewer: fullscreen enabled
+
+`mountPannellumViewer` (module.js) now sets `showFullscreenCtrl: true` (was `false`). The
+review/preview boxes this viewer mounts into are cramped by design — `#pp360-panowrap`'s fixed
+240px review strip, and the lightbox's own modal chrome — so a real fullscreen escape hatch
+matters more here than in a viewer with more room to breathe. The browser's Fullscreen API is
+independent of the surrounding DOM's z-index/overflow, so this doesn't interact with any of the
+containment work those two contexts already do.
+
+⚠️ Verified in an earlier segment of this same session via genuine Playwright/Chromium execution
+against the real, npm-installed Pannellum library (not a stub): the fullscreen toggle button
+(`.pnlm-fullscreen-toggle-button`) renders, is visible alongside the zoom controls, and does not
+interfere with panorama loading or rendering.
+
+### Merge with `origin/main`
+
+`origin/main` had advanced substantially since this branch started (portfolio site-view work,
+admin/users changes, and — most relevant here — its own same-day cache-bust round reaching
+`20260916r`/`za` on the shared `MODULE_V` fallback). Merged forward; five conflicts, all of the
+shape this repo's own CLAUDE.md documents as standard:
+- `modules/progress-photos/CLAUDE.md` — union of both sides' new entries, neither summarized.
+- `modules/progress-photos/index.html` — `pano360.js`/`module.js?v=` re-derived to `20260916zb`
+  (past both this branch's `20260916a` and `origin/main`'s `20260914i`/`20260916z1`, since both
+  files carry real content changes from this pass); `ppr.js?v=` kept at origin/main's
+  `20260916z1` (untouched by this pass).
+- `assets/js/modules-grid.js`, `dashboard.html`, `modules.html` — the shared `MODULE_V` fallback
+  re-derived to `20260916zc`, past every `20260916z*` token found anywhere in the repo at merge
+  time (`z1`, `za`, `zb`), per this repo's own "bump MODULE_V on any index.html change" rule —
+  this pass's merge-conflict resolution changed `progress-photos/index.html`'s bytes, which
+  triggers that rule on its own even setting aside the module's other content changes.
+
+### Verified
+
+**Isolated the merge-only baseline before trusting the numbers**: stashed this pass's own 6
+changed files (leaving only the merge in place), ran the full suite, then restored the stash and
+re-ran. Merge-only baseline: **973 passed, 4 failed**. With this pass's changes: **975 passed, 4
+failed** — the same 4 failure names in both runs (a PDF page-break assertion, a filter-panel
+density assertion, and 2 `capture.js` audio/mic-toggle assertions — all pre-existing, all
+unrelated to this pass), confirming this pass adds exactly 2 new passing checks and introduces
+zero regressions, rather than trusting a bare pass/fail count.
+
+`node --check` clean on `module.js`/`pano360.js`/`test.js`. `test.mjs` (the server pipeline's own
+Node-runnable suite, sharing `stitch-core.mjs` byte-for-byte with the Deno `index.ts`) passes with
+the three new sections (`[8d]`/`[8e]`/`[8f]`) included.
+
+⚠️ **Not verified against a real capture.** The feathering fix is proven correct by genuine
+execution against a controlled pixel fixture and by contrast against the exact pre-fix formula on
+the same input — it has not been observed against a real recorded 360° walkthrough run through the
+real Edge Function worker, since this environment has no Deno runtime to invoke `index.ts` and no
+real video fixtures for this pipeline. The cylindrical-warp gap remains open and is now documented
+rather than guessed at or silently shipped as fixed.
+
+`module.js`/`pano360.js?v=` → `20260916zb`; `MODULE_V` → `20260916zc`.
+
 ## 2026-09-16 — The portfolio view named a migration that could not run — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the

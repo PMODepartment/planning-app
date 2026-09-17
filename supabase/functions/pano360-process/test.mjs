@@ -13,6 +13,8 @@
 // own changelog entry for the honest split.
 
 import * as SC from './stitch-core.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 let pass = 0;
 let fail = 0;
@@ -279,6 +281,125 @@ function cropFrame(scene, sceneWidth, sceneHeight, frameWidth, frameHeight, x, y
   const hard = SC.makeCanvas(20, 4, [0, 0, 0]);
   SC.pasteFrame(hard, 20, 4, fg, 10, 4, 0, 0, 0);
   ok('[8c] featherPx=0 is a hard cut — the very first column is already fully opaque', hard[0] === 200);
+}
+
+// ===========================================================================
+// [8d] pasteFrame — SIGNED featherPx picks which edge is feathered. Audit
+//      finding: the shipped function always feathered the frame's own LEFT
+//      edge regardless of which way the frame actually moved relative to
+//      the previous one — correct for an ordinary rightward pan (the
+//      overlap IS on the left edge), silently wrong for a leftward pan or a
+//      momentary backward wobble (the overlap is on the RIGHT edge, and
+//      feathering the left edge there blends into nothing while hard-
+//      cutting the edge that actually needed it). A negative featherPx now
+//      feathers the RIGHT |featherPx| columns instead.
+// ===========================================================================
+{
+  // A canvas already filled with "existing content" (value 100), simulating
+  // whatever was pasted before this frame.
+  const w = 20, h = 4, fw = 10;
+  const existing = 100, incoming = 200, mag = 5;
+  const fg2 = SC.makeCanvas(fw, h, [incoming, incoming, incoming]);
+
+  const rightFeathered = SC.makeCanvas(w, h, [existing, existing, existing]);
+  SC.pasteFrame(rightFeathered, w, h, fg2, fw, h, 0, 0, -mag); // negative == feather the RIGHT edge
+  // Far from the feathered edge (column 0): fully the new frame.
+  ok('[8d] right-feather: a column far from the feathered edge is fully opaque (new frame)',
+    rightFeathered[0] === incoming);
+  // The very last column (x = fw-1 = 9): a is driven to 0, so it reads as
+  // fully the EXISTING content — the seam blends into what was already
+  // there, rather than hard-cutting over it.
+  ok('[8d] right-feather: the very last column blends fully back to the existing content',
+    rightFeathered[(0 * w + 9) * 3] === existing);
+  // A column inside the feather zone (x=8, one step in from the edge) is a
+  // genuine partial blend, not one extreme or the other.
+  const midRight = rightFeathered[(0 * w + 8) * 3];
+  ok(`[8d] right-feather: a column inside the feather zone is genuinely blended (got ${midRight})`,
+    midRight > existing && midRight < incoming);
+
+  // A positive featherPx of the same magnitude still feathers the LEFT edge
+  // exactly as before this fix — the default/original behaviour is
+  // unchanged for the ordinary rightward-pan case.
+  const leftFeathered = SC.makeCanvas(w, h, [existing, existing, existing]);
+  SC.pasteFrame(leftFeathered, w, h, fg2, fw, h, 0, 0, mag);
+  ok('[8d] left-feather (unchanged default): the very FIRST column blends back to the existing content',
+    leftFeathered[0] === existing);
+  ok('[8d] left-feather (unchanged default): a column past the feather zone is fully opaque',
+    leftFeathered[(0 * w + 9) * 3] === incoming);
+
+  // ---- The actual bug, reproduced: the PRE-FIX formula (feather the left
+  // edge unconditionally, `featherPx > 0 && x < featherPx`) is replayed
+  // here against the exact same inputs used above. Fed the same NEGATIVE
+  // featherPx meant to signal "feather the right edge", the old formula's
+  // `featherPx > 0` guard is false for every column, so it silently
+  // degrades to a hard cut with NO feathering at all — the seam this fix
+  // exists to blend is left as a hard edge, reproducing the defect this
+  // fix corrects. ----
+  function preFixPasteFrame(canvas, cw, ch, frameRgb, fw2, fh2, offsetX, offsetY, featherPx) {
+    for (let y = 0; y < fh2; y++) {
+      const cy = offsetY + y;
+      if (cy < 0 || cy >= ch) continue;
+      for (let x = 0; x < fw2; x++) {
+        const cx = offsetX + x;
+        if (cx < 0 || cx >= cw) continue;
+        const si = (y * fw2 + x) * 3;
+        const di = (cy * cw + cx) * 3;
+        let a = 1;
+        if (featherPx > 0 && x < featherPx) a = x / featherPx;
+        if (a >= 1) {
+          canvas[di] = frameRgb[si]; canvas[di + 1] = frameRgb[si + 1]; canvas[di + 2] = frameRgb[si + 2];
+        } else {
+          canvas[di] = (canvas[di] * (1 - a) + frameRgb[si] * a) | 0;
+          canvas[di + 1] = (canvas[di + 1] * (1 - a) + frameRgb[si + 1] * a) | 0;
+          canvas[di + 2] = (canvas[di + 2] * (1 - a) + frameRgb[si + 2] * a) | 0;
+        }
+      }
+    }
+  }
+  const preFixCanvas = SC.makeCanvas(w, h, [existing, existing, existing]);
+  preFixPasteFrame(preFixCanvas, w, h, fg2, fw, h, 0, 0, -mag);
+  ok('[8d] CONTRAST — the pre-fix formula given the same negative featherPx hard-cuts instead (the bug, reproduced)',
+    preFixCanvas[(0 * w + 9) * 3] === incoming);
+  ok('[8d] the shipped fix genuinely differs from the pre-fix formula on this exact input',
+    rightFeathered[(0 * w + 9) * 3] !== preFixCanvas[(0 * w + 9) * 3]);
+}
+
+// ===========================================================================
+// [8e] index.ts — structural check that the compositing step reads the
+//      pair's own dx sign and passes a SIGNED featherPx through to
+//      pasteFrame, rather than always calling it with the same positive
+//      magnitude (which would silently reintroduce the [8d] bug). This is
+//      the one part of the fix that can't be executed directly in Node
+//      (index.ts is Deno-only, imports `@supabase/supabase-js` from
+//      esm.sh) — a source check on the exact shipped call site.
+// ===========================================================================
+{
+  const indexTsPath = fileURLToPath(new URL('./index.ts', import.meta.url));
+  const src = readFileSync(indexTsPath, 'utf8');
+  ok('[8e] the compositing step reads the previous pair\'s own dx before choosing a feather sign',
+    /offsets\[cursor\s*-\s*1\]/.test(src));
+  ok('[8e] a negative pair dx flips the feather sign (so pasteFrame is told which edge to feather)',
+    /pairDx\s*<\s*0\s*\?\s*-featherMag\s*:\s*featherMag/.test(src));
+  ok('[8e] pasteFrame is called with the derived SIGNED value, not the bare magnitude',
+    /pasteFrame\([^)]*featherPx\)/.test(src) && !/pasteFrame\([^)]*featherMag\)/.test(src));
+}
+
+// ===========================================================================
+// [8f] The cylindrical-warp gap found on the 2026-09-16 audit is DOCUMENTED,
+//      not silently absent. This never proves the geometry is right — a
+//      cylindrical warp isn't implemented at all — it only proves the next
+//      reader isn't left to rediscover a known, real gap from scratch. See
+//      the header comment in stitch-core.mjs for the full reasoning.
+// ===========================================================================
+{
+  const stitchCorePath = fileURLToPath(new URL('./stitch-core.mjs', import.meta.url));
+  const src = readFileSync(stitchCorePath, 'utf8');
+  ok('[8f] the file states there is no cylindrical reprojection step',
+    /no cylindrical[\s\S]{0,20}reprojection step/i.test(src));
+  ok('[8f] the file names the client pipeline\'s own 2026-09-12 fix as the precedent for this gap',
+    /2026-09-12/.test(src) && /cylindrical/i.test(src));
+  ok('[8f] the file states why a from-scratch remap was not shipped this round (unverifiable here)',
+    /NOT.{0,40}implemented from scratch/is.test(src));
 }
 
 // ===========================================================================

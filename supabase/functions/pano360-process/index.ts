@@ -415,6 +415,13 @@ Deno.serve(async (req) => {
       }
 
       // ---- An ordinary compositing step: paste one more frame -----------
+      // ⚠️⚠️ This pastes a RAW, un-warped perspective frame — there is no
+      // cylindrical reprojection step anywhere in this file or in
+      // stitch-core.mjs. A camera ROTATING about a fixed point (this app's
+      // own capture guidance) is not handled correctly by pure translation
+      // past a few degrees of rotation; see stitch-core.mjs's own header
+      // comment ("2026-09-16 CORRECTNESS AUDIT") for the full reasoning on
+      // why this is a known, real gap left deliberately unfixed this round.
       const canvas = await downloadBytes(admin, state.storagePath);
       const frame = await decodeFrameForComposite(admin, job.frame_paths[cursor], state.frameWidth);
       const rgb = frame.width === state.frameWidth && frame.height === state.frameHeight
@@ -424,7 +431,18 @@ Deno.serve(async (req) => {
       const offsets = Array.isArray(job.offsets) ? job.offsets : [];
       const placements = cumulativePlacements(offsets.slice(0, cursor), state.scaleFactor);
       const p = placements[placements.length - 1];
-      const featherPx = Math.max(1, Math.round(state.frameWidth * FEATHER_FRACTION));
+      const featherMag = Math.max(1, Math.round(state.frameWidth * FEATHER_FRACTION));
+      // ⚠️⚠️ The feather direction has to match which edge of THIS frame
+      // actually overlaps the canvas, not always the left one — see
+      // pasteFrame's own header comment in stitch-core.mjs. offsets[cursor-1]
+      // is the alignment for the pair (cursor-1, cursor): a non-negative dx
+      // means this frame landed to the right of the previous one (the
+      // ordinary case — its LEFT edge is the one that overlaps, so the
+      // sign stays positive), a negative dx means it landed to the left
+      // (a leftward pan or a momentary backward wobble — its RIGHT edge is
+      // the one that overlaps, so the sign flips negative).
+      const pairDx = offsets[cursor - 1] ? offsets[cursor - 1].dx : 0;
+      const featherPx = pairDx < 0 ? -featherMag : featherMag;
       pasteFrame(canvas, state.width, state.height, rgb, state.frameWidth, state.frameHeight, state.shiftX + p.x, state.shiftY + p.y, featherPx);
       await uploadBytes(admin, state.storagePath, canvas, "application/octet-stream");
 

@@ -145,17 +145,36 @@
 // samples spread evenly across whatever duration it actually has.
 // ⚠️ This is a deliberate trade against 2026-09-12's own density fix: a very
 // long, fast recording will again have wider angular gaps between
-// consecutive samples than a short one sampled at the same 48-frame count —
+// consecutive samples than a short one sampled at the same fixed-count —
 // the exact overlap problem that fix existed to solve. Accepted here because
 // the owner asked for a fixed frame count specifically to bound processing
 // time, not because the overlap problem stopped mattering; if a future
 // report says fast recordings are failing to join again, the fix is a
 // per-pair remedy (JOIN_LOOKAHEAD, or asking for a slower turn), not
 // silently re-scaling this count back up.
+//
+// ⚠️⚠️ 2026-09-16 (later still — "use 72 frames instead of 48"): raised from
+// 48 to 72. Since the 2026-09-16 (earlier same day) architecture change,
+// this constant no longer decides how many frames get STITCHED in one
+// sequential, per-pair OpenCV pass on the device — stitching moved server-
+// side (`supabase/functions/pano360-process`), and the client's own job path
+// (`uploadJobFrames`/`extractFrames`) only extracts and uploads this many
+// small JPEGs, which is comparatively cheap (no ORB/BFMatcher/RANSAC on the
+// client at all for that path). The real cost this constant used to trade
+// off against — "a real walk-around recording is several hundred frames of
+// SEQUENTIAL, per-pair OpenCV work" on a phone — mostly moved to the
+// server's own chunked, self-chaining job instead. Raising the count back up
+// a little therefore buys back some of the overlap/join-density the 2026-09-
+// 13 fixed-48 cap gave up, at a lower client-side cost than it used to have.
+// ⚠️ `Pano360.stitchFromVideo` (the FULL client-side stitch below — cylindrical
+// projection, homography chaining, feathering) is UNUSED by that job path
+// today (see module.js's `runStitchForDraft`) but is still a real, reachable
+// public export used by anything that stitches locally, so this constant
+// still governs its cost too, on any code path that still calls it directly.
 window.Pano360 = (function () {
   var WORK_MAXW = 640;           // per-frame width used for feature matching/warping — kept small for mobile CPU cost
   var MIN_GOOD_MATCHES = 12;     // below this, a join is not "confident" — see the lookahead search below
-  var FIXED_FRAME_COUNT = 48;    // every recording is sampled into exactly this many frames, regardless of duration
+  var FIXED_FRAME_COUNT = 72;    // every recording is sampled into exactly this many frames, regardless of duration
   var JOIN_LOOKAHEAD = 5;        // how many frames ahead of the last-placed one to search for a confident join
 
   // Pure, and exported (Pano360._frameCountFor) so the fixed count itself can
@@ -163,9 +182,9 @@ window.Pano360 = (function () {
   // ⚠️ `durationSec` is accepted (and still validated) purely to keep this
   // function's call shape unchanged for every existing caller — it no longer
   // influences the returned count at all. A degenerate duration (0/NaN/
-  // negative/undefined) does not change the outcome either: 48 frames spread
-  // evenly across a near-zero-length clip via extractFrames' own fraction
-  // math simply lands very close together, which is harmless.
+  // negative/undefined) does not change the outcome either: the frames are
+  // spread evenly across a near-zero-length clip via extractFrames' own
+  // fraction math simply landing very close together, which is harmless.
   function frameCountFor(durationSec) {
     return FIXED_FRAME_COUNT;
   }

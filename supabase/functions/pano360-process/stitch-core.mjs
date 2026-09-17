@@ -23,6 +23,49 @@
 // only translation. A capture that pans smoothly and doesn't roll the phone
 // (the guidance this feature has always given) is exactly the case this
 // still handles well.
+//
+// ⚠️⚠️ 2026-09-16 CORRECTNESS AUDIT — A REAL, KNOWN GAP FOUND AND DELIBERATELY
+// NOT FIXED THIS ROUND: this pipeline does PURE TRANSLATION alignment and
+// compositing on raw (un-warped) perspective frames, with no cylindrical
+// reprojection step. That is architecturally the same category of bug the
+// CLIENT-side pipeline (pano360.js) already hit and fixed, documented at
+// length in this module's own CLAUDE.md under 2026-09-12: a camera that
+// ROTATES about a fixed point (exactly what this app's own capture guide
+// asks for — "stand in one spot and slowly turn") is not doing a lateral
+// translation, and reprojecting rotated frames onto one flat reference plane
+// via a plain shift produces a badly malformed, largely-black mosaic once
+// the rotation is more than a few degrees. The client pipeline's fix was a
+// real cylindrical warp (`cv.remap` at an assumed ~65° HFOV) applied to every
+// frame BEFORE alignment/compositing, so a pure-yaw rotation becomes a plain
+// horizontal translation in the warped coordinate space — which is exactly
+// the motion this file's own alignment search already assumes and handles.
+// The server pipeline has no equivalent warp, so the identical failure mode
+// is reachable here on the same real capture that would trigger it client-
+// side.
+//
+// This was NOT implemented from scratch in this pass. Reasoning, stated
+// rather than silently deferred: a correct cylindrical remap needs real
+// per-pixel trigonometry (source x/y as a function of the destination
+// column's angle off-axis, with the destination edge's own half-angle being
+// `atan(tan(HFOV/2))`-shaped, not a linear scale of HFOV/2 — an error caught
+// and corrected during the reasoning for this note, which is itself the
+// argument for not shipping an unverified version of it) plus real masking/
+// clamping for the region a rotated frame's corners no longer cover. This
+// environment has no Deno runtime, no real recorded video/image fixtures for
+// this pipeline, and no way to RENDER a mosaic to visually confirm a remap
+// is correct rather than subtly wrong in a way that only shows up on a real
+// capture — the exact class of mistake this module's own engineering culture
+// (see CLAUDE.md, repeatedly) treats as worse than not shipping a fix at
+// all. Bounded, pure translation over a real (if imperfect) capture is a
+// known, working degrade; an unverified cylindrical remap risking a WORSE,
+// differently-wrong mosaic is not an improvement just because it addresses
+// more of the geometry in principle.
+//
+// If this is picked up again: build an isolated Node/Deno-free harness with
+// a SYNTHETIC rotating-camera test scene (the client pipeline's own
+// 2026-09-12 fix was verified exactly this way, against a real recording,
+// in a real browser) before trusting any cylindrical-warp arithmetic here —
+// do not ship it on inspection alone.
 
 // ---------------------------------------------------------------------------
 // Grayscale downsampling — used only for the ALIGNMENT search, never for the
@@ -192,12 +235,29 @@ export function computeBounds(placements, frameWidth, frameHeight) {
 // ---------------------------------------------------------------------------
 // Paste one RGB frame onto a growing RGB canvas buffer, clipped to the
 // canvas bounds (never wraps, never throws on an out-of-range offset) and
-// linearly feathered across its own LEFT `featherPx` columns so a seam
-// blends into whatever the canvas already has there instead of cutting hard
-// — pass featherPx=0 for the very first frame placed (nothing to blend
-// into yet).
+// linearly feathered across `featherPx` columns so a seam blends into
+// whatever the canvas already has there instead of cutting hard — pass
+// featherPx=0 for the very first frame placed (nothing to blend into yet).
+//
+// ⚠️⚠️ `featherPx` is SIGNED, and the sign picks which edge is feathered —
+// this is the fix for a real correctness gap found on audit: the function
+// used to ALWAYS feather the frame's own LEFT edge, which is only the right
+// edge to blend when the frame was placed to the RIGHT of whatever is
+// already on the canvas (an ordinary rightward pan). A frame placed to the
+// LEFT of the existing content (a leftward pan, a momentary backward wobble
+// in an otherwise-forward walk-around, or a mirrored/front-facing capture)
+// overlaps the canvas on its own RIGHT edge instead — feathering the left
+// edge in that case blends into nothing (there's no overlap there) and
+// hard-cuts the edge that actually needed blending, which is exactly where
+// a visible seam would appear. A positive `featherPx` feathers the LEFT
+// `featherPx` columns (the original, still-default behaviour); a negative
+// value feathers the RIGHT `|featherPx|` columns instead. The caller (the
+// compositor in index.ts) is responsible for picking the sign from the
+// direction the frame actually moved relative to the previous one.
 // ---------------------------------------------------------------------------
 export function pasteFrame(canvas, cw, ch, frameRgb, fw, fh, offsetX, offsetY, featherPx) {
+  const featherAbs = Math.abs(featherPx);
+  const featherRight = featherPx < 0;
   for (let y = 0; y < fh; y++) {
     const cy = offsetY + y;
     if (cy < 0 || cy >= ch) continue;
@@ -209,7 +269,13 @@ export function pasteFrame(canvas, cw, ch, frameRgb, fw, fh, offsetX, offsetY, f
       const si = (fRowBase + x) * 3;
       const di = (cRowBase + cx) * 3;
       let a = 1;
-      if (featherPx > 0 && x < featherPx) a = x / featherPx;
+      if (featherAbs > 0) {
+        if (!featherRight && x < featherAbs) {
+          a = x / featherAbs;
+        } else if (featherRight && x >= fw - featherAbs) {
+          a = (fw - 1 - x) / featherAbs;
+        }
+      }
       if (a >= 1) {
         canvas[di] = frameRgb[si];
         canvas[di + 1] = frameRgb[si + 1];

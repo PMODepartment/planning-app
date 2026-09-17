@@ -4486,6 +4486,8 @@ console.log('\n[misc] insert().select() returns the new row id');
       ok('…configured as a partial equirectangular panorama: haov 360 (a full walk-around), vaov derived from the image\'s own height/width ratio',
          lastConfig.type === 'equirectangular' && lastConfig.panorama === 'blob:pano.jpg' && lastConfig.haov === 360 &&
          lastConfig.vaov === Math.min(140, Math.max(20, 360 * 0.4)));
+      ok('2026-09-16 viewer improvement: fullscreen is ON (both callers mount into a cramped box — a real browser fullscreen is how a planner actually inspects a capture at size), zoom stays available too',
+         lastConfig.showFullscreenCtrl === true && lastConfig.showZoomCtrl === true);
 
       lastConfig = null;
       PP._mountPannellumViewer({ querySelector: function () { return null; } }, 'blob:tall.jpg', 3);
@@ -4615,28 +4617,33 @@ console.log('\n[misc] insert().select() returns the new row id');
 
   console.log('\n[56c] 2026-09-13 (later still): "since it\'s taking too long to process and stitch an image, divide video to a fixed 48 frames per process" — frameCountFor no longer scales with duration at all');
 
-  ok('frameCountFor is now a FIXED count (48), regardless of duration — the 30fps/duration-scaled density this replaces is gone from the function body',
-     /var FIXED_FRAME_COUNT = 48;/.test(p3js) &&
+  ok('frameCountFor is a FIXED count, regardless of duration — the 30fps/duration-scaled density this replaces is gone from the function body',
+     /var FIXED_FRAME_COUNT = \d+;/.test(p3js) &&
      /function frameCountFor\(durationSec\) \{\s*return FIXED_FRAME_COUNT;\s*\}/.test(p3js) &&
      !/var FRAMES_PER_SEC/.test(p3js) &&
      !/var MIN_FRAMES/.test(p3js) &&
      !/var MAX_FRAMES/.test(p3js));
+
+  console.log('\n[56d] 2026-09-16: "use 72 frames instead of 48" — the fixed count raised, now that the actual stitching pass moved server-side (see [67]) and the client-side per-frame cost dropped');
+
+  ok('the fixed frame count is now 72, not 48',
+     /var FIXED_FRAME_COUNT = 72;/.test(p3js));
 
   // Genuine execution of frameCountFor() — confirms the fixed count is
   // ACTUALLY fixed (same output for a very short clip, an ordinary one, a
   // very long one, and a degenerate/invalid duration), not just declared
   // fixed in a comment while the body still varies its answer.
   (function () {
-    eq('frameCountFor: a very short clip still samples exactly 48 frames',
-       P360._frameCountFor(0.3), 48);
-    eq('frameCountFor: a very long clip still samples exactly 48 frames — no longer scaled up or capped by duration',
-       P360._frameCountFor(9999), 48);
-    eq('frameCountFor: an ordinary mid-length clip samples exactly 48 frames, not 30 * duration',
-       P360._frameCountFor(6), 48);
-    eq('frameCountFor: a zero/invalid duration still returns 48 rather than throwing or sampling zero frames',
-       P360._frameCountFor(0), 48);
-    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 48, not the old 720',
-       P360._frameCountFor(24), 48);
+    eq('frameCountFor: a very short clip still samples exactly 72 frames',
+       P360._frameCountFor(0.3), 72);
+    eq('frameCountFor: a very long clip still samples exactly 72 frames — no longer scaled up or capped by duration',
+       P360._frameCountFor(9999), 72);
+    eq('frameCountFor: an ordinary mid-length clip samples exactly 72 frames, not 30 * duration',
+       P360._frameCountFor(6), 72);
+    eq('frameCountFor: a zero/invalid duration still returns 72 rather than throwing or sampling zero frames',
+       P360._frameCountFor(0), 72);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 72, not the old 720',
+       P360._frameCountFor(24), 72);
     ok('…the count truly does not vary with duration — a 4s clip and a 20s clip get the identical frame count, unlike the retired 30fps scaling',
        P360._frameCountFor(4) === P360._frameCountFor(20));
   })();
