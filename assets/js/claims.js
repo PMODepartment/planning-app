@@ -137,6 +137,10 @@ window.PDClaims = (function () {
   function agingBuckets(rows, valueKey, today) {
     var t = today || todayISO();
     var out = {}, unsent = 0, unsentVal = 0, oldest = null, total = 0, totalVal = 0;
+    /* ⚠️ The ROW, not only the number of days. "oldest 45 days" says there is a problem;
+       it does not say which record to go and chase, which is the only action the figure supports.
+       Additive — every existing caller reads `oldest` and is untouched. */
+    var oldestRow = null;
     AGE_BUCKETS.forEach(function (b) { out[b.key] = { key: b.key, label: b.label, n: 0, value: 0 }; });
     pending(rows).forEach(function (r) {
       var v = valueKey ? valueOf(r, valueKey) : 0;
@@ -146,12 +150,12 @@ window.PDClaims = (function () {
       if (!k) return;
       out[k].n++; out[k].value += v;
       total++; totalVal += v;
-      if (oldest == null || a > oldest) oldest = a;
+      if (oldest == null || a > oldest) { oldest = a; oldestRow = r; }
     });
     return {
       buckets: AGE_BUCKETS.map(function (b) { return out[b.key]; }),
       unsent: unsent, unsentValue: unsentVal,
-      oldest: oldest, n: total, value: totalVal
+      oldest: oldest, oldestRow: oldestRow, n: total, value: totalVal
     };
   }
 

@@ -1,5 +1,26 @@
 # Module: portfolio-overview
 
+## 2026-09-16 (later) — Even spacing, one-line notes, no second S-curve, no look-ahead — fmlozano
+
+See the root `CLAUDE.md` (2026-09-16 (a5)) for the full entry, and (z3) for the read fixes that
+came first — the `?` column and the two cancelled statements.
+
+- `#po-view-overview` is a **flex column with one `gap`**. It was `display:block` with no card
+  margins, so the gaps measured **20 / 0 / 0 / 14 / 0** at 1440px — three cards touching. The two
+  ad-hoc margins (`.pd-kpis` bottom, `.po-coverage` top) are zeroed, or the container gap doubles
+  under them. Re-measured 16 / 16 / 16 / 16.
+- **"What lands next" removed**, renderer included. ⚠️ Its `ms` read STAYS — the 30-day
+  milestone KPI still consumes it.
+- The curve card **links through to the S-Curve module** in portfolio scope. It already computed
+  via the shared `PDScurve` engine; the test now pins all three calls, so the day this page
+  derives its own curve the card becomes a duplicate and the suite says so.
+- Both notes shortened. ⚠️ Do not quote the removed coverage clause in a comment here: the
+  suite asserts it does not occur in the file, and a comment is an occurrence.
+- `.po-chk` gained `white-space:nowrap` (shared) — "Group by" was wrapping between its words.
+- ⚠️ **Group by → Group Head could NOT be reproduced**: exercised on the shipped page with only
+  the network stubbed, it groups correctly. Suspect data (every project resolving to
+  `(No group head)`), not code. Left unchanged.
+
 ## 2026-09-16 — The page IS the Overview: the last two duplicate views and the dropdown are gone — fmlozano
 
 See the root `CLAUDE.md` (2026-09-16 (v)) for the full entry.

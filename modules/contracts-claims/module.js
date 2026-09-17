@@ -1059,7 +1059,10 @@ window.ContractsClaims = (function () {
       '<label data-days>Client approved days<input id="cc-f-appr-d" type="text" inputmode="numeric" value="' + esc(e.approved_days == null ? '' : e.approved_days) + '" /></label>' +
 
       '<div class="cc-sec" data-not="Contract">Status &amp; dates</div>' +
-      '<label data-not="Contract">Status<select id="cc-f-stat"><option value="">—</option>' +
+      /* ⚠️ `data-statusrow` makes this span both columns — see the note on `.cc-form`. Without it
+         Status occupies one cell and shunts the four dates below it by one, which is what split
+         "Date filed / Date submitted" across two rows. */
+      '<label data-not="Contract" data-statusrow>Status<select id="cc-f-stat"><option value="">—</option>' +
         STATUSES.map(function (s) { return '<option' + (statusOf(e) === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') +
       '</select></label>' +
       /* ⚠️ THESE FOUR HAD NO TYPE GUARD while the section header above them and the
@@ -1109,13 +1112,54 @@ window.ContractsClaims = (function () {
       '<div class="cc-form">' + body + '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="cc-m-cancel">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="cc-m-save">Save</button></div>');
+    /* ⚠️ `UI.modal()` takes no class, so the width class goes on afterwards — see `.pd-modal.cc-rec`.
+       This form carries a money pipeline, four dates, an activity tree with a programme preview
+       beside it, remarks and attachments; the shared 520px is a four-field dialog's width. */
+    var _recBox = m.el.querySelector('.pd-modal');
+    if (_recBox) _recBox.classList.add('cc-rec');
 
     var el = function (id) { return m.el.querySelector('#' + id); };
+
+    /* ==== AMOUNTS CARRY THEIR COMMAS =========================================================
+       Owner 2026-09-17: *"amounts should have a numerical comma."* `58995925` and `5899592` are
+       one keystroke apart and look identical at a glance; grouping is what makes the difference
+       visible, and every figure this module PRINTS is already grouped. Only the inputs were not.
+       ⚠️⚠️ GROUPED ON BLUR, RAW ON FOCUS — not while typing. Rewriting the value on every
+       keystroke moves the caret to the end, so "13023058" edited in the middle becomes a fight
+       with the field. On focus it goes back to plain digits, which is what a planner wants to edit
+       and what a paste lands as.
+       ⚠️ SAFE BECAUSE THE PARSER ALREADY SPEAKS COMMAS. `n()` below validates them against
+       `\d{1,3}(,\d{3})+` rather than stripping them — see the note there on why "1.000,50" must be
+       REFUSED rather than silently read as 1.0005. So a grouped value round-trips, and a value this
+       formatter refuses to touch is left exactly as the planner typed it, for `n()` to judge.
+       ⚠️ Days are left alone: `data-days` counts run to four digits at most and a claim for
+       "1,095 days" reads no better than "1095". `data-money` is the marker the form already uses. */
+    function groupAmountInputs() {
+      m.el.querySelectorAll('label[data-money] input, #cc-f-amount').forEach(function (inp) {
+        if (inp.__ccGrouped) return;
+        inp.__ccGrouped = true;
+        var raw = function () { return String(inp.value || '').replace(/,/g, ''); };
+        var fmt = function () {
+          var t = raw().trim();
+          if (!t || !/^-?\d*\.?\d+$/.test(t)) return;      // not a plain number: leave it be
+          var neg = t.charAt(0) === '-'; if (neg) t = t.slice(1);
+          var parts = t.split('.');
+          inp.value = (neg ? '-' : '') +
+            parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',') +
+            (parts.length > 1 ? '.' + parts[1] : '');
+        };
+        inp.addEventListener('focus', function () { inp.value = raw(); });
+        inp.addEventListener('blur', fmt);
+        fmt();                                             // and the value it opened with
+      });
+    }
 
     /* ⚠ STAGED WHEN THERE IS NO ROW YET. `openForm(null)` is the quick Add path, and a record has
        no id until persistRecord returns — so files chosen here are held and flushed after the save,
        exactly as the wizard does. On an EDIT the id exists and the panel uploads immediately, which
        is why the same panel reads both ways from one call. */
+    groupAmountInputs();
+
     var attStaged = [];
     function paintAtts() {
       var box = el('cc-f-atts'); if (!box) return;
@@ -1344,7 +1388,13 @@ window.ContractsClaims = (function () {
         }
       }
       m.close(); UI.toast((r ? 'Record updated.' : 'Record added.') + affMsg,
-        affMsg.indexOf('') >= 0 ? 'warn' : 'success');
+        /* ⚠️ `affMsg.indexOf('') >= 0` — what this said until 2026-09-17 — is ALWAYS TRUE:
+           `indexOf` of the empty string is 0 in every JavaScript engine, so every successful save
+           toasted as a warning, including the ordinary ones with no affected-work message at all.
+           The needle had been lost from the source at some point; what it has to test is whether
+           the affected-work write is the half that failed, and both of its failure branches above
+           say `NOT saved`. */
+        affMsg.indexOf('NOT saved') >= 0 ? 'warn' : 'success');
       warnDropped(res.dropped);
       gotoTypeTab(t);
     };

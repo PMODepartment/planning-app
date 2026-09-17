@@ -65,6 +65,27 @@
       .po-bar-tools { margin-left:0; flex:1 1 100%; }
     }
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
+    /* ==== AN EMPTY FILTER BAR MUST NOT RESERVE A ROW ========================================
+       Owner 2026-09-17: *"there is a big gap between the 4 KPI cards and the titlebar — check
+       across all of the modules."* Measured in a harness against the real stylesheets, module bar
+       to the first KPI card:
+
+         portfolio-overview ... 50px        risk-register .... 20px
+         issues-lessons ....... 20px        stakeholder-map .. 20px
+
+       So 20px is the app's spacing and this ONE page was 30px over. ⚠️⚠️ THE CAUSE IS A BOX
+       WITH NO HEIGHT THAT STILL COSTS 30px. When the funnel is shut, `.po-toolbar-fields` goes
+       `display:none` — but its WRAPPER stays `display:flex` at zero height, and a zero-height box is
+       still a box: it keeps this `margin-bottom:14px` and it still takes a slot in
+       `#po-view-overview`'s `gap:16px`. 16 + 14 = the 30px, paid for nothing on screen. Every other
+       module hides its filter row itself and has no wrapper, which is why only this page showed it.
+       ⚠️ Scoped so it can only ever collapse a bar whose ONLY child is that shut filter row.
+       `.po-toolbar` is also used by the eleven portfolio views, where `mount()` force-opens the
+       fields and several bars carry other controls — those keep their row. */
+    .po-toolbar:not(:has(.po-toolbar-fields.open)):not(:has(> :not(.po-toolbar-fields))) { display:none; }
+    /* And when it IS showing, the parent's `gap` is already the space below it. A margin on top of
+       a flex gap is the same double-spacing the `> .pd-kpis` rule further down already guards. */
+    #po-view-overview > .po-toolbar { margin-bottom:0; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
     /* Filters (incl. each tab's search box) collapse behind one funnel toggle
        instead of sitting permanently open — UI.wireFilterToggle (ui.js) shows/
@@ -78,7 +99,13 @@
     .po-search > [data-ico] { position:absolute; left:10px; color:var(--pd-muted); pointer-events:none; display:inline-flex; }
     .po-search .pd-input { padding-left:32px; width:220px; }
     .po-spacer { margin-left:auto; }
-    .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-base); cursor:pointer; color:var(--pd-ink); }
+    /* ⚠️ `white-space:nowrap` — a label like "Group by" or "Running past contract only" is a
+       PHRASE, and an inline-flex box with normal white-space breaks it between words the moment
+       the flex line is squeezed. Measured on the Portfolio Dashboard at 1440px: the "Group by"
+       label rendered 38px tall — two 19px lines — while its text needs 60px of a 1313px row.
+       The label wrapped, not because there was no room, but because nothing said not to. */
+    .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-base);
+      cursor:pointer; color:var(--pd-ink); white-space:nowrap; }
     /* multi-select project filter */
     /* ⚠️⚠️ NOT A DROPDOWN ANY MORE. It was `position:absolute; left:0; width:260px`
        hanging off a RIGHT-ALIGNED button, so a 260px menu opened rightwards from a
@@ -100,7 +127,11 @@
     .po-projfilter-menu { display:none; }
     .po-projfilter-menu.open {
       display:flex; flex-direction:column; position:absolute; top:calc(100% + 6px); right:0;
-      z-index:40; width:min(560px, calc(100vw - 32px)); max-height:min(60vh, 460px);
+      /* ⚠️ 640px, and two columns of 260px inside it. At 560px a grouped list of long project
+         names ("4PH Jenara Residences Construction Schedule Test") ellipsised in almost every row,
+         which is a picker you cannot pick from. ⚠️ Still `min(..., 100vw - 32px)`, so it can
+         never be wider than the window — the clipping that rule was added for. */
+      z-index:40; width:min(640px, calc(100vw - 32px)); max-height:min(66vh, 520px);
       background:var(--pd-card); border:1px solid var(--pd-line);
       border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg); overflow:hidden;
     }
@@ -116,7 +147,15 @@
     /* ⚠️ The LIST scrolls, not the popover — the search box and Select all / Clear must stay
        reachable with 21 projects on screen, which is exactly when they are needed. */
     .po-projfilter-list { flex:1 1 auto; min-height:0; overflow-y:auto; padding:4px 0;
-      display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); }
+      display:grid; grid-template-columns:1fr; }
+    /* ⚠️⚠️ ONE COLUMN, and that is a reversal made on a measurement. Two columns fitted more
+       rows, and at 640px it ellipsised THREE OF FIVE project names in the test fixture --
+       "4PH Jenara Residences Construction Schedule Test" and its like are the norm here, not the
+       exception. A picker whose names you cannot read is not denser, it is unusable; the list
+       scrolls, so the rows that do not fit are one flick away and still legible. */
+    /* A group head's heading spans the whole list rather than sitting in one column, or the
+       grouping reads as two unrelated lists side by side. */
+    .po-projfilter-list label.po-pf-prog { grid-column:1 / -1; }
     .po-projfilter-list label { display:flex; align-items:center; gap:8px; padding:7px 12px;
       font-size:var(--pd-fs-base); cursor:pointer; color:var(--pd-ink); }
     .po-projfilter-list label:hover { background:var(--pd-red-light); }
@@ -127,6 +166,13 @@
     .po-projfilter-list label.po-pf-prog { padding-top:9px; border-top:1px solid var(--pd-line,#eee); }
     .po-projfilter-list label.po-pf-prog:first-child { border-top:0; }
     .po-projfilter-list .po-pf-count { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); white-space:nowrap; }
+    /* ⚠️ A view may mark a project it cannot draw (see `pfBadge` in portfolio-dash.js). Muted,
+       not red: it is a statement about the data, not a fault the planner caused. */
+    .po-pf-badge { margin-left:8px; flex:0 0 auto; font-size:var(--pd-fs-micro); font-weight:700;
+      color:var(--pd-muted); background:var(--pd-bg); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); padding:1px 6px; white-space:nowrap; }
+    /* The name takes the room; the badge and the code keep theirs. */
+    .po-projfilter-list label > span:first-of-type { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .po-projfilter-list label.po-pf-child { padding-left:30px; }
     /* ⚠️⚠️ ON A PHONE THE POPOVER IS PINNED TO THE VIEWPORT, NOT THE BUTTON — measured, not
        assumed: at 390px the right-anchored panel put its own left edge at −78px, so a third
@@ -143,6 +189,22 @@
     /* charts */
     .po-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; box-shadow:var(--pd-shadow); min-width:0; }
     .po-card h3 { margin:0 0 10px; font-size:var(--pd-fs-base); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    /* ⚠️⚠️ THE OVERVIEW IS ONE COLUMN WITH ONE GAP. Owner 2026-09-16: *"the s-curve needs to
+       be spaced evenly between other cards."* It was a plain `display:block` stack in which
+       `.po-card` carries NO margin, so the only separation anywhere came from two unrelated
+       ad-hoc margins — `.pd-kpis`'s 20px bottom and `.po-coverage`'s 14px top. MEASURED at
+       1440px, the gaps down the page were **20, 0, 0, 14, 0**: the curve card, the card above it
+       and the register below were all touching.
+       ⚠️ A flex column with `gap` is the fix rather than a margin on `.po-card`: the gap belongs
+       to the CONTAINER, so it cannot be doubled by a neighbour's margin and nothing has to know
+       what sits next to it. The two ad-hoc margins are zeroed here for exactly that reason. */
+    #po-view-overview { display:flex; flex-direction:column; gap:16px; }
+    #po-view-overview > .pd-kpis { margin-bottom:0; }
+    #po-view-overview > .po-coverage { margin-top:0; }
+    /* A section heading may carry a link through to the module that owns the full view. */
+    .po-seclink { margin-left:auto; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-red);
+      text-decoration:none; white-space:nowrap; }
+    .po-seclink:hover { text-decoration:underline; }
     .po-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:24px; text-align:center; }
     /* ---- D4 trend charts + D5 look-ahead (Overview) ---- */
     .po-mini { display:block; width:100%; }
@@ -215,15 +277,24 @@
     /* Row banding — eighteen unbanded rows of thin bars is where the eye loses which label goes
        with which bar. ⚠️ On the ROW, not on the track, so the tint runs under the label too. */
     .po-sh-row.alt { background:var(--pd-bg); }
-    .po-sh-lab { flex:0 0 var(--po-sh-lab, 220px); min-width:0; font-size:var(--pd-fs-base);
+    .po-sh-lab { display:flex; align-items:baseline; gap:6px;
+      flex:0 0 var(--po-sh-lab, 220px); min-width:0; font-size:var(--pd-fs-base);
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* The row label is name + progress + any flag. ⚠️ The NAME takes the room and ellipsises;
+       the figure and the flag keep theirs, because a truncated "153d late" is worse than a
+       truncated project name you can still recognise. */
+    .po-sh-nm { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    .po-sh-pct { flex:0 0 auto; color:var(--pd-muted); font-size:var(--pd-fs-xs); }
     .po-sh-track { position:relative; flex:1 1 auto; height:18px; min-width:0; }
     /* the contract window is the GROUND the programme is measured against, so it reads as a
        rail behind the bar rather than as a second bar competing with it */
-    .po-sh-rail { position:absolute; top:7px; height:4px; background:var(--pd-line); border-radius:2px; }
-    .po-sh-bar { position:absolute; top:3px; height:12px; background:var(--pd-line);
+    /* ⚠️ `--po-sh-*`, not `--pd-line`/`--pd-dark` — those two made the whole chart a set of
+       near-invisible bars in dark mode (contrast 1.28:1 for the fill). See the token block in
+       dashboard.css. Do not put a raw `--pd-*` surface token back on a bar here. */
+    .po-sh-rail { position:absolute; top:7px; height:4px; background:var(--po-sh-rail); border-radius:2px; }
+    .po-sh-bar { position:absolute; top:3px; height:12px; background:var(--po-sh-track);
       border:1px solid var(--pd-dark); border-radius:3px; overflow:hidden; }
-    .po-sh-fill { display:block; height:100%; background:var(--pd-dark); }
+    .po-sh-fill { display:block; height:100%; background:var(--po-sh-fill); }
     .po-sh-over { position:absolute; top:3px; height:12px; background:var(--pd-bad-text);
       opacity:.75; border-radius:0 3px 3px 0; }
     .po-sh-fc { position:absolute; top:1px; width:2px; height:16px; background:var(--pd-warn-text); }

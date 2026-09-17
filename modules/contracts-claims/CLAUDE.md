@@ -1,5 +1,154 @@
 # Module: contracts-claims
 
+## 2026-09-17 (c) — The two sessions' dashboards collide a second time; main's design wins this round, its two new figures ported into the simple table
+
+Owner: *"resolve merge conflicts."* `origin/main` had moved 37 commits ahead overnight, including a
+second round of Dashboard work from the concurrent thread — (a) and (b) below — built directly on
+top of the RICHER design (verdict line, `UI.kpi` cards, an async BOQ read) that (e) below had already
+discarded in favour of the owner's own plainer, single-table instruction from this session
+(*"leave only the main table in the dashboard… no need for the view buttons"*).
+
+⚠️⚠️ **THAT MEANS (a)/(b) WERE WRITTEN AGAINST FUNCTIONS THIS BRANCH HAD ALREADY DELETED.**
+`ccDashFill`, `ccMoneyTable`, `ccHasClaims` and the verdict-line `ccDashHTML` do not exist here —
+(e) removed them a day before (a)/(b) extended them on `main`. The conflict in `module.js` was
+therefore the identical collision as (e)'s own note describes, one day later: two designs for one
+tab, and only one can ship in a single file.
+
+**Resolved the same way as (e), for the same reason — this session's owner has not reversed their
+instruction.** The simple table (`ccTypeRows`/`CC_DASH_COLS`, Contract landing tab, Dashboard
+fourth) stays; `main`'s verdict-line rebuild, its packages block, its async certified-to-date read
+and its scope-of-works `<details>` markup are all merged out again. `module.css`'s auto-merge
+(no conflict markers — it sits outside this branch's diff) pulled in `.cc-scope*` /
+`.cc-dash-scope` regardless, orphaning them the moment the JS that rendered them was gone; both
+removed, checked by grep for zero remaining callers in `module.js`.
+
+⚠️⚠️ **BUT (a)/(b) ALSO CARRY TWO GENUINE, SMALL FIXES THAT ARE NOT PART OF THE DESIGN DISPUTE, AND
+THOSE MERGED IN CLEANLY (NO CONFLICT MARKERS) BECAUSE THEY TOUCH OTHER FUNCTIONS ENTIRELY:**
+the `.pd-modal.cc-rec` / `@container` width fix for the Affected-work picker, the Date-filed/
+Date-submitted field-pairing fix in `.cc-form`, the comma-grouped amount inputs (`n()`), and the
+column-header-tooltip glossary — none of that lived inside `ccDashHTML`, so none of it was touched
+by this collision and all of it is live in the merged file exactly as (a) describes it.
+
+⚠️ **What did NOT survive, because it lived only inside the now-discarded `ccDashHTML`:** (b)'s
+"revised contract sum" card (original + approved change orders) and its "oldest — name the record"
+header. Both are real, useful figures — reported here rather than silently dropped, since the next
+session may want to add them to the SIMPLE table rather than to the design that no longer ships:
+`PDClaims.agingBuckets` now returns `oldestRow` alongside `oldest` (an additive change to the
+shared helper, read by three screens, untouched by this merge) and is available to name the oldest
+record in this table's own group rows whenever that is wanted; the approved-change-orders total is
+`PDClaims.sum(PDClaims.decided(PDClaims.ofType(claimish, 'Change Order')), 'approved_amount')`,
+already the exact arithmetic the "Change orders" group row in the simple table computes as its own
+column total — so the revised-sum figure is one line away (`ctVal + thatSum`) if a future pass wants
+to state it, without reviving the verdict-line design.
+
+### Verified
+
+`node --check` clean on `module.js`; `module.css` braces balanced (627/627 — the `.cc-scope*` /
+`.cc-dash-scope` removal and this entry's own accounting cancel out against what the clean auto-merge
+added); grepped `module.js` for `cc-scope`, `ccMoneyTable`, `ccDashFill`, `ccHasClaims`,
+`ccDashPkgHTML`, `ccTimeHTML`, `cc-dash-verdict`, `cc-dash-comm`, `cc-dash-facts`, `cc-dash-certcard`
+— **zero hits**, all either absent or referenced only inside a comment recording this history.
+Repo-wide sweep for leftover `<<<<<<<`/`=======`/`>>>>>>>` markers after resolving all three
+conflicted files (`module.js`, `index.html`, this file): zero.
+⚠️ Not verified signed in — no live project read since the merge.
+
+`module.js` / `module.css` → `?v=20260917c` (neither matches this branch's prior tokens nor `main`'s
+verbatim — the merge carries `main`'s 37 commits' worth of unrelated changes to the rest of both
+files, and `module.css` was edited again after the clean auto-merge to drop the dead scope-of-works
+rules). `MODULE_V` → `20260917c`, re-derived past the deployed `20260916zc` fallback.
+
+## 2026-09-17 (b) — The dashboard states the revised contract sum, and names the record to chase
+
+Owner: *"Contracts & Claims dashboard for project-level needs to be improved. Please suggest both
+information and UI improvements."* Two information gaps closed; the rest is written up in the reply
+rather than built, because they need data the register does not hold yet.
+
+### An approved variation changes the contract, and the card did not say so
+Original + approved variations = the **revised contract sum** — the figure every commercial report
+is measured against: valuation, retention, final account. The page held both halves and printed only
+the first, so a project with ₱400M of approved change orders showed the same *Contract value* as one
+with none.
+
+⚠️ **The headline VALUE stays the signed figure**, and the revision is named beneath it. A planner
+comparing this screen against a signed contract has to find the signed number where they left it;
+the revision is the news, and news belongs in the line that explains.
+
+⚠️ **Approved change orders only.** A cost claim is a recovery against the existing sum, not a
+change to it, and anything still pending has changed nothing yet. Computed through
+`PDClaims.decided` + `PDClaims.sum`, like every other figure here, so "decided" cannot drift from
+what the pipeline table means by it.
+
+### "oldest 45 days" named no record
+It says there is a problem; it does not say **which record to chase**, which is the only action the
+figure supports — and a planner then had to scroll the register and sort it by hand to find out.
+`PDClaims.agingBuckets` now returns `oldestRow` beside `oldest`, and the header names it: reference
+first (what the record is called in an email to the client, and short), description second, clipped.
+
+⚠️ Additive to the shared helper — every existing caller reads `oldest` and is untouched. That
+matters here: `agingBuckets` is read by **three** screens, and the point of `claims.js` is that they
+cannot describe the register differently.
+
+### Tests
+`tools/test-claims.js` — new, **15 passed, 0 failed**, loading `claims.js` the way the page does
+(a real `window`, then the IIFE assigns onto it) rather than a rewritten copy. Covers the cases that
+would each have named the wrong record: a **dateless** record has no age and must not win (it is
+waiting on us, not on the client), a **decided** record is not pending and cannot be the oldest
+thing with the client, and a **tie** resolves to the first stably so the header does not change on
+re-render. Plus the variation rule: approved change orders only, claims and pending excluded.
+
+⚠️ Negative-tested — dropping `oldestRow = r` turns 5 assertions red.
+
+`claims.js` → `?v=20260917a`; module → `?v=20260917b`.
+
+⚠️ **This session's (c) above merges the design away** — the table this figure and this card would
+have decorated does not ship on this branch. `claims.js`'s `oldestRow` addition is unaffected and
+lives on regardless of which dashboard design reads it.
+
+## 2026-09-17 (a) — The record dialog stops clipping, amounts carry commas, and four sentences of glossary become tooltips
+
+Seven things the owner raised on the live project.
+
+**The Affected-work picker clipped.** *"Affected work is the one that clips in the window."* The
+record dialog is the shared `.pd-modal` at 520px, and the picker puts a tree and a programme preview
+side by side — ~220px and ~253px — so the preview's headline wrapped one word per line. Two changes:
+the dialog gets its own width class (`.pd-modal.cc-rec`, 760px, the same idiom as `.boq-wide`), and
+the picker now adapts with a **container query** rather than a media query. ⚠️⚠️ A media query cannot
+fix this and would look like it had: the box is narrow while the viewport is 1,920px, so every
+`max-width` rule would be false exactly when the bug is on screen. `@container` asks how much room
+*this component* has, and the answer holds in all three hosts it is mounted in.
+
+**Date filed / Date submitted did not line up.** `.cc-form` used `auto-fit`, so which fields shared
+a row was an accident of width — and **Status**, in a single cell, shunted the four dates down by
+one and split the pairs. Counted columns plus a full-width Status makes the pairing a property of
+the markup order, which is what expresses the pipeline: filed → submitted, evaluated → approved.
+
+**Amounts carry commas.** `58995925` and `5899592` are one keystroke apart and look identical.
+Grouped on blur, raw on focus — not while typing, which moves the caret to the end and turns editing
+the middle of a number into a fight. Safe because `n()` already **validates** commas rather than
+stripping them.
+
+**Four sentences of glossary left the page.** *"These are tooltips and not necessarily to be shown
+in the main page."* The pipeline definitions now sit on the column headers as `title` text — where
+the word being defined actually is — and each header already carried a short sub-label. The aging
+note became the `title` on the heading it explains. The one line kept is the only part that was not
+a definition: this band covers the whole register and does not follow the filters.
+
+**"No package breakdown yet…" is gone.** *"It doesn't provide any valuable information, it just
+states the current."* And the state it stated is already on screen — the Contract value card's own
+subtext reads *no package breakdown*.
+
+**The scope of works stopped being an aside.** It was `.cc-hint`: muted, small, the style this tab
+uses for footnotes — holding the most substantive sentence on the page, at ~220 characters a line.
+Now a labelled block in body ink, capped at 78ch, clamping behind a disclosure past 320 characters.
+
+`test-boq` 66/0, `wiring-check` 139/0, `dark-remap` 0 findings. Bumped to `?v=20260917a`.
+
+⚠️ **Not all of this survives the (c) merge above.** The dialog-width fix, the date-field pairing,
+the comma-grouped amounts and the header-tooltip glossary are in functions this collision does not
+touch and are live as described. **The "scope of works" `<details>` block is gone** — it lived
+inside the discarded `ccDashHTML`, and its CSS (`.cc-scope*`) was removed as dead code in (c) once
+that was established.
+
 ## 2026-09-16 (e) — Amounts round to the nearest .00 M, values right-align, and a concurrent session's alternate dashboard is merged out
 
 Owner: *"align values right and for amounts round off to nearest .00 M then resolve merge conflicts."*

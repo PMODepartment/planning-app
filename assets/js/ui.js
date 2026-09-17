@@ -62,7 +62,7 @@
         ? '<a class="pd-usermenu-link" href="' + base + 'my-work.html">' + mIco('clipboard') + 'My Work</a>'
         : '') +
       (isAdmin
-        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('settings') + 'Admin</a>'
+        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('users') + 'Users</a>'
         : '');
 
     mount.innerHTML =
@@ -524,14 +524,17 @@
             /* ⚠️ "Users", NOT "Admin" — owner 2026-09-15: *"for admin keep only user
                management and rename to Users."* admin.html dropped its Projects tab the
                same change (projects.html already owns that, group heads included), so
-               the page is user management now and the label says so.
+               the page is user management now and the label says so. A later owner ask
+               ("change also the icon of users to users") swapped the glyph too, from the
+               gear (`settings`) to the people pair (`users`) — the popup menu's matching
+               link (renderUserBar, above) carries the identical icon.
                ⚠️ THE KEY `admin` IS DELIBERATELY UNCHANGED — same call as the My Work
                row's `personal-dashboard` key just above: `cls('admin')` here and the
                `active: 'admin'` admin.html itself passes to renderNav must keep matching
                each other, and the filename/href stays `admin.html` so nothing that
-               already links here breaks. Only the visible word moved. */
+               already links here breaks. Only the visible word and the icon moved. */
             '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Users">' +
-              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Users</span></a>'
+              '<span class="pd-navico" data-ico="users"></span><span class="pd-navtxt">Users</span></a>'
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled && visible(m); });
@@ -1050,6 +1053,71 @@
     };
   }
 
+  /* ==== ICON-ONLY DROPDOWN (the export control, and anything like it) ========================
+     Owner 2026-09-16: *"I've noticed across multiple modules there are different UI's for export.
+     Let's make this consistent."* There were four idioms: this one, a bespoke copy in Issues &
+     Concerns, a plain single-format button in seven modules, and a File menu in Project Schedule.
+
+     """ + W + W + u""" MOVED HERE FROM minutes-of-meeting, NOT RE-WRITTEN. That module had already made it
+     generic — id, icon, title, options, an optional extra class, a wire step and a global close —
+     and every hard-won detail below came with it, including the `:not([hidden])` fix recorded in
+     its own stylesheet. Re-deriving it here would have re-derived the bugs.
+     """ + W + u""" `id` must be unique per instance ON SCREEN. A list view and a detail view may each
+     render one, never both at once, so one id per call site is enough; `wireIconMenu` re-binds on
+     every repaint.
+     """ + W + u""" A module with ONE export format keeps a plain button — a one-entry menu is a control
+     that cannot do anything. Consistency here is the trigger's look and its place in the bar,
+     which the module-bar rules already give it, not a menu for its own sake. */
+  function iconMenuHTML(id, icon, title, options, extraBtnCls) {
+    return '<div class="pd-iconmenu" id="' + id + '">' +
+      '<button type="button" class="pd-btn pd-iconmenu-btn' + (extraBtnCls ? ' ' + extraBtnCls : '') +
+        '" title="' + esc(title) + '" aria-label="' + esc(title) + '">' +
+        '<span data-ico="' + icon + '" data-ico-size="16"></span></button>' +
+      '<div class="pd-iconmenu-menu" hidden>' +
+        options.map(function (o) {
+          return '<button type="button" class="pd-iconmenu-item" data-val="' + esc(o.value) + '">' +
+            esc(o.label) + '</button>';
+        }).join('') +
+      '</div></div>';
+  }
+  /* Every open menu closes before a new one opens; a click anywhere outside closes whatever is
+     left. """ + W + u""" The outside-click listener is attached ONCE per root, not once per wire() call —
+     these get re-wired on every repaint, and a listener added each time is a leak that also fires
+     the close N times. */
+  function closeIconMenus(root) {
+    (root || document).querySelectorAll('.pd-iconmenu-menu').forEach(function (m) { m.hidden = true; });
+  }
+  var _iconMenuDocBound = false;
+  function wireIconMenu(root, id, onPick) {
+    root = root || document;
+    var wrap = root.querySelector('#' + id); if (!wrap) return;
+    var btn = wrap.querySelector('.pd-iconmenu-btn'), menu = wrap.querySelector('.pd-iconmenu-menu');
+    if (!btn || !menu) return;
+    btn.onclick = function (e) {
+      e.stopPropagation();
+      var was = !menu.hidden;
+      closeIconMenus(document);
+      menu.hidden = was;
+      btn.classList.toggle('is-active', !menu.hidden);
+    };
+    wrap.querySelectorAll('.pd-iconmenu-item').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        menu.hidden = true;
+        btn.classList.remove('is-active');
+        onPick(b.dataset.val);
+      };
+    });
+    if (!_iconMenuDocBound) {
+      _iconMenuDocBound = true;
+      document.addEventListener('click', function () {
+        closeIconMenus(document);
+        document.querySelectorAll('.pd-iconmenu-btn.is-active')
+          .forEach(function (x) { x.classList.remove('is-active'); });
+      });
+    }
+  }
+
   // ---- Shared collapsible filter group (search box + selects behind a
   // funnel toggle) --------------------------------------------------------
   // Generalises the pattern Issues & Concerns / Progress Photos shipped by
@@ -1157,6 +1225,7 @@
 
   window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell,
                 enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar,
+                iconMenuHTML: iconMenuHTML, wireIconMenu: wireIconMenu, closeIconMenus: closeIconMenus,
                 acceptSuggestOnTab: acceptSuggestOnTab, bindHistoryState: bindHistoryState,
                 renderNav: renderNav, renderSwitcher: renderSwitcher,
                 renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
