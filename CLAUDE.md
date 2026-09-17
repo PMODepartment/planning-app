@@ -106,8 +106,8 @@ developer, plug into one shared shell.
 
 ### 2026-09-17 (am) — The step lede loses its cap too
 
-Owner: *"the lede too"* — after *(al)* removed the cap from  and reported that
- was still , filling **43%** of his 1398px panel.
+Owner: *"the lede too"* — after *(al)* removed the cap from `.sbld-how` and reported that
+`.sbld-panel .sbld-lede` was still `max-width:70ch`, filling **43%** of his 1398px panel.
 
 ⚠ The case for keeping it was put in *(al)* and declined: a one-sentence purpose line is genuinely
 prose, where the How pane is a scanned list of mechanics, so 70ch had a better argument here than
@@ -118,18 +118,31 @@ there. That is why it was raised rather than swept, and why it changed only on t
 Topology only …”*) drops from two lines to **one** at 913px and above.
 
 ⚠⚠ **Scanned the whole stylesheet for the same shape rather than waiting for a third report.** Four
-rules cap in ; the other three stay, and here is why:  and  belong to
-the schedule **summary** view (emitted by  /  / ), not to the Setup, and
- is the holiday chip’s deliberate 22ch truncation — which carries a title, added in
-*(z)* for exactly that reason.
+rules cap in `ch`; the other three stay, and here is why: `.ps-smy-note` and `.ps-smy-vs`
+belong to the schedule **summary** view (emitted by `sect` / `card` / `smyMsStrip`), not to
+the Setup, and `.ps-cal-holname` is the holiday chip’s deliberate 22ch truncation — which carries
+a title, added in *(z)* for exactly that reason.
 
-**Verified:**  683/683 ·  4/4 ·  139/0 ·  9
-(baseline) ·  0 findings · inline scripts parse.   → .
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · inline scripts parse. `modules-grid.js` `?v=` → `20260917zzk`.
 
 ⚠ Also confirmed this turn: the class-code migration **is applied** — the owner ran
- and got **466**, which is the expected post-state.
-The earlier  did mean “already matches the template”, and the absolute count is what
+`select count(*) from class_codes where active` and got **466**, which is the expected post-state.
+The earlier `0 / 0 / 0` did mean “already matches the template”, and the absolute count is what
 settled it rather than the assumption.
+
+⚠⚠ **This entry is a repair.** `0c325b4` appended it by piping a double-quoted heredoc through
+the shell, so bash **command-substituted every backticked term** and the entry landed on `main` with
+~20 identifier names silently deleted — `.sbld-how`, `max-width:70ch`, the four `ch` rules,
+every tool name on the Verified line. What remained was grammatical English with holes in it, which
+is worse than a visible corruption: nothing in the diff looks wrong.
+
+⚠ **Scope, checked rather than assumed:** the damage stopped at `CLAUDE.md`. The commit message was
+written without backticks and is intact, and the CSS comment at `.sbld-panel .sbld-lede` went through
+the Write tool and still carries all of its identifiers. The shipped fix was never at risk — only
+the record of it. ⚠ Anything containing a backtick or a backslash escape goes through Write/Edit,
+never a shell string; this is the fourth time that trap has been hit here and the first time it
+survived as far as `origin/main`.
 
 ### 2026-09-17 (al) — The "How to use this step" cap was tuned on the wrong viewport, twice
 
