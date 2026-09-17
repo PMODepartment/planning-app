@@ -928,10 +928,46 @@ export function bandForFrame(placements, i, frameWidth, featherPx) {
 // dominated by what entered and left the view, not by exposure.
 // ---------------------------------------------------------------------------
 
-// A chained gain is a product, so a small consistent bias compounds. These
-// bound it: no frame is ever scaled beyond this range, whatever the chain says.
-export const GAIN_MIN = 0.72;
-export const GAIN_MAX = 1.38;
+// ⚠⚠ A CHAINED GAIN IS A PRODUCT, SO A SMALL CONSISTENT BIAS COMPOUNDS — AND
+// THE FIRST CUT OF THIS BOUNDED THAT IN THE ONE PLACE THAT ALSO BOUNDS THE
+// SCENE. The reasoning was right and the placement was not. A compounding
+// PER-PAIR bias is bounded by bounding THE PER-PAIR STEP (GAIN_STEP_MAX,
+// below), which is where it actually compounds; bounding only the ACCUMULATED
+// gain additionally truncates the legitimate total range a real room has.
+//
+// Measured on a dim interior wall beside a bright window — the owner's own
+// scene, a 3.35x auto-exposure swing across one capture: the chain needs gains
+// spanning 0.669..2.238, and [0.72, 1.38] could express only up to 1.38. So
+// 125 of 144 frames were PINNED AT A BOUND, and the truncated correction landed
+// as a hard brightness step at each of their seams — worst 5.92 levels, 30
+// seams past 2 levels, on a FLAT wall where any step at all is an artefact.
+//
+// ⚠ That is the shape of the report, and it is why the cause was not one of the
+// obvious ones. The streaks are NOT one per seam — at ~29 composite px per band
+// there are dozens of seams on screen at once — they are a handful, exactly
+// where the clamp bit hardest. Three plausible causes (a luminance-only gain
+// leaving a colour step, the feather's ramp shape, generational JPEG on the
+// intermediate) were each measured and each REFUTED before this one was found.
+//
+// Widened to what a real room needs. ⚠ The backstop is still real: it is what
+// stops a PARTIAL capture (no loop closure to remove a linear drift) running
+// away without limit. It simply no longer fires on an ordinary indoor pan.
+export const GAIN_MIN = 0.40;
+export const GAIN_MAX = 2.50;
+
+// ⚠⚠ THE PER-PAIR BOUND — AND IT IS HERE BECAUSE THIS IS WHERE A BIAS
+// COMPOUNDS. Consecutive frames overlap ~96% (144 frames over a turn at ~65°
+// HFOV), so they are two photographs of very nearly the same scene: a genuine
+// per-pair exposure ratio is therefore SMALL, and a large one is a measurement
+// error — a thin overlap, someone walking through, a specular flare — not a
+// real exposure change. Bounding it stops ONE bad pair from displacing every
+// frame after it, which is the failure the accumulated clamp was reaching for
+// and could only address after the damage was already in the chain.
+// ⚠ 0.10 is ~10.5% per pair: far above any real auto-exposure step between two
+// frames 2.5° apart (the 3.35x swing above averages 0.8% per pair), and far
+// below the excursion a broken pair produces. It does not bite on any capture
+// measured here — it is a guard, not a correction.
+export const GAIN_STEP_MAX = 0.10;
 
 // ⚠⚠ THE DEADBAND IS NOT A TUNING KNOB — WITHOUT IT THIS FEATURE MAKES A
 // CONSTANT-EXPOSURE CAPTURE WORSE, AND THAT WAS MEASURED, NOT FEARED.
@@ -1006,11 +1042,17 @@ export function gainChain(ratios, opts) {
   const n = (ratios ? ratios.length : 0) + 1;
   const logs = new Float64Array(n);
   const dead = (opts && typeof opts.deadband === "number") ? opts.deadband : GAIN_DEADBAND;
+  const stepMax = (opts && typeof opts.stepMax === "number") ? opts.stepMax : GAIN_STEP_MAX;
   for (let i = 1; i < n; i++) {
     const r = ratios[i - 1];
     const v = (typeof r === "number" ? r : (r && r.ratio)) || 1;
     let l = v > 0 ? Math.log(v) : 0;
     if (Math.abs(l) < dead) l = 0;
+    // ⚠ Bound the STEP, not only the total — see GAIN_STEP_MAX. One bad pair
+    // must not displace every frame after it, and the accumulated clamp can
+    // only notice that long after the chain has already carried it.
+    if (l > stepMax) l = stepMax;
+    else if (l < -stepMax) l = -stepMax;
     logs[i] = logs[i - 1] + l;
   }
   if (opts && opts.closeLoop && n > 2) {

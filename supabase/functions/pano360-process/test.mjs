@@ -1072,5 +1072,123 @@ function cropFrame(scene, sceneWidth, sceneHeight, frameWidth, frameHeight, x, y
 }
 
 // ---------------------------------------------------------------------------
+// [13] THE CLAMP WAS BOUNDING THE SCENE, NOT THE BIAS
+//
+// Owner, on the SECOND pass, with a real capture: "there are still a few
+// streaks". ⚠⚠ THE WORD THAT MATTERED WAS "FEW". At ~29 composite px per band
+// there are DOZENS of seams on screen at once, so a handful of streaks cannot
+// be a per-seam cause — and three per-seam candidates were each measured and
+// each REFUTED before this one was found: a luminance-only gain leaving a
+// colour step on a saturated wall (1 level, and a per-channel gain was no
+// better), the feather's linear ramp leaving a slope discontinuity for Mach
+// banding to find (0.716 against 0.716 for smoothstep), and generational JPEG
+// on the intermediate canvas (there is none — it is stored as raw bytes).
+//
+// What is rare is a CLAMP, which does nothing at all until the scene asks for
+// more range than it allows and then truncates hard. See GAIN_MIN/GAIN_MAX.
+// ---------------------------------------------------------------------------
+{
+  const FW = 320, FH = 120, N = 144, STEP = 11;
+  // A real room, and a real TURN: a dim interior wall, one bright window, back
+  // to the wall. On a full turn the exposure necessarily returns to where it
+  // began, which is what makes loop closure the appropriate guard below.
+  const trueLum = (x) => {
+    const t = (((x % (STEP * N)) + STEP * N) % (STEP * N)) / (STEP * N);
+    return 60 + 185 * Math.exp(-Math.pow((t - 0.5) / 0.13, 2));
+  };
+  // the camera's own auto-exposure, driving each frame toward a mid grey
+  const ae = (i) => {
+    let s = 0;
+    for (let x = 0; x < FW; x++) s += trueLum(i * STEP + x);
+    return Math.max(0.35, Math.min(1.6, 110 / (s / FW)));
+  };
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const grays = [];
+  for (let i = 0; i < N; i++) {
+    const g = new Uint8Array(FW * FH), a = ae(i);
+    for (let x = 0; x < FW; x++) {
+      const v = Math.max(0, Math.min(255, trueLum(i * STEP + x) * a + (rnd() - 0.5) * 2));
+      for (let y = 0; y < FH; y++) g[y * FW + x] = v | 0;
+    }
+    grays.push(g);
+  }
+  const ratios = [];
+  for (let i = 1; i < N; i++) {
+    ratios.push(SC.overlapMeanRatio(grays[i - 1], FW, FH, grays[i], FW, FH, STEP, 0).ratio);
+  }
+  const aes = Array.from({ length: N }, (_, i) => ae(i));
+  const swing = Math.max(...aes) / Math.min(...aes);
+  ok(`[13] the fixture is a real one, not a tuned one: the camera's OWN auto-exposure swings ${swing.toFixed(2)}x across the capture`,
+    swing > 3);
+
+  // Residual seam step: how far two neighbouring frames still disagree AFTER
+  // their gains, in levels, at the midpoint they share. On a flat wall any
+  // step at all is an artefact, so this needs no tolerance to be meaningful.
+  const residual = (gains) => {
+    let worst = 0, ge1 = 0, ge2 = 0;
+    for (let i = 1; i < N; i++) {
+      const mid = (i - 0.5) * STEP + FW / 2;
+      const d = Math.abs(trueLum(mid) * ae(i - 1) * gains[i - 1] - trueLum(mid) * ae(i) * gains[i]);
+      if (d > worst) worst = d;
+      if (d >= 1) ge1++;
+      if (d >= 2) ge2++;
+    }
+    return { worst, ge1, ge2 };
+  };
+
+  const now = SC.gainChain(ratios, { closeLoop: true });
+  // ⚠ THE CONTRAST IS THE ALGORITHM EXACTLY AS IT SHIPPED — no per-pair bound,
+  // and the accumulated gain clamped to the old [0.72, 1.38] after centring,
+  // which is where the old code clamped. Without this the block would assert
+  // that the new code is fine and prove nothing about what it fixed.
+  const was = Array.from(
+    SC.gainChain(ratios, { closeLoop: true, stepMax: Infinity }),
+    (g) => (g < 0.72 ? 0.72 : (g > 1.38 ? 1.38 : g)));
+
+  const rNow = residual(now), rWas = residual(was);
+  const pinned = was.filter((g) => g <= 0.72 + 1e-9 || g >= 1.38 - 1e-9).length;
+
+  ok(`[13] REPRODUCES THE REPORT: under the old bounds ${pinned} of ${N} frames are PINNED AT A CLAMP, so the correction is truncated rather than applied`,
+    pinned > N / 2);
+  ok(`[13] …and the truncation lands as a hard brightness step at their seams — worst ${rWas.worst.toFixed(2)} levels, ${rWas.ge2} seams past 2 levels`,
+    rWas.worst > 3 && rWas.ge2 > 10);
+  ok(`[13] THE DEFECT IS RARE, NOT PER-SEAM — ${rWas.ge2} of ${N - 1} seams — which is exactly why three per-seam causes were measured and refuted first`,
+    rWas.ge2 < (N - 1) / 3);
+  ok(`[13] with the per-pair bound the same capture leaves worst ${rNow.worst.toFixed(2)} levels and ${rNow.ge1} seams past 1 level`,
+    rNow.worst < 1.5 && rNow.ge1 === 0);
+  ok(`[13] …because the range the scene actually needs is now expressible (max gain ${Math.max(...now).toFixed(3)}, where the old bound stopped at 1.38)`,
+    Math.max(...now) > 1.38);
+
+  // ⚠⚠ THE TWO GUARANTEES THE WIDENED BOUND MUST NOT COST.
+  const flat = Array.from({ length: N - 1 }, () => 1.0);
+  ok('[13] a CONSTANT-exposure capture still gets gains of exactly 1 — the regression this feature once caused (a ±2% ramp over frames that were all identically exposed) stays fixed',
+    Array.from(SC.gainChain(flat, { closeLoop: false })).every((v) => Math.abs(v - 1) < 1e-12));
+
+  // A consistent per-pair bias is exactly a LINEAR drift in log space, and
+  // loop closure removes a linear drift outright — so on a full turn (every
+  // real 360° capture) the accumulated clamp was never the working guard.
+  const biased = Array.from({ length: N - 1 }, () => 1.005);
+  ok('[13] a consistent bias just above the deadband is removed OUTRIGHT by loop closure, so widening the accumulated bound costs the runaway guard nothing on a full turn',
+    Array.from(SC.gainChain(biased, { closeLoop: true })).every((v) => Math.abs(v - 1) < 1e-9));
+
+  const open = SC.gainChain(biased, { closeLoop: false });
+  ok(`[13] on a PARTIAL capture there is no loop to close, and the accumulated bound is still the backstop and still holds (${Math.min(...open).toFixed(3)}..${Math.max(...open).toFixed(3)})`,
+    Array.from(open).every((v) => v >= SC.GAIN_MIN - 1e-9 && v <= SC.GAIN_MAX + 1e-9));
+
+  // The per-pair bound itself: one impossible pair must not displace the rest.
+  const spike = [1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 1.0];
+  const spread = (a) => Math.max(...a) / Math.min(...a);
+  const bounded = SC.gainChain(spike, { closeLoop: false });
+  const unbounded = SC.gainChain(spike, { closeLoop: false, stepMax: Infinity });
+  ok(`[13] ONE impossible pair — 4x between two frames that overlap ~96% — no longer displaces every frame after it: spread ${spread(bounded).toFixed(2)}x against ${spread(unbounded).toFixed(2)}x unbounded`,
+    spread(bounded) < spread(unbounded) / 2);
+
+  const maxStep = Math.max(...ratios.map((r) => Math.abs(Math.log(r))));
+  ok(`[13] …and it is a GUARD, not a correction: the real capture's largest per-pair step is ${maxStep.toFixed(4)}, well inside GAIN_STEP_MAX ${SC.GAIN_STEP_MAX}, so it never bites on an honest pan`,
+    maxStep < SC.GAIN_STEP_MAX);
+}
+
+// ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
