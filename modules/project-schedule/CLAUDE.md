@@ -1,3 +1,417 @@
+## 2026-09-18 (d) — The Activities step: SAP Activities, one heading per trade, and an activity that can be several
+
+Owner's nine numbered items on Schedule Setup ▸ Activities: *"instead of Holding List, name this
+table as SAP Activities"*, *"if activity is already in the activity list, no need to include in SAP
+Activities list"*, *"fit width of tile to selected activity table and increase width of holding
+list"*, *"The selected activity table should also be grouped by trade"*, the class-code corrections,
+*"the add custom activities button should be beside load typical set"*, *"when adding custom
+activity, code should not be editable and should always be blank. if activity comes from SAP, trade
+should also be not editable/locked"*, the checkbox/merge item, and *"remove construction library.
+this is not needed"*.
+
+### ⚠️⚠️ ITEM 8 IS THE WHOLE CHANGE, AND THE MODEL IS A LIST ON THE ROW, NOT A SECOND TABLE
+
+*"this merged activity carries the class codes of all its child activities."* An activity already
+carries one code; a merged one carries several. That could have been a join table, a second store, or
+a delimited string in the existing column. It is `a.kids` — an array of the activities that went in —
+for one reason: **every reader that asks "what code is this?" keeps asking `a.code`**, and only the
+things that genuinely need the full set (the dedup, the `+N` badge, its tooltip) call `actCodes(a)`.
+A delimited string would have put parsing into every one of those readers; a second table would have
+put a fetch into a step that holds its whole state in one `schedule_builder` row.
+
+- ⚠️⚠️ **`normActivity` IS A WHITELIST, so `kids` had to be named in it or the merge would have
+  survived the session and vanished on reload** — silently, because a whitelist drops what it does
+  not know without erroring. Same for `normalize`, which is what runs on load.
+- ⚠️ **`normKids` returns `null` when the list is empty, never `[]`.** An empty array is truthy, so
+  `actIsMerged` would have answered true for every ordinary activity that had ever been unmerged —
+  the `[]`-is-truthy family this repo has shipped twice (`ensureCodes`, `ensureSugg`).
+- ⚠️⚠️ **THE PUSH STILL WRITES ONE `class_code`, AND THAT IS STATED RATHER THAN HIDDEN.**
+  `taskPayload` has one column for it, so a merged row pushes its first child's code; the rest live on
+  `kids` and are surfaced by the `+N` badge, whose `title` names every one. Widening the push is a
+  schema decision about `project_schedule`, not something a merge dialog gets to take.
+- ⚠️ **Merging is refused across trades**, per the owner, and the button says which refusal applies
+  rather than being dimmed with no reason: nothing ticked, one ticked, or a selection spanning trades.
+- ⚠️ **The merged duration defaults to the SUM of its children, not the max** — these are sequential
+  packages inside one zone, which is the case the owner described (masonry, then plastering, then
+  tiling). It is a judgement call, so the toast says so and the cell stays editable.
+- ⚠️ **`→` explodes a merged row back into separate catalog entries**, or a merge would be one-way and
+  the only undo would be retyping the children.
+
+### ⚠️⚠️ A LOCKED CELL STAYS AN INPUT, BECAUSE PDGrid BUILDS ITS COLUMN ORDER FROM THE CELLS
+
+Item 7 asks for a Code that cannot be edited and a Trade that is locked on a SAP activity. The obvious
+rendering is a `<span>`. `PDGrid.index()` builds the column order from **the first appearance of each
+`data-f`**, so a row that drops a cell reorders the grid's idea of its own columns — Tab and Ctrl+D
+then move along a different axis from the one on screen. A locked cell is therefore a `readonly`
+`.sbld-cell` input carrying its `data-f`, marked `.sbld-lock`.
+
+- ⚠️ **The refusal is in the WRITER, not only the renderer.** `xlSetById` and `t4Set` both open with
+  `if (xlFieldLocked(a, k)) return;` — a paste spills across cells and would otherwise write straight
+  past a readonly control.
+- ⚠️⚠️ **AND THE LOCKED LOOK WAS LOSING A SPECIFICITY TIE, WHICH ONLY MEASURING FOUND.**
+  `.sbld-xl input.sbld-lock` is (0,2,1); `table.sbld-xl input:not([type="checkbox"])` is (0,2,2) and
+  sets `color:var(--pd-ink)`. So the muted ink never applied and **every locked cell rendered
+  identical to an editable one** — the one thing the class exists to prevent. The rule was in the
+  cascade and losing, which reads exactly like a rule that is working. Moved below the generic rule
+  and prefixed with `table` to tie at (0,2,2) and win on source order; measured after, 7.07 light /
+  7.02 dark against the row's own ground.
+
+### ⚠️⚠️ TWO REDS AT 10px WERE UNDER AA, AND THE FIX IS THIS MODULE'S OWN SETTLED TREATMENT
+
+The `+N` badge and the *"N selected"* count both started as `color:var(--pd-red)` at 10px/700.
+Measured, composited over the ground each actually paints on:
+
+| | light | dark |
+|---|---|---|
+| `.sbld-xlmore` (`+N`) | **4.12** | **3.40** |
+| `.sbld-xlgrp-s` (N selected) | **3.74** | **4.14** |
+
+Both under AA's 4.5 for small text, in one theme or the other. `--pd-red` is a **fill** colour — white
+sits on it — which is the same trap this file already records for `--pd-warn` (*"a SURFACE colour at
+3.46:1 on white"*). The fix is not a new colour: `.ps-vs-chip.on`, in this very module, settled it on
+2026-09-12 — *"INK on the red tint, not brand red as text … the red stays as the border and the tint,
+which carry the state without being the text."* Both badges are now ink on a 14% brand tint:
+**13.30 / 10.98** and **12.18 / 13.17**. ⚠️ The tint is a fixed brand `rgba` on purpose — it composites
+over whatever ground it lands on, so one value is correct in both themes and `dark-remap` is right to
+exempt it.
+
+### Items 1–6 and 9
+
+- **1 · SAP Activities.** The pane's heading, its empty states and its two hints.
+- **2 · The dedup reads `actCodes`, not `a.code`.** Both loaders (`+ Library` and `+ From BOQ`) now
+  index every code an activity carries, so a code that arrived as a merge CHILD is not offered again —
+  which is the case the owner's wording does not cover and the one a merge creates.
+- **3 · The grid tile fits its table.** `flex:0 1 auto; width:max-content; max-width:100%` on
+  `.sbld-xlwrap`, and the pane takes the rest (`flex:1 1 260px`).
+  ⚠️ `width:max-content` is what closes the ~3px gap that was leaving a hairline scrollbar on a grid
+  that fits. Measured: at 1920 the pane is **733px**, at 1100 **274px**, the grid scrolls internally
+  and **the page never scrolls sideways**.
+- **4 · One heading row per trade**, in `GROUPS` order, unknown trade last.
+  ⚠️⚠️ **`sortActivities` sorts the ARRAY, not the view** — the same rule `sortCatalog` already
+  follows, because `←`/`→` and the push read `cfg.activities` in its own order, so a renderer that
+  sorted only what it drew would show one order and build another. ⚠️ It is called in `normalize`
+  **and** in the renderer: assertion 9.4 caught the gap — nothing re-sorted the array when a planner
+  changed a row's trade, so the display drifted from push order after one edit. The renderer's call is
+  idempotent, stable, and never calls `markDirty()` — re-sorting is not an unsaved change.
+- **5 · The chart is corrected.** `30050`, `37050`, `38050` and `39050` move `SW` → `OT`; `39100`,
+  `39150`, `39200`, `39250`, `39300` and `39350`, `39400` are removed. `CLASS_CODE_DB` **197 → 190**,
+  and four stale *"197"* claims in comments are corrected with it.
+- **6 · `+ Custom` sits beside `Load typical set`**, with `Merge N` and `Clear` in the same row —
+  `Merge` disabled with its reason in `title`, `Clear` present only when something is ticked.
+- **9 · The Construction Library view is deleted, not hidden** — 56 functions (`stLibrary`, every
+  `lib*`, the view-only `abs*`), `stTabbed`, 40+ CSS rules that could no longer match, and the
+  `STEP_TABS` entry. Found with a fixpoint unreachable-function pass rather than a line range, which
+  is what kept the **10 data-model functions the push's `dimKey` needs for the `agroup` WBS dims**.
+  ⚠️ Deep links still resolve: `'Library'` and `'Construction Library'` alias onto the Activities step.
+  ⚠️ **Reported rather than acted on:** the grouping data model now survives with no authoring
+  surface. It degrades gracefully — the push dialog already hides a grouping rung on a project that
+  has none — but nothing can create one any more, and that is the owner's call.
+
+### ⚠️ Four defects found by RENDERING, none of which is visible by reading
+
+1. **The `+N` badge overflowed its own cell onto the activity name** — it rendered as
+   *"M+2sonry & plaster"*. The Code cell is a plain `<td>` holding an input at `width:100%`, so the
+   badge had nowhere to go. `display:flex` on the cell plus `flex:1 1 auto; min-width:0` on the input.
+   ⚠️ The `min-width:0` is load-bearing: an `<input>` defaults to `min-width:auto`, which resolves to
+   its intrinsic size and refuses to shrink.
+2. **The checkbox gutter overflowed at 40px** → `RNW = 46`, and the column-resize handler's own
+   hardcoded `var tot = 40` had to follow it or the drag arithmetic would have disagreed with the
+   layout.
+3. **`table.sbld-xl input { width:100% }` stretched the gutter checkbox across its whole cell.**
+   ⚠️⚠️ **THE THIRD TIME A TEXT-FIELD WIDTH RULE HAS CAUGHT A CHECKBOX IN THIS APP** — after
+   `.pd-field` and the wizard's `.ccw-main input` over the class-code ladder. `:not([type="checkbox"])`.
+4. **The grid wrapper measured ~3px narrower than the table inside it**, which is a scrollbar on a
+   grid that fits. `width:max-content; max-width:100%`.
+
+### Verified
+
+**`test-actsetup` 133 assertions, 0 failing** — the renderer, `xlFieldLocked`, `actIsSap` and the
+whole merge model sliced out of the shipped file **by name** and executed. New sections cover the
+locked cells, the writers refusing, the trade grouping (**9.4 asserts the ARRAY is sorted**, not the
+markup), the checkbox gutter, the merge rule/payload/refusals, the collapsible children, `actCodes`
+dedup, and the base-side contrast. ⚠️⚠️ **The contrast is pinned to the SHA `d0da7cd` and it BITES:
+30 failures there** — the base has row numbers, no checkboxes, no trade headings and no Merge control.
+
+**`test-actdnd` 48/0** (`--base` 5/5). ⚠️ One assertion **retargeted, not weakened**: it pinned the
+literal selector `table.sbld-xl input, table.sbld-xl select {`, which the checkbox fix above changed.
+The property under test (`font:inherit` carrying the type rung into every editable cell) is unchanged;
+only the selector moved, and the test says so. ⚠️ Its survivor guard drops `LD Exterior Lighting
+Works` with a note — that is code `39350`, removed by item 5.
+
+**Every project-schedule suite green on the merged tree:** actdnd 48, actsetup 133, autotrace 32,
+builder 149, calendar-editor 23, cpm 28, critwbs 26, health 30, lsm 683, shapeedit 36, sitefit 31,
+syntax 4, towerseq 48, towertypes 79, wbsfile 28, zoneoverlap 57, zoneplan 50.
+`wiring-check` **139/0** · `dark-remap` **0 findings** · `dead-hooks` **9**, the documented baseline ·
+`loc-key-agree` clean · `selectall-key` 99 safe / 0 broken · `test-calendar` 71/0. CSS braces
+**2422/2422**, 0 NUL bytes, the inline block parses.
+
+**Measured in a browser** against the **extracted** stylesheet at 1920 / 1600 / 1280 / 1100: the tile
+fits its table, the pane widens to 733px and shrinks with it, the grid scrolls internally, **the page
+never scrolls sideways**, 0 page errors — and a dark-mode pass in which **every new colour resolves
+through a `--pd-*` token**: the trade heading, its name, the caret, the locked cell and the child row
+all change between themes, and the only thing that does not is the brand tint, which is exempt by
+design.
+
+### ⚠️⚠️ TWO HARNESS FAULTS, BOTH OF WHICH REPORTED THE OPPOSITE OF THE TRUTH
+
+1. **The harness served a STALE snapshot.** `page.html` is generated once from the shipped file, and
+   every measurement in this pass was taken against a build several fixes old. The locked-cell fix
+   above *"did not take"* twice, and the geometry numbers were describing a file that no longer
+   existed. **Regenerate the page before every measurement, or the harness is testing history.**
+2. **The contrast harness read a 14% tint as an opaque colour**, so the ink-on-tint fix measured
+   **3.96 / 3.59** — worse than the thing it replaced — for a change that actually measures
+   **13.30 / 10.98**. `groundOf` now walks up **compositing** translucent layers rather than stopping
+   at the first non-zero alpha. This repo already records the same correction for the sandbox card.
+
+⚠️ **NOT VERIFIED SIGNED IN.** No merge has been saved to a real `schedule_builder` row and no merged
+activity has been pushed, so the one thing worth watching on the first real use is what the schedule
+receives for a merged row: one `class_code`, the first child's, with the rest on `kids`.
+
+⚠️ **Merged `origin/main` (7 commits) before shipping** — the tower-types restructure and the
+Calendars rework, **1,729 lines of this same file**. It auto-merged with no conflicts, and a clean
+auto-merge is not evidence: both sides were checked present afterwards (`towerType` ×9, `ps-cal-`
+×184, `calwiz` ×52 against this change's own markers) and **main's two new suites, `test-towertypes`
+79/0 and `test-calendar-editor` 23/0, were re-run on the merged file**.
+
+⚠️⚠️ **RE-LETTERED `(c)` → `(d)`, AND `MODULE_V` RE-DERIVED TO `20260918e`, BECAUSE MAIN TOOK BOTH
+OF MINE WHILE THIS SAT OPEN.** Main's own Project Phases work independently published a
+`2026-09-18 (c)` in both changelogs **and** independently chose `MODULE_V = 20260918d` — the identical
+string this branch had already picked. ⚠️ The letter conflicts loudly and the token does **not**: both
+sides wrote the same characters, so git merged `modules-grid.js`, `dashboard.html` and `modules.html`
+**silently, with no conflict at all**, leaving one cache-bust token covering two different builds. A
+browser holding main's `d` would never have fetched this branch's bytes. Found by listing every
+`20260918*` token on **both refs before resolving** rather than after — the eighth time this log has
+recorded that shape, and the second time in two days that it merged clean. Both entries are kept
+whole; the one merging in is the one that moves, per this file's own rule. `MODULE_V` → `20260918e`,
+sort-checked past both sides' `d`.
+## 2026-09-18 (c) — Project Phases: one tree per phase, drawn as a Gantt you can draw relationships on
+
+Owner, five items on Schedule Setup ▸ Project Phases: *"remove the duplicate branch and paste outline
+buttons as well as add WBS. no other WBS is allowed aside from initiation, planning, execution
+(fixed), close-out. no need also for reset WBS in tools"* · *"remove also add branch for all the
+phases"* · *"when phase is clicked, provide button for add WBS and add activity. no need for reset to
+typical set inside phase"* · *"when add WBS, add it as a sibling WBS to the activity or WBS selected.
+WBS can be dragged to the left to make it a parent. activities can also be dragged to the WBS to
+place inside or outside the WBS. no need for the WBS branch column. no need also for the dates"* ·
+*"instead of a plain table, this should be a gantt chart per phase, in the gantt chart, users can
+draw lines between activities to define sequence. right clicking on arrow also allows user to define
+lag between activities as well as relationship type - FS, SS, FF, SF."*
+
+### ⚠️⚠️ THE FOUR-PHASE RULE IS NOW TRUE BY CONSTRUCTION, NOT BY CONVENTION
+
+Every control that could author a branch at the top level is gone: **Add WBS**, **Paste outline…**
+and **Duplicate branch…** off the tools row, **Reset WBS…** off the Tools popover, and
+**+ Add branch** off every phase rail. What replaces all five is one **+ Add WBS** per phase card,
+which resolves its parent inside that phase and cannot reach the top level at all.
+
+⚠️ **Their handlers were deleted in the same edit.** `getElementById(…).onclick` on a missing node
+throws *"Cannot set properties of null"* and kills every wiring line **below** it — so a button
+removed from the markup alone takes the rest of the page down. This repo has already paid for that
+shape once (2026-09-11 b1).
+⚠️ `openWbsOutline`, `wbsDuplicate` and `wbsResetTree` survive **uncalled**, named in a comment. Each
+is a large modal whose deletion is its own change; nothing else calls them.
+⚠️ **Adopt existing WBS stays.** It *repairs* an imported tree rather than authoring one, and it is
+what the "un-adopted branches" toasts send a planner to.
+⚠️ **Reported, not removed: `From project…` is still there and still copies a whole foreign WBS in at
+the top level.** It was not on the owner's list, so it is named here rather than taken out
+unasked — but it is the one remaining hole in the rule above.
+
+### ⚠️⚠️ ONE TREE, WHERE THERE WERE A LIST AND A TREE
+
+The card carried two blocks with a long note explaining that they are not two views of one thing: the
+planned activity **list** (`cfg.phases`, a plan) and the live WBS **tree** (`wbs_nodes`, a record).
+That is still true of the data — the activities are not in the database until the push — and it
+stopped being a reason to draw them apart the moment the owner asked to drag an activity **into** a
+branch: a drag needs both ends on screen at once.
+
+So a phase is one tree now, branches with their activities nested inside, and:
+
+| | |
+|---|---|
+| the **WBS column** | gone — tree position says which branch an activity is in |
+| the **Dates column** | gone — a Gantt states dates as bars, and a text column beside them is the same fact in the narrower form |
+| the **‖ concurrent tick** | gone — SS+0 says the same thing in the same vocabulary as the other three types |
+
+⚠️ `phWbsBlock` gained a `noTree` flag for the three editable cards. Leaving the `data-phwbs` host
+there as well would make `sbPhaseWbsViews` mount a **second** live tree over the same branches, so
+every rename would have two editors and one's collapse state would silently contradict the other.
+Milestones, Other branches and the read-only Execution card still use it — they have no Gantt.
+
+### ⚠️⚠️ A LIVE BUG THE COLUMN'S REMOVAL EXPOSED: `w` HAD NEVER SURVIVED A SAVE
+
+`normalize()` is a whitelist and carried `id, n, d, par`. It did **not** carry `w` — the per-activity
+WBS branch that shipped on 2026-09-17 (u) — so the branch a planner picked worked for the rest of the
+session and was gone on the next load, while `phaseTaskPayload` reads `t.r.act.w` at push time, which
+is the moment it was needed. The field sits **two lines below a comment warning, in bold, about
+exactly this trap** for `par`. Carried now, and only when set, so a setup that never used it is
+byte-identical to before.
+
+### The relationships, and why this is not a migration
+
+A phase is a **network**. `preds` is `[{id, type, lag}]` on each activity, validated in a second pass
+against that phase's own ids — a self-link, a link to a deleted activity or a duplicate between one
+pair is dropped rather than carried, because the scheduler would read an unknown predecessor as *no
+constraint* and quietly draw a different programme from the one the arrows show.
+
+⚠️⚠️ **EVERY SETUP SAVED BEFORE TODAY IS LEFT ALONE.** Rewriting them into explicit links on load
+would touch every saved setup in the database to change nothing anyone asked to change, and do it
+silently. `sbPhLinks` instead **derives** the old order + `par` chain as links whenever a phase
+carries none, so an untouched phase schedules to the dates it always did.
+
+⚠️⚠️ **THE CONVERSION IS PER PHASE, NEVER PER ACTIVITY.** If activity 3 carried a drawn link and
+activity 4 carried none, *"what does 4 follow?"* has no honest answer — it would appear to follow row
+3 while the arrows say nothing of the kind. So the first link drawn materialises that phase's whole
+implicit chain in one step (`sbPhMaterialise`), and the suite asserts **that step moves not one
+date**.
+
+⚠️ **The implicit chain reproduces the old GROUP semantics, which is subtler than "each row follows
+the one above".** Consecutive `par` rows were one group whose length was its longest member, and the
+next plain row followed **the group** — so it is linked FS to *every* member, not just the last. The
+scheduler takes the max over incoming links, so the longest drives. Linking only the last member
+would let a short final row release the next group early: the *"8508 days"* bug in reverse.
+
+⚠️⚠️ **`ph.net` IS THE MARKER, AND "DOES IT HAVE ANY LINKS?" WAS NOT ENOUGH — the suite caught it.**
+With the flag derived from the links alone, a converted phase stripped of its last arrow falls back
+to the implicit chain, so **deleting a link resurrects the dependency just deleted** and the bar jumps
+back. A phase that has been converted stays converted, with no links meaning no links.
+
+### The scheduler
+
+A forward pass in 0-based day indices, each activity occupying `[es, ef]` **inclusive** — the same
+model `generate()` and `addD` use, so a phase and the execution window it is measured against cannot
+disagree by a day.
+
+```
+FS+lag → es >= ef(pred) + 1 + lag      FF+lag → ef >= ef(pred) + lag
+SS+lag → es >= es(pred) + lag          SF+lag → ef >= es(pred) + lag
+```
+
+⚠️ The result is shifted so the earliest start is day 0: a negative lag can legally pull an activity
+before its predecessor, and without the shift the phase would start at a negative offset and overhang
+whatever sits beside it.
+⚠️⚠️ **A cycle must not hang the browser.** `sbPhLinkWouldCycle` refuses the link at **draw** time,
+with the reason, so the normal path never reaches an unschedulable network; Kahn's algorithm leaves
+anything cyclic unplaced and those are drawn at the phase start and reported, rather than iterated to
+a fixed point that does not exist.
+
+### ⚠️⚠️ ONE DELIBERATE BEHAVIOUR CHANGE, MEASURED RATHER THAN DISCOVERED
+
+Executing the old and new schedulers side by side over twelve phase shapes × three phases:
+
+| | |
+|---|---|
+| **span** (`sbPhDays`) | **identical in all 24 cases** |
+| **after-phases** | **byte-identical**, every row |
+| **before-phases** | concurrent members now **start** together; they used to **finish** together |
+
+The old backward walk aligned a group's members to the group's **finish** while the forward walk
+aligned them to its **start** — so `par` meant *"ends together"* in a before-phase and *"starts
+together"* in an after-phase, and the comment above it described only the forward case. SS+0 in both
+directions is what the drawn arrows will mean anyway; leaving the old alignment would make the dates
+**jump** the moment a planner drew their first link somewhere else in the phase.
+
+⚠️ The phase's **placement** is still back-scheduled — a before-phase finishes the day before
+execution starts. What is ASAP is its internal logic.
+⚠️ **`pp.start` / `pp.finish` are min/max over the rows now, never `rows[0]` and `rows[last]`.** A
+chain put rows in date order and a network does not, so on `[2, 9p, 3]` the old code reported the
+phase starting **seven days after its own earliest row**.
+
+### ⚠️⚠️ THE PUSH WROTE A CHAIN THAT CONTRADICTED ITS OWN DATES
+
+`phaseTaskPayload` gave every row the previous row's id as a bare FS predecessor — **including a row
+the dates placed alongside its neighbour**. So a pushed Planning Phase arrived with four activities
+dated to run together and a predecessor chain saying they run end to end, and the schedule's own CPM
+believes the relationships: the first recalculation pulls them apart. Both now come from
+`sbPhSchedule`'s network, serialised by **`serializeRels`, the schedule's own writer for that column**
+rather than a second spelling of `ID FS+2` that could drift from the parser reading it back.
+
+⚠️⚠️ **Every id is allocated before the first payload is built.** A relationship can point **forward**
+as easily as back — an SS link from a row further down the list is exactly what the Gantt exists to
+let a planner draw — and an id assigned lazily inside `phaseTaskPayload` would not exist when an
+earlier row asked for it. It would be dropped silently, so the one shape the old chain could not
+express would be the one the push threw away.
+
+### The chart
+
+Tree left, bars right, arrows between. ⚠️ **The arrow leaves and arrives at the end its type names** —
+FS leaves the predecessor's finish and arrives at the successor's start, SS leaves its start, FF
+arrives at its finish. Drawn corner-to-corner regardless of type, SS and FS would look identical and
+the type would exist only in a menu.
+
+⚠️ **Pointer events for the link drag, not HTML5 drag**: a native drag cannot draw a rubber band that
+follows the cursor, and a link you cannot see while drawing is one you aim by guesswork. The target is
+resolved with `elementFromPoint` at the **drop**, because the rubber band sits under the cursor and
+would otherwise be the element found every time.
+⚠️ **The arrow's hit target is a separate fat transparent twin** (`.sbld-ghit`, 11px). A 1.5px stroke
+is ~3px of clickable width; thickening the *visible* arrow instead would make six links unreadable.
+⚠️ The link handle sits just **outside** the bar's right edge — inside, a 4px bar would have no room
+for one, and the shortest activities are the likeliest hand-offs.
+⚠️ A mirrored (`source_kind`) branch never accepts a drop: its contents come from another app and the
+push may not add to it, so filing an activity there would be a promise the push breaks. Refused by
+not offering the target rather than by a toast afterwards.
+⚠️ **"directly on the phase"** on the Planned line is the way back **out** of every branch — without a
+target for it, an activity filed into a branch could never be taken out again.
+
+⚠️⚠️ **Every WBS edit asks for the step's own repaint.** `_wbsCommit` ends in `renderWbsManager()` +
+`psSetupChanged()`, which repaint the live tree views, the grid, the Gantt and the Vertical Stacking —
+and **not this panel**. That was fine while a phase card's branches were a live tree view; the Gantt
+draws its own, so without `.then(render)` a renamed branch keeps its old name on screen and a deleted
+one stays.
+
+### Verified
+
+**New `modules/project-schedule/test-phasenet.js` — 262 assertions, 0 failing**, every function
+sliced out of the shipped file and **executed**, with the pre-change file as the contrast. The
+equivalence block above is measured, not asserted; **three negative builds bite** (stripping the `net`
+marker fails 2, and the push contrast shows HEAD writing a bare FS onto a row it had just dated to
+start alongside its neighbour).
+
+**Rendered in Chromium against the shipped stylesheet**, the CSS sliced out of `index.html` rather
+than retyped: a four-activity phase across three nested branches draws **7 tree rows** at the right
+indents, **4 bars, 3 arrows** labelled `FS+2` / `SS` / `FF+3`, every bar's top **exactly 5px** below
+its own tree row (one uniform offset — the centring, not drift), no page horizontal scroll, **0 page
+errors**. ⚠️ In dark mode all five sampled colours change (bar `rgb(244,169,162)` → `rgb(110,42,37)`,
+card `rgb(255,255,255)` → `rgb(43,44,43)`), which is what proves they resolve through tokens rather
+than sticking at a literal.
+
+`test-lsm` 683/0 · `test-syntax` 4/0 · `test-builder` 149/0 · `test-calendar-editor` 23/0 ·
+`tools/test-calendar` 71/0 · `wiring-check` 139/0 · `dark-remap` 0 findings · `dead-hooks` 9, the
+documented baseline, identical before and after · inline script parses · CSS braces 2566/2566 · 0 NUL
+bytes.
+
+⚠️ **NOT VERIFIED SIGNED IN.** No link has been drawn against a real project, no branch created or
+dragged through the live tree, and no phase pushed. The engine and the render are proved by execution
+and measurement; the round trip is not. The first things to try are **+ Add WBS** with an activity
+selected, a drag from one bar's handle onto another, and a right-click on the arrow it makes.
+
+⚠️ Fixed in passing: the Execution card read *"built by steps 4–7"* after main split Repetition into
+four steps — `STEP_ALIAS` resolved the retired title to `Location Sequence`, the **first** of the
+four, for work defined as far as step 8. The alias did its job and the sentence was still wrong.
+
+⚠️ **Merged `origin/main` (10 commits) after committing.** No conflicts — main was working on the
+Calendars step and the rail while this was in Project Phases — and **a clean auto-merge is not a
+correct one**, so both sides' suites were re-run on the merged tree rather than assumed (above), and
+`_stepReady`'s new prerequisite gating was read to confirm it does not gate this step.
+
+⚠️⚠️ **Re-lettered `(b)` → `(c)` on merging `origin/main` again, and this time BOTH SIDES HAD TAKEN
+`(b)` AND BOTH HAD TAKEN `MODULE_V = 20260918c`.** Main landed its own `2026-09-18 (b)` — the tower
+TYPES restructure below — while this was in flight, so the letter half conflicted loudly and was
+resolved as the union (both entries kept whole, this one moving past main's per this file's own
+rule). ⚠️⚠️ **The version half did NOT conflict, and that is the dangerous half:** both sides wrote
+the identical string, so git had nothing to flag and merged it silently — leaving one cache-bust
+token covering two different builds, where a browser holding main's `20260918c` would never have
+fetched these bytes. Ninth time this log has recorded that shape, and the second time it has been
+caught in a merge that reported no conflict on the token at all.
+
+⚠️ **The index.html auto-merge is not taken as evidence.** Main rewrote `stTowers` into tower types
+and moved Floors & Zones into a pop-up; this branch rewrote Project Phases into a Gantt. The two sets
+of hunks are thousands of lines apart and merged without a conflict — so both sides' functions were
+asserted present on the merged tree by name, and the whole battery (this branch's suites **and**
+main's own `test-towertypes.js`, which this session had never run) was re-run on it.
+
+`MODULE_V` → `20260918d`, re-derived from what the merged tree actually carries **after** integrating
+rather than guessed beforehand, and sort-checked as a plain string past both sides' `20260918c`.
+
 ## 2026-09-18 (b) — A tower is an INSTANCE of a TYPE, and Floors & Zones asks in a pop-up
 
 Owner: *"the idea for the towers is that, users are to define the types of towers there are. Meaning

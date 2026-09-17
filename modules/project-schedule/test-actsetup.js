@@ -60,7 +60,14 @@ function sliceAny(n) { for (const d of [2, 4, 6]) { const s = sliceFn(n, d); if 
 /* ⚠️ A slice that comes back null ABORTS rather than being stubbed. A harness that quietly
    substitutes its own copy of the function under test measures the harness. */
 const WANT = ['stActivities', 'xlCellCtl', 'gc'];
-const OPTIONAL = ['sortCatalog'];           // absent on the base build, which is the point
+/* ⚠ `xlFieldLocked` / `actIsSap` are OPTIONAL for one reason only: they do not exist on the
+   pinned base, and the base's own `xlCellCtl` therefore never calls them — so nothing is being
+   stubbed in for the function under test. On the working tree both must slice, and 6.0 asserts
+   exactly that, so a rename fails loudly instead of quietly reverting the lock. */
+const OPTIONAL = ['sortCatalog', 'xlFieldLocked', 'actIsSap',
+  /* the merge model — all absent on the base, and the base's renderer calls none of them */
+  'actIsMerged', 'actCodes', 'normKids', 'sortActivities', 'actSelActs', 'actSelTrade',
+  'actMergeCodeCount', 'mergeActs'];   // absent on the base build, which is the point
 const code = {};
 for (const n of WANT) { const s = sliceAny(n); if (!s) { console.log('FATAL: could not slice ' + n + ' from ' + FILE); process.exit(1); } code[n] = s; }
 for (const n of OPTIONAL) { const s = sliceAny(n); if (s) code[n] = s; }
@@ -119,9 +126,11 @@ function makeHost() {
 }
 
 /* ---- run the shipped renderer ---------------------------------------------------------------- */
-function render(cfg, holdCol, catSel, holdQ) {
+function render(cfg, holdCol, catSel, holdQ, actSel, actExp) {
   const sandbox = {
     cfg, holdCol, catSel, holdQ: holdQ || '', holdW: 320, xColW: {},
+    actSel: (arguments.length > 4 ? arguments[4] : []) || [], actExp: (arguments.length > 5 ? arguments[5] : {}) || {},
+    psPrompt() {}, psConfirm() {},
     XL_COLS: [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 },
       { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true },
       { k: 'contract', label: 'Contract', w: 138, contract: true },
@@ -187,7 +196,8 @@ function render(cfg, holdCol, catSel, holdQ) {
      (`#b-holdq`, which appears only above 8 codes or while a query is live — this fixture has 6).
      So: nothing REMOVED may be looked up, and anything else that misses must be on this list with
      its guard named. */
-  const OPTIONAL = { 'b-holdq': 'rendered only above 8 codes or while a query is live — wired behind `if (hq)`' };
+  const OPTIONAL = { 'b-holdq': 'rendered only above 8 codes or while a query is live — wired behind `if (hq)`',
+                     'b-aclear': 'rendered only while rows are ticked in the gutter — wired behind `if (acBtn)`' };
   const REMOVED = ['b-delrows', 'b-add', 'b-tmpl', 'b-upl', 'b-uplfile'];
   eq(host._missing.filter(id => REMOVED.indexOf(id) >= 0).join(','), '',
      '1.10 EXECUTED: no handler is left wired to a control this pass removed');
@@ -207,11 +217,18 @@ function render(cfg, holdCol, catSel, holdQ) {
   const h = host.innerHTML;
   ok(/id="b-custom"/.test(h), '2.1 "+ Custom" exists');
   ok(host._wired.indexOf('b-custom') !== -1, '2.2 EXECUTED: it is wired');
-  // it sits INSIDE the class-code list's own header, not in the grid toolbar
+  /* ⚠⚠ RETARGETED, NOT DELETED, and these two used to assert the OPPOSITE: 2.3 read *"it lives
+     in the All class codes header, not the grid toolbar"* and 2.4 *"…so the grid toolbar holds only
+     Load typical set"*. Both were correct until the owner moved it — *"the add custom activities
+     button should be beside load typical set"* (2026-09-17) — so they now pin the new position with
+     the same strictness, in both directions. On the pinned base they fail, which is what keeps the
+     contrast honest. */
   const hdr = /<div class="sbld-hold-h">([\s\S]*?)<\/div>/.exec(h);
-  ok(!!hdr && hdr[1].indexOf('id="b-custom"') !== -1, '2.3 it lives in the All class codes header, not the grid toolbar');
+  ok(!!hdr && hdr[1].indexOf('id="b-custom"') === -1, '2.3 it has LEFT the SAP Activities header');
   const acts = /<div class="sbld-sec-actions">([\s\S]*?)<\/div>/.exec(h);
-  ok(!!acts && acts[1].indexOf('b-custom') === -1, '2.4 …so the grid toolbar holds only "Load typical set"');
+  ok(!!acts && acts[1].indexOf('id="b-custom"') !== -1, '2.4 …and sits beside "Load typical set"');
+  ok(!!acts && acts[1].indexOf('id="b-seed"') < acts[1].indexOf('id="b-custom"'),
+     '2.4b "Load typical set" first, "+ Custom" beside it — the owner\'s own order');
   // clicking it adds ONE row with a blank code
   const before = cfg.activities.length;
   const btn = host.querySelector('#b-custom');
@@ -219,7 +236,14 @@ function render(cfg, holdCol, catSel, holdQ) {
   // taking every later section down with it — a suite that crashes proves nothing about the rest.
   if (btn && typeof btn.onclick === 'function') btn.onclick();
   eq(cfg.activities.length, before + 1, '2.5 EXECUTED: one row added');
-  const added = cfg.activities[cfg.activities.length - 1] || {};
+  /* ⚠⚠ FOUND BY ID, NOT BY POSITION — and this assertion used to read
+     `cfg.activities[cfg.activities.length - 1]`, which stopped being the new row the moment the
+     build became trade-sorted (2026-09-17): a fresh custom row defaults to Structural and lands in
+     the ST run, with the Architectural rows after it. The handler was always right — it focuses
+     the cell by the id it just minted — so this is the TEST's assumption breaking, not the code's.
+     Keyed on the id now, which is true under any ordering. */
+  const known = new Set(mkCfg().activities.map(x => x.id));
+  const added = cfg.activities.find(x => !known.has(x.id)) || {};
   eq(added.code, '', '2.6 …with a BLANK class code — a custom activity');
   eq(added.contract, 'main', '2.7 …on the main contract, like any other new row');
 }
@@ -343,6 +367,298 @@ if (code.sortCatalog) {
   const cells = (h.match(/data-f="code"/g) || []).length;
   eq(cells, 3, '6.4 one row per activity, still');
   ok(/Load typical set/.test(h), '6.5 Load typical set still reachable');
+}
+
+/* =============================================================================================
+   7 · THE LOCKED CELLS — Code never editable, Trade locked on a SAP row
+   Owner 2026-09-17: *"when adding custom activity, code should not be editable and should always
+   be blank. if activity comes from SAP, trade should also be not editable/locked."*
+   ⚠⚠ The rule is asserted BOTH on the predicate (executed) and on what the renderer emits, because
+   a readonly attribute alone stops typing and nothing else — paste, Ctrl+D and Delete all reach
+   `xlSetById`, and that is what `xlFieldLocked` is there to refuse.
+   ============================================================================================= */
+if (!IS_BASE) {
+  ok(!!code.xlFieldLocked && !!code.actIsSap, '7.0 both predicates slice on the working tree');
+  const F = new Function('GROUPS', 'GLABEL',
+    code.actIsSap + '\n' + code.xlFieldLocked + '\n; return { actIsSap: actIsSap, xlFieldLocked: xlFieldLocked };')(
+    ['GR', 'SW', 'ST', 'AR', 'MEPF', 'SD', 'ALLIED', 'OT'], {});
+  const sap = { id: 'x', code: '03051', group: 'ST' };
+  const cust = { id: 'y', code: '', group: 'AR' };
+
+  ok(F.actIsSap(sap) === true, '7.1 a row carrying a code came from SAP');
+  ok(F.actIsSap(cust) === false, '7.2 a blank code is a custom activity');
+  ok(F.actIsSap({ code: '   ' }) === false, '7.3 whitespace is not a code');
+
+  ok(F.xlFieldLocked(sap, 'code') === true, '7.4 Code is locked on a SAP row');
+  ok(F.xlFieldLocked(cust, 'code') === true, '7.5 Code is locked on a custom row too — always blank');
+  ok(F.xlFieldLocked(sap, 'group') === true, '7.6 Trade is locked on a SAP row');
+  ok(F.xlFieldLocked(cust, 'group') === false, '7.7 …and EDITABLE on a custom row, which is the only way to trade it');
+  /* ⚠ The columns that must stay editable. Locking one of these by accident is the failure this
+     block would otherwise never notice — a lock is invisible until somebody tries to type. */
+  ['name', 'durInt', 'durExt', 'scope', 'contract'].forEach(k => {
+    ok(F.xlFieldLocked(sap, k) === false, '7.8 ' + k + ' stays editable on a SAP row');
+    ok(F.xlFieldLocked(cust, k) === false, '7.9 ' + k + ' stays editable on a custom row');
+  });
+
+  // …and the renderer actually emits it
+  const { host } = render(mkCfg(), {}, []);
+  const h = host.innerHTML;
+  const codeCells = h.match(/<input[^>]*data-f="code"[^>]*>/g) || [];
+  eq(codeCells.length, 3, '7.10 three Code cells');
+  ok(codeCells.every(c => /readonly/.test(c)), '7.11 EVERY Code cell is readonly');
+  ok(codeCells.every(c => /sbld-cell/.test(c) && /data-f="code"/.test(c)),
+     '7.12 …and still a PDGrid cell, so the column order cannot shift');
+  // a1/a3 carry codes -> locked trade; a2 is custom -> a real <select>
+  const tradeSel = h.match(/<select[^>]*data-f="group"[^>]*>/g) || [];
+  const tradeLock = h.match(/<input[^>]*data-f="group"[^>]*>/g) || [];
+  eq(tradeSel.length, 1, '7.13 exactly one editable Trade — the custom row');
+  eq(tradeLock.length, 2, '7.14 …and the two SAP rows are locked');
+  ok(tradeLock.every(c => /readonly/.test(c)), '7.15 the locked Trade cells are readonly');
+  ok(/placeholder="custom"/.test(h), '7.16 the blank code still reads "custom"');
+}
+
+/* =============================================================================================
+   8 · THE WRITER REFUSES A LOCKED FIELD — the half a readonly attribute cannot do
+   ============================================================================================= */
+if (!IS_BASE) {
+  ok(/function xlSetById\(id, k, text\) \{\s*\n\s*var a = xlActById\(id\); if \(!a\) return;\s*\n\s*if \(xlFieldLocked\(a, k\)\) return;/.test(src),
+     '8.1 xlSetById refuses a locked field BEFORE any branch runs');
+  ok(/function t4Set\(a, k, text\) \{[\s\S]{0,400}?if \(xlFieldLocked\(a, k\)\) return;/.test(src),
+     '8.2 the trade-sequence grid obeys the same rule through its own writer');
+}
+
+/* =============================================================================================
+   9 · THE BUILD GRID IS GROUPED BY TRADE — and it groups the ARRAY, not the view
+   Owner 2026-09-17: *"The selected activity table should also be grouped by trade."*
+   ⚠⚠ The load-bearing assertion is 9.4: this step's own hint says row order IS the fallback
+   sequence and `generate()` reads `cfg.activities` in order, so a renderer that grouped only what
+   it drew would show one order and build another. Same argument `sortCatalog` already won.
+   ============================================================================================= */
+if (!IS_BASE) {
+  const cfg = mkCfg();               // ST, AR, AR on the way in — deliberately not grouped
+  cfg.activities.push({ id: 'a4', code: '01051', name: 'Mobilization', group: 'GR', durInt: 1, durExt: 1 });
+  const { host } = render(cfg, {}, []);
+  const h = host.innerHTML;
+
+  const heads = [...h.matchAll(/<span class="sbld-xlgrp-n">([^<]*)<\/span>/g)].map(m => m[1]);
+  eq(heads.join(' | '), 'General Requirements | Structural | Architectural',
+     '9.1 one heading per trade, in the app\'s own GROUPS order');
+  const counts = [...h.matchAll(/<span class="sbld-xlgrp-c">(\d+)<\/span>/g)].map(m => +m[1]);
+  eq(counts.join(','), '1,1,2', '9.2 each heading carries its own count');
+  eq(counts.reduce((a, b) => a + b, 0), cfg.activities.length,
+     '9.3 …and they sum to the build — no activity is dropped by the grouping');
+
+  /* ⚠ THE ARRAY ITSELF. If this ever passes while 9.1 fails, the renderer has started sorting its
+     own output and the push will build a different order from the one on screen. */
+  eq(cfg.activities.map(a => a.group).join(','), 'GR,ST,AR,AR',
+     '9.4 sortActivities reordered cfg.activities, not just the drawing');
+  /* ⚠ STABLE: a2 and a3 were in that relative order on the way in and must stay in it — the
+     sequence a planner set inside a trade is not the grouping's to change. */
+  eq(cfg.activities.filter(a => a.group === 'AR').map(a => a.id).join(','), 'a2,a3',
+     '9.5 …and stably, so the order INSIDE a trade survives');
+
+  // a trade with nothing in it gets no heading at all
+  ok(heads.indexOf('MEPF') === -1, '9.6 a trade with no activities gets no heading');
+  // an unknown trade is bucketed, never dropped
+  const cfg2 = mkCfg();
+  cfg2.activities.push({ id: 'a9', code: '99999', name: 'Odd one', group: 'NOPE', durInt: 1, durExt: 1 });
+  const h2 = render(cfg2, {}, []).host.innerHTML;
+  ok(/sbld-xlgrp-n">Unclassified</.test(h2), '9.7 a row with an unknown trade lands in a named bucket');
+  eq([...h2.matchAll(/<span class="sbld-xlgrp-c">(\d+)<\/span>/g)].map(m => +m[1]).reduce((a, b) => a + b, 0),
+     cfg2.activities.length, '9.8 …and is still counted');
+}
+
+/* =============================================================================================
+   10 · THE CHECKBOX GUTTER
+   Owner 2026-09-17: *"on the left, instead of numbers, use checkboxes."*
+   ============================================================================================= */
+if (!IS_BASE) {
+  const { host } = render(mkCfg(), {}, []);
+  const h = host.innerHTML;
+  const cks = h.match(/<input type="checkbox" class="sbld-xlck"[^>]*>/g) || [];
+  eq(cks.length, 3, '10.1 one checkbox per activity');
+  ok(cks.every(c => /data-asel="/.test(c)), '10.2 …each addressing its own row');
+  /* ⚠ The gutter must NOT be a PDGrid cell, or ticking a box would move the grid's cell focus and
+     the Tab order would run through a control that writes nothing. */
+  ok(!/<td class="xl-rn"[^>]*>[\s\S]{0,200}?sbld-cell/.test(h),
+     '10.3 the gutter carries no .sbld-cell — PDGrid does not index it');
+  ok(!/<td class="xl-rn"[^>]*>\s*\d+\s*<\/td>/.test(h), '10.4 and the row NUMBER is gone');
+
+  // ticked state round-trips, and the heading counts it
+  const h3 = render(mkCfg(), {}, [], '', ['a2', 'a3']).host.innerHTML;
+  eq((h3.match(/class="sbld-xlck"[^>]*checked/g) || []).length, 2, '10.5 a ticked row renders checked');
+  ok(/sbld-xlgrp-s">2 selected</.test(h3), '10.6 …and its trade heading says how many');
+  ok(/id="b-aclear"/.test(h3), '10.7 a Clear button appears once anything is ticked');
+  ok(!/id="b-aclear"/.test(h), '10.8 …and not before');
+}
+
+/* =============================================================================================
+   11 · MERGING — the rule, the payload, and the refusals
+   Owner 2026-09-17: *"this merged activity carries the class codes of all its child activities.
+   activity merging is only allowed within the same trade."*
+   ============================================================================================= */
+if (!IS_BASE) {
+  const mk = (sel) => {
+    const cfg = mkCfg();
+    cfg.activities = [
+      { id: 'm1', code: '03051', name: 'Rebar', group: 'ST', durInt: 3, durExt: 4 },
+      { id: 'm2', code: '04051', name: 'Formworks', group: 'ST', durInt: 2, durExt: 2 },
+      { id: 'm3', code: '10101', name: 'Tiling', group: 'AR', durInt: 5, durExt: 5 }
+    ];
+    return cfg;
+  };
+  const run = (cfg, sel, name) => {
+    const toasts = [];
+    const sandbox = {
+      cfg, GROUPS: ['GR', 'SW', 'ST', 'AR', 'MEPF', 'SD', 'ALLIED', 'OT'],
+      GLABEL: { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', SD: 'Site Development', ALLIED: 'Allied Services', OT: 'Others' },
+      actExp: {}, uidv: () => 'MERGED', markDirty() {}, render() {},
+      UI: { toast: (t, k) => toasts.push(k + ': ' + t) }
+    };
+    /* ⚠⚠ `actSel` IS DECLARED INSIDE THE BODY, NOT PASSED AS A PARAMETER. `mergeActs` clears the
+       selection with `actSel = []`, which in the real module rebinds a module-scope var — but a
+       parameter of the same name is a LOCAL binding, so the reassignment would be invisible from
+       out here and 11.8 would fail against correct code. Declaring it in the body and handing it
+       back makes the clear observable, which is the only way to assert it at all. */
+    const body = 'var actSel = __sel;\n' +
+      ['actCodes', 'actIsMerged', 'normKids', 'sortActivities', 'actSelActs', 'actSelTrade', 'mergeActs']
+      .map(k => code[k]).join('\n') + '\n; return { ok: mergeActs(__name), sel: actSel };';
+    const names = Object.keys(sandbox);
+    const r = new Function(...names, '__name', '__sel', body)(...names.map(n => sandbox[n]), name, sel);
+    return { cfg, outcome: r.ok, toasts, actSel: r.sel };
+  };
+
+  // --- the happy path
+  {
+    const r = run(mk(), ['m1', 'm2'], 'Structural frame');
+    ok(r.outcome === true, '11.1 EXECUTED: a same-trade merge succeeds');
+    eq(r.cfg.activities.length, 2, '11.2 two rows became one');
+    const m = r.cfg.activities.find(a => a.id === 'MERGED') || {};
+    eq(m.name, 'Structural frame', '11.3 it takes the name it was given');
+    eq(m.group, 'ST', '11.4 …and the trade both children were in');
+    eq((m.kids || []).map(k => k.code).join(','), '03051,04051',
+       '11.5 it CARRIES BOTH class codes — the whole point of the merge');
+    eq(m.code, '03051', '11.6 …and pushes the first, because project_schedule stores one');
+    eq(m.durInt + '/' + m.durExt, '5/6', '11.7 durations are summed, not maxed');
+    eq(r.actSel.length, 0, '11.8 the selection is cleared — nothing is left primed');
+    ok(r.toasts.some(t => /success/.test(t) && /class code/.test(t)), '11.9 …and it says what it did');
+  }
+  // --- the refusal that matters
+  {
+    const r = run(mk(), ['m1', 'm3']);
+    ok(r.outcome === false, '11.10 EXECUTED: a cross-trade merge is REFUSED');
+    eq(r.cfg.activities.length, 3, '11.11 …and nothing is changed');
+    ok(r.toasts.some(t => /warn/.test(t) && /different trades/.test(t)),
+       '11.12 …with the reason named, not silently');
+  }
+  // --- one row is not a merge
+  {
+    const r = run(mk(), ['m1']);
+    ok(r.outcome === false, '11.13 one selected row cannot merge');
+    eq(r.cfg.activities.length, 3, '11.14 …and nothing is changed');
+  }
+  // --- merging a merged row FLATTENS rather than nests
+  {
+    const cfg = mk();
+    cfg.activities = [
+      { id: 'p1', code: '03051', name: 'Frame', group: 'ST', durInt: 5, durExt: 6,
+        kids: [{ code: '03051', name: 'Rebar', group: 'ST' }, { code: '04051', name: 'Formworks', group: 'ST' }] },
+      { id: 'p2', code: '05051', name: 'Concreting', group: 'ST', durInt: 2, durExt: 3 }
+    ];
+    const r = run(cfg, ['p1', 'p2'], 'Structure');
+    const m = r.cfg.activities.find(a => a.id === 'MERGED') || {};
+    eq((m.kids || []).map(k => k.code).join(','), '03051,04051,05051',
+       '11.15 a merge of a merged row FLATTENS — one list of codes, never a tree');
+    ok((m.kids || []).every(k => !k.kids), '11.16 …and no child carries children of its own');
+  }
+  // --- a custom activity has no code to carry, and must not fabricate one
+  {
+    const cfg = mk();
+    cfg.activities = [
+      { id: 'c1', code: '', name: 'Bespoke joinery', group: 'AR', durInt: 2, durExt: 2 },
+      { id: 'c2', code: '10101', name: 'Tiling', group: 'AR', durInt: 5, durExt: 5 }
+    ];
+    const r = run(cfg, ['c1', 'c2'], 'Finishes');
+    const m = r.cfg.activities.find(a => a.id === 'MERGED') || {};
+    eq((m.kids || []).length, 2, '11.17 a code-less child is still carried — by name');
+    eq((m.kids || []).map(k => k.code).join(','), ',10101', '11.18 …with its code left blank, not invented');
+    eq(m.code, '', '11.19 …and the merged row leads with the first child, blank or not');
+  }
+}
+
+/* =============================================================================================
+   12 · MERGED ROWS RENDER AS A COLLAPSIBLE GROUPING
+   ============================================================================================= */
+if (!IS_BASE) {
+  const cfg = mkCfg();
+  cfg.activities = [{ id: 'g1', code: '03051', name: 'Frame', group: 'ST', durInt: 5, durExt: 6,
+    kids: [{ code: '03051', name: 'Rebar', group: 'ST' }, { code: '04051', name: 'Formworks', group: 'ST' }] }];
+
+  const shut = render(cfg, {}, [], '', [], {}).host.innerHTML;
+  ok(/data-actexp="g1"/.test(shut), '12.1 a merged row gets a caret');
+  ok(/aria-expanded="false"/.test(shut), '12.2 …shut by default');
+  eq((shut.match(/sbld-xlkid/g) || []).length, 0, '12.3 …and its children are not drawn');
+  ok(/sbld-xlmore"[^>]*>\s*\+1</.test(shut) || /sbld-xlmore/.test(shut),
+     '12.4 the Code cell says it carries more than one');
+
+  const open = render(cfg, {}, [], '', [], { g1: true }).host.innerHTML;
+  ok(/aria-expanded="true"/.test(open), '12.5 expanding flips the caret');
+  eq((open.match(/<tr class="sbld-xlkid">/g) || []).length, 2, '12.6 …and draws one row per child');
+  ok(/Rebar/.test(open) && /Formworks/.test(open), '12.7 …naming each of them');
+  /* ⚠ A child row must carry NO editable cell: it is a record on `kids`, and `xlSetById` would
+     answer null for its id — a cell PDGrid indexes but no writer can reach. */
+  const kidRows = open.match(/<tr class="sbld-xlkid">[\s\S]*?<\/tr>/g) || [];
+  ok(kidRows.length && kidRows.every(r => r.indexOf('sbld-cell') === -1),
+     '12.8 a child row is read-only by construction — no .sbld-cell at all');
+  // an ordinary row is untouched by any of it
+  const plain = render(mkCfg(), {}, []).host.innerHTML;
+  eq((plain.match(/data-actexp=/g) || []).length, 0, '12.9 an unmerged row has no caret');
+  eq((plain.match(/sbld-xlmore/g) || []).length, 0, '12.10 …and no extra-codes badge');
+}
+
+/* =============================================================================================
+   13 · + Library SKIPS WHAT THE BUILD ALREADY HAS — including inside a merge
+   Owner 2026-09-17: *"when adding Library, if activity is already in the activity list, no need to
+   include in SAP Activities list."*
+   ============================================================================================= */
+if (!IS_BASE) {
+  const F = new Function('GROUPS', code.actCodes + '\n; return actCodes;')(['ST']);
+  eq(F({ code: '03051' }).join(','), '03051', '13.1 an ordinary activity carries its own code');
+  eq(F({ code: '03051', kids: [{ code: '03051' }, { code: '04051' }] }).join(','), '03051,04051',
+     '13.2 a MERGED activity carries every child code, deduped');
+  eq(F({ code: '' }).length, 0, '13.3 a custom activity carries none');
+  eq(F(null).length, 0, '13.4 …and a missing row does not throw');
+  /* ⚠ The loaders must read `actCodes`, not `a.code` — reading the bare field would re-offer every
+     code a merge had swallowed. Asserted on the source because both loaders are async and reach
+     the network; what matters is which reader they use. */
+  const dedup = (src.match(/\(cfg\.activities \|\| \[\]\)\.concat\(cfg\.catalog \|\| \[\]\)\.forEach\(function \(a\) \{ actCodes\(a\)/g) || []).length;
+  eq(dedup, 2, '13.5 BOTH loaders dedupe on actCodes — + Library and + From BOQ');
+  ok(!/forEach\(function \(a\) \{ if \(a\.code\) have\[/.test(src),
+     '13.6 …and neither reads the bare `a.code` any more, which would miss a merged row\'s children');
+}
+
+/* =============================================================================================
+   14 · THE CONTRAST'S OWN HALF — what the base build must still look like
+   ⚠⚠ Sections 9-13 are gated `if (!IS_BASE)` because the functions they execute do not exist on
+   the pinned base and a slice that came back null would abort the run. That gate would let the new
+   work go unproved, so these run on the BASE instead and assert the OLD shape. They must FAIL on
+   the working tree and PASS on the base — which is what makes "30 failures on the base" mean the
+   change is real rather than merely that the base is old.
+   ============================================================================================= */
+{
+  const { host } = render(mkCfg(), {}, []);
+  const h = host.innerHTML;
+  if (IS_BASE) {
+    ok(/<td class="xl-rn" data-r="0">1<\/td>/.test(h), '14.1 BASE: the gutter is a row NUMBER');
+    ok(h.indexOf('sbld-xlck') === -1, '14.2 BASE: there are no checkboxes');
+    ok(h.indexOf('sbld-xlgrp') === -1, '14.3 BASE: the build grid is flat — no trade headings');
+    ok(h.indexOf('id="b-merge"') === -1, '14.4 BASE: there is no Merge control');
+  } else {
+    ok(!/<td class="xl-rn" data-r="0">1<\/td>/.test(h), '14.1 the row number is gone');
+    ok(h.indexOf('sbld-xlck') !== -1, '14.2 checkboxes replace it');
+    ok(h.indexOf('sbld-xlgrp') !== -1, '14.3 the build grid carries trade headings');
+    ok(h.indexOf('id="b-merge"') !== -1, '14.4 …and a Merge control');
+  }
 }
 
 console.log((fail ? 'FAIL' : 'PASS') + ': ' + pass + ' assertions passed, ' + fail + ' failed');
