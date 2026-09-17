@@ -104,6 +104,77 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ad) — Flowline was removed from the product and left a suite failing 28 assertions
+
+Owner's item 4.3: *"Flowline - let's remove"*.
+
+### The view was already gone; the tests were not
+
+`modules/project-schedule/index.html` contains the word **flowline zero times** — the view, its mode
+setter, its geometry constants and its CSS all went when the toolbar button did. What survived is
+`modules/project-schedule/test-lsm.js`, which still sliced `renderFlowline` and `setFlowlineMode`
+**by name** and asserted against them. Run against the working tree it said:
+
+```
+sliced 53/55 fns, 21/25 vars   MISSING FNS: setFlowlineMode,renderFlowline
+                               MISSING VARS: flowlineMode,FL_ROWH,FL_PADT,FL_PADR
+FAIL: 675 assertions passed, 28 failed
+```
+
+⚠️⚠️ **A suite that fails 28 assertions is worse than no suite**, because nobody reads the 29th. The
+next real regression in the LSM would have landed in a list that was already red and been indis­tin­guish­able
+from the noise. That is the actual cost of a half-finished removal, and it is why this is
+finished here rather than left as a known-red.
+
+**Now:** `sliced 53/53 fns, 21/21 vars` · `PASS: 676 assertions passed, 0 failed`.
+
+### ⚠️⚠️ SIX OF THE 28 WERE NOT FLOWLINE, AND EACH WAS CHECKED AGAINST THE SHIPPED CODE FIRST
+
+"Make the suite green" is exactly how a real regression gets buried, so every red assertion that did
+not obviously belong to the flowline was read against the product before it was touched. All six turned
+out to be **stale assertions against code that had been superseded**, and the product is right in
+every case:
+
+- **`_fi + 1`** (two sites). `_lsmArrange` now groups by the **floor level alone** — after that fold
+  there is one grouping dimension, so there are no descendant rows left for `expandToLevel` to close.
+  The shipped code guards it with `if (!_flId)`, and only the **fallback** ladder still collapses,
+  where `locDims.length` is the correct depth. The assertions now check the fold *and* the guard,
+  which says more than the old spelling did.
+- **`setGroupBys(locDims)`** (two sites). Same supersession: the call is `setGroupBys(_want)` where
+  `var _want = _flId ? ['loc:' + _flId] : locDims`. The property these assertions exist to protect is
+  that the arrange step sets a **location-led** grouping — `setGroupBys` drops the LSM mode when
+  `dims[0].indexOf('loc:') !== 0`, so an arrange step that set anything else would switch the mode off
+  the instant it turned it on. Asserting on `_want`'s *definition* checks that on **both** branches,
+  where the old assertion only checked one spelling.
+- **the clash chip count** (expected 3, got 4). The strip gained a Hide/Show toggle with
+  `_lsmClashShow`, and the toggle carries `data-lsmclash` too — so counting that attribute gives 4 for
+  3 clashes. Counted by the chip **class** now, and the toggle gets **its own assertion** rather than
+  being silently absorbed into the chip count.
+
+### What was kept
+
+⚠️ Slice 5 was titled *"THE FLOWLINE"* and held two IIFEs. The first asserted that the flowline
+derived nothing of its own — that it read `_lsmRate`, `_lsmSeq`, `_lsmClash` and `_lsmLanes` rather
+than re-deriving them. That went. **The second never mentioned the flowline**: it tests
+`_vsTowerModel` directly, which the row layout still reads, and it was passing. It stays, under a
+banner that now says what it is. The reason the model was extracted — this module once shipped a 3D
+view that put a floor somewhere else than the 2D view of the same data, with no way to tell which was
+right — outlives the view that prompted it.
+
+The six surviving mentions of the word in that file are all **comments recording what was removed and
+why**, including the two sentences that used to end *"and the flowline's footnote is the honest
+answer"* and *"which is what BOTH the row layout and the flowline call"*. The record stays; the code
+does not.
+
+**Verified:** working tree **676/676**, was 675/703 · the pinned-base contrast still runs and is still
+loud (`sliced 20/53 fns, 7/21 vars` against `4d82fd4`, with the full MISSING list printed — a base that
+stopped being a contrast would be silent) · `test-syntax.js` 4/4 · `wiring-check` 139/0 ·
+`dead-hooks` 9 (baseline) · `dark-remap` 0 findings.
+
+⚠️ **No cache-bust token was bumped, deliberately.** The only file that changed is a test that ships
+to nobody; bumping `MODULE_V` for it would force every planner to re-download the module page to
+receive a change to a file their browser never fetches.
+
 ### 2026-09-17 (ac) — The last `font-weight: 600` in the app, and there were four of them, not two
 
 Owner: *"fix the two 600s in progress-photos too"* — the two entry *(ab)* flagged and left alone.

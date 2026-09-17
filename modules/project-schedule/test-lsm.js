@@ -147,7 +147,7 @@ const REAL_FNS = ['pd', 'dstr', 'dayDiff', 'addDays', 'isWbs', 'isMile', 'catVal
                   /* the LSM-shaped guard + the shared floor-level rule */
                   '_lsmShaped', '_locFloorLevelId', 'stkDefaultLevel',
                   /* slice 5 */
-                  '_lsmAggOn', '_lsmArrange', '_lsmFinish', 'setFlowlineMode', 'renderFlowline',
+                  '_lsmAggOn', '_lsmArrange', '_lsmFinish',
                   /* the declared cross-trade handoff. ⚠️ The link pass CAUGHT this: `_lsmClash`
                      gained a call to `_lsmLead` and the whole suite threw `_lsmLead is not defined`
                      rather than quietly passing — which is the entire reason it refuses to stub. */
@@ -167,7 +167,7 @@ const REAL_FNS = ['pd', 'dstr', 'dayDiff', 'addDays', 'isWbs', 'isMile', 'catVal
 const REAL_VARS = ['LSM_LANE_H', 'LSM_LANE_GAP', 'LSM_PAD', 'LSM_LANE_MAX', '_lsmRows',
                    '_lsmTopFirst', 'LSM_MIN_FLOORS', 'LSM_R2_OK', 'ALLAX', 'DL',
                    'LSM_CLASH_MIN', 'WORK_ORDER', '_lsmStatus', 'dataDate', 'groupBys', 'LOC_LEVELS',
-                   '_stkLevel', 'flowlineMode', 'FL_ROWH', 'FL_PADT', 'FL_PADR',
+                   '_stkLevel',
                    /* ⚠️⚠️ ADDED 2026-09-17 TO STOP THE WHOLE SUITE DYING. `_lsmBarsHTML` began
                       reading `_lsmClashShow` upstream, and an unlinked module-level var there is
                       a ReferenceError thrown from inside the function under test — which takes
@@ -1056,7 +1056,9 @@ function grpRow(name, anc, acts, idx, field) {
 })();
 
 /* ⚠️ A storey with NO rankable neighbour on either side stays off the axis - the declaration
-   says nothing about where it sits either, and the flowline's footnote is the honest answer. */
+   says nothing about where it sits either, and collecting it as `unranked` is the honest
+   answer. (This used to end “and the flowline's footnote is the honest answer”; the flowline
+   is gone, the collection it fed is not.) */
 (function () {
   M.setBuilder({ locCatalogue: function () {
     return { lvF: [ { value: 'Somewhere', dim: 'floor', tr: 'ST' },
@@ -1218,7 +1220,10 @@ function grpRow(name, anc, acts, idx, field) {
   eq(C.list[0].loc, '2nd Floor', 'the longest overlap leads');
   const h = M.clashHTML();
   ok(/ps-lsmclash-strip/.test(h), 'the strip renders');
-  eq((h.match(/data-lsmclash=/g) || []).length, 3, 'one navigable chip per clash');
+  eq((h.match(/ps-lsmclash-chip/g) || []).length, 3, 'one navigable chip per clash');
+  /* ⚠️ Counted by CLASS, not by `data-lsmclash=`: the Hide/Show toggle carries that attribute
+     too, so the attribute count is 4 for 3 clashes. The toggle is asserted, not absorbed. */
+  eq((h.match(/ps-lsmclash-toggle/g) || []).length, 1, 'and one Hide toggle beside them');
   ok(/3 clashes/.test(h), 'the count is stated');
   ok(/inferred order/.test(h), 'and an inferred order is LABELLED inferred on the strip itself');
   ok(/possible pitfalls/.test(h), 'the deck\'s own wording: reported, never blocked');
@@ -1421,12 +1426,13 @@ function grpRow(name, anc, acts, idx, field) {
   /* The old value would have left the floors expanded, which is the reported bug. */
   const nOld = locDims.length;
   eq(nOld >= 1 && (1 >= nOld - 1), false, 'the OLD level left the Level rows EXPANDED (the bug)');
-  /* And the shipped text uses the floor index, not the length.
-     ⚠️ Retargeted with slice 5's extraction: the collapse lives in `_lsmArrange`, which is what
-     BOTH the row layout and the flowline call. */
+  /* The collapse lives in `_lsmArrange`. ⚠️ This used to add “which is what BOTH the row layout
+     and the flowline call” — there is only the row layout now. */
   const st = sliceFn('_lsmArrange') || '';
   ok(/_locFloorLevelId\(\)/.test(st), 'the arrange step resolves the floor level');
-  ok(/_fi \+ 1/.test(st), 'and collapses at the floor\'s own depth');
+  ok(/setGroupBys\(_want\)/.test(st), 'and folds to that level alone');
+  ok(/if \(!_flId\)[\s\S]{0,80}expandToLevel\(/.test(st),
+     'so the ladder collapse runs ONLY on the fallback, where there is a ladder to collapse');
   /* A breakdown with no recognisable floor name falls back rather than throwing. */
   M.setLocLevels([{ id: 'A', name: 'Area' }, { id: 'B', name: 'Cell' }]);
   eq(M.floorLevelId(), 'B', 'with no floor-ish name it falls back to the deepest level');
@@ -1435,44 +1441,16 @@ function grpRow(name, anc, acts, idx, field) {
   M.setLocLevels(LV);
 })();
 
-/* ================================ SLICE 5: THE FLOWLINE ======================================== */
+/* ======================= SLICE 5: THE SHARED TOWER MODEL ====================================== */
 
-/* ⚠️⚠️ THE WHOLE POINT: the flowline derives NOTHING of its own. This module once shipped a 3D
-   view that put a floor somewhere else than the 2D view of the same data, with no way to tell which
-   was right; `_vsTowerModel` was extracted to stop that happening again. These assertions are what
-   keep the flowline on the same model as the rows. */
-(function () {
-  const fl = sliceFn('renderFlowline') || '';
-  ok(fl !== '', 'renderFlowline exists');
-  ok(/_lsmRate\(\)/.test(fl), 'it reads the shared model');
-  ok(/_lsmSeq\(\)/.test(fl), 'the shared trade sequence');
-  ok(/_lsmClash\(\)/.test(fl), 'and the shared clashes');
-  ok(/_lsmLanes\(\)/.test(fl), 'and the shared lane colours');
-  /* It must NOT re-derive the things the model already answers. */
-  ok(!/_lsmFit\(/.test(fl), 'it does not re-fit the slopes');
-  ok(!/levelRank\(/.test(fl), 'it does not re-rank the storeys');
-  ok(!/_lsmAgg\(/.test(fl), 'it does not re-aggregate the bars');
-  ok(/R\.ord\[/.test(fl), 'the storey ordinals come from the model');
-  ok(/R\.byKey/.test(fl), 'and so do the per-storey spans');
-  ok(/R\.byTrade\[/.test(fl), 'the slope label is the Rate strip\'s own figure');
-  /* The deck's own requirements. */
-  ok(/rs\.length === 1/.test(fl) && /ps-fl-block/.test(fl),
-     'a trade on ONE storey draws as a BLOCK TASK, not a near-vertical line');
-  ok(/ps-fl-band/.test(fl) && /polygon/.test(fl), 'the work is a band between start and finish');
-  ok(/ps-fl-bl/.test(fl) && /_gset\.baseline/.test(fl), 'the baseline is drawn, dashed, and respects its switch');
-  ok(/unranked/.test(fl), 'unrankable locations are collected');
-  ok(!/Y\(0\)/.test(fl) || /unranked/.test(fl), 'and never plotted at ground level');
-  ok(/ps-fl-clash/.test(fl), 'clashes are marked on the storey they happen on');
-  ok(/DAYW\[zoom\] \* ganttScale/.test(fl), 'it shares the Gantt\'s own day width, not a second scale');
-  ok(/_lsmRateHTML\(\)/.test(fl) && /_lsmClashHTML\(\)/.test(fl),
-     'the Rate and Clash strips travel with it (the legend is hidden in a full-width panel)');
-  /* Three distinct empty states, the rule the stacking arrived at after four reports. */
-  ok(/Location Breakdown Structure/.test(fl) && /resolve to a/.test(fl) && /Key trades/.test(fl),
-     'the empty state says WHICH of the three reasons applies');
-  /* CSS uses tokens only. */
-  ok(!/#[0-9a-fA-F]{6}/.test((src.match(/\.ps-fl-[\s\S]*?\.ps-fl-note[^}]*\}/) || [''])[0]),
-     'the flowline CSS carries no colour literals');
-})();
+/* ⚠⚠ THIS SLICE USED TO BE “THE FLOWLINE”, and its first half asserted that the flowline
+   derived nothing of its own — that it read `_lsmRate`, `_lsmSeq`, `_lsmClash` and `_lsmLanes`
+   rather than re-deriving them. The flowline was removed from the module (owner's 4.3), so
+   those assertions went with it. What is left is the half that never mentioned the flowline:
+   `_vsTowerModel` itself, which the ROW LAYOUT still reads. The reason the model was extracted
+   in the first place — this module once shipped a 3D view that put a floor somewhere else than
+   the 2D view of the same data, with no way to tell which was right — outlives the view that
+   prompted it, which is exactly why these stay. */
 
 /* The model carries what the chart needs. */
 (function () {
@@ -1687,8 +1665,9 @@ function grpRow(name, anc, acts, idx, field) {
   ok(/applyRowZoom\(/.test(sgb), 'and the row height is re-derived');
   /* ⚠️ It must not fight _lsmArrange, which sets a LOCATION-LED grouping while turning the mode on. */
   const arr = sliceFn('_lsmArrange') || '';
-  ok(/setGroupBys\(locDims\)/.test(arr),
-     'the arrange step sets a location-led grouping, so turning the mode ON cannot turn it off');
+  ok(/var _want = _flId \? \['loc:' \+ _flId\] : locDims;/.test(arr),
+     'the arrange step sets a location-led grouping on BOTH branches (the fold and the fallback),\n      so turning the mode ON cannot turn it off');
+  ok(/setGroupBys\(_want\)/.test(arr), 'and that is what it passes');
 
   /* ⚠️⚠️ EXECUTE THE SHIPPED GUARD, NOT A COPY OF IT. The first cut of this block
      re-typed the condition into the suite and asserted on THAT — and a negative build with the
@@ -1755,7 +1734,7 @@ function grpRow(name, anc, acts, idx, field) {
      guard above would otherwise drop the mode the instant it was turned on. */
   ok(/if \(!locDims\.length\) \{\s*UI\.toast\(/.test(arr),
      'with no location levels the arrange step toasts and never calls setGroupBys');
-  ok(arr.indexOf('setGroupBys(locDims)') > arr.indexOf('if (!locDims.length)'),
+  ok(arr.indexOf('setGroupBys(_want)') > arr.indexOf('if (!locDims.length)'),
      'the setGroupBys call sits inside the else branch, after that test');
   /* Turning the mode OFF restores the old grouping — and must not re-enter the guard. */
   const slr = sliceFn('setLsmRows') || '';
@@ -1783,7 +1762,7 @@ function grpRow(name, anc, acts, idx, field) {
    '_lsmAxOf', '_lsmSeq', '_lsmClash', '_lsmClashHTML',
    '_lsmStateOf', '_lsmStoreyStatus', '_lsmStatusLabel', 'startDDDrag',
    '_lsmShaped', '_locFloorLevelId',
-   '_lsmAggOn', '_lsmArrange', '_lsmFinish', 'setFlowlineMode', 'renderFlowline',
+   '_lsmAggOn', '_lsmArrange', '_lsmFinish',
    /* the declared cross-trade handoff */
    '_lsmLead', '_lsmLeadWarm', '_clearLsmLeadMemo', 'declaredBatchOf', 'declaredBatch',
    'handoffFrom', 'parallelKindOf', '_lsmKindWord',
@@ -1837,8 +1816,8 @@ function grpRow(name, anc, acts, idx, field) {
 
   /* The three things the mode must arrange are all reached from the setter. */
   /* ⚠️ RETARGETED, not loosened: slice 5 extracted the arrange step into `_lsmArrange` and the
-     repaint into `_lsmFinish` so the flowline uses the SAME one. The properties are unchanged and
-     one is stronger — that both entry points go through the one arrange. */
+     repaint into `_lsmFinish`. ⚠️ The second caller was the flowline, which is gone; the split is
+     kept because `setLsmRows` still goes through the one arrange and the one repaint. */
   const setter = sliceFn('setLsmRows') || '';
   const arrange = sliceFn('_lsmArrange') || '';
   const finish = sliceFn('_lsmFinish') || '';
@@ -1846,22 +1825,13 @@ function grpRow(name, anc, acts, idx, field) {
   ok(/setGroupBys\(/.test(arrange), 'it sets the location grouping (reusing setGroupBys)');
   ok(/expandToLevel\(/.test(arrange), 'it collapses via the EXISTING expandToLevel');
   ok(/saveCatKeys\(/.test(arrange), 'it proposes the curated key trades');
-  ok(/_locFloorLevelId\(\)/.test(arrange) && /_fi \+ 1/.test(arrange),
-     'and it collapses at the FLOOR depth, not the deepest level');
+  ok(/_locFloorLevelId\(\)/.test(arrange) && /setGroupBys\(_want\)/.test(arrange),
+     'and it folds to the FLOOR level alone, not the whole ladder');
   ok(/applyRowZoom\(/.test(finish), 'the repaint step pushes the lane budget through applyRowZoom');
   ok(/_lsmArrange\(/.test(setter), 'setLsmRows delegates to the arrange step');
   ok(/_lsmFinish\(/.test(setter), 'and to the repaint step');
   ok(/UI\.toast\(/.test(finish), 'which reports what it changed');
   ok(/_lsmPrevGroup/.test(setter), 'and the mode is reversible');
-  /* ⚠️⚠️ THE POINT OF THE EXTRACTION: the flowline must not carry a second copy. */
-  const flow = sliceFn('setFlowlineMode') || '';
-  ok(flow !== '', 'the flowline has a mode setter');
-  ok(/_lsmArrange\(/.test(flow), 'and it goes through the SAME arrange step');
-  ok(!/expandToLevel\(/.test(flow) && !/saveCatKeys\(/.test(flow),
-     'with no second copy of the collapse or the curation');
-  ok(/setVStackMode\(false\)/.test(flow) && /setProgressMode\(false\)/.test(flow),
-     'one full-width panel at a time, like setVStackMode does');
-  ok(!/_lsmRows = /.test(flow), 'and it does NOT turn the row layout on - two readings, one model');
 
   /* The renderer and the aggregation are actually reached from the render path. */
   ok(/_lsmBarsHTML\(r, min, dayw, top\)/.test(code) || /return out \+ _lsmBarsHTML\(/.test(code),
@@ -2242,9 +2212,6 @@ function grpRow(name, anc, acts, idx, field) {
   ok(/ps-lsmclash-lead/.test(src) && /border-left:3px dashed/.test(src), 'and a CSS class to match');
   ok(!/#[0-9a-fA-F]{3,6}/.test('.ps-lsmclash-chip.ps-lsmclash-lead { border-left:3px dashed var(--pd-bad); }'),
      'declared with a token, not a colour literal');
-  const fl = sliceFn('renderFlowline') || '';
-  ok(/ps-fl-clash-lead/.test(fl), 'the flowline marks the class too');
-  ok(/ahead of the declared/.test(fl), 'with its own sentence');
 })();
 
 
