@@ -104,6 +104,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (as) — Schedule Setup: a symbol that read as a warning, a bulk edit that duplicated two controls, and a copy that was a push
+
+Owner, three items off the Floors & Zones step, plus *"Apply this also to the floor plan layouts."*
+Module work — the full entry is in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zy)`. Logged here
+for the `MODULE_V` bump and the three things that generalise past this module:
+
+⚠️⚠️ **AN UNLABELLED GLYPH IN A CONTROL THAT TURNS RED IS NOT A NEUTRAL AFFORDANCE.** The tower
+menu was a 30 × 30 square holding `⋯`, and its own rule tints it `--pd-red` on hover and while open
+— so the only way to learn what it opened was to press it, and pressing it lit it in the colour
+this app reserves for danger. It reads **Tower options** now. The same shape exists elsewhere in the
+app (`#ps-tb-more` in the Project Schedule toolbar is also a bare `⋯`) and is deliberately left
+alone: that one is an overflow for controls that are already labelled when the row is wide enough,
+and it does not go red.
+
+⚠️⚠️ **A "CHANGE EVERY X" MODAL IS USUALLY A THIRD WAY TO DO THINGS THAT ALREADY HAVE TWO.** The
+removed dialog set a floor's category or its zone count in bulk — both of which are already asked
+at creation **and** editable on every row. Its zone half also **replaced** the zones it touched,
+discarding names and units that neither of the controls it duplicated ever touches. The handler was
+deleted with the button, on this repo's standing rule that a live function with no emitter is what a
+later reader restores a button for.
+
+⚠️⚠️ **A PUSH THAT REWRITES EVERY SIBLING IS THE WRONG SHAPE FOR THIS KIND OF CONTROL.**
+*"Copy this trade's floors → all trades"* replaced every other trade's zoning in one press. It is a
+**pull** now: one select naming every (trade, tower) pair that has floors, grouped and labelled by
+tower, replacing only the thing on screen. The owner's *"put a label of which tower is being
+referenced"* applies to the floor-plan **Trace over** picker too, which has always offered other
+towers' plans and never said which building they came from — every tower has an `F5`.
+
+⚠️ **A NUL BYTE IN `modules/project-schedule/CLAUDE.md` IS FIXED, AND IT IS THE THIRD TIME.** One
+raw 0x00 at line 586, inside an entry **quoting the `\u0000` sentinel `dimKey` returns** — the
+escape was written as the character instead of as the six characters of its text. `file` called that
+changelog **data** and GNU `grep` answered *"Binary file … matches"* instead of the matching line,
+on the 9,000-line file that is the module's primary history. (`git grep` was never affected: it
+sniffs only the first 8,000 bytes.) Repaired by building the escape from char codes and checking the
+bytes afterwards, which is what that file's own 2026-09-09 entry says to do.
+⚠️⚠️ **AND WRITING THIS PARAGRAPH REPRODUCED IT — a fourth time, in the sentence describing it.**
+The two characters above went into *this* file as one 0x00, because the editor wrote the escape as
+the character it denotes. Caught by re-scanning the bytes of both changelogs after prepending, which
+is the only reason it is not in this commit. **Never type that escape into prose and trust the
+write; build it from char codes and check the bytes.**
+
+⚠️ **One inline `font-size` was dropped while resolving the rebase**, deliberately: `origin/main`
+had removed it from this very control in its own typography pass, so the merged file takes main's
+decision rather than re-asserting a literal it had just deleted.
+
+**Verified:** the module's 3.4MB inline `<script>` parses (1 block, 0 failures); its `<style>` block
+is brace-balanced comments-stripped (2458/2458); 0 NUL bytes across both changed files; the
+function-set diff is **1 lost (`_bulkDlg`, deliberate) and 1 added**. Eleven module suites green
+(`zoneoverlap` 57/0 — it was **56/1** before this, failing on a comment that quoted the very
+selector its own assertion forbids); `wiring-check` **139/139**; `dead-hooks` at its documented
+9-finding baseline. Rendered and measured in an iframe at 1440px against the real stylesheets, in
+both themes, with no horizontal page scroll.
+
+⚠️ **Not verified signed in.** ⚠️ `test-builder` **99/1** and `test-lsm`'s crash are **pre-existing**
+— the first was run against the pre-edit file and fails identically.
+
+`MODULE_V` → `20260917zzo`, re-derived from what the live site actually serves (`zzn`) **after**
+rebasing onto 38 incoming commits, and sort-checked. ⚠️ The `modules-grid.js` fallback literal had
+drifted four tokens behind (`zzk`) and is brought current with it.
+
+
 ### 2026-09-17 (ar) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
 
 ⚠️ Re-lettered `(aa)` → `(ah)` → `(aj)` → `(ap)` → `(ar)` across five catch-up merges: each time,

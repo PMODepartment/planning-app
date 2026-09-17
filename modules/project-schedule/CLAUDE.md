@@ -1,3 +1,148 @@
+## 2026-09-17 (zy) — The tower menu gets a word, "Change every floor" goes, and one copy-from picker names its tower
+
+Owner, three reports off the Floors & Zones step: *"For the UI in schedule setup, why is there a
+symbol in the dropdown here. Pls fix that."*, *"pls remove the button of change every floor. what
+is the point of that."*, and *"in the third pic, also remove that. just allow users to copy from
+other trades and also from other towers IF APPLICABLE. However when referencing from other towers,
+pls put a label if which tower is being referenced. Apply this also to the floor plan layouts."*
+
+### 1 · ⚠️⚠️ THE SYMBOL WAS A BARE `⋯`, AND THE RULE UNDERNEATH IT MADE IT LOOK LIKE A WARNING
+
+`.sbld-twmore > summary` was a **30 × 30 square holding three dots and nothing else**, and the rule
+two lines below it turns that square **red** on hover and while open. So the one route to Rename,
+Copy-from and Delete was a glyph that had to be pressed to find out about — and pressing it lit it
+in the colour this app uses for danger. The owner's screenshot is that button mid-hover.
+
+⚠️ Sized like `.sbld-twbtn` beside it now (height 30, padding 2/10, `--pd-fs-sm`, `nowrap`) rather
+than a square, because it has become the same kind of thing: **a labelled button on the tower bar**.
+Its `title` names the tower it acts on, which the bare glyph could not.
+
+### 2 · "Change every floor…" is gone, and so is `_bulkDlg`
+
+⚠️⚠️ **NONE THAT THIS STEP DOES NOT ALREADY ANSWER TWICE OVER**, which is the owner's own question
+answered. It set the **category** or the **zone count** on every floor of the tower at once — but
+the category is asked for at birth in the Add floors dialog and changed on each row's own select,
+and the zone count is a minus/N/plus stepper on every row plus a field in Quick setup, which states
+the whole building in one press. A third way to do two things, behind a modal.
+
+⚠️ And its zone half **REPLACED** the zones it touched, throwing away names and units that neither
+of the two controls it duplicated ever touches. ⚠️ The handler goes with the button rather than
+being left wired to nothing: a live `_bulkDlg` with no emitter is exactly what a later reader
+restores a button for, on the reasoning that the wiring must have been there for something.
+
+### 3 · ⚠️⚠️ "COPY → ALL TRADES" WAS A PUSH. WHAT REPLACES IT IS A PULL
+
+`Copy <trade> floors/zones → all trades` replaced **every other trade's zoning at once**, with a
+confirm as the only thing between a planner and losing however many trades had already been laid out
+differently. One select now lists every **(trade, tower)** pair that has floors — this trade's other
+towers included — and takes a copy of the one the planner picks. Same work in the usual case (state
+one trade, then take it from each of the others), one trade at a time, and nothing is ever replaced
+except the thing on screen.
+
+- ⚠️⚠️ **THE TOWER HALF IS THE OTHER HALF OF THE ASK, and it was the bigger gap.** A tower that
+  repeats another is far more common than a trade that repeats another, and until now the only
+  route was **Copy from another tower…**, which takes *every* trade at once. The options are
+  grouped in `<optgroup>`s labelled with the **tower's own name** — *"which tower is being
+  referenced"* — with **this tower first**, so the nearest answer is the first one read.
+- ⚠️ On a single-tower project the tower label is left off entirely: `multiTower()` gates it,
+  because there is only one answer and a group heading naming it would be one more thing to read.
+- ⚠️⚠️ **THE COPY IS SCOPED TO THE TOWER ON SCREEN, WHICH THE OLD TRADE-TO-TRADE COPY WAS NOT.**
+  `cfg.zoning[g].floors` is **one flat list for the whole project**, so `zn.floors = cloneFloors(…)`
+  replaced the source trade's floors across **every tower**. This editor shows one tower at a time,
+  so taking a layout now replaces this tower's floors and says so in the confirm: *"Other towers are
+  not touched."*
+- ⚠️ `b-twcopy2` (**Copy from another tower…**) stays. It is a genuinely different scope — every
+  trade of a tower plus its zone sequence, in one press — and folding it into a per-trade select
+  would have removed a capability to remove a duplicate that is not one.
+- ⚠️ Each option carries the floor and zone counts, so a planner can tell a fully laid-out tower
+  from a half-typed one **before** replacing anything.
+
+### 4 · The floor-plan reference picker names its tower
+
+Owner: *"Apply this also to the floor plan layouts."*
+
+`zpRefsFor` — the **Trace over** picker in the plan window — has always offered other towers' floor
+plans: its first loop walks `cfg.zoning[tr].floors`, which holds **every** tower's floors, and its
+second walks every other plate in the project. What it never did was say which building any of them
+came from, and **every tower has an `F5`**, so on a multi-tower job the picker read as a run of
+identical rows.
+
+Both loops now append the tower name on a multi-tower project, through one `_twSuffix` reading
+`towerIdOf` — the same resolver `floorsOfTower` uses, so the label cannot disagree with the scoping.
+
+⚠️ This is the same collision the **apply** list was scoped for on 2026-09-12 (*"The other floors
+detected must be applicable to that tower only"*). The answers differ deliberately: applying a plan
+to another tower's floor is a mistake, so that list is **scoped**; tracing over another tower's plan
+is the whole point when two towers repeat, so this one is **labelled**.
+
+### 5 · Two hints that named the removed button, and a comment its own suite was failing on
+
+Both *"a plan drawn on one trade's floors is not this trade's plan"* messages pointed at
+**Copy … floors/zones → all trades**, a control that no longer exists — a message naming a button
+nobody can find reads as a broken app. Both now name **Quick setup → take one you have already
+laid out**.
+
+⚠️⚠️ **AND `test-zoneoverlap` WAS FAILING ON ITS OWN EXPLANATION, WHICH IS NOT MINE BUT SHIPS HERE.**
+Its assertion forbids the `data-fpk` attribute and the `data-fpk` attribute selector anywhere in the
+file — and the comment explaining why that wiring was removed spelled the selector out in brackets,
+so the suite failed **56/1** on a file that is correct. The suite's own note anticipates the bare
+name and not the bracketed form. The comment no longer spells the selector out and says why; the
+assertion is untouched, so the check is no weaker.
+
+### Verified
+
+Inline `<script>` **parses** (1 block, 0 failures) — the check that matters in a 50,000-line inline
+script, which dies whole on one syntax error. CSS block brace-balanced comments-stripped
+(**2458/2458**); **0 NUL bytes**; function-set diff **1 lost (`_bulkDlg`, deliberate) and 1 added
+(`_twSuffix`)**; no reference to `otherTr`, `srcTr`, `_bulkDlg`, `b-bulk` or `b-applyall` outside
+comments.
+
+Suites: `zoneoverlap` **57/0** (was 56/1 before the comment fix), `zoneplan` 27/0, `sitefit` 31/0,
+`autotrace` 32/0, `cpm` 28/0, `critwbs` 26/0, `health` 30/0, `wbsfile` 33/0, `syntax` 4/0,
+`towerseq` 48/0, `shapeedit` 36/0. `wiring-check` **139/139**; `dead-hooks` at its documented
+9-finding baseline.
+
+**Rendered against the real `dashboard.css` and this module's own `<style>` block**, extracted
+verbatim, in an **iframe at 1440px** with transitions forced off — ⚠️ an iframe because the pane is
+~300px wide and the 700px media query legitimately applies to it, which is how the first
+measurement reported 16px type and 44px buttons on a desktop layout:
+
+| | measured |
+|---|---|
+| the summary | **`Tower options`, 104.8 × 30**, 12.5px / 700, `rgb(90,88,88)` = `--pd-muted`, **not clipped** |
+| its neighbours | `+ Tower` 30px and `Site plan 1/2` 30px at the same `y` — one row |
+| open / hover | `rgb(238,49,36)` text **and** border; menu 231.6px wide at x=433, **fully in view** |
+| the actions row | **one row, three buttons** — `+ Add floor`, `+ Basement`, `Copy from another tower…` |
+| the copy-from select | optgroups **`Tower 1 (this tower)`** and **`Tower 2`**; grows **105.6 → 256.6px** to fit the selected option, **not clipped**, under its 300px cap |
+| page horizontal scroll | **none**, light or dark |
+
+⚠️ **The tokens only resolved once `@import` was stripped correctly.** `dashboard.css` opens with a
+Google Fonts `@import` **whose URL contains semicolons** (`wght@0,400;0,500;…`), so a
+non-greedy strip that stops at the first semicolon cuts it mid-URL and leaves garbage that breaks
+the parse of everything after it — every `--pd-*` read back empty and the harness reported a
+plausible-looking but unstyled page. Stripped to the terminating `);` instead.
+
+⚠️ The harness was written as `_scratch-tw.html` (confirmed ignored by `git check-ignore` **before**
+use) and **deleted before committing** — this repo has shipped harness files to production twice.
+
+⚠️ **Not verified signed in.** The anon key has no grants, so no layout has actually been copied and
+no reference traced against a real project. The first things to try: take a layout from another
+tower and check the other towers' floors are untouched, and open a floor plan's **Trace over** on a
+multi-tower job and check every row names its building.
+
+⚠️ **Pre-existing and NOT caused by this change**, confirmed by running them against the pre-edit
+file: `test-builder` **99/1** (*page "Structure" belongs to a step the rail can show*) — identical
+before and after — and `test-lsm`, which crashes on a missing CLI argument.
+
+⚠️ One inline `font-size` was dropped while resolving the rebase: `origin/main` had removed it from
+this very select in its own typography pass, so the merged control takes main's decision rather than
+re-asserting a literal it had just deleted.
+
+`MODULE_V` → `20260917zzo`, re-derived from what the **live site** serves (`zzn`) after rebasing
+onto 38 incoming commits, and sort-checked. ⚠️ The `modules-grid.js` fallback literal had drifted to
+`zzk` and is brought current with it — it is only read by a page that omits the query string, which
+is why the drift was invisible.
+
 ## 2026-09-17 (zx) — Repetition loses a tab it was drawing twice, and Scope per zone names the work
 
 Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
@@ -438,7 +583,7 @@ that tower's WBS branch, and it makes the stacking draw preliminaries as if they
 - ⚠️ The Floors & Zones chip row shows it as a **dead, dashed chip reading "project-wide"** rather than
   dropping it. A planner who used it in step 1 and cannot find it here has to be told why, once, where
   they are looking — the emptiest possible bug report is *"I set up the floors and nothing happened"*.
-- ⚠️ `dimKey` already returns the ` ` "no value at this level" sentinel for a null tower, so the
+- ⚠️ `dimKey` already returns the `\u0000` "no value at this level" sentinel for a null tower, so the
   pushed row attaches to its parent and builds no tower branch. That path is unchanged.
 
 ### Verified
