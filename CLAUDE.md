@@ -104,6 +104,79 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ao) — The holding list gets a search box and folds by trade
+
+Owner: *"I need a search filter in the holding list (172) as well so its easier to select.
+Additionally can we have a collapsible header based on trade as well to make it easier to navigate
+the holding list"*.
+
+A flat 172-item scroll is not a list you pick from, it is one you give up on. Two controls, both
+built on precedents already in this file rather than invented:
+
+| | what it does | the precedent it follows |
+|---|---|---|
+| `#b-holdq` | filters on **code, name and trade** | `ccSearchText` — *“matching the raw column alone would make the code unsearchable by name, which is the only way most people know it”* |
+| `details.sbld-hold-grp` | one foldable section per trade, in `GROUPS` order | `.sbld-how`, the module’s own `<details>` disclosure |
+
+### ⚠⚠ The three decisions that are not obvious
+
+**1. A live search overrides the fold.** A trade folded shut while the query matches inside it
+reads as *“nothing found”*, which is the wrong answer to the question being asked. This is the WBS
+Manager’s rule exactly — `q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id]` — and the fold state is
+**kept**, not cleared, so emptying the box restores what the planner had folded.
+
+**2. `ontoggle` records the fold and does NOT re-render.** `<details>` opens and closes itself.
+Calling `render()` there would rebuild the grid, the list and the search box to achieve something
+the browser has already done — and would drop the grid’s cell selection on the way. The state is
+read on the *next* render, which is the only time it is needed.
+
+**3. The search box re-finds itself through `document`, not through the captured `host`.** Ticking a
+code calls `render()`, which rebuilds the input from scratch — so the element being typed into no
+longer exists when the handler returns, and focus would land on `<body>` after **every keystroke**.
+
+⚠ The box appears above 8 codes and **stays while a query is live**, however few survive it.
+Without that, filtering 172 down to 3 removes the control holding the filter, with no way back to
+the other 169. And an empty result names the query (*“No code matches `xyz`”*) rather than saying
+“Empty”, which would send a planner to `+ Library` to reload codes that are already there.
+
+⚠ `holdQ` and `holdCol` are cleared on a project switch. A filter that **hides** is worse to leave
+behind than one that sorts — a stale query against a new catalog shows an empty pane, which reads as
+*“this project has no codes”*. (`catSel` is deliberately left: its ids cannot match another
+project’s catalog, so it is inert rather than misleading.)
+
+### Measured, by executing the shipped code
+
+The harness **slices the list builder and the pane markup out of `index.html` and runs them** — the
+technique `test-lsm` uses — against 172 synthetic codes, with the real stylesheet. Nothing about
+the logic or the CSS is retyped, because a hand-copied harness has already reported a fixed defect
+as unfixed once in this repo.
+
+| case | result |
+|---|---|
+| default | **8** groups in `GROUPS` order, header counts sum to **172**, all open |
+| fold `ST`, repaint | `ST` shut, the other seven open, all 172 still in the DOM |
+| search `concrete` with `ST` folded | **9 of 172 shown**, every group open, every item matches |
+| clear the box | `ST` folded again — the state survived the query |
+| search by trade / by code | `structural` → 22 items in `ST` only · `015007` → 1 item |
+| no match | 0 items, the query named, **the search box still there** |
+| ticked badges | `GR:3` `SW:1`, per trade, not the global count |
+| pane at its 180px drag minimum | input 166px, **0px** horizontal overflow in the tools row, the list or the header |
+| sticky headers, scrolled 0 → max | `GR` → `SW` → `ST` → … → `Others` — a trade always owns the top slot |
+
+⚠ `min-width:0` on the input is load-bearing: an `<input>` defaults to `min-width:auto`, which
+resolves to its intrinsic size and refuses to shrink — the same trap `.ps-search` documents further
+up the sheet. The pane drags down to 180px, so without it the box overflows the pane.
+
+⚠ Two harness readings were **wrong in my favour before being corrected**: the sticky check first
+reported *“0 pinned headers”* at the bottom of the list because it measured against the list’s top
+edge instead of its 6px padding, and `visibilityState` reads `hidden` in this pane while layout is
+live, so the gate is the geometry and a brand colour (`outline-color` `rgb(238,49,36)`), not the
+visibility flag.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline, with one more queried class reference — 464 → 465) · `dark-remap` 0 findings.
+`modules-grid.js` `?v=` → `20260917zzm`.
+
 ### 2026-09-17 (an) — The builder’s top-bar lede is gone, and only the one he quoted
 
 Owner: *"Can we also remove the ‘Set up the execution programme — activities, locations, sequencing,

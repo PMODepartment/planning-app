@@ -4560,6 +4560,29 @@
     .sbld-hold-n { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     .sbld-hold-empty { padding:10px; font-size:var(--pd-fs-xs); }
     .sbld-hold-code { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-hold-tools { padding:6px; border-bottom:1px solid var(--pd-line); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    /* ⚠ `min-width:0` is load-bearing. An <input> defaults to `min-width:auto`, which resolves to
+       its intrinsic size and refuses to shrink below it — the same trap documented on `.ps-search`
+       further up. The holding pane drags down to 180px, so without this the box overflows it. */
+    .sbld-hold-tools .pd-input { flex:1 1 110px; min-width:0; }
+    /* ⚠ The trade header is STICKY inside the scroller: with a trade folded open over 40 codes,
+       a header that scrolls away leaves the planner reading a list with no idea whose it is. */
+    .sbld-hold-grp > summary { position:sticky; top:0; z-index:1; cursor:pointer; list-style:none;
+      display:flex; align-items:center; gap:6px; padding:4px 7px; margin:0 0 4px;
+      background:var(--pd-bg); border:1px solid var(--pd-line); border-left:4px solid var(--zc,var(--pd-line));
+      border-radius:5px; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-ink);
+      -webkit-tap-highlight-color:transparent; }
+    .sbld-hold-grp > summary::-webkit-details-marker { display:none; }
+    .sbld-hold-grp > summary::before { content:"▸"; font-size:var(--pd-fs-micro); color:var(--pd-muted); transition:transform .15s ease; }
+    .sbld-hold-grp[open] > summary::before { transform:rotate(90deg); }
+    .sbld-hold-grp > summary:hover { background:var(--pd-card); }
+    .sbld-hold-gname { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sbld-hold-gn { flex:0 0 auto; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-hold-gsel { flex:0 0 auto; font-size:var(--pd-fs-micro); color:var(--pd-red); }
+    /* ⚠ `.sbld-hold-list` is a flex column with `gap:4px`, which spaces the GROUPS. The codes
+       inside a group are block children of <details> and that gap never reaches them. */
+    .sbld-hold-grp > .sbld-hold-item { width:100%; margin:0 0 4px; }
+    .sbld-hold-grp > .sbld-hold-item:last-child { margin-bottom:0; }
     @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
@@ -34229,6 +34252,8 @@
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
+    var holdQ = '';     // step-1 holding list: the search box's text (code / name / trade)
+    var holdCol = {};   // step-1 holding list: trade code -> true when that group is folded shut
     var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 98, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 98, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
@@ -35705,6 +35730,12 @@
         // ⚠️ `imp ? 1 : 0` — a project opened for the first time BY a staged import must land on the
         // checking steps, not back on Start. stageImport sets step before switching the tab, and
         // this branch is what would otherwise reset it as the setup list loads.
+        /* ⚠ The holding list's filter is cleared with the project. A stale query would survive
+           into a catalog that cannot match it and show an empty pane, which reads as "this
+           project has no codes" — a filter that HIDES is worse to leave behind than one that
+           merely sorts. (`catSel` is deliberately left: its ids cannot match another project's
+           catalog, so it is inert rather than misleading.) */
+        holdQ = ''; holdCol = {};
         curPid = projectId; step = imp ? 1 : 0; await loadCfg();
         // ⚠️ The schedule grid's DEFAULT grouping follows this setup — see _adoptSetupGrouping. The
         // Project Schedule may already be open behind this tab with the plain WBS tree, because the
@@ -38707,11 +38738,49 @@
           }).join('') +
           '<td class="xl-rowact"><button class="sbld-del" data-del="' + r + '" title="Delete row"><span data-ico="trash" data-ico-size="14"></span></button></td></tr>';
       }).join('');
-      var holdItems = cfg.catalog.map(function (a) {
-        return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + gc(a.group) + '">' +
-          '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
-          '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
+      /* ⚠⚠ SEARCHED AND GROUPED BY TRADE. Owner, at 172 parked codes: *"I need a search filter
+         in the holding list (172) as well so its easier to select. Additionally can we have a
+         collapsible header based on trade as well to make it easier to navigate"*. A flat 172-item
+         scroll is not a list you pick from, it is one you give up on.
+         ⚠ MATCHES CODE **AND** NAME **AND** TRADE, for the reason `ccSearchText` already states
+         upstream: matching the code alone makes it unsearchable by the only handle most people
+         have for it. Trade is in there because the groups are now visible, so typing one is the
+         obvious thing to try. */
+      var _hq = holdQ.trim().toLowerCase();
+      var _holdShown = !_hq ? cfg.catalog : cfg.catalog.filter(function (a) {
+        return ((a.code || '') + ' ' + (a.name || '') + ' ' + (GLABEL[a.group] || '')).toLowerCase().indexOf(_hq) >= 0;
+      });
+      /* ⚠ GROUPS order, not first-appearance order — the trades sit in the same sequence here as
+         in the grid's Trade column and everywhere else in the setup, so the pane does not reshuffle
+         itself as codes are loaded. The trailing '' is the bucket for a catalog row whose `group`
+         is missing or is not a GROUPS code; it is never dropped silently. */
+      var holdItems = GROUPS.concat(['']).map(function (g) {
+        var items = _holdShown.filter(function (a) { return (GLABEL[a.group] ? a.group : '') === g; });
+        if (!items.length) return '';
+        var nSel = items.filter(function (a) { return catSel.indexOf(a.id) >= 0; }).length;
+        /* ⚠⚠ A LIVE SEARCH OVERRIDES THE FOLD, exactly as the WBS Manager's tree does
+           (`q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id]`). A trade folded shut while the query
+           matches inside it reads as "nothing found", which is the wrong answer to the question
+           being asked. The fold state itself is kept, so clearing the box restores it. */
+        var open = _hq ? true : !holdCol[g];
+        return '<details class="sbld-hold-grp"' + (open ? ' open' : '') + ' data-grp="' + e2(g) + '" style="--zc:' + gc(g) + '">' +
+          '<summary title="' + e2((g ? GLABEL[g] : 'Codes with no trade set') + ' — click to fold this trade away') + '">' +
+          '<span class="sbld-hold-gname">' + e2(g ? GLABEL[g] : 'Unclassified') + '</span>' +
+          (nSel ? '<span class="sbld-hold-gsel">' + nSel + ' ticked</span>' : '') +
+          '<span class="sbld-hold-gn">' + items.length + '</span></summary>' +
+          items.map(function (a) {
+            return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + gc(a.group) + '">' +
+              '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
+              '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
+          }).join('') + '</details>';
       }).join('');
+      /* ⚠ The box appears at 9 codes, and STAYS while a query is live however few survive it —
+         otherwise filtering down to 3 removes the control holding the filter, with no way back to
+         the other 169. Same threshold shape as `#ps-cal-filter`, which shows above 6 calendars. */
+      var holdTools = (cfg.catalog.length > 8 || _hq)
+        ? '<div class="sbld-hold-tools"><input class="pd-input pd-input-sm" id="b-holdq" placeholder="Search code, name or trade…" value="' + e2(holdQ) + '">' +
+          (_hq ? '<span class="sbld-hold-n">' + _holdShown.length + ' of ' + cfg.catalog.length + ' shown</span>' : '') + '</div>'
+        : '';
       var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
         '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span title="Class codes parked for this project — loaded with + Library or + From BOQ, plus anything sent out of the build. This is not the whole chart.">Holding list (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
         /* ⚠️ The BOQ button is FIRST and primary. It loads the codes this project is actually
@@ -38723,7 +38792,14 @@
            it lives in the title, which is where the long form belongs. */
         '<button class="pd-btn pd-btn-primary sbld-libbtn" id="b-boq" title="Load only the class codes this project&rsquo;s current BOQ carries, from Contracts &amp; Claims">+ From BOQ</button>' +
         '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
-        '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
+        holdTools +
+        /* ⚠ THREE states, not two. "Empty" and "nothing matches your search" are different facts
+           and the second one names the query, because a pane that just says "empty" after a typo
+           sends the planner back to + Library to reload codes that are already there. */
+        '<div class="sbld-hold-list">' + (!cfg.catalog.length
+          ? '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>'
+          : (_holdShown.length ? holdItems
+            : '<div class="sbld-empty sbld-hold-empty">No code matches <b>' + e2(holdQ.trim()) + '</b>. Clear the box to see all ' + cfg.catalog.length + '.</div>')) + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       /* ⚠ Both suppressed under `noHead`. The lede enumerated “code, name, trade, scope and its
          interior/exterior duration” — which is the grid's own column headers, read out in prose
@@ -38829,6 +38905,24 @@
       });
       // holding-area shuttle
       host.querySelectorAll('[data-cat]').forEach(function (b) { b.onclick = function () { var id = b.dataset.cat, i = catSel.indexOf(id); if (i >= 0) catSel.splice(i, 1); else catSel.push(id); render(); }; });
+      /* ⚠⚠ RE-FOUND THROUGH THE DOCUMENT AFTER render(), not through the captured `host`. Ticking
+         a code calls render(), which rebuilds this input from scratch — so the element typed into
+         no longer exists by the time the handler returns, and focus would land on <body> after
+         every keystroke. `#ps-cal-filter` solves it the same way; the difference is that it can
+         trust its own container to survive and this one re-queries the document to be sure. */
+      var hq = host.querySelector('#b-holdq');
+      if (hq) hq.oninput = function () {
+        holdQ = hq.value; render();
+        var h2 = document.getElementById('b-holdq');
+        if (h2) { h2.focus(); h2.setSelectionRange(h2.value.length, h2.value.length); }
+      };
+      /* ⚠⚠ ontoggle RECORDS the fold and DOES NOT re-render. <details> opens and closes itself, so
+         calling render() here would rebuild the grid, the holding list and the search box to
+         achieve something the browser has already done — and would drop the grid's cell selection
+         on the way. The state is only read on the NEXT render, which is exactly when it is needed. */
+      host.querySelectorAll('details.sbld-hold-grp').forEach(function (d) {
+        d.ontoggle = function () { var g = d.dataset.grp; if (d.open) delete holdCol[g]; else holdCol[g] = true; };
+      });
       host.querySelector('#b-load').onclick = function () {
         if (!catSel.length) { UI.toast('Tick one or more class codes in the list first.', 'warn'); return; }
         var take = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) >= 0; });
