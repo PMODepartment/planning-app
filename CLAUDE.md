@@ -104,6 +104,92 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ah) — The grid's controls were painting over every highlight; the Grouping rungs stop appearing when there is nothing to group
+
+Three owner reports in one pass: *"These groupings should only appear when there is a grouping
+available"*, *"Let's include the pop-up window in the UI sweep"*, and *"The highlight UI is not
+working properly. Its clipping."*
+
+### ⚠️⚠️ ONE CAUSE, THREE SYMPTOMS: THE INPUTS WERE OPAQUE
+
+`table.sbld-xl input, select` carried `background: var(--pd-card)`. Every mark this grid makes is
+painted on the **`<td>`**, behind its children — so the control covered all of them:
+
+- PDGrid's selection, `.pdg-sel { box-shadow: inset 0 0 0 9999px rgba(238,49,36,.22) }`
+- the bad-code marking, `.sbld-badcode { background: var(--pd-warn-bg) }`
+- the copy marquee's marching ants, a `background-image` on the cell
+
+**Measured before the fix:** the cell computed to `rgba(199,119,0,0.12)` at **43px** tall while its
+input computed to opaque `rgb(255,255,255)` at **24px**. So the mark was hidden behind the text and
+survived only as a **19px strip below it** — which is exactly the reported "clipping": a highlight
+that reads as a band under the row instead of a filled cell.
+
+⚠️ **Transparent costs nothing here, and that was checked rather than assumed.** Walking up from the
+cell: `td`, `tr`, `tbody`, `table.sbld-xl` and `.sbld-xlwrap` are all `rgba(0,0,0,0)`; the first
+painted ancestor is the panel's own white. An unmarked cell is pixel-identical, and the marked ones
+finally show.
+
+⚠️ A second, smaller half: the cell's **colour** never reached the text either. The generic rule sets
+`color: var(--pd-ink)` on every input, which beats inheritance — so a bad code rendered bold (the
+weight *does* arrive, via `font: inherit`) but in ordinary ink. `.sbld-badcode input` carries the warn
+colour now. **Verified after:** input background `rgba(0,0,0,0)`, colour `rgb(138,83,0)` matching the
+cell, and a `.pdg-sel` cell's input no longer covers the selection.
+
+### A Grouping rung only appears when there is a grouping for it
+
+`agroup`…`agroup4` are the four rungs of the Construction Library's grouping path. On a project that
+groups nothing they were four rows that can never build — `willBuild` already returned false for them
+— sitting above the summary line as inert controls.
+
+⚠️ **The rows are hidden; the state is not.** `cfg.wbsOrder` is rebuilt from `work`/`incl`, never from
+the rendered rows, so a rung ticked in a saved setup keeps its tick and simply reappears the day the
+project has a grouping that deep. Hiding a row cannot silently drop it — which is the thing worth
+checking before hiding anything in a dialog that writes settings.
+
+⚠️⚠️ **And the ↑/↓ indices had to follow.** They were positions in `work`. With rows hidden, a swap
+keyed on the rendered index would have moved a different dim, and swapping with a *hidden* neighbour
+would have looked like a button that does nothing. They swap by **identity** now — the nearest visible
+dim, located in `work` — so hidden rungs stay where they are and every arrow moves the row it is on.
+
+⚠️ **Tower is deliberately not hidden by this.** It shows with its own *"skipped — this project has
+one tower, so it would be a level with a single branch"* note, which is a fact about the project worth
+reading. A grouping rung has no such story: it is simply not part of this project's structure.
+
+### The pop-ups join the UI sweep
+
+The 4.1 scanner only walked the **step renderers**, so a dialog opened *from* a step was never covered
+by it. Both are now at **0 off-scale inline font-sizes**:
+
+- `openPushModal` — five: `12px` four times (not a rung; `--pd-fs-sm` is 12.5) and `16px` once.
+- `openFileUnderPackage` — four more.
+
+⚠️⚠️ **The `16px` was fighting a rule that already exists.** `.pd-modal-header > h3` is `font: inherit`
+in `dashboard.css` precisely so a modal title takes the header's own `--pd-fs-lg`/700 — the inline
+literal overrode it and pinned this one dialog to a number that will not follow the token. Deleted, not
+re-tokenised.
+
+⚠️ **Six hand-written copies of one label, five of them agreeing.** The same
+`display:block;font-size:12px;font-weight:700;margin:12px 0 4px` block appears across three dialogs.
+The sixth says `margin:10px 0 4px` — two pixels of top margin is the only thing that kept it out of an
+exact-string sweep, which is this whole problem in miniature. All six are `.sbld-pushlbl` now.
+
+### Floors & Zones: measured, and it is already clean
+
+Asked for a sweep, and on the objective checks there is nothing left to sweep: `stLevels` has **0
+off-scale inline font-sizes** (the two `<select>`s were fixed in *(aa)*), and its CSS families —
+`.sbld-lvl*`, `.sbld-flr*`, `.sbld-zn*`, `.zpw-*`, `.sbld-twr*` — are **50 type-bearing rules with 0
+off-scale**. The one flagged value is `.zpw-mark text` at `calc(22px * var(--zs,1))`, which is **SVG
+text** and the scale's documented exemption (font-size in user units). `.sbld-twmore > summary` at 800
+was looked at and left: it is the glyph inside a 30×30 icon button, not body text. **Said plainly
+rather than sweeping something to look busy** — what the owner is seeing there is not visible to these
+checks, and is asked about instead.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · inline scripts parse · CSS brace balance identical to pinned
+`9884985` · 0 off-scale font-size rules and 0 off-scale inline sizes across the Setup and both
+dialogs. The highlight fix is a browser measurement before and after, not a reading of the CSS.
+`modules-grid.js` `?v=` → `20260917zzf`.
+
 ### 2026-09-17 (ah) — One bar per storey: the LSM row folds every trade into a single merged bar
 
 ⚠️ Re-lettered from `(ag)` on rebase: a concurrent session landed its own 2026-09-17 `(ag)` (below)
