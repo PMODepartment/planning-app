@@ -80,8 +80,16 @@ select 'boq_class_map rows carrying one', count(*)
     '11031','11032','12501','16451','17551','25606','25653','25701','25751','26350',
     '27101','27102','27204','27215','29252','50000','51000','NOBDT'))
 union all
-select 'boq_allocations rows carrying one', count(*)
-  from boq_allocations a join class_codes c on c.code = a.class_code
+-- ⚠⚠ WAS `boq_allocations a ... a.class_code`, WHICH DOES NOT EXIST AND STOPPED THE WHOLE
+-- SCRIPT: `ERROR: 42703: column a.class_code does not exist`, reported by the owner on his first
+-- run. `boq_allocations` links a BOQ item to an activity (boq_item_id, activity_id, qty, method)
+-- and has never carried a class code. The three tables that DO carry the string are
+-- `project_schedule`, `boq_class_map` and `boq_class_suggestions` — the last is the one meant
+-- here, and the count below is the same question asked of the right table.
+-- ⚠ Checked the rest of this file the same way rather than fixing only the line that threw:
+-- every other table.column it references exists.
+select 'boq_class_suggestions rows carrying one', count(*)
+  from boq_class_suggestions g join class_codes c on c.code = g.class_code
  where c.active and (length(c.code) <> 5 or c.code in
    ('01661','01700','01717','01719','01901','03053','04053','07054','11011','11021',
     '11031','11032','12501','16451','17551','25606','25653','25701','25751','26350',

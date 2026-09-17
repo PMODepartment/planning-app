@@ -104,12 +104,13 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-17 (aj) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
+### 2026-09-17 (ap) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
 
-⚠️ Re-lettered `(aa)` → `(ah)` → `(aj)` across three catch-up merges: `(ah)` collided with two
-newer entries `main` had landed in the interim (this file's own `(ai)` Floors & Zones and `(ah)`
-grid-controls entries below), so the entry that was still catching up moved again, per this file's
-"the one merging in gets bumped" rule.
+⚠️ Re-lettered `(aa)` → `(ah)` → `(aj)` → `(ap)` across four catch-up merges: each time, `main` had
+independently landed newer entries claiming whichever letter this one was sitting on in the
+interim (`(ah)` collided with the `(ai)`/`(ah)` pair below, then `(aj)` collided with `main`'s own
+fresh `(aj)` — the "Repetition's two long selects" entry now further down), so the entry that was
+still catching up moved again each time, per this file's "the one merging in gets bumped" rule.
 
 Owner, two live reports: a 360° video upload sat reading "Starting…" with no further movement, and
 the topbar's Drafts button label ran off the edge next to "+ Add media" at a narrow window width.
@@ -135,7 +136,377 @@ at `zq` — bumped to `zr` on integrating that. A real `<<<<<<<` conflict once `
 re-derived to `zze`. `main` then independently bumped again to `zzg` while this branch sat at `zze`;
 that merged with no conflict since only one side had moved. Same recurring collision the entry below
 documents its own chain of (`zg` → `zp`/`zq` → … → `zzg`) — this is further along the same chain,
-not a separate incident.**
+not a separate incident.** ⚠️ Note: by the time of this merge `main`'s own `assets/js/modules-grid.js`
+internal `MODULE_V` fallback literal reads `20260917zzk` while its `dashboard.html`/`modules.html`
+references already say `20260917zzm` — a pre-existing mismatch on `main` itself (not introduced by
+this merge, and invisible to `wiring-check`'s per-file version check since it only compares HTML
+references to each other). Left as-is rather than fixed here, since it belongs to whichever `main`
+commit moved the HTML refs without the fallback literal.
+
+### 2026-09-17 (ao) — The holding list gets a search box and folds by trade
+
+Owner: *"I need a search filter in the holding list (172) as well so its easier to select.
+Additionally can we have a collapsible header based on trade as well to make it easier to navigate
+the holding list"*.
+
+A flat 172-item scroll is not a list you pick from, it is one you give up on. Two controls, both
+built on precedents already in this file rather than invented:
+
+| | what it does | the precedent it follows |
+|---|---|---|
+| `#b-holdq` | filters on **code, name and trade** | `ccSearchText` — *“matching the raw column alone would make the code unsearchable by name, which is the only way most people know it”* |
+| `details.sbld-hold-grp` | one foldable section per trade, in `GROUPS` order | `.sbld-how`, the module’s own `<details>` disclosure |
+
+### ⚠⚠ The three decisions that are not obvious
+
+**1. A live search overrides the fold.** A trade folded shut while the query matches inside it
+reads as *“nothing found”*, which is the wrong answer to the question being asked. This is the WBS
+Manager’s rule exactly — `q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id]` — and the fold state is
+**kept**, not cleared, so emptying the box restores what the planner had folded.
+
+**2. `ontoggle` records the fold and does NOT re-render.** `<details>` opens and closes itself.
+Calling `render()` there would rebuild the grid, the list and the search box to achieve something
+the browser has already done — and would drop the grid’s cell selection on the way. The state is
+read on the *next* render, which is the only time it is needed.
+
+**3. The search box re-finds itself through `document`, not through the captured `host`.** Ticking a
+code calls `render()`, which rebuilds the input from scratch — so the element being typed into no
+longer exists when the handler returns, and focus would land on `<body>` after **every keystroke**.
+
+⚠ The box appears above 8 codes and **stays while a query is live**, however few survive it.
+Without that, filtering 172 down to 3 removes the control holding the filter, with no way back to
+the other 169. And an empty result names the query (*“No code matches `xyz`”*) rather than saying
+“Empty”, which would send a planner to `+ Library` to reload codes that are already there.
+
+⚠ `holdQ` and `holdCol` are cleared on a project switch. A filter that **hides** is worse to leave
+behind than one that sorts — a stale query against a new catalog shows an empty pane, which reads as
+*“this project has no codes”*. (`catSel` is deliberately left: its ids cannot match another
+project’s catalog, so it is inert rather than misleading.)
+
+### Measured, by executing the shipped code
+
+The harness **slices the list builder and the pane markup out of `index.html` and runs them** — the
+technique `test-lsm` uses — against 172 synthetic codes, with the real stylesheet. Nothing about
+the logic or the CSS is retyped, because a hand-copied harness has already reported a fixed defect
+as unfixed once in this repo.
+
+| case | result |
+|---|---|
+| default | **8** groups in `GROUPS` order, header counts sum to **172**, all open |
+| fold `ST`, repaint | `ST` shut, the other seven open, all 172 still in the DOM |
+| search `concrete` with `ST` folded | **9 of 172 shown**, every group open, every item matches |
+| clear the box | `ST` folded again — the state survived the query |
+| search by trade / by code | `structural` → 22 items in `ST` only · `015007` → 1 item |
+| no match | 0 items, the query named, **the search box still there** |
+| ticked badges | `GR:3` `SW:1`, per trade, not the global count |
+| pane at its 180px drag minimum | input 166px, **0px** horizontal overflow in the tools row, the list or the header |
+| sticky headers, scrolled 0 → max | `GR` → `SW` → `ST` → … → `Others` — a trade always owns the top slot |
+
+⚠ `min-width:0` on the input is load-bearing: an `<input>` defaults to `min-width:auto`, which
+resolves to its intrinsic size and refuses to shrink — the same trap `.ps-search` documents further
+up the sheet. The pane drags down to 180px, so without it the box overflows the pane.
+
+⚠ Two harness readings were **wrong in my favour before being corrected**: the sticky check first
+reported *“0 pinned headers”* at the bottom of the list because it measured against the list’s top
+edge instead of its 6px padding, and `visibilityState` reads `hidden` in this pane while layout is
+live, so the gate is the geometry and a brand colour (`outline-color` `rgb(238,49,36)`), not the
+visibility flag.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline, with one more queried class reference — 464 → 465) · `dark-remap` 0 findings.
+`modules-grid.js` `?v=` → `20260917zzm`.
+
+### 2026-09-17 (an) — The builder’s top-bar lede is gone, and only the one he quoted
+
+Owner: *"Can we also remove the ‘Set up the execution programme — activities, locations, sequencing,
+the lifecycle phases around it and the WBS — then push it into the Project Schedule. The generated
+preview stays here until you do.’ in the schedule setup as well its not needed"*.
+
+⚠ `#ps-bld-lede` **is a three-way switch, not one sentence**, and only the `'new'` branch was
+removed. The other two stay, deliberately:
+
+| mode | copy | kept? |
+|---|---|---|
+| `import` | *“Nothing is written to the schedule until Review & import”* | **kept** — a warning about writes, not a description |
+| `new` | the sentence above | **removed** |
+| chooser | *“Start here: bring in an existing programme…”* | **kept** — the landing state’s only instruction |
+
+The removed sentence described the wizard the wizard is already showing: the step rail names the
+steps, and the one thing it carried that the rail does not — *“the preview stays here until you
+push”* — is what `.sbld-pending` beside it already says as a live count. That is the same
+argument entry *(t)* used to delete the per-step prose; this is the last sentence of it.
+
+### Three edits, not one
+
+1. The `'new'` branch in `ScheduleBuilder.render()` → `''`.
+2. **The static markup at the `#ps-view-builder` head, which is the easy one to miss.** `render()`
+   overwrites it, but it paints first — leaving the sentence there would flash it for a frame on
+   every entry to the builder.
+3. ⚠ `#ps-bld-lede:empty { display:none; }`. An empty `<span>` is still a flex item, and
+   `.ps-ck-bar` sets `gap:10px` — without this the Setups button sits 10px in from the bar’s
+   edge for no visible reason. Deleting text does not delete the box it lived in.
+
+**Measured**, on a 1398px panel, from a harness built out of the shipped stylesheet and the real bar
+markup sliced from `index.html` — not a retyped copy, which has lied here before:
+
+| | lede display | lede width | Setups button offset from bar edge |
+|---|---|---|---|
+| `new` (empty) | `none` | 0px | **0px** |
+| `import` (text) | `block` | 472px | 482px (= 472 + the 10px gap) |
+
+The second row is the control: it proves `:empty` is what hides the first, and that the import
+warning still renders. Bar height is **30px in both**, so nothing below it shifts.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · `"The generated preview stays here until you do"` returns
+**0** matches in the module. ⚠ Grepping the looser `"execution programme"` returns **2**, and both are
+unrelated — a comment on the start-date scan and a sentence in the import report about unresolved
+predecessors. Checked rather than reported as a leftover. `modules-grid.js` `?v=` → `20260917zzl`.
+
+### 2026-09-17 (am) — The step lede loses its cap too
+
+Owner: *"the lede too"* — after *(al)* removed the cap from `.sbld-how` and reported that
+`.sbld-panel .sbld-lede` was still `max-width:70ch`, filling **43%** of his 1398px panel.
+
+⚠ The case for keeping it was put in *(al)* and declined: a one-sentence purpose line is genuinely
+prose, where the How pane is a scanned list of mechanics, so 70ch had a better argument here than
+there. That is why it was raised rather than swept, and why it changed only on the owner’s word.
+
+**Measured at four panel widths** — 1440 / 1100 / 913 / 772 — the lede and the How pane now both fill
+**100%** of the content box at every one, and the Zone-sequence lede (*“Which location follows which.
+Topology only …”*) drops from two lines to **one** at 913px and above.
+
+⚠⚠ **Scanned the whole stylesheet for the same shape rather than waiting for a third report.** Four
+rules cap in `ch`; the other three stay, and here is why: `.ps-smy-note` and `.ps-smy-vs`
+belong to the schedule **summary** view (emitted by `sect` / `card` / `smyMsStrip`), not to
+the Setup, and `.ps-cal-holname` is the holiday chip’s deliberate 22ch truncation — which carries
+a title, added in *(z)* for exactly that reason.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · inline scripts parse. `modules-grid.js` `?v=` → `20260917zzk`.
+
+⚠ Also confirmed this turn: the class-code migration **is applied** — the owner ran
+`select count(*) from class_codes where active` and got **466**, which is the expected post-state.
+The earlier `0 / 0 / 0` did mean “already matches the template”, and the absolute count is what
+settled it rather than the assumption.
+
+⚠⚠ **This entry is a repair.** `0c325b4` appended it by piping a double-quoted heredoc through
+the shell, so bash **command-substituted every backticked term** and the entry landed on `main` with
+~20 identifier names silently deleted — `.sbld-how`, `max-width:70ch`, the four `ch` rules,
+every tool name on the Verified line. What remained was grammatical English with holes in it, which
+is worse than a visible corruption: nothing in the diff looks wrong.
+
+⚠ **Scope, checked rather than assumed:** the damage stopped at `CLAUDE.md`. The commit message was
+written without backticks and is intact, and the CSS comment at `.sbld-panel .sbld-lede` went through
+the Write tool and still carries all of its identifiers. The shipped fix was never at risk — only
+the record of it. ⚠ Anything containing a backtick or a backslash escape goes through Write/Edit,
+never a shell string; this is the fourth time that trap has been hit here and the first time it
+survived as far as `origin/main`.
+
+### 2026-09-17 (al) — The "How to use this step" cap was tuned on the wrong viewport, twice
+
+Owner, after *(aj)* raised it from 78ch to 110ch: *"how to's still need UI rework unnecessary
+wrapping"*, with two screenshots from the live site.
+
+### ⚠️⚠️ THE LIVE PAGE ALREADY HAD THE FIX — SO THE FIX WAS THE PROBLEM
+
+First thing checked, before changing anything: `curl` the deployed module and grep the rule.
+`max-width: 110ch` was there. So this was not a stale cache or an undeployed commit; the owner was
+looking at the corrected version and it was still wrong.
+
+**The cap was tuned against the wrong panel.** 110ch (880px) was measured in the test harness, whose
+`.sbld-panel` is 913px — where it filled 100% and looked right. The owner's panel is **1398px**.
+Measured there:
+
+| | width | fills | unused |
+|---|---|---|---|
+| `.sbld-how` at 110ch | 910px | **65%** | 488px |
+| `.sbld-panel .sbld-lede` at 70ch | 602px | **43%** | 796px |
+
+488px of empty space beside a bordered grey box does not read as a readable measure; it reads as
+broken. ⚠️ **A cap chosen on one viewport is not a cap** — that is the mistake here, and it is mine.
+The harness measured honestly and I asked it the wrong question.
+
+### The cap is gone, not re-tuned
+
+`.sbld-how` now has no `max-width`: the step panel is the constraint. Measured at four panel widths —
+1440 / 1100 / 913 / 772 — it fills **100%** of the content box at every one, and the sample paragraph
+drops from two lines to one at the two larger sizes.
+
+⚠️ **The readability argument is not forgotten, it is overruled — deliberately, and by the person
+whose screen this is.** 45–90 characters is the comfortable range for *prose*, and at 1398px this pane
+runs to about 175. It is a disclosure of **mechanics** — numbered click sequences and short bullets,
+scanned rather than read end to end — and the owner has now asked twice. Re-tuning a third guess
+would have been worse than taking the instruction.
+
+### ⚠️ Left alone and reported instead: the lede
+
+`.sbld-panel .sbld-lede` is `max-width: 70ch` and fills **43%** of the owner's panel — visibly
+narrower than everything around it, and the more likely half of what "unnecessary wrapping" describes
+on those screenshots. It is **not** changed here, because a one-sentence purpose line is genuinely
+prose where the How pane is not, and widening it to 175 characters is a different decision from
+widening a bordered box. Measured, reported, and left for the owner to call.
+
+### The class-code migration returned 0 / 0 / 0
+
+Owner ran section 2 and got `retired_now 0, re_activated 0, missing_from_chart 0`.
+
+That reads as **"the chart already matches the template"** — no active row is off it, no inactive row
+is on it, and every template code exists. ⚠️ But it does **not**, on its own, prove the statement ran:
+this log already records the shape where *"a count equal to the PRE state means it never ran"*. Both
+branches are data-modifying CTEs referenced by the final select, so Postgres does execute them — but
+the honest way to settle it is the absolute count, which is section 3 of the migration:
+
+```sql
+select count(*) from class_codes;               -- 702 expected (nothing is ever deleted)
+select count(*) from class_codes where active;  -- 466 = applied · 698 = it never ran
+```
+
+Reported to the owner with that reading rather than a confident "it worked".
+
+**Verified:** `test-lsm` 683/683 · `wiring-check` 139/0 · inline scripts parse · the deployed rule
+confirmed by fetching the live page, not assumed. `modules-grid.js` `?v=` → `20260917zzj`.
+
+### 2026-09-17 (ak) — Two dead controls in the Setup, dead in two different ways; and the migration referenced a column that has never existed
+
+Owner: *"Close button not working. Let's check for dead buttons across the schedule setup"*, then, on
+running the class-code migration: *"`ERROR: 42703: column a.class_code does not exist`"*.
+
+### ⚠️⚠️ `#ps-cal-close` WAS WIRED, AND WIRED TO A NO-OP
+
+`renderCalendarsInto` draws a Close button unless `opts.showClose === false`, and binds it to
+`m.close()` where `m = { close: opts.close || function () {} }`. The Setup calls
+`renderCalendarsInto(ch)` with **no options at all**, so `showClose` is undefined (the button is
+drawn) and `opts.close` is undefined (the handler **is** the empty function). It has never done
+anything on this page.
+
+⚠️ The fix is not to give it a close: the Setup embeds the editor **inline in the step**, so there is
+nothing to close. `{ showClose: false }` is what the module's other inline caller already passes —
+the precedent existed and this call site missed it.
+
+### `#b-delrows` was emitted and never looked up
+
+"Delete selected rows" in the Activities grid: nothing anywhere did `querySelector('#b-delrows')`.
+Wired now, mirroring `#b-unload` beside it — the same question asked of the same selection, both
+reading `_xlG.selectedIds()`. The difference is that unload **moves** the rows to the holding list and
+this **discards** them, so it asks first through `psConfirm`, the app's own confirm.
+
+### The scan, and what it cannot see
+
+Two mechanical checks across the Setup's renderers and the editors and dialogs they open — an `id=`
+on a control nothing looks up, and a `data-*` hook nothing selects. Both now return **0**.
+
+⚠️ **Neither would have found `#ps-cal-close`**, because it is looked up and bound; the deadness is in
+the function it is bound to. Rather than claim coverage it does not have, the one shape it misses was
+hunted separately: `|| function () {}` as a handler default appears **once** in the whole module, and
+that once is this. Recorded so the next reader knows both what the scan covers and what it does not.
+
+⚠️ And the scan's first run reported `data-sl` and `data-sh` as dead. They are not: they are selected
+**with a value** — `[data-sl="0"]` — which a bare `[data-sl]` pattern misses. Fixed before reporting,
+because a scanner that cries wolf twice is one nobody runs a third time.
+
+### ⚠️⚠️ THE MIGRATION COUNTED A COLUMN THAT HAS NEVER EXISTED
+
+`migrations/2026-09-17-class-code-template-1164.sql` section 1 joined
+`boq_allocations a ... on c.code = a.class_code`. **`boq_allocations` has no `class_code`.** It links
+a BOQ item to an activity — `boq_item_id, activity_id, qty, method` — and never carried the string.
+The three tables that do are `project_schedule`, `boq_class_map` and **`boq_class_suggestions`**, and
+the last is the one meant. The count is the same question asked of the right table.
+
+⚠️ **The whole file was checked the same way rather than fixing the line that threw.** Every
+`table.column` the migration references was extracted and resolved against `supabase-build.sql`,
+following the aliases it binds: **one** bad reference, the one above; five others check out, now zero.
+Sending the owner back into a second `42703` would have been worse than the first.
+
+⚠️ This also corrects entry *(x)*, which stated that *"`project_schedule.class_code`, `boq_class_map`
+and `boq_allocations` carry these strings with no FK"*. Two of the three were right.
+
+### Also: the file the owner could not find
+
+*"@migrations/2026-09-17-class-code-template-1164.sql is not findable in the files i cannot migrate."*
+It is on `origin/main` (added in `a1ada63`). His working copy is **137 commits behind** at `eaf11ae`,
+which is why it is not there. ⚠️ Not pulled on his behalf: that clone holds **7 uncommitted files and
+2 unpushed commits** belonging to concurrent sessions, and a pull across that is his call, not mine.
+The corrected file was extracted with `git show origin/main:…` — which touches neither the tree nor
+the index — and handed to him directly.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · inline scripts parse · CSS brace balance identical to pinned
+`c000a2a` · `sql-struct` balanced · the migration now resolves **0** unknown columns against the
+schema. `modules-grid.js` `?v=` → `20260917zzi`.
+
+### 2026-09-17 (aj) — Repetition's two long selects were in a 62px box, and the "How to use" pane left a quarter of the page empty
+
+Owner: *"Repetition step needs the UI sweep too"*, then *"the how to use collapsed panes are
+unnecessarily wrapped. Let's maximize the space of the page/pane"*.
+
+### ⚠️ The Floors & Zones lesson, applied as a hunt rather than a look
+
+*(ai)* found that the floor row's defect was **geometry**, invisible to the type scanners. So this
+pass started by hunting that shape everywhere: **every flex row in the Setup that holds a
+`.pd-input`/`.pd-select`**, and whether anything overrides the `width:100%` those inherit. Ten
+containers hold one; nine have no override. Repetition's own — `.sbld-tlform` — is the one that
+**does**, and its note already explains why (*"labelled, auto-width controls laid out as a sentence,
+never `.sbld-mini`"*). So Repetition's controls were not that bug. They were the other one.
+
+### ⚠️⚠️ `.sbld-mini` IS `width: 62px`, AND TWO OF THE THREE HELD A SENTENCE
+
+Measured in the browser against the shipped class, with 48px of usable width inside it:
+
+| control | longest option | needs | short by |
+|---|---|---|---|
+| `b-seqcopy` (Trade sequence) | "Copy Structural Works sequence from…" | 259px | **211px** |
+| `b-stackbasis` (Stacking) | "External (contract)" | 122px | **74px** |
+| `b-autotype` (Trade sequence) | "FS" | 16px | — fits |
+
+So two of the three showed about seven characters of their own label, and the third is exactly what
+`.sbld-mini` exists for. ⚠️ **This file has already reached for this fix once** — the Activity-level
+picker in Floors & Zones carries a note reading *"NOT `.sbld-mini`, WHICH IS `width:62px` … `width:auto`
+lets a `<select>` size to its longest option"* (owner 2026-09-12, with a screenshot). `.sbld-selauto`
+names it so the fourth instance does not have to rediscover it.
+
+⚠️ And `b-seqcopy` got a **shorter label**, not a wider box. Unconstrained it wanted **311px** on the
+longest trade name — but the option read *"Copy **Structural Works** sequence from…"* inside a section
+that is already per-trade, and its own `title` already says *"this trade's sequence"*. It is
+*"Copy sequence from…"* now, which fits comfortably. The control did not need the space; the label
+needed the words removed.
+
+### The "How to use this step" pane was capped at 78ch
+
+Measured at `--pd-fs-sm`: one `ch` is 8px, so `max-width: 78ch` is **645px inside a 913px panel** —
+**268px, about 29% of the width, unused**, and a two-sentence paragraph wrapping to two lines where it
+had room for one.
+
+⚠️ **A cap is kept, not removed.** 78ch came from the prose measure (45–90 characters is the readable
+range) and that reasoning is sound *for prose* — but this pane is a disclosure of **mechanics**, a
+list of keystrokes and click sequences that is scanned rather than read, and with no cap at all an
+ultrawide monitor would hand it 200-character lines. **110ch is 880px:** it uses 100% of the panel
+here (910 of 913, unused 3px, the sample paragraph down to one line) and still caps at 910px on an
+1800px panel.
+
+### ⚠️ The pane that made "has the library updated?" unanswerable
+
+Owner, separately: *"Let's check if the all class codes have reflected the updated class code
+library."* The heading reads **"All class codes (172)"** and the number is `cfg.catalog.length` —
+**this project's holding list**, seeded by `+ Library` or `+ From BOQ` and added to by anything sent
+out of the build. It is not the library, and it does not follow one.
+
+A heading promising *"All"* is exactly what makes that question unanswerable from the screen. It reads
+**"Holding list (172)"** now, with a title saying where its contents come from and that it is not the
+whole chart.
+
+**For the record, the library itself:** `CLASS_CODE_DB` holds **197** Level-2 groups and template_1164
+holds the **same 197** — the eight the template drops are the eight the module never had, which is why
+entry *(x)* changed no module code. What still carries the retired rows is the item-level `class_codes`
+table, and `migrations/2026-09-17-class-code-template-1164.sql` **has not been run**. ⚠️ Could not
+confirm that against the live table: `class_codes` is behind RLS and returns **401** to the publishable
+key. The migration's own verification block is the check — `select count(*) from class_codes where
+active` should read **466**.
+
+**Verified:** `test-lsm` 683/683 · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0
+findings · inline scripts parse · CSS brace balance identical to pinned `0fbd2fa` · Setup still at 0
+off-scale font-size rules. Every width above is a browser measurement against the shipped classes.
+`modules-grid.js` `?v=` → `20260917zzh`.
 
 ### 2026-09-17 (ai) — Floors & Zones: every control in the floor row was asking for the whole row
 
@@ -291,13 +662,13 @@ checks, and is asked about instead.
 dialogs. The highlight fix is a browser measurement before and after, not a reading of the CSS.
 `modules-grid.js` `?v=` → `20260917zzf`.
 
-### 2026-09-17 (ak) — One bar per storey: the LSM row folds every trade into a single merged bar
+### 2026-09-17 (aq) — One bar per storey: the LSM row folds every trade into a single merged bar
 
-⚠️ Re-lettered `(ag)` → `(ah)` on rebase, then `(ah)` → `(ai)` on a later catch-up merge, then
-`(ai)` → `(ak)` on this one: `main` independently landed its own new `(ai)` (the Floors & Zones
-entry above) in the interim, so this carried-over entry moved a third time rather than collide.
-Both entries kept in full; bumped past the collision rather than either side guessing, per the
-rule in this file's header.
+⚠️ Re-lettered `(ag)` → `(ah)` → `(ai)` → `(ak)` → `(aq)` across four catch-up merges, each time
+because `main` had independently landed a fresh entry claiming whichever letter this one was
+sitting on (`(ai)` collided with `main`'s own Floors & Zones entry above; `(ak)` collided with
+`main`'s own "Two dead controls in the Setup" entry further up). Every entry involved is kept in
+full; the carried-over one is what moves each time, per the rule in this file's header.
 
 Owner: *"The gantt bar still doesn't fold into one gantt bar to show the LSM. Let's fix."* Asked which
 of three shapes he meant, he chose **one bar per storey, all trades merged** over keeping a lane per

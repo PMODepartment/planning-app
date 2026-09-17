@@ -3123,6 +3123,9 @@
     /* Weekly Work Plan (was the Planner Cockpit; these classes are still used by the
        Last Planner section and by the Schedule Setup's WBS card) */
     .ps-ck-bar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+    /* ⚠ An empty lede is still a flex item, and the bar's `gap:10px` would indent the Setups
+       button by 10px for no visible reason. In 'new' mode the lede is empty by design. */
+    #ps-bld-lede:empty { display:none; }
     /* Section divider between the cockpit KPIs/forecast and the merged Last Planner weekly section */
     .ps-ck-secdiv { display:flex; align-items:center; gap:8px; width:100%; margin:26px 0 14px; padding:18px 0 0; border:none; border-top:2px solid var(--pd-line); background:none; font:inherit; font-size:var(--pd-fs-md); font-weight:800; color:var(--pd-ink); letter-spacing:.01em; text-align:left; cursor:pointer; }
     .ps-ck-secdiv [data-ico] { color:var(--pd-red); }
@@ -3549,7 +3552,18 @@
        (.sbld-canvaswrap / .sbld-xlwrap) handles its own overflow. */
     .sbld-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:20px; min-height:55vh; min-width:0; }
     .sbld-panel h2 { margin:0 0 4px; font-size:var(--pd-fs-lg); }
-    .sbld-panel .sbld-lede { margin:0 0 10px; color:var(--pd-muted); font-size:var(--pd-fs-base); max-width:70ch; }
+    /* ⚠⚠ NO CAP, FOR THE SAME REASON `.sbld-how` HAS NONE. This was `max-width:70ch` (602px),
+       which fills **43%** of the owner's 1398px panel — visibly narrower than everything around it,
+       and the other half of the “unnecessary wrapping” he reported on the step screenshots.
+       ⚠ THE ARGUMENT FOR KEEPING IT WAS PUT AND DECLINED. A one-sentence purpose line is genuinely
+       prose, where the How pane is a scanned list of mechanics, so 70ch had a better case here
+       than there — which is exactly why it was raised rather than swept, and why it changes only
+       on the owner's word. The panel is the constraint now.
+       ⚠ Scanned the whole stylesheet for the same shape rather than waiting for a third report:
+       four rules cap in `ch`, and the other three stay. `.ps-smy-note` and `.ps-smy-vs` belong to
+       the schedule SUMMARY view (emitted by `sect`/`card`/`smyMsStrip`), not to the Setup;
+       `.ps-cal-holname` is the holiday chip's deliberate 22ch truncation, which carries a title. */
+    .sbld-panel .sbld-lede { margin:0 0 10px; color:var(--pd-muted); font-size:var(--pd-fs-base); }
     /* ---- "How to use this step" (the disclosure) -------------------------------------------
        Owner 2026-09-03: *"on the schedule setup, please make the instructions more direct and
        concise. the text takes too much space."* Step 8's lede alone ran to ~150 words and pushed
@@ -3561,7 +3575,20 @@
        ⚠️ `<details>` and not a JS panel on purpose: the open/closed state is the browser's, it
        needs no handler in the step's own bind pass (a step that forgot one would have an unopenable
        summary), and it re-renders closed like the rest of the panel. */
-    .sbld-how { margin:0 0 16px; max-width:78ch; font-size:var(--pd-fs-sm); }
+    /* ⚠⚠ NO CAP. This was 78ch, then 110ch, and the owner reported it STILL wrapping
+       unnecessarily both times: *“let's maximize the space of the page/pane”*, then *“how to's
+       still need UI rework unnecessary wrapping”*.
+       ⚠⚠ THE SECOND ATTEMPT WAS TUNED ON THE WRONG WIDTH — my error, recorded so the next
+       person does not repeat it. 110ch (880px) was measured against a 913px panel in the test
+       harness and filled it. The owner's panel is **1398px**, where the same rule fills **65%**
+       and leaves **488px** empty beside a bordered grey box — which reads as broken rather than
+       as a readable measure. A cap chosen on one viewport is not a cap.
+       ⚠ The readability argument for a cap (45–90 characters is the comfortable range for PROSE)
+       was made here twice and is not being forgotten — it is being overruled, deliberately, by the
+       person whose screen this is. This pane is a disclosure of MECHANICS: numbered click
+       sequences and short bullets, scanned rather than read end to end. The panel is the
+       constraint now. */
+    .sbld-how { margin:0 0 16px; font-size:var(--pd-fs-sm); }
     .sbld-how > summary { cursor:pointer; color:var(--pd-red); font-weight:700; font-size:var(--pd-fs-sm);
       list-style:none; display:inline-flex; align-items:center; gap:5px; padding:2px 0;
       -webkit-tap-highlight-color:transparent; }
@@ -4533,6 +4560,29 @@
     .sbld-hold-n { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     .sbld-hold-empty { padding:10px; font-size:var(--pd-fs-xs); }
     .sbld-hold-code { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-hold-tools { padding:6px; border-bottom:1px solid var(--pd-line); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    /* ⚠ `min-width:0` is load-bearing. An <input> defaults to `min-width:auto`, which resolves to
+       its intrinsic size and refuses to shrink below it — the same trap documented on `.ps-search`
+       further up. The holding pane drags down to 180px, so without this the box overflows it. */
+    .sbld-hold-tools .pd-input { flex:1 1 110px; min-width:0; }
+    /* ⚠ The trade header is STICKY inside the scroller: with a trade folded open over 40 codes,
+       a header that scrolls away leaves the planner reading a list with no idea whose it is. */
+    .sbld-hold-grp > summary { position:sticky; top:0; z-index:1; cursor:pointer; list-style:none;
+      display:flex; align-items:center; gap:6px; padding:4px 7px; margin:0 0 4px;
+      background:var(--pd-bg); border:1px solid var(--pd-line); border-left:4px solid var(--zc,var(--pd-line));
+      border-radius:5px; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-ink);
+      -webkit-tap-highlight-color:transparent; }
+    .sbld-hold-grp > summary::-webkit-details-marker { display:none; }
+    .sbld-hold-grp > summary::before { content:"▸"; font-size:var(--pd-fs-micro); color:var(--pd-muted); transition:transform .15s ease; }
+    .sbld-hold-grp[open] > summary::before { transform:rotate(90deg); }
+    .sbld-hold-grp > summary:hover { background:var(--pd-card); }
+    .sbld-hold-gname { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sbld-hold-gn { flex:0 0 auto; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-hold-gsel { flex:0 0 auto; font-size:var(--pd-fs-micro); color:var(--pd-red); }
+    /* ⚠ `.sbld-hold-list` is a flex column with `gap:4px`, which spaces the GROUPS. The codes
+       inside a group are block children of <details> and that gap never reaches them. */
+    .sbld-hold-grp > .sbld-hold-item { width:100%; margin:0 0 4px; }
+    .sbld-hold-grp > .sbld-hold-item:last-child { margin-bottom:0; }
     @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
@@ -4606,6 +4656,11 @@
     .sbld-linklbl { fill:var(--pd-muted); pointer-events:none; }
     .sbld-zbtn { width:28px; height:28px; padding:0; font-size:var(--pd-fs-md); font-weight:700; justify-content:center; line-height:1; }
     .sbld-mini { width:62px; height:30px; padding:2px 6px; font-size:var(--pd-fs-sm); font-weight:700; }
+    /* ⚠⚠ THE SIBLING OF `.sbld-mini` FOR A CONTROL WHOSE LABEL IS A SENTENCE. `.sbld-mini` is
+       62px — correct for the two-character FS/SS/FF/SF picker it was built for, and 211px short
+       of “Copy Structural Works sequence from…”. `width:auto` lets a <select> size to its own
+       longest option; `max-width` stops one long trade name from taking the whole row. */
+    .sbld-selauto { width:auto; max-width:260px; height:30px; padding:2px 6px; font-size:var(--pd-fs-sm); }
     .sbld-at-q { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); }
     .sbld-at-q:last-child { border-bottom:none; }
     .sbld-at-sec { margin:0 0 14px; padding:10px 12px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
@@ -5345,7 +5400,10 @@
         <div class="ps-ck-bar">
           <!-- Painted by ScheduleBuilder.render(): the bar has to say which of the two jobs is open
                (checking an import vs building a new programme), because they share this frame. -->
-          <span id="ps-bld-lede" style="font-size:12px;color:var(--pd-muted);">Set up the execution programme — activities, locations, sequencing, the lifecycle phases around it and the <b>WBS</b> — then push it into the Project Schedule. The generated preview stays here until you do.</span>
+          <!-- ⚠ Intentionally empty: ScheduleBuilder.render() fills it per mode, and the 'new'
+               mode now fills it with nothing. Leaving the old sentence here would flash it for a
+               frame on every entry to the builder, before render() clears it. -->
+          <span id="ps-bld-lede" style="font-size:12px;color:var(--pd-muted);"></span>
           <!-- Which package this setup builds, and the way into every other setup.
                Sits at the head of the builder because it is the first thing a planner
                on a multi-package project needs to be sure of. -->
@@ -34194,6 +34252,8 @@
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
+    var holdQ = '';     // step-1 holding list: the search box's text (code / name / trade)
+    var holdCol = {};   // step-1 holding list: trade code -> true when that group is folded shut
     var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 98, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 98, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
@@ -35670,6 +35730,12 @@
         // ⚠️ `imp ? 1 : 0` — a project opened for the first time BY a staged import must land on the
         // checking steps, not back on Start. stageImport sets step before switching the tab, and
         // this branch is what would otherwise reset it as the setup list loads.
+        /* ⚠ The holding list's filter is cleared with the project. A stale query would survive
+           into a catalog that cannot match it and show an empty pane, which reads as "this
+           project has no codes" — a filter that HIDES is worse to leave behind than one that
+           merely sorts. (`catSel` is deliberately left: its ids cannot match another project's
+           catalog, so it is inert rather than misleading.) */
+        holdQ = ''; holdCol = {};
         curPid = projectId; step = imp ? 1 : 0; await loadCfg();
         // ⚠️ The schedule grid's DEFAULT grouping follows this setup — see _adoptSetupGrouping. The
         // Project Schedule may already be open behind this tab with the plain WBS tree, because the
@@ -38672,13 +38738,51 @@
           }).join('') +
           '<td class="xl-rowact"><button class="sbld-del" data-del="' + r + '" title="Delete row"><span data-ico="trash" data-ico-size="14"></span></button></td></tr>';
       }).join('');
-      var holdItems = cfg.catalog.map(function (a) {
-        return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + gc(a.group) + '">' +
-          '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
-          '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
+      /* ⚠⚠ SEARCHED AND GROUPED BY TRADE. Owner, at 172 parked codes: *"I need a search filter
+         in the holding list (172) as well so its easier to select. Additionally can we have a
+         collapsible header based on trade as well to make it easier to navigate"*. A flat 172-item
+         scroll is not a list you pick from, it is one you give up on.
+         ⚠ MATCHES CODE **AND** NAME **AND** TRADE, for the reason `ccSearchText` already states
+         upstream: matching the code alone makes it unsearchable by the only handle most people
+         have for it. Trade is in there because the groups are now visible, so typing one is the
+         obvious thing to try. */
+      var _hq = holdQ.trim().toLowerCase();
+      var _holdShown = !_hq ? cfg.catalog : cfg.catalog.filter(function (a) {
+        return ((a.code || '') + ' ' + (a.name || '') + ' ' + (GLABEL[a.group] || '')).toLowerCase().indexOf(_hq) >= 0;
+      });
+      /* ⚠ GROUPS order, not first-appearance order — the trades sit in the same sequence here as
+         in the grid's Trade column and everywhere else in the setup, so the pane does not reshuffle
+         itself as codes are loaded. The trailing '' is the bucket for a catalog row whose `group`
+         is missing or is not a GROUPS code; it is never dropped silently. */
+      var holdItems = GROUPS.concat(['']).map(function (g) {
+        var items = _holdShown.filter(function (a) { return (GLABEL[a.group] ? a.group : '') === g; });
+        if (!items.length) return '';
+        var nSel = items.filter(function (a) { return catSel.indexOf(a.id) >= 0; }).length;
+        /* ⚠⚠ A LIVE SEARCH OVERRIDES THE FOLD, exactly as the WBS Manager's tree does
+           (`q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id]`). A trade folded shut while the query
+           matches inside it reads as "nothing found", which is the wrong answer to the question
+           being asked. The fold state itself is kept, so clearing the box restores it. */
+        var open = _hq ? true : !holdCol[g];
+        return '<details class="sbld-hold-grp"' + (open ? ' open' : '') + ' data-grp="' + e2(g) + '" style="--zc:' + gc(g) + '">' +
+          '<summary title="' + e2((g ? GLABEL[g] : 'Codes with no trade set') + ' — click to fold this trade away') + '">' +
+          '<span class="sbld-hold-gname">' + e2(g ? GLABEL[g] : 'Unclassified') + '</span>' +
+          (nSel ? '<span class="sbld-hold-gsel">' + nSel + ' ticked</span>' : '') +
+          '<span class="sbld-hold-gn">' + items.length + '</span></summary>' +
+          items.map(function (a) {
+            return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + gc(a.group) + '">' +
+              '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
+              '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
+          }).join('') + '</details>';
       }).join('');
+      /* ⚠ The box appears at 9 codes, and STAYS while a query is live however few survive it —
+         otherwise filtering down to 3 removes the control holding the filter, with no way back to
+         the other 169. Same threshold shape as `#ps-cal-filter`, which shows above 6 calendars. */
+      var holdTools = (cfg.catalog.length > 8 || _hq)
+        ? '<div class="sbld-hold-tools"><input class="pd-input pd-input-sm" id="b-holdq" placeholder="Search code, name or trade…" value="' + e2(holdQ) + '">' +
+          (_hq ? '<span class="sbld-hold-n">' + _holdShown.length + ' of ' + cfg.catalog.length + ' shown</span>' : '') + '</div>'
+        : '';
       var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
-        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
+        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span title="Class codes parked for this project — loaded with + Library or + From BOQ, plus anything sent out of the build. This is not the whole chart.">Holding list (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
         /* ⚠️ The BOQ button is FIRST and primary. It loads the codes this project is actually
            priced on — a few dozen — where + Library loads the whole 197-entry chart; and its codes
            are the ones that resolve as a `class_code` (see loadBoqCodes). Offering the general
@@ -38688,7 +38792,14 @@
            it lives in the title, which is where the long form belongs. */
         '<button class="pd-btn pd-btn-primary sbld-libbtn" id="b-boq" title="Load only the class codes this project&rsquo;s current BOQ carries, from Contracts &amp; Claims">+ From BOQ</button>' +
         '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
-        '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
+        holdTools +
+        /* ⚠ THREE states, not two. "Empty" and "nothing matches your search" are different facts
+           and the second one names the query, because a pane that just says "empty" after a typo
+           sends the planner back to + Library to reload codes that are already there. */
+        '<div class="sbld-hold-list">' + (!cfg.catalog.length
+          ? '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>'
+          : (_holdShown.length ? holdItems
+            : '<div class="sbld-empty sbld-hold-empty">No code matches <b>' + e2(holdQ.trim()) + '</b>. Clear the box to see all ' + cfg.catalog.length + '.</div>')) + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       /* ⚠ Both suppressed under `noHead`. The lede enumerated “code, name, trade, scope and its
          interior/exterior duration” — which is the grid's own column headers, read out in prose
@@ -38794,11 +38905,49 @@
       });
       // holding-area shuttle
       host.querySelectorAll('[data-cat]').forEach(function (b) { b.onclick = function () { var id = b.dataset.cat, i = catSel.indexOf(id); if (i >= 0) catSel.splice(i, 1); else catSel.push(id); render(); }; });
+      /* ⚠⚠ RE-FOUND THROUGH THE DOCUMENT AFTER render(), not through the captured `host`. Ticking
+         a code calls render(), which rebuilds this input from scratch — so the element typed into
+         no longer exists by the time the handler returns, and focus would land on <body> after
+         every keystroke. `#ps-cal-filter` solves it the same way; the difference is that it can
+         trust its own container to survive and this one re-queries the document to be sure. */
+      var hq = host.querySelector('#b-holdq');
+      if (hq) hq.oninput = function () {
+        holdQ = hq.value; render();
+        var h2 = document.getElementById('b-holdq');
+        if (h2) { h2.focus(); h2.setSelectionRange(h2.value.length, h2.value.length); }
+      };
+      /* ⚠⚠ ontoggle RECORDS the fold and DOES NOT re-render. <details> opens and closes itself, so
+         calling render() here would rebuild the grid, the holding list and the search box to
+         achieve something the browser has already done — and would drop the grid's cell selection
+         on the way. The state is only read on the NEXT render, which is exactly when it is needed. */
+      host.querySelectorAll('details.sbld-hold-grp').forEach(function (d) {
+        d.ontoggle = function () { var g = d.dataset.grp; if (d.open) delete holdCol[g]; else holdCol[g] = true; };
+      });
       host.querySelector('#b-load').onclick = function () {
         if (!catSel.length) { UI.toast('Tick one or more class codes in the list first.', 'warn'); return; }
         var take = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) >= 0; });
         cfg.catalog = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) < 0; });
         cfg.activities = cfg.activities.concat(take); catSel = []; markDirty(); render();
+      };
+      /* ⚠⚠ WAS EMITTED AND NEVER LOOKED UP — nothing did `querySelector('#b-delrows')`, so the
+         button had never done anything. Mirrors `#b-unload` below because it is the same question
+         asked of the same selection; the difference is that unload MOVES the rows to the holding
+         list and this discards them, so it asks first. `psConfirm` is the app's own confirm — see
+         the note above it; the browser's would be the wrong dialog in the wrong place. */
+      host.querySelector('#b-delrows').onclick = function () {
+        if (!cfg.activities.length) return;
+        var ids = _xlG ? _xlG.selectedIds() : [];
+        if (!ids.length) { UI.toast('Select the rows to delete first — click a cell, then Shift+↓ to extend.', 'warn'); return; }
+        var take = {}; ids.forEach(function (id) { take[String(id)] = 1; });
+        var gone = cfg.activities.filter(function (a) { return take[String(a.id)]; });
+        if (!gone.length) return;
+        psConfirm('Delete ' + gone.length + ' row' + (gone.length === 1 ? '' : 's') +
+          ' from the build? They are not sent to the holding list — the → button does that.',
+          function () {
+            cfg.activities = cfg.activities.filter(function (a) { return !take[String(a.id)]; });
+            markDirty(); render();
+            UI.toast('Deleted ' + gone.length + ' row' + (gone.length === 1 ? '' : 's') + '.', 'success');
+          }, { ok: 'Delete' });   // psConfirm is danger-by-default
       };
       host.querySelector('#b-unload').onclick = function () {
         if (!cfg.activities.length) return;
@@ -38913,7 +39062,7 @@
         var srcs = [['all', 'All levels (default)']].concat(KIND_ORDER.filter(kindHasOwn).map(function (k) { return [k, KIND_LABEL[k]]; }))
           .filter(function (o) { return o[0] !== uiSeqKind; });
         var copy = srcs.length
-          ? '<select class="pd-select sbld-mini" id="b-seqcopy" title="Copy this trade\'s sequence from another level type"><option value="">Copy ' + e2(GLABEL[tr]) + ' sequence from…</option>' +
+          ? '<select class="pd-select sbld-selauto" id="b-seqcopy" title="Copy this trade\'s sequence from another level type"><option value="">Copy sequence from…</option>' +
             srcs.map(function (o) { return '<option value="' + o[0] + '">' + e2(o[1]) + '</option>'; }).join('') + '</select>'
           : '';
         var noKinds = !kindsInProject().length;
@@ -45492,7 +45641,11 @@
       if (wb) wb.onclick = function () { openCalendarWizard(function () { render(); }); };
       var ch = host.querySelector('#sbld-cal-host');
       if (typeof renderCalendarsInto === 'function') {
-        try { renderCalendarsInto(ch); }
+        /* ⚠ `showClose:false` — the editor is INLINE in this step, so there is nothing to close.
+           Without it the editor draws a Close button and binds it to `opts.close || function(){}`,
+           which on this call site is the empty function. The other inline caller already passes
+           this; the precedent was there and this one missed it. */
+        try { renderCalendarsInto(ch, { showClose: false }); }
         catch (e) { ch.innerHTML = '<div class="sbld-empty">The calendar editor could not be drawn: ' + e2(e && e.message) + '</div>'; }
       } else ch.innerHTML = '<div class="sbld-empty">The calendar editor is unavailable on this page — reload and reopen this step.</div>';
     }
@@ -46901,7 +47054,7 @@
           '<br><br>Pick a <b>tower</b> and a <b>trade</b> to focus, and switch between <b>Internal</b> (target) and <b>External</b> (contract) durations. Nothing is edited here — it is the read-back before the push in step ' + _stepNo('Generate') + '.') +
         towerChips + tradeChips +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
-        '<select class="pd-select sbld-mini" id="b-stackbasis">' +
+        '<select class="pd-select sbld-selauto" id="b-stackbasis">' +
         [['int', 'Internal (target)'], ['ext', 'External (contract)']].map(function (o) { return '<option value="' + o[0] + '"' + (stackBasis === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
         '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-stkzout" title="Narrower cells">−</button><button class="pd-btn sbld-zbtn" id="b-stkzin" title="Wider cells — more room for dates">+</button></span>' +
@@ -48135,8 +48288,13 @@
       var lede = document.getElementById('ps-bld-lede');
       if (lede) lede.innerHTML = mode === 'import'
         ? 'Checking an imported programme. <b>Nothing is written to the schedule</b> until <b>Review &amp; import</b> \u2014 walk the steps and sanitise the file first.'
+        /* ⚠ 'new' IS DELIBERATELY EMPTY. Owner: *"its not needed"*. It described the wizard
+           the wizard is already showing — the step rail names the steps, and `.sbld-pending`
+           beside it says the one thing the sentence carried that the rail does not (*"the
+           generated preview stays here until you push"*) as a live count. The other two
+           branches stay: 'import' is a warning about writes, not a description. */
         : (mode === 'new'
-          ? 'Set up the execution programme \u2014 activities, locations, sequencing, the lifecycle phases around it and the <b>WBS</b> \u2014 then push it into the Project Schedule. The generated preview stays here until you do.'
+          ? ''
           : 'Start here: bring in an existing programme from Excel or P6, or build a new one step by step.');
       /* ⚠️ Computed ONCE per render and shown on every step, replacing the per-step sentences that
          each said the same thing. `generate('int')` is the same call the 5PMLC view already made
