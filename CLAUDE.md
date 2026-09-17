@@ -104,6 +104,71 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (s) — Branches before activities, a visible way to add one, and the clipping was not what I thought
+
+Owner: *"UI needs improvement. Many are clashing/clipping. How does one add branches?"* and *"I think
+it should be clear that the branches should come first before the activity in terms of sequence. By
+defining the sub-branches/sub-WBS the planner would be able to determine what activities should be
+defined in the sub-WBS."*
+
+### ⚠️⚠️ Branches now come first, and that is a sequence argument rather than a layout one
+
+He is right, and it is the stronger version of the point: the WBS is what the activities are filed
+**into**, so a card that asked for activities first was asking the planner to name work before
+deciding where it belongs. The block order now matches the order of the decisions — *In the schedule
+now* (the branches) above *Planned* (the activities the next Push will create).
+
+### ⚠️⚠️ "How does one add branches?" — there was no answer on screen
+
+The row's own add button lives in `.ps-wbs-acts`, which is `visibility:hidden` until the row is
+hovered or selected. **On an empty branch there is no row to hover**, so adding the first sub-branch
+was unreachable by mouse and discoverable only by knowing that Shift+Enter exists. Every block header
+now carries **+ Add branch**.
+⚠️ Not on the read-only Execution card, and not on a `source_kind` branch mirrored from another app:
+a button that can only raise a toast explaining itself is not a way in.
+⚠️ The parent is resolved **at click time**, never captured at render — a push between the two creates
+the phase branch, and a stale null would add a new TOP-LEVEL branch instead of a child, renumbering
+every sibling's dotted code.
+
+### ⚠️⚠️ And the clipping was not the hover. I guessed, measured, and was wrong
+
+My first fix assumed the ten action buttons appearing on hover stole ~270px from the name column.
+**Measured: they do not.** `visibility:hidden` still reserves its box, so showing it moves nothing —
+the name column is byte-identical idle and selected, at every width tested.
+
+What is actually happening, at a 424px row: **the content is 620px wide** (code + badges + name + ten
+buttons) and the row simply overflows and clips what does not fit. The fix is `min-width:max-content`
+on the row inside a card, so it keeps its natural width and the card's own `overflow:auto` scrolls to
+it instead of silently cutting it off. Measured before and after: **26 of 26 rows clipping at 520px →
+0 clipping**, at 520 / 1000 / 1593, with no page-level horizontal scroll.
+
+The wrong hypothesis is recorded rather than quietly replaced, because the shape of it matters: a
+plausible cause, a fix that looks right, and a measurement that says the fix changes nothing. Without
+the before/after numbers it would have shipped as a fix for a problem it does not touch.
+
+⚠️ `pointer-events:none` on the transparent actions is kept regardless — the buttons are laid out
+whether shown or not, and an invisible-but-clickable delete is the worst version of this.
+
+### Also
+
+The branch tally (*"3 branches · 0 activities"*) no longer inherits the header's uppercase, and the
+new button and the tally wrap rather than colliding on a narrow card.
+
+### Verified
+
+62/62 on the view suite, `wiring-check` 139/139, the inline script parses, CSS delta unchanged at 1.
+Rendered: five cards, **Add branch present on initiation / planning / closeout / other and absent on
+construction** (the read-only one), tally lowercase, actions reserving their space without being
+clickable, 0 clipping rows at three widths.
+
+⚠️ Two more patch-script variable leaks caught by the section-8 guard before they shipped — one in a
+toast string, where it would have printed `" + D + "` to the planner rather than throwing. The guard
+added this morning is now the thing catching them faster than I write them.
+
+⚠️ **Not verified signed in.** Add branch has never created a real node.
+
+`MODULE_V` → `20260917zu`.
+
 ### 2026-09-17 (r) — HOTFIX: the Project Phases step rendered no cards at all
 
 Owner: *"Project Phases bugged out completely. I cannot see the default WBS."* Correct — the heading,

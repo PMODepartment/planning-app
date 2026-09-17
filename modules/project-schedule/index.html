@@ -4105,7 +4105,27 @@
     .sbld-phwbs-n { font-variant-numeric:tabular-nums; color:var(--pd-ink); }
     .sbld-phcard-other .sbld-phname { color:var(--pd-muted); }
     .ps-wbs-rolock { color:var(--pd-muted); font-style:italic; }
-    .sbld-phplanh { margin-top:10px; }
+    .sbld-phplanh { margin-top:14px; }
+    /* ⚠️⚠️ THE ROW WAS CLIPPING, AND IT IS NOT THE HOVER. Owner 2026-09-17: *"Many are
+       clashing/clipping."* The first guess was the hover reveal resizing the row — measured, and
+       WRONG: `.ps-wbs-acts` is `visibility:hidden`, which still reserves its box, so showing it
+       moves nothing. Measured at a 424px row: the content is 620px wide (code + badges + name +
+       ten action buttons) and simply overflows, and the name is already pinned at its floor.
+       So the fix is to let the row keep its natural width and let the card's own `overflow:auto`
+       scroll to it, instead of the row silently clipping what does not fit.
+       ⚠️ `pointer-events:none` while transparent is kept regardless: the buttons are laid out
+       whether or not they are shown, and an invisible-but-clickable delete is the worst of it. */
+    .sbld-phwbs .ps-wbs-row { min-width:max-content; }
+    .sbld-phwbs .ps-wbs-acts { visibility:visible; opacity:0; pointer-events:none; }
+    .sbld-phwbs .ps-wbs-row:hover .ps-wbs-acts,
+    .sbld-phwbs .ps-wbs-row.selected .ps-wbs-acts { opacity:1; pointer-events:auto; }
+    /* A floor for the name so it is never squeezed to nothing by the badges beside it. */
+    .sbld-phwbs .ps-wbs-name { min-width:180px; }
+    .sbld-phwbs .ps-wbs-badge { overflow:hidden; text-overflow:ellipsis; }
+    /* The tally and the Add button sit on the header row; neither wants the heading's uppercase. */
+    .sbld-phwbs-n { text-transform:none; letter-spacing:0; font-weight:500; }
+    .sbld-phwbs-add { text-transform:none; letter-spacing:0; margin-left:10px; flex:none; }
+    .sbld-phwbs-h { flex-wrap:wrap; }
     /* The Tools popover. ⚠️ Anchored to its own wrapper rather than to the toolbar, so it
        opens under the button wherever the toolbar has been borrowed to. */
     .ps-wbs-toolswrap { position:relative; display:inline-flex; }
@@ -42961,9 +42981,21 @@
       /* ⚠️ Both numbers, each labelled. "0 · 3" would be two numbers and a guess. */
       var tally = n + ' branch' + (n === 1 ? '' : 'es') +
         (code === 'other' ? '' : ' · ' + na + ' activit' + (na === 1 ? 'y' : 'ies'));
+      /* ⚠️⚠️ A VISIBLE WAY IN. Owner 2026-09-17: *"How does one add branches?"* — and there
+         was no answer on screen. The row's own add button lives in `.ps-wbs-acts`, which is
+         `visibility:hidden` until the row is hovered or selected; on an EMPTY branch there is no row
+         to hover, so adding the first sub-branch was unreachable by mouse and discoverable only by
+         knowing that Shift+Enter exists.
+         ⚠️ Not offered on the read-only Execution card, and not on a `source_kind` branch
+         whose contents are mirrored from another app. A button that can only raise a toast
+         explaining itself is not a way in. */
+      var canAdd = (code !== 'construction') && !(b && b.source_kind);
+      var addBtn = canAdd
+        ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phwbsadd="' + e2(code) + '">+ Add branch</button>'
+        : '';
       return '<div class="sbld-phwbs-h"><span>' + (label || 'In the schedule now') + '</span>' +
         '<span class="sbld-phwbs-w">' + where + '</span>' +
-        '<span class="sbld-phwbs-n">' + tally + '</span></div>' +
+        '<span class="sbld-phwbs-n">' + tally + '</span>' + addBtn + '</div>' +
         '<div class="sbld-phwbs" data-phwbs="' + e2(code) + '"></div>';
     }
     function stPhases(host, noHead) {
@@ -43007,10 +43039,7 @@
            is `cfg.phases` — what the next Push will CREATE, not in the database yet. The branch
            block underneath is `wbs_nodes` — what the project HAS. They are not two views of one
            thing and cannot be merged into one list without merging an intention with a fact. */
-        var phHead = '<div class="sbld-phwbs-h sbld-phplanh"><span>Planned</span>' +
-          '<span class="sbld-phwbs-w">Created under this phase when you <b>' + _stepNo('Generate') +
-          ' · Push</b></span></div>' +
-          '<div class="sbld-phrow sbld-phhdr">' +
+        var phHead = '<div class="sbld-phrow sbld-phhdr">' +
           '<span class="sbld-phgrip" aria-hidden="true"></span>' +
           '<span>Activity</span>' +
           '<span title="Calendar days, not working days — these lifecycle activities are not scheduled against a working calendar.">Days</span>' +
@@ -43048,14 +43077,24 @@
             ? '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · spans <b>' + sbPhDays(d.v) + '</b> calendar days · ' +
               (pl ? e2(win(pl.start, pl.finish)) : '—')
             : 'Off — nothing is pushed for this phase.') + '</p>' +
-          (on ? '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' +
+          /* ⚠️⚠️ THE BRANCHES COME FIRST, AND THAT IS A SEQUENCE ARGUMENT, NOT A LAYOUT ONE.
+             Owner 2026-09-17: *"it should be clear that the branches should come first before the
+             activity in terms of sequence. By defining the sub-branches/sub-WBS the planner would be
+             able to determine what activities should be defined in the sub-WBS."* Right: the WBS is
+             what the activities are filed INTO, so a card that asked for activities first was asking
+             the planner to name work before deciding where it belongs. The block order now matches
+             the order of the decisions. */
+          phWbsBlock(d.v) +
+          (on ? '<div class="sbld-phwbs-h sbld-phplanh"><span>Planned</span>' +
+                  '<span class="sbld-phwbs-w">Created under this phase when you <b>' + _stepNo('Generate') +
+                  ' \u00b7 Push</b></span></div>' +
+                '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' +
                 '<div class="sbld-sec-actions"><button class="pd-btn" data-phadd="' + d.v + '">+ Add activity</button>' +
                 '<button class="pd-btn" data-phreset="' + d.v + '">Reset to the typical set</button></div>' : '') +
           /* ⚠️ THE SUBTREE IS SHOWN WHETHER THE PHASE IS ON OR OFF. The activity list above is
              what the next push WILL create; the tree below is what the project HAS. A branch with
              branches already in it, on a phase switched off, is exactly the state a planner needs
              to see — hiding it with the list would make the card lie about the project. */
-          phWbsBlock(d.v) +
           '</div>';
       }).join('');
       /* ⚠️⚠️ THE FIFTH CARD IS NOT OPTIONAL. Milestones is a seeded skeleton root with no
@@ -43103,6 +43142,29 @@
       });
       host.querySelectorAll('[data-phadd]').forEach(function (b) {
         b.onclick = function () { sbPhActs(b.dataset.phadd).push({ id: uidv(), n: '', d: 5 }); markDirty(); render(); };
+      });
+      /* ⚠️ The parent is resolved AT CLICK TIME, never captured at render: a push between the
+         two creates the phase branch, and a null captured earlier would silently add a new TOP-LEVEL
+         branch instead of a child — which renumbers every sibling's dotted code. */
+      host.querySelectorAll('[data-phwbsadd]').forEach(function (b) {
+        b.onclick = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          var code = b.dataset.phwbsadd;
+          if (code === 'other') { wbsQuickAdd(null, null); return; }   // a new top-level branch
+          if (code === 'milestones') {
+            var ms = _wbsMilestonesRootId();
+            if (!ms) { UI.toast('This project has no Milestones branch yet.', 'warn'); return; }
+            wbsQuickAdd(ms, null); return;
+          }
+          var pb = _phaseBranchAt(null, code);
+          if (!pb) {
+            /* ⚠️ Says what to do instead of failing quietly. The branch is created by the push,
+               so there is genuinely nowhere to put a child yet. */
+            UI.toast('This phase has no branch yet — run ' + _stepNo('Generate') + ' — Push first.', 'warn');
+            return;
+          }
+          wbsQuickAdd(pb.id, null);
+        };
       });
       host.querySelectorAll('[data-phreset]').forEach(function (b) {
         b.onclick = function () {
