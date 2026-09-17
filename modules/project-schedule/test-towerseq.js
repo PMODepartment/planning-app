@@ -84,7 +84,11 @@ function mkCfg() {
 const FNS = [
   'floorsOf', 'towerById', 'towerLabel', 'towerIdOf', 'towerList', 'blankTowers', 'floorsOfTower',
   'floorKind', 'locless', 'leavesOfFloor', 'cloneFloors', 'multiTower',
-  'twShapeOf', '_twSame', 'twShapeDiff', 'twSeqCount', 'copyTowerSeq', 'copyTower', 'seqFloors'
+  'twShapeOf', '_twSame', 'twShapeDiff', 'twSeqCount', 'copyTowerSeq', 'copyTower', 'seqFloors',
+  /* ⚠️ Tower TYPES (2026-09-18). floorsOfTower resolves an instance to its type's representative,
+     so these are REAL dependencies of a function this suite already slices — linked, never stubbed.
+     They are optional for the same reason `twShapeOf` is: the pinned base does not define them. */
+  'blankTowerTypes', 'typeList', 'typeById', 'typeOfTower', 'towersOfType', 'repTowerOf', 'repTowerOfTower'
 ];
 const VARS = ['GROUPS', 'GLABEL', 'KIND_ORDER', 'KIND_LABEL', 'LOCLESS'];
 
@@ -316,7 +320,8 @@ function diffAfter(mutate) {
     });
     ok(base.indexOf('var seqTower =') < 0, '7.6  base has no per-tower filter at all');
     /* The base's copyTower takes two arguments and copies EVERY trade. Executed, not read. */
-    const B = build(base, { optional: ['twShapeOf', '_twSame', 'twShapeDiff', 'twSeqCount', 'copyTowerSeq', 'seqFloors'] });
+    const B = build(base, { optional: ['twShapeOf', '_twSame', 'twShapeDiff', 'twSeqCount', 'copyTowerSeq', 'seqFloors',
+      'blankTowerTypes', 'typeList', 'typeById', 'typeOfTower', 'towersOfType', 'repTowerOf', 'repTowerOfTower'] });
     const c = mkCfg(); B.setCfg(c);
     const r = B.copyTower('twA', 'twB', { groups: ['ST'] });
     ok(r.floors === 6, '7.7  base copyTower IGNORES a per-trade option and takes all six floors', r.floors);
