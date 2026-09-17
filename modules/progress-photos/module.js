@@ -161,6 +161,17 @@ window.ProgressPhotos = (function () {
     var res = await sb().storage.from(BUCKET).createSignedUrl(path, SIGN_TTL);
     if (res && res.data && res.data.signedUrl) urlCache[path] = res.data.signedUrl;
   }
+  // signOne() above only ever populates urlCache; it never hands the URL
+  // back to its caller. The server-job 360° path (below) needs the URL
+  // itself — to draw the result image, to read its real pixel dimensions, to
+  // fetch the thumbnail bytes — so this is the same cache, just returning
+  // what it resolved to (or the cached value, unchanged, on a repeat call
+  // for the same path within this SIGN_TTL window).
+  async function signStoragePath(path) {
+    if (!path) return null;
+    if (!urlCache[path]) await signOne(path);
+    return urlCache[path] || null;
+  }
 
   // Trades mirror the WPM (procurement) trade vocabulary so photos, work
   // packages and cash-out all speak the same language.
@@ -842,13 +853,36 @@ window.ProgressPhotos = (function () {
       });
     }
     $('pp-refresh').onclick = function () { load(); };
-    if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
+    // ⚠️ Real bug fix: this used to call flushQueue() directly, with NO visible
+    // feedback while it ran (fetch-based uploads have no progress events at
+    // all — see the "upload byte progress" section above) — reported as
+    // "clicking Sync now appears to do nothing". It now opens the Pending
+    // uploads panel, which shows the queue, drives its own Sync now with real
+    // per-file percentage, and is where a failed item's error + Retry live.
+    if ($('pp-sync')) $('pp-sync').onclick = function () { openPendingMediaPanel(); };
     if ($('pp-genthumbs')) $('pp-genthumbs').onclick = function () { backfillThumbnails(); };
     if ($('pp360-drafts')) $('pp360-drafts').onclick = function () { openPano360DraftsList(); };
     wireSelBar();
     wireLightboxMagnifier();
     wireLightboxKpResizeDrag();
-    wirePanoDrag();
+    // ⚠️⚠️ 2026-09-16 HOTFIX: `wirePanoDrag()` was called here but the
+    // function itself was deleted on 2026-09-11 (third round) — superseded
+    // by the real Pannellum viewer, mounted per-instance via
+    // mountPannellumViewer() wherever a 360 photo is actually opened, never
+    // wired globally. The call site was left behind, and it threw a
+    // ReferenceError SYNCHRONOUSLY inside wire(), which init() calls with no
+    // try/catch and no await — so the throw rejected init()'s own promise
+    // and silently skipped EVERYTHING after it: applyTileScale(),
+    // syncChrome(), load() (the photo grid never rendered — #pp-view stayed
+    // completely empty), loadSchedule() (SCHED_ACTS/LOC_LEVELS never
+    // populated — the exact reason Works/Location had nothing to offer in
+    // the Add Media modal) and fillFilterOptions() (the Trade/Works filter
+    // selects stayed stuck at their single blank placeholder option).
+    // Confirmed live on the deployed site (module.js?v=20260916z1, Avesta
+    // Residences/AVR101): console threw "wirePanoDrag is not defined" at
+    // init(), #pp-view.innerHTML was empty, and #pp-f-trade/#pp-f-works both
+    // had exactly 1 option. This one stray call broke the WHOLE module for
+    // every project, not just this one's Works dropdown.
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -2944,8 +2978,12 @@ window.ProgressPhotos = (function () {
   var lightboxKeyPlanVisible = false;
   // Item 4: how far (in degrees) the 360° viewer has been panned away from
   // its opening position — reset to 0 whenever a photo opens/steps, updated
-  // live by wirePanoDrag() below, and read by paintKeyPlanOverlay() so the
-  // key-plan cone rotates to keep following the direction actually on screen.
+  // live by startPanoYawPoll()'s callback (see paintLightbox), and read by
+  // paintKeyPlanOverlay() so the key-plan cone rotates to keep following the
+  // direction actually on screen. ⚠️ Was "wirePanoDrag() below" until the
+  // 2026-09-16 hotfix — that function was deleted on 2026-09-11 (superseded
+  // by the real Pannellum viewer's own yaw polling) and this comment simply
+  // never got updated to match.
   var lightboxPanoHeadingDeg = 0;
   // Round-2 item 3 (2026-09-02): the lightbox's magnifier — replaces the
   // zoom in/out buttons item 10 added ("zoom is only for... the image pop-up
@@ -3124,9 +3162,24 @@ window.ProgressPhotos = (function () {
     if (!container.id) container.id = 'pp-pnlm-' + Math.random().toString(36).slice(2);
     var vaov = Math.min(140, Math.max(20, 360 * (heightOverWidth || 0.35)));
     try {
+      // ⚠️ 2026-09-16 (viewer improvement): fullscreen turned ON. Both
+      // callers of this function mount into a genuinely cramped box for
+      // actually looking around a panorama -- the "Add 360°" review flow's
+      // own preview is a fixed 240px-tall strip (`#pp360-panowrap`
+      // overrides the lightbox's larger sizing on purpose, see that CSS
+      // rule's own comment), and even the lightbox's own viewport-relative
+      // box is still constrained by this app's modal chrome around it.
+      // Pannellum's fullscreen control drives the standard browser
+      // Fullscreen API on this element specifically, which is a
+      // browser-level compositing layer independent of the surrounding
+      // DOM's own z-index/overflow -- it works the same whether this
+      // viewer sits inside a small preview box or a full-viewport modal,
+      // and gives a planner a real way to inspect a capture at its actual
+      // size instead of being capped by whichever container happened to
+      // mount it.
       return pannellum.viewer(container.id, {
         type: 'equirectangular', panorama: imageUrl, haov: 360, vaov: vaov,
-        autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: false, compass: false,
+        autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: true, compass: false,
         minHfov: 30, maxHfov: 120, hfov: 100
       });
     } catch (e) {
@@ -5808,13 +5861,28 @@ window.ProgressPhotos = (function () {
   // confirms the 360 photo. keep it in the session only as draft"
   //
   // ⚠️⚠️ SAFETY GATE, stated once so it is easy to audit: `uploadFile()` /
-  // `tolerantWrite()` are called from EXACTLY ONE place in this whole draft
-  // flow -- the "Confirm & Save" handler inside openPano360Review(), guarded
-  // on `draft.status === 'ready'`. Starting a capture
-  // (openPano360SourcePicker) and background-stitching it
-  // (runStitchForDraft/runPhotoForDraft/finishDraftStitch) never touch
-  // Storage or the shared database. This invariant is unchanged by the
-  // persistence added below.
+  // `tolerantWrite()` against progress_photos are called from EXACTLY ONE
+  // place in this whole draft flow -- the "Confirm & Save" handler inside
+  // openPano360Review(), guarded on `draft.status === 'ready'`. Starting a
+  // capture (openPano360SourcePicker) and background-processing it
+  // (runStitchForDraft/runPhotoForDraft/finishDraftStitch/
+  // trackJobToCompletion/finishDraftFromJob) never write a progress_photos
+  // row. This invariant is unchanged by the persistence added below.
+  //
+  // ⚠️⚠️ 2026-09-16: a video draft's stitching moved OUT of the browser and
+  // onto the server (see migrations/2026-09-16-pano360-jobs.sql and
+  // supabase/functions/pano360-process/index.ts) -- runStitchForDraft() now
+  // extracts frames client-side (fast, no WASM), uploads them, and inserts a
+  // `pano360_jobs` ROW to kick off the actual stitch, which runs entirely
+  // server-side, self-chained/cron-driven, and therefore survives this TAB
+  // CLOSING ENTIRELY, not merely being backgrounded. This does NOT weaken the
+  // safety gate above -- a pano360_jobs row is scratch working state for the
+  // stitch itself (frame paths, alignment offsets, the in-progress
+  // composite), never the shared progress_photos record a planner sees on
+  // the Gallery; it is cleaned up by removePano360Draft() the same way a
+  // discarded local stitch never left anything behind. A pre-processed 360°
+  // photo (runPhotoForDraft, no video to stitch) is untouched by this and
+  // still never touches the server at all until Confirm & Save.
   //
   // Architecture: a "draft" is decoupled from any one modal's lifecycle --
   // starting a capture creates a draft and kicks off background processing,
@@ -5849,6 +5917,15 @@ window.ProgressPhotos = (function () {
   // any) simply sit untouched in the same local database until they sign
   // back in themselves.
   // ============================================================================
+  var PANO360_JOBS_TABLE = 'pano360_jobs';
+  // Matches the server's own COMPOSITE_FRAME_MAX_WIDTH (pano360-process/
+  // index.ts) exactly -- the server downscales every frame to this width
+  // before compositing regardless of what it's handed, so uploading wider
+  // frames would only cost upload time/bandwidth for zero quality gain.
+  var JOB_FRAME_MAXW = 640;
+  var JOB_FRAME_JPEG_Q = 0.82;
+  var JOB_UPLOAD_CONCURRENCY = 4;
+  var PANO360_POLL_MS = 4000;
   var PANO360_DRAFTS = [];
   var _pano360DraftSeq = 0;
   function pano360DraftsForProject() { return PANO360_DRAFTS.filter(function (d) { return d.pid === pid; }); }
@@ -5913,12 +5990,18 @@ window.ProgressPhotos = (function () {
       progressMsg: 'Processing…',
       error: null,
       video: null, videoUrl: null,
-      stitchResult: null, stitchUrl: null,   // { blob, quality, width, height }
+      stitchResult: null, stitchUrl: null,   // { quality, width, height, pairsFallback, pairsTotal } for a job-backed video draft (no .blob -- see finishDraftFromJob); { blob, quality, width, height } for a pre-processed photo (finishDraftStitch)
       repBlob: null, repUrl: null,           // thumbnail frame -- becomes thumb_url
       pendingAdjust: {},                      // keyed 0 (a single item, same convention as the old single-slot flow)
       meta: { desc: '', date: new Date().toISOString().slice(0, 10), works: [], locVals: {}, viewName: '', tags: [], pinData: null },
       onUpdate: null,                         // set by whichever review modal is currently watching this draft, if any
-      _persistSourceBlob: null                // the ORIGINAL video/photo file -- kept only while status==='processing', so an interrupted stitch can be restarted after a reload without re-recording; see persistPano360Draft()
+      _persistSourceBlob: null,               // the ORIGINAL video/photo file -- kept only until a pano360_jobs row exists (video) or forever unneeded (photo, which has no job); see persistPano360Draft()
+      // 2026-09-16: server-job fields (video drafts only -- see
+      // runStitchForDraft/trackJobToCompletion/finishDraftFromJob below).
+      jobId: null,             // the pano360_jobs row this draft's stitch is running/ran as
+      jobResultPath: null,     // Storage path of the server-stitched panorama -- Confirm & Save reuses this directly instead of re-uploading
+      jobThumbPath: null,      // Storage path of the server's own default thumbnail -- reused unless _thumbOverridden
+      _thumbOverridden: false  // true once "Use this view as thumbnail" replaced the server's default with a planner-picked frame
     };
     PANO360_DRAFTS.push(d);
     renderPano360DraftsBadge();
@@ -5942,6 +6025,28 @@ window.ProgressPhotos = (function () {
     // draft leaves PANO360_DRAFTS it must also leave the local persistence
     // store, or it would reappear on the next rehydrate.
     Pano360DraftStore.remove(d.id).catch(function () {});
+    // Best-effort, unawaited cancel-then-delete of the pano360_jobs row this
+    // draft's video may have created. Cancel first, delete second, because
+    // that ordering covers both real cases under the migration's own RLS: an
+    // IN-FLIGHT job (still queued/aligning/compositing) gets flipped to
+    // 'cancelled' -- the only value an ordinary client is ever granted write
+    // access to (see the migration's column-level GRANT) -- which both stops
+    // the worker chaining further AND satisfies the delete policy's status
+    // check, so the delete that follows succeeds; an ALREADY-DONE job's
+    // cancel matches 0 rows (the UPDATE policy excludes 'done' from `using`)
+    // and is a harmless no-op, since 'done' already satisfies the delete
+    // policy on its own. One pair of calls therefore covers Discard AND the
+    // cleanup this same function already runs right after Confirm & Save.
+    // ⚠️ Known, accepted gap: this deletes the pano360_jobs ROW, not the
+    // frame/result/thumbnail OBJECTS it points at in Storage -- a discarded
+    // draft can leave orphaned files behind. Full multi-object Storage
+    // cleanup is a real follow-up, not attempted here.
+    if (d.jobId) {
+      var jid = d.jobId;
+      sb().from(PANO360_JOBS_TABLE).update({ status: 'cancelled' }).eq('id', jid)
+        .then(function () { return sb().from(PANO360_JOBS_TABLE).delete().eq('id', jid); })
+        .catch(function () {});
+    }
     renderPano360DraftsBadge();
   }
   // Mirrors #pp-sync's own established convention exactly (module.js/
@@ -6047,7 +6152,7 @@ window.ProgressPhotos = (function () {
   // IndexedDB. Called at every point the draft's own state actually
   // SETTLES -- created, metadata captured, stitched, errored, thumbnail
   // captured, adjustments changed -- never from the many intermediate
-  // progress ticks touchPano360Draft() drives (a 48-frame stitch reports
+  // progress ticks touchPano360Draft() drives (a many-frame stitch reports
   // progress dozens of times; the source blob never changes mid-stitch, so
   // persisting it once up front is enough to resume from).
   function persistPano360Draft(draft) {
@@ -6060,8 +6165,18 @@ window.ProgressPhotos = (function () {
       // something to resume TOWARD -- once a draft is 'ready' or 'error' the
       // stitched result (or the failure) is the fact that matters, and
       // keeping a large video blob around forever would just waste space.
+      // For a job-backed video draft this is ALSO cleared the moment the
+      // pano360_jobs row exists (see runStitchForDraft) -- from that point
+      // resuming means polling the job, not re-uploading the video.
       sourceBlob: draft.status === 'processing' ? (draft._persistSourceBlob || null) : null,
-      stitchBlob: res ? res.blob : null,
+      jobId: draft.jobId || null,
+      jobResultPath: draft.jobResultPath || null,
+      jobThumbPath: draft.jobThumbPath || null,
+      thumbOverridden: !!draft._thumbOverridden,
+      // A job-backed draft's stitchResult carries no .blob (the panorama
+      // lives in Storage under jobResultPath, never downloaded whole into
+      // this browser) -- only a legacy/pre-processed-photo draft has one.
+      stitchBlob: (res && res.blob) ? res.blob : null,
       stitchWidth: res ? res.width : null, stitchHeight: res ? res.height : null,
       stitchQuality: res ? res.quality : null,
       pairsFallback: res ? res.pairsFallback : null, pairsTotal: res ? res.pairsTotal : null,
@@ -6075,7 +6190,7 @@ window.ProgressPhotos = (function () {
     // storage quota, a private-mode restriction, a transient IndexedDB
     // error) must not fail quietly. Logged every time (for whoever's
     // actually debugging a report like this), toasted at most ONCE per
-    // session (never per progress tick -- a 48-frame stitch calls this
+    // session (never per progress tick -- a many-frame stitch calls this
     // dozens of times and a failing write fails the same way every time) so
     // the planner has an actual chance to notice their draft may not
     // survive closing the tab, rather than discovering it's gone later.
@@ -6091,20 +6206,29 @@ window.ProgressPhotos = (function () {
 
   // Reconnects this signed-in user's own in-progress/finished-but-
   // unconfirmed 360° drafts after a reload or a fresh login -- called once
-  // from init(), right after `uid` is known. ⚠️⚠️ A draft still mid-stitch is
-  // genuinely RESTARTED, not resumed from wherever it left off -- there is
-  // no way to pick a half-finished WASM computation back up across a page
-  // reload. What survives is the ORIGINAL recording, so the planner never
-  // has to re-record; the CPU time already spent on the interrupted attempt
-  // does not. A draft that had already reached 'ready' or 'error' before the
-  // reload is restored exactly as it was, with no reprocessing at all.
+  // from init(), right after `uid` is known.
+  // ⚠️⚠️ 2026-09-16: a draft still mid-stitch is now genuinely RESUMED, not
+  // restarted, PROVIDED it already has a `jobId` -- the stitching runs on
+  // the server, so "pick it back up" means polling the still-running
+  // pano360_jobs row (trackJobToCompletion), never re-extracting or
+  // re-uploading anything. The only draft that still has to be genuinely
+  // RESTARTED from its saved recording is one that never got as far as
+  // creating a job row before the tab closed (`rec.sourceBlob` with no
+  // `rec.jobId`) -- the legacy shape this function has always handled. A
+  // draft that had already reached 'ready' or 'error' before the reload is
+  // restored exactly as it was, with no reprocessing at all -- for a
+  // job-backed 'ready' draft that means re-signing its result's Storage URL
+  // (never downloaded as a Blob into this browser -- see
+  // persistPano360Draft's own comment), not re-fetching anything from the
+  // job row itself.
   async function rehydratePano360Drafts() {
     if (!uid || typeof indexedDB === 'undefined') return;
     var records;
     try { records = await Pano360DraftStore.allForUser(uid); } catch (e) { console.warn('[progress-photos] Could not read persisted 360° drafts:', e); return; }
-    var resuming = 0, restored = 0;   // for the recovery toast below -- see its own comment
-    records.forEach(function (rec) {
-      if (findPano360Draft(rec.id)) return;
+    var resumingJobs = 0, restartingLocal = 0, restored = 0;   // for the recovery toast below -- see its own comment
+    for (var i = 0; i < records.length; i++) {
+      var rec = records[i];
+      if (findPano360Draft(rec.id)) continue;
       var d = {
         id: rec.id, pid: rec.pid, source: rec.source, status: rec.status,
         progressMsg: rec.status === 'processing' ? 'Resuming…' : null,
@@ -6115,20 +6239,51 @@ window.ProgressPhotos = (function () {
         pendingAdjust: rec.pendingAdjust || {},
         meta: rec.meta || { desc: '', date: new Date().toISOString().slice(0, 10), works: [], locVals: {}, viewName: '', tags: [], pinData: null },
         onUpdate: null,
-        _persistSourceBlob: null
+        _persistSourceBlob: null,
+        jobId: rec.jobId || null,
+        jobResultPath: rec.jobResultPath || null,
+        jobThumbPath: rec.jobThumbPath || null,
+        _thumbOverridden: !!rec.thumbOverridden
       };
       if (rec.repBlob) { try { d.repUrl = URL.createObjectURL(rec.repBlob); } catch (e) {} }
       if (rec.stitchBlob) {
+        // A legacy or pre-processed-photo draft carries its own stitched
+        // Blob directly -- never job-backed, so there is nothing server-side
+        // to re-sign.
         d.stitchResult = {
           blob: rec.stitchBlob, width: rec.stitchWidth, height: rec.stitchHeight,
           quality: rec.stitchQuality, pairsFallback: rec.pairsFallback, pairsTotal: rec.pairsTotal
         };
         try { d.stitchUrl = URL.createObjectURL(rec.stitchBlob); } catch (e) {}
+      } else if (rec.status === 'ready' && rec.jobResultPath) {
+        // A job-backed draft that had already finished before this reload --
+        // the panorama lives in Storage, never downloaded whole into this
+        // browser, so re-signing its URL is all that's needed to show it
+        // again. Best-effort: a failed sign here leaves the draft restored
+        // with no preview rather than throwing the whole rehydrate away.
+        try {
+          d.stitchUrl = await signStoragePath(rec.jobResultPath);
+          d.stitchResult = {
+            width: rec.stitchWidth, height: rec.stitchHeight,
+            quality: rec.stitchQuality, pairsFallback: rec.pairsFallback, pairsTotal: rec.pairsTotal
+          };
+        } catch (e) {}
       }
       PANO360_DRAFTS.push(d);
       if (d.status === 'processing') {
-        if (rec.sourceBlob) {
-          resuming++;
+        if (rec.jobId) {
+          // The frames are already uploaded and a pano360_jobs row already
+          // exists server-side -- a real resume, not a restart: nothing is
+          // re-extracted or re-uploaded, the job just keeps being polled
+          // from wherever it actually is.
+          resumingJobs++;
+          trackJobToCompletion(d, rec.jobId);
+        } else if (rec.sourceBlob) {
+          // Legacy path -- a draft persisted before the server-job
+          // architecture, or one that failed/closed before a job row could
+          // even be created. The only way forward is genuinely restarting
+          // from the saved recording.
+          restartingLocal++;
           d._persistSourceBlob = rec.sourceBlob;
           if (d.source === 'video') {
             d.video = rec.sourceBlob;
@@ -6148,7 +6303,7 @@ window.ProgressPhotos = (function () {
       } else {
         restored++;
       }
-    });
+    }
     // ⚠️⚠️ 2026-09-14, later still yet again (again): recovering a draft used
     // to be completely silent -- the ONLY sign it survived was the small
     // topbar "N drafts" badge, which a planner reopening the app after
@@ -6157,12 +6312,13 @@ window.ProgressPhotos = (function () {
     // gone" -- which is exactly what was reported, even though the source
     // was in fact being persisted correctly the whole time. A direct toast,
     // fired once per app open (never per draft), says plainly that nothing
-    // was lost and that a still-processing one is being restarted -- the
-    // one thing recovery cannot do (see the RESTARTED-not-resumed note atop
-    // this function) and so the one thing worth being upfront about.
-    if (resuming || restored) {
+    // was lost. 2026-09-16: now that a job-backed draft is a genuine resume
+    // (see the note atop this function), the toast says so -- "restarting"
+    // is reserved for the one shape that's actually still true of.
+    if (resumingJobs || restartingLocal || restored) {
       var bits = [];
-      if (resuming) bits.push(resuming + ' 360° capture' + (resuming === 1 ? '' : 's') + ' resuming (restarting from your saved recording)');
+      if (resumingJobs) bits.push(resumingJobs + ' 360° capture' + (resumingJobs === 1 ? '' : 's') + ' resuming (continuing on the server)');
+      if (restartingLocal) bits.push(restartingLocal + ' 360° capture' + (restartingLocal === 1 ? '' : 's') + ' resuming (restarting from your saved recording)');
       if (restored) bits.push(restored + ' finished 360° capture' + (restored === 1 ? '' : 's') + ' waiting for review');
       UI.toast('Recovered from before you closed this app: ' + bits.join(', ') + '.', 'ok');
     }
@@ -6218,32 +6374,234 @@ window.ProgressPhotos = (function () {
     touchPano360Draft(draft);
   }
 
-  // ⚠️⚠️ 2026-09-13: "since it's taking too long to process and stitch an
-  // image, allow uploading 360 as draft during the session to work the
-  // stitching in the background." Runs to completion regardless of whether
-  // any modal is open -- it never touches the DOM, only `draft` state plus
-  // `touchPano360Draft`, which is itself a no-op repaint when nothing is
-  // watching. Reports the same four real stages pano360.js provides
-  // (duration / framecount / frames-per-frame / stitch) as `draft.progressMsg`,
-  // so a review modal reopened mid-stitch shows real, current progress
-  // rather than a frozen "Processing…".
-  async function runStitchForDraft(draft) {
-    draft.progressMsg = 'Reading video…';
+  // A fresh, RFC-4122-shaped job id -- minted CLIENT-SIDE, before the
+  // pano360_jobs row is inserted, because the frame Storage paths
+  // (<project>/pano360-jobs/<jobId>/frame-XXXX.jpg) need to exist before the
+  // insert can even happen. Same fallback shim as offline.js's own uuid() --
+  // this file doesn't import that one (a private IIFE closure), so it's
+  // restated here rather than reached into.
+  function newPanoJobId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+  function padFrameIndex(i, width) {
+    var s = String(i);
+    while (s.length < width) s = '0' + s;
+    return s;
+  }
+
+  // Extracts frames from `videoBlob` client-side -- the one piece of the old
+  // in-browser pipeline this side keeps -- and uploads each one to Storage
+  // under this job's own prefix, IN ORDER, via a capped-concurrency worker
+  // pool (JOB_UPLOAD_CONCURRENCY) matching the same pattern this file's own
+  // batch-photo-upload save loop already uses. ⚠️⚠️ Deliberately throws
+  // rather than skipping and continuing on a failed frame upload -- unlike
+  // an ordinary photo batch, where one bad file can't hurt the others, these
+  // frames are a required ORDERED SEQUENCE the server aligns pairwise, and a
+  // silently-missing frame partway through would corrupt every alignment
+  // past the gap.
+  async function uploadJobFrames(pidVal, jobId, videoBlob, onProgress) {
+    var duration = await Pano360.getDuration(videoBlob);
+    var count = Pano360.frameCountFor(duration);
+    var frames = await Pano360.extractFrames(videoBlob, count, JOB_FRAME_MAXW, duration, function (done, total) {
+      if (onProgress) onProgress('extract', done, total);
+    });
+    var paths = new Array(frames.length);
+    var nextIdx = 0, uploaded = 0;
+    async function worker() {
+      while (nextIdx < frames.length) {
+        var i = nextIdx++;
+        var blob = await canvasToBlob(frames[i], 'image/jpeg', JOB_FRAME_JPEG_Q);
+        var path = pidVal + '/pano360-jobs/' + jobId + '/frame-' + padFrameIndex(i, 4) + '.jpg';
+        var file = blobToFile(blob, 'photo');
+        var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false, contentType: 'image/jpeg' });
+        if (res.error) throw res.error;
+        paths[i] = path;
+        uploaded++;
+        if (onProgress) onProgress('upload', uploaded, frames.length);
+      }
+    }
+    var poolSize = Math.min(JOB_UPLOAD_CONCURRENCY, frames.length);
+    await Promise.all(Array.from({ length: poolSize }, worker));
+    return paths;
+  }
+
+  async function fetchPano360Job(jobId) {
+    var res = await sb().from(PANO360_JOBS_TABLE).select('*').eq('id', jobId).maybeSingle();
+    if (res.error) throw res.error;
+    return res.data || null;
+  }
+
+  // A plain poll loop -- Realtime was deliberately not used here, matching
+  // this codebase's own preference for a mechanism that keeps working with
+  // no extra migration/publication wiring. Resolves on 'done', rejects with
+  // a real Error on 'failed'/'cancelled', and retries past a transient fetch
+  // error rather than giving up the whole background job over one bad read.
+  // ⚠️ `sawJob` distinguishes "the row hasn't replicated yet" (retry) from
+  // "the row existed and is now gone" (a cancel-then-delete elsewhere,
+  // e.g. Discard) -- without it, a deleted job would poll forever.
+  function pollPano360Job(jobId, onTick) {
+    return new Promise(function (resolve, reject) {
+      var sawJob = false;
+      function tick() {
+        fetchPano360Job(jobId).then(function (job) {
+          if (!job) {
+            if (sawJob) { reject(new Error('The 360° stitching job no longer exists — it may have been cancelled.')); return; }
+            setTimeout(tick, PANO360_POLL_MS);
+            return;
+          }
+          sawJob = true;
+          if (onTick) { try { onTick(job); } catch (e) {} }
+          if (job.status === 'done') { resolve(job); return; }
+          if (job.status === 'failed' || job.status === 'cancelled') {
+            reject(new Error(job.error || ('The 360° stitching job was ' + job.status)));
+            return;
+          }
+          setTimeout(tick, PANO360_POLL_MS);
+        }).catch(function () { setTimeout(tick, PANO360_POLL_MS); });
+      }
+      tick();
+    });
+  }
+
+  // Reads a real image's own pixel dimensions off a signed Storage URL --
+  // the server-stitched panorama is never downloaded whole into this
+  // browser as a Blob (see finishDraftFromJob), so this is how a job-backed
+  // draft learns the width/height mountPannellumViewer needs for its aspect
+  // ratio, the same fact a locally-stitched draft already carries on
+  // res.width/res.height.
+  function urlDims(url) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onload = function () { resolve({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 }); };
+      img.onerror = function () { resolve({ width: 0, height: 0 }); };
+      img.src = url;
+    });
+  }
+
+  // The one place a settled pano360_jobs row (status='done') becomes a
+  // finished draft -- shared by trackJobToCompletion (a fresh stitch just
+  // finishing) and rehydratePano360Drafts (a draft that was already 'ready'
+  // before a reload, resolved from the persisted record instead of a live
+  // poll -- see that function). Never assumes the panorama is downloaded as
+  // a Blob; `draft.stitchResult` for a job-backed draft carries no `.blob`
+  // at all, only the dimensions/quality figures, matching persistPano360Draft's
+  // own comment on that shape.
+  async function finishDraftFromJob(draft, job) {
+    var resultUrl = await signStoragePath(job.result_path);
+    if (!resultUrl) {
+      draft.status = 'error';
+      draft.error = 'The stitched panorama could not be read back from storage';
+      draft._persistSourceBlob = null;
+      notifyPano360Draft(draft, false);
+      persistPano360Draft(draft);
+      touchPano360Draft(draft);
+      return;
+    }
+    var thumbUrl = job.thumb_path ? await signStoragePath(job.thumb_path) : null;
+    var dims = await urlDims(resultUrl);
+    draft.jobResultPath = job.result_path;
+    draft.jobThumbPath = job.thumb_path || null;
+    draft.stitchUrl = resultUrl;
+    draft.stitchResult = {
+      width: dims.width, height: dims.height,
+      quality: job.quality || 'ok',
+      pairsFallback: job.pairs_fallback || 0,
+      pairsTotal: job.pairs_total || null
+    };
+    draft.status = 'ready';
+    draft.progressMsg = null;
+    draft._persistSourceBlob = null;
+    // Every other draft shape reaches 'ready' with a real repBlob already in
+    // hand (finishDraftStitch's own thumbnail capture) -- a job-backed draft
+    // needs one downloaded from the server's own default thumbnail so the
+    // shared "ready requires repBlob" gate (Confirm & Save) never has to
+    // special-case this path. Best-effort: a failed download here still
+    // leaves the draft usable via "Use this view as thumbnail" once the
+    // viewer mounts.
+    if (thumbUrl) {
+      try {
+        var resp = await fetch(thumbUrl);
+        draft.repBlob = await resp.blob();
+        draft.repUrl = URL.createObjectURL(draft.repBlob);
+      } catch (e) {}
+    }
+    notifyPano360Draft(draft, true);
+    persistPano360Draft(draft);
     touchPano360Draft(draft);
+  }
+
+  // Polls `jobId` to completion and finishes the draft either way -- shared
+  // by a fresh stitch (runStitchForDraft, right after the job row is
+  // created) and a resumed one (rehydratePano360Drafts, for a draft that was
+  // still 'processing' with a job already in flight when the tab closed).
+  // ⚠️⚠️ Checked on EVERY tick, not just once at the start: a draft can be
+  // Discarded (or already Confirm & Saved) while this background poll is
+  // still running, and a completion arriving after that must never
+  // resurrect it -- `findPano360Draft` returning null is exactly the signal
+  // that the draft this poll was tracking no longer exists to be updated.
+  async function trackJobToCompletion(draft, jobId) {
+    draft.jobId = jobId;
     try {
-      var res = await Pano360.stitchFromVideo(draft.video, function (stage, a, b) {
-        if (stage === 'duration') {
-          draft.progressMsg = 'Reading video…';
-        } else if (stage === 'framecount') {
-          draft.progressMsg = 'Extracting up to ' + a + ' frame' + (a === 1 ? '' : 's') + '…';
-        } else if (stage === 'frames') {
-          draft.progressMsg = 'Extracting frames — ' + a + ' of ' + b + ' (' + Math.round((a / b) * 100) + '%)';
+      var job = await pollPano360Job(jobId, function (j) {
+        if (!findPano360Draft(draft.id)) return;
+        if (j.status === 'aligning' || j.status === 'compositing') {
+          var pct = Math.round(j.progress_pct || 0);
+          draft.progressMsg = (j.progress_msg || (j.status === 'aligning' ? 'Aligning frames' : 'Building panorama')) + ' — ' + pct + '%';
         } else {
-          draft.progressMsg = 'Stitching panorama — ' + Math.round(a * 100) + '%';
+          draft.progressMsg = j.progress_msg || 'Starting…';
         }
         touchPano360Draft(draft);
       });
-      finishDraftStitch(draft, res);
+      if (!findPano360Draft(draft.id)) return;
+      await finishDraftFromJob(draft, job);
+    } catch (err) {
+      if (!findPano360Draft(draft.id)) return;
+      draft.status = 'error';
+      draft.error = (err && err.message) ? err.message : 'an unknown error';
+      draft._persistSourceBlob = null;
+      notifyPano360Draft(draft, false);
+      persistPano360Draft(draft);
+      touchPano360Draft(draft);
+    }
+  }
+
+  // ⚠️⚠️ 2026-09-16: the stitching itself moves SERVER-SIDE -- this function's
+  // job is now "extract frames, upload them, create one pano360_jobs row,
+  // then track it to completion", not "run the whole WASM pipeline in this
+  // tab" (2026-09-13's own design, superseded here). Runs to completion
+  // regardless of whether any modal is open, same as before -- it never
+  // touches the DOM, only `draft` state plus `touchPano360Draft`, a no-op
+  // repaint when nothing is watching.
+  async function runStitchForDraft(draft) {
+    draft.progressMsg = 'Preparing frames…';
+    touchPano360Draft(draft);
+    try {
+      var jobId = newPanoJobId();
+      var framePaths = await uploadJobFrames(draft.pid, jobId, draft.video, function (stage, done, total) {
+        draft.progressMsg = (stage === 'extract' ? 'Extracting frames — ' : 'Uploading frames — ') +
+          done + ' of ' + total + ' (' + Math.round((done / total) * 100) + '%)';
+        touchPano360Draft(draft);
+      });
+      // The video's own bytes are no longer needed once every frame is
+      // safely on Storage -- resuming from here on means polling the job,
+      // never re-extracting/re-uploading the source.
+      if (draft.videoUrl) { try { URL.revokeObjectURL(draft.videoUrl); } catch (e) {} }
+      draft.video = null; draft.videoUrl = null;
+      draft.progressMsg = 'Starting server-side stitching…';
+      touchPano360Draft(draft);
+      var ins = await sb().from(PANO360_JOBS_TABLE).insert({
+        id: jobId, project_id: draft.pid, created_by: uid,
+        frame_paths: framePaths, frame_count: framePaths.length,
+        meta: draft.meta || {}
+      }).select('id').single();
+      if (ins.error) throw ins.error;
+      draft.jobId = jobId;
+      draft._persistSourceBlob = null;
+      persistPano360Draft(draft);
+      await trackJobToCompletion(draft, jobId);
     } catch (err) {
       draft.status = 'error';
       draft.error = (err && err.message) ? err.message : 'an unknown error';
@@ -6641,6 +6999,7 @@ window.ProgressPhotos = (function () {
           draft.repBlob = blob;
           if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
           draft.repUrl = URL.createObjectURL(blob);
+          draft._thumbOverridden = true; // Confirm & Save must upload THIS, never the server's own default thumbnail (jobThumbPath)
           persistPano360Draft(draft);
           paintThumb();
         });
@@ -6651,6 +7010,7 @@ window.ProgressPhotos = (function () {
           draft.repBlob = blob;
           if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
           draft.repUrl = URL.createObjectURL(blob);
+          draft._thumbOverridden = true; // same rule as above, for the no-viewer standin path
           persistPano360Draft(draft);
           paintThumb();
         });
@@ -6679,12 +7039,29 @@ window.ProgressPhotos = (function () {
       var tradeList = deriveTradesForWorksList(worksList);
       var pinData = draft.meta.pinData;
       try {
-        var stitchFile = blobToFile(draft.stitchResult.blob, 'photo');
-        var mainPath = await uploadFile(stitchFile);
-        var repFile = blobToFile(draft.repBlob, 'photo');
-        var thumbPath = await uploadFile(repFile);
+        var mainPath, thumbPath, titleName;
+        if (draft.jobResultPath) {
+          // Already on Storage, written there by the server job itself --
+          // reuse the path directly rather than downloading the whole
+          // panorama back into this browser just to re-upload the identical
+          // bytes.
+          mainPath = draft.jobResultPath;
+          titleName = 'panorama_' + Date.now() + '.jpg';
+        } else {
+          var stitchFile = blobToFile(draft.stitchResult.blob, 'photo');
+          mainPath = await uploadFile(stitchFile);
+          titleName = stitchFile.name;
+        }
+        if (draft.jobThumbPath && !draft._thumbOverridden) {
+          // The server's own default thumbnail, still untouched by "Use this
+          // view as thumbnail" -- reuse it the same way as the main image.
+          thumbPath = draft.jobThumbPath;
+        } else {
+          var repFile = blobToFile(draft.repBlob, 'photo');
+          thumbPath = await uploadFile(repFile);
+        }
         var row = {
-          project_id: pid, created_by: uid, title: stitchFile.name,
+          project_id: draft.pid, created_by: uid, title: titleName,
           photo_url: mainPath, thumb_url: thumbPath, media_type: '360',
           description: draft.meta.desc || '',
           taken_at: draft.meta.date || null,
@@ -7060,6 +7437,27 @@ window.ProgressPhotos = (function () {
         req.onerror = function () { reject(req.error); };
       }); });
     }
+    // ⚠️ Added for the pending-upload-status rework, below: a RETRY that fails
+    // again (or a fresh live upload that never had a qid until it failed)
+    // needs to UPDATE its own row in place — recording how far it got (e.g. the
+    // file's already-uploaded Storage path, so a further retry never re-sends
+    // the same bytes twice) — rather than either losing that progress or
+    // inserting a second, duplicate queue entry for the same capture.
+    function put(record) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx = d.transaction(STORE, 'readwrite');
+        var req = tx.objectStore(STORE).put(record);
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      }); });
+    }
+    function get(qid) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var req = d.transaction(STORE, 'readonly').objectStore(STORE).get(qid);
+        req.onsuccess = function () { resolve(req.result || null); };
+        req.onerror = function () { reject(req.error); };
+      }); });
+    }
     function all() {
       return open().then(function (d) { return new Promise(function (resolve, reject) {
         var out = [];
@@ -7079,81 +7477,514 @@ window.ProgressPhotos = (function () {
         tx.onerror = function () { reject(tx.error); };
       }); });
     }
-    return { add: add, all: all, remove: remove };
+    return { add: add, put: put, get: get, all: all, remove: remove };
   })();
 
-  async function queuedCountFor(pidVal) {
+  // --------------------------------------------------- upload byte progress --
+  // ⚠️⚠️ ROOT CAUSE of "Sync now does nothing / no visible feedback": every
+  // upload in this file went through Supabase's own storage.upload(), which is
+  // built on fetch() — and fetch has NO upload-progress event of any kind, for
+  // any request, in any browser. There was therefore no possible way to show a
+  // percentage, a moving bar, or even "still working" for a multi-minute video
+  // POST; clicking Sync just sat there indistinguishable from broken until the
+  // final toast, and a real network hiccup (or a file the server's upload size
+  // limit refuses outright) was swallowed into a bare `catch (e) { fail++; }`
+  // with no reason ever shown. xhrUploadToBucket() below talks to the EXACT
+  // SAME Storage endpoint via XMLHttpRequest instead, purely to get
+  // xhr.upload.onprogress — nothing about the wire contract changes. Verified
+  // against storage-js's own real source (StorageFileApi.uploadOrUpdate — the
+  // function storage.upload() itself calls): POST {url}/object/{bucket}/{path},
+  // a multipart FormData body of {cacheControl:'3600', ''=the file}, headers
+  // apikey + `Authorization: Bearer <token>` + (on POST) x-upsert, no explicit
+  // Content-Type (the browser sets the multipart boundary itself).
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n <= 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB'], i = 0, v = n;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? v : v.toFixed(v < 10 ? 2 : 1)) + ' ' + units[i];
+  }
+  // The session's own current access token — read fresh on every upload
+  // (never cached), matching how the SDK's own fetchWithAuth wrapper resolves
+  // it per-request. Falls back to the anon key exactly like the real SDK does
+  // when there is no session (fetchWithAuth: `accessToken ?? supabaseKey`).
+  async function currentAccessToken() {
     try {
-      var list = await OfflineQueue.all();
-      return list.filter(function (r) { return r.project_id === pidVal; }).length;
-    } catch (e) { return 0; }
+      var res = await sb().auth.getSession();
+      var session = res && res.data && res.data.session;
+      if (session && session.access_token) return session.access_token;
+    } catch (e) { /* no auth client in this context — fall through to the anon key */ }
+    return (window.APP_CONFIG && APP_CONFIG.SUPABASE_ANON_KEY) || '';
+  }
+  function storageObjectUrl(path) {
+    var base = (window.APP_CONFIG && APP_CONFIG.SUPABASE_URL) || '';
+    return base.replace(/\/+$/, '') + '/storage/v1/object/' + BUCKET + '/' + path;
+  }
+  // Same random-suffixed path shape uploadFile() has always used — pulled out
+  // so both the progress-tracked path below and the (untouched) plain
+  // uploadFile() build an identical, collision-safe path.
+  function buildStoragePath(name) {
+    var safe = String(name || 'upload').replace(/[^\w.\-]+/g, '_');
+    return pid + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '_' + safe;
+  }
+  function uploadCancelledError() {
+    var e = new Error('Upload cancelled');
+    e.cancelled = true;
+    return e;
+  }
+  // Turns a failed upload into a message a planner can actually act on,
+  // instead of a bare "failed" — this is the "show a useful error message"
+  // requirement: a file too large for the server, a session that's expired,
+  // and a dropped connection all look identical to the old bare catch block,
+  // and are three different things to DO about them.
+  function describeStorageXhrError(xhr) {
+    var msg = 'Upload failed (server responded ' + (xhr.status || 0) + ')';
+    try {
+      var body = xhr.responseText && JSON.parse(xhr.responseText);
+      if (body && (body.message || body.error)) msg = body.message || body.error;
+    } catch (e) { /* not JSON — keep the generic message above */ }
+    if (xhr.status === 413) msg = 'This file is too large for the server to accept — try a shorter recording or a smaller file.';
+    else if (xhr.status === 401 || xhr.status === 403) msg = 'You are not signed in, or do not have permission to upload here — refresh the page and sign in again.';
+    else if (xhr.status === 409) msg = 'A file already exists at that location.';
+    else if (xhr.status === 0) msg = 'Could not reach the server — check your connection and try again.';
+    var err = new Error(msg);
+    err.status = xhr.status;
+    return err;
+  }
+  function xhrSupported() { return typeof XMLHttpRequest !== 'undefined'; }
+  // Returns {promise, cancel} rather than a bare Promise, deliberately — the
+  // caller needs a way to abort an upload that's already in flight (the
+  // Pending panel's Cancel button) before the promise itself has settled.
+  function xhrUploadToBucket(file, path, opts) {
+    opts = opts || {};
+    var xhr = new XMLHttpRequest();
+    var cancelled = false;
+    function cancel() { cancelled = true; try { xhr.abort(); } catch (e) {} }
+    var promise = (async function () {
+      var token = await currentAccessToken();
+      if (cancelled) throw uploadCancelledError();
+      return new Promise(function (resolve, reject) {
+        var fd = new FormData();
+        fd.append('cacheControl', '3600');
+        fd.append('', file, file.name || 'upload');
+        xhr.open('POST', storageObjectUrl(path), true);
+        xhr.setRequestHeader('apikey', (window.APP_CONFIG && APP_CONFIG.SUPABASE_ANON_KEY) || '');
+        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+        xhr.setRequestHeader('x-upsert', opts.upsert ? 'true' : 'false');
+        if (xhr.upload) {
+          xhr.upload.onprogress = function (e) {
+            if (e.lengthComputable && typeof opts.onProgress === 'function') opts.onProgress(e.loaded, e.total);
+          };
+        }
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            if (typeof opts.onProgress === 'function') opts.onProgress(file.size || 0, file.size || 0);
+            resolve({ path: path });
+          } else {
+            reject(describeStorageXhrError(xhr));
+          }
+        };
+        xhr.onerror = function () { reject(new Error('Network error while uploading — check your connection and try again.')); };
+        xhr.onabort = function () { reject(uploadCancelledError()); };
+        xhr.send(fd);
+      });
+    })();
+    return { promise: promise, cancel: cancel };
   }
 
-  async function refreshQueueBadge() {
-    var n = await queuedCountFor(pid);
+  // ----------------------------------------------- pending upload task store -
+  // The single source of truth the "Pending uploads" panel (below) renders
+  // from. A task exists for as long as a capture is uploading/processing OR
+  // needs the planner's attention (failed / cancelled) — it is never silently
+  // dropped on failure, per the "do not silently remove media from the queue"
+  // requirement. A task is either LIVE (born from a fresh saveCapture() this
+  // session, holding the real File in `_file`) or QUEUE-BACKED (reconstructed
+  // from an IndexedDB record left over from a previous attempt/session, `qid`
+  // set) — runUploadTask() below reads whichever is available and does not
+  // otherwise care which kind it is.
+  var UPLOAD_TASKS = [];
+  var _taskSeq = 0;
+  var syncing = false;             // true while flushQueue()'s loop is running
+  var pendingPanelOpen = false;    // true while the panel modal is on screen
+
+  function createTask(partial) {
+    var t = Object.assign({
+      id: 't' + (++_taskSeq),
+      qid: null,
+      status: 'pending',           // pending | uploading | processing | completed | failed | retrying | cancelled
+      progress: 0,                 // 0..1, upload BYTES only (thumbnail/row-write have no fine-grained %)
+      uploadedBytes: 0,
+      totalBytes: 0,
+      error: null,
+      createdAt: new Date(),
+      _cancel: null,                // set only while an XHR is actually in flight
+      _uploadedPath: null,          // set once the main file's bytes are confirmed on Storage
+      _file: null,
+      _meta: {}
+    }, partial || {});
+    UPLOAD_TASKS.push(t);
+    notifyTasksChanged();
+    return t;
+  }
+  function taskById(id) {
+    for (var i = 0; i < UPLOAD_TASKS.length; i++) { if (String(UPLOAD_TASKS[i].id) === String(id)) return UPLOAD_TASKS[i]; }
+    return null;
+  }
+  // A task's contribution toward the OVERALL progress figure — never claims
+  // credit for bytes a failed/cancelled attempt didn't actually keep (spec:
+  // "failed uploads must not falsely show progress"), and treats the
+  // thumbnail+row-write tail ("processing") as done, since there is no
+  // meaningful sub-percentage for that brief, un-cancellable phase.
+  function taskFraction(t) {
+    if (t.status === 'completed' || t.status === 'processing') return 1;
+    if (t.status === 'uploading' || t.status === 'retrying') return t.progress || 0;
+    return 0; // pending / failed / cancelled
+  }
+  // File-size-weighted when every active task's size is known (the normal
+  // case — every task here always has a real File or a persisted Blob behind
+  // it); degrades to a plain per-task average only if a size is genuinely
+  // missing, per "use the most accurate calculation supported".
+  function overallProgress(tasks) {
+    if (!tasks || !tasks.length) return null;
+    var haveAllSizes = tasks.every(function (t) { return (t.totalBytes || 0) > 0; });
+    if (haveAllSizes) {
+      var total = 0, loaded = 0;
+      tasks.forEach(function (t) { total += t.totalBytes; loaded += t.totalBytes * taskFraction(t); });
+      return total > 0 ? loaded / total : 0;
+    }
+    var sum = tasks.reduce(function (s, t) { return s + taskFraction(t); }, 0);
+    return sum / tasks.length;
+  }
+
+  // rAF-coalesced repaint — xhr.upload.onprogress can fire many times a
+  // second on a fast connection; re-rendering the panel synchronously on
+  // every single event would be real, needless jank. Matches this file's own
+  // established convention elsewhere (wirePanoDrag/scheduleRedraw) for the
+  // identical "many raw events, one paint per frame" shape.
+  var _tasksDirty = false, _tasksRafQueued = false;
+  function notifyTasksChanged() {
+    _tasksDirty = true;
+    paintQueueBadge(); // cheap (a number + a hidden flag) — never gated behind rAF
+    if (_tasksRafQueued) return;
+    _tasksRafQueued = true;
+    var raf = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : function (fn) { setTimeout(fn, 0); };
+    raf(function () {
+      _tasksRafQueued = false;
+      if (!_tasksDirty) return;
+      _tasksDirty = false;
+      if (pendingPanelOpen) repaintPendingPanel();
+    });
+  }
+  function paintQueueBadge() {
     var btn = $('pp-sync');
     if (!btn) return;
+    var n = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid && t.status !== 'completed'; }).length;
     btn.hidden = !n;
     var lbl = $('pp-sync-n'); if (lbl) lbl.textContent = n;
   }
 
-  // Captures try to save immediately; a network failure (or being visibly
-  // offline) queues the file+metadata instead of losing the shot. Once the
-  // file is uploaded, the row write goes through tolerantWrite (PDSync) —
-  // which handles a network hiccup on JUST the row write on its own.
-  async function saveCapture(file, meta) {
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, blob: file, meta: meta, queued_at: new Date().toISOString() });
-      await refreshQueueBadge();
-      return { queued: true };
-    }
-    var path;
-    try {
-      path = await uploadFile(file);
-    } catch (err) {
-      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, blob: file, meta: meta, queued_at: new Date().toISOString() });
-      await refreshQueueBadge();
-      return { queued: true };
-    }
-    // Item 1: a real, small preview file, uploaded ALONGSIDE the original —
-    // never blocking the save if it can't be produced (see
-    // uploadThumbnailFor's own comment for why this never throws).
-    var thumbPath = await uploadThumbnailFor(file, path);
-    var row = Object.assign({}, meta, { project_id: pid, created_by: uid, photo_url: path, title: file.name });
-    if (thumbPath) row.thumb_url = thumbPath;
-    var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
-    if (!w.ok) {
-      // The file IS already uploaded — queue just the row write (skips a
-      // redundant re-upload on retry) rather than losing the capture.
-      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, uploadedPath: path, meta: meta, queued_at: new Date().toISOString() });
-      await refreshQueueBadge();
-      return { queued: true, ok: false, error: w.error };
-    }
-    return { queued: !!w.queued, ok: true, id: w.id };
+  function buildQueueRecord(task) {
+    var rec = { project_id: task.projectId, created_by: task.createdBy, fileName: task.fileName, meta: task._meta || {}, queued_at: (task.createdAt || new Date()).toISOString() };
+    if (task.qid != null) rec.qid = task.qid;
+    if (task._uploadedPath) rec.uploadedPath = task._uploadedPath;   // skip a redundant re-upload on the next retry
+    else if (task._file) rec.blob = task._file;
+    return rec;
+  }
+  // Persists (inserts OR updates) a task's current state into IndexedDB —
+  // called whenever a task needs to survive beyond this attempt: a fresh
+  // failure (first time it's ever queued), or a retry that failed again
+  // (updates the SAME row rather than adding a duplicate).
+  async function persistTaskToQueue(task) {
+    var rec = buildQueueRecord(task);
+    var qid = task.qid != null ? await OfflineQueue.put(rec) : await OfflineQueue.add(rec);
+    task.qid = qid;
+  }
+  function taskFromQueueRecord(rec) {
+    var hasBlob = !!rec.blob;
+    var size = hasBlob ? (rec.blob.size || 0) : 0;
+    return {
+      id: 'q' + rec.qid, qid: rec.qid,
+      kind: (rec.meta && rec.meta.media_type === 'video') ? 'video' : 'photo',
+      fileName: rec.fileName || 'Untitled',
+      totalBytes: size,
+      uploadedBytes: rec.uploadedPath ? size : 0,
+      progress: rec.uploadedPath ? 1 : 0,
+      status: 'pending', error: null,
+      projectId: rec.project_id, createdBy: rec.created_by,
+      createdAt: rec.queued_at ? new Date(rec.queued_at) : new Date(),
+      _cancel: null, _uploadedPath: rec.uploadedPath || null,
+      _file: rec.blob || null, _meta: rec.meta || {}
+    };
+  }
+  // Reconciles UPLOAD_TASKS against what's actually persisted for the CURRENT
+  // project: adds a 'pending' task for any IndexedDB record not already
+  // represented (this is what makes a queued upload survive a page refresh —
+  // "the pending queue must remain visible until successfully uploaded"), and
+  // drops a queue-backed task whose row is gone AND that isn't actively
+  // running right now (it was synced/removed some other way — never drops a
+  // task genuinely mid-upload/processing/retry in this tab).
+  async function syncTasksFromQueue() {
+    var list = [];
+    try { list = await OfflineQueue.all(); } catch (e) { list = []; }
+    var mine = list.filter(function (r) { return r.project_id === pid; });
+    var byQid = {}; mine.forEach(function (r) { byQid[r.qid] = r; });
+    UPLOAD_TASKS = UPLOAD_TASKS.filter(function (t) {
+      if (t.qid == null) return true;
+      if (byQid[t.qid]) return true;
+      return t.status === 'uploading' || t.status === 'processing' || t.status === 'retrying';
+    });
+    var known = {}; UPLOAD_TASKS.forEach(function (t) { if (t.qid != null) known[t.qid] = true; });
+    mine.forEach(function (rec) { if (!known[rec.qid]) UPLOAD_TASKS.push(taskFromQueueRecord(rec)); });
+  }
+  async function refreshQueueBadge() {
+    await syncTasksFromQueue();
+    paintQueueBadge();
+  }
+  // Drops a genuinely finished task after a short grace period, so "Completed"
+  // is visible for a moment rather than blinking out of the list instantly.
+  function scheduleTaskAutoClear(task) {
+    task.status = 'completed'; task.progress = 1; notifyTasksChanged();
+    setTimeout(function () {
+      UPLOAD_TASKS = UPLOAD_TASKS.filter(function (x) { return x !== task; });
+      notifyTasksChanged();
+    }, 4000);
   }
 
-  async function flushQueue() {
-    var list = [];
-    try { list = await OfflineQueue.all(); } catch (e) { UI.toast('Could not read the offline queue', 'error'); return; }
-    var mine = list.filter(function (r) { return r.project_id === pid; });
-    if (!mine.length) { UI.toast('Nothing to sync', 'ok'); return; }
+  // ---------------------------------------------------- upload lifecycle -----
+  // Runs ONE task's full lifecycle (upload the main file -> thumbnail ->
+  // insert the row), mutating the task object as it goes and repainting the
+  // panel on every real state change. Never throws — every failure is
+  // captured onto the task itself and returned as {ok:false, error}, so a
+  // caller looping over several tasks (flushQueue) can't have one failure
+  // abort the rest of the batch.
+  async function runUploadTask(task) {
+    task.status = 'uploading'; task.error = null; notifyTasksChanged();
+    try {
+      var file = task._file;
+      var uploadedPath = task._uploadedPath || null;
+      if (!file && !uploadedPath && task.qid != null) {
+        var rec = await OfflineQueue.get(task.qid);
+        if (!rec) throw new Error('This queued upload could no longer be found — it may already have synced on another device.');
+        file = rec.blob || null;
+        uploadedPath = rec.uploadedPath || null;
+        task._meta = rec.meta || task._meta || {};
+        task.fileName = task.fileName || rec.fileName;
+        if (file) task.totalBytes = file.size || task.totalBytes;
+      }
+      if (!uploadedPath) {
+        if (!file) throw new Error('The original file is no longer available on this device — please add it again.');
+        if (xhrSupported()) {
+          var handle = xhrUploadToBucket(file, buildStoragePath(task.fileName || file.name || 'upload'), {
+            upsert: false,
+            onProgress: function (loaded, total) {
+              task.uploadedBytes = loaded;
+              if (total) task.totalBytes = total;
+              task.progress = task.totalBytes ? loaded / task.totalBytes : 0;
+              notifyTasksChanged();
+            }
+          });
+          task._cancel = handle.cancel;
+          var res = await handle.promise;
+          task._cancel = null;
+          uploadedPath = res.path;
+        } else {
+          // No XMLHttpRequest in this context (a non-browser test harness, or
+          // an exotic runtime) — the upload itself still works, it just can't
+          // report byte-level progress. Never the reason an upload fails.
+          uploadedPath = await uploadFile(file);
+        }
+        task._uploadedPath = uploadedPath;
+        task.uploadedBytes = task.totalBytes = (file.size || task.totalBytes);
+        task.progress = 1;
+      } else {
+        task.progress = 1;
+      }
+      task.status = 'processing'; notifyTasksChanged();
+      var thumbPath = null;
+      if (file) { try { thumbPath = await uploadThumbnailFor(file, uploadedPath); } catch (e) { thumbPath = null; } }
+      var row = Object.assign({}, task._meta, { project_id: task.projectId, created_by: task.createdBy, photo_url: uploadedPath, title: task.fileName });
+      if (thumbPath) row.thumb_url = thumbPath;
+      var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
+      if (!w.ok) throw (w.error instanceof Error ? w.error : new Error((w.error && w.error.message) || 'The file uploaded, but its details could not be saved.'));
+      task.status = 'completed'; task.progress = 1; notifyTasksChanged();
+      return { ok: true, id: w.id };
+    } catch (err) {
+      task._cancel = null;
+      if (err && err.cancelled) { task.status = 'cancelled'; task.error = null; }
+      else { task.status = 'failed'; task.error = (err && err.message) ? err.message : String(err); }
+      notifyTasksChanged();
+      return { ok: false, error: err };
+    }
+  }
+
+  // Captures try to save immediately, with real, live progress tracked on a
+  // task the Pending-uploads panel can show. A network failure (or being
+  // visibly offline) queues the file+metadata instead of losing the shot —
+  // the task stays visible, marked 'failed'/'pending', never silently dropped.
+  async function saveCapture(file, meta) {
+    var task = createTask({
+      kind: meta.media_type === 'video' ? 'video' : 'photo',
+      fileName: file.name, totalBytes: file.size || 0,
+      projectId: pid, createdBy: uid, _file: file, _meta: meta
+    });
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      task.status = 'pending'; notifyTasksChanged();
+      try { await persistTaskToQueue(task); } catch (e) {}
+      await refreshQueueBadge(); notifyTasksChanged();
+      return { queued: true };
+    }
+    var r = await runUploadTask(task);
+    if (r.ok) { scheduleTaskAutoClear(task); return { queued: false, ok: true, id: r.id }; }
+    if (task.status === 'cancelled') return { queued: false, ok: false, error: r.error, cancelled: true };
+    try { await persistTaskToQueue(task); } catch (e) {}
+    await refreshQueueBadge(); notifyTasksChanged();
+    return { queued: true, ok: false, error: r.error };
+  }
+
+  // "Sync now" — reattempts every task for this project that isn't already
+  // uploading/completed (pending / failed / cancelled). Sequential, on
+  // purpose: several large videos uploading at once would fight each other
+  // for the same connection, which is the opposite of "make this reliable".
+  // Re-entrancy guarded (`syncing`) so a repeated click, or the automatic
+  // reconnect-and-sync, can never start a second overlapping pass.
+  async function flushQueue(opts) {
+    opts = opts || {};
+    if (syncing) { if (!opts.silent) UI.toast('A sync is already in progress', 'warn'); return; }
+    await syncTasksFromQueue();
+    var mine = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid && (t.status === 'pending' || t.status === 'failed' || t.status === 'cancelled'); });
+    if (!mine.length) { if (!opts.silent) UI.toast('Nothing to sync — you are up to date', 'ok'); notifyTasksChanged(); return; }
+    syncing = true; notifyTasksChanged();
     var ok = 0, fail = 0;
     for (var i = 0; i < mine.length; i++) {
-      var item = mine[i];
-      try {
-        var path = item.uploadedPath || await uploadFile(item.blob);
-        var thumbPath = await uploadThumbnailFor(item.blob, path);
-        var row = Object.assign({}, item.meta, { project_id: item.project_id, created_by: item.created_by, photo_url: path, title: item.fileName });
-        if (thumbPath) row.thumb_url = thumbPath;
-        var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
-        if (!w.ok) throw (w.error || new Error('write failed'));
-        await OfflineQueue.remove(item.qid);
+      var t = mine[i];
+      t.status = 'retrying'; t.error = null; notifyTasksChanged();
+      var r = await runUploadTask(t);
+      if (r.ok) {
         ok++;
-      } catch (e) { fail++; }
+        if (t.qid != null) { try { await OfflineQueue.remove(t.qid); } catch (e) {} }
+        scheduleTaskAutoClear(t);
+      } else {
+        fail++;
+        if (t.status === 'failed') { try { await persistTaskToQueue(t); } catch (e) {} }
+      }
     }
-    await refreshQueueBadge();
+    syncing = false;
+    await refreshQueueBadge(); notifyTasksChanged();
     if (ok) await load();
-    UI.toast(ok + ' synced' + (fail ? (', ' + fail + ' still pending') : ''), fail ? 'warn' : 'ok');
+    if (!opts.silent) UI.toast(ok + ' synced' + (fail ? (', ' + fail + ' still need attention') : ''), fail ? 'warn' : 'ok');
+  }
+  // Retries exactly ONE failed/cancelled item, from the panel's own Retry
+  // button — does not touch, or wait on, anything else in the queue.
+  async function retryTask(id) {
+    if (syncing) { UI.toast('A sync is already in progress — please wait', 'warn'); return; }
+    var t = taskById(id);
+    if (!t) return;
+    t.status = 'retrying'; t.error = null; notifyTasksChanged();
+    var r = await runUploadTask(t);
+    if (r.ok) {
+      if (t.qid != null) { try { await OfflineQueue.remove(t.qid); } catch (e) {} }
+      scheduleTaskAutoClear(t);
+      UI.toast((t.kind === 'video' ? 'Video' : 'Photo') + ' uploaded', 'ok');
+      await load();
+    } else if (t.status === 'failed') {
+      try { await persistTaskToQueue(t); } catch (e) {}
+    }
+    await refreshQueueBadge(); notifyTasksChanged();
+  }
+  // Cancels an upload that is ACTUALLY in flight right now — a task with no
+  // live XHR (still 'pending', or already 'processing'/'completed') has
+  // nothing to abort. The task stays visible afterward with a Retry option,
+  // per "cancelled, with the option to retry if supported".
+  function cancelTask(id) {
+    var t = taskById(id);
+    if (!t || typeof t._cancel !== 'function') return;
+    t._cancel();
+  }
+
+  // ------------------------------------------------- pending uploads panel ---
+  function taskStatusText(t) {
+    switch (t.status) {
+      case 'pending': return 'Waiting to upload';
+      case 'uploading': return 'Uploading… ' + Math.round((t.progress || 0) * 100) + '%' +
+        (t.totalBytes ? ' (' + fmtBytes(t.uploadedBytes || 0) + ' of ' + fmtBytes(t.totalBytes) + ')' : '');
+      case 'processing': return 'Uploaded — saving details…';
+      case 'completed': return 'Completed';
+      case 'failed': return 'Failed';
+      case 'retrying': return 'Retrying…' + (t.totalBytes ? ' ' + Math.round((t.progress || 0) * 100) + '%' : '');
+      case 'cancelled': return 'Cancelled';
+      default: return t.status;
+    }
+  }
+  function pendingRowHTML(t) {
+    var pct = Math.round((t.progress || 0) * 100);
+    var metaBits = [t.kind === 'video' ? 'Video' : 'Photo'];
+    if (t.totalBytes) metaBits.push(fmtBytes(t.totalBytes));
+    if (t._meta && t._meta.works) metaBits.push(t._meta.works);
+    if (t._meta && t._meta.location) metaBits.push(t._meta.location);
+    var showBar = t.status === 'uploading' || t.status === 'retrying';
+    var canCancel = t.status === 'uploading' && typeof t._cancel === 'function';
+    var canRetry = t.status === 'failed' || t.status === 'cancelled';
+    return '<div class="pp-pending-item pp-pending-' + Fmt.esc(t.status) + '" data-task="' + Fmt.esc(t.id) + '">' +
+      '<div class="pp-pending-icon">' + (window.Icons ? Icons.svg(t.kind === 'video' ? 'video' : 'camera', 18) : '') + '</div>' +
+      '<div class="pp-pending-info">' +
+        '<div class="pp-pending-name">' + Fmt.esc(t.fileName || 'Untitled') + '</div>' +
+        '<div class="pp-pending-meta">' + Fmt.esc(metaBits.join(' · ')) + '</div>' +
+        '<div class="pp-pending-status">' + Fmt.esc(taskStatusText(t)) + '</div>' +
+        (showBar ? '<div class="pp-pending-bar"><div class="pp-pending-bar-fill" style="width:' + pct + '%"></div></div>' : '') +
+        (t.status === 'failed' && t.error ? '<div class="pp-pending-error">' + Fmt.esc(t.error) + '</div>' : '') +
+      '</div>' +
+      '<div class="pp-pending-rowactions">' +
+        (canCancel ? '<button type="button" class="pd-btn pd-btn-sm" data-canceltask="' + Fmt.esc(t.id) + '">Cancel</button>' : '') +
+        (canRetry ? '<button type="button" class="pd-btn pd-btn-sm pd-btn-primary" data-retrytask="' + Fmt.esc(t.id) + '">Retry</button>' : '') +
+      '</div>' +
+    '</div>';
+  }
+  function pendingPanelBodyHTML() {
+    var mine = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid; })
+      .sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+    var active = mine.filter(function (t) { return t.status !== 'completed'; });
+    var overall = overallProgress(active);
+    var summary = !active.length
+      ? '<div class="pp-pending-empty">' + (window.Icons ? Icons.svg('check', 18) : '') + ' All caught up — nothing pending.</div>'
+      : ('<div class="pp-pending-summarytext">' + active.length + ' pending upload' + (active.length === 1 ? '' : 's') +
+         (overall != null ? ' — overall ' + Math.round(overall * 100) + '%' : '') + '</div>' +
+         (overall != null ? '<div class="pp-pending-overallbar"><div class="pp-pending-overallbar-fill" style="width:' + Math.round(overall * 100) + '%"></div></div>' : ''));
+    var rowsHtml = mine.map(pendingRowHTML).join('');
+    return '<div class="pp-pending-summary">' + summary + '</div>' +
+      '<div class="pp-pending-actions">' +
+        '<button type="button" class="pd-btn pd-btn-primary" id="pp-pending-syncall"' + (syncing ? ' disabled' : '') + '>' +
+          (syncing ? 'Syncing…' : 'Sync now') + '</button>' +
+        (syncing ? '<span class="pp-pending-syncstate">' + (window.Icons ? Icons.svg('refresh', 14) : '') + ' Sync in progress…</span>' : '') +
+      '</div>' +
+      '<div class="pp-pending-list">' + rowsHtml + '</div>';
+  }
+  function wirePendingPanelRowActions(host) {
+    Array.prototype.forEach.call(host.querySelectorAll('[data-retrytask]'), function (b) {
+      b.onclick = function () { retryTask(this.dataset.retrytask); };
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-canceltask]'), function (b) {
+      b.onclick = function () { cancelTask(this.dataset.canceltask); };
+    });
+    var syncBtn = host.querySelector('#pp-pending-syncall');
+    if (syncBtn) syncBtn.onclick = function () { flushQueue(); };
+  }
+  function repaintPendingPanel() {
+    var body = $('pp-pending-body');
+    if (!body) { pendingPanelOpen = false; return; } // the modal was closed some other way
+    body.innerHTML = pendingPanelBodyHTML();
+    hydrate(body);
+    wirePendingPanelRowActions(body);
+  }
+  // Reached from the SAME topbar control that used to fire flushQueue()
+  // directly with no visible result at all ("clicking Sync now appears to do
+  // nothing") — it now opens this panel instead, which both explains what is
+  // pending and gives Sync now somewhere to show its own progress.
+  function openPendingMediaPanel() {
+    pendingPanelOpen = true;
+    var html = '<div class="pd-modal-header"><h3>Pending uploads</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-pending" id="pp-pending-body">' + pendingPanelBodyHTML() + '</div>';
+    var m = openModal(html, 520, function () { pendingPanelOpen = false; });
+    wirePendingPanelRowActions(m.el);
   }
 
   // ----------------------------------------------------------- edit/delete ---
@@ -7703,6 +8534,28 @@ window.ProgressPhotos = (function () {
     // load" latch deterministically, instead of depending on being the
     // first test in the file to ever trigger a persist failure.
     _resetPano360PersistFailWarned: function () { pano360PersistFailWarned = false; },
-    _ensurePersistentStorage: function () { return ensurePersistentStorage(); }
+    _ensurePersistentStorage: function () { return ensurePersistentStorage(); },
+    // Test-only hooks for the pending-upload-status rework — genuinely
+    // EXECUTE the real, shipped functions (never a re-description of them),
+    // same convention as every hook above.
+    _fmtBytes: function (n) { return fmtBytes(n); },
+    _describeStorageXhrError: function (xhr) { return describeStorageXhrError(xhr); },
+    _taskFraction: function (t) { return taskFraction(t); },
+    _overallProgress: function (tasks) { return overallProgress(tasks); },
+    _createTask: function (partial) { return createTask(partial); },
+    _taskById: function (id) { return taskById(id); },
+    _runUploadTask: function (task) { return runUploadTask(task); },
+    _saveCapture: function (file, meta) { return saveCapture(file, meta); },
+    _flushQueue: function (opts) { return flushQueue(opts); },
+    _retryTask: function (id) { return retryTask(id); },
+    _cancelTask: function (id) { return cancelTask(id); },
+    _syncTasksFromQueue: function () { return syncTasksFromQueue(); },
+    _uploadTasks: function () { return UPLOAD_TASKS; },
+    _clearUploadTasks: function () { UPLOAD_TASKS.length = 0; },
+    _OfflineQueue: OfflineQueue,
+    _isSyncing: function () { return syncing; },
+    _taskStatusText: function (t) { return taskStatusText(t); },
+    _pendingPanelBodyHTML: function () { return pendingPanelBodyHTML(); },
+    _openPendingMediaPanel: function () { return openPendingMediaPanel(); }
   };
 })();

@@ -73,7 +73,96 @@
       }
     },
 
+    /* ==== A CROSS-PROJECT READ, SPLIT ONE PROJECT AT A TIME ==================================
+       ⚠️⚠️ NEVER `.in('project_id', ids)` ON A BIG TABLE. The index those reads live or die
+       by is `project_schedule_proj_id_idx (project_id, id)`, and its own migration says what it is
+       for in as many words: *"(where project_id = ? and id > ? order by id) — an indexed range scan
+       per page."* ONE project. Across eighteen ids there is no single range to scan, the plan
+       degenerates to a sequential scan, and the statement runs past the ~8s `statement_timeout` —
+       PostgREST answers `57014`, and the page shows "unavailable" or a row of `?`.
+       ⚠️ THIS IS NOT A NEW IDEA HERE. The portfolio S-Curve hit exactly this on 2026-09-16 and
+       was rewritten to call its aggregate once per project; `PDScurve.fanOutAgg` is that loop,
+       specialised to the agg payload. This is the same loop with nothing assumed about the answer,
+       so a table read and an RPC can both use it.
+       ⚠️ PARTIAL RESULTS ARE THE POINT. One project failing must not fail the page: every
+       failure is collected and NAMED, and the caller decides — the convention across this app is to
+       draw what came back and say how many did not, and to throw only when NOTHING did.
+       ⚠️ Bounded concurrency, not `Promise.all`. Eighteen simultaneous statements is how you
+       turn one slow read into eighteen, and Supabase pools connections. */
+    async fanOut(ids, callOne, opts) {
+      opts = opts || {};
+      var list = (ids || []).slice();
+      var conc = Math.min(opts.concurrency || 4, list.length);
+      var results = [], failed = [], done = 0, queue = list.slice();
+      async function worker() {
+        while (queue.length) {
+          var id = queue.shift();
+          try { results.push({ id: id, value: await callOne(id) }); }
+          catch (e) { failed.push({ id: id, err: e }); }
+          done++;
+          if (opts.onProgress) opts.onProgress(done, list.length);
+        }
+      }
+      var ws = [];
+      for (var i = 0; i < conc; i++) ws.push(worker());
+      await Promise.all(ws);
+      return { results: results, failed: failed };
+    },
+    /* Flatten a fanOut of ROW ARRAYS into one array, carrying how many projects could not be read.
+       ⚠️ `_failed` is a non-enumerable-ish tag on the array rather than a wrapper object, so
+       every existing consumer that treats this as a plain list keeps working unchanged. */
+    fanOutRows(r) {
+      var rows = [];
+      r.results.forEach(function (x) { rows = rows.concat(x.value || []); });
+      rows._failed = r.failed.length;
+      rows._failedIds = r.failed.map(function (f) { return f.id; });
+      return rows;
+    },
+
+    // ---- Sandbox (the personal training project) ----
+    // ⚠️⚠️ ONE SANDBOX PER PERSON, AND IT IS AN ORDINARY PROJECT ROW. Everything
+    // that makes it private happens in the database: `can_access_project()` gives
+    // a sandbox to its owner and to NOBODY else, admins included, so all 16
+    // modules inherit the isolation with no module code whatsoever. See
+    // migrations/2026-09-17-sandbox-project.sql.
+    //
+    // ⚠️ `isSandbox` reads the COLUMN, never the id prefix. The `SBX-` code is a
+    // convenience for the person reading it; a client that tested the prefix
+    // would be one renamed project away from treating a real project as a
+    // sandbox, and — worse — would report every project as real on a database
+    // where the migration has not run yet, which is the direction that leaks.
+    // ⚠️ An unmigrated database has no such column, so this answers false for
+    // everything and the whole app behaves exactly as it did before. That is
+    // deliberate: this file is safe to ship BEFORE the migration is run.
+    isSandbox(p) { return !!(p && p.is_sandbox); },
+
+    // Get-or-create, through the RPC. ⚠️ The client cannot insert one itself —
+    // `projects_ins` carries `not is_sandbox` precisely so the RPC stays the
+    // only door, which is what makes "owner_id is always the caller" true by
+    // construction rather than by convention.
+    async ensureSandbox() {
+      var { data, error } = await sb().rpc('sandbox_ensure');
+      if (error) throw error;
+      // A `returns projects` RPC comes back as the row itself; PostgREST has
+      // been known to wrap a composite in a single-element array, so accept both
+      // rather than reaching into a shape that is right today.
+      return Array.isArray(data) ? data[0] : data;
+    },
+    // ⚠️ TAKES NO ARGUMENT, and that is a security property rather than an
+    // oversight: the RPC looks up the caller's own sandbox instead of purging
+    // whatever id it is handed, so there is no ownership check to forget.
+    async resetSandbox() {
+      var { error } = await sb().rpc('sandbox_reset');
+      if (error) throw error;
+    },
+
     // ---- Projects (shared across all modules) ----
+    // ⚠️ RETURNS THE SANDBOX TOO, on purpose. RLS already means the only sandbox
+    // in this result is the caller's own, so it is exactly one extra row — not
+    // the +50 test projects this feature exists to end — and including it is
+    // what makes every module's project `<select>` able to show it with no
+    // per-module change. What must NOT include it is a portfolio AGGREGATE:
+    // see UI.allProjectIds() and portfolio-dash's scopedProjectIds().
     async getProjects() {
       var { data, error } = await sb()
         .from('projects').select('*').order('name');
@@ -665,9 +754,11 @@
       var { error } = await sb().rpc('admin_delete_user', { target: id });
       if (error) throw error;
     },
-    async updateLastLogin(id) {
-      try { await sb().from('users').update({ last_login: new Date().toISOString() }).eq('id', id); } catch (e) {}
-    },
+    /* ⚠ `updateLastLogin` was RETIRED on 2026-09-17, not left as a spare. Its one caller
+       (index.html's password handler) covered only half the sign-ins, and the write moved into
+       `AppAuth.requireLogin`, which every authenticated page reaches whatever the provider. An
+       exported writer with no callers is the thing the next editor calls, and then there are two
+       writers for one column again. */
   };
 
   // ---- Formatters (shared) ----
@@ -675,6 +766,27 @@
     money: function (n) {
       if (n == null || isNaN(n)) return '—';
       return '₱' + Number(n).toLocaleString('en-PH', { maximumFractionDigits: 2 });
+    },
+    /* ==== HOW FAR AHEAD OF, OR BEHIND, PLAN =================================================
+       Owner 2026-09-17: *"what does the pp mean in the behind plan? it's not a widely used unit of
+       measurement."* It meant **percentage points** — actual percent complete minus planned
+       percent complete, which genuinely is points and not a percentage of anything. The notation is
+       correct and almost nobody outside statistics reads it.
+       ⚠️⚠️ AND UNDER A CARD TITLED "BEHIND PLAN" IT WAS A DOUBLE NEGATIVE. `−4.2 pp` on a
+       card headed *Behind plan* can be read as four points behind or as four points less behind
+       than before; the sign carried meaning the label had already claimed. Saying the direction in
+       WORDS removes both problems — "4.2% behind" cannot be read backwards.
+       ⚠️ Shared rather than copied: three screens printed this — the Portfolio Dashboard's
+       headline card, its per-project column, and the portfolio S-Curve's Schedule Variance — and
+       three copies is how one of them ends up still saying "pp" a year from now. */
+    vsPlan: function (pp, opts) {
+      if (pp == null || isNaN(pp)) return '—';
+      var o = opts || {};
+      var d = Math.abs(pp).toFixed(o.dp == null ? 1 : o.dp);
+      /* Rounding decides the word, not the raw value: a +0.04 that prints as "0.0" must not say
+         "ahead", or the number and the word on screen disagree. */
+      if (parseFloat(d) === 0) return o.zero || 'on plan';
+      return d + '% ' + (pp > 0 ? 'ahead' : 'behind');
     },
     moneyShort: function (n) {
       if (n == null || isNaN(n)) return '—';

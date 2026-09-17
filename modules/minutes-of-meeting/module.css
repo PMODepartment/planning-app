@@ -32,7 +32,7 @@
 .il-project:hover, .il-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
 
 /* Tool cluster */
-.il-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.il-topbar-tools { display: flex; align-items: center; margin-left: auto; }
 /* ⚠ THE 34px SQUARE IS FOR THE ICON-ONLY BUTTONS AND MUST NOT CATCH A LABELLED
    ONE. This rule had no `:not()`, so it forced width:34px onto EVERY .pd-btn in
    the cluster -- including "+ Add meeting", whose two words then wrapped onto two
@@ -48,7 +48,7 @@
    the shared fix alone, `+ Add meeting` correctly went to `display:none` (it is excluded
    by the `:not(.il-tb-labeled)` above) while the funnel and refresh both still computed
    `flex`. Excluding hidden buttons here lets the shared rule decide, and is the same fix
-   this file already applies to `.il-icondd-menu` further down. */
+   this file already applies to `.pd-iconmenu-menu` (dashboard.css) . */
 .il-topbar-tools .pd-btn:not(.il-tb-labeled):not([hidden]) {
   height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
@@ -61,7 +61,15 @@
 .il-topbar-tools .pd-btn.il-tb-labeled {
   height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap;
 }
-.il-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
+/* ⚠️⚠️ THE HOVER RESTATEMENT IS GONE, AND IT WAS A REAL BUG, NOT JUST DUPLICATION.
+   `.il-topbar-tools .pd-btn:hover` did not exclude `.pd-btn-primary`, and at (0,3,0) it outranked
+   dashboard.css's own `.pd-btn-primary:hover` (0,2,0) -- so the RED primary in this module's bar
+   turned GREY the moment you pointed at it, which is the one button in the bar that must not
+   recede. MEASURED in a browser against the shipped sheets (the loaded `:hover` rules rewritten
+   in place to a class of equal specificity, so the cascade under test is the real one):
+   `rgb(238,49,36)` at rest -> `rgb(244,244,244)` on hover.
+   ⚠️ The hover now comes from `.pd-modulebar .pd-btn:not(.pd-btn-primary):hover` in
+   dashboard.css, which carries that exclusion. Do not restate it here. */
 
 /* ⚠️ REMOVED (2026-08-31, owner-reported bug #4 — see issues-lessons/module.css for
    the full explanation): a `.il-title-txt { display:none }` rule at ≤1500px, copied
@@ -415,36 +423,16 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; padding: 0;
 }
-/* ⚠⚠ Same (0,1,0)-vs-[hidden] tie documented for .il-icondd-menu below, on the
+/* ⚠⚠ Same (0,1,0)-vs-[hidden] tie documented for .pd-iconmenu-menu (dashboard.css), on the
    WRAPPER this time — and it is the wrapper that syncTopbarTools() sets `hidden` on.
    Fixing the menu in August left the export control itself visible on every screen. */
-.il-icondd { position: relative; display: inline-flex; }
-.il-icondd[hidden] { display: none; }
-.il-icondd-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; padding: 0;
-}
-/* ⚠️⚠️ Meetings List item 1 (owner report, screenshot): the export dropdown
-   rendered OPEN by default. Root cause: `menu.hidden = was` (wireIconMenu)
-   toggles the DOM `hidden` ATTRIBUTE, but this rule set `display:flex`
-   unconditionally on the plain `.il-icondd-menu` CLASS selector — same
-   (0,1,0) specificity as the browser's own built-in `[hidden]{display:none}`
-   rule, and an author rule of equal specificity always beats the user-agent
-   default. So the menu was flex-visible regardless of `hidden`, and only
-   ever *looked* closed if nothing had rendered a menu instance yet. Scoped
-   with `:not([hidden])` so the attribute — the only thing JS actually
-   flips — is what decides visibility again. */
-.il-icondd-menu:not([hidden]) {
-  position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; min-width: 150px;
-  display: flex; flex-direction: column; padding: 4px;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  box-shadow: var(--pd-shadow-lg);
-}
-.il-icondd-item {
-  border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 6px;
-  font-size: var(--pd-fs-base); color: var(--pd-ink); cursor: pointer;
-}
-.il-icondd-item:hover { background: var(--pd-bg); color: var(--pd-red); }
+/* ⚠️⚠️ `.il-icondd*` IS GONE — IT IS `.pd-iconmenu*` IN dashboard.css NOW, moved there
+   with the JS that drives it (2026-09-16, the export-consistency pass). The long note this block
+   carried about `:not([hidden])` moved WITH it, because it is the load-bearing part: `wireIconMenu`
+   toggles the `hidden` ATTRIBUTE, and a plain `.x-menu { display:flex }` is (0,1,0) — exactly the
+   user agent's own `[hidden]{display:none}` — so an author rule of equal specificity wins and the
+   menu renders OPEN on load. That shipped once here, as "the export dropdown is open by default".
+   ⚠️ Do not re-add a local copy of this block. */
 
 /* ---- Icon-only List/Calendar toggle --------------------------------------
    Reuses .il-viewtoggle's chrome (border/radius) but square icon buttons
@@ -1006,18 +994,37 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 }
 
 /* ---- "Minutes by meeting" — the grouped summary (item 13) ----------------- */
-.il-mom-mgroup { padding: 0; overflow: hidden; margin-bottom: 12px; }
-.il-mom-mgrouphead {
-  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
-  padding: 10px 14px; background: var(--pd-bg); border-bottom: 1px solid var(--pd-line);
-  cursor: pointer;
-}
-.il-mom-mgrouphead:hover { background: var(--pd-red-light); }
-.il-mom-mgroupt { font-size: var(--pd-fs-base); font-weight: 700; }
-.il-mom-mgroupm { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
-.il-mom-mgrouptbl { width: 100%; font-size: var(--pd-fs-sm); }
-.il-mom-mgrouptbl tr[data-openmom] { cursor: pointer; }
-.il-mom-mgroup > .il-mom-note { padding: 10px 14px; margin: 0; }
+/* ==== THE MINUTES, ONE TABLE ================================================================
+   Owner 2026-09-17: *"minutes by meeting tables are not aligned — fix this."* They were three
+   separate tables, each sizing its own columns from its own content. See `momDashByMeetingHTML`.
+   ⚠️ `table-layout:fixed` with a `<colgroup>`: without it a single long minute still drags
+   the other four columns around, because auto layout measures content. Fixed layout means the
+   widths in the colgroup are the widths, full stop — which is the whole point of the change.
+   ⚠️ The Minute column is the only one with no declared width, so it takes every pixel the
+   others do not. That is deliberate: it is the column with something to say. */
+.il-mom-alltbl { width: 100%; table-layout: fixed; font-size: var(--pd-fs-sm); }
+.il-mom-alltblwrap { overflow-x: auto; }
+.il-mom-alltbl tr[data-openmom] { cursor: pointer; }
+/* ⚠️ A long minute ELLIPSISES rather than wrapping to four lines. `clip()` already caps the
+   text at 90 characters; this is what stops the remaining 90 from setting the row height. */
+.il-mom-mintxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The group row's own two pieces. `tr.pd-grp > td` in dashboard.css supplies the band and the dark
+   remap; these only lay out the title and its meta inside it. */
+.il-mom-grp > td { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.il-mom-grpt { font-weight: 800; text-transform: none; font-size: var(--pd-fs-sm); letter-spacing: 0; }
+.il-mom-grpm { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--pd-muted); }
+.il-mom-grpempty > td { color: var(--pd-muted); font-style: italic; }
+
+/* ==== THE WIDE CHART STOPS RESERVING A FIXED 260px =========================================
+   ⚠️⚠️ THE THREE TILES ABOVE MUST KEEP IT AND THIS ONE MUST NOT. `.il-dash-cardbody`'s
+   260px exists so Status, Department and Responsible line up as a row of three — that is the note
+   on the rule itself and it still holds. `.il-dash-wide` is alone on its own row, so the height
+   buys no alignment and a project with three meetings drew three bars above ~180px of nothing,
+   which is most of what made this page read as unfinished.
+   ⚠️ `max-height` keeps the scroll for a portfolio with forty meetings — the card grows to
+   the content and then stops, rather than growing without limit. */
+.il-dash-wide .il-dash-cardbody { height: auto; max-height: 260px; }
+
 
 /* ⚠️ ROUND 3 — the always-visible schedule panel this block styled
    (.il-mom-schedpanel/-schedhead/-schedbody/-schedlist/-schedright/-schedrow/

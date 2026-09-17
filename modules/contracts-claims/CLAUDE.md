@@ -1,5 +1,704 @@
 # Module: contracts-claims
 
+## 2026-09-17 (f) — A fourth merge, and this time nothing about this module actually changed
+
+Owner: *"resolve merge conflict."* `origin/main` had moved another 8 commits (to `26953880`), all
+of them about the Users table / `admin.html` — activity/registered columns, department grouping,
+bulk edit, the "personal sandbox" isolation change. **None of it touches this module.** The only
+conflict was in `modules/contracts-claims/index.html`, and it was two version-string lines, not code.
+
+⚠️⚠️ **CHECKED, NOT ASSUMED: `module.css` did not actually change on `main`'s side this round.**
+`git diff --stat` between the previous merge-base and this fetch's `origin/main` shows exactly one
+file touched anywhere under this module — `index.html`, 4 lines — and the CSS/JS files themselves
+are untouched. `main`'s conflicting line still pointed at `module.css?v=20260917d`, which is the
+**same stale token** from the (e) collision two entries below: `main` had bumped it there for the
+verdict-line dashboard CSS (`.cc-dash-verdict` / `.cc-who-*` / `.cc-trend`) that (e) already merged
+out, and nothing on `main` has touched that file since. Kept at **`?v=20260917c`**, unchanged — the
+same decision (e) made, re-confirmed with a fresh `git hash-object` against this branch's own
+committed blob rather than re-derived from habit.
+
+`dashboard.css` genuinely did change on `main` (+36 lines, part of the Users-table work — the
+sizing/spacing fixes below), and this branch made zero changes to that file at any point, so
+`main`'s new token (`?v=20260917zg`) is taken **verbatim**: `diff` against `origin/main`'s own copy
+confirms the working tree is now byte-identical to it.
+
+### Verified
+
+`git hash-object` on the resolved `module.css` and `module.js` both match this branch's already-
+committed `HEAD` blobs exactly — nothing moved. `node --check` clean on every touched script
+(`db.js`, `ui.js`, `portfolio-dash.js` — all shared files carried in by the Users-table commits —
+plus this module's own five). `node tools/wiring-check.js` **139/139**, including the asset pass
+that confirms every reference resolves to one version with zero splits. This module's own three
+suites, unmodified and unaffected: `test-boq.js` **66/0**, `tools/test-claims.js` **40/0**,
+`test-record.js` **24/0**. Repo-wide sweep for leftover conflict markers: zero. Root `CLAUDE.md`
+merged with no letter collision this round — the three new entries ((m)/(n)/(p) for 2026-09-17) are
+all Users-table work and none of them collide with anything this branch wrote.
+
+⚠️ Not verified signed in — no live project read since the merge, and none of this round's upstream
+changes reach this module's own code paths.
+
+No `?v=` bump beyond adopting `main`'s own `dashboard.css` token; `module.css` / `module.js` are
+untouched at `?v=20260917c` / `?v=20260917e`.
+
+## 2026-09-17 (e) — A third collision, same shape: main kept extending the design (c) below already discarded, and this round found a real bug hiding inside it
+
+Owner: *"resolve merge conflict."* `origin/main` had moved 19 commits further (to `0f82c1b4`),
+including commit `1ce98293` — the (c) entry directly below this one, "Trend, the time position, and
+who is chasing what" — built on top of the SAME verdict-line `ccDashHTML` that (d) below (formerly
+lettered (c), see its own re-lettering note) had already merged out in favour of this session's
+plainer, single-table design. Third occurrence of the identical collision in three days: main keeps
+building on a dashboard shape this branch's owner explicitly rejected, and every extension to it has
+to be discarded again at the next merge.
+
+**Resolved the same way as (d): the simple table stays, `main`'s verdict-line rebuild — now carrying
+`ccWhoHTML`, `ccProgrammeHTML`, `ccTrendHTML` and `ccDashPkgHTML` on top of the parts already
+discarded once — is merged out again.** `module.css` auto-merged cleanly (the conflict sat in
+`module.js` only) and pulled in the new `.cc-dash-verdict` / `.cc-who-*` / `.cc-trend` / `.cc-tr-*` /
+`.cc-dash-facts` rules regardless; all removed, grepped for zero remaining selectors afterward.
+
+⚠️⚠️ **BUT THIS TIME THE DISCARDED CODE HELD A REAL, LIVE BUG — a raw NUL byte where the sentinel
+key needed an escape.** `ccWhoHTML`'s "unassigned" bucket was keyed on `ownerOf(r) || '<NUL>none'`
+(seven occurrences, lines 791/792/804/809×3/820 of the pre-resolution file) — a literal `\x00`
+control character in the source, the identical trap this repo's own root `CLAUDE.md` warns about
+under `exactKey` and the 2026-09-14 schedule floor-labels entry: *"write the escape, not the raw
+byte."* `file` would have called the module a binary file the moment that code shipped, exactly as
+it did here (`grep` reported `modules/contracts-claims/module.js: binary file matches` on the first
+pass). It is moot for THIS branch — the whole function is discarded — but it means `main`'s own copy
+of `ccWhoHTML` ships that byte until someone there fixes it. Recorded here so a future merge does
+not have to re-diagnose it from scratch, and reported rather than silently repaired on a branch that
+does not carry the function.
+
+⚠️⚠️ **WHAT SURVIVES, AGAIN, IS THE PART THAT WAS NEVER INSIDE THE DISCARDED FUNCTION.** The
+"Responsible" field infrastructure — `ownerOf` / `ownerText` / `ownerExtraOf` / `peopleNamesOf` /
+`PEOPLE`, the record dialog's Responsible picker, `_dropMissingNull`'s empty-value gate
+(`owner_ids: []` / `owner: ''`), `COL_MIGRATION`'s two new entries, and
+`migrations/2026-09-17-contracts-claims-owner.sql` — sits OUTSIDE the conflicted region entirely and
+merged in with zero markers. Confirmed by grep against `HEAD` before this merge: none of it existed
+on this branch, so all of it is `main`'s, and none of it depends on the discarded `ccWhoHTML`/
+`ccProgrammeHTML`/`ccTrendHTML` aggregate views — it is the per-record field and its save path, not
+the dashboard summary built on top of it. `modules/contracts-claims/test-record.js` (new, 24
+assertions) tests exactly this surviving half and passes unmodified against the merged file.
+
+⚠️ **`assets/js/claims.js` merged with zero conflicts too, and `PDClaims.exposureSeries` — the shared
+engine behind the discarded `ccTrendHTML` — is live in it.** Same shape as (d)'s `oldestRow` finding:
+the shared rules engine gained genuine new capability that has nothing to do with which module-local
+dashboard reads it. `tools/test-claims.js` **40 passed, 0 failed** (was 15), confirming
+`exposureSeries` on its own terms — undatable records excluded and counted, month-END buckets, the
+leap-year and year-boundary cases — independent of whether this module ever draws a chart from it.
+
+### Verified
+
+`node --check` clean on `module.js` (0 NUL bytes — confirmed by byte-scanning the resolved file, not
+just re-running `grep`, since the earlier false "binary file" report was itself evidence the naive
+tool cannot be trusted here); `module.css` verified **byte-identical** to this branch's already-
+committed blob via `git hash-object` once the newly-auto-merged dead rules were removed, not merely
+"unchanged in shape"; grepped `module.js` for `ccWhoHTML`, `ccProgrammeHTML`, `ccTrendHTML`, `ccDashPkgHTML`,
+`ccDashFill`, `cc-dash-verdict`, `cc-who`, `cc-trend`, `cc-tr-` — zero hits outside this entry's own
+prose. `tools/test-claims.js` 40/0, `modules/contracts-claims/test-record.js` 24/0 (both unmodified
+by this merge, run to confirm the surviving shared/record-level code is intact).
+Repo-wide sweep for leftover conflict markers across all six conflicted files (`module.js`,
+`module.css`, `index.html`, this file, `assets/js/modules-grid.js`, `dashboard.html`, `modules.html`):
+zero, apart from prose inside this entry and (d) quoting the marker names themselves.
+⚠️ Not verified signed in — no live project read since the merge.
+
+`module.js` → `?v=20260917e` — content genuinely changed (the "Responsible" field infrastructure and
+the comma/tooltip fixes from (a)/(b) are new relative to this branch's own last commit), and the
+token matches neither this branch's prior `c` nor `main`'s.
+⚠️⚠️ `module.css` is **NOT** bumped, and checking rather than assuming this saved a wasted cache
+invalidation: `git hash-object` on the resolved file matches this branch's already-committed blob
+exactly — the CSS `main` added duplicated what an earlier round already deleted, so removing it a
+second time reverted the file to byte-identical content. It stays on `?v=20260917c`, its existing,
+correct token; bumping an asset whose bytes did not move invalidates every page's cache for nothing.
+`assets/css/dashboard.css` → `?v=20260917za`, taken verbatim from `main` since this branch made no
+changes to that file at all. `assets/js/modules-grid.js`'s `MODULE_V` fallback, `dashboard.html` and
+`modules.html` → `20260917zg`, past `main`'s own `20260917zf` (chosen for an unrelated module
+elsewhere in the app).
+
+## 2026-09-17 (d) — The two sessions' dashboards collide a second time; main's design wins this round, its two new figures ported into the simple table
+
+⚠️ **Re-lettered `(c)` → `(d)` when a third round of merges landed.** This entry and the (c) entry
+directly below it (`"Trend, the time position, and who is chasing what"`, from `origin/main`'s commit
+`1ce98293`) were both independently written as `(c)` for 2026-09-17 — this one on this branch,
+describing the merge below; that one already published to `main`. `main`'s copy keeps the letter it
+shipped with; this one moves to the next free letter, same rule as the 2026-09-16 `(f)`→`(g)`
+collision this file already records. Content is otherwise untouched from when it was written.
+
+Owner: *"resolve merge conflicts."* `origin/main` had moved 37 commits ahead overnight, including a
+second round of Dashboard work from the concurrent thread — (a) and (b) below — built directly on
+top of the RICHER design (verdict line, `UI.kpi` cards, an async BOQ read) that (e) below had already
+discarded in favour of the owner's own plainer, single-table instruction from this session
+(*"leave only the main table in the dashboard… no need for the view buttons"*).
+
+⚠️⚠️ **THAT MEANS (a)/(b) WERE WRITTEN AGAINST FUNCTIONS THIS BRANCH HAD ALREADY DELETED.**
+`ccDashFill`, `ccMoneyTable`, `ccHasClaims` and the verdict-line `ccDashHTML` do not exist here —
+(e) removed them a day before (a)/(b) extended them on `main`. The conflict in `module.js` was
+therefore the identical collision as (e)'s own note describes, one day later: two designs for one
+tab, and only one can ship in a single file.
+
+**Resolved the same way as (e), for the same reason — this session's owner has not reversed their
+instruction.** The simple table (`ccTypeRows`/`CC_DASH_COLS`, Contract landing tab, Dashboard
+fourth) stays; `main`'s verdict-line rebuild, its packages block, its async certified-to-date read
+and its scope-of-works `<details>` markup are all merged out again. `module.css`'s auto-merge
+(no conflict markers — it sits outside this branch's diff) pulled in `.cc-scope*` /
+`.cc-dash-scope` regardless, orphaning them the moment the JS that rendered them was gone; both
+removed, checked by grep for zero remaining callers in `module.js`.
+
+⚠️⚠️ **BUT (a)/(b) ALSO CARRY TWO GENUINE, SMALL FIXES THAT ARE NOT PART OF THE DESIGN DISPUTE, AND
+THOSE MERGED IN CLEANLY (NO CONFLICT MARKERS) BECAUSE THEY TOUCH OTHER FUNCTIONS ENTIRELY:**
+the `.pd-modal.cc-rec` / `@container` width fix for the Affected-work picker, the Date-filed/
+Date-submitted field-pairing fix in `.cc-form`, the comma-grouped amount inputs (`n()`), and the
+column-header-tooltip glossary — none of that lived inside `ccDashHTML`, so none of it was touched
+by this collision and all of it is live in the merged file exactly as (a) describes it.
+
+⚠️ **What did NOT survive, because it lived only inside the now-discarded `ccDashHTML`:** (b)'s
+"revised contract sum" card (original + approved change orders) and its "oldest — name the record"
+header. Both are real, useful figures — reported here rather than silently dropped, since the next
+session may want to add them to the SIMPLE table rather than to the design that no longer ships:
+`PDClaims.agingBuckets` now returns `oldestRow` alongside `oldest` (an additive change to the
+shared helper, read by three screens, untouched by this merge) and is available to name the oldest
+record in this table's own group rows whenever that is wanted; the approved-change-orders total is
+`PDClaims.sum(PDClaims.decided(PDClaims.ofType(claimish, 'Change Order')), 'approved_amount')`,
+already the exact arithmetic the "Change orders" group row in the simple table computes as its own
+column total — so the revised-sum figure is one line away (`ctVal + thatSum`) if a future pass wants
+to state it, without reviving the verdict-line design.
+
+### Verified
+
+`node --check` clean on `module.js`; `module.css` braces balanced (627/627 — the `.cc-scope*` /
+`.cc-dash-scope` removal and this entry's own accounting cancel out against what the clean auto-merge
+added); grepped `module.js` for `cc-scope`, `ccMoneyTable`, `ccDashFill`, `ccHasClaims`,
+`ccDashPkgHTML`, `ccTimeHTML`, `cc-dash-verdict`, `cc-dash-comm`, `cc-dash-facts`, `cc-dash-certcard`
+— **zero hits**, all either absent or referenced only inside a comment recording this history.
+Repo-wide sweep for leftover `<<<<<<<`/`=======`/`>>>>>>>` markers after resolving all three
+conflicted files (`module.js`, `index.html`, this file): zero.
+⚠️ Not verified signed in — no live project read since the merge.
+
+`module.js` / `module.css` → `?v=20260917c` (neither matches this branch's prior tokens nor `main`'s
+verbatim — the merge carries `main`'s 37 commits' worth of unrelated changes to the rest of both
+files, and `module.css` was edited again after the clean auto-merge to drop the dead scope-of-works
+rules). `MODULE_V` → `20260917c`, re-derived past the deployed `20260916zc` fallback.
+
+## 2026-09-17 (c) — Trend, the time position, and who is chasing what
+
+**Run `migrations/2026-09-17-contracts-claims-owner.sql`.** The owner picked items 2, 3 and 4 off
+the suggestion list from (b).
+
+### 2 · Is it getting better or worse?
+Every figure on this page was a **snapshot**. *"Claims exposure ₱20.70M"* does not say whether that
+is up or down, which is the first thing anyone asks about a commercial position — and the second is
+*since when*.
+
+⚠️⚠️ **Derived from the dates the register already stores — no new table, no nightly job, no
+migration.** `date_submitted` says when a record went to the client and `date_approved` /
+`date_evaluated` say when it came back, so the position on any past date is computable from rows
+already in memory. A snapshot table would be a second source of truth that can disagree with the
+register it came from.
+
+⚠️ **A decided record with NO decision date is undatable, and is EXCLUDED and COUNTED** — the same
+discipline the ageing band applies to a pending record that was never submitted. Assuming a date
+would draw a confident wrong line. The note under the chart says how many were left out.
+
+⚠️ **Month ENDS, not month starts.** A record submitted on the 3rd and decided on the 20th of the
+same month never exists at either month start, and a series built on starts would draw a flat line
+through a month that was actually busy.
+
+The rule lives in `PDClaims.exposureSeries`, not in the module — the portfolio view ranks projects
+on this same pair, and a trend computed locally is how two screens come to tell different stories
+about one register.
+
+### 3 · The time position, which the page only ever half-stated
+The KPI strip said *Time granted: None* and the pipeline table carried the EOT day counts, but
+nothing said what any of it MEANT: 30 days is trivial or a crisis depending on whether the contract
+runs for 1,090 days or 60.
+
+⚠️ **This is the time analogue of the revised contract sum from (b), and it is built the same
+way**: the signed completion date stays where a reader expects it, and the revised one — original +
+granted — is stated beside it. Approved extensions have moved the contractual completion date; a
+page that shows only the original describes a contract that no longer exists. Verified in a harness:
+completion 2027-04-23 + 30d granted = **revised 2027-05-23**, and 30 of a 569-day contract = **5.3%**.
+
+⚠️ The dates come from the **packages**, which is where a contract's own start and finish live.
+With no package dates the day counts still print and the ratio and revised date do not — an
+extension expressed as a percentage of an unknown duration is a number with no meaning.
+
+### 4 · Who is chasing what
+⚠️⚠️ **"Unassigned" is a ROW, and it sorts FIRST.** A worklist that names the people who have work
+and quietly omits the records nobody owns is describing a tidier project than the one that exists —
+spotting the pile with no name on it is the whole value of the band.
+
+⚠️ **Pending only.** A decided record needs nobody to chase it, and including settled work would
+make the busiest-looking person the one who has finished the most. ⚠️ EOT records are counted in the
+record count but excluded from the money column: they carry DAYS, and adding a day count into a peso
+total is the mistake this module's key-pair convention exists to make impossible.
+
+### The two things that could have broken every save
+⚠️⚠️ **`_dropMissingNull` dropped only `null`.** The Responsible field sends `owner_ids: []` and
+`owner: ''` when nobody is assigned — neither of which is `null` — so on a database without the new
+migration **every save would have failed**, including the overwhelming majority that never touched
+the new field. It now drops EMPTY values (`null`, `''`, `[]`), which carry no information. A value
+that was actually entered still refuses, with the toast naming the migration; ⚠️ `0` is a figure,
+not an absence, and is still never dropped.
+
+⚠️⚠️ **`ownerExtraOf` is the inverse of `ownerText`, and it is load-bearing.** `owner` as stored
+is already `ownerText(ids, extra)`; seeding the form's free-text box with that whole string makes
+every save re-prepend the resolved names — *"Alvarez; Alvarez; Cruz"* after three edits. That exact
+bug was reported on the Issues register's champion field and then reproduced when the pattern was
+copied to Minutes of Meeting. It is not being introduced a third time.
+
+### Tests
+`tools/test-claims.js` **40 passed, 0 failed** (was 15) — the trend derivation, including the
+undatable record, the `eval` over `sub` key order, month ends, February in a leap year and the year
+boundary. `modules/contracts-claims/test-record.js` **24 passed, 0 failed**, new — the save gate and
+the name round trip, both sliced from `module.js` rather than retyped.
+
+⚠️ Negative-tested. Restoring the null-only gate and the naive extra turns **7** assertions red, and
+the round-trip failures print the literal *"Alvarez; Alvarez; Alvarez; The consultant QS"*.
+
+All three bands verified rendering in a browser from the shipped functions. ⚠️ One wording fix came
+out of looking at it: the legend said *"the darker part of a column is the shortfall"*, and the
+shortfall is `--pd-red` on `--pd-warn` amber — brighter, not darker.
+
+`claims.js` → `?v=20260917b`; module → `?v=20260917c`.
+
+## 2026-09-17 (b) — The dashboard states the revised contract sum, and names the record to chase
+
+Owner: *"Contracts & Claims dashboard for project-level needs to be improved. Please suggest both
+information and UI improvements."* Two information gaps closed; the rest is written up in the reply
+rather than built, because they need data the register does not hold yet.
+
+### An approved variation changes the contract, and the card did not say so
+Original + approved variations = the **revised contract sum** — the figure every commercial report
+is measured against: valuation, retention, final account. The page held both halves and printed only
+the first, so a project with ₱400M of approved change orders showed the same *Contract value* as one
+with none.
+
+⚠️ **The headline VALUE stays the signed figure**, and the revision is named beneath it. A planner
+comparing this screen against a signed contract has to find the signed number where they left it;
+the revision is the news, and news belongs in the line that explains.
+
+⚠️ **Approved change orders only.** A cost claim is a recovery against the existing sum, not a
+change to it, and anything still pending has changed nothing yet. Computed through
+`PDClaims.decided` + `PDClaims.sum`, like every other figure here, so "decided" cannot drift from
+what the pipeline table means by it.
+
+### "oldest 45 days" named no record
+It says there is a problem; it does not say **which record to chase**, which is the only action the
+figure supports — and a planner then had to scroll the register and sort it by hand to find out.
+`PDClaims.agingBuckets` now returns `oldestRow` beside `oldest`, and the header names it: reference
+first (what the record is called in an email to the client, and short), description second, clipped.
+
+⚠️ Additive to the shared helper — every existing caller reads `oldest` and is untouched. That
+matters here: `agingBuckets` is read by **three** screens, and the point of `claims.js` is that they
+cannot describe the register differently.
+
+### Tests
+`tools/test-claims.js` — new, **15 passed, 0 failed**, loading `claims.js` the way the page does
+(a real `window`, then the IIFE assigns onto it) rather than a rewritten copy. Covers the cases that
+would each have named the wrong record: a **dateless** record has no age and must not win (it is
+waiting on us, not on the client), a **decided** record is not pending and cannot be the oldest
+thing with the client, and a **tie** resolves to the first stably so the header does not change on
+re-render. Plus the variation rule: approved change orders only, claims and pending excluded.
+
+⚠️ Negative-tested — dropping `oldestRow = r` turns 5 assertions red.
+
+`claims.js` → `?v=20260917a`; module → `?v=20260917b`.
+
+⚠️ **This session's (c) above merges the design away** — the table this figure and this card would
+have decorated does not ship on this branch. `claims.js`'s `oldestRow` addition is unaffected and
+lives on regardless of which dashboard design reads it.
+
+## 2026-09-17 (a) — The record dialog stops clipping, amounts carry commas, and four sentences of glossary become tooltips
+
+Seven things the owner raised on the live project.
+
+**The Affected-work picker clipped.** *"Affected work is the one that clips in the window."* The
+record dialog is the shared `.pd-modal` at 520px, and the picker puts a tree and a programme preview
+side by side — ~220px and ~253px — so the preview's headline wrapped one word per line. Two changes:
+the dialog gets its own width class (`.pd-modal.cc-rec`, 760px, the same idiom as `.boq-wide`), and
+the picker now adapts with a **container query** rather than a media query. ⚠️⚠️ A media query cannot
+fix this and would look like it had: the box is narrow while the viewport is 1,920px, so every
+`max-width` rule would be false exactly when the bug is on screen. `@container` asks how much room
+*this component* has, and the answer holds in all three hosts it is mounted in.
+
+**Date filed / Date submitted did not line up.** `.cc-form` used `auto-fit`, so which fields shared
+a row was an accident of width — and **Status**, in a single cell, shunted the four dates down by
+one and split the pairs. Counted columns plus a full-width Status makes the pairing a property of
+the markup order, which is what expresses the pipeline: filed → submitted, evaluated → approved.
+
+**Amounts carry commas.** `58995925` and `5899592` are one keystroke apart and look identical.
+Grouped on blur, raw on focus — not while typing, which moves the caret to the end and turns editing
+the middle of a number into a fight. Safe because `n()` already **validates** commas rather than
+stripping them.
+
+**Four sentences of glossary left the page.** *"These are tooltips and not necessarily to be shown
+in the main page."* The pipeline definitions now sit on the column headers as `title` text — where
+the word being defined actually is — and each header already carried a short sub-label. The aging
+note became the `title` on the heading it explains. The one line kept is the only part that was not
+a definition: this band covers the whole register and does not follow the filters.
+
+**"No package breakdown yet…" is gone.** *"It doesn't provide any valuable information, it just
+states the current."* And the state it stated is already on screen — the Contract value card's own
+subtext reads *no package breakdown*.
+
+**The scope of works stopped being an aside.** It was `.cc-hint`: muted, small, the style this tab
+uses for footnotes — holding the most substantive sentence on the page, at ~220 characters a line.
+Now a labelled block in body ink, capped at 78ch, clamping behind a disclosure past 320 characters.
+
+`test-boq` 66/0, `wiring-check` 139/0, `dark-remap` 0 findings. Bumped to `?v=20260917a`.
+
+⚠️ **Not all of this survives the (c) merge above.** The dialog-width fix, the date-field pairing,
+the comma-grouped amounts and the header-tooltip glossary are in functions this collision does not
+touch and are live as described. **The "scope of works" `<details>` block is gone** — it lived
+inside the discarded `ccDashHTML`, and its CSS (`.cc-scope*`) was removed as dead code in (c) once
+that was established.
+
+## 2026-09-16 (e) — Amounts round to the nearest .00 M, values right-align, and a concurrent session's alternate dashboard is merged out
+
+Owner: *"align values right and for amounts round off to nearest .00 M then resolve merge conflicts."*
+
+### Amounts are millions, always, two decimals
+
+`ccDashHTML`'s `money()` formatter now reads `'₱' + (v/1e6).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2}) + 'M'` — so ₱1,155,577,055.60 reads **₱1,155.58M**, and a
+₱350,000 shortfall reads **₱0.35M**, on the same scale as every other figure in the table. ⚠️ Its
+own function, not `Fmt.moneyShort` (`assets/js/db.js`) — that one switches to a "B" suffix above
+₱1B, a coarser unit than "nearest million" asked for. Days (`days()`, used by the Extension of
+Time group) are untouched — the ask was about pesos.
+
+### ⚠️⚠️ RIGHT-ALIGNMENT WAS ALREADY THE DESIGN, AND IT HAD NEVER ACTUALLY WORKED
+
+`CC_DASH_COLS` and every money/day `<td>` have carried `.cc-r` since (b) — `.cc-r { text-align:
+right }` — and it had been rendering **left** the whole time, in every screenshot sent in (b)/(c)/
+(d). The cause: `.cc-dashtbl` also carries the shared `.pd-table` component, whose own
+`.pd-table th, .pd-table td { text-align: left }` (dashboard.css) is specificity **(0,1,1)** against
+`.cc-r`'s bare **(0,1,0)** — a class-vs-class-plus-element tie that `.cc-r` cannot win regardless of
+source order. Measured directly: `getComputedStyle` on a `.cc-dashtbl td.cc-r` reported `left`, with
+`.pd-table th, .pd-table td` as the only rule setting that property. ⚠️ Not a bug in `.cc-r` itself —
+`boq.js`'s own tables use `.cc-table`, whose `td` rule sets no `text-align` at all, so they never
+collided with it. Fixed with a table-scoped override, `.cc-dashtbl td.cc-r, .cc-dashtbl th.cc-r
+{ text-align: right }` — two classes + the element, (0,2,1), which beats `.pd-table td` outright —
+rather than touching the shared `.cc-r` class every other table in this module also uses.
+
+### A concurrent session built the same tab, differently, and lost
+
+Merging `origin/main` surfaced a real collision: another session, the same day, independently found
+the identical dead-code symptom (`ccDashHTML`/`ccTimeHTML` unreachable because `render()` returned
+before `kpiHTML()` ran) and built its own Dashboard tab — a verdict line, four `UI.kpi` cards, an
+async BOQ-read "certified to date" figure, packages, and `view = 'dashboard'` as the landing tab. Full
+account, and exactly what was and was not kept, is in the collision note prepended to this file above
+entry (i). In short: **this session's design wins**, because this session's owner said, live, *"it
+need not be the landing tab"* — the opposite of what the other thread's owner told it. Contract stays
+the landing tab; Dashboard stays fourth.
+
+⚠️⚠️ **Two leaks past the conflict markers, both found by rendering rather than reading.** git's
+3-way merge auto-applied two of the other thread's single-line changes as *non-conflicting* inserts,
+because they sat at points my own diff never touched — so they carried no `<<<<<<<` marker at all
+and had to be found by the module actually crashing, not by grep:
+- `render()` gained a **second, earlier** `if (view === 'dashboard')` block (the other thread's own,
+  calling `ccDashFill` — a function that no longer exists once its host functions were dropped) sitting
+  *before* this session's own block. It fired first, on every dashboard render, and threw
+  `ccDashFill is not defined` before this session's block was ever reached — this session's own
+  Dashboard tab has been **silently dead** since the merge, discoverable only by opening it. Deleted
+  along with the `view = 'dashboard'` default a few lines above it (reverted to `'contract'`).
+- `module.css`'s auto-merge pulled in the other thread's dashboard-only rules with no caller left to
+  read them: `.cc-sumwrap`/`.cc-sum`/`.cc-v-good`/`.cc-v-bad`/`.cc-v-warn`/`.cc-oldest`/`.cc-more`/
+  `.cc-dash-verdict`/`.cc-dash-comm`/`.cc-dash-facts`(+ its three descendant rules)/`#cc-dash-certcard`
+  — eighteen rules, zero callers anywhere in the module's JS, confirmed by grep before deleting. Brace
+  balance held before and after (619 → 619, net zero — the deletions and this entry's own additions
+  cancelled out).
+
+### Verified
+
+`node --check` clean on every JS file the merge touched in this module (module.js, packages.js,
+boq.js, pmi.js, affected.js, wizard.js); `module.css` braces balanced (621/621, the +2 from the new
+alignment rule). Same real-Chromium harness as (a)–(d), rebuilt fresh and deleted before this commit,
+with the same 7-record fixture: **the resurrected dead branch reproduced the crash first**
+(`ccDashFill is not defined`, confirming the leak was real before it was fixed), and after the fix
+**1 table renders, all `.cc-r` cells report `text-align: right`, every money cell prints the
+millions form** (₱1,155.58M, ₱12.50M, ₱11.70M, ₱3.95M, ₱0.35M against the fixture's raw pesos),
+checked in both themes. Repo-wide sweep for leftover `<<<<<<<`/`=======`/`>>>>>>>` markers: zero.
+Root `CLAUDE.md` checked against this repo's own documented merge trap (a doubled changelog) — 473
+headings, only the generic `### Verified` sub-heading repeats; no doubling.
+⚠️ Not verified signed in — fixture data through `_internals`, not a live project.
+
+`module.css` / `module.js` → `?v=20260916k` (re-derived past both this session's `i` and the other
+thread's `j`, since this file's content matches neither verbatim); `index.html`'s other shared-asset
+tokens (`dashboard.css`, `portfolio-dash.css`) taken from `origin/main`'s newer values, since those
+are legitimate unrelated bumps from other modules' work. No further `MODULE_V` bump beyond what the
+merge itself carries — the tab list is unchanged from (d).
+
+## 2026-09-16 (d) — The dashboard becomes just the one table: EOT merged in, the goto buttons removed, everything opens by default
+
+Owner, on the merged table shipped in (c): *"option 2 is nicer. but leave only the main table in
+the dashboard. include already EOT In the table. no need for the view buttons."*
+
+### Three reversals of (b)/(c), all in the same direction — one screen, one table
+
+- **EOT joins the same table as a fourth group**, reversing (c)'s deliberate separation. That
+  separation existed to satisfy `assets/js/claims.js`'s own rule — *"money and days are never
+  mixed"* — and the rule still holds: `ccTypeRows` never sums or compares ACROSS groups, only
+  within one group's own list, so a peso group and a day group sitting in the same `<table>` never
+  have their figures added together. What the owner asked for is one table on screen, not one
+  arithmetic; the four group totals stay independently correct, and the "Disputed" column reads
+  `Nd` for EOT the same way `ccDashHTML`'s `days()` formatter already renders everywhere else in
+  the app that shows day counts beside money.
+- **The package `%`-breakdown block and the "With the client" pending/aging section
+  (`ccTimeHTML`) are deleted, not hidden.** Both answered real questions (how the contract splits
+  by package; how long a submission has been sitting with the client) but neither is "the main
+  table" the owner asked to keep — and a function nothing calls is the exact dead-code shape this
+  module was reconnected from in (a). `ccTimeHTML`, its aging-bucket rendering and its call site are
+  removed outright, along with the closing hint paragraph that used to sit under it.
+- **The inline "View contract/change orders →" jump links are gone.** `dashGotoBtn` and
+  `wireDashGoto` — added in (c) specifically so the merged table's Contract row could still jump to
+  the Contract tab — are deleted along with their only caller. The Dashboard tab is now a read
+  surface with nothing that switches tabs from inside it.
+
+### ⚠️⚠️ Groups now open by default, and that reading was a guess I made explicit before building it
+
+The owner's "option 2 is nicer" referred to the second of two mockups I'd sent — the EXPANDED
+screenshot, never actually clicked open in the harness that produced it (both mockups were static
+renders, not the live toggle behaviour). Read as: the table's natural resting state should show
+every record, not a collapsed row per type. `ccTypeRows` no longer starts detail rows with
+`pd-collapsed`; the group row starts with `.open` and the caret (`▾`) rather than the closed glyph
+(`▸`). Collapsing is still available — `wireDashGroups` is unchanged, toggling `pd-collapsed` and
+the caret exactly as before — only the DEFAULT state flipped. ⚠️ If this reading is wrong, the fix
+is one word (drop `.open` from the group row's class and restore the initial `pd-collapsed` on the
+detail rows) rather than a redesign.
+
+### ⚠️ A CSS collision found and fixed as a side effect of deleting `ccTimeHTML`'s block
+
+`.cc-age` was declared TWICE in `module.css`: once as the simple `font-weight:700` / `.warn` /
+`.bad` text modifier the ordinary record tables' per-row Aging column has always used (module.js,
+pmi.js), and again — inside the now-deleted `ccTimeHTML`-only block — as a `display:flex` layout
+rule with its own `.cc-age-l`/`.cc-age-bar`/`.cc-age-v`/`.cc-age-warn`/`.cc-age-bad`/
+`.cc-age-unsent` family and a phone override block. Both applied cumulatively to any element
+carrying the class. Deleting the second definition (and its whole family, and the phone block that
+existed only for it) removes the collision; the original simple rule at the top of the file —
+confirmed still present and unchanged — is the only `.cc-age` left, and it is still exactly what
+the record tables' Aging column needs.
+
+### Verified
+
+`node --check` clean; `module.css` braces balanced (619/619, down from 648 — the deleted
+`.cc-dash-goto`/`.cc-dash-bar`/`.cc-dash-pks`/`.cc-dash-pk`/`.cc-dash-rest` and the whole
+`ccTimeHTML`-only `.cc-age*` family accounted for the drop, confirmed by grepping for each removed
+selector before and after). Same real-Chromium harness as (a)/(b)/(c), git-ignored and deleted
+before this commit, with the same 7-record fixture (1 Contract, 2 Change Orders, 2 Claims, 2 EOT):
+**1 table** (down from 2), **0 goto buttons**, **1 `.cc-dash` block** (the package-breakdown and
+aging sections gone), **7 of 7 detail rows visible with no click** (all four groups open by
+default), **0 leftover KPI tiles**. Checked in both themes — the dark-mode render resolves every
+status colour (Pending/Approved/Disapproved) and every group-row tint through the same tokens as
+before, nothing hardcoded.
+⚠️ Not verified signed in — fixture data through `_internals`, not a live project.
+
+`module.css` / `module.js` → `?v=20260916i`. No `MODULE_V` bump — the tab list is unchanged this
+round, only the Dashboard tab's own content.
+
+## 2026-09-16 (c) — Contract, Change Orders and Cost Claims share one table
+
+Owner: *"combine contracts, change orders, and coat claims in 1 table."*
+
+`ccTypeGroupHTML` (b) built one `<table>` per type. Split into `ccTypeRows(label, list, subK, evK,
+apK, fmt, goto)` — the group row + its detail rows only, no table of its own — so several types
+can share one `<table>`. **`ccMoneyTableHTML()`** is that shared table for Contract / Change
+Orders / Cost Claims; `ccTypeGroupHTML` is now a thin wrapper (still used for Extension of Time,
+alone in its own table below).
+
+⚠️⚠️ **Extension of Time stays separate, and that is not an oversight — `assets/js/claims.js`'s own
+header forbids the alternative.** *"Money and days are never mixed… every function here takes the
+key pair from its caller rather than guessing."* Folding EOT's day-counts into the same Submitted/
+Evaluated/Approved columns as peso figures would let the three group rows' totals be summed
+together by anyone reading across a row, which is exactly the mistake that comment exists to rule
+out. One shared table for the three MONEY types; EOT keeps its own.
+
+⚠️⚠️ **A Contract record has no pipeline, and forcing it through one is a worse bug than leaving
+it out.** `VIEWS.contract` has always had a single `amount` column, no Evaluated/Approved/Disputed/
+Status (2026-08-26: *"Contract has no pipeline — it's a flat description + amount list"*). Joining
+it into this table needed a real branch, not a reused zero: `ccTypeRows` takes `simple = !evK` and
+when true, every one of Evaluated/Approved/Disputed/Status renders a dash — for the group row AND
+every detail row — rather than `0`, which would read as "evaluated at nothing" on a document that
+was never evaluated at all.
+
+⚠️ **The old "Contract value" header's own "View contract →" link is removed, not duplicated.**
+The merged table's own Contract row now carries that same jump inline in its label cell
+(`dashGotoBtn`'s new `inline` argument, since a group-row `<td>` isn't the flex row `.cc-dash-h`
+relies on for `margin-left:auto`). Two identical links doing the identical thing on one screen
+reads as a mistake; the package `%`-breakdown above the table is untouched, since it answers a
+different question (allocation, not the claims pipeline) that the merged table has no column for.
+
+### Verified
+
+`node --check` clean; `module.css` braces balanced (648/648). Same real-Chromium harness as (a)/
+(b), git-ignored and deleted before this commit: **2 tables render** where there were 3 (Contract/
+CO/Claims merged, EOT separate), **4 groups, 7 detail rows total** (1 Contract + 2 CO + 2 Claims +
+2 EOT), all hidden by default and all 7 visible after clicking every group row; the Contract row
+and its one detail row both show real dashes (not `0`/`—` inconsistently) across Evaluated/
+Approved/Disputed/Status; the inline "View change orders →" link — now inside the merged table —
+still switches to the Claims tab and sets the type filter, confirmed by reading `.cc-tab.active`
+and `#cc-f-type.value` after the click. Checked in both themes.
+⚠️ Not verified signed in — fixture data through `_internals`, not a live project.
+
+`module.css` / `module.js` → `?v=20260916h`. No `MODULE_V` bump — `index.html` is unchanged this
+round.
+
+## 2026-09-16 (b) — The dashboard tiles become a table, and each type gets a "Group" expand
+
+Owner, on the tab shipped hours earlier: *"the dashboard tiles look very ugly, provide me sample
+look if table or chart."* Shown both (a `.pd-table` and a `.cc-ages`-style bar treatment, neither
+committed — throwaway harnesses, deleted). Owner picked the table shape and specified it directly:
+*"columns should be for submission, submitted, evaluated, approved, disputed. include also status.
+provide group button to expand breakdown of claims/change order details."*
+
+### What changed
+
+`ccBlock` — the five-tile `.cc-kpis` grid per type (Submitted / Evaluated / Approved / Disapproved
+/ Shortfall) — is **deleted**, not left orphaned; its only three callers now call the replacement,
+so nothing keeps referencing it. New `ccTypeGroupHTML(label, list, subK, evK, apK, fmt, goto)`
+renders one `.pd-table` per type (Change Orders / Cost Claims / Extension of Time):
+
+- **One group row per type**, bold (`.pd-grp`, the shared class this app already uses for a
+  table's own subtotal rows), showing the type's totals across all six columns.
+- **One row per record underneath**, collapsed by default (`.pd-collapsed`, the same shared
+  class), revealed by clicking the group row — `wireDashGroups` is the one handler for all three
+  tables, toggling a caret between ▸/▾.
+- **Columns: Submission · Submitted · Evaluated · Approved · Disputed · Status.**
+  - ⚠️⚠️ **Submission ≠ Submitted.** Submission is the record's identity — `descOf(r)` (reference +
+    description, the same helper the Contract/Claims/EOT tables already use) plus the date it was
+    submitted underneath, in `.cc-mini`. Submitted is the pipeline **amount**. Two different
+    existing fields (`reference_no`/`description`/`date_submitted` vs. `sub_amount`), not one
+    column typed twice.
+  - ⚠️⚠️ **Disputed is the old Shortfall, renamed and moved to where it earns its place.** The
+    owner dropped Shortfall as a tile two messages earlier ("no need for shortfall") and then asked
+    for a "disputed" column here — not a contradiction: a tile reading "₱350,000 shortfall" with no
+    record behind it was noise; "which record is disputed, and by how much" is exactly what a row
+    is for. Same arithmetic, `PDClaims.shortfall(sub, approved)`, now run **per record** as well as
+    for the group's total. ⚠️ A still-Pending record reads **"—"**, never 0 — `PDClaims.isDecided(r)`
+    gates it, or an unresolved claim would read as though it had already been argued down to
+    nothing.
+  - **Status** is the existing `.cc-st`/`STATUS_CLS` pill this module's own record tables already
+    use — Pending red, Approved green, Disapproved red, Cancelled muted — so a planner reading this
+    table and the Claims tab underneath it sees the identical treatment. The group row's Status
+    cell is a plain-text breakdown ("1 pending · 1 approved"), since a group spanning two different
+    statuses cannot honestly wear one pill.
+- **The "View →" links from 2026-09-16 (a) are unchanged** — they sit in the same `.cc-dash-h`
+  header, above the table now instead of above a tile grid.
+
+⚠️ **"With the client" (`ccTimeHTML`) is untouched** — still `.cc-kpis` tiles and the aging bars.
+This round only replaced the three per-type blocks the owner called ugly; that section wasn't
+raised and its own tiles are few enough (4) not to read as a wall.
+
+### Verified
+
+`node --check` clean; `module.css` braces balanced (647/647). Rendered in the same real-Chromium
+harness as (a) — git-ignored, deleted before this commit — driven through `_internals`: all three
+tables render collapsed by default with correct group totals and status breakdowns; clicking each
+group row reveals exactly its own records (6 of 6 after clicking all three, 0 before) with the
+right per-record Disputed value (a dash on every Pending record, a real figure on every
+Approved/Disapproved one, matching the arithmetic by hand); confirmed in both themes — every
+colour in the new table resolves through a token, nothing hardcoded.
+⚠️ Not verified signed in — fixture data through `_internals`, not a live project.
+
+`module.css` / `module.js` → `?v=20260916g`. No `MODULE_V` bump — `index.html`'s structure (tab
+count, script list) is unchanged from (a).
+
+## 2026-09-16 (a) — The dashboard becomes a fourth tab, and reconnecting it found it had been dead
+
+Owner: *"aside from contracts, claims and change orders, and eot. add also a dashboard."* Asked
+whether it should be the landing tab: *"it need not be the landing tab."* Contract stays the
+default/active tab; **Dashboard** is a new peer tab after Extension of Time.
+
+### ⚠️⚠️ THE DASHBOARD ALREADY EXISTED AND HAD BEEN UNREACHABLE SINCE 2026-09-07
+
+`ccDashHTML()` / `ccTimeHTML()` (built 2026-09-15) were never dead in the sense of "unused code
+that renders nothing" — they compute real figures off `PDClaims`, the same rules engine the
+project dashboard and the portfolio view use. They were dead in the sharper sense: **nothing on
+the shipped page could call them.** `kpiHTML`'s `if (view === 'contract') return ccDashHTML();`
+is only reached from inside `render()`'s generic record-list path — and `render()` has, since
+2026-09-07 ("the BOQ moved inline"), a `view === 'contract'` branch that delegates wholesale to
+`CCPackages.show(...)` and `return`s *before* `kpiHTML` is ever called. Confirmed by reading every
+caller before writing anything: `packages.js` never references `ccDashHTML`, `ccTimeHTML` or
+`kpiHTML` either. So the Contract tab's own changelog entry ("Let's rework the front page … to
+have a dashboard within it") was correct about what was *built*, and wrong about what was *live*
+— an 11-day gap nobody could have noticed by looking at the tab, because the tab looked exactly
+as intended either way (a package/contract table with no band above it).
+
+Wiring it to a real tab is therefore a **move**, not a rewrite: `ccDashHTML`, `ccTimeHTML` and
+`ccBlock`'s money/day arithmetic are untouched. What changed:
+
+- **`render()` gains a `view === 'dashboard'` branch**, alongside the existing `contract` one —
+  same shape (hides the filter bar, since the dashboard reads `rows` whole and has no visible
+  list of its own to filter), calls `ccDashHTML()` into `#cc-view`.
+- **`ccBlock(...)` and the contract-value heading gain a `goto` link** — "View change orders →",
+  "View cost claims →", "View extension of time →", "View contract →" — each jumping to the tab
+  it summarises via a new `wireDashGoto(host)`. The two Claims-tab links (Change Order / Claim)
+  also set `filters.type` before repainting, because `switchTab` deliberately does **not** clear
+  that filter when *arriving at* the Claims tab (only when leaving it) — see its own
+  `if (v !== 'claims')` guard. ⚠️ Without this, a KPI a planner cannot click through to is a
+  number they have to take on faith, which is the same reasoning `affChip` already uses elsewhere
+  in this file.
+- **A fourth `<button class="cc-tab" data-view="dashboard">` in `index.html`.** No other markup
+  changed — `UI.tabsToDropdown('.cc-tabs')` already collapses the strip into one trigger, which is
+  the whole reason a fourth tab costs nothing (the owner's own point, confirmed by rendering it:
+  the trigger reads "Contract ▾" exactly as before, and the menu it opens lists all four).
+- **`_internals` gains `render`, `switchTab`, `ccDashHTML`**, so the tab can be driven and its
+  markup inspected without a live Supabase session — the same shape `_set` already used.
+
+### Verified
+
+- `node --check` clean on `module.js` and `modules-grid.js`; `module.css` braces balanced
+  (642/642).
+- **Rendered in a real, headless-Chromium harness** (git-ignored, deleted before this commit —
+  see `.gitignore`'s `**/_scratch*`/`**/*harness*` patterns) carrying the real `dashboard.css` +
+  `module.css` and the real `db.js` / `icons.js` / `ui.js` / `claims.js` / `module.js`, driven
+  through `_internals._set(...)` + `_internals.render()` against a fixture shaped like a real
+  register (2 contracts' worth of packages, 2 change orders, 2 claims, 2 EOTs, one record with no
+  package). Confirmed: the tab renders with **0 page errors**; the package bar, all three
+  `ccBlock`s and the aging/hand-off section all paint with real figures; clicking **View change
+  orders →** switches the active tab to Claims/Change Order **and** sets the type filter to
+  "Change Order", landing on exactly CO-014 and CO-018 (the two Claim rows correctly excluded);
+  and with `UI.tabsToDropdown` applied, the four-tab strip collapses to the same single trigger
+  the three-tab strip used, opening a menu that lists all four — confirming the owner's own point
+  that the dropdown absorbs a fourth tab for free.
+- ⚠️ **Not verified signed in** — no live login is possible in this environment. The harness is a
+  real DOM and a real cascade, not a stub of either, but it is fixture data through `_internals`,
+  not a real project's rows through a real Supabase read.
+
+`module.css` / `module.js` → `?v=20260916f`; `MODULE_V` → `20260916f` (the module's `index.html`
+gained a tab, so the launcher's cache-busted link needs to change too).
+
+### Not built here, deliberately
+
+- **No new figures.** Every block on the Dashboard tab was already computed by `ccDashHTML` /
+  `ccTimeHTML`; this reconnects and links them, it does not add a new metric.
+- **No portfolio-wide view here** — that already exists, separately, in `assets/js/portfolio-dash.js`,
+  shown when this same page is opened from the Portfolio sidebar (`AppAuth.isPortfolioScope()`).
+  This tab is the single-project view; the two do not overlap and are not meant to.
+
+---
+
+⚠️⚠️ **CONCURRENT SESSIONS BUILT A DASHBOARD TAB FOR THIS MODULE INDEPENDENTLY, THE SAME DAY, AND
+DISAGREED ON THE DESIGN.** The entries below (h)/(i) and the unlettered one are a second session's
+own thread through the identical dead-code discovery and the identical "give the dashboard its own
+tab" decision — reached independently, on the same live symptom (`ccDashHTML`/`ccTimeHTML` unreachable
+because `render()` returned before `kpiHTML()` ever ran). Kept in full rather than dropped, per this
+repo's own rule that a doubled or discarded thread is still history worth keeping.
+
+**Resolved in favor of THIS session's (a)–(d) above.** The two sessions' final designs disagree on
+substance, not just presentation: this thread's owner, live, said *"it need not be the landing tab"*
+and asked for one plain table (see (d)); the other thread's owner independently said the opposite —
+*"Dashboard needs complete rework… both, commercial first"* — and built a verdict line, four KPI
+cards, an async BOQ-read "certified to date" figure, and made Dashboard the landing view. Only one
+tab can ship. This owner's explicit, in-conversation instruction on THIS branch is what decided it —
+not a judgement that one design is better in the abstract.
+
+⚠️ **What was NOT carried over from the other thread's work, checked before discarding it:** its
+`ccDashPkgHTML`/`ccMoneyTable`/`ccDashFill`/`ccHasClaims` functions and the `VIEWS.dashboard` /
+`view = 'dashboard'` default were dropped along with the CSS they alone used (`.cc-sumwrap`/`.cc-sum`/
+`.cc-v-good`/`.cc-v-bad`/`.cc-v-warn`/`.cc-oldest`/`.cc-more`/`.cc-dash-verdict`/`.cc-dash-comm`/
+`.cc-dash-facts`/`#cc-dash-certcard`) — grepped across every JS file in this module afterward to
+confirm zero callers remained. ⚠️ (i)'s own `selectAll` cursor fix lives in shared files this
+collision does not touch (`assets/js/db.js` and callers across other modules) and merged in on its
+own merits, unaffected by any of the above.
+
 ## 2026-09-16 (i) — The dashboard rebuilt around the contract, and a roll-up that had been truncating at 1000 items
 
 Owner: *"Contracts & Claims Dashboard needs complete rework"*, and when asked whether that meant the

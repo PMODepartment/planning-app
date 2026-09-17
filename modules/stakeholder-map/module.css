@@ -20,10 +20,9 @@
 .sm-tab + .sm-tab { border-left:1px solid var(--pd-line); }
 .sm-tab:hover:not(.active) { background:var(--pd-bg); }
 .sm-tab.active { background:var(--pd-red); color:#fff; }
-.sm-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.sm-topbar-tools { display:flex; align-items:center; margin-left:auto; }
 .sm-topbar-tools .pd-btn { height:34px; display:inline-flex; align-items:center; justify-content:center; }
 .sm-topbar-tools .pd-btn.sm-tb-labeled { padding:0 12px; gap:6px; }
-.sm-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 @media (max-width:900px) { .sm-title-txt { display:none; } }
 
 /* Filter bar — collapsed by default, revealed via the topbar funnel toggle

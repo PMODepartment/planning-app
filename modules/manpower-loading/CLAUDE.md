@@ -1,5 +1,18 @@
 # Manpower Loading — module change log
 
+## 2026-09-16 (later) — The write controls hide in portfolio scope — fmlozano
+
+See the root `CLAUDE.md` (2026-09-16 (d7)).
+
+- **Add / Derive / Seed / Import** carry `data-project-only`. Each writes to ONE project, and
+  portfolio scope is read-only at the Supabase chokepoint — shown there they could only raise a
+  toast saying so.
+- ⚠️ **Export and Refresh are deliberately left alone.** This module HAS a portfolio view (its
+  own Portfolio tab, consolidated across every project), so both mean something with no project
+  selected. Marking them would have been the easy uniform answer and the wrong one.
+- The hiding is a class on `<html>` set by `auth.js`, not a sweep — this module's bar is built by
+  `UI.initModuleTopbar()` on DOMContentLoaded and a one-shot sweep would race it.
+
 ## 2026-09-16 — The table adopts the approved projects.html treatment — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the

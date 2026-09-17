@@ -33,7 +33,7 @@
       var m = s && s.match(/[?&]v=([^&]+)/);
       if (m) return decodeURIComponent(m[1]);
     } catch (e) {}
-    return '20260916p';
+    return '20260917zh';
   })();
 
   function href(m) {
@@ -72,14 +72,22 @@
       '<div class="pd-module-sub">' + sub + '</div></div></div>';
   }
 
-  // ⚠️ `superAdminOnly` modules (config.js, 2026-09-03) are hidden from everyone but
-  // super_admin, read off the global `AppAuth.requireLogin` already sets — see the
+  // ⚠️ `superAdminOnly` modules (config.js, 2026-09-03) are hidden from everyone below
+  // `planner` (2026-09-17), read off the global `AppAuth.requireLogin` already sets — see the
   // matching note in ui.js's `renderNav`, which gates the sidebar the same way.
   // ⚠️ Delegated to `AppAuth.moduleVisible` (2026-09-15), which layers admin.html's
   // per-user Modules override on top of that role default — so this launcher grid
   // and the sidebar cannot disagree about which modules a given user sees.
   function visible(m) {
-    return window.AppAuth ? AppAuth.moduleVisible(m, window.__profile) : (!m.superAdminOnly || window.__role === 'super_admin');
+    /* ⚠⚠ THE FALLBACK FAILS CLOSED, and deliberately carries NO copy of the role list.
+       auth.js is a hard dependency of every page that loads this file (it is in <head> on all
+       of them, and `requireLogin` is what sets `window.__profile`), so this branch is
+       unreachable in practice. It used to restate the rule as `__role === 'super_admin'`,
+       which went stale the moment 2026-09-17 widened it to planners — two copies of a
+       permission rule is exactly how one surface starts granting what another refuses.
+       A restricted module hidden when we cannot evaluate the role is the safe way to be
+       wrong. See `MODULE_ALL_ROLES` in auth.js. */
+    return window.AppAuth ? AppAuth.moduleVisible(m, window.__profile) : !m.superAdminOnly;
   }
 
   window.ModulesGrid = {

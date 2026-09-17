@@ -2527,10 +2527,15 @@ console.log('\n[misc] insert().select() returns the new row id');
     eq('a row with no photo at all resolves to an empty string, never undefined/throwing', urls['no-photo'], '');
   }
 
-  ok('saveCapture uploads a thumbnail alongside the original and attaches it to the row before the insert',
-     /var thumbPath = await uploadThumbnailFor\(file, path\);[\s\S]{0,200}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
-  ok('flushQueue (the offline-capture sync path) does the same, so an offline-captured photo also gets a thumbnail once synced',
-     /var thumbPath = await uploadThumbnailFor\(item\.blob, path\);[\s\S]{0,200}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
+  // 2026-09-16: healthy churn from the pending-upload rewrite -- the thumbnail
+  // upload no longer happens directly inside saveCapture()/flushQueue(); both
+  // now go through the single, shared runUploadTask(task) pipeline (see the
+  // root CLAUDE.md's 2026-09-16 "Progress Photos" entry), which is where the
+  // thumbnail is actually generated and attached before the row insert, for
+  // BOTH a fresh capture and an offline-queue sync alike -- one code path
+  // instead of two, so the two can no longer drift apart on this.
+  ok('runUploadTask uploads a thumbnail alongside the original and attaches it to the row before the insert (shared by both a fresh capture and an offline-queue sync)',
+     /thumbPath = await uploadThumbnailFor\(file, uploadedPath\);[\s\S]{0,260}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
   ok('tolerantWrite strips thumb_url and retries on a pre-migration database, naming the round-3 migration file',
      /'thumb_url' in job\.patch[\s\S]{0,400}2026-08-30-photos-round3\.sql/.test(mjs));
   // ⚠️ Superseded (owner feedback item 1): the single-photo body moved into
@@ -4486,6 +4491,8 @@ console.log('\n[misc] insert().select() returns the new row id');
       ok('…configured as a partial equirectangular panorama: haov 360 (a full walk-around), vaov derived from the image\'s own height/width ratio',
          lastConfig.type === 'equirectangular' && lastConfig.panorama === 'blob:pano.jpg' && lastConfig.haov === 360 &&
          lastConfig.vaov === Math.min(140, Math.max(20, 360 * 0.4)));
+      ok('2026-09-16 viewer improvement: fullscreen is ON (both callers mount into a cramped box — a real browser fullscreen is how a planner actually inspects a capture at size), zoom stays available too',
+         lastConfig.showFullscreenCtrl === true && lastConfig.showZoomCtrl === true);
 
       lastConfig = null;
       PP._mountPannellumViewer({ querySelector: function () { return null; } }, 'blob:tall.jpg', 3);
@@ -4615,28 +4622,33 @@ console.log('\n[misc] insert().select() returns the new row id');
 
   console.log('\n[56c] 2026-09-13 (later still): "since it\'s taking too long to process and stitch an image, divide video to a fixed 48 frames per process" — frameCountFor no longer scales with duration at all');
 
-  ok('frameCountFor is now a FIXED count (48), regardless of duration — the 30fps/duration-scaled density this replaces is gone from the function body',
-     /var FIXED_FRAME_COUNT = 48;/.test(p3js) &&
+  ok('frameCountFor is a FIXED count, regardless of duration — the 30fps/duration-scaled density this replaces is gone from the function body',
+     /var FIXED_FRAME_COUNT = \d+;/.test(p3js) &&
      /function frameCountFor\(durationSec\) \{\s*return FIXED_FRAME_COUNT;\s*\}/.test(p3js) &&
      !/var FRAMES_PER_SEC/.test(p3js) &&
      !/var MIN_FRAMES/.test(p3js) &&
      !/var MAX_FRAMES/.test(p3js));
+
+  console.log('\n[56d] 2026-09-16: "use 72 frames instead of 48" — the fixed count raised, now that the actual stitching pass moved server-side (see [67]) and the client-side per-frame cost dropped');
+
+  ok('the fixed frame count is now 72, not 48',
+     /var FIXED_FRAME_COUNT = 72;/.test(p3js));
 
   // Genuine execution of frameCountFor() — confirms the fixed count is
   // ACTUALLY fixed (same output for a very short clip, an ordinary one, a
   // very long one, and a degenerate/invalid duration), not just declared
   // fixed in a comment while the body still varies its answer.
   (function () {
-    eq('frameCountFor: a very short clip still samples exactly 48 frames',
-       P360._frameCountFor(0.3), 48);
-    eq('frameCountFor: a very long clip still samples exactly 48 frames — no longer scaled up or capped by duration',
-       P360._frameCountFor(9999), 48);
-    eq('frameCountFor: an ordinary mid-length clip samples exactly 48 frames, not 30 * duration',
-       P360._frameCountFor(6), 48);
-    eq('frameCountFor: a zero/invalid duration still returns 48 rather than throwing or sampling zero frames',
-       P360._frameCountFor(0), 48);
-    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 48, not the old 720',
-       P360._frameCountFor(24), 48);
+    eq('frameCountFor: a very short clip still samples exactly 72 frames',
+       P360._frameCountFor(0.3), 72);
+    eq('frameCountFor: a very long clip still samples exactly 72 frames — no longer scaled up or capped by duration',
+       P360._frameCountFor(9999), 72);
+    eq('frameCountFor: an ordinary mid-length clip samples exactly 72 frames, not 30 * duration',
+       P360._frameCountFor(6), 72);
+    eq('frameCountFor: a zero/invalid duration still returns 72 rather than throwing or sampling zero frames',
+       P360._frameCountFor(0), 72);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 72, not the old 720',
+       P360._frameCountFor(24), 72);
     ok('…the count truly does not vary with duration — a 4s clip and a 20s clip get the identical frame count, unlike the retired 30fps scaling',
        P360._frameCountFor(4) === P360._frameCountFor(20));
   })();
@@ -4652,10 +4664,13 @@ console.log('\n[misc] insert().select() returns the new row id');
      /function extractFrames\(videoBlob, count, maxW, knownDuration, onProgress\)/.test(p3js) &&
      /var dur = \(isFinite\(knownDuration\) && knownDuration > 0\) \? knownDuration : await fixInfiniteDuration\(video\);/.test(p3js) &&
      /if \(onProgress\) onProgress\(i \+ 1, count\);/.test(p3js));
-  ok('module.js\'s runStitch reads all 4 stages into a real, changing status message — not one static "Reading video…" for the whole extraction phase',
-     /Extracting up to ' \+ a \+ ' frame' \+ \(a === 1 \? '' : 's'\) \+ '…';/.test(mjs) &&
-     /Extracting frames — ' \+ a \+ ' of ' \+ b \+ ' \(' \+ Math\.round\(\(a \/ b\) \* 100\) \+ '%\)';/.test(mjs) &&
-     /Stitching panorama — ' \+ Math\.round\(a \* 100\) \+ '%';/.test(mjs));
+  ok('SUPERSEDED 2026-09-16: module.js no longer runs a local, 4-stage stitch at all — runStitchForDraft extracts+uploads frames and hands stitching to a server-side pano360_jobs job, so the OLD 4-stage local progress strings are gone from the source',
+     !/function runStitch\(/.test(mjs) &&
+     !/Extracting up to ' \+ a \+ ' frame' \+ \(a === 1 \? '' : 's'\) \+ '…';/.test(mjs) &&
+     !/Stitching panorama — ' \+ Math\.round\(a \* 100\) \+ '%';/.test(mjs) &&
+     /function runStitchForDraft\(draft\)/.test(mjs) &&
+     /var jobId = newPanoJobId\(\);/.test(mjs) &&
+     /var framePaths = await uploadJobFrames\(draft\.pid, jobId, draft\.video, function \(stage, done, total\)/.test(mjs));
 
   // Genuine execution: a fake, controllable <video> element (same
   // monkey-patch-document.createElement convention as the capture.js race

@@ -69,8 +69,10 @@ function makeWindow() {
     console, Math, Date, JSON, Intl, URL, URLSearchParams, Promise, Proxy, Reflect,
     supabase: { createClient: () => chain() },
     // The one real dependency: the helpers read the project-selector's own warm
-    // cache, which `allProjectIds()` fills from here.
-    PDb: { getProjects: async () => PROJECTS.slice(), getGroupHeads: async () => [] },
+    // cache, which `allProjectIds()` fills from here. ⚠️ `isSandbox` mirrors
+    // db.js's own definition (`!!p.is_sandbox`) — added on main after this
+    // harness was written; `allProjectIds()` now filters through it.
+    PDb: { getProjects: async () => PROJECTS.slice(), getGroupHeads: async () => [], isSandbox: (p) => !!(p && p.is_sandbox) },
     Icons: { hydrate: noop, svg: () => '' },
   };
   win.window = win; win.self = win; win.globalThis = win;
