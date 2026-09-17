@@ -24752,7 +24752,11 @@
      zoom can still make the row taller, never shorter than the lanes need. ⚠️ And it
      goes through rowHFor so `applyRowZoom` stays THE ONE PLACE row height is set — see its
      note just below. */
-  function _lsmRowH() { return LSM_PAD + _lsmLaneCount() * (LSM_LANE_H + LSM_LANE_GAP); }
+  /* ⚠⚠ ONE LANE, because the row draws ONE bar. This was `_lsmLaneCount()` lanes, which is
+     what made an LSM row eight times taller than an ordinary one — the “ticking LSM widens the
+     rows” report. With the trades merged into a single bar there is nothing for the other lanes
+     to hold, and the height follows the drawing rather than the lane budget. */
+  function _lsmRowH() { return LSM_PAD + (LSM_LANE_H + LSM_LANE_GAP); }
   /* ⚠️⚠️ THE HEIGHT IS ONLY EARNED BY AN LSM-SHAPED GROUPING. `ROWH` is uniform
      by construction (renderWindow slices on `floor(scrollTop / ROWH)` and every bar sits at
      `i * ROWH`), so the lane budget cannot be given to the floor rows alone. That is fine when the
@@ -26534,8 +26538,45 @@
     out.sort(function (p, q) { return p.lane - q.lane; });
     return out.length ? out : null;
   }
-  /* The LSM row: one lane per keyed trade, each a bar from its first start to its last finish on
-     this location, notched where the trade left the floor and came back.
+  /* ---- Fold the per-trade buckets into ONE bar for the row ------------------------------------
+     See the note on the owner's choice above `_lsmBarsHTML`. Takes `_lsmAgg`'s output and returns
+     an array of ONE bucket in the same shape, so the renderer's gap/clash/baseline drawing is
+     unchanged — it simply has one bar to draw instead of N. */
+  function _lsmMergeAgg(agg) {
+    if (!agg || !agg.length) return agg;
+    var iv = [], vals = [], wd = 0, we = 0, n = 0, bs = null, bf = null, over = 0, cal = null;
+    for (var i = 0; i < agg.length; i++) {
+      var b = agg[i];
+      if (cal == null) cal = b.cal;
+      for (var j = 0; j < b.runs.length; j++) iv.push([b.runs[j][0], b.runs[j][1]]);
+      /* ⚠ The overflow bucket carries no trade NAME (that is the point of it), so it contributes
+         its span and its count and nothing to the colour or the trade list. */
+      if (b.over) over += (b.overCount || 0); else if (b.value) vals.push(b.value);
+      wd += b.wd || 0; we += b.we || 0; n += b.n || 0;
+      if (b.bs && (!bs || +b.bs < +bs)) bs = b.bs;
+      if (b.bf && (!bf || +b.bf > +bf)) bf = b.bf;
+    }
+    if (!iv.length) return null;
+    iv.sort(function (p, q) { return p[0] - q[0] || p[1] - q[1]; });
+    /* The SAME fold `_lsmAgg` uses, through the SAME `_lsmIdleGap`. */
+    var runs = [iv[0].slice()];
+    for (var k = 1; k < iv.length; k++) {
+      var cur = runs[runs.length - 1], nx = iv[k];
+      if (!_lsmIdleGap(cur[1], nx[0], cal)) { if (nx[1] > cur[1]) cur[1] = nx[1]; }
+      else runs.push(nx.slice());
+    }
+    var one = (vals.length === 1 && !over) ? agg.filter(function (x) { return !x.over; })[0] : null;
+    return [{
+      merged: true, values: vals, overCount: over,
+      value: one ? one.value : null, lane: 0,
+      color: one ? one.color : null, tex: one ? one.tex : 0, over: false,
+      cal: cal, runs: runs, s: new Date(runs[0][0]), f: new Date(runs[runs.length - 1][1]),
+      wd: wd, we: we, n: n, bs: bs, bf: bf,
+      pct: wd > 0 ? Math.max(0, Math.min(100, Math.round(we / wd))) : 0
+    }];
+  }
+  /* The LSM row: ONE bar per storey, from the first start to the last finish of every trade on it,
+     notched where the whole storey went quiet.
      ⚠️ NO BRACKET AND NO COMPOSITION STRIP ON AN LSM ROW. The row IS the floor and the
      lanes ARE the reading; a roll-up bracket drawn over them would be a second, coarser answer to
      the same question in the same space. The branch's span and roll-up % are still in the grid's
@@ -26937,7 +26978,9 @@
     return '<div class="ps-lsmrate"><span class="ps-lsmrate-lbl" title="Read off the staircase: how fast each trade climbs the building \u2014 the deck\u2019s &quot;12 working day cycle per floor&quot; and &quot;2 floors per month&quot;. Hover a chip for the fit.">Rate</span>' + h + '</div>';
   }
   function _lsmBarsHTML(r, min, dayw, top) {
-    var agg = r._glsm; if (!agg || !agg.length) return '';
+    /* ⚠ Folded HERE, not in `_lsmAgg`: the per-trade buckets are what the Rate strip and the
+       clash engine read, so they must survive. Only what is DRAWN merges. */
+    var agg = _lsmMergeAgg(r._glsm); if (!agg || !agg.length) return '';
     var pitch = LSM_LANE_H + LSM_LANE_GAP, y0 = top + Math.round(LSM_PAD / 2), out = '';
     var showBl = !!_gset.baseline, loc = r._graw || r.activity_name || '';
     /* The storey's state AT THE DATA DATE, printed beside the line.
@@ -26989,7 +27032,14 @@
         var _rk = _lsmRankOf(loc);
         if (_rk != null) _step = _R.steps[(r._danc || []).join('\u0001') + '\u0002' + b.value + '\u0002' + _rk];
       }
-      var tip = b.value + ' \u2014 ' + loc + ': ' + span + ', ' + b.pct + '%, ' +
+      /* ⚠ The merged bar has no single trade, so it lists them. `_step` (this storey's cycle
+         against the one below) is a PER-TRADE figure and is only stated when the storey happens
+         to hold exactly one — averaging it across trades would invent a number. */
+      var _who = b.merged
+        ? ((b.values.length ? b.values.join(', ') : 'no keyed trade') +
+           (b.overCount ? ' +' + b.overCount + ' more' : ''))
+        : b.value;
+      var tip = _who + ' \u2014 ' + loc + ': ' + span + ', ' + b.pct + '%, ' +
         b.n + ' activit' + (b.n === 1 ? 'y' : 'ies') + brk +
         (_step != null ? (' \u2014 started ' + _step + ' ' + (_R.wd ? 'working' : 'calendar') +
                           ' day' + (_step === 1 ? '' : 's') + ' after the storey below') : '');
@@ -26999,12 +27049,30 @@
          being marked is a STRETCH of the bar, not the whole of it. */
       var _cl = '';
       if (_lsmRows) {
-        var _ck = (r._danc || []).join('\u0001') + '\u0002' + b.value + '\u0002' + _rk;
-        /* ⚠ The same flag as the strip, read here rather than in a second place: a bar
+        /* ⚠⚠ EVERY TRADE ON THE STOREY, because the bar is now one bar. The marks are keyed
+           per trade, so a merged bar has to gather them all — otherwise folding the bars would
+           quietly drop the very overlaps the clash engine exists to show.
+           ⚠ The same flag as the strip, read here rather than in a second place: a bar
            still marked while the strip said “hidden” is the kind of half-applied toggle this
            file keeps recording. */
-        var _cm = (_rk == null || !_lsmClashShow) ? null : _lsmClash().marks[_ck];
-        if (_cm) {
+        var _vals = b.merged ? b.values : [b.value];
+        var _cm = [], _seen = {};
+        if (_rk != null && _lsmClashShow) {
+          for (var _vi = 0; _vi < _vals.length; _vi++) {
+            var _ck = (r._danc || []).join('\u0001') + '\u0002' + _vals[_vi] + '\u0002' + _rk;
+            var _one = _lsmClash().marks[_ck];
+            /* ⚠ Deduped by span. The SAME overlap is recorded against BOTH trades in it, so on a
+               merged bar the two marks land at identical coordinates - two absolutely-positioned
+               divs with the same gradient at the same offset, visually one mark and twice the DOM.
+               Keyed on the span, so two DIFFERENT stretches still both draw. */
+            if (_one) for (var _oi = 0; _oi < _one.length; _oi++) {
+              var _mk = +_one[_oi].s + String.fromCharCode(124) + +_one[_oi].f;
+              if (_seen[_mk]) continue;
+              _seen[_mk] = 1; _cm.push(_one[_oi]);
+            }
+          }
+        }
+        if (_cm.length) {
           for (var _q = 0; _q < _cm.length; _q++) {
             var _cx = Math.round(dayDiff(b.s, _cm[_q].s) * dayw);
             var _cw = Math.max(Math.round((dayDiff(_cm[_q].s, _cm[_q].f) + 1) * dayw), 2);
