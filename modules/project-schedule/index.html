@@ -11361,8 +11361,19 @@
     // part that actually means something — collapsing the floor still hides its zones.
     if (collapsed[dcode(nd)] && nd._dkind === 'task' && !nd._dsolo) return true;
     var a = danc(nd); for (var i = 0; i < a.length; i++) if (collapsed[a[i]]) return true;
-    // Hide empty groups: a WBS summary node with no visible activity anywhere below it.
-    if (_hideEmptyGroups && nd._dkind === 'wbs' && !_nonEmptyCodes[dcode(nd)]) return true;
+    /* Hide empty groups: a WBS summary node with no visible activity anywhere below it.
+       ⚠️⚠️ EXCEPT A TOP-LEVEL BRANCH, WHICH IS STRUCTURE RATHER THAN CLUTTER. Owner
+       2026-09-17, asked what had gone wrong with the WBS tree: *"Whole branches are missing."*
+       Milestones, Initiation, Planning and Close-out were all genuinely empty, so the setting removed
+       them and the WBS tree showed only Execution — a tree that omits four of its own five
+       seeded branches is not showing the WBS, whatever the checkbox is called. The footer did name
+       them, in grey, and that was evidently not enough; it is the wrong trade to begin with.
+       ⚠️ The setting keeps doing its job everywhere it is useful: an empty floor, zone or trade
+       INSIDE a branch is still hidden. Only the top level — a code with no dot — is exempt.
+       ⚠️ Not keyed on `is_locked`: an imported root is equally a top-level branch, and equally
+       misleading to delete from a view whose whole job is to show the structure. */
+    if (_hideEmptyGroups && nd._dkind === 'wbs' && !_nonEmptyCodes[dcode(nd)]
+        && String(dcode(nd) == null ? '' : dcode(nd)).indexOf('.') !== -1) return true;
     return false;
   }
   // Codes (in the current display scope) that contain at least one visible activity — a WBS node
@@ -25346,11 +25357,13 @@
     if (_eh) {
       var _empties = emptyTopBranches();
       _eh.style.display = _empties.length ? '' : 'none';
-      _eh.textContent = _empties.length ? ('· ' + _empties.length + ' empty branch' + (_empties.length === 1 ? '' : 'es') + ' hidden') : '';
+      /* ⚠️ It says they are EMPTY, not that they are hidden — they are on screen now. A
+         notice that still claimed to be hiding them would be the footer contradicting the grid. */
+      _eh.textContent = _empties.length ? ('· ' + _empties.length + ' branch' + (_empties.length === 1 ? '' : 'es') + ' empty') : '';
       _eh.title = _empties.length
         ? (_empties.join(', ') + ' — ' + (_empties.length === 1 ? 'this branch holds' : 'these hold') +
-           ' no activities at all, so “Hide empty groups” is leaving ' + (_empties.length === 1 ? 'it' : 'them') +
-           ' out. Un-tick that box to show ' + (_empties.length === 1 ? 'it' : 'them') + ' as empty headings.')
+           ' no activities yet. Top-level branches are always shown, so the structure stays visible; ' +
+           '“Hide empty groups” still hides empty floors, zones and trades inside them.')
         : '';
     }
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom] * ganttScale;
@@ -52289,7 +52302,9 @@
   // "Hide empty groups". Reads `rows` (not DL) on purpose — DL is the post-filter list these are
   // already missing from, so it could never tell us what went.
   function emptyTopBranches() {
-    if (!_hideEmptyGroups || !rows.length) return [];
+    /* ⚠️ No longer gated on the setting: a top-level branch is shown whether or not
+       "Hide empty groups" is on, so the fact that it is EMPTY is worth saying either way. */
+    if (!rows.length) return [];
     var tops = rows.filter(function (r) { return isWbs(r) && r.wbs && r.wbs.indexOf('.') === -1; });
     if (!tops.length) return [];
     return tops.filter(function (t) {

@@ -104,6 +104,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (t) — "Whole branches are missing" from the WBS tree: Hide empty groups was deleting the structure
+
+Owner, on the Project Schedule grouped by **WBS tree (default)**: *"the WBS Tree (default) bugged out
+... whole branches are missing."*
+
+### ⚠️⚠️ Not a regression, and the grid was already telling him — in grey, in the footer
+
+`Hide empty groups` hides any WBS node with no visible activity anywhere below it. On OPW101 that is
+**Milestones, Initiation, Planning and Close-out** — all genuinely 0 activities — so the WBS tree
+rendered Execution Phase and nothing else. The footer read *"· 4 empty branches hidden"* with a
+tooltip naming them, added for this exact complaint on a previous pass.
+
+It was not enough, and on reflection it was the wrong trade to begin with: **a tree that omits four of
+its own five seeded branches is not showing the WBS**, whatever the checkbox is called. The notice
+explained a behaviour that should not have been happening.
+
+**A top-level branch is structure, not clutter.** `Hide empty groups` now exempts any WBS code with no
+dot in it, and keeps doing its real job everywhere else — an empty floor, zone or trade *inside* a
+branch is still hidden.
+⚠️ Keyed on **top-level**, not on `is_locked`: an imported root is equally a top-level branch and
+equally misleading to delete from a view whose whole job is to show the structure.
+⚠️ The footer stops claiming to hide what is now on screen — it reads *"· 4 branches empty"*, and says
+that the top level is always shown while the setting still hides empties inside it. A notice that went
+on describing the old behaviour would be the footer contradicting the grid.
+
+### ⚠️ And the "new preset" was neither new nor ours
+
+*"There is a new preset Schedule Setup structure which I don't want. This is a regression."* —
+`git log -S` puts it at **`86aeccd`, ethanrobles10, 2026-09-03**, two weeks before this work, on a
+request that *"the WBS tree default should be matched with what was defined in the schedule setup"*.
+It is `.filter(p => p.dims.length)`-gated, so it only appears once a project defines location levels,
+which OPW101 now does — which is why it looked like it arrived today. Owner's call after seeing that:
+keep it, the Schedule Setup **is** the WBS default. Nothing changed there.
+
+Recorded because the instinct to "fix" an unfamiliar control on the day something else broke is how a
+working feature gets reverted for the wrong reason.
+
+### Verified
+
+**22 assertions**, `hiddenRow` sliced out and executed. All four empty top-level branches shown; a
+populated one shown; **an empty branch INSIDE the tree still hidden**, and one three levels down too —
+without that the change would be a deletion of the feature dressed as a fix. A task row is untouched
+by the rule, and with the setting off nothing is hidden at all.
+**Contrast pinned to `01b96e7`**: the base hid all four (gated first on the base lacking the
+exemption), so the suite bites on exactly the shape the owner reported.
+
+`wiring-check` 139/139, the WBS view suite 62/62, the inline script parses, no patch-variable leaks.
+
+⚠️ The version bump tried `20260917zv` and the sort check **refused it** — a concurrent session had
+already taken that token. Re-derived to `zw`. Second time today that check has earned its place.
+
+⚠️ **Not verified signed in.** The fix is asserted against a fixture, not against OPW101's own 2,562
+activities. On the next open the four branches should appear as empty headings and the footer should
+read *"4 branches empty"* rather than *"hidden"*.
+
+`MODULE_V` → `20260917zw`.
+
 ### 2026-09-17 (t) — Overlapping zones become a measurable error in the Floors & Zones step
 
 Owner: *"for the UI for the floors & zones, please improve the overall UI, starting from defining the
