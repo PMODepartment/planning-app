@@ -4654,26 +4654,28 @@ console.log('\n[misc] insert().select() returns the new row id');
      !/var MIN_FRAMES/.test(p3js) &&
      !/var MAX_FRAMES/.test(p3js));
 
-  console.log('\n[56d] 2026-09-17: "add frames, change from 72 to 108" — the fixed count raised again, now that the server warps every frame cylindrically before aligning (so a denser sample is directly a sharper panorama, not just a safer one)');
+  console.log('\n[56d] 2026-09-17 (second pass): the fixed count raised 108 -> 144 — the first of these steps taken on a MEASUREMENT rather than on "more is safer". Until the server\'s sub-pixel fit was corrected (parabola -> equiangular, see stitch-core.mjs) a higher count cost real accuracy: 0.22% accumulated rotation error at 108 against 0.98% at 144. With the fit corrected the error is flat (0.01-0.06%) at every count from 72 to 144, and the extra density then buys a 15% lower recovered-scene error across 5 of 5 simulated captures.');
 
-  ok('the fixed frame count is now 108, not 72 or 48',
-     /var FIXED_FRAME_COUNT = 108;/.test(p3js) && !/var FIXED_FRAME_COUNT = 72;/.test(p3js));
+  ok('the fixed frame count is now 144, and none of the counts it replaced',
+     /var FIXED_FRAME_COUNT = 144;/.test(p3js)
+     && !/var FIXED_FRAME_COUNT = 108;/.test(p3js)
+     && !/var FIXED_FRAME_COUNT = 72;/.test(p3js));
 
   // Genuine execution of frameCountFor() — confirms the fixed count is
   // ACTUALLY fixed (same output for a very short clip, an ordinary one, a
   // very long one, and a degenerate/invalid duration), not just declared
   // fixed in a comment while the body still varies its answer.
   (function () {
-    eq('frameCountFor: a very short clip still samples exactly 108 frames',
-       P360._frameCountFor(0.3), 108);
-    eq('frameCountFor: a very long clip still samples exactly 108 frames — no longer scaled up or capped by duration',
-       P360._frameCountFor(9999), 108);
-    eq('frameCountFor: an ordinary mid-length clip samples exactly 108 frames, not 30 * duration',
-       P360._frameCountFor(6), 108);
-    eq('frameCountFor: a zero/invalid duration still returns 108 rather than throwing or sampling zero frames',
-       P360._frameCountFor(0), 108);
-    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 108, not the old 720',
-       P360._frameCountFor(24), 108);
+    eq('frameCountFor: a very short clip still samples exactly 144 frames',
+       P360._frameCountFor(0.3), 144);
+    eq('frameCountFor: a very long clip still samples exactly 144 frames — no longer scaled up or capped by duration',
+       P360._frameCountFor(9999), 144);
+    eq('frameCountFor: an ordinary mid-length clip samples exactly 144 frames, not 30 * duration',
+       P360._frameCountFor(6), 144);
+    eq('frameCountFor: a zero/invalid duration still returns 144 rather than throwing or sampling zero frames',
+       P360._frameCountFor(0), 144);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 144, not the old 720',
+       P360._frameCountFor(24), 144);
     ok('…the count truly does not vary with duration — a 4s clip and a 20s clip get the identical frame count, unlike the retired 30fps scaling',
        P360._frameCountFor(4) === P360._frameCountFor(20));
   })();

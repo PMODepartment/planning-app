@@ -23,66 +23,92 @@
 // only translation. A capture that pans smoothly and doesn't roll the phone
 // (the guidance this feature has always given) is exactly the case this
 // still handles well.
+// ⚠⚠ THE 2026-09-16 AUDIT NOTE THAT USED TO SIT HERE HAS BEEN DISCHARGED AND
+// IS DELETED RATHER THAN LEFT STANDING. It recorded that this pipeline aligned
+// and composited RAW PERSPECTIVE frames by pure translation, with no
+// cylindrical reprojection — architecturally wrong for a camera rotating on
+// the spot — and it refused to fix that without "a SYNTHETIC rotating-camera
+// test scene ... do not ship it on inspection alone". That harness was built
+// (test.mjs section [11]), the warp shipped on 2026-09-17, and the note stopped
+// being true the same day. A comment that confidently describes the opposite of
+// the code is worse than no comment: it sends the next reader looking for a gap
+// that is closed. What the note asked for is what the rest of this file now
+// does, and the geometry is set out where it is implemented, under
+// "CYLINDRICAL REPROJECTION + EQUIRECTANGULAR OUTPUT" below.
 //
-// ⚠️⚠️ 2026-09-16 CORRECTNESS AUDIT — A REAL, KNOWN GAP FOUND AND DELIBERATELY
-// NOT FIXED THIS ROUND: this pipeline does PURE TRANSLATION alignment and
-// compositing on raw (un-warped) perspective frames, with no cylindrical
-// reprojection step. That is architecturally the same category of bug the
-// CLIENT-side pipeline (pano360.js) already hit and fixed, documented at
-// length in this module's own CLAUDE.md under 2026-09-12: a camera that
-// ROTATES about a fixed point (exactly what this app's own capture guide
-// asks for — "stand in one spot and slowly turn") is not doing a lateral
-// translation, and reprojecting rotated frames onto one flat reference plane
-// via a plain shift produces a badly malformed, largely-black mosaic once
-// the rotation is more than a few degrees. The client pipeline's fix was a
-// real cylindrical warp (`cv.remap` at an assumed ~65° HFOV) applied to every
-// frame BEFORE alignment/compositing, so a pure-yaw rotation becomes a plain
-// horizontal translation in the warped coordinate space — which is exactly
-// the motion this file's own alignment search already assumes and handles.
-// The server pipeline has no equivalent warp, so the identical failure mode
-// is reachable here on the same real capture that would trigger it client-
-// side.
-//
-// This was NOT implemented from scratch in this pass. Reasoning, stated
-// rather than silently deferred: a correct cylindrical remap needs real
-// per-pixel trigonometry (source x/y as a function of the destination
-// column's angle off-axis, with the destination edge's own half-angle being
-// `atan(tan(HFOV/2))`-shaped, not a linear scale of HFOV/2 — an error caught
-// and corrected during the reasoning for this note, which is itself the
-// argument for not shipping an unverified version of it) plus real masking/
-// clamping for the region a rotated frame's corners no longer cover. This
-// environment has no Deno runtime, no real recorded video/image fixtures for
-// this pipeline, and no way to RENDER a mosaic to visually confirm a remap
-// is correct rather than subtly wrong in a way that only shows up on a real
-// capture — the exact class of mistake this module's own engineering culture
-// (see CLAUDE.md, repeatedly) treats as worse than not shipping a fix at
-// all. Bounded, pure translation over a real (if imperfect) capture is a
-// known, working degrade; an unverified cylindrical remap risking a WORSE,
-// differently-wrong mosaic is not an improvement just because it addresses
-// more of the geometry in principle.
-//
-// If this is picked up again: build an isolated Node/Deno-free harness with
-// a SYNTHETIC rotating-camera test scene (the client pipeline's own
-// 2026-09-12 fix was verified exactly this way, against a real recording,
-// in a real browser) before trusting any cylindrical-warp arithmetic here —
-// do not ship it on inspection alone.
+// ⚠⚠ 2026-09-17, SECOND PASS — the owner's three reports against the first
+// one, each fixed at its own cause and each with a harness case that fails
+// without it (test.mjs section [12]):
+//   • "a deadspace connecting the start and finish of the video recording" —
+//     `bandForFrame` extended the FIRST and LAST frame in TIME to the strip's
+//     own edges, which is only the same thing while the pan is monotonic.
+//     Turning ANTICLOCKWISE reversed the two and left 13.9% of the strip
+//     unpainted, ~25° of black at each end of the wrap; a backward settle at
+//     the start of an otherwise-forward turn left a smaller wedge in the same
+//     place. The extremes are now spatial, not temporal.
+//   • "line streaks vertically across" — two causes. Auto-exposure: a phone
+//     re-exposes as it turns towards a window, and band compositing lands each
+//     frame's own exposure as a hard vertical step (see gainChain). And
+//     nearest-neighbour downscaling, which every frame passes through on the
+//     way to the composite width, aliasing at a different phase per frame (see
+//     resizeRgbArea).
+//   • "still blurry and misaligned areas" — the sub-pixel fit was a PARABOLA
+//     on a mean-absolute-difference surface, which near its minimum is a V.
+//     See estimateOffset: correcting it took accumulated rotation error over a
+//     full turn from 0.16–0.98% to 0.01–0.06%, and removed its dependence on
+//     the frame count.
 
 // ---------------------------------------------------------------------------
 // Grayscale downsampling — used only for the ALIGNMENT search, never for the
 // final composite (that uses full decoded RGB frames, see jpeg-codec).
 // ---------------------------------------------------------------------------
+// ⚠⚠ 2026-09-17 — AREA-AVERAGED, NOT NEAREST, AND THAT IS AN ALIGNMENT FIX
+// RATHER THAN A COSMETIC ONE. This runs at 640 -> 240, so a nearest sample
+// KEEPS ONE SOURCE COLUMN IN EVERY 2.67 AND DISCARDS THE OTHER 1.67. Whatever
+// survives is whatever happened to land on the sampling grid, and because each
+// frame sits at a different sub-pixel phase relative to the scene, two
+// consecutive frames are decimated DIFFERENTLY — the aliased high-frequency
+// detail moves between them. `estimateOffset` then searches for the shift that
+// best matches two images whose fine detail genuinely disagrees, so the score
+// surface it fits its sub-pixel parabola to is noisier than the scene is, and
+// every pair's estimate is a little worse than the pixels could support. Those
+// estimates are SUMMED along the chain (see cumulativePlacements), so the
+// error does not average out.
+// Averaging the whole source rectangle each destination pixel covers is the
+// standard box prefilter and removes the aliasing outright. Measured on the
+// synthetic rotating-camera harness, it is worth a real improvement in the
+// recovered-scene error — see test.mjs section [11].
+// ⚠ The box is computed from exact fractional source bounds and clamped, so a
+// non-integer scale (640/240 = 2.67) never drops or double-counts a row.
 export function toGrayscaleDownsampled(rgba, width, height, targetWidth) {
   const scale = targetWidth / width;
   const tw = Math.max(1, Math.round(width * scale));
   const th = Math.max(1, Math.round(height * scale));
   const gray = new Uint8Array(tw * th);
+  const bw = width / tw;
+  const bh = height / th;
   for (let y = 0; y < th; y++) {
-    const sy = Math.min(height - 1, Math.floor(y / scale));
+    let sy0 = Math.floor(y * bh);
+    let sy1 = Math.ceil((y + 1) * bh);
+    if (sy1 <= sy0) sy1 = sy0 + 1;
+    if (sy1 > height) sy1 = height;
     for (let x = 0; x < tw; x++) {
-      const sx = Math.min(width - 1, Math.floor(x / scale));
-      const si = (sy * width + sx) * 4;
-      // Rec. 601 luma weights, integer math (no float rounding drift).
-      gray[y * tw + x] = ((rgba[si] * 299 + rgba[si + 1] * 587 + rgba[si + 2] * 114) / 1000) | 0;
+      let sx0 = Math.floor(x * bw);
+      let sx1 = Math.ceil((x + 1) * bw);
+      if (sx1 <= sx0) sx1 = sx0 + 1;
+      if (sx1 > width) sx1 = width;
+      let acc = 0;
+      let n = 0;
+      for (let yy = sy0; yy < sy1; yy++) {
+        const row = yy * width;
+        for (let xx = sx0; xx < sx1; xx++) {
+          const si = (row + xx) * 4;
+          // Rec. 601 luma weights, integer math (no float rounding drift).
+          acc += rgba[si] * 299 + rgba[si + 1] * 587 + rgba[si + 2] * 114;
+          n++;
+        }
+      }
+      gray[y * tw + x] = n > 0 ? ((acc / (n * 1000)) + 0.5) | 0 : 0;
     }
   }
   return { width: tw, height: th, gray };
@@ -155,11 +181,42 @@ export function estimateOffset(prevGray, pw, ph, currGray, cw, ch, opts) {
   // whole pixel scored 2.43 where this one scored 8.53: a 3.5× difference in
   // recovered accuracy, caused by nothing but rounding.
   //
-  // The standard remedy: the score surface near its minimum is locally
-  // quadratic, so fitting a parabola through the best score and its two
-  // horizontal neighbours puts the true minimum at the vertex. Guarded on a
-  // genuinely convex triple (denom > 0) and clamped to ±0.5px, so a flat or
-  // noisy surface can only ever return the integer answer it already had.
+  // ⚠⚠ THE FIT IS EQUIANGULAR (TWO LINES), NOT A PARABOLA — CORRECTED
+  // 2026-09-17 (second pass), AND IT IS THE LARGEST SINGLE ACCURACY GAIN IN
+  // THIS FILE.
+  //
+  // A parabola is the right interpolant for a SQUARED-difference surface. This
+  // one is `meanAbsDiff` — an L1 surface — and near its minimum an L1 surface
+  // is locally piecewise LINEAR: a V, not a bowl. Fitting a parabola to a V
+  // puts the vertex systematically in the wrong place, and how wrong depends on
+  // where the true offset happens to sit between two pixels — so the error
+  // does not average out along the chain, it BIASES it.
+  //
+  // Measured against exact ground truth on the synthetic rotating-camera scene
+  // (a true 360° turn, alignment at the shipped 240px width), as accumulated
+  // rotation error over the whole chain:
+  //
+  //     frames   integer-only   parabola   equiangular
+  //        72       1.98%         0.48%       0.02%
+  //        96       3.68%         0.26%       0.01%
+  //       108       0.55%         0.22%       0.06%
+  //       120       0.55%         0.23%       0.06%
+  //       132       0.38%         0.16%       0.05%
+  //       144       3.34%         0.98%       0.06%
+  //
+  // Two things to read off that table. The obvious one: 4–25× more accurate.
+  // The more useful one: with the parabola the error swings by a factor of six
+  // ACROSS FRAME COUNTS, because each count puts the true per-pair shift at a
+  // different sub-pixel phase — so the finished panorama's geometry depended on
+  // an arbitrary sampling choice. The equiangular fit flattens that to
+  // 0.01–0.06% everywhere, which is what makes the frame count a question about
+  // cost and band width rather than about correctness.
+  //
+  // The estimator (Shimizu & Okutomi's equiangular fit): the two lines through
+  // the minimum have slopes set by the LARGER shoulder, so the vertex is
+  //     δ = (sL - sR) / (2 · (max(sL, sR) - s0))
+  // Guarded on a real shoulder (denominator > 0) and clamped to ±0.5px, so a
+  // flat or noisy surface can only ever return the integer answer it had.
   //
   // ⚠️ Opt-in rather than always-on because callers (and this repo's own
   // existing tests) reasonably expect integer offsets from a pixel search;
@@ -168,7 +225,7 @@ export function estimateOffset(prevGray, pw, ph, currGray, cw, ch, opts) {
     const sL = meanAbsDiff(prevGray, pw, ph, currGray, cw, ch, best.dx - 1, best.dy);
     const sR = meanAbsDiff(prevGray, pw, ph, currGray, cw, ch, best.dx + 1, best.dy);
     if (isFinite(sL) && isFinite(sR)) {
-      const denom = sL - 2 * best.score + sR;
+      const denom = (sL > sR ? sL : sR) - best.score;
       if (denom > 0) {
         let delta = (0.5 * (sL - sR)) / denom;
         if (delta > 0.5) delta = 0.5; else if (delta < -0.5) delta = -0.5;
@@ -387,6 +444,58 @@ export function resizeRgbNearest(rgb, srcW, srcH, dstW, dstH) {
       out[di] = rgb[si];
       out[di + 1] = rgb[si + 1];
       out[di + 2] = rgb[si + 2];
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Area-averaged RGB resize — the DOWNSCALE counterpart of resizeRgbNearest,
+// and the one the composite path uses.
+//
+// ⚠⚠ NEAREST IS WHY A PORTRAIT CAPTURE CAME OUT STREAKY. A portrait phone
+// frame warps to a cylindrical strip far wider than MAX_COMPOSITE_WIDTH, so
+// index.ts scales every frame down by ~0.68 — and `resizeRgbNearest` does that
+// by KEEPING ONE COLUMN IN EVERY 1.47 and discarding the rest. The kept
+// columns land on the same grid in every frame, but each frame is pasted at a
+// DIFFERENT canvas x, so the decimation phase changes from band to band and
+// the aliasing beats against the band boundaries: a regular pattern of
+// vertical streaks that follows the seams, exactly as reported. Averaging the
+// source rectangle each destination pixel covers removes the aliasing at
+// source instead of trying to hide it behind a wider feather.
+// ⚠ Kept SEPARATE from resizeRgbNearest rather than replacing it: nearest is
+// still the right (and provably colour-preserving) choice for a thumbnail
+// nobody aligns against, and this repo's own suite asserts that property.
+// ---------------------------------------------------------------------------
+export function resizeRgbArea(rgb, srcW, srcH, dstW, dstH) {
+  const out = new Uint8Array(dstW * dstH * 3);
+  const bw = srcW / dstW;
+  const bh = srcH / dstH;
+  for (let y = 0; y < dstH; y++) {
+    let sy0 = Math.floor(y * bh);
+    let sy1 = Math.ceil((y + 1) * bh);
+    if (sy1 <= sy0) sy1 = sy0 + 1;
+    if (sy1 > srcH) sy1 = srcH;
+    for (let x = 0; x < dstW; x++) {
+      let sx0 = Math.floor(x * bw);
+      let sx1 = Math.ceil((x + 1) * bw);
+      if (sx1 <= sx0) sx1 = sx0 + 1;
+      if (sx1 > srcW) sx1 = srcW;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let yy = sy0; yy < sy1; yy++) {
+        const row = yy * srcW;
+        for (let xx = sx0; xx < sx1; xx++) {
+          const si = (row + xx) * 3;
+          r += rgb[si]; g += rgb[si + 1]; b += rgb[si + 2];
+          n++;
+        }
+      }
+      const di = (y * dstW + x) * 3;
+      if (n > 0) {
+        out[di] = (r / n + 0.5) | 0;
+        out[di + 1] = (g / n + 0.5) | 0;
+        out[di + 2] = (b / n + 0.5) | 0;
+      }
     }
   }
   return out;
@@ -684,7 +793,27 @@ export function pasteFrameBand(canvas, cw, ch, frameRgb, fw, fh, offsetX, offset
   const x0 = Math.max(0, Math.floor(bandX0));
   const x1 = Math.min(fw, Math.ceil(bandX1));
   if (x1 <= x0) return;
-  const feather = Math.max(0, featherPx | 0);
+  const feather = Math.max(0, Math.abs(featherPx) | 0);
+  // ⚠⚠ SIGNED, AND THE SIGN PICKS THE ONE EDGE THAT MAY BE FEATHERED — the
+  // same convention `pasteFrame` above already uses, and for the same reason.
+  // A feather ALPHA-BLENDS INTO WHATEVER THE CANVAS ALREADY HAS, so it only
+  // means anything on the edge that faces already-painted content. Feathering
+  // the other edge fades the frame out into the bare background colour, which
+  // is a DARK VERTICAL STREAK at that seam, one per frame — the owner's
+  // "line streaks vertically across", reproduced in test.mjs section [12].
+  // On an ordinary forward pan the trailing edge happens to be overwritten by
+  // the next band a moment later, which is why this hid for so long; the
+  // moment the pan reverses (a hand-held wobble, or a capture that drifts back
+  // at either end) the darkened columns are the last thing written there and
+  // they stay.
+  //   featherPx > 0  -> feather the band's LEFT edge only
+  //   featherPx < 0  -> feather the band's RIGHT edge only
+  //   featherPx === 0 -> hard edges (the first frame placed: nothing to blend into)
+  // Either way the un-feathered edge is a hard cut, which leaves no gap: the
+  // neighbouring band always starts `feather` columns INSIDE it (see
+  // bandForFrame), so the two overlap by the full feather width.
+  const featherLeft = feather > 0 && featherPx > 0 && bandX0 > 0;
+  const featherRight = feather > 0 && featherPx < 0 && bandX1 < fw;
   for (let y = 0; y < fh; y++) {
     const cy = offsetY + y;
     if (cy < 0 || cy >= ch) continue;
@@ -694,15 +823,8 @@ export function pasteFrameBand(canvas, cw, ch, frameRgb, fw, fh, offsetX, offset
       const cx = offsetX + x;
       if (cx < 0 || cx >= cw) continue;
       let a = 1;
-      if (feather > 0) {
-        // Ramp in from the band's left edge and out at its right edge, but
-        // only where that edge is a real seam — a band clipped to the frame's
-        // own 0 / fw boundary has nothing beyond it to blend into, so
-        // feathering there would fade into whatever happened to be on the
-        // canvas (usually nothing) and darken the join instead of hiding it.
-        if (x - x0 < feather && bandX0 > 0) a = Math.min(a, (x - x0) / feather);
-        if (x1 - 1 - x < feather && bandX1 < fw) a = Math.min(a, (x1 - 1 - x) / feather);
-      }
+      if (featherLeft && x - x0 < feather) a = (x - x0) / feather;
+      else if (featherRight && x1 - 1 - x < feather) a = (x1 - 1 - x) / feather;
       const si = (fRowBase + x) * 3;
       const di = (cRowBase + cx) * 3;
       if (a >= 1) {
@@ -718,19 +840,205 @@ export function pasteFrameBand(canvas, cw, ch, frameRgb, fw, fh, offsetX, offset
   }
 }
 
+// Which way `pasteFrameBand`'s feather should point for frame `i`: towards the
+// frame pasted immediately before it, because that is the only side that has
+// anything on the canvas to blend into. Returns 0 for the first frame.
+export function featherSignFor(placements, i, featherPx) {
+  if (i <= 0) return 0;
+  return placements[i].x >= placements[i - 1].x ? featherPx : -featherPx;
+}
+
 // The column band frame `i` should contribute: from halfway back to the
 // previous frame's centre to halfway on to the next frame's centre, widened by
 // `featherPx` at each seam so neighbouring bands overlap enough to blend. The
 // first and last frames extend to their own outer edge, so the panorama has no
 // gap at either end.
+// ⚠⚠ 2026-09-17 — THE EDGE FRAMES ARE THE SPATIAL EXTREMES, NOT THE FIRST AND
+// LAST IN TIME, AND GETTING THAT WRONG IS THE "DEADSPACE CONNECTING THE START
+// AND FINISH OF THE VIDEO RECORDING".
+//
+// The canvas spans min(x) .. max(x)+frameWidth over ALL placements. This used
+// to extend frame 0's band to its own left edge and the last frame's to its
+// own right edge, which is only the same thing while the pan is monotonic. It
+// very often is not: a planner presses record, settles, and drifts BACKWARD
+// for a frame or two before starting to turn — or stops turning and drifts
+// back before pressing stop. Either way the leftmost (or rightmost) placement
+// belongs to a frame in the MIDDLE of the sequence, whose band is only the
+// narrow slice around its own optical centre. Everything outside it is canvas
+// nobody ever paints: a hard-edged wedge of background colour up to HALF A
+// FRAME WIDE, sitting exactly at the strip edge — which is exactly where the
+// panorama's 360° wrap puts it, i.e. between where the recording started and
+// where it finished.
+//
+// Measured on the placement harness (test.mjs section [12]): a 3-frame
+// backward settle at the start leaves 53 of 3726 strip columns (1.4%, ~5° of
+// yaw) fully unpainted; with this fix, zero.
+//
+// So the frame that owns the left edge is the one with the smallest x
+// (whenever it turns out to be), and the frame that owns the right edge is the
+// one with the largest. Frame 0 and the last frame keep their extension too:
+// on a monotonic pan they ARE the extremes, and on a non-monotonic one giving
+// them their own outer edge costs nothing (whatever they overpaint is the same
+// scene, and a later band overwrites it in any case).
 export function bandForFrame(placements, i, frameWidth, featherPx) {
   const c = frameWidth / 2;
   const here = placements[i].x;
   const prev = i > 0 ? placements[i - 1].x : null;
   const next = i < placements.length - 1 ? placements[i + 1].x : null;
-  const x0 = prev === null ? 0 : c - Math.abs(here - prev) / 2 - featherPx;
-  const x1 = next === null ? frameWidth : c + Math.abs(next - here) / 2 + featherPx;
+  let isMin = i === 0;
+  let isMax = i === placements.length - 1;
+  if (!isMin || !isMax) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (let k = 0; k < placements.length; k++) {
+      if (placements[k].x < minX) minX = placements[k].x;
+      if (placements[k].x > maxX) maxX = placements[k].x;
+    }
+    if (here <= minX) isMin = true;
+    if (here >= maxX) isMax = true;
+  }
+  const x0 = (prev === null || isMin) ? 0 : c - Math.abs(here - prev) / 2 - featherPx;
+  const x1 = (next === null || isMax) ? frameWidth : c + Math.abs(next - here) / 2 + featherPx;
   return { x0: Math.max(0, x0), x1: Math.min(frameWidth, Math.max(x0 + 1, x1)) };
+}
+
+// ---------------------------------------------------------------------------
+// EXPOSURE (GAIN) COMPENSATION — the other half of "line streaks vertically
+// across", and the half no amount of feathering can hide.
+//
+// ⚠⚠ A PHONE RE-EXPOSES AS IT TURNS. That is the whole of it. A planner
+// standing in a meeting room turns from a dim interior wall towards a bright
+// window, and the camera's own auto-exposure drops the gain to keep the window
+// from blowing out. Two consecutive frames are then photometrically DIFFERENT
+// pictures of the same scene. Band compositing gives each frame its own
+// vertical slice of the panorama, so those exposure steps land as hard
+// vertical edges between neighbouring bands — a ladder of brightness steps
+// marching across the panorama, strongest exactly where the scene's own
+// brightness changes fastest (across a window), which is precisely where the
+// owner's screenshot shows them.
+//
+// The fix is the standard one: measure how much brighter each frame is than
+// its predecessor OVER THE REGION THEY SHARE, chain those ratios into a
+// per-frame gain, and scale each frame by its gain before pasting. The
+// measurement is free — the alignment step already holds both frames and has
+// just worked out exactly how they overlap.
+//
+// ⚠ Measured on the OVERLAP, never on the whole frame: two frames of a
+// panning camera see different scenes, so a whole-frame mean ratio is
+// dominated by what entered and left the view, not by exposure.
+// ---------------------------------------------------------------------------
+
+// A chained gain is a product, so a small consistent bias compounds. These
+// bound it: no frame is ever scaled beyond this range, whatever the chain says.
+export const GAIN_MIN = 0.72;
+export const GAIN_MAX = 1.38;
+
+// ⚠⚠ THE DEADBAND IS NOT A TUNING KNOB — WITHOUT IT THIS FEATURE MAKES A
+// CONSTANT-EXPOSURE CAPTURE WORSE, AND THAT WAS MEASURED, NOT FEARED.
+// The per-pair ratio is estimated from two resampled, sub-pixel-misaligned
+// views of the same overlap, so it is never exactly 1 even when the exposure
+// genuinely did not change. Chaining ~107 of those noisy ratios is a random
+// walk, and it produced a ±2% brightness ramp across a panorama whose frames
+// were all identically exposed — i.e. this correction invented the very
+// banding it exists to remove (harness: seam-banding residual 1.85 -> 2.72 on
+// a constant-exposure capture).
+// Measured on that harness, |log ratio| separates cleanly: pure measurement
+// noise reaches 0.0037 at its worst, while a real 30% auto-exposure swing
+// reaches 0.033 — an order of magnitude apart. 0.004 sits in the gap.
+// ⚠ A HARD deadband, not a soft threshold: soft-thresholding subtracts the
+// epsilon from every real step too, which systematically under-corrects a long
+// exposure ramp. Zeroing below the floor and passing everything above it
+// UNCHANGED costs a genuine correction nothing.
+// ⚠ The cost, stated: a real exposure drift slower than 0.4% per frame is
+// treated as no drift. On a full turn the loop closure below removes exactly
+// that kind of slow systematic creep anyway; on a partial capture it is a
+// bounded residual, and a bounded residual is the right trade against a
+// correction that is pure noise on every clean capture.
+export const GAIN_DEADBAND = 0.004;
+
+// Mean luma of each image over the SAME overlap window `meanAbsDiff` scores,
+// and the ratio that brings `curr` onto `prev`'s exposure. Returns ratio 1 (a
+// no-op) when the overlap is too small or either mean is degenerate, so a bad
+// pair can never inject a wild gain.
+export function overlapMeanRatio(prevGray, pw, ph, currGray, cw, ch, dx, dy) {
+  const rdx = Math.round(dx);
+  const rdy = Math.round(dy);
+  const x0 = Math.max(0, rdx);
+  const x1 = Math.min(pw, cw + rdx);
+  const y0 = Math.max(0, rdy);
+  const y1 = Math.min(ph, ch + rdy);
+  if (x1 <= x0 || y1 <= y0) return { ratio: 1, prevMean: 0, currMean: 0, n: 0 };
+  let sp = 0;
+  let sc = 0;
+  let n = 0;
+  for (let y = y0; y < y1; y++) {
+    const pRow = y * pw;
+    const cRow = (y - rdy) * cw;
+    for (let x = x0; x < x1; x++) {
+      sp += prevGray[pRow + x];
+      sc += currGray[cRow + (x - rdx)];
+      n++;
+    }
+  }
+  if (n < pw * ph * MIN_OVERLAP_FRACTION) return { ratio: 1, prevMean: 0, currMean: 0, n: n };
+  const pm = sp / n;
+  const cm = sc / n;
+  // A near-black overlap makes the ratio meaningless and unstable — refuse it
+  // rather than divide by something close to zero.
+  if (!(pm > 4) || !(cm > 4)) return { ratio: 1, prevMean: pm, currMean: cm, n: n };
+  return { ratio: pm / cm, prevMean: pm, currMean: cm, n: n };
+}
+
+// Per-frame gains from the per-pair ratios.
+//
+// Worked in LOG space, which is what makes the three corrections below simple
+// sums rather than products:
+//   1. chain   — log gᵢ = Σ log rₖ, so frame i is brought onto frame 0's exposure;
+//   2. close   — (opts.closeLoop) on a full turn the last frame looks at the
+//                same scene as the first, so its true gain is frame 0's. Any
+//                residual is accumulated measurement bias, and subtracting a
+//                linear ramp removes it instead of letting it pile up at the
+//                wrap — which is the seam a planner is most likely to look at;
+//   3. centre  — subtract the mean, so the panorama as a whole keeps the
+//                capture's own exposure instead of drifting towards frame 0's.
+// Then clamp, so a pathological chain can darken or brighten a frame only so far.
+export function gainChain(ratios, opts) {
+  const n = (ratios ? ratios.length : 0) + 1;
+  const logs = new Float64Array(n);
+  const dead = (opts && typeof opts.deadband === "number") ? opts.deadband : GAIN_DEADBAND;
+  for (let i = 1; i < n; i++) {
+    const r = ratios[i - 1];
+    const v = (typeof r === "number" ? r : (r && r.ratio)) || 1;
+    let l = v > 0 ? Math.log(v) : 0;
+    if (Math.abs(l) < dead) l = 0;
+    logs[i] = logs[i - 1] + l;
+  }
+  if (opts && opts.closeLoop && n > 2) {
+    const drift = logs[n - 1] / (n - 1);
+    for (let i = 0; i < n; i++) logs[i] -= drift * i;
+  }
+  let mean = 0;
+  for (let i = 0; i < n; i++) mean += logs[i];
+  mean /= n;
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let g = Math.exp(logs[i] - mean);
+    if (g < GAIN_MIN) g = GAIN_MIN;
+    else if (g > GAIN_MAX) g = GAIN_MAX;
+    out[i] = g;
+  }
+  return out;
+}
+
+// Scale an RGB buffer by a gain, in place, with rounding and clamping. A gain
+// of exactly 1 is a no-op and returns immediately.
+export function applyGainRgb(rgb, gain) {
+  if (!(gain > 0) || Math.abs(gain - 1) < 1e-4) return rgb;
+  for (let i = 0; i < rgb.length; i++) {
+    const v = (rgb[i] * gain + 0.5) | 0;
+    rgb[i] = v > 255 ? 255 : v;
+  }
+  return rgb;
 }
 
 // ---------------------------------------------------------------------------
@@ -755,8 +1063,23 @@ export function bandForFrame(placements, i, frameWidth, featherPx) {
 // really is at the equirectangular scale. Nothing is padded, so every pixel of
 // the result is real image data and the panorama has no black in it at all.
 // ---------------------------------------------------------------------------
-export function equirectDims(stripHeight, focal, horizonY, outWidth) {
-  const k = outWidth / TWO_PI;                       // pixels per radian
+// ⚠⚠ `pxPerRad` IS THE VERTICAL SCALE AND IT MUST MATCH THE HORIZONTAL ONE.
+// It defaults to outWidth/2π — correct whenever the strip really is one full
+// turn, because then a full turn maps onto the full output width. It is NOT
+// correct on an UNDER-ROTATED capture: there `cylStripToEquirect` stretches the
+// shorter arc across the whole output (a uniform yaw scale error in place of a
+// black wedge), so the horizontal scale becomes outWidth/A px/rad for a covered
+// arc A < 2π while the vertical scale stayed at outWidth/2π. The picture came
+// out horizontally stretched relative to vertically — by 14% on a 250° capture
+// — which reads as "blurry and misaligned" long before anyone works out that it
+// is an aspect error rather than a stitching one.
+// Scaling BOTH axes by the same factor makes the result a uniform angular
+// magnification of the real scene: straight lines stay straight, nothing is
+// squashed, and — worked through rather than assumed — the viewer stays
+// self-consistent, because it derives vaov from the image's own aspect ratio
+// and that ratio is magnified by exactly the same factor as the yaw.
+export function equirectDims(stripHeight, focal, horizonY, outWidth, pxPerRad) {
+  const k = pxPerRad > 0 ? pxPerRad : outWidth / TWO_PI;   // pixels per radian
   const halfBand = Math.min(horizonY, stripHeight - 1 - horizonY);
   const phiMax = Math.atan(halfBand / focal);
   return { width: outWidth, height: Math.max(1, Math.round(2 * phiMax * k)), phiMax, k };
@@ -780,8 +1103,12 @@ export function fullTurnCrop(stripW, focal) {
   return stripW >= turnPx ? turnPx : stripW;
 }
 
-export function cylStripToEquirect(stripRgb, stripW, stripH, focal, horizonY, outWidth) {
-  const dims = equirectDims(stripH, focal, horizonY, outWidth);
+export function cylStripToEquirect(stripRgb, stripW, stripH, focal, horizonY, outWidth, opts) {
+  const turn = fullTurnCrop(stripW, focal);
+  // Pixels per radian in the OUTPUT, derived from the x mapping actually used
+  // below rather than assumed to be one turn — see equirectDims.
+  const kx = focal / (turn / outWidth);
+  const dims = equirectDims(stripH, focal, horizonY, outWidth, kx);
   const outW = dims.width;
   const outH = dims.height;
   const out = new Uint8Array(outW * outH * 3);
@@ -792,10 +1119,32 @@ export function cylStripToEquirect(stripRgb, stripW, stripH, focal, horizonY, ou
   // the viewer cannot show as a hole, in place of a gap it would show as
   // black. The real measured coverage is reported on the job either way, so
   // the stretch is stated rather than hidden.
-  const xScale = fullTurnCrop(stripW, focal) / outW;
+  const xScale = turn / outW;
   const px = [0, 0, 0];
+  const px2 = [0, 0, 0];
   const srcX = new Float64Array(outW);
   for (let xe = 0; xe < outW; xe++) srcX[xe] = xe * xScale;
+
+  // ⚠⚠ THE WRAP SEAM — "the deadspace connecting the start and finish of the
+  // video recording", once the hole itself is gone (see bandForFrame).
+  //
+  // Output column 0 is the world yaw the recording STARTED at. When the
+  // capture came all the way round, the strip also holds that same yaw a full
+  // turn further along, at column `turn` — the FINISH. Those two views of one
+  // place are the panorama's only butt join, and left alone they meet as a
+  // hard cut wherever the chain's accumulated error put them.
+  // Cross-fading the first `blend` columns with the strip content one turn
+  // later turns that cut into a join. It is deliberately NARROW (a couple of
+  // degrees): a wide cross-fade over two views that do not quite agree is a
+  // GHOST, which is worse than the cut it replaces.
+  // ⚠ Skipped entirely when there is no content past one turn — an
+  // under-rotated capture has nothing to blend with and must not pretend.
+  const overlapPx = stripW - turn;
+  const wantBlend = (opts && opts.wrapBlendPx) || 0;
+  const blend = overlapPx > 1 && wantBlend > 0
+    ? Math.max(0, Math.min(wantBlend | 0, Math.floor(overlapPx / xScale), outW >> 2))
+    : 0;
+
   for (let ye = 0; ye < outH; ye++) {
     const phi = dims.phiMax - ye / dims.k;
     const sy = horizonY - focal * Math.tan(phi);
@@ -803,10 +1152,21 @@ export function cylStripToEquirect(stripRgb, stripW, stripH, focal, horizonY, ou
     for (let xe = 0; xe < outW; xe++) {
       sampleBilinearRgb(stripRgb, stripW, stripH, srcX[xe], sy, px);
       const di = rowBase + xe * 3;
-      out[di] = px[0];
-      out[di + 1] = px[1];
-      out[di + 2] = px[2];
+      if (xe < blend) {
+        // t: 0 at the very first column (all FINISH) -> 1 at the end of the
+        // blend (all START). The finish is what the eye has just been looking
+        // at when it scrolls round to here, so it leads.
+        const t = (xe + 0.5) / blend;
+        sampleBilinearRgb(stripRgb, stripW, stripH, srcX[xe] + turn, sy, px2);
+        out[di] = (px2[0] * (1 - t) + px[0] * t + 0.5) | 0;
+        out[di + 1] = (px2[1] * (1 - t) + px[1] * t + 0.5) | 0;
+        out[di + 2] = (px2[2] * (1 - t) + px[2] * t + 0.5) | 0;
+      } else {
+        out[di] = px[0];
+        out[di + 1] = px[1];
+        out[di + 2] = px[2];
+      }
     }
   }
-  return { rgb: out, width: outW, height: outH };
+  return { rgb: out, width: outW, height: outH, blendPx: blend, pxPerRad: kx, phiMax: dims.phiMax };
 }
