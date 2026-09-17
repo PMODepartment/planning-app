@@ -104,6 +104,91 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (h) — Twelve items on Project Phases, and the two that were geometry rather than taste
+
+Owner, twelve items on Schedule Setup → Project Phases — the per-phase Gantt shipped in `(c)`: shrink
+the chart, clean up the arrows, drop the seeded activities, smaller type, column headers, better
+dragging, add-at-the-selected-level, remove the whole-programme line, fewer words, give Milestones the
+same workflow *"but this should always be required"*, stop the phase tiles overflowing at narrow
+widths, and an Autotrace button per phase. Module work — the full entry, every ⚠️ decision and the
+verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(f)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **THE OVERFLOW WAS `min-width: auto`, AND THAT IS THE FOURTH TIME THIS REPO HAS PAID FOR IT.**
+*"when window width is narrow, the tiles of phases overflow"* reads as a breakpoint problem and is
+not one. `.sbld-phcard` is a **grid item**, and a grid item's default `min-width` is `auto` — which
+resolves to its content's **min-content** size, never to zero — so a card holding a chart could not
+shrink below that chart however narrow the window got. Measured at 1100px: **card 1018px inside an
+828px panel**, with the page scrolling sideways; after, **0px past the panel and no page scroll** at
+1440 / 1100 / 900 / 760 / 420. One declaration. The same mechanism is on file for the 360° form's key
+plan (2026-09-12), for `.ps-search`, and for the holding list's input — and the tell is always an
+explicit `width:100%` or `max-width` **inside** an item that cannot itself shrink.
+
+⚠️⚠️ **A DENSITY PASS RAN STRAIGHT INTO THE ≤700px TAP FLOOR, WHICH IS NOT THIS MODULE'S TO
+NEGOTIATE.** `dashboard.css` forces `font-size: var(--pd-fs-tap)` (16px, `!important`) and
+`min-height: var(--pd-tap)` (44px) onto **every bare `<input>`** below 700px, and its own comment
+calls that *"the one place a module does not get a vote"* — under 16px iOS Safari zooms the page on
+focus. So the 20px row this pass asked for would have been a 44px input overlapping its neighbours.
+The row pitch now reads **the same 700px query the stylesheet uses** rather than a number of its own,
+and a `matchMedia('change')` listener re-renders on the one crossing that can make it stale.
+⚠️ The bar's height moved from CSS into the inline style in the same edit: the first cut left the
+height in the stylesheet while the JS computed it, the two disagreed, and the bar stayed 11px inside a
+48px row. **Two sources for one number is how a chart draws itself wrong.**
+
+⚠️⚠️ **"MILESTONES BEHAVES LIKE A PHASE" IS A FIVE-LINE CHANGE UNTIL YOU REACH THE CHECK
+CONSTRAINT.** `project_schedule.phase` carries a **4-value CHECK**, and a rejected value does not fail
+one row — `_dropScope()` strips `phase` from **every payload in the push**, so a fifth code would
+silently un-phase the whole programme. It is resolved by splitting *card code* from *database phase*:
+`MS_CODE` is known to exactly three **read** helpers and to nothing that writes, the push sends
+`phase: null`, and `phaseFromName()` — which is kept in step with a migration — is deliberately
+untouched. ⚠️ The Milestones branch is found through the skeleton's own root id, never by
+name-matching a phase.
+
+⚠️ **AND THE OBVIOUS IMPLEMENTATION OF "DRAG IT OUTSIDE" WOULD HAVE BROKEN THE FOUR-PHASE RULE.**
+`wbsMove(id, 'outdent')` on a direct child of a phase branch sets `parent_id = null` — a **fifth
+top-level branch**, which is exactly what `(c)` spent a whole pass making impossible by construction.
+The new promote walks the node's own ancestors and **floors at its phase branch**; a branch already
+there is refused with the reason, and a branch in another phase is not that card's to move.
+
+**Verified:** new `modules/project-schedule/test-phasecard.js` **95/0** across ten blocks, every
+assertion executing functions sliced out of the shipped file by name, with the contrast pinned to a
+**SHA** rather than `HEAD` — and it bites: run against the pinned copy as the subject it aborts at
+the first slice it cannot find. `test-phasenet` **262/0** against its own pre-Gantt base, and sixteen
+other project-schedule suites green on the changed tree (`lsm` 683/0, `builder` 149/0, `towertypes`
+79/0, …) plus `tools/test-calendar` 71/0. `wiring-check` **139/0**, `dark-remap` 0 findings,
+`dead-hooks` 9 (the documented baseline), the inline block parses, 0 NUL bytes, and the CSS brace
+delta is **+5/+5** against a whole-file count whose off-by-one is identical on `HEAD`.
+
+⚠️⚠️ **Three defects in my own suite, each of which accused correct code**, and one generalises:
+**`marker-end="` ENDS IN `d="`** — so matching an SVG `<path>` greedily and then running
+`exec(/d="([^"]+)"/)` over the match returns the marker reference rather than the route, and eleven
+assertions failed against arrows that were drawing perfectly. Anchor on whitespace and capture in one
+pass. The other two: a flat export map that threw before the contrast block could assert anything,
+and an assertion that counted an SVG path's runs without counting its `M`.
+
+⚠️ **Not verified signed in** — the card was rendered and read in Chromium, but no real project's
+phases have been pushed through this and the `phase: null` milestones payload has never reached the
+database.
+
+⚠️⚠️ **Re-lettered `(d)` → `(h)` on merging `origin/main` (16 commits), and the module entry `(d)` →
+`(f)` with it.** Main published four more 2026-09-18 entries while this was in flight — including its
+own `(d)`, the **Activities step** restructure, and `(f)`, the **Schedule Setup rail** pass — so both
+sides prepended different entries under one letter. Both are kept whole and this one moves past main's,
+per this file's own rule. ⚠️ The `MODULE_V` half **did conflict this time**, which is the good case:
+main had moved to `20260918g` while this branch still held `d`, so a token derived before integrating
+would have sorted **earlier** than one browsers already hold. Re-derived after.
+
+⚠️ **A clean auto-merge of `modules/project-schedule/index.html` is not evidence of a correct one.**
+Main rewrote the Activities step and the step rail; this branch rewrote Project Phases. Both sides'
+functions were asserted present on the merged tree **by name** and the whole battery re-run on it,
+**including main's own rewritten `test-actsetup.js` (133/0, was 50) and `test-actdnd.js` (48/0)**.
+⚠️ `modules/progress-photos/test.js` is **976/5** on the merged tree — the same five pre-existing
+failures main's own entries record, and this branch touches no file in that module.
+
+`MODULE_V` → `20260918h`, re-derived from what the remote carries **after** integrating rather than
+guessed beforehand, and sort-checked as a plain string past main's own `20260918g`.
+
 ### 2026-09-18 (g) — A guard placed where the damage showed rather than where it compounded, and three refuted hypotheses on the way
 
 Owner, against the pass below, **with the first real capture**: *"there are still a few streaks."*

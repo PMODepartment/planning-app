@@ -1,3 +1,190 @@
+## 2026-09-18 (f) — Project Phases: twelve items on the card shipped yesterday, and the two that were geometry rather than taste
+
+Owner, twelve items on Schedule Setup ▸ Project Phases — the per-phase Gantt from `(c)`:
+*"reduce size of gantt chart in initiation phase"* · *"gantt chart arrows are not clean. when a link
+refers to start it should point to the left of the bar. if link refers finish, it should point to
+right of the bar. provide arrows heads but still make minimalist"* · *"remove the default activities
+in each phase"* · *"reduce font sizes of activities and WBS to maintain minimalist look"* · *"in
+left, add column headers to identify activities and duration"* · *"improve dragging functionality of
+WBS and activities. When WBS is dragged outside, it should go to the outermost level"* · *"when
+adding activity, it should be on the same level as selected activity/WBS"* · *"remove the whole
+program indication on this page"* · *"lessen words/descriptions/instructions"* · *"for the milestones
+group, follow the same workflow for the other phases. but this should always be required"* · *"when
+window width is narrow, the tiles of phases overflow. please allow adjustable/flexible widths"* ·
+*"for each phase, add also button to autotrace logic. by default, this button adds an FS relationship
+to all activities one after the other without lag."*
+
+### ⚠️⚠️ ITEM 11 WAS ONE DECLARATION, AND IT IS THE FLEX/GRID `min-width:auto` TRAP AGAIN
+
+*"the tiles of phases overflow"* was not a breakpoint problem. `.sbld-phcard` is a **grid item**, and
+a grid item's default `min-width` is `auto` — which resolves to its content's **min-content** size,
+not to zero. The Gantt inside it has a tree column plus a plot, so the card could not shrink below
+that however narrow the window got: measured at a 1100px viewport, the card came out **1018px inside
+an 828px panel**, and the page scrolled sideways. `min-width: 0` on `.sbld-phcard`, on `.sbld-gantt`
+and on the two flex children inside it is the whole of the fix.
+
+**Measured before and after at five widths** — 1440 / 1100 / 900 / 760 / 420:
+
+| | before | after |
+|---|---|---|
+| card past its panel | 211–445px at every width | **0px** |
+| horizontal page scroll | yes | **no** |
+
+⚠️ This repo has now paid for `min-width: auto` **four** times — the grid-item overflow in the 360°
+form (2026-09-12), `.ps-search`'s own note, the holding list's input, and this. The shape is always
+the same: an explicit `width:100%` or `max-width` **inside** an item that cannot itself shrink.
+
+### ⚠️⚠️ ITEMS 1 AND 4: ONE NUMBER HAD TO DRIVE BOTH PANES, BECAUSE THE PHONE FLOOR IS NOT NEGOTIABLE
+
+Shrinking the chart is arithmetic — `dayW` went from `min(26, 620/days)` to `min(14, 430/days)`, the
+row pitch **26 → 20px**, the bar **16 → 11px**, and the name and duration cells onto `--pd-fs-xs`.
+What made it more than arithmetic is `dashboard.css`'s ≤700px block, which forces
+`font-size: var(--pd-fs-tap)` (16px, `!important`) and `min-height: var(--pd-tap)` (44px) onto
+**every bare `<input>`** — and its own comment calls that *"the one place a module does not get a
+vote"*, because under 16px iOS Safari zooms the page on focus. So a 20px row on a phone would have
+been a 44px input overlapping its neighbours.
+
+The row pitch therefore reads the **same 700px breakpoint the stylesheet uses**
+(`matchMedia('(max-width:700px)')`) and the bar height is derived from it — `ROW` 48 / `BAR` 14 at
+phone width, 20 / 11 above it. ⚠️ **The bar carries its height inline rather than in CSS**: the first
+cut left `height` on `.sbld-gbar` and the JS computed `BAR`, so the two disagreed and the bar stayed
+11px at ≤700px while the row grew to 48. Two sources for one number is how a chart draws itself
+wrong; the CSS declaration is deleted, not overridden.
+
+⚠️ **And `matchMedia` is read at render time, so it can go stale.** A `change` listener on that one
+query re-renders when a card is on screen — bound **once**, module-scope, beside `_phCollapsed`,
+because the card is rebuilt on every repaint and an unguarded listener would stack a copy per render.
+
+### ⚠️⚠️ ITEM 2: THE ARROWS WERE CLIPPED AT BOTH ENDS, AND EACH END WAS A DIFFERENT BUG
+
+The old route was a flat `H mx V y2 H ex L x2,y2` with `marker-end: url(#none)` — a marker **nothing
+in the file defines**, so no arrowhead had ever drawn. Each link now leaves its source edge on a 6px
+stub, travels in the inter-row lane, and arrives **horizontally** into the edge its type names: FS
+and SS arrive rightwards into the successor's **start**, FF and SF leftwards into its **finish**.
+That direction is what `orient="auto"` needs; without a horizontal final run the head points
+wherever the last segment happened to go.
+
+Two clipping faults, both found by rendering rather than by reading:
+- ⚠️ **An SS from a day-0 activity left the plot.** Its stub is drawn *before* the bar, so the route
+  began `M0,10 H-6` — and `.sbld-gantt` is `overflow:hidden`, so the whole arrow vanished. Every
+  coordinate is clamped to `[0, drawW]`.
+- ⚠️⚠️ **Clamping alone then collapsed the final segment.** A link arriving at the plot's right edge
+  gave `… V90 H429` with `x2` also 429 — a zero-length run, so `orient="auto"` had nothing to orient
+  by and the head pointed **down**. The SVG and the body are widened by `PAD_R = STUB + 4`, so there
+  is always somewhere for the last run to come from.
+
+⚠️ The head is a marker **defined per card** (`phah-<phase>`), not shared: a card renders into its own
+subtree and a document-wide id would be defined as many times as there are phases.
+⚠️ `--gw` went with the rewrite — nothing read it.
+
+### Items 3, 8 and 9: what was deleted, and the one thing that was kept
+
+`SB_PH_DEF` and `sbPhAct` are **gone**, so a phase opens with an empty list rather than three invented
+activities. ⚠️ The seed table is deleted rather than emptied: a `{}` left behind is the thing the next
+editor fills back in. The *"Whole programme"* total line and its CSS went with item 8, the step lede
+is cut from 30 words to one sentence, and the two stale hints below the tree are removed.
+
+⚠️ **Kept, deliberately:** the one line saying the planned list is *created by* **7 · Push**. That is
+the distinction between a plan and a record this card has had to state twice already, and an empty
+tree with no explanation reads as a screen that failed to load.
+
+### ⚠️⚠️ ITEM 6: `wbsMove(id, 'outdent')` COULD HAVE BROKEN THE FOUR-PHASE RULE
+
+The obvious implementation of *"dragged outside goes to the outermost level"* is the outdent this
+module already has. It is wrong here: on a **direct child of a phase branch** it sets
+`parent_id = null`, which creates a **fifth top-level branch** — exactly what `(c)` spent an entire
+pass making impossible by construction. New `_phPromote(v, id, levels)` walks the node's own ancestor
+chain **up to but not past its phase branch** and floors there; a branch already at the outermost
+level of its phase is refused with the reason, and a branch belonging to another phase is not this
+card's to move at all.
+
+⚠️ A locked (skeleton) heading is refused before anything is written — those are the phase roots.
+⚠️ Dragging past the tree column's left edge promotes **all the way**; a shorter leftward drag
+promotes one rung per 14px, so the gesture is continuous rather than binary.
+
+### Item 7: the new activity lands beside what is selected
+
+`_phAddActTarget(v)` answers in the order a planner would: a **WBS branch** selected inside this
+phase → the new activity goes under it; otherwise the selected **activity**'s own branch, spliced
+directly after it; otherwise the phase branch. ⚠️ The WBS selection is **global** — one node
+app-wide, which is what lets one toolbar act unambiguously — so a branch selected on *another*
+card correctly falls back rather than filing the activity into a different phase.
+
+### Item 12: Autotrace
+
+One button per phase, shown once a phase has more than one activity. It chains **FS+0 in display
+order** — the order `_phTreeRows` draws, not `cfg` insertion order, because the tree is what the
+planner is looking at. ⚠️ It **clears** every existing predecessor rather than appending, and
+therefore asks first when any activity already carries one: a silent merge would produce a network
+nobody authored. It sets `ph.net = true`, the marker `(c)` added so *"deliberately none"* stays
+distinguishable from *"never converted"*.
+
+### ⚠️⚠️ ITEM 10: MILESTONES IS A CARD CODE, NOT A DATABASE PHASE — AND THAT IS THE WHOLE DESIGN
+
+*"follow the same workflow for the other phases"* is a five-line change until you reach the database:
+`project_schedule.phase` carries a **4-value CHECK** (`initiation` / `planning` / `construction` /
+`closeout`), and a rejected value does not fail one row — `_dropScope()` strips `phase` from **every
+payload in the push**. So a fifth code would silently un-phase the whole programme.
+
+`MS_CODE = 'milestones'` is therefore known to exactly **three read helpers** —
+`_phaseBranchAt`, `_phaseBranchName` and `_phTaskNode` — which resolve it to the Milestones **root
+node** rather than to a phase, and to **nothing that writes**. `phaseTaskPayload` sends
+`phase: null`, and the two WBS-Summary payloads gained a third state (`noPhase`) so a milestones
+branch is written with `phase: null, scope_type: null` instead of defaulting to `construction`.
+
+⚠️⚠️ **`phaseFromName()` IS DELIBERATELY UNTOUCHED.** It is kept in step with a migration, and
+teaching it a fifth code is the one edit that would reach the CHECK. The Milestones branch is found
+by `_wbsMilestonesRootId()` — the skeleton's own root — never by name-matching a phase.
+⚠️ `always: true` in `SB_PHASE_DEFS` forces `on` through `normalize()`, so the card has **no
+checkbox** and the *"always pushed"* claim cannot be contradicted by a saved setup. ⚠️ `normalize()`
+is a whitelist and the round trip was proved by executing it against the five stubs it needs
+(`blankTowers`, `sortCatalog`, `GROUPS`, `KIND_ORDER`, `zpNormAll`), not asserted.
+
+### Verified
+
+**New `modules/project-schedule/test-phasecard.js` — 95 assertions across ten blocks, 0 failing**,
+every one executing functions sliced out of the shipped file by name, with the contrast pinned to a
+**SHA** (`4989bd6`, the pre-change copy) rather than `HEAD`. The contrast **bites**: run as the
+subject it aborts at the first slice it cannot find, and block 10 executes that copy's own seeder to
+show it really did seed three Initiation activities.
+
+`test-phasenet.js` **262/0** against its own pre-Gantt base, and every other suite green on the
+changed tree — `lsm` 683/0, `builder` 149/0, `towertypes` 79/0, `zoneoverlap` 57/0, `actsetup` 50/0,
+`zoneplan` 50/0, `towerseq` 48/0, `actdnd` 47/0, `shapeedit` 36/0, `sitefit` 31/0, `health` 30/0,
+`cpm` 28/0, `wbsfile` 28/0, `critwbs` 26/0, `calendar-editor` 23/0, `syntax` 4/0, plus
+`tools/test-calendar` 71/0. `wiring-check` **139/0**, `dark-remap` 0 findings, `dead-hooks` 9 (the
+documented baseline). The inline block parses; CSS braces **2571/2570**, which is **the same +1
+delta HEAD carries** (2566/2565) — this change is balanced at +5/+5.
+
+⚠️⚠️ **Three defects in my own suite, each of which reported the opposite of the truth**, recorded
+because two of them are shapes this repo keeps meeting:
+- **`marker-end="` ENDS IN `d="`.** Matching the tag greedily and then running `exec(/d="([^"]+)"/)`
+  over the match returns the **first** `d="`, which is inside `marker-end` — so every arrow's route
+  read as `url(#phah-planning)` and eleven assertions failed against correct code. Anchored on
+  whitespace and captured in one pass.
+- **The contrast build threw before asserting anything.** The sandbox's export map was a flat
+  literal naming every function, so a **partial** build over the pre-change file referenced a name
+  that copy does not define. It is derived from the slice list now.
+- ⚠️ **One assertion was simply wrong:** I counted the FS+0 route as five tokens where it is six —
+  the `M` counts. The code was right; the expectation was not.
+
+⚠️⚠️ **Re-lettered `(d)` → `(f)` on merging `origin/main`**, which had meanwhile published the
+Activities-step restructure as `(d)` and the Schedule Setup rail pass as `(e)`. Both are kept whole
+and this one moves past them. `modules/project-schedule/index.html` **auto-merged with no conflicts**
+— main rewrote the Activities step and the rail while this branch rewrote Project Phases — but a
+clean auto-merge is not evidence, so every function from both sides was asserted present by name
+afterwards and the whole battery re-run on the merged tree, **including main's own rewritten
+`test-actsetup.js` (133/0, up from 50) and `test-actdnd.js` (48/0)**. CSS braces on the merged tree
+are **2530/2529** against `origin/main`'s **2525/2524** — the same off-by-one on both sides, so this
+change is balanced at +5/+5.
+
+⚠️ **Not verified signed in.** The card was rendered and read in Chromium — headers reading
+*ACTIVITIES / DAYS*, all four relationship types drawing with clean heads, the FS+0 elbow a tight Z
+in the inter-row lane with no overlap, 0 bars off their rows at either breakpoint — but no real
+project's phases have been pushed through this, and the `phase: null` milestones payload has never
+reached the database.
+
+
 ## 2026-09-18 (e) — The step rail at narrow width, and 179 words off the Setup's pages
 
 Owner items 9 and 10 of ten. Items 1–8 (the Calendars editor) shipped in `011a2f1`.
