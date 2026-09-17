@@ -104,6 +104,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (t) — Overlapping zones become a measurable error in the Floors & Zones step
+
+Owner: *"for the UI for the floors & zones, please improve the overall UI, starting from defining the
+number of floors, zones, units etc."*, *"in the defining the plan layout of floors with no specified
+zones, users are allowed to add shapes still or trace"*, and *"for the definition of the floor plans,
+there should be like a system or error if there are overlapping zones."*
+
+Module work — **the full entry is in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md)**
+under `(zu)`. Logged here only for the `MODULE_V` bump and the two things that are facts about the
+shell rather than the module:
+
+⚠️⚠️ **`UI.modal` does not hydrate icons, and nothing else was doing it for a modal that rewrites its
+own `innerHTML`.** Every `data-ico` inside the floor-plan window was an empty span — the failure
+`assets/js/ui.js` records at line 1012, and the reason that window's `layers` icon has never drawn.
+Fixed inside the module (`Icons.hydrate(wrap)` after each repaint), but the shape is general: **any
+modal built with `UI.modal` that writes markup after `modal()` returns has to hydrate its own
+icons**, and a missing icon is silent.
+
+⚠️ **`--pd-warn` is a SURFACE colour and keeps catching people.** The new overlap marks use
+`--pd-warn-text` / `-bg` / `-line` throughout; `--pd-warn` is 3.46:1 on white, as the token block in
+`dashboard.css` already says in as many words.
+
+⚠️ The per-tower zone sequencing from the previous prompt was complete and passing but had never been
+committed. It ships in this push rather than being re-derived; see `(zu)` §5.
+
+⚠️ **`test-builder` (99/1) and `test-lsm` (675/28) fail identically on `bd4a2aee`** — checked against
+the pinned base, not from this work. Recorded rather than quietly passed over.
+
+`MODULE_V` → `20260917zv`.
+
 ### 2026-09-17 (s) — Branches before activities, a visible way to add one, and the clipping was not what I thought
 
 Owner: *"UI needs improvement. Many are clashing/clipping. How does one add branches?"* and *"I think

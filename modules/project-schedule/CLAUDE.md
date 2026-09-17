@@ -1,3 +1,165 @@
+## 2026-09-17 (zv) — Overlapping zones become an error the module can measure; the plan window opens on a zoneless floor with something to draw with; the building is stated in words
+
+Owner, on the Schedule Setup's Floors & Zones step: *"improve the overall UI, starting from defining
+the number of floors, zones, units etc."*, *"in the defining the plan layout of floors with no
+specified zones, users are allowed to add shapes still or trace"*, and *"for the definition of the
+floor plans, there should be like a system or error if there are overlapping zones."*
+
+### 1 · ⚠️⚠️ OVERLAPPING ZONES ARE MEASURED, NAMED AND PRICED — NOT JUST NOTICED
+
+**`zpInterArea` computes the exact area two traced areas share, and `zpOverlapsOf` reports every
+offending pair on a plate, worst first.** 56 assertions in a new suite, executed against the shipped
+functions.
+
+⚠️⚠️ **WHY THIS IS A CORRECTNESS CHECK AND NOT A TIDINESS ONE.** A floor's zones are *what the
+schedule is generated against* — one activity per zone per trade — and every quantity, scope split
+and percent-complete downstream is apportioned as if they **partition** the floor. Two zones
+overlapping by a third of their area are a third of that floor scheduled, measured and reported
+**twice**, and nothing downstream can tell: the 3D view draws both, the stacking colours both, the
+S-curve sums both. So the report is a **number** — *38% of the smaller* — not a red dot.
+
+⚠️⚠️ **TOUCHING IS NOT OVERLAPPING, and the whole feature is worthless if it is.** Zones are *meant*
+to share a wall — the snap grid exists so that they do — and two abutting rectangles share exactly
+zero area. That is a property of the clip, not a tolerance: a shared edge clips to a degenerate
+polygon. The suite asserts it for a shared wall, a shared corner, and **two interlocking Ls whose
+bounding boxes overlap across a 100×100 square and which share not one unit of area** — the single
+most common real floor layout there is, and the one a box test calls 100% broken.
+
+⚠️⚠️ **THE AREA IS EXACT, NOT SAMPLED OR RASTERISED.** A traced zone is an L, a T or a courtyard as
+often as a rectangle. The method is the triangle-fan identity — a simple polygon is the *signed* sum
+of the triangles fanned from its first corner, so `area(A∩B) = Σᵢ Σⱼ sᵢ·sⱼ·area(Tᵢ∩Tⱼ)` and every
+triangle pair is a convex-by-convex clip. Concave shapes need no special case; the negative fan
+triangles cancel the parts that are not in the polygon. Proved on a C-shaped zone with a courtyard: a
+zone sitting *in* the courtyard overlaps by 0, and one poking through the far wall overlaps by
+exactly the part that pokes.
+
+⚠️ **The tolerance is 0.5% of the SMALLER area, and it is not zero.** A shared wall needs no
+tolerance at all; this is for the hand-traced boundary that lands a unit or two past its neighbour
+with the snap off. Flagging those would put a warning on nearly every freehand floor, and a warning
+that is everywhere is one nobody reads — which costs the real double-counts their only chance of
+being seen. **Relative to the smaller area, never to the floor**: a 4 m² store wholly inside a 400 m²
+slab is 1% of the floor and 100% of itself, and it is the store that is double-counted. The measured
+percentage is always shown, so the planner judges the size of it rather than trusting the threshold.
+The threshold is **inclusive** and the suite pins that, because "exactly at the tolerance" is the one
+value a later edit to the comparison would flip without changing any other case.
+
+⚠️ **The whole-floor outline is not a zone** and is excluded on both sides — it is drawn *around* the
+zones on purpose, so counting it would report every correctly-traced floor as entirely broken. **Two
+areas carrying the same zone code are not a pair either**: `zpBox` already treats them as one zone
+traced in two pieces, and a zone cannot double-count itself.
+
+#### Reported in three places, because one is not enough
+
+| where | what it says |
+|---|---|
+| **the plan window** | a strip above the stage naming each pair and the percentage, with **Show** to select one of the two; both are marked on the drawing itself with a dashed amber stroke |
+| **the floor row** | the Plan/Shape button turns amber and gains a **!** — so a forty-storey list can be read down for faults without opening anything |
+| **the floor-plan panel** | a per-category count, a sentence saying what an overlap *costs*, and the category button becomes **Fix…** once everything is drawn |
+
+⚠️⚠️ **IT WARNS, IT DOES NOT BLOCK, and the suite asserts that the window cannot be refused over it.**
+Half a trace *is* an overlap — a planner drawing the second zone over the first and then pulling its
+corners back is in this state for the whole of that gesture. Refusing to close the window or to save
+would make the ordinary way of drawing a floor impossible, and the only escape would be deleting the
+work. The refusals in this module are for operations that create a fault *behind* the planner's back;
+a fault they can see and are in the middle of fixing is told, not fought.
+
+⚠️⚠️ **AN OVERLAP FORCES THE FLOOR-PLAN FOLD OPEN.** It is shut by default once anything is drawn, on
+the reasoning that a fully drawn tower has nothing left to say — which stops being true the moment one
+of those drawings is wrong. A fault reported only inside a fold nobody opens is not reported.
+
+⚠️ **Marked with a glyph AND a colour.** Colour is not a channel everyone has, and this is the one
+mark on the row that reports a defect rather than a state. The mark **replaces nothing**: a floor can
+be both incompletely traced and overlapping, and a button that could only say one of the two would
+hide whichever it did not pick.
+
+⚠️ **`--pd-warn-text`, never `--pd-warn`.** `--pd-warn` is the surface amber and measures 3.46:1 on
+white (under AA, measured in `dashboard.css`); every mark here is text or a stroke over a fill.
+
+⚠️ **Show selects, it does not repair.** There is no correct answer to *which of these two is in the
+wrong place*, and a button that guessed would move somebody's traced zone on their behalf. Selecting
+pushes no undo step and marks nothing dirty — asserted, because it changes nothing about the drawing.
+
+### 2 · ⚠️⚠️ The plan window opened on a zoneless floor with nothing to draw with
+
+Owner: *"in the defining the plan layout of floors with no specified zones, users are allowed to add
+shapes still or trace."* Exactly so, and the reason they could not is a one-line gate: the whole row
+carrying **Add, Trace, Copy, Paste, Delete, Orient, Snap and Undo** was emitted only `if (all.length)`
+— i.e. only if the floor had at least one **zone**. `allCodes()` excludes the whole-floor outline on
+purpose (it is not a zone), so on a zoneless floor it is empty and the row was not emitted at all.
+The window opened with the outline brush already loaded and no control able to draw it.
+
+⚠️ The gate was never about zones. Every control in that row acts on the **selected area** or on the
+**brush**, and the brush on a zoneless floor is the outline. Row 2 — which really is about zones —
+keeps its own empty state and says where zones come from.
+
+### 3 · Stating the building in words, not four abbreviations
+
+Owner: *"improve the overall UI, starting from defining the number of floors, zones, units etc."*
+The entry point read **`Quick: [ ] bsmt + [ ] flr × [ ] zn × [ ] un`** — four 50px boxes labelled
+with four abbreviations, in a sentence whose × signs suggested a multiplication that is not what
+happens (units are per zone, zones are per floor, basements are neither). The planner's first act on
+this step was to decode it.
+
+- Each box has a real label and a hint. The panel says in a sentence what **Generate** will produce —
+  including the count that actually matters, the number of **locations** the schedule will carry —
+  and what it will replace. That sentence is **live**, rewritten as the numbers are typed, so the
+  answer is read before the button is pressed rather than after.
+- ⚠️ **All four inputs are always emitted**, whatever the Activity level is. `qv()` reads them by id
+  with no null guard, so hiding one would throw the moment Generate was pressed. The ones the current
+  level ignores **say so** instead of disappearing.
+- **A floor-plan panel above the list, read by category.** Owner: *"improve the process flow of
+  defining the floor plans per floor and type."* A forty-storey tower is forty buttons that each say
+  "Plan…", and the planner had to scroll the list to learn that thirty-eight of them are the same
+  drawing. The row is the **category**, because that is the unit the work repeats on, and it carries
+  three numbers: how many storeys, how many **drawings** they share between them, and how many are
+  still bare. **Draw…** opens the first bare floor of that category — or the first one when they are
+  all drawn, so the button is never a dead end.
+- ⚠️ **What this tower and trade actually hold**, as four numbers plus one that could not be got at
+  all: **locations** is `leavesOfFloor`'s own count at the Activity level currently chosen, so it
+  moves when that select moves. A forty-storey tower with no zones and a twenty-storey tower with two
+  are the same size, and nothing said so.
+- **Copy from another tower… comes out of the ⋯ menu and onto the row**, beside the two buttons it is
+  an alternative to. The ⋯ entry stays — it is where you go to act on the tower itself — and both
+  open the same dialog.
+
+### 4 · The plan window's icons were never drawn
+
+⚠️ `UI.modal` does not hydrate and `paint()` writes `wrap.innerHTML` on every repaint, so **every
+`data-ico` in that window was an empty span** — the failure `ui.js` records at its line 1012, and the
+reason the site-plan hint's `layers` icon has never actually appeared. `Icons.hydrate(wrap)` after the
+write. Idempotent (`icoDone` guards each element) and scoped to `wrap`.
+
+### 5 · Per-tower zone sequencing, which had not shipped
+
+⚠️ The previous prompt's work — *"for the zone sequence, when there are multiple towers, users should
+be able to define the zone sequence per tower … But users are able to copy the zone sequence of a
+tower from another tower but if zones and number of floors and layout are not the same, these should
+not proceed"* — was complete and passing (48 assertions) but **uncommitted**. It ships here rather
+than being re-derived. `copyTowerSeq` copies links **by position**, and a position copy onto a tower
+with one floor fewer produces a schedule that is **wrong but plausible**: every arrow lands one storey
+out, the diagonal still looks like a diagonal, and nothing downstream can tell. The refusal is the
+feature, and the mismatch cases are asserted one at a time — a floor count, a category, a zone count,
+a unit count, and a trade present on one side only.
+
+### Verification
+
+`test-zoneoverlap` 56/56 (new), `test-towerseq` 48/48, `test-shapeedit` 36/36, `test-zoneplan` 27/27,
+`test-autotrace` 32/32, `test-sitefit` 31/31, `test-cpm` 28/28, `test-critwbs` 26/26, `test-health`
+30/30, `test-wbsfile` 33/33, `test-syntax` 4/4, `wiring-check` 139/139, `dark-remap` 0 findings.
+
+⚠️ **Two failures were checked against the pinned base and are NOT from this work**: `test-builder`
+99/1 (*"page 'Structure' belongs to a step the rail can show"*) and `test-lsm` 675/28 both fail
+identically on `bd4a2aee`. Recorded rather than quietly passed over.
+
+⚠️ The live screen could not be reached — the module redirects to sign-in and this session cannot
+authenticate — so the **behaviour** evidence is the executed suite, and the **layout** was checked by
+rendering the shipped CSS rules, extracted verbatim from `index.html`, against the real
+`dashboard.css` in light and dark. Nothing in that harness was committed (`_scratch*` is gitignored).
+
+`MODULE_V` → `20260917zv`.
+
+---
+
 ## 2026-09-17 (zo) — The browser's own dialogs leave the module; the shape editor gets numbers; General Requirements stops being in a tower
 
 Owner, on the Schedule Setup's Floors & Zones step: *"1. for adding floor plan, improve UI to edit

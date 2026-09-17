@@ -3815,6 +3815,19 @@
        with an SVG in plan units stretched over it, so a trace is resolution-independent. */
     .sbld-zpbtn { font-size:var(--pd-fs-xs); padding:2px 9px; min-height:0; }
     .sbld-zpbtn.has { border-color:var(--pd-red); color:var(--pd-red); }
+    /* ==== A FLOOR WHOSE ZONES OVERLAP ================================================
+       ⚠️⚠️ IT OUTRANKS `.has`, and the order of these two rules is the whole reason: `.has` is
+       the ordinary "this floor is drawn" state and every overlapping floor is also a drawn one,
+       so an overlap declared ABOVE it would be repainted red by the rule below and the fault
+       would be invisible on exactly the floors that have it.
+       ⚠️ `--pd-warn-text`, not `--pd-warn` — the latter is 3.46:1 on white (under AA, measured in
+       dashboard.css) and has no dark-mode value at all. */
+    .sbld-zpbtn.ov, .sbld-zpbtn.has.ov { border-color:var(--pd-warn-text); color:var(--pd-warn-text);
+      background:var(--pd-warn-bg); }
+    /* ⚠️ A GLYPH, not a colour alone: colour is not a channel everyone has, and this is the one
+       mark on the row that reports a defect rather than a state. `aria-hidden` because the whole
+       sentence is already in the button's title, where a screen reader reads it. */
+    .sbld-zpov { font-weight:900; }
     /* ⚠️ Owner 2026-09-12: *"make the space allotted for the site plan bigger."* Nearly the whole
        window, because the drawing IS the window — everything else in it is a control for the
        drawing. */
@@ -3920,6 +3933,44 @@
       vector-effect:non-scaling-stroke; cursor:grab; }
     .zpw-shape:hover polygon { fill-opacity:.5; }
     .zpw-shape.sel polygon { fill-opacity:.58; stroke-width:6; }
+    /* ==== AN AREA THAT OVERLAPS ANOTHER ===============================================
+       ⚠️⚠️ THE MARK IS A DASHED WARNING STROKE, NOT A COLOUR CHANGE. Every zone on this plan is
+       already identified BY its colour (`--zc`), and it is the same colour in the 3D view and the
+       stacking — repainting an offending zone red would say it is a different zone. The dash is
+       the one channel the drawing is not already using.
+       ⚠️ It survives `.sel`: the strip's Show button selects one of the pair, and losing the mark
+       at the moment you act on it is the moment you need it. So this rule follows `.sel` and both
+       stroke declarations are re-stated rather than inherited.
+       ⚠️ `--pd-warn-text`, not `--pd-warn`. Both are themed, but they are themed for different
+       jobs: `--pd-warn` is the SURFACE amber (#C77700 light / #E0A008 dark) and `--pd-warn-text`
+       is the one measured to carry on a surface (#8A5300 / #E0A008, dashboard.css). This stroke
+       sits over a zone fill at 34% over the plan image, which is nearer a text contrast problem
+       than a surface one, and it is the same token the strip and the row marks use — one amber
+       for one fault, rather than two that drift apart on one theme and not the other.
+       ⚠️ `vector-effect` and the `--zs` dash length, like every other annotation here: at 6× a
+       fixed dash reads as a solid line and the warning disappears into an ordinary border. */
+    .zpw-shape.ov polygon { stroke:var(--pd-warn-text); stroke-width:5;
+      stroke-dasharray:calc(11 * var(--zs, 1)) calc(7 * var(--zs, 1)); vector-effect:non-scaling-stroke; }
+    .zpw-shape.ov.sel polygon { stroke-width:7; }
+    /* The strip itself. ⚠️ Above the stage, not floating over it: it must not cover the drawing
+       it is asking the planner to change.
+       ⚠️⚠️ THE APP'S WARN TRIPLE, not `--pd-warn` painted on three things. `--pd-warn` (#C77700)
+       IS NOT A TEXT COLOUR — 3.46:1 on white, under AA, measured in dashboard.css — and every one
+       of the -bg / -line / -text tokens has a dark-mode pair, which a hand-mixed amber would not. */
+    .zpw-ov { margin:7px 0 0; border:1px solid var(--pd-warn-line); border-radius:8px;
+      background:var(--pd-warn-bg); overflow:hidden; }
+    .zpw-ov-h { display:flex; align-items:center; gap:7px; padding:7px 10px; font-size:var(--pd-fs-sm);
+      line-height:1.45; color:var(--pd-ink); }
+    .zpw-ov-h b, .zpw-ov-h [data-ico] { color:var(--pd-warn-text); }
+    .zpw-ov-r { display:flex; align-items:center; gap:8px; padding:5px 10px;
+      border-top:1px solid var(--pd-warn-line); font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    /* ⚠️ The zone's own colour on its chip, so the row and the drawing name the same thing. */
+    .zpw-ov-p { display:inline-flex; align-items:center; gap:5px; font-weight:700; color:var(--pd-ink); }
+    .zpw-ov-p::before { content:''; width:9px; height:9px; border-radius:2px; background:var(--zc, #888); }
+    .zpw-ov-x { font-style:italic; }
+    .zpw-ov-n { font-variant-numeric:tabular-nums; font-weight:700; color:var(--pd-warn-text); }
+    .zpw-ov-r > button { margin-left:auto; padding:2px 10px; font-size:var(--pd-fs-xs); min-height:0; }
+    .zpw-ov-more { justify-content:center; font-style:italic; }
     /* ⚠️ `--zs` is 1/zoom, written on the svg by paint(). A label is a fixed size on SCREEN, like
        every other annotation here — text that grew with the zoom would cover the very corner the
        planner zoomed in to reach. */
@@ -4623,6 +4674,15 @@
     .sbld-fpk > button { margin-left:auto; padding:3px 10px; font-size:var(--pd-fs-xs); }
     .sbld-fpk-gap { color:var(--pd-red); font-weight:700; }
     .sbld-fpk-ok { color:var(--pd-ok-text); font-weight:700; }
+    /* ⚠️ Emitted only on a category that HAS one — the cells in this row are already ragged
+       (`3 storeys`, `2 drawings`, `all drawn` are all different widths and the button is
+       `margin-left:auto`), so a fixed-width empty cell would buy no alignment and only add a
+       blank the eye has to skip on every clean row. */
+    .sbld-fpk-ov { font-weight:700; color:var(--pd-warn-text); }
+    .sbld-fpk-fix { border-color:var(--pd-warn-text); color:var(--pd-warn-text); }
+    /* ⚠️ The fold's own summary carries the count, so a shut panel still reports the fault. */
+    .sbld-fpanel.has-ov { border-color:var(--pd-warn-line); }
+    .sbld-fpanel.has-ov > summary { background:var(--pd-warn-bg); }
     /* relationship dialog */
     .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg); padding:10px; width:224px; }
     .sbld-ld-h { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:6px; }
@@ -4633,6 +4693,68 @@
     .sbld-ld-row input[type=number] { font:inherit; padding:4px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
     @media (max-width:900px){ .sbld-seq2 { grid-template-columns:1fr; } }
     @media (max-width:820px){ .sbld-wrap { grid-template-columns:1fr; } .sbld-rail { position:static; flex-direction:row; overflow-x:auto; } .sbld-step-s { display:none; } }
+    /* ==== DRAWING A LINK BY HAND, AS A PANEL =========================================
+       Owner 2026-09-17: *"there are way too many buttons and allow the manual intervention of
+       linking to be more seen."* Both sequencing steps put their linking flow here instead of
+       scattering it through a fourteen-control toolbar. It is deliberately quiet when Inspect is
+       on — it is then one sentence and a mode switch — and gains a tinted border the moment
+       Link-by-hand is, so the mode is readable from the corner of the eye. */
+    .sbld-flow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 12px;
+      padding:8px 11px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg);
+      font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    .sbld-flow.on { border-color:var(--pd-red); background:var(--pd-red-light); }
+    .sbld-flow .pd-btn { flex:none; }
+    .sbld-modeseg { flex:none; }
+    /* ⚠️ The steps are a READOUT, not buttons: the gesture that advances them is clicking a zone
+       on the drawing, and making them look pressable would invite a click that does nothing. */
+    .sbld-flow-s { display:inline-flex; align-items:center; gap:6px; }
+    .sbld-flow-s > i { font-style:normal; font-weight:800; font-size:var(--pd-fs-micro);
+      width:17px; height:17px; flex:none; border-radius:50%; display:inline-flex;
+      align-items:center; justify-content:center; background:var(--pd-line); color:var(--pd-ink); }
+    .sbld-flow-s.now { color:var(--pd-ink); font-weight:600; }
+    .sbld-flow-s.now > i { background:var(--pd-red); color:#fff; }
+    .sbld-flow-s.done > i { background:var(--pd-ok); color:#fff; }
+    .sbld-flow-hint { flex:1 1 220px; line-height:1.5; }
+    .sbld-flow-tip { flex:1 1 100%; font-size:var(--pd-fs-xs); opacity:.8; }
+    /* ==== THE SECONDARY CONTROLS, FOLDED ============================================
+       ⚠️ The current values are printed on the summary, which is what makes folding them honest:
+       a fold labelled only "View options" has to be opened to find out whether it matters. */
+    .sbld-viewopts { flex:none; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      background:var(--pd-card); font-size:var(--pd-fs-xs); }
+    .sbld-viewopts > summary { cursor:pointer; padding:6px 11px; color:var(--pd-muted); white-space:nowrap; }
+    .sbld-viewopts > summary > b { color:var(--pd-ink); }
+    .sbld-viewopts[open] { flex:1 1 100%; }
+    .sbld-viewopts[open] > summary { border-bottom:1px solid var(--pd-line); }
+    .sbld-viewoptsb { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:8px 11px; }
+    /* The zone sequence's tower row. Same chips as the trade row below it, one rung coarser. */
+    .sbld-seqtw { margin-bottom:4px; }
+    /* ==== STATING THE BUILDING ======================================================
+       ⚠️ Every box gets a real label and a one-word note. The four 50px inputs this replaces were
+       labelled "bsmt / flr / zn / un" inside a sentence made of × signs. */
+    .sbld-qs { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; }
+    .sbld-qsf { display:flex; flex-direction:column; gap:3px; }
+    .sbld-qsf > span { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); }
+    .sbld-qsf > input { width:86px; height:32px; }
+    .sbld-qsf > em { font-style:normal; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-qsf.off > input { opacity:.55; }
+    .sbld-qsf.off > em { color:var(--pd-warn-text); }
+    .sbld-qs > .pd-btn { height:32px; }
+    .sbld-qsprev { flex:1 1 100%; margin:8px 0 0; font-size:var(--pd-fs-xs); line-height:1.6;
+      color:var(--pd-muted); }
+    .sbld-qsprev b { color:var(--pd-ink); }
+    .sbld-qsprev-warn { color:var(--pd-warn-text); }
+    /* ==== WHAT THIS TOWER AND TRADE HOLD ============================================
+       ⚠️ `.sbld-lvlsum-key` is the location count — the number every later step is sized by — so
+       it is the one thing in this strip that is not grey. */
+    .sbld-lvlsum { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:0 0 10px;
+      padding:7px 11px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg);
+      font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .sbld-lvlsum b { font-size:var(--pd-fs-body); font-weight:800; color:var(--pd-ink);
+      font-variant-numeric:tabular-nums; margin-right:2px; }
+    .sbld-lvlsum-key { padding-left:14px; border-left:1px solid var(--pd-line); color:var(--pd-ink); font-weight:600; }
+    .sbld-lvlsum-tw { margin-left:auto; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
+    @media (max-width:760px){ .sbld-lvlsum-tw { margin-left:0; } .sbld-flow { gap:8px; } }
     /* ==== psAsk — the app's own prompt()/confirm() =====================================
        ⚠️ It reuses `.pd-modal-header/-body/-footer` rather than inventing a shell, so a dialog
        from this module and one from anywhere else in the app are the same object. Only the
@@ -34412,6 +34534,19 @@
       }, { passive: false });
     }
     var seqTradeFilter = 'ALL';   // Zone-sequence: which trade's bars/nodes are shown ('ALL' = every trade)
+    /* ⚠️⚠️ WHICH TOWER THE ZONE SEQUENCE IS BEING READ FOR. Owner 2026-09-17: *"when there are
+       multiple towers, users should be able to define the zone sequence per tower, bc there may be
+       instances zones of other towers and number of floors are not the same."*
+       ⚠️ The SEQUENCE was already per tower — a link joins two leaf uids and a leaf belongs to one
+       tower's floor, so nothing was ever shared. What was missing is the VIEW: every tower's floors
+       were stacked in one column, distinguished by a prefix on the label, so a twenty-storey tower
+       beside a six-storey podium read as one twenty-six-storey building with two F1s in it.
+       ⚠️ 'ALL' is kept and is still reachable, because a link ACROSS towers is legitimate here (the
+       Tower links step states the coarse relationship; this is the fine one) and a filter that could
+       not be turned off would remove a real capability rather than tidy it. */
+    var seqTower = 'ALL';     // Zone-sequence: which tower is shown ('ALL' = every tower, for cross-tower links)
+    var seqOptsOpen = false;  // the folded "View options" panel — a var, because a <details> is rebuilt on every render
+    var actOptsOpen = false;  // the same, on the Trade sequence step
     var seqLayout = 'split';  // step 3/4 layout: 'split' (tower left / gantt right) | 'stack' (building top / gantt bottom)
     var seqLevel = 2;         // step-3 collapse depth default: 2=Floor (compact + readable on tall buildings); 1=Trade, 3=Zone, 4=Unit
     var seqMode = 'view';     // step-3 interaction mode: 'view' = click a bar/zone to INSPECT its links; 'edit' = click to SELECT sources → right-click → destinations → link
@@ -34443,20 +34578,27 @@
       return '<button class="sbld-znode' + (pend ? ' pend' : (pdst ? ' pend-dst' : '')) + (isFocus(n.uids) ? ' sbld-focus' : '') + '" data-uids="' + e2(n.uids.join(' ')) + '" title="' + e2(GLABEL[tr] + ' · ' + n.label + (n.uids.length > 1 ? ' (' + n.uids.length + ' locations)' : '')) + '" style="--zc:' + gc(tr) + '">' + e2(n.label) + '</button>';
     }
     // One trade's tower column: header + floors (top floor first), each floor a row of level nodes.
+    /* ⚠️ ‘seqFloors’, NOT ‘floorsOf’, in both branches — the tower filter has to reach the Trade-level
+       roll-up too, or Detail 1 would quietly go on counting every tower's zones into one node while
+       the rest of the screen showed one building. */
+    function seqFloors(tr) {
+      return floorsOf(tr).filter(function (f) { return seqTower === 'ALL' || towerIdOf(f) === seqTower; });
+    }
     function seqTowerCol(tr) {
       if (seqLevel <= 1) {   // Trade level — a single node for the whole trade
-        var all = []; floorsOf(tr).forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { all.push(l.uid); }); });
+        var all = []; seqFloors(tr).forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { all.push(l.uid); }); });
         return '<div class="sbld-twr-col"><div class="sbld-twr-tradehead" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' +
           '<div class="sbld-twr-floor"><div class="sbld-twr-trade">' + (all.length ? towerNode(tr, { label: GLABEL[tr], uids: all }) : '') + '</div></div></div>';
       }
       return '<div class="sbld-twr-col"><div class="sbld-twr-tradehead" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' +
-        floorsOf(tr).slice().reverse().map(function (f) {
+        seqFloors(tr).slice().reverse().map(function (f) {
           var nodes = towerNodesFor(tr, f);
-          // ⚠️ With more than one tower this column holds BOTH towers' floors, so each row names its
-          // tower. Deliberately labelled rather than filtered: a zone-level link ACROSS towers is
-          // legitimate here (step 3 states the coarse tower relationship; this is the fine one), so
-          // hiding the other tower would remove a real capability. It just has to be readable.
-          var _twPfx = multiTower() ? ((towerById(towerIdOf(f)) || {}).code || towerLabel(towerIdOf(f))) + ' · ' : '';
+          /* ⚠️ The row still NAMES its tower whenever more than one could be on screen — which is now
+             only when the filter is off. The original note is kept because its reasoning still holds
+             and is what 'All towers' exists for: a zone-level link across towers is legitimate here
+             (the Tower links step states the coarse relationship; this is the fine one), so the
+             filter defaults to showing everything and hides nothing permanently. */
+          var _twPfx = (multiTower() && seqTower === 'ALL') ? ((towerById(towerIdOf(f)) || {}).code || towerLabel(towerIdOf(f))) + ' · ' : '';
           return '<div class="sbld-twr-floor"><span class="sbld-twr-lab" title="' + e2(towerLabel(towerIdOf(f))) + '">' + e2(_twPfx + (f.code || f.name || 'F')) + '</span><div class="sbld-twr-trade">' + nodes.map(function (n) { return towerNode(tr, n); }).join('') + '</div></div>';
         }).join('') + '</div>';
     }
@@ -38555,27 +38697,63 @@
         '<p class="sbld-lede">How a trade’s class codes run <b>inside one zone</b> — their order and their durations — defined per <b>level type</b>, because a basement is not built in the same order, or at the same pace, as a typical floor. <b>All levels</b> is the default the others inherit until they fork.</p>' +
         _sbldHow('<b>Level type</b> — the categories you tagged your floors with in step ' + _stepNo('Floors & Zones') + '. Both the sequence <b>and</b> the durations are per level type: a duration typed while a category is selected applies to that category only (those cells are marked). Any category can <b>copy</b> a sequence already defined elsewhere, or revert to the default in one click.' +
           '<br><br><b>The grid</b> (left) works like Excel — click/drag or Shift-click to select, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b>, <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear.' +
-          '<br><br><b>To link codes</b>, switch to <b>Edit mode</b> and click the schedule bars on the right:' +
+          '<br><br><b>To link codes</b>, switch to <b>Link by hand</b> and click the schedule bars on the right:' +
           '<ol><li>Click one or more <b>source</b> bars.</li><li>Right-click to confirm them.</li><li>Click the <b>destination</b> bars.</li><li>Right-click again.</li><li>Choose FS / SS / FF / SF + lag.</li></ol>' +
-          'In <b>View mode</b> a click just shows a bar’s links. <b>Links</b> opens them as a table; <b>Auto-chain</b> links every code back-to-back with the relationship in the dropdown beside it.') +
+          'In <b>Inspect</b> a click just shows a bar’s links. <b>Links</b> opens them as a table — and is also where a trade’s whole sequence is cleared. <b>Auto-chain</b> links every code back-to-back with the relationship in the dropdown beside it, and everything it makes can then be edited by hand.') +
         chips + kindRow +
+        /* ==== THE SAME RESTRUCTURE THE ZONE SEQUENCE GOT, FOR THE SAME REASON ==============
+           ⚠️⚠️ Owner 2026-09-17: *"improve the zone sequencing and trade sequencing UI. there are
+           way too many buttons and allow the manual intervention of linking to be more seen."*
+           This row was the worse of the two: mode, auto-chain, the relationship select, confirm,
+           reset, links, clear, two view buttons, FOUR time scales, two duration bases, two layout
+           buttons and two zoom buttons — up to nineteen controls, of which the ones a planner
+           actually reaches for are the mode and the confirm. See stSequence for the full argument;
+           the split is identical on purpose, because these two steps are the same gesture applied
+           to two different things and looking different would be the bug.
+           ⚠️ The Gantt's scale and duration basis fold WITH the rest: they only exist in the Gantt
+           view, so a row that grew by six controls the moment you pressed "Gantt" was also the row
+           that moved every other control along by six. */
         '<div class="sbld-sec-actions">' +
-        '<button class="pd-btn' + (aEditing ? ' pd-btn-primary' : '') + '" id="b-amode">' + (aEditing ? '✎ Edit mode — click to View' : '◉ View mode — click to Edit') + '</button>' +
         '<button class="pd-btn pd-btn-primary" id="b-autochain">Auto-chain</button>' +
         '<select class="pd-select sbld-mini" id="b-autotype" title="Relationship used when auto-chaining the class codes (FS / SS / FF / SF)">' +
         ['FS', 'SS', 'FF', 'SF'].map(function (o) { return '<option value="' + o + '"' + (autoChainType === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' +
-        aConfirmBtn +
-        ((aEditing && (pendActSet.length || pendActDst.length || actLinkPhase === 'dst')) ? '<button class="pd-btn" id="b-adone">Reset selection</button>' : '') +
         '<button class="pd-btn" id="b-alinkmgr">Links (' + countTradeLinks(tr) + ')</button>' +
-        '<button class="pd-btn" id="b-aclear">Clear links</button>' +
-        '<span class="sbld-tb-sep2"></span><span class="sbld-quick">View ' +
-        [['flow', 'Flow'], ['gantt', 'Gantt']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (tradeView === v[0] ? ' on' : '') + '" data-tview="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
-        (tradeView === 'gantt' ?
-          '<span class="sbld-quick">' + ['day', 'week', 'month', 'year'].map(function (sc) { return '<button class="pd-btn sbld-scbtn' + (tradeScale === sc ? ' on' : '') + '" data-tscale="' + sc + '">' + sc.charAt(0).toUpperCase() + sc.slice(1) + '</button>'; }).join('') + '</span>' +
-          '<span class="sbld-quick">Dur ' + [['int', 'Interior'], ['ext', 'Exterior']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
-        '<span class="sbld-quick">Layout ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
-        '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-azout">−</button><button class="pd-btn sbld-zbtn" id="b-azin">+</button></span>' +
-        '<span class="sbld-hint" id="b-apend"></span></div>' +
+        '<details class="sbld-viewopts"' + (actOptsOpen ? ' open' : '') + '><summary>View options — ' +
+          (tradeView === 'gantt' ? 'Gantt, ' + tradeScale + ', ' + (tradeBasis === 'ext' ? 'exterior' : 'interior') : 'flow') +
+          ', ' + (seqLayout === 'stack' ? 'stacked' : 'split') + '</summary><div class="sbld-viewoptsb">' +
+          '<span class="sbld-quick">View ' +
+          [['flow', 'Flow'], ['gantt', 'Gantt']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (tradeView === v[0] ? ' on' : '') + '" data-tview="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
+          (tradeView === 'gantt' ?
+            '<span class="sbld-quick">Scale ' + ['day', 'week', 'month', 'year'].map(function (sc) { return '<button class="pd-btn sbld-scbtn' + (tradeScale === sc ? ' on' : '') + '" data-tscale="' + sc + '">' + sc.charAt(0).toUpperCase() + sc.slice(1) + '</button>'; }).join('') + '</span>' +
+            '<span class="sbld-quick">Dur ' + [['int', 'Interior'], ['ext', 'Exterior']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
+          '<span class="sbld-quick">Layout ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
+          '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-azout">−</button><button class="pd-btn sbld-zbtn" id="b-azin">+</button></span>' +
+        '</div></details>' +
+        '</div>' +
+        (function () {
+          var s1 = actLinkPhase === 'src';
+          return '<div class="sbld-flow' + (aEditing ? ' on' : '') + '">' +
+            '<span class="ps-vs-seg sbld-modeseg" role="group">' +
+              '<button data-actmode="view"' + (aEditing ? '' : ' class="on"') + ' title="Click a bar to read its links. Nothing is changed.">◉ Inspect</button>' +
+              '<button data-actmode="edit"' + (aEditing ? ' class="on"' : '') + ' title="Click bars to pick sources, then destinations, then choose the relationship.">✎ Link by hand</button>' +
+            '</span>' +
+            (aEditing
+              ? '<span class="sbld-flow-s' + (s1 ? ' now' : ' done') + '"><i>1</i>Click the <b>source</b> bars' +
+                  (pendActSet.length ? ' — <b>' + pendActSet.length + ' picked</b>' : '') + '</span>' +
+                '<span class="sbld-flow-s' + (s1 ? '' : ' now') + '"><i>2</i>Click the <b>destination</b> bars' +
+                  (!s1 && pendActDst.length ? ' — <b>' + pendActDst.length + ' picked</b>' : '') + '</span>' +
+                '<span class="sbld-flow-s"><i>3</i>Choose <b>FS / SS / FF / SF</b> + lag</span>' +
+                (aConfirmBtn || '<span class="sbld-flow-hint">' + (s1
+                  ? 'Nothing picked yet — click a bar in the chart on the right.'
+                  : 'Pick at least one destination bar.') + '</span>') +
+                ((pendActSet.length || pendActDst.length || actLinkPhase === 'dst')
+                  ? '<button class="pd-btn" id="b-adone">Start over</button>' : '') +
+                '<span class="sbld-flow-tip">Right-click the chart to move on without the button.</span>'
+              : '<span class="sbld-flow-hint">Clicking a bar highlights what drives it and what it drives. ' +
+                'Switch to <b>Link by hand</b> to set the order yourself — anything <b>Auto-chain</b> ' +
+                'produced can be changed or removed here.</span>') +
+            '</div>';
+        })() +
         (function () {
           var listH = '<div class="sbld-seq2-h">Class codes — ' + e2(GLABEL[tr]) + '</div>';
           var totInt = tradeTotalDays(tr, 'int'), totExt = tradeTotalDays(tr, 'ext');
@@ -38598,23 +38776,22 @@
         }, { title: 'Follow the default sequence again?', ok: 'Drop the override',
              note: 'Those levels go back to following the default class-code sequence. The default itself is untouched.' });
       };
-      host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
+      host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; actOptsOpen = true; render(); }; });
       var atSel = host.querySelector('#b-autotype'); if (atSel) atSel.onchange = function () { autoChainType = atSel.value; };
       host.querySelector('#b-autochain').onclick = function () { autoChainTrade(tr, atSel ? atSel.value : autoChainType); };
-      host.querySelector('#b-aclear').onclick = function () {
-        var _go = function () { clearTradeLinks(tr); actReset(); render(); };
-        var n = countTradeLinks(tr);
-        if (!n) { _go(); return; }
-        psConfirm('Remove all ' + n + ' ' + GLABEL[tr] + ' link(s)?', _go,
-          { title: 'Clear this trade\u2019s sequence?', ok: 'Remove ' + n + ' link' + (n === 1 ? '' : 's'),
-            note: 'The class codes stay; only the order between them goes. <b>Auto-chain</b> can rebuild a straight sequence afterwards.' });
-      };
+      /* ⚠️ ‘Clear links’ LEAVES THIS ROW TOO. It stood one press from the zoom buttons and wiped a
+         whole trade's sequence; the Links table already carries the same action (#sbam-clear),
+         beside the list it would empty, which is the only place it can be read before it is used. */
       var acf = host.querySelector('#b-aconfirm'); if (acf) acf.onclick = function () { actConfirm(); };
       var almb = host.querySelector('#b-alinkmgr'); if (almb) almb.onclick = function () { openActLinkManager(tr); };
       var ad = host.querySelector('#b-adone'); if (ad) ad.onclick = actReset;
-      host.querySelectorAll('[data-tview]').forEach(function (b) { b.onclick = function () { tradeView = b.dataset.tview; render(); }; });
-      host.querySelectorAll('[data-tscale]').forEach(function (b) { b.onclick = function () { tradeScale = b.dataset.tscale; tgZoom = TG_PPD[tradeScale] || 2.2; render(); }; });
-      host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; render(); }; });
+      // ⚠️ Every one of these re-renders, which rebuilds the fold — so each one has to say it stays
+      // open, or the panel would shut itself the moment it was used. Same rule as stSequence.
+      host.querySelectorAll('[data-tview]').forEach(function (b) { b.onclick = function () { tradeView = b.dataset.tview; actOptsOpen = true; render(); }; });
+      host.querySelectorAll('[data-tscale]').forEach(function (b) { b.onclick = function () { tradeScale = b.dataset.tscale; tgZoom = TG_PPD[tradeScale] || 2.2; actOptsOpen = true; render(); }; });
+      host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; actOptsOpen = true; render(); }; });
+      var _avo = host.querySelector('.sbld-viewopts');
+      if (_avo) _avo.addEventListener('toggle', function () { actOptsOpen = _avo.open; });
       // Excel-style class-code grid (edit Code/Name/Interior/Exterior; multi-cell copy/paste).
       // Linking is on the schedule bars (View/Edit toggle), not a per-row column.
       /* ⚠ `t4Set` already takes (activity, field, text), so this grid needed no new setter —
@@ -38632,11 +38809,11 @@
         }
       });
       if (tradeView === 'gantt') {
-        host.querySelector('#b-azout').onclick = function () { tgZoom = Math.max(0.3, tgZoom / 1.25); render(); };
-        host.querySelector('#b-azin').onclick = function () { tgZoom = Math.min(40, tgZoom * 1.25); render(); };
+        host.querySelector('#b-azout').onclick = function () { tgZoom = Math.max(0.3, tgZoom / 1.25); actOptsOpen = true; render(); };
+        host.querySelector('#b-azin').onclick = function () { tgZoom = Math.min(40, tgZoom * 1.25); actOptsOpen = true; render(); };
       } else {
-        host.querySelector('#b-azout').onclick = function () { seqZoom = Math.max(1.5, seqZoom - 1); render(); };
-        host.querySelector('#b-azin').onclick = function () { seqZoom = Math.min(12, seqZoom + 1); render(); };
+        host.querySelector('#b-azout').onclick = function () { seqZoom = Math.max(1.5, seqZoom - 1); actOptsOpen = true; render(); };
+        host.querySelector('#b-azin').onclick = function () { seqZoom = Math.min(12, seqZoom + 1); actOptsOpen = true; render(); };
       }
       var grip = host.querySelector('#b-agrip'), leftPane = host.querySelector('.sbld-seq2-left'), splitRow = host.querySelector('.sbld-seq2');
       if (grip && leftPane && splitRow) grip.addEventListener('mousedown', function (ev) {
@@ -38646,12 +38823,13 @@
         function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
       });
-      var pendEl = host.querySelector('#b-apend'); if (pendEl) pendEl.textContent = (!acts.length || !aEditing) ? '' :
-        (actLinkPhase === 'src'
-          ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — right-click to confirm.') : 'Step 1: click one or more source bars.')
-          : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — right-click to create the links.') : 'Step 3: click one or more destination bars.'));
-      // View/Edit toggle (mirrors step 3's #b-seqmode). Leaving Edit clears any half-finished selection.
-      var amb = host.querySelector('#b-amode'); if (amb) amb.onclick = function () { actMode = (actMode === 'edit') ? 'view' : 'edit'; if (actMode !== 'edit') actReset(); else render(); };
+      // ⚠️ ‘#b-apend’ is gone with the row it sat at the end of — the flow panel above states the
+      // step and the counts where the planner is already looking. See stSequence.
+      // Inspect / Link by hand (mirrors the zone sequence). Leaving Edit clears a half-finished pick.
+      host.querySelectorAll('[data-actmode]').forEach(function (b) { b.onclick = function () {
+        var m = b.dataset.actmode; if (m === actMode) return;
+        actMode = m; if (actMode !== 'edit') actReset(); else render();
+      }; });
       // Class-code linking is now on the schedule BARS: View mode inspects a bar's predecessors/
       // successors; Edit mode selects sources → right-click → destinations → link.
       host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { var id = b.getAttribute('data-act'); if (actMode === 'edit') { actFocus = null; actSelect(id); } else { actFocus = id; render(); } }); });
@@ -39202,12 +39380,22 @@
     // a link that referenced the source leaf has to be rebuilt against the matching copied leaf.
     // Activity (class-code) sequencing is per TRADE, not per tower, so it already applies to both and
     // is deliberately not duplicated — duplicating it would create a second copy to drift.
-    function copyTower(fromId, toId) {
+    /* ⚠️ 2026-09-17: `opts` — WHICH TRADES, and whether the sequencing comes too. Owner: *"when
+       users select another tower, there is an option wherein users are able to copy the trades from
+       another tower and the number of floors etc."* The whole-tower copy is still the default and
+       still what every existing caller gets by passing nothing; what is new is being able to take
+       ONE trade's floors, which is the case a planner hits while working a trade at a time — taking
+       all six and replacing five they had already typed is not a smaller mistake for being offered
+       in one press. A trade left out of `groups` is not touched in the destination. */
+    function copyTower(fromId, toId, opts) {
       if (!fromId || !toId || fromId === toId) return { floors: 0, links: 0 };
+      opts = opts || {};
+      var _groups = (opts.groups && opts.groups.length) ? opts.groups : GROUPS;
+      var _wantLinks = opts.links !== false;
       var nFloors = 0;
       // Map source-leaf uid -> copied-leaf uid so step-3 links survive the copy.
       var uidMap = {};
-      GROUPS.forEach(function (tr) {
+      _groups.forEach(function (tr) {
         var src = floorsOfTower(tr, fromId);
         if (!src.length) return;
         // Drop whatever the destination tower had for this trade, then take a fresh copy.
@@ -39225,13 +39413,150 @@
       });
       // Re-point the source tower's zone links onto the copies.
       var added = 0;
-      (cfg.links || []).slice().forEach(function (k) {
+      if (_wantLinks) (cfg.links || []).slice().forEach(function (k) {
         var a = uidMap[k.from], b = uidMap[k.to];
         if (a && b && !cfg.links.some(function (x) { return x.from === a && x.to === b; })) {
           cfg.links.push({ from: a, to: b, type: k.type || 'FS', lag: k.lag || 0 }); added++;
         }
       });
       return { floors: nFloors, links: added };
+    }
+    /* ==== THE SAME BUILDING TWICE, OR NOT =============================================
+       Owner 2026-09-17: *"for the zone sequence, when there are multiple towers, users should be
+       able to define the zone sequence per tower, bc there may be instances zones of other towers
+       and number of floors are not the same. But users are able to copy the zone sequence of a
+       tower from another tower but if zones and number of floors and layout are not the same,
+       these should not proceed."*
+
+       ⚠️⚠️ THE CHECK IS THE FEATURE, NOT A GUARD ON IT. Copying a sequence means copying links
+       BY POSITION — the nth leaf of the source tower becomes the nth leaf of the destination —
+       because a leaf uid is built from object ids that are unique per tower, so there is nothing
+       else to join on. Position is only meaningful when the two towers hold the same leaves in
+       the same order. Run it onto a tower with one floor fewer and every link lands one storey
+       out: F2→F3 quietly becomes F2→F4, across hundreds of arrows, on a screen where they are
+       drawn as a diagonal that still LOOKS right. Nothing would ever report it.
+       ⚠️ So a mismatch REFUSES, and it names what differs — "Structural: 24 floors there, 22
+       here" — rather than saying no. A refusal a planner cannot act on is a dead end.
+
+       ⚠️ WHAT "LAYOUT" MEANS HERE is the arrangement of the LOCATIONS: which trades have floors,
+       how many, each floor's category, its zones in order and how many units each zone carries.
+       It is deliberately NOT the traced floor plan — a plan is attached per floor ID, so a tower
+       that was itself copied carries none at all, and blocking on that would refuse every case
+       this exists for. The dialog says which of the two it checked.
+       ⚠️ CODES ARE NOT BLOCKING. Two towers laid out identically may legitimately name their
+       floors `A-F1` and `B-F1`; the links map by position and do not read a code. A name that
+       differs is REPORTED in the dialog so the planner can see it is the building they meant,
+       and it does not stop the copy.
+       ⚠️ The trade walk is `GROUPS` minus LOCLESS — the same rule `locList` uses, written the
+       same way, because these two have to agree about what a leaf is. `usedGroups()` would be a
+       different question (which trades have ACTIVITIES) and would skip a trade whose floors are
+       typed but whose activities are not. */
+    function twShapeOf(towerId) {
+      var out = [];
+      GROUPS.forEach(function (tr) {
+        if (locless(tr)) return;
+        var fl = floorsOfTower(tr, towerId);
+        if (!fl.length) return;
+        out.push({ tr: tr, floors: fl.map(function (f) {
+          return { code: String(f.code || f.name || '').trim(), kind: floorKind(f),
+            zones: (f.zones || []).map(function (z) {
+              return { code: String(z.code || z.name || '').trim(), units: (z.units || []).length };
+            }) };
+        }) });
+      });
+      return out;
+    }
+    function _twSame(a, b) { return String(a).trim().toLowerCase() === String(b).trim().toLowerCase(); }
+    /* A -> the tower being copied FROM, B -> the tower being copied INTO. Every sentence is
+       written "there" (the source) then "here" (the destination), in that order, every time. */
+    function twShapeDiff(A, B) {
+      var out = { blocking: [], naming: [] };
+      var ka = A.map(function (x) { return x.tr; }), kb = B.map(function (x) { return x.tr; });
+      ka.forEach(function (g) { if (kb.indexOf(g) < 0) out.blocking.push(GLABEL[g] + ' has floors there and none here.'); });
+      kb.forEach(function (g) { if (ka.indexOf(g) < 0) out.blocking.push(GLABEL[g] + ' has floors here and none there.'); });
+      A.forEach(function (sa) {
+        var sb = B.filter(function (x) { return x.tr === sa.tr; })[0];
+        if (!sb) return;
+        if (sa.floors.length !== sb.floors.length) {
+          out.blocking.push(GLABEL[sa.tr] + ': ' + sa.floors.length + ' floor' + (sa.floors.length === 1 ? '' : 's') +
+            ' there, ' + sb.floors.length + ' here.');
+          return;   // ⚠️ Comparing floor n against floor n is meaningless once the counts differ.
+        }
+        sa.floors.forEach(function (fa, i) {
+          var fb = sb.floors[i];
+          var where = GLABEL[sa.tr] + ' · ' + (fb.code || fa.code || ('floor ' + (i + 1)));
+          if (fa.kind !== fb.kind) {
+            out.blocking.push(where + ' is ' + (KIND_LABEL[fa.kind] || fa.kind) + ' there and ' +
+              (KIND_LABEL[fb.kind] || fb.kind) + ' here.');
+          }
+          if (!_twSame(fa.code, fb.code)) out.naming.push(GLABEL[sa.tr] + ' floor ' + (i + 1) + ' is “' + fa.code + '” there and “' + fb.code + '” here.');
+          if (fa.zones.length !== fb.zones.length) {
+            out.blocking.push(where + ' has ' + fa.zones.length + ' zone' + (fa.zones.length === 1 ? '' : 's') +
+              ' there and ' + fb.zones.length + ' here.');
+            return;
+          }
+          fa.zones.forEach(function (za, j) {
+            var zb = fb.zones[j];
+            if (za.units !== zb.units) {
+              out.blocking.push(where + ' · ' + (zb.code || za.code || ('zone ' + (j + 1))) + ' has ' + za.units +
+                ' unit' + (za.units === 1 ? '' : 's') + ' there and ' + zb.units + ' here.');
+            }
+            if (!_twSame(za.code, zb.code)) out.naming.push(where + ' zone ' + (j + 1) + ' is “' + za.code + '” there and “' + zb.code + '” here.');
+          });
+        });
+      });
+      return out;
+    }
+    /* Copy the zone sequence of one tower onto another, by position.
+       ⚠️⚠️ ONLY the links whose BOTH ends are inside the source tower. A link from the source to
+       a THIRD tower is a statement about that third tower — copying it would invent a second one
+       nobody drew, pointing at the same place. Cross-tower links are made by hand on this step and
+       are left exactly as they are, in both towers.
+       ⚠️ `replace` clears the destination's OWN internal links first (never its cross-tower ones,
+       for the same reason). Without it the copy ADDS, which is what you want when a tower is
+       half-sequenced and you are filling in the rest.
+       ⚠️ Written straight into `cfg.links` rather than through `addLink`, which renders and toasts
+       once per link — the same reason copyTower does. The source is a valid acyclic sequence and
+       its copy is an isomorphic one, so the loop check `addLink` performs has nothing to find. */
+    /* How many links are INTERNAL to one tower — the honest count of "this tower's sequence".
+       ⚠️ Not the same as cfg.links.length, which on a four-tower project is four sequences plus
+       whatever crosses between them, and is the number the step used to print beside "Links". */
+    function twSeqCount(towerId) {
+      var inTw = {};
+      GROUPS.forEach(function (tr) {
+        if (locless(tr)) return;
+        floorsOfTower(tr, towerId).forEach(function (f) {
+          leavesOfFloor(tr, f).forEach(function (l) { inTw[l.uid] = 1; });
+        });
+      });
+      return (cfg.links || []).filter(function (k) { return inTw[k.from] && inTw[k.to]; }).length;
+    }
+    function copyTowerSeq(fromId, toId, replace) {
+      var map = {}, uidsTo = {};
+      GROUPS.forEach(function (tr) {
+        if (locless(tr)) return;
+        var sf = floorsOfTower(tr, fromId), df = floorsOfTower(tr, toId);
+        sf.forEach(function (f, i) {
+          var g = df[i]; if (!g) return;
+          var sl = leavesOfFloor(tr, f), dl = leavesOfFloor(tr, g);
+          sl.forEach(function (leaf, j) { if (dl[j]) map[leaf.uid] = dl[j].uid; });
+        });
+        df.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { uidsTo[l.uid] = 1; }); });
+      });
+      var removed = 0;
+      if (replace) {
+        var before = cfg.links.length;
+        cfg.links = cfg.links.filter(function (k) { return !(uidsTo[k.from] && uidsTo[k.to]); });
+        removed = before - cfg.links.length;
+      }
+      var added = 0, skipped = 0;
+      cfg.links.slice().forEach(function (k) {
+        var a = map[k.from], b = map[k.to];
+        if (!a || !b) return;
+        if (cfg.links.some(function (x) { return x.from === a && x.to === b; })) { skipped++; return; }
+        cfg.links.push({ from: a, to: b, type: k.type || 'FS', lag: k.lag || 0 }); added++;
+      });
+      return { added: added, removed: removed, skipped: skipped };
     }
     // ---- Step 3: how the towers interface -------------------------------------------------
     // Reads as sentences, not as a matrix: "Tower B starts after Tower A · Podium L4, +0d". A
@@ -39993,6 +40318,134 @@
       });
       return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     }
+    /* ==== DO TWO AREAS OVERLAP, AND BY HOW MUCH =========================================
+       Owner 2026-09-17: *"for the definition of the floor plans, there should be like a system or
+       error if there are overlapping zones."*
+
+       ⚠️⚠️ WHY THIS IS A CORRECTNESS CHECK AND NOT A TIDINESS ONE. A floor's zones are what the
+       schedule is generated against — one activity per zone, per trade — and the quantities, the
+       scope and the progress that hang off them are all apportioned by the planner as if the zones
+       PARTITION the floor. Two zones that overlap by a third of their area are a third of that
+       floor scheduled, measured and reported TWICE, and nothing downstream can tell: the 3D view
+       draws both, the stacking colours both, the S-curve sums both. It is invisible on a busy plan
+       and it is wrong in the one number the module exists to produce.
+
+       ⚠️⚠️ THE AREA IS COMPUTED EXACTLY, NOT SAMPLED OR RASTERISED. A traced zone is an L, a T or
+       a courtyard as often as it is a rectangle, so a bounding-box test would flag every ordinary
+       L-shaped pair that merely nests, and a point-sampling test would miss a thin strip along a
+       shared wall — which is precisely the overlap a planner actually draws by accident. The
+       method is the standard triangle-fan identity: a simple polygon is the SIGNED sum of the
+       triangles fanned from its first corner, so
+           area(A ∩ B) = Σ_i Σ_j sign_i · sign_j · area(T_i ∩ T_j)
+       and every T_i ∩ T_j is a convex-by-convex clip, which is exact. Concave shapes need no
+       special case; the negative fan triangles cancel the parts that are not in the polygon.
+
+       ⚠️⚠️ TOUCHING IS NOT OVERLAPPING, and the whole feature would be useless if it were. Zones
+       are MEANT to share a wall — the snap grid exists so that they do — and two rectangles that
+       abut share exactly zero area, which is what this returns for them. That is a property of the
+       clip, not a tolerance: a shared edge clips to a degenerate polygon of area 0. */
+    function zpSgnArea(pts) {
+      var a = 0;
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i], r = pts[(i + 1) % pts.length];
+        a += p[0] * r[1] - r[0] * p[1];
+      }
+      return a / 2;
+    }
+    /* Sutherland–Hodgman. ⚠️ `clip` MUST be convex and positively oriented — the callers below
+       only ever hand it a triangle they have already turned the right way round. Half-plane test
+       is `>= 0`, so a subject point lying exactly ON a clip edge is kept: that is what makes two
+       zones sharing a wall clip to a zero-area strip rather than to nothing on one side and a
+       sliver on the other. */
+    function zpClipConvex(subj, clip) {
+      var out = subj;
+      for (var i = 0; i < clip.length && out.length; i++) {
+        var a = clip[i], b = clip[(i + 1) % clip.length], inp = out, j;
+        out = [];
+        for (j = 0; j < inp.length; j++) {
+          var p = inp[j], q = inp[(j + 1) % inp.length];
+          var dp = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+          var dq = (b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0]);
+          if (dp >= 0) out.push(p);
+          if ((dp > 0) !== (dq > 0) && dp !== dq) {
+            var t = dp / (dp - dq);
+            out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]);
+          }
+        }
+      }
+      return out;
+    }
+    // The signed fan from pts[0]. ⚠️ n-2 triangles, and the collinear ones are dropped by their
+    // own zero area in zpInterArea rather than being filtered here — a triangle of area 0 clips to
+    // area 0 and contributes nothing, so there is no case to special-case.
+    function zpFanOf(pts) {
+      var out = [];
+      for (var i = 1; i + 1 < pts.length; i++) out.push([pts[0], pts[i], pts[i + 1]]);
+      return out;
+    }
+    function zpInterArea(A, B) {
+      if (!A || !B || A.length < 3 || B.length < 3) return 0;
+      // ⚠️ Whole-polygon bounding boxes first. Two zones at opposite ends of a floor are the
+      // common case and this settles them in eight comparisons instead of n·m clips.
+      var ba = zpBBoxOf(A), bb = zpBBoxOf(B);
+      if (ba.x + ba.w <= bb.x || bb.x + bb.w <= ba.x) return 0;
+      if (ba.y + ba.h <= bb.y || bb.y + bb.h <= ba.y) return 0;
+      var fa = zpFanOf(A), fb = zpFanOf(B), total = 0;
+      fa.forEach(function (ta) {
+        var sa = zpSgnArea(ta);
+        if (!sa) return;
+        var ca = sa > 0 ? ta : [ta[0], ta[2], ta[1]];
+        fb.forEach(function (tb) {
+          var sb = zpSgnArea(tb);
+          if (!sb) return;
+          var cb = sb > 0 ? tb : [tb[0], tb[2], tb[1]];
+          var piece = zpClipConvex(ca, cb);
+          if (piece.length < 3) return;
+          total += (sa > 0 ? 1 : -1) * (sb > 0 ? 1 : -1) * Math.abs(zpSgnArea(piece));
+        });
+      });
+      return Math.abs(total) < 1e-9 ? 0 : Math.abs(total);
+    }
+    /* ⚠️⚠️ THE TOLERANCE, AND WHY IT IS NOT ZERO. Half a percent of the SMALLER of the two areas.
+       A shared wall is exactly 0 and needs no tolerance at all — this is for the hand-traced
+       boundary that lands one or two plan units past its neighbour with the snap off. Flagging
+       those would put a warning on almost every freehand floor, and a warning that is on every
+       floor is one nobody reads, which costs the real double-counts their only chance of being
+       seen. The measured percentage is always SHOWN beside the pair, so the planner judges the
+       size of it rather than trusting this number.
+       ⚠️ Relative to the SMALLER area, not to the floor: a 4 m² store wholly inside a 400 m² slab
+       is 100% of itself and 1% of the floor, and it is the store that is double-counted. */
+    var ZP_OV_TOL = 0.005;
+    /* Every overlapping PAIR on one plate, worst first.
+       ⚠️ THE WHOLE-FLOOR OUTLINE IS NOT A ZONE and is excluded on both sides — it is drawn around
+       the zones on purpose, so including it would report every properly-traced floor as one
+       hundred percent broken.
+       ⚠️ TWO AREAS OF THE SAME ZONE ARE NOT A PAIR. `zpBox` already treats them as one zone traced
+       in two pieces, and a zone cannot double-count itself: it is one location either way. */
+    function zpOverlapsOf(p, first) {
+      var polys = (p && p.polys ? p.polys : []).filter(function (q) { return !zpIsAll(q.code) && q.pts && q.pts.length >= 3; });
+      var out = [];
+      for (var i = 0; i < polys.length; i++) {
+        for (var j = i + 1; j < polys.length; j++) {
+          var A = polys[i], B = polys[j];
+          if (zpNormCode(A.code) === zpNormCode(B.code)) continue;
+          var ov = zpInterArea(A.pts, B.pts);
+          if (!ov) continue;
+          var aa = Math.abs(zpSgnArea(A.pts)), ab = Math.abs(zpSgnArea(B.pts));
+          var sm = Math.min(aa, ab);
+          var frac = sm > 0 ? ov / sm : 0;
+          if (frac < ZP_OV_TOL) continue;
+          out.push({ a: A, b: B, area: ov, frac: frac });
+          if (first) return out;
+        }
+      }
+      out.sort(function (x, y) { return y.frac - x.frac; });
+      return out;
+    }
+    // Does this plate have any? ⚠️ `first` stops at the first pair, because the floor list asks
+    // this question once per row on every render and a forty-storey tower would otherwise measure
+    // every pair on every floor to answer a yes/no.
+    function zpHasOverlap(p) { return zpOverlapsOf(p, 1).length > 0; }
     /* The preset library, verbatim from the equipment site plan so the two screens cannot drift. */
     /* ==== ARRANGE AND ORIENT: rotate and resize a traced outline ==========================
        Owner 2026-09-12: *"once the per tower floor plan has been established, in the site plan, the
@@ -40654,6 +41107,20 @@
         var refs = SUBJ.refs(W.plateId);
         var others = SUBJ.others();
 
+        /* ==== OVERLAPPING ZONES ==========================================================
+           ⚠️⚠️ Owner 2026-09-17: *"for the definition of the floor plans, there should be like a
+           system or error if there are overlapping zones."* Measured HERE, on every repaint, from
+           the draft the planner is actually looking at — not on save. An overlap is made by a drag
+           and it has to be answered by the same drag; a check that only fires on save would report
+           it after the window that could fix it has closed.
+           ⚠️ Cheap enough to run on a pointermove: a floor has a handful of areas, and
+           `zpInterArea` settles a non-touching pair in eight comparisons (see its bbox reject).
+           ⚠️ `_ovIds` is the lookup the shape loop below uses, so an offending area is marked ON
+           THE DRAWING as well as listed in the strip. A list that named "Z2 and Z5" on a plan of
+           twelve areas would leave the planner hunting for them. */
+        var _ovs = zpOverlapsOf(d), _ovIds = {};
+        _ovs.forEach(function (o) { _ovIds[o.a.id] = 1; _ovIds[o.b.id] = 1; });
+
         var shapes = d.polys.map(function (q) {
           var on = (W.sel === q.id);
           var c = q.pts.reduce(function (s, p) { return [s[0] + p[0] / q.pts.length, s[1] + p[1] / q.pts.length]; }, [0, 0]);
@@ -40675,7 +41142,11 @@
               '<circle class="zpw-mid" data-mid="' + i + '" cx="' + ((p[0] + nx[0]) / 2).toFixed(1) +
                 '" cy="' + ((p[1] + nx[1]) / 2).toFixed(1) + '" r="' + (7 * zs).toFixed(2) + '"></circle>';
           }).join('') : '';
+          /* ⚠️ MARKED ON THE DRAWING, not only in the strip below. The strip can name the pair
+             and say how much of it is double-counted; only the drawing can say WHERE, and on a
+             plan of a dozen areas that is the whole of the answer. */
           return '<g class="zpw-shape' + (on ? ' sel' : '') + (q.lock ? ' lk' : '') +
+              (_ovIds[q.id] ? ' ov' : '') +
               '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpColor(q.code) + '">' +
             /* ⚠️ Said on the shape itself, not only in the toolbar: a planner who reaches for a
                corner that is not there needs the answer where they are looking. */
@@ -40891,8 +41362,19 @@
             })() +
           '</div>' +
 
-          // ---- row 3: making and editing areas -------------------------------------------
-          (all.length ? '<div class="zpw-bar">' +
+          /* ---- row 3: making and editing areas -------------------------------------------
+             ⚠️⚠️ THIS ROW USED TO BE GATED ON `all.length` — i.e. on the floor having at least one
+             ZONE. Owner 2026-09-17: *"in the defining the plan layout of floors with no specified
+             zones, users are allowed to add shapes still or trace."* Exactly so, and the gate is
+             why they could not: `allCodes()` excludes the whole-floor outline on purpose (it is not
+             a zone), so on a floor with no zones it is EMPTY — and the entire row carrying Add,
+             Trace, Copy, Paste, Delete, Orient, Snap and Undo was not emitted at all. The window
+             opened with the outline brush already loaded and nothing whatsoever to draw it with.
+             ⚠️ The gate was never about zones in the first place: every control in this row acts on
+             the SELECTED AREA or on the brush, and the brush on a zoneless floor is the outline
+             (see `brush: codes[0] || ZP_ALL` above). Row 2 — which really is about zones — keeps its
+             own empty state and says where zones come from. */
+          '<div class="zpw-bar">' +
             /* ==== THE SITE PLAN'S OWN FIRST ACTION ========================================
                ⚠️⚠️ IT LEADS THE ROW, ahead of the shape presets, because on a site plan it is
                almost always the right first move and the presets are the fallback. Drawing a tower
@@ -40969,7 +41451,7 @@
             '<span class="ps-tb-sep"></span>' +
             '<button class="pd-btn" id="zpw-undo"' + (W.hist.length ? '' : ' disabled') + ' title="' +
               (W.hist.length ? e2('Undo (' + W.hist.length + ' step' + (W.hist.length === 1 ? '' : 's') + ') · Ctrl+Z') : 'Nothing to undo') + '">Undo</button>' +
-          '</div>' : '') +
+          '</div>' +
 
           /* ==== ROW 4: THE SELECTED AREA, BY THE NUMBERS =================================
              ⚠️⚠️ Owner 2026-09-17: *"for adding floor plan, improve UI to edit shapes."* Every
@@ -41020,6 +41502,53 @@
           })() : '') +
 
           (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
+
+          /* ==== THE OVERLAP STRIP ========================================================
+             ⚠️⚠️ THIS IS THE “SYSTEM OR ERROR” THE OWNER ASKED FOR, and it is stated as a
+             QUANTITY rather than a red dot. A floor's zones are what the schedule is generated
+             against — one activity per zone per trade — and every quantity, every scope split and
+             every percent-complete downstream is apportioned as if they PARTITION the floor. Two
+             zones overlapping by a third of their area are a third of that floor scheduled,
+             measured and reported TWICE, and nothing downstream can tell: the 3D view draws both,
+             the stacking colours both, the S-curve sums both. So the strip says how much.
+             ⚠️⚠️ IT WARNS, IT DOES NOT BLOCK. Half a trace is an overlap — a planner drawing the
+             second zone over the first and then pulling its corners back is IN this state for the
+             whole of that gesture. Refusing to close the window, or refusing to save, would make
+             the ordinary way of drawing a floor impossible and the only escape would be deleting
+             the work. The refusals in this module are for operations that CREATE the fault behind
+             the planner's back; a fault they can see and are in the middle of fixing is told, not
+             fought.
+             ⚠️ EACH PAIR IS A BUTTON that selects one of the two areas, so the strip is a route to
+             the fix and not just a complaint. The other one stays marked on the drawing.
+             ⚠️ The count is capped at four rows: a plan that has just been pasted onto itself has
+             every pair overlapping, and a strip taller than the stage would push the drawing that
+             fixes it off the screen. */
+          (_ovs.length ? '<div class="zpw-ov">' +
+            /* ⚠️ `risk` is this app's warning triangle — there is no `alert-triangle` in the icon
+               set, and a data-ico naming an icon that does not exist renders as nothing at all. */
+            '<div class="zpw-ov-h"><span data-ico="risk" data-ico-size="14"></span>' +
+              '<b>' + _ovs.length + ' overlapping ' + (_ovs.length === 1 ? 'pair' : 'pairs') + '</b>' +
+              ' — ' + (_ovs.length === 1 ? 'this area is' : 'these areas are') + ' counted twice by everything ' +
+              'built from this floor. Zones are meant to meet, not to lie over one another.</div>' +
+            _ovs.slice(0, 4).map(function (o) {
+              /* ⚠️ THE PERCENTAGE IS OF THE SMALLER AREA, which is what the planner needs: a 4 m²
+                 store wholly inside a 400 m² slab is 1% of the floor and 100% double-counted, and
+                 it is the store that is wrong. `<1%` rather than `0%` for anything that rounds
+                 down to nothing — a row reading “0% overlapping” invites the planner to ignore it. */
+              var pc = Math.round(o.frac * 100);
+              return '<div class="zpw-ov-r">' +
+                '<span class="zpw-ov-p" style="--zc:' + zpColor(o.a.code) + '">' + e2(zpLabelOf(o.a.code)) + '</span>' +
+                '<span class="zpw-ov-x">over</span>' +
+                '<span class="zpw-ov-p" style="--zc:' + zpColor(o.b.code) + '">' + e2(zpLabelOf(o.b.code)) + '</span>' +
+                '<span class="zpw-ov-n">' + (pc < 1 ? '&lt;1' : pc) + '% of the smaller</span>' +
+                '<button class="pd-btn" data-zpov="' + e2(o.a.id) + '" title="' +
+                  e2('Select ' + zpLabelOf(o.a.code) + ' so it can be moved, resized or re-traced. ' +
+                     zpLabelOf(o.b.code) + ' stays marked on the drawing.') + '">Show</button>' +
+                '</div>';
+            }).join('') +
+            (_ovs.length > 4 ? '<div class="zpw-ov-r zpw-ov-more">and ' + (_ovs.length - 4) +
+              ' more — fix these first and the list shortens as you go.</div>' : '') +
+            '</div>' : '') +
           /* ==== WHAT THIS DRAWING DOES AND DOES NOT CLAIM ===============================
              ⚠️⚠️ THE SITE IS A LARGER SCALE THAN THE FLOOR PLANS IT IS BUILT FROM, and nothing in
              this app stores a dimension — so a footprint arrives at a DEFAULT size, not a measured
@@ -41210,6 +41739,12 @@
         // ⚠️ After the write, before wire(): the browser clamps scrollTop to the new content, so
         // this has to happen once the new content is in place.
         if (box && _scroll) box.scrollTop = _scroll;
+        /* ⚠️⚠️ NOTHING ELSE HYDRATES THIS WINDOW. `UI.modal` does not, and this markup is written
+           by `wrap.innerHTML` on every repaint — so a `data-ico` in here was an empty span, which
+           is the failure ui.js records at line 1012 and the reason the site-plan hint's `layers`
+           icon has never actually drawn. Idempotent (`icoDone` guards each element) and scoped to
+           `wrap`, so a repaint costs one querySelectorAll over a handful of nodes. */
+        if (window.Icons) Icons.hydrate(wrap);
         wire();
       }
 
@@ -41511,6 +42046,16 @@
             if (!np) return;
             snap(); s.pts = np; commit(); paint();
           };
+        });
+        /* ⚠️ THE OVERLAP STRIP'S ROUTE TO THE FIX. Selecting one of the pair is the whole action:
+           once it is selected the numeric X/Y/W/H row, the arrow keys, the corner handles and Del
+           are all pointed at it. It is deliberately NOT a repair — there is no correct answer to
+           "which of these two is in the wrong place", and a button that guessed would move
+           somebody's traced zone on their behalf.
+           ⚠️ No snap(), no commit(): selecting changes nothing about the drawing, so it must not
+           push an undo step or mark the setup dirty. */
+        wrap.querySelectorAll('[data-zpov]').forEach(function (b) {
+          b.onclick = function () { W.sel = b.dataset.zpov; W.drawing = false; W.pts = []; paint(); };
         });
         var del = q('zpw-del');
         if (del) del.onclick = function () {
@@ -42099,7 +42644,16 @@
           '<input class="pd-input grow" data-fk="name" data-f="' + i + '" value="' + e2(f.name) + '" placeholder="Floor name" />' +
           '<select class="pd-select sbld-kind" data-kf="' + i + '" title="Floor category — drives how trades hand off on this kind of level in step ' + _stepNo('Zone sequence') + '" style="height:34px;">' +
             KIND_ORDER.map(function (k) { return '<option value="' + k + '"' + (floorKind(f) === k ? ' selected' : '') + '>' + e2(KIND_LABEL[k]) + '</option>'; }).join('') + '</select>' +
-          (showZones ? '<button class="pd-btn sbld-addzone" data-f="' + i + '">+ Zone</button>' : '') +
+          /* ⚠️ A STEPPER, NOT A "+ Zone" BUTTON. Units on the row below have had − N + since they
+             existed; zones had an add button and a trash can on each zone row, so the two rungs of
+             the same question were asked with two different controls and only one of them printed
+             the number. Reading "how many zones is this floor split into" meant counting rows.
+             ⚠️ The − removes the LAST zone, which is what the unit stepper beside it does; a
+             particular zone is still removed by its own row. */
+          (showZones ? '<span class="sbld-step2ct">Zones</span>' +
+            '<button class="pd-btn sbld-znminus" data-f="' + i + '" title="Remove the last zone from this floor">−</button>' +
+            '<span class="sbld-zncount">' + f.zones.length + '</span>' +
+            '<button class="pd-btn sbld-znplus sbld-addzone" data-f="' + i + '" title="Add a zone to this floor">+</button>' : '') +
           /* ⚠️⚠️ THE PLAN LIVES ON THE FLOOR ROW, because that is what it belongs to. Owner
              2026-09-09: *"that floor plan will be identified for a specific floor"*. The button
              says whether this floor HAS one and how much of it is traced, so a forty-storey list
@@ -42118,20 +42672,36 @@
             var _n = _cs.filter(function (c) { return !zpIsAll(c); }).length;
             var _out = _cs.some(zpIsAll);
             var _sh = _p ? zpUsers(tr, zpIdFor(f)).length : 0;
+            /* ⚠️⚠️ OVERLAPPING ZONES, SAID ON THE ROW. Owner 2026-09-17: *"for the definition of
+               the floor plans, there should be like a system or error if there are overlapping
+               zones."* The plan window measures it and names the offending pair; this is the same
+               fact at list altitude, and it is what makes the check findable at all — a forty-storey
+               tower is forty plan windows, and nobody opens the one they have no reason to suspect.
+               The row carries the fault up to the surface the planner is already reading.
+               ⚠️ `zpHasOverlap`, not `zpOverlapsOf`: this is a yes/no per row and it stops at the
+               first pair rather than measuring every one of them on every keystroke.
+               ⚠️ THE MARK REPLACES NOTHING. A floor can be both incompletely traced AND overlapping,
+               so the label still says how much is traced; a button that could only say one of the two
+               would hide whichever it did not pick. */
+            var _ov = _p ? zpHasOverlap(_p) : false;
             var _lab = _z ? (_p ? 'Plan ' + _n + '/' + _z : 'Plan\u2026') : (_out ? 'Shape \u2713' : 'Shape\u2026');
-            return '<button class="pd-btn sbld-zpbtn' + (_p ? ' has' : '') + '" data-zpopen="' + e2(f.id) + '" title="' +
+            return '<button class="pd-btn sbld-zpbtn' + (_p ? ' has' : '') + (_ov ? ' ov' : '') +
+              '" data-zpopen="' + e2(f.id) + '" title="' +
+              e2(_ov ? ('OVERLAPPING ZONES on this floor — two areas lie over one another, so that part of the floor is scheduled, measured and reported twice. Open the plan to see which, and by how much.') : '') +
+              (_ov ? ' \u00b7 ' : '') +
               e2(_p ? ('Floor plan ' + (_p.img ? 'attached' : 'not attached') +
                   (_z ? (' · ' + _n + ' of ' + _z + ' zone' + (_z === 1 ? '' : 's') + ' traced')
                       : (_out ? ' · outline drawn' : ' · outline not drawn yet')) +
                   (_sh > 1 ? ' · shared by ' + _sh + ' floors' : ''))
                 : (_z ? 'Attach the floor plan and trace this floor\u2019s zones on it'
                       : 'Draw this floor\u2019s outline \u2014 the 3D view extrudes it instead of a guessed block')) + '">' +
-              _lab + '</button>';
+              _lab + (_ov ? ' <b class="sbld-zpov" aria-hidden="true">!</b>' : '') + '</button>';
           })() +
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
           (showZones ? '<div class="sbld-znwrap">' + zonesHtml + '</div>' : '<div class="sbld-znwrap"><div class="sbld-znhint">Floor level — zones &amp; units are ignored. Switch <b>Activity level</b> to Zone/Unit to split this floor.</div></div>') + '</div>';
       }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(_twAct)) +
-        ' yet.' + (multiTower() ? ' Add them below, or use <b>Copy from…</b> to take another tower\'s layout.' : '') + '</div>';
+        ' yet. Use <b>+ Add floor</b> for one at a time, or <b>Quick setup</b> to state the whole building at once.' +
+        (multiTower() ? ' If this tower repeats one you have already typed, <b>Copy from another tower…</b> takes its trades, floors, zones and units in one press.' : '') + '</div>';
       // Quick-generate inputs keep the counts the planner last generated with for THIS trade, so a
       // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
       var qd = quickN[tr] || { B: 0, F: 5, Z: 2, U: 0 };
@@ -42143,10 +42713,39 @@
          next thing to do; shut the instant there is a floor to look at instead.
          ⚠️ `<details>` keeps its contents in the DOM when shut, so #q-base, #b-quick, #b-applyall
          and #b-copyfrom stay wired below exactly as they were. */
+      /* ==== STATING THE BUILDING, IN WORDS ==============================================
+         ⚠️⚠️ Owner 2026-09-17: *"improve the overall UI, starting from defining the number of
+         floors, zones, units etc."* This was the entry point and it read
+         “Quick: [ ] bsmt + [ ] flr × [ ] zn × [ ] un” — four 50px boxes whose only labels were
+         four abbreviations, in a sentence whose × signs suggested a multiplication that is not
+         quite what happens (units are per zone, zones are per floor, basements are neither). The
+         planner's first act on this step was to decode it.
+         ⚠️ Each box has a real label now, and the panel says in a sentence what pressing Generate
+         will produce — including the count that actually matters, the number of LOCATIONS the
+         schedule will carry — and what it will replace. That sentence is live: it is rewritten as
+         the numbers are typed, so the answer is read before the button is pressed rather than
+         after.
+         ⚠️ ALL FOUR INPUTS ARE ALWAYS EMITTED, whatever the Activity level is. `qv()` reads them
+         by id with no null guard, so hiding one would throw the moment Generate was pressed. The
+         ones the current level ignores say so instead of disappearing. */
+      var _qsf = function (id, lab, v, mn, mx, hint, off) {
+        return '<label class="sbld-qsf' + (off ? ' off' : '') + '"><span>' + lab + '</span>' +
+          '<input class="pd-input" id="' + id + '" type="number" min="' + mn + '" max="' + mx + '" value="' + v + '">' +
+          '<em>' + hint + '</em></label>';
+      };
       var fillCtrl = '<details class="sbld-fill"' + (_twFloors.length ? '' : ' open') + '>' +
-        '<summary>Quick setup — generate floors' + (copyInner ? ', or take another trade’s' : '') + '…</summary>' +
+        '<summary>Quick setup — state the whole building at once' + (copyInner ? ', or take another trade’s' : '') + '…</summary>' +
         '<div class="sbld-fillbody">' +
-          '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span>' +
+          '<div class="sbld-qs">' +
+            _qsf('q-base', 'Basements', qd.B, 0, 20, 'B1 down') +
+            _qsf('q-floors', dimLabelOf('floor') + 's', qd.F, 1, 80, 'F1 up') +
+            _qsf('q-zones', dimLabelOf('zone') + 's on each', qd.Z, 0, 20,
+              showZones ? '0 = none' : 'ignored at Floor level', !showZones) +
+            _qsf('q-units', dimLabelOf('unit') + 's per ' + dimLabelOf('zone').toLowerCase(), qd.U, 0, 20,
+              showUnits ? '0 = none' : 'ignored at this level', !showUnits) +
+            '<button class="pd-btn pd-btn-primary" id="b-quick">Generate</button>' +
+          '</div>' +
+          '<p class="sbld-qsprev" id="q-prev"></p>' +
           copyInner +
         '</div></details>';
       /* ==== FLOOR PLANS, READ BY CATEGORY =================================================
@@ -42167,38 +42766,71 @@
          nothing drawn, because then it is the next thing to do. */
       var _planPanel = (function () {
         if (!_twFloors.length) return '';
-        var rows = [], nAll = 0, nHave = 0;
+        var rows = [], nAll = 0, nHave = 0, nOv = 0;
         KIND_ORDER.forEach(function (k) {
           var fl = _twFloors.map(function (o) { return o.f; }).filter(function (f) { return floorKind(f) === k; });
           if (!fl.length) return;
-          var plates = {}, bare = [];
+          var plates = {}, bare = [], ovFl = [];
           fl.forEach(function (f) {
-            var pid = zpIdFor(f);
-            if (pid && zpBag().plate[pid]) plates[pid] = 1; else bare.push(f);
+            var pid = zpIdFor(f), pl = pid && zpBag().plate[pid];
+            if (pl) { plates[pid] = 1; if (zpHasOverlap(pl)) ovFl.push(f); } else bare.push(f);
           });
           var np = Object.keys(plates).length;
-          nAll += fl.length; nHave += (fl.length - bare.length);
-          var target = (bare[0] || fl[0]);
+          nAll += fl.length; nHave += (fl.length - bare.length); nOv += ovFl.length;
+          /* ⚠⚠ AN UNDRAWN FLOOR IS STILL THE FIRST JOB. A category can be both incompletely
+             traced and overlapping where it IS traced, and the button can only go one place — it
+             goes to the missing drawing, because a floor with no plan at all is the larger hole
+             and the overlap is still marked on its own row below. Only once every storey is drawn
+             does the button become the route to the fault. */
+          var target = (bare[0] || ovFl[0] || fl[0]);
           rows.push('<div class="sbld-fpk' + (bare.length ? '' : ' done') + '">' +
             '<b>' + e2(KIND_LABEL[k]) + '</b>' +
             '<span>' + fl.length + ' storey' + (fl.length === 1 ? '' : 's') + '</span>' +
             '<span>' + (np ? (np + ' drawing' + (np === 1 ? '' : 's')) : 'no drawing yet') + '</span>' +
             '<span class="' + (bare.length ? 'sbld-fpk-gap' : 'sbld-fpk-ok') + '">' +
               (bare.length ? bare.length + ' not drawn' : 'all drawn') + '</span>' +
-            '<button class="pd-btn" data-fpk="' + e2(target.id) + '" title="' +
+            /* ⚠⚠ THE OVERLAP IS A SEPARATE CELL, NOT A WORSE VERSION OF "not drawn". They are
+               different states of different floors — one category can have three storeys with no
+               drawing and two more whose zones lie over each other — and folding them into one
+               cell would make the panel unable to report the pair. Both are emitted, side by
+               side, and either can be absent. */
+            (ovFl.length ? '<span class="sbld-fpk-ov">' + ovFl.length + ' overlapping</span>' : '') +
+            '<button class="pd-btn' + (!bare.length && ovFl.length ? ' sbld-fpk-fix' : '') +
+              '" data-fpk="' + e2(target.id) + '" title="' +
               e2(bare.length
                 ? ('Open the plan for ' + (target.code || target.name || 'this floor') + ' — the first ' +
                    KIND_LABEL[k].toLowerCase() + ' floor with no drawing. Trace it once, then use the ' +
                    'category button inside to give it to all ' + fl.length + '.')
-                : ('Open ' + (target.code || target.name || 'this floor') + '’s plan.')) + '">' +
-              (bare.length ? 'Draw…' : 'Open…') + '</button>' +
+                : (ovFl.length
+                    ? ('Open ' + (target.code || target.name || 'this floor') + '’s plan — the first ' +
+                       KIND_LABEL[k].toLowerCase() + ' floor whose zones overlap. The window names the ' +
+                       'pair and says how much of the smaller one is counted twice.')
+                    : ('Open ' + (target.code || target.name || 'this floor') + '’s plan.'))) + '">' +
+              (bare.length ? 'Draw…' : (ovFl.length ? 'Fix…' : 'Open…')) + '</button>' +
             '</div>');
         });
         if (!rows.length) return '';
-        return '<details class="sbld-fpanel"' + (nHave ? '' : ' open') + '>' +
+        /* ⚠⚠ AN OVERLAP FORCES THE PANEL OPEN. It is shut by default once anything is drawn,
+           on the reasoning that a drawn tower has nothing left to say — which stops being true
+           the moment one of those drawings is wrong. A fault reported only inside a fold the
+           planner has no reason to open is a fault nobody is told about. */
+        return '<details class="sbld-fpanel' + (nOv ? ' has-ov' : '') + '"' +
+            (nHave && !nOv ? '' : ' open') + '>' +
           '<summary>Floor plans — <b>' + nHave + ' of ' + nAll + '</b> stor' + (nAll === 1 ? 'ey' : 'eys') +
-            ' drawn' + (multiTower() ? ' in ' + e2(towerLabel(_twAct)) : '') + '</summary>' +
-          '<div class="sbld-fpbody">' + rows.join('') +
+            ' drawn' + (multiTower() ? ' in ' + e2(towerLabel(_twAct)) : '') +
+            (nOv ? ' · <b class="sbld-fpk-ov">' + nOv + ' with overlapping zones</b>' : '') + '</summary>' +
+          '<div class="sbld-fpbody">' +
+            /* ⚠⚠ WHY IT MATTERS, ONCE, WHERE IT IS REPORTED. "Overlapping" reads as untidiness
+               unless the consequence is stated, and the consequence is the reason the check
+               exists: the zones are what the schedule is generated against, so an overlap is a
+               piece of the floor that gets an activity, a quantity and a percent-complete TWICE,
+               and every chart downstream adds both up. */
+            (nOv ? '<p class="sbld-note sbld-note-warn" style="margin:0 0 4px;"><b>' + nOv + ' stor' +
+              (nOv === 1 ? 'ey has' : 'eys have') + ' zones lying over one another.</b> The zones on a floor are ' +
+              'what this schedule is generated against, so an overlapping strip is scheduled, measured ' +
+              'and reported twice — in the activity count, in the scope and in every curve built from ' +
+              'it. Open the plan and the window names the pair and says how much.</p>' : '') +
+            rows.join('') +
             '<p class="sbld-hint" style="margin:2px 0 0;">Draw <b>one plan per category</b> and share it — ' +
             'inside the plan window, <b>All floors of one category</b> points every storey of that ' +
             'type at the same drawing. Re-trace it once and all of them follow. A storey that is ' +
@@ -42226,7 +42858,45 @@
         '<span class="sbld-hint">Remaps the whole builder.</span></div>' +
         chips +
         '<div class="sbld-lvlgrid">' +
-        '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button></div>' +
+        '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add ' + e2(dimLabelOf('floor').toLowerCase()) + '</button>' +
+          '<button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
+          (_twFloors.length ? '<button class="pd-btn" id="b-bulk" title="Set the category, or the number of zones, on every floor of this tower at once">Change every floor…</button>' : '') +
+          /* ⚠️⚠️ THE TOWER COPY COMES OUT OF THE ⋯ MENU AND ONTO THE ROW. Owner 2026-09-17:
+             *"when users select another tower, there is an option wherein users are able to copy
+             the trades from another tower and the number of floors etc."* The capability existed
+             — but it was the third row of a ⋯ menu on the tower bar, which is the last place a
+             planner looks when the answer to "this tower is empty" is sitting in the tower next to
+             it. Here it is beside the two buttons it is an alternative to, and only when there is
+             more than one tower to copy from. The ⋯ entry stays: it is where you go to act on the
+             tower itself, and both open the same dialog. */
+          (towerList().length > 1 ? '<button class="pd-btn" id="b-twcopy2" title="Take another tower\u2019s trades, floors, zones and units">Copy from another tower…</button>' : '') +
+        '</div>' +
+        /* ==== WHAT THIS TOWER AND TRADE ACTUALLY HOLD =====================================
+           ⚠️ Four numbers the planner would otherwise get by counting rows, and one they could
+           not get at all: LOCATIONS is what the schedule is generated against — leavesOfFloor's
+           own count, at the Activity level currently chosen — so it moves when that select moves
+           and it is the number every later step is sized by. A forty-storey tower with no zones
+           and a twenty-storey tower with two are the same size, and nothing said so. */
+        (_twFloors.length ? (function () {
+          var sup = 0, sub = 0, nz = 0, nu = 0, nl = 0;
+          _twFloors.forEach(function (o) {
+            var f = o.f;
+            if (f.sub || floorKind(f) === 'basement') sub++; else sup++;
+            (f.zones || []).forEach(function (z) { nz++; nu += (z.units || []).length; });
+            nl += leavesOfFloor(tr, f).length;
+          });
+          function _n(v, lab, ttl) { return '<span title="' + e2(ttl) + '"><b>' + v + '</b> ' + e2(lab) + '</span>'; }
+          return '<div class="sbld-lvlsum">' +
+            _n(sup, dimLabelOf('floor').toLowerCase() + (sup === 1 ? '' : 's'), 'Superstructure — everything at or above grade.') +
+            _n(sub, 'basement' + (sub === 1 ? '' : 's'), 'Substructure — built deepest first.') +
+            (showZones ? _n(nz, dimLabelOf('zone').toLowerCase() + (nz === 1 ? '' : 's'), 'Across every floor of this tower.') : '') +
+            (showUnits ? _n(nu, dimLabelOf('unit').toLowerCase() + (nu === 1 ? '' : 's'), 'Across every zone of this tower.') : '') +
+            '<span class="sbld-lvlsum-key" title="' +
+              e2('What the schedule is actually generated against, at the Activity level chosen above: a floor with no zones is one location, a floor split into three is three. This is the number the zone sequence, the scope and the generated activity count are all sized by.') +
+              '"><b>' + nl + '</b> location' + (nl === 1 ? '' : 's') + ' scheduled</span>' +
+            (multiTower() ? '<span class="sbld-lvlsum-tw">' + e2(towerLabel(_twAct)) + ' · ' + e2(GLABEL[tr]) + '</span>' : '') +
+            '</div>';
+        })() : '') +
         fillCtrl +
         _planPanel +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
@@ -42345,8 +43015,7 @@
           markDirty(); render();
         });
       };
-      var _twCopy = host.querySelector('#b-twcopy');
-      if (_twCopy) _twCopy.onclick = function () {
+      function _twCopyDlg() {
         var others = towerList().filter(function (t) { return t.id !== _twAct; });
         if (!others.length) return;
         /* ⚠️⚠️ A LIST TO PICK FROM, NOT A NUMBER TO TYPE. This was a `prompt()` holding a
@@ -42356,25 +43025,49 @@
            ⚠️ AND THE WARNING IS IN THE SAME DIALOG. It used to be a SECOND browser box after the
            number was typed; the thing it warns about (this replaces everything here) is the whole
            reason the planner is being asked, so it belongs beside the question. */
+        var _trHas = GROUPS.filter(function (g) { return !locless(g) && floorsOfTower(g, others[0].id).length; });
         psAsk({ title: 'Copy another tower into ' + towerLabel(_twAct),
+          wide: true,
           ok: 'Copy and replace', danger: true,
-          text: 'Floors, zones, units and zone sequencing are copied in.',
-          note: '⚠️ This <b>REPLACES</b> everything currently under <b>' + e2(towerLabel(_twAct)) +
-            '</b>. It cannot be undone.',
-          fields: [{ k: 'src', label: 'Copy from', type: 'select', value: others[0].id,
-            options: others.map(function (t) {
-              var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, t.id).length; });
-              return [t.id, (t.name || t.code) + ' — ' + n + ' floor' + (n === 1 ? '' : 's')];
-            }) }]
+          text: 'The floors, zones and units of the tower you pick are copied in with fresh ids, so the two towers are independent afterwards.',
+          note: '⚠️ This <b>REPLACES</b> what is currently under <b>' + e2(towerLabel(_twAct)) +
+            '</b> for the trades you copy. It cannot be undone. A trade you do <b>not</b> copy is left exactly as it is.',
+          fields: [
+            { k: 'src', label: 'Copy from', type: 'select', value: others[0].id,
+              options: others.map(function (t) {
+                var n = 0, ntr = 0;
+                GROUPS.forEach(function (g) {
+                  if (locless(g)) return;
+                  var c = floorsOfTower(g, t.id).length; if (c) { ntr++; n += c; }
+                });
+                return [t.id, (t.name || t.code) + ' — ' + n + ' floor' + (n === 1 ? '' : 's') +
+                  ' across ' + ntr + ' trade' + (ntr === 1 ? '' : 's')];
+              }),
+              hint: 'The floor count is every trade\u2019s floors added together — most towers are laid out the same for all of them, so it is usually the storey count times the number of trades.' },
+            { k: 'what', label: 'Which trades', type: 'select', value: 'all',
+              options: [['all', 'Every trade — the whole tower'], [tr, 'Only ' + GLABEL[tr]]],
+              hint: 'Every trade is the usual answer: a tower that repeats another repeats it for all of them. One trade is for filling in the trade you are working on without touching the rest.' },
+            { k: 'seq', label: 'Bring the zone sequence with it', type: 'checkbox', value: true,
+              hint: 'The links between the copied zones are rebuilt against the copies, so the new tower flows the way the old one does. Turn it off to copy the places and sequence them yourself.' }
+          ]
         }, function (v) {
-          var src = others.filter(function (t) { return t.id === v.src; })[0];
-          if (!src) { UI.toast('No tower picked.', 'warn'); return; }
-          var r = copyTower(src.id, _twAct);
-          markDirty(); render();
-          UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') + ' and ' + r.links +
-            ' zone link' + (r.links === 1 ? '' : 's') + ' from ' + (src.name || src.code) + '.', 'success');
+          var s2 = others.filter(function (t) { return t.id === v.src; })[0];
+          if (!s2) { UI.toast('No tower picked.', 'warn'); return; }
+          var r = copyTower(s2.id, _twAct, { groups: (v.what === 'all' ? null : [v.what]), links: !!v.seq });
+          /* ⚠️ pruneLinks, which this handler never called: the destination tower's own floors are
+             REPLACED, so every link that pointed at one of them now points at a leaf that no longer
+             exists. They were left in cfg.links to be discovered at Generate. */
+          pruneLinks(); markDirty(); render();
+          UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') +
+            (v.what === 'all' ? '' : ' of ' + GLABEL[tr]) +
+            (v.seq ? ' and ' + r.links + ' zone link' + (r.links === 1 ? '' : 's') : '') +
+            ' from ' + (s2.name || s2.code) + '.', 'success');
         });
-      };
+      }
+      var _twCopy = host.querySelector('#b-twcopy');
+      if (_twCopy) _twCopy.onclick = _twCopyDlg;
+      var _twCopy2 = host.querySelector('#b-twcopy2');
+      if (_twCopy2) _twCopy2.onclick = _twCopyDlg;
       var _twDel = host.querySelector('#b-twdel');
       if (_twDel) _twDel.onclick = function () {
         if (towerList().length < 2) return;
@@ -42487,7 +43180,97 @@
           { title: 'Replace this trade’s floors?', ok: 'Replace them',
             note: 'Anything you have typed on those floors — names, zones, units — goes with them. Use <b>+ Add floor</b> instead to add to what is there.' });
       };
+      /* ==== THE LIVE ANSWER, ABOVE THE BUTTON THAT WOULD PRODUCE IT =====================
+         ⚠️ Reads the four boxes exactly as #b-quick does — through qv() — so the sentence and
+         the action cannot drift. `on input`, not `change`, because the point is to answer while
+         the number is being typed. */
+      var _qp = host.querySelector('#q-prev');
+      function _qsPrev() {
+        if (!_qp) return;
+        var B = Math.max(0, Math.min(20, qv('#q-base', 0))), Fl = Math.max(1, Math.min(80, qv('#q-floors', 1)));
+        var Z = showZones ? Math.max(0, Math.min(20, qv('#q-zones', 0))) : 0;
+        var U = showUnits ? Math.max(0, Math.min(20, qv('#q-units', 0))) : 0;
+        var st = B + Fl, nz = st * Z, nu = nz * U;
+        // ⚠️ The location count follows leavesOfFloor's own rule: no zones means the FLOOR is the
+        // leaf, and no units means the zone is. Stating anything else here would be a second
+        // opinion about what a location is.
+        var nl = Z ? (U ? nu : nz) : st;
+        _qp.innerHTML = 'Creates <b>' + st + '</b> storey' + (st === 1 ? '' : 's') +
+          (B ? ' (' + B + ' below grade)' : '') +
+          (Z ? ', <b>' + nz + '</b> ' + e2(dimLabelOf('zone').toLowerCase()) + (nz === 1 ? '' : 's') : ', no zones') +
+          (U ? ', <b>' + nu + '</b> ' + e2(dimLabelOf('unit').toLowerCase()) + (nu === 1 ? '' : 's') : '') +
+          ' — <b>' + nl + '</b> location' + (nl === 1 ? '' : 's') + ' to schedule.' +
+          (_twFloors.length
+            ? ' <b class="sbld-qsprev-warn">Replaces the ' + _twFloors.length + ' floor' +
+              (_twFloors.length === 1 ? '' : 's') + ' already under ' + e2(GLABEL[tr]) +
+              (multiTower() ? ' in ' + e2(towerLabel(_twAct)) : '') + '.</b>'
+            : '');
+      }
+      ['#q-base', '#q-floors', '#q-zones', '#q-units'].forEach(function (s) {
+        var el = host.querySelector(s); if (el) el.addEventListener('input', _qsPrev);
+      });
+      _qsPrev();
+      /* ==== EVERY FLOOR AT ONCE ==========================================================
+         ⚠️⚠️ The two things a planner changes on forty rows are the CATEGORY and the number of
+         ZONES, and both were one row at a time — forty selects, or forty presses of +. Quick
+         setup could do it in one go but only by throwing the floors away and generating new ones,
+         which loses every name that has been typed. This edits what is there.
+         ⚠️ “Leave unchanged” is the default on both, so the dialog cannot do something that was
+         not asked for, and it refuses to run when neither has been set rather than quietly
+         applying nothing.
+         ⚠️ Setting a zone count REPLACES the zones on those floors, and says so — there is no
+         honest way to merge “three zones” into a floor that has two named ones without deciding
+         which of them survives. */
+      function _bulkDlg() {
+        var kinds = {}; _twFloors.forEach(function (o) { kinds[floorKind(o.f)] = (kinds[floorKind(o.f)] || 0) + 1; });
+        var scope = [['all', 'Every floor in this tower (' + _twFloors.length + ')']]
+          .concat(KIND_ORDER.filter(function (k) { return kinds[k]; })
+            .map(function (k) { return ['k:' + k, 'Only the ' + KIND_LABEL[k] + ' floors (' + kinds[k] + ')']; }));
+        psAsk({
+          title: 'Change every floor',
+          wide: true,
+          text: (multiTower() ? towerLabel(_twAct) + ' · ' : '') + GLABEL[tr] + ' — ' + _twFloors.length +
+            ' floor' + (_twFloors.length === 1 ? '' : 's') + '. Names and codes are never touched.',
+          ok: 'Apply',
+          fields: [
+            { k: 'only', label: 'Which floors', type: 'select', value: 'all', options: scope },
+            { k: 'kind', label: 'Category', type: 'select', value: '',
+              options: [['', '— leave unchanged —']].concat(KIND_ORDER.map(function (k) { return [k, KIND_LABEL[k]]; })),
+              hint: 'What the zone sequence branches on, and what the floor plan can be shared across. Setting it to Basement also moves those floors below the grade line on the tower drawing.' },
+            (showZones ? { k: 'z', label: 'Zones on each floor', type: 'select', value: '',
+              options: [['', '— leave unchanged —']].concat([0, 1, 2, 3, 4, 5, 6, 8, 10, 12].map(function (n) {
+                return [String(n), n === 0 ? 'No zones — one location per floor' : (n + ' zone' + (n === 1 ? '' : 's') + ' (Z1…Z' + n + ')')];
+              })),
+              hint: '⚠️ This REPLACES the zones on those floors. Anything you renamed, every unit under them, and the links drawn to them go with them.' } : null)
+          ],
+          validate: function (v) {
+            return (!v.kind && (v.z == null || v.z === ''))
+              ? 'Nothing to change — pick a category, a zone count, or both.' : '';
+          }
+        }, function (v) {
+          var want = String(v.only || 'all');
+          var kOnly = want.indexOf('k:') === 0 ? want.slice(2) : null;
+          var n = 0;
+          _twFloors.forEach(function (o) {
+            var f = o.f;
+            if (kOnly && floorKind(f) !== kOnly) return;
+            n++;
+            if (v.kind) { f.kind = v.kind; f.sub = (v.kind === 'basement'); }
+            if (v.z != null && v.z !== '') {
+              var z = Math.max(0, Math.min(20, +v.z || 0)), zs = [];
+              for (var j = 1; j <= z; j++) zs.push({ id: uidv(), code: 'Z' + j, units: [] });
+              f.zones = zs;
+            }
+          });
+          pruneLinks(); markDirty(); render();
+          UI.toast('Changed ' + n + ' floor' + (n === 1 ? '' : 's') + '.', 'success');
+        });
+      }
+      var _bulkB = host.querySelector('#b-bulk'); if (_bulkB) _bulkB.onclick = _bulkDlg;
       host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); markDirty(); render(); }; });
+      // ⚠️ pruneLinks, like the unit stepper beside it: dropping a zone drops its leaf, and a link
+      // pointing at a leaf that no longer exists survives to Generate otherwise.
+      host.querySelectorAll('.sbld-znminus').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; if (f.zones.length) f.zones.pop(); pruneLinks(); markDirty(); render(); }; });
       host.querySelectorAll('.sbld-delzone').forEach(function (b) { b.onclick = function () { zn.floors[+b.dataset.f].zones.splice(+b.dataset.z, 1); pruneLinks(); markDirty(); render(); }; });
       host.querySelectorAll('.sbld-unplus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; z.units.push({ id: uidv(), code: 'U' + (z.units.length + 1) }); markDirty(); render(); }; });
       host.querySelectorAll('.sbld-unminus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; if (z.units.length) z.units.pop(); pruneLinks(); markDirty(); render(); }; });
@@ -42631,18 +43414,55 @@
       // Trade filter — scope the tower + schedule to one trade so you can link its floors zone-by-zone
       // without the other trades' bars in the way. 'ALL' shows every trade (to link across trades).
       if (seqTradeFilter !== 'ALL' && present.indexOf(seqTradeFilter) < 0) seqTradeFilter = 'ALL';
-      var showTr = present.filter(function (tr) { return seqTradeFilter === 'ALL' || tr === seqTradeFilter; });
-      var dispLocs = locs.filter(function (l) { return seqTradeFilter === 'ALL' || l.trade === seqTradeFilter; });
+      // ⚠️ A tower that has been deleted since this was last touched falls back to showing everything
+      // rather than to an empty screen with a chip nothing matches.
+      if (seqTower !== 'ALL' && !towerById(seqTower)) seqTower = 'ALL';
+      var _twMulti = multiTower();
+      if (!_twMulti) seqTower = 'ALL';
+      var showTr = present.filter(function (tr) {
+        return (seqTradeFilter === 'ALL' || tr === seqTradeFilter) &&
+               (seqTower === 'ALL' || floorsOfTower(tr, seqTower).length);
+      });
+      var dispLocs = locs.filter(function (l) {
+        return (seqTradeFilter === 'ALL' || l.trade === seqTradeFilter) &&
+               (seqTower === 'ALL' || l.towerId === seqTower);
+      });
+      /* ⚠️ THE TOWER ROW LEADS, above the trades, because it is the coarser question and because on
+         a multi-tower project it is the one that decides whether the screen below is one building
+         or four. Each chip carries that tower's own internal link count, so "which of these have I
+         sequenced" is answerable without clicking through them. */
+      var towerChips = _twMulti ? '<div class="sbld-tradechips sbld-seqtw">' +
+        '<span class="sbld-towerbar-l">Tower</span>' +
+        '<button class="sbld-chip' + (seqTower === 'ALL' ? ' on' : '') + '" data-seqtw="ALL" title="Show every tower at once — the only way to draw a link from one tower to another.">All towers</button>' +
+        towerList().map(function (t) {
+          var n = twSeqCount(t.id), nf = 0;
+          GROUPS.forEach(function (g) { if (!locless(g)) nf += floorsOfTower(g, t.id).length; });
+          return '<button class="sbld-chip' + (seqTower === t.id ? ' on' : '') + '" data-seqtw="' + e2(t.id) + '" title="' +
+            e2((t.name || t.code || 'Tower') + ' — ' + nf + ' floor' + (nf === 1 ? '' : 's') + ' across the trades, ' +
+               n + ' link' + (n === 1 ? '' : 's') + ' inside this tower') + '">' +
+            e2(t.name || t.code || 'Tower') + (n ? ' <b>' + n + '</b>' : '') + '</button>';
+        }).join('') +
+        '</div>' : '';
       var tradeChips = present.length ? '<div class="sbld-tradechips">' +
+        (_twMulti ? '<span class="sbld-towerbar-l">Trade</span>' : '') +
         '<button class="sbld-chip' + (seqTradeFilter === 'ALL' ? ' on' : '') + '" data-seqtr="ALL">All trades</button>' +
         present.map(function (g) { return '<button class="sbld-chip' + (seqTradeFilter === g ? ' on' : '') + '" data-seqtr="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + '</button>'; }).join('') +
         '</div>' : '';
       // Building/tower view — collapse-level aware (L1 Trade … L4 Unit). Split layout stacks the trade
       // columns vertically; stack layout lays them side-by-side across the top.
-      var towerEmpty = !locs.length;
-      var towerBody = towerEmpty ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
+      var towerEmpty = !dispLocs.length;
+      var towerBody = towerEmpty ? '<div class="sbld-empty">' + (locs.length
+          ? 'Nothing here for this tower and trade — ' + (seqTower === 'ALL' ? '' : e2(towerLabel(seqTower)) + ' ') +
+            'has no floors under ' + (seqTradeFilter === 'ALL' ? 'any trade' : e2(GLABEL[seqTradeFilter])) +
+            '. Add them in step ' + _stepNo('Floors & Zones') + ', or widen the filter above.'
+          : 'No zones yet — add floors/zones for a trade in step ' + _stepNo('Floors & Zones') + ', then their nodes appear here to connect.') + '</div>' :
         '<div class="sbld-twr' + (seqLayout === 'stack' ? ' sbld-twr-hz' : '') + '" style="zoom:' + towerZoom + ';">' + showTr.map(seqTowerCol).join('') + '</div>';
-      var schedH = '<div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div>';
+      // ⚠️ The count is the SHOWN tower's own links when one is selected, not the project's — a
+      // number that does not move when the filter does is a number nobody can use.
+      var _nLinks = seqTower === 'ALL' ? cfg.links.length : twSeqCount(seqTower);
+      var schedH = '<div class="sbld-seq2-h">Resulting schedule (' + _nLinks + ' link' + (_nLinks === 1 ? '' : 's') +
+        (seqTower === 'ALL' ? '' : ' in ' + e2(towerLabel(seqTower))) +
+        (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div>';
       var schedBody = focusLegendHTML(seqFocus.length, 'b-focusclear', !!seqSelLink) + scheduleSVG(dispLocs, starts);
       var LEVELS = [[1, 'Trade'], [2, 'Floor'], [3, 'Zone'], [4, 'Unit']];
       var body = seqLayout === 'stack'
@@ -42652,45 +43472,99 @@
           '<div class="sbld-seq2-grip" id="b-grip" title="Drag to resize the tower / schedule"></div>' +
           '<div class="sbld-seq2-right">' + schedH + schedBody + '</div></div>';
       var editing = seqMode === 'edit';
+      /* ==== DRAWING A LINK BY HAND, AS A PANEL RATHER THAN A BUTTON IN A ROW OF FOURTEEN ====
+         ⚠️⚠️ Owner 2026-09-17: *"improve the zone sequencing and trade sequencing UI. there are way
+         too many buttons and allow the manual intervention of linking to be more seen."*
+         Both halves of that are one problem. This row carried FOURTEEN controls — mode, auto-trace,
+         confirm, reset, links, clear, four Detail buttons, two layout, two zoom — and the manual
+         linking flow was three of them, scattered among the other eleven, plus a grey hint at the
+         far right that said which step you were on. The two most frequent things a planner does on
+         this screen (pick a mode, draw a link) had exactly the same weight as the zoom.
+         ⚠️ SO THE FLOW IS ITS OWN PANEL, and it states the steps it is on rather than describing
+         them in a fold nobody opens: the mode switch leads it, the current step is lit, the counts
+         are live, and the one button that advances the flow is the only primary on the screen.
+         ⚠️ AND THE SECONDARY CONTROLS FOLD. Detail / layout / zoom are view settings — set once,
+         then left alone for the rest of the session — so they live behind one summary and their
+         current values are printed ON that summary, which is what makes folding them honest
+         rather than hiding them.
+         ⚠️ ‘Clear links’ LEAVES THE ROW ENTIRELY: it was a destructive button one press from the
+         zoom, and the Links table already carries the same action beside the list it would empty. */
       var confirmBtn = editing && (linkPhase === 'src' && pendSet.length)
         ? '<button class="pd-btn pd-btn-primary" id="b-confirm">Confirm ' + pendSet.length + ' source' + (pendSet.length === 1 ? '' : 's') + ' →</button>'
         : (editing && linkPhase === 'dst' && pendDst.length)
           ? '<button class="pd-btn pd-btn-primary" id="b-confirm">Create ' + pendDst.length + ' link' + (pendDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
-      // Single toggle button: flips View ⇄ Edit. Primary (filled) while Editing so the mode is obvious.
-      var modeToggle = '<button class="pd-btn ' + (editing ? 'pd-btn-primary' : '') + '" id="b-seqmode" title="' + (editing ? 'Edit mode: click zones to select sources, right-click for destinations, then link. Click to return to View.' : 'View mode: click a bar or zone to inspect its relationships. Click to switch to Edit and create links.') + '">' + (editing ? '✎ Edit mode — click to View' : '◉ View mode — click to Edit') + '</button><span class="sbld-tb-sep2"></span>';
-      var lede = editing
-        ? '<p class="sbld-lede"><b>Edit mode</b> — connect the zones: which location follows which. Topology only; every block is the same size here.</p>' +
-          _sbldHow('<ol><li>Click one or more <b>source</b> zones.</li><li>Right-click, or press <b>Confirm sources</b>.</li><li>Click one or more <b>destination</b> zones.</li><li>Right-click, or press <b>Create links</b>.</li><li>Choose the relationship (FS / SS / FF / SF) + lag.</li></ol>' +
-            'Every source links to every destination. <b>Auto-trace logic</b> asks a few takt questions per trade — zones at once per floor, units at once per zone, floors finished before the next trade follows — then builds the whole flow for you, replacing the current links.', 'How linking works')
-        : '<p class="sbld-lede"><b>View mode</b> — click any bar or zone to highlight its <b>predecessors</b> (what drives it) and <b>successors</b> (what it drives). Switch to <b>Edit</b> to connect zones, or open <b>Links</b> to edit them as a table.</p>';
+      var _mode2 = '<span class="ps-vs-seg sbld-modeseg" role="group">' +
+        '<button data-seqmode="view"' + (editing ? '' : ' class="on"') + ' title="Click a bar or zone to read its relationships. Nothing is changed.">◉ Inspect</button>' +
+        '<button data-seqmode="edit"' + (editing ? ' class="on"' : '') + ' title="Click zones to pick sources, then destinations, then choose the relationship.">✎ Link by hand</button>' +
+        '</span>';
+      var _flow = '<div class="sbld-flow' + (editing ? ' on' : '') + '">' + _mode2 +
+        (editing
+          ? (function () {
+              var s1 = linkPhase === 'src';
+              return '<span class="sbld-flow-s' + (s1 ? ' now' : ' done') + '"><i>1</i>' +
+                  'Click the <b>source</b> zones' + (pendSet.length ? ' — <b>' + pendSet.length + ' picked</b>' : '') + '</span>' +
+                '<span class="sbld-flow-s' + (s1 ? '' : ' now') + '"><i>2</i>' +
+                  'Click the <b>destination</b> zones' + (!s1 && pendDst.length ? ' — <b>' + pendDst.length + ' picked</b>' : '') + '</span>' +
+                '<span class="sbld-flow-s"><i>3</i>Choose <b>FS / SS / FF / SF</b> + lag</span>' +
+                (confirmBtn ||
+                  '<span class="sbld-flow-hint">' + (s1
+                    ? 'Nothing picked yet — click a zone on the left, or a bar on the right.'
+                    : 'Pick at least one destination.') + '</span>') +
+                ((pendSet.length || pendDst.length || linkPhase === 'dst')
+                  ? '<button class="pd-btn" id="b-done">Start over</button>' : '') +
+                '<span class="sbld-flow-tip">Right-click the diagram to move on without the button.</span>';
+            })()
+          : '<span class="sbld-flow-hint">Clicking highlights a zone’s <b>predecessors</b> and <b>successors</b>. ' +
+            'Switch to <b>Link by hand</b> to connect them yourself — every link auto-trace makes can be drawn, ' +
+            'changed or removed here.</span>') +
+        '</div>';
+      /* ⚠️ The values are ON the summary. A fold whose label is only "View options" is a fold whose
+         contents have to be opened to find out whether they matter. */
+      var _opts = '<details class="sbld-viewopts"' + (seqOptsOpen ? ' open' : '') + '><summary>View options — ' +
+          'detail <b>' + (['', 'Trade', 'Floor', 'Zone', 'Unit'][seqLevel] || seqLevel) + '</b>, ' +
+          (seqLayout === 'stack' ? 'stacked' : 'split') + '</summary>' +
+        '<div class="sbld-viewoptsb">' +
+          '<span class="sbld-quick">Detail ' + LEVELS.map(function (l) { return '<button class="pd-btn sbld-scbtn' + (seqLevel === l[0] ? ' on' : '') + '" data-seqlvl="' + l[0] + '" title="Collapse both the building view AND the resulting schedule to ' + l[1] + ' level (links stay, aggregated between the collapsed bars)">' + l[1] + '</button>'; }).join('') + '</span>' +
+          '<span class="sbld-quick">Layout ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
+          '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-zout">−</button><button class="pd-btn sbld-zbtn" id="b-zin">+</button></span>' +
+        '</div></details>';
+      var lede = '<p class="sbld-lede">Which location follows which. Topology only — every block below is the same size, and the real durations are applied in step ' + _stepNo('Generate') + '.' +
+        (_twMulti ? ' <b>Each tower has its own sequence</b>; pick one below to work on it alone.' : '') + '</p>' +
+        _sbldHow('<b>By hand</b> — switch to <b>Link by hand</b>, then: <ol><li>Click one or more <b>source</b> zones.</li><li>Right-click, or press <b>Confirm sources</b>.</li><li>Click one or more <b>destination</b> zones.</li><li>Right-click, or press <b>Create links</b>.</li><li>Choose the relationship (FS / SS / FF / SF) + lag.</li></ol>' +
+          'Every source links to every destination. Click an <b>arrow</b> to change or remove a link you drew.' +
+          '<br><br><b>Auto-trace logic</b> asks a few takt questions per trade — zones at once per floor, units at once per zone, floors finished before the next trade follows — then builds the whole flow, replacing the current links. Anything it produces can then be edited by hand.' +
+          '<br><br><b>Per tower</b> — the tower chips scope this whole screen. <b>Copy sequence from…</b> takes another tower\u2019s flow, but only when the two towers hold the same floors, categories, zones and units; it names what differs rather than copying something that would land one storey out.', 'How linking works');
       host.innerHTML = '<h2>' + _stepNo('Zone sequence') + ' · Zone sequence — connect the flow</h2>' +
         lede +
+        towerChips +
         tradeChips +
         '<div class="sbld-sec-actions">' +
-        modeToggle +
         '<button class="pd-btn pd-btn-primary" id="b-autotrace">Auto-trace logic</button>' +
-        confirmBtn +
-        ((editing && (pendSet.length || pendDst.length || linkPhase === 'dst')) ? '<button class="pd-btn" id="b-done">Reset selection</button>' : '') +
         '<button class="pd-btn" id="b-linkmgr">Links (' + cfg.links.length + ')</button>' +
-        '<button class="pd-btn" id="b-clear">Clear links</button>' +
-        '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Detail ' + LEVELS.map(function (l) { return '<button class="pd-btn sbld-scbtn' + (seqLevel === l[0] ? ' on' : '') + '" data-seqlvl="' + l[0] + '" title="Collapse both the building view AND the resulting schedule to ' + l[1] + ' level (links stay, aggregated between the collapsed bars)">' + l[0] + '</button>'; }).join('') + '</span>' +
-        '<span class="sbld-quick">View ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
-        '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-zout">−</button><button class="pd-btn sbld-zbtn" id="b-zin">+</button></span>' +
-        '<span class="sbld-hint" id="b-pend"></span></div>' + body;
+        ((_twMulti && seqTower !== 'ALL' && towerList().length > 1)
+          ? '<button class="pd-btn" id="b-seqcopytw" title="Take another tower’s zone sequence — only if the two are laid out the same way">Copy sequence from another tower…</button>' : '') +
+        _opts +
+        '</div>' +
+        _flow + body;
       host.querySelectorAll('[data-seqtr]').forEach(function (b) { b.onclick = function () { seqTradeFilter = b.dataset.seqtr; nodeReset(); }; });
-      host.querySelectorAll('[data-seqlvl]').forEach(function (b) { b.onclick = function () { seqLevel = +b.dataset.seqlvl; render(); }; });
-      host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
-      // View ⇄ Edit toggle. Leaving Edit clears any half-finished selection so it can't linger into View.
-      var smb = host.querySelector('#b-seqmode'); if (smb) smb.onclick = function () { seqMode = (seqMode === 'edit') ? 'view' : 'edit'; if (seqMode !== 'edit') { pendSet = []; pendDst = []; linkPhase = 'src'; } render(); };
+      /* ⚠️ nodeReset(), not render(): a half-finished selection made against one tower's zones must
+         not survive into another tower, where its uids are not on screen and "3 sources picked"
+         would be a count of nothing the planner can see. Same rule the trade filter already follows. */
+      host.querySelectorAll('[data-seqtw]').forEach(function (b) { b.onclick = function () { seqTower = b.dataset.seqtw; nodeReset(); }; });
+      host.querySelectorAll('[data-seqlvl]').forEach(function (b) { b.onclick = function () { seqLevel = +b.dataset.seqlvl; seqOptsOpen = true; render(); }; });
+      host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; seqOptsOpen = true; render(); }; });
+      // ⚠️ The fold is rebuilt on every render, so its open state has to be remembered outside it —
+      // otherwise changing Detail (which re-renders) would slam the panel shut on the planner's hand.
+      var _vo = host.querySelector('.sbld-viewopts');
+      if (_vo) _vo.addEventListener('toggle', function () { seqOptsOpen = _vo.open; });
+      // Inspect ⇄ Link by hand. Leaving Edit clears any half-finished selection so it can't linger.
+      host.querySelectorAll('[data-seqmode]').forEach(function (b) { b.onclick = function () {
+        var m = b.dataset.seqmode; if (m === seqMode) return;
+        seqMode = m; if (seqMode !== 'edit') { pendSet = []; pendDst = []; linkPhase = 'src'; } render();
+      }; });
       host.querySelector('#b-autotrace').onclick = openAutoTraceDialog;
-      host.querySelector('#b-clear').onclick = function () {
-        var _go = function () { cfg.links = []; nodeReset(); markDirty(); render(); };
-        if (!cfg.links.length) { _go(); return; }
-        psConfirm('Remove all ' + cfg.links.length + ' link(s)?', _go,
-          { title: 'Clear the zone sequence?', ok: 'Remove ' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's'),
-            note: 'The zones stay; only the flow between them goes. <b>Auto-trace</b> can rebuild a takt flow afterwards.' });
-      };
+      var _sct = host.querySelector('#b-seqcopytw'); if (_sct) _sct.onclick = function () { _seqCopyTowerDlg(); };
       var cfb = host.querySelector('#b-confirm'); if (cfb) cfb.onclick = function () { nodeConfirm(); };
       var lmb = host.querySelector('#b-linkmgr'); if (lmb) lmb.onclick = openLinkManager;
       var doneb = host.querySelector('#b-done'); if (doneb) doneb.onclick = nodeReset;
@@ -42705,10 +43579,11 @@
         function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
       });
-      var pendEl = host.querySelector('#b-pend'); if (pendEl) pendEl.textContent = (!locs.length || !editing) ? '' :
-        (linkPhase === 'src'
-          ? (pendSet.length ? (pendSet.length + ' source(s) selected — right-click (or Confirm sources).') : 'Step 1: click one or more source zones.')
-          : (pendDst.length ? (pendDst.length + ' destination(s) selected — right-click (or Create links).') : 'Step 3: click one or more destination zones.'));
+      /* ⚠️ `#b-pend` IS GONE, AND ITS TEXT WITH IT. It was a grey sentence at the far right of a
+         fourteen-control row saying which step of the linking flow you were on — the flow panel
+         above now says that in the place the planner is already looking, with the counts lit on the
+         step they belong to. Keeping both would be two screens disagreeing the first time one of
+         them was edited. */
       // Click behaviour depends on the mode: EDIT selects zones/bars for linking (source → destination);
       // VIEW just highlights the clicked node's relationships (predecessors + successors) — inspect only.
       function clickNode(uids) { seqSelLink = null; if (!uids.length) { render(); return; } setFocus(uids); if (editing) nodeSelectMany(uids); else render(); }
@@ -42746,6 +43621,62 @@
                 note: 'This arrow stands for ' + matches.length + ' separate relationships at the level you are viewing. All of them go.' });
           });
       }); });
+    }
+    /* ==== TAKING ANOTHER TOWER'S SEQUENCE ==============================================
+       See twShapeOf / twShapeDiff / copyTowerSeq for why the check exists and what it checks.
+       ⚠️⚠️ THE REFUSAL IS IN ‘validate’, WHICH IS WHY THE DIALOG STAYS OPEN. The planner presses
+       the button, is told in the same dialog which trade and which floor disagree, and can change
+       the source tower in the select without starting again. A toast would close the dialog and
+       leave them to re-open it and guess a different answer.
+       ⚠️ Naming differences are shown but never block — two towers laid out identically may
+       legitimately call their floors A-F1 and B-F1, and the copy maps by position and never reads
+       a code. */
+    function _seqCopyTowerDlg() {
+      var others = towerList().filter(function (t) { return t.id !== seqTower; });
+      if (!others.length || seqTower === 'ALL') return;
+      var mine = twShapeOf(seqTower), here = twSeqCount(seqTower);
+      function _diffOf(id) { return twShapeDiff(twShapeOf(id), mine); }
+      psAsk({
+        title: 'Copy a zone sequence into ' + towerLabel(seqTower),
+        wide: true,
+        ok: 'Check the layout, then copy',
+        text: 'The links are copied BY POSITION — the nth zone of that tower becomes the nth zone of this one — so the two towers have to hold the same floors in the same order. That is checked before anything is written.',
+        note: '⚠️ Checked: which trades have floors, how many, each floor’s <b>category</b>, its zones in order and how many units each carries. ' +
+          '<b>Not</b> checked: the traced floor plans — a plan belongs to one floor and is never shared between towers, so a tower that was itself copied has none. ' +
+          'Floor and zone <b>names</b> are reported but do not stop the copy.',
+        fields: [
+          { k: 'src', label: 'Copy the sequence from', type: 'select', value: others[0].id,
+            options: others.map(function (t) {
+              var nf = 0; GROUPS.forEach(function (g) { if (!locless(g)) nf += floorsOfTower(g, t.id).length; });
+              var nl = twSeqCount(t.id);
+              return [t.id, (t.name || t.code) + ' — ' + nf + ' floor' + (nf === 1 ? '' : 's') + ', ' +
+                nl + ' link' + (nl === 1 ? '' : 's')];
+            }),
+            hint: 'The link count is that tower’s OWN sequence — links with both ends inside it.' },
+          { k: 'replace', label: 'Replace the ' + here + ' link' + (here === 1 ? '' : 's') + ' already inside ' + towerLabel(seqTower),
+            type: 'checkbox', value: here > 0,
+            hint: 'Off adds to what is there and skips anything already drawn. Either way, links between this tower and another are left alone — those are statements about the other tower.' }
+        ],
+        validate: function (v) {
+          var d = _diffOf(v.src);
+          if (!d.blocking.length) return '';
+          return 'These two towers are not laid out the same way, so the sequence cannot be copied — ' +
+            d.blocking.slice(0, 3).join(' ') +
+            (d.blocking.length > 3 ? ' (and ' + (d.blocking.length - 3) + ' more difference' + (d.blocking.length - 3 === 1 ? '' : 's') + ')' : '') +
+            ' Fix the floors in step ' + _stepNo('Floors & Zones') + ', or use Copy floors from another tower to make this one a copy first.';
+        }
+      }, function (v) {
+        var d = _diffOf(v.src);
+        // ⚠️ Re-checked here as well. ‘validate’ runs on the values as typed; this runs on the values
+        // being acted on, and a guard that only exists in the validator is one refactor from gone.
+        if (d.blocking.length) { UI.toast('Not copied — the two towers are laid out differently.', 'error'); return; }
+        var r = copyTowerSeq(v.src, seqTower, !!v.replace);
+        pruneLinks(); markDirty(); nodeReset();
+        UI.toast('Copied ' + r.added + ' link' + (r.added === 1 ? '' : 's') + ' from ' + towerLabel(v.src) +
+          (r.removed ? ' · replaced ' + r.removed : '') + (r.skipped ? ' · ' + r.skipped + ' already there' : '') +
+          (d.naming.length ? ' · ' + d.naming.length + ' name' + (d.naming.length === 1 ? '' : 's') + ' differ' : ''),
+          'success');
+      });
     }
     // left-click a zone/bar → toggle it in the current phase's set (free multi-select)
     function nodeSelect(uid) {
