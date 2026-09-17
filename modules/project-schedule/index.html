@@ -4476,30 +4476,86 @@
     .sbld-phlock { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .sbld-phmeta { margin:5px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .sbld-phmeta b { color:var(--pd-ink); }
-    .sbld-phlist { margin-top:9px; display:grid; gap:5px; }
-    /* name · days · computed window · delete. The window column is read-only output: the dates come
-       from the chain, so they are shown rather than entered. */
-    /* ⚠️ SEVEN columns now: grip · name · WBS · days · concurrent · dates · delete. See stPhases
-       for why the header row, the WBS picker and the concurrency tick exist. The phone rule below
-       keeps the WBS picker and drops the computed window — the window is output, the picker is the
-       only place the activity's destination can be set. */
-    .sbld-phrow { display:grid; grid-template-columns:14px minmax(0,1fr) 190px 74px 26px 168px 34px; gap:7px; align-items:center; }
-    /* ⚠️ A BRANCH NAME IS LONG AND THIS TRACK IS 190px, so the closed <select> WRAPS its own
-       label onto a second line and renders 50px tall against the row's 32px inputs — measured,
-       not guessed: 2 × 18.125 line + 12 padding + 2 border = 50.25. The row's height then follows
-       the longest branch name a planner happens to have typed. Every other builder row in this
-       file pins its control height for the same reason (`.sbld-row`, `.sbld-relrow`,
-       `.sbld-improw`); this one matches the text inputs beside it and ellipsises instead. */
-    .sbld-phw { min-width:0; height:32px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .sbld-phrow.sbld-phhdr { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); padding-bottom:1px; }
-    .sbld-phrow.sbld-phhdr i { font-style:normal; text-transform:none; letter-spacing:0; opacity:.7; }
-    .sbld-phpar { display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
-    .sbld-phpar input { cursor:pointer; }
-    .sbld-phpar input:disabled { cursor:default; opacity:.35; }
-    /* ⚠️ A concurrent row is marked on its LEFT EDGE, not by indenting it: the name column is
-       already narrow and an indent would misalign the one column a reader scans down. */
-    .sbld-phrow.is-par > .sbld-phgrip { box-shadow:inset 2px 0 0 var(--pd-red-mid); }
-    .sbld-phrow.is-par .sbld-phwin { color:var(--pd-ink); }
+    /* ---- the phase Gantt (owner 2026-09-17, items 4 and 5) ---------------------------------
+       Replaces `.sbld-phrow` and its seven-track grid, which drew the planned-activity TABLE.
+       ⚠️ Two panes that must stay in vertical step: the tree's rows and the plot's bars are
+       positioned by the SAME row height, so the number lives in one place in the renderer and the
+       plot's tick strip is paid for by an equal pad on the tree. A mismatch here reads as bars
+       belonging to the wrong activity, which is the one thing a Gantt may not do. */
+    .sbld-gantt { display:flex; align-items:stretch; margin-top:9px; border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); background:var(--pd-card); overflow:hidden; }
+    .sbld-gtree { flex:0 0 clamp(210px, 34%, 320px); border-right:1px solid var(--pd-line);
+      padding:22px 0 6px; min-width:0; }
+    .sbld-gplot { flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:6px; }
+    .sbld-gticks { position:relative; height:22px; }
+    .sbld-gtick { position:absolute; top:0; bottom:0; border-left:1px dashed rgba(128,128,128,.28); }
+    .sbld-gtick span { position:absolute; left:3px; top:4px; font-size:var(--pd-fs-micro);
+      color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    .sbld-gbody { position:relative; }
+    .sbld-gsvg { position:absolute; inset:0; overflow:visible; pointer-events:none; }
+    /* ⚠️ The arrow is drawn thin and hit with a fat transparent twin — see the wiring. Both carry
+       `pointer-events` explicitly because the svg above turns them off for the layer. */
+    .sbld-garrow { fill:none; stroke:var(--pd-muted); stroke-width:1.4; marker-end:url(#none); }
+    .sbld-ghit { fill:none; stroke:transparent; stroke-width:11; pointer-events:stroke; cursor:context-menu; }
+    .sbld-ghit:hover + .sbld-glab, .sbld-garrow:hover { stroke:var(--pd-red); }
+    .sbld-glab { font-size:9.5px; fill:var(--pd-muted); text-anchor:middle; pointer-events:all; cursor:context-menu;
+      paint-order:stroke; stroke:var(--pd-card); stroke-width:3px; }
+    .sbld-gbar { position:absolute; height:16px; border-radius:3px; background:var(--pd-red-mid);
+      box-shadow:inset 0 0 0 1px rgba(128,128,128,.35); cursor:default; }
+    .sbld-gbar.is-cycle { background:var(--pd-warn-bg); box-shadow:inset 0 0 0 1px var(--pd-warn-line); }
+    /* The link handle. ⚠️ It sits just OUTSIDE the bar's right edge so a short bar still has one:
+       inside, a 4px bar would have no room for it and the shortest activities — the ones most
+       likely to be a hand-off — would be the ones you could not link from. */
+    .sbld-ghandle { position:absolute; right:-5px; top:3px; width:10px; height:10px; border-radius:50%;
+      background:var(--pd-card); box-shadow:0 0 0 1.5px var(--pd-red); cursor:crosshair; opacity:0; transition:opacity .12s; }
+    .sbld-gbar:hover .sbld-ghandle, .sbld-ghandle:active { opacity:1; }
+    .sbld-grub { position:absolute; border:1px dashed var(--pd-red); border-radius:2px; pointer-events:none; }
+    /* tree rows */
+    .sbld-gr { display:flex; align-items:center; gap:5px; height:26px; padding-right:6px; }
+    .sbld-gr.is-sel { background:rgba(128,128,128,.14); }
+    .sbld-gr.is-drop { box-shadow:inset 0 0 0 2px var(--pd-red); border-radius:3px; }
+    .sbld-gr-wbs .sbld-gname-wbs { font-weight:700; }
+    .sbld-gr-wbs.is-mirror .sbld-gname-wbs { color:var(--pd-muted); }
+    .sbld-gcar { flex:0 0 12px; text-align:center; color:var(--pd-muted); cursor:pointer;
+      font-size:var(--pd-fs-xs); user-select:none; }
+    .sbld-ggrip { flex:0 0 10px; cursor:grab; color:var(--pd-muted); font-size:var(--pd-fs-xs);
+      line-height:1; letter-spacing:-2px; user-select:none; }
+    .sbld-ggrip:active { cursor:grabbing; }
+    /* ⚠️ A borderless input, not a label: the name is editable in place, and a box per row would
+       make a six-row phase read as a form rather than a tree. It takes its border on focus. */
+    /* ⚠️ `text-overflow` on an INPUT, which only takes effect while it is not focused — and
+      unfocused is how a name spends almost all of its time. Without it a long activity name is cut
+      mid-word with nothing saying so, which reads as a different (shorter) name rather than as a
+      clipped one. The full value is still one click away, and the row carries no title because the
+      input's own value is what a planner would copy. */
+    .sbld-gname { flex:1 1 auto; min-width:0; border:1px solid transparent; background:none;
+      font:inherit; color:var(--pd-ink); padding:2px 4px; border-radius:3px; text-overflow:ellipsis; }
+    .sbld-gname:focus { border-color:var(--pd-line); background:var(--pd-bg); outline:none; }
+    .sbld-gdur { flex:0 0 46px; text-align:right; font-variant-numeric:tabular-nums; border:1px solid transparent;
+      background:none; font:inherit; color:var(--pd-muted); padding:2px 2px; border-radius:3px; }
+    .sbld-gdur:focus { border-color:var(--pd-line); background:var(--pd-bg); color:var(--pd-ink); outline:none; }
+    .sbld-gdel { flex:0 0 auto; padding:0 4px; height:20px; background:none; border:0; color:var(--pd-muted); opacity:0; }
+    .sbld-gr:hover .sbld-gdel, .sbld-gr.is-sel .sbld-gdel { opacity:1; }
+    .sbld-gdel:hover { color:var(--pd-red); }
+    .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:9px; }
+    /* the "take it out of every branch" target, which lives on the Planned line */
+    .sbld-phdrop { margin-left:8px; padding:1px 7px; border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
+      font-size:var(--pd-fs-micro); color:var(--pd-muted); text-transform:none; letter-spacing:0; }
+    .sbld-phdrop.is-drop { border-style:solid; border-color:var(--pd-red); color:var(--pd-ink); }
+    /* the relationship editor */
+    .sbld-gtypes { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin-top:4px; }
+    .sbld-gtype { display:flex; align-items:center; gap:6px; padding:7px 9px; border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); cursor:pointer; font-size:var(--pd-fs-sm); }
+    .sbld-gtype.on { border-color:var(--pd-red); background:rgba(238,49,36,.08); }
+    .sbld-gtype b { font-variant-numeric:tabular-nums; }
+    .sbld-gtype span { color:var(--pd-muted); font-size:var(--pd-fs-xs); }
+    .sbld-grm { color:var(--pd-red); }
+    /* ⚠️ On a phone the tree gives up its share first: a bar you cannot read is still a bar, and a
+       name clipped to six characters is not a name. Below this the plot scrolls on its own. */
+    @media (max-width:720px) {
+      .sbld-gtree { flex-basis:160px; }
+      .sbld-gdur { flex-basis:38px; }
+    }
     /* ⚠️ THE IMPORT TREE HAS ITS OWN ROW, and it must: it was borrowing `.sbld-phrow`, whose grid is
        `14px 1fr 74px 168px 34px` for a PHASE ACTIVITY (grip, name, duration, window, delete). An
        import row carries a different set — expand chevron, branch name + code + count, a phase
@@ -4578,29 +4634,8 @@
       .sbld-improw { grid-template-columns:26px minmax(0,1fr); row-gap:4px; }
       .sbld-improw .pd-select, .sbld-improw-x, .sbld-improw-inh { grid-column:2; }
     }
-    .sbld-phgrip { cursor:grab; color:var(--pd-muted); font-size:var(--pd-fs-xs); line-height:1; letter-spacing:-2px;
-      user-select:none; text-align:center; }
-    .sbld-phgrip:active { cursor:grabbing; }
-    .sbld-phrow .pd-input { height:31px; }
-    .sbld-phd { text-align:right; font-variant-numeric:tabular-nums; }
-    .sbld-phwin { font-size:var(--pd-fs-xs); color:var(--pd-muted); font-variant-numeric:tabular-nums; white-space:nowrap;
-      overflow:hidden; text-overflow:ellipsis; }
     .sbld-phtotal { margin:12px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .sbld-phtotal b { color:var(--pd-ink); font-variant-numeric:tabular-nums; }
-    /* ⚠️⚠️ ON A PHONE THE PICKER GETS ITS OWN LINE. Squeezed into the same row it took the
-       activity NAME down to 33px — measured at 390px, against 160px before this column existed:
-       the one field a planner reads down the list, unreadable, to make room for a field they set
-       once. So the five original tracks are kept and the picker spans the full width beneath them,
-       where a long branch name is actually legible.
-       ⚠️ `.sbld-phw` is placed explicitly at row 2; the tick, days and delete cells auto-flow
-       into row 1 around it, which is why their order is unchanged.
-       ⚠️ The two header cells whose data cell is absent here are hidden with it: the Dates
-       label was ALREADY orphaned on a phone before this change (`.sbld-phwin` was hidden and its
-       heading was not), wrapping the heading onto a third line. Fixed in passing rather than left
-       beside a new column doing the same thing. */
-    @media (max-width:720px) { .sbld-phrow { grid-template-columns:14px minmax(0,1fr) 64px 26px 34px; }
-      .sbld-phwin, .sbld-phwin-h, .sbld-phw-h { display:none; }
-      .sbld-phw { grid-column:2 / -1; grid-row:2; margin-top:5px; } }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
     .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:var(--pd-radius-lg); background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
@@ -5601,11 +5636,12 @@
            The WBS Manager was removed as a screen (owner 2026-09-02: "let's remove the WBS Manager
            since this has already been folded under Schedule Setup"). Everything it used to host is
            now mounted into the Schedule Setup's WBS step at runtime:
-             • #ps-wbs-edittools — Add WBS / Paste outline / Duplicate / From project / expand /
-               collapse / search. Moved there in the 2026-09-02 first pass.
-             • #ps-wbs-integrations — Adopt existing WBS, Reset WBS, and the Engineering /
-               Procurement mirrors + Push need-by. Moved there in THIS pass, because the screen that
-               was their only home no longer exists.
+             • #ps-wbs-edittools — From project / expand / collapse / search. Moved there in the
+               2026-09-02 first pass. ⚠️ Add WBS, Paste outline and Duplicate branch were REMOVED
+               2026-09-17 — they authored top-level branches, which the four-phase rule forbids.
+             • #ps-wbs-integrations — Adopt existing WBS and the Engineering / Procurement mirrors
+               + Push need-by. Moved there in THIS pass, because the screen that was their only home
+               no longer exists. ⚠️ Reset WBS was removed 2026-09-17 with the three above.
              • #ps-wbs-card — the tree itself.
            ⚠️ They are DECLARED here, once, in their original markup, and are never duplicated: one
            tree, one set of id-bound handlers, one keyboard model. See sbWbsPark / sbWbsMount for why
@@ -5614,9 +5650,16 @@
            a borrowed node returned here must simply be out of the way. -->
       <div id="ps-view-wbs" hidden>
         <span id="ps-wbs-edittools" class="ps-wbs-edittools">
-        <button class="pd-btn pd-btn-primary" id="ps-wbs-addroot" title="Add a WBS under the selected node (top level when nothing is selected), then keep typing — Enter adds the next one"><span data-ico="plus" data-ico-size="15"></span> Add WBS</button>
-        <button class="pd-btn" id="ps-wbs-paste" title="Paste an indented or numbered outline (Excel / Word / notes) and build the whole tree in one go"><span data-ico="clipboard" data-ico-size="15"></span> Paste outline…</button>
-        <button class="pd-btn" id="ps-wbs-dup" title="Duplicate the selected branch — e.g. repeat a typical floor 20 times"><span data-ico="layers" data-ico-size="15"></span> Duplicate branch…</button>
+        <!-- ⚠️⚠️ ADD WBS / PASTE OUTLINE / DUPLICATE BRANCH WERE REMOVED HERE (owner 2026-09-17):
+             *"remove the duplicate branch and paste outline buttons as well as add WBS. no other WBS
+             is allowed aside from initiation, planning, execution (fixed), close-out."* All three
+             created TOP-LEVEL branches (`wbsQuickAdd(null, …)` when nothing is selected, and an
+             outline paste or a duplicate can land a whole subtree beside the four phases), which is
+             exactly the rule they now break. Adding a WBS is a per-phase action instead — see the
+             `+ Add WBS` button on each phase card, which can only ever add INSIDE that phase.
+             ⚠️ Their handlers went with them in the same edit. `getElementById(…).onclick` on a
+             missing node throws "Cannot set properties of null" and kills every wiring line BELOW
+             it, so a button removed from the markup alone takes the rest of the page down. -->
         <button class="pd-btn" id="ps-wbs-fromproj" title="Copy the WBS structure from another project"><span data-ico="download" data-ico-size="15"></span> From project…</button>
         <button class="pd-btn ps-icobtn" id="ps-wbs-expand" title="Expand all"><span data-ico="chevronDown" data-ico-size="15"></span></button>
         <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
@@ -5645,7 +5688,9 @@
                  separate button and never a side effect of a refresh. -->
         <span id="ps-wbs-integrations" class="ps-wbs-edittools ps-wbs-toolspop" hidden>
         <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
-        <button class="pd-btn" id="ps-wbs-reset" title="Drop every custom / imported branch and rebuild the tree from the schedule's own WBS codes — the standard skeleton is kept"><span data-ico="refresh" data-ico-size="15"></span> Reset WBS…</button>
+        <!-- ⚠️ Reset WBS… removed with the three above (owner: *"no need also for reset WBS in
+             tools"*). Adopt existing WBS stays: it REPAIRS an imported tree rather than authoring
+             one, and it is what the "un-adopted branches" toasts send a planner to. -->
         <span class="ps-tb-sep"></span>
         <!-- Design Development is MIRRORED from the Engineering App (drawing register +
              material submittal log). This pulls a fresh roll-up through the sync-eng
@@ -36324,22 +36369,64 @@
         if (pd2.when === 'exec') return;
         var src = _srcPh[pd2.v];
         if (!src || typeof src !== 'object') return;            // absent = off, filled in by sbPhases()
-        d.phases[pd2.v] = {
-          on: !!src.on,
-          acts: (Array.isArray(src.acts) ? src.acts : []).map(function (a) {
-            return { id: (a && a.id) || uidv(), n: String((a && a.n) || '').slice(0, 200),
-                     // ⚠️ Clamped to 1, never 0: a zero-day phase activity would push a row whose
-                     // finish precedes its start and break the chain for everything after it.
-                     d: Math.max(1, Math.min(999, Math.round(Number(a && a.d) || 1))),
-                     /* ⚠️⚠️ `par` HAS TO BE CARRIED HERE OR IT DOES NOT EXIST. This normaliser is a
-                        WHITELIST — every cfg that arrives (from a save, from the derive, from an older
-                        build) is rebuilt field by field, so a field it does not name is silently dropped.
-                        Caught in the harness: the derive marked 2 of 3 Planning-Phase activities
-                        concurrent and the step still drew them chained, because the flag never
-                        survived the trip from sbDeriveFromSchedule to cfg. */
-                     par: !!(a && a.par) };
-          })
-        };
+        var _acts = (Array.isArray(src.acts) ? src.acts : []).map(function (a) {
+          var o = { id: (a && a.id) || uidv(), n: String((a && a.n) || '').slice(0, 200),
+                    // ⚠️ Clamped to 1, never 0: a zero-day phase activity would push a row whose
+                    // finish precedes its start and break the chain for everything after it.
+                    d: Math.max(1, Math.min(999, Math.round(Number(a && a.d) || 1))),
+                    /* ⚠️⚠️ `par` HAS TO BE CARRIED HERE OR IT DOES NOT EXIST. This normaliser is a
+                       WHITELIST — every cfg that arrives (from a save, from the derive, from an older
+                       build) is rebuilt field by field, so a field it does not name is silently dropped.
+                       Caught in the harness: the derive marked 2 of 3 Planning-Phase activities
+                       concurrent and the step still drew them chained, because the flag never
+                       survived the trip from sbDeriveFromSchedule to cfg.
+                       ⚠️ `par` is no longer WRITTEN by the step — the ‖ column went with the Gantt
+                       (2026-09-17) — but it is still READ, as the implicit network of a phase nobody
+                       has drawn a link on yet. Dropping it here would silently re-time every setup
+                       saved before today. See `sbPhLinks`. */
+                    par: !!(a && a.par) };
+          /* ⚠️⚠️ `w` WAS NOT ON THIS LIST AND THE FEATURE HAD NEVER SURVIVED A SAVE. The
+             per-activity WBS branch shipped 2026-09-17 (u); this normaliser is two lines above a
+             comment warning, in bold, about exactly the field it then forgot. So the branch a
+             planner picked worked for the rest of the session and was gone on the next load — and
+             `phaseTaskPayload` reads `t.r.act.w` at push time, which is the moment it was needed.
+             ⚠️ Stored only when set, so a setup that never used it is byte-identical to before. */
+          if (a && a.w) o.w = String(a.w).slice(0, 64);
+          /* Explicit relationships — the FS/SS/FF/SF + lag a planner draws on the phase Gantt.
+             ⚠️ Validated against the phase's OWN activity ids below, once every id is known:
+             a pred naming an activity that has since been deleted would schedule against nothing. */
+          var _pr = (a && Array.isArray(a.preds)) ? a.preds : null;
+          if (_pr && _pr.length) {
+            o.preds = _pr.map(function (p) {
+              if (!p || !p.id) return null;
+              var t = String(p.type || 'FS').toUpperCase();
+              if (t !== 'FS' && t !== 'SS' && t !== 'FF' && t !== 'SF') t = 'FS';
+              return { id: String(p.id), type: t,
+                       lag: Math.max(-999, Math.min(999, Math.round(Number(p.lag) || 0))) };
+            }).filter(Boolean);
+          }
+          return o;
+        });
+        /* ⚠️⚠️ A SECOND PASS, BECAUSE A LINK IS ONLY MEANINGFUL AGAINST THE WHOLE LIST.
+           Self-links and links to an activity that is no longer in this phase are dropped rather
+           than carried: the scheduler would treat an unknown predecessor as "no constraint" and
+           quietly draw a different programme from the one the arrows show. Duplicates collapse to
+           the first, so two arrows between one pair cannot disagree about type or lag. */
+        var _ids = {}; _acts.forEach(function (a) { _ids[a.id] = 1; });
+        _acts.forEach(function (a) {
+          if (!a.preds) return;
+          var seen = {};
+          a.preds = a.preds.filter(function (p) {
+            if (p.id === a.id || !_ids[p.id] || seen[p.id]) return false;
+            seen[p.id] = 1; return true;
+          });
+          if (!a.preds.length) delete a.preds;
+        });
+        /* ⚠️ `net` marks a phase whose sequence is the drawn arrows rather than row order +
+           `par`. It has to survive the round trip for the same reason `par` does: without it a
+           converted phase re-reads as a legacy chain on the next load and every link a planner drew
+           is silently ignored. */
+        d.phases[pd2.v] = { on: !!src.on, net: !!src.net, acts: _acts };
       });
       return d;
     }
@@ -37533,18 +37620,156 @@
     }
     function sbPhOn(v) { var ph = sbPhases()[v]; return !!(ph && ph.on && ph.acts.length); }
     function sbPhActs(v) { var ph = sbPhases()[v]; return (ph && ph.acts) || []; }
-    /* Calendar days the phase actually OCCUPIES. ⚠️ NOT the sum of the durations — that is what
-       made the derived Planning Phase read "8508 days" for two years of concurrent work. Rows that
-       run alongside each other (`par`) contribute their group's longest member once. */
-    function sbPhDays(v) {
-      var total = 0, cur = 0;
-      sbPhActs(v).forEach(function (a) {
-        var d = Math.max(0, +a.d || 0);
-        if (a.par) { cur = Math.max(cur, d); }
-        else { total += cur; cur = d; }
+    /* ==========================================================================================
+       THE PHASE NETWORK, AND WHY IT HAS TWO SOURCES
+       ------------------------------------------------------------------------------------------
+       Owner 2026-09-17: *"users can draw lines between activities to define sequence. right
+       clicking on arrow also allows user to define lag between activities as well as relationship
+       type - FS, SS, FF, SF."* So a phase is a NETWORK now, not a chain.
+
+       ⚠⚠ IT IS NOT A MIGRATION, AND THAT IS DELIBERATE. Every setup saved before today
+       expresses its sequence the old way — row order, plus `par` meaning "runs alongside the row
+       above". Rewriting those into explicit links on load would touch every saved setup in the
+       database to change nothing a planner asked to change, and would do it silently. Instead the
+       implicit chain is DERIVED at read time whenever a phase carries no explicit link, so an
+       untouched phase schedules to the same dates it always did.
+
+       ⚠⚠ THE CONVERSION IS PER PHASE, NEVER PER ACTIVITY, and mixing the two is the
+       trap. If activity 3 carried a drawn link while activity 4 carried none, "what does 4 follow?"
+       has no honest answer — it would appear to follow row 3 while the arrows say nothing of the
+       kind. So the first link drawn on a phase materialises that phase's whole implicit chain in one
+       visible step (see `sbPhMaterialise`), and from then on the arrows are the only truth.
+
+       ⚠️ The implicit chain reproduces the OLD GROUP SEMANTICS exactly, which is subtler than
+       "each row follows the one above". Consecutive `par` rows formed ONE group whose length was its
+       longest member, and the next plain row followed THE GROUP — so it is linked FS to EVERY member
+       of that group, not just the last one. The scheduler takes the max over incoming links, so the
+       group's longest member drives, which is what `grpDur` did. Linking only the last member would
+       let a short final row release the next group early: the "8508 days" bug in reverse. */
+    function sbPhLinks(v) {
+      var acts = sbPhActs(v), ph = sbPhases()[v], out = [];
+      /* ⚠️⚠️ `ph.net` IS THE MARKER, AND "DOES IT HAVE ANY LINKS?" WAS NOT ENOUGH.
+         Caught by the suite: with the flag derived from the links alone, a phase converted to the
+         network and then stripped of its last arrow falls back to the IMPLICIT chain — so deleting
+         a link resurrects the very dependency the planner just deleted, and the bar jumps back.
+         A phase that has been converted stays converted, with no links meaning no links. */
+      var explicit = !!(ph && ph.net) || acts.some(function (a) { return a.preds && a.preds.length; });
+      if (explicit) {
+        acts.forEach(function (a) {
+          (a.preds || []).forEach(function (p) {
+            out.push({ to: a.id, from: p.id, type: p.type || 'FS', lag: +p.lag || 0 });
+          });
+        });
+        return out;
+      }
+      // Implicit: the pre-Gantt order + `par` chain, expressed as links.
+      var prevGroup = [], group = [];
+      acts.forEach(function (a, i) {
+        if (i && a.par) { group.push(a); return; }          // joins the group above
+        if (group.length) prevGroup = group;
+        group = [a];
+        prevGroup.forEach(function (p) { out.push({ to: a.id, from: p.id, type: 'FS', lag: 0 }); });
       });
-      return total + cur;
+      /* ⚠️ A `par` row is tied to its group's leader SS+0 so the group genuinely starts
+         together. Without this the members would each float to day 0 independently — which happens
+         to look the same on a first group and is wrong on every later one. */
+      var leader = null;
+      acts.forEach(function (a, i) {
+        if (i && a.par) { if (leader) out.push({ to: a.id, from: leader.id, type: 'SS', lag: 0 }); }
+        else leader = a;
+      });
+      return out;
     }
+    /* Turn a phase's implicit chain into real `preds`, once, before the first drawn link lands.
+       ⚠️ No-op when the phase already carries explicit links — it must never overwrite arrows a
+       planner has drawn. ⚠️ `par` is cleared as it goes: the flag and the links would otherwise
+       both claim to describe the sequence, and `sbPhLinks` would stop reading the flag anyway. */
+    function sbPhMaterialise(v) {
+      var ph = sbPhases()[v], acts = sbPhActs(v);
+      if (!ph || ph.net || acts.some(function (a) { return a.preds && a.preds.length; })) return false;
+      var byTo = {};
+      sbPhLinks(v).forEach(function (l) { (byTo[l.to] = byTo[l.to] || []).push({ id: l.from, type: l.type, lag: l.lag }); });
+      acts.forEach(function (a) { if (byTo[a.id]) a.preds = byTo[a.id]; delete a.par; });
+      ph.net = true;
+      return true;
+    }
+    /* The forward pass. Day indices, 0-based, each activity occupying [es, ef] INCLUSIVE — the same
+       inclusive calendar-day model `generate()` and `addD` use, so a phase and the execution window
+       it is measured against cannot disagree by a day.
+         FS+lag → es >= ef(pred) + 1 + lag
+         SS+lag → es >= es(pred) + lag
+         FF+lag → ef >= ef(pred) + lag
+         SF+lag → ef >= es(pred) + lag
+       ⚠️ The whole result is shifted so the earliest start is day 0. A negative lag can legally
+       pull an activity before its predecessor, and without the shift the phase would start at a
+       negative offset and overhang whatever sits beside it.
+       ⚠⚠ A CYCLE MUST NOT HANG THE BROWSER. Kahn's algorithm leaves anything in a cycle
+       unplaced; those are scheduled at day 0 and reported, rather than iterated to a fixed point
+       that does not exist. `sbPhLinkWouldCycle` refuses the link at DRAW time so this is a backstop
+       for data that arrived some other way, not the normal path. */
+    function sbPhSchedule(v) {
+      var acts = sbPhActs(v), links = sbPhLinks(v);
+      var es = {}, ef = {}, dur = {}, indeg = {}, outs = {}, order = [], cycle = [];
+      acts.forEach(function (a) { dur[a.id] = Math.max(1, +a.d || 1); indeg[a.id] = 0; });
+      links.forEach(function (l) {
+        if (dur[l.to] == null || dur[l.from] == null) return;   // a stale link schedules nothing
+        indeg[l.to]++; (outs[l.from] = outs[l.from] || []).push(l);
+      });
+      var q = acts.filter(function (a) { return !indeg[a.id]; }).map(function (a) { return a.id; });
+      while (q.length) {
+        var id = q.shift(); order.push(id);
+        (outs[id] || []).forEach(function (l) { if (--indeg[l.to] === 0) q.push(l.to); });
+      }
+      if (order.length < acts.length) {
+        acts.forEach(function (a) { if (order.indexOf(a.id) < 0) { order.push(a.id); cycle.push(a.id); } });
+      }
+      var inc = {}; links.forEach(function (l) { if (dur[l.to] != null && dur[l.from] != null) (inc[l.to] = inc[l.to] || []).push(l); });
+      order.forEach(function (id) {
+        var d = dur[id], start = 0, first = true;
+        (inc[id] || []).forEach(function (l) {
+          if (es[l.from] == null) return;                        // a cycle member, not yet placed
+          var t = l.type, lag = +l.lag || 0, want;
+          if (t === 'SS') want = es[l.from] + lag;
+          else if (t === 'FF') want = ef[l.from] + lag - (d - 1);
+          else if (t === 'SF') want = es[l.from] + lag - (d - 1);
+          else want = ef[l.from] + 1 + lag;                      // FS, and the default
+          if (first || want > start) { start = want; first = false; }
+        });
+        es[id] = start; ef[id] = start + d - 1;
+      });
+      var min = null, max = null;
+      acts.forEach(function (a) {
+        if (es[a.id] == null) { es[a.id] = 0; ef[a.id] = dur[a.id] - 1; }
+        if (min === null || es[a.id] < min) min = es[a.id];
+        if (max === null || ef[a.id] > max) max = ef[a.id];
+      });
+      if (min) acts.forEach(function (a) { es[a.id] -= min; ef[a.id] -= min; });
+      return { es: es, ef: ef, dur: dur, links: links, cycle: cycle,
+               days: acts.length ? ((max - (min || 0)) + 1) : 0 };
+    }
+    /* Would adding `from -> to` close a loop? Asked BEFORE the link is created, because refusing a
+       link the planner can see the reason for beats drawing one and silently flattening the phase.
+       ⚠️ Walks the network as it will be, i.e. including the proposed link. */
+    function sbPhLinkWouldCycle(v, fromId, toId) {
+      if (fromId === toId) return true;
+      var adj = {};
+      sbPhLinks(v).forEach(function (l) { (adj[l.from] = adj[l.from] || []).push(l.to); });
+      (adj[fromId] = adj[fromId] || []).push(toId);
+      var seen = {}, stack = [toId];
+      while (stack.length) {
+        var n = stack.pop();
+        if (n === fromId) return true;
+        if (seen[n]) continue;
+        seen[n] = 1;
+        (adj[n] || []).forEach(function (x) { stack.push(x); });
+      }
+      return false;
+    }
+    /* Calendar days the phase actually OCCUPIES. ⚠️ NOT the sum of the durations — that is what
+       made the derived Planning Phase read "8508 days" for two years of concurrent work.
+       ⚠️ Now the span of the scheduled network, which reduces to exactly the old group-chain
+       total for a phase nobody has drawn a link on — asserted in the harness over both shapes. */
+    function sbPhDays(v) { return sbPhSchedule(v).days; }
     // The dated plan for every enabled phase, around the generated execution window.
     // ⚠️ CALENDAR DAYS, chained finish-to-start — the same arithmetic generate() uses for the
     // execution rows (addD over a day count, no working-day calendar). Two different day models in
@@ -37575,45 +37800,49 @@
          ⚠️ Grouping is done on the FORWARD list in both directions, then the backward walk
          reverses the GROUPS — reversing the activities first would have made a `par` row attach to
          the wrong neighbour, i.e. silently regroup the phase when it is scheduled backwards. */
-      function groupsOf(v) {
-        var out = [];
-        sbPhActs(v).forEach(function (a) {
-          if (a.par && out.length) out[out.length - 1].push(a);
-          else out.push([a]);
+      /* ⚠⚠ THE GROUP-CHAIN WALK WAS REPLACED BY THE NETWORK SCHEDULER, and the property
+         that had to survive is that it schedules an untouched phase to the SAME dates. `groupsOf` /
+         `grpDur` chained groups end to end; `sbPhSchedule` places the same activities off the same
+         implicit links and returns day offsets. For a phase with no drawn link the two agree by
+         construction — `sbPhLinks` derives those links from the very order and `par` flags `groupsOf`
+         read — and the harness asserts it over both shapes rather than trusting that sentence.
+         ⚠️ What the offsets buy is the thing a chain could not express: an activity whose start
+         is driven by an SS+lag from three rows above, which is what the owner asked for. */
+      function _phWindow(d, anchor, back) {
+        var sc = sbPhSchedule(d.v), acts = sbPhActs(d.v), rows = [];
+        /* ⚠️ `back` is the back-scheduled direction: the phase must FINISH the day before
+           `anchor`, so day 0 sits (span - 1) days earlier. Forwards it simply starts at `anchor`.
+           This is what keeps the lifecycle one continuous programme rather than three blocks with
+           gaps nobody chose — the rule the old backward walk existed for. */
+        var base = back ? addD(anchor, -(Math.max(1, sc.days) - 1)) : anchor;
+        acts.forEach(function (a) {
+          rows.push({ act: a, start: addD(base, sc.es[a.id] || 0), finish: addD(base, sc.ef[a.id] || 0),
+                      dur: Math.max(1, +a.d || 1) });
         });
-        return out;
+        /* ⚠⚠ min/max OVER THE ROWS, never rows[0] and rows[last]. The old code read the
+           first and last row's dates because a chain put them in date order; a network does not, so
+           an activity dragged to the top of the list with an SS link to the bottom of it would have
+           reported a phase that starts after it finishes. */
+        var st = null, fi = null;
+        rows.forEach(function (r) {
+          if (!st || r.start < st) st = r.start;
+          if (!fi || r.finish > fi) fi = r.finish;
+        });
+        return { v: d.v, when: d.when, rows: rows, start: st, finish: fi, cycle: sc.cycle };
       }
-      function grpDur(g2) { return g2.reduce(function (m, a) { return Math.max(m, Math.max(1, +a.d || 1)); }, 1); }
       // Walk the before-block BACKWARDS from the execution start.
       var cursor = addD(g.start, -1);
       before.slice().reverse().forEach(function (d) {
-        var rows = [];
-        groupsOf(d.v).slice().reverse().forEach(function (grp) {
-          var dur = grpDur(grp), fin = cursor, st = addD(cursor, -(dur - 1));
-          // ⚠️ Every member of a group gets the GROUP's window, not its own duration's window:
-          // the group's span is the longest member and a shorter sibling inside it finishes early,
-          // which is exactly what "runs alongside" means.
-          grp.slice().reverse().forEach(function (a) {
-            var ad = Math.max(1, +a.d || 1);
-            rows.unshift({ act: a, start: addD(fin, -(ad - 1)), finish: fin, dur: ad });
-          });
-          cursor = addD(st, -1);
-        });
-        out.unshift({ v: d.v, when: d.when, rows: rows, start: rows.length ? rows[0].start : null, finish: rows.length ? rows[rows.length - 1].finish : null });
+        var pp = _phWindow(d, cursor, true);
+        if (pp.start) cursor = addD(pp.start, -1);
+        out.unshift(pp);
       });
       // …and the after-block forwards from the execution finish.
       cursor = addD(g.finish, 1);
       after.forEach(function (d) {
-        var rows = [];
-        groupsOf(d.v).forEach(function (grp) {
-          var dur = grpDur(grp), st = cursor, fin = addD(cursor, dur - 1);
-          grp.forEach(function (a) {
-            var ad = Math.max(1, +a.d || 1);
-            rows.push({ act: a, start: st, finish: addD(st, ad - 1), dur: ad });
-          });
-          cursor = addD(fin, 1);
-        });
-        out.push({ v: d.v, when: d.when, rows: rows, start: rows.length ? rows[0].start : null, finish: rows.length ? rows[rows.length - 1].finish : null });
+        var pp = _phWindow(d, cursor, false);
+        if (pp.finish) cursor = addD(pp.finish, 1);
+        out.push(pp);
       });
       return out;
     }
@@ -45747,6 +45976,39 @@
        a parameter, so the scope it actually runs in was never exercised. Slice-and-inject proves
        the arithmetic and is blind to where a name lives. */
     var _phIdx = null;
+    /* ⚠️⚠️ WHICH PLANNED ACTIVITY IS SELECTED, AND IT IS MODULE SCOPE FOR THE REASON
+       DIRECTLY ABOVE. `stPhases` writes it and the Gantt, the tree and `_phAddWbsTarget` — all
+       siblings, none of them children — read it. A `var` inside `stPhases` is the fault that took
+       this whole step off the screen in 2026-09-17 (p), and it parses cleanly either way.
+       ⚠️ It carries the PHASE as well as the activity id: ids are unique per activity but a
+       button exists per card, and "the selected activity" means nothing on a card it is not on.
+       ⚠️ Deliberately NOT persisted. A selection is where the planner's cursor is, not part of
+       the setup — saving it would make `markDirty()` fire on a click that changed nothing. */
+    var _phSel = { v: null, id: null };
+    function _phSelAct(v) {
+      if (!v || _phSel.v !== v || !_phSel.id) return null;
+      return sbPhActs(v).filter(function (a) { return a.id === _phSel.id; })[0] || null;
+    }
+    /* Where `+ Add WBS` puts the new branch — see the three cases on the button's own handler.
+       Returns `{ parent, after }` in `wbsQuickAdd`'s own argument shape, so the caller does not
+       have to know which of the three it got.
+       ⚠️ Every branch of this is re-validated against THIS phase: `_phTaskNode` answers null for
+       a node that has been deleted, is mirrored from another app, or sits under a different phase,
+       and each of those falls back to the phase branch rather than adding somewhere the card is not
+       showing. A saved `a.w` outlives the tree it points at. */
+    function _phAddWbsTarget(code, pb) {
+      var selNode = _wbsSel ? wbsById(_wbsSel) : null;
+      if (selNode && _phTaskNode(code, selNode.id)) {
+        /* ⚠️ The phase branch itself is not its own sibling — a sibling of it would be a new
+           TOP-LEVEL branch, which is the one thing the four-phase rule forbids. Selecting the phase
+           root means "inside this phase", so it becomes a child. */
+        if (selNode.id === pb.id) return { parent: pb.id, after: null };
+        return { parent: selNode.parent_id || pb.id, after: selNode.id };
+      }
+      var act = _phSelAct(code);
+      if (act) return { parent: _phTaskNode(code, act.w) || pb.id, after: null };
+      return { parent: pb.id, after: null };
+    }
     /* The branches a planned activity may be filed under: the phase branch itself (the default,
        and what every existing setup already does) plus every branch beneath it.
        ⚠️ A mirrored branch (`source_kind`) is NOT offered — its contents come from another
@@ -45777,7 +46039,7 @@
        ⚠️ The planned label is not deleted along with its rail. Whether the two lists are the
        same thing was asked twice (see the card body below) — a table with no label at all puts that
        question straight back. A line under a control strip is not a second pane. */
-    function phWbsBlock(code, label, extra) {
+    function phWbsBlock(code, label, extra, noTree) {
       var b = (code === 'other') ? null
             : (code === 'milestones') ? (function () { var id = _wbsMilestonesRootId(); return id ? wbsById(id) : null; })()
             : _phaseBranchAt(null, code);
@@ -45800,23 +46062,273 @@
       /* ⚠️ Both numbers, each labelled. "0 · 3" would be two numbers and a guess. */
       var tally = n + ' branch' + (n === 1 ? '' : 'es') +
         (code === 'other' ? '' : ' · ' + na + ' activit' + (na === 1 ? 'y' : 'ies'));
-      /* ⚠️⚠️ A VISIBLE WAY IN. Owner 2026-09-17: *"How does one add branches?"* — and there
-         was no answer on screen. The row's own add button lives in `.ps-wbs-acts`, which is
-         `visibility:hidden` until the row is hovered or selected; on an EMPTY branch there is no row
-         to hover, so adding the first sub-branch was unreachable by mouse and discoverable only by
-         knowing that Shift+Enter exists.
-         ⚠️ Not offered on the read-only Execution card, and not on a `source_kind` branch
-         whose contents are mirrored from another app. A button that can only raise a toast
-         explaining itself is not a way in. */
-      var canAdd = (code !== 'construction') && !(b && b.source_kind);
-      var addBtn = canAdd
-        ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phwbsadd="' + e2(code) + '">+ Add branch</button>'
-        : '';
+      /* ⚠️⚠️ "+ Add branch" WAS REMOVED FROM THIS RAIL, 2026-09-17, AND THAT IS A REVERSAL
+         OF THE PASS THAT ADDED IT. Owner: *"remove also add branch for all the phases."* It was put
+         here to answer *"How does one add branches?"*, which was a real hole — and the answer is
+         now `+ Add WBS` on the phase card's own toolbar, which is ONE button per phase instead of
+         one per rail, and which adds beside whatever is selected rather than always at the bottom.
+         ⚠️ So the question it was built for is still answered; what went is the second way of
+         answering it. The Milestones and Other-branches rails lose their only add control with it,
+         deliberately: the four-phase rule means nothing new is authored outside the lifecycle. */
       return '<div class="sbld-phwbs-h"><span>' + (label || 'In the schedule now') + '</span>' +
         '<span class="sbld-phwbs-w">' + where + '</span>' +
-        '<span class="sbld-phwbs-n">' + tally + '</span>' + addBtn + (extra || '') + '</div>' +
-        '<div class="sbld-phwbs" data-phwbs="' + e2(code) + '"></div>';
+        '<span class="sbld-phwbs-n">' + tally + '</span>' + (extra || '') + '</div>' +
+        /* ⚠️⚠️ `noTree` IS THE THREE EDITABLE PHASE CARDS, AND THEY MUST NOT EMIT THIS
+           HOST. Their branches are drawn inside the Gantt's own tree column now; leaving the
+           `data-phwbs` div here as well would make `sbPhaseWbsViews` mount a SECOND live tree over
+           the same branches, so every rename would have two editors and the collapse state of one
+           would silently contradict the other. Milestones, Other branches and the read-only
+           Execution card still use it — they have no Gantt. */
+        (noTree ? '' : '<div class="sbld-phwbs" data-phwbs="' + e2(code) + '"></div>');
     }
+    function _phActById(v, id) {
+      return sbPhActs(v).filter(function (a) { return a.id === id; })[0] || null;
+    }
+    /* Is `anc` an ancestor of `id` in the WBS tree? Guarded against a malformed tree rather than
+       trusting it to terminate — a cycle here would hang the browser on a drop. */
+    function _phTreeAncestor(id, anc) {
+      var n = wbsById(id), guard = 0;
+      while (n && guard++ < 64) { if (n.id === anc) return true; n = n.parent_id ? wbsById(n.parent_id) : null; }
+      return false;
+    }
+    /* Draw a relationship. ⚠️ Refused, with the reason, when it would close a loop: a cycle has
+       no schedule, and accepting the link and then flattening the phase would be a silent wrong
+       answer. ⚠️ An existing link between the same pair is REPLACED rather than doubled — two
+       arrows between one pair could disagree about type and lag, and only one of them would win. */
+    function _phAddLink(v, fromId, toId) {
+      if (fromId === toId) return;
+      sbPhMaterialise(v);
+      if (sbPhLinkWouldCycle(v, fromId, toId)) {
+        UI.toast('That would make the two activities wait for each other — the phase could not be scheduled.', 'warn');
+        return;
+      }
+      var to = _phActById(v, toId), from = _phActById(v, fromId);
+      if (!to || !from) return;
+      to.preds = (to.preds || []).filter(function (p) { return p.id !== fromId; });
+      to.preds.push({ id: fromId, type: 'FS', lag: 0 });
+      markDirty(); render();
+    }
+    /* The relationship editor. ⚠️ It edits the link IN PLACE and re-renders on every change, so
+       the bar moves as the type is picked rather than after an OK — the whole point of putting it
+       on the chart instead of in a form. */
+    function _phLinkMenu(v, idx, x, y) {
+      var links = sbPhLinks(v), l = links[idx];
+      if (!l) return;
+      var from = _phActById(v, l.from), to = _phActById(v, l.to);
+      if (!from || !to) return;
+      var TYPES = [['FS', 'Finish → Start'], ['SS', 'Start → Start'], ['FF', 'Finish → Finish'], ['SF', 'Start → Finish']];
+      var m = UI.modal(
+        '<div class="pd-modal-header"><h3>' + e2(from.n || 'Activity') + ' → ' + e2(to.n || 'Activity') + '</h3></div>' +
+        '<div class="pd-modal-body">' +
+          '<label class="pd-label">Relationship</label>' +
+          '<div class="sbld-gtypes">' + TYPES.map(function (t) {
+            return '<label class="sbld-gtype' + (l.type === t[0] ? ' on' : '') + '">' +
+              '<input type="radio" name="phrel" value="' + t[0] + '"' + (l.type === t[0] ? ' checked' : '') + '>' +
+              '<b>' + t[0] + '</b><span>' + t[1] + '</span></label>';
+          }).join('') + '</div>' +
+          '<label class="pd-label" style="margin-top:10px">Lag <small>(calendar days — negative overlaps)</small></label>' +
+          '<input class="pd-input" id="ph-rel-lag" type="number" min="-999" max="999" value="' + (+l.lag || 0) + '" style="width:120px">' +
+        '</div>' +
+        '<div class="pd-modal-footer">' +
+          '<button class="pd-btn sbld-grm" id="ph-rel-del">Remove this link</button>' +
+          '<span style="flex:1"></span>' +
+          '<button class="pd-btn pd-btn-primary" id="ph-rel-ok">Done</button>' +
+        '</div>', { width: 420 });
+      function edit(fn) {
+        /* ⚠️ Re-found by id every time, never captured: `render()` rebuilds `cfg.phases`' own
+           objects on some paths, and a captured reference would then edit an object nothing reads. */
+        var t = _phActById(v, l.to); if (!t || !t.preds) return;
+        var p = t.preds.filter(function (q) { return q.id === l.from; })[0];
+        if (p) { fn(p); markDirty(); render(); }
+      }
+      m.el.querySelectorAll('input[name="phrel"]').forEach(function (r) {
+        r.onchange = function () {
+          edit(function (p) { p.type = r.value; });
+          m.el.querySelectorAll('.sbld-gtype').forEach(function (lb) {
+            lb.classList.toggle('on', lb.querySelector('input').value === r.value);
+          });
+        };
+      });
+      var lag = m.el.querySelector('#ph-rel-lag');
+      lag.onchange = function () { edit(function (p) { p.lag = Math.max(-999, Math.min(999, Math.round(+lag.value || 0))); }); };
+      m.el.querySelector('#ph-rel-del').onclick = function () {
+        var t = _phActById(v, l.to);
+        if (t && t.preds) {
+          t.preds = t.preds.filter(function (q) { return q.id !== l.from; });
+          if (!t.preds.length) delete t.preds;
+          markDirty();
+        }
+        m.close(); render();
+      };
+      m.el.querySelector('#ph-rel-ok').onclick = function () { m.close(); };
+    }
+
+    /* ==========================================================================================
+       THE PHASE GANTT  (owner 2026-09-17, items 4 and 5)
+       ------------------------------------------------------------------------------------------
+       *"instead of a plain table, this should be a gantt chart per phase, in the gantt chart, users
+       can draw lines between activities to define sequence. right clicking on arrow also allows user
+       to define lag between activities as well as relationship type - FS, SS, FF, SF."*
+       and *"when add WBS, add it as a sibling WBS to the activity or WBS selected. WBS can be
+       dragged to the left to make it a parent. activities can also be dragged to the WBS to place
+       inside or outside the WBS. no need for the WBS branch column. no need also for the dates."*
+
+       ⚠⚠ ONE TREE, NOT A LIST BESIDE A TREE. The card used to carry two blocks: the
+       planned activity LIST (`cfg.phases`, a plan) and the live WBS TREE (`wbs_nodes`, a record),
+       and a long note explaining that they are not two views of one thing. That is still true of
+       the DATA — the activities are not in the database until the push — but it stopped being a
+       reason to draw them apart the moment the owner asked to drag an activity INTO a branch: a
+       drag needs both ends on screen at once, and "which branch is this activity in" is answered
+       far better by where it sits than by a select column.
+       ⚠️ So the branch a planned activity is filed under (`a.w`) is now expressed as tree
+       POSITION, and the WBS column is gone — the data it wrote is unchanged, and the push still
+       re-validates it. The distinction between plan and record survives as the row's own styling
+       and the "Planned" label above, not as two separate boxes.
+
+       ⚠️ The DATES column went with it, as asked: a Gantt states dates as bars, and a text
+       column beside them is the same fact twice, in the narrower of the two forms. The bar's title
+       still carries the exact window, because a bar is a shape and a date is a number. */
+
+    /* The card's rows, in drawing order: every branch under the phase, depth-first, with the
+       planned activities filed under each one.
+       ⚠️ An activity whose `a.w` no longer resolves inside this phase falls to the phase root
+       rather than disappearing — a saved recipe outlives the tree it points at, and an activity
+       that renders nowhere is one the planner cannot fix. It is the same fallback the push applies,
+       so what the card shows is what the push will do.
+       ⚠️ Mirrored branches (`source_kind`) are shown but never accept a drop: their contents
+       come from another app and the push may not add to them. */
+    function _phTreeRows(v) {
+      var pb = _phaseBranchAt(null, v), out = [], acts = sbPhActs(v);
+      var byW = {}, root = [];
+      acts.forEach(function (a) {
+        var w = a.w ? _phTaskNode(v, a.w) : null;
+        if (w && pb && w !== pb.id) (byW[w] = byW[w] || []).push(a); else root.push(a);
+      });
+      function emitActs(list, depth) {
+        list.forEach(function (a) { out.push({ kind: 'act', id: a.id, act: a, depth: depth }); });
+      }
+      emitActs(root, 0);
+      if (!pb) return out;
+      (function walk(parent, depth) {
+        wbsChildren(parent).forEach(function (n) {
+          var kids = wbsChildren(n.id), mine = byW[n.id] || [];
+          out.push({ kind: 'wbs', id: n.id, node: n, depth: depth,
+                     kids: kids.length + mine.length, collapsed: !!_phCollapsed[n.id] });
+          if (_phCollapsed[n.id]) return;
+          emitActs(mine, depth + 1);
+          walk(n.id, depth + 1);
+        });
+      })(pb.id, 0);
+      return out;
+    }
+    /* ⚠️ Module scope, keyed by node id, and NOT persisted — a fold is how the planner is
+       reading the card today, not part of the setup. Saving it would make `markDirty()` fire on a
+       click that changed nothing, which is how a "you have unsaved changes" prompt stops meaning
+       anything. Same call `_wbsCollapsed` already makes for the live tree. */
+    var _phCollapsed = {};
+
+    /* The Gantt for one phase. Left: the tree above. Right: a bar per activity on a day scale,
+       with the drawn relationships as arrows between them. */
+    function _phGanttHTML(v, pl) {
+      var rows = _phTreeRows(v), sc = sbPhSchedule(v), acts = sbPhActs(v);
+      if (!acts.length) return '<div class="sbld-empty">No activities yet — <b>+ Add activity</b> starts the list.</div>';
+      var days = Math.max(1, sc.days);
+      /* ⚠️ The day width is derived from the SPAN so the whole phase fits the card without a
+         horizontal scrollbar at ordinary sizes, and clamped at both ends: under ~3px a bar is a
+         smudge, over ~26px a three-week phase wastes half the card. A very long phase scrolls. */
+      var dayW = Math.max(3, Math.min(26, Math.round(620 / days)));
+      var plotW = days * dayW, ROW = 26, TOP = 0;
+      var yOf = {}, n = 0;
+      rows.forEach(function (r) { yOf[r.id] = n * ROW; n++; });
+      var H = Math.max(ROW, n * ROW);
+
+      // ---- the tree column -------------------------------------------------------------------
+      var tree = rows.map(function (r) {
+        var pad = 6 + r.depth * 14;
+        if (r.kind === 'wbs') {
+          var mirror = r.node.source_kind ? ' is-mirror' : '';
+          return '<div class="sbld-gr sbld-gr-wbs' + mirror + (_wbsSel === r.node.id ? ' is-sel' : '') + '" data-gwbs="' + e2(r.node.id) + '" data-v="' + v + '" style="padding-left:' + pad + 'px">' +
+            '<span class="sbld-gcar" data-gfold="' + e2(r.node.id) + '" title="' + (r.collapsed ? 'Expand' : 'Collapse') + '">' +
+              (r.kids ? (r.collapsed ? '▸' : '▾') : '') + '</span>' +
+            '<span class="sbld-ggrip" draggable="true" data-gdragwbs="' + e2(r.node.id) + '" data-v="' + v + '" title="Drag left to promote this branch a level, right to file it under the branch above.">⋮⋮</span>' +
+            '<input class="sbld-gname sbld-gname-wbs" data-gwbsname="' + e2(r.node.id) + '" value="' + e2(r.node.name || 'WBS') + '" title="Rename this branch">' +
+            (r.node.source_kind ? '<span class="sbld-gmirror" title="Mirrored from another app — read-only here">●</span>'
+              : '<button class="pd-btn sbld-gdel" data-gwbsdel="' + e2(r.node.id) + '" title="Delete this branch"><span data-ico="trash" data-ico-size="12"></span></button>') +
+            '</div>';
+        }
+        var a = r.act;
+        return '<div class="sbld-gr sbld-gr-act' + (_phSel.v === v && _phSel.id === a.id ? ' is-sel' : '') + '" data-gact="' + e2(a.id) + '" data-v="' + v + '" style="padding-left:' + pad + 'px">' +
+          '<span class="sbld-gcar"></span>' +
+          '<span class="sbld-ggrip" draggable="true" data-gdragact="' + e2(a.id) + '" data-v="' + v + '" title="Drag onto a branch to file it there, or onto the phase header to take it out of every branch.">⋮⋮</span>' +
+          '<input class="sbld-gname" data-gactname="' + e2(a.id) + '" data-v="' + v + '" value="' + e2(a.n) + '" placeholder="Activity name">' +
+          '<input class="sbld-gdur" type="number" min="1" max="999" data-gactdur="' + e2(a.id) + '" data-v="' + v + '" value="' + (+a.d || 1) + '" title="Duration in CALENDAR days — these lifecycle activities are not scheduled against a working calendar">' +
+          '<button class="pd-btn sbld-gdel" data-gactdel="' + e2(a.id) + '" data-v="' + v + '" title="Remove this activity"><span data-ico="trash" data-ico-size="12"></span></button>' +
+          '</div>';
+      }).join('');
+
+      // ---- the bars --------------------------------------------------------------------------
+      var planBy = {};
+      (pl && pl.rows || []).forEach(function (r) { planBy[r.act.id] = r; });
+      var bars = rows.filter(function (r) { return r.kind === 'act'; }).map(function (r) {
+        var a = r.act, es = sc.es[a.id] || 0, d = Math.max(1, +a.d || 1);
+        var w = planBy[a.id];
+        var when = w ? (fmtD(w.start) + ' → ' + fmtD(w.finish)) : (d + ' days');
+        var bad = sc.cycle.indexOf(a.id) >= 0;
+        return '<div class="sbld-gbar' + (bad ? ' is-cycle' : '') + '" data-gbar="' + e2(a.id) + '" data-v="' + v + '" ' +
+          'style="left:' + (es * dayW) + 'px;top:' + (yOf[a.id] + 5) + 'px;width:' + Math.max(4, d * dayW) + 'px" ' +
+          'title="' + e2((a.n || 'Activity') + ' · ' + d + ' day' + (d === 1 ? '' : 's') + ' · ' + when) + '">' +
+          '<span class="sbld-ghandle" data-glink="' + e2(a.id) + '" data-v="' + v + '" title="Drag onto another activity to make it follow this one"></span>' +
+          '</div>';
+      }).join('');
+
+      // ---- the arrows ------------------------------------------------------------------------
+      /* ⚠️⚠️ THE ARROW LEAVES AND ARRIVES AT THE END THE RELATIONSHIP NAMES, which is the
+         only thing that makes four types readable on one chart: FS leaves the predecessor's FINISH
+         and arrives at the successor's START, SS leaves its start, FF arrives at its finish, SF does
+         both. An arrow drawn corner-to-corner regardless of type would make SS and FS look
+         identical and the type would only exist in a menu. */
+      var arrows = sc.links.map(function (l, i) {
+        if (sc.es[l.from] == null || sc.es[l.to] == null || yOf[l.from] == null || yOf[l.to] == null) return '';
+        var fromStart = (l.type === 'SS' || l.type === 'SF');
+        var toFinish  = (l.type === 'FF' || l.type === 'SF');
+        var x1 = (fromStart ? sc.es[l.from] : sc.ef[l.from] + 1) * dayW;
+        var x2 = (toFinish  ? sc.ef[l.to] + 1 : sc.es[l.to]) * dayW;
+        var y1 = yOf[l.from] + 13, y2 = yOf[l.to] + 13;
+        var mx = fromStart ? (x1 - 9) : (x1 + 9);
+        var ex = toFinish ? (x2 + 9) : (x2 - 9);
+        var d2 = 'M' + x1 + ',' + y1 + ' H' + mx + ' V' + y2 + ' H' + ex + ' L' + x2 + ',' + y2;
+        var lab = l.type + (l.lag ? (l.lag > 0 ? '+' : '') + l.lag : '');
+        return '<path class="sbld-garrow" d="' + d2 + '" data-gl="' + i + '" data-v="' + v + '"></path>' +
+               '<path class="sbld-ghit" d="' + d2 + '" data-gl="' + i + '" data-v="' + v + '"><title>' + e2(lab + ' — right-click to change') + '</title></path>' +
+               (l.type !== 'FS' || l.lag
+                 ? '<text class="sbld-glab" x="' + ((mx + ex) / 2) + '" y="' + ((y1 + y2) / 2 - 3) + '" data-gl="' + i + '" data-v="' + v + '">' + e2(lab) + '</text>'
+                 : '');
+      }).join('');
+
+      // ---- the day scale ---------------------------------------------------------------------
+      /* Ticks every week where a week is wide enough to label, otherwise every four. A phase is
+         placed relative to the execution window, so the scale is stated in days-from-phase-start
+         rather than in dates: the dates are on each bar's own tooltip, and a date axis at 3px a day
+         is unreadable at exactly the widths where the phase is long enough to need one. */
+      var step = dayW >= 10 ? 7 : (dayW >= 5 ? 14 : 28), ticks = '';
+      for (var t = 0; t <= days; t += step) {
+        ticks += '<div class="sbld-gtick" style="left:' + (t * dayW) + 'px"><span>' + (t ? 'd' + t : 'd0') + '</span></div>';
+      }
+
+      return '<div class="sbld-gantt" data-gantt="' + v + '" style="--gw:' + plotW + 'px">' +
+        '<div class="sbld-gtree" data-gtree="' + v + '">' + tree + '</div>' +
+        '<div class="sbld-gplot" data-gplot="' + v + '">' +
+          '<div class="sbld-gticks">' + ticks + '</div>' +
+          '<div class="sbld-gbody" style="height:' + H + 'px;width:' + plotW + 'px">' +
+            '<svg class="sbld-gsvg" width="' + plotW + '" height="' + H + '">' + arrows + '</svg>' +
+            bars +
+            '<div class="sbld-grub" hidden></div>' +
+          '</div>' +
+        '</div></div>' +
+        (sc.cycle.length ? '<p class="sbld-note sbld-note-warn">' + sc.cycle.length +
+          ' activit' + (sc.cycle.length === 1 ? 'y forms' : 'ies form') + ' a loop and could not be scheduled — they are drawn at the phase start. Remove one of the arrows between them.</p>' : '');
+    }
+
     function stPhases(host, noHead) {
       /* ⚠️ Built ONCE per render and shared by the six cards. `phWbsBlock` needs the per-node
          activity count and `_wbsBuildIndex` walks the whole tree; six calls would walk it six
@@ -45829,10 +46341,15 @@
       function win(st, fi) { return (st && fi) ? (fmtD(st) + ' → ' + fmtD(fi)) : '—'; }
       var execRow = '<div class="sbld-phcard is-exec">' +
         '<div class="sbld-phhead"><span class="sbld-phname">' + e2(PHASE_LABELS.construction) + '</span>' +
-        /* ⚠ Named by the STEP, not by a view inside it: 'Stacking' is no longer one of
-           Repetition's tabs, and a title the alias has to rescue is a reference waiting to read
-           as a blank. */
-        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Repetition') + '</span></div>' +
+        /* ⚠ Named by the STEP, not by a view inside it: a title the alias has to rescue is a
+           reference waiting to read as a blank.
+           ⚠️ 'Repetition' WAS exactly that. It stopped being a step when it was split into
+           Towers / Floors & Zones / Location Sequence / Activity Sequence, and `STEP_ALIAS` kept it
+           resolving — to `Location Sequence`, which is the number of the FIRST of the four, not the
+           last. So the range read "4–7" for work that is defined as far as step 8. The alias did its
+           job (a number rather than a blank) and the sentence was still wrong; naming the real end
+           of the range is the fix. */
+        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Activity Sequence') + '</span></div>' +
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
           ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
         phWbsBlock('construction') + '</div>';
@@ -45847,55 +46364,20 @@
       var cards = SB_PHASE_DEFS.map(function (d) {
         if (d.when === 'exec') return execRow;
         var ph = sbPhases()[d.v], pl = planBy[d.v], on = !!ph.on;
-        /* ⚠️⚠️ THE COLUMNS ARE NAMED NOW. Owner 2026-09-03: *"See project phases. What does
-           the fields mean? Are these activities then days? Why is there a feature to drag the
-           activity, is this relevant to the sequence? Or just a non functional feature?"* — three
-           questions that all have the same cause: a row was [grip] [name] [271] [Sep 24, 02 → Jun
-           21, 03] [bin] with no header anywhere, so "271" was a bare number and the grip looked
-           decorative. Every answer was already true (271 IS calendar days; the drag IS functional
-           and DOES decide the dates) and none of it was on screen.
-           ⚠️ A header ROW, not tooltips. A tooltip answers the question only for the reader who
-           already suspected there was one. */
-        /* ⚠️⚠️ THE TWO LISTS ARE A PLAN AND A RECORD, AND THE CARD NOW SAYS SO. Asked twice
-           whether this is a duplicate, which means the screen was not answering it. The list below
-           is `cfg.phases` — what the next Push will CREATE, not in the database yet. The branch
-           block underneath is `wbs_nodes` — what the project HAS. They are not two views of one
-           thing and cannot be merged into one list without merging an intention with a fact. */
-        var phHead = '<div class="sbld-phrow sbld-phhdr">' +
-          '<span class="sbld-phgrip" aria-hidden="true"></span>' +
-          '<span>Activity</span>' +
-          '<span class="sbld-phw-h" title="Which branch under this phase the activity is created in when you push. Leave it on the phase itself when it does not belong to a sub-WBS.">WBS</span>' +
-          '<span title="Calendar days, not working days — these lifecycle activities are not scheduled against a working calendar.">Days</span>' +
-          '<span title="Tick to run this activity alongside the one above it instead of after it.">‖</span>' +
-          '<span class="sbld-phwin-h">Dates <i>(computed)</i></span><span></span></div>';
-        var body = phHead + ph.acts.map(function (a, i) {
-          return '<div class="sbld-phrow' + (a.par ? ' is-par' : '') + '" data-i="' + i + '">' +
-            '<span class="sbld-phgrip" draggable="true" title="Drag to reorder. The order IS the sequence: each activity (or parallel group) follows the one above it, so moving a row moves the dates of everything below it.">\u22ee\u22ee</span>' +
-            '<input class="pd-input sbld-phn" data-ph="' + d.v + '" data-i="' + i + '" value="' + e2(a.n) + '" placeholder="Activity name">' +
-            /* ⚠️ The SAVED value is shown even when it no longer resolves, rather than silently
-               snapping back to the phase: `_phWbsOptions` simply will not contain it, so the select
-               falls to its first option and the planner can see it has moved. The push validates
-               separately and says so. */
-            '<select class="pd-select sbld-phw" data-phw="' + d.v + '" data-i="' + i + '" ' +
-              'title="The branch this activity is created under when you push">' +
-              _phWbsOptions(d.v, a.w || '') + '</select>' +
-            '<input class="pd-input sbld-phd" type="number" min="1" max="999" data-ph="' + d.v + '" data-i="' + i + '" value="' + (+a.d || 1) + '" title="Duration in CALENDAR days">' +
-            /* ⚠️ Disabled on the FIRST row: "alongside the one above" has no meaning there, and a
-               tickable box that silently does nothing is worse than no box. */
-            '<label class="sbld-phpar" title="' + (i === 0
-              ? 'The first activity in a phase has nothing above it to run alongside.'
-              : 'Run this alongside “' + e2(String((ph.acts[i - 1] || {}).n || 'the row above')) + '” instead of after it. Concurrent rows form one block whose length is the longest of them.') + '">' +
-              '<input type="checkbox" data-phpar="' + d.v + '" data-i="' + i + '"' + (a.par ? ' checked' : '') + (i === 0 ? ' disabled' : '') + '></label>' +
-            /* ⚠ title AND body from the same call — two calls could not disagree here today,
-               but a cut date whose tooltip says something else is the worst of both. */
-            (function () {
-              var w = (on && pl && pl.rows[i]) ? win(pl.rows[i].start, pl.rows[i].finish) : null;
-              return '<span class="sbld-phwin"' + (w ? ' title="' + e2(w) + '"' : '') +
-                '>' + (w ? e2(w) : '&mdash;') + '</span>';
-            })() +
-            '<button class="pd-btn sbld-del" data-phdel="' + d.v + '" data-i="' + i + '" title="Remove this activity"><span data-ico="trash" data-ico-size="14"></span></button>' +
-            '</div>';
-        }).join('');
+        /* ⚠️⚠️ THE TABLE THAT USED TO BE HERE IS THE GANTT NOW (owner 2026-09-17, item 5).
+           What it was: a header row plus one row per activity — grip, name, WBS select, days, the
+           ‖ concurrent tick, the computed dates and a bin. The header row was itself a fix, from
+           2026-09-03: *"What does the fields mean? Are these activities then days? Why is there a
+           feature to drag the activity, is this relevant to the sequence?"* — three questions with
+           one cause, a row of bare numbers with nothing naming the columns.
+           ⚠️ Every one of those answers survives, in a form that does not need a header row to
+           carry it: the duration keeps its "calendar days, not working days" tooltip on the input
+           itself, the sequence is the arrows rather than the row order (so the question the drag
+           handle raised no longer arises — it files a row into a branch now, which is what it
+           looks like it does), and the dates are the bars.
+           ⚠️ The ‖ column went with it. `par` is still READ as the implicit network of a phase
+           nobody has drawn on — see `sbPhLinks` — but it is no longer written, because SS+0 says
+           the same thing and says it in the same vocabulary as the other three types. */
         return '<div class="sbld-phcard' + (on ? ' on' : '') + '">' +
           '<div class="sbld-phhead">' +
             '<label class="sbld-phname"><input type="checkbox" data-phon="' + d.v + '"' + (on ? ' checked' : '') + '> ' + e2(PHASE_LABELS[d.v]) + '</label>' +
@@ -45917,13 +46399,22 @@
           /* \u26a0\ufe0f The planned list's two buttons ride on the rail above it, not on a strip of
              their own \u2014 see the note on `phWbsBlock`. They are passed only when the phase is ON:
              a switched-off phase has no list to add to, and the rail still shows its branches. */
+          /* ⚠️⚠️ THE TWO BUTTONS A PHASE ACTUALLY NEEDS, and only while it is ON. Owner
+             2026-09-17: *"when phase is clicked, provide button for add WBS and add activity. no
+             need for reset to typical set inside phase."*
+             ⚠️ `+ Add WBS` is the ONLY way to author a branch now that the toolbar's Add WBS and
+             every rail's `+ Add branch` are gone — and it can only ever add INSIDE this phase, which
+             is what makes the four-phase rule hold by construction rather than by convention.
+             ⚠️ `Reset to the typical set` went as asked. It was the one control on this card that
+             could destroy a planner's own typed list in a single click, and its confirm said so. */
           phWbsBlock(d.v, null, on
-            ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phadd="' + d.v + '">+ Add activity</button>' +
-              '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phreset="' + d.v + '">Reset to the typical set</button>'
-            : '') +
+            ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phwbsadd="' + d.v + '">+ Add WBS</button>' +
+              '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phadd="' + d.v + '">+ Add activity</button>'
+            : '', on) +
           (on ? '<p class="sbld-phplanline"><b>Planned</b> \u00b7 created under this phase when you <b>' +
-                  _stepNo('Generate') + ' \u00b7 Push</b></p>' +
-                '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' : '') +
+                  _stepNo('Generate') + ' \u00b7 Push</b>' +
+                  '<span class="sbld-phdrop" data-gdrop-root="' + d.v + '" title="Drag an activity here to take it out of every branch and file it directly on the phase">directly on the phase</span></p>' +
+                _phGanttHTML(d.v, pl) : '') +
           /* ⚠️ THE SUBTREE IS SHOWN WHETHER THE PHASE IS ON OR OFF. The activity list above is
              what the next push WILL create; the tree below is what the project HAS. A branch with
              branches already in it, on a phase switched off, is exactly the state a planner needs
@@ -45979,16 +46470,25 @@
       /* ⚠️ The parent is resolved AT CLICK TIME, never captured at render: a push between the
          two creates the phase branch, and a null captured earlier would silently add a new TOP-LEVEL
          branch instead of a child — which renumbers every sibling's dotted code. */
+      /* ⚠️⚠️ A SIBLING OF WHAT IS SELECTED, NOT ALWAYS THE BOTTOM OF THE PHASE. Owner
+         2026-09-17: *"when add WBS, add it as a sibling WBS to the activity or WBS selected."*
+         So there are three cases, and the third is the one that keeps the four-phase rule true:
+           • a WBS branch selected inside THIS phase → a sibling beside it (same parent, after it);
+           • an ACTIVITY selected → a branch beside it, i.e. under whatever branch the activity is
+             filed in (`a.w`), which is what "sibling to the activity" means once activities live
+             in the tree rather than in a list of their own;
+           • nothing selected → the first child of the phase branch.
+         ⚠️⚠️ The selection is re-read AT CLICK TIME and re-checked against THIS phase. A
+         branch selected on the Planning card must not put a new branch under Planning while the
+         planner is pressing Initiation's button — a global selection plus a per-card button is
+         exactly how that happens. Out-of-phase selections fall back to the phase branch.
+         ⚠️ The parent is resolved at click time too, never captured at render: a push between
+         the two creates the phase branch, and a null captured earlier would silently add a new
+         TOP-LEVEL branch instead of a child — which renumbers every sibling's dotted code. */
       host.querySelectorAll('[data-phwbsadd]').forEach(function (b) {
         b.onclick = function (e) {
           e.preventDefault(); e.stopPropagation();
           var code = b.dataset.phwbsadd;
-          if (code === 'other') { wbsQuickAdd(null, null); return; }   // a new top-level branch
-          if (code === 'milestones') {
-            var ms = _wbsMilestonesRootId();
-            if (!ms) { UI.toast('This project has no Milestones branch yet.', 'warn'); return; }
-            wbsQuickAdd(ms, null); return;
-          }
           var pb = _phaseBranchAt(null, code);
           if (!pb) {
             /* ⚠️ Says what to do instead of failing quietly. The branch is created by the push,
@@ -45996,57 +46496,225 @@
             UI.toast('This phase has no branch yet — run ' + _stepNo('Generate') + ' — Push first.', 'warn');
             return;
           }
-          wbsQuickAdd(pb.id, null);
+          var ref = _phAddWbsTarget(code, pb);
+          /* ⚠️ `.then(render)` for the reason above — and it is what puts the new branch on
+             screen at all, since the Gantt's tree is not one of the live WBS views `wbsQuickAdd`
+             repaints. */
+          wbsQuickAdd(ref.parent, ref.after).then(render);
         };
       });
-      host.querySelectorAll('[data-phw]').forEach(function (sel) {
-        sel.onchange = function () {
-          var a = sbPhActs(sel.dataset.phw)[+sel.dataset.i];
-          if (!a) return;
-          /* ⚠️ Stored as undefined rather than '' when it is the phase itself, so a setup saved
-             before today and one saved after read identically. */
-          if (sel.value) a.w = sel.value; else delete a.w;
-          markDirty(); render();
-        };
-      });
-      host.querySelectorAll('[data-phreset]').forEach(function (b) {
-        b.onclick = function () {
-          var v = b.dataset.phreset;
-          psConfirm('Replace this phase\u2019s activities with the typical set?', function () {
-            sbPhases()[v].acts = (SB_PH_DEF[v] || []).map(sbPhAct); markDirty(); render();
-          }, { title: 'Back to the typical activities?', ok: 'Replace them',
-               note: 'Anything you have typed or re-ordered in this phase goes.' });
-        };
-      });
-      host.querySelectorAll('[data-phdel]').forEach(function (b) {
-        b.onclick = function () { sbPhActs(b.dataset.phdel).splice(+b.dataset.i, 1); markDirty(); render(); };
-      });
-      host.querySelectorAll('[data-phpar]').forEach(function (c) {
-        c.onchange = function () {
-          var a = sbPhActs(c.dataset.phpar)[+c.dataset.i];
-          if (a) { a.par = c.checked; markDirty(); render(); }
-        };
-      });
-      // ⚠️ Names and durations commit on 'change', never on 'input': render() rebuilds the whole
-      // step, so a repaint per keystroke would take the focus out of the field being typed into.
-      host.querySelectorAll('.sbld-phn').forEach(function (el) {
-        el.onchange = function () { var a = sbPhActs(el.dataset.ph)[+el.dataset.i]; if (a) { a.n = el.value; markDirty(); render(); } };
-      });
-      host.querySelectorAll('.sbld-phd').forEach(function (el) {
+      /* ==========================================================================================
+         GANTT WIRING
+         ⚠️⚠️ EVERY EDIT THAT CHANGES THE SEQUENCE CALLS `sbPhMaterialise` FIRST. A phase
+         saved before today expresses its sequence as row order + `par`; the moment one arrow is
+         drawn the arrows become the only truth, so the implicit chain has to be written down in the
+         same gesture. Skipping it would mean the first link a planner draws silently deletes every
+         dependency they could already see. `sbPhMaterialise` is a no-op on a phase already
+         converted, so calling it on every edit costs nothing.
+         ⚠️ Names and durations commit on 'change', never on 'input': render() rebuilds the whole
+         step, so a repaint per keystroke would take the focus out of the field being typed into. */
+      host.querySelectorAll('[data-gactname]').forEach(function (el) {
         el.onchange = function () {
-          var a = sbPhActs(el.dataset.ph)[+el.dataset.i];
+          var a = _phActById(el.dataset.v, el.dataset.gactname);
+          if (a) { a.n = el.value; markDirty(); render(); }
+        };
+      });
+      host.querySelectorAll('[data-gactdur]').forEach(function (el) {
+        el.onchange = function () {
+          var a = _phActById(el.dataset.v, el.dataset.gactdur);
           if (a) { a.d = Math.max(1, Math.min(999, Math.round(+el.value || 1))); markDirty(); render(); }
         };
       });
-      // Drag to reorder — the order IS the chain, so it decides the dates.
-      // ⚠️ Only the GRIP is draggable, never the row: with a draggable row, dragging across the name
-      // field to select part of it starts a drag instead of selecting the text. dragstart on the grip
-      // still bubbles to the row's own listener, so wireDrag sees the row as the dragged element and
-      // nothing else about it changes.
-      host.querySelectorAll('.sbld-phrow').forEach(function (row) {
-        var f = row.querySelector('[data-ph]');
-        var v = f ? f.dataset.ph : null;
-        if (v) wireDrag(row, null, function () { return sbPhActs(v); });
+      /* ⚠️⚠️ DELETING AN ACTIVITY DELETES EVERY ARROW THAT NAMED IT. `normalize()` drops
+         stale preds on the next save and `sbPhSchedule` ignores them meanwhile, so nothing would
+         break — but the arrow would stay on screen until the planner saved and reloaded, which
+         reads as a link that cannot be deleted. */
+      host.querySelectorAll('[data-gactdel]').forEach(function (b) {
+        b.onclick = function () {
+          var v = b.dataset.v, id = b.dataset.gactdel, acts = sbPhActs(v);
+          var i = acts.map(function (a) { return a.id; }).indexOf(id);
+          if (i < 0) return;
+          acts.splice(i, 1);
+          acts.forEach(function (a) {
+            if (!a.preds) return;
+            a.preds = a.preds.filter(function (p) { return p.id !== id; });
+            if (!a.preds.length) delete a.preds;
+          });
+          if (_phSel.id === id) _phSel = { v: null, id: null };
+          markDirty(); render();
+        };
+      });
+      // Selecting a row is what `+ Add WBS` reads to decide where the new branch goes.
+      host.querySelectorAll('[data-gact]').forEach(function (r) {
+        r.onmousedown = function (e) {
+          if (e.target.closest('input,button,.sbld-ggrip')) return;
+          _phSel = { v: r.dataset.v, id: r.dataset.gact }; _wbsSel = null; render();
+        };
+      });
+      host.querySelectorAll('[data-gwbs]').forEach(function (r) {
+        r.onmousedown = function (e) {
+          if (e.target.closest('input,button,.sbld-ggrip,.sbld-gcar')) return;
+          _wbsSel = r.dataset.gwbs; _phSel = { v: null, id: null }; render();
+        };
+      });
+      host.querySelectorAll('[data-gfold]').forEach(function (c) {
+        c.onclick = function (e) {
+          e.stopPropagation();
+          var id = c.dataset.gfold;
+          if (_phCollapsed[id]) delete _phCollapsed[id]; else _phCollapsed[id] = 1;
+          render();
+        };
+      });
+      /* ⚠️ A branch rename goes straight to the database through the tree's own writer, so the
+         Gantt column and the Schedule grid cannot disagree about a branch's name. It is NOT part of
+         the setup, so it does not call markDirty() — marking the setup dirty for a change that was
+         already persisted is how a "you have unsaved changes" prompt stops meaning anything. */
+      /* ⚠️⚠️ EVERY WBS EDIT RE-RENDERS THE STEP ITSELF, and it has to be asked for
+         here. `_wbsCommit` ends in `renderWbsManager()` + `psSetupChanged()` — which repaint the
+         live tree views, the schedule grid, the Gantt and the Vertical Stacking, and NOT this panel.
+         That was fine while a phase card's branches were a live tree view; the Gantt draws its own
+         tree, so without this a renamed branch keeps its old name on screen, a deleted one stays,
+         and a promoted one stays where it was, until something else happens to repaint the step.
+         ⚠️ All four are `async`, so each returns a promise even on its early-return refusals
+         (a locked heading, an empty name) — which is exactly when a repaint is most needed, to put
+         the input back to the value the database actually holds. */
+      host.querySelectorAll('[data-gwbsname]').forEach(function (el) {
+        el.onchange = function () { wbsRename(el.dataset.gwbsname, el.value).then(render); };
+      });
+      host.querySelectorAll('[data-gwbsdel]').forEach(function (b) {
+        b.onclick = function (e) { e.stopPropagation(); wbsDelete(b.dataset.gwbsdel).then(render); };
+      });
+
+      /* ---- drag: file an activity into a branch, promote or demote a branch ------------------
+         ⚠️⚠️ TWO DIFFERENT GESTURES, AND THEY ARE TOLD APART BY WHAT IS BEING DRAGGED,
+         never by where it lands. An activity dropped on a branch is filed INTO it (`a.w`); a branch
+         dropped is moved a LEVEL by how far sideways it travelled, which is the owner's *"WBS can
+         be dragged to the left to make it a parent."*
+         ⚠️ Only the GRIP is draggable, never the row: with a draggable row, dragging across the
+         name field to select part of it starts a drag instead of selecting the text. */
+      var _gDrag = null;
+      host.querySelectorAll('[data-gdragact]').forEach(function (g) {
+        g.ondragstart = function (e) {
+          _gDrag = { kind: 'act', v: g.dataset.v, id: g.dataset.gdragact, x: e.clientX };
+          try { e.dataTransfer.setData('text/plain', g.dataset.gdragact); e.dataTransfer.effectAllowed = 'move'; } catch (x) {}
+        };
+        g.ondragend = function () { _gDrag = null; host.querySelectorAll('.is-drop').forEach(function (n) { n.classList.remove('is-drop'); }); };
+      });
+      host.querySelectorAll('[data-gdragwbs]').forEach(function (g) {
+        g.ondragstart = function (e) {
+          _gDrag = { kind: 'wbs', v: g.dataset.v, id: g.dataset.gdragwbs, x: e.clientX };
+          try { e.dataTransfer.setData('text/plain', g.dataset.gdragwbs); e.dataTransfer.effectAllowed = 'move'; } catch (x) {}
+        };
+        g.ondragend = function (e) {
+          var d = _gDrag; _gDrag = null;
+          host.querySelectorAll('.is-drop').forEach(function (n) { n.classList.remove('is-drop'); });
+          if (!d || d.kind !== 'wbs') return;
+          /* ⚠️ A LEVEL IS 14px OF INDENT, SO THE THRESHOLD IS ONE LEVEL'S WORTH. Anything
+             smaller and a shaky drop re-parents a branch nobody meant to move; anything larger and
+             the gesture stops being discoverable. Dropping on a branch is handled below and wins —
+             this only fires when the drop went nowhere in particular. */
+          var dx = e.clientX - d.x;
+          if (dx <= -14) wbsMove(d.id, 'outdent').then(render);
+          else if (dx >= 14) wbsMove(d.id, 'indent').then(render);
+        };
+      });
+      function _gAllow(el, test) {
+        el.ondragover = function (e) { if (_gDrag && test(_gDrag)) { e.preventDefault(); el.classList.add('is-drop'); } };
+        el.ondragleave = function () { el.classList.remove('is-drop'); };
+      }
+      host.querySelectorAll('[data-gwbs]').forEach(function (r) {
+        var nid = r.dataset.gwbs, v = r.dataset.v;
+        /* ⚠️ A mirrored branch never accepts a drop — its contents come from another app and
+           the push may not add to it, so filing an activity there would be a promise the push
+           breaks. Refused by not offering the target rather than by a toast afterwards. */
+        var n = wbsById(nid);
+        if (n && n.source_kind) return;
+        _gAllow(r, function (d) { return d.v === v && d.id !== nid; });
+        r.ondrop = function (e) {
+          e.preventDefault(); e.stopPropagation(); r.classList.remove('is-drop');
+          var d = _gDrag; _gDrag = null;
+          if (!d || d.v !== v) return;
+          if (d.kind === 'act') {
+            var a = _phActById(v, d.id); if (!a) return;
+            a.w = nid; markDirty(); render();
+          } else if (d.id !== nid) {
+            /* A branch dropped ON a branch is filed under it — the "drag it to the right" half,
+               stated by the target rather than by the distance travelled. */
+            var node = wbsById(d.id);
+            if (!node || node.is_locked) { UI.toast('This is a fixed WBS heading and can’t be moved.', 'warn'); return; }
+            if (_phTreeAncestor(nid, d.id)) { UI.toast('A branch can’t be filed inside itself.', 'warn'); return; }
+            node.parent_id = nid; node.sort_order = wbsChildren(nid).length;
+            delete _phCollapsed[nid];
+            _wbsNormalizeAndPersist([node.id]).then(function () { return _wbsCommit(); }).then(render);
+          }
+        };
+      });
+      /* "directly on the phase" — the way back OUT of every branch, which a tree with no such
+         target cannot express: dropping an activity on empty space does nothing, so without this
+         an activity filed into a branch could never be taken out again. */
+      host.querySelectorAll('[data-gdrop-root]').forEach(function (z) {
+        var v = z.dataset.gdropRoot;
+        _gAllow(z, function (d) { return d.kind === 'act' && d.v === v; });
+        z.ondrop = function (e) {
+          e.preventDefault(); z.classList.remove('is-drop');
+          var d = _gDrag; _gDrag = null;
+          if (!d || d.kind !== 'act' || d.v !== v) return;
+          var a = _phActById(v, d.id); if (!a) return;
+          delete a.w; markDirty(); render();
+        };
+      });
+
+      /* ---- drawing a relationship -----------------------------------------------------------
+         Drag the handle on a bar's right edge onto another bar. The new link is FS+0, which is the
+         relationship four out of five are; the other three types and the lag are one right-click
+         away on the arrow itself.
+         ⚠️⚠️ POINTER EVENTS, NOT HTML5 DRAG. A native drag cannot draw a rubber band that
+         follows the cursor — the drag image is the element — and a link you cannot see while you
+         are drawing it is a link you aim by guesswork. Pointer events also give touch and pen for
+         free, which the grips above deliberately do not have.
+         ⚠️ The target is resolved with `elementFromPoint` at the DROP, not tracked on hover:
+         the rubber band sits under the cursor and would otherwise be the element found every time. */
+      host.querySelectorAll('[data-glink]').forEach(function (h) {
+        h.onpointerdown = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          var v = h.dataset.v, from = h.dataset.glink;
+          var body = host.querySelector('[data-gplot="' + v + '"] .sbld-gbody');
+          var rub = body && body.querySelector('.sbld-grub');
+          if (!body || !rub) return;
+          var bb = body.getBoundingClientRect();
+          var x0 = e.clientX - bb.left, y0 = e.clientY - bb.top;
+          rub.hidden = false;
+          function move(ev) {
+            var x = ev.clientX - bb.left, y = ev.clientY - bb.top;
+            var L = Math.min(x0, x), T = Math.min(y0, y);
+            rub.style.left = L + 'px'; rub.style.top = T + 'px';
+            rub.style.width = Math.abs(x - x0) + 'px'; rub.style.height = Math.abs(y - y0) + 'px';
+          }
+          function up(ev) {
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', up);
+            rub.hidden = true; rub.style.width = rub.style.height = '0px';
+            var el = document.elementFromPoint(ev.clientX, ev.clientY);
+            var tgt = el && el.closest ? el.closest('[data-gbar]') : null;
+            if (!tgt || tgt.dataset.v !== v) return;
+            var to = tgt.dataset.gbar;
+            if (to === from) return;
+            _phAddLink(v, from, to);
+          }
+          document.addEventListener('pointermove', move);
+          document.addEventListener('pointerup', up);
+        };
+      });
+
+      /* ---- right-click an arrow: type and lag ------------------------------------------------
+         ⚠️ The hit target is a separate, fat, transparent copy of the same path (`.sbld-ghit`).
+         A 1.5px stroke is about 3px of clickable width, which is not a control anyone can hit — and
+         thickening the VISIBLE arrow to fix that would make a chart of six links unreadable. */
+      host.querySelectorAll('.sbld-ghit, .sbld-glab').forEach(function (p) {
+        p.oncontextmenu = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          _phLinkMenu(p.dataset.v, +p.dataset.gl, e.clientX, e.clientY);
+        };
       });
     }
 
@@ -48875,23 +49543,65 @@
       // predecessors are generated from zone links and there is no single execution start activity
       // to hang a phase off, so inventing one relationship would be a guess with a critical path
       // attached to it.
-      // ⚠️ `_phPrevId` is what chains the phase: the id of the row emitted before this one WITHIN the
-      // same phase. It is a per-phase map, not one variable, because the payloads are emitted phase
-      // by phase and a single cursor would chain Close-out's first activity onto Planning's last.
-      var _phPrevId = {};
+      /* ⚠⚠ THE PUSH WRITES THE RELATIONSHIPS THE PLANNER DREW, AND IT USED TO WRITE A
+         STRAIGHT CHAIN THAT CONTRADICTED ITS OWN DATES. `_phPrevId` held the id of the row emitted
+         before this one and every row got it as its single FS predecessor — including a row marked
+         concurrent, which the DATES placed alongside its neighbour. So a pushed Planning Phase
+         arrived with four activities dated to run together and a predecessor chain saying they run
+         end to end, and the schedule's own CPM believes the relationships: the first recalculation
+         pulled them apart. The dates and the logic disagreed from the moment of the push.
+         ⚠️ Now both come from `sbPhSchedule`'s own network — the same links the Gantt draws — so
+         the pushed programme reschedules to exactly the bars the planner was looking at.
+         ⚠️ Two passes, because a predecessor must be NAMED by an id that is only assigned as
+         each payload is built: pass one allocates every id in the phase, pass two writes the string.
+         ⚠️ Serialised with `serializeRels`, the schedule's OWN writer for this column, rather
+         than a second spelling of "ID FS+2" that could drift from the parser that reads it back.
+         ⚠️ The link to the execution work is still expressed by the DATES, not by a
+         relationship: the execution rows' predecessors are generated from zone links and there is no
+         single execution start activity to hang a phase off, so inventing one relationship would be
+         a guess with a critical path attached to it. */
+      var _phIds = {};
+      function _phIdFor(t) {
+        var k = t.v + '|' + t.r.act.id;
+        if (!_phIds[k]) _phIds[k] = uniqId('PH' + String(t.v || '').slice(0, 3).toUpperCase() + '-' + (t.i + 1));
+        return _phIds[k];
+      }
+      /* ⚠️⚠️ THE LINKS COME FROM `sbPhLinks`, NOT FROM `act.preds`, AND THAT IS THE
+         DIFFERENCE BETWEEN "the arrows a planner drew" AND "the sequence this phase has". A phase
+         nobody has drawn on carries NO `preds` at all — its sequence is row order plus `par` — so
+         reading the field directly would push every legacy phase with no relationships whatsoever,
+         losing the chain the old code did at least write. `sbPhLinks` answers both shapes, and it is
+         the same function the Gantt and the scheduler read, so the pushed logic, the drawn arrows
+         and the pushed dates cannot disagree. */
+      var _phLinkMap = null;
+      function _phLinksFor(v) {
+        if (!_phLinkMap) _phLinkMap = {};
+        if (!_phLinkMap[v]) {
+          var m = {};
+          sbPhLinks(v).forEach(function (l) { (m[l.to] = m[l.to] || []).push(l); });
+          _phLinkMap[v] = m;
+        }
+        return _phLinkMap[v];
+      }
       function phaseTaskPayload(t) {
-        var id = uniqId('PH' + String(t.v || '').slice(0, 3).toUpperCase() + '-' + (t.i + 1));
-        var row = {
+        var id = _phIdFor(t);
+        var rels = [];
+        ((_phLinksFor(t.v))[t.r.act.id] || []).forEach(function (l) {
+          /* ⚠️ A pred is resolved through the SAME map, so a link naming an activity that is not
+             in this push — deleted since, or filtered out — is dropped rather than written as a
+             dangling id the grid would render as an unresolved relationship. */
+          var pid2 = _phIds[t.v + '|' + l.from];
+          if (pid2) rels.push({ id: pid2, type: l.type || 'FS', lag: +l.lag || 0 });
+        });
+        return {
           project_id: pid, created_by: UID,
           activity_id: id, activity_name: String(t.r.act.n || '').trim() || ((PHASE_LABELS[t.v] || 'Phase') + ' activity ' + (t.i + 1)),
           activity_type: 'Task', status: 'Not Started',
           start_date: iso2(t.r.start), end_date: iso2(t.r.finish), duration_days: t.r.dur,
           percent_complete: 0, phase: t.v, seq_order: t.i,
-          predecessors: (t.i > 0 && _phPrevId[t.v]) ? _phPrevId[t.v] : null,
+          predecessors: rels.length ? serializeRels(rels) : null,
           package_id: usePkg || null
         };
-        _phPrevId[t.v] = id;
-        return row;
       }
       // ---- Class codes -> activity codes ------------------------------------------------------
       // ⚠️ Ensured BEFORE the payloads are built, because taskPayload needs the value ids. Reuses an
@@ -49210,6 +49920,14 @@
             nodeByKey[pkey].keepOrder = true;
             pp.rows.forEach(function (r, i) { phaseTasks.push({ k: pkey, v: pp.v, r: r, i: i }); });
           });
+          /* ⚠⚠ EVERY ID IS ALLOCATED BEFORE THE FIRST PAYLOAD IS BUILT. A relationship can
+             point FORWARD as easily as back — an SS link from a row further down the list is exactly
+             what the Gantt exists to let a planner draw — and an id assigned lazily inside
+             `phaseTaskPayload` would not exist yet when an earlier row asked for it. It would be
+             dropped silently, so the one relationship shape the old chain could not express would be
+             the one the push threw away. Allocated in emission order, so the `-1`, `-2` numbering is
+             what it always was. */
+          phaseTasks.forEach(function (t) { _phIdFor(t); });
         }
         // base parent = the wbs_node behind the chosen WBS row (if any)
         var baseRow = rows.filter(function (r) { return isWbs(r) && String(r.wbs) === String(base); })[0];
@@ -57005,17 +57723,12 @@
     document.getElementById('ps-gc-apply').onclick = gcApply;
     // (#ps-lp-prev / -next / -thisweek / -add went with the Weekly Work Plan view — see the note
     //  where its markup used to be. Their functions survive, uncalled.)
-    // "Add WBS" = a sibling AFTER the selected node (same as Enter in the tree), or top level when
-    // nothing is selected — so clicking it repeatedly builds a list instead of burrowing deeper.
-    document.getElementById('ps-wbs-addroot').onclick = function () {
-      var sel = _wbsSel && wbsById(_wbsSel);
-      wbsQuickAdd(sel ? (sel.parent_id || null) : null, sel ? sel.id : null);
-    };
-    document.getElementById('ps-wbs-paste').onclick = function () { openWbsOutline(_wbsSel || null); };
-    document.getElementById('ps-wbs-dup').onclick = function () {
-      if (!_wbsSel || !wbsById(_wbsSel)) { UI.toast('Select the WBS branch you want to duplicate first.', 'warn'); return; }
-      wbsDuplicate(_wbsSel);
-    };
+    /* ⚠️ #ps-wbs-addroot / -paste / -dup are GONE (see the note where their markup was). Their
+       handlers are deleted with them rather than left querying an id nothing emits — that throws on
+       null and takes every line of wiring below it with it.
+       ⚠️ `openWbsOutline`, `wbsDuplicate` and `wbsResetTree` survive UNCALLED and are kept
+       deliberately: each is a large modal whose deletion is its own change, and each is still a
+       correct answer to a question this step no longer asks. Nothing else calls them. */
     document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
     // ⚠⚠ `onclick = wbsAdopt` PASSED THE CLICK EVENT AS `silent`, which is truthy. So the button
     // documented (by me, last pass) as "the non-silent recovery path" skipped its own confirm, its
@@ -57037,7 +57750,6 @@
       await autoAdoptAfterImport();
       renderWbsManager();
     };
-    document.getElementById('ps-wbs-reset').onclick = wbsResetTree;
     // (#ps-wbs-goedit — "Edit the WBS in Schedule Setup" — went with the WBS Manager screen. There
     //  is nowhere left to travel FROM: the tree is only ever shown inside the Schedule Setup now.)
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
