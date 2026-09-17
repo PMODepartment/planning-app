@@ -155,6 +155,21 @@ reporting widths ~35% too large. Internally consistent, and wrong. Caught by ass
 (`--pd-fs-sm` came back empty), not by reading the numbers. **Strip to end of line**, and any harness
 in this repo that inlines `dashboard.css` should assert a token before it reports a measurement.
 
+⚠⚠ **AND THE STACKING RENDERER IS KEPT, NOT DELETED — A REVERSAL, AT THE OWNER'S REQUEST.**
+*"make sure not yet to delete the code for stacking and just keep it in repo. this will be used later
+on in the generate step."* Worth being precise about what was ever at stake: the **drawing engine**
+(`stackTowerSVG`, `zonesOfFloorStk`, `openStackUnits`, `_genStackCards`) was never touched and is
+live on Generate today. What the retired tab owned was a **shell** around it — and that shell is now
+back, verbatim, parked out of `STEP_TABS` and out of every call path. The part worth keeping is its
+**basis `<select>`**, which shows Internal or External one at a time; Generate draws both side by
+side and has no way to do that.
+⚠ This repo's rule that *a renderer nothing calls is the one the next editor wires back up beside
+the real thing* is answered rather than waved off: the suite asserts the function exists, has exactly
+**one occurrence** (its declaration, no call site), and is **not back in `STEP_TABS`**.
+⚠⚠ **Parked is not preserved unless it still runs.** A separate suite wires it to a host and
+**executes** it, so a revival gets a working screen rather than a `ReferenceError` — which is also
+why `var stackBasis` came back with it rather than being left deleted under a function that reads it.
+
 ⚠️ **Reported, not fixed** — pre-existing and confirmed on `origin/main`'s own copy rather than
 waved past: `modules/project-schedule/CLAUDE.md` holds **one NUL byte** (offset 30,736, inside an
 earlier entry), which makes `grep` treat the whole changelog as binary — the same trap 2026-09-14
@@ -169,9 +184,10 @@ merged tree and identically on `origin/main`. A suite that needs an argument and
 reads exactly like a broken suite — which is how it got carried through three of this entry's
 verification passes unchallenged.
 
-**Verified:** 52 assertions across two suites, 0 failing, every one executing code sliced out of the
-shipped file, each with a contrast build against HEAD that bites (HEAD has five tabs ending in
-Stacking; HEAD renders `03101` as the label; HEAD's `stGenerate` emits no zoom). ⚠️ `stGenerate` is
+**Verified:** 65 assertions across three suites, 0 failing, every one executing code sliced out of
+the shipped file, with contrasts pinned to `origin/main` (once this branch is committed, `HEAD` IS
+the change and every contrast becomes self-comparison — which is exactly what started happening, and
+how it was caught). ⚠️ `stGenerate` is
 **executed** against a fake DOM — `node --check` cannot see a ReferenceError, which is this module's
 own z6 lesson — drawing both bases' stacking, wiring both zoom buttons, and **zoom 2× genuinely
 widening the SVG** (viewBox 414 → 674), so the control is not merely bound to a variable nothing

@@ -37114,8 +37114,10 @@
          inside each basis panel — so this tab was a SECOND copy of the same picture, one basis
          at a time, in the step that describes how the building repeats rather than the step that
          shows what it produces. What only the tab had (the zoom, and the notes about a clickable
-         “N units” cell) moved to Generate with it; `stStacking` and `stackBasis` are deleted
-         rather than left as a renderer nothing calls.
+         “N units” cell) moved to Generate with it.
+         ⚠ `stStacking` and `stackBasis` are **kept, parked and wired to nothing**, at the owner's
+         request — they are intended for further work on the Generate step. See the PARKED block
+         above `stStacking` itself; the suite asserts it stays out of this list.
          ⚠ A browser that remembers `stack` in `ps_steptab_Repetition` is safe: `stepTabKey`
          validates the stored key against this list and falls back to the first tab. */
       'Repetition': [
@@ -46659,9 +46661,11 @@
     // ---- Step (Stacking): vertical stacking — one building model per trade, each zone labelled with its zone
     // number and its COMPLETION date (from the generated schedule). Superstructure above the grade line,
     // basements below — same tower layout as step 2, but filled with dates instead of empty cells.
-    // ⚠ `stackBasis` went with `stStacking`: the Generate step draws Internal and External side
-    // by side, so there is no basis left to pick between. `stackZoom` stays — `stackTowerSVG` reads
-    // it, and the zoom buttons that write it now live on Generate.
+    /* ⚠ `stackBasis` is READ ONLY BY THE PARKED `stStacking` BELOW — nothing on screen writes it
+       today, because the Generate step draws Internal and External side by side and has no basis to
+       choose between. It is kept because the parked renderer is kept: deleting the state and leaving
+       the function would give whoever revives it a `ReferenceError` on line one. */
+    var stackBasis = 'int';
     var stackZoom = 1;   // stacking: cell-width multiplier so many-unit floors still show the date
     var stackTrade = 'ALL';   // step-6 stacking: which trade's tower(s) are shown ('ALL' = every trade)
     var stackTower = 'ALL';   // step-6 stacking: which PROJECT tower is shown ('ALL' = every tower)
@@ -46728,16 +46732,86 @@
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
     }
-    /* ⚠⚠ `stStacking` IS DELETED, NOT LEFT UNREFERENCED. Owner 2026-09-17: *“no need for
-       the vertical stacking in repetition step, move this to the generate step”*. It drew the same
-       buildings the Generate step already draws through `_genStackCards` — one basis at a time,
-       behind a <select>, in the step that describes how the building REPEATS rather than the step
-       that shows what it PRODUCES. A renderer nothing calls is the one the next editor wires back
-       up beside the real thing, which is why it goes rather than being left in place.
-       ⚠ What was only here moved to `stGenerate` with it: the zoom buttons (`stackZoom` is read
-       by `stackTowerSVG`, which both used) and the notes about a clickable “N units” cell and the
-       grade line. `stackBasis` went with the function — Generate shows both bases side by side,
-       so there is nothing left to choose between. */
+    /* ==========================================================================================
+       PARKED — KEPT ON PURPOSE, WIRED TO NOTHING. DO NOT DELETE.
+       Owner 2026-09-17: *“make sure not yet to delete the code for stacking and just keep it in
+       repo. this will be used later on in the generate step.”*
+
+       ⚠⚠ THIS IS A SHELL, NOT THE STACKING. The drawing itself — `stackTowerSVG`,
+       `zonesOfFloorStk`, `openStackUnits`, `_genStackCards` — was never removed and is LIVE on the
+       Generate step, one card per (tower × trade) inside each basis panel. What is parked here is
+       the retired Repetition › Stacking TAB's own chrome around it, and the one thing Generate does
+       not have: a **basis `<select>`**, which shows Internal or External one at a time instead of
+       both side by side. That control is why this is worth keeping rather than re-deriving.
+
+       ⚠ It is deliberately NOT in `STEP_TABS`. This file's own rule is that a renderer nothing
+       calls reads as working code to every tool — so the rule is answered rather than ignored: the
+       suite asserts this function EXISTS and has ZERO call sites, and fails if anyone wires it back
+       onto Repetition, which is the one place it must not go back to.
+       ⚠ Every name it calls was checked against the current file when it was parked, so it can be
+       revived without a ReferenceError — `stackBasis` above is kept for exactly that reason.
+       ========================================================================================== */
+    function stStacking(host) {
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps ' + _stepNo('Activities') + '–' + _stepNo('Scope per zone') + ' first (activities + per-trade floors/zones + scope).</div>'; return; }
+      var g = generate(stackBasis);
+      var finBy = {}; g.perZone.forEach(function (z) { finBy[z.loc.uid] = z.finish; });
+      var used = usedGroups();
+      if (stackTrade !== 'ALL' && used.indexOf(stackTrade) < 0) stackTrade = 'ALL';
+      var showTr = used.filter(function (tr) { return stackTrade === 'ALL' || tr === stackTrade; });
+      var tradeChips = used.length ? '<div class="sbld-tradechips">' +
+        '<button class="sbld-chip' + (stackTrade === 'ALL' ? ' on' : '') + '" data-stktr="ALL">All trades</button>' +
+        used.map(function (tr) { return '<button class="sbld-chip' + (stackTrade === tr ? ' on' : '') + '" data-stktr="' + tr + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</button>'; }).join('') +
+        '</div>' : '';
+      // A tower chip row appears only when there is more than one tower, so a single-tower project
+      // sees the step exactly as it is today.
+      if (stackTower !== 'ALL' && !towerById(stackTower)) stackTower = 'ALL';
+      var towerChips = multiTower() ? '<div class="sbld-tradechips">' +
+        '<button class="sbld-chip' + (stackTower === 'ALL' ? ' on' : '') + '" data-stktw="ALL">All towers</button>' +
+        towerList().map(function (t) {
+          var n = 0; used.forEach(function (tr) { n += floorsOfTower(tr, t.id).length; });
+          return '<button class="sbld-chip' + (stackTower === t.id ? ' on' : '') + '" data-stktw="' + e2(t.id) +
+            '" title="' + n + ' floor' + (n === 1 ? '' : 's') + ' across ' + used.length + ' trade(s)">' + e2(towerLabel(t.id)) + '</button>';
+        }).join('') + '</div>' : '';
+      _stkUnits = {};   // repopulated by stackTowerSVG below
+      // ⚠️ TOWER-MAJOR, one card per (tower × trade) — never one card per trade holding every
+      // tower's floors. Tower-major so a tower's trades sit together rather than a trade's towers.
+      var showTw = towerList().filter(function (t) { return stackTower === 'ALL' || t.id === stackTower; });
+      var towers = showTw.map(function (tw) {
+        return showTr.map(function (tr) {
+          var fl = floorsOfTower(tr, tw.id);
+          // A trade with no floors in THIS tower gets no card. An empty placeholder per missing
+          // combination would be most of the grid on a project where trades differ by tower.
+          if (!fl.length) return '';
+          return '<div class="sbld-stacktower" style="--tc:' + gc(tr) + '">' +
+            '<div class="sbld-towerh"><span class="sbld-stkh-name" title="' + e2(GLABEL[tr]) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
+            (multiTower() ? '<span style="font-weight:700;color:var(--pd-muted);"> · ' + e2(towerLabel(tw.id)) + '</span>' : '') + '</span>' +
+            '<span class="sbld-stkh-ct">' + fl.length + ' floor' + (fl.length === 1 ? '' : 's') + '</span></div>' +
+            stackTowerSVG(tr, finBy, tw.id) + '</div>';
+        }).join('');
+      }).join('');
+      host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking — completion by zone</h2>' +
+        '<p class="sbld-lede">The <b>vertical stacking</b> the steps above produce: each trade’s building, one cell per <b>zone</b>, showing its zone number and completion date.</p>' +
+        _sbldHow('A zone completes when its last unit does. A cell marked <b>“N units ▾”</b> is clickable — it opens each unit’s own date. Superstructure sits above the grade line, basements below.' +
+          '<br><br>Pick a <b>tower</b> and a <b>trade</b> to focus, and switch between <b>Internal</b> (target) and <b>External</b> (contract) durations. Nothing is edited here — it is the read-back before the push in step ' + _stepNo('Generate') + '.') +
+        towerChips + tradeChips +
+        '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
+        '<select class="pd-select sbld-mini" id="b-stackbasis">' +
+        [['int', 'Internal (target)'], ['ext', 'External (contract)']].map(function (o) { return '<option value="' + o[0] + '"' + (stackBasis === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select></label>' +
+        '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-stkzout" title="Narrower cells">−</button><button class="pd-btn sbld-zbtn" id="b-stkzin" title="Wider cells — more room for dates">+</button></span>' +
+        '<span class="sbld-hint">Project finish ' + fmtD(g.finish) + ' · ' + used.length + ' trade(s)' +
+        (multiTower() ? ' · ' + showTw.length + ' of ' + towerList().length + ' tower(s)' : '') +
+        '. Zoom in if a floor\'s dates are cramped.</span></div>' +
+        '<div class="sbld-stackgrid">' + (towers || '<div class="sbld-empty">' +
+          (multiTower() && stackTower !== 'ALL' ? 'No floors for this selection in ' + e2(towerLabel(stackTower)) + '. Pick another tower or trade, or add floors in step ' + _stepNo('Floors & Zones') + '.' : 'No trades with floors yet.') +
+          '</div>') + '</div>';
+      host.querySelectorAll('[data-stktr]').forEach(function (b) { b.onclick = function () { stackTrade = b.dataset.stktr; render(); }; });
+      host.querySelectorAll('[data-stktw]').forEach(function (b) { b.onclick = function () { stackTower = b.dataset.stktw; render(); }; });
+      var sel = host.querySelector('#b-stackbasis'); if (sel) sel.onchange = function () { stackBasis = sel.value; render(); };
+      var zo = host.querySelector('#b-stkzout'); if (zo) zo.onclick = function () { stackZoom = Math.max(0.6, Math.round((stackZoom - 0.2) * 10) / 10); render(); };
+      var zi = host.querySelector('#b-stkzin'); if (zi) zi.onclick = function () { stackZoom = Math.min(4, Math.round((stackZoom + 0.2) * 10) / 10); render(); };
+      host.querySelectorAll('.sbld-stkcell').forEach(function (el) { el.addEventListener('click', function () { openStackUnits(el.getAttribute('data-zk')); }); });
+    }
 
     function exportCsv(g, label) {
       function q(s) { s = String(s == null ? '' : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }

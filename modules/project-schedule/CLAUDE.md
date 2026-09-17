@@ -24,18 +24,39 @@ deliberate and is left alone; removing the fifth tab narrows the window anyway.
 `stGenerate` renders `_genBasisPanel` → `_genStackCards` → `stackTowerSVG` for **both** bases, side
 by side — the vertical stacking, on the Generate step, since 2026-09-17 (q). The Repetition tab drew
 the same buildings **one basis at a time behind a `<select>`**, in the step that describes how the
-building *repeats* rather than the step that shows what it *produces*. So this is a deletion, not a
-move: 61 lines of `stStacking` and `var stackBasis` are **gone**, not left unreferenced — a renderer
-nothing calls is the one the next editor wires back up beside the real thing.
+building *repeats* rather than the step that shows what it *produces*.
 
-⚠️ **What was only on the tab came with it.** The **zoom** (`stackZoom`, which `stackTowerSVG`
+⚠⚠ **AND THE ENGINE WAS NEVER TOUCHED, WHICH IS WHY THE TAB WAS A SECOND COPY AT ALL.**
+`stackTowerSVG`, `zonesOfFloorStk`, `openStackUnits` and `_genStackCards` are unchanged and live on
+Generate. What the tab owned was a **shell** around them: chips, a basis `<select>`, the zoom and a
+how-panel.
+
+⚠⚠ **THAT SHELL IS KEPT, PARKED AND WIRED TO NOTHING — A REVERSAL OF THIS ENTRY'S FIRST CUT.**
+Owner 2026-09-17: *"make sure not yet to delete the code for stacking and just keep it in repo. this
+will be used later on in the generate step."* So `stStacking` and `var stackBasis` are back, verbatim,
+out of `STEP_TABS` and out of every call path. The part worth keeping is the **basis `<select>`**:
+Generate draws Internal and External side by side and has no way to look at one at a time, and that
+control is the only thing the tab could do that Generate cannot.
+⚠ This file's own rule — *a renderer nothing calls is the one the next editor wires back up beside
+the real thing* — is answered rather than waved off. The suite asserts the function **exists**, has
+**exactly one occurrence** (its own declaration, no call site), and is **not back in `STEP_TABS`**,
+which is the one place it must not return to.
+⚠⚠ **And parked is not preserved unless it still RUNS.** A separate suite wires it to a host and
+**executes** it — it draws its heading, both towers, the basis `<select>` with the current basis
+marked, and every control it emits is wired. So the day somebody revives it they get a working
+screen rather than a `ReferenceError`. `stackBasis` is kept for exactly that reason: deleting the
+state while keeping the function would have left a landmine on its first line.
+
+⚠️ **What the tab had and Generate did not, came across.** The **zoom** (`stackZoom`, which `stackTowerSVG`
 already read and Generate had no control for) and the notes that make a cell discoverable — a zone
 completes when its last unit does, a cell marked *"N units ▾"* is clickable, superstructure sits
 above the grade line. A clickable cell with nothing saying it is clickable is a feature nobody finds.
+⚠️ The basis `<select>` did **not** come across, and it is the one thing the parked renderer still
+holds that Generate has no answer for.
 ⚠️ **One zoom for both panels**, because `stackTowerSVG` reads one variable: comparing Internal
 against External at two different cell widths is comparing two pictures rather than two schedules.
-⚠️ `stackBasis` did **not** come with it — Generate shows both bases at once, so there is nothing
-left to choose between.
+⚠️ `stackBasis` is read by **nothing on screen** — Generate shows both bases at once — but it is
+kept beside the parked renderer, which does read it.
 ⚠️ A browser holding `stack` in `ps_steptab_Repetition` is safe by construction: `stepTabKey`
 validates the stored key against the list and falls back to the first tab. Asserted, not assumed.
 
