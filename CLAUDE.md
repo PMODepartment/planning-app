@@ -104,6 +104,74 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ai) — Floors & Zones: every control in the floor row was asking for the whole row
+
+Owner, with a screenshot of OPW101: *"UI sweep for floors & zones. multiple clipping and unnecessary
+wrapping"* — the category select reading **"Basemen"** and running into the **"Zones"** label beside
+it, and the floor name reading **"Ground F"**.
+
+⚠️ The previous entry reported this page as *"measured clean"* on the type checks, and it was: 0
+off-scale sizes, 0 off-scale weights. **The defect was never a type defect — it was geometry**, which
+those scanners do not look at. Recorded because "clean on the checks I ran" is not "clean".
+
+### ⚠️⚠️ THE CAUSE IS `width: 100%`, INHERITED FROM A STACKED-FORM DEFAULT
+
+`.pd-input` and `.pd-select` are `width: 100%` in `dashboard.css`. That is right for a form where each
+control owns its line, and wrong in a flex **row**: every control asks for the whole row, so they all
+shrink in lockstep by the same proportion regardless of what any of them needs.
+
+**Measured across container widths, the name input and the category select came out at identical
+widths every time** — 322 / 222 / 158 / 122 / 82 / 52 px at 1100 / 900 / 772 / 700 / 620 / 560. The
+select's longest option, *"Podium / Commercial"*, needs **137px**, so it stopped fitting below about
+775px — which is roughly the width this panel actually gets.
+
+Three changes, each earning its place:
+
+- `.sbld-flr-h .pd-input, .sbld-flr-h .pd-select { width: auto }` — the row's controls stop inheriting
+  the stacked-form default.
+- `.sbld-flr-h .sbld-kind { flex: 0 0 auto; width: auto }` — the category sizes to its own longest
+  option and never shrinks. A four-word fixed vocabulary reading "Basemen" is worse than a narrower
+  name box beside it.
+- `.sbld-flr-h .grow { flex: 1 1 90px }` — the floor NAME is the only thing that gives, which is what
+  `.grow` was always for.
+
+### ⚠️⚠️ `min-width` WAS THE WRONG LEVER, AND ONLY MEASURING SHOWED IT
+
+The first attempt paired `flex: 1 1 auto` with `min-width: 90px` and the row still wrapped at 800px —
+even though the arithmetic said 123px was free for a 90px name. **Flexbox breaks lines on each item's
+*hypothetical* main size** — flex-basis clamped by min/max — and for an `<input>` a basis of `auto` is
+its **intrinsic** width, about 250px. So the line measured 549 fixed + 80 gaps + 20 padding + 250 =
+899px and wrapped, while `min-width` never entered the calculation. Only `flex-basis` lowers the
+hypothetical size. `flex: 1 1 90px`.
+
+⚠️ And a wrong measurement nearly hid it: the first line-counter divided row height by the tallest
+child, which with `align-items: center` and mixed control heights reported **2 lines at 900px where
+there was 1**. Clustering the children by their vertical CENTRE is what actually answers "did this
+wrap".
+
+### `flex-wrap: wrap`, which is not the wrapping that was reported
+
+With every control finally declaring a real width the row can genuinely run out of space — and an
+un-wrapping flex row does not clip, it **overflows the panel**. Measured: below ~620px it ran past its
+container. `flex-wrap: wrap` costs nothing while it fits and is the honest answer when it does not.
+This is the opposite of the "unnecessary wrapping" the owner reported: that was controls squeezed to
+nothing at a width where everything could have fitted.
+
+**Before → after, measured at the panel's real width (772px):**
+
+| | before | after |
+|---|---|---|
+| lines used | 1 (clipped) | **1** |
+| `Podium / Commercial` fits | **no** (136px for 137px) | **yes** |
+| `Ground Floor` fits | shared-shrink | **yes**, 120px box |
+| horizontal overflow | none (it clipped instead) | none |
+| first width that wraps | — | **~740px**, where it must |
+
+**Verified:** `test-lsm` 683/683 · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0
+findings · inline scripts parse · CSS brace balance identical to pinned `4593864` · the Setup still at
+0 off-scale font-size rules. Every width above is a browser measurement at seven container sizes, not
+a reading of the CSS. `modules-grid.js` `?v=` → `20260917zzg`.
+
 ### 2026-09-17 (ah) — The grid's controls were painting over every highlight; the Grouping rungs stop appearing when there is nothing to group
 
 Three owner reports in one pass: *"These groupings should only appear when there is a grouping

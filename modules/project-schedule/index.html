@@ -4108,8 +4108,32 @@
     .sbld-flr-sub { border-style:dashed; }
     .sbld-flr-sub .sbld-flr-h { background:var(--pd-red-light); }
     .sbld-subtag { flex:none; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em; color:var(--pd-red); border:1px solid var(--pd-red-mid); border-radius:var(--pd-radius); padding:2px 5px; }
-    .sbld-flr-h { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
-    .sbld-flr-h .grow { flex:1 1 auto; min-width:0; }
+    /* ⚠ WRAPS ONLY WHEN IT MUST. With every control finally declaring a real width the row can
+       genuinely run out of space, and an un-wrapping flex row does not clip - it OVERFLOWS the
+       panel. Measured: below ~620px the row ran past its container. `flex-wrap:wrap` costs nothing
+       while it fits (no wrap occurs) and is the honest answer when it does not. This is not the
+       “unnecessary wrapping” the owner reported - that was controls squeezed to nothing.
+       ⚠ Paired with a floor-NAME that stops collapsing (min-width below), so the row wraps at a
+       sensible point instead of grinding the name box down to 22px first. */
+    .sbld-flr-h { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
+    /* ⚠⚠ `width:auto`, OVERRIDING `.pd-input`/`.pd-select`'s `width:100%` — see the note above.
+       In a flex row that default makes every control demand the whole row and shrink in lockstep,
+       which is why the name box and the category select measured the same width at every
+       container size while needing very different amounts. */
+    .sbld-flr-h .pd-input, .sbld-flr-h .pd-select { width:auto; }
+    /* The NAME is the one control that gives: it takes the slack and it is the only thing that
+       shrinks, so a long floor name is what yields, not the label of a fixed vocabulary. */
+    /* ⚠⚠ `flex-basis: 90px`, NOT `auto` with a min-width. Flexbox breaks lines on each
+       item’s HYPOTHETICAL main size — flex-basis clamped by min/max — and for an <input> a basis
+       of `auto` is its INTRINSIC width, about 250px. So the row measured 549 + 80 gaps + 20 padding
+       + 250 = 899px and wrapped at 800px even though only 90px of name was actually required.
+       min-width does not lower the hypothetical size; only the basis does. Measured before and
+       after: wrapped at 800px, now stays on one line down to ~740px. */
+    .sbld-flr-h .grow { flex:1 1 90px; min-width:90px; }
+    /* ⚠ The category select sizes to its OWN longest option (“Podium / Commercial”, 137px) and
+       never shrinks below it. A four-word fixed vocabulary that reads “Basemen” is worse than a
+       narrower name box beside it. */
+    .sbld-flr-h .sbld-kind { flex:0 0 auto; width:auto; }
     .sbld-flr-h .pd-input { height:32px; font-size:var(--pd-fs-base); }
     .sbld-addzone { flex:none; font-size:var(--pd-fs-sm); height:30px; }
     .sbld-znwrap { padding:6px 10px 8px; display:flex; flex-direction:column; gap:6px; }
