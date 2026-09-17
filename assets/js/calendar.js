@@ -99,6 +99,89 @@
   }
 
   var WD_KEYS = ['work_sun', 'work_mon', 'work_tue', 'work_wed', 'work_thu', 'work_fri', 'work_sat'];
+  // The key a per-day schedule is stored under, by JS weekday index (0 = Sunday).
+  var DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+  /* ==========================================================================================
+     A WORKING DAY HAS A SHAPE, NOT JUST A LENGTH
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-17: *"ask also working schedule from day from what time to what time as well
+     as the break time."* So a calendar may carry `day_hours` —
+       { mon: { start: '08:00', end: '17:00', breaks: [{ start: '12:00', end: '13:00' }] }, ... }
+
+     ⚠️⚠️ `hours_per_day` IS NOT REPLACED, AND THAT IS THE WHOLE SAFETY OF THIS. It is the scalar
+     the rest of this app already multiplies by a day count — the FTE histogram, resource capacity,
+     `workingHoursInRange`, a season's fallback — and several of those live in other modules. So it
+     stays, keeps its meaning, and the editor writes it as the AVERAGE over the working days it can
+     see. A reader that knows nothing about `day_hours` therefore still gets the right total across
+     a week; a calendar with no `day_hours` behaves exactly as it did before this existed.
+
+     ⚠️ An END AT OR BEFORE THE START is read as crossing midnight, not as a negative day: a night
+     shift is a real thing on a construction site, and the alternative (clamping to zero) would make
+     a legitimately-entered 22:00–06:00 day silently worth nothing.
+     ========================================================================================== */
+  function hhmm(v) {
+    var m = String(v == null ? '' : v).match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    var h = +m[1], mi = +m[2];
+    if (h < 0 || h > 24 || mi < 0 || mi > 59) return null;
+    return h * 60 + mi;
+  }
+  // Minutes a spec is worth: (end - start) less every break, each break first clipped to the
+  // window so a break typed outside working hours cannot take time that was never worked.
+  function specMinutes(spec) {
+    if (!spec) return null;
+    var a = hhmm(spec.start), b = hhmm(spec.end);
+    if (a == null || b == null) return null;
+    if (b <= a) b += 24 * 60;                       // crosses midnight
+    var mins = b - a;
+    (Array.isArray(spec.breaks) ? spec.breaks : []).forEach(function (br) {
+      var x = hhmm(br && br.start), y = hhmm(br && br.end);
+      if (x == null || y == null) return;
+      if (y <= x) y += 24 * 60;
+      if (x < a) { x += 24 * 60; y += 24 * 60; }    // a break stated in the after-midnight half
+      var lo = Math.max(x, a), hi = Math.min(y, b);
+      if (hi > lo) mins -= (hi - lo);
+    });
+    return Math.max(0, mins);
+  }
+  function specHours(spec) {
+    var mi = specMinutes(spec);
+    return mi == null ? null : Math.round((mi / 60) * 100) / 100;
+  }
+  function dayHoursMap(cal) {
+    return (cal && cal.day_hours && typeof cal.day_hours === 'object') ? cal.day_hours : null;
+  }
+  // The schedule in force on a weekday key ('mon'), or null when none is stored.
+  function daySpec(cal, dayKey) {
+    var m = dayHoursMap(cal);
+    var spec = m ? m[dayKey] : null;
+    return (spec && specMinutes(spec) != null) ? spec : null;
+  }
+  /* The BASE hours for a date — the per-day schedule when there is one, otherwise the calendar's
+     own scalar. ⚠️ Deliberately ignores seasons: `hoursPerDay` layers those on top, so there is one
+     place that knows how a season and a day schedule compose rather than two that can disagree. */
+  function baseHoursFor(cal, date) {
+    var spec = daySpec(cal, DAY_KEYS[date.getDay()]);
+    var h = spec ? specHours(spec) : null;
+    return (h != null && h > 0) ? h : (Number(cal.hours_per_day) || 8);
+  }
+  /* The average over the days this calendar actually works — what `hours_per_day` should be set to
+     when a per-day schedule is authored, so every untaught reader's `hours × days` is still right.
+     ⚠️ Falls back to the existing scalar when no day carries a schedule, so it can never zero a
+     calendar that simply has not used the feature. */
+  function averageDayHours(cal) {
+    cal = cal || defaultCalendar();
+    var tot = 0, n = 0;
+    for (var i = 0; i < 7; i++) {
+      if (!cal[WD_KEYS[i]]) continue;
+      var spec = daySpec(cal, DAY_KEYS[i]);
+      var h = spec ? specHours(spec) : null;
+      if (h == null || !(h > 0)) h = Number(cal.hours_per_day) || 8;
+      tot += h; n++;
+    }
+    return n ? Math.round((tot / n) * 100) / 100 : (Number(cal.hours_per_day) || 8);
+  }
 
   // The one supported calendar shape when a resource/activity has none assigned
   // yet: 6-day week (Mon–Sat), 8 hours/day, PH regular holidays off.
@@ -181,10 +264,31 @@
     out._season = s;
     return out;
   }
+  /* ⚠️⚠️ A SEASON STATES A REDUCTION, NOT A REPLACEMENT — and both forms have to keep working.
+     Owner 2026-09-17: *"ask for productivity reduction in hours/day. for example, if regularly site
+     works 8hrs/day, but due to rain they can only work 6, user should input 2hrs/day as reduction."*
+     A reduction is the more durable statement: raise the base week to 10h and a stored absolute 6
+     still says 6, while a stored reduction of 2 correctly says 8. But every season SAVED BEFORE
+     today carries an absolute `hours_per_day`, so that is honoured when there is no reduction —
+     reading an old season as "reduce by 6" would have cut every wet-season day to 2 hours.
+     ⚠️ Floored above zero: a reduction at or past the base is a data-entry error, and a 0-hour
+     working day would divide by zero in the FTE histogram and report a calendar that gives days
+     but no hours. The editor refuses to save one; this is the belt as well as the braces. */
+  var MIN_HPD = 0.5;
   function hoursPerDay(cal, date) {
     cal = cal || defaultCalendar();
     if (!date) return Number(cal.hours_per_day) || 8;
-    return Number(patternFor(cal, date).hours_per_day) || Number(cal.hours_per_day) || 8;
+    var base = baseHoursFor(cal, date);
+    var s = seasonFor(cal, date);
+    if (s) {
+      if (s.hours_reduction != null && s.hours_reduction !== '' && !isNaN(Number(s.hours_reduction))) {
+        return Math.max(MIN_HPD, Math.round((base - Number(s.hours_reduction)) * 100) / 100);
+      }
+      if (s.hours_per_day != null && s.hours_per_day !== '' && !isNaN(Number(s.hours_per_day))) {
+        return Math.max(MIN_HPD, Number(s.hours_per_day));
+      }
+    }
+    return Math.max(MIN_HPD, base);
   }
   // Working hours a calendar gives over [start,end] — the season-aware answer, since a
   // 6-hour wet-season day and an 8-hour dry-season day are no longer interchangeable.
@@ -248,6 +352,45 @@
     return m ? ('--' + m[1] + '-' + m[2]) : null;
   }
   function isRecurKey(s) { return /^--\d{2}-\d{2}$/.test(String(s || '')); }
+  /* ==========================================================================================
+     "EVERY Nth <WEEKDAY> OF <MONTH>" — the second shape an annual non-working day comes in
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-17: *"for annual, ask for date but also allow user to define it as every Xth day
+     of the month."* A company day that is "the last Friday of April" has no fixed date, so
+     `--MM-DD` cannot express it.
+
+     Stored in the SAME `extra_holidays` array, as `--MM-#N-W`:
+       N = 1..4 or L (last), W = 0 (Sunday) .. 6 (Saturday).   '--08-#4-1' = 4th Monday of August.
+
+     ⚠️ Chosen so it cannot be mistaken for either existing shape: `isRecurKey` requires two digits
+     after the second hyphen and an ISO date never begins with one. A reader that has not been
+     taught this shape files it under `exact`, where it matches no date at all — so the day is
+     treated as WORKING. That is the safe direction (a day is not removed that should have been)
+     rather than removing days nobody asked for, and it is why this needs no migration.
+     ========================================================================================== */
+  function isNthKey(s) { return /^--\d{2}-#([1-4]|L)-[0-6]$/.test(String(s || '')); }
+  function parseNthKey(s) {
+    var m = String(s || '').match(/^--(\d{2})-#([1-4]|L)-([0-6])$/);
+    return m ? { month: +m[1], nth: m[2] === 'L' ? 'L' : +m[2], weekday: +m[3] } : null;
+  }
+  // The date such a key lands on in `y`, or null when that month has no such weekday
+  // (a 5th Monday, asked for as the 4th, always exists; 'L' always exists).
+  function nthKeyDate(key, y) {
+    var k = parseNthKey(key); if (!k) return null;
+    if (k.nth === 'L') {
+      var last = new Date(y, k.month, 0);                       // last day of the month
+      var back = (last.getDay() - k.weekday + 7) % 7;
+      last.setDate(last.getDate() - back);
+      return last;
+    }
+    var first = new Date(y, k.month - 1, 1);
+    var fwd = (k.weekday - first.getDay() + 7) % 7;
+    var day = 1 + fwd + (k.nth - 1) * 7;
+    if (day > new Date(y, k.month, 0).getDate()) return null;
+    return new Date(y, k.month - 1, day);
+  }
+  var _NTH_ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', L: 'last' };
+  var _WD_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var _holIdxCache = (typeof WeakMap === 'function') ? new WeakMap() : null;
   var _holIdxFallbackKey = null, _holIdxFallback = null;
   function holidayIndex(cal) {
@@ -255,16 +398,45 @@
     if (!list) return { exact: {}, recur: {}, nExact: 0, nRecur: 0 };
     if (_holIdxCache) { var hit = _holIdxCache.get(list); if (hit) return hit; }
     else if (_holIdxFallbackKey === list) return _holIdxFallback;
-    var out = { exact: {}, recur: {}, nExact: 0, nRecur: 0 };
+    var out = { exact: {}, recur: {}, nth: [], nExact: 0, nRecur: 0, nNth: 0, _nthYear: {} };
     for (var i = 0; i < list.length; i++) {
       var v = String(list[i] || '').trim();
       if (!v) continue;
       if (isRecurKey(v)) { if (!out.recur[v]) { out.recur[v] = 1; out.nRecur++; } }
+      /* ⚠️ Nth-weekday keys are held as a LIST and resolved per year on demand, never per call:
+         `nonWorkingReason` runs once per calendar day inside `addWorkingDays`, which walks up to
+         7,300 days for a single activity, and re-deriving "the 4th Monday of August" on each of
+         them is the same linear-scan cost the `--MM-DD` index was built to remove. */
+      else if (isNthKey(v)) { if (out.nth.indexOf(v) === -1) { out.nth.push(v); out.nNth++; } }
       else if (!out.exact[v]) { out.exact[v] = 1; out.nExact++; }
     }
     if (_holIdxCache) _holIdxCache.set(list, out);
     else { _holIdxFallbackKey = list; _holIdxFallback = out; }
     return out;
+  }
+  // ISO date -> the nth-key that produced it, for one year. Cached on the index, so it is
+  // computed once per (calendar, year) and collected with the list it belongs to.
+  function nthDatesIn(ix, y) {
+    if (!ix.nNth) return null;
+    if (ix._nthYear[y]) return ix._nthYear[y];
+    var map = {};
+    for (var i = 0; i < ix.nth.length; i++) {
+      var d = nthKeyDate(ix.nth[i], y);
+      if (d) map[iso(d)] = ix.nth[i];
+    }
+    return (ix._nthYear[y] = map);
+  }
+  /* Years in which a recurring entry is deliberately NOT observed. Owner 2026-09-17: *"for annual,
+     allow also user to define if this is excluded for a specific year."* A sidecar map keyed by the
+     same string, exactly as `extra_holiday_labels` is — so `extra_holidays` keeps one element
+     shape and every other module reading that column is untouched. */
+  function holidayExcluded(cal, key, y) {
+    var ex = cal && cal.extra_holiday_excludes;
+    if (!ex || typeof ex !== 'object') return false;
+    var list = ex[key];
+    if (!Array.isArray(list)) return false;
+    for (var i = 0; i < list.length; i++) if (Number(list[i]) === Number(y)) return true;
+    return false;
   }
 
   /* Fold an exact-date list down to annual repeats. A month/day that appears in at least
@@ -314,6 +486,9 @@
     if (isRecurKey(v)) {
       var mo = parseInt(v.slice(2, 4), 10), dy = parseInt(v.slice(5, 7), 10);
       when = (_MD_NAMES[mo - 1] || v.slice(2, 4)) + ' ' + dy + ' \u00b7 every year';
+    } else if (isNthKey(v)) {
+      var k = parseNthKey(v);
+      when = _NTH_ORD[k.nth] + ' ' + _WD_NAMES[k.weekday] + ' of ' + (_MD_NAMES[k.month - 1] || k.month) + ' \u00b7 every year';
     }
     /* ⚠⚠ THE NAME REPLACES THE DATE, IT DOES NOT HIDE IT. A chip reading only “Typhoon
        shutdown” would be unverifiable — the one thing a planner checks a holiday list for is
@@ -338,9 +513,18 @@
       var sp = phSpecialDays(date.getFullYear())[ds];
       if (sp) return { kind: 'special', name: sp };
     }
-    var ix = holidayIndex(cal);
-    if (ix.exact[ds]) return { kind: 'extra', name: 'Extra non-working day' };
-    if (ix.nRecur && ix.recur['--' + ds.slice(5)]) return { kind: 'extra', name: 'Annual non-working day (' + holidayLabel('--' + ds.slice(5)) + ')' };
+    var ix = holidayIndex(cal), y = date.getFullYear();
+    if (ix.exact[ds]) return { kind: 'extra', name: 'Extra non-working day', key: ds };
+    var rk = '--' + ds.slice(5);
+    if (ix.nRecur && ix.recur[rk] && !holidayExcluded(cal, rk, y)) {
+      return { kind: 'extra', name: 'Annual non-working day (' + holidayLabel(rk) + ')', key: rk };
+    }
+    if (ix.nNth) {
+      var nm = nthDatesIn(ix, y);
+      if (nm && nm[ds] && !holidayExcluded(cal, nm[ds], y)) {
+        return { kind: 'extra', name: 'Annual non-working day (' + holidayLabel(nm[ds]) + ')', key: nm[ds] };
+      }
+    }
     return null;
   }
 
@@ -493,18 +677,24 @@
   function yearStats(cal, y) {
     cal = cal || defaultCalendar();
     var months = [], total = 0;
+    var totalCal = 0;
     for (var mo = 0; mo < 12; mo++) {
       var d = new Date(y, mo, 1), end = new Date(y, mo + 1, 0), work = 0, hrs = 0, off = [];
+      var cdays = end.getDate();
       var seas = seasonFor(cal, new Date(y, mo, 1));
       for (; d <= end; d.setDate(d.getDate() + 1)) {
         var why = nonWorkingReason(cal, d);
         if (!why) { work++; hrs += hoursPerDay(cal, d); continue; }
         if (why.kind !== 'weekend') off.push({ date: iso(d), name: why.name, kind: why.kind });
       }
-      total += work;
-      months.push({ month: mo + 1, working: work, hours: hrs, season: seas ? (seas.label || 'Season') : null, holidays: off });
+      total += work; totalCal += cdays;
+      /* ⚠️ `calendar` is the month's real length, not `working + non-working` — the point of
+         showing it beside the working count is that the DIFFERENCE is what the calendar costs,
+         and deriving it from the same loop that produced `working` could never disagree with it. */
+      months.push({ month: mo + 1, working: work, calendar: cdays, hours: hrs,
+                    season: seas ? (seas.label || 'Season') : null, holidays: off });
     }
-    return { year: y, months: months, total: total };
+    return { year: y, months: months, total: total, totalCalendar: totalCal };
   }
 
   global.PDCal = {
@@ -537,6 +727,16 @@
     recurKey: recurKey,
     isRecurKey: isRecurKey,
     holidayIndex: holidayIndex,
+    holidayExcluded: holidayExcluded,
+    isNthKey: isNthKey,
+    parseNthKey: parseNthKey,
+    nthKeyDate: nthKeyDate,
+    DAY_KEYS: DAY_KEYS,
+    specHours: specHours,
+    specMinutes: specMinutes,
+    daySpec: daySpec,
+    baseHoursFor: baseHoursFor,
+    averageDayHours: averageDayHours,
     holidayLabel: holidayLabel,
     holidayWhen: holidayWhen,
     collapseHolidays: collapseHolidays,
