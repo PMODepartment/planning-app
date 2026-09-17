@@ -1,3 +1,145 @@
+## 2026-09-18 (b) — A tower is an INSTANCE of a TYPE, and Floors & Zones asks in a pop-up
+
+Owner: *"the idea for the towers is that, users are to define the types of towers there are. Meaning
+Type 1 Tower has 16F and same footprints, number of zones, same sizing etc... and users are to define
+how many type 1 towers there are in the project. Next for the floor & zones, based on the defined
+types of towers in the preceding step, users are then to define the number of floors and what their
+corresponding category floor (basement, podium / commercial, typical, roof deck). This is processed
+by letting the user use the quick setup but in a pop-up window. Then if there are changes to be made
+later on, the detailed pane below can be adjusted (which is what is defined currently)."*
+
+### ⚠️⚠️ THIS REVERSES A DECISION `stTowers`' OWN HELP TEXT ARGUED FOR, AND THE OLD SENTENCE IS KEPT
+
+That step used to read, in as many words: *"identical towers are just several towers carrying the
+same floors — that is how a tower 'type' is expressed; there is no separate type field."* The
+reasoning was that a type is only ever a shorthand for "these towers are the same", so storing one
+would be a second source of truth about a fact the floors already carry.
+
+It is wrong about the **work**, which is what the owner is reporting. Expressing "sixteen towers of
+Type 1" by creating sixteen towers and laying out sixteen identical sets of floors is sixteen chances
+to diverge, and nothing in the file could say they were *meant* to be the same — so a floor added to
+one of them silently made it a different building with no warning anywhere. The shipped help text is
+rewritten; ⚠️ a comment above it **quotes the old sentence and records that this is a reversal**,
+because a reversal with no record is a reversal that gets reversed back.
+
+### The model: floors are stored ONCE, on the type's first instance
+
+`cfg.towerTypes` is the new store — `{ id, code, name }` — and every tower carries a `typeId`.
+
+⚠️⚠️ **THE FLOORS ARE NOT COPIED PER INSTANCE, AND THAT IS THE WHOLE DESIGN.** They stay on the
+type's **representative** — its first instance — so:
+
+- `f.towerId` keeps its historical meaning, and every reader written before types existed is
+  unchanged;
+- *"every Type 1 tower is identical"* holds **by construction** rather than by discipline, because
+  there is only one set of floors to be identical to;
+- the fan-out happens in exactly **two** places: `floorsOfTower` on read, and `locList` on push.
+
+⚠️⚠️ **AND THE FIRST INSTANCE'S LEAF `uid` IS PRESERVED BYTE-FOR-BYTE.** `cfg.links`,
+`cfg.actLinks` and `cfg.scopeOff` are all keyed on those uids, so a generated uid for instance 0
+would have silently orphaned every zone sequence and every scope exclusion on every existing
+project. Instance 0 keeps the historical string; only `ti > 0` gets the new
+`trade@towerId/<tail>` form.
+
+### ⚠️⚠️ NO GUESSING: AN UNTYPED TOWER IS ITS OWN TYPE
+
+`typeOfTower` returns `''` for a tower carrying no `typeId`, `towersOfType('')` returns `[]`, and
+`repTowerOfTower` then falls back to the tower itself. An earlier cut fell back to *"the first
+type"* and **collapsed every tower onto tower 1's floors** — caught by `test-towerseq` with 20
+failures, which is the only reason it is not in this commit.
+
+`normalize()` migrates a setup saved before today: it builds `towerTypes`, gives each untyped tower
+**its own** type named after it (so nothing merges), and filters out types nothing instantiates.
+
+### The count control
+
+`− N +` per type on the Towers step, with the instance names listed under it.
+
+- ⚠️⚠️ **ADDED ONE AT A TIME, AND THE ORDER IS THE POINT.** `_twNewInstance` reads `towerList()` to
+  find a name and code nothing is using, so each new tower must be **in** the list before the next
+  is named. The first cut built them all first and appended afterwards — so they were every one
+  named against the same list, and raising a two-tower type to four produced **"Tower 3" twice**.
+  Two towers with one name is exactly what makes an area traced on the site development plan
+  ambiguous. Caught by the new suite; the comment beside it had warned about it and the code did it
+  anyway.
+- ⚠️ **REMOVED FROM THE END, NEVER THE FIRST.** The first instance is the representative that holds
+  the floors; dropping it would take the type's whole layout with it. Their `towerLinks` go with
+  them, or the sequence would point at towers that no longer exist.
+- ⚠️ **A NEW TOWER IS NAMED GLOBALLY** — *"Tower 4"*, not *"Type 1 4"*. The site plan joins towers
+  on their names, and a name scoped to a type would stop matching what a planner traced.
+- Renaming a **type** with exactly one instance renames that tower too; with several, a note says
+  the towers keep their own names.
+
+### Floors & Zones: the quick setup becomes a dialog
+
+The inline strip had room for four number boxes on one line — which is why it only ever asked for
+basements and floors. A fifth and sixth would have wrapped, and the owner is asking for **four floor
+categories plus zones and units**.
+
+- ⚠️ `psAsk`, this module's own dialog kit, with a **live sentence** rebuilt on every keystroke: how
+  many storeys with a breakdown by category, the zones, the units, the **location count** computed by
+  `leavesOfFloor`'s own rule, and the replace clause naming what it will overwrite.
+- ⚠️⚠️ **ONE ABOVE-GRADE SEQUENCE `F1…Fn`, NOT `P1…` / `F1…` / `R1`.** The categories say what each
+  floor **is**; they do not restart the count. Every location label and every generated activity id
+  is built from the code, so three separate sequences would produce three floors that all read as
+  the building's first.
+- ⚠️ Basements are emitted **deepest-first** (`B{n}` down to `B1`), which is the order the stacking
+  draws them in.
+- ⚠️ **The second `psConfirm` is dropped.** It counted `zn.floors.length` — *every* tower's floors —
+  while the generator only ever replaces **this** tower's, so it overstated what was at stake on
+  every multi-tower project. The dialog's own note carries the accurate count.
+- ⚠️ `_clampN` bounds every field, and `validate` refuses a run with no storeys at all rather than
+  silently producing an empty tower.
+- The detailed pane below is **unchanged** — it is still how a floor is adjusted afterwards, which is
+  the second half of the owner's sentence.
+
+### Verified
+
+**New `modules/project-schedule/test-towertypes.js` — 79 assertions, 0 failing**, every function
+sliced out of the shipped file **by name** and executed: the vocabulary, the no-guessing rule, *one
+set of floors / N buildings*, the uid contract, the count control, the naming, the migration (lifted
+out of `normalize` by regex and wrapped as `migrateTypes`), the clamp, and nine assertions reading
+the shipped step.
+
+⚠️⚠️ **The contrast is pinned to a SHA (`46b67299`), never `HEAD`** — which becomes self-comparison
+the moment this commits. The base has **none** of it: its `floorsOfTower('ST','tw2')` returns **0**
+floors where this returns 3, and its `locList()` returns **5** leaves where this returns 6.
+
+⚠️ **Three of my own assertions were wrong before the code was**, each left in the suite rather than
+quietly corrected:
+- **the arithmetic**: I asserted 5 leaves where the fixture has **6** (B1 with 1 zone + F1 with 2 +
+  F2 with 2 = 5 per tower, plus 1 for the second tower). §3.3 had already measured 5 per tower and
+  passed, which is what settled it;
+- **an assertion measuring its own explanation**: *"the help text that said the opposite is gone"*
+  failed because the ⚠️ comment recording the reversal **quotes** it. Re-aimed at the source with
+  comments blanked through `tools/scan.js` — ⚠️ `blankComments`, not `clean`, because the help text
+  **is** a string literal and that is the thing being tested for — with a second assertion that the
+  comment **is** kept;
+- and the `_twSetCount` naming defect above, which was a real bug rather than a bad assertion.
+
+Whole battery on the merged tree: `builder` 149 · `towerseq` 48 · `autotrace` 32 · `zoneplan` 50 ·
+`sitefit` 31 · `cpm` 28 · `critwbs` 26 · `health` 30 · `wbsfile` 33 · `zoneoverlap` 57 · `shapeedit`
+36 · `towertypes` **79** · `calendar-editor` 23 · `syntax` 4 · `lsm` 683 · `actdnd` 47 · `actsetup`
+50 · `test-calendar` 71 — **1,477 assertions, 0 failing**. `wiring-check` **139/0**. The inline
+`<script>` parses (1 block). 0 NUL bytes.
+
+⚠️ **NOT VERIFIED SIGNED IN.** The anon key has no grants, so no real setup has been opened: the
+model, the count control, the migration and the quick-setup generator are proved by execution against
+fixtures. **The first things to try:** raise a type's count to three and check the three towers carry
+the same floors; then run **Quick setup…** and check the location count on screen matches what the
+step reports afterwards.
+
+⚠️ **Merged `origin/main` (4 commits, PR #145's Calendars work) before shipping.**
+`modules/project-schedule/index.html` **auto-merged with no conflicts** — but a clean auto-merge is
+not evidence, so both sides were checked present afterwards (this side's `blankTowerTypes`,
+`_twSetCount`, `_twNewInstance`, `floorsOfTower`, `_qsSentence`, `_clampN`; main's
+`renderCalendarsInto`, `#ps-cal-close`, `day_hours`) and the whole battery re-run on the merged tree
+— **including main's own two new suites, which this session had never run**.
+
+`MODULE_V` → `20260918c`, re-derived from the merged tree **after** integrating (main had reached
+`20260918b`) and sort-checked as a plain string.
+
+
 ## 2026-09-18 (a) — A step you cannot answer yet cannot be entered, and four references to a rail that had been renumbered twice
 
 Owner, closing the 9-step restructure: *"\*\*\* Users are unable to proceed the next step without
@@ -135,6 +277,89 @@ unrelated change. It is recoverable, not discarded.
 
 `MODULE_V` → `20260918a` — re-derived from the merged tree **after** integrating (main had reached
 `20260917zzt`), and sort-checked as a plain string.
+
+## 2026-09-17 (zzt) — Schedule Setup: the Working Calendars step is called Calendars
+
+⚠️ **Re-lettered `(zzs)` → `(zzt)` on merging `origin/main`.** Main had independently published its
+own `2026-09-17 (zzs)` — the Activities step entry directly below — while this branch was in flight,
+so both sides prepended a different entry under one letter. Both are kept whole and this one moves
+past it, per the root changelog’s own rule: take only the NEW entries from each side, never both
+copies of the log.
+
+Owner: *"rename step Working Calendars to Calendars."* One word on screen; six places in the file,
+because this module deliberately addresses its steps **by title** rather than by index.
+
+⚠️⚠️ **A STEP TITLE IS A KEY HERE, NOT A LABEL — AND IT IS THE KEY IN TWO SEPARATE TABLES.**
+`_stepNo(title)` is what renumbers every *"see step 4"* in the module when the rail changes (the
+comment above `STEPS` says so in as many words), `SB_MANUAL` is keyed by title so the How-to pane
+finds the right page, and `gotoStep(title)` is the public entry point other screens and deep links
+call. Changing only the rail entry would have left the step's own heading printing a **blank** where
+its number belongs — `_stepNo` answers the empty string for a name it cannot find, which is exactly
+the failure `STEP_ALIAS` exists to prevent — and the How pane with no page at all. So the rename is:
+
+| | |
+|---|---|
+| `STEPS_NEW` | `{ t: 'Calendars', … }` — the rail entry and the step's own heading |
+| `SB_MANUAL` | re-keyed `'Calendars'` |
+| `stCalendars` | `_stepNo('Calendars')` |
+| the `tab === 'calendars'` deep link | `gotoStep('Calendars')` |
+
+⚠️⚠️ **THE OLD TITLE STILL RESOLVES, AND IT HAD TO BE ADDED TO BOTH TABLES, NOT ONE.**
+`STEP_ALIAS` (which `_stepNo` reads) and `gotoStep`'s own private `_al` are two maps doing
+overlapping jobs — pre-existing drift, not introduced here — and `gotoStep` does **not** consult
+`STEP_ALIAS`. Adding the alias to one of them would have left the other silently returning `false`
+for `gotoStep('Working calendars')`, which is how another module's button or a saved deep link stops
+working with nothing on screen to say so. ⚠️ The `_al` entry carries **no tab**: this step is one
+page, and asking for a tab would be wiring that does nothing.
+
+⚠️ **Not widened past the ask.** `STEP_ALIAS` and `_al` are still two maps; making `gotoStep` fall
+through to `STEP_ALIAS` would converge them, and would also change what `gotoStep('Tower links')`
+does today (it returns false; it would start resolving to Repetition). That is a behaviour change
+with nothing asking for it, so the one entry was added instead and the drift is named here.
+
+### Two on-screen strings that named this step, and were already stale
+
+*"Same editor as the **Working Calendars view**"* (the duration-scenario dialog's Edit calendars
+button) and *"per each activity's calendar (**Working Calendars view**)"* (the Schedule dialog's
+calendar-CPM note). ⚠️ There has been no Working Calendars **view** since 2026-09-02, when it became
+a Setup step — so both were wrong before this rename and would now have named a step that does not
+exist either. Both read **Schedule Setup — Calendars**.
+
+⚠️ **The calendar EDITOR's own heading is deliberately untouched.** `buildHTML()` still opens with
+`<h2>Working calendars</h2>`; that is the shared editor (the same one the standalone modal draws),
+it names the list of calendar records rather than the step, and rewriting a shared component's
+heading is not a rename of a rail entry. ⚠️ It does mean the step page shows its own `<h2>` and then
+the editor's — pre-existing, and worth a decision on its own rather than inside this.
+
+### Verified
+
+**17 assertions, 0 failing**, executing the shipped `sbSyncSteps` / `_stepNo` / `STEP_ALIAS` /
+`STEPS_NEW` / `STEPS_IMP` / `gotoStep`'s `_al` **sliced out of the file** rather than retyped: the
+build rail reads `Start → Calendars → Project phases → Activities → Floors & Zones → Repetition →
+Generate`, `_stepNo('Calendars')` is **2**, `_stepNo('Working calendars')` is **also 2** through the
+alias, an unknown title still yields the empty string, **every other step keeps its number**, the
+pre-existing aliases (`Tower links` → 6, `Stacking` → 7) are untouched, every `gotoStep` alias
+resolves to a step that really exists, and the import rail is unchanged (it never had this step).
+⚠️ **The contrast bites**: the same suite against `HEAD` fails **11 of 17**.
+
+⚠️ **My first harness was wrong and reported a defect that does not exist** — it built `STEPS` by
+hand from `STEPS_NEW` and so lost `STEP_START`, which `sbSyncSteps` prepends, reporting Calendars at
+position 1 and every step number off by one. Fixed by slicing and executing `sbSyncSteps` itself
+instead of imitating it.
+
+⚠️⚠️ **And the shipped suite's manual check was proved to bite, rather than assumed:** mutating the
+file to rename the step but leave `SB_MANUAL` keyed by the old title takes `test-builder` from
+**99/1 to 97/3**, naming both halves (*step "Calendars" has a page* / *page "Working calendars"
+belongs to a step the rail can show*). So the manual re-key is real coverage.
+
+Twelve module suites green — `lsm` **683/0**, `cpm` 28/0, `autotrace` 32/0, `towerseq` 48/0,
+`zoneoverlap` 57/0, `shapeedit` 36/0, `zoneplan` 50/0, `actdnd` 45/0, `health` 30/0, `critwbs` 26/0,
+`syntax` 4/0 — plus `wiring-check` **139/0** and 0 NUL bytes (counted as bytes; `grep -c` with a NUL
+pattern degenerates to an empty pattern and reports every line, which this log already records).
+⚠️ `test-builder` **99/1** is **pre-existing**: byte-identical on `HEAD`, and it is the documented
+*page "Structure" belongs to a step the rail can show*.
+
+⚠️ **Not verified signed in** — the rail has not been walked on a real project.
 
 ## 2026-09-17 (zzs) — The Activities step: two delete controls go, one of which main had wired while this branch called it dead
 

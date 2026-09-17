@@ -104,6 +104,66 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (b) — A tower becomes an instance of a type, and the thing that made it safe was NOT copying the floors
+
+Owner, on the Schedule Setup restructure: *"users are to define the types of towers there are …
+and users are to define how many type 1 towers there are in the project"*, and for the next step,
+*"this is processed by letting the user use the quick setup but in a pop-up window. Then if there
+are changes to be made later on, the detailed pane below can be adjusted."* Module work — the full
+entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(b)`. Logged here
+for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **THE FEATURE IS A REVERSAL OF A DECISION THE SCREEN ITSELF ARGUED FOR, AND THE OLD SENTENCE IS
+KEPT RATHER THAN DELETED.** That step's help text read *"identical towers are just several towers
+carrying the same floors — that is how a tower 'type' is expressed; there is no separate type
+field."* The reasoning was sound about the data and wrong about the **work**: expressing sixteen
+identical towers by laying out sixteen identical sets of floors is sixteen chances to diverge, and
+nothing in the file could say they were *meant* to match — so a floor added to one of them silently
+made it a different building. The shipped text is rewritten and a comment above it **quotes the old
+sentence and records the reversal**, because a reversal with no record is one that gets reversed
+back.
+
+⚠️⚠️ **WHAT MADE IT SAFE IS THAT NOTHING WAS COPIED.** Floors stay stored **once**, on the type's
+first instance, so `f.towerId` keeps its historical meaning, every reader written before types
+existed is untouched, *"every Type 1 tower is identical"* holds by construction rather than by
+discipline, and the fan-out happens in exactly **two** places. The load-bearing detail is that the
+first instance's leaf `uid` is preserved **byte-for-byte**: `cfg.links`, `cfg.actLinks` and
+`cfg.scopeOff` are all keyed on those uids, so generating a fresh one would have silently orphaned
+every zone sequence and scope exclusion on every existing project. A migration with a no-guessing
+rule — an untyped tower is **its own** type — covers setups saved before today; an earlier cut fell
+back to *"the first type"* and collapsed every tower onto tower 1's floors, which a suite caught
+with 20 failures.
+
+⚠️⚠️ **AND A REAL DEFECT THE NEW SUITE CAUGHT, WHICH THE COMMENT BESIDE IT HAD ALREADY WARNED
+ABOUT.** The count control builds each new tower by reading the list to find a name nothing is
+using — so every instance must be **in** the list before the next one is named. The first cut built
+them all first and appended afterwards, naming them all against the same list: raising a two-tower
+type to four produced **"Tower 3" twice**, and two towers with one name is exactly what makes an
+area traced on the site development plan ambiguous. The warning was written beside the code and the
+code did the opposite.
+
+**Verified:** a new suite of **79 assertions** executing the shipped functions sliced out by name,
+with the contrast pinned to a **SHA** rather than `HEAD` (which becomes self-comparison the moment
+this commits) and asserted to have run — the base returns **0** floors where this returns 3.
+Eighteen suites green on the merged tree — **1,477 assertions, 0 failing** — `wiring-check`
+**139/0**, the inline block parses, 0 NUL bytes. ⚠️ Three of my own assertions were wrong before the
+code was, including one **measuring its own explanation** (a "this text is gone" check tripping on
+the comment that records it went), fixed by reading the source with comments blanked.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so the model, the migration and the
+generator are proved by execution against fixtures rather than against a real setup.
+
+⚠️ **Merged `origin/main` (4 commits, PR #145's Calendars work) before shipping.**
+`modules/project-schedule/index.html` **auto-merged with no conflicts** — but a clean auto-merge is
+not evidence, so both sides were checked present afterwards and the whole battery re-run on the
+merged tree, **including main's own two new calendar suites, which this session had never run**.
+
+`MODULE_V` → `20260918c`, re-derived from the merged tree **after** integrating (main had reached
+`20260918b`) rather than guessed beforehand, and sort-checked as a plain string. No shared asset
+changed.
+
+
 ### 2026-09-18 (a) — Schedule Setup gates its own steps, and the gate had to be written so it cannot strand a project
 
 Owner, closing the 9-step Schedule Setup restructure: *"\*\*\* Users are unable to proceed the next
@@ -155,6 +215,52 @@ re-run on the merged tree.
 `MODULE_V` → `20260918a`, re-derived from the merged tree **after** integrating (main had reached
 `20260917zzt`) rather than guessed beforehand, and sort-checked as a plain string across every token
 in the tree. No shared asset changed.
+
+### 2026-09-17 (ax) — Schedule Setup: the Working Calendars step is called Calendars
+
+Owner: *"rename step Working Calendars to Calendars."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzt)`. Logged
+here for the `MODULE_V` bump and the one thing that is not a fact about this module:
+
+⚠️⚠️ **A DISPLAY NAME THAT IS ALSO A LOOKUP KEY CANNOT BE RENAMED IN ONE PLACE.** This module
+addresses its wizard steps **by title, never by index** — deliberately, and the comment above
+`STEPS` says why: the rail has been renumbered twice, and an index would have pointed at the wrong
+page both times. So one word on screen is six edits: the rail entry, the How-to manual's key, the
+step's own `_stepNo(...)` heading lookup, the deep link that lands on it, and **two separate alias
+tables** so the old title keeps resolving. The two tables are the trap — `_stepNo` reads
+`STEP_ALIAS` and `gotoStep` reads a private map of its own and does **not** consult it, so aliasing
+one leaves the other returning false for an external deep link, silently. Both were updated; the
+drift between them is named rather than fixed, because converging them would change what three
+unrelated aliases do today.
+
+⚠️ **Two on-screen strings that named this step were already wrong before the rename** — both said
+*"Working Calendars view"*, and there has been no such view since 2026-09-02, when it became a Setup
+step. They now read *Schedule Setup — Calendars*. The calendar **editor's** own heading is
+deliberately untouched: it is the shared component the standalone modal also draws, and it names the
+list of calendars, not the step.
+
+**Verified:** 17 assertions executing the shipped `sbSyncSteps` / `_stepNo` / both alias tables
+sliced out of the file — the rail reads `Start → Calendars → …`, the **old** title still resolves to
+step 2, every other step keeps its number, and the import rail is unchanged. ⚠️ The contrast against
+`HEAD` fails **11 of 17**. ⚠️ A mutation leaving the manual keyed by the old title takes
+`test-builder` from **99/1 to 97/3**, so that coverage is real. Twelve module suites green;
+`wiring-check` **139/0**. ⚠️ `test-builder` **99/1** is pre-existing, byte-identical on `HEAD`.
+⚠️ **Not verified signed in.**
+
+⚠️⚠️ **Re-lettered `(av)` → `(ax)` on merging `origin/main`, and the `MODULE_V` token re-derived
+with it.** Main had independently published its own `2026-09-17 (av)` — and an `(aw)` above it —
+while this was in flight, so both sides prepended a different entry under one letter. Both are kept
+whole and this one moves past both, per this file's own rule: take only the NEW entries from each
+side, never both copies of the log. ⚠️⚠️ **The version half did NOT conflict, and that is the
+dangerous half:** this branch had derived `20260917zzs` from what the remote carried at the time,
+main has since reached `20260918a`, and `zzs` sorts **earlier** as a plain string — so a browser
+already holding main’s token would never have fetched these bytes. Eighth time this log has
+recorded that shape.
+
+`MODULE_V` → `20260918b`, re-derived from what the remote actually carries **after** integrating
+rather than guessed beforehand, and sort-checked as a plain string against every token in the merged
+tree. The module changelog entry is re-lettered `(zzs)` → `(zzt)` for the same collision.
 
 ### 2026-09-17 (aw) — The 360° stitcher produced a cylinder and the viewer rendered it as a sphere
 

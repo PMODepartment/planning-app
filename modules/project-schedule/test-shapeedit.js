@@ -133,7 +133,9 @@ console.log('\n4 · the trade that carries no location');
 
   /* ⚠️⚠️ FOUR CALL SITES, ASSERTED INDIVIDUALLY. The whole reason `locless` exists rather than four
      `=== 'GR'` tests is that the first change to the rule would otherwise leave three behind. */
-  ok(/function locList\(\) \{ var out = \[\]; GROUPS\.forEach\(function \(tr\) \{ if \(locless\(tr\)\) return;/.test(mask),
+  // ⚠️ Bounded to 400 characters so this still matches locList's OWN gate and not another
+  //    function's — locList stopped being a one-liner when tower types landed.
+  ok(/function locList\(\)\s*\{[\s\S]{0,400}?if \(locless\(tr\)\) return;/.test(mask),
      '1 · locList produces no leaves for it');
   ok(/if \(locless\(tr\)\) return;\s*\(\(c\.zoning\[tr\] && c\.zoning\[tr\]\.floors\) \|\| \[\]\)/.test(mask),
      '2 · catalogueFrom contributes none of its floors to the location catalogue');
