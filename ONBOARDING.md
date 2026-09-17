@@ -108,7 +108,7 @@ files/photos.
 | **Project Schedule & Cost Loading** | `project-schedule` | **Loz Lozano** | **fmlozano-pmo / PMODepartment** | **In progress (priority)** |
 | Risk Register | `risk-register` | — (reference module) | — | Built |
 | Drawing Register | `drawing-register` | Ethan Patrick Robles | ethanrobles10 | Assigned (extend reference) |
-| Progress Photos | `progress-photos` | Johanne May Panganiban | yohanmay | Assigned |
+| Progress Photos | `progress-photos` | — | — | Unassigned |
 | Stakeholder Map | `stakeholder-map` | Art Lyndon Rovelo | ArtRovelo | Assigned |
 | Material Submittal Log | `material-submittal` | Art Lyndon Rovelo | ArtRovelo | Assigned |
 | Issues, Concerns & Lessons Learned | `issues-lessons` | — | — | Unassigned (reassigned Georgette to Cash Flow) |

@@ -1,3 +1,205 @@
+## 2026-09-16 (zc) — Activities filed under branches that no longer exist: three holes in one chain
+
+Owner, with the WBS tree open on a builder-pushed schedule: *"pls fix the logic of the grouping or
+the WBS when generated from the schedule builder. as you can see there are activities that do not
+fall in the correct location or zoning."* — `Rebar · Tower 2 · Floor 2 · Zone 1` sitting after the
+last floor branch, while `Concreting` for that same zone sat correctly inside it.
+
+### ⚠️⚠️ IT IS NOT THE BUILDER’S GROUPING, AND THE SCREENSHOT PROVES IT
+
+`dimKey` reads `r.loc`, and **every activity of a zone shares that object** — the generator puts
+them in one `locRows` bucket. Three activities of one zone therefore *cannot* be split by
+`buildTree`: they resolve the same key, take the same node, and are written with the same
+`wbs_node_id` and the same dotted code. Whatever separated them happened **after** the push.
+
+And the split is visible in the render order: the loose rows come out sorted by *code*, not by
+activity id and not by `seq_order`, which is only possible if their dotted codes differ from the
+ones their zones carry. `rebuild()` derives the grid’s hierarchy by **splitting the dotted code**
+(`_segs` / `_anc`), so a row whose code addresses a branch that no longer exists renders after the
+last surviving sibling, parented by arithmetic rather than by its `wbs_node_id`.
+
+⚠️ I checked the grid’s column-sort comparator first and it is **not** the cause — sliced out of the
+shipped file and run on the reported codes, it returns them in order. Recorded so the next person
+does not re-open it.
+
+### The chain, and all three links are closed here
+
+| # | where | what it did |
+|---|---|---|
+| 1 | `pushToSchedule`, node insert | **two nodes for one branch** — `existingChild` reads `WBS_NODES`, which is not written until the batch returns, so two descs at the same depth with the same parent and name both got inserted |
+| 2 | `_wbsDedupeSiblingNodes` (load) | merged them **correctly**, moving the loser’s activities onto the survivor — which changes `wbs_node_id` and **not** the dotted code |
+| 3 | `_wbsResyncCodes` | declined to look at activities at all, so those codes were never repaired |
+
+And a fourth, which is why the project stayed broken instead of healing on the next load:
+`_healFingerprint` — the gate in front of the whole repair chain — hashed summary rows and nodes
+and **not** activities, so a re-filed activity moved nothing it covered and the chain was skipped.
+
+#### 1 · The push no longer inserts two nodes for one branch
+
+Siblings queued in the same batch are now deduped against **each other**, keyed exactly as
+`existingChild` keys (parent id + trimmed, lower-cased name — asserted by running the shipped
+`existingChild` against both spellings). The duplicate is **folded onto the first desc** (`sameAs`,
+resolved once the ids are known) rather than dropped, marked `reused` so no second WBS-Summary row
+is written, and gives back the sibling slot `_nodeOrderPlan` took — a gap in `sort_order` is itself
+enough to re-code a branch on the next load.
+
+#### 2 · The insert response is matched by identity, never by position
+
+⚠️⚠️ The match-back trusted PostgREST’s row order **whenever the response was full-length**, and
+fell back to matching on `(parent_id, name)` only when it was **short**. A response that comes back
+complete but **reordered** passes the length check — so every desc was handed a *sibling’s* node id,
+the activities of a branch were filed under the branch next door, and the summary row written for it
+carried another branch’s name. Nothing errors, so nothing was reported. The old code already
+doubted the ordering — it wrote the fallback for it and then gated the fallback on a condition a
+reordered full response does not meet. The match is one pass over a shrinking pool and is now the
+only path.
+
+#### 3 · The code re-sync looks at activities, always
+
+Its short-circuit called itself exact: *"an activity’s target code is its node’s code plus its own
+tail, so if not one summary row’s code has moved, no activity’s can have either."* That holds only
+while the one way an activity’s code can go stale is its **node** being renumbered — and it is not.
+**An activity also drifts when it is re-filed onto a different node while every branch keeps the
+code it had**, which is exactly what the dedupe two steps earlier in the same chain does.
+
+⚠️ The saving it was buying is real (13 round-trips instead of 26 on a 12,459-node project) but it
+was paying for it with correctness. The honest saving is the **caller’s**: the chain is already
+behind `_healNeeded`, so an unchanged project never reaches this function. What the short-circuit
+saved was the second page on a load where something *had* moved — precisely the load that has to
+look.
+
+#### 4 · The gate can see a re-filed activity
+
+`_healFingerprint` now hashes each activity’s `(wbs, wbs_node_id)` as well. One more hash per row,
+against a chain of network round-trips it is deciding whether to skip. And it carries a **version**
+(`_HEAL_SIG_V = 2`): widening what the repairs read breaks the promise a stored signature makes, so
+every project re-runs the chain **once**. ⚠️ That is what repairs the schedules already in this
+state — including the one in the screenshot. Without it they would sit broken for ever, because
+nothing about them is changing.
+
+### Proved, and mutation-tested
+
+**New `modules/project-schedule/test-wbsfile.js` — 33 assertions, 0 failing.** `_wbsWantCodeFor`
+(lifted out of the paging loop and named so it can be *run*), `existingChild` and `_healFingerprint`
+are sliced out of the shipped file and executed; the two rules that are control flow inside a
+database-paging routine are asserted against the comment-blanked source, which is the only honest
+way to pin a branch that cannot be called without a server.
+
+⚠️⚠️ **THE FIRST VERSION OF THIS SUITE WAS GREEN ON TWO MUTATIONS AND IS RECORDED RATHER THAN
+QUIETLY FIXED.** `/_pendingByKey\[_dk\]/` is satisfied by the *store* line, so disabling the guard
+changed nothing; `/all = all.concat(await page(false))/` is satisfied by `if (0) all = …`. Both are
+now anchored to the start of the statement. Every gate is mutation-tested and each mutation fails
+**exactly one** assertion:
+
+- gating the activity page → *"the re-sync pages the ACTIVITIES, unconditionally"*
+- disabling the in-batch dedupe → *"siblings already queued in this batch are recognised"*
+- matching by position → *"no desc is matched to a returned row by its position"*
+
+Also asserted by execution: a pushed activity takes its branch code outright (the misfiled row is
+refiled), an **imported** activity keeps its own tail segment (rewriting it to the branch code
+collapses 16,393 rows on the measured project), a summary row *is* its node, and a re-filed activity
+moves the heal signature while the base’s signature does not budge.
+
+⚠️ The contrast block runs pinned `daca9716` and requires it to reproduce **all four** holes.
+
+`wiring-check` **139/139**, `test-lsm` **702/702**, `test-builder` **101/101**, `test-zoneplan`
+**27/27**, `test-sitefit` **31/31**, `test-wbsfile` **33/33**, `scan` self-test clean. The inline
+script parses (1 block), pure LF.
+
+⚠️ **Not verified signed in.** The anon key has no grants and DEMO01 needs a login. **What to
+expect:** the misfiled activities are repaired **on the next load** — the heal chain re-runs once
+because the signature version changed, pages the activities, and rewrites their dotted codes from
+the nodes they are actually filed under. Watch for the toast *"Re-synced N WBS codes…"*. If more
+than 500 distinct target codes drift the pass re-syncs the branches and **reports** the activity
+rebase instead of running it — a deliberate bound, and it will say so.
+
+`MODULE_V` → `20260916zc`, re-derived from what `origin/main` serves (`20260916zb`).
+
+## 2026-09-16 (zb) — Where a tower stands and what shape it is come from different drawings, and BOTH readings now ask both
+
+Owner, with the plan editor open on the L-shaped, three-zone **F1 of Tower 1**: *"wow haha, now the
+actual floor plan is gone? look at the floor plan defined here…"*
+
+### ⚠️⚠️ FOUR REPORTS IN ONE DAY, AND I ANSWERED THE WRONG ONE THREE TIMES
+
+| # | the report | what I changed | why it did not close |
+|---|---|---|---|
+| (y) | *"positioning and configuration … something happened when choosing floor by floor"* | keyed the plan lookup by **tower** | real fault, wrong half |
+| (z) | *"the issue still remains … not the same"* | fitted onto the **minimum-area rectangle** instead of the bounding box | real fault, wrong half |
+| (za) | (same report, third time) | **stopped the site reading floor plans at all** | over-correction — it deleted what the owner wanted |
+| (zb) | *"now the actual floor plan is gone?"* | **both readings read both drawings** | ⟵ this entry |
+
+Read the reports **together** and they are one sentence: *show me the floor plan I drew, and show me
+the same building in both readings.* I kept reading them as one or the other.
+
+> ⚠️⚠️ **THE DEFECT WAS NEVER *WHICH* DRAWING THE SITE USED. IT WAS THAT ONLY ONE OF THE TWO
+> READINGS USED IT.** **Whole towers** extruded the tower's traced **site** polygon — a placement
+> rectangle. **Floor by floor** re-drew every slice from the **floor** plan — an L with a core and
+> three zones. One building, two outlines, two clicks apart. Every one of (y), (z) and (za) moved
+> the floor plan around and left that asymmetry standing.
+
+### The fix: one rule, both readings
+
+`if (model.siteFloors && c.floor && !_pg)` → **`if (model.site)`**. Both site models set
+`site: true`; only Floor by floor sets `siteFloors`, and gating on **that** is what let the two
+readings disagree.
+
+| the question | the drawing that answers it |
+|---|---|
+| **where** the tower stands, how big it is, which way it runs | the **site plan** — its traced polygon's own rectangle (`_vsZpMinRect`), or its wrap slot where the site plan does not name it |
+| **what shape** it is | the **floor plans** — each floor for its own slice in *Floor by floor*, the tower's **biggest** floor for the one solid in *Whole towers* |
+
+Same drawings, same target, same transform (`_twSrc` — one source box per tower), so the massing
+solid **is** the biggest floor slice, and a setback is still a setback inside it.
+
+⚠️ **`_vsZpMinRect` is back**, and brought back out of the history rather than retyped from memory.
+It was correct geometry removed in (za) for a question the view had stopped asking; the view asks it
+again, so it is load-bearing again. The note on it now records both the removal and the return.
+
+⚠️ **`floors` is carried on a whole-tower cell.** That cell names no floor, so without it the
+renderer cannot find the tower's plans and *Whole towers* silently keeps its old outline. Collected
+from the loop that already computes `storeyN`, so the count and the list cannot drift.
+
+⚠️ **The biggest floor, not the first.** A massing solid is the building's outline and the outline of
+a building is its widest floor — the podium, not the penthouse and not whichever level sorted first.
+Measured in the same proportional units the shared box is built in, ties keeping the first.
+
+### Proved where all four versions actually differed — the call site
+
+`test-sitefit.js` rewritten — **31 assertions, 0 failing**, and it now runs the **resolution chain**
+rather than only the geometry: `_twFloors`, `_twSrc` and `_twBiggestPlan` are sliced out of
+`_vs3Build` by name and executed against a plan map and a row of cells, with `_vsZpFor` and its
+tower index sliced in too. Nothing is stubbed but the two things the renderer itself supplies.
+
+- the branch is entered for **both** readings — `if (model.site)`, asserted by regex on the shipped,
+  comment-blanked source, **and mutation-tested**: changing it back to `model.siteFloors` fails that
+  assertion and only that one
+- a whole-tower cell and a floor slice **resolve the identical source box**, and the massing solid
+  is byte-for-byte the biggest floor slice
+- the biggest floor wins **whichever order** the levels arrive in
+- the L keeps **all three zones**, lands inside the traced slab heading and all, and fills the
+  traced footprint in one direction without ever overrunning it
+- a setback stays **0.5 ×** the podium in both directions
+- an untraced tower's **wrap slot** is unchanged and still axis-aligned
+
+⚠️ **The contrast block runs pinned `feae648b` — entry (za), two hours old —** and requires it to
+reproduce the asymmetry at the call site: only `siteFloors` reads a plan, and a traced tower is
+excluded from even that. That is exactly the screenshot the owner replied to.
+
+⚠️⚠️ **The lesson, recorded because it cost four rounds:** the assertion has to sit where the
+**decision** is. A suite that exercised `_vsZpFitPolys` would have gone green on all four versions,
+including the three that were rejected — the geometry helper was never the thing that was wrong.
+
+`wiring-check` **139/139**, `test-lsm` **702/702**, `test-builder` **101/101**,
+`test-zoneplan` **27/27**, `test-sitefit` **31/31**, `scan` self-test clean. The inline script
+parses (1 block), pure LF.
+
+⚠️ **Not verified signed in.** The anon key has no grants and DEMO01 needs a login. **First thing to
+check:** *Whole towers* and *Floor by floor* should now show the **same L-shaped Tower 1**, in the
+same place, at the same size — the second simply cut into floors.
+
+`MODULE_V` → `20260916zb`, re-derived from what `origin/main` serves (`20260916za`).
+
 ## 2026-09-16 (za) — The site plan wins where it speaks: a traced tower is the same building in both readings
 
 Owner, with the two site readings side by side for the third time today: *"the issue still remains.

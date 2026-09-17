@@ -1,5 +1,87 @@
 # Module: contracts-claims
 
+## 2026-09-17 (b) — The dashboard states the revised contract sum, and names the record to chase
+
+Owner: *"Contracts & Claims dashboard for project-level needs to be improved. Please suggest both
+information and UI improvements."* Two information gaps closed; the rest is written up in the reply
+rather than built, because they need data the register does not hold yet.
+
+### An approved variation changes the contract, and the card did not say so
+Original + approved variations = the **revised contract sum** — the figure every commercial report
+is measured against: valuation, retention, final account. The page held both halves and printed only
+the first, so a project with ₱400M of approved change orders showed the same *Contract value* as one
+with none.
+
+⚠️ **The headline VALUE stays the signed figure**, and the revision is named beneath it. A planner
+comparing this screen against a signed contract has to find the signed number where they left it;
+the revision is the news, and news belongs in the line that explains.
+
+⚠️ **Approved change orders only.** A cost claim is a recovery against the existing sum, not a
+change to it, and anything still pending has changed nothing yet. Computed through
+`PDClaims.decided` + `PDClaims.sum`, like every other figure here, so "decided" cannot drift from
+what the pipeline table means by it.
+
+### "oldest 45 days" named no record
+It says there is a problem; it does not say **which record to chase**, which is the only action the
+figure supports — and a planner then had to scroll the register and sort it by hand to find out.
+`PDClaims.agingBuckets` now returns `oldestRow` beside `oldest`, and the header names it: reference
+first (what the record is called in an email to the client, and short), description second, clipped.
+
+⚠️ Additive to the shared helper — every existing caller reads `oldest` and is untouched. That
+matters here: `agingBuckets` is read by **three** screens, and the point of `claims.js` is that they
+cannot describe the register differently.
+
+### Tests
+`tools/test-claims.js` — new, **15 passed, 0 failed**, loading `claims.js` the way the page does
+(a real `window`, then the IIFE assigns onto it) rather than a rewritten copy. Covers the cases that
+would each have named the wrong record: a **dateless** record has no age and must not win (it is
+waiting on us, not on the client), a **decided** record is not pending and cannot be the oldest
+thing with the client, and a **tie** resolves to the first stably so the header does not change on
+re-render. Plus the variation rule: approved change orders only, claims and pending excluded.
+
+⚠️ Negative-tested — dropping `oldestRow = r` turns 5 assertions red.
+
+`claims.js` → `?v=20260917a`; module → `?v=20260917b`.
+
+## 2026-09-17 (a) — The record dialog stops clipping, amounts carry commas, and four sentences of glossary become tooltips
+
+Seven things the owner raised on the live project.
+
+**The Affected-work picker clipped.** *"Affected work is the one that clips in the window."* The
+record dialog is the shared `.pd-modal` at 520px, and the picker puts a tree and a programme preview
+side by side — ~220px and ~253px — so the preview's headline wrapped one word per line. Two changes:
+the dialog gets its own width class (`.pd-modal.cc-rec`, 760px, the same idiom as `.boq-wide`), and
+the picker now adapts with a **container query** rather than a media query. ⚠️⚠️ A media query cannot
+fix this and would look like it had: the box is narrow while the viewport is 1,920px, so every
+`max-width` rule would be false exactly when the bug is on screen. `@container` asks how much room
+*this component* has, and the answer holds in all three hosts it is mounted in.
+
+**Date filed / Date submitted did not line up.** `.cc-form` used `auto-fit`, so which fields shared
+a row was an accident of width — and **Status**, in a single cell, shunted the four dates down by
+one and split the pairs. Counted columns plus a full-width Status makes the pairing a property of
+the markup order, which is what expresses the pipeline: filed → submitted, evaluated → approved.
+
+**Amounts carry commas.** `58995925` and `5899592` are one keystroke apart and look identical.
+Grouped on blur, raw on focus — not while typing, which moves the caret to the end and turns editing
+the middle of a number into a fight. Safe because `n()` already **validates** commas rather than
+stripping them.
+
+**Four sentences of glossary left the page.** *"These are tooltips and not necessarily to be shown
+in the main page."* The pipeline definitions now sit on the column headers as `title` text — where
+the word being defined actually is — and each header already carried a short sub-label. The aging
+note became the `title` on the heading it explains. The one line kept is the only part that was not
+a definition: this band covers the whole register and does not follow the filters.
+
+**"No package breakdown yet…" is gone.** *"It doesn't provide any valuable information, it just
+states the current."* And the state it stated is already on screen — the Contract value card's own
+subtext reads *no package breakdown*.
+
+**The scope of works stopped being an aside.** It was `.cc-hint`: muted, small, the style this tab
+uses for footnotes — holding the most substantive sentence on the page, at ~220 characters a line.
+Now a labelled block in body ink, capped at 78ch, clamping behind a disclosure past 320 characters.
+
+`test-boq` 66/0, `wiring-check` 139/0, `dark-remap` 0 findings. Bumped to `?v=20260917a`.
+
 ## 2026-09-16 (i) — The dashboard rebuilt around the contract, and a roll-up that had been truncating at 1000 items
 
 Owner: *"Contracts & Claims Dashboard needs complete rework"*, and when asked whether that meant the

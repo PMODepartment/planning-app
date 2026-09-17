@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Module Template · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917z" />
   <link rel="stylesheet" href="module.css" />
 </head>
 <body>
@@ -48,7 +48,12 @@
           <button class="tpl-tab active" data-view="list">Records</button>
         </div>
         <div class="tpl-topbar-tools">
-          <button class="pd-btn pd-btn-primary" id="btn-add">+ Add record</button>
+        <!-- ⚠️⚠️ `data-project-only` — COPY THIS ONTO ANY CONTROL THAT WRITES. Portfolio scope
+             is read-only at the Supabase chokepoint (auth.js), so an Add/Import/Seed shown
+             there can only raise a toast saying it will not work. `auth.js` puts
+             `pd-portfolio` on <html> and dashboard.css hides anything carrying this
+             attribute. `node tools/toolbar-order.js` fails if you forget. -->
+          <button class="pd-btn pd-btn-primary" id="btn-add" data-project-only>+ Add record</button>
         </div>
         <div id="user-bar"></div>
       </div>
@@ -62,10 +67,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../assets/js/config.js?v=20260915a"></script>
-  <script src="../../assets/js/auth.js?v=20260915a"></script>
-  <script src="../../assets/js/db.js?v=20260916c"></script>
+  <script src="../../assets/js/auth.js?v=20260916a"></script>
+  <script src="../../assets/js/db.js?v=20260917a"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260916v"></script>
+  <script src="../../assets/js/ui.js?v=20260916w"></script>
   <script src="../../assets/js/notebook.js?v=20260915d"></script>
   <script src="../../assets/js/icons.js?v=20260915f"></script>
   <script src="module.js"></script>

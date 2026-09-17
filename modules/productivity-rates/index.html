@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Productivity Rates · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916u" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916u" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917z" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep the topbar
        rules in sync with those. 2026-08-30: modules gained a persistent
@@ -30,13 +30,17 @@
     .pr-tab + .pr-tab { border-left:1px solid var(--pd-line); }
     .pr-tab.active { background:var(--pd-red); color:#fff; }
     /* tool cluster beside the profile */
-    .pr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; }
-    .pr-topbar-tools .pd-btn:not(.pr-tb-labeled) { height:34px; width:34px; padding:0; font-size:var(--pd-fs-base); display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
-    .pr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .pr-topbar-tools { display:flex; align-items:center; margin-left:auto; flex-wrap:wrap; }
+    /* ⚠️⚠️ THE BUTTON TREATMENT IS SHARED NOW — see `.pd-modulebar .pd-btn` in
+       dashboard.css. This module was one of FOUR that declared its own (transparent until hover,
+       34px square) while the other ten left `.pd-btn` outlined, which is the "some buttons have an
+       outline then some doesn't" the owner reported on 2026-09-16.
+       ⚠️ DO NOT re-add a `background` / `border-color` / `width` / `height` rule for
+       `.pr-topbar-tools .pd-btn` here. It is (0,2,0), the same as the shared rule, and this stylesheet loads
+       AFTER dashboard.css — so it would win, silently, and only in this module. */
     .pr-topbar-tools .pd-btn.pr-tb-labeled { height:34px; width:auto; padding:0 12px; gap:6px; white-space:nowrap; }
     .pr-topbar-tools .pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .pr-topbar-tools .pd-btn.is-active { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-    .pr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 
     /* Monitoring filter/control bar — same card + funnel pattern as the suite's
        filter bars (risk-register / stakeholder-map). Left-aligned, no stray icon. */
@@ -265,16 +269,16 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260916c"></script>
+<script src="../../assets/js/auth.js?v=20260916a"></script>
+<script src="../../assets/js/db.js?v=20260917a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260916v"></script>
+<script src="../../assets/js/ui.js?v=20260916w"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
-<script src="../../assets/js/portfolio-dash.js?v=20260916u"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260917w"></script>
 <script>
 // ============================================================================
 // Productivity Rates — Productivity Monitoring (per project).

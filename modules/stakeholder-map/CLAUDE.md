@@ -1,5 +1,15 @@
 # Module: stakeholder-map
 
+## 2026-09-16 (later) — "+ Add stakeholder" hides in portfolio scope — fmlozano
+
+See the root `CLAUDE.md` (2026-09-16 (d7)).
+
+- **Add alone** carries `data-project-only`. `openForm()` already answered portfolio scope with
+  *"Portfolio is read-only — switch to a project to add or edit"*; a button whose whole
+  behaviour is that toast should not be on screen.
+- ⚠️ The layout toggle, the filter and Export are **kept**: `load()` reads across every project
+  in portfolio scope, so all three still act on something real.
+
 ## The table adopts the approved density, and stops becoming cards on a phone (2026-09-16) — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the

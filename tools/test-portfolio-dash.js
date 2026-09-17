@@ -298,9 +298,21 @@ function fakeNetwork(win, fixtures) {
 }
 
 /* =================================================================== mounting a view */
-async function mountView(win, key) {
+/* ⚠️⚠️ `pf` DEFAULTS TO "EVERY PROJECT TICKED", AND THAT IS NOT THE PRODUCT DEFAULT.
+   Ten of the eleven views treat an empty filter as the whole portfolio, so for them ticking
+   everything and ticking nothing are the same page and this changes no assertion. The S-Curve does
+   NOT — `emptyMeansNone` makes it open on a "pick some projects" prompt (owner, 2026-09-17) — so
+   without this its whole suite would measure the prompt instead of a curve.
+   ⚠️ Pass `[]` to test the opening state itself; pass specific ids to test a narrowed one.
+   The default is the state a planner reaches one click later, which is what these tests are about. */
+async function mountView(win, key, pf) {
   const host = win.document.createElement('div');
   win.document._byId['po-dash-host'] = host;
+  if (win.PortfolioDash._setPfSel) {
+    win.PortfolioDash._setPfSel(pf === undefined
+      ? win.PortfolioDash._projects().map(p => p.id)
+      : pf);
+  }
   const api = await win.PortfolioDash.mount(key, host, {});
   return { host, api };
 }
@@ -447,6 +459,37 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
     const m = await mountView(win, 'scurve');
     return { win, api: m.api, chart: () => win.document.getElementById('po-sc-chart').innerHTML,
              bd: () => win.document.getElementById('po-sc-bd') };
+  }
+
+  /* ---- and the state it OPENS in -------------------------------------------------- */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {}, agg: { P1: AGG_P1, P2: AGG_P2 }, trade: null,
+                       schedule: { P1: [], P2: [] } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(win, 'scurve', []);                 // nothing ticked: a fresh open
+    const st = win.PortfolioDash._pfState();
+    eq(st.emptyMeansAll, false, tag + 'open: the S-Curve treats an empty filter as NO projects');
+    eq(st.scoped.length, 0, tag + 'open: so it scopes to nothing and reads nothing');
+    eq(st.label, 'Select projects…', tag + 'open: and the button asks for a choice');
+    const chart = win.document.getElementById('po-sc-chart').innerHTML;
+    has(chart, 'Choose the projects', tag + 'open: the chart area says what to do next');
+    ok(!/No projects match/.test(chart),
+       tag + 'open: and does NOT blame a filter the planner never set');
+    /* ⚠️⚠️ THE OTHER TEN VIEWS MUST NOT HAVE CHANGED. This is the assertion that makes the
+       one above safe: `emptyMeansNone` is per-view, and a flag left set from a previous mount
+       would silently empty every other portfolio page. Mounting a second view in the SAME window
+       is the case that would catch it. */
+    const w2 = buildPage(dashSrc, assetsDir);
+    fakeNetwork(w2, { tables: { risks: [] }, agg: {}, trade: null, schedule: {} });
+    w2.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(w2, 'scurve', []);
+    eq(w2.PortfolioDash._pfState().emptyMeansAll, false, tag + 'open: (scurve mounted first)');
+    await mountView(w2, 'risk', []);   // same empty filter, different meaning
+    const st2 = w2.PortfolioDash._pfState();
+    eq(st2.emptyMeansAll, true, tag + 'open: a later view resets to "empty means ALL projects"');
+    eq(st2.scoped.length, PROJECTS.length, tag + 'open: and sees the whole portfolio again');
+    eq(st2.label, 'All projects', tag + 'open: with the button back to "All projects"');
   }
 
   /* ---- the bars ------------------------------------------------------------------ */
@@ -955,6 +998,84 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
     const q = press('quarter');
     ok(q.indexOf(">Q2 '20<") >= 0 && q.indexOf(">Q1 '20<") >= 0,
        tag + 'gantt: quarters are anchored on the calendar, so a Q label is a real Q');
+  }
+
+  /* ==== 2026-09-16 · THE PROJECT SCHEDULE GANTT, ANSWERED =====================================
+     Owner, with seven questions about this chart. Four were "why is this here?" and the answer in
+     each case was that it was not worth being here. */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {} });
+    win.PortfolioDash._setProjects([
+      { id: 'P1', name: 'Avesta Residences', group_head_id: 'gh1',
+        start_date: '2020-01-15', end_date: '2026-06-30',
+        schedule_start: '2020-02-01', schedule_finish: '2026-09-30', schedule_progress: 62,
+        schedule_updated_at: '2026-01-01' },                       // deliberately STALE
+      { id: 'P2', name: 'Bayfront Tower', group_head_id: 'gh2',
+        start_date: '2022-03-01', end_date: '2027-12-31',
+        schedule_start: '2022-04-01', schedule_finish: '2027-11-30', schedule_progress: 20 },
+      { id: 'P3', name: 'No Rollup Project', group_head_id: 'gh1' } // no schedule_start/finish
+    ], [{ id: 'gh1', name: 'Calimag Group' }, { id: 'gh2', name: 'Rodrin Group' }]);
+    const m = await mountView(win, 'schedule');
+    const kpis = win.document.getElementById('po-sh-kpis').innerHTML;
+    const gantt = win.document.getElementById('po-sh-gantt').innerHTML;
+
+    /* --- Q4: the two roll-up cards were a debugging warning, not a decision --------------- */
+    ok(!/With a roll-up/.test(kpis), 'kpi: "With a roll-up" is gone');
+    ok(!/Roll-up over/.test(kpis), 'kpi: "Roll-up over 45d old" is gone');
+    ok(/Worst slip/.test(kpis) && /Finishing within 90 days/.test(kpis),
+       'kpi: and what replaced them is something a planner can act on');
+
+    /* --- the amber staleness flag went with them (P1 is deliberately stale) ---------------- */
+    ok(!/roll-up \d+d old/.test(gantt),
+       'row: the amber "roll-up NNd old" flag is gone — it described OUR data, not the project');
+    /* """ + W + u""" But the thing a planner DOES act on is still called out. */
+    ok(/d late<\/span>/.test(gantt), 'row: days late is still flagged');
+
+    /* --- Q1: the bare percentage is labelled ---------------------------------------------- */
+    ok(/% done<\/span>/.test(gantt), 'row: the percentage says what it is');
+    ok(/po-sh-pct[^>]*title="[^"]*duration-weighted/.test(gantt),
+       'row: and its tooltip says where the number comes from');
+
+    /* --- Q3: the legend uses words a planner says ------------------------------------------ */
+    ok(/Contract period/.test(gantt) && !/Contract window/.test(gantt), 'legend: "Contract period"');
+    ok(/Current schedule/.test(gantt) && !/Live programme/.test(gantt), 'legend: "Current schedule"');
+    /* """ + W + W + u""" AND THE SWATCHES USE THE BARS' OWN TOKENS. A legend with its own colours is a
+       legend that can be wrong about the chart beside it — which is exactly what it was: the
+       swatches read `--pd-line`/`--pd-dark` while the bars now read `--po-sh-*`. */
+    ['--po-sh-rail', '--po-sh-track', '--po-sh-fill'].forEach(function (t) {
+      ok(gantt.indexOf(t) >= 0, 'legend: the swatch uses the bar\'s own token — ' + t);
+    });
+
+    /* --- Q5: the coverage paragraph moved into the picker ---------------------------------- */
+    const cov = win.document.getElementById('po-sh-cov');
+    eq(cov && cov.textContent, '', 'the coverage paragraph is empty — it moved to the filter');
+    ok(typeof m.api.projBadge === 'function', 'and the view supplies the filter a per-project badge');
+    ok(!!m.api.projBadge({ id: 'P3', name: 'No Rollup Project' }),
+       'a project with no roll-up IS badged');
+    ok(!m.api.projBadge({ id: 'P1', schedule_start: '2020-02-01', schedule_finish: '2026-09-30' }),
+       'and one that can be drawn is NOT');
+
+    /* --- Q6/Q7: the two controls say what they do ------------------------------------------ */
+    const mk = probe.PortfolioDash._markup('schedule');
+    ok(/Group packages by parent project/.test(mk), 'control: the grouping names packages');
+    ok(!/Running past contract only/.test(mk), 'control: the jargon filter label is gone');
+    ok(/Finishing late only/.test(mk), 'control: and says what it keeps');
+  }
+  {
+    /* --- Q5b: the picker groups by GROUP HEAD, not by parent project --------------------- */
+    const win = buildPage(dashSrc, assetsDir);
+    win.PortfolioDash._setProjects(
+      [{ id: 'A1', name: 'One', group_head_id: 'gh1' },
+       { id: 'B1', name: 'Two', group_head_id: 'gh2' },
+       { id: 'C1', name: 'Three', group_head_id: null }],
+      [{ id: 'gh1', name: 'Calimag Group' }, { id: 'gh2', name: 'Rodrin Group' }]);
+    const groups = win.PortfolioDash._pfGroups();
+    eq(groups.length, 3, 'picker: one bucket per group head, plus the unassigned one');
+    eq(groups[0].label, 'Calimag Group', 'picker: and they are named, alphabetically');
+    /* """ + W + u""" The unassigned bucket sorts LAST and is NAMED — a project with no group head is
+       still a project a planner has to be able to tick. */
+    eq(groups[groups.length - 1].label, 'No group head', 'picker: unassigned sorts last, and is named');
   }
 
   /* ---- takeOver(): the module steps aside, and keeps its way out ------------------ */

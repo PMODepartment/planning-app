@@ -46,7 +46,23 @@ function makeSlicer(src) {
     const t = src.slice(i, j < 0 ? src.length : j).trim();
     return /;$/.test(t) ? t : t + ';';
   }
-  return { sliceFn, sliceVarLine };
+  /* An ANONYMOUS function expression, sliced by the text that precedes it. ⚠️ For code that has
+     not been given a name yet — a comparator passed straight to `.sort()`, say. It is still the
+     SHIPPED function, byte for byte; the anchor only says where to start looking. Preferred only
+     where a name does not exist: a named slice cannot silently follow the wrong `function (`.
+     ⚠️ `after` is matched in the COMMENT-BLANKED source, so an anchor that also appears in a
+     comment above the real one cannot win. */
+  function sliceAnon(after, sig) {
+    const i = mask.indexOf(after);
+    if (i < 0) throw new Error('SLICE FAILED: anchor ' + JSON.stringify(after) + ' — aborting rather than comparing nothing');
+    const j = mask.indexOf(sig, i);
+    if (j < 0) throw new Error('SLICE FAILED: ' + JSON.stringify(sig) + ' after ' + JSON.stringify(after));
+    const out = src.slice(j, endOf(j));
+    try { new Function('return (' + out + ')'); }
+    catch (e) { throw new Error('anonymous slice after ' + after + ' does not parse: ' + e.message); }
+    return out;
+  }
+  return { sliceFn, sliceVarLine, sliceAnon };
 }
 
 module.exports = { makeSlicer };
