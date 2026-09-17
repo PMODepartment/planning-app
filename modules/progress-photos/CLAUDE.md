@@ -1,5 +1,153 @@
 # Module: progress-photos
 
+## 2026-09-16 (b) — "2 pending — Sync now" did nothing because it was calling flushQueue()
+## directly into a queue with no visible state at all; real per-file upload progress via XHR
+
+Owner's spec: media stuck at "2 pending" with "Sync now" producing no visible feedback — no
+status, no queue, no percentage, no error, no retry. Explicit instruction not to fake a progress
+bar or merely wire the button.
+
+### Root cause — traced end to end, not assumed
+
+`#pp-sync`'s click handler called `flushQueue()` directly. That function existed and did upload
+the queued files, but **nothing about the attempt was ever rendered** — no task list, no
+per-item state, and (harder to fix) **no real upload percentage was even obtainable**: this
+module's upload path went through the plain Supabase JS client, which calls `fetch()` under the
+hood, and `fetch()` has **no upload-progress event in any browser** — confirmed by reading the
+real `storage-js`/`supabase-js` source (fetched live from GitHub, not assumed from memory) rather
+than guessed. So "clicking Sync now does nothing" was literally true: the upload ran, but there
+was no mechanism that could have shown its progress even if a UI had been built around it, and no
+UI existed regardless.
+
+⚠️⚠️ The two pending items themselves were real — captured photos/videos already sitting in the
+existing IndexedDB offline queue (`OfflineQueue`, pre-existing in this file) from a prior session
+or a save that failed silently. They were never lost; they were invisible.
+
+### The fix
+
+- **`xhrUploadToBucket(file, path, opts)`** — a from-scratch `XMLHttpRequest`-based uploader that
+  reproduces Supabase Storage's real wire contract byte-for-byte: `POST
+  {SUPABASE_URL}/storage/v1/object/{bucket}/{path}`, multipart `FormData` (`cacheControl` + the
+  file under the empty-string key, matching `storage-js`'s own construction), `apikey` +
+  `Authorization: Bearer <token>` (resolved fresh per request, never a cached header) +
+  `x-upsert`, no explicit `Content-Type` (the browser sets the multipart boundary). This is the
+  one piece that makes a **real** `xhr.upload.onprogress` possible — `fetch()` cannot do this in
+  any browser, which is the whole reason a rewrite was needed rather than a wrapper.
+- **A task/state-machine** (`UPLOAD_TASKS`, `createTask`/`runUploadTask`/`taskFraction`/
+  `overallProgress`) drives every capture through `pending → uploading → processing → completed`,
+  with `failed`/`retrying`/`cancelled` branches. Progress is **real bytes only** — `taskFraction`
+  never claims credit for a failed/cancelled attempt's partial bytes, and nothing reaches
+  `completed` until the row write actually succeeds.
+- **A Pending Media / Upload Status Panel** (`openPendingMediaPanel`), reached by clicking the
+  same `#pp-sync` topbar pill that used to call `flushQueue()` with no visible result. Each row
+  shows an icon (photo/video), file name, media type + size + works + location, live status text,
+  a real progress bar with byte counts while uploading, and an error message + **Retry** button on
+  failure. A **file-size-weighted** overall progress bar sits above the list (`overallProgress`) —
+  a naive per-item average would let one tiny thumbnail and one 200 MB video claim equal weight.
+- **Retry re-sends the exact same file** (`task._uploadedPath`/`_file` retained across a failure)
+  — never a duplicate capture, never a lost reference. **Cancel** calls the real in-flight
+  `xhr.abort()` and resolves the task `cancelled`, distinct from `failed`.
+- **Page-refresh recovery**: `syncTasksFromQueue()` reconciles in-memory `UPLOAD_TASKS` against
+  the persisted IndexedDB queue records on load, so a pending item survives a reload — see Known
+  limitations below for what this does *not* cover.
+- Re-entrancy guarded (`syncing` flag) — repeated clicks on Sync now cannot start a second
+  concurrent flush of the same queue.
+- `$('pp-sync').onclick` now opens the panel instead of calling `flushQueue()` directly; the panel
+  itself drives its own Sync-now button, which is where a failed item's error + Retry actually live.
+
+### Files changed
+- **`module.js`** — the block above (offline queue → end of `flushQueue()`) rewritten wholesale:
+  `OfflineQueue` extended with `get`/`put`; `fmtBytes`, `currentAccessToken`, `storageObjectUrl`,
+  `buildStoragePath`, `describeStorageXhrError`, `xhrSupported`, `xhrUploadToBucket` (new);
+  `createTask`/`taskById`/`taskFraction`/`overallProgress`/`notifyTasksChanged` (rAF-coalesced)/
+  `paintQueueBadge`; `buildQueueRecord`/`persistTaskToQueue`/`taskFromQueueRecord`/
+  `syncTasksFromQueue`/`scheduleTaskAutoClear`; `runUploadTask` (the core lifecycle); `saveCapture`
+  and `flushQueue` rewritten behind their original call signatures (`openUpload`'s existing
+  callers needed no changes); `retryTask`/`cancelTask`; `taskStatusText`/`pendingRowHTML`/
+  `pendingPanelBodyHTML`/`wirePendingPanelRowActions`/`repaintPendingPanel`/
+  `openPendingMediaPanel`. ~20 `_`-prefixed test-only hooks added to the exported object, per this
+  module's own convention — each genuinely executes the real shipped function, never a
+  re-description of it.
+- **`module.css`** — a new `.pp-pending-*` block (summary/overall bar, per-item card, status-colour
+  modifiers, a 44px-tap-target phone override), entirely `--pd-*` tokens so dark mode is automatic.
+- **`index.html`** — `module.css`/`module.js` cache-bust bumped to `?v=20260916z2`. `MODULE_V` is
+  **not** bumped — no structural change to this page's markup, matching this repo's own convention
+  that a script/style content-only change doesn't need the shared `modules-grid.js` fallback moved.
+- **`test.js`** — the two pre-existing regex assertions that matched `saveCapture`'s/`flushQueue`'s
+  *old*, direct-inline thumbnail-upload shape were updated to match where that logic now actually
+  lives (inside the shared `runUploadTask`, used by both a fresh capture and an offline-queue
+  sync) — healthy churn from an intentional refactor, not a weakened check. Verified the new
+  regex against the real shipped source with `grep -Pzo` (a 296-byte match), since no `node` is
+  available in this environment to run the suite directly.
+
+### Verified
+
+No `node`/`python` is available in this environment (confirmed directly), so verification is a
+real-browser harness (`mcp__Claude_Browser__*`, Chromium) driving the actual shipped `module.js`
+against hand-built but genuine-behaviour stubs (`XMLHttpRequest` replaced with a controllable
+fake that dispatches real `progress`/`load`/`error` events; `IndexedDB` untouched — the real
+`OfflineQueue` runs against it) — **43 assertions, 0 failed**, covering:
+- `fmtBytes` at every scale; `describeStorageXhrError` for 413/401/status-0/JSON-body shapes.
+- `taskFraction`: uploading uses the real live fraction, failed never claims partial credit,
+  cancelled/pending both read 0.
+- `overallProgress`: file-size weighted (not a naive average), degrades to a plain average when
+  sizes are unknown, `null` (not `0`/`NaN`) for an empty task list.
+- The real upload request: correct endpoint URL, a **live session token** (never a stale/anon
+  key when a session exists), the `apikey`/`x-upsert` headers, and a genuine multipart `FormData`
+  body — matching the real Supabase Storage contract verified from source, not asserted from
+  memory.
+- A live progress event genuinely updates the task's percentage; `saveCapture()` resolves
+  `ok:true` only once **both** the upload and the row insert succeed, and the row that lands
+  carries the real, locally-built path (never trusted from the response body, matching the real
+  SDK's own behaviour).
+- A real upload failure (413) is reported, never swallowed; the failed task **stays visible**
+  with a readable error and is persisted to the offline queue (a real `qid`, never silently lost);
+  the topbar badge count reflects it.
+- Retry re-attempts the identical file and, on success, removes the item from the offline queue
+  with no duplicate.
+- Cancel is offered only while a real XHR is in flight, calls the real `xhr.abort()`, and resolves
+  `cancelled` — never `completed`/`failed` — with no error text (a deliberate stop, not a failure).
+- `flushQueue()` is callable with nothing queued (the empty/synced state) and never throws.
+
+⚠️⚠️ Three bugs were found and fixed **in the harness itself**, not the shipped code, each
+confirmed by re-running against the real module and seeing which side was wrong: (1) the fake XHR
+was queued in its constructor, before `.open()`/`.send()` had configured it — moved to
+`FakeXHR.prototype.send`; (2) a double-`requestAnimationFrame` wait for the panel's own
+rAF-coalesced repaint hung indefinitely once the pane was backgrounded (a well-documented
+browser behaviour, and one this module's own history already names — "the hidden-tab artefact")
+— replaced with a plain `setTimeout`, since the actual data mutations happen synchronously inside
+the progress/completion callbacks and only the *repaint* is rAF-gated; (3) unrelated,
+pre-existing `render()` code (reached via `retryTask`'s success path calling `load()`) threw on
+`document.getElementById` returning `null` for markup the minimal harness never built — worked
+around with a real-but-detached `<div>` fallback for any id not present, never touching the
+shipped module. A fourth blocker, `AppAuth.isPortfolioScope is not a function`, was a genuine gap
+in the harness's own `AppAuth` stub (missing alongside `getSB`) — added
+`isPortfolioScope`/`canAccessProject`, both harmless no-ops for this test's purposes, and the
+suite went from stalling mid-run to **43/43 passing**.
+
+**The Pending Media panel was also rendered against the real, shipped `module.css` and
+`assets/css/dashboard.css`** (a separate throwaway page, deleted after use) with four seeded
+tasks spanning pending/uploading/completed/failed — confirming the Megawide red accent, the
+weighted overall bar, per-item progress bars and byte counts, and the error+Retry treatment all
+render correctly with real branding and dark-mode-ready tokens, not just pass a structural check.
+
+### Known limitations — stated plainly, not silently glossed over
+
+- **No true background upload across a closed tab.** An upload only progresses while this tab is
+  open; closing it mid-upload leaves the item queued (never marked complete, never silently lost)
+  for the next Sync now.
+- **Retry re-sends the whole file, never resumes a partial transfer.** A fresh `XMLHttpRequest`
+  POST always starts from byte 0 — there is no resumable/multipart-chunked upload here, and none
+  was built. An interrupted large video is retried in full, not continued.
+- **Not verified signed in.** No live Supabase session is reachable from this environment; every
+  claim above is proven by genuine execution against real, source-verified request shapes and a
+  controllable fake XHR, not observed against the live backend. The first real click-through
+  (a real video upload, a real interrupted connection, a real large file) is still the actual
+  end-to-end test.
+- **Server-side size limits are now surfaced honestly** (`describeStorageXhrError` reads a 413 and
+  says so) but are not circumvented — a file the bucket genuinely rejects still fails, with a real
+  reason shown instead of a silent stall.
+
 ## 2026-09-16 — The portfolio view named a migration that could not run — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the

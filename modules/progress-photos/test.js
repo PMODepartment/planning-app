@@ -2527,10 +2527,15 @@ console.log('\n[misc] insert().select() returns the new row id');
     eq('a row with no photo at all resolves to an empty string, never undefined/throwing', urls['no-photo'], '');
   }
 
-  ok('saveCapture uploads a thumbnail alongside the original and attaches it to the row before the insert',
-     /var thumbPath = await uploadThumbnailFor\(file, path\);[\s\S]{0,200}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
-  ok('flushQueue (the offline-capture sync path) does the same, so an offline-captured photo also gets a thumbnail once synced',
-     /var thumbPath = await uploadThumbnailFor\(item\.blob, path\);[\s\S]{0,200}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
+  // 2026-09-16: healthy churn from the pending-upload rewrite -- the thumbnail
+  // upload no longer happens directly inside saveCapture()/flushQueue(); both
+  // now go through the single, shared runUploadTask(task) pipeline (see the
+  // root CLAUDE.md's 2026-09-16 "Progress Photos" entry), which is where the
+  // thumbnail is actually generated and attached before the row insert, for
+  // BOTH a fresh capture and an offline-queue sync alike -- one code path
+  // instead of two, so the two can no longer drift apart on this.
+  ok('runUploadTask uploads a thumbnail alongside the original and attaches it to the row before the insert (shared by both a fresh capture and an offline-queue sync)',
+     /thumbPath = await uploadThumbnailFor\(file, uploadedPath\);[\s\S]{0,260}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
   ok('tolerantWrite strips thumb_url and retries on a pre-migration database, naming the round-3 migration file',
      /'thumb_url' in job\.patch[\s\S]{0,400}2026-08-30-photos-round3\.sql/.test(mjs));
   // ⚠️ Superseded (owner feedback item 1): the single-photo body moved into
