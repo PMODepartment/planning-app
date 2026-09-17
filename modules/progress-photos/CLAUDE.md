@@ -1,5 +1,137 @@
 # Module: progress-photos
 
+## The real reason "queued" never advanced: the service-role auth check couldn't survive a key-format rotation (2026-09-17, later same day)
+
+Owner set up the Vault secrets, deployed `pano360-process`, and the job still sat at `queued`
+forever — the exact fallback the entry directly below this one made honest rather than silent, but
+now proven to be masking a second, real bug rather than just the documented "secrets not yet
+created" gap.
+
+### Traced live, one 401 at a time, down to the Edge Function's own source
+
+⚠️⚠️ **`pano360_invoke()`'s Bearer token and this function's own authorization check had silently
+stopped agreeing, and no amount of re-pasting the secret into Vault could ever fix it.** Confirmed
+live via `net._http_response` (the `pg_net` response log `pano360_invoke` writes to) that the
+deployed function was answering every call from the trigger/cron with **401**, cycling through the
+platform gateway's own distinct rejection codes as the owner iterated on the Vault secret's value —
+`UNAUTHORIZED_LEGACY_JWT` (stale JWT-format key), `UNAUTHORIZED_INVALID_JWT_FORMAT` (traced to a
+literal copy of this migration's own `<paste the sb_secret_... key here>` placeholder text having
+been pasted in verbatim), `"Invalid API key"` (a stale/wrong value even once correctly shaped) —
+before landing, with a freshly regenerated and independently-verified `sb_secret_...` key correctly
+stored in Vault, back on **`"Could not read the bearer token"`** — the one response this function's
+own code can produce, meaning the *platform gateway* was now satisfied and the request was reaching
+`index.ts` itself.
+- **A direct `curl` against the function URL, bypassing Postgres/`pg_net` entirely, was what broke
+  the loop.** The response headers (`x-served-by: supabase-edge-runtime`, `x-deno-execution-id`)
+  confirmed the code path had genuinely been reached; the body was still `"Could not read the
+  bearer token"` — proving this was never a Vault/secret-value mistake at all, it was a bug in the
+  shipped function.
+
+### The bug: authorization decoded the token as a JWT and could never recognise the newer key format
+
+`index.ts`'s own authorization block trusted a caller as service-role by **decoding the Bearer
+token as a JWT** and reading `payload.role === "service_role"` off it — correct for this project's
+*original* service-role key (`eyJ...`, a real JWT whose payload does carry that claim), and silently
+broken the moment Supabase's dashboard issues the newer opaque `sb_secret_...` format for the same
+purpose instead. `auth.split(".")[1]` on a string with no dots is `undefined`; `atob(undefined)`
+throws; the catch sets `payload = null`; and the function returns exactly the 401 body the curl
+test showed — **for every single legitimate call**, forever, regardless of how many times the
+Vault secret is corrected, because the value being rejected was never wrong.
+- **Fixed by checking the token the way this function already trusts itself**: `PL_SERVICE` (this
+  same function's own `Deno.env.get("PL_SERVICE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")`,
+  used one line above to build its own admin Supabase client) is compared to the Bearer token by
+  **direct string equality** first. ⚠️ This is correct for either key format — it never inspects the
+  token's shape at all, only whether it is literally the secret this deployment was actually given —
+  and is arguably the tighter check to begin with: a JWT merely *claiming* `role: "service_role"` is
+  a weaker guarantee than "is the exact secret this Edge Function was configured with."
+- **The JWT-decode path is kept, but demoted to a fallback** for an ordinary user's own JWT (nothing
+  in this app sends one to this function today, but nothing forbids it either) — held to the same
+  bar the rest of this app already uses: an approved account, matching the `is_writer()` gate this
+  table's own INSERT policy requires to create a job in the first place. `payload` is now scoped
+  entirely inside that fallback branch — grepped to confirm it has no other reader in the file, so
+  narrowing its scope changes nothing else.
+
+### Verified
+
+`node --check` clean (stripped of TS-only annotations first — no Deno/tsc runtime available in this
+environment to check the file natively). The diff was reviewed line by line against the platform's
+two key formats: an `eyJ...` JWT service-role key still matches by direct equality exactly as before
+(nothing regresses for a project that hasn't rotated keys yet); an `sb_secret_...` key now matches
+too; an ordinary user JWT correctly falls through to, and is evaluated by, the unchanged fallback
+path.
+
+⚠️ **Not verified against a real invocation** — this environment has no Deno runtime and no
+Supabase credentials to invoke the deployed function directly, and `test.mjs` for this function
+(`supabase/functions/pano360-process/test.mjs`) explicitly only covers `stitch-core.mjs`'s pure
+frame-alignment math, never this authorization block. The owner's own live loop — trigger a
+capture, watch `pano360_jobs.status` move off `queued` — is what actually proves this, once the
+function is **redeployed** (editing `index.ts` here changes nothing already running on Supabase).
+
+## "Starting…" forever on a real 360° upload, and the Drafts button overflowing a narrow window (2026-09-17)
+
+Owner, two live reports off the deployed site: uploading a 360° video left the Review modal
+reading **"Starting…"** with no further movement, and the topbar's **Drafts** button label ran off
+the edge of the window next to "+ Add media".
+
+### "Starting…" was the documented, honest fallback for a job nobody is driving forward
+
+⚠️⚠️ **This traces straight to the 2026-09-16 server-side rewrite's own stated gap, not a new
+bug.** `trackJobToCompletion`'s poll callback showed `j.progress_msg || 'Starting…'` for any status
+other than `aligning`/`compositing` — and a job sits at `queued` forever, with `progress_msg`
+staying null, for exactly as long as `pano360_invoke()` is the documented no-op it stays until the
+migration's own one-time Vault secrets (`pano360_function_url`/`pano360_service_key`) are created
+in the SQL editor — a step no migration or CI deploy can perform, since it needs the project's own
+function URL and service-role key. That entry already flagged this as the thing "most worth
+watching on the first real capture"; the first real capture found exactly it.
+- **The Edge Function's own first branch proves the healthy case is near-instant**: a `queued` job
+  flips to `aligning` (with `progress_msg: "Aligning frames…"`) the moment ONE invocation reaches
+  it — there is no legitimate reason for `queued` to persist for more than a beat. So a run of
+  consecutive poll ticks (`PANO360_STUCK_TICKS = 5`, ~20s at the existing 4s poll interval) still
+  reading no progress is a reliable, cheap signal that the self-chain never reached the worker at
+  all, without needing a new persisted timestamp field that would also have to survive a resume.
+- **`trackJobToCompletion`'s onTick now counts consecutive stuck ticks and replaces the silent,
+  indefinite fallback once the threshold is crossed**: *"Still queued, waiting for server-side
+  processing to start. This usually means the 360° background worker has not finished being set up
+  yet — you can keep waiting, or Discard and try again once it is ready."* ⚠️ The counter resets to
+  0 the instant status genuinely moves to `aligning`/`compositing`, so this self-heals the moment
+  the real fix (the Vault secrets) lands — nothing here papers over the underlying gap, it just
+  stops the UI silently lying about "starting" when nothing is.
+- **Not a code fix for the underlying gap** — that is still the one-time SQL step
+  `migrations/2026-09-16-pano360-jobs.sql`'s own header documents in full, and this session has no
+  live Supabase credentials to run it. The Discard button already existed in the Review modal's
+  footer regardless of status, so a planner was never actually trapped — only left with no
+  indication that "queued" was not simply "about to start any second."
+
+### The Drafts button's label had nowhere to go at a narrow width
+
+`#pp360-drafts` (and `#pp-sync`, the identical offline-queue button carrying the same
+`.pd-tb-labeled.pp-syncbtn` shape) render their text as a bare inline text node beside the icon —
+`dashboard.css`'s own shared rule only ever collapses an *unlabelled* `.pd-btn` to a 34px icon
+square; a labelled one always keeps `width:auto`, with no narrow-width fallback of its own. Neither
+button had ever needed one until "+ Add media" sat beside it in the same row.
+- Wrapped each button's text in its own `<span class="pp-tb-label">` (module-local, not a shared
+  rule change — `dashboard.css` is intentionally untouched here) so it can be targeted without
+  touching the icon.
+- **`@media (max-width: 700px)`** (this module's own existing breakpoint, reused rather than
+  inventing a new one) hides `.pp-tb-label` inside `.pp-syncbtn` and collapses the button back to
+  the same 34px icon-only square every other unlabelled topbar tool already is — the icon plus its
+  `title` tooltip is enough to reopen either panel.
+
+### Verified
+
+Full suite: **974 passed, 4 failed** — the same 4 pre-existing, unrelated failures this file's own
+history already carries (a PDF page-break assertion, a filter-panel density assertion, and two
+`capture.js` audio-track assertions), confirmed unchanged. `node --check` clean; `tools/
+wiring-check.js` — **139 passed, 0 failed**; CSS braces balanced (568/568); 0 duplicate DOM ids.
+
+⚠️ **Not verified against a real stuck job** — the stuck-tick counter is proven correct by reading
+the poll logic against the Edge Function's own documented status-transition order, not by driving
+an actual `queued` job through 20 real seconds against live Supabase (no credentials in this
+session). The label-overflow fix is a plain CSS/markup change, no behaviour to drive.
+
+`module.css`/`module.js?v=` → `20260917zq`; `MODULE_V` (`modules-grid.js?v=` on
+`dashboard.html`/`modules.html`, and its own fallback literal) → `20260917zq` to match.
+
 ## 2026-09-16 (c) — 72 frames, a signed-feathering bug fixed server-side, the cylindrical-warp gap documented (not fixed), and the panorama viewer gets a real fullscreen control
 
 Owner: *"also, use 72 frames instead of 48. audit to improve correctness. improve also panorama

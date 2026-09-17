@@ -688,6 +688,16 @@
   display: flex; align-items: center; gap: 5px;
 }
 .pp-syncbtn:hover { background: var(--pd-red); color: #fff; }
+/* Narrow window: reported live -- "Drafts" ran off the edge of the topbar
+   next to "+ Add media", with nothing giving either labelled button's text
+   room to go. Below the breakpoint the label hides and the button collapses
+   to the same 34px icon-only square every other unlabelled topbar tool
+   already is (dashboard.css's own .pd-tb-labeled sibling rule) -- the icon
+   alone (+ the tooltip) is enough to reopen either panel. */
+@media (max-width: 700px) {
+  .pp-syncbtn .pp-tb-label { display: none; }
+  .pp-syncbtn { width: 34px; height: 34px; padding: 0; gap: 0; justify-content: center; }
+}
 
 /* ---- Pending uploads panel --------------------------------------------- */
 /* Opened from the #pp-sync topbar pill above, which used to call flushQueue()
@@ -696,7 +706,7 @@
    needing its own dark-mode override. */
 .pp-pending { min-width: 0; }
 .pp-pending-summary { margin-bottom: 10px; }
-.pp-pending-summarytext { font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 600; }
+.pp-pending-summarytext { font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 700; }
 .pp-pending-empty {
   display: flex; align-items: center; gap: 8px; color: var(--pd-ok);
   font-size: var(--pd-fs-base); padding: 6px 0;
@@ -723,7 +733,7 @@
   background: color-mix(in srgb, var(--pd-red) 10%, var(--pd-card)); color: var(--pd-red);
 }
 .pp-pending-info { flex: 1 1 auto; min-width: 0; }
-.pp-pending-name { font-weight: 600; font-size: var(--pd-fs-base); color: var(--pd-ink); overflow-wrap: anywhere; }
+.pp-pending-name { font-weight: 700; font-size: var(--pd-fs-base); color: var(--pd-ink); overflow-wrap: anywhere; }
 .pp-pending-meta { font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 2px; }
 .pp-pending-status { font-size: var(--pd-fs-sm); color: var(--pd-ink); margin-top: 4px; }
 .pp-pending-error {

@@ -121,8 +121,12 @@ CSS brace delta **1**, this file's documented off-by-one, unchanged from base ·
 module page · dark mode measured (header ink remaps `rgb(90,88,88)` → `rgb(185,183,183)`, so it
 resolves through `--pd-muted` rather than sticking at a literal) · no horizontal page scroll at 390px.
 
-⚠️ **`test-lsm` is 675/28 and that is PRE-EXISTING** — byte-identical against `origin/main`'s own
-copy of the file, and the figure entry `(zu)` already records. Not caused here, and not fixed here.
+⚠️ **A CORRECTION TO THIS ENTRY, from the merge: `test-lsm` is 683/0, not 675/28.** It was 675/28
+when this branch was cut — pre-existing, byte-identical on the base, and the figure entry `(zu)`
+records — and `main` has since **fixed it** (`8920785`: the flowline was removed from the product and
+left the suite asserting against it). Measured on the merged tree and on `origin/main`: **683/0 on
+both**. The earlier figure is left in the sentence above rather than deleted, because a caveat that
+silently disappears reads as one that was never true.
 
 ⚠️⚠️ **FOUR HARNESS FAULTS, EVERY ONE OF WHICH REPORTED A CORRECT FILE AS BROKEN**, recorded because
 three of them are reusable traps:
@@ -147,15 +151,332 @@ moved a code on a real project. First things to try: drag one code onto the grid
 drag one of them (all three should go), and check the grid header reads **Internal (d)** /
 **External (d)**.
 
-⚠️ **This module's changelog held a literal NUL byte** at line 293 — prose about the `\0` sentinel
-written as a raw byte — so `grep` called the whole file binary and **silently hid every match in
-it**, which is how the next free entry letter was nearly picked wrong. Pre-existing on
-`origin/main`; **third recurrence** of the trap entry `2026-09-14 (u)` already records. Replaced with
-the two-character escape; `file` now reads UTF-8 text.
+⚠️ **This module's changelog held a literal NUL byte** at line 293 — prose about the `\u0000`
+sentinel written as a raw byte — so `grep` called the whole file binary and **silently hid every
+match in it**, which is how the next free entry letter was nearly picked wrong. I fixed it here and
+⚠️ **a concurrent session fixed it on `main` first** (`9d6465b`), with the escape spelled `\u0000`
+rather than `\0`; **theirs is what survives the merge** — there is nothing to win in a spelling.
+Recorded because it was the **third** recurrence of the trap entry `2026-09-14 (u)` already names,
+and because two sessions hitting it on the same file on the same day is the argument for a checker
+rather than for a third person finding it by accident.
 
-`MODULE_V` → `20260917zzm`. ⚠️ Chosen to sort after **both** `origin/main`'s `20260917zv` **and PR
-#140's `20260917zzg`** — an unmerged branch's token still matters, because if it lands first a
+⚠⚠ **MERGED `origin/main` (44 commits) AFTER OPENING THE PR, AND THE GROUND MOVED UNDER TWO OF
+THE THREE ITEMS.** Six conflicts, every one resolved as a **union** hunk by hunk rather than by
+taking a side:
+- **PR #138 landed the grouped, searchable holding list on `main`** (`860bd59`) — so the owner's
+  item 2 from the original seven is now in `main` rather than only in #140, and this branch's drag
+  wiring had to be re-hung on **that** markup: `draggable="true"` now goes on the row inside main's
+  per-trade `<details>`, and the harness's slice needles moved with it.
+- ⚠⚠ **`main` changed the cell control to `background:transparent`, and that change is
+  LOAD-BEARING** — the grid paints its selection, bad-code tint and copy marquee on the `<td>`,
+  *behind* its children, so an opaque control hides every one of them. Main's rule wins; only this
+  branch's tightened `padding` rides along with it.
+- `main`'s new `#b-delrows` handler and this branch's `_catLoad` + drag wiring are purely additive
+  on both sides, so both are kept.
+- `main` widened the two duration columns to `w: 98`; that width is kept and only the **labels**
+  are this branch's.
+
+⚠ The item-3 table above was **re-measured after the merge**, against `main`'s own changed grid
+CSS, and is unchanged. Both suites re-run green on the merged tree (45/0 and 26/0).
+⚠ The browser harness needed `#b-delrows` added to its fake markup once main's handler fell inside
+the sliced range — a fake host returning `null` for an id the real page **does** carry is the suite
+being wrong, not the page. A handler wired to a genuinely removed button still throws there.
+
+`MODULE_V` → `20260917zzq`. ⚠️ Chosen to sort after **both** `origin/main`'s `20260917zzo` **and PR #140's
+`20260917zzg`** — an unmerged branch's token still matters, because if it lands first a
 browser holding `zzg` would never fetch a page published under anything that sorts earlier.
+## 2026-09-17 (zy) — The tower menu gets a word, "Change every floor" goes, and one copy-from picker names its tower
+
+Owner, three reports off the Floors & Zones step: *"For the UI in schedule setup, why is there a
+symbol in the dropdown here. Pls fix that."*, *"pls remove the button of change every floor. what
+is the point of that."*, and *"in the third pic, also remove that. just allow users to copy from
+other trades and also from other towers IF APPLICABLE. However when referencing from other towers,
+pls put a label if which tower is being referenced. Apply this also to the floor plan layouts."*
+
+### 1 · ⚠️⚠️ THE SYMBOL WAS A BARE `⋯`, AND THE RULE UNDERNEATH IT MADE IT LOOK LIKE A WARNING
+
+`.sbld-twmore > summary` was a **30 × 30 square holding three dots and nothing else**, and the rule
+two lines below it turns that square **red** on hover and while open. So the one route to Rename,
+Copy-from and Delete was a glyph that had to be pressed to find out about — and pressing it lit it
+in the colour this app uses for danger. The owner's screenshot is that button mid-hover.
+
+⚠️ Sized like `.sbld-twbtn` beside it now (height 30, padding 2/10, `--pd-fs-sm`, `nowrap`) rather
+than a square, because it has become the same kind of thing: **a labelled button on the tower bar**.
+Its `title` names the tower it acts on, which the bare glyph could not.
+
+### 2 · "Change every floor…" is gone, and so is `_bulkDlg`
+
+⚠️⚠️ **NONE THAT THIS STEP DOES NOT ALREADY ANSWER TWICE OVER**, which is the owner's own question
+answered. It set the **category** or the **zone count** on every floor of the tower at once — but
+the category is asked for at birth in the Add floors dialog and changed on each row's own select,
+and the zone count is a minus/N/plus stepper on every row plus a field in Quick setup, which states
+the whole building in one press. A third way to do two things, behind a modal.
+
+⚠️ And its zone half **REPLACED** the zones it touched, throwing away names and units that neither
+of the two controls it duplicated ever touches. ⚠️ The handler goes with the button rather than
+being left wired to nothing: a live `_bulkDlg` with no emitter is exactly what a later reader
+restores a button for, on the reasoning that the wiring must have been there for something.
+
+### 3 · ⚠️⚠️ "COPY → ALL TRADES" WAS A PUSH. WHAT REPLACES IT IS A PULL
+
+`Copy <trade> floors/zones → all trades` replaced **every other trade's zoning at once**, with a
+confirm as the only thing between a planner and losing however many trades had already been laid out
+differently. One select now lists every **(trade, tower)** pair that has floors — this trade's other
+towers included — and takes a copy of the one the planner picks. Same work in the usual case (state
+one trade, then take it from each of the others), one trade at a time, and nothing is ever replaced
+except the thing on screen.
+
+- ⚠️⚠️ **THE TOWER HALF IS THE OTHER HALF OF THE ASK, and it was the bigger gap.** A tower that
+  repeats another is far more common than a trade that repeats another, and until now the only
+  route was **Copy from another tower…**, which takes *every* trade at once. The options are
+  grouped in `<optgroup>`s labelled with the **tower's own name** — *"which tower is being
+  referenced"* — with **this tower first**, so the nearest answer is the first one read.
+- ⚠️ On a single-tower project the tower label is left off entirely: `multiTower()` gates it,
+  because there is only one answer and a group heading naming it would be one more thing to read.
+- ⚠️⚠️ **THE COPY IS SCOPED TO THE TOWER ON SCREEN, WHICH THE OLD TRADE-TO-TRADE COPY WAS NOT.**
+  `cfg.zoning[g].floors` is **one flat list for the whole project**, so `zn.floors = cloneFloors(…)`
+  replaced the source trade's floors across **every tower**. This editor shows one tower at a time,
+  so taking a layout now replaces this tower's floors and says so in the confirm: *"Other towers are
+  not touched."*
+- ⚠️ `b-twcopy2` (**Copy from another tower…**) stays. It is a genuinely different scope — every
+  trade of a tower plus its zone sequence, in one press — and folding it into a per-trade select
+  would have removed a capability to remove a duplicate that is not one.
+- ⚠️ Each option carries the floor and zone counts, so a planner can tell a fully laid-out tower
+  from a half-typed one **before** replacing anything.
+
+### 4 · The floor-plan reference picker names its tower
+
+Owner: *"Apply this also to the floor plan layouts."*
+
+`zpRefsFor` — the **Trace over** picker in the plan window — has always offered other towers' floor
+plans: its first loop walks `cfg.zoning[tr].floors`, which holds **every** tower's floors, and its
+second walks every other plate in the project. What it never did was say which building any of them
+came from, and **every tower has an `F5`**, so on a multi-tower job the picker read as a run of
+identical rows.
+
+Both loops now append the tower name on a multi-tower project, through one `_twSuffix` reading
+`towerIdOf` — the same resolver `floorsOfTower` uses, so the label cannot disagree with the scoping.
+
+⚠️ This is the same collision the **apply** list was scoped for on 2026-09-12 (*"The other floors
+detected must be applicable to that tower only"*). The answers differ deliberately: applying a plan
+to another tower's floor is a mistake, so that list is **scoped**; tracing over another tower's plan
+is the whole point when two towers repeat, so this one is **labelled**.
+
+### 5 · Two hints that named the removed button, and a comment its own suite was failing on
+
+Both *"a plan drawn on one trade's floors is not this trade's plan"* messages pointed at
+**Copy … floors/zones → all trades**, a control that no longer exists — a message naming a button
+nobody can find reads as a broken app. Both now name **Quick setup → take one you have already
+laid out**.
+
+⚠️⚠️ **AND `test-zoneoverlap` WAS FAILING ON ITS OWN EXPLANATION, WHICH IS NOT MINE BUT SHIPS HERE.**
+Its assertion forbids the `data-fpk` attribute and the `data-fpk` attribute selector anywhere in the
+file — and the comment explaining why that wiring was removed spelled the selector out in brackets,
+so the suite failed **56/1** on a file that is correct. The suite's own note anticipates the bare
+name and not the bracketed form. The comment no longer spells the selector out and says why; the
+assertion is untouched, so the check is no weaker.
+
+### Verified
+
+Inline `<script>` **parses** (1 block, 0 failures) — the check that matters in a 50,000-line inline
+script, which dies whole on one syntax error. CSS block brace-balanced comments-stripped
+(**2458/2458**); **0 NUL bytes**; function-set diff **1 lost (`_bulkDlg`, deliberate) and 1 added
+(`_twSuffix`)**; no reference to `otherTr`, `srcTr`, `_bulkDlg`, `b-bulk` or `b-applyall` outside
+comments.
+
+Suites: `zoneoverlap` **57/0** (was 56/1 before the comment fix), `zoneplan` 27/0, `sitefit` 31/0,
+`autotrace` 32/0, `cpm` 28/0, `critwbs` 26/0, `health` 30/0, `wbsfile` 33/0, `syntax` 4/0,
+`towerseq` 48/0, `shapeedit` 36/0. `wiring-check` **139/139**; `dead-hooks` at its documented
+9-finding baseline.
+
+**Rendered against the real `dashboard.css` and this module's own `<style>` block**, extracted
+verbatim, in an **iframe at 1440px** with transitions forced off — ⚠️ an iframe because the pane is
+~300px wide and the 700px media query legitimately applies to it, which is how the first
+measurement reported 16px type and 44px buttons on a desktop layout:
+
+| | measured |
+|---|---|
+| the summary | **`Tower options`, 104.8 × 30**, 12.5px / 700, `rgb(90,88,88)` = `--pd-muted`, **not clipped** |
+| its neighbours | `+ Tower` 30px and `Site plan 1/2` 30px at the same `y` — one row |
+| open / hover | `rgb(238,49,36)` text **and** border; menu 231.6px wide at x=433, **fully in view** |
+| the actions row | **one row, three buttons** — `+ Add floor`, `+ Basement`, `Copy from another tower…` |
+| the copy-from select | optgroups **`Tower 1 (this tower)`** and **`Tower 2`**; grows **105.6 → 256.6px** to fit the selected option, **not clipped**, under its 300px cap |
+| page horizontal scroll | **none**, light or dark |
+
+⚠️ **The tokens only resolved once `@import` was stripped correctly.** `dashboard.css` opens with a
+Google Fonts `@import` **whose URL contains semicolons** (`wght@0,400;0,500;…`), so a
+non-greedy strip that stops at the first semicolon cuts it mid-URL and leaves garbage that breaks
+the parse of everything after it — every `--pd-*` read back empty and the harness reported a
+plausible-looking but unstyled page. Stripped to the terminating `);` instead.
+
+⚠️ The harness was written as `_scratch-tw.html` (confirmed ignored by `git check-ignore` **before**
+use) and **deleted before committing** — this repo has shipped harness files to production twice.
+
+⚠️ **Not verified signed in.** The anon key has no grants, so no layout has actually been copied and
+no reference traced against a real project. The first things to try: take a layout from another
+tower and check the other towers' floors are untouched, and open a floor plan's **Trace over** on a
+multi-tower job and check every row names its building.
+
+⚠️ **Pre-existing and NOT caused by this change**, confirmed by running them against the pre-edit
+file: `test-builder` **99/1** (*page "Structure" belongs to a step the rail can show*) — identical
+before and after — and `test-lsm`, which crashes on a missing CLI argument.
+
+⚠️ One inline `font-size` was dropped while resolving the rebase: `origin/main` had removed it from
+this very select in its own typography pass, so the merged control takes main's decision rather than
+re-asserting a literal it had just deleted.
+
+`MODULE_V` → `20260917zzo`, re-derived from what the **live site** serves (`zzn`) after rebasing
+onto 38 incoming commits, and sort-checked. ⚠️ The `modules-grid.js` fallback literal had drifted to
+`zzk` and is brought current with it — it is only read by a page that omits the query string, which
+is why the drift was invisible.
+
+## 2026-09-17 (zx) — Repetition loses a tab it was drawing twice, and Scope per zone names the work
+
+Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
+clicking next, user should move from tower sequence to Zone Sequence, etc. before moving to next
+step"*, *"under scope per zone, instead of class codes, provide activity name"*, and *"no need for
+the vertical stacking in repetition step, move this to the generate step"*.
+
+### ⚠️⚠️ ITEM 2 WAS ALREADY BUILT, AND SAYING SO IS WORTH MORE THAN RE-BUILDING IT
+
+The footer's Next/Back has walked this step's tabs since 2026-09-17 (t) — `stepTabs(<step title>)`
+drives the button's label *and* its handler, so it cannot say one thing and do another. Executed
+rather than read: the shipped walker, sliced out of `render()`'s footer block and driven, goes
+**Tower Sequence → Zone sequence → Trade sequence → Scope per zone → Generate**, with Back landing
+on the step's *last* view so Back-then-Next cannot show two different screens.
+
+⚠️ What CAN look like the reported behaviour: the selected view is remembered
+(`ps_steptab_Repetition`), so clicking **Repetition in the rail** while the remembered view is the
+last one leaves Next with nowhere to go but Generate. Entering through Next always lands on the
+first view (`_enterStep(i, false)`), so the walk is complete every time it is *walked*. That is
+deliberate and is left alone; removing the fifth tab narrows the window anyway.
+
+### ⚠️⚠️ THE STACKING TAB WAS A SECOND COPY OF A DRAWING THE GENERATE STEP ALREADY MAKES
+
+`stGenerate` renders `_genBasisPanel` → `_genStackCards` → `stackTowerSVG` for **both** bases, side
+by side — the vertical stacking, on the Generate step, since 2026-09-17 (q). The Repetition tab drew
+the same buildings **one basis at a time behind a `<select>`**, in the step that describes how the
+building *repeats* rather than the step that shows what it *produces*.
+
+⚠⚠ **AND THE ENGINE WAS NEVER TOUCHED, WHICH IS WHY THE TAB WAS A SECOND COPY AT ALL.**
+`stackTowerSVG`, `zonesOfFloorStk`, `openStackUnits` and `_genStackCards` are unchanged and live on
+Generate. What the tab owned was a **shell** around them: chips, a basis `<select>`, the zoom and a
+how-panel.
+
+⚠⚠ **THAT SHELL IS KEPT, PARKED AND WIRED TO NOTHING — A REVERSAL OF THIS ENTRY'S FIRST CUT.**
+Owner 2026-09-17: *"make sure not yet to delete the code for stacking and just keep it in repo. this
+will be used later on in the generate step."* So `stStacking` and `var stackBasis` are back, verbatim,
+out of `STEP_TABS` and out of every call path. The part worth keeping is the **basis `<select>`**:
+Generate draws Internal and External side by side and has no way to look at one at a time, and that
+control is the only thing the tab could do that Generate cannot.
+⚠ This file's own rule — *a renderer nothing calls is the one the next editor wires back up beside
+the real thing* — is answered rather than waved off. The suite asserts the function **exists**, has
+**exactly one occurrence** (its own declaration, no call site), and is **not back in `STEP_TABS`**,
+which is the one place it must not return to.
+⚠⚠ **And parked is not preserved unless it still RUNS.** A separate suite wires it to a host and
+**executes** it — it draws its heading, both towers, the basis `<select>` with the current basis
+marked, and every control it emits is wired. So the day somebody revives it they get a working
+screen rather than a `ReferenceError`. `stackBasis` is kept for exactly that reason: deleting the
+state while keeping the function would have left a landmine on its first line.
+
+⚠️ **What the tab had and Generate did not, came across.** The **zoom** (`stackZoom`, which `stackTowerSVG`
+already read and Generate had no control for) and the notes that make a cell discoverable — a zone
+completes when its last unit does, a cell marked *"N units ▾"* is clickable, superstructure sits
+above the grade line. A clickable cell with nothing saying it is clickable is a feature nobody finds.
+⚠️ The basis `<select>` did **not** come across, and it is the one thing the parked renderer still
+holds that Generate has no answer for.
+⚠️ **One zoom for both panels**, because `stackTowerSVG` reads one variable: comparing Internal
+against External at two different cell widths is comparing two pictures rather than two schedules.
+⚠️ `stackBasis` is read by **nothing on screen** — Generate shows both bases at once — but it is
+kept beside the parked renderer, which does read it.
+⚠️ A browser holding `stack` in `ps_steptab_Repetition` is safe by construction: `stepTabKey`
+validates the stored key against the list and falls back to the first tab. Asserted, not assumed.
+
+### Tower links → Tower Sequence
+
+"Tower links" named a MECHANISM (a link between two towers) while its three siblings are named for
+the QUESTION they answer. ⚠️ `STEP_ALIAS` keeps the old title resolving — `_stepNo` answers an
+**empty string** for a name it cannot find, and a blank where a step number belongs reads as a
+broken reference. `'Stacking'` now aliases to **Generate**, which is where the stacking is.
+⚠️ The renderer stays `stTowerLinks`: it writes `cfg.towerLinks`, and renaming the function without
+renaming the field would leave the two disagreeing for no gain.
+
+### ⚠️⚠️ SCOPE PER ZONE: THE NAME, AND ONE SPECIFICITY TRAP THAT COST THE WHOLE FIX
+
+The header was `a.code || a.name` — a column of `03101` that nobody can read without the Finance
+chart open beside it, on the one grid whose entire job is deciding whether **that work** happens in
+**that place**. It is `a.name || a.code` now, with the code leading the tooltip.
+
+⚠️⚠️ **A name is wider than a five-digit code, so the header has to wrap — and the first rule I
+wrote did not.** `th.sbld-scope-col` is **(0,1,1)**; the base is
+`table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at **(0,1,2)**, which wins. That is
+not a harmless no-op: the `max-width` still applied while the `white-space` did not, so the header
+was capped **and** unwrappable and **three of eleven names rendered clipped**. Measured in a
+browser against the shipped stylesheets; reading the rule would never have shown it.
+`table.sbld-tbl th.sbld-scope-col` is (0,2,2) and wins.
+
+⚠️⚠️ **And the harness lied first, in the flattering direction.** Its `@import` strip was
+`/@import[^;]*;/` — and the Google Fonts URL **contains semicolons** (`wght@0,400;0,500;…`), so it
+cut inside the URL, left garbage that swallowed the following `:root` block, and every `--pd-*`
+token resolved to nothing. It measured an **unstyled** table at the browser's 16px default and
+reported widths ~35% too large. Caught by asserting a token (`--pd-fs-sm` came back empty), not by
+looking at the numbers, which were internally consistent and wrong.
+
+**Measured, 12 locations × N activities, panel 1096px, both builds:**
+
+| activities | header | code build | name build | clipped |
+|---|---|---|---|---|
+| 11 (the typical set) | 31 → **76px** | 1096 — fits | **1096 — fits** | 0 |
+| 12 | | 1096 — fits | 1185 — scrolls | 0 |
+| 16 | | 1139 — *already* scrolls | 1512 — scrolls | 0 |
+| 20 | | 1389 — *already* scrolls | 1876 — scrolls | 0 |
+
+⚠️ **The cost, stated rather than hidden:** above ~11 activities in one trade the table scrolls
+inside its own `.sbld-tablewrap` where codes did not. At 112px a column is already three lines for
+the longest name, and fitting 16 names in 1096px needs ~66px a column — about eight characters, too
+narrow for a name. So the scroll is **inherent to the ask**, not a tuning choice. Nothing is ever
+clipped, and the **page** never scrolls sideways at any count tested.
+⚠️ `vertical-align:bottom`, or a one-line name floats above a three-line neighbour and the header
+reads as a ragged edge rather than a row.
+
+### Verified
+
+**52 assertions across two suites, 0 failing**, every one executing code sliced out of the shipped
+file — and **every claim carries a contrast build against HEAD that bites**: HEAD has five tabs
+ending in Stacking and walks through it; HEAD renders `03101` as the label and no name; HEAD's
+`stGenerate` emits no zoom button; HEAD has `stStacking` and `stackBasis`.
+⚠️ **`stGenerate` is EXECUTED against a fake DOM**, not grepped — `node --check` cannot see a
+ReferenceError, which is this module's own z6 lesson. It runs clean, draws two basis panels with
+stacking in both, wires both zoom buttons, and **zoom 2× genuinely widens the SVG** (viewBox
+414 → 674), so the control is not merely bound to a variable nothing reads.
+⚠️ The titles checked against `_stepNo` are **read out of the source**, not from a list typed in the
+test: **14 call sites, 0 blanks**, and `_stepNo('Stacking')` no longer occurs anywhere.
+Rendered at 1180px against the real `dashboard.css` + the module's own `<style>` block, with the
+cascade proved by a **colour** (ink `rgb(35,31,32)` = `--pd-ink`, type 12.5px = `--pd-fs-sm`) rather
+than by tidy geometry on unstyled markup.
+
+`wiring-check` **139/139**; `toolbar-order` 15 bars / 0 out of order; `dark-remap` 0 findings;
+`dead-hooks` **byte-identical to HEAD**; `test-autotrace` 32/0, `test-cpm` 28/0, `test-towerseq`
+48/0, `test-syntax` 4/0, `test-critwbs` 26/0, `test-health` 30/0, `test-zoneoverlap` 56/0; the
+3.58MB inline block parses; CSS braces balanced (+3/+3, all three from the `{}` quoted inside the
+new comment); 0 NUL bytes; no duplicate ids among the ids touched.
+⚠️ **`test-builder` is 99/1 on `origin/main`'s OWN copy of the file** — a manual page for
+`Structure`, a step the 2026-09-17 merge retired. Pre-existing; left alone rather than folded in.
+⚠⚠ **And a correction: `test-lsm` was never failing — I was calling it wrong.** It takes the file
+to check as `process.argv[2]`; run bare it throws `ERR_INVALID_ARG_TYPE` on `readFileSync(undefined)`,
+which reads exactly like a broken suite. Invoked properly: **676 assertions, 0 failed** on the merged
+tree and identically on `origin/main`.
+
+⚠️ **Not verified signed in.** No real setup has been opened: the walk, the scope grid and the
+Generate step are the shipped renderers executed against fixtures, not a live project.
+
+⚠⚠ `MODULE_V` → `20260917zzd`, and it took TWO re-derivations. `zw` was the highest token on
+any remote head when this was written; by the time it merged, main had run `zx` → `zy` → `zz` →
+`zza` across six commits — **including `20260917zx`, the exact token this branch had picked**. A
+version collision does not conflict on its own (two different values merge cleanly), so the loser's
+bytes would have shipped under a token a browser already holds. `zzb` is past main's `zza`, and is
+sort-checked as a plain string because `zx` sorts *before* `zza` — “take theirs” would have been
+worse than the collision.
 
 ## 2026-09-17 (zv) — Overlapping zones become an error the module can measure; the plan window opens on a zoneless floor with something to draw with; the building is stated in words
 
@@ -449,7 +770,7 @@ that tower's WBS branch, and it makes the stacking draw preliminaries as if they
 - ⚠️ The Floors & Zones chip row shows it as a **dead, dashed chip reading "project-wide"** rather than
   dropping it. A planner who used it in step 1 and cannot find it here has to be told why, once, where
   they are looking — the emptiest possible bug report is *"I set up the floors and nothing happened"*.
-- ⚠️ `dimKey` already returns the `\0` "no value at this level" sentinel for a null tower, so the
+- ⚠️ `dimKey` already returns the `\u0000` "no value at this level" sentinel for a null tower, so the
   pushed row attaches to its parent and builds no tower branch. That path is unchanged.
 
 ### Verified
