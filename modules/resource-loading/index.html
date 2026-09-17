@@ -245,7 +245,7 @@
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/portfolio-dash.js?v=20260917zg"></script>
-<script src="../../assets/js/calendar.js?v=20260917a"></script>
+<script src="../../assets/js/calendar.js?v=20260918a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script>
@@ -933,6 +933,13 @@
       var seasons = (calDraft.seasons || []).filter(function (x) { return x.months && x.months.length; }).map(function (x) {
         var o = { id: x.id || ('s' + Math.random().toString(36).slice(2, 8)), label: (x.label || '').trim() || 'Season', months: x.months.slice() };
         if (x.hours_per_day != null && x.hours_per_day !== '') o.hours_per_day = Number(x.hours_per_day);
+        /* ⚠⚠ CARRIED THROUGH, NOT EDITED HERE. The Schedule Setup's Calendars step writes a
+           season as a REDUCTION in hours/day (owner 2026-09-17) rather than an absolute. This form
+           rebuilds a season field by field, so a field it does not name is DELETED on the next save
+           from this module - and the two screens edit the same row, so a planner who opened a
+           calendar here would silently undo the wet-season reduction set over there. This form does
+           not offer the field; it must still preserve it. */
+        if (x.hours_reduction != null && x.hours_reduction !== '') o.hours_reduction = Number(x.hours_reduction);
         DAYS.forEach(function (d) { if (x[d[0]] === true || x[d[0]] === false) o[d[0]] = x[d[0]]; });
         return o;
       });
