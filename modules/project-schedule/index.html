@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917z" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917za" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
@@ -5419,17 +5419,17 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260916a"></script>
-<script src="../../assets/js/db.js?v=20260917a"></script>
+<script src="../../assets/js/config.js?v=20260917zb"></script>
+<script src="../../assets/js/auth.js?v=20260917zf"></script>
+<script src="../../assets/js/db.js?v=20260917zf"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <!-- ⚠️ The SHARED curve engine, for the Summary's progress chart. Loaded rather than
        reimplemented: portfolio-overview carried a hand-copied copy of this maths until
        2026-09-10 (z1) and its own log records what that cost. The S-Curve module, the project
        Dashboard panel and this page now read one engine. -->
-  <script src="../../assets/js/scurve.js?v=20260916r"></script>
+  <script src="../../assets/js/scurve.js?v=20260917a"></script>
   <script src="../../assets/js/portfolio-dash.js?v=20260917w"></script>
-<script src="../../assets/js/ui.js?v=20260916w"></script>
+<script src="../../assets/js/ui.js?v=20260917zb"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
@@ -26766,10 +26766,19 @@
     function plannedValueAt(D) { var pv = 0; leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return; var pf = D >= e ? 1 : (D < s ? 0 : (e > s ? (D - s) / (e - s) : 1)); pv += val(a) * pf; }); return pv; }
     var pctNow = TOT ? overallDone / TOT * 100 : 0;
     var plPctNow = TOT ? plannedValueAt(tnow) / TOT * 100 : 0;
-    var spi = plPctNow > 0 ? pctNow / plPctNow : 1;
-    spi = Math.max(0.1, Math.min(spi, 3));
-    var remMs = Math.max(0, +plannedEnd - +tnow);
-    var fc = pctNow >= 100 ? tnow : new Date(+tnow + remMs / spi);
+    /* ⚠️⚠️ THE SHARED DECISION, NOT A SECOND COPY OF IT. These four lines were a verbatim
+       port of `scurve.js`'s forecast — including the defect that made DEMO01 forecast 2034 from one
+       screen while the schedule said 2027 — and the comment above this function has said "same
+       math, verbatim" the whole time, which is exactly how the copy stayed in step with the bug and
+       not with the fix. `PDScurve.forecast` now owns the rule; see the note on it for why SPI is
+       gated at both ends of a job.
+       ⚠️ No `slipMs` is passed: this chart holds a MONTHLY planned series and cannot measure
+       the horizontal gap to a day. The immature forecast is then the planned finish, which is an
+       honest answer where 2034 was not. The dedicated S-Curve module, which has the daily curve,
+       passes the real slip. */
+    var _fk = PDScurve.forecast({ pctNow: pctNow, plPctNow: plPctNow,
+                                  plannedEnd: plannedEnd, tnow: tnow });
+    var spi = _fk.spi, fc = _fk.autoFc;
     var domainMax = new Date(Math.max(+max, +tnow, +fc));
     var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
     while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
@@ -26795,7 +26804,7 @@
     actualC[ti] = overallDone;
     for (var k = ti + 1; k < actualC.length; k++) actualC[k] = 0;
     var overallPct = TOT ? overallDone / TOT * 100 : 0;
-    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, overallPct: overallPct, ti: ti, activities: leaves.length, plannedEnd: plannedEnd, fcFinish: fc, spi: spi, dataDate: tnow };
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, overallPct: overallPct, ti: ti, activities: leaves.length, plannedEnd: plannedEnd, fcFinish: fc, spi: spi, fcBasis: _fk.basis, dataDate: tnow };
   }
   function _ckSCurveSVG(d) {
     var W = 1000, H = 300, padL = 40, padR = 16, padT = 16, padB = 34, n = d.months.length, maxV = d.TOT || 1;

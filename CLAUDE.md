@@ -103,6 +103,532 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (l) — Activity and Registered on the Users table, a last_login that Microsoft sign-ins actually reach, and two columns removed to pay for them
+
+Owner: *"a feature tracking the activity and registered date in the users which is already available
+in the procurement dashboard … This information should only be available to admins and
+super_admins"*, then *"squeeze the table … in a way that the table does not necessarily need to be
+scrollable."*
+
+### ⚠️ No migration, and no new access rule — both already existed
+
+`users.last_login` and `users.created_at` have been on the table since **2026-08-11**, and
+`PDb.listUsers` already does `select('*')`. The figures were being fetched and thrown away. What was
+missing was a column in the UI, not a schema.
+
+⚠️⚠️ **And the access requirement is already met in the database, which is the only place it
+counts.** `users_self_read` is `auth.uid() = id or is_admin()`, and `is_admin()` is
+`role in ('admin','super_admin') and status = 'approved'` — so a **planner cannot read another
+user's row at all**, `last_login` included. Read out of `supabase-schema.sql` and asserted, not
+assumed. This page adds no second gate: `requireAdmin` already fronts it, and a UI check layered
+over an RLS rule teaches the next reader that the UI is what protects it.
+
+### ⚠️⚠️ The column was written from one place, and that place missed half the sign-ins
+
+`last_login` was updated only by **index.html's email/password handler**. `loginWithMicrosoft`
+redirects to the provider and returns on `home.html`, which never touched it — so **anyone signing
+in with Microsoft read as "never logged in", permanently.** An activity column built on that would
+not have been wrong about a date, it would have been wrong about a *person*.
+
+Moved into `AppAuth.requireLogin`, the one function every authenticated page already calls.
+- ⚠️ **Once per browser session**, not per page load — `requireLogin` runs on all 29 pages, and
+  writing there would make *"last login"* mean *"last page view"*: a different measurement wearing
+  the same label.
+- ⚠️ `PDb.updateLastLogin` is **retired, not left as a spare**. An exported writer with no callers is
+  the thing the next editor calls, and then there are two writers for one column again.
+
+### The two cells
+
+**Activity** — an `Active` / `Inactive` pill on the shared `.pd-pill` component (no fourth green),
+split at **7 working days**, with *"Sep 16, 2026 · 1 working day ago"* beneath.
+⚠️ **Working days, not calendar days**, matching the procurement dashboard: someone who signed in on
+Friday is not "3 days idle" on Monday. Computed in closed form — whole weeks contribute five each and
+only the remainder is walked — and asserted equal to a naive day-by-day walk over 120 days.
+⚠️⚠️ **Three absences, three messages.** `undefined` = the column is not on this database (names the
+migration); `null` = the column is there and this person has never signed in; a bad value = a dash.
+One dash for all three would send an admin looking for a person when the answer is a migration.
+⚠️ The cell passes `Fmt.date` a **Date object, not the ISO string**: the string branch reads the
+`yyyy-mm-dd` prefix, which is **UTC**, while `workingDaysSince` parses to local — so a 02:00 Manila
+sign-in printed *yesterday's* date beside a correctly-counted pill.
+
+**Registered** — `created_at`, same treatment.
+
+### ⚠️ Paying for them: Name and Email were the same string
+
+Two new columns took the table to 1,644px in a 1,545px container — scrolling. The fat was obvious
+once measured: **Name and Email were two full columns holding the identical value** for every
+account created from an email address with no display name, which is half this table. Stacked into
+one **User** cell (name bold, email beneath) — the shape the procurement dashboard already uses —
+and when the name is absent or *is* the email, the email is the only line.
+
+Plus `min-width` on the Role and Department selects (130→112, 140→118) and 10px→7px cell gutters
+**scoped to `#users-table`**: nine columns pay the gutter nine times. Scoped rather than shared,
+because every other table in the app is fine at 10px and a global change to make one screen fit is
+how a design system starts drifting.
+
+Measured, table width against container:
+
+| viewport | container | table | scrolls |
+|---|---|---|---|
+| 1593 (sidebar open at 1920) | 1,545 | **1,543** | **no** |
+| 1400 | 1,352 | **1,350** | **no** |
+| 1280 | 1,232 | 1,337 | yes, inside the wrapper |
+| 390 | 342 | 1,377 | yes, inside the wrapper |
+
+**The page never scrolls sideways at any width** — only the wrapper does, which is what
+`.pd-tablewrap` is for.
+
+### Verified
+
+**41 assertions**, the three helpers **sliced out of admin.html and executed**: the working-day
+boundary tested at exactly 7 and exactly 8 rather than near them, singular/plural, the three
+absences distinguished, the header/body column counts agreeing at nine, **exactly one writer for
+`last_login`** across five files with comments stripped first, and a **gate** asserting the RLS
+policy text itself. Contrast pinned to `origin/main`: the base has no `activityCell` and eight
+columns, so the suite bites.
+
+Rendered in an iframe: all four activity states with their tones resolving from the shared tokens
+(`rgb(18,105,58)` on `rgba(31,143,78,.12)` for Active, `rgb(138,83,0)` for Inactive), dates correct,
+nine headers, no page-level horizontal scroll at 1593 / 1400 / 1280 / 390.
+
+⚠️ **Not verified signed in** — no real `last_login` has been read, and the Microsoft path has not
+been exercised end to end. The figure to watch on the first real open is how many rows read *"Never
+signed in"*: if it is everyone who uses Microsoft, the move has not taken effect yet.
+
+`auth.js` (28 pages) and `db.js` (25) → `?v=20260917zf`; `MODULE_V` → `20260917zf`.
+
+### 2026-09-17 (k) — Six short blocks that balance instead of three long ones that cannot, and the Users table stops crushing its own columns
+
+Owner: *"Still not the best wrapping. Can we also reduce the length of the how to read this chart?"*
+and *"UI also needs improvement for the table. Columns wrap unnecessarily when side panel is opened."*
+
+### ⚠️ Three uneven paragraphs cannot balance at any width
+
+Entry (i) columned the disclosure and (j) widened the cap, and it still looked wrong — because the
+problem had stopped being the cap. **Three blocks of very different lengths cannot divide evenly
+into two or three columns**: the third drops to a second row with a hole beside it, which is what
+the owner was looking at.
+
+Split into **six**, each with a bolded lead — *The lines · The forecast date · The bars · No bar at
+the data date · Forecast bars run high · The weighting* — and shortened: **245 words → 170**, with
+the forecast method promoted out of the tail of a paragraph about line styles into its own block,
+because it is the single most-queried thing on this chart.
+
+⚠️ **The layout is `columns:`, not a grid.** A grid flows row-wise, so a tall item sets the height of
+its whole row and leaves gaps beside the short ones. Multicol flows column-wise and *balances*, so
+the column bottoms land within 40px of each other. `break-inside:avoid` keeps each block whole.
+
+⚠️⚠️ **And `column-width` is a MINIMUM, which cost one more iteration.** The browser fits
+`floor((W+gap)/(width+gap))` columns and then stretches them. At `40ch` that asked for **four**
+tracks on the owner's 1,511px container, the six blocks balanced into three, and the fourth sat
+empty — **75% fill**, the same complaint a third time. 44ch is where it tips to three; **46ch** is
+shipped, keeping a margin so a different font metric cannot tip it back.
+
+Swept rather than sampled, on the measured chain (sidebar 245 → `.pd-main` 24 → card 17):
+
+| viewport | container | columns | blocks each | fill | chars |
+|---|---|---|---|---|---|
+| 390 | 293px | 1 | 6 | 100% | ~47 |
+| 1000 | 918px | 2 | 3, 3 | 100% | ~71 |
+| **1593** | **1,511px** | **3** | **2, 2, 2** | **100%** | ~78 |
+| 2318 | 2,236px | 4 | 2, 2, 1, 1 | 80% | ~68 |
+
+No horizontal scroll at any width. On the owner's screen the open block is now **152px** — it was
+**379px** when this started, carrying *fewer* facts.
+
+### ⚠️ The Users table crushed its columns and scrolled anyway
+
+`<div class="pd-card" style="overflow:auto">` around a `width:100%` table: with no minimum the table
+**crushes its columns first** and only scrolls once it can crush no further, so with the sidebar open
+*"No projects assigned"* broke over three lines **and** the row still scrolled sideways — the worst
+of both.
+
+⚠️ **`.pd-tablewrap` was already in `dashboard.css`** (`overflow-x:auto` + `> table { min-width:
+max-content }`) **and used on zero pages.** Reviving it beats a third local copy of the same two
+rules. `.pd-chip` gains `white-space:nowrap` — a chip is one token, and *"6 modules hidden"* over
+three lines reads as three separate facts.
+
+Measured: table 1,335px at every viewport (columns keep their natural widths), **0 chips wrapping**,
+scrolling inside the wrapper and **never on the page**, and at 1593 the table fits with no scroll at
+all.
+
+### Module access — the code was already right
+
+Owner: *"Modules are still hidden for planners."* Checked by running the access suite against the
+**deployed** `auth.js` and `config.js`, fetched from the live site: **planner 13/13**, admin 13/13,
+user 7/13, viewer 7/13. The screenshot is a tab loaded before the deploy — its modal still shows the
+old *"(super_admin by default)"* label, which was replaced in (h). A hard reload is the whole fix.
+
+### Verified
+
+`test-fcsum` **18/18** (up from 10 — the sentence assertions were retargeted to the new wording, and
+one now asserts the **figure** rather than the phrasing), the (h) forecast suite 28/28,
+`test-modaccess` 24/24, `test-scurve-forecast` 28/28, `wiring-check` 139/139, CSS braces 227/227,
+the inline script parses.
+
+⚠️⚠️ **Three separate defects came out of writing this, all from the same source and all caught
+before shipping:**
+1. A patch reordered `nW.ti = …` ahead of `nW.fchigh = …` and produced a **chained assignment** —
+   `nW.ti = nW.fchigh = (…)()` — which parses cleanly, duplicates one block and drops the other as a
+   dangling expression statement. `node --check` cannot see it; reading the result could.
+2. **Backslashes lost a layer through the shell heredoc** — twice in the page (`\'s` arriving as
+   `''s`, which at least failed to parse) and once in a test, where `\b` arrived as a literal
+   backspace and quietly failed an assertion. The page now uses `’`, which needs no escape
+   inside a single-quoted JS string, and the test uses `indexOf`.
+
+`MODULE_V` → `20260917ze`. No shared asset changed, so no app-wide bump.
+
+### 2026-09-17 (j) — "Are the forecast bars correct?" They are, and the chart now says why; the notes finally fill the panel
+
+Owner: *"Is the actual forecast bars correct? They're all over planned this month? If we add them
+all up (cumulative) the red forecast line should be above the planned (cumulative)."* — and
+separately, *"the wraps are not maximized with the whole panel."*
+
+### ⚠️⚠️ The bars ARE all over the planned ones, and that is forced arithmetic
+
+Added them up rather than reasoning about them. On a DEMO01-shaped fixture (22 months, 0.4% booked,
+forecast finishing 14 days after the plan), run through the shipped engine and the shipped lens:
+
+| | |
+|---|---|
+| forecast bar taller than planned in | **21 of 22** remaining months |
+| forecast bars total | **99.6%** |
+| planned bars total | **95.5%** |
+| difference | **4.1 pp** |
+| the plan's head start at the data date | **4.1 pp** — *exactly the same number* |
+
+⚠️ **The forecast starts at today's ACTUAL and must still reach 100%**, so it has strictly more work
+left than the plan does, over roughly the same time. Every month's bar is therefore a little taller
+— about **0.19 pp** — and the excess summed over the whole remainder equals the plan's head start
+and **nothing more**. Asserted as an identity, not a tolerance.
+
+⚠️⚠️ **And it still cannot overtake — 0 months above the planned line.** The owner's intuition is the
+natural one and the step it skips is this: adding the bars up gives the rise from the **forecast's
+own** starting point, which is the lower one. The forecast finishes *after* the plan, so it reaches
+100% later and can only converge from below. **The converse is asserted too**, or the claim would be
+untestable: pin a forecast finish EARLIER than the planned one and the red line goes above the black
+in **18** months. So this is a consequence of the dates, not a floor somewhere in the maths.
+
+**The chart now says so itself**, with the project's own figures rather than a generic note — *"The
+forecast bars sit above the planned ones, and they have to: the forecast starts at today's actual
+and must still reach 100%, so it carries the 4.1 pp the plan is already ahead by — about 0.19 pp a
+month over the 22 months left. The two curves meet at 100% rather than crossing, because the
+forecast finishes 2028-07-13, after the planned 2028-06-29."* It flips to the other claim when the
+forecast finish is pinned earlier, and a project exactly on plan gets **no sentence at all** rather
+than *"0 pp"*.
+
+### The notes still were not filling the panel
+
+⚠️ Entry (i) capped the block at `46ch * 3` — **1,190px** — and that still bit on the owner's own
+screen. Measured chain at 1920: sidebar 245 → `.pd-main` padding 24 → card border 1 + padding 16
+leaves a **1,593px** container, so 400px of it was still empty. The same complaint, one iteration
+smaller, which is what comes of picking a tasteful number instead of measuring the panel.
+
+At `64ch * 3 + 48px` = 1,635px the cap does not engage there and the three columns share the row
+exactly. It has to stay a cap: without one a 2,560px monitor collapses the empty tracks and hands
+each paragraph ~840px, about 130 characters to a line.
+
+Measured on the real chain — container, fill, characters per line:
+
+| viewport | card content | columns | column | fill | chars |
+|---|---|---|---|---|---|
+| 390 | 293px | 1 | 293px | **100%** | ~47 |
+| 820 | 738px | 2 | 357px | **100%** | ~57 |
+| **1675** | **1,593px** | **3** | **515px** | **100%** | ~82 |
+| 2400 | 2,318px | 3 | 530px | 71% *(capped, deliberately)* | ~85 |
+
+No horizontal scroll at any width. On the owner's screen the open block is **223px** — down from
+379px when this started — while carrying one more paragraph of explanation than it did then.
+
+### Verified
+
+**17 assertions** in a new adding-up suite, all executed against the shipped engine and the shipped
+lens: the bars add back up to their own lines; the excess equals the head start as an identity; the
+forecast never crosses; **and the converse fires**, which is what stops the "never crosses" result
+being true by accident.
+
+⚠️ The new sentence is **sliced out of the shipped file and executed** over the same fixture, so the
+figures in the note are checked against the ones computed independently — a note explaining the
+chart with the wrong number is worse than no note. ⚠️ The slice first returned the *function* rather
+than the sentence: a paren-depth scan from `(function () {` closes on the wrapper and leaves the
+calling `()` behind. Now asserted before use.
+
+`test-scurve-forecast` 28/28, the (h) forecast-bar suite 28/28, `wiring-check` 139/139, CSS braces
+226/226, the inline script parses.
+
+`MODULE_V` → `20260917zd`. No shared asset changed, so no app-wide bump.
+
+### 2026-09-17 (i) — The chart notes wrapped to 41% of the card, and the obvious grid fix was worse than the bug
+
+Owner: *"Verify live"*, then *"Wrap text needs improvement as well."*
+
+**Live verification first, and it passed:** every page on the deployed site is serving
+`?v=20260917zb`, and the owner's own screenshot of DEMO01 — signed in, which nothing here can do —
+shows the (h) facts row and the disclosure rendering correctly. It also showed the defect below,
+which is the argument for looking at the real screen rather than the harness.
+
+### ⚠️ The measure was right; the layout was not
+
+`.sc-whybody` capped the reading measure at `80ch`. Measured on the owner's card width, **1,568px:
+the text occupied 648px — 41% of the row** — three paragraphs stacked down the left edge with two
+thirds of the card empty.
+
+⚠️ **Widening the cap is the wrong fix.** A 1,568px line of 12.5px type is precisely what the cap
+exists to prevent. The answer is columns: the three paragraphs are independent (the lines, the bars,
+the weighting), so nothing has to read across a gap.
+
+### ⚠️⚠️ AND THE FIRST ATTEMPT WAS WORSE THAN THE BUG, IN A BAND A SPOT CHECK MISSES
+
+```css
+grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 46ch));   /* looks right */
+```
+
+It is not. **`auto-fit` counts tracks from the MAX sizing function when that is a definite length**,
+so the row was stepped in 380px units and the 320px floor never participated at all. Measured:
+
+| container | tracks | fill |
+|---|---|---|
+| 758px | **1** | **48%** |
+| 938px | 2 | 100% |
+| 1,218px | 3 | 100% |
+
+So between roughly 760 and 940 it collapsed to a single column and used **less** of the row than the
+bug being fixed — and it looked correct at 1280 and at 390, which are exactly the two widths a spot
+check uses. Found only by sweeping the range.
+
+**The fix is `1fr` as the max**, so the count comes off the floor and the tracks then share the row
+exactly, plus `max-width:calc(46ch * 3 + 48px)` to cap the block at three measures — without it a
+2,560px monitor collapses the empty tracks and hands each paragraph ~840px, about 130 characters to
+a line.
+
+⚠️ The left rule moves from the container onto each paragraph, or one border would run the height of
+the tallest column beside two that had already ended.
+
+### Verified
+
+Swept, not sampled — container fill and characters per line at each width:
+
+| width | columns | column | fill | chars/line |
+|---|---|---|---|---|
+| 390 | 1 | 313px | 100% | ~50 |
+| 820 | 2 | 367px | 100% | ~59 |
+| 1000 | 2 | 457px | 100% | ~73 |
+| 1600 | 3 | 381px | 100% of the capped block | ~61 |
+
+Every width inside the 45–75 character band, **no horizontal scroll at any of them**, and on the
+1,568px card the open block goes **379px → 283px** while the text goes **41% → 76%** of the row.
+
+⚠️ **The "before" was measured against the DEPLOYED stylesheet**, not a remembered one: the same
+fixtures and the same `notesHTML` rendered under the CSS from `HEAD`, so the only variable between
+the two pages is the rule that changed.
+
+`wiring-check` 139/139, `test-scurve-forecast` 28/28, CSS braces 226/226, the inline script parses.
+
+`MODULE_V` → `20260917zc` (the `modules-grid.js?v=` in `dashboard.html` and `modules.html`, plus the
+fallback literal). No shared asset changed, so no app-wide bump.
+
+### 2026-09-17 (h) — A question about the forecast turned out to be arithmetic; the bar beside it was a bug. Planners get every module
+
+Three asks in one prompt. The first was a question, and answering it properly is what found the second.
+
+### ⚠️⚠️ "The forecast bar is TALLER than the planned bar, yet the forecast LINE is below the plan"
+
+Owner, on DEMO01: *"How come the forecast this month is higher than the planned this month and yet
+the forecast to finish is still lower than the planned (cumulative) line?"* — reading *Nov 2026:
+planned 33.6% / forecast 29.2% cumulative, planned 18.3% / forecast 19% in the month.*
+
+**The chart is right, and the two readings are answering different questions.** A bar is a **rate**
+(what happens *inside* that month); a line is a **level** (where the project *has reached*). The
+forecast is anchored to the actual at the data date — `forecastC[ti] = actualC[ti]` — so it starts
+the 5.6 pp below plan that DEMO01 is already behind, and it has to reach 100% at a finish only
+**3 days** later than the plan's. So it must run marginally *faster* every month for the rest of the
+job. 19 against 18.3 is that catch-up: **0.7 pp a month against a 4.4 pp deficit.** Arithmetic on
+his own figures: 33.6 − 18.3 = 15.3 planned by end-Oct, 29.2 − 19.0 = 10.2 forecast — a 5.1 pp gap
+entering November, 4.4 leaving it. The gap closes; it does not close in one month.
+
+Reproduced by **executing the shipped engine and the shipped lens**, not by reading them: over a
+24-month fixture the gap runs 4.2 → 3.5 while the forecast bar sits at or above the planned bar,
+and the forecast still lands on 100% at the forecast finish.
+
+### ⚠️⚠️ AND THE SAME ANCHOR WAS DRAWING A BAR SIX TIMES TOO TALL
+
+`forecastC` is null everywhere before the data date and *starts* at it. `periodic()` looks backwards
+for the previous non-null point, finds none, and so reported the **whole cumulative actual** as that
+one month's forecast production.
+
+DEMO01 hides it perfectly: 0% is booked, so the bar is 0 and invisible. **Measured on a project 35%
+complete: a 35% bar where the real monthly forecasts are ~5% — 6.3× the tallest genuine bar.** And
+it is not one wrong bar: `perMax` is taken across planned **and** actual **and** forecast together,
+so that bar set the right-hand axis and squashed every real bar in the chart to a sixth of its
+height.
+
+⚠️ **This is the identical defect the renderer already fixes for the ACTUAL bar** (2026-09-11,
+`perA[L.ti] = null`, found by LOOKING at a 97% bar on a project that had done 35%). The actual and
+the forecast are anchored to the same value; the fix was simply never carried across. Fixed in
+`lens()` this time, not in the renderer, so the chart, the hover readout and the data table cannot
+disagree about it — and **null, not 0**: there is no such thing as this period's forecast
+production, because the forecast line *begins* there.
+
+### The notes under the chart
+
+Owner: *"Let's fix/improve this UI as well"*, quoting the two paragraphs under the plot — **187
+words of 12.5px grey prose, 180px tall at 1400px.**
+
+⚠️ **Nothing is deleted, it is demoted.** Every clause in those paragraphs stops a specific
+misreading this repo has already paid for: a bar read against the left-hand axis is out by an order
+of magnitude, an absent bar reads as a month of no work, and *"performance-based (SPI 0.1)"* read as
+an authoritative calculation on the day it forecast 2034. So the three questions a planner asks
+*every* time are answered as inline facts, and the reasoning moves into one disclosure, shut by
+default:
+
+> `Duration-weighted · 591 activities` `Bars on the right axis · peak 19.6%/month`
+> `Forecast finish 2027-07-10 · plan + 3-day slip` — then *“How to read this chart”.*
+
+**Measured at 1400px: 180px → 55px, and 187 visible words → 19**, with 263 words available — *more*
+than before, because the forecast bar now needs explaining too. A `<details>`, not a tooltip: it
+prints, Chrome's own Find opens it, and it is keyboard-reachable for free.
+
+⚠️ **The compact preview no longer drops anything.** It used to lose the sentences naming the sheet
+and the way back to Automatic, because the paragraph was the tallest thing on it. Collapsed, both
+cost one line.
+
+⚠️ Three incidental fixes fell out of doing this: the mount is a **`<div>`, not a `<p>`** (the parser
+closes an open `<p>` at a `<details>` start tag, and the disclosure would have landed *outside* the
+note with nothing reported); the legend said **"Planned this month" in the quarterly and yearly
+views**; and the unsaved-edits badge now goes into the facts row rather than below the disclosure,
+where the one claim that must not be missed would have been last.
+
+### Planners see every module
+
+Owner: *"Let's revise module access. Planners should be able to access all modules."*
+
+`MODULE_ALL_ROLES = ['super_admin', 'admin', 'planner']` in auth.js, and `moduleVisible` is the one
+place that reads it. **admin is in the list too** — `ROLES` is ordered by privilege and a planner
+seeing a module their own admin cannot is not a permission model, it is a bug. `user` and `viewer`
+are unchanged. Still UI visibility only: no RLS policy, no grant.
+
+⚠️⚠️ **The real work was the four surfaces that RESTATED the rule**, any one of which would have
+gone stale silently:
+- `ui.js` and `modules-grid.js` each carried a `__role === 'super_admin'` fallback for a missing
+  `AppAuth`. That branch is unreachable (auth.js is in `<head>` on every page that loads them), so
+  they now **fail closed** and carry no copy at all.
+- admin.html's Modules cell asserted `isSuper ? "+ all modules" : "6 modules hidden"` — it would
+  have gone on reporting *6 modules hidden* for planners who could by then open all six. Both
+  branches come from `AppAuth.moduleVisible` now, and the tooltip names the modules actually hidden
+  and the role hiding them.
+- The modal's *"(super_admin by default)"* label sat beside a **ticked** box; a planner would
+  reasonably have read the tick as a per-user grant and unticked it. It reads *"(planner and above
+  by default)"*.
+
+⚠️ **The flag keeps its name and the name is now a lie.** `superAdminOnly` is six config entries and
+four read sites in a tree two other sessions are editing; a half-applied rename of a *permission*
+flag is worse than a stale name with the rule stated beside it. Named in config.js as the next quiet
+-tree job, not smuggled in here.
+
+⚠️ **If the planners on this team are recorded with role `user`, nothing changes for them** — this
+moves the `planner` role, not the people in it. That is a call on the Users table, not in code.
+
+### Verified
+
+- **28** forecast assertions (new), the old lens sliced out of the pinned **`4fde147`** and executed
+  beside the shipped one: the contrast confirms the base drew that bar at the full cumulative
+  actual, so the suite bites. The carry is asserted on the **numbers**, not on equivalence.
+- **24** module-access assertions (new), run against the shipped `auth.js` + `config.js`: planner
+  13/13, admin 13/13, user 7/13, viewer 7/13, both override directions intact, no profile → hidden.
+  A **gate** first proves the flag still restricts *somebody*, and a further check proves **no file
+  re-derives the rule** — with `/* */` and `//` stripped first, so the checker cannot match its own
+  explanation. Contrast on `4fde147`: planner saw 7 of 13.
+- `tools/test-scurve-forecast.js` 28/28, `tools/wiring-check.js` 139/139, the 148KB inline script
+  parses, CSS braces 226/226, 0 NUL bytes.
+- **Rendered in an iframe** at 1400px and 390px, both themes: chips 12.5px / 11px compact, radius
+  999px, caret rotating on open, **no horizontal scroll at 390px** (chips wrap to 3 rows, widest
+  292px), and all **nine** colours resolving per theme — chip border `rgb(220,219,219)` →
+  `rgba(255,255,255,.12)`, body ink `rgb(90,88,88)` → `rgb(185,183,183)` — which is what proves the
+  stylesheet is in the cascade.
+- ⚠️ The caret first measured as *not rotating*, twice. `* { transition:none }` **does not match
+  pseudo-elements**, so the transition was live and the read caught it at t=0. `*, *::before,
+  *::after` settles it. The harness rule this repo already records had a hole in it.
+- ⚠️ **Not verified signed in.** No real planner has opened a restricted module, and the forecast
+  bar has never been seen on the owner's own data — DEMO01 is at 0%, which is exactly the case that
+  hides it.
+
+`auth.js` (28 pages), `config.js` (29), `ui.js` (23), `modules-grid.js` (2) → `?v=20260917zb`;
+`MODULE_V` → `20260917zb`, sort-checked past `20260917z` across 38 tokens in the tree.
+
+### 2026-09-17 (g) — A 2027 programme forecast 2034, and the same line forecast "finished today" at the other end
+
+Owner, on DEMO01: *"finish is at Apr 23, 2027 but the s-curve has its own forecast finishing by
+2034. Let's check and debug."*
+
+#### The line
+```js
+var spi = plPctNow > 0 ? pctNow / plPctNow : 1;
+spi = Math.max(0.1, Math.min(spi, 3));
+var remMs = Math.max(0, +plannedEnd - +tnow);
+var autoFc = pctNow >= 100 ? tnow : new Date(+tnow + remMs / spi);
+```
+
+⚠️⚠️ **SPI IS MEANINGLESS AT BOTH ENDS OF A JOB, AND THIS USED IT AT BOTH.**
+
+* **At the start.** DEMO01 was three days into a 296-day programme with about 0.5% booked against
+  ~5% planned. SPI is then 0.1 — so the clamp did not *protect* anything, it **guaranteed a tenfold
+  stretch** of the remaining programme. 293 remaining days became 2,930, and the caption reported
+  `SPI 0.1, auto finish 2034-09-25` as though it were a calculation rather than a division by
+  something close to zero.
+* **At the end.** Past the planned finish, `remMs` is **zero**, so `now + 0 / spi` is the data date
+  — a project 40% complete and six months late forecast **finishing today**. Found while
+  negative-testing the first half; the test now pins it.
+
+One defect seen from two sides: an expression only meaningful in the middle of a job, used at its
+edges.
+
+#### What it does now
+Performance forecasting is **gated on maturity** (10% of the work — the conventional EVM threshold;
+SPI is unreliable below roughly a tenth and converges to 1.0 near the end whatever happens) and on
+there being remaining duration to stretch. Below that, the forecast is the planned finish plus the
+**slip already measured horizontally between the two curves** — the Earned Schedule read: *the plan
+said we would be here on the 15th, it is the 17th.* Bounded, derived from the same data, and never
+more wrong than the slip itself.
+
+⚠️ **The clamp is kept** and now only bites where SPI is used at all. A genuinely half-speed project
+must still forecast twice its remaining duration; a "fix" that made every forecast look like the
+plan would be worse than the bug, and a test asserts the stretch survives.
+
+⚠️ **Ahead of plan does not pull the finish in early on.** Slip is clamped at zero: three days of
+good numbers is not evidence the rest will go faster, and beating the programme on that basis is the
+same overconfidence as 2034 pointing the other way. Above the threshold, SPI may legitimately bring
+it in.
+
+⚠️ **The caption says which method ran.** It printed *"performance-based (SPI 0.1)"* for every auto
+forecast including the ones that were not performance-based — which is how the 2034 figure read as
+authoritative. `basis` now comes back as `spi` / `slip` / `done` and the wording follows it.
+
+#### There were two copies
+⚠️⚠️ Project Schedule's cockpit chart (`_ckSCurveCompute`) carried the **identical four lines** —
+its own comment says *"same math, verbatim"*, which is exactly how the copy stayed in step with the
+bug and not with a fix. One screen would have told a planner 2034 while the schedule beside it said
+2027. The decision is now `PDScurve.forecast`, called by both, and **a test asserts the arithmetic
+appears in exactly one file**.
+
+The cockpit passes no slip — it holds a monthly series and cannot measure the gap to a day — so its
+immature forecast is the planned finish. An honest answer where 2034 was not.
+
+#### Tests
+`tools/test-scurve-forecast.js` — new, **28 passed, 0 failed**, loading `scurve.js` the way the page
+does. Covers the reported DEMO01 case, the gate either side of 10%, the overrun case, pinned dates,
+ahead-of-plan, the slip measure itself, and the single-copy guard.
+
+⚠️ Negative-tested: restoring the old rule turns **6** red; removing the `remMs > 0` guard turns 2
+red and prints the forecast as the data date itself.
+
+⚠️ Two assertions failed first against a product that was correct — the test formatted dates with
+`toISOString()` while `pd()` parses to local midnight, so in Manila every date read one day early.
+The formatter was the bug, not the forecast.
+
+`scurve.js` → `?v=20260917a`.
+
+---
+
 ### 2026-09-17 (f) — The dropdown LIST finally matches the app, in CSS, with no JavaScript
 
 Owner: *"meeting description dropdown in Meetings module needs to be improved. We've already done a
@@ -1529,6 +2055,69 @@ identically in Manpower, Risk Register and Productivity Rates, and the chip's **
 Shared assets bumped: `portfolio-dash.js`/`.css` → `20260916s`, `ui.js` → `20260916r`,
 `dashboard.css` → `20260916b`, `issues-lessons/module.js` → `20260916a`,
 `risk-register`/`stakeholder-map` `module.css` → `20260916a`.
+### 2026-09-16 (e7) — The dropdown text was still unreadable because it was disabled, not because of the theme
+
+⚠️ **Re-lettered `(t)` → `(e7)` on merge — both sides independently picked `(t)` for 2026-09-16.**
+This entry was written and pushed before the concurrent session's own, unrelated `(t)` ("One table
+design across the app…") had merged; both landed under the same letter with no conflict on the
+letter itself (only on the surrounding CSS/HTML lines), which is exactly the trap this file's own
+header warns about. Resolved as the union — both entries kept whole, main's `(t)` unchanged, this
+one moved to the next free letter in the block it was building on top of (`…a5, a6, a7, b7, c7,
+d7` — `e7` continues that sequence without colliding with anything already in use for the date).
+
+Owner: *"the unreadable texts in dropdown still was not fixed. please fix."* Correct — (d)'s
+`color-scheme: light` fix was real and is still right, but it was answering a different question.
+
+#### ⚠️⚠️ THE CONTROL THE OWNER WAS LOOKING AT WAS `disabled`, AND NOTHING IN THIS FILE STYLED THAT STATE
+
+Measured before touching anything: **zero** `:disabled` rules exist for `.pd-select`, `.pd-input` or
+`.pd-textarea` anywhere in `dashboard.css` — the only `:disabled` rule in the whole file is
+`.pd-nb-ed:disabled` on the unrelated notebook editor. So a disabled control fell straight through to
+the **browser's own** disabled rendering, with none of this app's own `color`/`background` reaching it.
+
+On WebKit — every iPhone — that native rendering dims a disabled control's text through
+**`-webkit-text-fill-color`**, not through `color`, and applies its own `opacity` on top. `color:
+var(--pd-ink)` on `.pd-select` (line 789) has never had any effect on a disabled one; the (d) fix's
+`color-scheme: light` has even less to do with it — that property tells the browser which PALETTE to
+use for an *enabled* control's native chrome on a theme mismatch, not how a *disabled* control's own
+text is painted.
+
+And the very control the report describes now has a disabled state to trip on it: `admin.html`'s
+Role and Department `<select>` (2026-09-16 (c)'s `lockAttr`, `<select ... disabled title="Only a
+super_admin can change a super_admin's account">`) is disabled precisely whenever a plain admin views
+a super_admin's row — which is exactly the screen that was screenshotted. The same gap was reachable
+on five other module pages that already carry a `disabled` `.pd-select` (stakeholder-map,
+risk-register, project-schedule, issues-lessons, progress-photos) — this was never admin-only, only
+admin.html was the one anyone had looked at.
+
+⚠️ `opacity: 1` and `-webkit-text-fill-color` are both required, and `color` alone is not enough —
+this is the standard, well-documented WebKit gap for disabled/read-only form controls, and it is
+exactly what made the earlier `color-scheme` fix look like it "did nothing": it was correct and
+irrelevant to what was actually on screen.
+
+```css
+.pd-input:disabled, .pd-select:disabled, .pd-textarea:disabled {
+  opacity: 1; -webkit-text-fill-color: var(--pd-muted); color: var(--pd-muted);
+  background: var(--pd-line); cursor: not-allowed;
+}
+```
+
+`--pd-muted` / `--pd-line` are the same tokens `.pd-field label` and every border already use, so a
+locked control now reads as *muted*, not merely as the same white box with invisible text.
+
+### Verified
+
+Brace balance holds on `dashboard.css` (578/578), 0 NUL bytes. `node tools/wiring-check.js` —
+**139 passed, 0 failed**, 3,852 cross-module references, every asset on one version. `admin.html`'s
+inline script still parses.
+⚠️ **Not verified signed in, and not verified on a real iPhone** — no live login or real iOS device is
+reachable from this environment; the fix targets the documented, standard WebKit mechanism for a
+disabled control's text (`-webkit-text-fill-color` + `opacity`), the same class of iOS-only override
+this file already carries for `input[type="date"]`.
+
+`dashboard.css?v=` → `20260917zb` (29 pages, shared, re-derived past both this branch's own `20260916t`
+and the `20260917z` main had reached by the time this merged — sort-checked past both). No
+`MODULE_V` bump — a shared stylesheet token-only change, no module `index.html` changed structurally.
 
 ### 2026-09-16 (s) — The last five cursor-less reads, and the two the checker could not see at all
 

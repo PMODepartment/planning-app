@@ -130,6 +130,66 @@ window.PDClaims = (function () {
     return 0;
   }
 
+  /* ==== WHAT THE POSITION LOOKED LIKE ON A PAST DATE =========================================
+     Owner 2026-09-17, on the Contracts & Claims dashboard: everything on it is a snapshot —
+     *"Claims exposure ₱20.70M"* says nothing about whether that is up or down, which is the first
+     thing anyone asks. This derives the history from the dates the register ALREADY stores, so it
+     needs no new table, no snapshotting job and no migration.
+
+     ⚠️⚠️ A RECORD IS PENDING AT T IF IT HAD BEEN SUBMITTED BY THEN AND NOT YET DECIDED.
+     That is the only honest reading of these columns, and it is exactly the same rule `isPending`
+     applies to today — walked backwards.
+     ⚠️ WHEN a record was decided is `date_approved`, and for a disapproved one that never
+     got an approval date, `date_evaluated`. A record whose status is decided but which carries
+     NEITHER date is **undatable**: we cannot say when it stopped being pending, so it is excluded
+     from the series and COUNTED, the same discipline the ageing band already applies to a pending
+     record that was never submitted. Quietly assuming a date would draw a confident wrong line.
+     ⚠️ Shortfall accrues at the moment of decision, so it enters the series on the same
+     date the record leaves `pending`. Exposure = pending + shortfall, the same pair the dashboard
+     and the portfolio ranking use; measuring the trend on a different basis from the headline is
+     the mistake `valueOf` exists to prevent. */
+  function decidedOn(r) {
+    if (!isDecided(r)) return null;
+    return r.date_approved || (isDisapproved(r) ? r.date_evaluated : null) || null;
+  }
+  function exposureAt(rows, iso, valueKey, subKey, apprKey) {
+    var pend = 0, short = 0, undated = 0;
+    (rows || []).forEach(function (r) {
+      if (!r) return;
+      var dec = decidedOn(r);
+      if (isDecided(r) && !dec) { undated++; return; }
+      var sub = r.date_submitted;
+      if (!sub || sub > iso) return;                 // not yet with the client on that date
+      if (!dec || dec > iso) { pend += valueOf(r, valueKey); return; }
+      short += shortfall(n(r[subKey]), n(r[apprKey]));
+    });
+    return { pending: pend, shortfall: short, total: pend + short, undated: undated };
+  }
+
+  /* `months` month-ENDS up to and including the month `today` falls in.
+     ⚠️ Month ends, not month starts: a record submitted on the 3rd and decided on the 20th
+     of the same month never existed at either month start, and a series built on starts would show
+     a flat line through a month that was actually busy. */
+  function exposureSeries(rows, months, valueKey, subKey, apprKey, today) {
+    var t = today || todayISO();
+    var y = +t.slice(0, 4), m = +t.slice(5, 7);
+    var out = [], nMonths = months || 12;
+    for (var i = nMonths - 1; i >= 0; i--) {
+      var yy = y, mm = m - i;
+      while (mm <= 0) { mm += 12; yy--; }
+      /* Day 0 of the NEXT month is the last day of this one — no month-length table, and February
+         in a leap year is the Date object's problem rather than ours. */
+      var end = new Date(Date.UTC(yy, mm, 0));
+      var iso = end.toISOString().slice(0, 10);
+      var at = exposureAt(rows, iso, valueKey, subKey, apprKey);
+      at.iso = iso;
+      at.label = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mm - 1] +
+                 ' ' + String(yy).slice(2);
+      out.push(at);
+    }
+    return out;
+  }
+
   /* Returns one entry per bucket (always all four, so a chart has a stable axis)
      plus `unsent` and `oldest`. `valueKey` may be one key or a LIST tried in order
      — pass the same list `pendingValue` gets, or the bars will not add up to the
@@ -217,6 +277,7 @@ window.PDClaims = (function () {
     daysBetween: daysBetween, todayISO: todayISO, agingOf: agingOf,
     bucketOf: bucketOf, agingBuckets: agingBuckets,
     stageDays: stageDays, pendingValue: pendingValue,
-    typeOf: typeOf, ofType: ofType, claimsOnly: claimsOnly, contractValue: contractValue
+    typeOf: typeOf, ofType: ofType, claimsOnly: claimsOnly, contractValue: contractValue,
+    decidedOn: decidedOn, exposureAt: exposureAt, exposureSeries: exposureSeries
   };
 })();

@@ -108,6 +108,48 @@ window.ContractsClaims = (function () {
   /* A3's tail. Loaded tolerantly — `packages` arrives with
      2026-08-19-packages.sql, and until it is run the picker is simply absent. */
   var PKGS = [];
+  /* ==== WHO IS CHASING EACH RECORD ===========================================================
+     Owner 2026-09-17: the ageing band could say a record had been with the client for 45 days and
+     the register could say what it was worth, but nothing said WHOSE it was. "2 pending, oldest 45
+     days" is a fact; "Alvarez has two, the older 45 days" is an instruction.
+     ⚠️ `PDb.getPeople()` — the `app_people()` RPC — never `getAllUsers()`, which under
+     `users_self_read` returns ONLY YOUR OWN ROW to a non-admin, so a picker built on it silently
+     offers a one-person list to every planner. That note is on `getPeople` itself.
+     ⚠️ Empty when the migration has not been run, and the form falls back to free text
+     rather than losing the field. Same tolerance the roster itself applies. */
+  var PEOPLE = [];
+  function peopleNamesOf(ids) {
+    if (!ids || !ids.length) return [];
+    var by = {};
+    PEOPLE.forEach(function (p) { by[String(p.id)] = p.name; });
+    return ids.map(function (id) { return by[String(id)]; }).filter(Boolean);
+  }
+  /* The text half of the pair the migration describes: resolved names, plus anyone named who has
+     no account. ⚠️ issues-lessons and minutes-of-meeting each hold their own copy of this
+     function. A third copy is not the answer and this one is deliberately the smallest that works;
+     converging all three belongs in its own change, not in a feature. */
+  function ownerText(ids, extra) {
+    var parts = peopleNamesOf(ids);
+    var t = (extra || '').trim();
+    if (t && parts.indexOf(t) < 0) parts.push(t);
+    return parts.join('; ');
+  }
+  function ownerOf(r) { return ownerText(r && r.owner_ids, r && r.owner) || ''; }
+  /* ⚠️⚠️ THE INVERSE, AND IT IS LOAD-BEARING. `owner` on a saved record is ALREADY
+     `ownerText(owner_ids, extra)`. Seeding the free-text box with that whole string instead of just
+     the typed extra makes every save re-prepend the resolved names onto an already-name-bearing
+     string — "Alvarez; Alvarez; Cruz" after three edits. That exact bug was reported on the Issues
+     register's champion field and then reproduced when the pattern was copied to Minutes of
+     Meeting; it is not being introduced a third time. */
+  function ownerExtraOf(r) {
+    if (!r) return '';
+    var named = {};
+    peopleNamesOf(r.owner_ids).forEach(function (n) { named[n] = 1; });
+    return String(r.owner || '').split(';')
+      .map(function (x) { return x.trim(); })
+      .filter(function (x) { return x && !named[x]; })
+      .join('; ');
+  }
   /* Every project id in the app — read once, used only to refuse a package that restates
      a project (see wizard.js's `codeConflict`). Tolerant like PKGS: a failed read leaves
      it empty and the guard simply finds fewer conflicts, never a false one. */
@@ -627,10 +669,22 @@ window.ContractsClaims = (function () {
         store is a genuine failure and still stops the save loudly — silently discarding
         money is the one outcome worse than an error. The retry is bounded, and it names
         the migration either way so the schema still gets fixed. */
+  /* ⚠️⚠️ EMPTY, NOT ONLY NULL — AND THE DIFFERENCE IS A BROKEN SAVE. This dropped a column
+     the database does not have ONLY when its value was `null`, and refused the save otherwise, on
+     the sound reasoning that silently discarding a claim's figure is worse than refusing. The
+     Responsible field (2026-09-17) sends `owner_ids: []` and `owner: ''` when nobody is assigned —
+     neither of which is `null` — so on a database without that migration EVERY save would have
+     failed, including the overwhelming majority that never touched the new field.
+     ⚠️ An empty array and an empty string carry no information, so dropping them loses
+     nothing and the old reasoning does not apply. A value that was actually ENTERED still refuses,
+     with `recordFailMsg` naming the migration to run — that half is unchanged and deliberate. */
+  function _isEmptyVal(v) {
+    return v === null || v === '' || (Array.isArray(v) && v.length === 0);
+  }
   function _dropMissingNull(payload, err) {
     var m = /(?:column|find the)\s+'?"?([a-z_]+)"?'?\s+(?:column\s+)?of/i.exec(err && err.message || '');
     var col = m && m[1];
-    if (!col || !(col in payload) || payload[col] !== null) return null;
+    if (!col || !(col in payload) || !_isEmptyVal(payload[col])) return null;
     var next = Object.assign({}, payload); delete next[col];
     return next;
   }
@@ -679,7 +733,13 @@ window.ContractsClaims = (function () {
         contract save silently dropped its package link, the register listed every contract
         as "not linked to a package", and the toast sent whoever read it to a migration
         that was already applied and would have changed nothing. */
-  var COL_MIGRATION = { package_id: 'migrations/2026-08-25-package-adoption.sql' };
+  var COL_MIGRATION = {
+    package_id: 'migrations/2026-08-25-package-adoption.sql',
+    /* ⚠️ Both of these, not just one: `owner_ids` and `owner` arrive together and a planner told
+       to run a migration for one and then again for the other would rightly lose patience. */
+    owner_ids: 'migrations/2026-09-17-contracts-claims-owner.sql',
+    owner:     'migrations/2026-09-17-contracts-claims-owner.sql'
+  };
   var DEFAULT_MIGRATION = 'migrations/2026-07-20-contracts-claims-full.sql';
   function migrationsFor(cols) {
     var seen = {};
@@ -1098,6 +1158,26 @@ window.ContractsClaims = (function () {
             '</p>' + CCAffected.pickerHTML() +
           '</div>'
         : '') +
+      /* ==== RESPONSIBLE ====================================================================
+         ⚠️⚠️ ONE PERSON IN THE FORM, AN ARRAY IN THE COLUMN, and that is deliberate rather
+         than an oversight. `owner_ids` is `uuid[]` because a claim genuinely can be run by two
+         people and a single-uuid column would drop the second on the first save — the reasoning is
+         on the migration. The FORM offers one, because that is what this register's records
+         actually have, and a chips picker for a field that holds one name is ceremony. When two
+         becomes normal, the picker changes and the schema does not.
+         ⚠️ The free-text box beside it is not a fallback for a missing roster — it is for a
+         person who will never have an account: a consultant QS, the client's own surveyor. Both are
+         written on save so the id half and the text half cannot disagree. */
+      '<div class="cc-sec">Responsible</div>' +
+      '<label>Who is chasing this<select id="cc-f-own"><option value="">— nobody yet —</option>' +
+        PEOPLE.map(function (p) {
+          var on = (e.owner_ids || []).map(String).indexOf(String(p.id)) >= 0;
+          return '<option value="' + esc(p.id) + '"' + (on ? ' selected' : '') + '>' + esc(p.name) +
+                 (p.department ? ' · ' + esc(p.department) : '') + '</option>';
+        }).join('') +
+      '</select></label>' +
+      '<label>… or a name with no account<input id="cc-f-ownx" type="text" placeholder="e.g. the consultant QS" value="' +
+        esc(ownerExtraOf(e)) + '" /></label>' +
       '<label class="cc-wide">Remarks<textarea id="cc-f-rem">' + esc(e.remarks || '') + '</textarea></label>' +
       /* ⚠⚠ FILES ON EVERY TYPE, no `data-only`. Owner 2026-09-15: *"an attach a file feature in
          the contracts, claims, eot, and change order"* — all four. A signed contract, a variation
@@ -1344,6 +1424,11 @@ window.ContractsClaims = (function () {
         date_submitted: t === 'Contract' ? null : v('cc-f-subd'),
         date_evaluated: t === 'Contract' ? null : v('cc-f-evald'),
         date_approved: t === 'Contract' ? null : v('cc-f-apprd'),
+        /* ⚠️ BOTH HALVES, ALWAYS — see the migration. The ids are what a worklist query can act
+           on; the text is what a printed sheet shows and is the only home for a person with no
+           account. Writing one without the other is how they come to disagree. */
+        owner_ids: (function () { var id = v('cc-f-own'); return id ? [id] : []; })(),
+        owner: ownerText(v('cc-f-own') ? [v('cc-f-own')] : [], v('cc-f-ownx')),
         remarks: v('cc-f-rem'), updated_at: new Date().toISOString()
       };
       // Only the pipeline belonging to this type is written; the other is nulled
@@ -1682,6 +1767,11 @@ window.ContractsClaims = (function () {
     } else {
       PKGS = [];
     }
+    /* ⚠️ The people roster, for the Responsible field. `PDb.getPeople()` caches for the page's
+       lifetime, so this is one RPC per session however many times a project is switched, and it
+       returns `[]` rather than throwing when the migration that defines `app_people()` has not been
+       run — the form then falls back to the free-text box beside the picker. */
+    try { PEOPLE = await PDb.getPeople(); } catch (e) { PEOPLE = []; }
     // Cheap (a few dozen rows) and read once per project switch, so the wizard's
     // per-keystroke conflict check never touches the network. Skipped in portfolio scope —
     // the wizard (raising a new record) is not reachable there anyway, since writes are blocked.

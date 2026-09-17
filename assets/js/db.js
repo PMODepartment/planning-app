@@ -711,9 +711,11 @@
       var { error } = await sb().rpc('admin_delete_user', { target: id });
       if (error) throw error;
     },
-    async updateLastLogin(id) {
-      try { await sb().from('users').update({ last_login: new Date().toISOString() }).eq('id', id); } catch (e) {}
-    },
+    /* ⚠ `updateLastLogin` was RETIRED on 2026-09-17, not left as a spare. Its one caller
+       (index.html's password handler) covered only half the sign-ins, and the write moved into
+       `AppAuth.requireLogin`, which every authenticated page reaches whatever the provider. An
+       exported writer with no callers is the thing the next editor calls, and then there are two
+       writers for one column again. */
   };
 
   // ---- Formatters (shared) ----

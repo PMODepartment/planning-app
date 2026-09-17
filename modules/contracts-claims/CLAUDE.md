@@ -1,6 +1,87 @@
 # Module: contracts-claims
 
-## 2026-09-17 (c) — The two sessions' dashboards collide a second time; main's design wins this round, its two new figures ported into the simple table
+## 2026-09-17 (e) — A third collision, same shape: main kept extending the design (c) below already discarded, and this round found a real bug hiding inside it
+
+Owner: *"resolve merge conflict."* `origin/main` had moved 19 commits further (to `0f82c1b4`),
+including commit `1ce98293` — the (c) entry directly below this one, "Trend, the time position, and
+who is chasing what" — built on top of the SAME verdict-line `ccDashHTML` that (d) below (formerly
+lettered (c), see its own re-lettering note) had already merged out in favour of this session's
+plainer, single-table design. Third occurrence of the identical collision in three days: main keeps
+building on a dashboard shape this branch's owner explicitly rejected, and every extension to it has
+to be discarded again at the next merge.
+
+**Resolved the same way as (d): the simple table stays, `main`'s verdict-line rebuild — now carrying
+`ccWhoHTML`, `ccProgrammeHTML`, `ccTrendHTML` and `ccDashPkgHTML` on top of the parts already
+discarded once — is merged out again.** `module.css` auto-merged cleanly (the conflict sat in
+`module.js` only) and pulled in the new `.cc-dash-verdict` / `.cc-who-*` / `.cc-trend` / `.cc-tr-*` /
+`.cc-dash-facts` rules regardless; all removed, grepped for zero remaining selectors afterward.
+
+⚠️⚠️ **BUT THIS TIME THE DISCARDED CODE HELD A REAL, LIVE BUG — a raw NUL byte where the sentinel
+key needed an escape.** `ccWhoHTML`'s "unassigned" bucket was keyed on `ownerOf(r) || '<NUL>none'`
+(seven occurrences, lines 791/792/804/809×3/820 of the pre-resolution file) — a literal `\x00`
+control character in the source, the identical trap this repo's own root `CLAUDE.md` warns about
+under `exactKey` and the 2026-09-14 schedule floor-labels entry: *"write the escape, not the raw
+byte."* `file` would have called the module a binary file the moment that code shipped, exactly as
+it did here (`grep` reported `modules/contracts-claims/module.js: binary file matches` on the first
+pass). It is moot for THIS branch — the whole function is discarded — but it means `main`'s own copy
+of `ccWhoHTML` ships that byte until someone there fixes it. Recorded here so a future merge does
+not have to re-diagnose it from scratch, and reported rather than silently repaired on a branch that
+does not carry the function.
+
+⚠️⚠️ **WHAT SURVIVES, AGAIN, IS THE PART THAT WAS NEVER INSIDE THE DISCARDED FUNCTION.** The
+"Responsible" field infrastructure — `ownerOf` / `ownerText` / `ownerExtraOf` / `peopleNamesOf` /
+`PEOPLE`, the record dialog's Responsible picker, `_dropMissingNull`'s empty-value gate
+(`owner_ids: []` / `owner: ''`), `COL_MIGRATION`'s two new entries, and
+`migrations/2026-09-17-contracts-claims-owner.sql` — sits OUTSIDE the conflicted region entirely and
+merged in with zero markers. Confirmed by grep against `HEAD` before this merge: none of it existed
+on this branch, so all of it is `main`'s, and none of it depends on the discarded `ccWhoHTML`/
+`ccProgrammeHTML`/`ccTrendHTML` aggregate views — it is the per-record field and its save path, not
+the dashboard summary built on top of it. `modules/contracts-claims/test-record.js` (new, 24
+assertions) tests exactly this surviving half and passes unmodified against the merged file.
+
+⚠️ **`assets/js/claims.js` merged with zero conflicts too, and `PDClaims.exposureSeries` — the shared
+engine behind the discarded `ccTrendHTML` — is live in it.** Same shape as (d)'s `oldestRow` finding:
+the shared rules engine gained genuine new capability that has nothing to do with which module-local
+dashboard reads it. `tools/test-claims.js` **40 passed, 0 failed** (was 15), confirming
+`exposureSeries` on its own terms — undatable records excluded and counted, month-END buckets, the
+leap-year and year-boundary cases — independent of whether this module ever draws a chart from it.
+
+### Verified
+
+`node --check` clean on `module.js` (0 NUL bytes — confirmed by byte-scanning the resolved file, not
+just re-running `grep`, since the earlier false "binary file" report was itself evidence the naive
+tool cannot be trusted here); `module.css` verified **byte-identical** to this branch's already-
+committed blob via `git hash-object` once the newly-auto-merged dead rules were removed, not merely
+"unchanged in shape"; grepped `module.js` for `ccWhoHTML`, `ccProgrammeHTML`, `ccTrendHTML`, `ccDashPkgHTML`,
+`ccDashFill`, `cc-dash-verdict`, `cc-who`, `cc-trend`, `cc-tr-` — zero hits outside this entry's own
+prose. `tools/test-claims.js` 40/0, `modules/contracts-claims/test-record.js` 24/0 (both unmodified
+by this merge, run to confirm the surviving shared/record-level code is intact).
+Repo-wide sweep for leftover conflict markers across all six conflicted files (`module.js`,
+`module.css`, `index.html`, this file, `assets/js/modules-grid.js`, `dashboard.html`, `modules.html`):
+zero, apart from prose inside this entry and (d) quoting the marker names themselves.
+⚠️ Not verified signed in — no live project read since the merge.
+
+`module.js` → `?v=20260917e` — content genuinely changed (the "Responsible" field infrastructure and
+the comma/tooltip fixes from (a)/(b) are new relative to this branch's own last commit), and the
+token matches neither this branch's prior `c` nor `main`'s.
+⚠️⚠️ `module.css` is **NOT** bumped, and checking rather than assuming this saved a wasted cache
+invalidation: `git hash-object` on the resolved file matches this branch's already-committed blob
+exactly — the CSS `main` added duplicated what an earlier round already deleted, so removing it a
+second time reverted the file to byte-identical content. It stays on `?v=20260917c`, its existing,
+correct token; bumping an asset whose bytes did not move invalidates every page's cache for nothing.
+`assets/css/dashboard.css` → `?v=20260917za`, taken verbatim from `main` since this branch made no
+changes to that file at all. `assets/js/modules-grid.js`'s `MODULE_V` fallback, `dashboard.html` and
+`modules.html` → `20260917zg`, past `main`'s own `20260917zf` (chosen for an unrelated module
+elsewhere in the app).
+
+## 2026-09-17 (d) — The two sessions' dashboards collide a second time; main's design wins this round, its two new figures ported into the simple table
+
+⚠️ **Re-lettered `(c)` → `(d)` when a third round of merges landed.** This entry and the (c) entry
+directly below it (`"Trend, the time position, and who is chasing what"`, from `origin/main`'s commit
+`1ce98293`) were both independently written as `(c)` for 2026-09-17 — this one on this branch,
+describing the merge below; that one already published to `main`. `main`'s copy keeps the letter it
+shipped with; this one moves to the next free letter, same rule as the 2026-09-16 `(f)`→`(g)`
+collision this file already records. Content is otherwise untouched from when it was written.
 
 Owner: *"resolve merge conflicts."* `origin/main` had moved 37 commits ahead overnight, including a
 second round of Dashboard work from the concurrent thread — (a) and (b) below — built directly on
@@ -56,6 +137,88 @@ conflicted files (`module.js`, `index.html`, this file): zero.
 verbatim — the merge carries `main`'s 37 commits' worth of unrelated changes to the rest of both
 files, and `module.css` was edited again after the clean auto-merge to drop the dead scope-of-works
 rules). `MODULE_V` → `20260917c`, re-derived past the deployed `20260916zc` fallback.
+
+## 2026-09-17 (c) — Trend, the time position, and who is chasing what
+
+**Run `migrations/2026-09-17-contracts-claims-owner.sql`.** The owner picked items 2, 3 and 4 off
+the suggestion list from (b).
+
+### 2 · Is it getting better or worse?
+Every figure on this page was a **snapshot**. *"Claims exposure ₱20.70M"* does not say whether that
+is up or down, which is the first thing anyone asks about a commercial position — and the second is
+*since when*.
+
+⚠️⚠️ **Derived from the dates the register already stores — no new table, no nightly job, no
+migration.** `date_submitted` says when a record went to the client and `date_approved` /
+`date_evaluated` say when it came back, so the position on any past date is computable from rows
+already in memory. A snapshot table would be a second source of truth that can disagree with the
+register it came from.
+
+⚠️ **A decided record with NO decision date is undatable, and is EXCLUDED and COUNTED** — the same
+discipline the ageing band applies to a pending record that was never submitted. Assuming a date
+would draw a confident wrong line. The note under the chart says how many were left out.
+
+⚠️ **Month ENDS, not month starts.** A record submitted on the 3rd and decided on the 20th of the
+same month never exists at either month start, and a series built on starts would draw a flat line
+through a month that was actually busy.
+
+The rule lives in `PDClaims.exposureSeries`, not in the module — the portfolio view ranks projects
+on this same pair, and a trend computed locally is how two screens come to tell different stories
+about one register.
+
+### 3 · The time position, which the page only ever half-stated
+The KPI strip said *Time granted: None* and the pipeline table carried the EOT day counts, but
+nothing said what any of it MEANT: 30 days is trivial or a crisis depending on whether the contract
+runs for 1,090 days or 60.
+
+⚠️ **This is the time analogue of the revised contract sum from (b), and it is built the same
+way**: the signed completion date stays where a reader expects it, and the revised one — original +
+granted — is stated beside it. Approved extensions have moved the contractual completion date; a
+page that shows only the original describes a contract that no longer exists. Verified in a harness:
+completion 2027-04-23 + 30d granted = **revised 2027-05-23**, and 30 of a 569-day contract = **5.3%**.
+
+⚠️ The dates come from the **packages**, which is where a contract's own start and finish live.
+With no package dates the day counts still print and the ratio and revised date do not — an
+extension expressed as a percentage of an unknown duration is a number with no meaning.
+
+### 4 · Who is chasing what
+⚠️⚠️ **"Unassigned" is a ROW, and it sorts FIRST.** A worklist that names the people who have work
+and quietly omits the records nobody owns is describing a tidier project than the one that exists —
+spotting the pile with no name on it is the whole value of the band.
+
+⚠️ **Pending only.** A decided record needs nobody to chase it, and including settled work would
+make the busiest-looking person the one who has finished the most. ⚠️ EOT records are counted in the
+record count but excluded from the money column: they carry DAYS, and adding a day count into a peso
+total is the mistake this module's key-pair convention exists to make impossible.
+
+### The two things that could have broken every save
+⚠️⚠️ **`_dropMissingNull` dropped only `null`.** The Responsible field sends `owner_ids: []` and
+`owner: ''` when nobody is assigned — neither of which is `null` — so on a database without the new
+migration **every save would have failed**, including the overwhelming majority that never touched
+the new field. It now drops EMPTY values (`null`, `''`, `[]`), which carry no information. A value
+that was actually entered still refuses, with the toast naming the migration; ⚠️ `0` is a figure,
+not an absence, and is still never dropped.
+
+⚠️⚠️ **`ownerExtraOf` is the inverse of `ownerText`, and it is load-bearing.** `owner` as stored
+is already `ownerText(ids, extra)`; seeding the form's free-text box with that whole string makes
+every save re-prepend the resolved names — *"Alvarez; Alvarez; Cruz"* after three edits. That exact
+bug was reported on the Issues register's champion field and then reproduced when the pattern was
+copied to Minutes of Meeting. It is not being introduced a third time.
+
+### Tests
+`tools/test-claims.js` **40 passed, 0 failed** (was 15) — the trend derivation, including the
+undatable record, the `eval` over `sub` key order, month ends, February in a leap year and the year
+boundary. `modules/contracts-claims/test-record.js` **24 passed, 0 failed**, new — the save gate and
+the name round trip, both sliced from `module.js` rather than retyped.
+
+⚠️ Negative-tested. Restoring the null-only gate and the naive extra turns **7** assertions red, and
+the round-trip failures print the literal *"Alvarez; Alvarez; Alvarez; The consultant QS"*.
+
+All three bands verified rendering in a browser from the shipped functions. ⚠️ One wording fix came
+out of looking at it: the legend said *"the darker part of a column is the shortfall"*, and the
+shortfall is `--pd-red` on `--pd-warn` amber — brighter, not darker.
+
+`claims.js` → `?v=20260917b`; module → `?v=20260917c`.
 
 ## 2026-09-17 (b) — The dashboard states the revised contract sum, and names the record to chase
 

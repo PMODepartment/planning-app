@@ -831,6 +831,25 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
    still wins outright. */
 .pd-input, .pd-select { min-height: 32px; }
 .pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-focus); outline-offset: -1px; }
+/* ⚠️⚠️ NO `:disabled` RULE EXISTED FOR ANY FORM CONTROL IN THIS FILE, so a disabled
+   `.pd-select`/`.pd-input`/`.pd-textarea` fell all the way back to the BROWSER'S OWN
+   disabled rendering — and on WebKit (Safari, so every iPhone) that renders a disabled
+   control's text through `-webkit-text-fill-color` at a heavily dimmed system colour,
+   which `color:` above has NO effect on and the 2026-09-16 `color-scheme: light` fix
+   has NOTHING to do with (that fixes native chrome for an ENABLED control on a theme
+   mismatch; it does not touch a disabled control's own text rendering at all). This is
+   the actual cause of "the unreadable texts in dropdown still was not fixed": the
+   controls the report is about are admin.html's locked Role/Department `<select>`
+   (2026-09-16 (c), `lockAttr` — disabled whenever a plain admin views a super_admin's
+   row), and a disabled control was never styled here, on any page, at all.
+   ⚠️ `-webkit-text-fill-color` AND `opacity: 1` are both required. Safari dims a
+   disabled/read-only control by writing its own colour through `-webkit-text-fill-color`
+   (never `color`) and by applying its own reduced `opacity` to the box — setting `color`
+   alone, which is what every other rule in this file does, changes nothing on iOS. */
+.pd-input:disabled, .pd-select:disabled, .pd-textarea:disabled {
+  opacity: 1; -webkit-text-fill-color: var(--pd-muted); color: var(--pd-muted);
+  background: var(--pd-line); cursor: not-allowed;
+}
 
 /* ==== THE DROPDOWN LIST, AT LAST STYLEABLE ==================================================
    Owner 2026-09-17: *"meeting description dropdown in Meetings module needs to be improved — we've
