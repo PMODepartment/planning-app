@@ -47,7 +47,7 @@
 .ms-tab:hover:not(.active) { background:var(--pd-bg); }
 .ms-tab.active { background:var(--pd-red); color:#fff; }
 
-.ms-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.ms-topbar-tools { display:flex; align-items:center; margin-left:auto; }
 .ms-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
   background:transparent; border-color:transparent; font-size:var(--ms-fs-base); }
 /* ⚠️⚠️ THE HOVER RESTATEMENT IS GONE, AND IT WAS A REAL BUG, NOT JUST DUPLICATION.
@@ -60,7 +60,6 @@
    ⚠️ The hover now comes from `.pd-modulebar .pd-btn:not(.pd-btn-primary):hover` in
    dashboard.css, which carries that exclusion. Do not restate it here. */
 .ms-topbar-tools .pd-btn.ms-tb-labeled { width:auto; padding:0 12px; gap:6px; }
-.ms-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 .ms-clearbtn { color:var(--pd-bad-text); }
 .ms-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
 

@@ -298,9 +298,21 @@ function fakeNetwork(win, fixtures) {
 }
 
 /* =================================================================== mounting a view */
-async function mountView(win, key) {
+/* ⚠️⚠️ `pf` DEFAULTS TO "EVERY PROJECT TICKED", AND THAT IS NOT THE PRODUCT DEFAULT.
+   Ten of the eleven views treat an empty filter as the whole portfolio, so for them ticking
+   everything and ticking nothing are the same page and this changes no assertion. The S-Curve does
+   NOT — `emptyMeansNone` makes it open on a "pick some projects" prompt (owner, 2026-09-17) — so
+   without this its whole suite would measure the prompt instead of a curve.
+   ⚠️ Pass `[]` to test the opening state itself; pass specific ids to test a narrowed one.
+   The default is the state a planner reaches one click later, which is what these tests are about. */
+async function mountView(win, key, pf) {
   const host = win.document.createElement('div');
   win.document._byId['po-dash-host'] = host;
+  if (win.PortfolioDash._setPfSel) {
+    win.PortfolioDash._setPfSel(pf === undefined
+      ? win.PortfolioDash._projects().map(p => p.id)
+      : pf);
+  }
   const api = await win.PortfolioDash.mount(key, host, {});
   return { host, api };
 }
@@ -447,6 +459,37 @@ async function suite(dashSrc, assetsDir, label, expectMoved) {
     const m = await mountView(win, 'scurve');
     return { win, api: m.api, chart: () => win.document.getElementById('po-sc-chart').innerHTML,
              bd: () => win.document.getElementById('po-sc-bd') };
+  }
+
+  /* ---- and the state it OPENS in -------------------------------------------------- */
+  {
+    const win = buildPage(dashSrc, assetsDir);
+    fakeNetwork(win, { tables: {}, agg: { P1: AGG_P1, P2: AGG_P2 }, trade: null,
+                       schedule: { P1: [], P2: [] } });
+    win.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(win, 'scurve', []);                 // nothing ticked: a fresh open
+    const st = win.PortfolioDash._pfState();
+    eq(st.emptyMeansAll, false, tag + 'open: the S-Curve treats an empty filter as NO projects');
+    eq(st.scoped.length, 0, tag + 'open: so it scopes to nothing and reads nothing');
+    eq(st.label, 'Select projects…', tag + 'open: and the button asks for a choice');
+    const chart = win.document.getElementById('po-sc-chart').innerHTML;
+    has(chart, 'Choose the projects', tag + 'open: the chart area says what to do next');
+    ok(!/No projects match/.test(chart),
+       tag + 'open: and does NOT blame a filter the planner never set');
+    /* ⚠️⚠️ THE OTHER TEN VIEWS MUST NOT HAVE CHANGED. This is the assertion that makes the
+       one above safe: `emptyMeansNone` is per-view, and a flag left set from a previous mount
+       would silently empty every other portfolio page. Mounting a second view in the SAME window
+       is the case that would catch it. */
+    const w2 = buildPage(dashSrc, assetsDir);
+    fakeNetwork(w2, { tables: { risks: [] }, agg: {}, trade: null, schedule: {} });
+    w2.PortfolioDash._setProjects(PROJECTS, []);
+    await mountView(w2, 'scurve', []);
+    eq(w2.PortfolioDash._pfState().emptyMeansAll, false, tag + 'open: (scurve mounted first)');
+    await mountView(w2, 'risk', []);   // same empty filter, different meaning
+    const st2 = w2.PortfolioDash._pfState();
+    eq(st2.emptyMeansAll, true, tag + 'open: a later view resets to "empty means ALL projects"');
+    eq(st2.scoped.length, PROJECTS.length, tag + 'open: and sees the whole portfolio again');
+    eq(st2.label, 'All projects', tag + 'open: with the button back to "All projects"');
   }
 
   /* ---- the bars ------------------------------------------------------------------ */

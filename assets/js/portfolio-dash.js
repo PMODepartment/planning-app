@@ -211,7 +211,23 @@
      ⚠ EMPTY MEANS EVERY PROJECT, NOT NO PROJECT. `{}` is the default and the "All projects" state;
      "Clear" returns to it rather than to an empty view. A filter whose cleared state shows nothing
      is one a planner has to fight to get out of. */
-  var pfSel = {};             // {} = every project in scope. NEVER a selection of none.
+  var pfSel = {};             // {} = every project in scope — unless pfEmptyMeansAll is false.
+  /* ==== ONE VIEW OPENS EMPTY ON PURPOSE =======================================================
+     Owner 2026-09-17: *"in portfolio s-curve let's not have the s-curve be pre-selected — let the
+     planner choose which projects to see the s-curve so it loads smoothly upon opening."*
+     ⚠️⚠️ THE RULE ABOVE IS STILL RIGHT FOR THE OTHER TEN VIEWS. "Empty means all" is what
+     makes Risk, Issues, Contracts and the rest useful the instant they open: one read of one table
+     across the portfolio, which is the question those pages exist to answer. The S-Curve is not
+     that shape — it rolls up the SCHEDULE of every selected project, one server-side call each,
+     and across 21 projects that is twenty-one calls and a visible wait before a planner has said
+     what they wanted to compare. The default was doing expensive work nobody had asked for yet.
+     ⚠️ A VIEW OPTS IN, the filter does not decide. `def("scurve", { emptyMeansNone: true })`
+     is read at mount; every other view is untouched and keeps the old default. Anything else would
+     mean eleven views sharing a filter whose meaning depends on which one you are looking at.
+     ⚠️ `pfSel` ITSELF IS NOT CLEARED ON MOUNT. A planner who ticked two projects on the
+     Risk view and then opened the S-Curve meant those two projects; re-asking would be the tool
+     forgetting what it was just told. This only changes what NOTHING selected means. */
+  var pfEmptyMeansAll = true;
   var pfQuery = '';
   var pfOnChange = null;
   function pfCount() { return Object.keys(pfSel).length; }
@@ -247,7 +263,9 @@
   }
   function pfLabel() {
     var n = pfCount();
-    if (!n) return 'All projects';
+    /* ⚠️ The button is the only thing on screen that says which mode this view is in. Reading
+       "All projects" over an empty chart would look like a failed load rather than a prompt. */
+    if (!n) return pfEmptyMeansAll ? 'All projects' : 'Select projects…';
     if (n === 1) {
       var p = PROJ.filter(function (x) { return pfSel[x.id]; })[0];
       return p ? (p.name || p.id) : '1 project';
@@ -261,7 +279,7 @@
     return n + ' projects';
   }
   function scopedProjectIds() {
-    if (!pfCount()) return PROJ.map(function (p) { return p.id; });
+    if (!pfCount()) return pfEmptyMeansAll ? PROJ.map(function (p) { return p.id; }) : [];
     /* ⚠ Ordered by PROJ, never by the order boxes were ticked: the views cache on
        `ids.join(',')` to decide whether anything needs re-reading, and a set that reorders itself
        would look like a different selection every time and re-fetch the same projects. */
@@ -317,7 +335,19 @@
   var pfBadge = null;
   function projFilterHTML() {
     return '<div class="po-projfilter" id="po-projfilter-wrap">' +
-      '<button class="pd-btn" id="po-projfilter-btn" type="button" title="Which projects this view is scoped to">' +
+      /* ⚠️⚠️ `pd-tb-labeled` IS LOAD-BEARING, NOT DECORATION. Owner 2026-09-17:
+         *"check project selection filter: wraps unnecessarily to two rows."* The shared bar styles
+         every unlabelled tool button as a 34x34 SQUARE —
+         `.pd-modulebar .pd-btn:not(.pd-btn-primary):not([class*="tb-labeled"])` sets
+         `width:34px; padding:0` — so a button carrying the words "All projects" was being crushed
+         into an icon's footprint and the label wrapped onto a second line, doubling the bar's height.
+         `pd-tb-labeled` is the opt-out: `width:auto; padding:0 12px; white-space:nowrap`.
+         ⚠️ THE STATIC COPY IN `portfolio-overview/index.html` ALREADY HAD THIS. The toolbar pass
+         fixed the one it could see in markup and missed the one built here by string concatenation,
+         which is why the wrap showed up on every module that hosts a portfolio dashboard and not on
+         the Portfolio Dashboard itself. Two spellings of one control is the actual defect; if this
+         needs changing again, change both. */
+      '<button class="pd-btn pd-tb-labeled" id="po-projfilter-btn" type="button" title="Which projects this view is scoped to">' +
         '<span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span>' +
         ' <span data-ico="chevronDown" data-ico-size="13"></span></button>' +
       '<div class="po-projfilter-menu" id="po-projfilter-menu">' +
@@ -404,8 +434,10 @@
     menu.querySelector('[data-act="all"]').onclick = function () {
       PROJ.forEach(function (p) { pfSel[p.id] = true; }); relabel();
     };
-    /* ⚠️ "Clear" goes back to ALL projects (the `{}` default), never to none — see the note on
-       `pfSel`. A cleared filter that shows an empty page is one a planner has to fight. */
+    /* ⚠️ "Clear" goes back to the `{}` default, which on ten of the eleven views means ALL
+       projects, never none: a cleared filter that shows an empty page is one a planner has to
+       fight. On a view with `emptyMeansNone` it returns to the "pick some projects" prompt it
+       opened with, which is the same promise — clear puts the view back how it started. */
     menu.querySelector('[data-act="none"]').onclick = function () { pfSel = {}; relabel(); };
     document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) menu.classList.remove('open'); });
   }
@@ -820,6 +852,9 @@
     setup: function () {
     // ================= Portfolio Contracts & Claims (cross-project) =================
     var ctRows = null, ctLoadedIds = null;
+    /* See `renderCt`. Declared in `setup()` — which runs once per MOUNT — so a planner's own
+       open/shut choice survives every filter change on this view and resets when they leave it. */
+    var CT_OPEN_MAX = 60, ctAllTouched = false, ctWantOpen = false;
     function ctDesc(r) {
       var ref = (r.reference_no || '').trim(), d = (r.description || '').trim() || (r.title || '').trim();
       if (ref && d) return ref + ' — ' + d;
@@ -917,6 +952,39 @@
          reason to open it and no sense of what is behind it. */
       var sum = document.getElementById('po-ct-allsum');
       if (sum) sum.textContent = 'All records (' + list.length + ')';
+      /* ==== OPEN IT WHEN OPENING IT IS REASONABLE ==============================================
+         Owner 2026-09-17: *"Contracts & Claims — I feel like the contract value record should be
+         available/seen already rather than having it collapsed."* Correct for the case he is
+         looking at. The original reasoning above ("a summary that opens on 900 rows is not a
+         summary") is also correct — for the case it was written for. Both hold, so the disclosure
+         decides from the actual count instead of guessing once at authoring time.
+         ⚠️ CT_OPEN_MAX is a SCREENFUL-ish, not a performance limit. The table renders 900 rows
+         perfectly well; the reason not to auto-open at 900 is that the summary cards above it — the
+         ranking and the ageing, which are the point of this page — get pushed off the screen.
+         ⚠️⚠️ AND A PLANNER'S OWN TOGGLE WINS FROM THEN ON. `renderCt` re-runs on every project
+         filter change, so a bare `open = small` would slam the disclosure shut (or back open) under
+         someone who had just set it the other way — the filter is exactly when they are opening it
+         to look something up. `pfSel` changes, the count crosses the threshold, and their panel
+         moves on its own. The flag is per-mount, so switching views still starts fresh. */
+      var wrap = document.getElementById('po-ct-allwrap');
+      if (wrap) {
+        if (!wrap.__poBound) {
+          wrap.__poBound = true;
+          /* ⚠️⚠️ `toggle` CANNOT SIMPLY MEAN "the planner clicked". Assigning `wrap.open`
+             below fires this same event — asynchronously, on a queued task, so it lands AFTER this
+             function returns no matter where the listener is bound. A listener that just sets the
+             flag would therefore mark the panel "touched" the first time the code opened it, and
+             the count would never be consulted again. It compares against what was last set
+             programmatically: equal means that was our own echo, different means a human. */
+          wrap.addEventListener('toggle', function () {
+            if (wrap.open !== ctWantOpen) ctAllTouched = true;
+          });
+        }
+        if (!ctAllTouched) {
+          ctWantOpen = list.length > 0 && list.length <= CT_OPEN_MAX;
+          wrap.open = ctWantOpen;
+        }
+      }
     }
 
     /* One row per project, ranked by what is unrecovered. ⚠️ Projects with NOTHING outstanding are
@@ -1195,6 +1263,12 @@
     icon: "trendingUp",
     title: "Portfolio S-Curve",
     needs: ["PDScurve"],
+    /* ⚠️⚠️ THE ONLY VIEW THAT OPENS WITH NOTHING SELECTED — see `pfEmptyMeansAll`. Owner
+       2026-09-17: *"let the planner choose which projects to see the s-curve so it loads smoothly
+       upon opening."* Every other view answers its question with one read across the portfolio;
+       this one makes a server-side roll-up call PER PROJECT, so "all" is the most expensive
+       possible default and is paid before anyone has said what they wanted to compare. */
+    emptyMeansNone: true,
     markup: [
       "<div id=\"po-sc-pane-curve\">",
       "<div class=\"pd-kpis\" id=\"po-sc-kpis\"></div>",
@@ -1918,7 +1992,15 @@
       var kpiHost = document.getElementById('po-sc-kpis'), chartHost = document.getElementById('po-sc-chart');
       if (!ids.length) {
         kpiHost.innerHTML = '';
-        chartHost.innerHTML = '<div class="po-empty">No projects match the current filter.</div>';
+        /* ⚠️ TWO DIFFERENT EMPTIES, AND THEY MUST NOT READ THE SAME. Nothing selected on this
+           view is the state it deliberately OPENS in, so the page has to say what to do next; the
+           old wording blamed a filter and looked like a failed load. A filter that genuinely
+           excluded everything (only reachable here once something has been ticked) still says so. */
+        chartHost.innerHTML = pfCount()
+          ? '<div class="po-empty">No projects match the current filter.</div>'
+          : '<div class="po-empty">Choose the projects to roll up — use <b>Select projects</b> in the '
+            + 'toolbar above. The curve reads each project’s schedule separately, so it draws as soon '
+            + 'as you pick one.</div>';
         scData = null; scLoadedIds = ids; return;
       }
       kpiHost.innerHTML = '';
@@ -2045,7 +2127,17 @@
       var kpis = document.getElementById('po-scm-kpis');
       var note = document.getElementById('po-scm-note');
       if (!tbl) return;
-      if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; note.textContent = ''; return; }
+      if (!ids.length) {
+        kpis.innerHTML = '';
+        /* ⚠️ Same two empties as the Curve tab. A blank table with no words was survivable when
+           this state only happened after a deliberate filter; it is the OPENING state now. */
+        tbl.innerHTML = '<tbody><tr><td class="po-empty">' + (pfCount()
+          ? 'No projects match the current filter.'
+          : 'Choose the projects to list — use <b>Select projects</b> in the toolbar above.')
+          + '</td></tr></tbody>';
+        note.textContent = '';
+        return;
+      }
       kpis.innerHTML = '';
       tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the manual curves of ' + ids.length + ' project(s)\u2026</td></tr></tbody>';
       try {
@@ -3068,6 +3160,10 @@
     var v = VIEWS[key];
     if (!v) throw new Error('No portfolio dashboard called "' + key + '"');
     if (!host) throw new Error('No host element for the "' + key + '" dashboard');
+    /* ⚠️ Set BEFORE the markup, the bar and `setup()` — all three can call
+       `scopedProjectIds()` or `pfLabel()`, and a view that read the previous view's setting would
+       fire off the very 21-project roll-up this flag exists to prevent. */
+    pfEmptyMeansAll = !v.emptyMeansNone;
     host.classList.add('po-dash');
     host.innerHTML = v.markup;
     /* ⚠️ THE FILTER ROW OPENS BY DEFAULT HERE, and that is not a style tweak. On the Portfolio
@@ -3212,6 +3308,16 @@
     // file asks for the approved treatment by name rather than mounting eleven pages to find out.
     _markup: function (k) { return VIEWS[k] ? VIEWS[k].markup : ''; },
     // Test seam: the picker's group buckets, without mounting a view to open it.
-    _pfGroups: function () { return pfGroups(); }
+    _pfGroups: function () { return pfGroups(); },
+    /* ⚠️ Test seams for the project filter. `_setPfSel` is how a harness says "the planner
+       ticked these", which the S-Curve now REQUIRES before it will draw — see `emptyMeansNone`.
+       `_pfState` reads back the two things a test can otherwise only infer from pixels: what the
+       button says, and whether an empty selection means all or none on the mounted view. */
+    _setPfSel: function (ids) {
+      pfSel = {};
+      (ids || []).forEach(function (id) { pfSel[id] = true; });
+    },
+    _pfState: function () { return { label: pfLabel(), emptyMeansAll: pfEmptyMeansAll,
+                                     scoped: scopedProjectIds() }; }
   };
 })();

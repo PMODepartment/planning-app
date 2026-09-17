@@ -53,7 +53,7 @@
 .cc-tab:hover:not(.active) { background:var(--pd-bg); }
 .cc-tab.active { background:var(--pd-red); color:#fff; }
 
-.cc-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.cc-topbar-tools { display:flex; align-items:center; margin-left:auto; }
 .cc-topbar-tools .pd-btn:not(.cc-tb-labeled) { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
   background:transparent; border-color:transparent; font-size:var(--pd-fs-base); }
 /* ⚠️⚠️ THE HOVER RESTATEMENT IS GONE, AND IT WAS A REAL BUG, NOT JUST DUPLICATION.
@@ -66,7 +66,6 @@
    ⚠️ The hover now comes from `.pd-modulebar .pd-btn:not(.pd-btn-primary):hover` in
    dashboard.css, which carries that exclusion. Do not restate it here. */
 .cc-topbar-tools .pd-btn.cc-tb-labeled { height:34px; width:auto; padding:0 12px; gap:6px; white-space:nowrap; }
-.cc-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 .cc-clearbtn { color:var(--pd-bad-text); }
 .cc-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
 

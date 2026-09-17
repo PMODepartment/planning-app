@@ -47,7 +47,7 @@
 .il-tab.active { background: var(--pd-red); color: #fff; }
 
 /* Tool cluster */
-.il-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.il-topbar-tools { display: flex; align-items: center; margin-left: auto; }
 .il-topbar-tools .pd-btn:not(.il-tb-labeled) {
   height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
@@ -63,7 +63,6 @@
    ⚠️ The hover now comes from `.pd-modulebar .pd-btn:not(.pd-btn-primary):hover` in
    dashboard.css, which carries that exclusion. Do not restate it here. */
 .il-topbar-tools .pd-btn.il-tb-labeled { height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap; }
-.il-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 
 /* ITEM 8: the Export dropdown — Excel / PDF / HTML, in the topbar tool
    cluster beside Refresh. Same anchored-popover pattern the topbar filter

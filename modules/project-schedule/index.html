@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916y" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917y" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916w" />
@@ -134,12 +134,11 @@
        Actions ▾ / + Add activity / File ▾ / Reports / Health" report at narrow widths). Wrapping
        lets this cluster grow to a second internal line instead, which .pd-modulebar (itself
        flex-wrap:wrap) then sizes around correctly. */
-    .ps-topbar-tools { display:flex; flex-wrap:wrap; row-gap:4px; align-items:center; gap:4px; min-width:0;
+    .ps-topbar-tools { display:flex; flex-wrap:wrap; row-gap:4px; align-items:center; min-width:0;
       padding-left:10px; margin-left:auto; border-left:1px solid var(--pd-line); }
     .ps-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
     /* Labeled tool buttons (File / Reports / Health) — auto width with icon + word so they don't read as mystery icons */
     .ps-topbar-tools .pd-btn.ps-tb-labeled { width:auto; padding:0 10px; gap:6px; }
-    .ps-topbar-tools .ps-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     /* Make the theme toggle (injected by theme.js before #user-bar) match the tool cluster,
        and set off the user avatar from the tools with a divider. */
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
@@ -5397,7 +5396,7 @@
        2026-09-10 (z1) and its own log records what that cost. The S-Curve module, the project
        Dashboard panel and this page now read one engine. -->
   <script src="../../assets/js/scurve.js?v=20260916r"></script>
-  <script src="../../assets/js/portfolio-dash.js?v=20260916w"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260917w"></script>
 <script src="../../assets/js/ui.js?v=20260916w"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>

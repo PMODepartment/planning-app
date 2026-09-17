@@ -32,7 +32,7 @@
 .il-project:hover, .il-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
 
 /* Tool cluster */
-.il-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.il-topbar-tools { display: flex; align-items: center; margin-left: auto; }
 /* ⚠ THE 34px SQUARE IS FOR THE ICON-ONLY BUTTONS AND MUST NOT CATCH A LABELLED
    ONE. This rule had no `:not()`, so it forced width:34px onto EVERY .pd-btn in
    the cluster -- including "+ Add meeting", whose two words then wrapped onto two

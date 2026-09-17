@@ -103,6 +103,108 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (a) — One toolbar divider instead of thirteen, the portfolio Gantt on the app's own bar colours, and the S-Curve stops doing work nobody asked for
+
+Six things the owner raised in one message, all in the portfolio layer.
+
+#### The divider between tool groups existed thirteen times
+*"There are still inconsistencies in the toolbar, check across all modules."* / *"Manpower loading
+has a different toolbar UI — considerably better."*
+
+`.mp-tb-sep`, `.cc-tb-sep`, `.il-tb-sep`, `.rr-tb-sep`, `.sm-tb-sep`, `.sc-tb-sep`, `.rl-tb-sep`,
+`.pr-tb-sep`, `.pp-tb-sep`, `.ms-tb-sep`, `.eq-tb-sep`, `.dr-tb-sep` and
+`.ps-topbar-tools .ps-tb-sep` were **byte-identical**: `width:1px; align-self:stretch;
+margin:5px 3px; background:var(--pd-line)`. All thirteen are replaced by one rule in
+`dashboard.css` matched on the class **suffix** — `.pd-modulebar [class$="-tb-sep"]` — so no
+module's markup changed and a fourteenth prefix gets the right divider for free.
+
+⚠️ **The `gap` declarations beside them were already dead, and the entry says so.** Ten modules
+set `gap:4px` and three set `gap:6px` on their own `.x-topbar-tools`, which *looks* like the
+inconsistency on screen — but the shared cluster rule is `.pd-modulebar > [class$="-topbar-tools"]`
+at (0,2,0) and a bare `.mp-topbar-tools` is (0,1,0), so **6px was already winning everywhere**.
+Fifteen of them were deleted as hygiene, not as a fix. A declaration that looks authoritative and
+does nothing is worse than no declaration, but removing it changes no pixel and this log will not
+claim otherwise.
+
+#### The project filter button was being styled as an icon
+*"Check project selection filter: wraps unnecessarily to two rows."*
+
+`assets/js/portfolio-dash.js` builds that button by string concatenation as `class="pd-btn"`. The
+shared bar squares every unlabelled tool button —
+`.pd-btn:not(.pd-btn-primary):not([class*="tb-labeled"])` sets `width:34px; padding:0` — so a
+button carrying the words **All projects** was crushed into an icon's footprint and the label
+wrapped, doubling the bar's height.
+
+⚠️⚠️ **The static copy in `portfolio-overview/index.html` already had `pd-tb-labeled`.** The
+toolbar pass on 2026-09-16 fixed the spelling it could see in markup and missed the one built in
+JavaScript, which is exactly why the wrap appeared on every module hosting a portfolio dashboard
+and *not* on the Portfolio Dashboard itself. Two spellings of one control is the real defect.
+
+#### The portfolio Gantt used a palette invented for it
+*"Let's follow the gantt bar brand colors in the schedule from project-level in the portfolio-level
+schedule. It's not consistent with the current build."*
+
+`--po-sh-rail` / `--po-sh-track` / `--po-sh-fill` were a neutral grey ramp chosen for contrast
+alone. Project Schedule's own Gantt has had a settled palette for a long time — `--ps-bar #2B2C2B`,
+`--ps-track rgba(35,31,32,.13)`, and a progress fill of `--pd-red`, because in that file **red means
+progress**. The portfolio chart is the same picture at programme scale and now uses the same three,
+in both themes.
+
+⚠️ **Mirrored, not referenced, deliberately.** `--ps-*` is scoped to `#ps-view-schedule` *and* is
+user-customisable per project — the colour editor writes those variables. A portfolio chart must
+not inherit one project's custom palette, so it takes the brand **defaults**. If the defaults move,
+these move with them; the comment in `dashboard.css` says so.
+
+#### Contracts & Claims opens its register when opening it is reasonable
+*"I feel like the contract value record should be available/seen already rather than having it
+collapsed."*
+
+The `<details>` was shut unconditionally, with a comment justifying it: *"a summary that opens on
+900 rows is not a summary."* Both positions are right, for different portfolios, so the disclosure
+decides from the actual count: open at or below **60 rows**, shut above. The limit is about the
+ranking and ageing cards above it being pushed off screen, not about render cost.
+
+⚠️⚠️ **A programmatic `open =` fires the same `toggle` event a click does**, asynchronously, so
+a listener that simply set "the planner touched this" would mark the panel touched the first time
+the *code* opened it and the count would never be consulted again. The listener compares against
+the last value set programmatically: equal is our own echo, different is a human. After a human
+toggles it, the count stops deciding — `renderCt` re-runs on every filter change, and the filter is
+exactly when someone has the panel open to look something up.
+
+#### The S-Curve opens empty, on purpose
+*"In portfolio s-curve let's not have the s-curve be pre-selected — let the planner choose which
+projects to see the s-curve so it loads smoothly upon opening."*
+
+`pfSel = {}` has always meant **every project**, and for ten of the eleven views that is what makes
+them useful the instant they open: one read of one table across the portfolio. The S-Curve is a
+different shape — it makes a server-side roll-up call **per project**, so "all" is the most
+expensive possible default and it was paid before anyone had said what they wanted to compare.
+
+`def("scurve", { emptyMeansNone: true })` is read at mount and flips what an empty filter means for
+that view only. The filter button reads **Select projects…** instead of "All projects", and the
+chart area says what to do next rather than reporting a filter nobody set.
+
+⚠️ `pfSel` itself is **not** cleared on mount. Someone who ticked two projects on the Risk view and
+then opened the S-Curve meant those two; re-asking would be the tool forgetting what it was just
+told. Only the meaning of *nothing selected* changed.
+
+#### Tests
+`tools/test-portfolio-dash.js` **398 passed, 0 failed** (was 376 + a crash: the flag correctly broke
+the whole S-Curve suite, which had been relying on the old default). `mountView` now ticks every
+project unless a test passes a selection — for the ten views that changes nothing, and for the
+S-Curve it is the state a planner reaches one click later.
+
+⚠️ **Negative-tested.** With `emptyMeansNone: false` the five new assertions go red
+(`393 passed, 5 failed`) and name the exact difference; restored, 398/0. The reset assertion — that
+mounting any other view afterwards returns to "empty means ALL" — is the one that makes the feature
+safe, because a flag left set from a previous mount would silently empty every other portfolio page.
+
+`wiring-check` 139/0, `toolbar-order` 15 bars / 0 out of order / 0 private export controls / 0
+unguarded write controls, `dark-remap` 0 findings. `dashboard.css` and `portfolio-dash.js` bumped to
+`?v=20260917`.
+
+---
+
 ### 2026-09-16 (d7) — A write control stops being shown in a scope that cannot write
 
 Owner: *"some buttons in the toolbars are not working for portfolio view, probably since these

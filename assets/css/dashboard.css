@@ -57,9 +57,21 @@
      fixed colour cannot do both, which is exactly how the old one failed.
      ⚠️ Semantic names, not `--po-gray-1`: a reader changing these needs to know which bar
      they are looking at, and the legend on the chart uses the same three words. */
-  --po-sh-rail:  #E4E3E3;     /* contract period — a quiet rail behind everything */
-  --po-sh-track: #C4C3C3;     /* current schedule, the part not yet done */
-  --po-sh-fill:  #2B2C2B;     /* of that schedule, what is reported complete */
+  /* ⚠️⚠️ THESE MIRROR THE PROJECT-LEVEL GANTT'S PALETTE. Owner 2026-09-17: *"let's follow
+     the gantt bar brand colors in the schedule from project-level in the portfolio-level schedule —
+     it's not consistent with the current build."* Right, and the first cut of these was a neutral
+     ramp invented for contrast alone. Project Schedule's Gantt (`#ps-view-schedule`) has had a
+     settled palette for a long time:
+       `--ps-bar: #2B2C2B`  the task bar     `--ps-track: rgba(35,31,32,.13)`  its unfilled track
+       `--ps-prog` → `--pd-red`  the progress fill — **RED MEANS PROGRESS**, as that file puts it
+     The portfolio chart is the same picture at programme scale, so it uses the same three.
+     ⚠️ MIRRORED, NOT REFERENCED, DELIBERATELY. `--ps-bar` and friends are scoped to
+     `#ps-view-schedule` AND are user-customisable per project — the colour editor writes them (see
+     the `{ k:'bar', v:'--ps-bar' }` list in that file). A PORTFOLIO chart must not inherit one
+     project's custom palette, so it takes the brand DEFAULTS. If those defaults move, move these. */
+  --po-sh-rail:  rgba(35,31,32,.13);   /* contract period    = --ps-track */
+  --po-sh-track: #2B2C2B;              /* current schedule   = --ps-bar  */
+  --po-sh-fill:  var(--pd-red);        /* progress to date   = --ps-prog */
   --pd-bg: #F4F4F4;           /* app background */
   --pd-card: #FFFFFF;         /* White — surfaces */
   /* Status (kept distinct from brand red so "error" ≠ "brand") */
@@ -1119,9 +1131,11 @@ html.pd-dark {
      `--po-sh-track`, and the track is a light wash on a dark card. Measured against `--pd-card`
      (#2B2C2B): rail 1.9:1 (a hairline, deliberately quiet), track 3.4:1, fill 11.6:1 — against
      the 1.28:1 the fill used to have. */
-  --po-sh-rail:  rgba(255,255,255,0.20);
-  --po-sh-track: rgba(255,255,255,0.34);
-  --po-sh-fill:  #EDEDED;
+  /* ⚠️ The same three from `html.pd-dark #ps-view-schedule`. The fill stays RED in both
+     themes — it is the brand accent, not a neutral, and the project Gantt does exactly this. */
+  --po-sh-rail:  rgba(224,224,224,.16);  /* = --ps-track (dark) */
+  --po-sh-track: #c7ccd1;                /* = --ps-bar   (dark) */
+  --po-sh-fill:  var(--pd-red);
   --pd-sidebar-bg: #161717;           /* the panel goes darker still on dark, as it always has */
   --pd-red-light: #3D1A19;            /* red tint on dark */
   --pd-red-mid: #6E2A25;
@@ -1832,6 +1846,22 @@ body { overflow-x: clip; }
 .pd-modulebar > [id$="-topbar-tools"] {
   display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
   margin-left: auto; justify-content: flex-end;
+}
+/* ==== THE DIVIDER BETWEEN TOOL GROUPS, ONCE ================================================
+   Owner 2026-09-17: *"there are still inconsistencies in the toolbar, check across all modules"*
+   and *"Manpower loading has a different toolbar UI — considerably better."*
+   ⚠️⚠️ THIRTEEN MODULES DEFINED THIS RULE, BYTE FOR BYTE: `.mp-tb-sep`, `.cc-tb-sep`,
+   `.il-tb-sep`, `.rr-tb-sep` … every one `width:1px; align-self:stretch; margin:5px 3px;
+   background:var(--pd-line)`. Thirteen copies cannot STAY equal; they simply had not diverged yet.
+   Matched on the class SUFFIX so no module's markup changes — all thirteen already spell it
+   `x-tb-sep`, and a module that adds a fourteenth prefix gets the right divider for free.
+   ⚠️ The per-module `gap:4px` declarations that sat beside these were deleted in the same
+   pass, but they were already DEAD: the shared cluster rule above is `.pd-modulebar > [class$=...]`
+   at (0,2,0) and a bare `.mp-topbar-tools` is (0,1,0), so 6px was already winning everywhere. They
+   were removed because a declaration that looks authoritative and does nothing is worse than no
+   declaration — not because they were the thing on screen. */
+.pd-modulebar [class$="-tb-sep"] {
+  width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); flex: none;
 }
 
 /* ---- Tablet: tighter row padding ---- */
