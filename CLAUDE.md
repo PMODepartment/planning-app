@@ -103,6 +103,100 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-18 (e) — The 360° stitcher's last three defects, and a sub-pixel fit that was solving the wrong problem
+
+Owner, against the pass that shipped a few hours earlier: *"there is a deadspace connecting the start
+and finish of the video recording"*, *"line streaks vertically across"*, *"still blurry and misaligned
+areas"*, *"add more frames"*, and *"remove also the thumbnail preview when adding 360"*. Module work —
+the full entry, all seven causes, every ⚠️ decision and the measurements are in
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md) under *"the second pass"*.
+Logged here for the `MODULE_V` bump and the five things that are not facts about one module.
+
+⚠️⚠️ **Re-lettered `(c)` → `(e)` on merging, AND THE VERSION HALF COLLIDED TWICE OVER.** Two concurrent
+sessions and this one all reached for `2026-09-18 (c)`, and main's own merge commit records that **both of
+its sides independently took `MODULE_V 20260918d`** — the very token this branch had derived. Main has
+since moved to `20260918e`, which sorts **after** `d`, so shipping `d` would have put these bytes behind a
+token a browser already holds and they would simply never have arrived. Re-derived past main's `e` to
+`20260918f` **after** integrating, and sort-checked as a plain string. Both `(c)` entries are kept whole;
+this one moves past main's `(d)`, per this file's own rule that the entry merging in is the one that moves.
+⚠️ Dated 2026-09-18 to keep the log descending — the code's own comments call it the *2026-09-17 second
+pass*, which is when the work was done.
+
+**The headline, on a capture shaped like the one reported** (a 3-frame backward settle, hand jitter,
+and a 30% auto-exposure dip through a window): unpainted background **1.501% → 0.000%**, edge holes at
+the wrap **21 columns → 0**, seam banding **12.444 → 1.957**, recovered-scene error **14.221 → 4.122**.
+
+⚠️⚠️ **A SUB-PIXEL INTERPOLANT HAS TO MATCH THE COST SURFACE IT IS FITTING, AND GETTING THAT WRONG
+COSTS MORE THAN ACCURACY — IT MAKES THE RESULT DEPEND ON AN ARBITRARY SAMPLING CHOICE.** A parabola is
+right for a **squared**-difference surface. This one is mean-absolute-difference — **L1**, which near
+its minimum is a **V, not a bowl** — so the fitted vertex was systematically wrong by an amount that
+depends on where the true shift sits between two pixels. Chained over a hundred pairs that does not
+average out, it **biases**. Measured against exact ground truth, accumulated rotation error over a full
+turn ran **0.16–0.98% with the parabola and swung by a factor of six across frame counts**; the
+equiangular fit is **0.01–0.06% at every count from 72 to 144 — flat**. The flatness is the more
+useful half: it is what makes a frame count a question about cost rather than about correctness, and
+it is why *"more frames is safer"* — the argument every previous increase of that constant rested on —
+was **false until this was fixed**. 108 → 144 is the first of those steps taken on a measurement.
+
+⚠️⚠️ **A FEATHER BLENDS INTO WHAT IS ALREADY THERE, SO IT HAS A DIRECTION.** Ramping alpha at both
+edges of a composited band fades one of them into the **bare background**, which is a dark vertical
+streak — one per seam. On a monotonic pan the trailing edge happens to be overwritten a moment later,
+which is why it hid; the instant the pan reverses, the darkened columns are the last thing written and
+they stay. Reproduced: on a flat source of 160 the old rule dragged a painted column to **34**.
+
+⚠️⚠️ **NEAREST-NEIGHBOUR DOWNSCALING IS NOT "SLIGHTLY SOFT" — IT IS ALIASING WHOSE PHASE VARIES PER
+SOURCE, AND THAT BECOMES A PATTERN WHEREVER EACH SOURCE OWNS ITS OWN REGION OF THE OUTPUT.** A 3×
+reduction keeps one column in three and throws two away; which detail survives depends on each frame's
+own sub-pixel phase, so consecutive frames keep **different** detail. It degrades the alignment search
+(the two frames genuinely disagree about fine structure) *and* beats against the band boundaries as
+visible streaks. A box prefilter collapses a fine grating's **176-level** beat to **58**.
+
+⚠️⚠️ **A CORRECTION BUILT ON A NOISY PER-STEP MEASUREMENT, CHAINED, IS A RANDOM WALK — AND WITHOUT A
+DEADBAND IT INVENTS THE ARTEFACT IT EXISTS TO REMOVE.** The new exposure compensation chained ~107
+per-pair brightness ratios and produced a **±2% ramp across a panorama whose frames were all
+identically exposed** (seam banding 1.85 → **2.72** on a clean capture — worse than doing nothing). The
+deadband is not a tuning knob: measured, pure noise reaches **0.0037** and a real 30% exposure swing
+reaches **0.033**, an order of magnitude apart, so **0.004** sits in the gap. ⚠️ Hard, not soft — a soft
+threshold shaves every genuine step too and under-corrects a long ramp.
+
+⚠️⚠️ **AND A METRIC THAT CANNOT SEE A DEGREE OF FREEDOM WILL REPORT A BETTER RESULT AS A WORSE ONE.**
+The synthetic harness's headline figure **went the wrong way** — full-turn recovered-scene error 0.95
+on the base against 1.63 here. Rather than write that off, every change was **reverted one at a time**
+against the same harness until exactly one moved it (the estimator), and then the **metric** was
+examined: it searches only for a translation phase and is blind to a uniform horizontal **scale**.
+Allowed to search scale, the new panorama is **0.94 against the old 0.99** — it is not misaligned, it
+is magnified **0.45%** in yaw — and the old fit's `k` was exactly 1.0000 only because its per-pair
+over-estimate cancelled that residual at this one frame count. Two independent readings agree
+alignment improved: measured coverage of a true 360° turn goes **362° → 360°, exact**. ⚠️ The 0.45%
+residual is **named rather than chased** — 1.6° over a whole turn, and the viewer stays self-consistent
+through it because it derives its vertical field from the image's own aspect ratio.
+
+⚠️ **The 2026-09-16 audit note in `stitch-core.mjs` is DELETED rather than left standing.** It said this
+pipeline does no cylindrical reprojection and refused to fix that without a synthetic harness. The
+harness was built, the warp shipped, and the note stopped being true the same day. A comment that
+confidently describes the opposite of the code sends the next reader looking for a gap that is closed.
+
+**Verified:** the server suite **118 passed, 0 failed** (was 80), with seven new blocks that each
+reproduce the defect before the fix; Progress Photos' own suite **976 passed, 5 failed**, ⚠️
+**byte-identical to the base** (976/5, same five, confirmed against a clean `git archive HEAD` tree
+rather than by stashing in a shared clone). ⚠️⚠️ **Both contrasts bite:** the server suite against the
+base fails the prefilter and hole assertions and then **throws** on `featherSignFor` not existing; the
+module suite against the base fails **6 more**, every one a 144-frame assertion naming `got 108 want
+144`. Every changed file parses, 0 NUL bytes across all six, and — the check `node --check` cannot do —
+all **24** names `index.ts` imports from `stitch-core.mjs` resolve against the module's real exports,
+which is the z6-shape failure this repo has already paid for. `wiring-check` **139/0**, every asset on
+one version.
+
+⚠️⚠️ **Not verified against a real recording, and the Edge Function was not executed** — no Deno
+runtime, no deployment, no phone video here. **The first real capture after
+`supabase functions deploy pano360-process` is the test.**
+
+`MODULE_V` → `20260918f`, re-derived from what the tree carries **after** fast-forwarding onto
+`origin/main` (which had by then reached `20260918e`) rather than guessed beforehand, and sort-checked as a
+plain string. `pano360.js` and `module.js` bumped with it; ⚠️ `module.css` deliberately **not** — it
+did not change this round, and bumping an unchanged asset invalidates a cache for nothing.
+
 ### 2026-09-18 (d) — Schedule Setup ▸ Activities: SAP Activities, one heading per trade, and an activity that can be several
 
 Owner's nine numbered items on that step — the pane renamed to **SAP Activities**, a library code

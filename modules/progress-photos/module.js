@@ -7072,16 +7072,17 @@ window.ProgressPhotos = (function () {
       _uploadModalOpen = false;
     }
 
-    function paintThumb() {
-      var field = $('pp360rv-thumbfield');
-      var img = $('pp360rv-thumbpreview');
-      if (draft.repUrl) {
-        if (img) img.src = draft.repUrl;
-        if (field) field.hidden = false;
-      } else if (field) {
-        field.hidden = true;
-      }
-    }
+    // ⚠⚠ 2026-09-17 — "remove also the thumbnail preview when adding 360".
+    // The preview (`#pp360rv-thumbfield` / `#pp360rv-thumbpreview`) and its
+    // `paintThumb()` painter are GONE, and their four call sites with them —
+    // not left as no-ops, because a painter nothing calls is what the next
+    // editor wires a control back up for.
+    // ⚠ What it previewed is NOT gone: `draft.repBlob` / `draft.repUrl` are
+    // still captured exactly as before and are still what gets uploaded as the
+    // photo's thumbnail on Confirm & Save. The panel had become a second, much
+    // smaller copy of the panorama already filling the viewer directly above
+    // it — and since the last view IS the thumbnail (see viewThumbFromPano),
+    // the viewer is the preview.
 
     function mountViewerIfReady() {
       var viewerEl = $('pp360rv-pano-viewer');
@@ -7109,7 +7110,6 @@ window.ProgressPhotos = (function () {
             var grab = function () {
               captureImageThumbnail(standinEl, function (blob) {
                 if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); }
-                paintThumb();
               });
             };
             if (standinEl && standinEl.complete && standinEl.naturalWidth) grab();
@@ -7126,10 +7126,10 @@ window.ProgressPhotos = (function () {
         }
         if (standinEl && !draft.repUrl) {
           if (standinEl.complete && standinEl.naturalWidth) {
-            captureImageThumbnail(standinEl, function (blob) { if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); } paintThumb(); });
+            captureImageThumbnail(standinEl, function (blob) { if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); } });
           } else {
             standinEl.onload = function () {
-              captureImageThumbnail(standinEl, function (blob) { if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); } paintThumb(); });
+              captureImageThumbnail(standinEl, function (blob) { if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); } });
             };
           }
         }
@@ -7149,7 +7149,6 @@ window.ProgressPhotos = (function () {
       if (saveBtn) saveBtn.disabled = draft.status !== 'ready';
       if (draft.status === 'ready') {
         mountViewerIfReady();
-        paintThumb();
         var warn = $('pp360rv-qualitywarn');
         if (warn) {
           var res = draft.stitchResult;
@@ -7182,9 +7181,6 @@ window.ProgressPhotos = (function () {
           '<p class="pp-hint">Drag to look around the stitched panorama. Whatever you leave it on becomes the thumbnail.</p>' +
           '<div style="margin:6px 0;display:flex;gap:8px;flex-wrap:wrap;">' +
             '<button type="button" class="pd-btn" id="pp360rv-adjust">Adjust</button>' +
-          '</div>' +
-          '<div class="pd-field" id="pp360rv-thumbfield" hidden><label>Thumbnail</label>' +
-            '<img id="pp360rv-thumbpreview" alt="Selected thumbnail" style="max-width:200px;display:block;border-radius:var(--pd-radius);" />' +
           '</div>' +
         '</div>' +
         '<div class="pp-form2">' +
