@@ -104,6 +104,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (w) — `body is not defined`: the calendar editor drew perfectly and could not save
+
+Owner, on the Working calendars step: *"There is an error when I click on the + New calendar."* The
+toast read **"Calendar editor could not attach its controls: body is not defined"**.
+
+`render()` declares its own `var body` (`#ps-cal-body`, the modal's content div) and `wire()` is its
+**sibling**, not a closure inside it. Three references to `body` arrived in `b9a937a` with the
+name-a-date feature — two inside click handlers, and one, `body.querySelectorAll('[data-lblhol]')`,
+**top-level in `wire()`**. That third one runs on the way down, so `wire()` threw there on every
+single render of the editor.
+
+### ⚠️⚠️ The blast radius was everything BELOW the throw, not the feature that owned it
+
+`render()` writes the markup and *then* calls `wire()`, so the editor drew correctly, looked
+completely normal, and had no handlers past the line that threw:
+
+| left unbound | what the planner saw |
+|---|---|
+| **Save calendar** | the button did nothing |
+| **Delete**, **Assign to project** | the same |
+| **Fold repeating dates into yearly ones** | the same |
+| **name-a-date** (`[data-lblhol]`) | the feature the broken line belongs to |
+
+Everything wired *above* line 7108 — picking a calendar, the filter box, the day checkboxes, hours,
+seasons, **+ Add date** and **+ Add yearly day** — kept working, which is why this reads as one odd
+button rather than a dead editor. **The calendar editor could not save, for anyone, all afternoon.**
+
+The fix is one line: `wire()` declares `body` with `render()`'s own expression rather than aliasing
+it to `root` (`m.el`), which would work today — `#ps-cal-body` is a descendant — and would be a
+second definition free to drift from the one the markup is actually written into.
+
+⚠️ **Fourth time in this repo**: a name that resolves only in a sibling scope, shipped green,
+because `node --check` parses it and the enclosing function is never executed by a sliced-out test.
+The others were the schedule's `below`, stakeholder-map's `canWrite`, and `boq.js`'s `locKey`. The
+tell is always the same — the feature the reference belongs to is not what visibly breaks.
+
+
 ### 2026-09-17 (v) — One rail per phase card: the two headers and the button bar become one
 
 Owner, on the Project Phases step: *"Can't we just move the reset/add to the 'In the schedule now'

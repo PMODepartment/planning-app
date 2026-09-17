@@ -7003,6 +7003,20 @@
 
     function wire() {
       var root = m.el;
+      /* ⚠️⚠️ `body` IS NOT IN SCOPE HERE UNLESS IT IS DECLARED HERE. Owner 2026-09-17, on
+         + New calendar: *"There is an error when I click on the + New calendar."* — the toast read
+         **"Calendar editor could not attach its controls: body is not defined"**. `render()` has its
+         own `var body` and `wire()` is its SIBLING, not a closure inside it, so three references
+         added with the holiday-name feature resolved to nothing and `wire()` threw at the first one
+         it reached on the way down.
+         ⚠️ The damage was everything BELOW that line, not the feature that owned it: wire()
+         aborts where it throws, so Save, Delete, Assign to project, Fold repeating dates and the
+         name-a-date buttons were all left unbound while the editor still drew perfectly — the
+         markup is written by `render()` before `wire()` is ever called. The editor looked fine and
+         could not save.
+         ⚠️ Declared with `render()`'s OWN expression rather than aliased to `root`, so the two
+         cannot drift apart later: this is the element the markup was written into. */
+      var body = m.el.querySelector('#ps-cal-body') || m.el;
       // Tab/Enter on an empty field takes the greyed suggestion (the calendar name,
       // a season's label). Bound on the container once — render() replaces the
       // markup underneath it, and a per-input binding would be lost every redraw.
