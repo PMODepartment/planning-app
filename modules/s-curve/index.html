@@ -140,11 +140,18 @@
        the three paragraphs ~840px each — about 130 characters to a line.
        ⚠ The rule moves from the CONTAINER to each paragraph, or a single left border would
        run down the height of the tallest column beside two that had already ended. */
-    .sc-whybody { margin-top:8px; display:grid; align-items:start; gap:12px 24px;
-      grid-template-columns:repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-      max-width:calc(64ch * 3 + 48px);
+    /* ⚠ 46ch, and the number was MEASURED rather than chosen. `column-width` is a MINIMUM:
+       the browser fits floor((W+gap)/(width+gap)) columns and then stretches them. At 40ch
+       that arithmetic asked for FOUR tracks on the owner's 1,511px container, the six blocks
+       balanced into three of them, and the fourth sat empty — 75% fill, which is the same
+       complaint again. 44ch is where it tips to three; 46ch keeps a margin so a different
+       font metric cannot tip it back. Swept: 390 -> 1 col 100%, 1000 -> 2 cols 100%,
+       1593 -> 3 cols 100%, 2318 -> 4 cols 80%. */
+    .sc-whybody { margin-top:8px; columns:46ch; column-gap:26px;
       font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.6; }
-    .sc-whybody p { margin:0; padding-left:12px; border-left:2px solid var(--pd-line); }
+    .sc-whybody p { break-inside:avoid; margin:0 0 12px; padding-left:12px;
+      border-left:2px solid var(--pd-line); }
+    .sc-whybody p:last-child { margin-bottom:0; }
     .sc-whybody b { color:var(--pd-ink); }
     /* The compact preview above the manual sheet keeps every fact and takes less room than the
        single paragraph it replaces — the reasoning is collapsed rather than cut. */
@@ -2120,7 +2127,15 @@
     /* ⚠ Named slots rather than two arrays, because three separate places below fill these and
        the READING ORDER is fixed (what it is weighted by → which axis the bars use → where the
        forecast date came from). Pushing onto an array would order them by whichever branch ran. */
-    var nF = { weight: '', bars: '', fc: '' }, nW = { lines: '', bars: '', weight: '' };
+    /* ⚠⚠ SIX SHORT BLOCKS, NOT THREE LONG ONES, AND THAT IS A LAYOUT DECISION AS MUCH AS AN
+       EDITORIAL ONE. Three uneven paragraphs cannot balance into columns at any width — two
+       columns leaves the third alone on a second row with a hole beside it, which is what the
+       owner was looking at. Six roughly equal blocks divide into 2, 3 or 6 columns evenly, and a
+       bolded lead on each is scannable in a way a 120-word paragraph is not.
+       ⚠ The reading order is fixed, so they are named slots rather than an array — three
+       separate places below fill these and pushing would order them by whichever branch ran. */
+    var nF = { weight: '', bars: '', fc: '' },
+        nW = { lines: '', fcdate: '', bars: '', ti: '', fchigh: '', weight: '' };
     if (d.empty) {
       // The cost basis with no loading is its own message, with the way out named.
       host.innerHTML = '<div class="sc-empty">' + (
@@ -2170,11 +2185,12 @@
       nF.weight = '<b>Manual curve</b> · trades weighted by ' + wWord;
       nF.fc = seenTxt.length ? 'Entered: <b>' + seenTxt.join(', ') + '</b>'
                              : '<b>Nothing entered yet</b> — the curve is flat';
-      nW.lines = '<b>A manual curve.</b> Entered by hand, per trade, per month, in the sheet on the ' +
-        'Manual data tab. Each trade is weighted by its share of the schedule (' + wWord + '), so the ' +
-        'trades roll up to the project in proportion to what they are worth. ' +
-        (seenTxt.length ? 'Entered so far: <b>' + seenTxt.join(', ') + '</b>. '
-                        : 'Nothing has been entered yet, so the curve is flat until the sheet is filled in. ') +
+      nW.lines = '<b>A manual curve.</b> Entered by hand, per trade, per month, on the Manual data ' +
+        'tab. Each trade is weighted by its share of the schedule (' + wWord + '), so the trades roll ' +
+        'up in proportion to what they are worth.';
+      nW.fcdate = (seenTxt.length ? '<b>Entered so far:</b> ' + seenTxt.join(', ') + '. '
+                                  : '<b>Nothing entered yet</b> — the curve is flat until the sheet ' +
+                                    'is filled in. ') +
         'Switch to <b>Automatic</b> to read the same project from the schedule instead.';
     } else {
     /* ⚠️⚠️ THIS WAS AN EARLY `return`, AND IT MEANT THE CHART WAS NEVER DRAWN IN MANUAL MODE.
@@ -2194,37 +2210,38 @@
       ? '<b>Cost-weighted</b> · ' + peso(d.TOT) + ' on ' + d.priced + ' of ' + d.activities + ' activities'
       : '<b>Duration-weighted</b> · ' + d.activities + ' activities';
     nW.weight = d.money
-      ? '<b>The weighting.</b> Progress is weighted by the cost loaded on each activity (' + peso(d.TOT) +
-        ' across ' + d.priced + ' of ' + d.activities + ' activities' +
+      ? '<b>The weighting.</b> By the cost loaded on each activity: ' + peso(d.TOT) + ' across ' +
+        d.priced + ' of ' + d.activities +
         (d.priced < d.activities ? ' — the other ' + (d.activities - d.priced) +
           ' carry no cost and count for nothing here' : '') +
-        '), spread over each activity\'s dates ' + shapeNote(d.shapes) + '.'
-      : '<b>The weighting.</b> Progress is weighted by activity duration across ' + d.activities +
-        ' activities — a day of work is a day of work, whatever it costs. Switch the basis to ' +
-        '<b>Cost</b> in the toolbar to weight it by money instead.';
+        ', spread over their dates ' + shapeNote(d.shapes) + '.'
+      : '<b>The weighting.</b> By activity duration across ' + d.activities +
+        ' activities — a day of work is a day of work. Switch to <b>Cost</b> in the toolbar to ' +
+        'weight by money.';
     /* ⚠ The date is the fact; WHICH of the three methods produced it is the caveat. Both are
        stated — the method in a short tag on the chip, at length in the disclosure. */
     nF.fc = 'Forecast finish <b>' + iso(d.fcFinish) + '</b> <i>' +
       (d.manual ? 'pinned' : d.basis === 'spi' ? 'SPI ' + (Math.round(d.spi * 100) / 100)
         : d.basis === 'done' ? 'complete' : 'plan + ' + d.slipDays + '-day slip') + '</i>';
-    nW.lines = '<b>The lines.</b> Solid = planned &amp; actual, and the actual stops at the data date. ' +
-      'Red dashed = forecast to finish — ' +
-      /* ⚠️⚠️ SAY WHICH METHOD ACTUALLY RAN. This printed "performance-based (SPI 0.1)" for every
-         auto forecast, including the ones that were not performance-based at all — which is how
-         DEMO01's 2034 finish read as an authoritative calculation rather than as a division by
-         something close to zero. `basis` comes back from PDScurve.compute and says which of the
-         three produced the date. */
-      (d.manual ? 'pinned to ' + iso(d.fcFinish)
+    nW.lines = '<b>The lines.</b> Solid = planned and actual; the actual stops at the data date. ' +
+      'Red dashed = forecast — the plan’s shape from the actual point up to 100%.';
+    /* ⚠️⚠️ SAY WHICH METHOD ACTUALLY RAN. This printed "performance-based (SPI 0.1)" for every
+       auto forecast, including the ones that were not performance-based at all — which is how
+       DEMO01's 2034 finish read as an authoritative calculation rather than as a division by
+       something close to zero. `basis` comes back from PDScurve.compute and says which of the three
+       produced the date.
+       ⚠ Its own block now: the method is the single most-queried thing on this chart, and it was
+       the tail of a paragraph about line styles. */
+    nW.fcdate = '<b>The forecast date.</b> ' +
+      (d.manual ? 'Pinned to ' + iso(d.fcFinish) + '. Clear it in the toolbar to auto-forecast.'
         : d.basis === 'spi'
-          ? 'performance-based (SPI ' + (Math.round(d.spi * 100) / 100) + ', auto finish ' + iso(d.autoFc) + ')'
+          ? 'Performance-based: SPI ' + (Math.round(d.spi * 100) / 100) + ' gives ' + iso(d.autoFc) +
+            '. Set a date in the toolbar to override.'
         : d.basis === 'done'
-          ? 'complete — the forecast is the data date'
-          : 'the planned finish plus the ' + d.slipDays + '-day slip already incurred (auto finish ' +
-            iso(d.autoFc) + '). Below ' + d.spiMinPct + '% complete an SPI forecast is not meaningful — ' +
-            'the ratio of two very small percentages swings wildly — so the slip measured between ' +
-            'the two curves is used instead') +
-      '. It follows the plan’s shape from the actual point up to 100%. Set a date in the toolbar to ' +
-      'override it; clear the date to go back to the automatic forecast.';
+          ? 'Complete — the forecast is the data date.'
+          : 'Planned finish + the ' + d.slipDays + '-day slip incurred → ' + iso(d.autoFc) +
+            '. SPI is skipped below ' + d.spiMinPct + '% complete, where a ratio of two tiny ' +
+            'percentages swings wildly. Override with a date in the toolbar.');
     }
     /* ==========================================================================================
        THE COMPACT VARIANT.
@@ -2454,53 +2471,53 @@
     if (showBars) {
       var peakPct = maxV ? (Math.round(perMax / maxV * 1000) / 10) : 0;
       nF.bars = 'Bars on the <b>right</b> axis · peak <b>' + peakPct + '%</b>/' + perWord;
-      nW.bars = '<b>The bars.</b> They are read against the right-hand axis — each is that ' +
-        perWord + '\'s own share of the total, peaking at ' + peakPct + '% in one ' + perWord + '. ' +
-        'They are the differences between the cumulative points, so they always add back up to the lines.' +
-        /* ⚠️ An absent bar has to be explained, or it reads as a period of no work. TWO are
-           absent at the data date now, not one: the actual bar has been suppressed since
-           2026-09-11, and the FORECAST bar since 2026-09-17 — same cause, same anchored value,
-           and the fix had simply never been carried across. See `perF[d.ti] = null` in lens(). */
-        /* ⚠⚠ THE QUESTION THE OWNER HAD TO ASK, ANSWERED ON THE CHART. 2026-09-17:
-           *"Is the actual forecast bars correct? They're all over planned this month? If we add
-           them all up the red forecast line should be above the planned line."* Measured on a
-           DEMO01-shaped project: the forecast bar is the taller one in 21 of 22 remaining months,
-           and the bars total 99.6% against the plan's 95.5%.
-           It is forced arithmetic, not a glitch. The forecast starts at TODAY'S ACTUAL and must
-           still reach 100%, so it has strictly more work left than the plan does, in about the
-           same time -- and the excess summed over the remaining months equals the plan's head
-           start at the data date EXACTLY, nothing more.
-           ⚠ And it still cannot overtake: adding the bars up gives the rise from the FORECAST's
-           own starting point, which is lower. Where the forecast finish is later than the planned
-           finish the red line reaches 100% later and can only converge from below. Pin an
-           EARLIER finish and it does cross -- which is what proves this is a consequence of the
-           dates rather than a floor somewhere. */
-        (function () {
-          var head = d.TOT ? (d.plannedC[d.ti] - d.actualC[d.ti]) / d.TOT * 100 : 0;
-          var left = d.months.length - d.ti - 1;
-          if (!(head > 0.05) || left < 1 || !d.forecastC || d.forecastC[d.ti] == null) return '';
-          return ' <b>The forecast bars sit above the planned ones</b>, and they have to: the ' +
-            'forecast starts at today\'s actual and must still reach 100%, so it carries the ' +
-            (Math.round(head * 10) / 10) + ' pp the plan is already ahead by — about ' +
-            (Math.round(head / left * 100) / 100) + ' pp a ' + perWord + ' over the ' + left + ' ' +
-            perWord + (left === 1 ? '' : 's') + ' left. ' +
-            (d.fcFinish >= d.plannedEnd
-              ? 'The two curves meet at 100% rather than crossing, because the forecast finishes ' +
-                iso(d.fcFinish) + ', after the planned ' + iso(d.plannedEnd) + '.'
-              : 'The forecast line does rise above the plan here, because the forecast finish (' +
-                iso(d.fcFinish) + ') is EARLIER than the planned one (' + iso(d.plannedEnd) + ').');
-        })() +
-        (!d.manMode
-          ? ' <b>The data-date ' + perWord + ' has no actual or forecast bar.</b> The curve anchors ' +
-            'that point to the project\'s true recorded % complete, so the step into it carries the ' +
-            'whole difference between the modelled curve and what has been booked, and the forecast ' +
-            'line begins there rather than stepping into it — neither is one ' + perWord + '\'s ' +
-            'production, so neither is drawn as one. Enter it in <b>Manual</b> mode to state it.'
-          : ' <b>The data-date ' + perWord + ' has no forecast bar</b> — the forecast line begins ' +
-            'there, so there is no step into it to draw.');
+      nW.bars = '<b>The bars.</b> Right-hand axis — each is that ' + perWord +
+        '’s own share of the total, peaking at ' + peakPct + '%. They are the differences between ' +
+        'the cumulative points, so they add back up to the lines.';
+
+      /* ⚠️ An absent bar has to be explained, or it reads as a period of no work. TWO are absent
+         at the data date now, not one: the actual bar has been suppressed since 2026-09-11 and the
+         FORECAST bar since 2026-09-17 — same cause, same anchored value, and the fix had simply
+         never been carried across. See `perF[d.ti] = null` in lens(). */
+      nW.ti = !d.manMode
+        ? '<b>No bar at the data-date ' + perWord + '.</b> The curve anchors it to the project’s ' +
+          'true recorded % complete, so the step into it is a correction, not production — and the ' +
+          'forecast line starts there, so it has no step either. State it in <b>Manual</b> mode.'
+        : '<b>No forecast bar at the data-date ' + perWord + '</b> — the forecast line starts ' +
+          'there, so there is no step to draw.';
+
+      /* ⚠⚠ THE QUESTION THE OWNER HAD TO ASK, ANSWERED ON THE CHART. 2026-09-17: *"Is the
+         actual forecast bars correct? They're all over planned this month? If we add them all up
+         the red forecast line should be above the planned line."* Measured on a DEMO01-shaped
+         project: the forecast bar is the taller one in 21 of 22 remaining months, and the bars
+         total 99.6% against the plan's 95.5%.
+         It is forced arithmetic, not a glitch. The forecast starts at TODAY'S ACTUAL and must still
+         reach 100%, so it has strictly more work left than the plan does in about the same time —
+         and the excess summed over the remaining months equals the plan's head start at the data
+         date EXACTLY, nothing more.
+         ⚠ And it still cannot overtake: adding the bars up gives the rise from the FORECAST's own
+         starting point, which is the lower one. Where the forecast finish is later than the planned
+         finish the red line reaches 100% later and can only converge from below. Pin an EARLIER
+         finish and it does cross — which is what proves this is a consequence of the dates rather
+         than a floor somewhere in the maths. */
+      nW.fchigh = (function () {
+        var head = d.TOT ? (d.plannedC[d.ti] - d.actualC[d.ti]) / d.TOT * 100 : 0;
+        var left = d.months.length - d.ti - 1;
+        if (!(head > 0.05) || left < 1 || !d.forecastC || d.forecastC[d.ti] == null) return '';
+        return '<b>Forecast bars run high.</b> By ' + (Math.round(head * 10) / 10) +
+          ' pp in total — the head start the plan already has, which the forecast must still make ' +
+          'up over ' + left + ' ' + perWord + (left === 1 ? '' : 's') + ' (about ' +
+          (Math.round(head / left * 100) / 100) + ' pp each). ' +
+          (d.fcFinish >= d.plannedEnd
+            ? 'They meet at 100% rather than crossing, because the forecast finishes ' +
+              iso(d.fcFinish) + ', after the planned ' + iso(d.plannedEnd) + '.'
+            : 'Here the forecast line does rise above the plan, because the forecast finish (' +
+              iso(d.fcFinish) + ') is earlier than the planned one (' + iso(d.plannedEnd) + ').');
+      })();
     }
     /* ⚠ ONE WRITE, at the end, after all three contributors have had their say. */
-    basisNote.innerHTML = notesHTML([nF.weight, nF.bars, nF.fc], [nW.lines, nW.bars, nW.weight], compact);
+    basisNote.innerHTML = notesHTML([nF.weight, nF.bars, nF.fc],
+      [nW.lines, nW.fcdate, nW.bars, nW.ti, nW.fchigh, nW.weight], compact);
     /* ==========================================================================================
        WIRING THE READOUT AND THE BREAKDOWN.
        ⚠️ Bound here rather than once at init, because `host.innerHTML` above destroys the svg on

@@ -9,7 +9,11 @@
   <title>Users · Planners Dashboard</title>
   <link rel="stylesheet" href="assets/css/dashboard.css?v=20260917za" />
   <style>
-    .pd-chip { display:inline-block; font-size:var(--pd-fs-xs); padding:2px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); margin:2px 3px 2px 0; }
+    /* ⚠ `nowrap`: a chip is one token — "6 modules hidden" broken over three lines reads as
+       three separate facts. The row scrolls instead, which is what .pd-tablewrap is for. */
+    .pd-chip { display:inline-block; white-space:nowrap; font-size:var(--pd-fs-xs); padding:2px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); margin:2px 3px 2px 0; }
+    /* the two placeholders that sit where a chip would, and wrapped for the same reason */
+    .pd-nochip { color:var(--pd-muted); white-space:nowrap; }
     .pd-status-pending { color:var(--pd-warn-text); font-weight:700; }
     .pd-status-approved { color:var(--pd-ok-text); font-weight:700; }
     .pd-status-rejected { color:var(--pd-bad-text); font-weight:700; }
@@ -97,7 +101,16 @@
            — see ui.js's own comment on the My Work row). -->
       <div class="pd-topbar"><div id="ctx-switcher"></div><h1>Users</h1><div id="user-bar"></div></div>
       <div class="pd-main">
-        <div class="pd-card" style="padding:0;overflow:auto;">
+        <!-- ⚠⚠ `.pd-tablewrap`, NOT a bare `overflow:auto`. Owner 2026-09-17: *"Columns
+             wrap unnecessarily when side panel is opened."* A `width:100%` table with no
+             minimum CRUSHES its columns first and only scrolls once it can crush no further,
+             so with the sidebar open "No projects assigned" broke over three lines AND the
+             row still scrolled sideways — the worst of both. `.pd-tablewrap` (dashboard.css)
+             pairs `overflow-x:auto` with `> table { min-width: max-content }`, so the table
+             keeps its natural column widths and the wrapper scrolls cleanly.
+             ⚠ It was already in the shared stylesheet and used on ZERO pages. Reviving it
+             beats a third local copy of the same two rules. -->
+        <div class="pd-card pd-tablewrap" style="padding:0;">
           <table class="pd-table" id="users-table"></table>
         </div>
       </div>
@@ -205,7 +218,7 @@
           var okChip = 'style="background:var(--pd-ok-bg);color:var(--pd-ok-text);"';
           var projCell = isFullAccess
             ? '<span class="pd-chip" '+okChip+' title="Role-based — every project is reachable no matter what is checked in Assign projects.">All projects</span>'
-            : ((u.projects||[]).map(function(p){ return '<span class="pd-chip">'+Fmt.esc(p)+'</span>'; }).join('') || '<span style="color:var(--pd-muted);">No projects assigned</span>');
+            : ((u.projects||[]).map(function(p){ return '<span class="pd-chip">'+Fmt.esc(p)+'</span>'; }).join('') || '<span class="pd-nochip">No projects assigned</span>');
           // Assigning projects to a role that already sees every one of them is a
           // control that changes nothing — it re-appears the moment the role is
           // dropped to planner/user/viewer, where the assignment is real again.
@@ -232,7 +245,7 @@
               ? '<span class="pd-chip" '+okChip+' title="'+Fmt.esc(restrictedNames)+'">+ all modules</span>'
               : '<span class="pd-chip" title="'+Fmt.esc(hiddenMods.map(function (rm) { return rm.name; }).join(', '))+' — not visible to the '+Fmt.esc(u.role)+' role">'+hiddenMods.length+' module'+(hiddenMods.length===1?'':'s')+' hidden</span>';
           } else {
-            moduleCell = '<span style="color:var(--pd-muted);">—</span>';
+            moduleCell = '<span class="pd-nochip">—</span>';
           }
           // ⚠️⚠️ Approve/Reject/Delete collapse into one "Actions" menu with icon-only
           // controls (title= carries the label) rather than three loose buttons —
@@ -269,7 +282,7 @@
               '<button class="pd-btn pd-btn-sm" data-modules="'+u.id+'"'+lockAttr+'>Modules</button></div></td>' +
             '<td>' + (hasMenu
               ? '<button type="button" class="pd-btn pd-btn-sm pd-actions-trigger" data-actions-trigger="'+u.id+'">Actions '+(window.Icons?Icons.svg('chevronDown',13):'▾')+'</button>'
-              : '<span style="color:var(--pd-muted);">—</span>') +
+              : '<span class="pd-nochip">—</span>') +
             '</td>' +
           '</tr>';
         }).join('') + '</tbody>';

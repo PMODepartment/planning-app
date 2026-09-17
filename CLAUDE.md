@@ -103,6 +103,87 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (k) — Six short blocks that balance instead of three long ones that cannot, and the Users table stops crushing its own columns
+
+Owner: *"Still not the best wrapping. Can we also reduce the length of the how to read this chart?"*
+and *"UI also needs improvement for the table. Columns wrap unnecessarily when side panel is opened."*
+
+### ⚠️ Three uneven paragraphs cannot balance at any width
+
+Entry (i) columned the disclosure and (j) widened the cap, and it still looked wrong — because the
+problem had stopped being the cap. **Three blocks of very different lengths cannot divide evenly
+into two or three columns**: the third drops to a second row with a hole beside it, which is what
+the owner was looking at.
+
+Split into **six**, each with a bolded lead — *The lines · The forecast date · The bars · No bar at
+the data date · Forecast bars run high · The weighting* — and shortened: **245 words → 170**, with
+the forecast method promoted out of the tail of a paragraph about line styles into its own block,
+because it is the single most-queried thing on this chart.
+
+⚠️ **The layout is `columns:`, not a grid.** A grid flows row-wise, so a tall item sets the height of
+its whole row and leaves gaps beside the short ones. Multicol flows column-wise and *balances*, so
+the column bottoms land within 40px of each other. `break-inside:avoid` keeps each block whole.
+
+⚠️⚠️ **And `column-width` is a MINIMUM, which cost one more iteration.** The browser fits
+`floor((W+gap)/(width+gap))` columns and then stretches them. At `40ch` that asked for **four**
+tracks on the owner's 1,511px container, the six blocks balanced into three, and the fourth sat
+empty — **75% fill**, the same complaint a third time. 44ch is where it tips to three; **46ch** is
+shipped, keeping a margin so a different font metric cannot tip it back.
+
+Swept rather than sampled, on the measured chain (sidebar 245 → `.pd-main` 24 → card 17):
+
+| viewport | container | columns | blocks each | fill | chars |
+|---|---|---|---|---|---|
+| 390 | 293px | 1 | 6 | 100% | ~47 |
+| 1000 | 918px | 2 | 3, 3 | 100% | ~71 |
+| **1593** | **1,511px** | **3** | **2, 2, 2** | **100%** | ~78 |
+| 2318 | 2,236px | 4 | 2, 2, 1, 1 | 80% | ~68 |
+
+No horizontal scroll at any width. On the owner's screen the open block is now **152px** — it was
+**379px** when this started, carrying *fewer* facts.
+
+### ⚠️ The Users table crushed its columns and scrolled anyway
+
+`<div class="pd-card" style="overflow:auto">` around a `width:100%` table: with no minimum the table
+**crushes its columns first** and only scrolls once it can crush no further, so with the sidebar open
+*"No projects assigned"* broke over three lines **and** the row still scrolled sideways — the worst
+of both.
+
+⚠️ **`.pd-tablewrap` was already in `dashboard.css`** (`overflow-x:auto` + `> table { min-width:
+max-content }`) **and used on zero pages.** Reviving it beats a third local copy of the same two
+rules. `.pd-chip` gains `white-space:nowrap` — a chip is one token, and *"6 modules hidden"* over
+three lines reads as three separate facts.
+
+Measured: table 1,335px at every viewport (columns keep their natural widths), **0 chips wrapping**,
+scrolling inside the wrapper and **never on the page**, and at 1593 the table fits with no scroll at
+all.
+
+### Module access — the code was already right
+
+Owner: *"Modules are still hidden for planners."* Checked by running the access suite against the
+**deployed** `auth.js` and `config.js`, fetched from the live site: **planner 13/13**, admin 13/13,
+user 7/13, viewer 7/13. The screenshot is a tab loaded before the deploy — its modal still shows the
+old *"(super_admin by default)"* label, which was replaced in (h). A hard reload is the whole fix.
+
+### Verified
+
+`test-fcsum` **18/18** (up from 10 — the sentence assertions were retargeted to the new wording, and
+one now asserts the **figure** rather than the phrasing), the (h) forecast suite 28/28,
+`test-modaccess` 24/24, `test-scurve-forecast` 28/28, `wiring-check` 139/139, CSS braces 227/227,
+the inline script parses.
+
+⚠️⚠️ **Three separate defects came out of writing this, all from the same source and all caught
+before shipping:**
+1. A patch reordered `nW.ti = …` ahead of `nW.fchigh = …` and produced a **chained assignment** —
+   `nW.ti = nW.fchigh = (…)()` — which parses cleanly, duplicates one block and drops the other as a
+   dangling expression statement. `node --check` cannot see it; reading the result could.
+2. **Backslashes lost a layer through the shell heredoc** — twice in the page (`\'s` arriving as
+   `''s`, which at least failed to parse) and once in a test, where `\b` arrived as a literal
+   backspace and quietly failed an assertion. The page now uses `’`, which needs no escape
+   inside a single-quoted JS string, and the test uses `indexOf`.
+
+`MODULE_V` → `20260917ze`. No shared asset changed, so no app-wide bump.
+
 ### 2026-09-17 (j) — "Are the forecast bars correct?" They are, and the chart now says why; the notes finally fill the panel
 
 Owner: *"Is the actual forecast bars correct? They're all over planned this month? If we add them
