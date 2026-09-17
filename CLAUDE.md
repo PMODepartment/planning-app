@@ -103,6 +103,937 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (t) — Named non-working dates, groupings that can exist before their work, and Project Phases becomes one page
+
+Owner, picking the order off his own Schedule Setup list: *"Let's do 1.1 and 2.3 first before 4.1"* —
+**1.1** *"For Calendar, when adding one-off dates, provide option to add label"* and **2.3** *"add
+option to add sub-groupings before adding activities"*. Then, mid-work and with screenshots:
+*"Step 3 project phases is just the whole step. It should be integrated with the 5PMLC since they both
+serve the same function. I prefer to call it Project Phases"*, plus two blocks of prose to delete. Then:
+*"The next button in repetition needs to follow through the next tab first before the generate step."*
+
+### ⚠️⚠️ 1.1 UNCOVERED A LIVE BUG THAT HAS NOTHING TO DO WITH LABELS
+
+`calendars.extra_holidays` is declared **`date[]`** (`2026-07-06-working-calendars.sql`) and nothing
+has ever altered it — checked across every migration and both schema files. But the yearly-holiday
+pass writes ISO 8601 recurring keys of the form `--MM-DD` into that same array, and says so in its own
+note: *"THE STORAGE IS UNCHANGED, DELIBERATELY … the string `--MM-DD` … no migration"*. That reasoning
+is right about the CLIENT, which reads every element as a string, and wrong about the COLUMN. `'--12-25'`
+is not a date, so on a database matching this repo's schema, pressing **Add yearly day** or **Fold N
+repeating dates** and then Save is refused by Postgres with `22007 invalid input syntax for type date`.
+The whole "Repeats every year" section could not be saved, and the feature has been shipped since
+2026-09-03. `migrations/2026-09-17-calendar-holiday-labels.sql` widens the column to `text[]`.
+
+Widening is the right direction because `text[]` is what every reader already assumes: `holidayIndex`
+does `String(list[i]).trim()`, `isWorkDay` looks the day up by string key, and the only SQL anywhere
+that touches the column is a type-agnostic `array_length`. No reader changes and no date arithmetic is
+lost — there was none. ⚠️ The DO block reads the type from `pg_attribute` rather than assuming, because
+`VERIFICATION.md` documents measured drift between `/migrations` and the live database; it is a no-op
+if the column is already `text[]`, and it **raises** on any other type rather than guessing.
+
+### ⚠️ The label is a sidecar map, and the reason is the hot path
+
+`extra_holiday_labels jsonb`, keyed by the same string that sits in `extra_holidays`. Not an array of
+objects: `isWorkDay` is called once per calendar day by `addWorkingDays`, which walks up to 7,300 days
+to turn one duration into one finish date, across thousands of activities — `holidayIndex` exists
+precisely because a linear scan there cost *"up to 1.6 million string comparisons to date a single
+activity"*. An object per element would put a property dereference inside that loop and force three
+other modules to learn a new shape for a field they only count or compare. A sidecar costs that path
+nothing; it is read only when the editor draws a chip. One map serves both kinds of entry, so a yearly
+holiday is nameable ("Christmas") exactly as a one-off is ("Typhoon Egay shutdown"). A key with no
+entry falls back to the date — so an unlabelled calendar, and every calendar saved before today, reads
+exactly as it did.
+
+### 2.3 — a grouping can now exist before anything is filed under it
+
+The Construction Library built its tree **from the paths items carry**, which meant a grouping could
+only be created by first creating work to put in it. The planner who wants to lay the structure out and
+then fill it in had no way to do that. `cfg.groupings` is now a declared list that the tree builder
+folds in alongside the item-derived paths, so an empty grouping is a real node. ⚠️ Declared paths go
+through **`_libNorm`, the same key the tree already builds with**, so a grouping declared here and a
+path an activity later carries land on ONE node instead of two that look identical on screen.
+
+⚠️⚠️ Deleting a grouping had to learn about this in the same change. `absDelSeg` deletes by rewriting
+the paths ITEMS carry — a declared grouping with nothing in it has no item paths to rewrite, so without
+`libUndeclare` it would survive its own delete and read as a broken button. Undeclaring drops
+DESCENDANTS too, since a declared child of a rung that no longer exists would keep the parent alive
+through the builder. And the toast no longer claims items moved when none did.
+
+⚠️ `cfg.groupings` is named in `normalize()`. That function is a **whitelist** — a key it does not name
+is silently stripped on save and on load, so a new field that skips it appears to work all session and
+is gone on reload.
+
+### ⚠️⚠️ Project Phases is one page, and the screenshot showed why the tabs were wrong
+
+Shipped this morning, the step rendered **"3 · Project phases — Project phases"** — the tab name
+repeating the step name — and then, under the tab strip, a SECOND heading **"3 · The phases either side
+of construction"**, because the sub-renderer emits its own. Two headings and a tab strip for a step
+whose two halves are the same subject: the phases, and the tree those phases produce. Reading one after
+the other is the whole content, so there was nothing to switch between. Both halves now draw on one
+page under one heading; `stPhases` and `stWbs` take a `noHead` flag rather than losing their headings,
+so each stays usable if something opens it on its own. The tab MECHANISM stays — Activities still has
+two genuinely different views.
+
+Removed at the owner's request: the **Construction Library → Execution Phase** bridge paragraph (three
+sentences of counts and mechanism above a pane that shows the same counts in its own header, and which
+on an empty project led with "0 groupings"), and the lede **"The project's live WBS. Saved as you
+type."** `strBridge` and its four stat helpers went with the paragraph rather than being left as a
+renderer nothing calls, and so did the now-unmatched `.sbld-strjump` rule — a rule that cannot match
+reads as working styling to everyone who comes after.
+
+### The Next button walks Repetition's five views
+
+Same request as the Activities one, for the same reason. The footer's Next/Back walk
+`stepTabs(<step title>)`; Repetition kept its five views in a private `REP_TABS` + `_repView` pair the
+walker could not see, so Next jumped from Tower links straight to Generate past four screens. The list
+and the selected key move into `STEP_TABS` — ⚠️ not a copy, because a private copy kept in step with a
+shared one is the bug that writes itself. Next now goes Tower links → Zone sequence → Trade sequence →
+Scope per zone → Stacking → Generate, and Back from Generate lands on Stacking.
+
+⚠️ It is deliberately **not** routed through `stTabbed`: all five sub-renderers emit their own `<h2>`,
+so the shell's heading would land a second one directly above it — the exact doubled title fixed above.
+Unifying the two tab treatments (Repetition's pills, Activities' cards) belongs to the typography pass
+(4.1), not to a Next button. The view is now remembered across reloads, which the pills never did.
+
+Deep-link aliases: the three phases aliases (`WBS`, `5PMLC`, `Structure`) no longer ask for a `pmlc`
+tab that was deleted with the tab set — `setStepTabQuiet` ignored it, so it was inert wiring that read
+as live. They resolve to the step, which shows both halves.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · `sql-struct`
+all bodies balanced · inline scripts parse (`new Function`, 0 failures) · CSS brace balance identical to
+pinned `70e7e38` on all three blocks · no NUL bytes · orphaned-`*/` scan at its 2-hit baseline · the
+Next walk simulated against the real `STEP_TABS` extracted from the file. `calendar.js` `?v=` →
+`20260917a` across all three consumers, `modules-grid.js` `?v=` → `20260917zk` (both sort after what the
+remote serves). ⚠️ **The migration has not been run** — the owner runs those himself, and until he does,
+"Add yearly day" stays broken exactly as it is today.
+
+### 2026-09-17 (s) — The Schedule Setup grids become PDGrid, and two copies of one engine go
+
+Owner: *"Tables should be more readable. Cleanup and follow consistency especially having the excel
+feature"*, then, asked whether that meant adopting the shared grid layer: *"Let's adopt PDGrid for the
+setup tables."*
+
+### ⚠️⚠️ WHAT THIS REPLACES IS THE SAME ENGINE WRITTEN TWICE
+
+`wireXlGrid` (101 lines, the Activities step) and `wireT4Grid` (77 lines, the Trade-sequence step)
+each carried their own focus model, range paint, mousedown/mouseover drag, dblclick-to-edit,
+Tab/Enter/arrow handling, clipboard paste and copy. Read side by side they are near-identical —
+`cellEl`, `paint`, `bounds` and all three mouse handlers match line for line, differing mainly in
+whether the edit flag is called `xEditing` or `t4edit`. That is the two-copies-drift shape this
+module keeps paying for, and `assets/js/xlgrid.js` has been that engine since 2026-09-07, already
+shipped and already used by the BOQ and the S-curve.
+
+**178 lines of duplicated grid engine deleted; net −56 lines in the module.**
+
+### ⚠️⚠️ AND IT IS A DELIBERATE TRADE, NOT A FREE WIN — MEASURED BEFORE COMMITTING TO IT
+
+The bespoke grids were **not** poorer than PDGrid. Measured against the shipped source, they already
+had arrow keys, Tab, Enter, Escape, type-to-edit, click-drag range selection, clipboard copy **and**
+paste — plus two things PDGrid does not have:
+
+| | bespoke setup grids | PDGrid |
+|---|---|---|
+| selection | **rectangle** (r0..r1 × c0..c1) | column run |
+| Ctrl+D fill | across a rectangle | one column |
+| Delete | clears a rectangle | clears a column run |
+| Ctrl+Z undo | **none** | **yes** |
+| cell model | `<td>` + an edit overlay | real inputs |
+
+So the honest question was whether "adopt PDGrid" meant accepting a **narrower** selection. It does —
+and PDGrid's own note already argues the case: *"the operations a planner actually wants here are
+'put this rate down the rest of the trade' and 'clear this column' — both vertical. A rectangular
+model would cost range maths in every operation to serve a case (multi-column fill) that a paste
+already covers better."* That reasoning holds for these columns too: what gets filled down is
+Interior (d) or Exterior (d), one at a time; code and name are per-row unique. And PDGrid's paste
+still spills in **2-D**, so the pasted case is unaffected. Recorded here rather than left for somebody
+to discover that a rectangle no longer selects.
+
+### ⚠️ A `type="number"` PASTE TRAP GOES WITH IT, FOR THE THIRD RECORDED TIME
+
+The old inline editor built its control as `ctl.type = col.num ? 'number' : 'text'`. A number input
+**reads back an EMPTY STRING for anything the spec cannot parse**, so a pasted `1,000` silently became
+blank. This repo has now recorded that same trap in the BOQ grid, the Contracts & Claims money fields
+and the Cash Flow inputs. The duration cells are `type="text"` with `inputmode="numeric"`.
+
+### Three defects found while converting, each of which would have shipped quietly
+
+- ⚠️⚠️ **`+ Add row` wrote the retired focus pair.** With `xa`/`xf`/`xWantFocus` deleted it is a
+  **ReferenceError on the first click** — and `node --check` cannot see it, which is this module's own
+  z6 lesson. The intent (land the caret in the new row) is kept, asked of the DOM instead of a flag.
+- ⚠️⚠️ **`Unload selected rows` read `xa`/`xf` too — and would NOT have thrown.** Those were
+  declared at module scope, so it kept parsing and running, and would simply have unloaded **row 0
+  every time, whatever was selected**: a silent wrong answer, which is the worse failure. PDGrid had no
+  way to answer "which rows are selected", so it gains a small read-only **`selectedIds()`** rather
+  than the module reaching into `.pdg-sel`, which is that file's private paint class and one rename
+  from breaking silently.
+- ⚠️ **`td.xl-cell` carried `user-select:none` and `cursor:cell`** — correct for a `<td>` you
+  select, wrong for one that now holds an input. `user-select` inherits, so a planner double-clicking
+  a code to replace it would have found nothing selectable.
+
+### What else went, and what deliberately stayed
+
+`xlSetCell(row, col, text)` is **deleted**, not left beside its replacement: two setters parsing the
+same labels is how they come to disagree about what a pasted "Change Order" means. One
+`xlSetById(id, field, text)` carries the identical parsing. ⚠️⚠️ **It refuses to `prompt()` inside a
+batch** — filling "Change Order" down forty rows through the old grid meant **forty dialogs**, one per
+cell, which is not a thing anybody can finish; in a batch the contract is set and the reference is left
+for the Change Order Ref column. `.xl-sel`/`.xl-active` went too — PDGrid paints `pdg-sel`, so those
+rules could never match again, and a rule that cannot match reads as working styling to everyone after.
+⚠️ **The column-resize grips stay**: PDGrid attaches rather than renders, so `data-r`/`data-c` remain
+on the `<td>` for the grips and the row-number gutter, and `data-i`/`data-f` go on the control inside.
+
+Both tables take `pdg-grid`, so the setup grids now read as the same lattice as the BOQ — which is the
+"follow consistency" half of the ask, and it is the skin the owner asked for by name on 2026-09-07
+(*"we can just follow the all work packages grid design"*).
+
+### Verified
+
+Inline block **parses, 0 failures**; `xlgrid.js` parses; every name the new code calls is checked for a
+declaration, and a sweep for references to the retired grid state (`xa`, `xf`, `xEditing`,
+`xWantFocus`, `t4edit`, `t4f`, `t4a`, `clampRowIdx`, `xlSetCell`) returns **comments only**.
+`wiring-check` **139 passed, 0 failed** — ⚠️ and it **bit**: the first pass loaded
+`xlgrid.js?v=20260907a`, a token I guessed, against the `20260907e` the other two consumers carry,
+and the asset audit reported the split rather than letting a stale copy ship. `dead-hooks` **9**, the
+documented baseline; 0 NUL bytes; CSS braces **2277/2276** against `origin/main`'s **2279/2278** — the
+delta of 1 is this file's own recorded off-by-one, identical on both sides.
+
+⚠️ **NOT VERIFIED SIGNED IN.** Nothing here has been typed into: the grids need a loaded project, and
+what is proven is that the module parses, that every identifier resolves and that the two engines are
+gone. The first things to try are **Tab across a row**, **Shift+↓ then Ctrl+D** down Interior (d),
+**a paste of two columns out of Excel**, **Ctrl+Z**, and **Unload** with a range selected — that last
+one is the path that would have silently taken row 0.
+
+`xlgrid.js` → `?v=20260917zj` across all 3 referencing pages; `MODULE_V` → `20260917zj`,
+sort-checked past `20260917zh`.
+### 2026-09-17 (r) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
+
+⚠️ **Re-lettered `(h)` → `(q)` → `(r)`, TWICE on merge.** First a concurrent session independently
+used `(h)` on 2026-09-17 for its own, unrelated entry (*"Planners get every module"*, which widened
+`AppAuth.moduleVisible`'s default with `MODULE_ALL_ROLES`/`seesRestrictedModules`) — moved to `(q)`,
+the next free letter past that day's highest (`p`) at the time. A second concurrent session then
+independently ALSO picked `(q)`, for an unrelated Schedule Setup entry — kept whole, below, and this
+one moved again to `(r)`, the next free letter now that both `(p)` and `(q)` are spent. `(o)` is
+still skipped, as it reads deliberately absent elsewhere in this file's own convention.
+⚠️ **The two changes compose, not collide** — `moduleVisible` now checks `USER_ADMIN_ALLOWED`
+for role `user`/`admin` FIRST (returning false outright for anything outside the eight-module
+list), and only a role that survives that check reaches `!m.superAdminOnly || seesRestrictedModules(profile)`,
+so a `planner`'s wider access from `(h)` is untouched while `admin`'s is narrowed exactly as
+asked here.
+
+Owner: *"for user and admin, hide the rest of the modules and show only: Projects, Pormac, Dashboard,
+Meetings, Schedule, S-Curve, Issues and Concerns, Progress Photos."* Then, separately: *"for actions,
+instead of actions dropdown, show already the check, X, delete buttons."*
+
+**The module allowlist.** `AppAuth.moduleVisible(m, profile)` is the one predicate `UI.renderNav`,
+`ModulesGrid.visible` (which `dashboard.html`'s tile grid delegates to) and Portfolio Overview's
+hardcoded tab gate all already call — so this is a rule added to that one function, not four separate
+edits. ⚠️ A new `USER_ADMIN_ALLOWED` list sits **above** the existing `superAdminOnly` check and
+**below** the per-user `module_access` override: for role `user` or `admin` with no override, only
+`pormac`, `minutes-of-meeting` (Meetings), `project-schedule` (Schedule), `s-curve`, `issues-lessons`
+(Issues and Concerns) and `progress-photos` (Progress Photos) are visible — everything else,
+including `contracts-claims`, which was not `superAdminOnly` and so was still reaching `admin`, drops
+out. ⚠️ **Projects and Dashboard are not `MODULES` registry entries** — `projects.html` and
+`dashboard.html` are always-reachable shell pages, so there is nothing to gate for either. ⚠️ `planner`
+and `viewer` are untouched, and a per-user `module_access` override still wins in either direction,
+exactly as it already did for the `superAdminOnly` rule — the override is checked first and returns
+immediately.
+
+**The Users table's Actions column.** 2026-09-16 (w) had collapsed Approve / Reject / Delete into one
+"Actions ▾" popover menu. Reverted: each row now renders the three icon-only buttons (check / x /
+trash) directly in the cell, shown only when they apply (Approve hidden once approved, Reject once
+rejected, Delete on your own row) — the same gate the popover used, just without the trigger and the
+`position:fixed` menu it built and tore down on every render. `wireActionsMenus` / `closeActionMenus`
+/ `.pd-actions-menu` / `.pd-am-btn` are removed rather than left dead; the three buttons wire through
+plain `data-approve` / `data-reject` / `data-del` attributes, alongside the existing `data-role` /
+`data-dept` / `data-projects` / `data-modules` wiring in the same function.
+
+**Verified:** `node tools/wiring-check.js` **139 passed, 0 failed**; `node --check` on `auth.js` and
+admin.html's inline script; 0 NUL bytes in both files; `auth.js?v=` re-derived past the concurrent
+`(h)`/other 2026-09-17 bumps to `20260917zh`, across all **28** referencing pages, 0 stragglers.
+⚠️ **Not verified signed in** — no live login is possible in this environment; the role gate is
+checked by reading `moduleVisible`'s logic against every role/override combination, not by watching a
+real `user`/`admin` account's sidebar.
+
+`assets/js/auth.js?v=` → `20260917zh` (28 pages, shared) — sort-checked past every other
+`auth.js?v=` token this day's cascade of entries reached. No `MODULE_V` bump — no module
+`index.html` changed structurally; `admin.html` is fetched at its own URL and is not a module page.
+
+### 2026-09-17 (q) — Schedule Setup: the Structure step splits in two, Next walks the tabs, Generate ends with the push, and the Flowline goes
+
+Owner, a twelve-item list across Schedule Setup, the schedule UI and the LSM, then three clarifications
+in flight. This entry covers the seven that are done; the rest are named at the bottom rather than
+half-built.
+
+### ⚠️⚠️ THE STRUCTURE STEP DID NOT MOVE — IT SPLIT, AND THAT IS WHAT MADE THE MOVE POSSIBLE
+
+Owner: *"Remove this step let's integrate with the project phases step. Let's brainstorm."*, then
+*"move this step after working calendars"*, and — after the brainstorm — *"Construction Library is ok
+to be a second view of the Activities Step."*
+
+Structure carried **two views that are not one subject**. **5PMLC is literally the project
+lifecycle**, so it and the Project phases step were the same thing seen twice: phases DECIDES which
+branch is which, 5PMLC SHOWS the tree that produces. Merging those deduplicates a screen. The
+**Construction Library** is different — the work inside Execution — and it is a READ of the places
+and the items, which is exactly why this file used to argue the merged step **could not lead**:
+
+> *"That is also why the merged step sits HERE and not at position 2: of its two views, only 5PMLC
+> could have led."*
+
+That objection was right about the Library and wrong about nothing else. Sending the Library to the
+step that OWNS its items **answers** it rather than overriding it, and what is left — the lifecycle
+phases and the tree they make — is a structural decision a planner can take before a single activity
+exists. So it can lead.
+
+| | before | after |
+|---|---|---|
+| build rail | Calendars · Activities · Floors & Zones · **Structure** · Repetition · **Project phases** · Generate | Calendars · **Project phases** · Activities · Floors & Zones · Repetition · Generate |
+| steps | 7 | **6** |
+
+⚠️ **One tab mechanism, two steps, keyed by step TITLE and never by index** — the rail is renumbered
+by `sbSyncSteps` per path, so a remembered index would point at a different step on the import path.
+⚠️ **`stStructure` is DELETED, not left dead** (zero call sites), along with `strTabs` and the
+`strView` trio; a renderer nothing calls reads as working code to every tool. ⚠️ **`strBridge`
+SURVIVES** and is rendered by the new shell — it is the line explaining that Library items become
+branches inside Execution Phase *only on push*, which is the one thing that stops "editing here" and
+"editing there" being confused. Deleting it with its host would have thrown away real guidance.
+⚠️⚠️ **Every retired title still resolves.** `_stepNo` answers an EMPTY STRING for a name it cannot
+find, and a blank where a step number belongs reads as a broken reference — so `Structure`, `5PMLC`
+and `Construction Library` alias onto the steps that absorbed them, and `gotoStep` (which other
+modules call) now routes **to two different steps with the right tab showing**, where it previously
+pointed at a step that no longer exists and would have failed silently.
+
+### Next and Back walk the tabs before they leave the step
+
+Owner, mid-flight: *"Next/Finish for schedule setup specifically for activities: it should move
+through each tab not directly to the next step."*
+
+⚠️⚠️ **A STEP WITH TABS IS NOT FINISHED WHEN ITS FIRST TAB IS.** Next jumping straight past the second
+view means the Construction Library and the 5PMLC tree are only ever reached by noticing the tabs —
+which is how a view ends up never opened. ⚠️ **Back is symmetric**, or the pair disagrees: Next walks
+you forward through two tabs and Back takes you out of the step from the first of them, skipping the
+one you just saw. ⚠️ **The button says which it will do** — *"Construction Library →"* rather than a
+bare *"Next →"* — and moving into a step from either direction lands on the matching end of its tabs,
+so Back-then-Next cannot show two different screens.
+
+### Generate: the building, then the push, in that order
+
+Owner: *"instead of the current gantt and table preview, move the vertical stacking here for internal
+and external. retain the project start date"*, and then *"Push down to the bottom is the final step in
+terms of sequence and reading the page it should be seen when the whole page is scrolled down."*
+
+The old preview was a duration-per-zone bar list plus every generated row in a scrolling table — an
+inventory. The question at the push is *where does this building get to, and when*, which is the shape
+the stacking answers and a 2,000-row table does not. Both bases sit side by side because **the
+difference between them is the decision being made**.
+
+⚠️ **Nothing is re-derived**: the cards come from `stackTowerSVG`, the same renderer the Repetition
+step's Stacking tab uses, fed this basis's own finish dates. Two renderers of one model is how this
+module once shipped a 3D view that disagreed with the 2D view of the same data. ⚠️ The trade and tower
+chips are the stacking's own state, so narrowing applies to **both columns at once** — comparing
+internal against external through two independent filters would be comparing two different buildings.
+⚠️⚠️ **The zero-duration warning survives the rewrite.** It is what turns *"only one trade was pushed"*
+from a surprise afterwards into a sentence before — the reported Allied-Services-only case — and
+dropping it with the table would have removed the one thing in the old preview that prevented a bad
+push. ⚠️ The push bar is **the last thing the step renders**, so the Back / Save setup footer lands
+directly beneath it: it is the only irreversible action in the wizard and it used to sit **above** the
+preview it is meant to be judged on.
+
+### ⚠️⚠️ THE PUSH STOPS ASKING — AND THE SCENARIO COULD NOT BE KEYED THE OBVIOUS WAY
+
+Owner: *"default push is for external. simultaneous push for internal but will proceed to scenario."*
+External is the contract, so it is what the live schedule holds; internal is the target, which is what
+a what-if scenario is for. The chooser made a planner pick one and lose the other.
+
+⚠️⚠️ **THE IDS DO NOT MATCH BETWEEN THE TWO BASES, AND KEYING ON THE INTERNAL ONES WOULD HAVE FAILED
+SILENTLY.** `pushToSchedule` allocates `SB<rank><nnnnn>` **by sequence position within one basis's
+row set**, and the two sets are not the same rows: `generate()` drops any activity whose duration is
+0 on that basis. So the same piece of work gets a **different id** under internal than under external.
+A scenario built from the internal generate would key on ids the live schedule does not have — and
+`restoreScenario` skips an unknown id with `if (!r) return;`, **silently**. It would look captured
+and restore nothing. The stable identity across the two is `(loc.uid, act.id)`, so that is the join:
+the scenario is keyed on the **external** rows' real ids, carrying the internal dates.
+
+⚠️ **What cannot be represented is counted and said.** Work that exists only on the internal basis has
+no live row for a scenario to point at; the toast names how many rather than dropping them quietly.
+⚠️ **A failed capture never fails the push** — the activities are in, and rolling them back over a
+convenience would be far worse; an un-migrated database says so and names the migration.
+
+### The LSM folds, and the clashes can be put away
+
+Owner: *"The Gantt should be that the WBS should fold all into one row not see the ladder"*, then
+*"LSM Gantt bars intentionally will fold into the same bar for multiple activities. Let's also add the
+option not to show the clashes."*
+
+Grouping by every location level and then collapsing produced **Tower rows with Level rows nested under
+them** — a ladder to read past before reaching the storeys, which is not what a time-location chart is.
+Grouping by the **floor level alone** makes every storey a top-level row: no ancestors, no zone or unit
+rows beneath, and several activities deliberately sharing one bar. ⚠️ It falls back to the full ladder
+when no floor level can be identified — one row per storey is meaningless when nothing names a storey —
+and the collapse that followed now runs **only on that fallback**, since a single grouping dimension has
+no descendants left to close and calling it would be a no-op dressed as an action.
+
+⚠️⚠️ **THE CLASH TOGGLE HIDES THE DISPLAY, NOT THE FINDING.** The deck calls an overlap a *"possible
+pitfall"* and the strip has always said some overlap is deliberate; on a programme where most are
+intended, a permanently-lit row of red chips trains a planner to ignore the one that matters.
+`_lsmClash()` still computes, **the count is still printed**, and one click brings it back — so this
+can never become a schedule that looks clean because somebody switched the evidence off and forgot. One
+flag gates both the strip and the on-bar marks, read in each place rather than copied.
+
+### The Flowline is removed
+
+Owner: *"Flowline - let's remove"*, confirmed mid-flight: *"Flowline button is in the toolbar let's just
+remove this."* The button, the ~190-line renderer, its CSS block, `flowlineMode`, `setFlowlineMode`,
+the view-key entry, the toolbar shed list and every call site. `_lsmAggOn()` collapses to `_lsmRows`.
+
+⚠️⚠️ **THE COMMENTS WERE MOST OF THE WORK, AND TWO OF THE STRINGS WERE USER-FACING.** Fifteen comments
+claimed things that stopped being true — and the LSM button's own tooltip and the Group menu preset's
+both told the planner to use *"the Flowline button"*, a control that no longer exists. A third hint sent
+them to *"the flowline's footnote"* for an unrankable storey; with the chart gone that storey keeps its
+own row and is simply left out of the rate, which is what it now says. A tooltip naming a control nobody
+can find reads as a broken app.
+
+⚠️ **Twice I deleted the OPENING line of a multi-line comment and left its body as bare code** — the
+parse caught both. A scanner for orphaned `*/` now reports 2, and ⚠️ **both are pre-existing regex
+literals**, measured identical on `origin/main` rather than assumed.
+
+### Verified
+
+Inline block **parses, 0 failures**; every identifier the new code names is checked for a declaration in
+the same scope (`node --check` cannot see a ReferenceError, which is the z6 lesson). `wiring-check`
+**139 passed, 0 failed**; `dead-hooks` **9**, the documented baseline; `dark-remap` 0 findings; 0 NUL
+bytes. CSS braces **2279/2278** against `origin/main`'s **2299/2298** — the delta of 1 is this file's
+own recorded off-by-one, **identical on both sides**, so the flowline block came out and the two new
+blocks went in balanced.
+
+⚠️⚠️ **A `git stash -q` INSIDE A THROWAWAY GUARD SWALLOWED THE WHOLE CHANGE, AND THREE OF MY OWN
+MEASUREMENTS WERE TAKEN AFTER IT.** The checks that followed reported `origin/main`'s numbers as if
+they were mine — including a CSS comparison that read "identical" because both sides were the same file.
+Caught because `git diff --stat` came back **empty**. Recovered from `stash@{0}` (the other session's
+`stash@{1}` untouched) and every gate re-run against the real tree. The lesson is not "check the diff",
+it is **do not stash in a shared clone at all** — which is a rule this repo already has.
+
+⚠️ **NOT VERIFIED SIGNED IN**, and that gap is wider than usual here: the wizard's steps, the tab walk,
+the stacking preview and the push all need a loaded project, and nothing in this change has been driven
+against one. The first things to try are opening Schedule Setup (the rail should read **Calendars →
+Project phases → Activities → …**), pressing **Next** on Activities (it should go to Construction Library,
+not to Floors & Zones), and one push (external into the schedule, internal named in the scenario list).
+
+⚠️ **NOT DONE, and deliberately not half-built:** the **label on a one-off calendar date** (item 1.1 —
+`extra_holidays` is a Postgres `date[]` with nowhere to put a label, so it needs a widening migration
+or a sidecar `jsonb`, not a UI change); **sub-groupings before activities exist** (item 2.3 — the Library
+derives its groupings from activities, so authoring one first is a real feature rather than a control);
+and the **typography and table sweep** (items 4.1 / 4.2 — that wants measurement first, and "follow the
+excel feature" needs a decision on whether the setup tables adopt `PDGrid`).
+
+`MODULE_V` → `20260917zh`, sort-checked past `20260917zg`.
+
+### 2026-09-17 (p) — The personal sandbox: one function change isolates all 16 modules, and a checker that had never read its own subject
+
+**Run `migrations/2026-09-17-sandbox-project.sql`.** Owner: *"I need a sandbox project. This will be
+the training ground for tomorrow's cascade of the app. This sandbox project will be personal to the
+user and any edits they made will not be shared for other users. In this way planners will no longer
+have to add new projects that will add +50 test projects. This will also help them in familiarizing
+the app."*
+
+### ⚠️⚠️ THE WHOLE FEATURE IS ONE ORDINARY PROJECT ROW THAT ONLY ITS OWNER CAN SEE
+
+This database already partitions every module's data by `project_id`, and every one of those
+partitions is gated by ONE function. Measured against `supabase-build.sql` before a line was written:
+
+| | |
+|---|---|
+| `can_access_project(...)` | **244 occurrences** |
+| `create policy` | 279 |
+| `is_writer()` | 137 |
+
+So `can_access_project()` **is** the isolation boundary for the entire app. Teaching that one
+function that a sandbox belongs to exactly one person means all 16 modules inherit it —
+project_schedule, boq, cash_flow, s_curve, risk_register, the lot — with **no module table altered,
+no module code changed**, and no future module able to forget to apply a per-user filter.
+
+⚠️⚠️ **NOTE WHAT THE SANDBOX BRANCH DOES NOT SAY: there is no `role in ('admin','super_admin')` in
+it.** That omission is the feature. An admin sees every real project in the company and CANNOT see
+anyone else's sandbox, because a training ground you share with your boss is not a training ground.
+This is the only place in this schema where admin is not a superset, and `projects_read` had to be
+restructured for it — its existing shape is `is_admin() or can_access_project(id)`, and that leading
+`is_admin()` **short-circuits**, so an admin would have seen every sandbox however carefully the
+function underneath was written.
+
+**Two designs rejected, on their merits rather than on effort:**
+- ⚠️ **A `user_id` column on every module table** — 89 tables altered, 244 policies rewritten, and
+  the part that kills it: every future module silently defaulting to NOT isolated until somebody
+  remembers the column. A second partition that means almost the same thing as the existing one is a
+  bug factory.
+- ⚠️ **One shared `SANDBOX` project for everybody** — the cheapest possible change, and it fails in
+  the first hour of the cascade: two planners on the same fake schedule overwriting each other, which
+  is **worse** training than the +50 test projects it replaces.
+
+### The guards, each closing a door that would otherwise be open
+
+- ⚠️ **`is_sandbox` is NOT NULL DEFAULT false.** A nullable flag would make every policy read
+  `coalesce(is_sandbox,false)` forever, and the one that forgot would fail **open** — a sandbox
+  visible to the whole company. NOT NULL makes the safe reading the only reading.
+- ⚠️⚠️ **`owner_id` is ON DELETE SET NULL, and both alternatives are worse.** NO ACTION makes
+  `admin_delete_user()` fail on a foreign key — a user you cannot delete. CASCADE removes the
+  projects row and strands the sandbox's module rows as orphans, because **25 tables carrying
+  `project_id` have no FK to projects at all** (wbs_nodes among them). SET NULL leaves a visible,
+  purgeable husk, which `projects_read` deliberately shows to admins and to nobody else.
+- ⚠️⚠️ **A partial unique index is what actually makes "one per person" true.** `sandbox_ensure()`
+  checks before inserting, and a check-then-insert is a race: two tabs opening the app at the same
+  moment both find nothing and both insert.
+- ⚠️⚠️ **Both sides of `projects_upd`'s `with check` pin the flag.** Without it the owner could set
+  `is_sandbox = false` and promote their training data into a real project visible to every admin —
+  the exact mess this feature exists to end, arriving through the back door. The other branch pins it
+  the other way, so a planner cannot take a real project private.
+- ⚠️ **`projects_ins` carries `not is_sandbox`**, so the RPC is the only door and "owner_id is always
+  the caller" is an invariant rather than a convention.
+- ⚠️⚠️ **`sandbox_reset()` TAKES NO ARGUMENT.** A `sandbox_reset(target text)` signature would be a
+  SECURITY DEFINER function that purges any project id the caller names — one missing ownership check
+  away from company-wide data loss. Taking no argument means there is no check to forget.
+- ⚠️ `can_access_project()` is rewritten as **one `exists` over a join, not two nested subqueries** —
+  it runs per row for 244 policies, including project_schedule reads in the six figures against an 8s
+  statement_timeout. The `left join` is load-bearing: `project_id` on the FK-less tables can name a
+  project that no longer exists, and an inner join would silently change those rows' behaviour.
+- ⚠️ `sandbox_reset()` reuses `admin_delete_project()`'s catalog sweep, minus the final delete, and is
+  **deliberately not refactored into a shared helper** — folding them together would put the
+  company's hard-delete and a self-service button on one code path.
+
+### What it does NOT solve, stated rather than discovered tomorrow
+
+⚠️⚠️ **A `viewer` gets a sandbox they can READ but not WRITE.** Every module write policy is
+`is_writer() and ... can_access_project(project_id)`, and `is_writer()` takes no project argument, so
+there is no way to grant a viewer write access to their own sandbox alone without rewriting all 137
+`is_writer()` call sites — flattening months of per-module hand-tuning for one edge case. A viewer
+who needs to practise WRITING should be moved to `user` for the cascade; that is a one-field change
+in admin.html and it is the right lever. Measured before deciding, not assumed.
+
+### The client: the sandbox is offered everywhere and counted nowhere
+
+⚠️⚠️ **`PDb.getProjects()` deliberately still RETURNS it** — RLS means the only sandbox in that result
+is your own, so it is one extra row, not fifty, and including it is what lets every module's project
+picker offer it with **zero per-module change**. What must not include it is a portfolio
+**aggregate**: `UI.allProjectIds()` and portfolio-dash's `scopedProjectIds()` both filter it out,
+because those are what every "Portfolio (all projects)" read fans out over, and a sandbox left in
+them would put practice data into your own S-curves, cash-flow totals and KPI roll-ups as figures
+that look entirely real.
+
+⚠️ **`PDb.isSandbox()` reads the COLUMN, never the `SBX-` id prefix.** A prefix test would be one
+renamed project away from treating a real project as a sandbox and — the direction that leaks —
+would report every project as real on a database where the migration has not run. As written, an
+unmigrated database answers false for everything and the whole app behaves exactly as before, so
+**the client is safe to ship before the migration is run.**
+
+⚠️⚠️ **A defect caught by reading the second caller: `reloadData()` re-reads the project list.** The
+first cut split the sandbox out at boot only, so it was filed correctly until the first create or
+delete and then quietly rejoined the list **and the "N projects" count**. One `applyProjects()` now
+serves both readers, because two readers of one shape is how they drift.
+
+`projects.html` gets a pinned sandbox card above the list — rendered whether or not the row exists
+yet, because the answer to *"how do I practise without adding a test project?"* has to be on screen
+**before** the thing exists. ⚠️ It sits outside the group/sort/search machinery entirely: a search for
+"tower" must not make the training ground disappear, and it must never be filed under a group head.
+⚠️ Reset reuses the type-the-code gate rather than a bare confirm, and passes **no preview** —
+`admin_project_delete_preview` is `is_admin()`-only, so arming on a preview an ordinary user can
+never obtain would make Reset permanently unusable for most of the people this is for.
+`dashboard.html` gets a banner, because once you are inside a project every module looks identical
+whichever project it is.
+
+### ⚠️⚠️ AND THE SQL CHECKER REPORTED "0 FUNCTION BODIES" ON A FILE WITH THREE
+
+`tools/sql-struct.js` matched `/\$\$([\s\S]*?)\$\$/` — **the bare `$$` only**. This migration uses
+`$fn$`, so all three bodies were invisible and the run **exited 0 having checked nothing**. That is a
+false pass of the worst kind: it spends the credibility of a green run on a file it never opened.
+The blind spot was not new — `supabase-schema.sql`, `supabase-setup.sql` and
+`2026-09-07-class-code-dedupe.sql` (`$q$`) had **never once been read** by it.
+
+Now tag-aware, and bodies are located in the **masked** source (comments and string bodies blanked by
+`scanSql`, offsets preserved) so a `$$` inside a comment cannot open a phantom body — which the raw
+regex could. ⚠️ It self-tests on all three shapes before reading a file, and the green run is proved
+to bite: deleting one `end if;` from this migration reports **body 2 UNBALANCED, bare `end` closes an
+open `if`**. Full sweep: **140 bodies, 0 unbalanced.**
+
+### Verified
+
+- **140 plpgsql bodies balanced, 0 unbalanced**, with the negative build biting.
+- The card **rendered in a browser** against the shipped stylesheet, sliced out of `projects.html`
+  and executed rather than retyped: both states correct (*Create my sandbox* with no Reset, then
+  *Open* + Reset with the name rendered), background resolving to a **colour**
+  (`rgba(199,119,0,.12)` light, `rgba(224,160,8,.16)` dark, pill ink `#8A5300` → `#E0A008`), so the
+  stylesheet is provably in the cascade; at desktop the actions sit to the RIGHT of the text on the
+  same row, at phone width they take their own row with both buttons on one line and no label
+  wrapped; **no sideways page scroll at either width**.
+  ⚠️ The phone case measured at **185px**, not the 375 requested — the pane scaled it — so it is a
+  stricter test than a real phone, not a laxer one.
+- ⚠️ **Two harness faults, both of which reported the opposite of the truth.** The first run measured
+  a **hidden tab**: `visibilityState:"hidden"`, `clientWidth:0`, every geometry void — caught only
+  because the harness gates on it. The second: `getComputedStyle` returns a **live** declaration, so
+  comparing the light value after flipping to dark compares the dark value **with itself** and
+  reported *"the tokens do not remap"* over a stylesheet that remaps perfectly. Read the strings out
+  before flipping.
+- `wiring-check` **138 passed, 1 failed**, and ⚠️ **the 1 is not mine**: `portfolio-dash.css` at two
+  versions, from another session's uncommitted working tree. A **staged-tree** audit — what actually
+  deploys — reports **0 version splits across 54 distinct assets**.
+- 4 JS files + both inline blocks parse; `dashboard.css` braces 589/589; 0 NUL bytes across every
+  changed file; `dark-remap` **0 findings** (the card reuses the existing warn triple, which already
+  remaps; ⚠️ never `--pd-warn` as a text colour — it measures 3.46:1 on white).
+
+### ⚠️⚠️ THREE FILES WERE STAGED AS "HEAD + MY EDIT", NOT FROM THE WORKING TREE
+
+This clone carries a concurrent session's uncommitted work, and committing the working-tree copies
+would have **deleted shipped code**:
+
+| file | working tree | why |
+|---|---|---|
+| `assets/js/portfolio-dash.js` | **430 lines BEHIND HEAD** | a stale base — committing it removes the periodic bars, the month breakdown panel and the `padR = 48` axis fix |
+| `assets/js/modules-grid.js` | `MODULE_V` fallback moved **BACKWARDS**, `20260916p` → `m` | a token that sorts EARLIER than one already served can never invalidate it |
+| `modules/portfolio-overview/index.html` | `portfolio-dash.css` **backwards**, `p` → `n` | the split `wiring-check` reports |
+
+Each was rebuilt from `git show HEAD:` plus my one edit and staged through `git hash-object` /
+`git update-index`, so **the working tree is untouched** and their in-flight work is still theirs to
+commit. Verified afterwards on the staged blobs: portfolio-dash.js is HEAD's 2,473 lines + my 8, still
+contains `po-sc-bd` and `padR = 48`, and parses. ⚠️ The patch script **aborts on a missed anchor**
+rather than staging a no-op; all three matched.
+⚠️ `assets/css/portfolio-dash.css`, `tools/test-portfolio-dash.js` and two module `CLAUDE.md` are
+theirs alone and are **not staged at all**.
+
+⚠️ **NOT VERIFIED SIGNED IN, AND THE MIGRATION HAS NOT BEEN RUN.** No sandbox has been created, opened
+or reset against the live database, so the admin-isolation claim — the one thing in this change that
+contradicts every other policy in the schema — rests on the policy text rather than on an observed
+refusal. The migration's verify block §(b) is the test that matters, and ⚠️ **it must be run from a
+signed-in session in the app, never the SQL editor**, which connects as `postgres` and bypasses RLS
+entirely: it will happily show you every sandbox and prove nothing.
+
+Shared `dashboard.css` / `db.js` / `ui.js` → `?v=20260917zg` (31 / 25 / 23 pages); `MODULE_V` →
+`20260917zg`, fallback literal included, sort-checked past the remote's `20260917zf`.
+
+### 2026-09-17 (n) — Bulk edit on the Users table, paid for by the column grouping had just made redundant
+
+Owner: *"add bulk edit so that its convenient to approve/edit/update multiple users."*
+
+A select column, and a bar that appears above the rows only when something is selected:
+**N selected · Approve · Reject · Set role… · Set department… · Clear.**
+
+### ⚠️ The Status column paid for the select column
+
+Adding a checkbox to a table that had *just* been measured to fit without scrolling would have
+broken it again. But grouping (m) had already made **Status redundant**: pending and rejected are
+their own headings now, so every remaining row said *"approved"* — a column of one repeated word.
+Dropping it funds the select column almost exactly. Measured: **1,543px in a 1,545px container,
+unchanged, still no scroll.** The status is still on screen for the two cases where it varies — the
+heading above the row.
+
+⚠️ `.pd-status-pending/-approved/-rejected` are **retired with it**. Their only consumer was that
+cell; three rules matching nothing is what the next editor edits by mistake.
+
+### ⚠️⚠️ What a bulk control must not do
+
+- **No checkbox on a row this admin cannot write.** `locked` is the same rule the per-row selects
+  already use (a plain admin may *see* a super_admin but not change one) and the database enforces
+  it in `users_admin_update`. A checkbox that can only ever produce a refusal is worse than none.
+- **Never your own row.** A bulk Reject that included you would lock you out of the page you ran it
+  from. The per-row Actions menu still lets you act on yourself deliberately.
+- **Never a row the search has hidden.** The selection is cleared whenever the query changes, and
+  select-all covers the *selectable, currently shown* set rather than everything fetched.
+- **N writes are N outcomes.** `users_admin_update` can refuse an individual row, so a bulk write is
+  not one operation that succeeds or fails. Each failure is collected and the toast names it:
+  *"11 updated · 1 refused: Rachelle Lungsod (…)"*. Swallowing that into a single *"Saved"* is how
+  an admin comes to believe they approved twelve people when they approved eleven.
+  ⚠️ Sequential, not `Promise.all` — twelve parallel UPDATEs on one table for no gain, and the
+  first rejection would mask the rest.
+- **No bulk delete.** Deletion is irreversible, frees the email for re-registration, and
+  `admin_delete_user` is a per-row RPC with its own confirmation. A convenience control for
+  *"approve these ten"* should not sit one button away from *"delete these ten"*.
+- **Every bulk action confirms, naming the action and the count** — this is the one control on the
+  page that acts on people it is not pointing at.
+
+### ⚠️⚠️ Two defects caught before shipping, neither by the parser
+
+1. **`m.querySelector` instead of `m.el.querySelector`.** `UI.modal` returns `{ el, close }`, not a
+   node — so every bulk confirmation would have thrown *"not a function"* on its first click. It
+   parses cleanly, and every other modal on this page already writes `m.el`. Found by reading the
+   real API instead of the call site I had just written; a sweep now asserts **zero** bare
+   `m.querySelector` in the file against **twelve** correct ones.
+2. **The bar rendered 161px tall.** `.pd-select` is `width:100%` in the shared sheet — correct for a
+   form field, wrong in a flex row, where each control claimed its own line. Measured, not eyeballed:
+   **161px → 54px** with an explicit width.
+
+### Verified
+
+**65 assertions** (`test-usergroups`, up from 44) and **43** (`test-activity`). `selCount`,
+`userGroups`, `groupedBody` and `filterUsers` sliced out and executed; the bulk handlers close over
+`loadUsers`'s locals and cannot be lifted, so what is asserted there is the *set of properties a
+bulk control gets wrong* — one write per row, failures collected not thrown, every path confirming,
+select-all over `selectable` not `shown`, the two exclusions present, and **no bulk delete beside
+the bulk approve**.
+
+⚠️ Both suites counted `<th>` and reported **8** for a 9-column header, because the select column
+carries a class — the checker wrong in the same direction as the bug it exists to catch. Now `<th[ >]`.
+
+**Rendered in an iframe at 1593 and 390**: nine columns with Status gone, select column 34px, six of
+seven rows pickable (the super_admin correctly not), selected rows tinted, the locked cell a muted
+dash, bar 54px at desktop and wrapping to 160px on a phone with no page-level horizontal scroll
+either way. Colours flip per theme except the bar's border, which is `--pd-red` — the brand red,
+fixed in both themes by design.
+
+⚠️ **Not verified signed in.** No bulk write has been executed against the database, so the
+partial-failure path — the one this is most carefully built for — has been reasoned about and
+asserted in source, not seen. The first real use to watch is a bulk action that includes a
+super_admin while signed in as a plain admin: it should report a refusal, not fail silently.
+
+No shared asset changed, so no version bump.
+
+### 2026-09-17 (m) — The Users table groups by department with the approval queue on top, and gains a search bar
+
+Owner: *"Can we also group the users by department? Let's follow the existing grouping UI"*, then
+*"Can we also segregate the users and the ones that are pending approval"*. One ordering answers
+both, because they are the same question asked twice: **what needs doing, and then who is who.**
+
+```
+▾ PENDING APPROVAL  [2 awaiting]
+▾ COMMERCIAL AND CONTRACTS  1 person
+▾ ENGINEERING  2 people
+▾ PMO  3 people
+▾ NO DEPARTMENT  1 person
+▾ REJECTED  1 person
+```
+
+### ⚠️ The app's own grouped-table idiom, not a new one
+
+`tr.pd-grp` heading rows inside the **same** table — which `dashboard.css` already styles and
+already remaps for dark mode, and which `modules/minutes-of-meeting/module.js` uses for its
+minutes-by-meeting view. One table means the columns stay aligned across groups by construction
+rather than by tuning.
+
+⚠️ **`.pd-grptog` and `.pd-collapsed` were already in the shared stylesheet with no consumer** — the
+same state `.pd-tablewrap` was in this morning. Reviving them beats inventing a fourth caret.
+
+⚠️⚠️ **Pending is first and is not a department.** Someone awaiting approval usually has no
+department set, and filing them under *No department* would bury the one group on this page that
+needs an action. Rejected goes last for the mirror reason: it is an archive, not a queue. *No
+department* sorts after the named departments rather than alphabetically, or an unset field would
+lead the list.
+
+⚠️ The folded set is **page-scope, not rebuilt per render**: every role or department change calls
+`setUser`, which reloads and re-renders, and a fold that sprang open on each save would be worse
+than no fold at all. The delegated listener is bound **once** — `t` survives every render, so an
+unguarded `addEventListener` would stack a copy per reload, the hazard this file already records
+for `closeActionMenus`.
+
+### The search bar
+
+Above the card and full width, matching the procurement dashboard's User Management screen, which
+is what the owner pointed at. A search that filters a whole table belongs over the table, not inside
+its first column.
+
+⚠️ It matches **name, email and department** — department because the table is now grouped by it,
+and typing a heading you can see and getting nothing back is the obvious thing to try and the
+obvious thing to get wrong. The placeholder says all three.
+⚠️ **Typing re-renders from a cache, never from the network.** `getAllUsers` is a round trip and
+this filters fourteen rows; `setUser` still reloads for real, because a saved role has to come back
+from the database rather than from whatever was cached a moment ago.
+⚠️ An empty result is **its own message quoting the query** — a grouped table that simply renders no
+rows reads as a page that failed to load.
+
+### Verified
+
+**44 assertions**, `userGroups` / `groupedBody` / `filterUsers` **sliced out of admin.html and
+executed**. The one that matters most: **every person lands in exactly one group and nobody appears
+twice** — the failure a grouped table can have that looks like nothing at all. Also: a *pending* user
+*with* a department goes to Pending and not also to that department; a whitespace-only department
+counts as absent rather than becoming a group called `"   "`; singular/plural on the counts; the
+heading `colspan` asserted **equal to the real header column count**, so the two cannot drift.
+
+**Rendered in an iframe**: five groups in the right order, heading rows uppercase/800 on `--pd-bg`
+from the shared component, folding PMO hides **exactly** its two rows and the caret and
+`aria-expanded` both flip, unfolding restores all seven. **All eight measured colours flip per
+theme** (heading `rgb(244,244,244)` → `rgba(255,255,255,.05)`, pending pill `rgb(138,83,0)` →
+`rgb(224,160,8)`), which is what proves the stylesheet is in the cascade. Table still **1,543px in a
+1,545px container — no scroll** even with the grouping, and no page-level horizontal scroll at 390px.
+
+⚠️ **I broke the pinned-contrast rule again, and the suite caught it.** `test-activity` defaulted its
+contrast to `origin/main`, which became **self-comparison** the moment (l) landed — the base now
+contains the very thing the contrast asserts it lacks, so it "failed" for the opposite of the real
+reason. Both suites are pinned to SHAs now (`93ad9f9`, `0f82c1b`). This repo already records that
+rule; it is the second time today.
+
+No shared asset changed and `admin.html` is refetched on every load (`sw.js` forces
+`cache: 'reload'` on HTML), so **no version bump**.
+
+### 2026-09-17 (l) — Activity and Registered on the Users table, a last_login that Microsoft sign-ins actually reach, and two columns removed to pay for them
+
+Owner: *"a feature tracking the activity and registered date in the users which is already available
+in the procurement dashboard … This information should only be available to admins and
+super_admins"*, then *"squeeze the table … in a way that the table does not necessarily need to be
+scrollable."*
+
+### ⚠️ No migration, and no new access rule — both already existed
+
+`users.last_login` and `users.created_at` have been on the table since **2026-08-11**, and
+`PDb.listUsers` already does `select('*')`. The figures were being fetched and thrown away. What was
+missing was a column in the UI, not a schema.
+
+⚠️⚠️ **And the access requirement is already met in the database, which is the only place it
+counts.** `users_self_read` is `auth.uid() = id or is_admin()`, and `is_admin()` is
+`role in ('admin','super_admin') and status = 'approved'` — so a **planner cannot read another
+user's row at all**, `last_login` included. Read out of `supabase-schema.sql` and asserted, not
+assumed. This page adds no second gate: `requireAdmin` already fronts it, and a UI check layered
+over an RLS rule teaches the next reader that the UI is what protects it.
+
+### ⚠️⚠️ The column was written from one place, and that place missed half the sign-ins
+
+`last_login` was updated only by **index.html's email/password handler**. `loginWithMicrosoft`
+redirects to the provider and returns on `home.html`, which never touched it — so **anyone signing
+in with Microsoft read as "never logged in", permanently.** An activity column built on that would
+not have been wrong about a date, it would have been wrong about a *person*.
+
+Moved into `AppAuth.requireLogin`, the one function every authenticated page already calls.
+- ⚠️ **Once per browser session**, not per page load — `requireLogin` runs on all 29 pages, and
+  writing there would make *"last login"* mean *"last page view"*: a different measurement wearing
+  the same label.
+- ⚠️ `PDb.updateLastLogin` is **retired, not left as a spare**. An exported writer with no callers is
+  the thing the next editor calls, and then there are two writers for one column again.
+
+### The two cells
+
+**Activity** — an `Active` / `Inactive` pill on the shared `.pd-pill` component (no fourth green),
+split at **7 working days**, with *"Sep 16, 2026 · 1 working day ago"* beneath.
+⚠️ **Working days, not calendar days**, matching the procurement dashboard: someone who signed in on
+Friday is not "3 days idle" on Monday. Computed in closed form — whole weeks contribute five each and
+only the remainder is walked — and asserted equal to a naive day-by-day walk over 120 days.
+⚠️⚠️ **Three absences, three messages.** `undefined` = the column is not on this database (names the
+migration); `null` = the column is there and this person has never signed in; a bad value = a dash.
+One dash for all three would send an admin looking for a person when the answer is a migration.
+⚠️ The cell passes `Fmt.date` a **Date object, not the ISO string**: the string branch reads the
+`yyyy-mm-dd` prefix, which is **UTC**, while `workingDaysSince` parses to local — so a 02:00 Manila
+sign-in printed *yesterday's* date beside a correctly-counted pill.
+
+**Registered** — `created_at`, same treatment.
+
+### ⚠️ Paying for them: Name and Email were the same string
+
+Two new columns took the table to 1,644px in a 1,545px container — scrolling. The fat was obvious
+once measured: **Name and Email were two full columns holding the identical value** for every
+account created from an email address with no display name, which is half this table. Stacked into
+one **User** cell (name bold, email beneath) — the shape the procurement dashboard already uses —
+and when the name is absent or *is* the email, the email is the only line.
+
+Plus `min-width` on the Role and Department selects (130→112, 140→118) and 10px→7px cell gutters
+**scoped to `#users-table`**: nine columns pay the gutter nine times. Scoped rather than shared,
+because every other table in the app is fine at 10px and a global change to make one screen fit is
+how a design system starts drifting.
+
+Measured, table width against container:
+
+| viewport | container | table | scrolls |
+|---|---|---|---|
+| 1593 (sidebar open at 1920) | 1,545 | **1,543** | **no** |
+| 1400 | 1,352 | **1,350** | **no** |
+| 1280 | 1,232 | 1,337 | yes, inside the wrapper |
+| 390 | 342 | 1,377 | yes, inside the wrapper |
+
+**The page never scrolls sideways at any width** — only the wrapper does, which is what
+`.pd-tablewrap` is for.
+
+### Verified
+
+**41 assertions**, the three helpers **sliced out of admin.html and executed**: the working-day
+boundary tested at exactly 7 and exactly 8 rather than near them, singular/plural, the three
+absences distinguished, the header/body column counts agreeing at nine, **exactly one writer for
+`last_login`** across five files with comments stripped first, and a **gate** asserting the RLS
+policy text itself. Contrast pinned to `origin/main`: the base has no `activityCell` and eight
+columns, so the suite bites.
+
+Rendered in an iframe: all four activity states with their tones resolving from the shared tokens
+(`rgb(18,105,58)` on `rgba(31,143,78,.12)` for Active, `rgb(138,83,0)` for Inactive), dates correct,
+nine headers, no page-level horizontal scroll at 1593 / 1400 / 1280 / 390.
+
+⚠️ **Not verified signed in** — no real `last_login` has been read, and the Microsoft path has not
+been exercised end to end. The figure to watch on the first real open is how many rows read *"Never
+signed in"*: if it is everyone who uses Microsoft, the move has not taken effect yet.
+
+`auth.js` (28 pages) and `db.js` (25) → `?v=20260917zf`; `MODULE_V` → `20260917zf`.
+
+### 2026-09-17 (k) — Six short blocks that balance instead of three long ones that cannot, and the Users table stops crushing its own columns
+
+Owner: *"Still not the best wrapping. Can we also reduce the length of the how to read this chart?"*
+and *"UI also needs improvement for the table. Columns wrap unnecessarily when side panel is opened."*
+
+### ⚠️ Three uneven paragraphs cannot balance at any width
+
+Entry (i) columned the disclosure and (j) widened the cap, and it still looked wrong — because the
+problem had stopped being the cap. **Three blocks of very different lengths cannot divide evenly
+into two or three columns**: the third drops to a second row with a hole beside it, which is what
+the owner was looking at.
+
+Split into **six**, each with a bolded lead — *The lines · The forecast date · The bars · No bar at
+the data date · Forecast bars run high · The weighting* — and shortened: **245 words → 170**, with
+the forecast method promoted out of the tail of a paragraph about line styles into its own block,
+because it is the single most-queried thing on this chart.
+
+⚠️ **The layout is `columns:`, not a grid.** A grid flows row-wise, so a tall item sets the height of
+its whole row and leaves gaps beside the short ones. Multicol flows column-wise and *balances*, so
+the column bottoms land within 40px of each other. `break-inside:avoid` keeps each block whole.
+
+⚠️⚠️ **And `column-width` is a MINIMUM, which cost one more iteration.** The browser fits
+`floor((W+gap)/(width+gap))` columns and then stretches them. At `40ch` that asked for **four**
+tracks on the owner's 1,511px container, the six blocks balanced into three, and the fourth sat
+empty — **75% fill**, the same complaint a third time. 44ch is where it tips to three; **46ch** is
+shipped, keeping a margin so a different font metric cannot tip it back.
+
+Swept rather than sampled, on the measured chain (sidebar 245 → `.pd-main` 24 → card 17):
+
+| viewport | container | columns | blocks each | fill | chars |
+|---|---|---|---|---|---|
+| 390 | 293px | 1 | 6 | 100% | ~47 |
+| 1000 | 918px | 2 | 3, 3 | 100% | ~71 |
+| **1593** | **1,511px** | **3** | **2, 2, 2** | **100%** | ~78 |
+| 2318 | 2,236px | 4 | 2, 2, 1, 1 | 80% | ~68 |
+
+No horizontal scroll at any width. On the owner's screen the open block is now **152px** — it was
+**379px** when this started, carrying *fewer* facts.
+
+### ⚠️ The Users table crushed its columns and scrolled anyway
+
+`<div class="pd-card" style="overflow:auto">` around a `width:100%` table: with no minimum the table
+**crushes its columns first** and only scrolls once it can crush no further, so with the sidebar open
+*"No projects assigned"* broke over three lines **and** the row still scrolled sideways — the worst
+of both.
+
+⚠️ **`.pd-tablewrap` was already in `dashboard.css`** (`overflow-x:auto` + `> table { min-width:
+max-content }`) **and used on zero pages.** Reviving it beats a third local copy of the same two
+rules. `.pd-chip` gains `white-space:nowrap` — a chip is one token, and *"6 modules hidden"* over
+three lines reads as three separate facts.
+
+Measured: table 1,335px at every viewport (columns keep their natural widths), **0 chips wrapping**,
+scrolling inside the wrapper and **never on the page**, and at 1593 the table fits with no scroll at
+all.
+
+### Module access — the code was already right
+
+Owner: *"Modules are still hidden for planners."* Checked by running the access suite against the
+**deployed** `auth.js` and `config.js`, fetched from the live site: **planner 13/13**, admin 13/13,
+user 7/13, viewer 7/13. The screenshot is a tab loaded before the deploy — its modal still shows the
+old *"(super_admin by default)"* label, which was replaced in (h). A hard reload is the whole fix.
+
+### Verified
+
+`test-fcsum` **18/18** (up from 10 — the sentence assertions were retargeted to the new wording, and
+one now asserts the **figure** rather than the phrasing), the (h) forecast suite 28/28,
+`test-modaccess` 24/24, `test-scurve-forecast` 28/28, `wiring-check` 139/139, CSS braces 227/227,
+the inline script parses.
+
+⚠️⚠️ **Three separate defects came out of writing this, all from the same source and all caught
+before shipping:**
+1. A patch reordered `nW.ti = …` ahead of `nW.fchigh = …` and produced a **chained assignment** —
+   `nW.ti = nW.fchigh = (…)()` — which parses cleanly, duplicates one block and drops the other as a
+   dangling expression statement. `node --check` cannot see it; reading the result could.
+2. **Backslashes lost a layer through the shell heredoc** — twice in the page (`\'s` arriving as
+   `''s`, which at least failed to parse) and once in a test, where `\b` arrived as a literal
+   backspace and quietly failed an assertion. The page now uses `’`, which needs no escape
+   inside a single-quoted JS string, and the test uses `indexOf`.
+
+`MODULE_V` → `20260917ze`. No shared asset changed, so no app-wide bump.
+
 ### 2026-09-17 (j) — "Are the forecast bars correct?" They are, and the chart now says why; the notes finally fill the panel
 
 Owner: *"Is the actual forecast bars correct? They're all over planned this month? If we add them

@@ -119,7 +119,50 @@
       return rows;
     },
 
+    // ---- Sandbox (the personal training project) ----
+    // ⚠️⚠️ ONE SANDBOX PER PERSON, AND IT IS AN ORDINARY PROJECT ROW. Everything
+    // that makes it private happens in the database: `can_access_project()` gives
+    // a sandbox to its owner and to NOBODY else, admins included, so all 16
+    // modules inherit the isolation with no module code whatsoever. See
+    // migrations/2026-09-17-sandbox-project.sql.
+    //
+    // ⚠️ `isSandbox` reads the COLUMN, never the id prefix. The `SBX-` code is a
+    // convenience for the person reading it; a client that tested the prefix
+    // would be one renamed project away from treating a real project as a
+    // sandbox, and — worse — would report every project as real on a database
+    // where the migration has not run yet, which is the direction that leaks.
+    // ⚠️ An unmigrated database has no such column, so this answers false for
+    // everything and the whole app behaves exactly as it did before. That is
+    // deliberate: this file is safe to ship BEFORE the migration is run.
+    isSandbox(p) { return !!(p && p.is_sandbox); },
+
+    // Get-or-create, through the RPC. ⚠️ The client cannot insert one itself —
+    // `projects_ins` carries `not is_sandbox` precisely so the RPC stays the
+    // only door, which is what makes "owner_id is always the caller" true by
+    // construction rather than by convention.
+    async ensureSandbox() {
+      var { data, error } = await sb().rpc('sandbox_ensure');
+      if (error) throw error;
+      // A `returns projects` RPC comes back as the row itself; PostgREST has
+      // been known to wrap a composite in a single-element array, so accept both
+      // rather than reaching into a shape that is right today.
+      return Array.isArray(data) ? data[0] : data;
+    },
+    // ⚠️ TAKES NO ARGUMENT, and that is a security property rather than an
+    // oversight: the RPC looks up the caller's own sandbox instead of purging
+    // whatever id it is handed, so there is no ownership check to forget.
+    async resetSandbox() {
+      var { error } = await sb().rpc('sandbox_reset');
+      if (error) throw error;
+    },
+
     // ---- Projects (shared across all modules) ----
+    // ⚠️ RETURNS THE SANDBOX TOO, on purpose. RLS already means the only sandbox
+    // in this result is the caller's own, so it is exactly one extra row — not
+    // the +50 test projects this feature exists to end — and including it is
+    // what makes every module's project `<select>` able to show it with no
+    // per-module change. What must NOT include it is a portfolio AGGREGATE:
+    // see UI.allProjectIds() and portfolio-dash's scopedProjectIds().
     async getProjects() {
       var { data, error } = await sb()
         .from('projects').select('*').order('name');
@@ -711,9 +754,11 @@
       var { error } = await sb().rpc('admin_delete_user', { target: id });
       if (error) throw error;
     },
-    async updateLastLogin(id) {
-      try { await sb().from('users').update({ last_login: new Date().toISOString() }).eq('id', id); } catch (e) {}
-    },
+    /* ⚠ `updateLastLogin` was RETIRED on 2026-09-17, not left as a spare. Its one caller
+       (index.html's password handler) covered only half the sign-ins, and the write moved into
+       `AppAuth.requireLogin`, which every authenticated page reaches whatever the provider. An
+       exported writer with no callers is the thing the next editor calls, and then there are two
+       writers for one column again. */
   };
 
   // ---- Formatters (shared) ----

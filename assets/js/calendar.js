@@ -303,12 +303,26 @@
 
   var _MD_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   // How a stored entry should read on a chip: 'Aug 21 · every year' or '2026-04-09'.
-  function holidayLabel(s) {
+  /* ⚠ `labels` is OPTIONAL and the old one-argument call is unchanged — this is read by
+     the calendar editor, which has a name map, and by anything that does not, which passes
+     nothing and gets exactly what it got before. A date with no name falls back to the date,
+     because that is what every calendar shows today. */
+  function holidayLabel(s, labels) {
     var v = String(s || '').trim();
-    if (!isRecurKey(v)) return v;
-    var mo = parseInt(v.slice(2, 4), 10), dy = parseInt(v.slice(5, 7), 10);
-    return (_MD_NAMES[mo - 1] || v.slice(2, 4)) + ' ' + dy + ' \u00b7 every year';
+    var nm = (labels && typeof labels === 'object') ? String(labels[v] || '').trim() : '';
+    var when = v;
+    if (isRecurKey(v)) {
+      var mo = parseInt(v.slice(2, 4), 10), dy = parseInt(v.slice(5, 7), 10);
+      when = (_MD_NAMES[mo - 1] || v.slice(2, 4)) + ' ' + dy + ' \u00b7 every year';
+    }
+    /* ⚠⚠ THE NAME REPLACES THE DATE, IT DOES NOT HIDE IT. A chip reading only “Typhoon
+       shutdown” would be unverifiable — the one thing a planner checks a holiday list for is
+       WHICH DAY is off. The date goes in the title so it is one hover away and still printed by
+       the year preview below. */
+    return nm ? nm : when;
   }
+  /* The date behind a chip, whatever its name — for the tooltip. */
+  function holidayWhen(s) { return holidayLabel(s, null); }
 
   // Why a date is non-working, for the UI. Returns null when it IS a working day.
   // { kind: 'weekend' | 'regular' | 'special' | 'extra', name: '...' }
@@ -524,6 +538,7 @@
     isRecurKey: isRecurKey,
     holidayIndex: holidayIndex,
     holidayLabel: holidayLabel,
+    holidayWhen: holidayWhen,
     collapseHolidays: collapseHolidays,
     iso: iso
   };

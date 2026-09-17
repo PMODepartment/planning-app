@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Projects — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260917za" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260917zg" />
 </head>
 <body>
   <div class="pd-app">
@@ -92,10 +92,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260917zb"></script>
-  <script src="assets/js/auth.js?v=20260917zb"></script>
-  <script src="assets/js/db.js?v=20260917a"></script>
+  <script src="assets/js/auth.js?v=20260917zh"></script>
+  <script src="assets/js/db.js?v=20260917zg"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/ui.js?v=20260917zb"></script>
+  <script src="assets/js/ui.js?v=20260917zg"></script>
   <script src="assets/js/notebook.js?v=20260915d"></script>
   <script src="assets/js/icons.js?v=20260915f"></script>
   <script>
@@ -105,6 +105,14 @@
     // bucket, not a hidden state — an unassigned project must stay reachable.
     var NONE = '__nogh__';
     var GH = [], PROJ = [], ghById = {};
+    // ⚠️⚠️ THE SANDBOX IS HELD APART FROM `PROJ`, and that separation is the whole
+    // reason this page stays honest. It is a real projects row and RLS means the
+    // only one anybody sees is their own — but it is not a project of the
+    // COMPANY, so it must not be counted in "23 projects", must not sit inside a
+    // group head's run, and must not be sorted among real work by budget or
+    // finish date. Every one of those would be a small lie told by a number.
+    // It gets a pinned card of its own above the list instead.
+    var SANDBOX = null;
     var selectedGh = null;          // null = all group heads
     // ⚠️ Grouped by group head, matching the PRC App's Portfolio Overview. This is NOT the folder
     // tree A2 removed: every project is still on screen and one click away — the headers only label
@@ -129,12 +137,29 @@
     async function boot() {
       try {
         var res = await Promise.all([PDb.getGroupHeads(), PDb.getProjects()]);
-        GH = res[0]; PROJ = res[1];
+        GH = res[0];
+        applyProjects(res[1]);
       } catch (e) { UI.toast('Load failed: ' + e.message, 'error'); return; }
       indexGh();
       renderGhFilter();
       render();
       wireToolbar();
+    }
+
+    /* ⚠️⚠️ THE ONE PLACE PROJECTS ARE SPLIT, and it is a function rather than two
+       copies because this page reads the project list TWICE — once at boot and
+       again from reloadData() after every create, edit, archive or delete. The
+       first version of this change split at boot only, so the sandbox was filed
+       correctly until the first delete and then quietly rejoined the list and
+       the "N projects" count. Two readers of one shape is how they drift.
+       ⚠️ Split by the COLUMN, through PDb.isSandbox — never by the `SBX-` id
+       prefix. On a database where the migration has not run the column is
+       absent, every project reads as real, and this page behaves exactly as it
+       does today: no card, no filtering, nothing missing. */
+    function applyProjects(rows) {
+      rows = rows || [];
+      SANDBOX = rows.filter(function (p) { return PDb.isSandbox(p); })[0] || null;
+      PROJ = rows.filter(function (p) { return !PDb.isSandbox(p); });
     }
 
     function indexGh() { ghById = {}; GH.forEach(function (g) { ghById[g.id] = g; }); }
@@ -226,16 +251,109 @@
       return '<span class="pd-pill ' + cls + '">' + Fmt.esc(st.charAt(0).toUpperCase() + st.slice(1)) + '</span>';
     }
 
+    /* ---- The sandbox card -------------------------------------------------
+       ⚠️ Rendered whether or not a sandbox row exists yet, because the answer to
+       "how do I practise without adding a test project?" has to be on screen
+       BEFORE the thing exists. With no row it is an invitation that creates one
+       on the first click; with a row it opens it and offers Reset.
+       ⚠️ It sits ABOVE the toolbar's own results area and outside `proj-area`'s
+       group/sort/search machinery entirely — a search for "tower" must not make
+       the training ground disappear, and it must never be filed under a group
+       head, because it belongs to a person rather than to the portfolio. */
+    function sandboxCardHTML() {
+      var has = !!SANDBOX;
+      return '<div class="pd-sbx-card" id="sbx-card">' +
+        '<div class="pd-sbx-ic">' + Icons.svg('project', 22) + '</div>' +
+        '<div class="pd-sbx-body">' +
+          '<div class="pd-sbx-title">' +
+            (has ? Fmt.esc(SANDBOX.name) : 'Your sandbox') +
+            '<span class="pd-pill pd-pill-warn pd-sbx-tag">Private</span>' +
+          '</div>' +
+          '<div class="pd-sbx-sub">' +
+            (has
+              ? 'Only you can see this project — not your colleagues, not an admin. ' +
+                'Anything you do in it stays out of every portfolio total.'
+              : 'A personal training project to try the app in. Only you will see it, ' +
+                'and nothing you do in it reaches real project data.') +
+          '</div>' +
+        '</div>' +
+        '<div class="pd-sbx-act">' +
+          (has ? '<button class="pd-btn pd-btn-sm" id="sbx-reset">Reset</button> ' : '') +
+          '<button class="pd-btn pd-btn-primary pd-btn-sm" id="sbx-open">' +
+            (has ? 'Open' : 'Create my sandbox') + '</button>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function wireSandboxCard() {
+      var open = document.getElementById('sbx-open');
+      if (open) open.onclick = openSandbox;
+      var reset = document.getElementById('sbx-reset');
+      if (reset) reset.onclick = confirmSandboxReset;
+    }
+
+    async function openSandbox() {
+      var btn = document.getElementById('sbx-open');
+      if (btn) { btn.disabled = true; btn.textContent = SANDBOX ? 'Opening…' : 'Creating…'; }
+      try {
+        // ⚠️ ALWAYS through the RPC, even when SANDBOX is already loaded. It is
+        // get-or-create, so the extra call is one indexed read — and it is what
+        // makes a sandbox deleted in another tab, or an account whose row never
+        // got written, self-heal instead of dead-ending on a stale object.
+        var p = await PDb.ensureSandbox();
+        SANDBOX = p;
+        openProject(p.id, p);
+      } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = SANDBOX ? 'Open' : 'Create my sandbox'; }
+        // ⚠️ A missing RPC is a migration that has not been run, not a broken
+        // app, and saying which spares whoever reads it a hunt through the code.
+        var msg = String((e && e.message) || e);
+        UI.toast(/PGRST202|does not exist|not find/i.test(msg)
+          ? 'The sandbox is not set up on this database yet — run migrations/2026-09-17-sandbox-project.sql.'
+          : 'Could not open your sandbox: ' + msg, 'error');
+      }
+    }
+
+    /* ⚠️ Reset EMPTIES the sandbox and keeps the project. It is destructive and
+       has no undo, so it reuses the same type-the-code gate the project delete
+       uses rather than a bare confirm — the training ground is where somebody
+       will have spent an afternoon building a practice schedule.
+       ⚠️ It passes no `preview`: admin_project_delete_preview is is_admin()-only,
+       so an ordinary user cannot read one, and arming on a preview they can
+       never obtain would make Reset permanently unusable for most of the people
+       this feature is for. */
+    function confirmSandboxReset() {
+      if (!SANDBOX) return;
+      confirmDelete({
+        title: 'Reset your sandbox',
+        id: SANDBOX.id,
+        body: 'This empties <b>' + Fmt.esc(SANDBOX.name) + '</b> — every activity, BOQ line, ' +
+              'risk, photo record and everything else you have put in it. The project itself ' +
+              'stays, so you can start again straight away. <b>This cannot be undone.</b>' +
+              '<br><br>Files already uploaded to storage are not removed.',
+        ok: 'Sandbox emptied — it is ready to build in again.',
+        run: async function () { await PDb.resetSandbox(); }
+      });
+    }
+
     function render() {
       var list = projectsInScope();
       document.getElementById('proj-count').textContent = list.length + (list.length === 1 ? ' project' : ' projects');
       var area = document.getElementById('proj-area');
+      // ⚠️ The sandbox card is prepended to whatever the list renders, INCLUDING
+      // the empty state — a planner with no assigned projects yet is exactly the
+      // person who most needs somewhere to learn the app.
+      var body;
       if (!list.length) {
-        area.innerHTML = '<div class="pd-empty">No projects' + (selectedGh !== null ? ' for this group head' : '') + ' yet.' +
+        body = '<div class="pd-empty">No projects' + (selectedGh !== null ? ' for this group head' : '') + ' yet.' +
           (canWrite ? ' Use <strong>+ Add</strong> to create one.' : '') + '</div>';
+        area.innerHTML = sandboxCardHTML() + body;
+        wireSandboxCard();
         return;
       }
       view === 'cards' ? renderCards(area, list) : renderList(area, list);
+      area.insertAdjacentHTML('afterbegin', sandboxCardHTML());
+      wireSandboxCard();
       area.querySelectorAll('[data-open]').forEach(function (el) {
         el.onclick = function () { openProject(el.dataset.open); };
       });
@@ -345,8 +463,11 @@
       }).join('');
     }
 
-    function openProject(id) {
-      var p = PROJ.find(function (x) { return x.id === id; });
+    // ⚠️ `row` is optional and exists for the sandbox, which is deliberately NOT
+    // in PROJ — without it the lookup below would miss and opening the training
+    // ground would silently do nothing.
+    function openProject(id, row) {
+      var p = row || PROJ.find(function (x) { return x.id === id; });
       if (!p) return;
       sessionStorage.setItem('pd_project', p.id);
       sessionStorage.setItem('pd_project_name', p.name || p.id);
@@ -697,7 +818,8 @@
     }
 
     async function reloadData() {
-      GH = await PDb.getGroupHeads(); PROJ = await PDb.getProjects();
+      GH = await PDb.getGroupHeads();
+      applyProjects(await PDb.getProjects());
       indexGh();
       // A group head that was just deleted must not stay as a dangling filter.
       if (selectedGh && selectedGh !== NONE && !ghById[selectedGh]) selectedGh = null;

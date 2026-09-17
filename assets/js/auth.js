@@ -219,7 +219,38 @@
 
     window.__profile = profile;
     window.__role = profile.role;
+    noteLogin(session.user.id);
     if (cb) cb(session.user, profile);
+  }
+
+  /* ==== RECORDING THE SIGN-IN =================================================================
+     Owner 2026-09-17: *"a feature tracking the activity and registered date in the users … to
+     track activity and performance."*
+     ⚠⚠ IT WAS RECORDED IN ONE PLACE AND THAT PLACE MISSED HALF THE SIGN-INS. `last_login`
+     has existed on `users` since 2026-08-11 and was written from exactly one call site —
+     index.html's EMAIL/PASSWORD handler. `loginWithMicrosoft` redirects to the provider and comes
+     back on home.html, which never touched it, so anyone signing in with Microsoft read as
+     "never logged in" forever. An activity column built on that would not have been wrong about
+     a date, it would have been wrong about a PERSON, which is worse.
+     Moved here, into the one function every authenticated page already calls.
+     ⚠ ONCE PER BROWSER SESSION, not once per page load. requireLogin runs on every one of the
+     29 pages; writing there would turn a navigation into an UPDATE and make "last login" mean
+     "last page view", which is a different measurement wearing the same label.
+     ⚠ Fire-and-forget and never awaited: a failed write must not block the page. The column is
+     reporting, not a gate.
+     ⚠ Storage can throw (private mode, blocked site data). Then the guard simply does not
+     persist and the write happens again — idempotent, so the failure mode is a redundant UPDATE
+     rather than a broken sign-in. */
+  var LOGIN_KEY = 'pd_login_noted';
+  function noteLogin(uid) {
+    try {
+      if (sessionStorage.getItem(LOGIN_KEY) === uid) return;
+      sessionStorage.setItem(LOGIN_KEY, uid);
+    } catch (e) { /* no storage — fall through and write */ }
+    try {
+      getSB().from('users').update({ last_login: new Date().toISOString() }).eq('id', uid)
+        .then(function () {}, function () {});
+    } catch (e) {}
   }
 
   // requireRole(roles, cb): like requireLogin but also gates on role membership.
@@ -288,9 +319,30 @@
   // ⚠️ A retired module (`enabled:false`) is not this function's concern —
   //    every caller already filters on `enabled` separately, and an override
   //    naming a retired module's key is simply never asked about.
+  //
+  // ⚠️⚠️ USER_ADMIN_ALLOWED (2026-09-17, owner's call) — for role `user` and
+  //    role `admin` specifically, the module grid/nav shows ONLY these keys,
+  //    regardless of `superAdminOnly` (most of which already excluded admin
+  //    anyway — see below). This is a SECOND, NARROWER default that sits
+  //    ABOVE the superAdminOnly check but BELOW `module_access`: a per-user
+  //    override still wins in either direction, exactly as it already does
+  //    for the super-admin-only rule. `planner` and `viewer` are untouched —
+  //    they still follow the plain superAdminOnly rule as before.
+  // ⚠️ "Projects" and "Dashboard" are deliberately absent from this list —
+  //    neither is a MODULES registry entry (projects.html / dashboard.html
+  //    are always-reachable shell pages, not module tiles), so there is
+  //    nothing here to gate for them.
+  var USER_ADMIN_ALLOWED = [
+    'pormac', 'minutes-of-meeting', 'project-schedule', 's-curve',
+    'issues-lessons', 'progress-photos'
+  ];
   function moduleVisible(m, profile) {
     if (profile && Array.isArray(profile.module_access)) {
       return profile.module_access.indexOf(m.key) !== -1;
+    }
+    if (profile && (profile.role === 'user' || profile.role === 'admin') &&
+        USER_ADMIN_ALLOWED.indexOf(m.key) === -1) {
+      return false;
     }
     return !m.superAdminOnly || seesRestrictedModules(profile);
   }

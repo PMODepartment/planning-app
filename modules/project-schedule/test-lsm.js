@@ -168,6 +168,12 @@ const REAL_VARS = ['LSM_LANE_H', 'LSM_LANE_GAP', 'LSM_PAD', 'LSM_LANE_MAX', '_ls
                    '_lsmTopFirst', 'LSM_MIN_FLOORS', 'LSM_R2_OK', 'ALLAX', 'DL',
                    'LSM_CLASH_MIN', 'WORK_ORDER', '_lsmStatus', 'dataDate', 'groupBys', 'LOC_LEVELS',
                    '_stkLevel', 'flowlineMode', 'FL_ROWH', 'FL_PADT', 'FL_PADR',
+                   /* ⚠️⚠️ ADDED 2026-09-17 TO STOP THE WHOLE SUITE DYING. `_lsmBarsHTML` began
+                      reading `_lsmClashShow` upstream, and an unlinked module-level var there is
+                      a ReferenceError thrown from inside the function under test — which takes
+                      down every assertion after it and reports a code fault where there is none.
+                      ⚠️ The REAL var is linked, never a stub. */
+                   '_lsmClashShow',
                    /* ⚠️⚠️ The warmed catalogue and its once-per-project guard. `_lsmDecl` wraps its
                       whole body in try/catch, so an unlinked name here does NOT fail the link pass
                       — it degrades silently to the heuristic basis, which is how adding the

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260917za" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260917zg" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260910w3" />
 </head>
 <body>
@@ -435,17 +435,17 @@
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260917zb"></script>
-  <script src="assets/js/auth.js?v=20260917zb"></script>
-  <script src="assets/js/db.js?v=20260917a"></script>
+  <script src="assets/js/auth.js?v=20260917zh"></script>
+  <script src="assets/js/db.js?v=20260917zg"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260917a"></script>
-  <script src="assets/js/ui.js?v=20260917zb"></script>
+  <script src="assets/js/ui.js?v=20260917zg"></script>
   <!-- PDClaims — the shortfall/decided/recovery rules this page's Contracts & Claims panel
        shares with the register's own band and the portfolio view. -->
   <script src="assets/js/claims.js?v=20260917b"></script>
   <script src="assets/js/notebook.js?v=20260915d"></script>
   <script src="assets/js/icons.js?v=20260915f"></script>
-  <script src="assets/js/modules-grid.js?v=20260917zd"></script>
+  <script src="assets/js/modules-grid.js?v=20260917zk"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -555,6 +555,7 @@
       document.getElementById('dash-sub').textContent =
         '(' + curProj.id + ')' + (loc ? '  ·  ' + loc : '');
       document.getElementById('dash-sub').title = loc || '';
+      renderSandboxBanner();
       // Re-render the picker + nav now that the authoritative project list/name are
       // in — cheap, and the first pass above already made the shell usable. This is
       // what gives the picker's popover the FULL project list (it only offers
@@ -563,6 +564,31 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'dashboard', base: '', isAdmin: isAdmin, pname: curProj.name || curProj.id, modules: APP_CONFIG.MODULES,
       });
+    }
+
+    /* ⚠️⚠️ A SANDBOX MUST ANNOUNCE ITSELF ON THE PROJECT HOME, and this is not
+       decoration. Once you are inside a project every module looks identical
+       whichever project it is, so the one thing standing between a planner and
+       "I typed tomorrow's real progress into my training project" is a line at
+       the top of the screen saying which they are in. It is rendered from the
+       project row's own `is_sandbox`, so it cannot disagree with the database.
+       ⚠️ Inserted rather than declared in the markup: on every real project — the
+       overwhelming majority of loads — there is then no element at all, instead
+       of a hidden one that a later stylesheet could reveal by accident. */
+    function renderSandboxBanner() {
+      var old = document.getElementById('sbx-banner');
+      if (old) old.remove();
+      if (!(window.PDb && PDb.isSandbox(curProj))) return;
+      var host = document.getElementById('proj-title');
+      var head = host && host.closest('.pd-main, main, .pd-content');
+      if (!head) return;
+      var el = document.createElement('div');
+      el.id = 'sbx-banner';
+      el.className = 'pd-sbx-banner';
+      el.innerHTML = '<span class="pd-pill pd-pill-warn">Sandbox</span>' +
+        '<span>This is your personal training project. Only you can see it, and nothing ' +
+        'in it counts towards any portfolio figure. Practise freely.</span>';
+      head.insertBefore(el, head.firstChild);
     }
 
     // ---- Module tiles (A5) ----

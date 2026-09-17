@@ -241,9 +241,20 @@
   // project, everyone else only their assignments), so "every project id" IS
   // "every project this call returns" — no second access rule to write.
   // Cached alongside the project-selector's own cache (same underlying read).
+  //
+  // ⚠️⚠️ THE SANDBOX IS EXCLUDED HERE, AND THIS IS THE ONE LINE THAT KEEPS
+  // TRAINING DATA OUT OF EVERY MODULE'S PORTFOLIO NUMBERS. This function is what
+  // every "Portfolio (all projects)" read fans out over, so a sandbox left in it
+  // would put whatever a planner typed while practising into their own S-curves,
+  // cash-flow totals, manpower curves and KPI roll-ups — figures that look
+  // entirely real and are not. `PDb.getProjects()` deliberately still RETURNS it
+  // (a module's project picker must be able to offer it); the split between
+  // "a project you can open" and "a project that counts" lives here.
   async function allProjectIds() {
     if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
-    return (_pdProjCache || []).map(function (p) { return p.id; });
+    return (_pdProjCache || [])
+      .filter(function (p) { return !(window.PDb && PDb.isSandbox(p)); })
+      .map(function (p) { return p.id; });
   }
   // ---- Portfolio scope: a project's own row, by id ---------------------------
   // The companion read to allProjectIds() — a module consolidating across the
