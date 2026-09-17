@@ -19,10 +19,12 @@
 //   reduction the earlier feature made. A full sphere needs known camera
 //   intrinsics and a rotation-only motion model; a phone's walk-around
 //   pan is well served by a cylinder and does not need that.
-// - Viewing it (module.js's viewer) is a plain 2D drag-to-pan over the wide
-//   image, not a WebGL/Three.js scene — deliberately, so a 360° photo costs
-//   no more to view on a phone than an ordinary wide image does (item 7,
-//   performance). No GPU context, no separate render loop.
+// - ⚠️ STALE AS WRITTEN, corrected 2026-09-17: viewing has NOT been a plain
+//   2D drag-to-pan since 2026-09-11, when the owner asked for Pannellum. It
+//   is a real WebGL equirectangular viewer (module.js's mountPannellumViewer),
+//   which is also why the server pipeline now has to emit a genuine
+//   equirectangular image rather than the cylindrical mosaic it used to —
+//   see supabase/functions/pano360-process/stitch-core.mjs.
 // - Standard OpenCV.js browser builds do NOT expose `cv.Stitcher` (its JS
 //   bindings were never added to the default build) — confirmed the same
 //   way the earlier feature confirmed it, by checking `typeof cv.Stitcher`
@@ -171,10 +173,28 @@
 // today (see module.js's `runStitchForDraft`) but is still a real, reachable
 // public export used by anything that stitches locally, so this constant
 // still governs its cost too, on any code path that still calls it directly.
+// ⚠️⚠️ 2026-09-17 ("add frames, change from 72 to 108"): raised again, from 72
+// to 108. The same reasoning as the 48 -> 72 step above still holds — since
+// stitching moved server-side this constant governs how many small JPEGs the
+// CLIENT extracts and uploads, not how much per-pair OpenCV work a phone does
+// — and this round it buys more than it used to. With the server now
+// cylindrically warping every frame before aligning them (2026-09-17, see
+// supabase/functions/pano360-process/stitch-core.mjs), a denser sample is
+// directly a sharper panorama rather than just a safer one: each frame
+// contributes only the narrow band around its own optical centre
+// (`pasteFrameBand`), so the more frames there are, the narrower — and
+// therefore the less distorted and better-aligned — every contributed band is.
+// 108 frames over the capture guide's ~24s slow turn is a sample every ~3.3°
+// of yaw, against ~5° at 72.
+// ⚠️ The cost is real and is the same one as before, now paid mostly in I/O
+// rather than CPU: 108 frames is 108 uploads from the phone, and the server's
+// chunked compositor reads and rewrites the whole intermediate canvas once per
+// frame. Measured against the previous count it is ~50% more of both. That is
+// the deliberate trade for the density; it is not free.
 window.Pano360 = (function () {
   var WORK_MAXW = 640;           // per-frame width used for feature matching/warping — kept small for mobile CPU cost
   var MIN_GOOD_MATCHES = 12;     // below this, a join is not "confident" — see the lookahead search below
-  var FIXED_FRAME_COUNT = 72;    // every recording is sampled into exactly this many frames, regardless of duration
+  var FIXED_FRAME_COUNT = 108;   // every recording is sampled into exactly this many frames, regardless of duration
   var JOIN_LOOKAHEAD = 5;        // how many frames ahead of the last-placed one to search for a confident join
 
   // Pure, and exported (Pano360._frameCountFor) so the fixed count itself can

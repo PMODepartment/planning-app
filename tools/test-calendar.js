@@ -178,10 +178,13 @@ G('8 · EQUIVALENCE against the pre-change engine');
 (function () {
   var cp = require('child_process'), prev = null;
   try {
-    var txt = cp.execSync('git show HEAD:assets/js/calendar.js', { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+    /* ⚠️⚠️ PINNED TO A SHA, NEVER `HEAD`. `HEAD` becomes self-comparison the instant this
+       change commits — and it did: the contrast started passing for the wrong reason, with the
+       gate below the only thing that said so. 9fe4e9f is the commit before the engine moved. */
+    var txt = cp.execSync('git show 9fe4e9f:assets/js/calendar.js', { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
     var gg = {}; new Function('window', txt)(gg); prev = gg.PDCal;
   } catch (e) { }
-  if (!prev) { console.log('  ??   SKIPPED - could not load HEAD:assets/js/calendar.js'); return; }
+  if (!prev) { console.log('  ??   SKIPPED - could not load 9fe4e9f:assets/js/calendar.js'); return; }
   // If HEAD already knows the new fields this is self-comparison, not a contrast.
   ok(typeof prev.specHours !== 'function', 'the base really is the PRE-change engine');
 

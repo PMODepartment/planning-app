@@ -4352,11 +4352,36 @@ console.log('\n[misc] insert().select() returns the new row id');
        /pp360Viewer = mountPannellumViewer\(viewerEl, draft\.stitchUrl, hOverW\);/.test(mjs));
     ok('open360 flow: the separate video-frame thumbnail scrubber is GONE — no #pp360-repslider, no #pp360-repframe, no Pano360.extractFrameAt call anywhere in the module',
        !/pp360-repslider/.test(mjs) && !/pp360-repframe/.test(mjs) && !/Pano360\.extractFrameAt\(/.test(mjs));
-    ok('openPano360Review: "Use this view as thumbnail" captures whatever the viewer is CURRENTLY showing via the shared captureViewerThumbnail(), writing straight onto the DRAFT (draft.repBlob/draft.repUrl) — never onto DOM-only state that a modal close would lose — and a default is captured automatically the first time the panorama actually renders (viewer.on(\'load\', ...)) so Confirm & Save is never blocked on remembering to press it',
-       /id="pp360rv-usethumb">Use this view as thumbnail/.test(body) &&
-       /captureViewerThumbnail\(viewerEl, function \(blob\) \{/.test(mjs) &&
-       /draft\.repBlob = blob; draft\.repUrl = URL\.createObjectURL\(blob\);/.test(mjs) &&
-       /pp360Viewer\.on\('load', function \(\) \{/.test(mjs));
+    // ⚠️⚠️ 2026-09-17 — RETARGETED, not deleted. The owner's own call: "the Use
+    // this view as thumbnail also does not work but it does not need to be
+    // shown already. by default, the last view will be the thumbnail." The
+    // button is gone, and the behaviour it was supposed to provide now happens
+    // automatically at Confirm & Save. The old assertion pinned the button's
+    // markup AND its use of captureViewerThumbnail — a WebGL readback that is
+    // exactly why it never worked (see viewThumbFromPano's own comment), so
+    // asserting it would now pin the defect in place.
+    // ⚠️ Comment lines are stripped before the label check. The code that
+    // REMOVED this button necessarily quotes the owner's words about it, so a
+    // raw search would match the explanation rather than the button — the same
+    // "a checker measuring its own comment" trap this repo has hit before.
+    // Conservative on purpose: only whole lines whose first non-space
+    // characters are `//`, so a `//` inside a string or a URL is untouched.
+    var bodyCode = body.split('\n').filter(function (ln) { return !/^\s*\/\//.test(ln); }).join('\n');
+    ok('openPano360Review: the "Use this view as thumbnail" button is GONE from the markup and from the wiring — not merely hidden',
+       !/pp360rv-usethumb/.test(body) && !/pp360rv-usethumb/.test(mjs) &&
+       !/Use this view as thumbnail/.test(bodyCode));
+    ok('openPano360Review: the thumbnail is instead taken from wherever the viewer was LEFT, at Confirm & Save — captureLastView() reads the live yaw/pitch/hfov off the viewer and reprojects them out of the panorama IMAGE (viewThumbFromPano), never out of the WebGL drawing buffer that made the old button a no-op',
+       /function captureLastView\(\)/.test(mjs) &&
+       /pp360Viewer\.getYaw\(\); pitch = pp360Viewer\.getPitch\(\); hfov = pp360Viewer\.getHfov\(\)/.test(mjs) &&
+       /viewThumbFromPano\(standinEl, yaw, pitch, hfov, vaov, resolve\)/.test(mjs) &&
+       /var lastView = await captureLastView\(\);/.test(mjs) &&
+       /draft\._thumbOverridden = true;/.test(mjs));
+    ok('openPano360Review: a thumbnail that cannot be re-framed never blocks the save — captureLastView resolves null and the server\'s own default thumbnail is reused, exactly as before',
+       /if \(lastView\) \{/.test(mjs) &&
+       /if \(draft\.jobThumbPath && !draft\._thumbOverridden\)/.test(mjs));
+    ok('openPano360Review: a placeholder thumbnail is still captured the first time the panorama renders (viewer.on(\'load\', ...)) so the field is never empty while reviewing — but from the standin <img>, not the WebGL canvas',
+       /pp360Viewer\.on\('load', function \(\) \{/.test(mjs) &&
+       /captureImageThumbnail\(standinEl, function \(blob\) \{/.test(mjs));
     // ⚠️⚠️ 2026-09-13: the whole point of the draft architecture — this is
     // the ONE place in the entire 360° flow allowed to touch Storage/the
     // database, and it must be gated on the draft (not on any local modal
@@ -4629,26 +4654,26 @@ console.log('\n[misc] insert().select() returns the new row id');
      !/var MIN_FRAMES/.test(p3js) &&
      !/var MAX_FRAMES/.test(p3js));
 
-  console.log('\n[56d] 2026-09-16: "use 72 frames instead of 48" — the fixed count raised, now that the actual stitching pass moved server-side (see [67]) and the client-side per-frame cost dropped');
+  console.log('\n[56d] 2026-09-17: "add frames, change from 72 to 108" — the fixed count raised again, now that the server warps every frame cylindrically before aligning (so a denser sample is directly a sharper panorama, not just a safer one)');
 
-  ok('the fixed frame count is now 72, not 48',
-     /var FIXED_FRAME_COUNT = 72;/.test(p3js));
+  ok('the fixed frame count is now 108, not 72 or 48',
+     /var FIXED_FRAME_COUNT = 108;/.test(p3js) && !/var FIXED_FRAME_COUNT = 72;/.test(p3js));
 
   // Genuine execution of frameCountFor() — confirms the fixed count is
   // ACTUALLY fixed (same output for a very short clip, an ordinary one, a
   // very long one, and a degenerate/invalid duration), not just declared
   // fixed in a comment while the body still varies its answer.
   (function () {
-    eq('frameCountFor: a very short clip still samples exactly 72 frames',
-       P360._frameCountFor(0.3), 72);
-    eq('frameCountFor: a very long clip still samples exactly 72 frames — no longer scaled up or capped by duration',
-       P360._frameCountFor(9999), 72);
-    eq('frameCountFor: an ordinary mid-length clip samples exactly 72 frames, not 30 * duration',
-       P360._frameCountFor(6), 72);
-    eq('frameCountFor: a zero/invalid duration still returns 72 rather than throwing or sampling zero frames',
-       P360._frameCountFor(0), 72);
-    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 72, not the old 720',
-       P360._frameCountFor(24), 72);
+    eq('frameCountFor: a very short clip still samples exactly 108 frames',
+       P360._frameCountFor(0.3), 108);
+    eq('frameCountFor: a very long clip still samples exactly 108 frames — no longer scaled up or capped by duration',
+       P360._frameCountFor(9999), 108);
+    eq('frameCountFor: an ordinary mid-length clip samples exactly 108 frames, not 30 * duration',
+       P360._frameCountFor(6), 108);
+    eq('frameCountFor: a zero/invalid duration still returns 108 rather than throwing or sampling zero frames',
+       P360._frameCountFor(0), 108);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 108, not the old 720',
+       P360._frameCountFor(24), 108);
     ok('…the count truly does not vary with duration — a 4s clip and a 20s clip get the identical frame count, unlike the retired 30fps scaling',
        P360._frameCountFor(4) === P360._frameCountFor(20));
   })();

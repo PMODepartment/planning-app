@@ -52,19 +52,29 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as jpeg from "https://esm.sh/jpeg-js@0.4.4";
 import {
-  toGrayscaleDownsampled,
   estimateOffset,
   rgbaToRgb,
   rgbToRgba,
-  cumulativePlacements,
   capScaleFactor,
   computeBounds,
-  pasteFrame,
   makeCanvas,
   centerCropRect,
   cropRgb,
   resizeRgbNearest,
   THUMB_ASPECT,
+  // 2026-09-17 — cylindrical reprojection + equirectangular output. See
+  // stitch-core.mjs's own header for the geometry and for the synthetic
+  // rotating-camera verification every one of these was developed against.
+  hfovForFrame,
+  cylindricalDims,
+  warpToCylindrical,
+  warpRgbaToCylindricalGray,
+  cumulativePlacementsClamped,
+  coverageYaw,
+  framesForFullTurn,
+  pasteFrameBand,
+  bandForFrame,
+  cylStripToEquirect,
 } from "./stitch-core.mjs";
 
 const CORS = {
@@ -92,13 +102,34 @@ const ALIGN_TARGET_WIDTH = 240;
 // capped below, since a long pan at this per-frame width can still exceed a
 // sane canvas size.
 const COMPOSITE_FRAME_MAX_WIDTH = 640;
-const MAX_COMPOSITE_WIDTH = 3600;
-const MAX_COMPOSITE_HEIGHT = 1200;
+// ⚠️ Raised from 3600/1200 (2026-09-17). Cylindrical warping makes the strip
+// SHORTER than it used to be (its height is cropped to the all-valid band —
+// see cylindricalDims) and its width is now bounded by one full turn plus one
+// frame, because anything past a full turn is trimmed rather than pasted. A
+// higher width cap therefore costs less memory than the old one did and lets a
+// full turn keep its native per-frame resolution instead of being scaled down.
+const MAX_COMPOSITE_WIDTH = 4200;
+const MAX_COMPOSITE_HEIGHT = 1400;
 
-// A frame's own left edge blends into whatever the canvas already has there
-// over this many composite-resolution pixels — proportional to frame width
-// so a narrower final composite (after capping) still gets a sensible blend.
-const FEATHER_FRACTION = 0.12;
+// ⚠️⚠️ WAS 0.12, NOW 0.02 — and this is a real part of the "blurry" fix, not a
+// tuning nudge. A 12%-of-frame-width feather made sense when whole frames were
+// pasted over each other; with band pasting (pasteFrameBand) each frame
+// contributes only the slice between the midpoints to its neighbours, so the
+// feather only has to hide a seam, not blend a whole frame. Left at 12% it
+// would smear each join across ~77px and undo most of what band pasting buys.
+const FEATHER_FRACTION = 0.02;
+
+// The final equirectangular image's width. One full turn of the strip is
+// 2π·focal composite pixels (~3150 for a 640-wide landscape frame at 65°), so
+// this preserves the strip's own horizontal resolution without inventing any.
+const EQUIRECT_MAX_WIDTH = 3200;
+
+// How far the running vertical placement may wander from the first frame's
+// row, as a fraction of the (warped) frame height. See
+// cumulativePlacementsClamped — this is what stops the mosaic bowing into an
+// arc, and the same band is cropped off both edges at the end so every
+// remaining pixel is real.
+const DRIFT_CLAMP_FRACTION = 0.02;
 
 const THUMB_WIDTH = 480;
 const JPEG_QUALITY = 85;
@@ -164,6 +195,13 @@ type CompositeState = {
   shiftX: number; // add to a raw placement.x to get a non-negative canvas x
   shiftY: number;
   scaleFactor: number; // alignment-resolution px -> composite-resolution px, AFTER capping
+  hfov: number;        // radians, derived from the frame's own aspect (hfovForFrame)
+  focal: number;       // composite-resolution pixels per radian of yaw
+  keepFrames: number;  // frames kept after trimming anything past one full turn
+  driftClamp: number;  // composite-resolution px, how far the chain was allowed to wander
+  validY0: number;     // first canvas row covered by EVERY kept frame
+  validH: number;      // how many rows are covered by every kept frame
+  coverageDeg: number; // how far the capture actually turned — reported, never guessed
 };
 
 // -----------------------------------------------------------------------------
@@ -315,11 +353,27 @@ Deno.serve(async (req) => {
       ]);
       const prevDecoded = decodeJpeg(prevBytes);
       const currDecoded = decodeJpeg(currBytes);
-      const prevGray = toGrayscaleDownsampled(prevDecoded.data, prevDecoded.width, prevDecoded.height, ALIGN_TARGET_WIDTH);
-      const currGray = toGrayscaleDownsampled(currDecoded.data, currDecoded.width, currDecoded.height, ALIGN_TARGET_WIDTH);
+      // ⚠️⚠️ WARP FIRST, THEN ALIGN. This one reordering is what makes the
+      // translation-only search below geometrically VALID: a camera turning on
+      // the spot relates two frames by a rotation, and only in cylindrical
+      // coordinates does that rotation become the plain horizontal shift
+      // `estimateOffset` looks for. Measured on the synthetic rotating-camera
+      // harness (test.mjs): the best-match residual stays flat at ~0.3–0.9 as
+      // the step grows from 2° to 8°, where un-warped frames degrade from 1.6
+      // to 5.2 — that growing residual IS the ghosting/blur in the join.
+      const hfov = hfovForFrame(prevDecoded.width, prevDecoded.height);
+      const prevGray = warpRgbaToCylindricalGray(prevDecoded.data, prevDecoded.width, prevDecoded.height, ALIGN_TARGET_WIDTH, hfov);
+      const currGray = warpRgbaToCylindricalGray(currDecoded.data, currDecoded.width, currDecoded.height, ALIGN_TARGET_WIDTH, hfov);
+      // ⚠️⚠️ `subPixel` is not a refinement of a refinement — these offsets are
+      // SUMMED along the whole chain, so a consistent rounding bias becomes a
+      // scale error on the finished panorama. Measured on the synthetic
+      // rotating-camera harness: without it a true 360° turn reports itself as
+      // 372° and the recovered scene scores 8.53/255 against ground truth;
+      // with it, 362° and 0.95. See estimateOffset's own comment.
       const offset = estimateOffset(
         prevGray.gray, prevGray.width, prevGray.height,
         currGray.gray, currGray.width, currGray.height,
+        { subPixel: true },
       );
 
       const offsets = Array.isArray(job.offsets) ? job.offsets.slice() : [];
@@ -351,17 +405,40 @@ Deno.serve(async (req) => {
       // stitch-core.mjs). ----
       let state: CompositeState;
       if (!job.composite_state) {
-        const firstFrame = await decodeFrameForComposite(admin, job.frame_paths[0], COMPOSITE_FRAME_MAX_WIDTH);
-        const scaleFactorRaw = firstFrame.width / ALIGN_TARGET_WIDTH;
+        const firstRaw = await decodeFrameForComposite(admin, job.frame_paths[0], COMPOSITE_FRAME_MAX_WIDTH);
+        const hfov = hfovForFrame(firstRaw.width, firstRaw.height);
+        // Every frame is warped to the SAME cylindrical size, so the layout can
+        // be derived once from the first one.
+        const cylRaw = cylindricalDims(firstRaw.width, firstRaw.height, hfov);
+        const alignCyl = cylindricalDims(
+          ALIGN_TARGET_WIDTH,
+          Math.max(1, Math.round((firstRaw.height * ALIGN_TARGET_WIDTH) / firstRaw.width)),
+          hfov,
+        );
+        const scaleFactorRaw = cylRaw.width / alignCyl.width;
         const offsets = Array.isArray(job.offsets) ? job.offsets : [];
-        const rawPlacements = cumulativePlacements(offsets, scaleFactorRaw);
-        const rawBounds = computeBounds(rawPlacements, firstFrame.width, firstFrame.height);
+
+        // ---- 360° normalisation (the owner's item 2) --------------------
+        // Arc length / focal length is the yaw angle, so once the frames are
+        // cylindrical the capture's real rotation is measurable rather than
+        // assumed. Anything past a full turn is duplicated content that would
+        // otherwise be pasted straight over the beginning of the panorama.
+        const coverage = coverageYaw(offsets, alignCyl.focal);
+        const keepFrames = Math.min(frameCount, framesForFullTurn(offsets, alignCyl.focal));
+        const keptOffsets = offsets.slice(0, Math.max(0, keepFrames - 1));
+
+        const driftRaw = Math.max(1, Math.round(cylRaw.height * DRIFT_CLAMP_FRACTION));
+        const rawPlacements = cumulativePlacementsClamped(keptOffsets, scaleFactorRaw, driftRaw);
+        const rawBounds = computeBounds(rawPlacements, cylRaw.width, cylRaw.height);
 
         const cap = capScaleFactor(rawBounds.width, rawBounds.height, MAX_COMPOSITE_WIDTH, MAX_COMPOSITE_HEIGHT);
         const scaleFactor = scaleFactorRaw * cap;
-        const frameWidth = Math.max(1, Math.round(firstFrame.width * cap));
-        const frameHeight = Math.max(1, Math.round(firstFrame.height * cap));
-        const placements = cap === 1 ? rawPlacements : cumulativePlacements(offsets, scaleFactor);
+        const frameWidth = Math.max(1, Math.round(cylRaw.width * cap));
+        const frameHeight = Math.max(1, Math.round(cylRaw.height * cap));
+        const driftClamp = Math.max(1, Math.round(driftRaw * cap));
+        const placements = cap === 1
+          ? rawPlacements
+          : cumulativePlacementsClamped(keptOffsets, scaleFactor, driftClamp);
         const bounds = computeBounds(placements, frameWidth, frameHeight);
 
         state = {
@@ -373,20 +450,45 @@ Deno.serve(async (req) => {
           shiftX: -bounds.minX,
           shiftY: -bounds.minY,
           scaleFactor,
+          hfov,
+          focal: cylRaw.focal * cap,
+          keepFrames,
+          driftClamp,
+          // ⚠️⚠️ The fully-covered band is the INTERSECTION of where the frames
+          // actually landed, not `driftClamp` off each edge. Cropping by the
+          // clamp assumes every frame sat at the clamp; on a capture that
+          // wobbles, some frames sit at 0 and some at ±clamp, so the covered
+          // band is narrower than the clamp implies and the difference comes
+          // out as a thin black strip along one edge. Measured on the
+          // synthetic harness with a 2° pitch wobble: 1.34% of the panorama
+          // was still black with the clamp-based crop, 0% with this one.
+          validY0: Math.max(...placements.map((q) => q.y)) - bounds.minY,
+          validH: Math.max(
+            1,
+            Math.min(...placements.map((q) => q.y)) + frameHeight - bounds.minY
+              - (Math.max(...placements.map((q) => q.y)) - bounds.minY),
+          ),
+          coverageDeg: Math.round(Math.abs(coverage) * (180 / Math.PI)),
         };
 
         const canvas = makeCanvas(state.width, state.height, [20, 20, 20]);
+        const warped0 = warpToCylindrical(firstRaw.rgb, firstRaw.width, firstRaw.height, hfov);
         const frame0 = cap === 1
-          ? firstFrame
-          : { rgb: resizeRgbNearest(firstFrame.rgb, firstFrame.width, firstFrame.height, frameWidth, frameHeight), width: frameWidth, height: frameHeight };
-        pasteFrame(canvas, state.width, state.height, frame0.rgb, frame0.width, frame0.height, state.shiftX, state.shiftY, 0);
+          ? warped0
+          : { rgb: resizeRgbNearest(warped0.rgb, warped0.width, warped0.height, frameWidth, frameHeight), width: frameWidth, height: frameHeight };
+        const feather0 = Math.max(1, Math.round(frameWidth * FEATHER_FRACTION));
+        const band0 = bandForFrame(placements, 0, frameWidth, feather0);
+        pasteFrameBand(
+          canvas, state.width, state.height, frame0.rgb, frame0.width, frame0.height,
+          state.shiftX + placements[0].x, state.shiftY + placements[0].y, band0.x0, band0.x1, feather0,
+        );
         await uploadBytes(admin, state.storagePath, canvas, "application/octet-stream");
 
         const updated = await commitStep(cursor, {
           composite_state: state,
           step_cursor: 1,
-          progress_pct: 50 + Math.round((1 / frameCount) * 50),
-          progress_msg: `Building the panorama — 1 of ${frameCount}…`,
+          progress_pct: 50 + Math.round((1 / keepFrames) * 50),
+          progress_msg: `Building the panorama — 1 of ${keepFrames}…`,
         });
         if (updated) await selfChain();
         return json({ ok: true, status: "compositing", frame: 0 });
@@ -394,16 +496,67 @@ Deno.serve(async (req) => {
 
       state = job.composite_state as CompositeState;
 
-      if (cursor >= frameCount) {
-        // Every frame pasted — finalize: encode + upload the result and a
-        // thumbnail, drop the (large, now-unneeded) raw intermediate, finish.
-        const canvas = await downloadBytes(admin, state.storagePath);
-        const finalJpeg = encodeJpeg(canvas, state.width, state.height, JPEG_QUALITY);
+      // ⚠️⚠️ UPGRADE GUARD. A job that reached `compositing` under the
+      // pre-2026-09-17 pipeline has a composite_state with no `hfov`,
+      // `keepFrames`, `validY0` … — and `warpToCylindrical(rgb, w, h,
+      // undefined)` is not an error, it is NaN propagated silently through
+      // every sampled coordinate, producing a black panorama with nothing in
+      // the logs to say why. Rebuilding the layout is cheap (step 0 re-derives
+      // everything from `offsets`, which survive untouched) and is the only
+      // outcome that is actually correct, so a stale state is discarded rather
+      // than half-trusted.
+      // ⚠️ Stated rather than papered over: a job caught mid-`aligning` by this
+      // same deploy keeps whatever offsets it had already measured WITHOUT the
+      // cylindrical warp, mixed with warped ones for the rest. That is not
+      // detectable from the row (the offsets carry no provenance) and it
+      // degrades to a poor stitch, not a crash — a one-deploy transient a
+      // planner can Discard and re-record. Adding a provenance marker would
+      // need a column, which is not worth a migration for a minutes-long job.
+      if (!state || typeof state.hfov !== "number" || typeof state.keepFrames !== "number") {
+        const updated = await commitStep(cursor, {
+          composite_state: null,
+          step_cursor: 0,
+          progress_msg: "Rebuilding the panorama layout…",
+        });
+        if (updated) await selfChain();
+        return json({ ok: true, status: "compositing", note: "stale composite_state discarded" });
+      }
+
+      if (cursor >= state.keepFrames) {
+        // Every frame pasted — finalize. Two transforms happen here, both of
+        // them the difference between the owner's screenshots and a usable
+        // panorama, and NEITHER can happen earlier: both need the whole strip.
+        const raw = await downloadBytes(admin, state.storagePath);
+
+        // (1) Crop to the band EVERY kept frame covered (state.validY0 /
+        // validH, computed from the real placements at layout time). This is
+        // what makes "no black" a property of the geometry rather than a hope:
+        // cumulativePlacementsClamped bounded how far the chain could wander,
+        // and this takes the intersection of where the frames actually landed.
+        const bandY = Math.max(0, Math.min(state.validY0 | 0, state.height - 1));
+        const stripH = Math.max(1, Math.min(state.validH | 0, state.height - bandY));
+        const strip = (bandY > 0 || stripH < state.height)
+          ? cropRgb(raw, state.width, state.height, { x: 0, y: bandY, width: state.width, height: stripH })
+          : raw;
+
+        // (2) Cylinder -> equirectangular. The viewer declares this image
+        // `type: 'equirectangular'`; until now it was handed a CYLINDRICAL
+        // mosaic, and the two projections disagree down y. That mismatch is
+        // what bent every horizontal line into an arc and put a curved black
+        // boundary across the top and bottom of the review modal. This also
+        // normalises the width to exactly one turn, so the viewer's own
+        // `vaov = 360 * height / width` reads the correct vertical field
+        // straight off the aspect ratio.
+        const outWidth = Math.min(EQUIRECT_MAX_WIDTH, Math.max(320, Math.round(state.width)));
+        const equi = cylStripToEquirect(strip, state.width, stripH, state.focal, (stripH - 1) / 2, outWidth);
+
+        const canvas = equi.rgb;
+        const finalJpeg = encodeJpeg(canvas, equi.width, equi.height, JPEG_QUALITY);
         const resultPath = `${job.project_id}/pano360-jobs/${jobId}/result.jpg`;
         await uploadBytes(admin, resultPath, finalJpeg, "image/jpeg");
 
-        const cropRect = centerCropRect(state.width, state.height, THUMB_ASPECT);
-        const cropped = cropRgb(canvas, state.width, state.height, cropRect);
+        const cropRect = centerCropRect(equi.width, equi.height, THUMB_ASPECT);
+        const cropped = cropRgb(canvas, equi.width, equi.height, cropRect);
         const thumbHeight = Math.max(1, Math.round(THUMB_WIDTH / THUMB_ASPECT));
         const thumbRgb = resizeRgbNearest(cropped, cropRect.width, cropRect.height, THUMB_WIDTH, thumbHeight);
         const thumbJpeg = encodeJpeg(thumbRgb, THUMB_WIDTH, thumbHeight, JPEG_QUALITY);
@@ -417,55 +570,62 @@ Deno.serve(async (req) => {
 
         const pairsFallback = job.pairs_fallback || 0;
         const pairsTotal = job.pairs_total || Math.max(1, frameCount - 1);
+        // ⚠️ The measured coverage is REPORTED rather than quietly absorbed.
+        // Under 360° the panorama is stretched to fill a full turn (see
+        // cylStripToEquirect) — a uniform yaw scale error in place of a black
+        // wedge — and a planner is entitled to know that is what happened.
+        // Over 360° the duplicated tail was trimmed, and the frame count says so.
+        const trimmed = frameCount - state.keepFrames;
+        const bits = [`${pairsFallback} of ${pairsTotal} joins could not be matched confidently`];
+        if (trimmed > 0) bits.push(`turned ${state.coverageDeg}° — ${trimmed} over-rotated frame(s) trimmed to one full turn`);
+        else if (state.coverageDeg < 330) bits.push(`turned only ${state.coverageDeg}°, stretched to fill 360°`);
         await commitStep(cursor, {
           status: "done",
           result_path: resultPath,
           thumb_path: thumbPath,
-          quality: pairsFallback > 0 ? "poor" : "ok",
+          quality: (pairsFallback > 0 || state.coverageDeg < 300) ? "poor" : "ok",
           progress_pct: 100,
-          progress_msg: `Done — ${pairsFallback} of ${pairsTotal} joins could not be matched confidently.`,
+          progress_msg: `Done — ${bits.join("; ")}.`,
         });
         // Terminal — no self-chain.
         return json({ ok: true, status: "done", result_path: resultPath });
       }
 
       // ---- An ordinary compositing step: paste one more frame -----------
-      // ⚠️⚠️ This pastes a RAW, un-warped perspective frame — there is no
-      // cylindrical reprojection step anywhere in this file or in
-      // stitch-core.mjs. A camera ROTATING about a fixed point (this app's
-      // own capture guidance) is not handled correctly by pure translation
-      // past a few degrees of rotation; see stitch-core.mjs's own header
-      // comment ("2026-09-16 CORRECTNESS AUDIT") for the full reasoning on
-      // why this is a known, real gap left deliberately unfixed this round.
+      // The frame is cylindrically reprojected first (the same warp the
+      // alignment step used, so a placement measured there lands where it
+      // says it does here), then only its CENTRE BAND is pasted — see
+      // pasteFrameBand in stitch-core.mjs for why pasting whole frames left
+      // the panorama built out of every frame's softest edge.
       const canvas = await downloadBytes(admin, state.storagePath);
-      const frame = await decodeFrameForComposite(admin, job.frame_paths[cursor], state.frameWidth);
-      const rgb = frame.width === state.frameWidth && frame.height === state.frameHeight
-        ? frame.rgb
-        : resizeRgbNearest(frame.rgb, frame.width, frame.height, state.frameWidth, state.frameHeight);
+      const frameRaw = await decodeFrameForComposite(admin, job.frame_paths[cursor], COMPOSITE_FRAME_MAX_WIDTH);
+      const warped = warpToCylindrical(frameRaw.rgb, frameRaw.width, frameRaw.height, state.hfov);
+      const rgb = warped.width === state.frameWidth && warped.height === state.frameHeight
+        ? warped.rgb
+        : resizeRgbNearest(warped.rgb, warped.width, warped.height, state.frameWidth, state.frameHeight);
 
       const offsets = Array.isArray(job.offsets) ? job.offsets : [];
-      const placements = cumulativePlacements(offsets.slice(0, cursor), state.scaleFactor);
-      const p = placements[placements.length - 1];
-      const featherMag = Math.max(1, Math.round(state.frameWidth * FEATHER_FRACTION));
-      // ⚠️⚠️ The feather direction has to match which edge of THIS frame
-      // actually overlaps the canvas, not always the left one — see
-      // pasteFrame's own header comment in stitch-core.mjs. offsets[cursor-1]
-      // is the alignment for the pair (cursor-1, cursor): a non-negative dx
-      // means this frame landed to the right of the previous one (the
-      // ordinary case — its LEFT edge is the one that overlaps, so the
-      // sign stays positive), a negative dx means it landed to the left
-      // (a leftward pan or a momentary backward wobble — its RIGHT edge is
-      // the one that overlaps, so the sign flips negative).
-      const pairDx = offsets[cursor - 1] ? offsets[cursor - 1].dx : 0;
-      const featherPx = pairDx < 0 ? -featherMag : featherMag;
-      pasteFrame(canvas, state.width, state.height, rgb, state.frameWidth, state.frameHeight, state.shiftX + p.x, state.shiftY + p.y, featherPx);
+      const keptOffsets = offsets.slice(0, Math.max(0, state.keepFrames - 1));
+      // ⚠️ The WHOLE placement chain is recomputed, not just up to `cursor`:
+      // bandForFrame needs the NEXT frame's placement to know where this
+      // frame's contribution should stop, and a chain truncated at the cursor
+      // would make every frame think it was the last one and paste to its own
+      // right edge — putting the soft edge back.
+      const placements = cumulativePlacementsClamped(keptOffsets, state.scaleFactor, state.driftClamp);
+      const p = placements[cursor];
+      const featherPx = Math.max(1, Math.round(state.frameWidth * FEATHER_FRACTION));
+      const band = bandForFrame(placements, cursor, state.frameWidth, featherPx);
+      pasteFrameBand(
+        canvas, state.width, state.height, rgb, state.frameWidth, state.frameHeight,
+        state.shiftX + p.x, state.shiftY + p.y, band.x0, band.x1, featherPx,
+      );
       await uploadBytes(admin, state.storagePath, canvas, "application/octet-stream");
 
       const nextCursor = cursor + 1;
       const updated = await commitStep(cursor, {
         step_cursor: nextCursor,
-        progress_pct: 50 + Math.round((nextCursor / frameCount) * 50),
-        progress_msg: `Building the panorama — ${nextCursor} of ${frameCount}…`,
+        progress_pct: 50 + Math.round((nextCursor / state.keepFrames) * 50),
+        progress_msg: `Building the panorama — ${nextCursor} of ${state.keepFrames}…`,
       });
       if (updated) await selfChain();
       return json({ ok: true, status: "compositing", frame: cursor });
