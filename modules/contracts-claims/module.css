@@ -291,7 +291,7 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 /* Status opens the Status & dates block on its own line, so the four dates below it start on a
    fresh row and pair as written. */
-.cc-form > label#cc-l-stat, .cc-form > label[data-statusrow] { grid-column:1/-1; }
+.cc-form > label[data-statusrow] { grid-column:1/-1; }
 
 /* ==== THE RECORD DIALOG IS WIDER THAN THE SHARED 520px ======================================
    Owner 2026-09-17: *"affected work is the one that clips in the window."*

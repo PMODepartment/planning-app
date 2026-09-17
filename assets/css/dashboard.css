@@ -1860,7 +1860,12 @@ body { overflow-x: clip; }
    at (0,2,0) and a bare `.mp-topbar-tools` is (0,1,0), so 6px was already winning everywhere. They
    were removed because a declaration that looks authoritative and does nothing is worse than no
    declaration — not because they were the thing on screen. */
-.pd-modulebar [class$="-tb-sep"] {
+/* ⚠️ NOT SCOPED TO `.pd-modulebar`, and that is the point of matching on the name. Project
+   Schedule has a SECOND tool row below the module bar (`.ps-toolbar .ps-tb-row`) which had grown
+   its own fourteenth spelling, `.ps-tb-div` — a full-height line with `margin:0 2px` instead of the
+   inset 5px every other bar uses. A divider is a divider wherever a toolbar puts one; the class
+   name is the contract, not the ancestor. */
+[class$="-tb-sep"] {
   width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); flex: none;
 }
 

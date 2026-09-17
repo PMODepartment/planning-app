@@ -91,7 +91,6 @@
        only while the row is too narrow to afford the word. */
     .ps-tb-row.ps-tb-compact #ps-zoombtn-txt,
     .ps-tb-row.ps-tb-compact #ps-viewbtn-txt { display:none; }
-    .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 2px; }
     /* one consistent control height across selects, inputs, buttons & segments */
     .ps-toolbar .pd-select, .ps-toolbar .pd-input, .ps-toolbar .pd-btn { height:36px; }
     .ps-toolbar .pd-btn { padding:0 10px; font-size:var(--pd-fs-base); font-weight:500; white-space:nowrap; }
@@ -4660,10 +4659,10 @@
                second red primary sitting in the MIDDLE of the view icons, where it read as a view.
                It is an action, so it lives beside Actions, and Add activity is the only red button. -->
           <button class="pd-btn" id="ps-schedbtn" title="Schedule — set the data date, calculation options &amp; recompute the CPM (P6's F9)"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
-          <span class="ps-tb-div"></span>
+          <span class="ps-tb-sep"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-openbtn" title="Open schedule — Current, baselines &amp; what-if scenarios"><span data-ico="calendar" data-ico-size="15"></span> Open ▾</button><div class="ps-menu" id="ps-open-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-groupbtn" title="Grouping — pick the levels and their order. The face shows the current grouping."><span data-ico="layers" data-ico-size="15"></span> <span id="ps-groupbtn-txt">WBS</span> ▾</button><div class="ps-menu ps-group-menu" id="ps-group-menu"></div></div>
-          <span class="ps-tb-div"></span>
+          <span class="ps-tb-sep"></span>
           <!-- Contract scope. ⚠️ STILL a top-level control, one click, and it NAMES the active scope
                on its own face -- the standing rule here is that it must not be only in the Filter menu,
                because "show me the change orders" is a question a planner asks constantly and a filter
@@ -4736,7 +4735,20 @@
           <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
                the View ▾ menu now: both answer "how am I looking at this schedule", the same question
                View already owns, and the row was two lines deep at laptop widths. See renderLayoutMenu. -->
-          <span class="ps-tb-div"></span>
+          <!-- ⚠️⚠️ COLOURS BELONGS WITH THE OTHER APPEARANCE TOGGLES, not marooned on the
+               right. Owner 2026-09-17: *"the 3 buttons (bar colors, keyboard shortcuts, and search
+               bar) look out of place among the rest of the buttons in terms of placement."*
+               Measured in a harness against the real stylesheet: `.ps-tb-spacer` below throws
+               everything after it to the right edge, so at the owner's ~1660px content width the
+               gap between **Analyze** and the palette was **238px** — 48x the 5px between every
+               other pair — and 438px at 1860px. Three controls floating in open space with nothing
+               saying they are a group is what "out of place" looks like on screen.
+               Colours is a BAR-APPEARANCE control, exactly like Progress / Stacking / Flow / LSM /
+               Outline beside it, so it stops being an orphan by being FILED CORRECTLY rather than by
+               moving the void somewhere else. What stays right is help + search — a conventional
+               utility cluster — and it now has a divider in front of it. -->
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colorsbtn" aria-label="Bar colors" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span></button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
+          <span class="ps-tb-sep"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight -->
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-analyzebtn" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="15"></span> Analyze ▾</button>
             <div class="ps-menu" id="ps-analyze-menu">
@@ -4764,6 +4776,9 @@
                window the toolbar looks exactly as it always did. -->
           <button class="pd-btn ps-icobtn" id="ps-tb-more" title="More toolbar controls" aria-expanded="false" hidden>⋯</button>
           <span class="ps-tb-spacer"></span>
+          <!-- ⚠️ The marker that makes the right-hand pair read as a deliberate utility group
+               rather than two buttons that drifted there. Same divider as the three above it. -->
+          <span class="ps-tb-sep"></span>
           <!-- ⚠️ ICON-ONLY, for the same measured reason as Progress / Stacking / Outline above.
                Owner 2026-09-03: *"In my screen resolution of a laptop, the toolbar spills over into
                two rows. Let's optimize that by removing the 'colors' label in the colors"*. The
@@ -4773,7 +4788,6 @@
                ⚠️ Safe to unlabel where "View: Split" was not: Colors opens a MENU rather than
                entering a mode, so there is no state for a label to have to report. The palette glyph
                is the same one the Colors items inside Actions already use. -->
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colorsbtn" aria-label="Bar colors" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span></button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <!-- ⚠️⚠️ HIDDEN BELOW 1400px, and it is the LAST 41px of the one-row fix (see the
                .ps-search rule and _paintViewBtn for the other two). Measured with the Contract
                Scope button also showing — the widest the row ever gets — the row needed 1,238px
@@ -4910,13 +4924,13 @@
         <span id="ps-wbs-integrations" class="ps-wbs-edittools">
         <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
         <button class="pd-btn" id="ps-wbs-reset" title="Drop every custom / imported branch and rebuild the tree from the schedule's own WBS codes — the standard skeleton is kept"><span data-ico="refresh" data-ico-size="15"></span> Reset WBS…</button>
-        <span class="ps-tb-div"></span>
+        <span class="ps-tb-sep"></span>
         <!-- Design Development is MIRRORED from the Engineering App (drawing register +
              material submittal log). This pulls a fresh roll-up through the sync-eng
              Edge Function; the branch itself stays read-only. -->
         <button class="pd-btn" id="ps-sync-eng" title="Refresh Design Development from the Engineering App's drawing register and material submittal log. Only this button refreshes it — it no longer runs when the schedule loads, because diffing a whole branch took minutes on a large tree. The date beside it is how fresh it is."><span data-ico="refresh" data-ico-size="15"></span> Sync Engineering</button>
         <span id="ps-sync-eng-at" style="font-size:11.5px;color:var(--pd-muted);"></span>
-        <span class="ps-tb-div"></span>
+        <span class="ps-tb-sep"></span>
         <!-- Procurement is MIRRORED from the Procurement (WPM) app: one branch per
              trade, one activity per work package. Read-only here. -->
         <button class="pd-btn" id="ps-sync-prc" title="Refresh Procurement from the Procurement (WPM) app's work packages. Only this button refreshes it — it no longer runs when the schedule loads. The date beside it is how fresh it is."><span data-ico="refresh" data-ico-size="15"></span> Sync Procurement</button>
@@ -20176,7 +20190,7 @@
             esc(_vsAxis().slice(0, _vsDetailNow()).map(function (l) { return l.name; }).join(' › ')) + '</span></span>' +
           '<span class="ps-vs-seg"><button id="ps-vs-fzcmp"' + (cmp ? ' class="on"' : '') +
             ' title="Show the baseline building on the left and the recorded/forecast building on the right. Hovering or panning either one drives both.">Planned vs Actual, side by side</button></span>' +
-          '<span class="ps-tb-div"></span>' +
+          '<span class="ps-tb-sep"></span>' +
           /* ⚠️⚠️ OMITTED IN 3D, NOT DISABLED. Zoom %, Fit and the pan hint describe an SVG that is
              sized and translated; a WebGL canvas has none of those semantics — it orbits and it
              dollies, which the model's own drag and wheel already do. Leaving three controls on
@@ -20884,7 +20898,7 @@
     /* ⚠⚠ A FRAGMENT, NOT A ROW. Owner 2026-09-15: *"The Towers toolbar and trades toolbar can
        be in the same level"* — asked while the buildings had about 100px of the pane and the two
        chip rows were taking ~96px of it. Both filters now share one `.ps-vs-chips`; see the
-       assembly at `host.innerHTML`. Each keeps its own label, and a `.ps-tb-div` separates them,
+       assembly at `host.innerHTML`. Each keeps its own label, and a `.ps-tb-sep` separates them,
        which is how `.ps-tb-row` has always kept unrelated groups apart in one line. */
     var tradeChips = '<span class="ps-vs-rowlab">Trades</span><button class="ps-vs-chip' + (!_vsTradeSel.length ? ' on' : '') +
       '" data-vstr="ALL" aria-pressed="' + (!_vsTradeSel.length) + '" title="Show every trade">All trades</button>' +
@@ -21020,7 +21034,7 @@
          face: it is a live control that goes to the step that owns the drawing, which is the only
          honest thing to offer when the answer is "nobody has drawn it yet". */
       ((towerNames.length > 1 && !_vsSitePlan())
-        ? '<span class="ps-tb-div"></span>' +
+        ? '<span class="ps-tb-sep"></span>' +
           '<button class="pd-btn ps-vs-sitecta" id="ps-vs-sitecta" title="' +
           esc('Arrange the ' + towerNames.length + ' towers on a site plan, and this view can show where each one stands. Opens Schedule Setup › Floors & Zones.') +
           '"><span data-ico="compass" data-ico-size="14"></span> Draw the site plan…</button>'
@@ -21028,7 +21042,7 @@
       /* ⚠ The divider goes with whatever is to its LEFT. With Consolidated removed, a
          single-tower project emits neither the Model segment nor the site call-to-action, and an
          unconditional rule here would open the bar on a vertical stroke separating nothing. */
-      (_scopeN > 1 || (towerNames.length > 1 && !_vsSitePlan()) ? '<span class="ps-tb-div"></span>' : '') +
+      (_scopeN > 1 || (towerNames.length > 1 && !_vsSitePlan()) ? '<span class="ps-tb-sep"></span>' : '') +
       '<span class="ps-vs-seg">' +
         '<button data-vs3d="0"' + (!_vs3D ? ' class="on"' : '') + ' title="The section: storeys as rows, zones across">2D</button>' +
         '<button data-vs3d="1"' + (_vs3D ? ' class="on"' : '') + ' title="The same storeys and zones as a solid model you can orbit, with the four elevations named">3D</button>' +
@@ -21037,19 +21051,19 @@
       '<span class="ps-vs-note"' + (_vsMixTrades ? ' title="' + esc(VS_MIX_NOTE) + '"' : '') + '>' +
         esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) +
         (_vsMixTrades ? ' — levels only (trades combined)' : '') + '</span></span>' +
-      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-tb-sep"></span>' +
       '<span class="ps-vs-grp"><span class="ps-vs-seg"><span class="ps-vs-seglab">Dates</span>' +
         [['actual', 'Actual', 'Actual where recorded, forecast where not — the dates the grid shows'],
          ['planned', 'Planned', 'The baseline (BL Start / BL Finish)'],
          ['compare', 'Planned vs Actual', 'Both, with the slip in days. Cells are coloured by slip, not by progress']]
           .map(function (o) { return '<button data-vsbasis="' + o[0] + '"' + (_vsBasis === o[0] ? ' class="on"' : '') + ' title="' + esc(o[2]) + '">' + o[1] + '</button>'; }).join('') +
       '</span></span>' +
-      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-tb-sep"></span>' +
       '<span class="ps-vs-grp"><span class="ps-vs-seg"><span class="ps-vs-seglab">Show</span>' +
         '<button data-vsdt="finish"' + (_vsDateMode === 'finish' ? ' class="on"' : '') + ' title="Each cell shows when it COMPLETES (its last activity\'s finish)">Finish</button>' +
         '<button data-vsdt="start"' + (_vsDateMode === 'start' ? ' class="on"' : '') + ' title="Each cell shows when it BEGINS (its first activity\'s start)">Start</button>' +
       '</span></span>' +
-      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-tb-sep"></span>' +
       '<span class="ps-vs-seg"><span class="ps-vs-seglab">Zoom</span>' +
         '<button id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
         '<button id="ps-vs-zin" title="Wider cells — more room for the dates">+</button></span>' +
@@ -21407,7 +21421,7 @@
          jump to the next line whole and leave a half-empty row above it; letting the chips reflow
          keeps the row dense, and the two labels plus the rule are what say where one filter ends. */
     var filterRow = '<div class="ps-vs-chips">' + towerChips +
-      (towerChips ? '<span class="ps-tb-div"></span>' : '') + tradeChips + '</div>';
+      (towerChips ? '<span class="ps-tb-sep"></span>' : '') + tradeChips + '</div>';
     host.innerHTML = filterRow + bar + warn + _vsHatchDefs() +
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
@@ -39568,7 +39582,7 @@
             /* ⚠️ The owner's *"uniformity of the sizes"*: another floor's outlines, shown but
                not editable, to trace against. Absent entirely when no other floor has one -
                an empty picker is a question with no answers. */
-            (refs.length ? '<span class="ps-tb-div"></span>' +
+            (refs.length ? '<span class="ps-tb-sep"></span>' +
               '<label class="zpw-grid-ctl" title="Show another floor\u2019s zones underneath as a grey outline, to trace against. It cannot be selected or edited.">Trace over' +
                 '<select id="zpw-ref"><option value="">nothing</option>' + refs.map(function (r) {
                   return '<option value="' + e2(r.plateId) + '"' + (W.ref === r.plateId ? ' selected' : '') + '>' +
@@ -39628,7 +39642,7 @@
             (function () {
               var act = sel ? sel.code : W.brush;
               if (!act) return '';
-              return '<span class="ps-tb-div"></span>' +
+              return '<span class="ps-tb-sep"></span>' +
                 '<label class="zpw-grid-ctl" title="' + e2('The colour ' + zpLabelOf(act) + ' is drawn in — here, and in the 3D view when that is set to colour by zone. It applies on every floor.') + '">Colour' +
                   '<input type="color" id="zpw-col" value="' + e2(zpColor(act)) + '"></label>' +
                 (zpColorIsSet(act)
@@ -39647,7 +39661,7 @@
              looking for "what do I draw next" now finds every answer on one line.
              ⚠️ When it is not drawn the floor's shape is taken from the zones (see _vsZpOutlineOf)
              instead of falling back to a guessed box. */
-            '<span class="ps-tb-div"></span>' +
+            '<span class="ps-tb-sep"></span>' +
             '<span class="zpw-lbl">Floor shape</span>' +
             (function () {
               var _out = outlinePolys(), _zon = zonePolys();
@@ -39691,7 +39705,7 @@
                         : 'No tower has a traced floor plan yet — draw one on a floor row behind this window first, and its footprint lands here.') + '">' +
                 '<span data-ico="layers" data-ico-size="14"></span> ' +
                 (_fpn ? 'Bring in ' + _fpn + ' tower footprint' + (_fpn === 1 ? '' : 's') : 'No tower plans yet') + '</button>' +
-                '<span class="ps-tb-div"></span>';
+                '<span class="ps-tb-sep"></span>';
             })() : '') +
             '<span class="zpw-lbl">Add</span>' +
             '<span class="zpw-shapes">' + ZP_SHAPES.map(function (s) {
@@ -39700,7 +39714,7 @@
             }).join('') + '</span>' +
             '<button class="pd-btn' + (W.drawing ? ' pd-btn-primary' : '') + '" id="zpw-draw" title="Click corner by corner; click the first corner again, or double-click, to close">' +
               (W.drawing ? (W.pts.length >= 3 ? 'Finish' : 'Cancel') : 'Trace…') + '</button>' +
-            '<span class="ps-tb-div"></span>' +
+            '<span class="ps-tb-sep"></span>' +
             /* ⚠️ NOT on a migrated footprint. A copy is written back as an ordinary area with the
                same tower name on it — a SECOND outline of one building, which is the thing this
                feature exists to prevent, and the "already on the site" check would then see the
@@ -39714,7 +39728,7 @@
               (sel && sel.lock ? 'A tower footprint cannot be duplicated — there is one of it'
                                : 'Copy and paste in one go') + '">Duplicate</button>' +
             '<button class="pd-btn" id="zpw-del"' + (sel ? '' : ' disabled') + '>Delete</button>' +
-            '<span class="ps-tb-div"></span>' +
+            '<span class="ps-tb-sep"></span>' +
             /* ==== ORIENT AND SIZE =========================================================
                ⚠️ Not gated to the site plan. A zone traced at the wrong angle on a floor plan is
                the same problem, and a control that exists on one subject and not the other is a
@@ -39734,12 +39748,12 @@
                 '<button data-zpscale="1.1111111"' + (sel ? '' : ' disabled') + ' title="Make it bigger — the shape is kept, only the size changes">+</button>' +
               '</span>' +
             '</span>' +
-            '<span class="ps-tb-div"></span>' +
+            '<span class="ps-tb-sep"></span>' +
             '<label class="zpw-grid-ctl" title="Corners land on a grid of this many plan units (the sheet is ' + ZP_W + ' across)">Snap' +
               '<select class="pd-select" id="zpw-grid">' + ZP_GRIDS.map(function (g) {
                 return '<option value="' + g + '"' + (g === W.grid ? ' selected' : '') + '>' + (g ? g : 'Off') + '</option>';
               }).join('') + '</select></label>' +
-            '<span class="ps-tb-div"></span>' +
+            '<span class="ps-tb-sep"></span>' +
             '<button class="pd-btn" id="zpw-undo"' + (W.hist.length ? '' : ' disabled') + ' title="' +
               (W.hist.length ? e2('Undo (' + W.hist.length + ' step' + (W.hist.length === 1 ? '' : 's') + ') · Ctrl+Z') : 'Nothing to undo') + '">Undo</button>' +
           '</div>' : '') +

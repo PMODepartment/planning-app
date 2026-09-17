@@ -103,6 +103,54 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (c) — The Schedule toolbar's three marooned controls, and the fourteenth divider
+
+Owner: *"the 3 buttons (bar colors, keyboard shortcuts, and search bar) look out of place among the
+rest of the buttons in terms of placement."*
+
+#### Measured before it was changed
+A harness rendered `.ps-tb-row` against the real stylesheet at four widths. `.ps-tb-spacer` carries
+`margin-left:auto`, so everything after it is thrown to the right edge:
+
+| row width | gap between **Analyze** and the palette |
+|---|---|
+| 1340px | 10px |
+| 1520px | 98px |
+| 1660px | **238px** |
+| 1860px | **438px** |
+
+Every other pair in that row is 5px apart. At the owner's ~1660px content width the gap was **48x**
+the normal one, with nothing between the two groups saying they were groups. That is what "out of
+place" looks like.
+
+⚠️ **The sizes were fine and the first guess was wrong.** Every control in the row measured 36px
+tall, and the icon buttons 36x36 — uniform. The suspicion that these three were a different size
+came from the module bar's 34px and did not survive measurement.
+
+#### What changed
+**Colours rejoined the group it belongs to.** It is a bar-appearance control exactly like Progress /
+Stacking / Flow / LSM / Outline, which sit together immediately before Analyze. It now sits 5px
+after Outline, inside that cluster. The orphan was filed, rather than the void being moved around.
+
+**The right-hand pair got a divider.** What remains right of the spacer is help + search — a
+conventional utility cluster — and a divider now marks it as one, the same divider as the three
+already in the row.
+
+#### And a fourteenth spelling of the divider
+`.ps-tb-div` — `width:1px; align-self:stretch; min-height:26px; margin:0 2px` — a **full-height**
+line, in the same module whose module bar uses `.ps-tb-sep` and the app's inset 5px. 21 occurrences,
+renamed, and the private rule deleted.
+
+⚠️⚠️ **The shared rule stopped requiring `.pd-modulebar`.** Yesterday's consolidation scoped it to
+the module bar, which is why this second tool row could keep its own copy. A divider is a divider
+wherever a toolbar puts one; the class name is the contract, not the ancestor. Measured after:
+4 dividers in the row, all 26px against 36px buttons — inset, like every other bar in the app.
+
+`wiring-check` 139/0, `toolbar-order` 0 findings, `dark-remap` 0. `dashboard.css` already at
+`?v=20260917`.
+
+---
+
 ### 2026-09-17 (b) — Autosave left the Save button reading "Saving…" forever, and every save toasted as a warning
 
 Owner: *"Saving button is not working, probably due to the autosave feature."* That diagnosis was
