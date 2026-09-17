@@ -4605,7 +4605,15 @@
     .sbld-note b { color:var(--pd-ink); }
     .sbld-note-warn { border-left-color:var(--pd-warn, #C77700); }
     .sbld-phgrid { display:grid; gap:12px; margin-top:10px; }
-    .sbld-phcard { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); padding:11px 13px 12px; }
+    /* ⚠️⚠️ `min-width:0` IS THE WHOLE OF THE NARROW-WINDOW FIX, owner 2026-09-18: *"when window
+       width is narrow, the tiles of phases overflow."* A GRID ITEM defaults to `min-width:auto`, so
+       it refuses to shrink below its own min-content — and this card's min-content includes the
+       Gantt's non-shrinkable tree column plus the plot's full day scale. Measured before: at a
+       1100px window the card rendered 1018px wide inside an 828px panel and the PAGE scrolled
+       sideways; at 420px it was 820px inside 396px. Nothing about the Gantt was wrong — the card
+       was simply never allowed to be as narrow as the room it had. */
+    .sbld-phcard { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card);
+      padding:11px 13px 12px; min-width:0; }
     .sbld-phcard.on { border-color:var(--pd-red-mid, var(--pd-red)); box-shadow:var(--pd-shadow); }
     /* The Execution Phase card is a STATEMENT, not a control — it is what the other steps built, so
        it carries no tick and cannot be edited here. The tint is what says so at a glance. */
@@ -4623,10 +4631,21 @@
        plot's tick strip is paid for by an equal pad on the tree. A mismatch here reads as bars
        belonging to the wrong activity, which is the one thing a Gantt may not do. */
     .sbld-gantt { display:flex; align-items:stretch; margin-top:9px; border:1px solid var(--pd-line);
-      border-radius:var(--pd-radius-md); background:var(--pd-card); overflow:hidden; }
-    .sbld-gtree { flex:0 0 clamp(210px, 34%, 320px); border-right:1px solid var(--pd-line);
-      padding:22px 0 6px; min-width:0; }
+      border-radius:var(--pd-radius-md); background:var(--pd-card); overflow:hidden; min-width:0; }
+    /* ⚠️ The tree's share is a percentage of whatever the card ended up with, floored at 140px —
+       below that a name is six characters and a name clipped to six characters is not a name. The
+       PLOT is what gives way, because it can: it scrolls on its own. */
+    .sbld-gtree { flex:0 0 clamp(140px, 32%, 280px); border-right:1px solid var(--pd-line);
+      padding:0 0 6px; min-width:0; }
     .sbld-gplot { flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:6px; }
+    /* The tree's column headers. ⚠️ Its height and box-sizing must match `.sbld-gticks` exactly —
+       the two panes' rows are in step only because these two strips are. */
+    .sbld-ghead { display:flex; align-items:center; gap:5px; height:22px; box-sizing:border-box;
+      padding:0 6px; font-size:var(--pd-fs-micro); font-weight:700; letter-spacing:.04em;
+      text-transform:uppercase; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); }
+    .sbld-ghead-n { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sbld-ghead-d { flex:0 0 46px; text-align:right; }
+    .sbld-ghead-x { flex:0 0 20px; }
     .sbld-gticks { position:relative; height:22px; }
     .sbld-gtick { position:absolute; top:0; bottom:0; border-left:1px dashed rgba(128,128,128,.28); }
     .sbld-gtick span { position:absolute; left:3px; top:4px; font-size:var(--pd-fs-micro);
@@ -4635,29 +4654,37 @@
     .sbld-gsvg { position:absolute; inset:0; overflow:visible; pointer-events:none; }
     /* ⚠️ The arrow is drawn thin and hit with a fat transparent twin — see the wiring. Both carry
        `pointer-events` explicitly because the svg above turns them off for the layer. */
-    .sbld-garrow { fill:none; stroke:var(--pd-muted); stroke-width:1.4; marker-end:url(#none); }
+    /* ⚠️ `marker-end` is an ATTRIBUTE on the path now, naming this card's own marker — it used to
+       be `url(#none)` here, a reference to a marker nothing defines, i.e. no head at all. */
+    .sbld-garrow { fill:none; stroke:var(--pd-muted); stroke-width:1.2; }
+    /* ⚠️ A marker's contents inherit from where the <marker> SITS, not from the path that
+       references it — it is inside this card's own <svg>, so `--pd-muted` resolves and the head
+       follows the theme like the line it belongs to. */
+    .sbld-gah { fill:var(--pd-muted); }
     .sbld-ghit { fill:none; stroke:transparent; stroke-width:11; pointer-events:stroke; cursor:context-menu; }
     .sbld-ghit:hover + .sbld-glab, .sbld-garrow:hover { stroke:var(--pd-red); }
     .sbld-glab { font-size:9.5px; fill:var(--pd-muted); text-anchor:middle; pointer-events:all; cursor:context-menu;
       paint-order:stroke; stroke:var(--pd-card); stroke-width:3px; }
-    .sbld-gbar { position:absolute; height:16px; border-radius:3px; background:var(--pd-red-mid);
+    /* ⚠️ 16px → 11px, in step with `.sbld-gr`'s 26 → 20 and the renderer's own ROW/BAR/BAR_T.
+       The three numbers are one set; see the note on them. */
+    .sbld-gbar { position:absolute; border-radius:2px; background:var(--pd-red-mid);
       box-shadow:inset 0 0 0 1px rgba(128,128,128,.35); cursor:default; }
     .sbld-gbar.is-cycle { background:var(--pd-warn-bg); box-shadow:inset 0 0 0 1px var(--pd-warn-line); }
     /* The link handle. ⚠️ It sits just OUTSIDE the bar's right edge so a short bar still has one:
        inside, a 4px bar would have no room for it and the shortest activities — the ones most
        likely to be a hand-off — would be the ones you could not link from. */
-    .sbld-ghandle { position:absolute; right:-5px; top:3px; width:10px; height:10px; border-radius:50%;
+    .sbld-ghandle { position:absolute; right:-5px; top:50%; margin-top:-4.5px; width:9px; height:9px; border-radius:50%;
       background:var(--pd-card); box-shadow:0 0 0 1.5px var(--pd-red); cursor:crosshair; opacity:0; transition:opacity .12s; }
     .sbld-gbar:hover .sbld-ghandle, .sbld-ghandle:active { opacity:1; }
     .sbld-grub { position:absolute; border:1px dashed var(--pd-red); border-radius:2px; pointer-events:none; }
     /* tree rows */
-    .sbld-gr { display:flex; align-items:center; gap:5px; height:26px; padding-right:6px; }
+    .sbld-gr { display:flex; align-items:center; gap:5px; height:20px; padding-right:6px; min-width:0; }
     .sbld-gr.is-sel { background:rgba(128,128,128,.14); }
     .sbld-gr.is-drop { box-shadow:inset 0 0 0 2px var(--pd-red); border-radius:3px; }
     .sbld-gr-wbs .sbld-gname-wbs { font-weight:700; }
     .sbld-gr-wbs.is-mirror .sbld-gname-wbs { color:var(--pd-muted); }
-    .sbld-gcar { flex:0 0 12px; text-align:center; color:var(--pd-muted); cursor:pointer;
-      font-size:var(--pd-fs-xs); user-select:none; }
+    .sbld-gcar { flex:0 0 11px; text-align:center; color:var(--pd-muted); cursor:pointer;
+      font-size:var(--pd-fs-micro); user-select:none; }
     .sbld-ggrip { flex:0 0 10px; cursor:grab; color:var(--pd-muted); font-size:var(--pd-fs-xs);
       line-height:1; letter-spacing:-2px; user-select:none; }
     .sbld-ggrip:active { cursor:grabbing; }
@@ -4668,13 +4695,26 @@
       mid-word with nothing saying so, which reads as a different (shorter) name rather than as a
       clipped one. The full value is still one click away, and the row carries no title because the
       input's own value is what a planner would copy. */
+    /* ⚠️ `font:inherit` took the panel's own 14px body size, which on a 20px row is the single
+       heaviest thing in the card. Owner 2026-09-18: *"reduce font sizes of activities and WBS to
+       maintain minimalist look."* The FAMILY still inherits — only the size is stated. */
+    /* ⚠️⚠️ THE BOX IS BOUNDED AND THE FONT IS NOT, AND THAT IS DELIBERATE. Below 700px
+       `dashboard.css` pins EVERY input at `--pd-fs-tap` (16px) with `!important`, because iOS zooms
+       the page on a focused field under 16px — its own comment calls that "the one place a module
+       does not get a vote", and it is right. So the phone cannot have 11px names. What it can have
+       is a row that still fits: a border-box 18px tall with a 16px line box sits inside the 20px
+       row at either size, so the tree's rows and the plot's bars stay in step at every width. The
+       alternative — a taller row below 700px — would desync the two panes, because the plot's row
+       pitch is a JS constant and a media query cannot reach it. */
     .sbld-gname { flex:1 1 auto; min-width:0; border:1px solid transparent; background:none;
-      font:inherit; color:var(--pd-ink); padding:2px 4px; border-radius:3px; text-overflow:ellipsis; }
+      font:inherit; font-size:var(--pd-fs-xs); color:var(--pd-ink); padding:0 4px; border-radius:3px;
+      box-sizing:border-box; height:18px; line-height:16px; text-overflow:ellipsis; }
     .sbld-gname:focus { border-color:var(--pd-line); background:var(--pd-bg); outline:none; }
     .sbld-gdur { flex:0 0 46px; text-align:right; font-variant-numeric:tabular-nums; border:1px solid transparent;
-      background:none; font:inherit; color:var(--pd-muted); padding:2px 2px; border-radius:3px; }
+      background:none; font:inherit; font-size:var(--pd-fs-xs); color:var(--pd-muted); padding:0 2px; border-radius:3px;
+      box-sizing:border-box; height:18px; line-height:16px; }
     .sbld-gdur:focus { border-color:var(--pd-line); background:var(--pd-bg); color:var(--pd-ink); outline:none; }
-    .sbld-gdel { flex:0 0 auto; padding:0 4px; height:20px; background:none; border:0; color:var(--pd-muted); opacity:0; }
+    .sbld-gdel { flex:0 0 auto; padding:0 4px; height:18px; background:none; border:0; color:var(--pd-muted); opacity:0; }
     .sbld-gr:hover .sbld-gdel, .sbld-gr.is-sel .sbld-gdel { opacity:1; }
     .sbld-gdel:hover { color:var(--pd-red); }
     .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:9px; }
@@ -4693,8 +4733,18 @@
     /* ⚠️ On a phone the tree gives up its share first: a bar you cannot read is still a bar, and a
        name clipped to six characters is not a name. Below this the plot scrolls on its own. */
     @media (max-width:720px) {
-      .sbld-gtree { flex-basis:160px; }
-      .sbld-gdur { flex-basis:38px; }
+      /* ⚠️ The flex-basis is a clamp on the card's own width now, so it already gives way — what
+         is left to do here is the duration column, whose 46px is three digits and a caret. */
+      .sbld-gdur, .sbld-ghead-d { flex-basis:38px; }
+    }
+    /* ⚠️⚠️ 700px, NOT 720 — this block must fire on exactly the breakpoint `dashboard.css`
+       raises every input to `--pd-tap` on, and on exactly the one `_gNarrow` reads. Three numbers
+       that have to agree, so they are all written as 700. The height is the 44px control plus its
+       own border and the row's breathing space; `--gh` lets the two inputs fill it rather than
+       sitting as a 44px island in a 48px row. */
+    @media (max-width:700px) {
+      .sbld-gr { height:48px; }
+      .sbld-gname, .sbld-gdur { height:44px; line-height:20px; }
     }
     /* ⚠️ THE IMPORT TREE HAS ITS OWN ROW, and it must: it was borrowing `.sbld-phrow`, whose grid is
        `14px 1fr 74px 168px 34px` for a PHASE ACTIVITY (grip, name, duration, window, delete). An
@@ -4774,8 +4824,6 @@
       .sbld-improw { grid-template-columns:26px minmax(0,1fr); row-gap:4px; }
       .sbld-improw .pd-select, .sbld-improw-x, .sbld-improw-inh { grid-column:2; }
     }
-    .sbld-phtotal { margin:12px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
-    .sbld-phtotal b { color:var(--pd-ink); font-variant-numeric:tabular-nums; }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
     .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:var(--pd-radius-lg); background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
@@ -6583,8 +6631,27 @@
   // the Execution Phase branch out from under the activities that had just been filed there.
   // `phaseFromName` already tolerates every spelling; the stored `phase` wins over it, exactly as
   // _nodePhase resolves.
+  /* ⚠️⚠️ `milestones` IS A CARD CODE, NOT A DATABASE PHASE, and keeping those two apart is
+     what makes owner item 10 of 2026-09-18 — *"for the milestones group, follow the same workflow
+     for the other phases. but this should always be required"* — safe to build at all.
+     `project_schedule.phase` carries a FOUR-VALUE CHECK, and `phaseFromName('Milestones')` answers
+     null by design (see its own note). So Milestones gets the phase WORKFLOW — a planned list, a
+     Gantt, + Add WBS / + Add activity, Autotrace — while every row it pushes carries `phase: null`.
+     ⚠️ Three read helpers learn the code, and `phaseFromName` deliberately does NOT: that one is
+     kept in step with the migration that seeds the column, and teaching it a fifth value would put
+     'milestones' into a WBS-Summary payload the insert rejects — which `_dropScope` would then
+     answer by stripping `phase` off EVERY row in the push. */
+  var MS_CODE = 'milestones';
   function _phaseBranchAt(parentId, code) {
     if (!code) return null;
+    /* ⚠️ Matched by the root the tree actually has, never by name at an arbitrary depth: the
+       Milestones card is the top-level skeleton root, and a sub-branch a planner happened to call
+       "Milestones" is not it. */
+    if (code === MS_CODE) {
+      if (parentId) return null;
+      var msid = _wbsMilestonesRootId();
+      return msid ? wbsById(msid) : null;
+    }
     var kids = (WBS_NODES || []).filter(function (n) { return (n.parent_id || null) === (parentId || null); })
       .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); });
     for (var i = 0; i < kids.length; i++) {
@@ -6596,6 +6663,8 @@
   // may be re-worded; the skeleton is what every other project already carries, and the next push,
   // the import placement picker and the dedupe healer all have to find the same branch.
   function _phaseBranchName(code) {
+    // ⚠️ The skeleton's own spelling, as for every other phase — `phaseFromName` cannot find it.
+    if (code === MS_CODE) return 'Milestones';
     var hit = (WBS_SKELETON || []).filter(function (n) { return phaseFromName(n.name) === code; })[0];
     return (hit && hit.name) || PHASE_LABELS[code] || code;
   }
@@ -6659,9 +6728,12 @@
     if (!w) return null;
     var n = wbsById(w);
     if (!n || n.source_kind) return null;
+    // ⚠️ Milestones is identified by the ROOT ID, because it has no phase code to match on.
+    var msid = (phaseCode === MS_CODE) ? _wbsMilestonesRootId() : null;
+    if (phaseCode === MS_CODE && !msid) return null;
     var a = n, guard = 0;
     while (a && guard++ < 64) {
-      if ((a.phase || phaseFromName(a.name)) === phaseCode) return w;
+      if (msid ? (a.id === msid) : ((a.phase || phaseFromName(a.name)) === phaseCode)) return w;
       a = a.parent_id ? wbsById(a.parent_id) : null;
     }
     return null;
@@ -36267,10 +36339,15 @@
       // ⚠️⚠️ THIS CLAUSE IS LOAD-BEARING. normalize() builds `d` from blank() and copies only the keys
       // it knows about, so an un-normalised key does not survive a save/load round trip: without this
       // the phases a planner ticked would work for the rest of the session and be gone tomorrow.
-      // ⚠️ Only the three NON-execution codes are accepted, and only ones the database's phase CHECK
-      // allows (see SB_PHASE_DEFS) — a stale or hand-edited key cannot introduce a phase the insert
-      // would reject. 'construction' is never stored here: the Execution Phase is generated, not
-      // listed, and a config carrying it would offer a second, hand-typed construction phase.
+      // ⚠️ Only the codes SB_PHASE_DEFS names are accepted — a stale or hand-edited key cannot
+      // introduce a phase this step does not know about. 'construction' is never stored here: the
+      // Execution Phase is generated, not listed, and a config carrying it would offer a second,
+      // hand-typed construction phase.
+      // ⚠️⚠️ `milestones` IS ON THIS LIST AND IS **NOT** A DATABASE PHASE CODE. It is the fifth
+      // card (2026-09-18 item 10); the `project_schedule.phase` CHECK still has four values, and
+      // `phaseTaskPayload` writes null for it. Whitelisting it here is what makes its planned list
+      // survive a save — this normaliser is the whitelist, and a key it does not name is silently
+      // stripped, which is the trap `w` fell into on 2026-09-18 (c).
       d.phases = {};
       var _srcPh = (c.phases && typeof c.phases === 'object') ? c.phases : {};
       SB_PHASE_DEFS.forEach(function (pd2) {
@@ -36334,7 +36411,9 @@
            `par`. It has to survive the round trip for the same reason `par` does: without it a
            converted phase re-reads as a legacy chain on the next load and every link a planner drew
            is silently ignored. */
-        d.phases[pd2.v] = { on: !!src.on, net: !!src.net, acts: _acts };
+        // ⚠️ A required phase stores `on: true` whatever arrived — `sbPhases()` forces it on read
+        //    anyway, and a stored `false` that the reader ignores is a lie in the saved file.
+        d.phases[pd2.v] = { on: pd2.always ? true : !!src.on, net: !!src.net, acts: _acts };
       });
       return d;
     }
@@ -37498,20 +37577,39 @@
     // value would silently strip the phase off every row in the push. Adding one is a migration,
     // not a list edit.
     // ⚠️ 'construction' IS the execution phase — the stored code never changed, only the label.
-    var SB_PH_DEF = {
-      initiation: ['Project charter & scope sign-off:5', 'Contract award & notice to proceed:10', 'Permits & regulatory clearances:20'],
-      planning:   ['Design development & IFC drawings:30', 'Baseline schedule & method statements:15', 'Procurement & subcontractor packages:25'],
-      closeout:   ['Testing & commissioning:20', 'Punchlisting & rectification:20', 'As-built drawings & O&M manuals:15', 'Turnover & handover:10']
-    };
+    /* ⚠️⚠️ NOTHING IS SEEDED ANY MORE — owner 2026-09-18: *"remove the default activities in
+       each phase."* `SB_PH_DEF` held three to four invented activities per phase ('Project charter &
+       scope sign-off:5', 'Testing & commissioning:20', …) and `sbPhases()` wrote them into any phase
+       that had none, so ticking a phase on filled it with somebody else's programme. The planner
+       then had to delete work they never entered before entering their own, and — worse — a phase
+       ticked and never read would PUSH those invented rows into a real schedule.
+       ⚠️ It is DELETED, not emptied and kept: a seed table with no reader is what the next editor
+       wires back up. The 'Reset to the typical set' button that used to restore it went on
+       2026-09-17 for the same reason, so nothing else referenced it either — checked, not assumed.
+       ⚠️ A phase saved BEFORE today keeps every activity it already has: `sbPhases()` only fills in
+       when `acts` is absent, so this changes the empty case and nothing else. */
     // ⚠️ ORDER IS THE LIFECYCLE, and the two 'before' phases are back-scheduled as a block onto the
     // execution start while 'after' runs off the execution finish — see sbPhasePlan.
+    /* ⚠️⚠️ MILESTONES IS FIRST AND IS `when:'ms'`, WHICH IS NEITHER BEFORE NOR AFTER. It is
+       skeleton root #1 and its card already led the step; what it did not have was the workflow —
+       owner 2026-09-18: *"for the milestones group, follow the same workflow for the other phases.
+       but this should always be required."* So it gets one, with two differences that fall out of
+       what a milestone IS:
+         • `always: true` — no on/off tick. "Always required" means the card cannot be switched off,
+           and a checkbox that cannot be unticked is worse than no checkbox.
+         • `when:'ms'` — it is not scheduled either side of Execution. Milestones mark the whole
+           programme, so the block is anchored at the PROGRAMME start (the earliest before-phase, or
+           the execution start when there is none) and runs forwards. Anything else would be an
+           invented claim about when a project's markers fall.
+       ⚠️ It carries NO database phase code — see the note on `_phaseBranchAt`. */
     var SB_PHASE_DEFS = [
+      { v: MS_CODE, when: 'ms', always: true },
       { v: 'initiation', when: 'before' },
       { v: 'planning', when: 'before' },
       { v: 'construction', when: 'exec' },
       { v: 'closeout', when: 'after' }
     ];
-    function sbPhAct(spec) { var i = spec.lastIndexOf(':'); return { id: uidv(), n: spec.slice(0, i), d: +spec.slice(i + 1), par: false }; }
+    function sbPhTitle(v) { return PHASE_LABELS[v] || _phaseBranchName(v); }
     // The stored shape, with defaults filled in. ⚠️ A setup saved before today has no `phases` key at
     // all, and must open with every extra phase OFF — turning three phases on inside somebody's saved
     // recipe, which they would then push without noticing, is not a default anyone asked for.
@@ -37521,8 +37619,11 @@
         if (d.when === 'exec') return;
         var cur = cfg.phases[d.v];
         if (!cur || typeof cur !== 'object') cur = cfg.phases[d.v] = { on: false, acts: null };
-        if (!Array.isArray(cur.acts)) cur.acts = (SB_PH_DEF[d.v] || []).map(sbPhAct);
-        cur.on = !!cur.on;
+        // ⚠️ Empty, never seeded — see the note where SB_PH_DEF used to be.
+        if (!Array.isArray(cur.acts)) cur.acts = [];
+        /* ⚠️ `always` wins over whatever is stored: Milestones is required, so a setup saved with
+           it off — or saved before it existed — still opens with it on. */
+        cur.on = d.always ? true : !!cur.on;
       });
       return cfg.phases;
     }
@@ -37688,10 +37789,10 @@
     // lifecycle read as one continuous programme instead of three blocks with gaps nobody chose.
     function sbPhasePlan(g) {
       if (!g || !g.start) return [];
-      var out = [], before = [], after = [];
+      var out = [], before = [], after = [], ms = [];
       SB_PHASE_DEFS.forEach(function (d) {
         if (d.when === 'exec' || !sbPhOn(d.v)) return;
-        (d.when === 'before' ? before : after).push(d);
+        (d.when === 'ms' ? ms : d.when === 'before' ? before : after).push(d);
       });
       /* ⚠️⚠️ ACTIVITIES ARE GROUPED, NOT BLINDLY CHAINED, and the difference is the reason
          this was reported. A phase used to be one end-to-end chain: activity 2 starts the day
@@ -37751,6 +37852,18 @@
         var pp = _phWindow(d, cursor, false);
         if (pp.finish) cursor = addD(pp.finish, 1);
         out.push(pp);
+      });
+      /* ⚠️⚠️ MILESTONES IS ANCHORED AT THE PROGRAMME START AND RUNS FORWARD — never chained to
+         a neighbour, because it is not "before" or "after" anything. The programme start is the
+         earliest of the before-block (computed above, so it is already known) or the execution
+         start when nothing sits before it. ⚠️ It is UNSHIFTED so the plan's order matches the
+         cards', and so nothing reading `plan[0]` for the before-block's start can pick it up by
+         accident — that reader was removed with the "whole programme" line, and this keeps the
+         order honest for the next one. */
+      ms.forEach(function (d) {
+        var pstart = g.start;
+        out.forEach(function (x) { if (x.when === 'before' && x.start && x.start < pstart) pstart = x.start; });
+        out.unshift(_phWindow(d, pstart, false));
       });
       return out;
     }
@@ -38645,21 +38758,26 @@
       /* ⚠ ONE heading, emitted here. Both sub-renderers are called with `noHead`, because each
          used to own a step and still writes its own <h2> — which is what produced the doubled
          title in the owner’s screenshot. */
+      /* ⚠️ 30 WORDS BECAME 10 — owner 2026-09-18: *"lessen words/descriptions/instructions."*
+         What the sentence said and where it is said instead: "what sits either side of construction"
+         is the Execution card, which sits between the before- and after-phase cards and is labelled
+         as built by the other steps; "and the tree those phases produce" is the tree, drawn; "no
+         locations here, and nothing repeats per zone" is a fact about a screen that shows neither. */
       host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · Project Phases</h2>' +
-        '<p class="sbld-lede">The lifecycle around <b>Execution</b>: what sits either side of ' +
-        'construction, and the tree those phases produce. No locations here, and nothing repeats per zone.</p>' +
+        '<p class="sbld-lede">The lifecycle around <b>Execution</b>.</p>' +
         /* ⚠️ Shown only when it is TRUE, and it is the one thing a full-looking tree cannot
            explain about itself: every branch reads 0 because nothing has ever been pushed. */
         (function () {
           var _live = 0, _gen = 0;
           try { _live = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
           try { _gen = generate('int').rows.length; } catch (e) {}
+          /* ⚠️ The WARN stays: a generated programme sitting over a tree that reads 0 is the one
+             thing a full-looking screen cannot explain about itself. The "near-empty tree is normal"
+             hint goes — each card already says *"This phase has no branch yet · N · Push creates
+             it"*, on the phase it is true of, which is where it can be acted on. */
           return (_gen && !_live)
             ? '<p class="sbld-note sbld-note-warn">Every branch reads <b>0</b> because nothing has been pushed yet.</p>'
-            : (_sbldWbsCount() <= 5
-              ? '<p class="sbld-hint">A near-empty tree is normal — <b>' + _stepNo('Generate') +
-                ' · Push</b> creates the branches.</p>'
-              : '');
+            : '';
         })() +
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
         '<div id="sbld-ph-a"></div>';
@@ -46626,6 +46744,65 @@
       if (act) return { parent: _phTaskNode(code, act.w) || pb.id, after: null };
       return { parent: pb.id, after: null };
     }
+    /* ⚠️⚠️ PROMOTE A BRANCH INSIDE ITS PHASE, AND NEVER OUT OF IT — owner 2026-09-18:
+       *"improve dragging functionality of WBS and activities. When WBS is dragged outside, it
+       should go to the outermost level."*
+
+       ⚠️⚠️ AND THE CONTROL IT REPLACES COULD BREAK THE FOUR-PHASE RULE. The drag used to call
+       `wbsMove(id, 'outdent')`, which sets `parent_id = parent.parent_id` — so a branch that is
+       already a DIRECT CHILD of the phase branch was promoted to `null`, i.e. to a fifth TOP-LEVEL
+       branch beside Initiation / Planning / Execution / Close-out. That is the one thing the whole
+       *"no other WBS is allowed aside from initiation, planning, execution, close-out"* rule
+       forbids, and `+ Add WBS` goes to some lengths to prevent it while the drag beside it could
+       do it in one gesture. `pb` is the floor here, by construction.
+
+       `levels` is how many rungs to climb; anything at or past the top lands as a direct child of
+       the phase branch, which is what "the outermost level" means on a card that IS one phase.
+       ⚠️ ONE write, not N: `wbsMove` is a round trip per level, and a three-level promotion would
+       be three sequential requests with three repaints. ⚠️ The guard on the ancestor walk is the
+       same one `_phTreeAncestor` carries — a malformed tree must not hang the browser. */
+    function _phPromote(v, id, levels) {
+      var pb = _phaseBranchAt(null, v), n = wbsById(id);
+      if (!pb || !n) return null;
+      if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\u2019t be moved.', 'warn'); return null; }
+      var chain = [], p = n.parent_id ? wbsById(n.parent_id) : null, guard = 0;
+      while (p && p.id !== pb.id && guard++ < 64) { chain.push(p); p = p.parent_id ? wbsById(p.parent_id) : null; }
+      if (!p) return null;                 // not inside this phase at all — nothing to promote within
+      if (!chain.length) {
+        /* ⚠️ Says so rather than doing nothing: a gesture that silently no-ops reads as broken.
+           It is also the case the old outdent got WRONG, so the message is worth being explicit. */
+        UI.toast('Already at the outermost level of this phase.', 'warn');
+        return null;
+      }
+      var steps = Math.max(1, Math.min(levels || 1, chain.length));
+      var np = chain[steps] || pb;
+      n.parent_id = np.id;
+      // Immediately after the ancestor it came out of, which is where an outdent has always put it.
+      n.sort_order = (chain[steps - 1].sort_order || 0) + 0.5;
+      delete _wbsCollapsed[np.id]; delete _phCollapsed[np.id];
+      return _wbsNormalizeAndPersist([n.id]).then(function () { return _wbsCommit(); });
+    }
+    /* ⚠️⚠️ WHERE `+ Add activity` PUTS THE NEW ROW — owner 2026-09-18: *"when adding activity,
+       it should be on the same level as selected activity/WBS."* It used to `push` onto the end of
+       the list with no branch at all, so on a phase with any structure the new row appeared at the
+       top of the card, outside every branch, however deep in the tree the planner was working.
+       The three cases mirror `_phAddWbsTarget` exactly, because "beside what is selected" has to
+       mean the same thing for both buttons:
+         • a BRANCH selected in this phase  → inside it (the branch IS the level);
+         • an ACTIVITY selected in this phase → the same branch that activity is filed in, and
+           inserted directly after it, so "the same level" is true of the order as well as the tree;
+         • nothing selected, or the phase root → directly on the phase, appended.
+       ⚠️ Re-validated through `_phTaskNode`, so a selection on another card — the selection is
+       global and the button is per card — falls back to this phase rather than filing a row under
+       a branch this card is not showing. */
+    function _phAddActTarget(v) {
+      var pb = _phaseBranchAt(null, v);
+      var selNode = _wbsSel ? wbsById(_wbsSel) : null;
+      if (selNode && (!pb || selNode.id !== pb.id) && _phTaskNode(v, selNode.id)) return { w: selNode.id, after: null };
+      var act = _phSelAct(v);
+      if (act) return { w: act.w || null, after: act.id };
+      return { w: null, after: null };
+    }
     /* The branches a planned activity may be filed under: the phase branch itself (the default,
        and what every existing setup already does) plus every branch beneath it.
        ⚠️ A mirrored branch (`source_kind`) is NOT offered — its contents come from another
@@ -46657,9 +46834,10 @@
        same thing was asked twice (see the card body below) — a table with no label at all puts that
        question straight back. A line under a control strip is not a second pane. */
     function phWbsBlock(code, label, extra, noTree) {
-      var b = (code === 'other') ? null
-            : (code === 'milestones') ? (function () { var id = _wbsMilestonesRootId(); return id ? wbsById(id) : null; })()
-            : _phaseBranchAt(null, code);
+      // ⚠️ `_phaseBranchAt` resolves the Milestones root itself now, so this no longer carries a
+      //    second copy of that lookup — two resolvers for one branch is how the card and the push
+      //    come to disagree about which node they mean.
+      var b = (code === 'other') ? null : _phaseBranchAt(null, code);
       var n = (code === 'other') ? _wbsOtherRootIds().length : (b ? wbsChildren(b.id).length : 0);
       /* ⚠️⚠️ THE BRANCH'S OWN ACTIVITIES, AND THIS WAS A REAL HOLE. Owner 2026-09-17:
          *"When I tick the checkbox it adds activities under the ticked phase ... but at the bottom
@@ -46707,6 +46885,43 @@
       var n = wbsById(id), guard = 0;
       while (n && guard++ < 64) { if (n.id === anc) return true; n = n.parent_id ? wbsById(n.parent_id) : null; }
       return false;
+    }
+    /* ⚠️⚠️ AUTOTRACE — owner 2026-09-18: *"for each phase, add also button to autotrace logic.
+       by default, this button adds an FS relationship to all activities one after the other without
+       lag."* One press turns a phase's list into a plain chain, which is the sequence most phases
+       actually have and which drawing by hand costs one drag per activity.
+
+       ⚠️⚠️ "ONE AFTER THE OTHER" IS THE ORDER ON SCREEN, not the order in the array, and the
+       two genuinely differ: `_phTreeRows` walks the WBS depth-first and files each activity under
+       its own branch, so a row added early but filed into the last branch is drawn last. Chaining
+       the array would draw a network whose arrows leapt up and down the card for no reason a reader
+       could see. This is the one place the display order IS the answer.
+
+       ⚠️ It REPLACES the whole network rather than filling in the gaps, and says so before it
+       runs when there is something to lose: half a hand-drawn network plus half a generated chain
+       is a sequence nobody stated. ⚠️ `ph.net` is set even when the chain comes out empty (a
+       one-activity phase), because without it `sbPhLinks` falls back to the pre-Gantt implicit
+       chain and the phase silently un-converts — the same `absent` vs `deliberately none` trap
+       `sbPhLinks`'s own note records. ⚠️ A chain over distinct ids cannot close a loop, so there
+       is nothing to refuse here. */
+    function _phAutotrace(v) {
+      var ph = sbPhases()[v], acts = sbPhActs(v);
+      if (!ph || acts.length < 2) return;
+      var order = _phTreeRows(v).filter(function (r) { return r.kind === 'act'; }).map(function (r) { return r.act; });
+      var drawn = acts.filter(function (a) { return a.preds && a.preds.length; }).length;
+      function run() {
+        acts.forEach(function (a) { delete a.preds; });
+        order.forEach(function (a, i) { if (i) a.preds = [{ id: order[i - 1].id, type: 'FS', lag: 0 }]; });
+        ph.net = true;
+        markDirty(); render();
+        UI.toast('Traced ' + (order.length - 1) + ' link' + (order.length === 2 ? '' : 's') +
+          ' — every activity now follows the one above it, FS with no lag.', 'ok');
+      }
+      if (!drawn) { run(); return; }
+      psConfirm('This replaces every relationship on ' + sbPhTitle(v) +
+        ' with a plain chain: each activity follows the one above it, FS with no lag.',
+        run, { title: 'Autotrace this phase?', ok: 'Replace the links', note: drawn + ' activit' +
+          (drawn === 1 ? 'y has' : 'ies have') + ' a relationship drawn on ' + (drawn === 1 ? 'it' : 'them') + ' today.' });
     }
     /* Draw a relationship. ⚠️ Refused, with the reason, when it would close a loop: a cycle has
        no schedule, and accepting the link and then flattening the phase would be a silent wrong
@@ -46843,6 +47058,19 @@
        click that changed nothing, which is how a "you have unsaved changes" prompt stops meaning
        anything. Same call `_wbsCollapsed` already makes for the live tree. */
     var _phCollapsed = {};
+    /* ⚠️⚠️ THE ONE MOMENT `_gNarrow` CAN GO STALE IS A WINDOW CROSSING 700px, so that is the
+       one thing this listens for — not `resize`, which fires continuously and would repaint the
+       whole wizard on every drag of a window edge. Bound once for the life of the page.
+       ⚠️ Guarded on the panel being on screen: the listener outlives any one render, and calling
+       `render()` while the planner is on another tab would rebuild a step nobody is looking at. */
+    var _phMqBound = false;
+    function _phWatchNarrow() {
+      if (_phMqBound || typeof matchMedia !== 'function') return;
+      _phMqBound = true;
+      var mq = matchMedia('(max-width:700px)');
+      var fn = function () { if (document.querySelector('[data-gantt]')) render(); };
+      if (mq.addEventListener) mq.addEventListener('change', fn); else if (mq.addListener) mq.addListener(fn);
+    }
 
     /* The Gantt for one phase. Left: the tree above. Right: a bar per activity on a day scale,
        with the drawn relationships as arrows between them. */
@@ -46852,9 +47080,29 @@
       var days = Math.max(1, sc.days);
       /* ⚠️ The day width is derived from the SPAN so the whole phase fits the card without a
          horizontal scrollbar at ordinary sizes, and clamped at both ends: under ~3px a bar is a
-         smudge, over ~26px a three-week phase wastes half the card. A very long phase scrolls. */
-      var dayW = Math.max(3, Math.min(26, Math.round(620 / days)));
-      var plotW = days * dayW, ROW = 26, TOP = 0;
+         smudge, over ~14px a three-week phase wastes half the card. A very long phase scrolls.
+         ⚠️⚠️ THE CEILING AND THE TARGET WIDTH BOTH CAME DOWN (26→14, 620→430) on the
+         owner's *"reduce size of gantt chart in initiation phase"*. Initiation is the shortest
+         phase, so it was the one the old 620px target stretched hardest: a 35-day phase drew at
+         18px a day and 630px of plot to say three bars. The chart is a shape, not a ruler — the
+         dates are on each bar's own tooltip — so the smaller scale costs nothing a planner reads.
+         ⚠️ The floor stays 3: below that a bar stops being a bar. */
+      var dayW = Math.max(3, Math.min(14, Math.round(430 / days)));
+      /* ⚠️⚠️ ROW, BAR AND THE BAR'S TOP OFFSET ARE ONE SET OF NUMBERS AND MUST MOVE
+         TOGETHER. The tree's row height is `.sbld-gr`'s in CSS and the plot's is this constant; a
+         mismatch reads as bars belonging to the wrong activity, which is the one thing a Gantt may
+         not do. BAR_T is the centring pad, ROW-BAR over two. */
+      /* ⚠️⚠️ THE ROW PITCH READS THE SAME BREAKPOINT THE STYLESHEET USES, and it has to.
+         Below 700px `dashboard.css` gives every `<input>` `min-height: var(--pd-tap)` — 44px, a
+         TOUCH TARGET, whose own comment calls it "the one place a module does not get a vote". A
+         20px row cannot hold a 44px control: the name fields would overlap their neighbours and
+         every bar would line up with nothing. That floor is not ours to override, so the row
+         follows it. ⚠️ A media query cannot reach a JS constant, so the constant reads the media
+         query — and `stPhases` listens for the crossing, which is the only moment it can go stale.
+         ⚠️ ONE number drives both panes at both widths, which is what keeps a bar on its own row. */
+      var _gNarrow = (typeof matchMedia === 'function') && matchMedia('(max-width:700px)').matches;
+      var plotW = days * dayW, ROW = _gNarrow ? 48 : 20, BAR = _gNarrow ? 14 : 11;
+      var BAR_T = Math.round((ROW - BAR) / 2);
       var yOf = {}, n = 0;
       rows.forEach(function (r) { yOf[r.id] = n * ROW; n++; });
       var H = Math.max(ROW, n * ROW);
@@ -46867,7 +47115,7 @@
           return '<div class="sbld-gr sbld-gr-wbs' + mirror + (_wbsSel === r.node.id ? ' is-sel' : '') + '" data-gwbs="' + e2(r.node.id) + '" data-v="' + v + '" style="padding-left:' + pad + 'px">' +
             '<span class="sbld-gcar" data-gfold="' + e2(r.node.id) + '" title="' + (r.collapsed ? 'Expand' : 'Collapse') + '">' +
               (r.kids ? (r.collapsed ? '▸' : '▾') : '') + '</span>' +
-            '<span class="sbld-ggrip" draggable="true" data-gdragwbs="' + e2(r.node.id) + '" data-v="' + v + '" title="Drag left to promote this branch a level, right to file it under the branch above.">⋮⋮</span>' +
+            '<span class="sbld-ggrip" draggable="true" data-gdragwbs="' + e2(r.node.id) + '" data-v="' + v + '" title="Drag left to promote this branch — clear of the tree takes it to the outermost level. Drag right, or onto a branch, to file it under one.">⋮⋮</span>' +
             '<input class="sbld-gname sbld-gname-wbs" data-gwbsname="' + e2(r.node.id) + '" value="' + e2(r.node.name || 'WBS') + '" title="Rename this branch">' +
             (r.node.source_kind ? '<span class="sbld-gmirror" title="Mirrored from another app — read-only here">●</span>'
               : '<button class="pd-btn sbld-gdel" data-gwbsdel="' + e2(r.node.id) + '" title="Delete this branch"><span data-ico="trash" data-ico-size="12"></span></button>') +
@@ -46892,7 +47140,10 @@
         var when = w ? (fmtD(w.start) + ' → ' + fmtD(w.finish)) : (d + ' days');
         var bad = sc.cycle.indexOf(a.id) >= 0;
         return '<div class="sbld-gbar' + (bad ? ' is-cycle' : '') + '" data-gbar="' + e2(a.id) + '" data-v="' + v + '" ' +
-          'style="left:' + (es * dayW) + 'px;top:' + (yOf[a.id] + 5) + 'px;width:' + Math.max(4, d * dayW) + 'px" ' +
+          /* ⚠️ The HEIGHT is inline too, not in the stylesheet: it is the third member of the
+             ROW/BAR/BAR_T set, and a CSS copy of it would need its own media query to follow the
+             row pitch — two numbers for one fact, which is how a bar drifts off its row. */
+          'style="left:' + (es * dayW) + 'px;top:' + (yOf[a.id] + BAR_T) + 'px;height:' + BAR + 'px;width:' + Math.max(4, d * dayW) + 'px" ' +
           'title="' + e2((a.n || 'Activity') + ' · ' + d + ' day' + (d === 1 ? '' : 's') + ' · ' + when) + '">' +
           '<span class="sbld-ghandle" data-glink="' + e2(a.id) + '" data-v="' + v + '" title="Drag onto another activity to make it follow this one"></span>' +
           '</div>';
@@ -46903,24 +47154,74 @@
          only thing that makes four types readable on one chart: FS leaves the predecessor's FINISH
          and arrives at the successor's START, SS leaves its start, FF arrives at its finish, SF does
          both. An arrow drawn corner-to-corner regardless of type would make SS and FS look
-         identical and the type would only exist in a menu. */
+         identical and the type would only exist in a menu.
+
+         ⚠️⚠️ AND THE HEAD IS WHAT MAKES THAT VISIBLE — owner 2026-09-18: *"gantt chart arrows
+         are not clean. when a link refers to start it should point to the left of the bar. if link
+         refers finish, it should point to right of the bar. provide arrows heads but still make
+         minimalist."* Both halves were missing:
+           • the CSS said `marker-end:url(#none)` — a reference to a marker that DOES NOT EXIST, so
+             every arrow was a bare line and which end was the head was left to the reader;
+           • the old route ran `H mx V y2 H ex L x2,y2`, i.e. it dropped to the target row and then
+             ran BACKWARDS ALONG y2 past the bar and forwards again into it. On the commonest link
+             of all — FS+0, where the successor starts the day the predecessor finishes and the two
+             x's are equal — that is an 18px run left with a 9px run right drawn on top of it. That
+             overlap is the "not clean".
+         The final segment is now always HORIZONTAL and always travels INTO the named edge, so an
+         `orient="auto"` head lands pointing right at a start and left at a finish, by construction
+         rather than by a second rule. When the route has to double back it does so in the lane
+         BETWEEN the two rows, where nothing else is drawn, instead of on top of itself.
+         ⚠️ STUB is small on purpose: the head is the signal, and a long approach run on a 20px
+         row reads as a second bar. */
+      /* ⚠️ A right gutter, because an arrow ARRIVING at a finish on the phase's last day needs
+         its approach run to the RIGHT of that day — clamping it to the plot instead collapsed the
+         final segment to zero length, and a zero-length segment gives `orient="auto"` nothing to
+         orient by, so the head pointed DOWN off the end of the chart. Found by dumping the paths:
+         `... V90 H429` with x2 also 429. */
+      var MIDY = Math.round(ROW / 2), STUB = 6, PAD_R = STUB + 4, MK = 'phah-' + v;
+      var drawW = plotW + PAD_R;
       var arrows = sc.links.map(function (l, i) {
         if (sc.es[l.from] == null || sc.es[l.to] == null || yOf[l.from] == null || yOf[l.to] == null) return '';
         var fromStart = (l.type === 'SS' || l.type === 'SF');
         var toFinish  = (l.type === 'FF' || l.type === 'SF');
         var x1 = (fromStart ? sc.es[l.from] : sc.ef[l.from] + 1) * dayW;
         var x2 = (toFinish  ? sc.ef[l.to] + 1 : sc.es[l.to]) * dayW;
-        var y1 = yOf[l.from] + 13, y2 = yOf[l.to] + 13;
-        var mx = fromStart ? (x1 - 9) : (x1 + 9);
-        var ex = toFinish ? (x2 + 9) : (x2 - 9);
-        var d2 = 'M' + x1 + ',' + y1 + ' H' + mx + ' V' + y2 + ' H' + ex + ' L' + x2 + ',' + y2;
+        var y1 = yOf[l.from] + MIDY, y2 = yOf[l.to] + MIDY;
+        /* `ld` is the direction the line LEAVES in, `ad` the direction it ARRIVES in. `ad` is the
+           whole of the owner's rule: +1 arrives travelling rightwards, so the head sits on the
+           target's LEFT edge (a start); -1 arrives travelling leftwards, on its RIGHT edge. */
+        var ld = fromStart ? -1 : 1, ad = toFinish ? -1 : 1;
+        /* ⚠️⚠️ THE STUBS ARE CLAMPED TO THE PLOT, and without it the commonest SS link on any
+           phase leaves the chart. An SS leaves the predecessor's START, and the first activity
+           starts at day 0 — so its stub lands at x = -6, outside `.sbld-gantt`'s own
+           `overflow:hidden`, and the elbow is simply cut off. Caught by dumping the paths rather
+           than by reading them: `M0,10 H-6 V70 H26`. A clamped stub degenerates into a plain
+           vertical at the edge, which is a correct arrow, not a truncated one. */
+        var sx = Math.max(0, Math.min(drawW, x1 + ld * STUB));
+        var ex = Math.max(0, Math.min(drawW, x2 - ad * STUB));
+        var ym = (y1 + y2) / 2, lx, ly, d2;
+        if (ad * (x2 - sx) > 0) {
+          // The plain step: out, down, in. The run at y2 already travels in the arrival direction.
+          d2 = 'M' + x1 + ',' + y1 + ' H' + sx + ' V' + y2 + ' H' + x2;
+          lx = (sx + x2) / 2; ly = y2 - 3;
+        } else {
+          // Doubling back — done in the gap between the rows, never along the target's own row.
+          d2 = 'M' + x1 + ',' + y1 + ' H' + sx + ' V' + ym + ' H' + ex + ' V' + y2 + ' H' + x2;
+          lx = (sx + ex) / 2; ly = ym - 2;
+        }
         var lab = l.type + (l.lag ? (l.lag > 0 ? '+' : '') + l.lag : '');
-        return '<path class="sbld-garrow" d="' + d2 + '" data-gl="' + i + '" data-v="' + v + '"></path>' +
+        return '<path class="sbld-garrow" marker-end="url(#' + MK + ')" d="' + d2 + '" data-gl="' + i + '" data-v="' + v + '"></path>' +
                '<path class="sbld-ghit" d="' + d2 + '" data-gl="' + i + '" data-v="' + v + '"><title>' + e2(lab + ' — right-click to change') + '</title></path>' +
                (l.type !== 'FS' || l.lag
-                 ? '<text class="sbld-glab" x="' + ((mx + ex) / 2) + '" y="' + ((y1 + y2) / 2 - 3) + '" data-gl="' + i + '" data-v="' + v + '">' + e2(lab) + '</text>'
+                 ? '<text class="sbld-glab" x="' + lx + '" y="' + ly + '" data-gl="' + i + '" data-v="' + v + '">' + e2(lab) + '</text>'
                  : '');
       }).join('');
+      /* ⚠️ ONE MARKER PER PHASE, id'd by the phase code, because a card draws its own <svg> and a
+         `url(#…)` resolves document-wide: one shared id across five cards would be five definitions
+         of one name. ⚠️ `refX` sits at the tip so the point lands exactly on the path's end
+         rather than a marker-width short of the bar it is aiming at. */
+      var defs = '<defs><marker id="' + MK + '" viewBox="0 0 6 6" refX="5.6" refY="3" ' +
+        'markerWidth="5" markerHeight="5" orient="auto"><path class="sbld-gah" d="M0.4,0.7 L5.6,3 L0.4,5.3 Z"></path></marker></defs>';
 
       // ---- the day scale ---------------------------------------------------------------------
       /* Ticks every week where a week is wide enough to label, otherwise every four. A phase is
@@ -46932,12 +47233,24 @@
         ticks += '<div class="sbld-gtick" style="left:' + (t * dayW) + 'px"><span>' + (t ? 'd' + t : 'd0') + '</span></div>';
       }
 
-      return '<div class="sbld-gantt" data-gantt="' + v + '" style="--gw:' + plotW + 'px">' +
-        '<div class="sbld-gtree" data-gtree="' + v + '">' + tree + '</div>' +
+      /* ⚠️ COLUMN HEADERS — owner 2026-09-18: *"in left, add column headers to identify
+         activities and duration."* The table this Gantt replaced had a header row and lost it in the
+         move, so a column of bare numbers was back to being the thing the 2026-09-03 round already
+         had to answer once (*"What does the fields mean? Are these activities then days?"*).
+         ⚠️⚠️ IT IS EXACTLY AS TALL AS THE PLOT'S TICK STRIP (22px, both `box-sizing:border-box`),
+         because it REPLACES the 22px of dead top padding the tree column used to pay to stay in
+         vertical step with it. A header one pixel out of step shifts every bar off its own row. */
+      /* ⚠️ `--gw` used to be set here and read by nothing — a custom property with no consumer
+         reads as live styling to the next person. The plot's width is the body's own, below. */
+      return '<div class="sbld-gantt" data-gantt="' + v + '">' +
+        '<div class="sbld-gtree" data-gtree="' + v + '">' +
+          '<div class="sbld-ghead"><span class="sbld-ghead-n">Activities</span>' +
+          '<span class="sbld-ghead-d" title="Duration in calendar days">Days</span>' +
+          '<span class="sbld-ghead-x"></span></div>' + tree + '</div>' +
         '<div class="sbld-gplot" data-gplot="' + v + '">' +
           '<div class="sbld-gticks">' + ticks + '</div>' +
-          '<div class="sbld-gbody" style="height:' + H + 'px;width:' + plotW + 'px">' +
-            '<svg class="sbld-gsvg" width="' + plotW + '" height="' + H + '">' + arrows + '</svg>' +
+          '<div class="sbld-gbody" style="height:' + H + 'px;width:' + drawW + 'px">' +
+            '<svg class="sbld-gsvg" width="' + drawW + '" height="' + H + '">' + defs + arrows + '</svg>' +
             bars +
             '<div class="sbld-grub" hidden></div>' +
           '</div>' +
@@ -46947,6 +47260,7 @@
     }
 
     function stPhases(host, noHead) {
+      _phWatchNarrow();
       /* ⚠️ Built ONCE per render and shared by the six cards. `phWbsBlock` needs the per-node
          activity count and `_wbsBuildIndex` walks the whole tree; six calls would walk it six
          times for one number each. */
@@ -46970,14 +47284,15 @@
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
           ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
         phWbsBlock('construction') + '</div>';
-      /* ⚠️ Only when the root exists. A project whose skeleton predates Milestones has
-         nothing to show, and an empty card for a branch that is not there would be a claim. */
-      var msCard = _wbsMilestonesRootId()
-        ? '<div class="sbld-phcard sbld-phcard-ms">' +
-            '<div class="sbld-phhead"><span class="sbld-phname">Milestones</span>' +
-            '<span class="sbld-phlock">the first branch in the schedule</span></div>' +
-            phWbsBlock('milestones') + '</div>'
-        : '';
+      /* ⚠️⚠️ THE STANDALONE MILESTONES CARD IS GONE AND THE GENERIC PATH DRAWS IT — owner
+         2026-09-18: *"for the milestones group, follow the same workflow for the other phases."* It
+         used to be a hand-built card carrying a rail and a live tree and nothing else: no planned
+         list, no Gantt, no way to add an activity. It is `SB_PHASE_DEFS[0]` now, so every control
+         the other phases have it has, by construction rather than by being kept in step.
+         ⚠️ The old gate — render it only when the root exists — is gone WITH it, and that is a
+         gain: the card now says *"This phase has no branch yet · N · Push creates it"*, which is
+         true, where before a project whose skeleton predates Milestones simply had no card at all
+         and no way to author one. */
       var cards = SB_PHASE_DEFS.map(function (d) {
         if (d.when === 'exec') return execRow;
         var ph = sbPhases()[d.v], pl = planBy[d.v], on = !!ph.on;
@@ -46995,17 +47310,29 @@
            ⚠️ The ‖ column went with it. `par` is still READ as the implicit network of a phase
            nobody has drawn on — see `sbPhLinks` — but it is no longer written, because SS+0 says
            the same thing and says it in the same vocabulary as the other three types. */
-        return '<div class="sbld-phcard' + (on ? ' on' : '') + '">' +
-          '<div class="sbld-phhead">' +
-            '<label class="sbld-phname"><input type="checkbox" data-phon="' + d.v + '"' + (on ? ' checked' : '') + '> ' + e2(PHASE_LABELS[d.v]) + '</label>' +
-            '<span class="sbld-phlock">' + (d.when === 'before' ? 'ends before the Execution Phase starts' : 'starts after the Execution Phase finishes') + '</span>' +
+        /* ⚠️ A REQUIRED PHASE GETS NO TICK BOX, it does not get a ticked one that cannot be
+           unticked: a disabled checkbox is a control that refuses, and "always required" is not a
+           refusal, it is simply not a question. */
+        var head = d.always
+          ? '<span class="sbld-phname">' + e2(sbPhTitle(d.v)) + '</span>'
+          : '<label class="sbld-phname"><input type="checkbox" data-phon="' + d.v + '"' + (on ? ' checked' : '') + '> ' + e2(sbPhTitle(d.v)) + '</label>';
+        var sub2 = d.when === 'ms' ? 'the first branch in the schedule · always pushed'
+                 : d.when === 'before' ? 'ends before the Execution Phase starts'
+                 : 'starts after the Execution Phase finishes';
+        return '<div class="sbld-phcard' + (on ? ' on' : '') + (d.always ? ' sbld-phcard-ms' : '') + '">' +
+          '<div class="sbld-phhead">' + head +
+            '<span class="sbld-phlock">' + sub2 + '</span>' +
           '</div>' +
           // ⚠️ Each number says what it IS. "200 activities · 8508 days" left the reader to guess
           // whether 8508 was a total, a span or a sum — and it was the sum, which was the bug.
-          '<p class="sbld-phmeta">' + (on
-            ? '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · spans <b>' + sbPhDays(d.v) + '</b> calendar days · ' +
-              (pl ? e2(win(pl.start, pl.finish)) : '—')
-            : 'Off — nothing is pushed for this phase.') + '</p>' +
+          /* ⚠️ A required phase with nothing in it says what to do rather than reporting "0
+             activities · spans 0 calendar days", which reads as a broken figure rather than an
+             empty list. */
+          '<p class="sbld-phmeta">' + (!on ? 'Off — nothing is pushed for this phase.'
+            : !ph.acts.length ? (d.always ? 'No milestones yet — <b>+ Add activity</b> starts the list.'
+                                          : 'No activities yet — <b>+ Add activity</b> starts the list.')
+            : '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · spans <b>' + sbPhDays(d.v) + '</b> calendar days · ' +
+              (pl ? e2(win(pl.start, pl.finish)) : '—')) + '</p>' +
           /* ⚠️⚠️ THE BRANCHES COME FIRST, AND THAT IS A SEQUENCE ARGUMENT, NOT A LAYOUT ONE.
              Owner 2026-09-17: *"it should be clear that the branches should come first before the
              activity in terms of sequence. By defining the sub-branches/sub-WBS the planner would be
@@ -47024,13 +47351,20 @@
              is what makes the four-phase rule hold by construction rather than by convention.
              ⚠️ `Reset to the typical set` went as asked. It was the one control on this card that
              could destroy a planner's own typed list in a single click, and its confirm said so. */
+          /* ⚠️ Autotrace is offered only with something to chain: on a one-activity phase it
+             would be a control that cannot do anything, which is worse than an absent one. */
           phWbsBlock(d.v, null, on
             ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phwbsadd="' + d.v + '">+ Add WBS</button>' +
-              '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phadd="' + d.v + '">+ Add activity</button>'
+              '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phadd="' + d.v + '">+ Add activity</button>' +
+              (ph.acts.length > 1 ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phtrace="' + d.v +
+                '" title="Chain every activity FS with no lag, in the order shown — replaces any relationships already drawn on this phase">Autotrace</button>' : '')
             : '', on) +
-          (on ? '<p class="sbld-phplanline"><b>Planned</b> \u00b7 created under this phase when you <b>' +
+          /* ⚠️ Shortened, not deleted. This one line is what stops the Gantt above being read as
+             the project's own schedule: the activities on it do not exist until the push. It is the
+             same distinction the card's two blocks are ordered by. */
+          (on ? '<p class="sbld-phplanline"><b>Planned</b> \u00b7 created by <b>' +
                   _stepNo('Generate') + ' \u00b7 Push</b>' +
-                  '<span class="sbld-phdrop" data-gdrop-root="' + d.v + '" title="Drag an activity here to take it out of every branch and file it directly on the phase">directly on the phase</span></p>' +
+                  '<span class="sbld-phdrop" data-gdrop-root="' + d.v + '" title="Drop an activity or a branch here to take it out of every sub-branch and put it directly on the phase">directly on the phase</span></p>' +
                 _phGanttHTML(d.v, pl) : '') +
           /* ⚠️ THE SUBTREE IS SHOWN WHETHER THE PHASE IS ON OR OFF. The activity list above is
              what the next push WILL create; the tree below is what the project HAS. A branch with
@@ -47043,19 +47377,15 @@
          be on no card at all: invisible, un-editable, and still renumbering their siblings' dotted
          codes. It is rendered even when empty, so "there is nothing outside the phases" is a
          statement the screen makes rather than something the reader has to infer from absence. */
-      cards = msCard + cards;
       cards += '<div class="sbld-phcard sbld-phcard-other">' +
         '<div class="sbld-phhead"><span class="sbld-phname">Other branches</span>' +
         '<span class="sbld-phlock">outside the lifecycle phases</span></div>' +
         phWbsBlock('other') + '</div>';
-      var span = (function () {
-        if (!g.start) return '';
-        var a = (plan.length && plan[0].when === 'before' && plan[0].start) ? plan[0].start : g.start;
-        var last = plan.filter(function (x) { return x.when === 'after' && x.finish; }).pop();
-        var b = last ? last.finish : g.finish;
-        return '<p class="sbld-phtotal">Whole programme: <b>' + fmtD(a) + ' → ' + fmtD(b) + '</b> · ' +
-          (Math.round((+b - +a) / 86400000) + 1) + ' calendar days</p>';
-      })();
+      /* ⚠️ THE "Whole programme: … · N calendar days" LINE IS GONE — owner 2026-09-18: *"remove
+         the whole program indication on this page."* It summed the lifecycle around the Execution
+         window, which is a statement about the SCHEDULE, on a step that authors the phases either
+         side of it; every card already states its own span, and the programme's own window is what
+         the Generate step and the schedule itself report. */
       /* ⚠ `noHead` when the Project Phases step is drawing both halves on one page — it emits
          the one heading, and this used to add a second one directly under the first (the doubled
          title in the owner’s screenshot). Still emitted when something opens this renderer on
@@ -47074,15 +47404,31 @@
                to the moment someone tries to add a fifth, not to every visit. */
         '<p class="sbld-lede">The lifecycle around <b>Execution</b>. No locations here, and nothing ' +
         'repeats per zone.</p>') +
-        '<p class="sbld-hint">Dates are <em>computed</em>: each row follows the one above, so ' +
-        'dragging a row moves everything below it. Tick <b>‖</b> to run alongside instead.</p>' +
-        '<div class="sbld-phgrid">' + cards + '</div>' + span;
+        /* ⚠️⚠️ THIS HINT WAS REMOVED BECAUSE IT HAD BECOME FALSE, not only because it was long.
+           It read *"each row follows the one above, so dragging a row moves everything below it.
+           Tick ‖ to run alongside instead."* — and the ‖ column went with the table on 2026-09-17,
+           while the drag handle now FILES a row into a branch rather than reordering it. So it named
+           a control that does not exist and described a gesture that does something else. The one
+           fact worth keeping — that the dates are computed rather than typed — is what the bars are.
+           ⚠️ A stale instruction is worse than a long one: it teaches the reader the wrong model. */
+        '<div class="sbld-phgrid">' + cards + '</div>';
 
       host.querySelectorAll('[data-phon]').forEach(function (c) {
         c.onchange = function () { sbPhases()[c.dataset.phon].on = c.checked; markDirty(); render(); };
       });
       host.querySelectorAll('[data-phadd]').forEach(function (b) {
-        b.onclick = function () { sbPhActs(b.dataset.phadd).push({ id: uidv(), n: '', d: 5 }); markDirty(); render(); };
+        b.onclick = function () {
+          var v = b.dataset.phadd, acts = sbPhActs(v), t = _phAddActTarget(v);
+          var a = { id: uidv(), n: '', d: 5 };
+          if (t.w) a.w = t.w;
+          var at = t.after ? acts.map(function (x) { return x.id; }).indexOf(t.after) : -1;
+          if (at >= 0) acts.splice(at + 1, 0, a); else acts.push(a);
+          /* ⚠️ The new row becomes the selection, so a second press adds beside IT rather than
+             beside whatever was selected three rows ago — and `+ Add WBS` reads the same selection,
+             so the two buttons agree about where the planner is working. */
+          _phSel = { v: v, id: a.id }; _wbsSel = null;
+          markDirty(); render();
+        };
       });
       /* ⚠️ The parent is resolved AT CLICK TIME, never captured at render: a push between the
          two creates the phase branch, and a null captured earlier would silently add a new TOP-LEVEL
@@ -47102,6 +47448,9 @@
          ⚠️ The parent is resolved at click time too, never captured at render: a push between
          the two creates the phase branch, and a null captured earlier would silently add a new
          TOP-LEVEL branch instead of a child — which renumbers every sibling's dotted code. */
+      host.querySelectorAll('[data-phtrace]').forEach(function (b) {
+        b.onclick = function (e) { e.preventDefault(); e.stopPropagation(); _phAutotrace(b.dataset.phtrace); };
+      });
       host.querySelectorAll('[data-phwbsadd]').forEach(function (b) {
         b.onclick = function (e) {
           e.preventDefault(); e.stopPropagation();
@@ -47229,9 +47578,19 @@
           /* ⚠️ A LEVEL IS 14px OF INDENT, SO THE THRESHOLD IS ONE LEVEL'S WORTH. Anything
              smaller and a shaky drop re-parents a branch nobody meant to move; anything larger and
              the gesture stops being discoverable. Dropping on a branch is handled below and wins —
-             this only fires when the drop went nowhere in particular. */
+             this only fires when the drop went nowhere in particular.
+             ⚠️⚠️ HOW FAR LEFT IS HOW MANY LEVELS, and dragging clear of the tree's own left
+             edge takes it all the way out — owner 2026-09-18: *"When WBS is dragged outside, it
+             should go to the outermost level."* Before this, one drag was one level however far it
+             travelled, so a branch four deep needed four separate drags.
+             ⚠️⚠️ AND IT GOES THROUGH `_phPromote`, NOT `wbsMove('outdent')`, because that one
+             promotes a direct child of the phase branch to a fifth TOP-LEVEL branch — out of the
+             lifecycle entirely. See the note on `_phPromote`. */
           var dx = e.clientX - d.x;
-          if (dx <= -14) wbsMove(d.id, 'outdent').then(render);
+          var treeEl = host.querySelector('[data-gtree="' + d.v + '"]');
+          var outside = treeEl && e.clientX < treeEl.getBoundingClientRect().left;
+          if (outside) { var pr = _phPromote(d.v, d.id, 99); if (pr) pr.then(render); }
+          else if (dx <= -14) { var pr2 = _phPromote(d.v, d.id, Math.floor(-dx / 14)); if (pr2) pr2.then(render); }
           else if (dx >= 14) wbsMove(d.id, 'indent').then(render);
         };
       });
@@ -47268,14 +47627,18 @@
       });
       /* "directly on the phase" — the way back OUT of every branch, which a tree with no such
          target cannot express: dropping an activity on empty space does nothing, so without this
-         an activity filed into a branch could never be taken out again. */
+         an activity filed into a branch could never be taken out again.
+         ⚠️ IT TAKES A BRANCH TOO NOW. Aiming a drag at nothing in particular is how a gesture
+         becomes a guess; this is the same "out of everything" answer for both kinds of row, stated
+         by a target rather than by how far the cursor travelled. */
       host.querySelectorAll('[data-gdrop-root]').forEach(function (z) {
         var v = z.dataset.gdropRoot;
-        _gAllow(z, function (d) { return d.kind === 'act' && d.v === v; });
+        _gAllow(z, function (d) { return d.v === v; });
         z.ondrop = function (e) {
           e.preventDefault(); z.classList.remove('is-drop');
           var d = _gDrag; _gDrag = null;
-          if (!d || d.kind !== 'act' || d.v !== v) return;
+          if (!d || d.v !== v) return;
+          if (d.kind === 'wbs') { var pr = _phPromote(v, d.id, 99); if (pr) pr.then(render); return; }
           var a = _phActById(v, d.id); if (!a) return;
           delete a.w; markDirty(); render();
         };
@@ -48213,6 +48576,14 @@
       var phCodes = {};
       rows.forEach(function (r) {
         if (!isWbs(r) || !r.wbs) return;
+        /* ⚠️ Milestones has no phase code and `phaseFromName` answers null for it by design, so
+           the derive finds its branch by NAME — which is how every other reader of that root finds
+           it too (`_wbsMilestonesRootId`). Without this the fifth card would be the one phase the
+           "read the live schedule" route could not round-trip. */
+        if (String(r.activity_name || '').trim().toLowerCase() === 'milestones') {
+          (phCodes[MS_CODE] = phCodes[MS_CODE] || []).push(String(r.wbs));
+          return;
+        }
         var v = (typeof phaseFromName === 'function') ? phaseFromName(r.activity_name) : null;
         if (!v || v === EXEC_PHASE) return;
         (phCodes[v] = phCodes[v] || []).push(String(r.wbs));
@@ -48246,8 +48617,8 @@
           return { id: uidv(), n: String(r.activity_name || '').slice(0, 200), d: Math.max(1, Math.min(999, sbDurOf(r))), par: par };
         }) };
         var nPar = out.phases[d.v].acts.filter(function (a) { return a.par; }).length;
-        rep.phases.push(PHASE_LABELS[d.v] + ' (' + out.phases[d.v].acts.length + (nPar ? ', ' + nPar + ' concurrent' : '') + ')');
-        if (mine.length > 200) rep.notes.push(PHASE_LABELS[d.v] + ' had ' + mine.length + ' activities; the first 200 were read (the step is a hand-edited list, not a generator).');
+        rep.phases.push(sbPhTitle(d.v) + ' (' + out.phases[d.v].acts.length + (nPar ? ', ' + nPar + ' concurrent' : '') + ')');
+        if (mine.length > 200) rep.notes.push(sbPhTitle(d.v) + ' had ' + mine.length + ' activities; the first 200 were read (the step is a hand-edited list, not a generator).');
       });
 
       /* ⚠️ NAMED ONE BY ONE NOW, instead of one blanket sentence. The old note said the tower
@@ -50213,10 +50584,16 @@
         });
         return {
           project_id: pid, created_by: UID,
-          activity_id: id, activity_name: String(t.r.act.n || '').trim() || ((PHASE_LABELS[t.v] || 'Phase') + ' activity ' + (t.i + 1)),
+          activity_id: id, activity_name: String(t.r.act.n || '').trim() || (sbPhTitle(t.v) + ' activity ' + (t.i + 1)),
           activity_type: 'Task', status: 'Not Started',
           start_date: iso2(t.r.start), end_date: iso2(t.r.finish), duration_days: t.r.dur,
-          percent_complete: 0, phase: t.v, seq_order: t.i,
+          /* ⚠️⚠️ NULL FOR MILESTONES, AND THIS IS THE LINE THE WHOLE FIFTH CARD TURNS ON.
+             `project_schedule.phase` carries a four-value CHECK; sending 'milestones' would make
+             PostgREST reject the batch, `_dropScope` would answer by stripping `phase` from EVERY
+             payload in the push, and the whole schedule would land with no lifecycle phase at all
+             — a fifth card costing four phases. The rows still land under the Milestones branch,
+             which is what says what they are. */
+          percent_complete: 0, phase: (t.v === MS_CODE ? null : t.v), seq_order: t.i,
           predecessors: rels.length ? serializeRels(rels) : null,
           package_id: usePkg || null
         };
@@ -50533,7 +50910,11 @@
             var pkey = 'PH_' + pp.v;
             ensureNode(pkey, '__phaseparent__', _phaseBranchName(pp.v), null, null);
             nodeByKey[pkey].findPhase = pp.v;
-            nodeByKey[pkey].phase = pp.v;
+            /* ⚠️⚠️ THE MILESTONES BRANCH CARRIES **NO** PHASE, AND `nd.phase` CANNOT EXPRESS
+               THAT — the two WBS-Summary payloads below both read `nd.phase || 'construction'`, so
+               leaving it undefined would tag the Milestones branch as EXECUTION, and setting it to
+               'milestones' would be rejected by the CHECK. A third state is needed, so it has one. */
+            if (pp.v === MS_CODE) nodeByKey[pkey].noPhase = true; else nodeByKey[pkey].phase = pp.v;
             // ⚠️ The push files these beside branches it does not own — see _nodeOrderPlan.
             nodeByKey[pkey].keepOrder = true;
             pp.rows.forEach(function (r, i) { phaseTasks.push({ k: pkey, v: pp.v, r: r, i: i }); });
@@ -50803,7 +51184,7 @@
           function _hasSummaryRow(nid) {
             return !!nid && rows.some(function (r) { return isWbs(r) && r.wbs_node_id === nid; });
           }
-          nodeDescs.forEach(function (nd) { var _nid = keyToNodeId[nd.key]; if (reused[nd.key] && _hasSummaryRow(_nid)) return; var nidn = _nid; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var _nid = keyToNodeId[nd.key]; if (reused[nd.key] && _hasSummaryRow(_nid)) return; var nidn = _nid; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: nd.noPhase ? null : (nd.phase || 'construction'), scope_type: (nd.noPhase || (nd.phase && nd.phase !== 'construction')) ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
           /* ⚠️⚠️ THE ACTIVITY'S OWN BRANCH WINS, WHEN IT IS STILL A VALID ONE. `t.r.act.w`
              is what the planner picked in the PLANNED list; `_phTaskNode` re-checks at push time
@@ -50834,7 +51215,7 @@
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
           var codeByKey = {}, so2 = {};
           function childCode(pk) { var pc = pk === '__base__' ? base : codeByKey[pk]; if (so2[pk] == null) so2[pk] = nextChildIndex(pc); return code(pc, so2[pk]++); }
-          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: nd.noPhase ? null : (nd.phase || 'construction'), scope_type: (nd.noPhase || (nd.phase && nd.phase !== 'construction')) ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; p.wbs = childCode(t.k); payloads.push(p); });
           phaseTasks.forEach(function (t) { var p2 = phaseTaskPayload(t); p2.wbs = childCode(t.k); payloads.push(p2); });
         }
