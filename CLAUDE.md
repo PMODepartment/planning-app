@@ -104,6 +104,57 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (aj) — Schedule Setup ▸ Activities: drag a class code onto the grid, and Interior/Exterior become Internal/External
+
+Owner's three remaining items on that step: *"add option to drag and drop from all class codes to
+selected list"*, *"label for the duration interior and exterior — this should be internal and
+external, apply for whole schedule module"*, and *"improve look of the activities selected table,
+font sizes can be reduced"*. Module work — the full entry, every ⚠️ decision and the verification are
+in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzb)`. Logged
+here for the `MODULE_V` bump and the three things that are not facts about the module:
+
+⚠️⚠️ **THIS BRANCH DELIBERATELY DOES NOT DUPLICATE PR #140.** That PR — open and unmerged — already
+covers the owner's other four items on the same step (the delete/add-row buttons, grouping the
+class-code list by trade, dropping Download template / Upload Excel, and sorting `+ Library` by
+code). An earlier cut of this branch had implemented all four independently, which is two rewrites
+of the same hold pane: a merge nobody wants and a duplicate nobody asked for. **That work was
+discarded and the branch rebuilt on `origin/main`** carrying only the three items above, so the two
+branches now touch almost nothing in common. Established before rebuilding, by reading PR #140's own
+copy of the file rather than trusting its description: it has no drag wiring in that pane, still
+reads `label: 'Interior (d)'`, and still has the grid a rung higher.
+
+⚠️⚠️ **`MODULE_V` → `20260917zzm`, chosen to sort after BOTH `origin/main`'s `20260917zv` AND PR
+#140's `20260917zzg`.** An unmerged branch's token still matters: if #140 lands first, a browser
+holding `zzg` would never fetch a page published under anything that sorts earlier — which is worse
+than a collision, because the new bytes simply never arrive. This log has recorded that failure
+often enough; the rule that keeps working is to re-derive the token from **every** token the remote
+carries, not only from the default branch's.
+
+⚠️ **The rename is a module-internal reconciliation, not a new vocabulary.** The Generate step, the
+stacking basis, the push dialog and the trade-sequence totals line **already** said Internal /
+External; only the two duration grids and their captions still said Interior / Exterior, so the same
+two numbers were called two different things three clicks apart. `durInt` / `durExt` and the
+`'int'` / `'ext'` basis values are untouched — renaming either would be a data migration wearing a
+typography change's clothes.
+
+⚠️⚠️ **And `modules/project-schedule/CLAUDE.md` held a literal NUL byte** at line 293 — prose about
+the `\0` sentinel, written as a raw byte instead of the escape — so `grep` classified the whole
+14,000-line changelog as **binary and silently reported no matches in it**, which is how the next
+free entry letter was nearly picked wrong. Pre-existing on `origin/main`, and the **third**
+recurrence of the trap the 2026-09-14 (u) entry already records in as many words. Replaced with the
+two-character escape; `file` now reads *UTF-8 text* and `grep` works again. Worth carrying at app
+level because it is the failure mode of every tool in this repo that reads a changelog: a doubled
+log is visible in a diff, and a log that answers *"no matches"* is not.
+
+**Verified:** new `modules/project-schedule/test-actdnd.js` **45/0** (the mover sliced out of the
+shipped file and executed; `--base` asserts the opposite and passes 5/5 on `origin/main`, where the
+normal run aborts with exit 1), plus a Chromium harness driving **real `DragEvent`s** through the
+same slices, **26/0** — both biting on the same one-line mutation. `wiring-check` **139/0**;
+`test-syntax` 4/0; `test-cpm` 28/0; `test-autotrace` 32/0; `test-towerseq` 48/0; `test-zoneoverlap`
+56/0; `test-shapeedit` 36/0; the 3.6MB inline script parses; CSS brace delta unchanged from base at
+1. ⚠️ `test-lsm` is **675/28 and byte-identical on `origin/main`** — pre-existing, as entry `(t)`
+already records. ⚠️ **Not verified signed in.**
+
 ### 2026-09-17 (t) — Overlapping zones become a measurable error in the Floors & Zones step
 
 Owner: *"for the UI for the floors & zones, please improve the overall UI, starting from defining the

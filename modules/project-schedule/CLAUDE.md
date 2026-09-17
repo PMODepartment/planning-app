@@ -1,3 +1,162 @@
+## 2026-09-17 (zzb) — Drag a class code onto the grid; Interior/Exterior become Internal/External; the grid drops a rung
+
+Owner, three items on **Schedule Setup ▸ Activities**: *"for activities, add option to drag and drop
+from all class codes to selected list"*, *"in activities, label for the duration interior and
+exterior. this should be internal and external. apply for whole schedule module"*, and *"improve look
+of the activities selected table, font sizes can be reduced"*.
+
+⚠️⚠️ **THIS BRANCH DELIBERATELY DOES NOT TOUCH THE FOUR ITEMS PR #140 ALREADY COVERS.** That PR
+(`claude/clever-feynman-syw95y`, open, unmerged at the time of writing) removes the delete/add-row
+buttons, groups the class-code list by trade, drops Download template / Upload Excel and sorts
+`+ Library` by code. An earlier cut of this branch had implemented all four independently — two
+rewrites of the same hold pane, which is a merge nobody wants and a duplicate nobody asked for. That
+work was **discarded and the branch rebuilt on `origin/main`** carrying only the three items above.
+Verified before rebuilding: PR #140 contains **no** drag wiring in that pane (its 12 `drag*` hits are
+the phase cards, the progress-table headers, the column grips and the WBS rows), still reads
+`label: 'Interior (d)'` twice, and still has the grid a rung higher at `--pd-fs-sm`.
+
+### 1 · Drag a code onto the grid
+
+`←` loads the ticked codes; a code can now also be dragged straight onto the grid.
+
+- ⚠️⚠️ **ONE MOVER, `_catLoad(ids)`, SHARED BY BOTH GESTURES** — and that is the point rather than
+  tidiness. `←` and a drop have to land the same rows in the same order and drop the same ticks; two
+  copies is exactly how the button and the drag come to disagree about what a selection is. The
+  button passes the ticked ids, the drop passes what was dragged, and nothing else differs.
+- ⚠️ It filters `cfg.catalog` rather than mapping from `ids`, so rows keep the **list's** own order
+  however the drag was assembled — which is the order `←` already gives. Measured: dragging `c3`
+  then `c1` lands them `c1, c3`.
+- ⚠️ **The moved codes lose their ticks**, or `←` would go on offering to move rows that are no
+  longer in the list.
+- ⚠️⚠️ **`ev.preventDefault()` ON `dragover` IS WHAT MAKES THE DROP LEGAL.** Without it the browser
+  refuses the drop and the whole gesture silently does nothing — no error, no toast, nothing to
+  diagnose. Both suites carry an assertion for it, and a negative build that removes just that one
+  line fails exactly that assertion in both (source and browser).
+- ⚠️⚠️ **`dragleave` fires crossing EVERY child boundary.** An unguarded handler flickers the drop
+  ring off while the cursor is still inside the grid, over a cell. It clears only when
+  `ev.target === _xlDrop` — the wrapper itself. Measured: a `dragleave` dispatched at a `.xl-cell`
+  leaves the ring on; one at the wrapper clears it.
+- ⚠️ **Dragging a TICKED row carries the whole ticked set; an un-ticked row carries only itself.**
+  Anything else surprises: a planner who ticked six and dragged one of them means the six, and one
+  who dragged a row they never ticked means that row.
+- ⚠️ A drop with nothing in flight moves nothing (`if (!_dragIds) return`), and `dragend` releases
+  the drag whether or not it landed.
+- ⚠️ **`←` stays.** Drag ADDS a gesture and replaces none: the button is the discoverable one and the
+  only one reachable from the keyboard. Its `title` now names the second route, which is the only
+  place a drag affordance can be written down.
+- The drop target is the **wrapper** `#b-xl`, not the table, so a drop in the empty space below the
+  last row still lands. The ring is `inset`, or the wrapper's own `overflow:auto` would clip it.
+
+### 2 · Interior/Exterior → Internal/External
+
+⚠️⚠️ **THE REST OF THE MODULE ALREADY SAID Internal/External, so this is closing an internal
+disagreement rather than renaming a concept.** The Generate step heads itself *"Generate & preview —
+Internal vs External"*, the stacking basis reads *Internal (target)* / *External (contract)*, the
+push dialog and the trade-sequence totals line both say Internal/External. Only the Activities grid,
+the Trade-sequence grid and their captions still said Interior/Exterior — so the same two durations
+were called two different things three clicks apart.
+
+Changed: both grids' column headers (`XL_COLS`, `T4_COLS`), the `_sbldHow` bullet, the
+trade-sequence caption and its **Dur** toggle, the downloadable CSV template's header row, and the
+toast that names the columns an upload could not find. Nine comments that name those columns moved
+with them, or they would describe a screen that no longer exists.
+
+- ⚠️⚠️ **THE STORED SHAPE IS UNTOUCHED.** `durInt` / `durExt` are the field names every reader, the
+  push and every saved setup use, and `'int'` / `'ext'` are the basis values. Renaming either would
+  be a data migration wearing a typography change's clothes.
+- ⚠️⚠️ **THE UPLOAD MATCHER KEEPS BOTH SPELLINGS** — `idx(['internal', 'interior', 'int'])`. A
+  planner may upload a template downloaded before today, and dropping `'interior'` would read their
+  durations as **0** rather than failing: a silent wrong answer, which is worse than a refusal. The
+  new spelling is first so it wins on a fresh template.
+- ⚠️⚠️ **SIX SURVIVORS ARE LEFT ALONE, AND THE SUITE ASSERTS THEY SURVIVE** so a future sweep does
+  not "fix" them. Each is a **different subject** from the duration basis: `PC Exterior Walls`,
+  `PC Interior Walls` and `LD Exterior Lighting Works` are **Finance's own class-code chart names**;
+  *"exterior concrete"* and *"interior fit-out"* are **weather exposure** (an exposed pour loses half
+  a wet month, fit-out in a topped-out building loses nothing — nothing to do with which duration
+  column you push); `Exterior Wall Complete` is verbatim from the LSM training deck's own chart. The
+  `'interior'` term in the Architectural trade vocabulary stays too — it matches real WBS branch
+  names — as do two polygon-geometry comments about a ring's interior.
+
+### 3 · The grid drops a rung
+
+⚠️ **One rung of the shared scale, never a fresh literal** — `--pd-fs-sm` (12.5px) → `--pd-fs-xs`
+(11px), with the cell padding tightened to match, because smaller type in the same box reads as a
+gap rather than as a denser table. Measured against the shipped stylesheets at 1440px:
+
+| | origin/main | this branch |
+|---|---|---|
+| header + cell type | 12.5px | **11px** |
+| cell padding | 5px 8px | **4px 7px** |
+| header ink | `rgb(35,31,32)` (full) | **`rgb(90,88,88)` (muted)** |
+| row-number gutter | 36px | **32px** |
+| **row height** | 29px | **25px** |
+
+⚠️ The header is **muted, matching `.pd-table th`** — the app's own header treatment. At full ink it
+competed with the data under it for the eye, which is most of what read as heavy.
+⚠️ **`font:inherit` on the cell controls is what carries the rung into every editable cell**, so the
+inputs follow rather than restating a size — and the shared phone rule still pins a focused input at
+`--pd-fs-tap`, so **iOS cannot zoom the page**. Measured at 390px: header 11px, **input 16px**.
+⚠️⚠️ **THIS RULE IS SHARED with the Trade-sequence grid (`#b-t4`), deliberately.** They are the same
+lattice over the same columns, and two copies is how one ends up a pixel off the other. Both move.
+
+### Verified
+
+New **`modules/project-schedule/test-actdnd.js` — 45 assertions, 0 failing**, the mover sliced out of
+the shipped file by name and **executed** (an empty list, an unknown id, a single move, a multi-code
+move keeping list order, the tick drop, the dirty flag, the repaint count). Run it with the file as
+`argv[2]`; `--base` asserts the **opposite** and passes **5/5 against `origin/main`**, and the normal
+run **ABORTS with exit 1** there rather than quietly comparing nothing.
+
+⚠️⚠️ **AND THE GESTURE WAS ACTUALLY DRIVEN, because a source assertion cannot see a refused drop.**
+A Chromium harness slices the same `holdItems` builder and the same wiring out of the shipped file
+and dispatches **real `DragEvent`s** at them — **26 assertions, 0 failing**: one un-ticked code
+moves alone, a ticked one carries both ticks, the ring goes on, survives a child `dragleave`, clears
+on the wrapper's own and on drop, a drop with nothing in flight is a no-op, and `←` still works
+through the same mover. Both suites bite on the same mutation (remove the `dragover`
+`preventDefault` → 44/1 and 25/1).
+
+`wiring-check` **139/0** · `test-syntax` 4/0 · `test-cpm` 28/0 · `test-autotrace` 32/0 ·
+`test-towerseq` 48/0 · `test-zoneoverlap` 56/0 · `test-shapeedit` 36/0 · inline script parses ·
+CSS brace delta **1**, this file's documented off-by-one, unchanged from base · 0 NUL bytes in the
+module page · dark mode measured (header ink remaps `rgb(90,88,88)` → `rgb(185,183,183)`, so it
+resolves through `--pd-muted` rather than sticking at a literal) · no horizontal page scroll at 390px.
+
+⚠️ **`test-lsm` is 675/28 and that is PRE-EXISTING** — byte-identical against `origin/main`'s own
+copy of the file, and the figure entry `(zu)` already records. Not caused here, and not fixed here.
+
+⚠️⚠️ **FOUR HARNESS FAULTS, EVERY ONE OF WHICH REPORTED A CORRECT FILE AS BROKEN**, recorded because
+three of them are reusable traps:
+1. **`dashboard.css` was linked `file://`** into a `setContent` document, whose base URL is
+   `about:blank` — so it never loaded, every `--pd-*` token resolved to nothing, and a correct 11px
+   rule measured as the browser's default **16px**.
+2. **Inlining it into a template literal was worse:** `dashboard.css` contains **315 backticks** in
+   its own comments, and a backtick terminates the literal. It is injected with `addStyleTag` now.
+3. ⚠️⚠️ **And the `@import` strip was `/@import[^;]*;/` — but the Google Fonts URL CONTAINS
+   SEMICOLONS** (`wght@0,400;0,500;…`), so the match cut mid-URL and the leftover text swallowed the
+   very `:root` block that defines every token. 488 rules parsed and the first one was `*`, not
+   `:root`. Stripped by line instead. **The harness now GATES on `--pd-fs-xs === '11px'` and aborts
+   otherwise**, because a measurement taken with the stylesheet out of the cascade means nothing.
+4. `catSel` was a `new Function` **parameter**, so `_catLoad`'s own `catSel = …` landed on the
+   parameter and the harness kept a stale array. It is a closure `var` of one compiled scope now —
+   the shape `stActivities` itself has.
+⚠️ Plus one of mine in the harness markup: **`return` alone on a line**, which ASI turns into
+`return undefined` — the exact trap entry `(z)` records, reproduced while testing.
+
+⚠️ **NOT VERIFIED SIGNED IN.** No `schedule_builder` row has been loaded, so the drag has never
+moved a code on a real project. First things to try: drag one code onto the grid, tick three and
+drag one of them (all three should go), and check the grid header reads **Internal (d)** /
+**External (d)**.
+
+⚠️ **This module's changelog held a literal NUL byte** at line 293 — prose about the `\0` sentinel
+written as a raw byte — so `grep` called the whole file binary and **silently hid every match in
+it**, which is how the next free entry letter was nearly picked wrong. Pre-existing on
+`origin/main`; **third recurrence** of the trap entry `2026-09-14 (u)` already records. Replaced with
+the two-character escape; `file` now reads UTF-8 text.
+
+`MODULE_V` → `20260917zzm`. ⚠️ Chosen to sort after **both** `origin/main`'s `20260917zv` **and PR
+#140's `20260917zzg`** — an unmerged branch's token still matters, because if it lands first a
+browser holding `zzg` would never fetch a page published under anything that sorts earlier.
+
 ## 2026-09-17 (zv) — Overlapping zones become an error the module can measure; the plan window opens on a zoneless floor with something to draw with; the building is stated in words
 
 Owner, on the Schedule Setup's Floors & Zones step: *"improve the overall UI, starting from defining
@@ -290,7 +449,7 @@ that tower's WBS branch, and it makes the stacking draw preliminaries as if they
 - ⚠️ The Floors & Zones chip row shows it as a **dead, dashed chip reading "project-wide"** rather than
   dropping it. A planner who used it in step 1 and cannot find it here has to be told why, once, where
   they are looking — the emptiest possible bug report is *"I set up the floors and nothing happened"*.
-- ⚠️ `dimKey` already returns the ` ` "no value at this level" sentinel for a null tower, so the
+- ⚠️ `dimKey` already returns the `\0` "no value at this level" sentinel for a null tower, so the
   pushed row attaches to its parent and builds no tower branch. That path is unchanged.
 
 ### Verified

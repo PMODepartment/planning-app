@@ -4449,6 +4449,12 @@
     .sbld-hold-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:1px solid var(--pd-line); border-left:4px solid var(--zc,var(--pd-line)); border-radius:6px; background:var(--pd-card); color:var(--pd-ink); font:inherit; cursor:pointer; padding:5px 8px; }
     .sbld-hold-item:hover { background:var(--pd-bg); }
     .sbld-hold-item.sel { outline:2px solid var(--pd-red); outline-offset:1px; background:var(--pd-red-light,rgba(238,49,36,.08)); }
+    /* Drag a class code onto the grid as an ALTERNATIVE to ←, never a replacement: the button
+       stays the discoverable gesture and the only one reachable from the keyboard. */
+    .sbld-hold-item[draggable="true"] { cursor:grab; }
+    .sbld-hold-item.dragging { opacity:.45; cursor:grabbing; }
+    /* Inset, so the ring cannot be clipped by the wrapper's own `overflow:auto`. */
+    .sbld-xlwrap.sbld-dropok { box-shadow:inset 0 0 0 2px var(--pd-red); }
     .sbld-hold-desc { font-size:var(--pd-fs-sm); font-weight:700; line-height:1.2; }
     /* ⚠ Both of these were inline `font-size` literals (10.5px / 11.5px) — off the scale by a
        pixel each, and in a JS string where no stylesheet sweep would ever see them. */
@@ -4470,15 +4476,23 @@
        --pd-focus measures 4.12 / 3.40. Kept INSET so it is not clipped by the wrapper's own
        `overflow:auto`. */
     .sbld-xlwrap:focus-visible { box-shadow:inset 0 0 0 2px var(--pd-focus); }
-    table.sbld-xl { border-collapse:collapse; font-size:var(--pd-fs-sm); width:100%; }
-    table.sbld-xl th, table.sbld-xl td { border:1px solid var(--pd-line); padding:5px 8px; text-align:left; white-space:nowrap; }
-    table.sbld-xl thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-weight:700; }
+    /* ⚠⚠ THIS RULE IS SHARED by the Activities grid (#b-xl) and the Trade-sequence grid
+       (#b-t4), deliberately — they are the same lattice over the same columns, and two copies
+       is how one of them ends up a pixel off the other. Owner 2026-09-17: *"improve look of the
+       activities selected table, font sizes can be reduced"* — so it drops ONE rung of the
+       shared scale (sm 12.5 → xs 11), never a fresh literal, with the cell padding tightened to
+       match: smaller type in the same box reads as a gap rather than as a denser table. */
+    table.sbld-xl { border-collapse:collapse; font-size:var(--pd-fs-xs); width:100%; }
+    table.sbld-xl th, table.sbld-xl td { border:1px solid var(--pd-line); padding:4px 7px; text-align:left; white-space:nowrap; }
+    /* Muted, matching `.pd-table th` — the app's own header treatment. At the old weight and
+       full ink the header row competed with the data under it for the eye. */
+    table.sbld-xl thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-weight:700; color:var(--pd-muted); }
     table.sbld-xl thead th[data-ci] { position:sticky; overflow:visible; }
     .xl-colgrip { position:absolute; top:0; right:-4px; width:9px; height:100%; cursor:col-resize; z-index:4; }
     .xl-colgrip:hover, .xl-colgrip.drag { background:var(--pd-red); opacity:.55; }
     .sbld-holdgrip { flex:0 0 8px; align-self:stretch; cursor:col-resize; border-radius:3px; margin:0 2px; }
     .sbld-holdgrip:hover, .sbld-holdgrip.drag { background:var(--pd-red); opacity:.5; }
-    table.sbld-xl td.xl-rn { background:var(--pd-bg); color:var(--pd-muted); text-align:center; width:36px; user-select:none; font-variant-numeric:tabular-nums; }
+    table.sbld-xl td.xl-rn { background:var(--pd-bg); color:var(--pd-muted); text-align:center; width:32px; user-select:none; font-variant-numeric:tabular-nums; }
     /* ⚠⚠ `user-select:none` AND `cursor:cell` BELONG TO A <td> YOU SELECT, NOT ONE THAT
        HOLDS AN INPUT. `user-select` inherits, so leaving it here would have fought the caret in
        every cell of a grid whose whole point is that the cell IS the editor — a planner
@@ -4490,7 +4504,9 @@
     table.sbld-xl td.xl-cell { min-width:70px; max-width:340px; padding:0; }
     table.sbld-xl td.xl-rowact { width:38px; text-align:center; }
     table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
-    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
+    /* ⚠ `font:inherit` is what carries the rung above into every editable cell — and the shared
+       phone rule still pins a focused input at --pd-fs-tap, so iOS cannot zoom the page. */
+    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:2px 4px; outline:none; }
     /* ⚠️ The shared focus ring is `outline-offset:2px`, which OVERLAPS the neighbouring cell in a
        table this dense. Pulled inside for grid cells only - the ring is still 2px and still the
        same colour, it just draws within the cell it belongs to. */
@@ -33969,7 +33985,7 @@
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
-    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
+    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Internal (d)', w: 90, num: true }, { k: 'durExt', label: 'External (d)', w: 90, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
     // activity the push creates. Everything the builder produces lands in the EXECUTION phase, so
@@ -34508,7 +34524,7 @@
     var autoChainType = 'FS';  // step-4 Auto-chain relationship type (FS / SS / FF / SF)
     var tradeView = 'flow';    // step-4 right pane: 'flow' (equal blocks) | 'gantt' (time-scaled)
     var tradeScale = 'month';  // step-4 Gantt time axis: 'day' | 'week' | 'month' | 'year'
-    var tradeBasis = 'int';    // step-4 Gantt duration basis: 'int' (interior) | 'ext' (exterior)
+    var tradeBasis = 'int';    // step-4 Gantt duration basis: 'int' (internal) | 'ext' (external)
     var tgZoom = 2.2;          // step-4 Gantt px-per-day (set by scale presets, fine-tuned by +/-)
     var TG_PPD = { day: 18, week: 8, month: 2.2, year: 0.6 };
     var seqZoom = 3;      // Zone-sequence flow diagram: block size / column spacing (zoom +/- and Ctrl+scroll)
@@ -34559,7 +34575,7 @@
     function isActFocus(id) { return actFocus && actFocus === id; }
     /* ⚠ The trade-sequence grid’s own cursor is gone with its engine too — PDGrid keeps its
        own focus per attached table, so the two grids no longer need a cursor each. */
-    var T4_COLS = [{ k: 'code', label: 'Code', w: 100 }, { k: 'name', label: 'Activity name', w: 190 }, { k: 'durInt', label: 'Interior (d)', w: 84, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 84, num: true }];
+    var T4_COLS = [{ k: 'code', label: 'Code', w: 100 }, { k: 'name', label: 'Activity name', w: 190 }, { k: 'durInt', label: 'Internal (d)', w: 84, num: true }, { k: 'durExt', label: 'External (d)', w: 84, num: true }];
     // Tower display nodes for one floor at the current collapse level. Each node carries ALL its
     // descendant leaf uids (so a collapsed node links/highlights its whole group). L1 is handled at
     // the trade level (whole-trade node), so this covers L2–L4.
@@ -35301,7 +35317,7 @@
         why: 'The list of work that repeats through the building — one row per class code, with how long it takes in one place.',
         how: ['Press <b>+ Library</b> to load the standard class codes, tick the ones this project uses, then <b>←</b> to bring them in.',
               'Or download the <b>template</b>, fill it in Excel and upload it.',
-              'Set each row\u2019s <b>trade</b>, <b>scope</b> and its <b>Interior / Exterior</b> duration.',
+              'Set each row\u2019s <b>trade</b>, <b>scope</b> and its <b>Internal / External</b> duration.',
               '<b>Scope</b> is what the duration is FOR: <i>per zone</i>, <i>per floor</i>, or <i>whole project</i>. A whole-project duration is split down automatically.'],
         watch: ['⚠️ <b>Codes must be distinct.</b> Two rows with the same code cannot be told apart in the sequencing steps, which makes them unusable.',
                 'The grid is a spreadsheet: drag to select, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd>, <kbd>Ctrl+D</kbd> to fill down, <kbd>Delete</kbd> to clear. Paste blocks straight from Excel.'],
@@ -35534,9 +35550,9 @@
     function usedGroups() { var seen = {}; cfg.activities.forEach(function (a) { if (a.group) seen[a.group] = 1; }); return GROUPS.filter(function (g) { return seen[g]; }); }
     function included(uid, aid) { return !cfg.scopeOff[uid + '|' + aid]; }
     // ⚠⚠ CROSS-BASIS FALLBACK — this is the "only Allied Services was migrated" bug.
-    // Step 1 has two duration columns (Interior / Exterior) and the push runs on ONE of them. A row is
+    // Step 1 has two duration columns (Internal / External) and the push runs on ONE of them. A row is
     // dropped from generate() when its duration for the CHOSEN basis is 0, so a planner who filled only
-    // the Interior column and then pushed lost every activity — except the trades whose rows happened
+    // the Internal column and then pushed lost every activity — except the trades whose rows happened
     // to carry both numbers, which is why the survivor looked arbitrary (Allied Services).
     // normActivity() already MEANT to mirror one column onto the other, but its guard was
     // `a.durExt != null`, and all three paths that CREATE a row (catalog import, the paste handler,
@@ -35568,7 +35584,7 @@
       if (!a) return 0;
       var fk = durKindOf(a, kind);
       // Per COLUMN: this level type's own number if it typed one, otherwise the default's. A category
-      // that specialises only its Interior duration still inherits the default Exterior one.
+      // that specialises only its Internal duration still inherits the default External one.
       function pick(col) { var v = fk ? Math.max(0, +fk[col] || 0) : 0; return v > 0 ? v : Math.max(0, +a[col] || 0); }
       var want = pick(basis === 'ext' ? 'durExt' : 'durInt');
       if (want > 0) return want;
@@ -35769,7 +35785,7 @@
       var out = {}; acts.forEach(function (a) { out[a.id] = st(a.id); }); return out;
     }
     // Longest-path total duration (days) of a trade's linked class codes for the given basis
-    // (int = interior, ext = exterior) — the finish day of the latest-finishing code.
+    // (int = internal, ext = external) — the finish day of the latest-finishing code.
     function tradeTotalDays(tr, basis) {
       var acts = tradeActs(tr); if (!acts.length) return 0;
       var starts = actDayStarts(tr, basis), max = 0;
@@ -36667,7 +36683,7 @@
       var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
       // ⚠️ DIAGNOSTIC — why a trade might be silently absent from the push. A row is dropped above when
       // effDur() is 0, i.e. the activity has NO duration for the CHOSEN BASIS (Internal vs External).
-      // So a planner who filled only the Interior column, then pushed "External", gets an empty push —
+      // So a planner who filled only the Internal column, then pushed "External", gets an empty push —
       // and someone who filled only one trade's durations gets "only <that trade> was pushed" (the
       // reported Allied-Services-only surprise). Report which USED trades produced 0 rows and which
       // activities were dropped for a zero duration on this basis, so the push can say so out loud.
@@ -36857,7 +36873,7 @@
 
     // ---- Activity template: download a CSV users fill in, then upload (CSV or Excel) to load ----
     function actTemplateCsv() {
-      var lines = ['Code,Activity Name,Trade,Scope,Interior Duration (days),Exterior Duration (days)',
+      var lines = ['Code,Activity Name,Trade,Scope,Internal Duration (days),External Duration (days)',
         'MOB,Mobilization,General Requirements,Per zone,3,3', 'EXC,Excavation,Site Works,Per zone,4,4', 'REBAR,Rebar,Structural,Per zone,3,4', 'MAS,Masonry,Architectural,Per zone,5,6', 'ELEC,Electrical Rough-in,MEPF,Whole project,60,60', 'LSCP,Landscaping,Allied Services,Per floor,2,3'];
       var blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
       var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'activities-template.csv'; a.click();
@@ -36874,7 +36890,10 @@
       if (!rows2d || rows2d.length < 2) { UI.toast('No rows found — use the template and keep the header row.', 'error'); return; }
       var hdr = rows2d[0].map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
       function idx(names) { for (var i = 0; i < hdr.length; i++) for (var j = 0; j < names.length; j++) if (hdr[i].indexOf(names[j]) >= 0) return i; return -1; }
-      var ci = idx(['code']), ni = idx(['activity name', 'name', 'activity']), gi = idx(['trade', 'discipline', 'group']), si = idx(['scope']), ii = idx(['interior', 'internal', 'int']), ei = idx(['exterior', 'external', 'ext']);
+      /* ⚠ The duration matchers keep BOTH spellings. The template header says Internal/External
+         now, but a planner may upload one downloaded before the rename, and dropping 'interior'
+         would read their durations as 0 rather than failing — a silent wrong answer. */
+      var ci = idx(['code']), ni = idx(['activity name', 'name', 'activity']), gi = idx(['trade', 'discipline', 'group']), si = idx(['scope']), ii = idx(['internal', 'interior', 'int']), ei = idx(['external', 'exterior', 'ext']);
       var tmap = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'genreq': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'site development': 'SD', 'sitedevelopment': 'SD', 'site dev': 'SD', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
       var out = [];
       for (var r = 1; r < rows2d.length; r++) {
@@ -36887,7 +36906,7 @@
         var sc = (si >= 0 ? parseScope(row[si]) : null) || 'zone';
         out.push({ id: uidv(), code: code, name: name, group: g, durInt: di, durExt: de, scope: sc });
       }
-      if (!out.length) { UI.toast('No activity rows read — check the columns (Code / Activity Name / Trade / Interior / Exterior).', 'error'); return; }
+      if (!out.length) { UI.toast('No activity rows read — check the columns (Code / Activity Name / Trade / Internal / External).', 'error'); return; }
       function _land(mode) {
         cfg.activities = (mode === 'replace') ? out : cfg.activities.concat(out);
         markDirty(); render(); UI.toast('Loaded ' + out.length + ' activities (' + mode + ').', 'success');
@@ -38428,7 +38447,7 @@
           '<td class="xl-rowact"><button class="sbld-del" data-del="' + r + '" title="Delete row"><span data-ico="trash" data-ico-size="14"></span></button></td></tr>';
       }).join('');
       var holdItems = cfg.catalog.map(function (a) {
-        return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + gc(a.group) + '">' +
+        return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" draggable="true" style="--zc:' + gc(a.group) + '">' +
           '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
           '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
       }).join('');
@@ -38444,9 +38463,9 @@
         '<button class="pd-btn pd-btn-primary sbld-libbtn" id="b-boq" title="Load only the class codes this project&rsquo;s current BOQ carries, from Contracts &amp; Claims">+ From BOQ</button>' +
         '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
         '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
-      var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
+      var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build &mdash; or drag a code from the list straight onto the grid">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       /* ⚠ Both suppressed under `noHead`. The lede enumerated “code, name, trade, scope and its
-         interior/exterior duration” — which is the grid's own column headers, read out in prose
+         internal/external duration” — which is the grid's own column headers, read out in prose
          directly above the grid. Kept when this view is opened on its own. */
       host.innerHTML = (noHead ? '' :
         '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
@@ -38549,12 +38568,64 @@
       });
       // holding-area shuttle
       host.querySelectorAll('[data-cat]').forEach(function (b) { b.onclick = function () { var id = b.dataset.cat, i = catSel.indexOf(id); if (i >= 0) catSel.splice(i, 1); else catSel.push(id); render(); }; });
+      /* ⚠⚠ ONE MOVER FOR BOTH GESTURES. ← and a drop have to land the same rows in the same
+         order and drop the same ticks; two copies of this is how the button and the drag come to
+         disagree about what a selection is. `ids` is the set to move — the button passes the
+         ticked ones, the drop passes what was dragged. */
+      function _catLoad(ids) {
+        if (!ids || !ids.length) return false;
+        var take = {}; ids.forEach(function (id) { take[String(id)] = 1; });
+        /* Filtered out of `cfg.catalog` rather than mapped from `ids`, so the rows keep the
+           LIST's own order however the drag was assembled — which is the order ← already gives. */
+        var moved = (cfg.catalog || []).filter(function (a) { return take[String(a.id)]; });
+        if (!moved.length) return false;
+        cfg.catalog = cfg.catalog.filter(function (a) { return !take[String(a.id)]; });
+        cfg.activities = cfg.activities.concat(moved);
+        catSel = catSel.filter(function (id) { return !take[String(id)]; });
+        markDirty(); render();
+        return true;
+      }
       host.querySelector('#b-load').onclick = function () {
         if (!catSel.length) { UI.toast('Tick one or more class codes in the list first.', 'warn'); return; }
-        var take = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) >= 0; });
-        cfg.catalog = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) < 0; });
-        cfg.activities = cfg.activities.concat(take); catSel = []; markDirty(); render();
+        _catLoad(catSel.slice());
       };
+      /* ---- drag a class code onto the grid -------------------------------------------------
+         ⚠ Dragging a TICKED row carries the whole ticked set; dragging an un-ticked one carries
+         only itself. Anything else surprises: a planner who ticked six and dragged one of them
+         means the six, and one who dragged a row they never ticked means that row. */
+      var _dragIds = null;
+      host.querySelectorAll('[data-cat]').forEach(function (b) {
+        b.addEventListener('dragstart', function (ev) {
+          var id = b.dataset.cat;
+          _dragIds = (catSel.indexOf(id) >= 0) ? catSel.slice() : [id];
+          b.classList.add('dragging');
+          try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', id); } catch (e) {}
+        });
+        b.addEventListener('dragend', function () { b.classList.remove('dragging'); _dragIds = null; });
+      });
+      var _xlDrop = host.querySelector('#b-xl');
+      if (_xlDrop) {
+        /* ⚠⚠ `preventDefault()` on dragover is what MAKES a drop legal — without it the browser
+           refuses the drop and the gesture silently does nothing. */
+        _xlDrop.addEventListener('dragover', function (ev) {
+          if (!_dragIds) return;
+          ev.preventDefault();
+          try { ev.dataTransfer.dropEffect = 'move'; } catch (e) {}
+          _xlDrop.classList.add('sbld-dropok');
+        });
+        /* ⚠ dragleave fires crossing EVERY child boundary, so clearing on any of them makes the
+           ring flicker off while the cursor is still inside the grid. Only the wrapper counts. */
+        _xlDrop.addEventListener('dragleave', function (ev) {
+          if (ev.target === _xlDrop) _xlDrop.classList.remove('sbld-dropok');
+        });
+        _xlDrop.addEventListener('drop', function (ev) {
+          if (!_dragIds) return;
+          ev.preventDefault();
+          _xlDrop.classList.remove('sbld-dropok');
+          var ids = _dragIds.slice(); _dragIds = null;
+          _catLoad(ids);
+        });
+      }
       host.querySelector('#b-unload').onclick = function () {
         if (!cfg.activities.length) return;
         /* ⚠⚠ READ FROM THE GRID, NOT FROM `xa`/`xf`. Those were the old hand-rolled grid’s
@@ -38682,7 +38753,7 @@
             : '<span class="sbld-hint">Showing the default &mdash; the first edit gives <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> its own sequence, and any duration typed here applies to <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels only.</span>');
         return '<div class="sbld-seqkind"><span class="sbld-seqkind-l">Level type</span>' + btns + copy + state + '</div>';
       })();
-      // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Interior / Exterior) with
+      // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Internal / External) with
       // multi-cell copy/paste, so a column of durations can be pasted straight from Excel. LINKING is
       // done on the schedule BARS on the right via the View/Edit toggle (mirrors step 3) — the old
       // per-row ▸ column is gone.
@@ -38719,13 +38790,13 @@
         ['FS', 'SS', 'FF', 'SF'].map(function (o) { return '<option value="' + o + '"' + (autoChainType === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' +
         '<button class="pd-btn" id="b-alinkmgr">Links (' + countTradeLinks(tr) + ')</button>' +
         '<details class="sbld-viewopts"' + (actOptsOpen ? ' open' : '') + '><summary>View options — ' +
-          (tradeView === 'gantt' ? 'Gantt, ' + tradeScale + ', ' + (tradeBasis === 'ext' ? 'exterior' : 'interior') : 'flow') +
+          (tradeView === 'gantt' ? 'Gantt, ' + tradeScale + ', ' + (tradeBasis === 'ext' ? 'external' : 'internal') : 'flow') +
           ', ' + (seqLayout === 'stack' ? 'stacked' : 'split') + '</summary><div class="sbld-viewoptsb">' +
           '<span class="sbld-quick">View ' +
           [['flow', 'Flow'], ['gantt', 'Gantt']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (tradeView === v[0] ? ' on' : '') + '" data-tview="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
           (tradeView === 'gantt' ?
             '<span class="sbld-quick">Scale ' + ['day', 'week', 'month', 'year'].map(function (sc) { return '<button class="pd-btn sbld-scbtn' + (tradeScale === sc ? ' on' : '') + '" data-tscale="' + sc + '">' + sc.charAt(0).toUpperCase() + sc.slice(1) + '</button>'; }).join('') + '</span>' +
-            '<span class="sbld-quick">Dur ' + [['int', 'Interior'], ['ext', 'Exterior']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
+            '<span class="sbld-quick">Dur ' + [['int', 'Internal'], ['ext', 'External']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
           '<span class="sbld-quick">Layout ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
           '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-azout">−</button><button class="pd-btn sbld-zbtn" id="b-azin">+</button></span>' +
         '</div></details>' +
@@ -38792,7 +38863,7 @@
       host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; actOptsOpen = true; render(); }; });
       var _avo = host.querySelector('.sbld-viewopts');
       if (_avo) _avo.addEventListener('toggle', function () { actOptsOpen = _avo.open; });
-      // Excel-style class-code grid (edit Code/Name/Interior/Exterior; multi-cell copy/paste).
+      // Excel-style class-code grid (edit Code/Name/Internal/External; multi-cell copy/paste).
       // Linking is on the schedule bars (View/Edit toggle), not a per-row column.
       /* ⚠ `t4Set` already takes (activity, field, text), so this grid needed no new setter —
          only the id→activity lookup PDGrid’s contract implies. It writes per-KIND durations
