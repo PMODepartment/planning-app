@@ -2757,18 +2757,34 @@ function grpRow(name, anc, acts, idx, field) {
    build that dropped the tag PASSED the whole suite. So `catalogueFrom` is sliced and RUN. */
 (function () {
   const cf = sliceAny('catalogueFrom'), fk = sliceAny('floorKind'), bt = sliceAny('blankTowers');
+  const lless = sliceAny('locless');
   ok(cf && fk && bt, 'catalogueFrom / floorKind / blankTowers are all present');
   if (!cf || !fk || !bt) return;
+  /* ⚠️⚠️ `locless` AND ITS TABLE ARE LINKED FROM THE SHIPPED FILE, never stubbed. `catalogueFrom`
+     started calling it on 2026-09-17, and the whole function is wrapped in try/catch returning
+     what it has so far — so an unlinked name does NOT throw here, it returns `{}` and every
+     assertion below fails with "expected 4, got 0". That reads as a broken catalogue rather than
+     as a broken harness, which is exactly the kind of false report this suite exists to avoid.
+     ⚠️ The base build has neither, and there the slices are simply absent — the base's
+     `catalogueFrom` does not call them. */
+  const lTab = /var LOCLESS = [^\n]*/.exec(src);
   const run = new Function('GROUPS', 'CFG', [
     "var KIND_LABEL = { basement: 'Basement', podium: 'Podium / Commercial', typical: 'Typical', roof: 'Roof Deck' };",
     "var uidv = function () { return 'u' + Math.random(); };",
     "function locLevelFor(d) { return d === 'floor' ? { id: 'lvF' } : (d === 'tower' ? { id: 'lvT' } : null); }",
+    lTab ? lTab[0] : '', lless || '',
     fk, bt, cf,
     'return catalogueFrom(CFG);'
   ].join('\n'));
   const GROUPS = ['GR', 'SW', 'ST', 'AR', 'MEPF', 'SD', 'ALLIED', 'OT'];
+  /* ⚠️ THE FIRST FLOOR MOVED OFF `GR` ON 2026-09-17, and it is retargeted rather than dropped.
+     General Requirements is loc-less (see LOCLESS) — project-wide work carrying no tower, floor
+     or zone — so a floor typed under it contributes nothing to the catalogue by design. The
+     multi-trade property this fixture exists to prove is unchanged; it is proved with Site Works,
+     and the GR floor below now proves the exclusion instead. */
   const CFG = { towers: [{ id: 't1', code: 'T1', name: 'Tower 1' }], zoning: {
-    GR: { floors: [{ id: 'f0', code: 'F1', name: 'F1', kind: 'typical', zones: [] }] },
+    SW: { floors: [{ id: 'f0', code: 'F1', name: 'F1', kind: 'typical', zones: [] }] },
+    GR: { floors: [{ id: 'f9', code: 'GRX', name: 'GRX', kind: 'typical', zones: [] }] },
     ST: { floors: [{ id: 'f1', code: 'B3', name: 'B3', sub: true, kind: 'basement', zones: [] },
                    { id: 'f2', code: 'GF', name: 'Ground Floor', kind: 'typical', zones: [] },
                    { id: 'f3', code: 'PA', name: 'Podium Amenities', kind: 'podium', zones: [] }] }
@@ -2779,7 +2795,11 @@ function grpRow(name, anc, acts, idx, field) {
   const floors = (out.lvF || []).filter(e => e.dim === 'floor');
   eq(floors.length, 4, 'catalogueFrom returns every declared floor');
   const tagOf = {}; floors.forEach(e => { tagOf[e.value] = e.tr; });
-  eq(tagOf['F1'], 'GR', '⚠️⚠️ and each floor carries THE TRADE WHOSE LIST IT CAME FROM');
+  if (lless) {
+    ok(!('GRX' in tagOf),
+       '⚠️⚠️ a LOC-LESS trade contributes NOTHING — General Requirements carries no floor');
+  }
+  eq(tagOf['F1'], 'SW', '⚠️⚠️ and each floor carries THE TRADE WHOSE LIST IT CAME FROM');
   eq(tagOf['B3'], 'ST', 'B3 from Structural');
   eq(tagOf['Podium Amenities'], 'ST', 'and the podium too');
   /* The category still rides along, unchanged. */

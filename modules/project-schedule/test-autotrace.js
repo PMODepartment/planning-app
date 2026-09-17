@@ -30,10 +30,25 @@ const FNS = ['autoTrace', 'zoneGroupsOfFloor', 'floorGateOf', 'floorLagOf', 'try
   'parallelKind', 'parallelKindOf', 'leavesOfFloor', 'towerList', 'towerIdOf',
   'floorIndexOf', 'tradeActs', 'locList', 'floorsOf'];
 
+/* ⚠️⚠️ `locless` IS SLICED ONLY WHERE IT EXISTS, and that is the one exception to this suite's
+   refuse-to-stub rule. `locList` gained a `if (locless(tr)) return;` gate on 2026-09-17 (General
+   Requirements carries no tower, floor or zone), so the CURRENT file needs it and the PINNED BASE
+   does not define it at all — slicing it unconditionally would fail the contrast build on a
+   function the base has never heard of.
+   ⚠️ It is not stubbed: where the name exists the REAL function is linked, and an assertion below
+   requires the current file to define it, so this cannot quietly hide the gate going missing. */
+const FNS_OPT = ['locless'];
+
 function build(src) {
   const S = makeSlicer(src);
   let body = '';
   FNS.forEach(function (n) { body += S.sliceFn(n) + '\n'; });
+  FNS_OPT.forEach(function (n) {
+    if (src.indexOf('function ' + n + '(') >= 0) body += S.sliceFn(n) + '\n';
+  });
+  // ⚠️ The table `locless` reads, sliced by the same rule and from the same file — never a
+  // fixture. Which trades are loc-less is the fact under test whenever this gate matters.
+  if (src.indexOf('var LOCLESS = ') >= 0) body += S.sliceVarLine('LOCLESS') + '\n';
   /* ⚠️ `cellKey` is declared TWICE in this file — a 3-argument gantt helper and the 1-argument
      location one. `sliceFn` would take the first; the location-shaped one is what autoTrace calls. */
   const i = src.indexOf('function cellKey(loc)');
@@ -245,6 +260,15 @@ console.log('\n8 · the source');
     'the dead `lead` local is gone — `batchKind` is the only reader of cfg.floorLead');
   ok(/pByTK\[tw \+ '\|' \+ k\]/.test(code), 'the leading trade is grouped by (tower, kind)');
   ok(!/pByKind/.test(code), 'the kind-only grouping is gone, not left beside its replacement');
+
+  /* ⚠️⚠️ THE OPTIONAL SLICE CANNOT HIDE THE GATE GOING MISSING. `locless` is linked only where the
+     source defines it (see FNS_OPT), which is what lets the pinned base build at all — so the
+     CURRENT file is required to define it, and `locList` is required to call it. Without these
+     two, deleting the gate would make the suite pass by falling back to the base's behaviour. */
+  ok(/function locless\s*\(/.test(code), 'the current file defines locless');
+  ok(/function locList\(\)[^\n]*if \(locless\(tr\)\) return;/.test(code),
+     'locList gates on it, so a loc-less trade produces no leaves');
+  ok(!/function locless\s*\(/.test(base), 'BASE has no locless — which is why the slice is optional');
 }
 
 console.log('\nPASS ' + pass + '  FAIL ' + fail);

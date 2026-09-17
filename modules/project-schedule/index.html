@@ -3656,6 +3656,10 @@
     .sbld-chip:hover { background:var(--pd-bg); }
     .sbld-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); font-weight:700; }
     .sbld-chip b { font-size:var(--pd-fs-xs); background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:0 6px; }
+    /* A trade that HAS no location — see LOCLESS. ⚠️ Dashed and unclickable, so it cannot be
+       mistaken for a chip somebody forgot to select: there is nothing behind it to open. */
+    .sbld-chip-off { cursor:default; border-style:dashed; background:transparent; color:var(--pd-muted); }
+    .sbld-chip-off i { font-style:normal; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; }
     .sbld-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
     .sbld-quick { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); flex-wrap:wrap; }
     .sbld-step2ct { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-left:4px; }
@@ -3945,6 +3949,18 @@
       text-transform:uppercase; color:var(--pd-muted); }
     .zpw-xform .ps-vs-seg > button { padding:5px 8px; font-size:var(--pd-fs-sm); min-width:30px; }
     .zpw-xform .ps-vs-seg > button:disabled { opacity:.45; cursor:not-allowed; }
+    /* ==== THE SELECTED AREA'S OWN ROW ================================================
+       ⚠️ Tinted and rule-topped, because it comes and goes with the selection: a row that
+       appears and disappears in a fixed stack of toolbars reads as the window jumping unless
+       it is visibly a different KIND of row — one about the thing you have picked, not about
+       the drawing. */
+    .zpw-selbar { border-top:1px solid var(--pd-line); background:var(--pd-bg);
+      border-radius:0 0 8px 8px; }
+    .zpw-num { display:inline-flex; align-items:center; gap:4px; font-size:var(--pd-fs-micro);
+      font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--pd-muted); }
+    .zpw-num input { width:62px; height:26px; padding:2px 5px; font-size:var(--pd-fs-sm); }
+    .zpw-num.off { opacity:.5; }
+    .zpw-selbar .ps-vs-seg > button { padding:4px 7px; font-size:var(--pd-fs-sm); min-width:26px; }
     /* The site plan's scale note. ⚠️ It says the sizes are a DEFAULT, not a survey — see
        zpSitePlaceFootprints. A planner reading relative sizes off this drawing would be reading
        something nobody stated. */
@@ -4031,6 +4047,12 @@
     /* ⚠️ A floor that already has its OWN plan is flagged, because ticking it replaces that. */
     .zpw-fl.warn { border-style:dashed; }
     .zpw-fl em { font-style:normal; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    /* The floor's CATEGORY on its row — see the per-category buttons above the list. ⚠️ Pale and
+       un-bordered so it reads as an attribute of the floor, not as a second thing to tick. */
+    .zpw-fl u { text-decoration:none; font-size:var(--pd-fs-micro); color:var(--pd-muted); opacity:.8; }
+    .zpw-kinds { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:8px 0 0; }
+    .zpw-kindbtn { padding:3px 9px; font-size:var(--pd-fs-xs); }
+    .zpw-kindbtn b { font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:700; }
     .sbld-lvlgrid { display:grid; grid-template-columns:minmax(0,1fr) minmax(400px,460px); gap:22px; align-items:start; margin-top:6px; }
     .sbld-flr { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); margin-bottom:10px; overflow:hidden; }
     .sbld-flr-sub { border-style:dashed; }
@@ -4521,6 +4543,18 @@
     .sbld-fill > summary { cursor:pointer; padding:7px 11px; font-size:var(--pd-fs-sm); font-weight:700; }
     .sbld-fill[open] > summary { border-bottom:1px solid var(--pd-line); }
     .sbld-fillbody { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 11px; }
+    /* ==== FLOOR-PLAN COVERAGE, BY CATEGORY ==========================================
+       ⚠️ Same fold shell as .sbld-fill above it, so the two panels above the floor list read as
+       one pair — "how do I fill this trade" and "what is drawn" — rather than two inventions. */
+    .sbld-fpanel { margin:0 0 12px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
+    .sbld-fpanel > summary { cursor:pointer; padding:7px 11px; font-size:var(--pd-fs-sm); }
+    .sbld-fpanel[open] > summary { border-bottom:1px solid var(--pd-line); font-weight:700; }
+    .sbld-fpbody { padding:9px 11px; display:flex; flex-direction:column; gap:6px; }
+    .sbld-fpk { display:flex; align-items:center; gap:10px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .sbld-fpk > b { min-width:118px; color:var(--pd-ink); font-size:var(--pd-fs-sm); }
+    .sbld-fpk > button { margin-left:auto; padding:3px 10px; font-size:var(--pd-fs-xs); }
+    .sbld-fpk-gap { color:var(--pd-red); font-weight:700; }
+    .sbld-fpk-ok { color:var(--pd-ok-text); font-weight:700; }
     /* relationship dialog */
     .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg); padding:10px; width:224px; }
     .sbld-ld-h { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:6px; }
@@ -4531,6 +4565,36 @@
     .sbld-ld-row input[type=number] { font:inherit; padding:4px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
     @media (max-width:900px){ .sbld-seq2 { grid-template-columns:1fr; } }
     @media (max-width:820px){ .sbld-wrap { grid-template-columns:1fr; } .sbld-rail { position:static; flex-direction:row; overflow-x:auto; } .sbld-step-s { display:none; } }
+    /* ==== psAsk — the app's own prompt()/confirm() =====================================
+       ⚠️ It reuses `.pd-modal-header/-body/-footer` rather than inventing a shell, so a dialog
+       from this module and one from anywhere else in the app are the same object. Only the
+       FIELD layout is new — that is the part `prompt()` never had. */
+    .pd-modal.psask { max-width:480px; }
+    .pd-modal.psask.psask-wide { max-width:640px; }
+    .psask-body { padding:16px 22px 4px; }
+    .psask-text { margin:0 0 12px; font-size:var(--pd-fs-sm); line-height:1.55; }
+    .psask-note { margin:0 0 12px; font-size:var(--pd-fs-xs); line-height:1.5; color:var(--pd-muted);
+      border-left:3px solid var(--pd-line); padding:2px 0 2px 9px; }
+    .psask-fields { display:flex; flex-direction:column; gap:12px; margin:0 0 6px; }
+    .psask-row { display:flex; flex-direction:column; gap:4px; }
+    .psask-lab { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); }
+    .psask-lab:empty { display:none; }
+    .psask-req { color:var(--pd-red); font-style:normal; }
+    .psask-row .pd-input, .psask-row .pd-select { width:100%; }
+    .psask-row textarea.pd-input { resize:vertical; min-height:64px; line-height:1.5; }
+    .psask-hint { margin:0; font-size:var(--pd-fs-xs); line-height:1.45; color:var(--pd-muted); }
+    .psask-chk { display:flex; align-items:flex-start; gap:8px; font-size:var(--pd-fs-sm); cursor:pointer; }
+    .psask-chk input { margin-top:2px; }
+    .psask-static { font-size:var(--pd-fs-sm); line-height:1.5; }
+    /* A field-by-field list inside the dialog's own prose — used by the audit revert, which has to
+       show old → new for every field it is about to write. ⚠️ Monospaced numerals so a column of
+       dates lines up; a revert is read by comparing two values, not by reading a sentence. */
+    .psask-list { margin:6px 0 0; padding:0 0 0 18px; font-size:var(--pd-fs-xs); line-height:1.6;
+      font-variant-numeric:tabular-nums; }
+    /* ⚠️ `hidden` is set on the element, so it must not be display:flex'd back on by a rule here. */
+    .psask-err { margin:10px 0 0; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-bad-text); }
+    .psask-err[hidden] { display:none; }
 </style>
 </head>
 <body>
@@ -5887,9 +5951,11 @@
   // Offer the way out. Returns true when the caller may proceed with the scope edit.
   async function _ensureExecPhase(r) {
     if (!r || isExecPhase(r)) return true;
-    if (!confirm('Contract scope applies to the Execution Phase only.\n\n' +
-      'This activity\'s phase is ' + _phaseWhy(r) + '.\n\n' +
-      'Set this activity to the Execution Phase now and continue?')) return false;
+    if (!(await psOk('This activity\'s phase is ' + _phaseWhy(r) + '.', {
+      title: 'Move this activity to the Execution Phase?',
+      ok: 'Set it and continue', danger: false,
+      note: 'Contract scope — main contract or change order — applies to the Execution Phase only, so the phase has to change before the scope can.'
+    }))) return false;
     var ok = await persist(r.id, { phase: EXEC_PHASE });
     if (ok) { _clearPhaseMemo(); _clearScopeMemo(); }
     return ok;
@@ -6805,9 +6871,11 @@
         });
         var already = targets.filter(function (r) { return r.calendar_id === draft.id; }).length;
         if (!targets.length) { UI.toast('No activities match that selection.', 'warn'); return; }
-        if (!confirm('Put ' + targets.length + ' activity/activities on "' + draft.name + '"?\n\n' +
-            already + ' already use it. This changes which days their durations are counted in, so ' +
-            'forecast dates will move on the next schedule run. Undoable (Ctrl+Z).')) return;
+        if (!(await psOk('Put ' + targets.length + ' activity/activities on \u201c' + draft.name + '\u201d?', {
+            title: 'Assign this calendar?', ok: 'Assign the calendar', danger: false,
+            note: already + ' already use it. This changes which days their durations are counted in, ' +
+              'so forecast dates will move on the next schedule run. Undoable (Ctrl+Z).'
+          }))) return;
         var ok = 0, bad = 0;
         for (var i = 0; i < targets.length; i++) {
           if (targets[i].calendar_id === draft.id) { ok++; continue; }
@@ -6830,7 +6898,10 @@
           UI.toast('In use by ' + used + ' activity/activities and ' + usedByScn + ' scenario(s) — reassign them first.', 'warn');
           return;
         }
-        if (!confirm('Delete the calendar "' + draft.name + '"?')) return;
+        if (!(await psOk('Delete the calendar \u201c' + draft.name + '\u201d?', {
+          title: 'Delete this calendar?', ok: 'Delete the calendar',
+          note: 'Nothing points at it \u2014 that was checked before this was offered.'
+        }))) return;
         try {
           var d = await sb().from('calendars').delete().eq('id', draft.id);
           if (d.error) throw d.error;
@@ -7394,7 +7465,10 @@
     // persist(), so it lands on the undo stack like any other edit.
     async function dsApply(pv) {
       if (!pv.affected) return;
-      if (!confirm('Apply ' + pv.affected + ' adjusted duration(s) to the live schedule?\n\nThis rewrites Duration and Finish on those activities. It is undoable (Ctrl+Z), but it is a real edit — not a preview.')) return;
+      if (!(await psOk('Apply ' + pv.affected + ' adjusted duration(s) to the live schedule?', {
+        title: 'Write these durations?', ok: 'Apply them', danger: false,
+        note: 'This rewrites <b>Duration</b> and <b>Finish</b> on those activities. It is undoable (Ctrl+Z), but it is a real edit \u2014 not a preview.'
+      }))) return;
       var ok = 0, failed = 0;
       for (var i = 0; i < pv.items.length; i++) {
         var it = pv.items[i];
@@ -7481,7 +7555,10 @@
       };
       var del = root.querySelector('#ps-ds-delete');
       if (del) del.onclick = async function () {
-        if (!confirm('Delete the scenario "' + draft.name + '"? The schedule itself is untouched — only the rules go.')) return;
+        if (!(await psOk('Delete the scenario \u201c' + draft.name + '\u201d?', {
+          title: 'Delete this scenario?', ok: 'Delete the scenario',
+          note: 'The schedule itself is untouched \u2014 only the rules go.'
+        }))) return;
         try {
           var d = await sb().from('duration_scenarios').delete().eq('id', draft.id);
           if (d.error) throw d.error;
@@ -8748,9 +8825,12 @@
       UI.toast('No activities are linked to a work package yet — nothing to push.', 'warn'); return;
     }
     var dated = keys.filter(function (k) { return nb[k].date; }).length;
-    if (!confirm('Send need-by dates for ' + keys.length + ' work package(s) (' + dated +
-        ' with a date) to the Procurement app?\n\nBuyers will see these next to their Target ' +
-        'Installation. Nothing they own is overwritten.')) return;
+    if (!(await psOk('Send need-by dates for ' + keys.length + ' work package(s) (' + dated +
+        ' with a date) to the Procurement app?', {
+      title: 'Push to the Procurement app?', ok: 'Send the dates', danger: false,
+      note: 'Buyers will see these next to their Target Installation. Nothing they own is overwritten. ' +
+        'It leaves this app the moment you press it.'
+    }))) return;
     var btn = document.getElementById('ps-push-needby');
     if (btn) { btn.disabled = true; btn.textContent = 'Pushing…'; }
     try {
@@ -9409,6 +9489,253 @@
   function fmtOPCDate(v, actual) { var d = pd(v); if (!d) return ''; return String(d.getDate()).padStart(2,'0') + '-' + MON3[d.getMonth()] + '-' + String(d.getFullYear()).slice(2) + (actual ? ' A' : ''); }
   function renderDataDateBadge() { var b = document.getElementById('ps-datadate-badge'); if (b) b.textContent = 'Data Date: ' + fmtOPCDate(dstr(today())); _repIdPaint(); }
   function esc(s) { return Fmt.esc(s); }
+
+  /* ==========================================================================================
+     ASK IN THE APP, NOT IN THE BROWSER — psAsk / psConfirm / psPrompt.
+     Owner 2026-09-17: *"when adding towers, floors, UI usually gives browser pop-up. instead of
+     browser pop-up create an app pop-up window where user can input the fields. apply this
+     across the whole schedule module."*
+
+     ⚠️⚠️ A BROWSER `prompt()` IS ONE FIELD AND NOTHING ELSE, and that is the whole reason this
+     exists. Adding a tower asked TWO of them back to back — name, then code — so a planner who
+     changed their mind about the name after typing the code had no way back, the dialog could
+     not say what the code is FOR, it could not show the name it was about to use, and it could
+     not validate anything until both were already answered. A form asks once, shows every field
+     at the same time, explains each one, and can refuse to close on an empty required field.
+     ⚠️ It is also the only kind of dialog this app can STYLE. `prompt()` renders in the browser
+     chrome — no dark mode, no project typography, and on Chrome a second one in the same gesture
+     carries a "prevent this page from creating more dialogs" checkbox that silently disables
+     every dialog on the page for the rest of the session. Two sequential prompts per tower is
+     exactly the pattern that triggers it.
+
+     ⚠️⚠️ ASYNCHRONOUS, AND THAT IS NOT NEGOTIABLE. `prompt()` blocks; a DOM dialog cannot. Every
+     call site therefore becomes a callback, and the rule for converting one is: everything AFTER
+     the answer moves INSIDE. A site that leaves work behind the call runs it before the planner
+     has answered — the one failure mode of this change, and it is invisible until the answer is
+     "cancel". Conversions in this file were done one at a time for that reason.
+
+     psAsk(opts, onOk)      — opts.fields[] = { k, label, type, value, hint, options[], required,
+                              min, max, placeholder, rows }. Calls back with a { k: value } object,
+                              or not at all when the planner cancels: `return` is still the cancel
+                              path at every call site.
+     psPrompt(label, value, onOk, opts)  — the one-field shorthand, shaped like `prompt()`.
+     psConfirm(text, onYes, opts)        — the two-button shorthand, shaped like `confirm()`.
+
+     ⚠️ ONE dialog at a time, by construction: `_psAskOpen` closes the first before opening a
+     second. A window that opens a dialog from a repaint could otherwise stack them, and the
+     planner would answer the same question twice with only the second answer counting. */
+  var _psAskOpen = null;
+  function _psAskField(f, i) {
+    var id = 'psask-f' + i;
+    var lab = '<label class="psask-lab" for="' + id + '">' + esc(f.label || '') +
+      (f.required ? ' <i class="psask-req" title="Required">*</i>' : '') + '</label>';
+    var ctl;
+    if (f.type === 'select') {
+      ctl = '<select class="pd-select" id="' + id + '" data-k="' + esc(f.k) + '">' +
+        (f.options || []).map(function (o) {
+          var v = (o && o.length) ? o[0] : o, t = (o && o.length > 1) ? o[1] : v;
+          return '<option value="' + esc(v) + '"' + (String(f.value) === String(v) ? ' selected' : '') +
+            '>' + esc(t) + '</option>';
+        }).join('') + '</select>';
+    } else if (f.type === 'textarea') {
+      ctl = '<textarea class="pd-input" id="' + id + '" data-k="' + esc(f.k) + '" rows="' + (f.rows || 4) +
+        '" placeholder="' + esc(f.placeholder || '') + '">' + esc(f.value == null ? '' : f.value) + '</textarea>';
+    } else if (f.type === 'checkbox') {
+      /* ⚠️ The caption goes BESIDE the box, not above it: a tick with its caption on the line
+         above reads as an unlabelled control, and this is the one field type where the caption is
+         the thing being ticked. */
+      return '<div class="psask-row psask-row-chk"><label class="psask-chk">' +
+        '<input type="checkbox" id="' + id + '" data-k="' + esc(f.k) + '"' + (f.value ? ' checked' : '') + '>' +
+        '<span>' + esc(f.label || '') + '</span></label>' +
+        (f.hint ? '<p class="psask-hint">' + f.hint + '</p>' : '') + '</div>';
+    } else if (f.type === 'static') {
+      return '<div class="psask-row psask-row-static">' + (f.label ? lab : '') +
+        '<div class="psask-static">' + (f.html || esc(f.value == null ? '' : f.value)) + '</div>' +
+        (f.hint ? '<p class="psask-hint">' + f.hint + '</p>' : '') + '</div>';
+    } else {
+      ctl = '<input class="pd-input" id="' + id + '" data-k="' + esc(f.k) + '" type="' +
+        (f.type === 'number' ? 'number' : (f.type === 'color' ? 'color' : 'text')) + '"' +
+        (f.type === 'number' && f.min != null ? ' min="' + esc(f.min) + '"' : '') +
+        (f.type === 'number' && f.max != null ? ' max="' + esc(f.max) + '"' : '') +
+        ' value="' + esc(f.value == null ? '' : f.value) + '" placeholder="' + esc(f.placeholder || '') + '">';
+    }
+    return '<div class="psask-row">' + lab + ctl +
+      (f.hint ? '<p class="psask-hint">' + f.hint + '</p>' : '') + '</div>';
+  }
+  function psAsk(opts, onOk) {
+    opts = opts || {};
+    if (_psAskOpen) { try { _psAskOpen.close(); } catch (e) {} _psAskOpen = null; }
+    var fields = (opts.fields || []).filter(Boolean);
+    var okLabel = opts.ok || (fields.length ? 'Save' : 'OK');
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h3>' + esc(opts.title || 'Confirm') + '</h3></div>' +
+      '<div class="pd-modal-body psask-body">' +
+        (opts.html ? '<div class="psask-text">' + opts.html + '</div>'
+                   : (opts.text ? '<p class="psask-text">' + esc(opts.text).replace(/\n/g, '<br>') + '</p>' : '')) +
+        (opts.note ? '<p class="psask-note">' + opts.note + '</p>' : '') +
+        (fields.length ? '<div class="psask-fields">' + fields.map(_psAskField).join('') + '</div>' : '') +
+        '<p class="psask-err" id="psask-err" hidden></p>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="psask-no">' + esc(opts.cancel || 'Cancel') + '</button>' +
+        '<button class="pd-btn ' + (opts.danger ? 'pd-btn-danger' : 'pd-btn-primary') + '" id="psask-ok">' +
+          esc(okLabel) + '</button>' +
+      '</div>', { noBackdropClose: true });
+    _psAskOpen = m;
+    var wrap = m.el;
+    wrap.querySelector('.pd-modal').classList.add('psask');
+    if (opts.wide) wrap.querySelector('.pd-modal').classList.add('psask-wide');
+    function close() {
+      document.removeEventListener('keydown', onKey, true);
+      if (_psAskOpen === m) _psAskOpen = null;
+      m.close();
+    }
+    function values() {
+      var out = {};
+      fields.forEach(function (f, i) {
+        if (f.type === 'static') return;
+        var el = wrap.querySelector('#psask-f' + i);
+        if (!el) return;
+        out[f.k] = (f.type === 'checkbox') ? !!el.checked
+                 : (f.type === 'number' ? (el.value === '' ? null : +el.value) : el.value);
+      });
+      return out;
+    }
+    function fail(msg, i) {
+      var e = wrap.querySelector('#psask-err');
+      if (e) { e.textContent = msg; e.hidden = false; }
+      var el = i == null ? null : wrap.querySelector('#psask-f' + i);
+      if (el) { try { el.focus(); if (el.select) el.select(); } catch (e2) {} }
+    }
+    function go() {
+      var v = values();
+      /* ⚠️ REQUIRED IS CHECKED HERE, not by the caller. `prompt()` returns '' for an empty box and
+         every call site had to remember to test it; half of them did not. The dialog stays open
+         and says which field, which is what a form is for. */
+      for (var i = 0; i < fields.length; i++) {
+        var f = fields[i];
+        if (f.required && f.type !== 'checkbox' && f.type !== 'static' &&
+            String(v[f.k] == null ? '' : v[f.k]).trim() === '') {
+          fail((f.label || 'This field') + ' is required.', i); return;
+        }
+      }
+      if (opts.validate) {
+        var msg = opts.validate(v);
+        if (msg) { fail(msg); return; }
+      }
+      close();
+      if (onOk) onOk(v);
+    }
+    wrap.querySelector('#psask-ok').onclick = go;
+    wrap.querySelector('#psask-no').onclick = function () { close(); if (opts.onCancel) opts.onCancel(); };
+    /* ⚠️ Enter commits from a single-line field only. In a <textarea> it is a newline, and in a
+       <select> the browser is still choosing an option. Escape always cancels.
+       ⚠️ Capture phase and removed on close — the same rule the plan window's Ctrl+Z follows: a
+       listener left on the document would answer a dialog that is no longer on screen. */
+    function onKey(ev) {
+      if (ev.key === 'Escape') {
+        ev.preventDefault(); ev.stopPropagation();
+        close(); if (opts.onCancel) opts.onCancel(); return;
+      }
+      if (ev.key === 'Enter') {
+        var t = ev.target;
+        if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+        ev.preventDefault(); ev.stopPropagation(); go();
+      }
+    }
+    document.addEventListener('keydown', onKey, true);
+    // ⚠️ The first field, not the OK button: the planner opened this to type something.
+    var first = wrap.querySelector('.psask-fields .pd-input, .psask-fields .pd-select');
+    setTimeout(function () {
+      try {
+        var t = first || wrap.querySelector('#psask-ok');
+        t.focus(); if (first && first.select) first.select();
+      } catch (e) {}
+    }, 0);
+    return m;
+  }
+  /* The one-field shorthand. ⚠️ Shaped like `prompt(label, value)` on purpose, so a converted call
+     site reads as nearly the same line it replaced — the only difference being where the rest of
+     the work now lives. */
+  function psPrompt(label, value, onOk, opts) {
+    opts = opts || {};
+    return psAsk({
+      title: opts.title || label,
+      text: opts.title ? label : (opts.text || ''),
+      html: opts.html, note: opts.note, ok: opts.ok || 'OK', danger: opts.danger, wide: opts.wide,
+      validate: opts.validate ? function (v) { return opts.validate(v.v); } : null,
+      fields: [{ k: 'v', label: opts.fieldLabel || '', type: opts.type || 'text',
+                 value: value == null ? '' : value, options: opts.options,
+                 placeholder: opts.placeholder || '', hint: opts.hint, required: !!opts.required,
+                 min: opts.min, max: opts.max, rows: opts.rows }]
+    }, function (v) { if (onOk) onOk(v.v); });
+  }
+  /* The two-button shorthand. ⚠️ `onYes` only — at nearly every converted site cancel meant
+     exactly "do nothing", and offering a second callback by default is how a site ends up with
+     the work in the wrong one. Sites that DO have to put something back (a <select> that must
+     revert to its old value) pass `opts.onCancel`. */
+  function psConfirm(text, onYes, opts) {
+    opts = opts || {};
+    return psAsk({
+      title: opts.title || 'Are you sure?',
+      text: text, html: opts.html, note: opts.note, wide: opts.wide,
+      ok: opts.ok || 'Yes, continue', cancel: opts.cancel || 'Cancel',
+      danger: opts.danger !== false, onCancel: opts.onCancel, fields: []
+    }, function () { if (onYes) onYes(); });
+  }
+  /* ⚠️⚠️ THE `await` FORM, AND IT IS THE ONE TO REACH FOR IN AN `async` FUNCTION. Roughly half
+     the converted sites were already `async` — `if (!confirm(M)) return;` then a string of
+     `await persist(...)` calls — and in those the honest conversion is one line, not a callback
+     wrapping fifty:
+
+        if (!(await psOk(M, opts))) return;
+
+     ⚠️ It resolves FALSE on cancel rather than rejecting. A rejection would have to be caught at
+     every site or it becomes an unhandled rejection in the console for the ordinary act of
+     changing your mind, and the one thing this must not do is make "no" look like a fault. */
+  function psOk(text, opts) {
+    return new Promise(function (resolve) {
+      var o = opts || {}, done = false;
+      function once(v) { if (!done) { done = true; resolve(v); } }
+      psConfirm(text, function () { once(true); },
+        { title: o.title, ok: o.ok, cancel: o.cancel, note: o.note, html: o.html, wide: o.wide,
+          danger: o.danger, onCancel: function () { once(false); } });
+    });
+  }
+  /* The `await` form of psPrompt: resolves with the typed string, or NULL on cancel — which is
+     exactly `prompt()`'s own contract, so `if (v === null) return;` survives the conversion
+     unchanged at every site that used it. */
+  function psAskText(label, value, opts) {
+    var o = opts || {};
+    return new Promise(function (resolve) {
+      var done = false;
+      function once(v) { if (!done) { done = true; resolve(v); } }
+      var f = { k: 'v', label: o.fieldLabel || '', type: o.type || 'text',
+                value: value == null ? '' : value, options: o.options,
+                placeholder: o.placeholder || '', hint: o.hint, required: !!o.required,
+                min: o.min, max: o.max, rows: o.rows };
+      psAsk({
+        title: o.title || label, text: o.title ? label : (o.text || ''),
+        note: o.note, ok: o.ok || 'OK', danger: o.danger, wide: o.wide,
+        validate: o.validate ? function (vals) { return o.validate(vals.v); } : null,
+        onCancel: function () { once(null); },
+        fields: [f]
+      }, function (vals) { once(vals.v); });
+    });
+  }
+  /* The `await` form of psAsk: resolves with the values object, or NULL on cancel.
+     ⚠️ Null rather than undefined, so `if (!v) return;` and `if (v === null)` both read true at
+     a call site, and a field legitimately named `undefined` cannot be confused with a cancel. */
+  function psAskAsync(opts) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function once(v) { if (!done) { done = true; resolve(v); } }
+      var o = {}; Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; });
+      var userCancel = o.onCancel;
+      o.onCancel = function () { if (userCancel) userCancel(); once(null); };
+      psAsk(o, function (v) { once(v); });
+    });
+  }
 
   // ---- data ----
   async function loadProjects() {
@@ -11323,7 +11650,11 @@
         b.onclick = async function () {
           var id = b.dataset.del, l = LOC_LEVELS.find(function (x) { return x.id === id; });
           var used = rows.filter(function (r) { return locValOf(r, id); }).length;
-          if (!confirm('Delete the level "' + (l ? l.name : '') + '"?' + (used ? '\n\n' + used + ' activities have a value at this level. The values stay in the data but stop being shown or groupable.' : ''))) return;
+          if (!(await psOk('Delete the level \u201c' + (l ? l.name : '') + '\u201d?', {
+            title: 'Delete this location level?', ok: 'Delete the level',
+            note: used ? (used + ' activities have a value at this level. The values stay in the data but stop being shown or groupable.')
+                       : 'No activity carries a value at this level.'
+          }))) return;
           await sb().from('location_levels').delete().eq('id', id);
           LOC_LEVELS = LOC_LEVELS.filter(function (x) { return x.id !== id; });
           groupBys = groupBys.filter(function (d) { return d !== 'loc:' + id; });
@@ -14546,8 +14877,14 @@
       b.onclick = function () {
         menu.classList.remove('open');
         if (b.dataset.lvl === 'all') {
-          if (rows.length > 4000 && !confirm('This schedule has ' + rows.length + ' rows. Expanding all may be slow. Continue?')) return;
-          collapsed = {}; renderGrid(); renderGantt(); return;
+          var _expandAll = function () { collapsed = {}; renderGrid(); renderGantt(); };
+          if (rows.length > 4000) {
+            psConfirm('This schedule has ' + rows.length + ' rows.', _expandAll,
+              { title: 'Expand the whole outline?', ok: 'Expand all', danger: false,
+                note: 'Opening every branch at once can take a few seconds on a schedule this size. Collapse to a WBS level instead to stay quick.' });
+            return;
+          }
+          _expandAll(); return;
         }
         expandToLevel(parseInt(b.dataset.lvl, 10));
       };
@@ -16238,10 +16575,12 @@
       return false;
     });
     if (!targets.length) { UI.toast('Nothing to assign — every located activity already carries a ' + lvl.name + '.', 'info'); return; }
-    if (!confirm('Set ' + lvl.name + ' = "' + val + '" on ' + targets.length + ' activit' +
-      (targets.length === 1 ? 'y' : 'ies') + '?\n\nOnly the ' + lvl.name +
-      ' is written; every other location value is left as it is. This can be undone by editing the ' +
-      lvl.name + ' column in the grid.')) return;
+    if (!(await psOk('Set ' + lvl.name + ' = \u201c' + val + '\u201d on ' + targets.length + ' activit' +
+      (targets.length === 1 ? 'y' : 'ies') + '?', {
+      title: 'Fill in the ' + lvl.name + '?', ok: 'Set it on ' + targets.length, danger: false,
+      note: 'Only the <b>' + esc(lvl.name) + '</b> is written; every other location value is left as it is. ' +
+        'An activity that already has one is never overwritten. Undo it by editing the ' + esc(lvl.name) + ' column in the grid.'
+    }))) return;
     showLoading('Assigning ' + lvl.name + ' to ' + targets.length + ' activities…');
     var ups = targets.map(function (r) {
       var loc = {}; var src = r.location || {};
@@ -22442,7 +22781,8 @@
     };
   }
   async function delStep(id, r) {
-    if (!confirm('Delete this step?')) return;
+    if (!(await psOk('Delete this step?', { title: 'Delete this step?', ok: 'Delete it',
+      note: 'The activity\u2019s physical % complete is re-weighted from the steps that remain.' }))) return;
     var res = await sb().from('activity_steps').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     UI.toast('Removed.', 'success'); await loadResourcesAssignments(); await syncPhysicalPct(r); renderDetails();
@@ -22588,7 +22928,8 @@
     };
   }
   async function delAssign(id) {
-    if (!confirm('Remove this resource assignment?')) return;
+    if (!(await psOk('Remove this resource assignment?', { title: 'Remove this assignment?', ok: 'Remove it',
+      note: 'The activity\u2019s cost is recalculated from the assignments and expenses that remain.' }))) return;
     var gone = ASSIGN.find(function (x) { return x.id === id; });
     var res = await sb().from('resource_assignments').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
@@ -22650,7 +22991,8 @@
     };
   }
   async function delExpense(id, r) {
-    if (!confirm('Delete this expense?')) return;
+    if (!(await psOk('Delete this expense?', { title: 'Delete this expense?', ok: 'Delete it',
+      note: 'The activity\u2019s cost is recalculated from the assignments and expenses that remain.' }))) return;
     var res = await sb().from('activity_expenses').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     UI.toast('Deleted.', 'success'); await loadResourcesAssignments(); await syncActivityCost(r); renderDetails(); renderGrid(); renderGantt();
@@ -23713,7 +24055,18 @@
       if (a === 'asc' || a === 'desc') { colSort = { idx: idx, dir: a === 'asc' ? 1 : -1 }; }
       else if (a === 'nosort') { colSort = null; }
       else if (a === 'fit') { fitColumn(idx); closeColMenu(); return; }
-      else if (a === 'rename') { var nn = prompt('Rename column “' + colLabel(c) + '” to:', colLabel(c)); if (nn != null) { nn = nn.trim(); if (nn && nn !== c[1]) colNames[colKey(c)] = nn; else delete colNames[colKey(c)]; try { localStorage.setItem('ps_colnames', JSON.stringify(colNames)); } catch (e2) {} renderHeader(); } closeColMenu(); return; }
+      else if (a === 'rename') {
+        closeColMenu();
+        psPrompt('What should this column be called?', colLabel(c), function (nn) {
+          nn = String(nn == null ? '' : nn).trim();
+          if (nn && nn !== c[1]) colNames[colKey(c)] = nn; else delete colNames[colKey(c)];
+          try { localStorage.setItem('ps_colnames', JSON.stringify(colNames)); } catch (e2) {}
+          renderHeader();
+        }, { title: 'Rename the “' + colLabel(c) + '” column', fieldLabel: 'Column heading',
+             hint: 'Leave it blank to go back to the built-in name. This is remembered in this browser only \u2014 it does not change the field itself or anything exported.',
+             ok: 'Rename it' });
+        return;
+      }
       else if (a === 'hide') { if (c[1] === 'Activity Name') { UI.toast('Activity Name can’t be hidden.', 'warn'); closeColMenu(); return; } colHidden[colKey(c)] = 1; try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e3) {} applyColHidden(); closeColMenu(); return; }
       try { localStorage.setItem('ps_colsort', JSON.stringify(colSort)); } catch (e4) {}
       closeColMenu(); rebuild(); renderHeader(); renderGrid(); renderGantt();
@@ -26979,7 +27332,10 @@
   }
   async function takeSnapshot() {
     if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
-    var label = prompt('Snapshot label:', 'As of ' + fmtOPCDate(dstr(today())));
+    var label = await psAskText('Name this snapshot so it can be found later.', 'As of ' + fmtOPCDate(dstr(today())), {
+      title: 'Take a snapshot', fieldLabel: 'Snapshot label', ok: 'Take the snapshot',
+      hint: 'A snapshot records where the programme stands today \u2014 the percentage, the finish and every milestone \u2014 so a later one can be compared against it.'
+    });
     if (label === null) return;
     var s = _snapSummary();
     var payload = { project_id: pid, label: label || ('As of ' + fmtOPCDate(dstr(today()))), data_date: dstr(today()), created_by: UID,
@@ -27028,7 +27384,8 @@
       '<table class="ps-snap-tbl"><thead><tr><th>Milestone</th><th>Then (forecast)</th><th>Now (forecast)</th><th style="text-align:right;">Drift</th></tr></thead><tbody>' + (body || '<tr><td colspan="4" class="ps-ck-empty">No milestones captured.</td></tr>') + '</tbody></table>';
   }
   async function deleteSnapshot(id) {
-    if (!confirm('Delete this snapshot?')) return;
+    if (!(await psOk('Delete this snapshot?', { title: 'Delete this snapshot?', ok: 'Delete it',
+      note: 'A snapshot is a saved record of where the programme stood. Deleting it changes nothing in the live schedule.' }))) return;
     var res = await sb().from('schedule_snapshots').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     _snaps = _snaps.filter(function (s) { return s.id !== id; }); renderSnapList();
@@ -27170,9 +27527,14 @@
         patch[k] = a.changes[k].from;
         lines.push('• ' + _auditFieldLabel(k) + ': ' + _auditFmtVal(r[k]) + '  →  ' + _auditFmtVal(a.changes[k].from));
       });
-      if (!confirm('Revert this change on “' + (r.activity_name || r.activity_id) + '”?\n\n' + lines.join('\n') +
-        '\n\nThe left-hand value is what the activity holds NOW — if somebody edited it after this ' +
-        'change, reverting overwrites their value too.')) return;
+      if (!(await psOk('Revert this change on “' + (r.activity_name || r.activity_id) + '”?', {
+        title: 'Revert this change?', ok: 'Revert it',
+        html: '<p class="psask-text">Revert this change on <b>' + esc(r.activity_name || r.activity_id) + '</b>?</p>' +
+          '<ul class="psask-list">' + lines.map(function (ln) {
+            return '<li>' + esc(ln.replace(/^\u2022 /, '')) + '</li>';
+          }).join('') + '</ul>',
+        note: 'The left-hand value is what the activity holds <b>now</b> \u2014 if somebody edited it after this change, reverting overwrites their value too.'
+      }))) return;
       btn.disabled = true;
       var ok = await persist(r.id, patch);
       btn.disabled = false;
@@ -27185,8 +27547,10 @@
     // Restore a deleted activity, under its original id.
     var row = a.changes._row;
     if (rows.some(function (x) { return x.id === row.id; })) { UI.toast('That activity is already back in the schedule.', 'warn'); return; }
-    if (!confirm('Restore “' + (row.activity_name || row.activity_id || row.id) + '”?\n\n' +
-      'It comes back under its original id, so relationships and assignments that pointed at it line up again.')) return;
+    if (!(await psOk('Restore “' + (row.activity_name || row.activity_id || row.id) + '”?', {
+      title: 'Restore this activity?', ok: 'Restore it', danger: false,
+      note: 'It comes back under its <b>original id</b>, so relationships and assignments that pointed at it line up again.'
+    }))) return;
     btn.disabled = true;
     var ins = await sb().from(TABLE).insert(row).select().single();
     btn.disabled = false;
@@ -27229,7 +27593,10 @@
   }
   async function captureBaseline() {
     if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
-    var name = prompt('Baseline name:', 'Baseline ' + fmtOPCDate(dstr(today())));
+    var name = await psAskText('Name this baseline.', 'Baseline ' + fmtOPCDate(dstr(today())), {
+      title: 'Capture a baseline', fieldLabel: 'Baseline name', ok: 'Capture it',
+      hint: 'It stores every activity\u2019s current dates, duration and planned cost. Nothing on the schedule changes until you <b>Set primary</b>.'
+    });
     if (name === null) return;
     var acts = {}, n = 0;
     rows.forEach(function (r) { if (isWbs(r) || !r.activity_id) return; acts[String(r.activity_id)] = [r.start_date || null, r.end_date || null, r.duration_days != null ? r.duration_days : null, r.planned_cost != null ? r.planned_cost : null]; n++; });
@@ -27252,7 +27619,10 @@
       acts[String(r.id)] = [s, f, dur, r.pcost != null ? r.pcost : null]; n++;
     });
     if (!n) { UI.toast('No activities with an Activity ID found in the file.', 'error'); return; }
-    var name = prompt('Imported baseline name:', 'Imported ' + (fname ? fname.replace(/\.[^.]+$/, '') : fmtOPCDate(dstr(today()))));
+    var name = await psAskText('Name this imported baseline.', 'Imported ' + (fname ? fname.replace(/\.[^.]+$/, '') : fmtOPCDate(dstr(today()))), {
+      title: 'Import a baseline', fieldLabel: 'Baseline name', ok: 'Import it',
+      hint: n + ' activit' + (n === 1 ? 'y was' : 'ies were') + ' matched by Activity ID. Nothing on the schedule changes until you <b>Set primary</b>.'
+    });
     if (name === null) return;
     showLoading('Saving imported baseline…');
     var res = await sb().from('schedule_baselines').insert({ project_id: pid, name: name || ('Imported ' + fmtOPCDate(dstr(today()))), created_by: UID, activity_count: n, activities: acts });
@@ -27270,10 +27640,12 @@
     if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
     var n = rows.filter(function (r) { return !isWbs(r) && (r.bl_start || r.bl_finish || r.bl_cost != null); }).length;
     if (!n) { UI.toast('No activity carries baseline dates — nothing to clear.', 'info'); return; }
-    if (!confirm('Clear the baseline from ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '?\n\n' +
-      'BL Start, BL Finish and BL Cost are emptied, which unlocks Planned Duration and clears the ' +
-      'baseline variance columns. The current schedule (Start / Finish) is NOT touched.\n\n' +
-      'Saved baselines are kept — you can re-apply one with "Set primary" at any time.')) return;
+    if (!(await psOk('Clear the baseline from ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '?', {
+      title: 'Clear the baseline stamp?', ok: 'Clear it from ' + n,
+      note: '<b>BL Start</b>, <b>BL Finish</b> and <b>BL Cost</b> are emptied, which unlocks Planned Duration and clears the ' +
+        'baseline variance columns. The current schedule (Start / Finish) is <b>not</b> touched. ' +
+        'Saved baselines are kept \u2014 you can re-apply one with <b>Set primary</b> at any time.'
+    }))) return;
     showLoading('Clearing baseline…');
     // One filtered write for the whole project: the same value is going to every row.
     var res = await sb().from(TABLE).update({ bl_start: null, bl_finish: null, bl_cost: null }).eq('project_id', pid);
@@ -27286,7 +27658,10 @@
   }
   async function setPrimaryBaseline(id) {
     var b = _bls.find(function (x) { return x.id === id; }); if (!b) return;
-    if (!confirm('Set “' + (b.name || '') + '” as the primary baseline?\n\nThis overwrites each activity’s Baseline Start/Finish (BL0) — the Gantt baseline bar and variance will use it.')) return;
+    if (!(await psOk('Set “' + (b.name || '') + '” as the primary baseline?', {
+      title: 'Apply this baseline?', ok: 'Set it primary', danger: false,
+      note: 'This overwrites each activity\u2019s <b>Baseline Start / Finish</b> (BL0) \u2014 the Gantt baseline bar and every variance column will be measured against it from now on.'
+    }))) return;
     showLoading('Applying baseline…');
     await sb().from('schedule_baselines').update({ is_primary: false }).eq('project_id', pid).neq('id', id);
     await sb().from('schedule_baselines').update({ is_primary: true }).eq('id', id);
@@ -27343,7 +27718,8 @@
     }; });
   }
   async function deleteBaseline(id) {
-    if (!confirm('Delete this baseline?')) return;
+    if (!(await psOk('Delete this baseline?', { title: 'Delete this baseline?', ok: 'Delete it',
+      note: 'The saved snapshot goes. Any baseline dates already stamped onto the activities stay where they are \u2014 use <b>Clear baseline dates</b> to remove those.' }))) return;
     var res = await sb().from('schedule_baselines').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     _bls = _bls.filter(function (b) { return b.id !== id; }); renderBlList();
@@ -27398,7 +27774,10 @@
   }
   async function captureScenario() {
     if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
-    var name = prompt('Scenario name:', 'What-if ' + fmtOPCDate(dstr(today())));
+    var name = await psAskText('Name this what-if.', 'What-if ' + fmtOPCDate(dstr(today())), {
+      title: 'Capture a scenario', fieldLabel: 'Scenario name', ok: 'Capture it',
+      hint: 'It stores every activity\u2019s dates, duration, progress, predecessors and planned cost, so the live schedule can be rolled back to this point.'
+    });
     if (name === null) return;
     var acts = {}, n = 0;
     rows.forEach(function (r) { if (isWbs(r) || !r.activity_id) return; acts[String(r.activity_id)] = [r.start_date || null, r.end_date || null, r.duration_days != null ? r.duration_days : null, r.percent_complete != null ? r.percent_complete : null, r.predecessors || null, r.planned_cost != null ? r.planned_cost : null, r.bl_start || null, r.bl_finish || null]; n++; });
@@ -27440,7 +27819,11 @@
   }
   async function restoreScenario(id) {
     var s = _scns.find(function (x) { return x.id === id; }); if (!s) return;
-    if (!confirm('Restore “' + (s.name || '') + '”?\n\nThis OVERWRITES every activity’s Start / Finish / Duration / % Complete / Predecessors / Planned Cost with the scenario’s values, rolling back any changes made since it was captured. Baseline (BL0) and actuals are not touched.')) return;
+    if (!(await psOk('Restore “' + (s.name || '') + '”?', {
+      title: 'Roll the schedule back to this scenario?', ok: 'Restore it',
+      note: 'This <b>overwrites</b> every activity\u2019s Start, Finish, Duration, % Complete, Predecessors and Planned Cost with the scenario\u2019s values, ' +
+        'rolling back every change made since it was captured. Baseline (BL0) and actuals are not touched.'
+    }))) return;
     var acts = s.activities || {}, byId = {}; rows.forEach(function (r) { if (r.activity_id) byId[String(r.activity_id)] = r; });
     var patches = []; Object.keys(acts).forEach(function (aid) { var r = byId[aid]; if (!r) return; var a = acts[aid]; patches.push({ id: r.id, start_date: a[0] || null, end_date: a[1] || null, duration_days: a[2] != null ? a[2] : null, percent_complete: a[3] != null ? a[3] : null, predecessors: a[4] || null, planned_cost: a[5] != null ? a[5] : null }); });
     showLoading('Restoring scenario…');
@@ -27457,7 +27840,8 @@
     closeScenarios(); await load();
   }
   async function deleteScenario(id) {
-    if (!confirm('Delete this scenario?')) return;
+    if (!(await psOk('Delete this scenario?', { title: 'Delete this what-if?', ok: 'Delete it',
+      note: 'A scenario is a saved copy of the schedule\u2019s dates. Deleting it changes nothing in the live schedule.' }))) return;
     var res = await sb().from('schedule_scenarios').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     _scns = _scns.filter(function (x) { return x.id !== id; }); if (_scnSel === id) _scnSel = null;
@@ -27642,17 +28026,33 @@
     body.querySelectorAll('[data-thr-del]').forEach(function (b) { b.onclick = function () { delThreshold(b.dataset.thrDel); }; });
     var gen = document.getElementById('ps-thr-gen'); if (gen && breaches) gen.onclick = function () { generateIssues(breaches); };
   }
+  /* \u26a0\u26a0 THREE `prompt()`s IN A ROW BECAME ONE FORM, and this site is the clearest argument
+     for the change. The first box printed a hand-numbered menu of every metric and asked for a
+     NUMBER between 1 and 7 \u2014 a <select> written out in text, with a typo for every way of getting
+     it wrong. The second asked for a value with no idea which metric it belonged to unless the
+     planner remembered. The third asked for a severity as free text and quietly rewrote anything
+     it did not recognise as \u201cMedium\u201d. One dialog asks all three, each from a list. */
   async function addThreshold() {
     if (!pid) return;
-    var opts = _THR_METRICS.map(function (m, i) { return (i + 1) + ') ' + m.label; }).join('\n');
-    var pick = prompt('Which metric?\n' + opts + '\n\nEnter 1-' + _THR_METRICS.length + ':', '1');
-    if (pick === null) return; var mi = parseInt(pick, 10) - 1; var m = _THR_METRICS[mi]; if (!m) { UI.toast('Invalid choice.', 'warn'); return; }
-    var val = prompt(m.label + '\n\nThreshold value (days):', m.k === 'float_below' ? '0' : '10');
-    if (val === null) return; var v = parseFloat(val); if (isNaN(v)) { UI.toast('Value must be a number.', 'warn'); return; }
-    var sev = prompt('Severity — Low / Medium / High:', 'Medium'); if (sev === null) return; sev = (sev || 'Medium').trim();
-    if (['Low', 'Medium', 'High'].indexOf(sev) === -1) sev = 'Medium';
-    var res = await sb().from('schedule_thresholds').insert({ project_id: pid, name: m.label, metric: m.k, value: v, severity: sev, enabled: true, created_by: UID }).select().single();
-    if (res.error) { UI.toast(res.error.message + ' — run the schedule-thresholds migration.', 'error'); return; }
+    var v = await psAskAsync({
+      title: 'Add a threshold',
+      text: 'A threshold watches one number on every activity and reports the ones that breach it.',
+      ok: 'Add the rule',
+      fields: [
+        { k: 'metric', label: 'Watch', type: 'select', value: _THR_METRICS[0].k,
+          options: _THR_METRICS.map(function (m) { return [m.k, m.label]; }) },
+        { k: 'value', label: 'Threshold value (days)', type: 'number', value: 10, required: true,
+          hint: 'Float below 0 catches negative float; the others are a number of days to exceed.' },
+        { k: 'sev', label: 'Severity', type: 'select', value: 'Medium',
+          options: [['Low', 'Low'], ['Medium', 'Medium'], ['High', 'High']],
+          hint: 'Carried onto any issue raised from a breach of this rule.' }
+      ],
+      validate: function (vv) { return isFinite(+vv.value) ? '' : 'The threshold value has to be a number.'; }
+    });
+    if (!v) return;
+    var m = thrMetric(v.metric); if (!m) { UI.toast('Pick a metric.', 'warn'); return; }
+    var res = await sb().from('schedule_thresholds').insert({ project_id: pid, name: m.label, metric: m.k, value: +v.value, severity: v.sev, enabled: true, created_by: UID }).select().single();
+    if (res.error) { UI.toast(res.error.message + ' \u2014 run the schedule-thresholds migration.', 'error'); return; }
     _thresholds.push(res.data); renderThresholds();
   }
   async function toggleThreshold(id, on) {
@@ -27661,7 +28061,8 @@
     var t = _thresholds.find(function (x) { return x.id === id; }); if (t) t.enabled = on;
   }
   async function delThreshold(id) {
-    if (!confirm('Delete this threshold?')) return;
+    if (!(await psOk('Delete this threshold?', { title: 'Delete this threshold?', ok: 'Delete it',
+      note: 'Breaches already raised as issues stay where they are; only the rule that finds them goes.' }))) return;
     var res = await sb().from('schedule_thresholds').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     _thresholds = _thresholds.filter(function (x) { return x.id !== id; }); renderThresholds();
@@ -27699,7 +28100,10 @@
   function _thrIssueTitle(b) { return '[Threshold] ' + (b.r.activity_id || b.r.activity_name || '') + ' — ' + b.desc; }
   async function generateIssues(breaches) {
     if (!breaches.length) return;
-    if (!confirm('Create ' + breaches.length + ' issues from these breaches? Duplicates (same activity + rule, still open) are skipped.')) return;
+    if (!(await psOk('Create ' + breaches.length + ' issue(s) from these breaches?', {
+      title: 'Raise these as issues?', ok: 'Create the issues', danger: false,
+      note: 'They land in <b>Issues &amp; Lessons</b> under the Schedule Threshold category. A breach that already has an open issue for the same activity and rule is skipped.'
+    }))) return;
     showLoading('Checking existing issues…');
     // dedup against open Schedule-Threshold issues already in issues_lessons
     var existing = {};
@@ -28048,7 +28452,10 @@
   }
   async function gcApply() {
     var matched = gcPreview(); if (!matched || !matched.length) return;
-    if (!confirm('Apply these changes to ' + matched.length + ' activities? This is a bulk change and cannot be individually undone.')) return;
+    if (!(await psOk('Apply these changes to ' + matched.length + ' activities?', {
+      title: 'Run this global change?', ok: 'Apply to ' + matched.length,
+      note: 'This is a <b>bulk</b> change: the rows are written in batches and cannot be undone one at a time.'
+    }))) return;
     showLoading('Applying to ' + matched.length + ' activities…');
     var ok = 0, err = null, CH = 40;
     for (var i = 0; i < matched.length && !err; i += CH) {
@@ -28116,7 +28523,12 @@
   }
   async function addCodeType() {
     if (!pid) return;
-    var name = prompt('Code type name (e.g. Phase, Area, Zone):'); if (!name || !name.trim()) return;
+    var name = await psAskText('Name the code type.', '', {
+      title: 'Add an activity code', fieldLabel: 'Code type name', required: true, ok: 'Add it',
+      placeholder: 'Phase, Area, Zone\u2026',
+      hint: 'An activity code is a project-defined field you can group, filter and colour the schedule by. Its values are added next.'
+    });
+    if (name === null || !String(name).trim()) return;
     var res = await sb().from('activity_code_types').insert({ project_id: pid, name: name.trim(), sort_order: CODE_TYPES.length, created_by: UID }).select().single();
     if (res.error) { UI.toast(res.error.message + ' — run the activity-codes migration.', 'error'); return; }
     CODE_TYPES.push(res.data); _codesSelType = res.data.id;
@@ -28130,7 +28542,8 @@
     UI.toast('Renamed.', 'success'); populateGroupSelect(); renderCodesList(); renderCodesDetail(); buildFilterMenu();
   }
   async function delCodeType(id) {
-    if (!confirm('Delete this code type and all its values? Activities keep their history but lose this code assignment.')) return;
+    if (!(await psOk('Delete this code type and all its values?', { title: 'Delete this activity code?', ok: 'Delete it',
+      note: 'Activities keep their history but lose this code assignment, and any grouping or filter that used it falls back.' }))) return;
     var res = await sb().from('activity_code_types').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     CODE_TYPES = CODE_TYPES.filter(function (x) { return x.id !== id; });
@@ -28146,7 +28559,8 @@
     CODE_VALUES.push(res.data); renderCodesDetail(); renderCodesList(); buildFilterMenu();
   }
   async function delCodeValue(id) {
-    if (!confirm('Delete this value? Activities assigned to it will show as unassigned.')) return;
+    if (!(await psOk('Delete this value?', { title: 'Delete this code value?', ok: 'Delete it',
+      note: 'Activities assigned to it will show as unassigned.' }))) return;
     var res = await sb().from('activity_code_values').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     CODE_VALUES = CODE_VALUES.filter(function (x) { return x.id !== id; });
@@ -28186,8 +28600,17 @@
   }
   async function addCostAccount(parentId) {
     if (!pid) return;
-    var name = prompt('Cost account name' + (parentId ? ' (child of ' + costAcctLabel(parentId) + ')' : '') + ':'); if (name == null || !name.trim()) return;
-    var code = prompt('Account code (optional, e.g. 01-100):') || '';
+    var _v = await psAskAsync({
+      title: parentId ? ('Add an account under ' + costAcctLabel(parentId)) : 'Add a top-level cost account',
+      ok: 'Add the account',
+      fields: [
+        { k: 'name', label: 'Account name', value: '', required: true, placeholder: 'Site Office' },
+        { k: 'code', label: 'Account code (optional)', value: '', placeholder: '01-100',
+          hint: 'Free text. It is what the cost reports sort and roll up by, so keep the numbering consistent down the tree.' }
+      ]
+    });
+    if (!_v) return;
+    var name = _v.name, code = _v.code || '';
     var sibs = costAcctChildren(parentId || null).length;
     var res = await sb().from('cost_accounts').insert({ project_id: pid, parent_id: parentId || null, name: name.trim(), code: code.trim() || null, sort_order: sibs, created_by: UID }).select().single();
     if (res.error) { UI.toast(res.error.message + ' — run the resource-cost-parity migration.', 'error'); return; }
@@ -28195,8 +28618,16 @@
   }
   async function editCostAccount(id) {
     var a = costAcctById(id); if (!a) return;
-    var name = prompt('Account name:', a.name || ''); if (name == null) return; name = name.trim(); if (!name) { UI.toast('Name required.', 'warn'); return; }
-    var code = prompt('Account code (optional):', a.code || ''); if (code == null) code = a.code || '';
+    var _v = await psAskAsync({
+      title: 'Rename this cost account', ok: 'Save',
+      fields: [
+        { k: 'name', label: 'Account name', value: a.name || '', required: true },
+        { k: 'code', label: 'Account code (optional)', value: a.code || '', placeholder: '01-100' }
+      ]
+    });
+    if (!_v) return;
+    var name = String(_v.name).trim(); if (!name) { UI.toast('Name required.', 'warn'); return; }
+    var code = _v.code == null ? (a.code || '') : _v.code;
     var res = await sb().from('cost_accounts').update({ name: name, code: code.trim() || null }).eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     a.name = name; a.code = code.trim() || null; UI.toast('Saved.', 'success'); renderCostAccounts();
@@ -28204,7 +28635,11 @@
   async function delCostAccount(id) {
     if (costAcctChildren(id).length) { UI.toast('This account has sub-accounts — delete or move them first.', 'warn'); return; }
     var used = costAcctUsage(id);
-    if (!confirm('Delete cost account “' + costAcctLabel(id) + '”?' + (used ? ' ' + used + ' assignment/expense reference(s) will become unassigned.' : ''))) return;
+    if (!(await psOk('Delete cost account “' + costAcctLabel(id) + '”?', {
+      title: 'Delete this cost account?', ok: 'Delete it',
+      note: used ? (used + ' assignment/expense reference(s) will become unassigned.')
+                 : 'Nothing references it.'
+    }))) return;
     var res = await sb().from('cost_accounts').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     COST_ACCTS = COST_ACCTS.filter(function (x) { return x.id !== id; });
@@ -28234,16 +28669,29 @@
   }
   async function addUdfDef() {
     if (!pid) return;
-    var name = prompt('Field name:'); if (!name || !name.trim()) return;
-    var type = prompt('Field type — one of: text, number, date, cost', 'text');
-    if (type === null) return; type = (type || 'text').trim().toLowerCase();
-    if (['text', 'number', 'date', 'cost'].indexOf(type) === -1) { UI.toast('Type must be text, number, date, or cost.', 'warn'); return; }
+    /* \u26a0 The type was a free-text box listing its own four legal answers, which is a <select>
+       written as a sentence \u2014 and a typo in it fell through to a toast rather than to the field
+       being created. It is the list now, so an illegal value cannot be typed. */
+    var _v = await psAskAsync({
+      title: 'Add a user-defined field', ok: 'Add the field',
+      text: 'A user-defined field is a column of your own on every activity in this project.',
+      fields: [
+        { k: 'name', label: 'Field name', value: '', required: true, placeholder: 'Subcontractor' },
+        { k: 'type', label: 'Field type', type: 'select', value: 'text',
+          options: _UDF_TYPES.map(function (t) { return [t[0], t[1]]; }),
+          hint: 'This decides how the column sorts, totals and formats. It cannot be changed afterwards.' }
+      ]
+    });
+    if (!_v) return;
+    var name = _v.name, type = String(_v.type || 'text').trim().toLowerCase();
+    if (['text', 'number', 'date', 'cost'].indexOf(type) === -1) type = 'text';
     var res = await sb().from('activity_udf_defs').insert({ project_id: pid, name: name.trim(), field_type: type, sort_order: UDF_DEFS.length, created_by: UID }).select().single();
     if (res.error) { UI.toast(res.error.message + ' — run the user-defined-fields migration.', 'error'); return; }
     UDF_DEFS.push(res.data); renderUdfList();
   }
   async function delUdfDef(id) {
-    if (!confirm('Delete this field? Activities keep their stored value but it will no longer be shown or editable.')) return;
+    if (!(await psOk('Delete this field?', { title: 'Delete this user-defined field?', ok: 'Delete it',
+      note: 'Activities keep their stored value, but it will no longer be shown or editable anywhere.' }))) return;
     var res = await sb().from('activity_udf_defs').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     UDF_DEFS = UDF_DEFS.filter(function (x) { return x.id !== id; }); renderUdfList();
@@ -28428,7 +28876,8 @@
     };
   }
   async function delCommitment(id) {
-    if (!confirm('Delete this commitment?')) return;
+    if (!(await psOk('Delete this commitment?', { title: 'Delete this commitment?', ok: 'Delete it',
+      note: 'It leaves this week\u2019s plan and stops counting towards PPC.' }))) return;
     var res = await sb().from('weekly_commitments').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     LP_ALL = LP_ALL.filter(function (x) { return x.id !== id; });
@@ -30431,7 +30880,8 @@
     if (wbsChildren(id).length) { UI.toast('This WBS has sub-nodes — delete or move them first.', 'warn'); return; }
     var nAct = wbsActivityCount(id);
     if (nAct) { UI.toast('This WBS has ' + nAct + ' activit' + (nAct === 1 ? 'y' : 'ies') + ' — move or delete them first.', 'warn'); return; }
-    if (!confirm('Delete WBS “' + n.name + '”?')) return;
+    if (!(await psOk('Delete WBS “' + n.name + '”?', { title: 'Delete this WBS branch?', ok: 'Delete the branch',
+      note: 'It holds no sub-nodes and no activities \u2014 that was checked before this was offered. Its WBS Summary row goes with it.' }))) return;
     await sb().from('wbs_nodes').delete().eq('id', id);
     /* ⚠️ THE PROJECTION IS DELETED ON THE SERVER, BY LINK — the in-memory lookup alone left an
        ORPHANED WBS Summary row whenever `rows` did not happen to hold it, and a branch row whose
@@ -31024,7 +31474,10 @@
       return isWbs(r) && !r.wbs_node_id && r.wbs && !_adoptedCodes[String(r.wbs)];
     });
     if (!legacy.length) { _wbsAdoptBroken = false; if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
-    if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
+    if (!silent && !(await psOk('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows?', {
+      title: 'Adopt these rows into the WBS tree?', ok: 'Build the tree', danger: false,
+      note: 'Their dotted codes are preserved as custom codes, so nothing that references a code changes.'
+    }))) return 0;
     var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
     _adoptDeferred = 0;
     _adoptOrphaned = [];
@@ -32181,12 +32634,17 @@
       if (!ok.length) return;
       var r0 = rec();
       var shift = ok.reduce(function (s, p) { return Math.max(s, p.plan.shift); }, 0);
-      if (!confirm('Insert ' + r0.reference_no + ' into ' + ok.length + ' activit' + (ok.length === 1 ? 'y' : 'ies') + '?\n\n' +
-        '· each stays ONE line item, its bar drawn in two pieces with the change order in the gap\n' +
-        '· ' + ok.length + ' change-order activit' + (ok.length === 1 ? 'y is' : 'ies are') + ' created, each linked SS into its host\n' +
-        '· every one of those ' + ok.length + ' line items finishes later, by up to ' + shift + ' day(s)\n' +
-        '· successors are left alone — they still follow their row, which now finishes later\n' +
-        '\nNot per-step undoable.')) return;
+      if (!(await psOk('Insert ' + r0.reference_no + ' into ' + ok.length + ' activit' + (ok.length === 1 ? 'y' : 'ies') + '?', {
+        title: 'Insert this change order?', ok: 'Insert into ' + ok.length, wide: true,
+        html: '<p class="psask-text">Insert <b>' + esc(r0.reference_no) + '</b> into <b>' + ok.length + '</b> activit' + (ok.length === 1 ? 'y' : 'ies') + '?</p>' +
+          '<ul class="psask-list">' +
+            '<li>each stays <b>one line item</b>, its bar drawn in two pieces with the change order in the gap</li>' +
+            '<li>' + ok.length + ' change-order activit' + (ok.length === 1 ? 'y is' : 'ies are') + ' created, each linked <b>SS</b> into its host</li>' +
+            '<li>every one of those ' + ok.length + ' line items finishes later, by up to <b>' + shift + '</b> day(s)</li>' +
+            '<li>successors are left alone \u2014 they still follow their row, which now finishes later</li>' +
+          '</ul>',
+        note: 'Not undoable step by step.'
+      }))) return;
       m.close();
       showLoading('Inserting ' + ok.length + ' change order' + (ok.length === 1 ? '' : 's') + '…');
       var err = null, made = 0;
@@ -32303,12 +32761,17 @@
   async function applySplit(host, plan, co) {
     var b = splitBuild(host, plan, co);
     var own = plan.seg1.dur + plan.seg2.dur, span = own + plan.co.dur;
-    if (!confirm('Insert the change order into “' + (host.activity_name || host.activity_id) + '”?\n\n' +
-      '· this activity stays ONE line item; its BAR is drawn in two pieces with the change order in the gap\n' +
-      '· it keeps all ' + own + ' day(s) of its own work and now spans ' + span + ' day(s), finishing ' + Fmt.date(dstr(plan.seg2.end)) + '\n' +
-      '· 1 activity is created: the change order, linked SS+' + plan.seg1.dur + ' so it sits where the work stops\n' +
-      '· its successors are left alone — they still follow this row, which now finishes later\n' +
-      '\nThe line item finishes ' + plan.shift + ' day(s) later. Not per-step undoable.')) return;
+    if (!(await psOk('Insert the change order into “' + (host.activity_name || host.activity_id) + '”?', {
+      title: 'Insert this change order?', ok: 'Insert it', wide: true,
+      html: '<p class="psask-text">Insert the change order into <b>' + esc(host.activity_name || host.activity_id) + '</b>?</p>' +
+        '<ul class="psask-list">' +
+          '<li>this activity stays <b>one line item</b>; its bar is drawn in two pieces with the change order in the gap</li>' +
+          '<li>it keeps all <b>' + own + '</b> day(s) of its own work and now spans <b>' + span + '</b> day(s), finishing <b>' + esc(Fmt.date(dstr(plan.seg2.end))) + '</b></li>' +
+          '<li>1 activity is created: the change order, linked <b>SS+' + plan.seg1.dur + '</b> so it sits where the work stops</li>' +
+          '<li>its successors are left alone \u2014 they still follow this row, which now finishes later</li>' +
+        '</ul>',
+      note: 'The line item finishes <b>' + plan.shift + '</b> day(s) later. Not undoable step by step.'
+    }))) return;
     showLoading('Inserting change order…');
     var err = null;
     try {
@@ -32379,13 +32842,19 @@
     var ownDur = segs.reduce(function (t, r) { return t + (r.duration_days || 0); }, 0);
     var span = dayDiff(fs2, le) + 1;
     var gapCos = _splitGapCos(segs, fs2);
-    if (!confirm('Merge “' + (first.activity_name || '') + '” back into one line item?\n\n' +
-      '· ' + rest.length + ' continuation row(s) are deleted\n' +
-      '· it becomes ONE row of ' + ownDur + ' own day(s) spanning ' + span + ' day(s) to ' + Fmt.date(dstr(le)) + ' — the finish does NOT move, so the change order time impact is kept\n' +
-      (gapCos.length
-        ? '· ' + gapCos.length + ' change order(s) are re-linked SS into this row, so its bar draws in pieces around them\n'
-        : '· no change order was found in the gap(s), so the bar will draw unbroken\n') +
-      '· the change order(s) themselves are KEPT — delete them separately if that is what you want\n\nNot per-step undoable.')) return;
+    if (!(await psOk('Merge “' + (first.activity_name || '') + '” back into one line item?', {
+      title: 'Merge this split back together?', ok: 'Merge it', wide: true,
+      html: '<p class="psask-text">Merge <b>' + esc(first.activity_name || '') + '</b> back into one line item?</p>' +
+        '<ul class="psask-list">' +
+          '<li><b>' + rest.length + '</b> continuation row(s) are deleted</li>' +
+          '<li>it becomes <b>one row</b> of ' + ownDur + ' own day(s) spanning ' + span + ' day(s) to <b>' + esc(Fmt.date(dstr(le))) + '</b> \u2014 the finish does <b>not</b> move, so the change order\u2019s time impact is kept</li>' +
+          (gapCos.length
+            ? '<li>' + gapCos.length + ' change order(s) are re-linked <b>SS</b> into this row, so its bar draws in pieces around them</li>'
+            : '<li>no change order was found in the gap(s), so the bar will draw unbroken</li>') +
+          '<li>the change order(s) themselves are <b>kept</b> \u2014 delete them separately if that is what you want</li>' +
+        '</ul>',
+      note: 'Not undoable step by step.'
+    }))) return;
     showLoading('Merging…');
     var err = null;
     try {
@@ -32442,14 +32911,22 @@
       return;
     }
     var names = followers.slice(0, 8).map(function (r) { return (r.activity_id || '') + ' ' + (r.activity_name || ''); });
-    var more = followers.length > 8 ? '\n  …and ' + (followers.length - 8) + ' more' : '';
-    var msg = 'Splice this change order into the main-contract chain?\n\n' +
-      coRow.activity_id + ' currently follows: ' + preds.join(', ') + '\n\n' +
-      'OK  — insert it BETWEEN: these ' + followers.length + ' activit' + (followers.length === 1 ? 'y' : 'ies') + ' will follow the change order instead of ' + preds.join('/') + '.\n' +
-      'The change order then DRIVES them, which is what makes the variation time impact visible on the critical path:\n  ' +
-      names.join('\n  ') + more + '\n\n' +
-      'Cancel — leave it in PARALLEL: the change order runs alongside that work without delaying it.';
-    if (!confirm(msg)) { UI.toast('Change order left running in parallel — nothing was re-pointed.', 'info'); return; }
+    var more = followers.length > 8 ? (followers.length - 8) + ' more' : '';
+    /* \u26a0\u26a0 THE TWO BUTTONS ARE THE TWO ANSWERS, which a browser confirm() could only express
+       as \u201cOK\u201d and \u201cCancel\u201d with a paragraph explaining which was which. Splice and
+       Leave in parallel are both real choices here \u2014 neither is \u201cdo nothing\u201d \u2014 and naming
+       them on the buttons is the whole reason this dialog reads better than the box it replaced. */
+    if (!(await psOk('Splice this change order into the main-contract chain?', {
+      title: 'Splice it in, or leave it in parallel?', wide: true,
+      ok: 'Insert it between', cancel: 'Leave it in parallel', danger: false,
+      html: '<p class="psask-text"><b>' + esc(coRow.activity_id) + '</b> currently follows ' + esc(preds.join(', ')) + '.</p>' +
+        '<p class="psask-text"><b>Insert it between</b> \u2014 these ' + followers.length + ' activit' + (followers.length === 1 ? 'y' : 'ies') +
+          ' will follow the change order instead of ' + esc(preds.join('/')) + '. The change order then <b>drives</b> them, ' +
+          'which is what makes the variation\u2019s time impact visible on the critical path:</p>' +
+        '<ul class="psask-list">' + names.map(function (nm) { return '<li>' + esc(nm) + '</li>'; }).join('') +
+          (more ? '<li>\u2026and ' + esc(more) + '</li>' : '') + '</ul>',
+      note: '<b>Leave it in parallel</b> \u2014 the change order runs alongside that work without delaying it.'
+    }))) { UI.toast('Change order left running in parallel \u2014 nothing was re-pointed.', 'info'); return; }
     showLoading('Re-pointing ' + followers.length + ' relationship' + (followers.length === 1 ? '' : 's') + '…');
     for (var i = 0; i < followers.length; i++) {
       var f = followers[i], next = f.predecessors;
@@ -32832,6 +33309,30 @@
     // (a "Structural" from the builder beside "Structural Works" from the import). GR/OT have no WORK_CANON
     // entry, so they keep their GLABEL name.
     var GWORK = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural Works', AR: 'Architectural Works', MEPF: 'MEPF Works', SD: 'Site Development', ALLIED: 'Allied Services', OT: 'Others' };
+    /* ==== THE TRADE THAT IS NOWHERE IN PARTICULAR ======================================
+       Owner 2026-09-17: *"general requirements should have no tower, floor, or zones."*
+
+       ⚠️⚠️ AND THIS OVERTURNS A PREVIOUS ANSWER, deliberately — the note in generate() records
+       the owner saying on 2026-09-03 *"i dont think if there is no floors or zones under a
+       trade, it should have an all location. if it is still under tower 1, then it is under
+       tower 1."* That was about a trade that HAPPENS to have no floors typed in yet, and it is
+       still right for one. General Requirements is a different thing: mobilisation, the site
+       office, insurances, the safety programme and the as-built documentation are not IN a
+       storey or a tower, they are the job. Giving them one tower out of seven is not a
+       conservative default — it is a claim, it lands them inside that tower's branch of the WBS,
+       and it makes the stacking draw preliminaries as if they happened on a floor.
+       ⚠️ ONE LIST, READ IN FOUR PLACES — the editor (no floors can be typed for it), locList (no
+       leaves come out of it), catalogueFrom (nothing of its gets into the location catalogue) and
+       generate (its single occurrence carries no tower). Spread across four independent `=== 'GR'`
+       tests, the first change to it would leave three of them behind.
+       ⚠️ Its zoning is NOT deleted from configs that already have some. It is ignored, so a
+       project that typed floors under General Requirements before today can be moved back by
+       taking this key out — deleting the data would make the change one-way for no gain. */
+    var LOCLESS = { GR: 1 };
+    function locless(tr) { return !!LOCLESS[tr]; }
+    // The used trades that DO break down by location — the editor, the plan step and the scope
+    // grid all mean this, never the full `usedGroups()`.
+    function locGroups() { return usedGroups().filter(function (g) { return !locless(g); }); }
     var GCOLOR = { GR: '#8a5cd1', SW: '#c07f2c', ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', SD: '#b8860b', ALLIED: '#1f8f4e', OT: '#0d9488' };
     // ⚠️ Structural's brand Dark Gray (#2B2C2B) is EXACTLY the dark-mode card colour, so on a dark
     // surface the trade name rendered dark-on-dark and was unreadable (reported on the Auto-trace
@@ -33392,8 +33893,12 @@
         var ct = parseContract(text); if (!ct) return;
         var was = a.contract; a.contract = ct;
         if (ct === 'change_order' && was !== 'change_order' && !a.coRef) {
-          var ref = prompt('Change order reference for "' + (a.name || a.code || 'this activity') + '" (e.g. VO-014 — leave blank to fill in later):', '');
-          if (ref != null) a.coRef = String(ref).trim();
+          psPrompt('Which change order does this line belong to?', '', function (ref) {
+            a.coRef = String(ref == null ? '' : ref).trim(); markDirty(); render();
+          }, { title: 'Change order reference', fieldLabel: 'Reference',
+               text: 'For “' + (a.name || a.code || 'this activity') + '”.',
+               placeholder: 'VO-014', ok: 'Set the reference',
+               hint: 'Leave it blank to fill in later \u2014 the line is still marked as change-order work either way.' });
         }
         if (ct !== 'change_order') a.coRef = '';   // a ref on a main-contract line is worse than none
       }
@@ -33947,8 +34452,10 @@
       /* ⚠️ Deleting a SETUP never touches the SCHEDULE it pushed. Those activities are
          real work with real progress on them; the setup is only the recipe. Said out
          loud in the prompt, because the two are easy to confuse. */
-      if (!confirm('Delete the setup “' + (row.name || 'Untitled') + '”?\n\n' +
-        'This removes the builder setup only. Activities already pushed into the schedule are NOT deleted.')) return;
+      if (!(await psOk('Delete the setup “' + (row.name || 'Untitled') + '”?', {
+        title: 'Delete this setup?', ok: 'Delete the setup',
+        note: 'This removes the builder <b>recipe</b> only. Activities already pushed into the schedule are <b>not</b> deleted \u2014 they are real work with real progress on them.'
+      }))) return;
       var r = await sbc().from('schedule_builder').delete().eq('id', id);
       if (r.error) { UI.toast(r.error.message, 'error'); return; }
       if (curSetupId === id) { await loadSetups(); applySetup(pickDefaultSetup()); }
@@ -33983,15 +34490,15 @@
           can correct it and push again. Anything else would be a silent bulk delete. */
     function restoreFromPush(row) {
       if (!row || !row.config) return;
-      if (!confirm('Load the setup as it was when “' + (row.setup_name || 'a setup') + '” was pushed on ' +
-        Fmt.date(String(row.pushed_at || '').slice(0, 10)) + '?\n\n' +
-        'Your current unsaved edits are replaced. Activities already in the schedule are NOT changed — ' +
-        'correct the setup, then push again.')) return;
-      cfg = normalize(row.config);
-      curPkgId = row.package_id || curPkgId;
-      markDirty(); setState('Restored from a push — unsaved');
-      render();
-      UI.toast('Setup restored from the push. Review it, then Save.', 'success');
+      psConfirm('Load the setup as it was when “' + (row.setup_name || 'a setup') + '” was pushed on ' +
+        Fmt.date(String(row.pushed_at || '').slice(0, 10)) + '?', function () {
+        cfg = normalize(row.config);
+        curPkgId = row.package_id || curPkgId;
+        markDirty(); setState('Restored from a push \u2014 unsaved');
+        render();
+        UI.toast('Setup restored from the push. Review it, then Save.', 'success');
+      }, { title: 'Restore this push snapshot?', ok: 'Load that setup',
+           note: 'Your current unsaved edits are replaced. Activities already in the schedule are <b>not</b> changed \u2014 correct the setup, then push again.' });
     }
     /* The Setups dialog: every saved setup for this project, grouped by contract
        package, plus the push history. One place to answer "which package am I
@@ -34072,24 +34579,41 @@
         var b = e.target.closest && e.target.closest('button'); if (!b) return;
         if (b.hasAttribute('data-open')) {
           var row = setups.filter(function (x) { return String(x.id) === b.getAttribute('data-open'); })[0];
-          if (row && dirty && !confirm('Discard unsaved changes to “' + (curSetupName || 'the current setup') + '”?')) return;
-          if (row) { applySetup(row); render(); UI.toast('Opened “' + (row.name || 'setup') + '”.', 'success'); }
-          close();
+          var _open = function () {
+            if (row) { applySetup(row); render(); UI.toast('Opened “' + (row.name || 'setup') + '”.', 'success'); }
+            close();
+          };
+          if (row && dirty) {
+            psConfirm('Discard unsaved changes to “' + (curSetupName || 'the current setup') + '”?', _open,
+              { title: 'Discard your unsaved edits?', ok: 'Discard and open',
+                note: 'Opening another setup replaces what is in the editor. Cancel, then <b>Save</b>, to keep it.' });
+            return;
+          }
+          _open();
         } else if (b.hasAttribute('data-dup')) {
           var src = setups.filter(function (x) { return String(x.id) === b.getAttribute('data-dup'); })[0];
           if (!src) return;
-          var nm = prompt('Name for the copy', (src.name || 'Setup') + ' copy'); if (!nm) return;
-          applySetup(src);                       // duplicate what is stored, not a stale cfg
-          saveAsNew(nm, src.package_id || null); close();
+          psPrompt('Name the copy.', (src.name || 'Setup') + ' copy', function (nm) {
+            if (!String(nm || '').trim()) return;
+            applySetup(src);                     // duplicate what is stored, not a stale cfg
+            saveAsNew(String(nm).trim(), src.package_id || null); close();
+          }, { title: 'Duplicate “' + (src.name || 'Setup') + '”', fieldLabel: 'Setup name',
+               required: true, ok: 'Duplicate it',
+               hint: 'The copy takes everything the stored setup holds \u2014 activities, floors, zones, sequencing \u2014 and the same contract package.' });
         } else if (b.hasAttribute('data-del')) {
           deleteSetup(b.getAttribute('data-del')); close();
         } else if (b.hasAttribute('data-new')) {
           var pk = b.getAttribute('data-new') || null;
-          var nm2 = prompt('Name for the new setup', pk ? (packageShort(pk) || 'Setup') : 'Setup'); if (!nm2) return;
-          /* ⚠️ A NEW setup starts EMPTY. Seeding it from whatever happened to be open is
-             how a Package 2 build quietly inherits Package 1's floors and zones. */
-          cfg = blank(); curSetupId = null; curSetupName = nm2; curPkgId = pk;
-          saveAsNew(nm2, pk); close();
+          psPrompt('Name the new setup.', pk ? (packageShort(pk) || 'Setup') : 'Setup', function (nm2) {
+            if (!String(nm2 || '').trim()) return;
+            nm2 = String(nm2).trim();
+            /* \u26a0\ufe0f A NEW setup starts EMPTY. Seeding it from whatever happened to be open is
+               how a Package 2 build quietly inherits Package 1's floors and zones. */
+            cfg = blank(); curSetupId = null; curSetupName = nm2; curPkgId = pk;
+            saveAsNew(nm2, pk); close();
+          }, { title: pk ? ('New setup for ' + (packageShort(pk) || 'this package')) : 'New setup',
+               fieldLabel: 'Setup name', required: true, ok: 'Create it',
+               hint: 'It starts <b>empty</b> \u2014 nothing is copied from the setup currently open.' });
         } else if (b.hasAttribute('data-restore')) {
           var pu = pushes.filter(function (x) { return String(x.id) === b.getAttribute('data-restore'); })[0];
           restoreFromPush(pu); close();
@@ -34270,7 +34794,10 @@
       }
       if (projectId !== curPid) {
         // Switching project discards the in-memory builder config — offer to save the old one first.
-        if (curPid && isDirty() && confirm('You have unsaved Schedule Setup changes for the previous project. Save them before switching?')) { try { await save(); } catch (e) {} }
+        if (curPid && isDirty() && (await psOk('Save your unsaved Schedule Setup changes for the previous project before switching?', {
+          title: 'Save before switching project?', ok: 'Save them', cancel: 'Switch without saving', danger: false,
+          note: 'The editor only holds one project\u2019s setup at a time, so switching discards whatever is not saved.'
+        }))) { try { await save(); } catch (e) {} }
         // ⚠️ `imp ? 1 : 0` — a project opened for the first time BY a staged import must land on the
         // checking steps, not back on Start. stageImport sets step before switching the tab, and
         // this branch is what would otherwise reset it as the setup list loads.
@@ -34307,7 +34834,11 @@
     }
     // ⚠️ Each leaf carries its tower id + label, so the push and the stacking can use it in a later
     // step without re-deriving it from the floor (which is how duplicate-derivation bugs start).
-    function locList() { var out = []; GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { l.towerId = towerIdOf(f); l.tower = towerLabel(l.towerId); out.push(l); }); }); }); return out; }
+    // ⚠️ A LOC-LESS TRADE PRODUCES NO LEAVES AT ALL, whatever its zoning happens to hold — see
+    // LOCLESS. This is the gate that makes the rule true for every downstream reader at once
+    // (cellKey, auto-trace, scope, stacking, generate); testing for it in each of them is how
+    // one of them would end up disagreeing.
+    function locList() { var out = []; GROUPS.forEach(function (tr) { if (locless(tr)) return; cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { l.towerId = towerIdOf(f); l.tower = towerLabel(l.towerId); out.push(l); }); }); }); return out; }
     function catalogueFrom(c) {
         var out = {};
         try {
@@ -34336,6 +34867,10 @@
           }
           _tw.forEach(function (t) { add('tower', _twLabel(t.id)); });
           GROUPS.forEach(function (tr) {
+            // ⚠️ A loc-less trade contributes nothing to the location catalogue either — see
+            // LOCLESS. Its old floors would otherwise keep offering their names to the WBS
+            // matcher long after the trade stopped having a location.
+            if (locless(tr)) return;
             ((c.zoning[tr] && c.zoning[tr].floors) || []).forEach(function (f) {
               var tw = _twLabel((f && f.towerId) || (_tw[0] && _tw[0].id));
               add('floor', f.name || f.code, { kind: floorKind(f), tower: tw, tr: tr });
@@ -35403,7 +35938,15 @@
       ov.querySelectorAll('[data-zup]').forEach(function (b) { b.onclick = function () { var it = b.closest('.sbld-zord-item'), pv = it && it.previousElementSibling; if (pv) it.parentNode.insertBefore(it, pv); }; });
       ov.querySelectorAll('[data-zdown]').forEach(function (b) { b.onclick = function () { var it = b.closest('.sbld-zord-item'), nx = it && it.nextElementSibling; if (nx) it.parentNode.insertBefore(nx, it); }; });
       ov.querySelector('#sbld-at-go').onclick = function () {
-        if (cfg.links.length && !confirm('Auto-trace REPLACES the current ' + cfg.links.length + ' link(s) with a fresh takt flow. Continue?')) return;
+        if (cfg.links.length) {
+          psConfirm('Auto-trace replaces the current ' + cfg.links.length + ' link(s) with a fresh takt flow.', _atGo,
+            { title: 'Replace the zone links?', ok: 'Re-trace them',
+              note: 'Every link you drew by hand in the zone sequence goes with them.' });
+          return;
+        }
+        _atGo();
+      };
+      function _atGo() {
         Array.prototype.forEach.call(ov.querySelectorAll('input[data-atkind]'), function (inp) {
           var kind = inp.dataset.atkind, target = inp.dataset.attr, fk = inp.dataset.kind;
           if (kind === 'pkind') { (cfg.tradeParallelKind[target] = cfg.tradeParallelKind[target] || {})[fk] = inp.checked; if (fk === 'typical') cfg.tradeParallel[target] = inp.checked; return; }
@@ -35419,7 +35962,7 @@
         });
         ov.querySelectorAll('[data-atzord]').forEach(function (list) { cfg.zoneOrder[list.dataset.atzord] = Array.prototype.map.call(list.querySelectorAll('.sbld-zord-item'), function (it) { return it.dataset.zk; }); });
         close(); autoTrace();
-      };
+      }
     }
 
     function generate(basis, startOverride) {
@@ -35450,11 +35993,18 @@
          ⚠️ The FLOOR stays `_all`. This adds the tower it is in; it does not invent a storey. The
          floor/zone/unit levels are still skipped for this row (dimKey reads `floor._all`), so it
          attaches at the tower and no fake location is written beneath it. */
+        /* ⚠️⚠️ EXCEPT FOR A LOC-LESS TRADE, and that is the 2026-09-17 amendment to everything
+           above: *"general requirements should have no tower, floor, or zones."* The reasoning
+           in the note still holds for a trade that merely has no floors TYPED IN — it is still
+           in the building — and it is why the tower is resolved for every other trade here. A
+           loc-less trade is not in any one building by definition, so `towerId` is left null,
+           locMapOf writes no tower value, and dimKey files it under the no-tower key. The floor,
+           zone and unit levels were already skipped for this row. */
         if (!haveLoc[tr] && tradeActs(tr).length) {
           var _allFloor = { id: '__all__', code: '', name: '', zones: [], _all: true };
-          var _allTw = towerIdOf(_allFloor);
+          var _allTw = locless(tr) ? null : towerIdOf(_allFloor);
           locs.push({ uid: tr + '/__all__', trade: tr, floor: _allFloor, zone: null, unit: null,
-                      towerId: _allTw, tower: towerLabel(_allTw) });
+                      towerId: _allTw, tower: _allTw ? towerLabel(_allTw) : '' });
         }
       });
       var days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l, basis); });
@@ -35684,9 +36234,26 @@
         out.push({ id: uidv(), code: code, name: name, group: g, durInt: di, durExt: de, scope: sc });
       }
       if (!out.length) { UI.toast('No activity rows read — check the columns (Code / Activity Name / Trade / Interior / Exterior).', 'error'); return; }
-      var mode = cfg.activities.length ? (confirm('Replace the ' + cfg.activities.length + ' existing activities with the ' + out.length + ' uploaded?\n\nOK = replace · Cancel = append') ? 'replace' : 'append') : 'replace';
-      cfg.activities = (mode === 'replace') ? out : cfg.activities.concat(out);
-      markDirty(); render(); UI.toast('Loaded ' + out.length + ' activities (' + mode + ').', 'success');
+      function _land(mode) {
+        cfg.activities = (mode === 'replace') ? out : cfg.activities.concat(out);
+        markDirty(); render(); UI.toast('Loaded ' + out.length + ' activities (' + mode + ').', 'success');
+      }
+      if (!cfg.activities.length) { _land('replace'); return; }
+      /* \u26a0\u26a0 THREE ANSWERS, NOT TWO, and that is why this one had to become a form. The box it
+         replaced was a confirm() whose message had to spell out \u201cOK = replace \u00b7 Cancel = append\u201d
+         \u2014 so the planner had to decode two buttons into three outcomes, and the way to back out of
+         the import entirely was the window\u2019s own close button. A select says replace or append,
+         and Cancel means cancel. */
+      psAsk({
+        title: 'Replace, or add to what is there?',
+        text: 'This project already has ' + cfg.activities.length + ' activit' + (cfg.activities.length === 1 ? 'y' : 'ies') +
+          ', and the file holds ' + out.length + '.',
+        ok: 'Load them',
+        fields: [{ k: 'mode', label: 'What to do with the uploaded rows', type: 'select', value: 'append',
+          options: [['append', 'Add them \u2014 keep the ' + cfg.activities.length + ' already here'],
+                    ['replace', 'Replace \u2014 drop the ' + cfg.activities.length + ' already here']],
+          hint: 'Replacing discards the durations, trades and scopes typed against the existing rows.' }]
+      }, function (v) { _land(v.mode === 'replace' ? 'replace' : 'append'); });
     }
     function uploadActivities(file) {
       if (!file) return; var name = (file.name || '').toLowerCase(), rd = new FileReader();
@@ -36444,8 +37011,12 @@
     // Ask for a grouping name and apply it to the selection, reporting what actually happened.
     function libGroupPrompt(acts) {
       if (!acts.length) return;
-      var typed = prompt('Group ' + acts.length + ' item' + (acts.length === 1 ? '' : 's') +
-        ' under a new grouping — name it:', '');
+      psPrompt('Name the new grouping.', '', function (typed) { _libGroupGo(acts, typed); },
+        { title: 'Group ' + acts.length + ' item' + (acts.length === 1 ? '' : 's'), fieldLabel: 'Grouping name',
+          required: true, ok: 'Group them',
+          hint: 'The items keep the rung they already have \u2014 this <b>inserts</b> a grouping above them rather than flattening what is there. A selection spanning several trades makes one grouping of this name inside each.' });
+    }
+    function _libGroupGo(acts, typed) {
       var nm = String(typed == null ? '' : typed).trim();
       if (!nm) return;
       var r = absGroupSel(acts.map(function (a) { return a.id; }), nm);
@@ -36468,28 +37039,35 @@
       var parent = node.path.length > 1 ? node.path[node.path.length - 2] : (GWORK[node.g] || GLABEL[node.g] || node.g);
       // ⚠️ Names the destination and says no activity is deleted. A "Delete" on a heading reads as
       // "delete what is under it", and it would be a rotten surprise to be wrong about.
-      if (!confirm('Delete the grouping "' + node.name + '"?\n\n' +
-          'Its ' + node.acts.length + ' item' + (node.acts.length === 1 ? '' : 's') +
-          ' move up into "' + parent + '". No activity is deleted.')) return;
-      var hit = absDelSeg(node);
-      if (!hit) { UI.toast('That grouping is no longer there — nothing changed.', 'warn'); return; }
-      UI.toast('Deleted "' + node.name + '" — ' + hit + ' item' + (hit === 1 ? '' : 's') + ' moved up.', 'success');
-      markDirty(); render();
+      psConfirm('Delete the grouping “' + node.name + '”?', function () {
+        var hit = absDelSeg(node);
+        if (!hit) { UI.toast('That grouping is no longer there \u2014 nothing changed.', 'warn'); return; }
+        UI.toast('Deleted “' + node.name + '” \u2014 ' + hit + ' item' + (hit === 1 ? '' : 's') + ' moved up.', 'success');
+        markDirty(); render();
+      }, { title: 'Delete this grouping?', ok: 'Delete the grouping',
+           note: 'Its <b>' + node.acts.length + '</b> item' + (node.acts.length === 1 ? '' : 's') +
+             ' move up into <b>' + e2(parent) + '</b>. <b>No activity is deleted</b> \u2014 only the rung goes.' });
     }
     function libRenamePrompt(node) {
-      var typed = prompt('Rename this L' + (node.path.length + 1) + ' grouping — all ' + node.acts.length +
-        ' item(s) under it follow:', node.name);
-      var nm = String(typed == null ? '' : typed).trim();
-      if (!nm || _libNorm(nm) === _libNorm(node.name)) return;
-      if (absRenameSeg(node, nm)) { markDirty(); render(); }
+      psPrompt('Rename this grouping.', node.name, function (typed) {
+        var nm = String(typed == null ? '' : typed).trim();
+        // \u26a0\ufe0f Cancelled, emptied, or the same name: not a change. Renaming to the same
+        // spelling would still repaint and still flag the setup dirty.
+        if (!nm || _libNorm(nm) === _libNorm(node.name)) return;
+        if (absRenameSeg(node, nm)) { markDirty(); render(); }
+      }, { title: 'Rename this L' + (node.path.length + 1) + ' grouping', fieldLabel: 'Grouping name',
+           required: true, ok: 'Rename it',
+           hint: 'All <b>' + node.acts.length + '</b> item(s) under it follow. A grouping of the same name under a different parent is a different grouping and is not touched.' });
     }
     function libSubPrompt(node) {
-      var typed = prompt('Insert a level under "' + node.name + '" — name the new L' + (node.path.length + 2) +
-        ' grouping, and its ' + node.acts.length + ' item(s) move one rung deeper inside it:', '');
-      var nm = String(typed == null ? '' : typed).trim();
-      if (!nm) return;
-      if (absAddSub(node, nm)) { markDirty(); render(); }
-      else UI.toast(absAddWhy(node) || 'Could not insert a level there.', 'warn');
+      psPrompt('Name the new grouping.', '', function (typed) {
+        var nm = String(typed == null ? '' : typed).trim();
+        if (!nm) return;
+        if (absAddSub(node, nm)) { markDirty(); render(); }
+        else UI.toast(absAddWhy(node) || 'Could not insert a level there.', 'warn');
+      }, { title: 'Insert a level under “' + node.name + '”', fieldLabel: 'L' + (node.path.length + 2) + ' grouping name',
+           required: true, ok: 'Insert the level',
+           hint: 'Its <b>' + node.acts.length + '</b> item(s) move one rung deeper, inside the new grouping.' });
     }
     // The menu for an ITEM row. `a` is the row that was right-clicked; the selection is what acts,
     // and right-clicking outside it selects that row first so the menu never acts on rows the
@@ -36506,9 +37084,9 @@
         { label: 'Move down', go: function () { if (absMoveSel(acts, 1)) { markDirty(); render(); } } },
         { sep: 1 },
         { label: 'Move out a rung (L' + (lv - 1) + ')', off: lv <= 2 ? 'Already directly under its trade' : '',
-          go: function () { var m = 0; acts.forEach(function (x) { if (absSetLevel(x, absLevelOf(x) - 1)) m++; }); if (m) { markDirty(); render(); } } },
+          go: async function () { var m = 0; for (var i = 0; i < acts.length; i++) { if (await absSetLevel(acts[i], absLevelOf(acts[i]) - 1)) m++; } if (m) { markDirty(); render(); } } },
         { label: 'Move in a rung (L' + (lv + 1) + ')', off: lv >= 2 + ABS_MAX_GRP ? ('L' + (2 + ABS_MAX_GRP) + ' is as deep as it goes') : '',
-          go: function () { var m = 0; acts.forEach(function (x) { if (absSetLevel(x, absLevelOf(x) + 1)) m++; }); if (m) { markDirty(); render(); } } },
+          go: async function () { var m = 0; for (var i = 0; i < acts.length; i++) { if (await absSetLevel(acts[i], absLevelOf(acts[i]) + 1)) m++; } if (m) { markDirty(); render(); } } },
         { sep: 1 },
         { label: 'Clear selection', go: function () { libSelClear(); render(); } }
       ]);
@@ -36691,29 +37269,17 @@
           // ⚠️ Only repaint when something MOVED. absSetLevel refuses a no-op (and a deepening the
           // planner cancelled out of), and marking the setup dirty for a refused change would
           // report unsaved work that does not exist.
-          if (absSetLevel(a, +b.dataset.lv)) { markDirty(); render(); }
+          absSetLevel(a, +b.dataset.lv).then(function (moved) { if (moved) { markDirty(); render(); } });
         };
       });
+      /* \u26a0 BOTH ROW BUTTONS GO THROUGH THE MENU'S OWN HANDLERS. They asked the same two
+         questions with the same two prompts, written out a second time \u2014 so the row and the
+         right-click menu could drift into wording the same edit differently. One implementation. */
       host.querySelectorAll('[data-libren]').forEach(function (b) {
-        b.onclick = function () {
-          var n = _libNodes[+b.dataset.libren]; if (!n) return;
-          var typed = prompt('Rename this L' + (n.path.length + 1) + ' grouping — all ' + n.acts.length + ' item(s) under it follow:', n.name);
-          var nm = String(typed == null ? '' : typed).trim();
-          // ⚠️ Cancelled, emptied, or the same name: not a change. Renaming to the same spelling
-          // would still repaint and still flag the setup dirty.
-          if (!nm || _libNorm(nm) === _libNorm(n.name)) return;
-          if (absRenameSeg(n, nm)) { markDirty(); render(); }
-        };
+        b.onclick = function () { var n = _libNodes[+b.dataset.libren]; if (n) libRenamePrompt(n); };
       });
       host.querySelectorAll('[data-libsub]').forEach(function (b) {
-        b.onclick = function () {
-          var n = _libNodes[+b.dataset.libsub]; if (!n) return;
-          var typed = prompt('Insert a level under "' + n.name + '" — name the new L' + (n.path.length + 2) +
-            ' grouping, and its ' + n.acts.length + ' item(s) move one rung deeper inside it:', '');
-          var nm = String(typed == null ? '' : typed).trim();
-          if (!nm) return;
-          if (absAddSub(n, nm)) { markDirty(); render(); }
-        };
+        b.onclick = function () { var n = _libNodes[+b.dataset.libsub]; if (n) libSubPrompt(n); };
       });
       host.querySelectorAll('[data-libdel]').forEach(function (b) {
         b.onclick = function () { var nd = _libNodes[+b.dataset.libdel]; if (nd) libDelPrompt(nd); };
@@ -36906,23 +37472,30 @@
        Deepening needs names, and the ones offered come from the trade's most recent path rather
        than from blanks — an item that landed in a grouping called "" would sit at L3 in the pane
        and skip the rung in the tree, which is the disagreement absLevelOf exists to prevent. */
-    function absSetLevel(a, lv) {
+    /* \u26a0\u26a0 ASYNC SINCE 2026-09-17, because the rung it may have to ask for now comes from an
+       in-app dialog rather than a blocking `prompt()`. The contract is otherwise unchanged \u2014 it
+       still resolves TRUE only when something moved, so every caller's `if (moved) { markDirty();
+       render(); }` reads the same, and a cancelled or refused change still writes nothing. */
+    async function absSetLevel(a, lv) {
       if (!a) return false;
       var want = (+lv) - 2;                        // how many grouping rungs sit above the item
       if (!(want >= 0 && want <= ABS_MAX_GRP)) return false;
       var cur = absPathOf(a);
-      if (cur.length === want) return false;       // ⚠️ a no-op is REFUSED: nothing dirty, no repaint
+      if (cur.length === want) return false;       // \u26a0\ufe0f a no-op is REFUSED: nothing dirty, no repaint
       if (want < cur.length) { absSetPath(a, cur.slice(0, want)); return true; }
       var out = cur.slice();
       while (out.length < want) {
         var d = out.length;
-        // ⚠️ Re-asked at EVERY rung with the path built so far, so each borrowed name is a sibling
+        // \u26a0\ufe0f Re-asked at EVERY rung with the path built so far, so each borrowed name is a sibling
         // of the slot it fills rather than a segment lifted from somewhere else in the trade.
         var name = absSeedSeg(a.group || 'ST', out);
         if (!name) {
-          var typed = prompt('Name the L' + (d + 2) + ' grouping this item belongs to:', '');
+          var typed = await psAskText('Name the grouping this item belongs to.', '', {
+            title: 'L' + (d + 2) + ' grouping', fieldLabel: 'Grouping name', required: true, ok: 'Use this name',
+            hint: 'This trade has no grouping at this rung yet, so there is none to borrow \u2014 name it once and the next item can be dropped into it.'
+          });
           name = String(typed == null ? '' : typed).trim();
-          // ⚠️ Cancelled halfway: NOTHING is written. The path is built in a copy and committed
+          // \u26a0\ufe0f Cancelled halfway: NOTHING is written. The path is built in a copy and committed
           // only at the end, so a half-named chain can never reach the activity.
           if (!name) return false;
         }
@@ -37542,14 +38115,23 @@
       host.querySelectorAll('[data-seqkind]').forEach(function (b) { b.onclick = function () { uiSeqKind = b.dataset.seqkind; actFocus = null; actReset(); }; });
       var scp = host.querySelector('#b-seqcopy'); if (scp) scp.onchange = function () { if (scp.value) copyTradeSeq(scp.value, uiSeqKind, tr); };
       var srs = host.querySelector('#b-seqreset'); if (srs) srs.onclick = function () {
-        if (!confirm('Drop the ' + KIND_LABEL[uiSeqKind] + ' sequence and follow the default on those levels?')) return;
-        if (cfg.actLinksKind) delete cfg.actLinksKind[uiSeqKind];
-        markDirty(); render();
+        psConfirm('Drop the ' + KIND_LABEL[uiSeqKind] + ' sequence?', function () {
+          if (cfg.actLinksKind) delete cfg.actLinksKind[uiSeqKind];
+          markDirty(); render();
+        }, { title: 'Follow the default sequence again?', ok: 'Drop the override',
+             note: 'Those levels go back to following the default class-code sequence. The default itself is untouched.' });
       };
       host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
       var atSel = host.querySelector('#b-autotype'); if (atSel) atSel.onchange = function () { autoChainType = atSel.value; };
       host.querySelector('#b-autochain').onclick = function () { autoChainTrade(tr, atSel ? atSel.value : autoChainType); };
-      host.querySelector('#b-aclear').onclick = function () { if (countTradeLinks(tr) && !confirm('Remove all ' + countTradeLinks(tr) + ' ' + GLABEL[tr] + ' link(s)?')) return; clearTradeLinks(tr); actReset(); render(); };
+      host.querySelector('#b-aclear').onclick = function () {
+        var _go = function () { clearTradeLinks(tr); actReset(); render(); };
+        var n = countTradeLinks(tr);
+        if (!n) { _go(); return; }
+        psConfirm('Remove all ' + n + ' ' + GLABEL[tr] + ' link(s)?', _go,
+          { title: 'Clear this trade\u2019s sequence?', ok: 'Remove ' + n + ' link' + (n === 1 ? '' : 's'),
+            note: 'The class codes stay; only the order between them goes. <b>Auto-chain</b> can rebuild a straight sequence afterwards.' });
+      };
       var acf = host.querySelector('#b-aconfirm'); if (acf) acf.onclick = function () { actConfirm(); };
       var almb = host.querySelector('#b-alinkmgr'); if (almb) almb.onclick = function () { openActLinkManager(tr); };
       var ad = host.querySelector('#b-adone'); if (ad) ad.onclick = actReset;
@@ -38977,6 +39559,52 @@
       if (!zpRingOk(out)) return null;             // scaled to nothing
       return zpFitBack(out, h);
     }
+    /* ==== EDITING A SHAPE BY THE NUMBERS =================================================
+       Owner 2026-09-17: *"for adding floor plan, improve UI to edit shapes."*
+
+       ⚠️⚠️ EVERY EDIT IN THIS WINDOW WAS A DRAG, and a drag cannot say "exactly here". Three
+       things had no gesture at all: mirroring a shape (the handed L of the east tower against
+       the west one), moving it by a known amount, and giving it a stated position or size. The
+       first two are one-click; the third is four numbers, which is why the readout below is
+       editable rather than a label.
+       ⚠️ ALL THREE GO THROUGH zpFitBack, exactly as rotate and scale already do, so a shape can
+       still never leave the sheet — and they REFUSE rather than mangle when it cannot fit, which
+       is the rule the note on zpFitBack sets and the reason a trapezoid is not the failure mode. */
+    function zpFlipPts(pts, axis, h) {
+      var b = zpBBoxOf(pts), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      /* ⚠️ The WINDING REVERSES on a mirror, which zpRingOk measures as a negative area — it
+         takes the absolute value, so this is safe; the note is here because a future check that
+         cares about direction would be broken by it and would look like a mirror bug. */
+      var out = zpXformPts(pts, function (p) {
+        return axis === 'x' ? [2 * cx - p[0], p[1]] : [p[0], 2 * cy - p[1]];
+      });
+      return zpFitBack(out, h);
+    }
+    // Move by a fixed amount, clamped by the BOUNDING BOX — the same rule the body drag uses, so
+    // a nudge can never push half an area off the sheet while the rest stays on.
+    function zpNudgePts(pts, dx, dy, h) {
+      var b = zpBBoxOf(pts);
+      var ddx = zpClamp(dx, -b.x, ZP_W - b.x - b.w), ddy = zpClamp(dy, -b.y, h - b.y - b.h);
+      if (!ddx && !ddy) return null;
+      return pts.map(function (p) { return [p[0] + ddx, p[1] + ddy]; });
+    }
+    /* Put the shape's bounding box exactly here, at exactly this size.
+       ⚠️⚠️ NON-UNIFORM ON PURPOSE, and it is the one place in this file that is. zpScalePts is
+       uniform because a tower footprint brought in from its own floor plan has no dimensions, so
+       only its proportions are true. These four boxes are the planner STATING the dimensions —
+       "this zone is the left 300 of a 1000 sheet" — and refusing to let them set width without
+       height would make the control unable to say the thing it exists to say. A locked footprint
+       never reaches here: paint() does not emit the box for one. */
+    function zpSetBoxPts(pts, box, h) {
+      var b = zpBBoxOf(pts);
+      var nw = Math.max(1, Math.min(ZP_W, box.w)), nh = Math.max(1, Math.min(h, box.h));
+      var kx = b.w > 1e-9 ? nw / b.w : 1, ky = b.h > 1e-9 ? nh / b.h : 1;
+      var nx = zpClamp(box.x, 0, ZP_W - nw), ny = zpClamp(box.y, 0, h - nh);
+      var out = pts.map(function (p) {
+        return [nx + (p[0] - b.x) * kx, ny + (p[1] - b.y) * ky];
+      });
+      return zpRingOk(out) ? out : null;
+    }
     function zpPreset(kind, w, h) {
       w = w || 220; h = h || 160;
       var pts = [];
@@ -39379,10 +40007,6 @@
                  apply: false };
 
       function H() { return zpH(_zpWin.draft); }
-      /* ⚠️ READ STRAIGHT OFF THE BAG, never through zpIdFor: that resolves a floor, and a
-         synthetic `{ id: 'nolev' }` would fall through to its `kind:` fallback and report the
-         typical floors' plate as the band's — a tick nobody put there. */
-      function nolevOn() { return !!(_zpWin.plateId && zpBag().of[ZP_NOLEV_ID] === _zpWin.plateId); }
       function selShape() {
         var W = _zpWin;
         return W.draft.polys.filter(function (q) { return q.id === W.sel; })[0] || null;
@@ -39838,6 +40462,14 @@
                 '<button data-zpscale="0.9"' + (sel ? '' : ' disabled') + ' title="Make it smaller — the shape is kept, only the size changes">&#8722;</button>' +
                 '<button data-zpscale="1.1111111"' + (sel ? '' : ' disabled') + ' title="Make it bigger — the shape is kept, only the size changes">+</button>' +
               '</span>' +
+              /* ⚠️ MIRROR, not another rotation. Owner 2026-09-17: *"improve UI to edit shapes."*
+                 A handed plan — the east tower's L against the west tower's — cannot be reached
+                 by ANY rotation, so until now the only way to draw the second one was to trace it
+                 again by hand from the first. Two buttons, beside the turns they are not. */
+              '<span class="ps-vs-seg">' +
+                '<button data-zpflip="x"' + (sel && !sel.lock ? '' : ' disabled') + ' title="Mirror left–right. A handed plan cannot be reached by turning it.">&#8646;</button>' +
+                '<button data-zpflip="y"' + (sel && !sel.lock ? '' : ' disabled') + ' title="Mirror top–bottom">&#8645;</button>' +
+              '</span>' +
             '</span>' +
             '<span class="ps-tb-sep"></span>' +
             '<label class="zpw-grid-ctl" title="Corners land on a grid of this many plan units (the sheet is ' + ZP_W + ' across)">Snap' +
@@ -39848,6 +40480,54 @@
             '<button class="pd-btn" id="zpw-undo"' + (W.hist.length ? '' : ' disabled') + ' title="' +
               (W.hist.length ? e2('Undo (' + W.hist.length + ' step' + (W.hist.length === 1 ? '' : 's') + ') · Ctrl+Z') : 'Nothing to undo') + '">Undo</button>' +
           '</div>' : '') +
+
+          /* ==== ROW 4: THE SELECTED AREA, BY THE NUMBERS =================================
+             ⚠️⚠️ Owner 2026-09-17: *"for adding floor plan, improve UI to edit shapes."* Every
+             edit in this window was a drag, and a drag cannot state a number. Two zones that are
+             supposed to be the same width could only be made the same width by eye, and "put
+             this one at the top-left corner" was a drag against a grid.
+             ⚠️ IT IS THE BOUNDING BOX, not the corners — four numbers for a shape of any
+             complexity. The corners still belong to the drag; this row is where the shape is
+             PLACED and SIZED, which is the pair of questions that has a numeric answer.
+             ⚠️ ONLY WHEN SOMETHING IS SELECTED, and never for a locked footprint: its corners
+             came from its own floor plan and only its position and angle belong to this sheet,
+             so a width box here would offer to contradict the building. Its position is still
+             editable — that is what `lock` allows.
+             ⚠️ Rounded to whole plan units for display, and only WRITTEN when the planner
+             changes one: re-applying the rounded readout on every repaint would creep a rotated
+             shape a fraction of a unit at a time. */
+          (sel ? (function () {
+            var _b = zpBBoxOf(sel.pts), _lk = !!sel.lock;
+            function _n(id, lab, v, ttl, dis) {
+              return '<label class="zpw-num' + (dis ? ' off' : '') + '" title="' + e2(ttl) + '">' + lab +
+                '<input class="pd-input" id="' + id + '" type="number" step="1" value="' +
+                Math.round(v) + '"' + (dis ? ' disabled' : '') + '></label>';
+            }
+            return '<div class="zpw-bar zpw-selbar">' +
+              '<span class="zpw-lbl">' + e2(zpLabelOf(sel.code)) + '</span>' +
+              _n('zpw-bx', 'X', _b.x, 'Left edge, in plan units across a sheet ' + ZP_W + ' wide.') +
+              _n('zpw-by', 'Y', _b.y, 'Top edge, in plan units down a sheet ' + Math.round(hh) + ' tall.') +
+              _n('zpw-bw', 'W', _b.w, _lk ? 'A tower footprint keeps the width of the floor plan it came from — use − / + to size it against its neighbours.' : 'Width in plan units. Type the same number on two zones and they are the same width.', _lk) +
+              _n('zpw-bh', 'H', _b.h, _lk ? 'A tower footprint keeps the proportions of the floor plan it came from.' : 'Height in plan units.', _lk) +
+              '<span class="ps-tb-sep"></span>' +
+              /* ⚠️ Position PRESETS, because "against the top-left corner of the sheet" and
+                 "in the middle" are the two placements a planner asks for by name, and both are
+                 a drag-and-squint today. They move the box; they never resize it. */
+              '<span class="ps-vs-seg" title="Put this area against an edge of the sheet, or in the middle of it">' +
+                '<button data-zpsnapto="l">&#8676;</button>' +
+                '<button data-zpsnapto="c">&#8596;</button>' +
+                '<button data-zpsnapto="r">&#8677;</button>' +
+                '<button data-zpsnapto="t">&#8673;</button>' +
+                '<button data-zpsnapto="m">&#8597;</button>' +
+                '<button data-zpsnapto="b">&#8675;</button>' +
+              '</span>' +
+              '<span class="sbld-hint" style="margin:0;">' +
+                (_lk ? 'Locked shape — move, turn and resize it; its corners are the floor plan’s.'
+                     : 'Arrow keys nudge it' + (W.grid > 0 ? ' by the ' + W.grid + '-unit grid' : ' by 1') +
+                       ' · <b>Shift</b> for ten · <b>Tab</b> selects the next area · <b>Del</b> removes it') +
+              '</span>' +
+            '</div>';
+          })() : '') +
 
           (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
           /* ==== WHAT THIS DRAWING DOES AND DOES NOT CLAIM ===============================
@@ -39970,23 +40650,66 @@
               /* ⚠️ The tower is NAMED in the summary on a multi-tower job, because the list below is
                  scoped to it and a panel that silently shows a subset reads as a bug. */
               '<summary>Also use this plan on other floors' + (multiTower() ? ' of ' + e2(towerLabel(SUBJ.towerId)) : '') + '…' +
-                (mine.length > 1 ? ' <b>' + mine.length + ' floors using it</b>' : '') +
-                (nolevOn() ? ' <b>+ the no-level band</b>' : '') + '</summary>' +
-              /* ⚠️ The band that has no floor. Owner: *"for floors without levels … edit the
-                 shape of that floor"* — in the Vertical Stacking, work whose activities carry no
-                 floor is drawn as a row of its own, and until now nothing could give that row a
-                 shape because it has no row HERE to hang one off. It gets a pointer instead, and
-                 this is where the planner sets it. */
-              '<div class="zpw-floors">' +
-                '<label class="zpw-fl zpw-fl-nolev"><input type="checkbox" id="zpw-nolev"' +
-                  (nolevOn() ? ' checked' : '') + '>' +
-                  'Work with no floor <em title="The Vertical Stacking draws activities that carry no floor as a band of their own. Tick this and that band is drawn with this outline instead of a guessed block.">the “no level” band</em></label>' +
-                '</div>' +
+                (mine.length > 1 ? ' <b>' + mine.length + ' floors using it</b>' : '') + '</summary>' +
+              /* ==== THE "NO LEVEL" BAND TICK IS GONE ====================================
+                 ⚠️⚠️ Owner 2026-09-17: *"when defining floor plan, delete the checkbox of no
+                 label band checkbox."* It was the odd one out in a list of floors: every other
+                 tick in this panel names a storey the planner typed themselves, and this one
+                 named a row the Vertical Stacking invents for work whose activities carry no
+                 floor at all. Asking, on the floor-plan window of F7, whether F7's outline should
+                 also stand in for "activities nobody filed anywhere" is a question about a
+                 DIFFERENT screen's fallback, and it sat two pixels above the real floors.
+                 ⚠️ THE POINTER ITSELF IS NOT REMOVED. `ZP_NOLEV_ID` is still read by the stacking
+                 (see _VS_ZP_NOLEV) and still survives normalize, so a project that ticked this
+                 before today keeps the shape it chose — deleting the data to remove a control
+                 would silently repaint somebody's stacking. What is gone is the way to set it
+                 from here. Nothing in the setup writes that pointer any more. */
+              /* ==== BY CATEGORY, IN ONE PRESS ==========================================
+                 ⚠️⚠️ Owner 2026-09-17: *"improve the process flow of defining the floor plans per
+                 floor and type."* The tick list is per FLOOR, and on a forty-storey tower that is
+                 thirty-nine ticks to say the one thing a planner actually means: *the typical
+                 floors are all this shape*. Type is already a field on every floor — the Category
+                 select on its row, which the zone sequence branches on — so the sentence it
+                 supports is one button, not thirty-nine.
+                 ⚠️ IT IS A SHORTCUT INTO THE SAME TICKS, not a second way of storing anything: it
+                 sets `of[floorId]` for each floor of that category, exactly as ticking them by
+                 hand does, and the list below repaints showing them ticked. There is no
+                 "assigned by category" state to diverge from the ticks — which is precisely the
+                 trap the legacy `kind:` pointer (see zpNormAll) fell into.
+                 ⚠️ Only categories that are NOT already fully on this plate get a button, and each
+                 says how many floors it would take — so it never offers a press that does nothing,
+                 and never takes floors silently. */
+              (function () {
+                var byKind = {};
+                others.concat(SUBJ.floor ? [SUBJ.floor] : []).forEach(function (f) {
+                  var k = floorKind(f);
+                  (byKind[k] = byKind[k] || []).push(f);
+                });
+                var btns = KIND_ORDER.filter(function (k) { return byKind[k]; }).map(function (k) {
+                  var fl = byKind[k];
+                  var off = fl.filter(function (f) { return !W.plateId || zpIdFor(f) !== W.plateId; });
+                  if (!off.length) return '';
+                  return '<button class="pd-btn zpw-kindbtn" data-zpkind="' + e2(k) + '" title="' +
+                    e2('Point all ' + fl.length + ' ' + KIND_LABEL[k].toLowerCase() + ' floor' +
+                       (fl.length === 1 ? '' : 's') + ' in this tower at this drawing. ' +
+                       off.filter(function (f) { return !!zpIdFor(f); }).length +
+                       ' of them currently have a plan of their own.') + '">' +
+                    e2(KIND_LABEL[k]) + ' <b>+' + off.length + '</b></button>';
+                }).join('');
+                return btns
+                  ? '<div class="zpw-kinds"><span class="sbld-hint" style="margin:0;">All floors of one <b>category</b>:</span>' +
+                      btns + '</div>'
+                  : '';
+              })() +
               '<div class="zpw-floors">' + others.map(function (f) {
                 var on = W.plateId && zpIdFor(f) === W.plateId;
                 var hasOwn = !on && !!zpIdFor(f);
+                /* ⚠️ The CATEGORY is on every row now, because the buttons above act on it and a
+                   list that cannot be read by category makes them unverifiable — a planner who
+                   presses "Typical +11" has to be able to see which eleven. */
                 return '<label class="zpw-fl' + (hasOwn ? ' warn' : '') + '"><input type="checkbox" data-zpfl="' + e2(f.id) + '"' +
                   (on ? ' checked' : '') + '>' + e2(f.code || f.name || 'Floor') +
+                  '<u title="Floor category">' + e2(KIND_LABEL[floorKind(f)] || '') + '</u>' +
                   (hasOwn ? '<em title="This floor already has a plan of its own. Ticking it replaces that.">has its own</em>' : '') +
                   '</label>';
               }).join('') + '</div>' +
@@ -40105,14 +40828,16 @@
         var up = q('zpw-up'); if (up) up.onclick = pick;
         var rm = q('zpw-rm');
         if (rm) rm.onclick = function () {
-          if (!confirm('Remove the plan image? The areas you have drawn stay.')) return;
-          snap();
-          var old = W.draft.img;
-          W.draft.img = null; W.url = null;
-          commit();
-          if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
-          if (old) { try { sb().storage.from(ZP_BUCKET).remove([old]); } catch (e) {} }
-          paint();
+          psConfirm('Remove the plan image?', function () {
+            snap();
+            var old = W.draft.img;
+            W.draft.img = null; W.url = null;
+            commit();
+            if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
+            if (old) { try { sb().storage.from(ZP_BUCKET).remove([old]); } catch (e) {} }
+            paint();
+          }, { title: 'Remove the plan image?', ok: 'Remove the image',
+               note: 'The areas you have drawn stay exactly where they are — only the drawing underneath them goes. The file is deleted from storage.' });
         };
         var op = q('zpw-o');
         if (op) {
@@ -40249,6 +40974,54 @@
             snap(); s.pts = np; commit(); paint();
           };
         });
+        /* ---- mirror --------------------------------------------------------------------
+           ⚠️ Same shape as the rotate handler right above, deliberately: snap, transform, refuse
+           if it cannot land on the sheet, commit, paint. A mirror that behaved differently from a
+           turn would be one more rule to hold. */
+        wrap.querySelectorAll('[data-zpflip]').forEach(function (b) {
+          b.onclick = function () {
+            var s = selShape(); if (!s || s.lock) return;
+            var np = zpFlipPts(s.pts, b.dataset.zpflip, H());
+            if (!np) { UI.toast('That area cannot be mirrored and still fit on the sheet.', 'warn'); return; }
+            snap(); s.pts = np; commit(); paint();
+          };
+        });
+        /* ---- the numeric box -----------------------------------------------------------
+           ⚠️ `change`, not `input`: the number spinner fires per keystroke, and a shape that
+           re-laid-out on every digit of "300" would pass through 3 and 30 — each of them a
+           committed edit and an undo step. */
+        function _boxApply() {
+          var s = selShape(); if (!s) return;
+          var b0 = zpBBoxOf(s.pts), hh2 = H();
+          function _v(id, d) { var el = q(id); var n = el ? parseFloat(el.value) : NaN; return isFinite(n) ? n : d; }
+          var box = { x: _v('zpw-bx', b0.x), y: _v('zpw-by', b0.y),
+                      w: s.lock ? b0.w : _v('zpw-bw', b0.w), h: s.lock ? b0.h : _v('zpw-bh', b0.h) };
+          // ⚠️ Nothing actually changed (a focus-out with no edit) — no snapshot, no dirty flag.
+          if (Math.abs(box.x - b0.x) < 0.5 && Math.abs(box.y - b0.y) < 0.5 &&
+              Math.abs(box.w - b0.w) < 0.5 && Math.abs(box.h - b0.h) < 0.5) { paint(); return; }
+          var np = zpSetBoxPts(s.pts, box, hh2);
+          if (!np) { UI.toast('Those numbers leave the area with no shape.', 'warn'); paint(); return; }
+          snap(); s.pts = np; commit(); paint();
+        }
+        ['zpw-bx', 'zpw-by', 'zpw-bw', 'zpw-bh'].forEach(function (id) {
+          var el = q(id); if (el) el.onchange = _boxApply;
+        });
+        wrap.querySelectorAll('[data-zpsnapto]').forEach(function (b) {
+          b.onclick = function () {
+            var s = selShape(); if (!s) return;
+            var bb = zpBBoxOf(s.pts), hh2 = H(), k = b.dataset.zpsnapto;
+            var dx = 0, dy = 0;
+            if (k === 'l') dx = -bb.x;
+            else if (k === 'r') dx = ZP_W - bb.w - bb.x;
+            else if (k === 'c') dx = (ZP_W - bb.w) / 2 - bb.x;
+            else if (k === 't') dy = -bb.y;
+            else if (k === 'b') dy = hh2 - bb.h - bb.y;
+            else if (k === 'm') dy = (hh2 - bb.h) / 2 - bb.y;
+            var np = zpNudgePts(s.pts, dx, dy, hh2);
+            if (!np) return;
+            snap(); s.pts = np; commit(); paint();
+          };
+        });
         var del = q('zpw-del');
         if (del) del.onclick = function () {
           var i = W.draft.polys.map(function (p) { return p.id; }).indexOf(W.sel);
@@ -40303,35 +41076,41 @@
           // gone stale between the paint and the press.
           var r = SUBJ.refs(W.plateId).filter(function (x) { return x.plateId === W.ref; })[0];
           if (!r) return;
-          if (!confirm('Copy ' + r.plate.polys.length + ' area(s) from ' + r.label + ' onto this floor?')) return;
-          snap();
-          var rh = zpH(r.plate), mh = H();
-          /* ⚠️ New ids, and the reference's own height scaled into this sheet - the same
-             correction the ghost draws with, so what lands is what was shown.
-             ⚠️⚠️ SKIPPED ENTIRELY when the two sheets are the same height, which is the normal
-             case. `420 / 620 * 620` is 419.99999999999994, and a feature whose whole point is
-             uniformity should not introduce a difference of its own. */
-          var same = (rh === mh);
-          r.plate.polys.forEach(function (qq) {
-            W.draft.polys.push({ id: zpNewId(), code: qq.code,
-              pts: qq.pts.map(function (p) { return same ? [p[0], p[1]] : [p[0], p[1] / rh * mh]; }) });
-          });
-          W.sel = null;
-          commit(); paint();
-          UI.toast('Copied ' + r.plate.polys.length + ' area(s) from ' + r.label + '. They are ordinary shapes now — move or reshape any of them.');
+          psConfirm('Copy ' + r.plate.polys.length + ' area(s) from ' + r.label + ' onto this floor?', function () {
+            snap();
+            var rh = zpH(r.plate), mh = H();
+            /* ⚠️ New ids, and the reference's own height scaled into this sheet - the same
+               correction the ghost draws with, so what lands is what was shown.
+               ⚠️⚠️ SKIPPED ENTIRELY when the two sheets are the same height, which is the normal
+               case. `420 / 620 * 620` is 419.99999999999994, and a feature whose whole point is
+               uniformity should not introduce a difference of its own. */
+            var same = (rh === mh);
+            r.plate.polys.forEach(function (qq) {
+              W.draft.polys.push({ id: zpNewId(), code: qq.code,
+                pts: qq.pts.map(function (p) { return same ? [p[0], p[1]] : [p[0], p[1] / rh * mh]; }) });
+            });
+            W.sel = null;
+            commit(); paint();
+            UI.toast('Copied ' + r.plate.polys.length + ' area(s) from ' + r.label + '. They are ordinary shapes now — move or reshape any of them.');
+          }, { title: 'Copy these areas here?', danger: false, ok: 'Copy them here',
+               note: 'They land as ordinary areas on THIS drawing — a copy, not a link. Re-tracing ' +
+                 e2(r.label) + ' afterwards will not change them. To keep two floors identical instead, ' +
+                 'share one drawing with <b>Also use this plan on other floors</b>.' });
         };
         var ox2 = q('zpw-outx');
         if (ox2) ox2.onclick = function () {
           var n2 = outlinePolys().length;
           if (!n2) return;
-          if (!confirm('Delete the floor outline (' + n2 + ' area' + (n2 === 1 ? '' : 's') + ')? The zones stay, and the floor’s shape goes back to being those zones.')) return;
-          snap();
-          W.draft.polys = zonePolys();
-          W.sel = null;
-          if (zpIsAll(W.brush)) W.brush = (allCodes()[0] || ZP_ALL);
-          commit();
-          if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
-          paint();
+          psConfirm('Delete the floor outline (' + n2 + ' area' + (n2 === 1 ? '' : 's') + ')?', function () {
+            snap();
+            W.draft.polys = zonePolys();
+            W.sel = null;
+            if (zpIsAll(W.brush)) W.brush = (allCodes()[0] || ZP_ALL);
+            commit();
+            if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
+            paint();
+          }, { title: 'Delete the floor outline?', ok: 'Delete the outline',
+               note: 'The zones stay. The floor’s shape goes back to being those zones — which is right unless the slab is bigger than them.' });
         };
         var mkB = q('zpw-mk');
         if (mkB) mkB.onclick = function () {
@@ -40352,22 +41131,31 @@
         wrap.querySelectorAll('[data-zpsel]').forEach(function (b) {
           b.onclick = function () { W.sel = (W.sel === b.dataset.zpsel) ? null : b.dataset.zpsel; paint(); };
         });
-        /* The un-levelled band, ticked or cleared. ⚠️ THE SAME GUARD as the floor checkboxes:
-           pointing anything at a plate that holds neither an outline nor an image would file a
-           plate that zpDropIfEmpty is entitled to delete, and the tick would survive the drawing
-           it refers to. */
-        var nl = q('zpw-nolev');
-        if (nl) nl.onchange = function () {
-          if (!W.draft.polys.length && !W.draft.img) {
-            nl.checked = false;
-            UI.toast('Draw an area or attach a plan first — there is nothing to share yet.', 'warn');
-            return;
-          }
-          commit();
-          if (nl.checked) zpAssign(ZP_NOLEV_ID, W.plateId);
-          else { zpAssign(ZP_NOLEV_ID, null); zpGc(); }
-          markDirty(); paint();
-        };
+        // ⚠️ The "no level" band tick was wired here until 2026-09-17 — see the note where the
+        // checkbox used to be emitted. Nothing in this window writes ZP_NOLEV_ID any more.
+        /* ---- "every floor of this category" -------------------------------------------
+           ⚠️ THE SAME GUARD AND THE SAME WRITER as a single tick: zpAssign per floor, so there
+           is exactly one way a floor comes to point at a plate. A bulk path that wrote the
+           pointer itself would be a second writer to keep in step with zpAssign's own note. */
+        wrap.querySelectorAll('[data-zpkind]').forEach(function (b) {
+          b.onclick = function () {
+            if (!W.draft.polys.length && !W.draft.img) {
+              UI.toast('Draw an area or attach a plan first — there is nothing to share yet.', 'warn');
+              return;
+            }
+            var k = b.dataset.zpkind;
+            var fl = SUBJ.others().concat(SUBJ.floor ? [SUBJ.floor] : [])
+              .filter(function (f) { return floorKind(f) === k; });
+            commit();
+            var n = 0;
+            fl.forEach(function (f) { if (zpIdFor(f) !== W.plateId) { zpAssign(f.id, W.plateId); n++; } });
+            // ⚠️ After the re-pointing, not before: a plate the last of those floors has just
+            // stopped pointing at is only orphaned once every assignment is done.
+            zpGc(); markDirty(); paint();
+            UI.toast(n + ' ' + (KIND_LABEL[k] || 'floor').toLowerCase() + ' floor' + (n === 1 ? '' : 's') +
+              ' now use this drawing.', 'success');
+          };
+        });
         wrap.querySelectorAll('[data-zpfl]').forEach(function (c) {
           c.onchange = function () {
             if (!W.draft.polys.length && !W.draft.img) {
@@ -40655,10 +41443,66 @@
 
       // ⚠️ Ctrl+Z reaches the window wherever the focus is, and is removed with it — a listener
       // left on the document would undo into a closed window's state on the next screen.
+      /* ⚠️⚠️ THE KEYBOARD ONLY ACTS ON THE DRAWING WHEN THE PLANNER IS NOT TYPING. This window
+         now holds four number boxes and several <select>s, and an arrow key inside a number box
+         means "step the value" — not "move the shape". Without this guard, editing the X field
+         with the keyboard would move the shape and edit the number at the same time, and Delete
+         in a field would remove the area the field describes. */
+      function _typing(ev) {
+        var t = ev.target;
+        if (!t || !t.tagName) return false;
+        var n = t.tagName;
+        return n === 'INPUT' || n === 'TEXTAREA' || n === 'SELECT' || t.isContentEditable;
+      }
       function onKey(ev) {
         if (!_zpWin) return;
         if ((ev.ctrlKey || ev.metaKey) && String(ev.key).toLowerCase() === 'z') { ev.preventDefault(); undo(); return; }
-        if (ev.key === 'Escape' && _zpWin.drawing) { ev.preventDefault(); _zpWin.drawing = false; _zpWin.pts = []; paint(); }
+        if (ev.key === 'Escape' && _zpWin.drawing) { ev.preventDefault(); _zpWin.drawing = false; _zpWin.pts = []; paint(); return; }
+        if (_typing(ev) || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        var W = _zpWin;
+        /* ---- Tab walks the areas ------------------------------------------------------
+           ⚠️ Owner 2026-09-17: *"improve UI to edit shapes."* On a floor traced into eight
+           zones, selecting the one UNDERNEATH another could only be done from the chip list at
+           the bottom of the window — a click on the drawing always takes the shape on top. Tab
+           is the way out, and it wraps. */
+        if (ev.key === 'Tab' && W.draft.polys.length) {
+          ev.preventDefault();
+          var ids = W.draft.polys.map(function (p) { return p.id; });
+          var at = ids.indexOf(W.sel);
+          var step = ev.shiftKey ? -1 : 1;
+          W.sel = ids[(at + step + ids.length * 2) % ids.length];
+          paint(); return;
+        }
+        var s = selShape(); if (!s) return;
+        if (ev.key === 'Delete' || ev.key === 'Backspace') {
+          ev.preventDefault();
+          var i = W.draft.polys.map(function (p) { return p.id; }).indexOf(W.sel);
+          if (i < 0) return;
+          snap(); W.draft.polys.splice(i, 1); W.sel = null; commit();
+          if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
+          paint(); return;
+        }
+        /* ---- arrow keys nudge ----------------------------------------------------------
+           ⚠️ THE STEP IS THE SNAP GRID when one is on, and 1 unit when it is off. A nudge that
+           ignored the grid would walk a shape off the gridlines its neighbours are meeting on,
+           which is the whole reason the grid exists. Shift multiplies by ten either way.
+           ⚠️ A LOCKED FOOTPRINT MOVES. Its corners are the floor plan's; its position on the
+           site is this drawing's, and moving it is exactly what the site plan is for. */
+        var D = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+        if (!D) return;
+        ev.preventDefault();
+        var unit = (W.grid > 0 ? W.grid : 1) * (ev.shiftKey ? 10 : 1);
+        var np = zpNudgePts(s.pts, D[0] * unit, D[1] * unit, H());
+        if (!np) return;                      // already against that edge — nothing to say
+        /* ⚠️ ONE SNAPSHOT PER BURST, which is the rule the drag already follows ("one snapshot
+           per gesture, taken on pointerdown"). A held arrow key auto-repeats ~30 times a second;
+           snapshotting each one would fill the 50-step history in under two seconds and leave
+           Ctrl+Z stepping a shape back one unit at a time. A pause of more than half a second
+           starts a new gesture. */
+        var now = Date.now();
+        if (!W.nudgeAt || now - W.nudgeAt > 500) snap();
+        W.nudgeAt = now;
+        s.pts = np; commit(); paint();
       }
       document.addEventListener('keydown', onKey, true);
       var _close = m.close;
@@ -40672,7 +41516,13 @@
       loadImg();
     }
     function stLevels(host) {
-      var used = usedGroups();
+      /* ⚠️⚠️ THE TRADES THAT HAVE A LOCATION, not every trade in use — see LOCLESS. Owner
+         2026-09-17: *"general requirements should have no tower, floor, or zones."* A chip for
+         a trade whose floors are ignored everywhere downstream is a screen inviting the planner
+         to type something that will never be read, and the emptiest possible bug report is
+         "I set up the floors and nothing happened". `_loclessUsed` is what is left out, and it
+         is SAID rather than silently dropped. */
+      var used = locGroups(), _loclessUsed = usedGroups().filter(locless);
       if (!used.length) {
         /* ⚠️ THE LOCATION BAR RENDERS EVEN HERE, and that is now load-bearing rather than a nicety.
            This step is the ONLY way into the Location Breakdown since it was taken out of the
@@ -40688,7 +41538,12 @@
             'and units as needed. Every later step, the push and all location grouping read what ' +
             'you name here.</p>') +
           _locBreakdownBar() +
-          '<div class="sbld-empty">No trades yet — add activities in step ' + _stepNo('Activities') + ' and assign each one a trade. The trades you use there will show up here, ready for their floors and zones.</div>';
+          (_loclessUsed.length
+            ? '<div class="sbld-empty">' + e2(_loclessUsed.map(function (g) { return GLABEL[g]; }).join(' and ')) +
+              ' ' + (_loclessUsed.length === 1 ? 'is' : 'are') + ' project-wide — no tower, floor or zone. ' +
+              'Add activities in step ' + _stepNo('Activities') + ' under a trade that is built somewhere, ' +
+              'and it will show up here for its floors and zones.</div>'
+            : '<div class="sbld-empty">No trades yet — add activities in step ' + _stepNo('Activities') + ' and assign each one a trade. The trades you use there will show up here, ready for their floors and zones.</div>');
         _locBarWire(host);
         return;
       }
@@ -40704,7 +41559,21 @@
         // Per TOWER: a count of the whole project beside a list showing one tower reads as a bug.
         var n = floorsOfTower(g, _twAct).reduce(function (t, f) { return t + (leavesOfFloor(g, f).length || 0); }, 0);
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
-      }).join('') + '</div>';
+      }).join('') +
+        /* ⚠️ THE MISSING CHIP IS EXPLAINED WHERE IT WOULD HAVE BEEN. A planner who used General
+           Requirements in step 1 and then cannot find it here has to be told why, once, in the
+           place they are looking — not left to conclude the step lost their trade. A dead chip
+           rather than a footnote, for the same reason: it holds the position. */
+        (_loclessUsed.length
+          ? _loclessUsed.map(function (g) {
+              return '<span class="sbld-chip sbld-chip-off" title="' +
+                e2(GLABEL[g] + ' is project-wide: mobilisation, site facilities, insurances, ' +
+                   'documentation. It is scheduled once for the whole job and carries no tower, ' +
+                   'floor or zone, so there is nothing to lay out here.') + '"><span class="sbld-dot" style="background:' +
+                gc(g) + '"></span>' + e2(GLABEL[g]) + ' <i>project-wide</i></span>';
+            }).join('')
+          : '') +
+        '</div>';
       // Most towers share the same floors/zones across trades — copy this trade's zoning to the others
       // (or pull another trade's zoning in) instead of re-entering the whole building per trade.
       var otherTr = used.filter(function (g) { return g !== tr; }), srcTr = otherTr.filter(function (g) { return cfg.zoning[g].floors.length; });
@@ -40790,6 +41659,62 @@
           '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span>' +
           copyInner +
         '</div></details>';
+      /* ==== FLOOR PLANS, READ BY CATEGORY =================================================
+         ⚠️⚠️ Owner 2026-09-17: *"improve the process flow of defining the floor plans per floor
+         and type."* Until now the only statement about floor plans on this screen was one
+         button per floor row, so the shape of the work — *draw one typical floor, one podium,
+         one roof, and point everything else at them* — was invisible. A forty-storey tower is
+         forty buttons that each say "Plan…", and the planner has to scroll the list to learn
+         that thirty-eight of them are the same drawing.
+         ⚠️ THE ROW IS THE CATEGORY, because the category is the unit the work actually repeats
+         on — the same field the zone sequence branches on and the same one the plan window's new
+         per-category apply acts on. Three numbers per row: how many storeys, how many DRAWINGS
+         they use between them, and how many storeys are still bare.
+         ⚠️ `Draw…` OPENS THE FIRST BARE FLOOR OF THAT CATEGORY, or — when every one of them is
+         already drawn — the first one, so the button is never a dead end. It is a shortcut into
+         the same window the row button opens; there is no second editor.
+         ⚠️ It is a <details>, shut by default once anything is drawn. Open on a tower with
+         nothing drawn, because then it is the next thing to do. */
+      var _planPanel = (function () {
+        if (!_twFloors.length) return '';
+        var rows = [], nAll = 0, nHave = 0;
+        KIND_ORDER.forEach(function (k) {
+          var fl = _twFloors.map(function (o) { return o.f; }).filter(function (f) { return floorKind(f) === k; });
+          if (!fl.length) return;
+          var plates = {}, bare = [];
+          fl.forEach(function (f) {
+            var pid = zpIdFor(f);
+            if (pid && zpBag().plate[pid]) plates[pid] = 1; else bare.push(f);
+          });
+          var np = Object.keys(plates).length;
+          nAll += fl.length; nHave += (fl.length - bare.length);
+          var target = (bare[0] || fl[0]);
+          rows.push('<div class="sbld-fpk' + (bare.length ? '' : ' done') + '">' +
+            '<b>' + e2(KIND_LABEL[k]) + '</b>' +
+            '<span>' + fl.length + ' storey' + (fl.length === 1 ? '' : 's') + '</span>' +
+            '<span>' + (np ? (np + ' drawing' + (np === 1 ? '' : 's')) : 'no drawing yet') + '</span>' +
+            '<span class="' + (bare.length ? 'sbld-fpk-gap' : 'sbld-fpk-ok') + '">' +
+              (bare.length ? bare.length + ' not drawn' : 'all drawn') + '</span>' +
+            '<button class="pd-btn" data-fpk="' + e2(target.id) + '" title="' +
+              e2(bare.length
+                ? ('Open the plan for ' + (target.code || target.name || 'this floor') + ' — the first ' +
+                   KIND_LABEL[k].toLowerCase() + ' floor with no drawing. Trace it once, then use the ' +
+                   'category button inside to give it to all ' + fl.length + '.')
+                : ('Open ' + (target.code || target.name || 'this floor') + '’s plan.')) + '">' +
+              (bare.length ? 'Draw…' : 'Open…') + '</button>' +
+            '</div>');
+        });
+        if (!rows.length) return '';
+        return '<details class="sbld-fpanel"' + (nHave ? '' : ' open') + '>' +
+          '<summary>Floor plans — <b>' + nHave + ' of ' + nAll + '</b> stor' + (nAll === 1 ? 'ey' : 'eys') +
+            ' drawn' + (multiTower() ? ' in ' + e2(towerLabel(_twAct)) : '') + '</summary>' +
+          '<div class="sbld-fpbody">' + rows.join('') +
+            '<p class="sbld-hint" style="margin:2px 0 0;">Draw <b>one plan per category</b> and share it — ' +
+            'inside the plan window, <b>All floors of one category</b> points every storey of that ' +
+            'type at the same drawing. Re-trace it once and all of them follow. A storey that is ' +
+            'genuinely different gets its own from its row below.</p>' +
+          '</div></details>';
+      })();
       host.innerHTML = '<h2>' + _stepNo('Floors & Zones') + ' · Substructure &amp; Superstructure — per trade</h2>' +
         '<p class="sbld-lede">Pick a trade, add its <b>' + e2(dimLabelOf('floor').toLowerCase()) + 's</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>' + e2(dimLabelOf('zone').toLowerCase()) + 's</b> and <b>' + e2(dimLabelOf('unit').toLowerCase()) + 's</b>. These are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
         // ⚠️ THE LOCATION BREAKDOWN COMES FIRST. The builder's three location levels ARE the project's
@@ -40813,6 +41738,7 @@
         '<div class="sbld-lvlgrid">' +
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button></div>' +
         fillCtrl +
+        _planPanel +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
           (multiTower() ? ' <span style="font-weight:700;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
@@ -40822,27 +41748,47 @@
         '';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
       var applyAll = host.querySelector('#b-applyall'); if (applyAll) applyAll.onclick = function () {
-        if (!confirm('Copy ' + GLABEL[tr] + '\'s floors/zones/units to all ' + otherTr.length + ' other trade(s)? This REPLACES their current zoning.')) return;
-        otherTr.forEach(function (g) { cfg.zoning[g].floors = cloneFloors(zn.floors); });
-        pruneLinks(); markDirty(); render();
+        psConfirm('Copy ' + GLABEL[tr] + '\u2019s floors, zones and units to all ' + otherTr.length + ' other trade(s)?', function () {
+          otherTr.forEach(function (g) { cfg.zoning[g].floors = cloneFloors(zn.floors); });
+          pruneLinks(); markDirty(); render();
+        }, { title: 'Copy this layout to every trade?', ok: 'Copy to ' + otherTr.length + ' trade' + (otherTr.length === 1 ? '' : 's'),
+             note: 'This <b>replaces</b> their current zoning. Most towers really are laid out the same for every trade \u2014 but any trade that zones its floors differently loses that here.' });
       };
       var copyFrom = host.querySelector('#b-copyfrom'); if (copyFrom) copyFrom.onchange = function () {
         var g = copyFrom.value; if (!g) return;
-        if (zn.floors.length && !confirm('Replace ' + GLABEL[tr] + '\'s current zoning with a copy of ' + GLABEL[g] + '\'s?')) { copyFrom.value = ''; return; }
-        zn.floors = cloneFloors(cfg.zoning[g].floors); pruneLinks(); markDirty(); render();
+        var _take = function () { zn.floors = cloneFloors(cfg.zoning[g].floors); pruneLinks(); markDirty(); render(); };
+        if (!zn.floors.length) { _take(); return; }
+        /* \u26a0 A <select> has already moved by the time this fires, so cancel has to put it back \u2014
+           the same rule the Activity level control follows. */
+        psConfirm('Replace ' + GLABEL[tr] + '\u2019s current zoning with a copy of ' + GLABEL[g] + '\u2019s?', _take,
+          { title: 'Take another trade\u2019s layout?', ok: 'Replace it',
+            note: 'Everything typed against ' + e2(GLABEL[tr]) + '\u2019s floors \u2014 names, zones, units \u2014 goes with them.',
+            onCancel: function () { copyFrom.value = ''; } });
       };
       // The floor-plan window, opened from the button on each floor row.
       host.querySelectorAll('[data-zpopen]').forEach(function (b) {
         b.onclick = function () { openZonePlan(tr, b.dataset.zpopen); };
       });
       // ⚠️ Wired next to the floor-plan buttons, because it is the same window — see openPlate.
+      // ⚠️ Straight into the SAME window the floor row's own button opens — see the note on
+      // _planPanel. The category panel is a route, never a second editor.
+      host.querySelectorAll('[data-fpk]').forEach(function (b) {
+        b.onclick = function () { openZonePlan(tr, b.dataset.fpk); };
+      });
       var _sb = host.querySelector("#b-siteplan");
       if (_sb) _sb.onclick = function () { openSitePlan(); };
       _locBarWire(host);
       var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () {
         // Changing the activity level changes every leaf uid, so links can't survive it — confirm first.
-        if (cfg.links.length && !confirm('Changing the Activity level rebuilds the locations, so the ' + cfg.links.length + ' zone link(s) from Step 3 will be cleared. Continue?')) { lvlSel.value = cfg.locLevel || 'auto'; return; }
-        cfg.locLevel = lvlSel.value; cfg.links = []; markDirty(); render();
+        /* ⚠️ THIS IS THE SITE THAT NEEDS `onCancel`. A <select> has ALREADY moved by the time its
+           change event fires, so "cancel" here is not "do nothing" — the control has to be put
+           back, or the screen would say Zone level while the setup still said Floor. */
+        var _apply = function () { cfg.locLevel = lvlSel.value; cfg.links = []; markDirty(); render(); };
+        if (!cfg.links.length) { _apply(); return; }
+        psConfirm('Changing the Activity level rebuilds the locations, so the ' + cfg.links.length +
+          ' zone link(s) from step ' + _stepNo('Zone sequence') + ' will be cleared.', _apply,
+          { title: 'Change the activity level?', ok: 'Change it and clear the links',
+            onCancel: function () { lvlSel.value = cfg.locLevel || 'auto'; } });
       };
       // ⚠️ Counts and codes are per TOWER, so adding F1 to Tower B does not become F21 because Tower
       // A already has twenty floors.
@@ -40861,51 +41807,162 @@
         };
         document.addEventListener('pointerdown', _twOut);
       }
+      /* ==== THE TOWER, ASKED FOR IN ONE FORM ===========================================
+         ⚠️⚠️ TWO `prompt()`s BECAME ONE DIALOG. Owner 2026-09-17: *"when adding towers, floors,
+         UI usually gives browser pop-up. instead of browser pop-up create an app pop-up window
+         where user can input the fields."* Adding a tower asked for the name, closed, then asked
+         for the code in a second box whose only clue about what a code is for was the sentence
+         it was titled with. The two fields belong to one object and are now asked as one.
+         ⚠️ The code is REQUIRED here, where it was silently defaulted before: it is what every
+         generated activity id and every location label is built from, so a blank one produced
+         codes with a hole in them and nobody found out until the push. */
+      function _twFields(t, n) {
+        return [
+          { k: 'name', label: 'Tower name', value: (t && t.name) || ('Tower ' + n), required: true,
+            placeholder: 'Tower ' + n, hint: 'What the planners call it — shown on the tower bar, in the stacking and on the site plan.' },
+          { k: 'code', label: 'Short code', value: (t && t.code) || ('T' + n), required: true,
+            placeholder: 'T' + n, hint: 'Two or three characters. It is built into generated activity codes and location labels, so keep it short and unique.' }
+        ];
+      }
       var _twAdd = host.querySelector('#b-twadd');
       if (_twAdd) _twAdd.onclick = function () {
         var n = towerList().length + 1;
-        var nm = prompt('Name for the new tower:', 'Tower ' + n); if (nm == null) return;
-        nm = String(nm).trim() || ('Tower ' + n);
-        var cd = prompt('Short code for ' + nm + ' (used in codes and labels):', 'T' + n);
-        var t = { id: uidv(), code: String(cd == null ? ('T' + n) : cd).trim() || ('T' + n), name: nm };
-        cfg.towers = towerList().concat([t]); uiTower = t.id; markDirty(); render();
+        psAsk({ title: 'Add a tower', ok: 'Add tower',
+          note: 'Each tower keeps its own floors, zones and zone sequencing. Nothing is copied into it — use <b>Copy from…</b> afterwards if this tower repeats another.',
+          fields: _twFields(null, n),
+          validate: function (v) {
+            var k = String(v.code).trim().toLowerCase();
+            return towerList().some(function (t) { return String(t.code || '').trim().toLowerCase() === k; })
+              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
+          }
+        }, function (v) {
+          var t = { id: uidv(), code: String(v.code).trim(), name: String(v.name).trim() };
+          cfg.towers = towerList().concat([t]); uiTower = t.id; markDirty(); render();
+        });
       };
       var _twRen = host.querySelector('#b-twren');
       if (_twRen) _twRen.onclick = function () {
         var t = towerById(_twAct); if (!t) return;
-        var nm = prompt('Tower name:', t.name || ''); if (nm == null) return;
-        var cd = prompt('Tower code:', t.code || ''); if (cd == null) return;
-        t.name = String(nm).trim() || t.name; t.code = String(cd).trim() || t.code; markDirty(); render();
+        psAsk({ title: 'Rename ' + towerLabel(_twAct), ok: 'Rename',
+          fields: _twFields(t, towerList().length),
+          validate: function (v) {
+            var k = String(v.code).trim().toLowerCase();
+            return towerList().some(function (o) { return o.id !== t.id && String(o.code || '').trim().toLowerCase() === k; })
+              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
+          }
+        }, function (v) {
+          t.name = String(v.name).trim() || t.name; t.code = String(v.code).trim() || t.code;
+          markDirty(); render();
+        });
       };
       var _twCopy = host.querySelector('#b-twcopy');
       if (_twCopy) _twCopy.onclick = function () {
         var others = towerList().filter(function (t) { return t.id !== _twAct; });
         if (!others.length) return;
-        var pick = prompt('Copy floors, zones, units and zone sequencing INTO ' + towerLabel(_twAct) +
-          ' from which tower?\n\n' + others.map(function (t, i) { return (i + 1) + ') ' + (t.name || t.code); }).join('\n') +
-          '\n\nType a number:', '1');
-        if (pick == null) return;
-        var src = others[(parseInt(pick, 10) || 0) - 1];
-        if (!src) { UI.toast('No tower picked.', 'warn'); return; }
-        if (!confirm('This REPLACES everything currently under ' + towerLabel(_twAct) + ' with a copy of ' +
-          (src.name || src.code) + '. Continue?')) return;
-        var r = copyTower(src.id, _twAct);
-        markDirty(); render();
-        UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') + ' and ' + r.links +
-          ' zone link' + (r.links === 1 ? '' : 's') + ' from ' + (src.name || src.code) + '.', 'success');
+        /* ⚠️⚠️ A LIST TO PICK FROM, NOT A NUMBER TO TYPE. This was a `prompt()` holding a
+           hand-numbered menu — "1) Tower A / 2) Tower B … Type a number:" — which is a <select>
+           rendered in text, with a typo for every way of getting it wrong and no way to tell the
+           planner what each tower actually holds. The counts are on the options now.
+           ⚠️ AND THE WARNING IS IN THE SAME DIALOG. It used to be a SECOND browser box after the
+           number was typed; the thing it warns about (this replaces everything here) is the whole
+           reason the planner is being asked, so it belongs beside the question. */
+        psAsk({ title: 'Copy another tower into ' + towerLabel(_twAct),
+          ok: 'Copy and replace', danger: true,
+          text: 'Floors, zones, units and zone sequencing are copied in.',
+          note: '⚠️ This <b>REPLACES</b> everything currently under <b>' + e2(towerLabel(_twAct)) +
+            '</b>. It cannot be undone.',
+          fields: [{ k: 'src', label: 'Copy from', type: 'select', value: others[0].id,
+            options: others.map(function (t) {
+              var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, t.id).length; });
+              return [t.id, (t.name || t.code) + ' — ' + n + ' floor' + (n === 1 ? '' : 's')];
+            }) }]
+        }, function (v) {
+          var src = others.filter(function (t) { return t.id === v.src; })[0];
+          if (!src) { UI.toast('No tower picked.', 'warn'); return; }
+          var r = copyTower(src.id, _twAct);
+          markDirty(); render();
+          UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') + ' and ' + r.links +
+            ' zone link' + (r.links === 1 ? '' : 's') + ' from ' + (src.name || src.code) + '.', 'success');
+        });
       };
       var _twDel = host.querySelector('#b-twdel');
       if (_twDel) _twDel.onclick = function () {
         if (towerList().length < 2) return;
         var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, _twAct).length; });
-        if (!confirm('Delete ' + towerLabel(_twAct) + (n ? ' and its ' + n + ' floor' + (n === 1 ? '' : 's') : '') + '? This cannot be undone.')) return;
-        GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return towerIdOf(f) !== _twAct; }); });
-        cfg.towers = towerList().filter(function (t) { return t.id !== _twAct; });
-        cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return k.from !== _twAct && k.to !== _twAct; });
-        uiTower = towerList()[0].id;
-        pruneLinks(); markDirty(); render();
+        psConfirm('Delete ' + towerLabel(_twAct) +
+          (n ? ' and its ' + n + ' floor' + (n === 1 ? '' : 's') : '') + '?', function () {
+          GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return towerIdOf(f) !== _twAct; }); });
+          cfg.towers = towerList().filter(function (t) { return t.id !== _twAct; });
+          cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return k.from !== _twAct && k.to !== _twAct; });
+          uiTower = towerList()[0].id;
+          pruneLinks(); markDirty(); render();
+        }, { title: 'Delete this tower?', ok: 'Delete the tower',
+             note: 'This cannot be undone. Every trade’s floors under this tower go with it.' });
       };
-      host.querySelector('#b-addfloor').onclick = function () { var nf = floorsOfTower(tr, _twAct).filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', kind: 'typical', towerId: _twAct, zones: [] }); markDirty(); render(); };
+      /* ==== ADDING A STOREY, AS A FORM =================================================
+         ⚠️⚠️ Owner 2026-09-17: *"when adding towers, floors … create an app pop-up window where
+         user can input the fields"*, and the same prompt's *"improve the process flow of defining
+         the floor plans per floor and type"*. "+ Add floor" appended ONE blank row with an
+         auto-code and the default category, and everything that actually distinguishes a storey —
+         its name, whether it is a roof or a podium or a typical floor, how many zones are on it —
+         had to be typed into the row afterwards, once per floor. A tower is built ten floors at a
+         time, and the count is the field that was missing: `How many` turns ten gestures into one.
+         ⚠️ THE DEFAULTS REPRODUCE THE OLD BUTTON EXACTLY — one floor, the next auto code, no name,
+         Typical, no zones — so pressing Enter the moment the dialog opens is the gesture that was
+         there before, and nothing about the fast path got slower.
+         ⚠️ The CATEGORY is asked here rather than left to the row, because it is what the zone
+         sequence branches on (a basement is not sequenced like a typical floor) and it is the
+         "type" half of the owner's "per floor and type". Choosing it at birth is also what lets
+         the plan step below offer the right plate to share.
+         ⚠️ `_fkind` defaults the copy for the two buttons: the basement one is the same form with
+         the substructure answers pre-filled, not a second dialog to keep in step. */
+      function _addFloorDlg(sub) {
+        var sibs = floorsOfTower(tr, _twAct).filter(function (f) { return !!f.sub === !!sub; });
+        var pre = sub ? 'B' : 'F', from = sibs.length + 1;
+        psAsk({
+          title: sub ? 'Add basement levels' : 'Add floors',
+          text: (multiTower() ? towerLabel(_twAct) + ' · ' : '') + GLABEL[tr] +
+            (sub ? ' — substructure, built deepest first.' : ' — superstructure, built bottom-up.'),
+          ok: 'Add',
+          fields: [
+            { k: 'n', label: 'How many', type: 'number', value: 1, min: 1, max: 60,
+              hint: 'More than one and the codes run on from the first — ' + pre + from + ', ' + pre + (from + 1) + ', …' },
+            { k: 'code', label: 'Code of the first one', value: pre + from, required: true,
+              hint: 'Short, and what the WBS and every generated activity code is built from. A trailing number counts up.' },
+            { k: 'name', label: 'Name (optional)', value: '',
+              placeholder: sub ? 'Lower basement' : 'Ground floor',
+              hint: 'The readable name. Where one is given it — not the code — names the floor’s WBS branch.' },
+            { k: 'kind', label: 'Category', type: 'select', value: sub ? 'basement' : 'typical',
+              options: KIND_ORDER.map(function (k) { return [k, KIND_LABEL[k]]; }),
+              hint: 'What kind of storey this is. The zone sequence can be set separately per category, and the floor plan can be shared across every floor of one category.' },
+            (showZones ? { k: 'z', label: 'Zones on each', type: 'number', value: 0, min: 0, max: 20,
+              hint: 'Leave at 0 for a floor that is scheduled as one location. Zones are named Z1, Z2… and can be renamed in the list.' } : null)
+          ]
+        }, function (v) {
+          var n = Math.max(1, Math.min(60, +v.n || 1));
+          var z = Math.max(0, Math.min(20, +v.z || 0));
+          /* ⚠️ The number is taken off the END of the typed code and counted up from there, so
+             "B2" gives B2, B3, B4 and "PODIUM" gives PODIUM, PODIUM 2 — a code with no number in
+             it must not silently become "PODIUM1" for the first one. */
+          var mm = /^(.*?)(\d+)$/.exec(String(v.code).trim());
+          var stem = mm ? mm[1] : (String(v.code).trim() + ' '), num = mm ? +mm[2] : 1;
+          var made = [];
+          for (var i = 0; i < n; i++) {
+            var zs = [];
+            for (var j = 1; j <= z; j++) zs.push({ id: uidv(), code: 'Z' + j, units: [] });
+            made.push({ id: uidv(), code: mm ? (stem + (num + i)) : (i ? (stem + (num + i)) : String(v.code).trim()),
+                        name: (n === 1 ? String(v.name || '').trim() : ''), kind: v.kind,
+                        sub: (v.kind === 'basement'), towerId: _twAct, zones: zs });
+          }
+          /* ⚠️ Basements are INSERTED at index 0 and in reverse, because the list runs bottom-up
+             and a basement is built deepest first — the same rule the old two buttons encoded, in
+             one place now that one form makes both. */
+          if (made[0].sub) zn.floors = made.slice().reverse().concat(zn.floors);
+          else zn.floors = zn.floors.concat(made);
+          markDirty(); render();
+        });
+      }
+      host.querySelector('#b-addfloor').onclick = function () { _addFloorDlg(false); };
       // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
       /* A BASEMENT BELONGS TO THE SELECTED TOWER, LIKE EVERY OTHER FLOOR.
          Owner 2026-09-04: *"the adding of basement is not working, meaning when i click add basement,
@@ -40916,22 +41973,29 @@
          The count was wrong for the same reason: it counted basements across ALL towers, so adding
          B1 to Tower 3 while Tower 1 already had two produced "B3". "+ Add floor" already scopes its
          count with floorsOfTower; this now matches it.
-         Basements build bottom-up (deepest first), so a new one is still INSERTED at index 0. */
-      host.querySelector('#b-addbsmt').onclick = function () { var nb = floorsOfTower(tr, _twAct).filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, kind: 'basement', towerId: _twAct, zones: [] }); markDirty(); render(); };
+         Basements build bottom-up (deepest first), so a new one is still INSERTED at index 0.
+         ⚠️ 2026-09-17: both buttons are now ONE form — see _addFloorDlg. The rule above still
+         holds and is implemented there; this button only pre-fills the substructure answers. */
+      host.querySelector('#b-addbsmt').onclick = function () { _addFloorDlg(true); };
       host.querySelector('#b-quick').onclick = function () {
         var B = Math.max(0, Math.min(20, qv('#q-base', 0))), F = Math.max(1, Math.min(80, qv('#q-floors', 1))), Z = Math.max(0, Math.min(20, qv('#q-zones', 0))), U = Math.max(0, Math.min(20, qv('#q-units', 0)));
         quickN[tr] = { B: B, F: F, Z: Z, U: U };
-        if (zn.floors.length && !confirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?')) return;
-        function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
-        // ⚠️ Replace only THIS tower's floors. This was `zn.floors = []`, which wiped every other
-        // tower's floors too — generating Tower 2 destroyed Tower 1.
-        var _kept = zn.floors.filter(function (f) { return towerIdOf(f) !== _twAct; });
-        var _gen = [];
-        for (var bi = B; bi >= 1; bi--) _gen.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', towerId: _twAct, zones: mkZones() });   // deepest (B{B}) first
-        for (var i = 1; i <= F; i++) _gen.push({ id: uidv(), code: 'F' + i, name: '', kind: 'typical', towerId: _twAct, zones: mkZones() });
-        zn.floors = _kept.concat(_gen);
-        // Only the regenerated tower's links are stale; the other towers' stay valid.
-        pruneLinks(); markDirty(); render();
+        function _go() {
+          function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
+          // ⚠️ Replace only THIS tower's floors. This was `zn.floors = []`, which wiped every other
+          // tower's floors too — generating Tower 2 destroyed Tower 1.
+          var _kept = zn.floors.filter(function (f) { return towerIdOf(f) !== _twAct; });
+          var _gen = [];
+          for (var bi = B; bi >= 1; bi--) _gen.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', towerId: _twAct, zones: mkZones() });   // deepest (B{B}) first
+          for (var i = 1; i <= F; i++) _gen.push({ id: uidv(), code: 'F' + i, name: '', kind: 'typical', towerId: _twAct, zones: mkZones() });
+          zn.floors = _kept.concat(_gen);
+          // Only the regenerated tower's links are stale; the other towers' stay valid.
+          pruneLinks(); markDirty(); render();
+        }
+        if (!zn.floors.length) { _go(); return; }
+        psConfirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?', _go,
+          { title: 'Replace this trade’s floors?', ok: 'Replace them',
+            note: 'Anything you have typed on those floors — names, zones, units — goes with them. Use <b>+ Add floor</b> instead to add to what is there.' });
       };
       host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); markDirty(); render(); }; });
       host.querySelectorAll('.sbld-delzone').forEach(function (b) { b.onclick = function () { zn.floors[+b.dataset.f].zones.splice(+b.dataset.z, 1); pruneLinks(); markDirty(); render(); }; });
@@ -41130,7 +42194,13 @@
       // View ⇄ Edit toggle. Leaving Edit clears any half-finished selection so it can't linger into View.
       var smb = host.querySelector('#b-seqmode'); if (smb) smb.onclick = function () { seqMode = (seqMode === 'edit') ? 'view' : 'edit'; if (seqMode !== 'edit') { pendSet = []; pendDst = []; linkPhase = 'src'; } render(); };
       host.querySelector('#b-autotrace').onclick = openAutoTraceDialog;
-      host.querySelector('#b-clear').onclick = function () { if (cfg.links.length && !confirm('Remove all ' + cfg.links.length + ' link(s)?')) return; cfg.links = []; nodeReset(); markDirty(); render(); };
+      host.querySelector('#b-clear').onclick = function () {
+        var _go = function () { cfg.links = []; nodeReset(); markDirty(); render(); };
+        if (!cfg.links.length) { _go(); return; }
+        psConfirm('Remove all ' + cfg.links.length + ' link(s)?', _go,
+          { title: 'Clear the zone sequence?', ok: 'Remove ' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's'),
+            note: 'The zones stay; only the flow between them goes. <b>Auto-trace</b> can rebuild a takt flow afterwards.' });
+      };
       var cfb = host.querySelector('#b-confirm'); if (cfb) cfb.onclick = function () { nodeConfirm(); };
       var lmb = host.querySelector('#b-linkmgr'); if (lmb) lmb.onclick = openLinkManager;
       var doneb = host.querySelector('#b-done'); if (doneb) doneb.onclick = nodeReset;
@@ -41178,7 +42248,13 @@
         var ex = matches[0], many = matches.length > 1;
         openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true, count: matches.length },
           function (type, lag) { matches.forEach(function (m) { m.type = type; m.lag = lag; }); markDirty(); render(); },
-          function () { if (many && !confirm('Unlink all ' + matches.length + ' relationships between these two?')) return; matches.forEach(function (m) { removeLink(m.from, m.to); }); seqSelLink = null; markDirty(); render(); });
+          function () {
+            var _go = function () { matches.forEach(function (m) { removeLink(m.from, m.to); }); seqSelLink = null; markDirty(); render(); };
+            if (!many) { _go(); return; }
+            psConfirm('Unlink all ' + matches.length + ' relationships between these two?', _go,
+              { title: 'Remove every link here?', ok: 'Unlink all ' + matches.length,
+                note: 'This arrow stands for ' + matches.length + ' separate relationships at the level you are viewing. All of them go.' });
+          });
       }); });
     }
     // left-click a zone/bar → toggle it in the current phase's set (free multi-select)
@@ -41280,7 +42356,12 @@
         if (window.Icons) Icons.hydrate(body);
       }
       search.oninput = draw;
-      ov.querySelector('#sblm-clear').onclick = function () { if (cfg.links.length && confirm('Remove all ' + cfg.links.length + ' link(s)?')) { cfg.links = []; markDirty(); draw(); } };
+      ov.querySelector('#sblm-clear').onclick = function () {
+        if (!cfg.links.length) return;
+        psConfirm('Remove all ' + cfg.links.length + ' link(s)?', function () { cfg.links = []; markDirty(); draw(); },
+          { title: 'Clear the zone sequence?', ok: 'Remove ' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's'),
+            note: 'The zones stay; only the flow between them goes.' });
+      };
       draw();
     }
     // Readable label for a class-code link endpoint.
@@ -41321,7 +42402,13 @@
         if (window.Icons) Icons.hydrate(body);
       }
       search.oninput = draw;
-      ov.querySelector('#sbam-clear').onclick = function () { if (countTradeLinks(tr) && confirm('Remove all ' + countTradeLinks(tr) + ' ' + GLABEL[tr] + ' link(s)?')) { clearTradeLinks(tr); draw(); } };
+      ov.querySelector('#sbam-clear').onclick = function () {
+        var n = countTradeLinks(tr);
+        if (!n) return;
+        psConfirm('Remove all ' + n + ' ' + GLABEL[tr] + ' link(s)?', function () { clearTradeLinks(tr); draw(); },
+          { title: 'Clear this trade\u2019s sequence?', ok: 'Remove ' + n + ' link' + (n === 1 ? '' : 's'),
+            note: 'The class codes stay; only the order between them goes.' });
+      };
       draw();
     }
 
@@ -41473,8 +42560,10 @@
       host.querySelectorAll('[data-phreset]').forEach(function (b) {
         b.onclick = function () {
           var v = b.dataset.phreset;
-          if (!confirm('Replace this phase’s activities with the typical set?')) return;
-          sbPhases()[v].acts = (SB_PH_DEF[v] || []).map(sbPhAct); markDirty(); render();
+          psConfirm('Replace this phase\u2019s activities with the typical set?', function () {
+            sbPhases()[v].acts = (SB_PH_DEF[v] || []).map(sbPhAct); markDirty(); render();
+          }, { title: 'Back to the typical activities?', ok: 'Replace them',
+               note: 'Anything you have typed or re-ordered in this phase goes.' });
         };
       });
       host.querySelectorAll('[data-phdel]').forEach(function (b) {
@@ -42441,8 +43530,10 @@
     async function sbDoDerive() {
       if (!curPid) { UI.toast('Select a project first.', 'error'); return; }
       var had = (cfg && cfg.activities && cfg.activities.length) || 0;
-      if (had && !confirm('Replace this setup’s ' + had + ' activity line(s) with what is read from the live schedule?\n\n' +
-        'The schedule itself is only read, never changed. Save the setup under a new name first if you want to keep the current one.')) return;
+      if (had && !(await psOk('Replace this setup\u2019s ' + had + ' activity line(s) with what is read from the live schedule?', {
+        title: 'Read the schedule into the steps?', ok: 'Read it in',
+        note: 'The schedule itself is only <b>read</b>, never changed. Save this setup under a new name first if you want to keep it.'
+      }))) return;
       if (typeof showLoading === 'function') showLoading('Reading the schedule into the steps…');
       var res;
       try { res = sbDeriveFromSchedule(); }
@@ -42602,8 +43693,10 @@
       var gb = host.querySelector('#b-impgo'); if (gb) gb.onclick = function () { mode = 'import'; step = 1; render(); };
       var db = host.querySelector('#b-impdrop');
       if (db) db.onclick = function () {
-        if (!confirm('Discard the staged import from “' + imp.fname + '”?\n\nNothing has been written to the schedule, so nothing is deleted — you would just have to read the file again.')) return;
-        imp = null; _impCountMemo = null; mode = sbDefaultMode(); step = 0; render();
+        psConfirm('Discard the staged import from “' + imp.fname + '”?', function () {
+          imp = null; _impCountMemo = null; mode = sbDefaultMode(); step = 0; render();
+        }, { title: 'Throw away the staged import?', ok: 'Discard it',
+             note: 'Nothing has been written to the schedule, so nothing is deleted \u2014 but every phase, exclusion and relationship decision made over this file goes, and you would have to read it again.' });
       };
       var nb = host.querySelector('#b-modenew'); if (nb) nb.onclick = function () { setMode('new'); };
       var db2 = host.querySelector('#b-modederive'); if (db2) db2.onclick = sbDoDerive;
@@ -43339,8 +44432,11 @@
       var rq = host.querySelector('#b-relq'); if (rq) rq.onchange = function () { imp.relQ = rq.value; render(); };
       var rr = host.querySelector('#b-relreset');
       if (rr) rr.onclick = function () {
-        if (!confirm('Undo all ' + impRelDirty() + ' relationship change(s) and go back to exactly what the file says?')) return;
-        imp.relDrop = {}; imp.relEdit = {}; imp.relAdd = {}; render();
+        var n = impRelDirty();
+        psConfirm('Undo all ' + n + ' relationship change(s)?', function () {
+          imp.relDrop = {}; imp.relEdit = {}; imp.relAdd = {}; render();
+        }, { title: 'Go back to the file\u2019s own logic?', ok: 'Undo ' + n + ' change' + (n === 1 ? '' : 's'),
+             note: 'Every link you dropped, re-typed or added over this import goes, and the relationships read exactly as the file states them.' });
       };
       // Click an arrow to edit its type/lag or unlink it — the build path's own gesture.
       host.querySelectorAll('.sbld-linkhit').forEach(function (pth) {
@@ -43494,9 +44590,12 @@
       // panel behind it, and the focus in this box, are untouched.
       search.oninput = draw;
       ov.querySelector('#implm-undo').onclick = function () {
-        if (!impRelDirty()) { UI.toast('Nothing to undo — these are the file’s own relationships.', 'info'); return; }
-        if (!confirm('Undo all ' + impRelDirty() + ' relationship change(s) and go back to exactly what the file says?')) return;
-        imp.relDrop = {}; imp.relEdit = {}; imp.relAdd = {}; draw();
+        var n = impRelDirty();
+        if (!n) { UI.toast('Nothing to undo \u2014 these are the file\u2019s own relationships.', 'info'); return; }
+        psConfirm('Undo all ' + n + ' relationship change(s)?', function () {
+          imp.relDrop = {}; imp.relEdit = {}; imp.relAdd = {}; draw();
+        }, { title: 'Go back to the file\u2019s own logic?', ok: 'Undo ' + n + ' change' + (n === 1 ? '' : 's'),
+             note: 'Every link you dropped, re-typed or added over this import goes.' });
       };
       draw();
     }
@@ -43575,8 +44674,10 @@
       var pk = host.querySelector('#b-imppkg'); if (pk) pk.onchange = function () { imp.pkgId = pk.value || null; };
       var cx = host.querySelector('#b-impcancel');
       if (cx) cx.onclick = function () {
-        if (!confirm('Discard the staged import from “' + imp.fname + '”?\n\nNothing has been written, so nothing is deleted.')) return;
-        imp = null; _impCountMemo = null; mode = sbDefaultMode(); step = 0; render();
+        psConfirm('Discard the staged import from “' + imp.fname + '”?', function () {
+          imp = null; _impCountMemo = null; mode = sbDefaultMode(); step = 0; render();
+        }, { title: 'Throw away the staged import?', ok: 'Discard it',
+             note: 'Nothing has been written, so nothing is deleted \u2014 but every decision made over this file goes with it.' });
       };
       var go = host.querySelector('#b-impcommit'); if (go) go.onclick = impCommit;
     }
@@ -44087,9 +45188,10 @@
          because unassigned activities are invisible to every package total and the
          only cure is a bulk re-tag afterwards. */
       if (!usePkg && (PACKAGES || []).length) {
-        if (!confirm('This project has ' + PACKAGES.length + ' contract package(s), but this setup is not assigned to one.\n\n' +
-          'The activities will be pushed at project level and will belong to NO package, so they will not appear in any ' +
-          'package total. Assign the setup to a package first (Setups), or continue?')) return;
+        if (!(await psOk('This project has ' + PACKAGES.length + ' contract package(s), but this setup is not assigned to one.', {
+          title: 'Push without a package?', ok: 'Push at project level', cancel: 'Go back and assign one',
+          note: 'The activities will belong to <b>no package</b>, so they will not appear in any package total, and the only cure afterwards is a bulk re-tag. Assign the setup to a package in <b>Setups</b> first.'
+        }))) return;
       }
       if (typeof showLoading === 'function') showLoading('Pushing to the project schedule…');
       var locIds = await ensureLocLevels();
@@ -45893,10 +46995,13 @@
       // basis — so what was priced under the old basis is orphaned, not silently re-attached to a
       // line that happens to share a name. Said out loud, with the count, before anything moves.
       var priced = Object.keys(c.groups || {}).filter(function (k2) { return c.groups[k2] && c.groups[k2].total != null; });
-      if (priced.length && !confirm('Switch what is being priced to \u201c' + (k === 'wbs' ? 'WBS branch name' : 'Activity name') + '\u201d?\n\n' +
-        priced.length + ' cost line(s) already carry a total. The cost lines are named by the basis, so those figures will no longer match any line and will read as unpriced.\n\n' +
-        'Nothing is written to the schedule until you press Apply.')) return;
-      c.basis = k; c.basisChosen = true; selGroup = null; markDirty(); paint();
+      var _switch = function () { c.basis = k; c.basisChosen = true; selGroup = null; markDirty(); paint(); };
+      if (!priced.length) { _switch(); return; }
+      psConfirm('Switch what is being priced to \u201c' + (k === 'wbs' ? 'WBS branch name' : 'Activity name') + '\u201d?', _switch,
+        { title: 'Change the cost-line basis?', ok: 'Switch the basis',
+          note: '<b>' + priced.length + '</b> cost line(s) already carry a total. Cost lines are named by the basis, ' +
+            'so those figures will no longer match any line and will read as unpriced. Nothing is written to the ' +
+            'schedule until you press <b>Apply</b>.' });
     }
     function entry(name) { var c = ensureCfg(); return (c.groups[name] = c.groups[name] || { total: null, mode: 'equal', pct: {}, curve: 'linear' }); }
     async function load() {
@@ -45981,11 +47086,14 @@
         });
       });
       if (!writes.length) { UI.toast('The schedule already carries this loading — nothing to write.', 'success'); return; }
-      var msg = 'Write Planned IBB on ' + writes.length + ' activit' + (writes.length === 1 ? 'y' : 'ies') + '?';
-      // ⚠️ An existing planned_cost may have come from a P6 import or from someone else's loading, so
-      // overwriting it is stated with a count rather than done quietly.
-      if (overwrite) msg += '\n\n' + overwrite + ' of them already carry a Planned IBB from elsewhere (an import, or an earlier loading) and will be replaced.';
-      if (!confirm(msg)) return;
+      /* \u26a0\ufe0f An existing planned_cost may have come from a P6 import or from someone else\u2019s
+         loading, so overwriting it is stated with a count rather than done quietly. */
+      if (!(await psOk('Write Planned IBB on ' + writes.length + ' activit' + (writes.length === 1 ? 'y' : 'ies') + '?', {
+        title: 'Write this cost onto the schedule?', ok: 'Write ' + writes.length, danger: !!overwrite,
+        note: overwrite
+          ? ('<b>' + overwrite + '</b> of them already carry a Planned IBB from elsewhere \u2014 an import, or an earlier loading \u2014 and will be <b>replaced</b>.')
+          : 'None of them carries a Planned IBB yet, so nothing is overwritten.'
+      }))) return;
       showLoading('Writing cost onto ' + writes.length + ' activities…');
       // ⚠️ TOLERANT OF THE UN-RUN cost_curve MIGRATION, and it degrades rather than aborting.
       // PostgREST rejects the WHOLE row when it does not know a column (PGRST204), so a missing
@@ -46454,9 +47562,10 @@
       // step 1 — rename
       panel.querySelectorAll('[data-ren]').forEach(function (b) {
         b.onclick = function () {
-          var old = b.dataset.ren, n = prompt('Rename this activity everywhere it occurs in the schedule:', old);
-          if (n == null) return;
-          renameGroup(old, n);
+          var old = b.dataset.ren;
+          psPrompt('What should this be called?', old, function (n) { renameGroup(old, n); },
+            { title: 'Rename this cost line', fieldLabel: 'Activity name', required: true, ok: 'Rename it',
+              hint: 'It is renamed <b>everywhere it occurs in the schedule</b>, not only here \u2014 a cost line is one name over every occurrence of that work.' });
         };
       });
       // step 2 — the total
@@ -46832,18 +47941,22 @@
     // reopen it each time. rerender() rebuilds in place (and re-anchors, since the menu got shorter).
     menu.querySelectorAll('[data-dellyt]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var v = loadViews(); delete v[b.dataset.dellyt]; saveViews(v); rerender(); }; });
     menu.querySelector('[data-savelyt]').onclick = function () {
-      var n = prompt('Save current layout as:'); if (!n) return;
-      var v = loadViews();
-      // A saved layout bundles filter + grouping + the whole column setup (hidden/sort/renames/widths)
-      // plus zoom/search, so one click restores the full working arrangement.
-      var pane = document.querySelector('.ps-grid-pane'), cols = {};
-      if (pane) ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (c) { cols[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); });
-      v[n] = { zoom: zoom, search: search, filters: JSON.parse(JSON.stringify(filters)),
-        groupBys: groupBys.slice(), colHidden: JSON.parse(JSON.stringify(colHidden)),
-        colSort: colSort ? JSON.parse(JSON.stringify(colSort)) : null,
-        colNames: JSON.parse(JSON.stringify(colNames)), cols: cols,
-        charts: (function () { try { return JSON.parse(JSON.stringify(chartsList())); } catch (e) { return null; } })() };
-      saveViews(v); menu.classList.remove('open'); UI.toast('Layout “' + n + '” saved for this project.', 'success');
+      psPrompt('Name this layout.', '', function (n) {
+        n = String(n || '').trim(); if (!n) return;
+        var v = loadViews();
+        // A saved layout bundles filter + grouping + the whole column setup (hidden/sort/renames/widths)
+        // plus zoom/search, so one click restores the full working arrangement.
+        var pane = document.querySelector('.ps-grid-pane'), cols = {};
+        if (pane) ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (c) { cols[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); });
+        v[n] = { zoom: zoom, search: search, filters: JSON.parse(JSON.stringify(filters)),
+          groupBys: groupBys.slice(), colHidden: JSON.parse(JSON.stringify(colHidden)),
+          colSort: colSort ? JSON.parse(JSON.stringify(colSort)) : null,
+          colNames: JSON.parse(JSON.stringify(colNames)), cols: cols,
+          charts: (function () { try { return JSON.parse(JSON.stringify(chartsList())); } catch (e) { return null; } })() };
+        saveViews(v); menu.classList.remove('open'); UI.toast('Layout “' + n + '” saved for this project.', 'success');
+      }, { title: 'Save the current layout', fieldLabel: 'Layout name', required: true, ok: 'Save the layout',
+           placeholder: 'Weekly review',
+           hint: 'It stores the filter, the grouping, every column\u2019s width, order, name and visibility, the zoom, the search and the charts \u2014 for this project, in this browser. Re-using a name overwrites it.' });
     };
   }
   function applyView(v) {
@@ -47395,7 +48508,11 @@
       patches.push({ id: t.id, patch: { start_date: dstr(ddP), end_date: e ? dstr(addDays(e, delta)) : dstr(ddP), updated_at: new Date().toISOString() }, row: t });
     });
     if (!patches.length) { if (!silent) UI.toast('No un-started activities to move — they already sit correctly against the data date.', 'info'); return 0; }
-    if (!silent && !confirm('Move ' + patches.length + ' un-started activit' + (patches.length === 1 ? 'y' : 'ies') + ' to the data date (' + Fmt.date(dstr(dd)) + '), keeping their durations?\n\nActivities with no predecessor are placed ON the data date; those with predecessors are only pulled forward out of the past.')) return 0;
+    if (!silent && !(await psOk('Move ' + patches.length + ' un-started activit' + (patches.length === 1 ? 'y' : 'ies') +
+      ' to the data date (' + Fmt.date(dstr(dd)) + '), keeping their durations?', {
+      title: 'Pull un-started work out of the past?', ok: 'Move ' + patches.length, danger: false,
+      note: 'Activities with <b>no predecessor</b> are placed <b>on</b> the data date; those with predecessors are only pulled forward out of the past. Durations are kept.'
+    }))) return 0;
     showLoading('Moving ' + patches.length + ' activities…');
     var ok = 0, err = null, CH = 40;
     for (var i = 0; i < patches.length && !err; i += CH) {
@@ -47441,7 +48558,11 @@
       patches.push({ id: t.id, patch: patch, row: t });
     });
     if (!patches.length) { UI.toast('All dates already satisfy the relationships — nothing to move.', 'info'); return; }
-    if (!confirm('Reschedule ' + patches.length + ' activit' + (patches.length === 1 ? 'y' : 'ies') + " so successors follow their predecessors' dates?\n\nCompleted activities keep their actual dates. This bulk change is not per-step undoable.")) return;
+    if (!(await psOk('Reschedule ' + patches.length + ' activit' + (patches.length === 1 ? 'y' : 'ies') +
+      ' so successors follow their predecessors\u2019 dates?', {
+      title: 'Reschedule to the logic?', ok: 'Reschedule ' + patches.length,
+      note: 'Completed activities keep their actual dates. This is a <b>bulk</b> change and is not undoable step by step.'
+    }))) return;
     showLoading('Rescheduling ' + patches.length + ' activities…');
     var ok = 0, err = null, CH = 40;
     for (var i = 0; i < patches.length && !err; i += CH) {
@@ -48681,7 +49802,12 @@
     side.querySelector('[data-repact="run"]').onclick = function () { runReport(rep); };
     side.querySelector('[data-repact="edit"]').onclick = function () { repMode = rep.saved ? 'edit' : 'new'; renderReportSide(); };
     var del = side.querySelector('[data-repact="del"]');
-    if (del) del.onclick = function () { if (!confirm('Delete report “' + rep.name + '”?')) return; var a = loadReports(); a.splice(rep.savedIdx, 1); saveReports(a); repSel = null; renderReportList(); renderReportSide(); };
+    if (del) del.onclick = function () {
+      psConfirm('Delete report “' + rep.name + '”?', function () {
+        var a = loadReports(); a.splice(rep.savedIdx, 1); saveReports(a); repSel = null; renderReportList(); renderReportSide();
+      }, { title: 'Delete this saved report?', ok: 'Delete it',
+           note: 'Only the saved settings go \u2014 the template it was based on stays, so the report can be rebuilt.' });
+    };
   }
   function renderReportForm(side) {
     var editing = repMode === 'edit', rep = editing ? resolveReport(repSel) : null;
@@ -50847,8 +51973,10 @@
   async function deleteRow(r) {
     if (!r || !r.id || _editLocked()) return;
     if (isWbsNode(r)) { if (r.wbs_node_id) wbsDelete(r.wbs_node_id); return; }
-    if (!confirm('Delete activity “' + (r.activity_name || r.activity_id || r.id) + '”?\n\n' +
-      'It is written to Change history first, so Actions › Change history can put it back.')) return;
+    if (!(await psOk('Delete activity “' + (r.activity_name || r.activity_id || r.id) + '”?', {
+      title: 'Delete this activity?', ok: 'Delete it',
+      note: 'The whole row is written to <b>Change history</b> first, so <b>Actions \u203a Change history</b> can put it back under its original id.'
+    }))) return;
     /* ⚠️⚠️ THE WHOLE ROW IS AUDITED *BEFORE* THE DELETE, and that is what makes the deletion
        recoverable. `_auditSummary` has always had a 'delete' branch and NOTHING EVER WROTE ONE — it
        was dead code, and the confirm said "This cannot be undone", which was true because the row's
@@ -50955,7 +52083,10 @@
   async function deleteSelected() {
     if (_editLocked()) return;
     var rs = _selectedTaskRows(); if (!rs.length) return;
-    if (!confirm('Delete ' + rs.length + ' selected activit' + (rs.length === 1 ? 'y' : 'ies') + '? This cannot be undone.')) return;
+    if (!(await psOk('Delete ' + rs.length + ' selected activit' + (rs.length === 1 ? 'y' : 'ies') + '?', {
+      title: 'Delete the selection?', ok: 'Delete ' + rs.length,
+      note: 'A multi-row delete is <b>not</b> written to Change history the way a single one is \u2014 this cannot be undone.'
+    }))) return;
     showLoading('Deleting ' + rs.length + '…');
     for (var i = 0; i < rs.length; i++) { var res = await sb().from(TABLE).delete().eq('id', rs[i].id); if (res.error) { hideLoading(); UI.toast(res.error.message, 'error'); return; } rows = rows.filter(function (x) { return x.id !== rs[i].id; }); }
     hideLoading(); if (rs.some(function (r) { return r.id === selId; })) selId = null; _selSet = new Set();
@@ -52350,8 +53481,10 @@
     document.getElementById('ps-wbs-adopt').onclick = async function () {
       var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
       if (!legacy) { UI.toast('No un-adopted WBS branches found — the tree is complete.', 'info'); return; }
-      if (!confirm('Build the WBS tree from ' + legacy.toLocaleString() + ' existing WBS summary rows?\n\n' +
-                   'Their codes are preserved as custom codes. This only adds the branches that are missing.')) return;
+      if (!(await psOk('Build the WBS tree from ' + legacy.toLocaleString() + ' existing WBS summary rows?', {
+        title: 'Finish the WBS tree?', ok: 'Build the branches', danger: false,
+        note: 'Their dotted codes are preserved as custom codes, and only the <b>missing</b> branches are added \u2014 nothing already in the tree is touched.'
+      }))) return;
       await autoAdoptAfterImport();
       renderWbsManager();
     };
