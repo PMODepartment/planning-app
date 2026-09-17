@@ -104,6 +104,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ac) — The last `font-weight: 600` in the app, and there were four of them, not two
+
+Owner: *"fix the two 600s in progress-photos too"* — the two entry *(ab)* flagged and left alone.
+
+### ⚠️ A SCAN THAT READS BOTH SPELLINGS FOUND FOUR
+
+Entry *(ab)* reported two, from a grep for `font-weight`. Running the same question against **both**
+spellings turned up two more, hidden inside `font:` shorthands where a `font-weight` grep never
+looks — exactly the blind spot *(ab)* had just documented for the Project Schedule, one module over:
+
+| | file | spelling |
+|---|---|---|
+| `.pp-pending-summarytext` | `progress-photos/module.css` | longhand |
+| `.pp-pending-name` | `progress-photos/module.css` | longhand |
+| `.il-viewtoggle button` | `minutes-of-meeting/module.css` | **shorthand** |
+| `.il-mom-todaybtn` | `minutes-of-meeting/module.css` | **shorthand** |
+
+All four folded. **The app is now at zero live `font-weight: 600` declarations in either spelling**,
+finishing what the 2026-09-10 sweep started with 262 of them.
+
+### The fold is a measured no-op, and the pair check came first
+
+The app downloads Montserrat `400;500;700;800` and Gotham has no Semibold, so CSS font matching for a
+request above 500 looks **up**. Rendered widths of one string: `500 → 164.69px`, `600 → 170.86px`,
+`700 → 170.86px`. **600 already paints as 700 to the pixel** — nothing moves on screen, and the source
+stops asking for a cut that does not exist.
+
+⚠️⚠️ **The light/heavy-pair check ran first, because that is where this sweep has been wrong before.**
+The 2026-09-10 pass found ten cases where 600 and 700 were the two halves of *one* component, and
+folding both ends made the two states identical — a blanket `sed` would have destroyed a feature the
+log had added on purpose. None of these four is one of those: in `progress-photos` every
+`.pp-pending-*` sibling (`-meta`, `-status`, `-error`) sets no weight at all, and in Minutes of
+Meeting every other weighted rule in the file is already 700. They are single emphasis declarations
+against unweighted siblings — the majority case.
+
+### What was NOT changed, and why
+
+⚠️ **The two Minutes of Meeting shorthands stay shorthands.** The three this pass converted to
+longhand in the Project Schedule had reasons of their own — two carried literal px sizes and one
+(`font: 600 11.5px/1 inherit`) was invalid CSS the browser discarded entirely. These two are valid and
+already token-based for both size and family (`font: 700 var(--pd-fs-sm)/1 var(--pd-font)`), so the
+weight was the only thing wrong with them. Rewriting them would be churn in a module this change has
+no other business in, and the scanner now reads shorthands anyway.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · CSS brace
+balance in both module stylesheets identical to pinned `ad9641d`, both files genuinely differ · the
+whole diff is **four lines, each `600` → `700`**, plus two cache-bust tokens. A re-scan for both
+spellings across every `.css` and `.html` in the repo returns **none**.
+`progress-photos/module.css` `?v=` → `20260917a` (past `20260916z2`), `minutes-of-meeting/module.css`
+`?v=` → `20260917b` (past `20260917a` — the two must not collide, and they are bumped in the same
+commit that changes both files).
+
 ### 2026-09-17 (ab) — The spreadsheet's number columns were left-aligned, and 319 lines of stylesheet had never been scanned
 
 Owner: *"Now do 4.2 for the tables"* — *"Tables should be more readable. Cleanup and follow
