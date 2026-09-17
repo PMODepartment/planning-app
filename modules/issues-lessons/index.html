@@ -7,9 +7,9 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916t" />
-  <link rel="stylesheet" href="module.css?v=20260911d" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916r" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917za" />
+  <link rel="stylesheet" href="module.css?v=20260916b" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
 </head>
 <body>
   <div class="pd-app">
@@ -61,25 +61,28 @@
           <div class="il-topsearch" id="il-topsearch-wrap">
             <input class="pd-input" id="il-topsearch" placeholder="Search…" />
           </div>
-          <button class="il-topfilttoggle" id="il-topfilttoggle" title="More filters">
+          <button class="pd-btn pd-filttoggle" id="il-topfilttoggle" title="More filters">
             <span data-ico="filter" data-ico-size="16"></span></button>
           <span class="il-tb-sep"></span>
           <button class="pd-btn pd-btn-primary il-tb-labeled" id="il-new" title="Log a new issue">+ New issue</button>
           <span class="il-tb-sep" id="il-sep"></span>
-          <button class="pd-btn" id="il-refresh" title="Reload">
-            <span data-ico="refresh" data-ico-size="16"></span></button>
           <!-- Item 8: export the currently-shown Issues or Lessons list (whichever
                screen is active) as Excel / PDF / HTML. Hidden on the Dashboard tab
                (nothing there is "the list" to export) — see syncChrome() in module.js. -->
-          <div class="il-exportwrap" id="il-exportwrap">
-            <button class="pd-btn" id="il-export-btn" title="Export this list">
-              <span data-ico="download" data-ico-size="16"></span></button>
-            <div class="il-export-menu" id="il-export-menu">
-              <button data-export="excel">Export as Excel (.xlsx)</button>
-              <button data-export="pdf">Export as PDF</button>
-              <button data-export="html">Export as HTML</button>
-            </div>
-          </div>
+          <!-- ⚠⚠ THE SHARED ICON-DROPDOWN (UI.iconMenuHTML / wireIconMenu, ui.js). Owner
+               2026-09-16: *"I've noticed across multiple modules there are different UI's for
+               export. Let's make this consistent."* This module carried its own — `.il-exportwrap`
+               / `.il-export-menu`, with its own open/close state on a CLASS rather than the
+               `hidden` attribute, its own outside-click listener and its own `is-active` handling.
+               Minutes of Meeting had a second, generic one; that is the one that was promoted, and
+               this markup is now the same component, emitted by the same function.
+               ⚠ Built by JS rather than written here, so there is ONE definition of the control's
+               markup. Wired in wire() — see `UI.wireIconMenu`. -->
+          <div id="il-export-mount"></div>
+          <!-- ⚠️ Refresh is LAST in every module bar in the app: it acts on the page rather than
+               on the work, and it wants to be in the same place whichever module you are in. -->
+          <button class="pd-btn" id="il-refresh" title="Reload">
+            <span data-ico="refresh" data-ico-size="16"></span></button>
         </div>
         <div id="il-presence" title="People viewing this project"></div>
         <div id="user-bar"></div>
@@ -186,15 +189,15 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../assets/js/config.js?v=20260915a"></script>
-  <script src="../../assets/js/auth.js?v=20260915a"></script>
-  <script src="../../assets/js/db.js?v=20260916c"></script>
+  <script src="../../assets/js/auth.js?v=20260916a"></script>
+  <script src="../../assets/js/db.js?v=20260917a"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260916q"></script>
+  <script src="../../assets/js/ui.js?v=20260916w"></script>
   <script src="../../assets/js/notebook.js?v=20260915d"></script>
   <script src="../../assets/js/icons.js?v=20260915f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
-  <script src="../../assets/js/autosave.js?v=20260812b"></script>
+  <script src="../../assets/js/autosave.js?v=20260917b"></script>
   <!-- Item 8: export libraries — same pinned versions the rest of the suite already
        loads (drawing-register/project-schedule/etc for SheetJS; minutes-of-meeting/
        progress-photos for html2pdf.js). Loaded before module.js so both are ready by
@@ -202,8 +205,8 @@
        failed to load rather than throwing. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="../../assets/js/portfolio-dash.js?v=20260916r"></script>
-  <script src="module.js?v=20260914u"></script>
+  <script src="../../assets/js/portfolio-dash.js?v=20260917w"></script>
+  <script src="module.js?v=20260916b"></script>
   <script>
     // Issues & Concerns / Lessons Learned / Dashboard as a Project-Schedule-style
     // dropdown instead of a flat tab row (kept from before the Minutes of Meeting

@@ -1,5 +1,33 @@
 # Module: risk-register
 
+## The table adopts the approved density, and stops becoming cards on a phone (2026-09-16) — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+Owner: *"We already have an approved UI of tables seen in projects.html. Let's follow that
+universally."* Then: *"Check the Risk register and stakeholder map table UI as well."*
+
+`.rr-table` was already on the shared `.pd-table` base but **not on the approved DENSITY**, so it
+read looser than projects.html (8px/13.5px against 6px/12.5px); it carries `.pd-proj-table` now.
+
+⚠⚠ **The ≤900px card conversion is REMOVED** — `thead` hidden, every row a stacked card, every
+cell relabelled from its `data-l`. The owner rejected that exact shape for Issues & Concerns on
+2026-09-11: *"in mobile view, the table turns into tiles. maintain table view even in mobile view
+and just allow scroll."* The overrides were written `.pd-table.rr-table` / `.rr-table td`
+**precisely** to outrank the shared phone rule (a nowrap horizontal scroller), so removing them is
+what lets it through. Do not reinstate them. Measured at 500px afterwards: `thead` still
+`table-header-group`, cells still `table-cell`, `white-space: nowrap`, no `::before` labels — still
+a table, scrolling sideways.
+
+The filter stacking at that width is kept; it has nothing to do with turning rows into cards.
+
+⚠️ The look now comes from `.pd-table .pd-proj-table` in dashboard.css, claimed **by name in the
+markup**, rather than being restated here. Do NOT re-add width / font-size / padding / border /
+hover rules for this table: this stylesheet loads after dashboard.css, so at equal specificity they
+win and silently restore the second design.
+
+
 ## EPC → MCC finished: the file, the global and the captions (2026-09-02f) — fmlozano
 
 Owner: *"Finish the EPC → MCC rename."* The 2026-09-01 pass renamed the two view **headings** and

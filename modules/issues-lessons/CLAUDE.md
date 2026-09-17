@@ -1,5 +1,40 @@
 # Module: issues-lessons
 
+## 2026-09-16 (later) — The bespoke export dropdown is replaced by the shared one — fmlozano
+
+See the root `CLAUDE.md` (2026-09-16 (c7)).
+
+- `.il-exportwrap` / `.il-export-menu` and their wiring are **deleted**. The control is
+  `UI.iconMenuHTML` / `UI.wireIconMenu` now, built into `#il-export-mount`.
+- ⚠️ This module's version held open/closed on a CSS **class**, so it needed its own
+  outside-click listener — added inside `wire()`, which runs on every repaint. The shared one
+  uses the `hidden` attribute and binds ONE document listener for every menu on the page.
+- ⚠️ `$('il-exportwrap')` in `syncChrome()` (the show/hide-per-screen logic) had to follow, or
+  the export control would never hide again. It names `il-export-mount` — the MOUNT, because the
+  control inside it is re-emitted on every `wire()`.
+- `closeExportMenu()` survives as a one-line forwarder; other code in this file calls it.
+
+## 2026-09-16 — The portfolio register opens one issue, and the duplicated logo is fixed at its cause — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+- **`?openIssue=<id>`**, answered in `init()`'s deep-link block beside the `?openLesson=` link this
+  module already had — a query parameter rather than a second convention, because this module's
+  history binding (`il_screen`) carries only which SCREEN is open, not which issue. Checked FIRST of
+  the three branches: an explicit "open THIS issue" is the most specific thing the URL can ask for.
+  ⚠️ It runs after `await load()`, so `openIssue()` has the register in memory when it renders the
+  detail drill-down. portfolio-dash.js has already cleared portfolio scope and remembered the
+  project, so by the time this fires it is an ordinary project-scoped load.
+- **The "duplicated logo" was two clipboards**, and neither this module's markup nor its CSS was
+  wrong. `UI.tabsToDropdown('.il-tabs', { icon: 'clipboard' })` gives the trigger the module's mark,
+  and `.pd-title-hasdrop` only ever hid the `<h1>`'s TEXT — leaving its icon beside the trigger's.
+  ⚠️ This module had been papering over it in `switchScreen()` (`titleEl.style.display = 'none'`),
+  which is exactly why it showed only where `switchScreen` never runs: the portfolio view, and the
+  moment before auth resolves. Fixed in `ui.js`/`dashboard.css` (`.pd-h1-hasdropico`) instead, so the
+  workaround here is now redundant rather than load-bearing.
+- The portfolio table's group heading is the approved `.pd-ghchip` + `.pd-ghcount` ("6 issues").
+
 ## 2026-09-11 (round 2) — Drag-to-reorder replaces the move-up/move-down buttons, using Pointer Events instead of HTML5 drag
 
 Owner: "use drag to re-order for issues and lessons list instead of up and down buttons."

@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Productivity Rates · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916t" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916r" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917za" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep the topbar
        rules in sync with those. 2026-08-30: modules gained a persistent
@@ -30,13 +30,17 @@
     .pr-tab + .pr-tab { border-left:1px solid var(--pd-line); }
     .pr-tab.active { background:var(--pd-red); color:#fff; }
     /* tool cluster beside the profile */
-    .pr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; }
-    .pr-topbar-tools .pd-btn:not(.pr-tb-labeled) { height:34px; width:34px; padding:0; font-size:var(--pd-fs-base); display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
-    .pr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .pr-topbar-tools { display:flex; align-items:center; margin-left:auto; flex-wrap:wrap; }
+    /* ⚠️⚠️ THE BUTTON TREATMENT IS SHARED NOW — see `.pd-modulebar .pd-btn` in
+       dashboard.css. This module was one of FOUR that declared its own (transparent until hover,
+       34px square) while the other ten left `.pd-btn` outlined, which is the "some buttons have an
+       outline then some doesn't" the owner reported on 2026-09-16.
+       ⚠️ DO NOT re-add a `background` / `border-color` / `width` / `height` rule for
+       `.pr-topbar-tools .pd-btn` here. It is (0,2,0), the same as the shared rule, and this stylesheet loads
+       AFTER dashboard.css — so it would win, silently, and only in this module. */
     .pr-topbar-tools .pd-btn.pr-tb-labeled { height:34px; width:auto; padding:0 12px; gap:6px; white-space:nowrap; }
     .pr-topbar-tools .pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .pr-topbar-tools .pd-btn.is-active { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-    .pr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 
     /* Monitoring filter/control bar — same card + funnel pattern as the suite's
        filter bars (risk-register / stakeholder-map). Left-aligned, no stray icon. */
@@ -76,10 +80,17 @@
     .pr-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
     /* tables */
-    .pr-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
-    .pr-table th { background:var(--pd-bg); padding:8px 12px; text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
-    .pr-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
-    .pr-table tbody tr:hover { background:var(--pd-bg); }
+    /* ⚠⚠ THE APPROVED TABLE IS projects.html's, AND THIS IS NOT A SECOND COPY OF IT.
+       Owner 2026-09-16: *"We already have an approved UI of tables seen in projects.html. Let's
+       follow that universally"*, then *"check productivity rates module as well."* This block
+       declared its own width, type scale, header treatment, cell padding and hover — values a few
+       pixels away from the approved ones, which is precisely what made the app's tables read as
+       several different designs rather than one.
+       ⚠️ Each `.pr-table` now carries `pd-table pd-proj-table` IN ITS MARKUP and takes all of
+       that from dashboard.css.
+       ⚠️ Do NOT re-add width / font-size / padding / border / hover rules here: this <style>
+       block comes after dashboard.css, so at equal specificity they win and silently restore the
+       second design. */
     .pr-num { text-align:right; font-variant-numeric:tabular-nums; }
     .pr-mono { font-variant-numeric:tabular-nums; }
     .pr-sub { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
@@ -247,7 +258,7 @@
       <div id="pr-view-rates" style="display:none;"></div>
       <div id="pr-view-data" style="display:none;">
         <div class="pr-card" style="padding:0;overflow:auto;">
-          <table class="pr-table" id="pr-datatable"></table>
+          <table class="pd-table pd-proj-table pr-table" id="pr-datatable"></table>
         </div>
       </div>
     </div>
@@ -258,16 +269,16 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260916c"></script>
+<script src="../../assets/js/auth.js?v=20260916a"></script>
+<script src="../../assets/js/db.js?v=20260917a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260916q"></script>
+<script src="../../assets/js/ui.js?v=20260916w"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
-<script src="../../assets/js/portfolio-dash.js?v=20260916r"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260917w"></script>
 <script>
 // ============================================================================
 // Productivity Rates — Productivity Monitoring (per project).
@@ -742,7 +753,7 @@
 
     h += '<div class="pd-card" style="padding:0;margin-bottom:14px;overflow:auto;">' +
       '<div class="pr-secthead">Rate library <span class="pr-sub">output per man-day, from real months — the basis for schedule durations</span></div>' +
-      '<table class="pr-table"><thead><tr><th>Vendor</th><th>Trade</th><th>Unit</th>' +
+      '<table class="pd-table pd-proj-table pr-table"><thead><tr><th>Vendor</th><th>Trade</th><th>Unit</th>' +
       '<th class="pr-num">Rate / man-day</th><th class="pr-num">Months</th><th class="pr-num">Projects</th><th>Range</th></tr></thead><tbody>';
     if (!RATELIB.length) {
       h += '<tr><td colspan="7" style="padding:22px;color:var(--pd-muted);">No rates yet. A row appears once a month records ' +
@@ -772,7 +783,7 @@
       'measured <em>for payment</em>; site output is measured <em>for progress</em>. Waste, remeasure, provisional sums ' +
       'and cut allowances separate them legitimately — the variance is the information, so it is reported and never ' +
       'reconciled away. Units are never converted: a mismatch shows as two rows.</p>' +
-      '<table class="pr-table"><thead><tr><th>Work package</th><th>Unit</th>' +
+      '<table class="pd-table pd-proj-table pr-table"><thead><tr><th>Work package</th><th>Unit</th>' +
       '<th class="pr-num">BOQ planned</th><th class="pr-num">Site actual</th><th class="pr-num">Variance</th>' +
       '<th class="pr-num">Man-days</th><th class="pr-num">Rate</th><th>Months</th></tr></thead><tbody>';
     if (!RECON.length) {
@@ -1246,7 +1257,7 @@
       '<p class="pr-hint">Found <strong>' + parsed.length + '</strong> activities · <strong>' + totalEntries + '</strong> monthly records. Review, then import into this project.' +
         (existing ? ' <strong>Note:</strong> this project already has ' + existing + ' activit' + (existing === 1 ? 'y' : 'ies') + ' — import <em>adds</em> new ones (it does not merge or replace).' : '') + '</p>' +
       '<div style="max-height:46vh;overflow:auto;border:1px solid var(--pd-line);border-radius:8px;">' +
-        '<table class="pr-table"><thead><tr><th>Activity</th><th>Resource</th><th>Unit</th><th>Subcontractor</th><th class="pr-num">Months</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+        '<table class="pd-table pd-proj-table pr-table"><thead><tr><th>Activity</th><th>Resource</th><th>Unit</th><th>Subcontractor</th><th class="pr-num">Months</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '</div>' +
       '<p class="pr-hint">Working days per month are set to reproduce the workbook’s own productivity rate where possible, otherwise the Philippine 6-day working calendar.</p>' +
       '<div style="text-align:right;margin-top:10px;"><button class="pd-btn" id="im-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="im-go">Import ' + parsed.length + ' activities</button></div>'

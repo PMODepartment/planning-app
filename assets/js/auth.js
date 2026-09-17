@@ -43,6 +43,31 @@
   function isPortfolioScope() {
     try { return sessionStorage.getItem(PORTFOLIO_KEY) === '1'; } catch (e) { return false; }
   }
+  /* ==== THE PAGE SAYS WHICH SCOPE IT IS IN, SO CSS CAN ANSWER =================================
+     Owner 2026-09-16: *"some buttons in the toolbars are not working for portfolio view, probably
+     since these buttons only work for project-level, which defeats the purpose of showing the
+     buttons in the first place."*
+     ⚠️⚠️ WRITES WERE ALREADY REFUSED — THE UI JUST DID NOT AGREE. `wrapWritesForPortfolio`
+     below blocks every insert/update/upsert/delete at the Supabase chokepoint while this flag is
+     set, so an "+ Add stakeholder" in portfolio scope could only ever raise a toast explaining it
+     would not work. A control whose entire behaviour is to say "not here" should not be there.
+     ⚠️ A CLASS ON `<html>`, NOT A SWEEP OVER THE BUTTONS. Module chrome is built at wildly
+     different times — `UI.initModuleTopbar()` on DOMContentLoaded, module renderers on every
+     repaint, `PortfolioDash.takeOver()` from an auth callback that races both. A one-shot
+     `querySelectorAll` hides whatever exists at that instant and misses everything drawn after it;
+     that exact race produced the duplicated title bar (2026-09-16 (u)). A class on the document is
+     already in force whenever a control is finally created.
+     ⚠️ Set at SCRIPT LOAD, not on DOMContentLoaded: `sessionStorage` is readable
+     immediately, `document.documentElement` exists as soon as this file runs (it is loaded in
+     <head> on every page), and anything later would let a project-only control paint first. */
+  function markScope() {
+    try {
+      var el = document.documentElement;
+      if (!el) return;
+      el.classList.toggle('pd-portfolio', isPortfolioScope());
+    } catch (e) {}
+  }
+  markScope();
   // Called when a planner picks a REAL project out of the shared selector
   // (UI.enhanceProjectSelect) while in Portfolio scope — leaving Portfolio
   // for a specific project is the one place this flag is cleared again.
@@ -51,6 +76,10 @@
       if (on) sessionStorage.setItem(PORTFOLIO_KEY, '1');
       else sessionStorage.removeItem(PORTFOLIO_KEY);
     } catch (e) {}
+    /* ⚠️ The class follows the flag. Every caller of this reloads immediately afterwards, so
+       this is belt-and-braces — but a flag and a class that can disagree is exactly the kind of
+       thing that stops being true later, quietly. */
+    markScope();
   }
 
   // ⚠️⚠️ WRITES ARE BLOCKED AT THE ONE CHOKEPOINT EVERY MODULE'S WRITE GOES

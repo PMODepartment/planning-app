@@ -1,3 +1,20 @@
+## The table adopts the approved projects.html treatment (2026-09-16) — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+Owner: *"We already have an approved UI of tables seen in projects.html. Let's follow that
+universally."* `.eq-table` declared its own width, type scale, header
+treatment, cell padding and hover — a whole private table design, a few pixels from the approved
+one, which is what made the app's tables read as several designs rather than one. It adopts
+`pd-table pd-proj-table` and the duplicate declarations are deleted.
+
+⚠️ The look now comes from `.pd-table .pd-proj-table` in dashboard.css, claimed **by name in the
+markup**, rather than being restated here. Do NOT re-add width / font-size / padding / border /
+hover rules for this table: this stylesheet loads after dashboard.css, so at equal specificity they
+win and silently restore the second design.
+
+
 ## The availability grid becomes the portfolio landing page (2026-09-16) — eprobles
 
 ⚠️⚠️ **THIS ONE ALREADY ANSWERED A PORTFOLIO QUESTION — JUST NOT THE SAME ONE.** `load()` has

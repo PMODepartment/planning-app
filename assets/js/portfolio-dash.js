@@ -95,14 +95,77 @@
     return Object.keys(by).map(function (k) { return by[k]; })
       .sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
   }
-  /* The group header row. ⚠️ `.po-grp` is the Overview's own grouped-table idiom, reused rather
-     than re-invented — including its caret, because `.po-grp td` already declares
-     `cursor:pointer` and a pointer over something that does not respond is a lie. */
-  function groupHeadRow(g, cols, open) {
-    return '<tr class="po-grp" data-pgrp="' + esc(g.pid) + '"><td colspan="' + cols + '">' +
+  /* The group header row. ⚠️⚠️ THE APPROVED GROUP HEADING IS projects.html's, AND THIS EMITS IT:
+     `.pd-group-row` + a `.pd-ghchip` (tinted, red LEFT BORDER) + a muted `.pd-ghcount` beside it —
+     the same three classes `renderList()` in projects.html is drawn with, taken from dashboard.css
+     rather than restated here. It used to be the Overview's own idiom (a bold plain cell and a
+     `.po-mut` count), which is one of the "different table formats" the owner counted across five
+     screens.
+     ⚠️ The count carries its NOUN ("6 issues", "2 action items"), the way projects.html writes
+     "2 projects". A naked number beside a project name reads as an id at a glance.
+     ⚠️ `.po-grp` STAYS on the row and is not decoration — it is the hook `wireGroupToggle` binds
+     the collapse to, and collapsing is the one thing projects.html's own groups cannot do. The
+     caret stays with it: `.po-grp td` declares `cursor:pointer`, and a pointer over something that
+     does not respond is a lie. */
+  function groupHeadRow(g, cols, open, noun) {
+    var n = g.rows.length;
+    noun = noun || 'item';
+    return '<tr class="pd-group-row po-grp" data-pgrp="' + esc(g.pid) + '"><td colspan="' + cols + '">' +
       '<span class="po-grp-name"><span class="po-caret">' + (open ? '\u25be' : '\u25b8') + '</span>' +
-      esc(g.name) + ' <span class="po-mut" style="font-weight:400;">' + g.rows.length + '</span>' +
+      '<span class="pd-ghchip">' + esc(g.name) + '</span>' +
+      '<span class="pd-ghcount">' + n + ' ' + noun + (n === 1 ? '' : 's') + '</span>' +
       '</span></td></tr>';
+  }
+  /* ==== OPENING ONE ROW, ON THE PAGE IT IS ALREADY STANDING ON ===============================
+     Owner 2026-09-16: *"For meetings and issues and concerns I want to be able to open those
+     specific meetings/items from the table as well from the portfolio view, not just a viewing
+     page."* The portfolio table was a read-only list of every project's rows with no way into any
+     one of them — a planner who spotted the overdue item had to note the project, change the
+     project selector, find the register, and find the row again.
+
+     ⚠⚠ IT LEAVES PORTFOLIO SCOPE, AND IT HAS TO. Portfolio scope is read-only at the Supabase
+     chokepoint (auth.js wraps `.from()` and refuses every write while the flag is set), so an
+     issue "opened" with the flag still set would render an editor whose every Save is refused by
+     the network — a detail screen that looks writable and is not. Opening one row means standing
+     in that row's project, which is exactly what the project selector already does (`wireSelect`
+     below); this is that same three-step move — clear the flag, remember the project, reload — with
+     a deep link on the end.
+     ⚠ SAME PAGE, NEVER A CONSTRUCTED PATH. `location.pathname` is the module's own page, because
+     the portfolio view of Issues IS the Issues module and the portfolio view of Meetings IS the
+     Minutes module. Building "../minutes-of-meeting/index.html" here would be a second copy of the
+     app's URL layout, wrong the first time a page is renamed.
+     ⚠ A FULL RELOAD, not a router hop: the module's own init() was deliberately SKIPPED on this
+     page (see each module's portfolio branch), so nothing on it is initialised to receive a
+     project. Reloading is what runs init() for real. */
+  function openInProject(pid, hashOrSearch) {
+    if (!pid) return;
+    if (window.AppAuth && AppAuth.setPortfolioScope) AppAuth.setPortfolioScope(false);
+    try {
+      sessionStorage.setItem('pd_project', pid);
+      var p = PROJ.filter(function (x) { return x.id === pid; })[0];
+      if (p) sessionStorage.setItem('pd_project_name', p.name || p.id);
+    } catch (e) {}
+    location.href = location.pathname + (hashOrSearch || '');
+  }
+  /* The hash a module's own `UI.bindHistoryState` binding would have written for that view.
+     ⚠⚠ THIS IS NOT A NEW DEEP-LINK PROTOCOL — it is the one the module already round-trips.
+     `bindHistoryState` restores `key=<url-encoded JSON>` out of the hash on load ("a link landing
+     straight on this page with our key already in the hash restores that view"), so a link built
+     to that shape opens the meeting through the module's OWN apply(), with no second code path to
+     keep in step with it. Invent a `?meeting=` parameter instead and there are two ways to open a
+     meeting, one of which the module does not know about. */
+  function stateHash(key, state) {
+    return '#' + key + '=' + encodeURIComponent(JSON.stringify(state));
+  }
+  /* Binds whatever rows carry `data-open-pid` (+ an optional `data-open-to`, already a hash or a
+     query string) to openInProject. ⚠ One binder, like wireGroupToggle beside it, so a view adds
+     an attribute rather than a click handler.
+     ⚠ The group heading also matches `[data-open-pid]` in no view — it carries `data-pgrp` — so
+     collapsing a group cannot be mistaken for opening one. */
+  function wireRowOpen(table) {
+    table.querySelectorAll('tr[data-open-pid]').forEach(function (tr) {
+      tr.onclick = function () { openInProject(tr.dataset.openPid, tr.dataset.openTo || ''); };
+    });
   }
   /* One binder for the caret, so neither view has to remember how a group toggles. */
   function wireGroupToggle(table, collapsed, rerender) {
@@ -125,7 +188,259 @@
   /* ⚠️ THE SCOPE FUNCTION KEEPS ITS NAME. On the Portfolio Dashboard this resolved the project
      filter; here it is every project the planner can see. The renderers ask the same question and
      never had to learn a second one. */
-  function scopedProjectIds() { return PROJ.map(function (p) { return p.id; }); }
+  /* ==== THE PROJECT FILTER, AND WHY THIS FILE NOW HAS ONE ====================================
+     This file's own header used to say, in as many words, that there is *"deliberately no
+     multi-project picker here"* — the argument being that the topbar's project selector already
+     says "Portfolio", and a second control that disagrees with it is worse than none.
+     ⚠⚠ THE OWNER OVERRULED THAT ON 2026-09-16, about the S-Curve: *"the s-curve doesn't have a
+     select project filter as well, on which projects that will be loaded in the s-curve."* And on
+     that view the argument was always weakest: eighteen overlaid curves is not a portfolio answer,
+     it is a thicket, and the renderer ALREADY carried the empty state for a narrowed selection
+     ("No projects match the current filter") from its life on the Portfolio Dashboard — a filter
+     it had been built for and then shipped without.
+     ⚠ THE TWO CONTROLS DO NOT DISAGREE, and that is what makes this safe: the topbar selector
+     answers *"which project am I in?"* (and "Portfolio" is a real answer — picking a project there
+     LEAVES portfolio scope entirely), while this answers *"which of them is this view about?"*
+     inside portfolio scope. One changes scope; one narrows within it.
+
+     ⚠⚠ IT NARROWS `scopedProjectIds()`, NOTHING ELSE. Every renderer in this file already asks
+     that one function which projects it is about — so all eleven honour the filter without a line
+     of per-view code, and none of them can honour it differently from another. `PROJ` itself is
+     deliberately NOT narrowed: it is also the id→name lookup every view builds its labels from,
+     and a filtered PROJ would print raw ids for rows the filter had just excluded.
+     ⚠ EMPTY MEANS EVERY PROJECT, NOT NO PROJECT. `{}` is the default and the "All projects" state;
+     "Clear" returns to it rather than to an empty view. A filter whose cleared state shows nothing
+     is one a planner has to fight to get out of. */
+  var pfSel = {};             // {} = every project in scope — unless pfEmptyMeansAll is false.
+  /* ==== ONE VIEW OPENS EMPTY ON PURPOSE =======================================================
+     Owner 2026-09-17: *"in portfolio s-curve let's not have the s-curve be pre-selected — let the
+     planner choose which projects to see the s-curve so it loads smoothly upon opening."*
+     ⚠️⚠️ THE RULE ABOVE IS STILL RIGHT FOR THE OTHER TEN VIEWS. "Empty means all" is what
+     makes Risk, Issues, Contracts and the rest useful the instant they open: one read of one table
+     across the portfolio, which is the question those pages exist to answer. The S-Curve is not
+     that shape — it rolls up the SCHEDULE of every selected project, one server-side call each,
+     and across 21 projects that is twenty-one calls and a visible wait before a planner has said
+     what they wanted to compare. The default was doing expensive work nobody had asked for yet.
+     ⚠️ A VIEW OPTS IN, the filter does not decide. `def("scurve", { emptyMeansNone: true })`
+     is read at mount; every other view is untouched and keeps the old default. Anything else would
+     mean eleven views sharing a filter whose meaning depends on which one you are looking at.
+     ⚠️ `pfSel` ITSELF IS NOT CLEARED ON MOUNT. A planner who ticked two projects on the
+     Risk view and then opened the S-Curve meant those two projects; re-asking would be the tool
+     forgetting what it was just told. This only changes what NOTHING selected means. */
+  var pfEmptyMeansAll = true;
+  var pfQuery = '';
+  var pfOnChange = null;
+  function pfCount() { return Object.keys(pfSel).length; }
+  /* ==== THE PICKER GROUPS BY GROUP HEAD =======================================================
+     Owner 2026-09-16: *"I also think we can still improve the UI of the project selector dropdown.
+     We can easily group this by group head and make the width of the dropdown proper."*
+     ⚠️⚠️ IT GROUPED BY PARENT PROJECT, which is a different question. A parent project
+     is one development in several contract packages — useful INSIDE a project, and nearly always a
+     group of one at portfolio level, so the picker was a flat list wearing eighteen headings. The
+     group head is how this organisation actually divides the portfolio, and it is what
+     `projects.html` and the Portfolio Dashboard both already group by.
+     ⚠️ `GH` is loaded beside `PROJ` by `loadProjects()`, so this costs no read.
+     ⚠️ The unassigned bucket sorts LAST and is named, never hidden: a project with no group
+     head is still a project a planner has to be able to tick. */
+  function pfGroups() {
+    var byId = {};
+    (GH || []).forEach(function (g) { byId[g.id] = g; });
+    var NONE = '\u0000none';
+    var by = {};
+    PROJ.forEach(function (p) {
+      var k = p.group_head_id || NONE;
+      if (!by[k]) {
+        by[k] = { key: k, label: k === NONE ? 'No group head'
+                                            : ((byId[k] && byId[k].name) || p.group_head_id), members: [] };
+      }
+      by[k].members.push(p);
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) {
+      if (a.key === NONE) return 1;
+      if (b.key === NONE) return -1;
+      return String(a.label).localeCompare(String(b.label));
+    });
+  }
+  function pfLabel() {
+    var n = pfCount();
+    /* ⚠️ The button is the only thing on screen that says which mode this view is in. Reading
+       "All projects" over an empty chart would look like a failed load rather than a prompt. */
+    if (!n) return pfEmptyMeansAll ? 'All projects' : 'Select projects…';
+    if (n === 1) {
+      var p = PROJ.filter(function (x) { return pfSel[x.id]; })[0];
+      return p ? (p.name || p.id) : '1 project';
+    }
+    /* One whole parent project selected reads as that project, not as a count — "Avesta
+       Residences (2 packages)" is the answer to "what am I looking at?". */
+    var whole = pfGroups().filter(function (g) {
+      return g.members.length > 1 && g.members.every(function (x) { return pfSel[x.id]; });
+    });
+    if (whole.length === 1 && whole[0].members.length === n) return whole[0].label + ' (' + n + ' packages)';
+    return n + ' projects';
+  }
+  function scopedProjectIds() {
+    if (!pfCount()) return pfEmptyMeansAll ? PROJ.map(function (p) { return p.id; }) : [];
+    /* ⚠ Ordered by PROJ, never by the order boxes were ticked: the views cache on
+       `ids.join(',')` to decide whether anything needs re-reading, and a set that reorders itself
+       would look like a different selection every time and re-fetch the same projects. */
+    return PROJ.filter(function (p) { return pfSel[p.id]; }).map(function (p) { return p.id; });
+  }
+
+  /* ==== THE PORTFOLIO MODULE BAR =============================================================
+     ⚠️⚠️ THE PAGE NEEDS A BAR OF ITS OWN BECAUSE takeOver() HIDES THE MODULE'S. It always meant
+     to — that bar's buttons act on a UI that is no longer showing — but until the
+     `hidden`-vs-`display` fix in takeOver() below it never actually did, so nobody had seen what a
+     portfolio page looks like with the module bar really gone: no heading, no name, nothing saying
+     which module you are standing in.
+     ⚠️ SO THIS IS NOT DECORATION. It restores the one thing the hidden bar carried that the
+     dashboard still needs (the module's mark and its name) and gives the two portfolio-level
+     controls a home: the project filter, and — where a view has more than one screen — its tabs.
+     ⚠️ IT REUSES `.pd-modulebar` rather than inventing a bar class: the shell already styles that
+     element (height, border, the ≤700px stacking rule, the sidebar-collapse interaction), and a
+     private class would be a second thing to keep level with it every time the shell moves. */
+  function buildBar(key, view, opts) {
+    var content = document.querySelector('.pd-content');
+    var main = document.querySelector((opts && opts.main) || '.pd-main');
+    if (!content || !main) return null;
+    var bar = document.createElement('div');
+    bar.className = 'pd-modulebar po-dash-bar';
+    bar.id = 'po-dash-bar';
+    var ico = (opts && opts.icon) || view.icon || 'grid';
+    bar.innerHTML =
+      '<h1><span class="po-bar-ico" data-ico="' + esc(ico) + '" data-ico-size="18"></span>' +
+      esc(view.title) + '</h1>' +
+      '<span class="po-bar-scope">Portfolio</span>' +
+      '<div class="po-bar-tabs" id="po-bar-tabs"></div>' +
+      '<div class="po-bar-tools" id="po-bar-tools">' +
+        (view.filter === false ? '' : projFilterHTML()) +
+      '</div>';
+    content.insertBefore(bar, main);
+    if (view.filter !== false) wireProjFilter(bar);
+    if (window.Icons && Icons.hydrate) Icons.hydrate(bar);
+    return bar;
+  }
+
+  /* The multi-select project popover. ⚠️ SAME MARKUP AND SAME CLASSES as the Portfolio
+     Overview's own picker: `.po-projfilter*` is already fully styled in portfolio-dash.css —
+     anchored RIGHT so it opens into the page instead of off the edge, and pinned to the viewport
+     below 700px. Both of those were bugs paid for once; re-skinning this would have meant
+     re-learning them. */
+  /* ⚠️⚠️ A VIEW MAY MARK A PROJECT IT CANNOT DRAW, and this is where the Project Schedule's
+     coverage paragraph went. Owner: *"the note below is not necessary — can we have the project
+     filter already tell this information, if the project can be rolled up or not?"* The note
+     reported a COUNT at the bottom of the page, after the chart, where nothing could be done with
+     it. A badge names the specific project, next to the tick box that includes it.
+     ⚠️ `pfBadge` is per-VIEW and resets on every mount, so one view's idea of "cannot be
+     drawn" never leaks into another's picker. Default null = no badges, which is every other view. */
+  var pfBadge = null;
+  function projFilterHTML() {
+    return '<div class="po-projfilter" id="po-projfilter-wrap">' +
+      /* ⚠️⚠️ `pd-tb-labeled` IS LOAD-BEARING, NOT DECORATION. Owner 2026-09-17:
+         *"check project selection filter: wraps unnecessarily to two rows."* The shared bar styles
+         every unlabelled tool button as a 34x34 SQUARE —
+         `.pd-modulebar .pd-btn:not(.pd-btn-primary):not([class*="tb-labeled"])` sets
+         `width:34px; padding:0` — so a button carrying the words "All projects" was being crushed
+         into an icon's footprint and the label wrapped onto a second line, doubling the bar's height.
+         `pd-tb-labeled` is the opt-out: `width:auto; padding:0 12px; white-space:nowrap`.
+         ⚠️ THE STATIC COPY IN `portfolio-overview/index.html` ALREADY HAD THIS. The toolbar pass
+         fixed the one it could see in markup and missed the one built here by string concatenation,
+         which is why the wrap showed up on every module that hosts a portfolio dashboard and not on
+         the Portfolio Dashboard itself. Two spellings of one control is the actual defect; if this
+         needs changing again, change both. */
+      '<button class="pd-btn pd-tb-labeled" id="po-projfilter-btn" type="button" title="Which projects this view is scoped to">' +
+        '<span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span>' +
+        ' <span data-ico="chevronDown" data-ico-size="13"></span></button>' +
+      '<div class="po-projfilter-menu" id="po-projfilter-menu">' +
+        '<div class="po-projfilter-search"><input class="pd-input pd-input-sm" id="po-projfilter-search" placeholder="Search projects…" /></div>' +
+        '<div class="po-projfilter-actions"><button type="button" data-act="all">Select all</button>' +
+        '<button type="button" data-act="none">Clear</button></div>' +
+        '<div class="po-projfilter-list" id="po-projfilter-list"></div>' +
+      '</div></div>';
+  }
+  function pfBadgeHTML(p) {
+    if (!pfBadge) return '';
+    var b = pfBadge(p);
+    return b ? '<span class="po-pf-badge" title="' + esc(b.title || b.label) + '">' + esc(b.label) + '</span>' : '';
+  }
+  function renderProjFilterList() {
+    var host = document.getElementById('po-projfilter-list');
+    if (!host) return;
+    var q = pfQuery.trim().toLowerCase();
+    var match = function (p) { return !q || ((p.name || '') + ' ' + p.id).toLowerCase().indexOf(q) !== -1; };
+    var groups = pfGroups().map(function (g) {
+      /* A search matching the PARENT name keeps all its packages — searching "Avesta" must not
+         hide AVR102 just because its own name reads "Towers 2-7". */
+      var keep = (q && g.label.toLowerCase().indexOf(q) !== -1) ? g.members : g.members.filter(match);
+      return { key: g.key, label: g.label, members: keep };
+    }).filter(function (g) { return g.members.length; });
+    if (!groups.length) { host.innerHTML = '<div class="po-pf-empty">No projects match.</div>'; return; }
+    host.innerHTML = groups.map(function (g) {
+      /* ⚠️ A program of ONE is not a group: a parent header above a single package invents a
+         hierarchy that is not there. program.js's own rule, followed here too. */
+      if (g.members.length === 1) {
+        var p = g.members[0];
+        return '<label><input type="checkbox" data-pf="' + esc(p.id) + '"' + (pfSel[p.id] ? ' checked' : '') +
+          '> <span>' + esc(p.name || p.id) + '</span>' + pfBadgeHTML(p) + '</label>';
+      }
+      var all = g.members.every(function (p) { return pfSel[p.id]; });
+      var some = !all && g.members.some(function (p) { return pfSel[p.id]; });
+      return '<label class="po-pf-prog"><input type="checkbox" data-pf-prog="' + esc(g.key) + '"' +
+          (all ? ' checked' : '') + (some ? ' data-ind="1"' : '') + '> <strong>' + esc(g.label) + '</strong>' +
+          '<span class="po-pf-count">' + g.members.length + ' packages</span></label>' +
+        g.members.map(function (p) {
+          return '<label class="po-pf-child"><input type="checkbox" data-pf="' + esc(p.id) + '"' +
+            (pfSel[p.id] ? ' checked' : '') + '> <span>' + esc(p.name || p.id) + '</span>' +
+            pfBadgeHTML(p) + '<code>' + esc(p.id) + '</code></label>';
+        }).join('');
+    }).join('');
+    /* Indeterminate is a PROPERTY, not an attribute — it cannot be set in the markup above. */
+    host.querySelectorAll('input[data-ind]').forEach(function (cb) { cb.indeterminate = true; });
+    var after = function () {
+      var lab = document.getElementById('po-projfilter-label');
+      if (lab) lab.textContent = pfLabel();
+      renderProjFilterList();          // repaint so a parent's tick follows its packages
+      if (pfOnChange) pfOnChange();
+    };
+    host.querySelectorAll('input[data-pf]').forEach(function (cb) {
+      cb.onchange = function () {
+        if (cb.checked) pfSel[cb.dataset.pf] = true; else delete pfSel[cb.dataset.pf];
+        after();
+      };
+    });
+    host.querySelectorAll('input[data-pf-prog]').forEach(function (cb) {
+      cb.onchange = function () {
+        var g = groups.filter(function (x) { return x.key === cb.dataset.pfProg; })[0];
+        if (!g) return;
+        g.members.forEach(function (p) { if (cb.checked) pfSel[p.id] = true; else delete pfSel[p.id]; });
+        after();
+      };
+    });
+  }
+  function wireProjFilter(bar) {
+    var wrap = bar.querySelector('#po-projfilter-wrap'), menu = bar.querySelector('#po-projfilter-menu');
+    if (!wrap || !menu) return;
+    bar.querySelector('#po-projfilter-btn').onclick = function (e) {
+      e.stopPropagation();
+      var open = menu.classList.toggle('open');
+      if (open) { renderProjFilterList(); bar.querySelector('#po-projfilter-search').focus(); }
+    };
+    bar.querySelector('#po-projfilter-search').oninput = function (e) { pfQuery = e.target.value; renderProjFilterList(); };
+    var relabel = function () {
+      var lab = bar.querySelector('#po-projfilter-label');
+      if (lab) lab.textContent = pfLabel();
+      renderProjFilterList();
+      if (pfOnChange) pfOnChange();
+    };
+    menu.querySelector('[data-act="all"]').onclick = function () {
+      PROJ.forEach(function (p) { pfSel[p.id] = true; }); relabel();
+    };
+    /* ⚠️ "Clear" goes back to the `{}` default, which on ten of the eleven views means ALL
+       projects, never none: a cleared filter that shows an empty page is one a planner has to
+       fight. On a view with `emptyMeansNone` it returns to the "pick some projects" prompt it
+       opened with, which is the same promise — clear puts the view back how it started. */
+    menu.querySelector('[data-act="none"]').onclick = function () { pfSel = {}; relabel(); };
+    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) menu.classList.remove('open'); });
+  }
 
   /* One fetch per page, shared by whichever dashboard is mounted. ⚠️ The same offline read-cache
      the Portfolio Dashboard uses, under its own key: a module opened on a dead connection still
@@ -158,6 +473,7 @@
 
   /* ---- Risk Register ------------------------------------------------------------ */
   def("risk", {
+    icon: "risk",
     title: "Risk Register",
     needs: ["MCCRCM"],
     markup: [
@@ -173,7 +489,7 @@
       "        <p style=\"font-size:12px;color:var(--pd-muted);margin:0 0 12px;\">Priority is the same 5×5 lookup the Risk Register itself uses.</p>",
       "        <div class=\"pd-kpis\" id=\"po-rk-kpis\"></div>",
       "        <div class=\"po-card\" style=\"padding:0;overflow:hidden;\">",
-      "          <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-rk-table\"></table></div>",
+      "          <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-rk-table\"></table></div>",
       "        </div>"
     ].join('\n'),
     setup: function () {
@@ -251,6 +567,7 @@
 
   /* ---- Issues & Concerns ------------------------------------------------------------ */
   def("issues", {
+    icon: "clipboard",
     title: "Issues & Concerns",
     needs: [],
     markup: [
@@ -265,7 +582,7 @@
       "        </div>",
       "        <div class=\"pd-kpis\" id=\"po-is-kpis\"></div>",
       "        <div class=\"po-card\" style=\"padding:0;overflow:hidden;\">",
-      "          <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-is-table\"></table></div>",
+      "          <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-is-table\"></table></div>",
       "        </div>"
     ].join('\n'),
     setup: function () {
@@ -322,7 +639,7 @@
       var body = '';
       groups.forEach(function (g) {
         var open = !isCollapsed[g.pid];
-        body += groupHeadRow(g, 5, open);
+        body += groupHeadRow(g, 5, open, 'issue');
         if (!open) return;
         /* ⚠️ Oldest first WITHIN the project — aging is this register's own measure of what has
            been sitting longest, and it is null once an issue is closed, so a closed row sorts
@@ -332,7 +649,13 @@
           return (y == null ? -1 : y) - (x == null ? -1 : x);
         }).forEach(function (r) {
           var age = isAgingDays(r), st = r.status || 'Open';
-          body += '<tr>' +
+          /* ⚠ `?openIssue=` — a QUERY parameter, matching the `?openLesson=` deep link this same
+             module already answers, rather than a second convention beside it. The Issues screen's
+             own history binding (`il_screen`) carries only which SCREEN is showing, not which issue
+             is open, so there is no existing hash to aim at the way Meetings has one. */
+          body += '<tr class="pd-proj-row" data-open-pid="' + esc(r.project_id) + '"' +
+            ' data-open-to="?openIssue=' + encodeURIComponent(r.id) + '"' +
+            ' title="Open this issue in ' + esc(nameById[r.project_id] || r.project_id) + '">' +
             '<td>' + esc(clip(r.description, 90) || '(no issue text)') + '</td>' +
             '<td>' + esc(r.department || '—') + '</td>' +
             '<td>' + esc(r.champion || '—') + '</td>' +
@@ -344,6 +667,7 @@
       var t = document.getElementById('po-is-table');
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
       wireGroupToggle(t, isCollapsed, isRender);
+      wireRowOpen(t);
     }
       // ⚠️ Wired here rather than by the host page: these two lines lived in the Portfolio
       //    Dashboard’s auth block, three thousand lines from the renderer they drive.
@@ -355,6 +679,7 @@
 
   /* ---- Meetings ------------------------------------------------------------ */
   def("meetings", {
+    icon: "calendar",
     title: "Meetings",
     needs: [],
     markup: [
@@ -370,7 +695,7 @@
       "        <p style=\"font-size:12px;color:var(--pd-muted);margin:0 0 12px;\" id=\"po-mm-note\"></p>",
       "        <div class=\"pd-kpis\" id=\"po-mm-kpis\"></div>",
       "        <div class=\"po-card\" style=\"padding:0;overflow:hidden;\">",
-      "          <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-mm-table\"></table></div>",
+      "          <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-mm-table\"></table></div>",
       "        </div>"
     ].join('\n'),
     setup: function () {
@@ -446,7 +771,7 @@
       var body = '';
       groups.forEach(function (g) {
         var open = !mmCollapsed[g.pid];
-        body += groupHeadRow(g, 5, open);
+        body += groupHeadRow(g, 5, open, 'action item');
         if (!open) return;
         /* ⚠️ MEETING DATE, newest first — the owner's own ask. A meeting with no date sorts last
            rather than to the top, which is where an empty string would put it. Ties inside one
@@ -459,7 +784,12 @@
         }).forEach(function (it) {
           var m = momById[it.mom_id];
           var late = mmIsLate(it), closed = (it.status || 'Open') === 'Closed';
-          body += '<tr>' +
+          /* ⚠ The MEETING is what opens, not the action item: Minutes of Meeting has no
+             single-item screen — an action item is a row inside its meeting's detail view, which
+             is where a planner reads and answers it. */
+          body += '<tr class="pd-proj-row" data-open-pid="' + esc(it.project_id) + '"' +
+            (it.mom_id ? ' data-open-to="' + esc(stateHash('mom_view', { t: 'meetings', v: 'detail', m: it.mom_id })) + '"' : '') +
+            ' title="Open this meeting in ' + esc(nameById[it.project_id] || it.project_id) + '">' +
             '<td>' + esc((m && m.title) || '—') + (m && m.meeting_date ? ' <span style="color:var(--pd-muted);">· ' + esc(Fmt.date(m.meeting_date)) + '</span>' : '') + '</td>' +
             '<td>' + esc(clip(it.action_item || it.description, 90) || '(no action text)') + '</td>' +
             '<td>' + esc(it.owner || '—') + '</td>' +
@@ -472,6 +802,7 @@
       var t = document.getElementById('po-mm-table');
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
       wireGroupToggle(t, mmCollapsed, mmRender);
+      wireRowOpen(t);
 
       /* ⚠️ The note follows the FILTER. It used to state "Closed items are left out" as a fixed
          fact; with the filter it would have been false three settings out of four. */
@@ -490,6 +821,7 @@
 
   /* ---- Contracts & Claims ------------------------------------------------------------ */
   def("contracts", {
+    icon: "contract",
     title: "Contracts & Claims",
     needs: [],
     markup: [
@@ -500,7 +832,7 @@
       "             it. The old flat table is kept below, because the page is also used to find one row. -->",
       "        <div class=\"po-card\" id=\"po-ct-rankcard\">",
       "          <h3 style=\"text-transform:none;font-size:15px;\">Projects by unrecovered exposure</h3>",
-      "          <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-ct-rank\"></table></div>",
+      "          <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-ct-rank\"></table></div>",
       "          <p class=\"po-ct-note\" id=\"po-ct-ranknote\"></p>",
       "        </div>",
       "        <div class=\"po-card\" id=\"po-ct-agecard\">",
@@ -514,12 +846,15 @@
       "             another. Shut by default: a summary that opens on 900 rows is not a summary. -->",
       "        <details class=\"po-card po-ct-all\" id=\"po-ct-allwrap\">",
       "          <summary id=\"po-ct-allsum\">All records</summary>",
-      "          <div style=\"overflow-x:auto;margin-top:10px;\"><table class=\"po-table\" id=\"po-ct-table\"></table></div>",
+      "          <div style=\"overflow-x:auto;margin-top:10px;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-ct-table\"></table></div>",
       "        </details>"
     ].join('\n'),
     setup: function () {
     // ================= Portfolio Contracts & Claims (cross-project) =================
     var ctRows = null, ctLoadedIds = null;
+    /* See `renderCt`. Declared in `setup()` — which runs once per MOUNT — so a planner's own
+       open/shut choice survives every filter change on this view and resets when they leave it. */
+    var CT_OPEN_MAX = 60, ctAllTouched = false, ctWantOpen = false;
     function ctDesc(r) {
       var ref = (r.reference_no || '').trim(), d = (r.description || '').trim() || (r.title || '').trim();
       if (ref && d) return ref + ' — ' + d;
@@ -617,6 +952,39 @@
          reason to open it and no sense of what is behind it. */
       var sum = document.getElementById('po-ct-allsum');
       if (sum) sum.textContent = 'All records (' + list.length + ')';
+      /* ==== OPEN IT WHEN OPENING IT IS REASONABLE ==============================================
+         Owner 2026-09-17: *"Contracts & Claims — I feel like the contract value record should be
+         available/seen already rather than having it collapsed."* Correct for the case he is
+         looking at. The original reasoning above ("a summary that opens on 900 rows is not a
+         summary") is also correct — for the case it was written for. Both hold, so the disclosure
+         decides from the actual count instead of guessing once at authoring time.
+         ⚠️ CT_OPEN_MAX is a SCREENFUL-ish, not a performance limit. The table renders 900 rows
+         perfectly well; the reason not to auto-open at 900 is that the summary cards above it — the
+         ranking and the ageing, which are the point of this page — get pushed off the screen.
+         ⚠️⚠️ AND A PLANNER'S OWN TOGGLE WINS FROM THEN ON. `renderCt` re-runs on every project
+         filter change, so a bare `open = small` would slam the disclosure shut (or back open) under
+         someone who had just set it the other way — the filter is exactly when they are opening it
+         to look something up. `pfSel` changes, the count crosses the threshold, and their panel
+         moves on its own. The flag is per-mount, so switching views still starts fresh. */
+      var wrap = document.getElementById('po-ct-allwrap');
+      if (wrap) {
+        if (!wrap.__poBound) {
+          wrap.__poBound = true;
+          /* ⚠️⚠️ `toggle` CANNOT SIMPLY MEAN "the planner clicked". Assigning `wrap.open`
+             below fires this same event — asynchronously, on a queued task, so it lands AFTER this
+             function returns no matter where the listener is bound. A listener that just sets the
+             flag would therefore mark the panel "touched" the first time the code opened it, and
+             the count would never be consulted again. It compares against what was last set
+             programmatically: equal means that was our own echo, different means a human. */
+          wrap.addEventListener('toggle', function () {
+            if (wrap.open !== ctWantOpen) ctAllTouched = true;
+          });
+        }
+        if (!ctAllTouched) {
+          ctWantOpen = list.length > 0 && list.length <= CT_OPEN_MAX;
+          wrap.open = ctWantOpen;
+        }
+      }
     }
 
     /* One row per project, ranked by what is unrecovered. ⚠️ Projects with NOTHING outstanding are
@@ -704,6 +1072,7 @@
 
   /* ---- Progress Photos ------------------------------------------------------------ */
   def("photos", {
+    icon: "camera",
     title: "Progress Photos",
     needs: [],
     markup: [
@@ -714,7 +1083,7 @@
       "          <div class=\"po-photo-grid\" id=\"po-ph-grid\"></div>",
       "        </div>",
       "        <div class=\"po-card\" style=\"margin-top:16px;padding:0;overflow:hidden;\">",
-      "          <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-ph-table\"></table></div>",
+      "          <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-ph-table\"></table></div>",
       "        </div>"
     ].join('\n'),
     setup: function () {
@@ -741,10 +1110,36 @@
       try {
         phRows = await PDb.selectAll('progress_photos', function (q) { return q.in('project_id', ids).eq('favorite', true); });
       } catch (e) {
+        /* ==== WHEN THE FAVORITES READ FAILS =====================================================
+           ⚠⚠ IT USED TO ANSWER EVERY FAILURE WITH ONE FILENAME, AND THE FILENAME COULD NOT RUN.
+           The old test was `/favorite|schema cache/i` → *"run
+           migrations/2026-09-07-progress-photos-favorites.sql"*, which is right for a missing
+           COLUMN and wrong for a missing TABLE — that migration's first statement is
+           `alter table progress_photos add column ...`, so against a database without the table it
+           dies with `42P01: relation "progress_photos" does not exist`, which is exactly what the
+           owner reported on 2026-09-16 after following this very message. A nudge that names a
+           file which then fails is worse than no nudge: it reads as "the app is broken in two
+           places" rather than "one prerequisite is missing".
+           ⚠ So the two are told apart and each names the file that will actually run. 42703 /
+           "column ... does not exist" is the column; 42P01 / PGRST205 / "relation ... does not
+           exist" is the table, and `supabase-schema.sql` is what creates it.
+           ⚠⚠ AND THE WHOLE VIEW SAYS SO, NOT JUST THE PHOTO GRID. This branch returned after
+           writing into `grid` alone, leaving the KPI strip and the per-project table as blank
+           elements — the "progress photos bugs out" screenshot is that: a page with one sentence
+           on it and two empty boxes below, which reads as a half-loaded page rather than as one
+           clear prerequisite. */
         var msg = (e && e.message) || String(e);
-        grid.innerHTML = '<div class="po-empty">' + (/favorite|schema cache/i.test(msg)
-          ? 'Run <code>migrations/2026-09-07-progress-photos-favorites.sql</code> to enable favorites and the portfolio-level favorites view.'
-          : 'Could not load: ' + esc(msg)) + '</div>';
+        var code = (e && e.code) || '';
+        var noTable = code === '42P01' || code === 'PGRST205' || /relation .* does not exist|could not find the table/i.test(msg);
+        var noColumn = !noTable && (code === '42703' || /favorite|column .* does not exist|schema cache/i.test(msg));
+        var say = noTable
+          ? 'This database has no <code>progress_photos</code> table yet. Run <code>supabase-schema.sql</code> first — it creates the table; <code>migrations/2026-09-07-progress-photos-favorites.sql</code> only adds the favorite flag to an existing one, and fails on its own with <code>42P01</code>.'
+          : noColumn
+            ? 'Run <code>migrations/2026-09-07-progress-photos-favorites.sql</code> to enable favorites and the portfolio-level favorites view.'
+            : 'Could not load the favorited photos: ' + esc(msg);
+        grid.innerHTML = '<div class="po-empty">' + say + '</div>';
+        kpis.innerHTML = '';
+        tbl.innerHTML = '<tbody><tr><td class="po-empty">' + say + '</td></tr></tbody>';
         return;
       }
       phLoadedIds = ids;
@@ -800,13 +1195,14 @@
 
   /* ---- Productivity Rates ------------------------------------------------------------ */
   def("productivity", {
+    icon: "barChart",
     title: "Productivity Rates",
     needs: [],
     markup: [
       "        <p style=\"font-size:12px;color:var(--pd-muted);margin:0 0 12px;\">Rate = output ÷ (crew or equipment × working days).</p>",
       "        <div class=\"pd-kpis\" id=\"po-pr-kpis\"></div>",
       "        <div class=\"po-card\" style=\"padding:0;overflow:hidden;\">",
-      "          <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-pr-table\"></table></div>",
+      "          <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-pr-table\"></table></div>",
       "        </div>"
     ].join('\n'),
     setup: function () {
@@ -864,9 +1260,17 @@
 
   /* ---- Portfolio S-Curve ---------------------------------------------------------- */
   def("scurve", {
+    icon: "trendingUp",
     title: "Portfolio S-Curve",
     needs: ["PDScurve"],
+    /* ⚠️⚠️ THE ONLY VIEW THAT OPENS WITH NOTHING SELECTED — see `pfEmptyMeansAll`. Owner
+       2026-09-17: *"let the planner choose which projects to see the s-curve so it loads smoothly
+       upon opening."* Every other view answers its question with one read across the portfolio;
+       this one makes a server-side roll-up call PER PROJECT, so "all" is the most expensive
+       possible default and is paid before anyone has said what they wanted to compare. */
+    emptyMeansNone: true,
     markup: [
+      "<div id=\"po-sc-pane-curve\">",
       "<div class=\"pd-kpis\" id=\"po-sc-kpis\"></div>",
       "<div class=\"po-card\">",
       "  <h3 style=\"text-transform:none;font-size:15px;\">Portfolio S-Curve — Planned vs Actual (duration-weighted, across selected projects)</h3>",
@@ -875,7 +1279,29 @@
       "<!-- What a clicked month is MADE OF. A panel under the chart, not a modal: the question",
       "     it answers is \"what is inside THAT month\", and covering the chart hides the month",
       "     being asked about. Hidden until a month is clicked. -->",
-      "<div class=\"po-card po-sc-bd\" id=\"po-sc-bd\" style=\"display:none;\"></div>"
+      "<div class=\"po-card po-sc-bd\" id=\"po-sc-bd\" style=\"display:none;\"></div>",
+      "</div>",
+      "<!-- ==== MANUAL DATA, AT PORTFOLIO LEVEL ======================================",
+      "     The module's Curve | Manual data tabs exist on this page too, and the second was a",
+      "     DEAD CONTROL here: that tab strip is static markup wired by the module's own init(),",
+      "     which a portfolio open deliberately SKIPS \u2014 so the dropdown rendered, opened, and did",
+      "     nothing at all. Owner 2026-09-16: *\"there is a manual data tab that is clickable that",
+      "     doesn't work.\"*",
+      "     \u26a0\u26a0 IT IS A REGISTER, NOT THE SHEET, AND IT CANNOT BE THE SHEET. The project-level tab",
+      "     is an editable trades-by-months grid, and portfolio scope is READ-ONLY at the Supabase",
+      "     chokepoint (auth.js refuses every write while the flag is set). A grid rendered here",
+      "     would accept keystrokes and have every save refused by the network.",
+      "     \u26a0 So it answers the question a PORTFOLIO can answer: which projects carry a",
+      "     hand-entered curve, whether the planned one is locked, how far it runs and when it was",
+      "     last touched \u2014 with a row that opens that project's own sheet to actually edit it.",
+      "     =========================================================================== -->",
+      "<div id=\"po-sc-pane-manual\" hidden>",
+      "  <div class=\"pd-kpis\" id=\"po-scm-kpis\"></div>",
+      "  <p class=\"po-note\" id=\"po-scm-note\"></p>",
+      "  <div class=\"po-card\" style=\"padding:0;overflow:hidden;\">",
+      "    <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-scm-table\"></table></div>",
+      "  </div>",
+      "</div>"
     ].join('\n'),
     setup: function () {
     function isWbsRow(r) { return r.activity_type === 'WBS Summary'; }
@@ -1520,7 +1946,7 @@
           '<td class="num">' + r1(r.ownP) + '</td>' +
           '<td class="num is-act">' + r1(r.ownA) + '</td></tr>';
       }).join('');
-      return '<div style="overflow-x:auto;"><table class="po-table po-bd-table">' +
+      return '<div style="overflow-x:auto;"><table class="pd-table pd-proj-table po-table po-bd-table">' +
         '<thead><tr><th>' + esc(what) + '</th>' +
           '<th class="num" title="Points of the PORTFOLIO&#39;s percentage this ' + esc(what.toLowerCase()) +
             ' added in this month — these sum to the portfolio figure above">This month planned</th>' +
@@ -1550,7 +1976,7 @@
       var v = r1(d.variance);
       host.innerHTML = kpi2('Activities', String(d.activities)) + kpi2('Overall Progress', r1(d.overallPct) + '%') +
         kpi2('Planned to date', r1(d.plannedPct) + '%') + kpi2('Actual to date', r1(d.actualPct) + '%') +
-        kpi2('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? '--pd-ok' : '--pd-bad');
+        kpi2('Schedule Variance', Fmt.vsPlan(v), v >= 0 ? '--pd-ok' : '--pd-bad');
     }
     var scLoadedIds = null, scAggs = [];
     /* ⚠️ A monotonic load token. Two overlapping loads used to BOTH paint, and whichever
@@ -1566,7 +1992,15 @@
       var kpiHost = document.getElementById('po-sc-kpis'), chartHost = document.getElementById('po-sc-chart');
       if (!ids.length) {
         kpiHost.innerHTML = '';
-        chartHost.innerHTML = '<div class="po-empty">No projects match the current filter.</div>';
+        /* ⚠️ TWO DIFFERENT EMPTIES, AND THEY MUST NOT READ THE SAME. Nothing selected on this
+           view is the state it deliberately OPENS in, so the page has to say what to do next; the
+           old wording blamed a filter and looked like a failed load. A filter that genuinely
+           excluded everything (only reachable here once something has been ticked) still says so. */
+        chartHost.innerHTML = pfCount()
+          ? '<div class="po-empty">No projects match the current filter.</div>'
+          : '<div class="po-empty">Choose the projects to roll up — use <b>Select projects</b> in the '
+            + 'toolbar above. The curve reads each project’s schedule separately, so it draws as soon '
+            + 'as you pick one.</div>';
         scData = null; scLoadedIds = ids; return;
       }
       kpiHost.innerHTML = '';
@@ -1673,13 +2107,155 @@
       /* ⚠️ Test seam, same contract as `_setProjects`: the merged curve read back rather than
          reached for inside the closure, so the carry-forward can be asserted on numbers instead
          of on the shape of an SVG path. */
-      return { load: loadScurve, _data: function () { return scData; },
+    /* ==== MANUAL DATA — the cross-project register ===========================================
+       ⚠️ ONE READ OF EACH TABLE, and only when the tab is first opened. A planner who never
+       leaves the Curve tab pays nothing for this, and the 18-project schedule roll-up the Curve
+       tab is already paying for is quite enough on one page load.
+       ⚠️ Tolerant of the pre-migration state (`migrations/2026-09-10-scurve-manual-poc.sql` not
+       yet run), the same way the Equipment and Photos views are: a missing table degrades to a
+       named "run this migration" nudge rather than a raw PostgREST error. The module's own tab
+       does exactly this for the same two tables — `isMissingTable` there, this test here. */
+    var scmRows = null, scmMeta = null, scmLoadedIds = null, scmMissing = false;
+    function scmIsMissing(e) {
+      var m = ((e && (e.message || e.code)) || '') + '';
+      return /does not exist|schema cache|42P01|PGRST205/i.test(m);
+    }
+    async function loadManual(force) {
+      var ids = scopedProjectIds();
+      if (!force && scmLoadedIds && scmLoadedIds.join(',') === ids.join(',')) return;
+      var tbl = document.getElementById('po-scm-table');
+      var kpis = document.getElementById('po-scm-kpis');
+      var note = document.getElementById('po-scm-note');
+      if (!tbl) return;
+      if (!ids.length) {
+        kpis.innerHTML = '';
+        /* ⚠️ Same two empties as the Curve tab. A blank table with no words was survivable when
+           this state only happened after a deliberate filter; it is the OPENING state now. */
+        tbl.innerHTML = '<tbody><tr><td class="po-empty">' + (pfCount()
+          ? 'No projects match the current filter.'
+          : 'Choose the projects to list — use <b>Select projects</b> in the toolbar above.')
+          + '</td></tr></tbody>';
+        note.textContent = '';
+        return;
+      }
+      kpis.innerHTML = '';
+      tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the manual curves of ' + ids.length + ' project(s)\u2026</td></tr></tbody>';
+      try {
+        var res = await Promise.all([
+          PDb.selectAll('scurve_manual', function (q) { return q.in('project_id', ids); }),
+          /* ⚠⚠ `'project_id'` IS THE CURSOR, AND LEAVING IT OFF WOULD HAVE BROKEN EVERY READ.
+             `scurve_manual_meta` is keyed `project_id text primary key` — it has NO `id` column,
+             and `PDb.selectAll` pages on `id` unless told otherwise, so the default would return
+             `400 / 42703 column scurve_manual_meta.id does not exist` on EVERY load of this tab.
+             ⚠ Caught by `node tools/selectall-key.js` before this shipped, which is the whole
+             reason that checker exists: this exact shape has shipped four times (`class_codes`,
+             `trade_map` and two vendor views that had never loaded on any project), and it
+             surfaces to a planner as an empty screen blaming a migration they have already run.
+             ⚠ `project_id` is legal as a cursor where `sort_order`/`period` are not: a keyset
+             cursor must be UNIQUE and NON-NULL, and this is the primary key. */
+          PDb.selectAll('scurve_manual_meta', function (q) { return q.in('project_id', ids); }, null, 'project_id')
+        ]);
+        scmRows = res[0] || []; scmMeta = res[1] || []; scmMissing = false;
+      } catch (e) {
+        scmMissing = scmIsMissing(e);
+        note.textContent = '';
+        tbl.innerHTML = '<tbody><tr><td class="po-empty">' + (scmMissing
+          ? 'Run <code>migrations/2026-09-10-scurve-manual-poc.sql</code> to enable hand-entered S-curves.'
+          : esc((e && e.message) || String(e))) + '</td></tr></tbody>';
+        return;
+      }
+      scmLoadedIds = ids;
+      scmRender();
+    }
+    function scmRender() {
+      var tbl = document.getElementById('po-scm-table');
+      if (!tbl) return;
+      var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+      var metaBy = {}; (scmMeta || []).forEach(function (m) { metaBy[m.project_id] = m; });
+      /* One row per PROJECT, not per cell: `scurve_manual` is one row per trade × month × kind,
+         and a portfolio register of forty thousand cells is not a register of anything. */
+      var by = {};
+      (scmRows || []).forEach(function (r) {
+        var g = by[r.project_id] || (by[r.project_id] = { trades: {}, months: {}, kinds: {}, cells: 0, touched: '' });
+        g.cells++;
+        if (r.trade) g.trades[r.trade] = 1;
+        if (r.month) g.months[String(r.month).slice(0, 7)] = 1;
+        if (r.kind) g.kinds[r.kind] = 1;
+        if (r.updated_at && r.updated_at > g.touched) g.touched = r.updated_at;
+      });
+      var rows = Object.keys(by).map(function (id) {
+        var g = by[id], ms = Object.keys(g.months).sort();
+        return { id: id, name: nameById[id] || id, trades: Object.keys(g.trades).length,
+                 cells: g.cells, kinds: g.kinds, from: ms[0] || '', to: ms[ms.length - 1] || '',
+                 touched: g.touched, locked: !!(metaBy[id] && metaBy[id].planned_locked) };
+      }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+
+      var locked = rows.filter(function (r) { return r.locked; }).length;
+      document.getElementById('po-scm-kpis').innerHTML =
+        kpi2('Projects with a manual curve', rows.length + ' of ' + scopedProjectIds().length) +
+        kpi2('Planned curve locked', String(locked)) +
+        kpi2('Trades covered', String(rows.reduce(function (a, r) { return a + r.trades; }, 0))) +
+        kpi2('Cells entered', String(rows.reduce(function (a, r) { return a + r.cells; }, 0)));
+
+      var head = '<thead><tr><th>Project</th><th class="num">Trades</th><th>Months covered</th>' +
+        '<th>Kinds entered</th><th>Planned</th><th>Last edited</th></tr></thead>';
+      var KINDS = ['planned', 'actual', 'forecast'];
+      var body = rows.length ? rows.map(function (r) {
+        var kinds = KINDS.filter(function (k) { return r.kinds[k]; })
+          .map(function (k) { return statePill(k.charAt(0).toUpperCase() + k.slice(1), 'muted'); }).join(' ');
+        /* ⚠️ `?scView=manual` — the row opens that project's OWN Manual data tab, which is the
+           only place the sheet can actually be edited. Same shape as the `?openIssue=` link the
+           Issues register uses, and answered by the S-Curve module's own boot. */
+        return '<tr class="pd-proj-row" data-open-pid="' + esc(r.id) + '" data-open-to="?scView=manual"' +
+          ' title="Open this project\u2019s manual sheet">' +
+          '<td class="pd-proj-name">' + esc(r.name) + '</td>' +
+          '<td class="num">' + r.trades + '</td>' +
+          '<td>' + (r.from ? esc(moLabel(r.from)) + ' \u2013 ' + esc(moLabel(r.to)) : '\u2014') + '</td>' +
+          '<td>' + (kinds || '\u2014') + '</td>' +
+          '<td>' + (r.locked ? statePill('Locked', 'muted') : statePill('Open', 'warn')) + '</td>' +
+          '<td>' + (r.touched ? Fmt.date(r.touched) : '\u2014') + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="po-empty">No project in scope carries a hand-entered curve yet. ' +
+        'Open one project\u2019s S-Curve and use its Manual data tab to enter one.</td></tr>';
+      tbl.innerHTML = head + '<tbody>' + body + '</tbody>';
+      wireRowOpen(tbl);
+      document.getElementById('po-scm-note').textContent =
+        'A manual curve is the planner\u2019s own monthly POC per trade, entered by hand \u2014 a second source ' +
+        'of truth the schedule knows nothing about. Portfolio scope is read-only, so this lists them; ' +
+        'open a project to edit its sheet.';
+    }
+
+    /* The Curve | Manual data tabs, in the portfolio bar. ⚠️ `api.bar(bar)` is called by
+       takeOver() once the bar exists — the view cannot build it itself, because `mount()` is also
+       used by pages that host a dashboard without taking the page over. */
+    var scView = 'curve';
+    function scShowView(v, api) {
+      scView = (v === 'manual') ? 'manual' : 'curve';
+      var pc = document.getElementById('po-sc-pane-curve'), pm = document.getElementById('po-sc-pane-manual');
+      if (pc) pc.hidden = scView !== 'curve';
+      if (pm) pm.hidden = scView !== 'manual';
+      document.querySelectorAll('#po-bar-tabs [data-scv]').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.scv === scView);
+      });
+      if (scView === 'manual') loadManual();
+    }
+    function scBar(bar) {
+      var host = bar.querySelector('#po-bar-tabs');
+      if (!host) return;
+      host.innerHTML =
+        '<button class="po-bar-tab on" data-scv="curve">Curve</button>' +
+        '<button class="po-bar-tab" data-scv="manual">Manual data</button>';
+      host.querySelectorAll('[data-scv]').forEach(function (b) {
+        b.onclick = function () { scShowView(b.dataset.scv); };
+      });
+    }
+      return { load: loadScurve, bar: scBar, _data: function () { return scData; },
                _bars: function () { return scBars; }, _bd: function () { return { i: scBdOpen, dim: scBdDim }; } };
     }
   });
 
   /* ---- Consolidated Cash Flow ------------------------------------------------------ */
   def("cashflow", {
+    icon: "wallet",
     title: "Consolidated Cash Flow",
     needs: [],
     markup: [
@@ -1689,7 +2265,7 @@
       "  <div id=\"po-cf-chart\"></div>",
       "</div>",
       "<div class=\"po-card\" style=\"padding:0;overflow:hidden;\">",
-      "  <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-cf-table\"></table></div>",
+      "  <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-cf-table\"></table></div>",
       "</div>"
     ].join('\n'),
     setup: function () {
@@ -1802,6 +2378,7 @@
 
   /* ---- Portfolio Resources --------------------------------------------------------- */
   def("resources", {
+    icon: "users",
     title: "Portfolio Resources",
     needs: [],
     markup: [
@@ -1812,7 +2389,7 @@
       "  <div id=\"po-rs-chart\"></div>",
       "</div>",
       "<div class=\"po-card\" style=\"padding:0;overflow:hidden;\">",
-      "  <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-rs-table\"></table></div>",
+      "  <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-rs-table\"></table></div>",
       "</div>"
     ].join('\n'),
     setup: function () {
@@ -1877,6 +2454,7 @@
 
   /* ---- Portfolio Equipment availability -------------------------------------------- */
   def("equipment", {
+    icon: "box",
     title: "Equipment availability",
     needs: ["XLSX"],
     markup: [
@@ -1903,7 +2481,7 @@
       "</div>",
       "<div class=\"po-card\" style=\"margin-top:16px;\">",
       "  <h3>Asset register across the portfolio</h3>",
-      "  <div style=\"overflow-x:auto;\"><table class=\"po-table\" id=\"po-eq-table\"></table></div>",
+      "  <div style=\"overflow-x:auto;\"><table class=\"pd-table pd-proj-table po-table\" id=\"po-eq-table\"></table></div>",
       "</div>"
     ].join('\n'),
     setup: function (host) {
@@ -2245,16 +2823,37 @@
      the view loads itself. A module calls it and awaits it; nothing else needs to know how a
      dashboard is built. */
   def("schedule", {
+    icon: "ganttChart",
     title: "Project Schedule",
     needs: [],
     markup: [
       "        <div class=\"po-toolbar\">",
       "          <div class=\"po-toolbar-fields\" id=\"po-sh-fields\">",
-      "            <select class=\"pd-select\" id=\"po-sh-group\" style=\"max-width:190px;\">",
-      "              <option value=\"program\">Group by parent project</option>",
-      "              <option value=\"none\">No grouping</option>",
+      "            <!-- \u26a0 BOTH CONTROLS WERE NAMED IN JARGON, and the owner had to ask what each",
+      "                 one meant. *\"What does the Group by parent project do? Does this refer to the",
+      "                 packages?\"* \u2014 it does: a parent project is one development bought as several",
+      "                 contract packages (PDProgram groups on `program`, else the id's letter prefix).",
+      "                 *\"There is also a running past contract only, what does this mean?\"* \u2014 it keeps",
+      "                 only projects whose current schedule finishes AFTER the contract end date.",
+      "                 Both now say that in the control itself rather than in an answer to a question. -->",
+      "            <select class=\"pd-select\" id=\"po-sh-group\" style=\"max-width:230px;\"",
+      "                    title=\"A parent project is one development bought as several contract packages.\">",
+      "              <option value=\"program\">Group packages by parent project</option>",
+      "              <option value=\"none\">List every project separately</option>",
       "            </select>",
-      "            <label class=\"po-chk\"><input type=\"checkbox\" id=\"po-sh-slip\"> Running past contract only</label>",
+      "            <label class=\"po-chk\" title=\"Only projects whose current schedule finishes after the contract end date\"><input type=\"checkbox\" id=\"po-sh-slip\"> Finishing late only</label>",
+      "            <!-- \u26a0 THE TIME GRAIN, as an explicit control rather than a guess. It used to be",
+      "                 inferred from the span alone (>48 months \u2192 years, >18 \u2192 quarters, else months),",
+      "                 so a 2020\u20132031 portfolio was ALWAYS years and a planner who wanted to read",
+      "                 this quarter had no way to ask. Owner 2026-09-16: *\"let's also have a toggle",
+      "                 for year, quarterly, monthly viewing as well.\"* Auto is kept as the default",
+      "                 and is still the right answer most of the time. -->",
+      "            <span class=\"pd-seg po-sh-grain\" id=\"po-sh-grain\" title=\"Time grain of the chart\">",
+      "              <button data-g=\"auto\" class=\"on\">Auto</button>",
+      "              <button data-g=\"year\">Year</button>",
+      "              <button data-g=\"quarter\">Quarter</button>",
+      "              <button data-g=\"month\">Month</button>",
+      "            </span>",
       "            <span class=\"po-spacer\"></span>",
       "            <div class=\"po-search\"><span data-ico=\"search\" data-ico-size=\"15\"></span><input class=\"pd-input\" id=\"po-sh-q\" placeholder=\"Search project…\" /></div>",
       "          </div>",
@@ -2267,8 +2866,11 @@
       "        <p class=\"po-coverage\" id=\"po-sh-cov\"></p>"
     ].join('\n'),
     setup: function () {
-      var shGroup = 'program', shSlipOnly = false, shQuery = '';
-      var STALE_DAYS = 45;
+      var shGroup = 'program', shSlipOnly = false, shQuery = '', shGrain = 'auto';
+      /* ⚠️ `STALE_DAYS` and the row's `age` went with the staleness KPI and the amber row flag
+         (2026-09-16). They measured how fresh OUR roll-up was, not how the project is doing, and
+         the owner asked for both off the dashboard. Left as a comment rather than a dead constant:
+         the next person to want "how old is this roll-up" should read this first. */
 
       function shRows() {
         var q = shQuery.trim().toLowerCase();
@@ -2285,11 +2887,9 @@
         var cs = pd(p.start_date), cf = pd(p.end_date);
         var ps = pd(p.schedule_start), pf = pd(p.schedule_finish);
         var ff = pd(p.forecast_finish);
-        var upd = pd(p.schedule_updated_at);
-        var age = upd ? Math.round((today() - upd) / 86400000) : null;
         return { p: p, id: p.id, name: p.name || p.id, cs: cs, cf: cf, ps: ps, pf: pf, ff: ff,
                  pct: Math.max(0, Math.min(100, num(p.schedule_progress))),
-                 acts: num(p.schedule_activities), age: age,
+                 acts: num(p.schedule_activities),
                  has: !!(ps && pf), slip: shSlip(p) };
       }
       function shSlip(p) {
@@ -2317,12 +2917,31 @@
 
         var withRoll = rows.filter(function (r) { return r.has; });
         var late = withRoll.filter(function (r) { return r.slip > 0; });
-        var stale = withRoll.filter(function (r) { return r.age != null && r.age > STALE_DAYS; });
+        /* ==== FOUR FIGURES A PLANNER CAN ACT ON ================================================
+           ⚠️⚠️ TWO CARDS WERE REMOVED, AND THE REASON IS THE DASHBOARD'S PURPOSE. Owner
+           2026-09-16: *"remove the Roll-Up KPI cards, both 'with a roll-up' and 'roll-up over 45d
+           old'. This doesn't provide informed decision making value but just a debugging warning.
+           The main objective of the dashboard is to provide information for all projects that
+           would help make informed decisions."* Both counted the health of our own DATA, not the
+           health of the portfolio — "15 of 18 have a roll-up" tells a planner nothing they can do
+           anything about on a Tuesday morning.
+           ⚠️ What replaces them answers the two questions this chart exists for: how bad is
+           the worst slip, and what is about to land. Both are already derived per row, so neither
+           costs a read.
+           ⚠️ The coverage that WAS in "with a roll-up" is not lost — it moved to the project
+           filter, where a project that cannot be drawn is marked next to its own name, beside the
+           control that would include it. */
+        var worst = late.reduce(function (m, r) { return Math.max(m, r.slip); }, 0);
+        var soon = withRoll.filter(function (r) {
+          if (!r.pf) return false;
+          var d = Math.round((r.pf - today()) / 86400000);
+          return d >= 0 && d <= 90;
+        }).length;
         kpis.innerHTML =
           kpi2('Projects', String(rows.length)) +
-          kpi2('With a roll-up', withRoll.length + ' of ' + rows.length) +
-          kpi2('Past contract finish', String(late.length), late.length ? '--pd-bad' : '--pd-ok') +
-          kpi2('Roll-up over ' + STALE_DAYS + 'd old', String(stale.length), stale.length ? '--pd-warn' : '--pd-ok');
+          kpi2('Finishing late', String(late.length), late.length ? '--pd-bad' : '--pd-ok') +
+          kpi2('Worst slip', worst ? worst + 'd' : '\u2014', worst > 30 ? '--pd-bad' : worst ? '--pd-warn' : '--pd-ok') +
+          kpi2('Finishing within 90 days', String(soon));
 
         if (!withRoll.length) {
           host.innerHTML = '<div class="po-empty">No project in scope carries a schedule roll-up yet. ' +
@@ -2339,18 +2958,49 @@
         var span = (+t1 - +t0) || 1;
         function x(d) { return ((+d - +t0) / span) * 100; }
 
-        /* ⚠️ Month ticks thin to quarters then years; a tick per month over a five-year
-           portfolio is an unreadable smear of labels. */
+        /* ==== THE TIME AXIS ====================================================================
+           ⚠️ THE GRAIN IS CHOSEN, NOT INFERRED. `every` used to be derived from the span alone
+           (>48 months → one tick a year, >18 → a quarter, else a month), which over a 2020–2031
+           portfolio meant YEARS, always, with no way to ask for anything else — the owner's
+           *"toggle for year, quarterly, monthly viewing"*. `auto` keeps exactly the old rule as
+           the default; the other three override it.
+           ⚠️ A month tick every month over eleven years is ~132 labels in ~1500px. `month` is
+           therefore a real choice a planner can make and not one the chart makes for them: it
+           stays legible because the axis SCROLLS at that grain (see `.po-sh-scroll`), rather than
+           squeezing 132 labels into the width and smearing them into a grey band. */
         var months = [], c = new Date(t0.getFullYear(), t0.getMonth(), 1);
         while (c <= t1) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
-        var every = months.length > 48 ? 12 : months.length > 18 ? 3 : 1;
-        var axis = months.map(function (m, i) {
-          if (i % every) return '';
-          return '<span class="po-sh-tick" style="left:' + x(m).toFixed(3) + '%">' +
-            (every === 12 ? m.getFullYear() : moLabel(m.getFullYear() + '-' + ('0' + (m.getMonth() + 1)).slice(-2))) +
-            '</span>';
+        var every = shGrain === 'year' ? 12 : shGrain === 'quarter' ? 3 : shGrain === 'month' ? 1
+                  : (months.length > 48 ? 12 : months.length > 18 ? 3 : 1);
+        /* ⚠️ QUARTERS AND YEARS START WHERE THEY REALLY START. Stepping `i % every` from the
+           first month in the window put "quarters" on Feb/May/Aug/Nov whenever the earliest
+           contract happened to begin in February — ticks labelled as quarters that were not
+           quarters. Anchoring on the calendar month instead makes a Q label a real Q. */
+        function shOnTick(m) {
+          if (every === 12) return m.getMonth() === 0;
+          if (every === 3) return m.getMonth() % 3 === 0;
+          return true;
+        }
+        function shTickLabel(m) {
+          if (every === 12) return String(m.getFullYear());
+          if (every === 3) return 'Q' + (Math.floor(m.getMonth() / 3) + 1) + " '" + String(m.getFullYear()).slice(2);
+          return moLabel(m.getFullYear() + '-' + ('0' + (m.getMonth() + 1)).slice(-2));
+        }
+        var ticks = months.filter(shOnTick);
+        var axis = ticks.map(function (m) {
+          return '<span class="po-sh-tick" style="left:' + x(m).toFixed(3) + '%">' + shTickLabel(m) + '</span>';
         }).join('');
+        /* ⚠⚠ ONE CONTINUOUS GRID, DRAWN ONCE BEHIND EVERY ROW — and this is the fix for the
+           "today" line the owner was looking at. `.po-sh-now` was emitted per row INSIDE each
+           18px-tall `.po-sh-track`, plus once inside the 18px-tall axis: today was never a line
+           down the chart, it was a stack of disconnected 18px stubs with a gap at every row
+           padding and group heading. A bar could not be read against a date, which is most of
+           what a gantt is for. This layer spans the whole plot area, so a period boundary and
+           today are each ONE line from the axis to the last row. */
         var nowX = x(today());
+        var grid = ticks.map(function (m) {
+          return '<span class="po-sh-gl" style="left:' + x(m).toFixed(3) + '%"></span>';
+        }).join('') + '<span class="po-sh-now" style="left:' + nowX.toFixed(3) + '%"></span>';
 
         var groups = {};
         rows.forEach(function (r) {
@@ -2358,6 +3008,12 @@
           (groups[g.key] || (groups[g.key] = { label: g.label, rows: [] })).rows.push(r);
         });
 
+        /* ⚠️ ONE COUNTER FOR THE WHOLE CHART, not one per group — measured, not assumed. Banding
+           from each group's own index looked right in the code and produced ONE striped row out of
+           five on real data: "Group by parent project" is the default, most parents hold a single
+           package, and a group of one always starts at index 0. Zebra striping that appears on one
+           row in five reads as a rendering fault, not as a rhythm. */
+        var shBand = 0;
         var body = Object.keys(groups).sort(function (a, b) {
           return String(groups[a].label).localeCompare(String(groups[b].label));
         }).map(function (k) {
@@ -2365,24 +3021,58 @@
           /* ⚠️ program.js's own rule: a heading above a SINGLE project invents a hierarchy
              that is not there. A parent with one package reads as a plain row. */
           var head = g.rows.length > 1
-            ? '<div class="po-sh-grp">' + esc(g.label) + ' <span class="po-mut">' + g.rows.length + '</span></div>'
+            ? '<div class="po-sh-grp"><span class="pd-ghchip">' + esc(g.label) + '</span>' +
+              '<span class="pd-ghcount">' + g.rows.length + ' project' + (g.rows.length === 1 ? '' : 's') + '</span></div>'
             : '';
+          /* ⚠️ BANDED IN JS, NOT WITH `:nth-child`. Group headings and rows are both plain divs
+             inside `.po-sh-body`, so a CSS `:nth-child(even)` counts the HEADINGS too and the
+             stripe flips at every group — banding that is worse than none, because it looks
+             deliberate. `shRow` also returns '' for a project with no roll-up, so the index has
+             to count rows that were actually DRAWN; filtering first is what makes that true. */
           return head + g.rows.sort(function (a, b) {
             return (b.slip == null ? -1e9 : b.slip) - (a.slip == null ? -1e9 : a.slip);
-          }).map(shRow).join('');
+          }).filter(function (r) { return r.has; })
+            .map(function (r) { return shRow(r, shBand++); }).join('');
         }).join('');
 
-        host.innerHTML = '<div class="po-sh-axis">' + axis +
-          '<span class="po-sh-now" style="left:' + nowX.toFixed(3) + '%"></span></div>' +
-          '<div class="po-sh-body">' + body + '</div>' +
+        /* ⚠️ The plot is its own positioned box so the grid layer above can be absolute against
+           IT and not against the axis strip (which is 18px tall — the old bug). `.po-sh-plot` is
+           inset from the left by exactly the label column, which is why that width lives in ONE
+           place now (`--po-sh-lab` in portfolio-dash.css) instead of being repeated as a 230px
+           margin on the axis and a 220px flex-basis on the labels, two numbers that had to agree
+           and were only ever checked by eye.
+           ⚠️ At MONTH grain the whole plot scrolls sideways instead of compressing: 132 monthly
+           labels in the pane's width is a grey smear, and a planner who asked for months wants to
+           read months. Auto/quarter/year fit as before. */
+        /* ⚠⚠ THE PLOT IS WIDENED FROM THE TICK COUNT, NOT FROM A GUESSED CONSTANT — and the
+           constant was measured to be wrong. This was `min-width: 1600px` whenever the grain was
+           months, which over a 2020–2027 window is 96 labels in 1370px: rendering it and asking
+           the DOM how many labels overlapped their neighbour returned **95 of 96**. That is the
+           unreadable smear this control exists to escape, reproduced by the escape hatch.
+           ⚠ So each tick is given a floor of its own label's width. `max(100%, Npx)` keeps the
+           plot exactly pane-width whenever the ticks already fit (year and auto on any normal
+           portfolio), and lets `.po-sh-scroll` take over only when they genuinely do not. */
+        var perTick = every === 12 ? 44 : every === 3 ? 50 : 52;
+        var minW = ticks.length * perTick;
+        host.className = 'po-sh-chart';
+        host.innerHTML = '<div class="po-sh-scroll"><div class="po-sh-inner" style="min-width:max(100%,' + minW + 'px)">' +
+          '<div class="po-sh-axis">' + axis + '</div>' +
+          '<div class="po-sh-plot"><div class="po-sh-grid">' + grid + '</div></div>' +
+          '<div class="po-sh-body">' + body + '</div></div></div>' +
           '<div class="po-legend2">' +
-            '<span class="po-lg2"><span class="sw2" style="background:var(--pd-line);"></span>Contract window</span>' +
-            '<span class="po-lg2"><span class="sw2" style="background:var(--pd-dark);"></span>Live programme</span>' +
-            '<span class="po-lg2"><span class="sw2" style="background:var(--pd-bad-text);"></span>Past contract finish</span>' +
+            /* ⚠️ PLAIN NAMES. Owner: *"why is it called contract window and live programme?"* —
+               a fair question, because neither is a phrase a planner says. "Contract window" is the
+               agreed start→finish; "live programme" is the schedule as it stands today. They are
+               named for what they ARE now, and the swatches use the same `--po-sh-*` tokens the
+               bars do, so the legend cannot drift from the chart. */
+            '<span class="po-lg2"><span class="sw2" style="background:var(--po-sh-rail);"></span>Contract period</span>' +
+            '<span class="po-lg2"><span class="sw2" style="background:var(--po-sh-fill);"></span>Progress to date</span>' +
+            '<span class="po-lg2"><span class="sw2" style="background:var(--po-sh-track);"></span>Current schedule</span>' +
+            '<span class="po-lg2"><span class="sw2" style="background:var(--pd-bad-text);"></span>Finishing past contract</span>' +
             '<span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-red);"></span>Today</span>' +
           '</div>';
 
-        function shRow(r) {
+        function shRow(r, i) {
           if (!r.has) return '';
           var a = Math.min(x(r.ps), x(r.pf)), b = Math.max(x(r.ps), x(r.pf));
           var rail = (r.cs && r.cf)
@@ -2398,40 +3088,70 @@
                     '<span class="po-sh-fill" style="width:' + r.pct + '%"></span></span>';
           var fc = r.ff ? '<span class="po-sh-fc" style="left:' + x(r.ff).toFixed(3) + '%" title="Forecast finish"></span>' : '';
           var flags = '';
-          if (r.slip > 0) flags += ' <span class="po-bad">' + r.slip + 'd past contract</span>';
-          /* ⚠️ A stale roll-up is SAID, not silently drawn as current: schedule_updated_at is
-             written when the module is opened, so a project untouched for months carries a
-             confident-looking bar built from months-old numbers. */
-          if (r.age != null && r.age > STALE_DAYS) flags += ' <span class="po-warn">roll-up ' + r.age + 'd old</span>';
-          return '<div class="po-sh-row">' +
-            '<div class="po-sh-lab">' + esc(r.name) +
-              '<span class="po-mut"> ' + Math.round(r.pct) + '%</span>' + flags + '</div>' +
-            '<div class="po-sh-track">' + rail + over + bar + fc +
-              '<span class="po-sh-now" style="left:' + nowX.toFixed(3) + '%"></span></div>' +
+          if (r.slip > 0) flags += ' <span class="po-bad">' + r.slip + 'd late</span>';
+          /* ⚠️⚠️ THE "roll-up NNd old" FLAG IS GONE, for the same reason its KPI card is.
+             Owner, pointing at HO Renovation: *"it has yellow texts after it — why? Is this a
+             bug?"* It was not a bug: `schedule_updated_at` is stamped when a project's Project
+             Schedule is opened, so the amber said "this bar is drawn from numbers nobody has
+             refreshed in 58 days". True, and a statement about OUR data rather than about the
+             project — the same debugging warning the owner asked be taken off the KPI strip. It
+             read as an error against one project's name while saying nothing that project's team
+             could act on.
+             ⚠️ What IS still called out is the thing a planner acts on: days late. */
+          /* ⚠️ The percentage is LABELLED now. It was a bare "9%" hanging off the project
+             name and the owner had to ask what it meant (*"it follows a % — what does the % mean?"*).
+             It is `schedule_progress`: the roll-up of the project's own schedule, duration-weighted
+             across its activities, which is the same number the bar's fill draws. */
+          return '<div class="po-sh-row' + (i % 2 ? ' alt' : '') + '">' +
+            '<div class="po-sh-lab">' +
+              '<span class="po-sh-nm">' + esc(r.name) + '</span>' +
+              '<span class="po-sh-pct" title="Schedule progress — duration-weighted across this project\u2019s activities">' +
+                Math.round(r.pct) + '% done</span>' + flags + '</div>' +
+            /* ⚠️ No per-row "today" stub any more — the grid layer draws it once, continuously,
+               for the whole chart. See the note at `grid` above for why the stubs were wrong. */
+            '<div class="po-sh-track">' + rail + over + bar + fc + '</div>' +
             '</div>';
         }
 
         note.innerHTML = withRoll.length + ' drawn · ' +
           t0.getFullYear() + ' – ' + t1.getFullYear() +
           ' · <span class="po-mut">measured against today, not a data date</span>';
-        /* ⚠️ What the picture could NOT show, counted rather than dropped. */
-        var noRoll = rows.length - withRoll.length;
-        var noContract = withRoll.filter(function (r) { return !(r.cs && r.cf); }).length;
-        var bits = [];
-        if (noRoll) bits.push(noRoll + ' project(s) carry no schedule roll-up, so they are not drawn');
-        if (noContract) bits.push(noContract + ' have no contract window to measure against');
-        if (stale.length) bits.push(stale.length + ' were last rolled up over ' + STALE_DAYS + ' days ago');
-        cov.textContent = bits.length
-          ? 'Of the ' + rows.length + ' project(s) in scope, ' + bits.join('; ') + '.'
-          : '';
+        /* ⚠️⚠️ THE COVERAGE PARAGRAPH IS GONE, AND WHAT IT SAID MOVED SOMEWHERE USEFUL.
+           Owner: *"the note below is not necessary. Can we have the project filter already tell
+           this information — if the project can be rolled up or not?"* It is a better place by a
+           long way: the note reported a count at the bottom of the page, after the chart, where
+           nothing could be done about it; the filter names the specific projects, next to the
+           tick box that includes them. See `projFilterHTML`'s `badge`.
+           ⚠️ `cov` is still cleared rather than left alone — a stale sentence from a previous
+           render outliving the paragraph that produced it is the worse failure. */
+        if (cov) cov.textContent = '';
       }
 
       async function loadSchedule() { shRender(); }
 
+      document.querySelectorAll('#po-sh-grain button').forEach(function (b) {
+        b.onclick = function () {
+          shGrain = b.dataset.g || 'auto';
+          document.querySelectorAll('#po-sh-grain button').forEach(function (x) { x.classList.toggle('on', x === b); });
+          shRender();
+        };
+      });
       document.getElementById('po-sh-group').onchange = function (e) { shGroup = e.target.value; shRender(); };
       document.getElementById('po-sh-slip').onchange = function (e) { shSlipOnly = e.target.checked; shRender(); };
       document.getElementById('po-sh-q').oninput = function (e) { shQuery = e.target.value; shRender(); };
-      return { load: loadSchedule };
+      /* ⚠️⚠️ WHAT THE COVERAGE PARAGRAPH USED TO SAY, SAID WHERE IT IS ACTIONABLE. A project
+         with no `schedule_start`/`schedule_finish` roll-up cannot be drawn on this chart at all,
+         and the old note counted those at the BOTTOM of the page. Here the picker names each one
+         beside its own tick box.
+         ⚠️ Returned as `projBadge` rather than reaching into the filter: the filter is shared by
+         eleven views and must not learn what a schedule roll-up is. */
+      function shProjBadge(p) {
+        if (pd(p.schedule_start) && pd(p.schedule_finish)) return null;
+        return { label: 'no roll-up',
+                 title: 'This project has no schedule roll-up yet, so it cannot be drawn on the Gantt. '
+                      + 'It is written when the project’s Project Schedule is opened.' };
+      }
+      return { load: loadSchedule, projBadge: shProjBadge };
     }
   });
 
@@ -2440,6 +3160,10 @@
     var v = VIEWS[key];
     if (!v) throw new Error('No portfolio dashboard called "' + key + '"');
     if (!host) throw new Error('No host element for the "' + key + '" dashboard');
+    /* ⚠️ Set BEFORE the markup, the bar and `setup()` — all three can call
+       `scopedProjectIds()` or `pfLabel()`, and a view that read the previous view's setting would
+       fire off the very 21-project roll-up this flag exists to prevent. */
+    pfEmptyMeansAll = !v.emptyMeansNone;
     host.classList.add('po-dash');
     host.innerHTML = v.markup;
     /* ⚠️ THE FILTER ROW OPENS BY DEFAULT HERE, and that is not a style tweak. On the Portfolio
@@ -2475,13 +3199,69 @@
     var mainSel = opts.main || '.pd-main';
     var main = document.querySelector(mainSel);
     if (!main) throw new Error('No ' + mainSel + ' to mount the "' + key + '" dashboard in');
-    Array.prototype.forEach.call(main.children, function (c) { c.hidden = true; });
-    Array.prototype.forEach.call(document.querySelectorAll(opts.hide || '.pd-modulebar'), function (n) { n.hidden = true; });
+    /* ⚠⚠ A CLASS, NOT THE `hidden` ATTRIBUTE — AND THIS IS A REAL BUG THIS LINE ONCE HAD.
+       `hidden` is a UA-stylesheet rule (`[hidden] { display: none }`), and ANY author rule that
+       sets `display` on the same element beats it outright — author origin wins over UA origin,
+       no matter how weak the selector. Three of the things this line is pointing at declare
+       exactly that:
+         · `.pd-modulebar { display: flex }`        (dashboard.css)  — every module
+         · `.ps-toolbar   { display: flex }`        (project-schedule) — its authoring toolbar
+         · `.po-toolbar   { display: flex }`        (portfolio-dash.css)
+       So `n.hidden = true` set an attribute that changed NOTHING, and every portfolio view has
+       been drawing underneath its module's own still-visible chrome. Owner 2026-09-16, on Project
+       Schedule: *"portfolio level UI bugged out completely"*, and separately *"the toolbars
+       aren't necessary since these are unusable until a project is selected"* — which is what
+       this line was always trying to say. It also explains the Issues module's "duplicated logo":
+       a module bar that was supposed to be gone, showing its <h1> mark beside the dropdown's.
+       ⚠ `!important` is not belt-and-braces here: `body.ps-reporting .pd-modulebar` already uses
+       `display:none !important`, so an ordinary class would be the WEAKER rule against a module
+       that plays the same card to show something.
+       ⚠ `hidden` is still set alongside it, for the semantics the attribute carries (it is what
+       assistive tech and `:not([hidden])` selectors read); the class is what actually hides. */
+    /* ⚠⚠ THE PAGE IS MARKED, NOT JUST THE ELEMENTS — AND THIS IS THE SECOND HALF OF THE BUG.
+       The first half was `hidden` losing to an author `display` rule (see the note below). Fixing
+       that alone left the module bar STILL on screen, now with the dashboard's own bar under it —
+       the owner's *"title bar has bugged out completely, it duplicated"*, across every module.
+       ⚠⚠ BECAUSE `.pd-modulebar` DOES NOT EXIST YET WHEN THIS RUNS, HALF THE TIME. It is not in
+       any module's markup: `UI.initModuleTopbar()` CREATES it (ui.js) and moves the title, tabs and
+       tools into it — and that runs on DOMContentLoaded, while this runs from
+       `AppAuth.requireLogin`'s callback. Those two race. With a cold session the auth round-trips
+       lose and the bar is there to be hidden; with a cached session they win, this
+       `querySelectorAll` matches NOTHING, and the bar is built afterwards, unhidden. A bug that
+       depends on whether you are already logged in is exactly the kind that survives testing.
+       ⚠ So the rule is hung on the BODY and the stylesheet does the hiding. However late the bar
+       is built, it is born into a page that already says "a dashboard has taken this over".
+       ⚠ The per-element class is kept as well: it is what carries the `hidden` semantics, and it
+       still covers `.pd-main`'s own children, which ARE in the markup and never move. */
+    document.body.classList.add('po-dash-page');
+    Array.prototype.forEach.call(main.children, function (c) { c.hidden = true; c.classList.add('po-taken-over'); });
+    Array.prototype.forEach.call(document.querySelectorAll(opts.hide || '.pd-modulebar'), function (n) {
+      n.hidden = true; n.classList.add('po-taken-over');
+    });
     var host = document.createElement('div');
     host.id = 'po-dash-host';
     main.appendChild(host);
     if (opts.select) wireSelect(document.querySelector(opts.select));
-    return mount(key, host, opts);
+    /* ⚠️ The bar is built BEFORE the view mounts, and awaits the project list first — its
+       filter is a list OF those projects, and an empty popover on first open would read as "this
+       page has no projects" rather than "they have not arrived yet". mount() awaits the same
+       already-started promise, so this costs no second fetch. */
+    await loadProjects();
+    var bar = buildBar(key, VIEWS[key], opts);
+    var api = await mount(key, host, opts);
+    /* ⚠️ Re-LOADS, never just re-renders. Narrowing the filter changes which projects the view
+       is about, and nine of the eleven views hold rows they fetched for the PREVIOUS selection —
+       a repaint would redraw the old projects under the new label. Each view's own `load()` already
+       compares `scopedProjectIds().join(',')` against what it last read and returns early when
+       nothing moved, so widening back to a set it already holds costs nothing. */
+    pfOnChange = function () { if (api && api.load) api.load(); };
+    /* ⚠️ Per view, and reset HERE rather than by each view: a picker still badging "no
+       schedule roll-up" after the planner has moved to Cash Flow would be nonsense, and a view
+       that simply forgot to clear it is the likeliest way that happens. */
+    pfBadge = (api && api.projBadge) || null;
+    if (bar && pfBadge) renderProjFilterList();
+    if (bar && api && api.bar) api.bar(bar);
+    return api;
   }
 
   /* ⚠️⚠️ THE WAY BACK OUT, and it is the module that would otherwise lose it. A module hosting
@@ -2523,6 +3303,21 @@
     // ⚠️ Test seam. The harness fills the project list and reads it back rather than reaching
     // into the closure, so the renderers can be exercised against fixtures with no network.
     _setProjects: function (p, g) { PROJ = p || []; GH = g || []; _loadedP = Promise.resolve(); },
-    _projects: function () { return PROJ.slice(); }
+    _projects: function () { return PROJ.slice(); },
+    // Test seam: a view's markup WITHOUT mounting it, so the suite can prove every table in this
+    // file asks for the approved treatment by name rather than mounting eleven pages to find out.
+    _markup: function (k) { return VIEWS[k] ? VIEWS[k].markup : ''; },
+    // Test seam: the picker's group buckets, without mounting a view to open it.
+    _pfGroups: function () { return pfGroups(); },
+    /* ⚠️ Test seams for the project filter. `_setPfSel` is how a harness says "the planner
+       ticked these", which the S-Curve now REQUIRES before it will draw — see `emptyMeansNone`.
+       `_pfState` reads back the two things a test can otherwise only infer from pixels: what the
+       button says, and whether an empty selection means all or none on the mounted view. */
+    _setPfSel: function (ids) {
+      pfSel = {};
+      (ids || []).forEach(function (id) { pfSel[id] = true; });
+    },
+    _pfState: function () { return { label: pfLabel(), emptyMeansAll: pfEmptyMeansAll,
+                                     scoped: scopedProjectIds() }; }
   };
 })();

@@ -44,6 +44,34 @@
   --pd-ink: #231F20;          /* Black — primary text */
   --pd-muted: #5A5858;        /* secondary text */
   --pd-line: #DCDBDB;         /* Construction Gray — borders/dividers */
+  /* ==== THE PORTFOLIO GANTT'S THREE BARS =====================================================
+     ⚠️⚠️ THESE EXIST BECAUSE THE CHART WAS ALL BUT INVISIBLE IN DARK MODE. It reused
+     `--pd-line` for BOTH the contract rail and the schedule track, and `--pd-dark` for the
+     progress fill. In dark mode `--pd-line` is `rgba(255,255,255,.12)` and `--pd-dark` is
+     **#161717** — on the `#2B2C2B` card those bars sit on, the fill computes to a contrast ratio
+     of **1.28:1**. A near-black bar on dark grey. Owner 2026-09-16: *"due to dark mode the Gantt
+     bars are barely seen or barely appreciated, especially the contract window and live
+     programme."*
+     ⚠️ The FILL INVERTS between themes and that is the point: it must contrast with the
+     TRACK it sits inside, and the track is light on white and light-on-dark in dark mode. A single
+     fixed colour cannot do both, which is exactly how the old one failed.
+     ⚠️ Semantic names, not `--po-gray-1`: a reader changing these needs to know which bar
+     they are looking at, and the legend on the chart uses the same three words. */
+  /* ⚠️⚠️ THESE MIRROR THE PROJECT-LEVEL GANTT'S PALETTE. Owner 2026-09-17: *"let's follow
+     the gantt bar brand colors in the schedule from project-level in the portfolio-level schedule —
+     it's not consistent with the current build."* Right, and the first cut of these was a neutral
+     ramp invented for contrast alone. Project Schedule's Gantt (`#ps-view-schedule`) has had a
+     settled palette for a long time:
+       `--ps-bar: #2B2C2B`  the task bar     `--ps-track: rgba(35,31,32,.13)`  its unfilled track
+       `--ps-prog` → `--pd-red`  the progress fill — **RED MEANS PROGRESS**, as that file puts it
+     The portfolio chart is the same picture at programme scale, so it uses the same three.
+     ⚠️ MIRRORED, NOT REFERENCED, DELIBERATELY. `--ps-bar` and friends are scoped to
+     `#ps-view-schedule` AND are user-customisable per project — the colour editor writes them (see
+     the `{ k:'bar', v:'--ps-bar' }` list in that file). A PORTFOLIO chart must not inherit one
+     project's custom palette, so it takes the brand DEFAULTS. If those defaults move, move these. */
+  --po-sh-rail:  rgba(35,31,32,.13);   /* contract period    = --ps-track */
+  --po-sh-track: #2B2C2B;              /* current schedule   = --ps-bar  */
+  --po-sh-fill:  var(--pd-red);        /* progress to date   = --ps-prog */
   --pd-bg: #F4F4F4;           /* app background */
   --pd-card: #FFFFFF;         /* White — surfaces */
   /* Status (kept distinct from brand red so "error" ≠ "brand") */
@@ -823,6 +851,71 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
   background: var(--pd-line); cursor: not-allowed;
 }
 
+/* ==== THE DROPDOWN LIST, AT LAST STYLEABLE ==================================================
+   Owner 2026-09-17: *"meeting description dropdown in Meetings module needs to be improved — we've
+   already done a UI sweep for this, let's fix across all of the modules."*
+   The sweep did land: the CLOSED control has matched the app for a while (`.pd-input, .pd-select`
+   above, and the `min-height` note beside it). What never matched is the **list that opens** — the
+   popup is drawn by the operating system, at the OS's size, in the OS's colours, and no stylesheet
+   in this repo could reach it. That is the grey slab in the owner's screenshot.
+   ⚠️⚠️ `appearance: base-select` IS THE FIRST THING THAT CAN. It moves the select's picker
+   into the page, where `::picker(select)`, `option`, `::checkmark` and `::picker-icon` are real,
+   styleable parts. Behind `@supports`, so a browser without it renders EXACTLY as today — this adds
+   a capability and removes none. Measured available in this app's own browser engine (Chromium
+   152: `CSS.supports('appearance','base-select')` → true).
+   ⚠️ `:not([multiple]):not([size])` — base-select is for DROP-DOWN selects only. A list box
+   (project-schedule ships `<select multiple size="4">`) is a different control and must keep its
+   own rendering; naming it here would be asking for a picker that has no meaning. */
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]) {
+    appearance: base-select;
+    /* base-select lays the button out as a flex box. Without these the value centres itself and
+       the arrow sits on top of it, which is not what any of these controls looked like before. */
+    display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
+    text-align: left;
+  }
+  /* The arrow. ⚠️ `currentColor`, not a fixed grey: these selects sit on the card in light
+     mode and on a dark card in dark mode, and a hard-coded arrow would be invisible in one of them.
+     Muted by opacity so it reads as chrome rather than as content. */
+  select:not([multiple]):not([size])::picker-icon {
+    color: var(--pd-muted); transition: transform .15s ease; font-size: .8em;
+  }
+  select:not([multiple]):not([size]):open::picker-icon { transform: rotate(180deg); }
+
+  /* The list. The same card, line and shadow tokens every other floating surface in this app uses
+     — `.pd-iconmenu`, the project switcher, the filter popovers — so it belongs to the same family
+     rather than merely being "not the OS one". */
+  select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+    background: var(--pd-card); color: var(--pd-ink);
+    border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+    box-shadow: var(--pd-shadow-xl); padding: 4px; margin-top: 4px;
+    /* ⚠️ A LIST OF PROJECTS CAN BE LONG. Without a cap the picker grows to the option count
+       and a 40-project select becomes a full-height column. */
+    max-height: 320px; overflow-y: auto;
+  }
+  select:not([multiple]):not([size]) option {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border-radius: 6px; font-size: var(--pd-fs-sm);
+    background: transparent; color: var(--pd-ink); cursor: pointer;
+  }
+  /* ⚠️ `:hover` AND `:focus` BOTH, not just hover: the picker is keyboard-driven too, and a
+     list that only responds to a mouse loses the arrow keys that a native select always had. */
+  select:not([multiple]):not([size]) option:hover,
+  select:not([multiple]):not([size]) option:focus {
+    background: var(--pd-red-light); color: var(--pd-red); outline: none;
+  }
+  select:not([multiple]):not([size]) option:checked { font-weight: 700; }
+  select:not([multiple]):not([size]) option:disabled { color: var(--pd-muted); cursor: default; }
+  select:not([multiple]):not([size]) option:disabled:hover { background: transparent; color: var(--pd-muted); }
+  /* The tick marking the current value. ⚠️ Given a FIXED WIDTH whether or not it is showing,
+     so the labels line up instead of shifting 14px when the selection moves down the list. */
+  select:not([multiple]):not([size]) option::checkmark {
+    content: '¹3'; width: 14px; flex: none; color: var(--pd-red); font-weight: 700;
+  }
+  select:not([multiple]):not([size]) option:not(:checked)::checkmark { content: ''; }
+}
+
 /* ⚠️⚠️ THE APP-WIDE KEYBOARD FOCUS RING — and until 2026-09-10 there wasn't one.
    Established by resolving the cascade against the shipped stylesheet (see the note on
    measuring this, below): the three form-field classes above carried a focus rule and
@@ -911,6 +1004,15 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; font-weight: 700; }
 .pd-nt-portfolio [data-ico], .pd-nt-portfolio svg { color: var(--pd-red); flex: none; }
 .pd-nt-portfolio.sel [data-ico], .pd-nt-portfolio.sel svg { color: #fff; }
+/* Two-line row (2026-09-16) — "Portfolio" over "every project you can see", matching
+   the closed trigger's own wording (enhanceProjectSelect/renderSwitcher) so the row
+   you pick Portfolio from reads exactly like the state it puts you in. Mirrors
+   .pd-nt-proj-txt directly below: same gap/weight rhythm, its own name so a future
+   change to one cannot silently reshape the other. */
+.pd-nt-portfolio-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
+.pd-nt-portfolio-txt strong { font-weight: 700; }
+.pd-nt-portfolio-txt small { display: block; font-size: var(--pd-fs-micro); font-weight: 400; color: var(--pd-muted); }
+.pd-nt-portfolio.sel .pd-nt-portfolio-txt small { color: rgba(255,255,255,.82); }
 .pd-nt-list { padding: 4px 0; }
 .pd-nt-ghlabel { padding: 9px 10px 4px; font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
 .pd-nt-ghlabel-none { font-style: italic; text-transform: none; }
@@ -1109,6 +1211,15 @@ html.pd-dark {
   --pd-bg: #1C1C1C;                   /* app background */
   --pd-card: #2B2C2B;                 /* surfaces (brand Dark Gray) */
   --pd-dark: #161717;                 /* topbar-dark/toast — darker than cards */
+  /* ⚠️ See the light block for why the FILL flips to near-white here: it has to read against
+     `--po-sh-track`, and the track is a light wash on a dark card. Measured against `--pd-card`
+     (#2B2C2B): rail 1.9:1 (a hairline, deliberately quiet), track 3.4:1, fill 11.6:1 — against
+     the 1.28:1 the fill used to have. */
+  /* ⚠️ The same three from `html.pd-dark #ps-view-schedule`. The fill stays RED in both
+     themes — it is the brand accent, not a neutral, and the project Gantt does exactly this. */
+  --po-sh-rail:  rgba(224,224,224,.16);  /* = --ps-track (dark) */
+  --po-sh-track: #c7ccd1;                /* = --ps-bar   (dark) */
+  --po-sh-fill:  var(--pd-red);
   --pd-sidebar-bg: #161717;           /* the panel goes darker still on dark, as it always has */
   --pd-red-light: #3D1A19;            /* red tint on dark */
   --pd-red-mid: #6E2A25;
@@ -1804,6 +1915,14 @@ body { overflow-x: clip; }
 @media (min-width: 701px) {
   .pd-modulebar > h1 .pd-title-hasdrop { display: none; }
 }
+/* ⚠⚠ AT EVERY WIDTH, and that is the difference from the rule above. `UI.tabsToDropdown()`
+   adds `.pd-h1-hasdropico` only when its caller passed `opts.icon`, i.e. when the dropdown
+   trigger carries the module's mark itself — at which point the <h1> beside it is a duplicate
+   ICON as well as duplicate text, and there is nothing left in it worth a row at any size.
+   ⚠ The whole element, never the text alone: a text-only hide is what leaves a bare icon
+   stranded on its own line (see the long note above, and issues-lessons/module.css's "REMOVED"
+   block). Nothing is stranded by removing the element. */
+.pd-modulebar > h1.pd-h1-hasdropico { display: none; }
 .pd-modulebar > [class$="-tabs"] {
   display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
 }
@@ -1811,6 +1930,27 @@ body { overflow-x: clip; }
 .pd-modulebar > [id$="-topbar-tools"] {
   display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
   margin-left: auto; justify-content: flex-end;
+}
+/* ==== THE DIVIDER BETWEEN TOOL GROUPS, ONCE ================================================
+   Owner 2026-09-17: *"there are still inconsistencies in the toolbar, check across all modules"*
+   and *"Manpower loading has a different toolbar UI — considerably better."*
+   ⚠️⚠️ THIRTEEN MODULES DEFINED THIS RULE, BYTE FOR BYTE: `.mp-tb-sep`, `.cc-tb-sep`,
+   `.il-tb-sep`, `.rr-tb-sep` … every one `width:1px; align-self:stretch; margin:5px 3px;
+   background:var(--pd-line)`. Thirteen copies cannot STAY equal; they simply had not diverged yet.
+   Matched on the class SUFFIX so no module's markup changes — all thirteen already spell it
+   `x-tb-sep`, and a module that adds a fourteenth prefix gets the right divider for free.
+   ⚠️ The per-module `gap:4px` declarations that sat beside these were deleted in the same
+   pass, but they were already DEAD: the shared cluster rule above is `.pd-modulebar > [class$=...]`
+   at (0,2,0) and a bare `.mp-topbar-tools` is (0,1,0), so 6px was already winning everywhere. They
+   were removed because a declaration that looks authoritative and does nothing is worse than no
+   declaration — not because they were the thing on screen. */
+/* ⚠️ NOT SCOPED TO `.pd-modulebar`, and that is the point of matching on the name. Project
+   Schedule has a SECOND tool row below the module bar (`.ps-toolbar .ps-tb-row`) which had grown
+   its own fourteenth spelling, `.ps-tb-div` — a full-height line with `margin:0 2px` instead of the
+   inset 5px every other bar uses. A divider is a divider wherever a toolbar puts one; the class
+   name is the contract, not the ancestor. */
+[class$="-tb-sep"] {
+  width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); flex: none;
 }
 
 /* ---- Tablet: tighter row padding ---- */
@@ -2103,6 +2243,88 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 .pd-filtergroup .pd-select { flex: 1 1 150px; min-width: 0; max-width: 200px; }
 .pd-filtergroup input[type="text"], .pd-filtergroup input[type="search"],
 .pd-filtergroup input:not([type]) { flex: 1 1 220px; min-width: 160px; }
+/* ==== EVERY MODULE-BAR BUTTON, ONE TREATMENT ===============================================
+   Owner 2026-09-16: *"Let's also check the toolbar buttons UI overall. Some buttons have an
+   outline then some doesn't. Let's make the UI in the app globally consistent."*
+
+   ⚠️⚠️ IT WAS A FOUR-MODULE SPLIT, and both halves were deliberate. `cash-flow`,
+   `productivity-rates`, `project-schedule` and `s-curve` each declared
+   `.x-topbar-tools .pd-btn { background:transparent; border-color:transparent }` in their own
+   stylesheet; the other ten left `.pd-btn`'s outlined default. Same bar, same kind of button, two
+   looks — and which one you got depended on which module you were standing in.
+
+   ⚠️ GHOST WINS, AND NOT BY TASTE: `.pd-filttoggle` (just below) is the one button that exists
+   in EVERY module's bar, and it has been transparent-until-hover since it was written. Ten modules
+   were therefore already showing a ghost funnel beside outlined neighbours — so ghost is the
+   app's existing majority for a module-bar tool, and adopting it makes the funnel consistent with
+   what sits next to it instead of being the odd one out. It also reads better: six outlined boxes
+   in a row beside a red primary is noise, and the one action worth noticing is the primary.
+   ⚠️ THE PRIMARY KEEPS ITS FILL — `:not(.pd-btn-primary)`. It is the one control in the bar
+   that must not recede, and hollowing it out is how a toolbar stops having a subject.
+   ⚠️ Scoped to `.pd-modulebar`, which is where `UI.initModuleTopbar()` moves every module's
+   tool cluster — so this reaches all fourteen (and any module added later) without any of them
+   restating it. A `.pd-btn` anywhere ELSE in the app is untouched and stays outlined.
+   ⚠️⚠️ DO NOT re-add a per-module copy of this. `.x-topbar-tools .pd-btn` is (0,2,0), the
+   same as this, and every module stylesheet loads AFTER dashboard.css — so a private copy silently
+   wins and the split comes straight back. The four that had one have had it removed. */
+.pd-modulebar .pd-btn:not(.pd-btn-primary) { background: transparent; border-color: transparent; }
+.pd-modulebar .pd-btn:not(.pd-btn-primary):hover { background: var(--pd-bg); border-color: var(--pd-line); }
+/* A disabled button must not answer the hover — it would read as clickable. */
+.pd-modulebar .pd-btn:not(.pd-btn-primary):disabled:hover { background: transparent; border-color: transparent; }
+/* An icon-only tool is a 34px square, the same square `.pd-filttoggle` already is, so the row
+   reads as one set rather than as buttons of assorted widths.
+   ⚠️⚠️ A BUTTON THAT CARRIES TEXT MUST BE EXCLUDED, OR ITS LABEL IS CLIPPED TO 34px. Ten
+   modules already mark theirs `*-tb-labeled`; SEVEN buttons across five modules carried text and
+   no marker at all, and this rule would have squashed every one of them — found by scanning the
+   tool clusters for a button with text and no marker, not by looking at screenshots.
+   ⚠️ The match is `[class*="tb-labeled"]` with NO leading hyphen, so it covers both the shared
+   `pd-tb-labeled` below and every module's own `rr-`/`il-`/`pp-`... spelling. */
+.pd-modulebar .pd-btn:not(.pd-btn-primary):not([class*="tb-labeled"]) {
+  width: 34px; height: 34px; padding: 0; justify-content: center;
+}
+/* The shared marker, for a labelled tool in a module that has no spelling of its own. */
+.pd-modulebar .pd-btn.pd-tb-labeled {
+  height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap;
+}
+
+/* ---- Icon-only dropdown (UI.iconMenuHTML) -------------------------------------------------
+   ⚠️⚠️ MOVED from minutes-of-meeting/module.css together with its JS. The
+   `:not([hidden])` below is LOAD-BEARING and was paid for once already: `wireIconMenu` toggles
+   the `hidden` ATTRIBUTE, and a plain `.pd-iconmenu-menu { display:flex }` is (0,1,0) — exactly
+   the user agent's own `[hidden]{display:none}` — so an author rule of equal specificity wins and
+   the menu renders OPEN by default. That shipped once, as "the export dropdown is open when the
+   page loads". Do not drop the `:not([hidden])`. */
+.pd-iconmenu { position: relative; display: inline-flex; }
+.pd-iconmenu[hidden] { display: none; }
+.pd-iconmenu-btn { display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0; }
+.pd-iconmenu-menu:not([hidden]) {
+  position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; min-width: 150px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: var(--pd-shadow-lg);
+}
+.pd-iconmenu-item {
+  border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 6px;
+  font-size: var(--pd-fs-base); color: var(--pd-ink); cursor: pointer;
+}
+.pd-iconmenu-item:hover { background: var(--pd-bg); color: var(--pd-red); }
+/* The trigger reads as pressed while its menu is open, like every other toggle in the bar. */
+.pd-modulebar .pd-iconmenu-btn.is-active { background: var(--pd-bg); border-color: var(--pd-line); }
+
+/* ==== A CONTROL THAT NEEDS ONE PROJECT, IN A SCOPE THAT HAS NONE ============================
+   `auth.js` puts `pd-portfolio` on <html> whenever the planner is in portfolio scope. Anything
+   marked `data-project-only` is a control that can act on exactly one project — add, edit, import,
+   seed, derive — and portfolio scope is READ-ONLY at the Supabase chokepoint, so those controls
+   could only ever raise a toast saying so. Owner: *"this defeats the purpose of showing the
+   buttons in the first place."*
+   ⚠️ `display:none !important`, never the `hidden` attribute: `[hidden]` is a UA rule and any
+   author `display` beats it, which is how `.pd-modulebar { display:flex }` survived being hidden
+   for weeks. Same trap, written down in three places now.
+   ⚠️ The attribute goes on the OUTERMOST element of the control — a wrapper if it has one —
+   so a menu's trigger and its panel disappear together. */
+html.pd-portfolio [data-project-only] { display: none !important; }
+
 .pd-filttoggle {
   position: relative; height: 34px; width: 34px; padding: 0; flex: none;
   display: inline-flex; align-items: center; justify-content: center;

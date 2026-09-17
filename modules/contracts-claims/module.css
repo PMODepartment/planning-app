@@ -53,12 +53,19 @@
 .cc-tab:hover:not(.active) { background:var(--pd-bg); }
 .cc-tab.active { background:var(--pd-red); color:#fff; }
 
-.cc-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.cc-topbar-tools { display:flex; align-items:center; margin-left:auto; }
 .cc-topbar-tools .pd-btn:not(.cc-tb-labeled) { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
   background:transparent; border-color:transparent; font-size:var(--pd-fs-base); }
-.cc-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+/* ⚠️⚠️ THE HOVER RESTATEMENT IS GONE, AND IT WAS A REAL BUG, NOT JUST DUPLICATION.
+   `.cc-topbar-tools .pd-btn:hover` did not exclude `.pd-btn-primary`, and at (0,3,0) it outranked
+   dashboard.css's own `.pd-btn-primary:hover` (0,2,0) -- so the RED primary in this module's bar
+   turned GREY the moment you pointed at it, which is the one button in the bar that must not
+   recede. MEASURED in a browser against the shipped sheets (the loaded `:hover` rules rewritten
+   in place to a class of equal specificity, so the cascade under test is the real one):
+   `rgb(238,49,36)` at rest -> `rgb(244,244,244)` on hover.
+   ⚠️ The hover now comes from `.pd-modulebar .pd-btn:not(.pd-btn-primary):hover` in
+   dashboard.css, which carries that exclusion. Do not restate it here. */
 .cc-topbar-tools .pd-btn.cc-tb-labeled { height:34px; width:auto; padding:0 12px; gap:6px; white-space:nowrap; }
-.cc-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 .cc-clearbtn { color:var(--pd-bad-text); }
 .cc-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
 
@@ -270,7 +277,32 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
   clip:rect(0 0 0 0); white-space:nowrap; border:0; }
 
 /* ---- Modal / form ------------------------------------------------------- */
-.cc-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+/* ==== TWO COLUMNS, COUNTED — NOT `auto-fit` ==================================================
+   Owner 2026-09-17: *"can we also make that the date filed and date submitted are aligned with
+   each other. The same with date evaluated and date approved."*
+   ⚠️⚠️ `auto-fit` MADE THE PAIRING AN ACCIDENT OF WIDTH. The four dates are four
+   consecutive grid items, so which of them share a row depends on how many columns the track
+   algorithm produced and on what sat in the cells before them — here a full-width section heading
+   and then **Status**, whose single cell pushed everything down by one and split the pairs as
+   (Status | Date filed), (Date submitted | Date evaluated), (Date approved | —). Widening the
+   dialog below would have re-broken them a third way at three columns.
+   Counted columns plus a full-width Status makes the pairs a property of the markup order, which
+   is the thing that actually expresses the pipeline: filed → submitted, evaluated → approved. */
+.cc-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+/* Status opens the Status & dates block on its own line, so the four dates below it start on a
+   fresh row and pair as written. */
+.cc-form > label[data-statusrow] { grid-column:1/-1; }
+
+/* ==== THE RECORD DIALOG IS WIDER THAN THE SHARED 520px ======================================
+   Owner 2026-09-17: *"affected work is the one that clips in the window."*
+   This form is not a four-field dialog: it carries a four-stage money pipeline, four dates, an
+   activity TREE with a programme preview beside it, remarks and an attachments panel. At the
+   shared `.pd-modal` 520px the picker's two panes were ~220px and ~253px, which is where the
+   preview's headline started wrapping one word per line.
+   ⚠️ Same idiom as `.boq-wide` / `.boq-widish` above, which already exist for exactly this
+   reason — a new width class rather than a change to `.pd-modal`, which every other dialog in the
+   app is sized by. */
+.pd-modal.cc-rec { max-width:760px; width:94vw; }
 .cc-form label { display:flex; flex-direction:column; gap:4px; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-muted); }
 .cc-form label.cc-wide { grid-column:1/-1; }
 .cc-form input, .cc-form select, .cc-form textarea { font:inherit; font-size:var(--pd-fs-base); font-weight:400; color:var(--pd-ink);
@@ -794,6 +826,33 @@ tr.cc-collapsed { display:none; }
 
 /* A section rule between the two stacked tables on the Contract tab, so "records" and
    "lots" read as two things rather than one long scroll. */
+/* ==== THE SCOPE OF WORKS ====================================================================
+   Owner 2026-09-17: *"the contract description UI needs to be improved as well."*
+   ⚠️⚠️ IT WAS SET IN THE "ASIDE" STYLE. `.cc-hint` is muted, small, and used everywhere on
+   this tab for hints and footnotes — so the one genuinely substantive sentence on the page, the
+   scope of works, was in the colour a reader is trained to skip, and ran the full width of the
+   dashboard: ~220 characters a line on a 1,900px monitor, about three times a readable measure.
+   ⚠️ `max-width` in `ch`, not `px`: the constraint is a number of CHARACTERS (55-80 is the
+   long-standing typographic range), and in `px` it would drift every time the type scale moved. */
+.cc-scope { margin:10px 0 4px; }
+.cc-scope-lbl { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--pd-muted); margin-bottom:4px; }
+.cc-scope p, .cc-scope summary > span { margin:0; max-width:78ch; font-size:var(--pd-fs-sm);
+  line-height:1.55; color:var(--pd-ink); }
+/* ⚠️ `<details>` already hides every non-summary child when shut, so the full paragraph needs
+   no rule — but the truncated preview lives INSIDE the summary and would otherwise stay on screen
+   above the full text once opened, printing the first 320 characters twice. */
+.cc-scope-more > summary { list-style:none; cursor:pointer; display:block; }
+.cc-scope-more > summary::-webkit-details-marker { display:none; }
+.cc-scope-more > summary::after { content:'Show full scope'; display:inline-block; margin-top:4px;
+  font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); }
+.cc-scope-more[open] > summary > span { display:none; }
+.cc-scope-more[open] > summary::after { content:'Hide'; }
+
+/* One muted line where four sentences of definitions used to be — see `ccMoneyTable`. The
+   definitions moved onto the column headers; this is the only part that was not one. */
+.cc-dash-scope { margin:6px 0 0; }
+
 .cc-sechead { display:flex; align-items:baseline; gap:10px; margin:18px 0 8px; }
 .cc-sechead h2 { margin:0; font-size:var(--pd-fs-sm); font-weight:800; text-transform:uppercase;
   letter-spacing:.06em; color:var(--pd-muted); white-space:nowrap; }
@@ -1147,6 +1206,29 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 /* ⚠️ Tree LEFT, preview RIGHT, and the preview is given the wider track: a bar chart is unreadable
    below a few hundred pixels, while a tree row degrades gracefully by ellipsis. */
 .cca-lower { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:8px; }
+/* ==== IT IS THE CONTAINER THAT IS NARROW, NOT THE WINDOW ====================================
+   ⚠️⚠️ A MEDIA QUERY CANNOT FIX THIS AND WOULD LOOK LIKE IT HAD. The picker clips inside a
+   520-760px dialog on a 1920px monitor — the viewport is enormous, the box is not. Every
+   `@media (max-width: …)` here would be false exactly when the bug is on screen, and true on a
+   phone where the dialog is already full-width and fine.
+   `@container` asks the question that matters: how much room do *I* have. The same rules then hold
+   in all three hosts this component is mounted in — the wizard's wide step, the record dialog, and
+   the BOQ allocator — without any of them having to know about the others.
+   ⚠️ `container-type: inline-size` establishes a query container and NOTHING else; it does
+   not lay the box out or clip it. It does make `.cca` a containment context, so an absolutely
+   positioned descendant would resolve against it — the picker has none. */
+.cca { container-type:inline-size; container-name:cca; }
+@container cca (max-width: 560px) {
+  /* Tree above, preview below. Both get the full width, which is what the preview's Gantt and
+     headline needed; stacking costs a scroll the planner was already doing inside each pane. */
+  .cca-lower { grid-template-columns:minmax(0,1fr); }
+  /* ⚠️ The ladder keeps `minmax(150px,…)` on purpose — see the note above: below that a
+     five-level project becomes five unreadable 90px columns. `auto-fit` lets the rungs WRAP onto a
+     second line instead, which is the honest way to run out of width. */
+  .cca-lad { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); overflow-x:visible; }
+  .cca-treebody { height:300px; }
+  .cca-mgbody { height:280px; }
+}
 /* ⚠️ `opts.preview:false` (the BOQ allocator) emits no second column, so the 1.15fr track would
    otherwise sit empty and squeeze the tree into half the dialog. One column, full width. */
 .cca-nopreview .cca-lower { grid-template-columns:minmax(0,1fr); }

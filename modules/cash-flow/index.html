@@ -7,13 +7,18 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916t" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916r" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917za" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
-    .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
-    .cf-topbar-tools .pd-btn { width:34px; height:34px; padding:0; font-size:var(--pd-fs-base); display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
-    .cf-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .cf-topbar-tools { display:flex; align-items:center; margin-left:auto; }
+    /* ⚠️⚠️ THE BUTTON TREATMENT IS SHARED NOW — see `.pd-modulebar .pd-btn` in
+       dashboard.css. This module was one of FOUR that declared its own (transparent until hover,
+       34px square) while the other ten left `.pd-btn` outlined, which is the "some buttons have an
+       outline then some doesn't" the owner reported on 2026-09-16.
+       ⚠️ DO NOT re-add a `background` / `border-color` / `width` / `height` rule for
+       `.cf-topbar-tools .pd-btn` here. It is (0,2,0), the same as the shared rule, and this stylesheet loads
+       AFTER dashboard.css — so it would win, silently, and only in this module. */
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
     .cf-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
@@ -305,10 +310,10 @@
         <select class="pd-select cf-project" id="cf-project" title="Project"></select>
       </div>
       <div class="cf-topbar-tools">
-        <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="17"></span></button>
-        <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="17"></span></button>
         <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="17"></span></button>
         <button class="pd-btn" id="cf-check" title="Setup check — verify DB tables / columns / RPC are in place"><span data-ico="check" data-ico-size="17"></span></button>
+        <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="17"></span></button>
+        <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="17"></span></button>
       </div>
       <div id="cf-presence" title="People viewing this project"></div>
       <div id="user-bar"></div>
@@ -393,13 +398,13 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260916c"></script>
+<script src="../../assets/js/auth.js?v=20260916a"></script>
+<script src="../../assets/js/db.js?v=20260917a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260916q"></script>
+<script src="../../assets/js/ui.js?v=20260916w"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
-<script src="../../assets/js/portfolio-dash.js?v=20260916r"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260917w"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script>

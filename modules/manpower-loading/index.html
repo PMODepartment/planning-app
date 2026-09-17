@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Manpower Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260916t" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917za" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -22,9 +22,8 @@
     .mp-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
     .mp-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
     .mp-project:hover, .mp-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
-    .mp-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
+    .mp-topbar-tools { display:flex; align-items:center; margin-left:auto; flex-wrap:wrap; }
     .mp-topbar-tools .pd-btn.mp-tb-labeled { height:34px; padding:0 12px; gap:6px; }
-    .mp-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     @media (max-width:900px) { .mp-title-txt { display:none; } }
 
     .mp-tabs { display:flex; border-bottom:2px solid var(--pd-line); }
@@ -174,14 +173,26 @@
     .mp-mx td.mp-cost { font-size:var(--pd-fs-xs); }
 
     /* ---- Tables (register / roster / portfolio) ------------------------------------------ */
-    .mp-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
-    .mp-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:var(--pd-fs-xs); font-weight:700;
-      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    /* ⚠⚠ THE APPROVED TABLE IS projects.html's, AND THIS IS NOT A SECOND COPY OF IT.
+       Owner 2026-09-16: *"We already have an approved UI of tables seen in projects.html. Let's
+       follow that universally"*, then *"include the manpower loading and equipment loading
+       modules in the check as well."* This block used to declare its own width, type scale,
+       header treatment, cell padding and hover — values a few pixels off the approved ones, which
+       is exactly what made the app's tables read as several different designs.
+       ⚠️ The table now carries `pd-table pd-proj-table` IN ITS MARKUP and takes all of that from
+       dashboard.css. What is left here is only what is particular to THIS table.
+       ⚠️ Do NOT re-add width / font-size / padding / border / hover rules. This stylesheet loads
+       after dashboard.css, so at equal specificity they would win and silently restore the second
+       design. */
     .mp-table th.num, .mp-table td.num { text-align:right; }
-    .mp-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
-    .mp-table tr:hover td { background:var(--pd-bg); }
-    .mp-table tr.mp-grp td { background:var(--pd-bg); font-weight:800; font-size:var(--pd-fs-xs);
-      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-ink); }
+    /* ⚠️ Only the vertical alignment survives — these cells carry a second line of
+       detail under the main value, which reads wrong centred. */
+    .mp-table td { vertical-align:top; }
+    /* ⚠️ The group heading is `.pd-group-row` + `.pd-ghchip` from dashboard.css now — the tinted
+       chip with the red left border that projects.html groups by — so a grouped table reads the
+       same here as it does there and in every portfolio view. The bold-uppercase-cell treatment
+       this replaced was a third spelling of the same idea. */
+    .mp-table tr.mp-grp td { padding-top:6px; padding-bottom:6px; }
     .mp-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); display:inline-block; }
     /* ⚠️ THREE OF THESE FOUR BADGES ARE NOW SHARED TOKENS, and the reason is that this block
        used to be a private four-colour palette with its own dark half — eight declarations
@@ -335,11 +346,15 @@
         <button class="mp-tab" data-view="portfolio">Portfolio</button>
       </div>
       <div class="mp-topbar-tools">
-        <button class="pd-btn pd-btn-primary mp-tb-labeled" id="mp-add" title="Add a manpower profile — a person or a budgeted slot, with its contract duration">+ Add manpower</button>
-        <button class="pd-btn" id="mp-derive" title="Derive the monthly deployment from every profile's contract duration"><span data-ico="users" data-ico-size="16"></span></button>
-        <button class="pd-btn" id="mp-seed" title="Seed the standard organisation chart">Seed</button>
+        <!-- ⚠️ `data-project-only`: Add / Derive / Seed / Import each write to ONE project, and
+             portfolio scope is read-only at the Supabase chokepoint — shown there they could only
+             raise a toast saying so. Export and Refresh stay: this module HAS a portfolio view
+             (its own Portfolio tab), and both are meaningful across it. -->
+        <button class="pd-btn pd-btn-primary mp-tb-labeled" id="mp-add" data-project-only title="Add a manpower profile — a person or a budgeted slot, with its contract duration">+ Add manpower</button>
+        <button class="pd-btn" id="mp-derive" data-project-only title="Derive the monthly deployment from every profile's contract duration"><span data-ico="users" data-ico-size="16"></span></button>
+        <button class="pd-btn pd-tb-labeled" id="mp-seed" data-project-only title="Seed the standard organisation chart">Seed</button>
         <span class="mp-tb-sep"></span>
-        <button class="pd-btn" id="mp-import" title="Import a filled loading sheet"><span data-ico="upload" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="mp-import" data-project-only title="Import a filled loading sheet"><span data-ico="upload" data-ico-size="16"></span></button>
         <button class="pd-btn" id="mp-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
         <button class="pd-btn" id="mp-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
       </div>
@@ -401,7 +416,7 @@
           <span class="mp-note">A <b>position</b> is the requirement — how many heads the job needs. A <b>manpower profile</b> is the person or budgeted slot filling it, and its contract duration is what puts them on the project in a given month.</span>
         </div>
         <div class="mp-card" style="padding:0;overflow:auto;">
-          <table class="mp-table" id="mp-reg"></table>
+          <table class="pd-table pd-proj-table mp-table" id="mp-reg"></table>
         </div>
       </div>
 
@@ -449,7 +464,7 @@
         </div>
         <div class="mp-kpis" id="mp-roster-kpis"></div>
         <div class="mp-card" style="padding:0;overflow:auto;">
-          <table class="mp-table" id="mp-roster"></table>
+          <table class="pd-table pd-proj-table mp-table" id="mp-roster"></table>
         </div>
         <div class="mp-card">
           <h3>Demobilisation — heads coming off contract</h3>
@@ -486,7 +501,7 @@
         </div>
         <div id="mp-act-matrix">
           <div class="mp-card" style="padding:0;overflow:auto;">
-            <table class="mp-table" id="mp-act-tbl"></table>
+            <table class="pd-table pd-proj-table mp-table" id="mp-act-tbl"></table>
           </div>
         </div>
         <div id="mp-act-stack" style="display:none;">
@@ -534,7 +549,7 @@
         <div class="mp-pv on" id="mp-pv-snapshot">
           <div class="mp-kpis" id="mp-p-kpis"></div>
           <div class="mp-card" style="padding:0;overflow:auto;">
-            <table class="mp-table" id="mp-p-tbl"></table>
+            <table class="pd-table pd-proj-table mp-table" id="mp-p-tbl"></table>
           </div>
         </div>
 
@@ -545,7 +560,7 @@
             <div class="mp-legend" id="mp-p-curve-legend"></div>
           </div>
           <div class="mp-card" style="padding:0;overflow:auto;">
-            <table class="mp-table" id="mp-p-curve-tbl"></table>
+            <table class="pd-table pd-proj-table mp-table" id="mp-p-curve-tbl"></table>
           </div>
         </div>
 
@@ -590,10 +605,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260915a"></script>
-<script src="../../assets/js/db.js?v=20260916c"></script>
+<script src="../../assets/js/auth.js?v=20260916a"></script>
+<script src="../../assets/js/db.js?v=20260917a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260916q"></script>
+<script src="../../assets/js/ui.js?v=20260916w"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script>
@@ -1695,7 +1710,7 @@
     var lastKey = null;
     POS.forEach(function (p) {
       var key = (p.workforce || '') + ' · ' + (p.department || '—');
-      if (key !== lastKey) { lastKey = key; h.push('<tr class="mp-grp"><td colspan="10">' + esc(key) + '</td></tr>'); }
+      if (key !== lastKey) { lastKey = key; h.push('<tr class="pd-group-row mp-grp"><td colspan="10"><span class="pd-ghchip">' + esc(key) + '</span></td></tr>'); }
       var peak = 0;
       SPAN.months.forEach(function (m) { var v = govOf(p, m.iso); if (v != null && v > peak) peak = v; });
       var req = cutIso ? govOf(p, cutIso) : null;
@@ -2124,7 +2139,7 @@
       host.innerHTML = '<div class="mp-note">No contract end dates recorded' + (open ? ' — ' + open + ' entr(ies) are open-ended.' : '.') + '</div>';
       return;
     }
-    var h = ['<table class="mp-table"><thead><tr><th>Contract end</th><th class="num">Heads</th><th>Positions</th></tr></thead><tbody>'];
+    var h = ['<table class="pd-table pd-proj-table mp-table"><thead><tr><th>Contract end</th><th class="num">Heads</th><th>Positions</th></tr></thead><tbody>'];
     keys.forEach(function (iso) {
       var list = byMonth[iso], by = {};
       list.forEach(function (r) { var t = r.position_id ? posTitle(r.position_id) : 'not linked'; by[t] = (by[t] || 0) + 1; });
@@ -2637,7 +2652,7 @@
     rows.forEach(function (r) { var iso = mkey(mFloor(pd_(r[field]))); (by[iso] = by[iso] || []).push(r); });
     var keys = Object.keys(by).sort();
     if (!keys.length) return '<div class="mp-note">No ' + label + ' dates recorded.</div>';
-    var h = ['<table class="mp-table"><thead><tr><th>Month</th><th class="num">Heads</th><th>Who</th></tr></thead><tbody>'];
+    var h = ['<table class="pd-table pd-proj-table mp-table"><thead><tr><th>Month</th><th class="num">Heads</th><th>Who</th></tr></thead><tbody>'];
     keys.forEach(function (iso) {
       var list = by[iso];
       h.push('<tr><td><b>' + monLabel(pd_(iso)) + '</b></td><td class="num">' + list.length + '</td><td>' +
@@ -2799,7 +2814,7 @@
     if (!rows.length) { host.innerHTML = '<div class="mp-empty">No tagged Skilled Self-Performed / Subcontractor profile matches this location' + (stackActKey ? ' and activity' : '') + '.</div>'; if (lg) lg.innerHTML = ''; return; }
     if (!floorLv) {
       host.innerHTML = '<div class="mp-note" style="margin-bottom:8px;">This project has no location level below &ldquo;' + esc(levelObj ? levelObj.name : '') + '&rdquo;, so there is nothing to stack — listing the matches instead.</div>' +
-        '<table class="mp-table"><tbody>' + rows.map(function (r) {
+        '<table class="pd-table pd-proj-table mp-table"><tbody>' + rows.map(function (r) {
           return '<tr><td style="border-left:4px solid ' + deptColor(r.id) + ';padding-left:8px;"><b>' + esc(r.employee_name) + '</b></td><td>' + esc(r.link_label || '') + '</td></tr>';
         }).join('') + '</tbody></table>';
       if (lg) lg.innerHTML = '';
@@ -3338,7 +3353,7 @@
         '<td><button class="mp-btn-sm" data-open="' + esc(r.id) + '">Open</button></td></tr>');
     });
     if (quiet.length) {
-      h.push('<tr class="mp-grp"><td colspan="8">No manpower plan for ' + esc(monLabel(pd_(PORT.iso))) + ' — ' + quiet.length + ' project(s)</td></tr>');
+      h.push('<tr class="pd-group-row mp-grp"><td colspan="8"><span class="pd-ghchip">No manpower plan for ' + esc(monLabel(pd_(PORT.iso))) + '</span><span class="pd-ghcount">' + quiet.length + ' project' + (quiet.length === 1 ? '' : 's') + '</span></td></tr>');
       quiet.forEach(function (r) {
         // ⚠️ THREE different reasons a project has no plan, and they send the reader to three
         // different places. Collapsing them into "no quantity is recorded" is wrong the moment a

@@ -617,27 +617,21 @@ window.ProgressPhotos = (function () {
     return LOC_LEVELS.map(function (l) { return values[l.id]; }).filter(Boolean).join(' › ');
   }
 
-  // The schedule activity that's "current" for a set of picked location
-  // values: prefer In Progress (earliest start), else the next Not Started,
-  // else whatever's there. Matches any activity whose OWN location agrees on
-  // every level actually specified in `values` — an activity with additional
-  // levels set (more specific) still matches, so stopping the picker early
-  // (e.g. just Tower + Level, no Zone) still surfaces something.
-  function resolveActivity(values) {
-    var keys = Object.keys(values || {}).filter(function (k) { return values[k]; });
-    if (!keys.length) return null;
-    var cands = SCHED_ACTS.filter(function (a) {
-      var loc = a.location || {};
-      return keys.every(function (k) { return (loc[k] || '') === values[k]; });
-    });
-    if (!cands.length) return null;
-    var pick = cands.filter(function (a) { return (a.status || '') === 'In Progress'; })
-      .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
-    if (!pick) pick = cands.filter(function (a) { return (a.status || '') === 'Not Started'; })
-      .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
-    if (!pick) pick = cands[0];
-    return { id: pick.activity_id, name: pick.activity_name };
-  }
+  // ⚠️ 2026-09-16 fix: this module used to also resolve "the schedule
+  // activity that's current for this location" here and silently save it as
+  // the photo's own activity_id/activity_name — regardless of what Works
+  // value the planner actually picked. That is what produced a photo tagged
+  // "Rebar" for a location whose SCHEDULE happens to have Rebar in progress,
+  // even when the planner selected a completely different Works value (or
+  // none at all). The photo's activity must come from the photo itself — the
+  // Works picker — never be inferred from location alone. See
+  // worksActivityIdFor()/works_activity_ids, which already trace the real,
+  // planner-chosen Works value(s) back to a schedule activity id; that is now
+  // the ONLY source for a photo's activity_id/activity_name (see the three
+  // save handlers below). The removed function (`resolveActivity`) is not
+  // needed for anything else — grepped, its only callers were this file's own
+  // "Current activity" hint (also removed, see paintLocCtx) and the three
+  // save payloads.
 
   // Most recent photo captured at (a superset of) this set of location values.
   function lastCaptureAt(values) {
@@ -848,13 +842,36 @@ window.ProgressPhotos = (function () {
       });
     }
     $('pp-refresh').onclick = function () { load(); };
-    if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
+    // ⚠️ Real bug fix: this used to call flushQueue() directly, with NO visible
+    // feedback while it ran (fetch-based uploads have no progress events at
+    // all — see the "upload byte progress" section above) — reported as
+    // "clicking Sync now appears to do nothing". It now opens the Pending
+    // uploads panel, which shows the queue, drives its own Sync now with real
+    // per-file percentage, and is where a failed item's error + Retry live.
+    if ($('pp-sync')) $('pp-sync').onclick = function () { openPendingMediaPanel(); };
     if ($('pp-genthumbs')) $('pp-genthumbs').onclick = function () { backfillThumbnails(); };
     if ($('pp360-drafts')) $('pp360-drafts').onclick = function () { openPano360DraftsList(); };
     wireSelBar();
     wireLightboxMagnifier();
     wireLightboxKpResizeDrag();
-    wirePanoDrag();
+    // ⚠️⚠️ 2026-09-16 HOTFIX: `wirePanoDrag()` was called here but the
+    // function itself was deleted on 2026-09-11 (third round) — superseded
+    // by the real Pannellum viewer, mounted per-instance via
+    // mountPannellumViewer() wherever a 360 photo is actually opened, never
+    // wired globally. The call site was left behind, and it threw a
+    // ReferenceError SYNCHRONOUSLY inside wire(), which init() calls with no
+    // try/catch and no await — so the throw rejected init()'s own promise
+    // and silently skipped EVERYTHING after it: applyTileScale(),
+    // syncChrome(), load() (the photo grid never rendered — #pp-view stayed
+    // completely empty), loadSchedule() (SCHED_ACTS/LOC_LEVELS never
+    // populated — the exact reason Works/Location had nothing to offer in
+    // the Add Media modal) and fillFilterOptions() (the Trade/Works filter
+    // selects stayed stuck at their single blank placeholder option).
+    // Confirmed live on the deployed site (module.js?v=20260916z1, Avesta
+    // Residences/AVR101): console threw "wirePanoDrag is not defined" at
+    // init(), #pp-view.innerHTML was empty, and #pp-f-trade/#pp-f-works both
+    // had exactly 1 option. This one stray call broke the WHOLE module for
+    // every project, not just this one's Works dropdown.
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -2950,8 +2967,12 @@ window.ProgressPhotos = (function () {
   var lightboxKeyPlanVisible = false;
   // Item 4: how far (in degrees) the 360° viewer has been panned away from
   // its opening position — reset to 0 whenever a photo opens/steps, updated
-  // live by wirePanoDrag() below, and read by paintKeyPlanOverlay() so the
-  // key-plan cone rotates to keep following the direction actually on screen.
+  // live by startPanoYawPoll()'s callback (see paintLightbox), and read by
+  // paintKeyPlanOverlay() so the key-plan cone rotates to keep following the
+  // direction actually on screen. ⚠️ Was "wirePanoDrag() below" until the
+  // 2026-09-16 hotfix — that function was deleted on 2026-09-11 (superseded
+  // by the real Pannellum viewer's own yaw polling) and this comment simply
+  // never got updated to match.
   var lightboxPanoHeadingDeg = 0;
   // Round-2 item 3 (2026-09-02): the lightbox's magnifier — replaces the
   // zoom in/out buttons item 10 added ("zoom is only for... the image pop-up
@@ -3496,13 +3517,25 @@ window.ProgressPhotos = (function () {
     // spacing, tuned generously now that the strip's own height is no
     // longer spoken for.
     'header{background:#fff;color:#231F20}' +
-    'header .dl-hdrbody{padding:18px 22px 14px}' +
+    // ⚠️ Real defect found live (2026-09-14) — see ppr.js's identical
+    // `.hdrbody` fix for the full writeup: `<header>` had no width cap of its
+    // own, so it did not line up with `.wrap`/`.dl-pagegroup` below it on any
+    // window wider than ~1180px. `.dl-hdrbody` now shares `.wrap`'s own
+    // max-width+centering formula (never a second, guessed number).
+    'header .dl-hdrbody{max-width:1180px;margin:0 auto;padding:18px 22px 14px}' +
     'header h1{margin:0;font-size:21px;letter-spacing:.01em;font-weight:700}' +
     'header p{margin:3px 0 0;font-size:13px;color:#6b6b6b;line-height:1.3}' +
     '.wrap{max-width:1180px;margin:0 auto;padding:18px}' +
     // Item 1 (2026-09-11): `.dl-pagegroup` wraps one `.dl-slide` + its own
     // footer as a single page-break unit — see ppr.js's identical
     // `.pagegroup` comment for the full reasoning.
+    //
+    // ⚠️ This base "card + separate footer strip" look is what the PDF export
+    // still uses (unchanged, approved — `exportSelectedPdf()` shares this
+    // same DL_CSS). The offline HTML export's OWN look is overridden by
+    // `DL_PAGECARD_CSS`, below — appended only to the offline-export's own
+    // `<style>` tag, never to the PDF capture's — see ppr.js's identical
+    // `EXPORT_PAGECARD_CSS` for the full writeup.
     '.dl-pagegroup{position:relative}' +
     '.dl-slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:12px 14px;margin-bottom:10px}' +
     // `break-after`/`page-break-after` is kept for a real browser printing
@@ -3558,7 +3591,33 @@ window.ProgressPhotos = (function () {
   // with photos "unnecessarily small" per that half-width column. Kept as a
   // SEPARATE fragment, appended only to the offline-HTML export's own CSS
   // (dlBodyHTML's caller) — never to the PDF capture's `wrap`.
-  var DL_MOBILE_CSS = '@media (max-width:820px){.dl-pair,.dl-pair.dl-single{grid-template-columns:1fr}}';
+  //
+  // ⚠️⚠️ A second, distinct bug (2026-09-14, same root cause as ppr.js's own
+  // EXPORT_MOBILE_CSS — see that comment for the full live-measured writeup):
+  // a bare `@media (max-width:820px)`, with no `screen` qualifier, also
+  // matches during PRINT — and a standard PORTRAIT A4/Letter page's usable
+  // content width is under 820px. Printing (or "Save as PDF") the saved
+  // offline HTML file therefore silently collapsed Previous/Current to one
+  // column too, roughly doubling each page's height and pushing the footer
+  // onto its own page 2. `screen and` scopes this breakpoint to on-screen
+  // viewing only (an actual phone browser), so it can never fire during
+  // print/PDF regardless of paper size or orientation.
+  var DL_MOBILE_CSS = '@media screen and (max-width:820px){.dl-pair,.dl-pair.dl-single{grid-template-columns:1fr}}';
+  // ⚠️⚠️ Real defect found live (2026-09-14) — see ppr.js's identical
+  // `EXPORT_PAGECARD_CSS` for the full writeup. `.dl-slide`'s own bordered
+  // card, immediately followed by `<footer>` as a plain un-boxed sibling
+  // with a visible gap, reads as two disconnected fragments rather than one
+  // complete page. HTML-EXPORT-ONLY, deliberately kept out of DL_CSS itself
+  // — the PDF export shares DL_CSS byte-for-byte and is already approved
+  // with the base "card + separate footer" look; this fragment is appended
+  // only to the offline export's own `<style>` tag, never to
+  // `exportSelectedPdf()`'s `wrap`. Moves the white background/border/radius
+  // from `.dl-slide` onto `.dl-pagegroup` instead, so the footer sits flush
+  // inside the same bordered card as its bottom section.
+  var DL_PAGECARD_CSS =
+    '.dl-pagegroup{background:#fff;border:1px solid #DCDBDB;border-radius:4px;overflow:hidden;margin-bottom:16px}' +
+    '.dl-slide{background:transparent;border:0;margin-bottom:0}' +
+    '@media print{.dl-pagegroup{border:0}}';
   // ⚠️ PDF-capture-only override (2026-09-11/12) — see ppr.js's identical
   // `EXPORT_PDF_CSS`/`layoutPagegroups()` for the full root-cause writeup.
   // Neutralizes `.dl-pagegroup`'s own `page-break-after` back to `auto`
@@ -3652,7 +3711,7 @@ window.ProgressPhotos = (function () {
     var html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
       '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
       '<title>' + Fmt.esc(projName || pid) + ' — Progress Photos</title>' +
-      '<style>' + DL_CSS + DL_MOBILE_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs, logo, tagline) + '</body></html>';
+      '<style>' + DL_CSS + DL_MOBILE_CSS + DL_PAGECARD_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs, logo, tagline) + '</body></html>';
     var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -5405,16 +5464,23 @@ window.ProgressPhotos = (function () {
     var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
     return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
+  // ⚠️ 2026-09-16: this used to also print "Current activity: <strong>Rebar
+  // Works</strong>" here — whichever schedule activity happens to be
+  // In-Progress/Not-Started AT THIS LOCATION, entirely independent of the
+  // photo actually being added. It read as though the photo had already been
+  // tagged with that activity (and, until this same fix, it silently WAS —
+  // see the save handlers' activity_id/activity_name). Removed outright:
+  // location alone must never imply or assign an activity. The one thing
+  // worth keeping is the reference photo below, which is just a prior shot
+  // for framing comparison, not an activity assignment.
   function paintLocCtx(idPrefix) {
     var ctx = $(idPrefix + '-actctx');
     var values = currentLocValues(idPrefix);
     var hasAny = Object.keys(values).length > 0;
     if (!ctx) return;
     if (!hasAny) { ctx.innerHTML = ''; return; }
-    var act = resolveActivity(values), last = lastCaptureAt(values);
+    var last = lastCaptureAt(values);
     var html = '';
-    if (act) html += '<div class="pp-actline">Current activity: <strong>' + Fmt.esc(act.name || act.id) + '</strong></div>';
-    else html += '<div class="pp-actline pp-muted">No active schedule activity found for this location.</div>';
     if (last) {
       // A small reference thumbnail never needed full-resolution — using
       // the (already-cheap, already-cached) thumbnail here instead of
@@ -5673,7 +5739,6 @@ window.ProgressPhotos = (function () {
       var reqErr = requiredFieldsMissing('pp');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
-      var act = resolveActivity(locVals);
       // Item 6: Works is a multi-select again; Trade is the UNION of every
       // chosen Works value's own derived trade. `trades`/`works_multi` are
       // the real array columns; `trade`/`works` stay populated too as the
@@ -5695,8 +5760,12 @@ window.ProgressPhotos = (function () {
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         view_name: viewNameEl ? viewNameEl.value.trim() : null,
-        activity_id: act ? act.id : null,
-        activity_name: act ? act.name : null,
+        // 2026-09-16 fix: activity_id/activity_name now trace the photo's
+        // OWN Works selection (same "first of the array" convention as
+        // trade/works above), never a schedule activity inferred from
+        // location alone — see the removed resolveActivity().
+        activity_id: worksActivityIdFor(worksList[0]) || null,
+        activity_name: worksList[0] || null,
         tags: readCodeTags('pp'),
         media_type: kind
       };
@@ -6633,7 +6702,6 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
       var locVals = draft.meta.locVals || {};
-      var act = resolveActivity(locVals);
       var worksList = draft.meta.works || [];
       var tradeList = deriveTradesForWorksList(worksList);
       var pinData = draft.meta.pinData;
@@ -6652,7 +6720,10 @@ window.ProgressPhotos = (function () {
           trade: tradeList[0] || null, works: worksList[0] || null,
           location: locBreadcrumb(locVals) || null, location_values: locVals,
           view_name: draft.meta.viewName || null,
-          activity_id: act ? act.id : null, activity_name: act ? act.name : null,
+          // 2026-09-16 fix: traced from the picked Works value, never from
+          // location alone — see the removed resolveActivity().
+          activity_id: worksActivityIdFor(worksList[0]) || null,
+          activity_name: worksList[0] || null,
           tags: draft.meta.tags || []
         };
         if (draft.pendingAdjust[0] && !adjustmentsAreDefault(draft.pendingAdjust[0])) row.adjustments = draft.pendingAdjust[0];
@@ -7016,6 +7087,27 @@ window.ProgressPhotos = (function () {
         req.onerror = function () { reject(req.error); };
       }); });
     }
+    // ⚠️ Added for the pending-upload-status rework, below: a RETRY that fails
+    // again (or a fresh live upload that never had a qid until it failed)
+    // needs to UPDATE its own row in place — recording how far it got (e.g. the
+    // file's already-uploaded Storage path, so a further retry never re-sends
+    // the same bytes twice) — rather than either losing that progress or
+    // inserting a second, duplicate queue entry for the same capture.
+    function put(record) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx = d.transaction(STORE, 'readwrite');
+        var req = tx.objectStore(STORE).put(record);
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      }); });
+    }
+    function get(qid) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var req = d.transaction(STORE, 'readonly').objectStore(STORE).get(qid);
+        req.onsuccess = function () { resolve(req.result || null); };
+        req.onerror = function () { reject(req.error); };
+      }); });
+    }
     function all() {
       return open().then(function (d) { return new Promise(function (resolve, reject) {
         var out = [];
@@ -7035,81 +7127,514 @@ window.ProgressPhotos = (function () {
         tx.onerror = function () { reject(tx.error); };
       }); });
     }
-    return { add: add, all: all, remove: remove };
+    return { add: add, put: put, get: get, all: all, remove: remove };
   })();
 
-  async function queuedCountFor(pidVal) {
+  // --------------------------------------------------- upload byte progress --
+  // ⚠️⚠️ ROOT CAUSE of "Sync now does nothing / no visible feedback": every
+  // upload in this file went through Supabase's own storage.upload(), which is
+  // built on fetch() — and fetch has NO upload-progress event of any kind, for
+  // any request, in any browser. There was therefore no possible way to show a
+  // percentage, a moving bar, or even "still working" for a multi-minute video
+  // POST; clicking Sync just sat there indistinguishable from broken until the
+  // final toast, and a real network hiccup (or a file the server's upload size
+  // limit refuses outright) was swallowed into a bare `catch (e) { fail++; }`
+  // with no reason ever shown. xhrUploadToBucket() below talks to the EXACT
+  // SAME Storage endpoint via XMLHttpRequest instead, purely to get
+  // xhr.upload.onprogress — nothing about the wire contract changes. Verified
+  // against storage-js's own real source (StorageFileApi.uploadOrUpdate — the
+  // function storage.upload() itself calls): POST {url}/object/{bucket}/{path},
+  // a multipart FormData body of {cacheControl:'3600', ''=the file}, headers
+  // apikey + `Authorization: Bearer <token>` + (on POST) x-upsert, no explicit
+  // Content-Type (the browser sets the multipart boundary itself).
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n <= 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB'], i = 0, v = n;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? v : v.toFixed(v < 10 ? 2 : 1)) + ' ' + units[i];
+  }
+  // The session's own current access token — read fresh on every upload
+  // (never cached), matching how the SDK's own fetchWithAuth wrapper resolves
+  // it per-request. Falls back to the anon key exactly like the real SDK does
+  // when there is no session (fetchWithAuth: `accessToken ?? supabaseKey`).
+  async function currentAccessToken() {
     try {
-      var list = await OfflineQueue.all();
-      return list.filter(function (r) { return r.project_id === pidVal; }).length;
-    } catch (e) { return 0; }
+      var res = await sb().auth.getSession();
+      var session = res && res.data && res.data.session;
+      if (session && session.access_token) return session.access_token;
+    } catch (e) { /* no auth client in this context — fall through to the anon key */ }
+    return (window.APP_CONFIG && APP_CONFIG.SUPABASE_ANON_KEY) || '';
+  }
+  function storageObjectUrl(path) {
+    var base = (window.APP_CONFIG && APP_CONFIG.SUPABASE_URL) || '';
+    return base.replace(/\/+$/, '') + '/storage/v1/object/' + BUCKET + '/' + path;
+  }
+  // Same random-suffixed path shape uploadFile() has always used — pulled out
+  // so both the progress-tracked path below and the (untouched) plain
+  // uploadFile() build an identical, collision-safe path.
+  function buildStoragePath(name) {
+    var safe = String(name || 'upload').replace(/[^\w.\-]+/g, '_');
+    return pid + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '_' + safe;
+  }
+  function uploadCancelledError() {
+    var e = new Error('Upload cancelled');
+    e.cancelled = true;
+    return e;
+  }
+  // Turns a failed upload into a message a planner can actually act on,
+  // instead of a bare "failed" — this is the "show a useful error message"
+  // requirement: a file too large for the server, a session that's expired,
+  // and a dropped connection all look identical to the old bare catch block,
+  // and are three different things to DO about them.
+  function describeStorageXhrError(xhr) {
+    var msg = 'Upload failed (server responded ' + (xhr.status || 0) + ')';
+    try {
+      var body = xhr.responseText && JSON.parse(xhr.responseText);
+      if (body && (body.message || body.error)) msg = body.message || body.error;
+    } catch (e) { /* not JSON — keep the generic message above */ }
+    if (xhr.status === 413) msg = 'This file is too large for the server to accept — try a shorter recording or a smaller file.';
+    else if (xhr.status === 401 || xhr.status === 403) msg = 'You are not signed in, or do not have permission to upload here — refresh the page and sign in again.';
+    else if (xhr.status === 409) msg = 'A file already exists at that location.';
+    else if (xhr.status === 0) msg = 'Could not reach the server — check your connection and try again.';
+    var err = new Error(msg);
+    err.status = xhr.status;
+    return err;
+  }
+  function xhrSupported() { return typeof XMLHttpRequest !== 'undefined'; }
+  // Returns {promise, cancel} rather than a bare Promise, deliberately — the
+  // caller needs a way to abort an upload that's already in flight (the
+  // Pending panel's Cancel button) before the promise itself has settled.
+  function xhrUploadToBucket(file, path, opts) {
+    opts = opts || {};
+    var xhr = new XMLHttpRequest();
+    var cancelled = false;
+    function cancel() { cancelled = true; try { xhr.abort(); } catch (e) {} }
+    var promise = (async function () {
+      var token = await currentAccessToken();
+      if (cancelled) throw uploadCancelledError();
+      return new Promise(function (resolve, reject) {
+        var fd = new FormData();
+        fd.append('cacheControl', '3600');
+        fd.append('', file, file.name || 'upload');
+        xhr.open('POST', storageObjectUrl(path), true);
+        xhr.setRequestHeader('apikey', (window.APP_CONFIG && APP_CONFIG.SUPABASE_ANON_KEY) || '');
+        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+        xhr.setRequestHeader('x-upsert', opts.upsert ? 'true' : 'false');
+        if (xhr.upload) {
+          xhr.upload.onprogress = function (e) {
+            if (e.lengthComputable && typeof opts.onProgress === 'function') opts.onProgress(e.loaded, e.total);
+          };
+        }
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            if (typeof opts.onProgress === 'function') opts.onProgress(file.size || 0, file.size || 0);
+            resolve({ path: path });
+          } else {
+            reject(describeStorageXhrError(xhr));
+          }
+        };
+        xhr.onerror = function () { reject(new Error('Network error while uploading — check your connection and try again.')); };
+        xhr.onabort = function () { reject(uploadCancelledError()); };
+        xhr.send(fd);
+      });
+    })();
+    return { promise: promise, cancel: cancel };
   }
 
-  async function refreshQueueBadge() {
-    var n = await queuedCountFor(pid);
+  // ----------------------------------------------- pending upload task store -
+  // The single source of truth the "Pending uploads" panel (below) renders
+  // from. A task exists for as long as a capture is uploading/processing OR
+  // needs the planner's attention (failed / cancelled) — it is never silently
+  // dropped on failure, per the "do not silently remove media from the queue"
+  // requirement. A task is either LIVE (born from a fresh saveCapture() this
+  // session, holding the real File in `_file`) or QUEUE-BACKED (reconstructed
+  // from an IndexedDB record left over from a previous attempt/session, `qid`
+  // set) — runUploadTask() below reads whichever is available and does not
+  // otherwise care which kind it is.
+  var UPLOAD_TASKS = [];
+  var _taskSeq = 0;
+  var syncing = false;             // true while flushQueue()'s loop is running
+  var pendingPanelOpen = false;    // true while the panel modal is on screen
+
+  function createTask(partial) {
+    var t = Object.assign({
+      id: 't' + (++_taskSeq),
+      qid: null,
+      status: 'pending',           // pending | uploading | processing | completed | failed | retrying | cancelled
+      progress: 0,                 // 0..1, upload BYTES only (thumbnail/row-write have no fine-grained %)
+      uploadedBytes: 0,
+      totalBytes: 0,
+      error: null,
+      createdAt: new Date(),
+      _cancel: null,                // set only while an XHR is actually in flight
+      _uploadedPath: null,          // set once the main file's bytes are confirmed on Storage
+      _file: null,
+      _meta: {}
+    }, partial || {});
+    UPLOAD_TASKS.push(t);
+    notifyTasksChanged();
+    return t;
+  }
+  function taskById(id) {
+    for (var i = 0; i < UPLOAD_TASKS.length; i++) { if (String(UPLOAD_TASKS[i].id) === String(id)) return UPLOAD_TASKS[i]; }
+    return null;
+  }
+  // A task's contribution toward the OVERALL progress figure — never claims
+  // credit for bytes a failed/cancelled attempt didn't actually keep (spec:
+  // "failed uploads must not falsely show progress"), and treats the
+  // thumbnail+row-write tail ("processing") as done, since there is no
+  // meaningful sub-percentage for that brief, un-cancellable phase.
+  function taskFraction(t) {
+    if (t.status === 'completed' || t.status === 'processing') return 1;
+    if (t.status === 'uploading' || t.status === 'retrying') return t.progress || 0;
+    return 0; // pending / failed / cancelled
+  }
+  // File-size-weighted when every active task's size is known (the normal
+  // case — every task here always has a real File or a persisted Blob behind
+  // it); degrades to a plain per-task average only if a size is genuinely
+  // missing, per "use the most accurate calculation supported".
+  function overallProgress(tasks) {
+    if (!tasks || !tasks.length) return null;
+    var haveAllSizes = tasks.every(function (t) { return (t.totalBytes || 0) > 0; });
+    if (haveAllSizes) {
+      var total = 0, loaded = 0;
+      tasks.forEach(function (t) { total += t.totalBytes; loaded += t.totalBytes * taskFraction(t); });
+      return total > 0 ? loaded / total : 0;
+    }
+    var sum = tasks.reduce(function (s, t) { return s + taskFraction(t); }, 0);
+    return sum / tasks.length;
+  }
+
+  // rAF-coalesced repaint — xhr.upload.onprogress can fire many times a
+  // second on a fast connection; re-rendering the panel synchronously on
+  // every single event would be real, needless jank. Matches this file's own
+  // established convention elsewhere (wirePanoDrag/scheduleRedraw) for the
+  // identical "many raw events, one paint per frame" shape.
+  var _tasksDirty = false, _tasksRafQueued = false;
+  function notifyTasksChanged() {
+    _tasksDirty = true;
+    paintQueueBadge(); // cheap (a number + a hidden flag) — never gated behind rAF
+    if (_tasksRafQueued) return;
+    _tasksRafQueued = true;
+    var raf = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : function (fn) { setTimeout(fn, 0); };
+    raf(function () {
+      _tasksRafQueued = false;
+      if (!_tasksDirty) return;
+      _tasksDirty = false;
+      if (pendingPanelOpen) repaintPendingPanel();
+    });
+  }
+  function paintQueueBadge() {
     var btn = $('pp-sync');
     if (!btn) return;
+    var n = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid && t.status !== 'completed'; }).length;
     btn.hidden = !n;
     var lbl = $('pp-sync-n'); if (lbl) lbl.textContent = n;
   }
 
-  // Captures try to save immediately; a network failure (or being visibly
-  // offline) queues the file+metadata instead of losing the shot. Once the
-  // file is uploaded, the row write goes through tolerantWrite (PDSync) —
-  // which handles a network hiccup on JUST the row write on its own.
-  async function saveCapture(file, meta) {
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, blob: file, meta: meta, queued_at: new Date().toISOString() });
-      await refreshQueueBadge();
-      return { queued: true };
-    }
-    var path;
-    try {
-      path = await uploadFile(file);
-    } catch (err) {
-      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, blob: file, meta: meta, queued_at: new Date().toISOString() });
-      await refreshQueueBadge();
-      return { queued: true };
-    }
-    // Item 1: a real, small preview file, uploaded ALONGSIDE the original —
-    // never blocking the save if it can't be produced (see
-    // uploadThumbnailFor's own comment for why this never throws).
-    var thumbPath = await uploadThumbnailFor(file, path);
-    var row = Object.assign({}, meta, { project_id: pid, created_by: uid, photo_url: path, title: file.name });
-    if (thumbPath) row.thumb_url = thumbPath;
-    var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
-    if (!w.ok) {
-      // The file IS already uploaded — queue just the row write (skips a
-      // redundant re-upload on retry) rather than losing the capture.
-      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, uploadedPath: path, meta: meta, queued_at: new Date().toISOString() });
-      await refreshQueueBadge();
-      return { queued: true, ok: false, error: w.error };
-    }
-    return { queued: !!w.queued, ok: true, id: w.id };
+  function buildQueueRecord(task) {
+    var rec = { project_id: task.projectId, created_by: task.createdBy, fileName: task.fileName, meta: task._meta || {}, queued_at: (task.createdAt || new Date()).toISOString() };
+    if (task.qid != null) rec.qid = task.qid;
+    if (task._uploadedPath) rec.uploadedPath = task._uploadedPath;   // skip a redundant re-upload on the next retry
+    else if (task._file) rec.blob = task._file;
+    return rec;
+  }
+  // Persists (inserts OR updates) a task's current state into IndexedDB —
+  // called whenever a task needs to survive beyond this attempt: a fresh
+  // failure (first time it's ever queued), or a retry that failed again
+  // (updates the SAME row rather than adding a duplicate).
+  async function persistTaskToQueue(task) {
+    var rec = buildQueueRecord(task);
+    var qid = task.qid != null ? await OfflineQueue.put(rec) : await OfflineQueue.add(rec);
+    task.qid = qid;
+  }
+  function taskFromQueueRecord(rec) {
+    var hasBlob = !!rec.blob;
+    var size = hasBlob ? (rec.blob.size || 0) : 0;
+    return {
+      id: 'q' + rec.qid, qid: rec.qid,
+      kind: (rec.meta && rec.meta.media_type === 'video') ? 'video' : 'photo',
+      fileName: rec.fileName || 'Untitled',
+      totalBytes: size,
+      uploadedBytes: rec.uploadedPath ? size : 0,
+      progress: rec.uploadedPath ? 1 : 0,
+      status: 'pending', error: null,
+      projectId: rec.project_id, createdBy: rec.created_by,
+      createdAt: rec.queued_at ? new Date(rec.queued_at) : new Date(),
+      _cancel: null, _uploadedPath: rec.uploadedPath || null,
+      _file: rec.blob || null, _meta: rec.meta || {}
+    };
+  }
+  // Reconciles UPLOAD_TASKS against what's actually persisted for the CURRENT
+  // project: adds a 'pending' task for any IndexedDB record not already
+  // represented (this is what makes a queued upload survive a page refresh —
+  // "the pending queue must remain visible until successfully uploaded"), and
+  // drops a queue-backed task whose row is gone AND that isn't actively
+  // running right now (it was synced/removed some other way — never drops a
+  // task genuinely mid-upload/processing/retry in this tab).
+  async function syncTasksFromQueue() {
+    var list = [];
+    try { list = await OfflineQueue.all(); } catch (e) { list = []; }
+    var mine = list.filter(function (r) { return r.project_id === pid; });
+    var byQid = {}; mine.forEach(function (r) { byQid[r.qid] = r; });
+    UPLOAD_TASKS = UPLOAD_TASKS.filter(function (t) {
+      if (t.qid == null) return true;
+      if (byQid[t.qid]) return true;
+      return t.status === 'uploading' || t.status === 'processing' || t.status === 'retrying';
+    });
+    var known = {}; UPLOAD_TASKS.forEach(function (t) { if (t.qid != null) known[t.qid] = true; });
+    mine.forEach(function (rec) { if (!known[rec.qid]) UPLOAD_TASKS.push(taskFromQueueRecord(rec)); });
+  }
+  async function refreshQueueBadge() {
+    await syncTasksFromQueue();
+    paintQueueBadge();
+  }
+  // Drops a genuinely finished task after a short grace period, so "Completed"
+  // is visible for a moment rather than blinking out of the list instantly.
+  function scheduleTaskAutoClear(task) {
+    task.status = 'completed'; task.progress = 1; notifyTasksChanged();
+    setTimeout(function () {
+      UPLOAD_TASKS = UPLOAD_TASKS.filter(function (x) { return x !== task; });
+      notifyTasksChanged();
+    }, 4000);
   }
 
-  async function flushQueue() {
-    var list = [];
-    try { list = await OfflineQueue.all(); } catch (e) { UI.toast('Could not read the offline queue', 'error'); return; }
-    var mine = list.filter(function (r) { return r.project_id === pid; });
-    if (!mine.length) { UI.toast('Nothing to sync', 'ok'); return; }
+  // ---------------------------------------------------- upload lifecycle -----
+  // Runs ONE task's full lifecycle (upload the main file -> thumbnail ->
+  // insert the row), mutating the task object as it goes and repainting the
+  // panel on every real state change. Never throws — every failure is
+  // captured onto the task itself and returned as {ok:false, error}, so a
+  // caller looping over several tasks (flushQueue) can't have one failure
+  // abort the rest of the batch.
+  async function runUploadTask(task) {
+    task.status = 'uploading'; task.error = null; notifyTasksChanged();
+    try {
+      var file = task._file;
+      var uploadedPath = task._uploadedPath || null;
+      if (!file && !uploadedPath && task.qid != null) {
+        var rec = await OfflineQueue.get(task.qid);
+        if (!rec) throw new Error('This queued upload could no longer be found — it may already have synced on another device.');
+        file = rec.blob || null;
+        uploadedPath = rec.uploadedPath || null;
+        task._meta = rec.meta || task._meta || {};
+        task.fileName = task.fileName || rec.fileName;
+        if (file) task.totalBytes = file.size || task.totalBytes;
+      }
+      if (!uploadedPath) {
+        if (!file) throw new Error('The original file is no longer available on this device — please add it again.');
+        if (xhrSupported()) {
+          var handle = xhrUploadToBucket(file, buildStoragePath(task.fileName || file.name || 'upload'), {
+            upsert: false,
+            onProgress: function (loaded, total) {
+              task.uploadedBytes = loaded;
+              if (total) task.totalBytes = total;
+              task.progress = task.totalBytes ? loaded / task.totalBytes : 0;
+              notifyTasksChanged();
+            }
+          });
+          task._cancel = handle.cancel;
+          var res = await handle.promise;
+          task._cancel = null;
+          uploadedPath = res.path;
+        } else {
+          // No XMLHttpRequest in this context (a non-browser test harness, or
+          // an exotic runtime) — the upload itself still works, it just can't
+          // report byte-level progress. Never the reason an upload fails.
+          uploadedPath = await uploadFile(file);
+        }
+        task._uploadedPath = uploadedPath;
+        task.uploadedBytes = task.totalBytes = (file.size || task.totalBytes);
+        task.progress = 1;
+      } else {
+        task.progress = 1;
+      }
+      task.status = 'processing'; notifyTasksChanged();
+      var thumbPath = null;
+      if (file) { try { thumbPath = await uploadThumbnailFor(file, uploadedPath); } catch (e) { thumbPath = null; } }
+      var row = Object.assign({}, task._meta, { project_id: task.projectId, created_by: task.createdBy, photo_url: uploadedPath, title: task.fileName });
+      if (thumbPath) row.thumb_url = thumbPath;
+      var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
+      if (!w.ok) throw (w.error instanceof Error ? w.error : new Error((w.error && w.error.message) || 'The file uploaded, but its details could not be saved.'));
+      task.status = 'completed'; task.progress = 1; notifyTasksChanged();
+      return { ok: true, id: w.id };
+    } catch (err) {
+      task._cancel = null;
+      if (err && err.cancelled) { task.status = 'cancelled'; task.error = null; }
+      else { task.status = 'failed'; task.error = (err && err.message) ? err.message : String(err); }
+      notifyTasksChanged();
+      return { ok: false, error: err };
+    }
+  }
+
+  // Captures try to save immediately, with real, live progress tracked on a
+  // task the Pending-uploads panel can show. A network failure (or being
+  // visibly offline) queues the file+metadata instead of losing the shot —
+  // the task stays visible, marked 'failed'/'pending', never silently dropped.
+  async function saveCapture(file, meta) {
+    var task = createTask({
+      kind: meta.media_type === 'video' ? 'video' : 'photo',
+      fileName: file.name, totalBytes: file.size || 0,
+      projectId: pid, createdBy: uid, _file: file, _meta: meta
+    });
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      task.status = 'pending'; notifyTasksChanged();
+      try { await persistTaskToQueue(task); } catch (e) {}
+      await refreshQueueBadge(); notifyTasksChanged();
+      return { queued: true };
+    }
+    var r = await runUploadTask(task);
+    if (r.ok) { scheduleTaskAutoClear(task); return { queued: false, ok: true, id: r.id }; }
+    if (task.status === 'cancelled') return { queued: false, ok: false, error: r.error, cancelled: true };
+    try { await persistTaskToQueue(task); } catch (e) {}
+    await refreshQueueBadge(); notifyTasksChanged();
+    return { queued: true, ok: false, error: r.error };
+  }
+
+  // "Sync now" — reattempts every task for this project that isn't already
+  // uploading/completed (pending / failed / cancelled). Sequential, on
+  // purpose: several large videos uploading at once would fight each other
+  // for the same connection, which is the opposite of "make this reliable".
+  // Re-entrancy guarded (`syncing`) so a repeated click, or the automatic
+  // reconnect-and-sync, can never start a second overlapping pass.
+  async function flushQueue(opts) {
+    opts = opts || {};
+    if (syncing) { if (!opts.silent) UI.toast('A sync is already in progress', 'warn'); return; }
+    await syncTasksFromQueue();
+    var mine = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid && (t.status === 'pending' || t.status === 'failed' || t.status === 'cancelled'); });
+    if (!mine.length) { if (!opts.silent) UI.toast('Nothing to sync — you are up to date', 'ok'); notifyTasksChanged(); return; }
+    syncing = true; notifyTasksChanged();
     var ok = 0, fail = 0;
     for (var i = 0; i < mine.length; i++) {
-      var item = mine[i];
-      try {
-        var path = item.uploadedPath || await uploadFile(item.blob);
-        var thumbPath = await uploadThumbnailFor(item.blob, path);
-        var row = Object.assign({}, item.meta, { project_id: item.project_id, created_by: item.created_by, photo_url: path, title: item.fileName });
-        if (thumbPath) row.thumb_url = thumbPath;
-        var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
-        if (!w.ok) throw (w.error || new Error('write failed'));
-        await OfflineQueue.remove(item.qid);
+      var t = mine[i];
+      t.status = 'retrying'; t.error = null; notifyTasksChanged();
+      var r = await runUploadTask(t);
+      if (r.ok) {
         ok++;
-      } catch (e) { fail++; }
+        if (t.qid != null) { try { await OfflineQueue.remove(t.qid); } catch (e) {} }
+        scheduleTaskAutoClear(t);
+      } else {
+        fail++;
+        if (t.status === 'failed') { try { await persistTaskToQueue(t); } catch (e) {} }
+      }
     }
-    await refreshQueueBadge();
+    syncing = false;
+    await refreshQueueBadge(); notifyTasksChanged();
     if (ok) await load();
-    UI.toast(ok + ' synced' + (fail ? (', ' + fail + ' still pending') : ''), fail ? 'warn' : 'ok');
+    if (!opts.silent) UI.toast(ok + ' synced' + (fail ? (', ' + fail + ' still need attention') : ''), fail ? 'warn' : 'ok');
+  }
+  // Retries exactly ONE failed/cancelled item, from the panel's own Retry
+  // button — does not touch, or wait on, anything else in the queue.
+  async function retryTask(id) {
+    if (syncing) { UI.toast('A sync is already in progress — please wait', 'warn'); return; }
+    var t = taskById(id);
+    if (!t) return;
+    t.status = 'retrying'; t.error = null; notifyTasksChanged();
+    var r = await runUploadTask(t);
+    if (r.ok) {
+      if (t.qid != null) { try { await OfflineQueue.remove(t.qid); } catch (e) {} }
+      scheduleTaskAutoClear(t);
+      UI.toast((t.kind === 'video' ? 'Video' : 'Photo') + ' uploaded', 'ok');
+      await load();
+    } else if (t.status === 'failed') {
+      try { await persistTaskToQueue(t); } catch (e) {}
+    }
+    await refreshQueueBadge(); notifyTasksChanged();
+  }
+  // Cancels an upload that is ACTUALLY in flight right now — a task with no
+  // live XHR (still 'pending', or already 'processing'/'completed') has
+  // nothing to abort. The task stays visible afterward with a Retry option,
+  // per "cancelled, with the option to retry if supported".
+  function cancelTask(id) {
+    var t = taskById(id);
+    if (!t || typeof t._cancel !== 'function') return;
+    t._cancel();
+  }
+
+  // ------------------------------------------------- pending uploads panel ---
+  function taskStatusText(t) {
+    switch (t.status) {
+      case 'pending': return 'Waiting to upload';
+      case 'uploading': return 'Uploading… ' + Math.round((t.progress || 0) * 100) + '%' +
+        (t.totalBytes ? ' (' + fmtBytes(t.uploadedBytes || 0) + ' of ' + fmtBytes(t.totalBytes) + ')' : '');
+      case 'processing': return 'Uploaded — saving details…';
+      case 'completed': return 'Completed';
+      case 'failed': return 'Failed';
+      case 'retrying': return 'Retrying…' + (t.totalBytes ? ' ' + Math.round((t.progress || 0) * 100) + '%' : '');
+      case 'cancelled': return 'Cancelled';
+      default: return t.status;
+    }
+  }
+  function pendingRowHTML(t) {
+    var pct = Math.round((t.progress || 0) * 100);
+    var metaBits = [t.kind === 'video' ? 'Video' : 'Photo'];
+    if (t.totalBytes) metaBits.push(fmtBytes(t.totalBytes));
+    if (t._meta && t._meta.works) metaBits.push(t._meta.works);
+    if (t._meta && t._meta.location) metaBits.push(t._meta.location);
+    var showBar = t.status === 'uploading' || t.status === 'retrying';
+    var canCancel = t.status === 'uploading' && typeof t._cancel === 'function';
+    var canRetry = t.status === 'failed' || t.status === 'cancelled';
+    return '<div class="pp-pending-item pp-pending-' + Fmt.esc(t.status) + '" data-task="' + Fmt.esc(t.id) + '">' +
+      '<div class="pp-pending-icon">' + (window.Icons ? Icons.svg(t.kind === 'video' ? 'video' : 'camera', 18) : '') + '</div>' +
+      '<div class="pp-pending-info">' +
+        '<div class="pp-pending-name">' + Fmt.esc(t.fileName || 'Untitled') + '</div>' +
+        '<div class="pp-pending-meta">' + Fmt.esc(metaBits.join(' · ')) + '</div>' +
+        '<div class="pp-pending-status">' + Fmt.esc(taskStatusText(t)) + '</div>' +
+        (showBar ? '<div class="pp-pending-bar"><div class="pp-pending-bar-fill" style="width:' + pct + '%"></div></div>' : '') +
+        (t.status === 'failed' && t.error ? '<div class="pp-pending-error">' + Fmt.esc(t.error) + '</div>' : '') +
+      '</div>' +
+      '<div class="pp-pending-rowactions">' +
+        (canCancel ? '<button type="button" class="pd-btn pd-btn-sm" data-canceltask="' + Fmt.esc(t.id) + '">Cancel</button>' : '') +
+        (canRetry ? '<button type="button" class="pd-btn pd-btn-sm pd-btn-primary" data-retrytask="' + Fmt.esc(t.id) + '">Retry</button>' : '') +
+      '</div>' +
+    '</div>';
+  }
+  function pendingPanelBodyHTML() {
+    var mine = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid; })
+      .sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+    var active = mine.filter(function (t) { return t.status !== 'completed'; });
+    var overall = overallProgress(active);
+    var summary = !active.length
+      ? '<div class="pp-pending-empty">' + (window.Icons ? Icons.svg('check', 18) : '') + ' All caught up — nothing pending.</div>'
+      : ('<div class="pp-pending-summarytext">' + active.length + ' pending upload' + (active.length === 1 ? '' : 's') +
+         (overall != null ? ' — overall ' + Math.round(overall * 100) + '%' : '') + '</div>' +
+         (overall != null ? '<div class="pp-pending-overallbar"><div class="pp-pending-overallbar-fill" style="width:' + Math.round(overall * 100) + '%"></div></div>' : ''));
+    var rowsHtml = mine.map(pendingRowHTML).join('');
+    return '<div class="pp-pending-summary">' + summary + '</div>' +
+      '<div class="pp-pending-actions">' +
+        '<button type="button" class="pd-btn pd-btn-primary" id="pp-pending-syncall"' + (syncing ? ' disabled' : '') + '>' +
+          (syncing ? 'Syncing…' : 'Sync now') + '</button>' +
+        (syncing ? '<span class="pp-pending-syncstate">' + (window.Icons ? Icons.svg('refresh', 14) : '') + ' Sync in progress…</span>' : '') +
+      '</div>' +
+      '<div class="pp-pending-list">' + rowsHtml + '</div>';
+  }
+  function wirePendingPanelRowActions(host) {
+    Array.prototype.forEach.call(host.querySelectorAll('[data-retrytask]'), function (b) {
+      b.onclick = function () { retryTask(this.dataset.retrytask); };
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-canceltask]'), function (b) {
+      b.onclick = function () { cancelTask(this.dataset.canceltask); };
+    });
+    var syncBtn = host.querySelector('#pp-pending-syncall');
+    if (syncBtn) syncBtn.onclick = function () { flushQueue(); };
+  }
+  function repaintPendingPanel() {
+    var body = $('pp-pending-body');
+    if (!body) { pendingPanelOpen = false; return; } // the modal was closed some other way
+    body.innerHTML = pendingPanelBodyHTML();
+    hydrate(body);
+    wirePendingPanelRowActions(body);
+  }
+  // Reached from the SAME topbar control that used to fire flushQueue()
+  // directly with no visible result at all ("clicking Sync now appears to do
+  // nothing") — it now opens this panel instead, which both explains what is
+  // pending and gives Sync now somewhere to show its own progress.
+  function openPendingMediaPanel() {
+    pendingPanelOpen = true;
+    var html = '<div class="pd-modal-header"><h3>Pending uploads</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-pending" id="pp-pending-body">' + pendingPanelBodyHTML() + '</div>';
+    var m = openModal(html, 520, function () { pendingPanelOpen = false; });
+    wirePendingPanelRowActions(m.el);
   }
 
   // ----------------------------------------------------------- edit/delete ---
@@ -7174,7 +7699,6 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
       var locVals = currentLocValues('pp-e');
-      var act = resolveActivity(locVals);
       var worksList = readWorksMulti('pp-e');
       var tradeList = deriveTradesForWorksList(worksList);
       var pinData = window.BIM ? BIM.readPinField('pp-e') : null;   // read before the modal closes
@@ -7190,8 +7714,10 @@ window.ProgressPhotos = (function () {
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         view_name: viewNameEl ? viewNameEl.value.trim() : null,
-        activity_id: act ? act.id : null,
-        activity_name: act ? act.name : null,
+        // 2026-09-16 fix: traced from the picked Works value, never from
+        // location alone — see the removed resolveActivity().
+        activity_id: worksActivityIdFor(worksList[0]) || null,
+        activity_name: worksList[0] || null,
         tags: readCodeTags('pp-e'),
         updated_at: new Date().toISOString()
       };
@@ -7658,6 +8184,28 @@ window.ProgressPhotos = (function () {
     // load" latch deterministically, instead of depending on being the
     // first test in the file to ever trigger a persist failure.
     _resetPano360PersistFailWarned: function () { pano360PersistFailWarned = false; },
-    _ensurePersistentStorage: function () { return ensurePersistentStorage(); }
+    _ensurePersistentStorage: function () { return ensurePersistentStorage(); },
+    // Test-only hooks for the pending-upload-status rework — genuinely
+    // EXECUTE the real, shipped functions (never a re-description of them),
+    // same convention as every hook above.
+    _fmtBytes: function (n) { return fmtBytes(n); },
+    _describeStorageXhrError: function (xhr) { return describeStorageXhrError(xhr); },
+    _taskFraction: function (t) { return taskFraction(t); },
+    _overallProgress: function (tasks) { return overallProgress(tasks); },
+    _createTask: function (partial) { return createTask(partial); },
+    _taskById: function (id) { return taskById(id); },
+    _runUploadTask: function (task) { return runUploadTask(task); },
+    _saveCapture: function (file, meta) { return saveCapture(file, meta); },
+    _flushQueue: function (opts) { return flushQueue(opts); },
+    _retryTask: function (id) { return retryTask(id); },
+    _cancelTask: function (id) { return cancelTask(id); },
+    _syncTasksFromQueue: function () { return syncTasksFromQueue(); },
+    _uploadTasks: function () { return UPLOAD_TASKS; },
+    _clearUploadTasks: function () { UPLOAD_TASKS.length = 0; },
+    _OfflineQueue: OfflineQueue,
+    _isSyncing: function () { return syncing; },
+    _taskStatusText: function (t) { return taskStatusText(t); },
+    _pendingPanelBodyHTML: function () { return pendingPanelBodyHTML(); },
+    _openPendingMediaPanel: function () { return openPendingMediaPanel(); }
   };
 })();

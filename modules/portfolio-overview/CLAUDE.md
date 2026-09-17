@@ -1,5 +1,44 @@
 # Module: portfolio-overview
 
+## 2026-09-16 (later) — Even spacing, one-line notes, no second S-curve, no look-ahead — fmlozano
+
+See the root `CLAUDE.md` (2026-09-16 (a5)) for the full entry, and (z3) for the read fixes that
+came first — the `?` column and the two cancelled statements.
+
+- `#po-view-overview` is a **flex column with one `gap`**. It was `display:block` with no card
+  margins, so the gaps measured **20 / 0 / 0 / 14 / 0** at 1440px — three cards touching. The two
+  ad-hoc margins (`.pd-kpis` bottom, `.po-coverage` top) are zeroed, or the container gap doubles
+  under them. Re-measured 16 / 16 / 16 / 16.
+- **"What lands next" removed**, renderer included. ⚠️ Its `ms` read STAYS — the 30-day
+  milestone KPI still consumes it.
+- The curve card **links through to the S-Curve module** in portfolio scope. It already computed
+  via the shared `PDScurve` engine; the test now pins all three calls, so the day this page
+  derives its own curve the card becomes a duplicate and the suite says so.
+- Both notes shortened. ⚠️ Do not quote the removed coverage clause in a comment here: the
+  suite asserts it does not occur in the file, and a comment is an occurrence.
+- `.po-chk` gained `white-space:nowrap` (shared) — "Group by" was wrapping between its words.
+- ⚠️ **Group by → Group Head could NOT be reproduced**: exercised on the shipped page with only
+  the network stubbed, it groups correctly. Suspect data (every project resolving to
+  `(No group head)`), not code. Left unchanged.
+
+## 2026-09-16 — The page IS the Overview: the last two duplicate views and the dropdown are gone — fmlozano
+
+See the root `CLAUDE.md` (2026-09-16 (v)) for the full entry.
+
+- **Stakeholder Map** and **Milestones** joined `PO_MOVED_VIEWS` — they redirect to
+  `stakeholder-map` and `project-schedule`, both already in the sidebar. ⚠️ The read-only argument
+  this file recorded against moving the Stakeholder Map was about MOUNTING it under
+  `#pd_scope=portfolio`, not about redirecting to the module, which opens in its own scope.
+- **`.po-tabs` is gone again**, one day after being reinstated. That reinstatement was reasonable
+  for three views and is not for one.
+- **1,016 lines of renderer deleted** (`ms*`, `dir*`, `sh*` and the person panel). The page is
+  1,303 lines, from 2,407.
+- `viewLoaders()` → `{ overview }`; `FILTER_PANEL` → `{ overview }`; `switchView` keeps only its
+  role as the **deep-link resolver** `#po_view=` arrives through.
+- `test-portfolio.js` updated to match and grew to **128 assertions** — including that each removed
+  renderer no longer occurs in the file at all. ⚠️ Do not name those functions in a comment here:
+  the check counts occurrences in the source, so a comment naming them keeps it red.
+
 ## 2026-09-16 (f) — The last four views leave, and what is left is not a module list
 
 Owner, after the first wave: *"at a portfolio view, the dashboards of each corresponding module

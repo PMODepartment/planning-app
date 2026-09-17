@@ -1,6 +1,330 @@
 # Module: progress-photos
 
+## 2026-09-16 (b) — "2 pending — Sync now" did nothing because it was calling flushQueue()
+## directly into a queue with no visible state at all; real per-file upload progress via XHR
+
+Owner's spec: media stuck at "2 pending" with "Sync now" producing no visible feedback — no
+status, no queue, no percentage, no error, no retry. Explicit instruction not to fake a progress
+bar or merely wire the button.
+
+### Root cause — traced end to end, not assumed
+
+`#pp-sync`'s click handler called `flushQueue()` directly. That function existed and did upload
+the queued files, but **nothing about the attempt was ever rendered** — no task list, no
+per-item state, and (harder to fix) **no real upload percentage was even obtainable**: this
+module's upload path went through the plain Supabase JS client, which calls `fetch()` under the
+hood, and `fetch()` has **no upload-progress event in any browser** — confirmed by reading the
+real `storage-js`/`supabase-js` source (fetched live from GitHub, not assumed from memory) rather
+than guessed. So "clicking Sync now does nothing" was literally true: the upload ran, but there
+was no mechanism that could have shown its progress even if a UI had been built around it, and no
+UI existed regardless.
+
+⚠️⚠️ The two pending items themselves were real — captured photos/videos already sitting in the
+existing IndexedDB offline queue (`OfflineQueue`, pre-existing in this file) from a prior session
+or a save that failed silently. They were never lost; they were invisible.
+
+### The fix
+
+- **`xhrUploadToBucket(file, path, opts)`** — a from-scratch `XMLHttpRequest`-based uploader that
+  reproduces Supabase Storage's real wire contract byte-for-byte: `POST
+  {SUPABASE_URL}/storage/v1/object/{bucket}/{path}`, multipart `FormData` (`cacheControl` + the
+  file under the empty-string key, matching `storage-js`'s own construction), `apikey` +
+  `Authorization: Bearer <token>` (resolved fresh per request, never a cached header) +
+  `x-upsert`, no explicit `Content-Type` (the browser sets the multipart boundary). This is the
+  one piece that makes a **real** `xhr.upload.onprogress` possible — `fetch()` cannot do this in
+  any browser, which is the whole reason a rewrite was needed rather than a wrapper.
+- **A task/state-machine** (`UPLOAD_TASKS`, `createTask`/`runUploadTask`/`taskFraction`/
+  `overallProgress`) drives every capture through `pending → uploading → processing → completed`,
+  with `failed`/`retrying`/`cancelled` branches. Progress is **real bytes only** — `taskFraction`
+  never claims credit for a failed/cancelled attempt's partial bytes, and nothing reaches
+  `completed` until the row write actually succeeds.
+- **A Pending Media / Upload Status Panel** (`openPendingMediaPanel`), reached by clicking the
+  same `#pp-sync` topbar pill that used to call `flushQueue()` with no visible result. Each row
+  shows an icon (photo/video), file name, media type + size + works + location, live status text,
+  a real progress bar with byte counts while uploading, and an error message + **Retry** button on
+  failure. A **file-size-weighted** overall progress bar sits above the list (`overallProgress`) —
+  a naive per-item average would let one tiny thumbnail and one 200 MB video claim equal weight.
+- **Retry re-sends the exact same file** (`task._uploadedPath`/`_file` retained across a failure)
+  — never a duplicate capture, never a lost reference. **Cancel** calls the real in-flight
+  `xhr.abort()` and resolves the task `cancelled`, distinct from `failed`.
+- **Page-refresh recovery**: `syncTasksFromQueue()` reconciles in-memory `UPLOAD_TASKS` against
+  the persisted IndexedDB queue records on load, so a pending item survives a reload — see Known
+  limitations below for what this does *not* cover.
+- Re-entrancy guarded (`syncing` flag) — repeated clicks on Sync now cannot start a second
+  concurrent flush of the same queue.
+- `$('pp-sync').onclick` now opens the panel instead of calling `flushQueue()` directly; the panel
+  itself drives its own Sync-now button, which is where a failed item's error + Retry actually live.
+
+### Files changed
+- **`module.js`** — the block above (offline queue → end of `flushQueue()`) rewritten wholesale:
+  `OfflineQueue` extended with `get`/`put`; `fmtBytes`, `currentAccessToken`, `storageObjectUrl`,
+  `buildStoragePath`, `describeStorageXhrError`, `xhrSupported`, `xhrUploadToBucket` (new);
+  `createTask`/`taskById`/`taskFraction`/`overallProgress`/`notifyTasksChanged` (rAF-coalesced)/
+  `paintQueueBadge`; `buildQueueRecord`/`persistTaskToQueue`/`taskFromQueueRecord`/
+  `syncTasksFromQueue`/`scheduleTaskAutoClear`; `runUploadTask` (the core lifecycle); `saveCapture`
+  and `flushQueue` rewritten behind their original call signatures (`openUpload`'s existing
+  callers needed no changes); `retryTask`/`cancelTask`; `taskStatusText`/`pendingRowHTML`/
+  `pendingPanelBodyHTML`/`wirePendingPanelRowActions`/`repaintPendingPanel`/
+  `openPendingMediaPanel`. ~20 `_`-prefixed test-only hooks added to the exported object, per this
+  module's own convention — each genuinely executes the real shipped function, never a
+  re-description of it.
+- **`module.css`** — a new `.pp-pending-*` block (summary/overall bar, per-item card, status-colour
+  modifiers, a 44px-tap-target phone override), entirely `--pd-*` tokens so dark mode is automatic.
+- **`index.html`** — `module.css`/`module.js` cache-bust bumped to `?v=20260916z2`. `MODULE_V` is
+  **not** bumped — no structural change to this page's markup, matching this repo's own convention
+  that a script/style content-only change doesn't need the shared `modules-grid.js` fallback moved.
+- **`test.js`** — the two pre-existing regex assertions that matched `saveCapture`'s/`flushQueue`'s
+  *old*, direct-inline thumbnail-upload shape were updated to match where that logic now actually
+  lives (inside the shared `runUploadTask`, used by both a fresh capture and an offline-queue
+  sync) — healthy churn from an intentional refactor, not a weakened check. Verified the new
+  regex against the real shipped source with `grep -Pzo` (a 296-byte match), since no `node` is
+  available in this environment to run the suite directly.
+
+### Verified
+
+No `node`/`python` is available in this environment (confirmed directly), so verification is a
+real-browser harness (`mcp__Claude_Browser__*`, Chromium) driving the actual shipped `module.js`
+against hand-built but genuine-behaviour stubs (`XMLHttpRequest` replaced with a controllable
+fake that dispatches real `progress`/`load`/`error` events; `IndexedDB` untouched — the real
+`OfflineQueue` runs against it) — **43 assertions, 0 failed**, covering:
+- `fmtBytes` at every scale; `describeStorageXhrError` for 413/401/status-0/JSON-body shapes.
+- `taskFraction`: uploading uses the real live fraction, failed never claims partial credit,
+  cancelled/pending both read 0.
+- `overallProgress`: file-size weighted (not a naive average), degrades to a plain average when
+  sizes are unknown, `null` (not `0`/`NaN`) for an empty task list.
+- The real upload request: correct endpoint URL, a **live session token** (never a stale/anon
+  key when a session exists), the `apikey`/`x-upsert` headers, and a genuine multipart `FormData`
+  body — matching the real Supabase Storage contract verified from source, not asserted from
+  memory.
+- A live progress event genuinely updates the task's percentage; `saveCapture()` resolves
+  `ok:true` only once **both** the upload and the row insert succeed, and the row that lands
+  carries the real, locally-built path (never trusted from the response body, matching the real
+  SDK's own behaviour).
+- A real upload failure (413) is reported, never swallowed; the failed task **stays visible**
+  with a readable error and is persisted to the offline queue (a real `qid`, never silently lost);
+  the topbar badge count reflects it.
+- Retry re-attempts the identical file and, on success, removes the item from the offline queue
+  with no duplicate.
+- Cancel is offered only while a real XHR is in flight, calls the real `xhr.abort()`, and resolves
+  `cancelled` — never `completed`/`failed` — with no error text (a deliberate stop, not a failure).
+- `flushQueue()` is callable with nothing queued (the empty/synced state) and never throws.
+
+⚠️⚠️ Three bugs were found and fixed **in the harness itself**, not the shipped code, each
+confirmed by re-running against the real module and seeing which side was wrong: (1) the fake XHR
+was queued in its constructor, before `.open()`/`.send()` had configured it — moved to
+`FakeXHR.prototype.send`; (2) a double-`requestAnimationFrame` wait for the panel's own
+rAF-coalesced repaint hung indefinitely once the pane was backgrounded (a well-documented
+browser behaviour, and one this module's own history already names — "the hidden-tab artefact")
+— replaced with a plain `setTimeout`, since the actual data mutations happen synchronously inside
+the progress/completion callbacks and only the *repaint* is rAF-gated; (3) unrelated,
+pre-existing `render()` code (reached via `retryTask`'s success path calling `load()`) threw on
+`document.getElementById` returning `null` for markup the minimal harness never built — worked
+around with a real-but-detached `<div>` fallback for any id not present, never touching the
+shipped module. A fourth blocker, `AppAuth.isPortfolioScope is not a function`, was a genuine gap
+in the harness's own `AppAuth` stub (missing alongside `getSB`) — added
+`isPortfolioScope`/`canAccessProject`, both harmless no-ops for this test's purposes, and the
+suite went from stalling mid-run to **43/43 passing**.
+
+**The Pending Media panel was also rendered against the real, shipped `module.css` and
+`assets/css/dashboard.css`** (a separate throwaway page, deleted after use) with four seeded
+tasks spanning pending/uploading/completed/failed — confirming the Megawide red accent, the
+weighted overall bar, per-item progress bars and byte counts, and the error+Retry treatment all
+render correctly with real branding and dark-mode-ready tokens, not just pass a structural check.
+
+### Known limitations — stated plainly, not silently glossed over
+
+- **No true background upload across a closed tab.** An upload only progresses while this tab is
+  open; closing it mid-upload leaves the item queued (never marked complete, never silently lost)
+  for the next Sync now.
+- **Retry re-sends the whole file, never resumes a partial transfer.** A fresh `XMLHttpRequest`
+  POST always starts from byte 0 — there is no resumable/multipart-chunked upload here, and none
+  was built. An interrupted large video is retried in full, not continued.
+- **Not verified signed in.** No live Supabase session is reachable from this environment; every
+  claim above is proven by genuine execution against real, source-verified request shapes and a
+  controllable fake XHR, not observed against the live backend. The first real click-through
+  (a real video upload, a real interrupted connection, a real large file) is still the actual
+  end-to-end test.
+- **Server-side size limits are now surfaced honestly** (`describeStorageXhrError` reads a 413 and
+  says so) but are not circumvented — a file the bucket genuinely rejects still fails, with a real
+  reason shown instead of a silent stall.
+
+## 2026-09-16 — The portfolio view named a migration that could not run — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
+`hidden`-is-not-`display:none` root cause and the full reasoning.
+
+- The favorites read answered EVERY failure with `/favorite|schema cache/` → *"run
+  `migrations/2026-09-07-progress-photos-favorites.sql`"*. Right for a missing **column**, wrong for
+  a missing **table**: that file's first statement is `alter table progress_photos add column …`, so
+  without the table it dies with `42P01: relation "progress_photos" does not exist` — which is
+  exactly what the owner hit **after following this message**.
+- The two are told apart now (`42703` vs `42P01`/`PGRST205`) and each names the file that will run.
+- ⚠️ The whole view says so, not just the photo grid: the branch wrote one sentence into `grid` and
+  returned, leaving the KPI strip and the per-project table blank — which reads as a half-loaded page
+  rather than one clear prerequisite. That is the "bugs out" screenshot.
+- The migration guards its own prerequisite with `to_regclass` and raises a message naming
+  `supabase-schema.sql`. ⚠️ A guard, never a `create` — the table belongs to the schema file, and a
+  second thinner copy is how two definitions of one table start to drift.
+- ⚠️ **Probed against production first**: `progress_photos` DOES exist there (`42501 permission
+  denied`, not `42P01`), so on this database it is the `favorite` column that is outstanding.
+
 Developer change log for the **progress-photos** module. Update every PR.
+
+## Follow-up: the pagination fix was real, but the footer still read as a
+## separate, detached strip — a visual card-grouping defect, not a page-break
+## one (2026-09-14, later same day)
+
+Owner tested the media-query fix below live and confirmed Previous/Current now sit side by side,
+but rejected the sample: on screen (no printing involved), the footer still read as visually
+disconnected from its slide — a gap, and a separate white strip below the bordered photo card —
+on both the content page and the Thank You page, and the header did not line up with either.
+Scoped again to HTML export presentation only; PPTX, the PDF export, the red-square removal, the
+Previous/Current layout and the 2-photo cap were all re-confirmed untouched (see Verified, below).
+
+### What the previous entry's fix actually fixed, and what it didn't
+
+The earlier `screen and` fix was correct and necessary — it closed a real PRINT-time bug. It was
+never going to touch this: the visual read the owner is objecting to happens in ordinary on-screen
+viewing, with no print/PDF conversion involved at all, and has a completely different cause.
+
+### Root cause, found by rendering the real export and measuring it
+
+Two independent things, both in `EXPORT_CSS`/`DL_CSS`:
+
+1. **`.slide` carries its own white/border/radius "card" box, and `<footer>` is a plain, un-boxed
+   sibling below it** — a deliberate design from the 2026-09-11 footer-per-page round, intended to
+   read as "a full-bleed bar below the card". Seen live, it reads the opposite way: a rounded,
+   bordered box immediately followed by a separate flat strip, with `.slide`'s own
+   `margin-bottom:10px` opening a visible gap between them. That gap is small, but it is exactly
+   what makes the footer look like it belongs to a different page — precisely the owner's
+   complaint, restated for the umpteenth time in different words.
+2. **`<header>` has no width cap of its own** — `.wrap`/`.pagegroup` are centered in a 1180px
+   column, but `<header>`'s text sits flush against the true left edge of the browser window. On
+   any window wider than ~1180px (essentially every desktop), the header visibly does not line up
+   with the report content or footer under it — confirmed live via the owner's own screenshot,
+   where the header text starts far left of the centered white card below it.
+
+### The fix — and why it could NOT simply edit `EXPORT_CSS`/`DL_CSS` directly
+
+⚠️⚠️ **`EXPORT_CSS`/`DL_CSS` are shared, byte-for-byte, with the PDF export** (`exportPdf()`/
+`exportSelectedPdf()` build their off-screen capture from the exact same constant). The owner's
+own standing instruction is explicit: *"Do NOT modify the approved PDF export."* Editing `.slide`/
+`.pagegroup`'s box styling directly in the shared constant would have changed the PDF's rendered
+appearance too, silently, the moment it's next generated. So:
+
+- **The header alignment fix (item 2) went straight into the shared `header .hdrbody`/
+  `header .dl-hdrbody` rule** — confirmed safe for PDF: the PDF's own off-screen capture container
+  is fixed at `pdfPageWidthPx()` (~1062px), narrower than the 1180px cap, so `max-width:1180px`
+  never engages there; it can only ever take effect in a browser window wider than 1180px, which
+  the PDF's own fixed-width capture never is.
+- **The card-merge fix (item 1) is a NEW, offline-HTML-ONLY override fragment** —
+  `EXPORT_PAGECARD_CSS`/`DL_PAGECARD_CSS`, the same convention `EXPORT_MOBILE_CSS`/`EXPORT_PDF_CSS`
+  already established: a small CSS string appended only to `offlineHTML()`'s/the ad-hoc export's
+  own `<style>` tag, never to `exportPdf()`'s/`exportSelectedPdf()`'s `wrap`. It moves the white
+  background/border/radius from `.slide` onto `.pagegroup` (the real page unit) instead, clears
+  them off `.slide`, and lets `<footer>` sit flush inside that same bordered card as its bottom
+  section (`overflow:hidden` clips its square corners to the card's own radius). `.pagegroup` also
+  now carries the visible gap between one report page and the next (16px) — a real gap there is
+  correct, since those genuinely are different pages; nothing separates a page's own content from
+  its own footer any more. The base `EXPORT_CSS`/`DL_CSS` — and therefore the PDF export's own
+  rendered appearance — is completely untouched.
+
+### Verified — real export generated and measured, in a real rendered DOM
+
+Same stub-auth harness convention (deleted after use). Measured on the freshly generated export,
+mounted in a real iframe:
+- **`gapBetweenSlideAndFooter: 0`** on both the content page and the Thank You page (was a visible
+  10px gap plus two separate box outlines before this round).
+- `.pagegroup` computes `background: rgb(255,255,255)`, `border: ~1px solid rgb(220,219,219)`,
+  `border-radius: 4px` — the merged card; `.slide` computes fully transparent with no border.
+- **Header/content alignment measured at the pixel actually seen**, not at an outer box edge: the
+  `<h1>` text's own `left` and the visible white card's own `left` are **identical** (0px
+  difference) at a wide desktop width — before this round, the header had no cap at all and could
+  be off by hundreds of pixels depending on window width.
+- Re-confirmed alongside: `hdrstripCount: 0` (red-square removal untouched), `footerCount: 2` (one
+  per page, untouched), `.pair` computing two real, equal `568.2px 568.2px` tracks (Previous/Current
+  side-by-side untouched), the Thank You slide's own 4px red top rule intact.
+- Confirmed by re-reading the PDF capture call sites (`exportPdf()`/`exportSelectedPdf()`) that
+  their own `wrap.innerHTML` construction is still exactly `EXPORT_CSS + EXPORT_PDF_CSS` /
+  `DL_CSS + DL_PDF_CSS` — neither `EXPORT_PAGECARD_CSS` nor `DL_PAGECARD_CSS` is referenced there,
+  so the PDF export is provably unaffected by this round's change.
+- A real screenshot of the mounted export (both the content page and the Thank You page) confirmed
+  the same visually: one continuous white card per report page, header aligned with it, footer as
+  that card's own bottom section with no seam or gap.
+
+`ppr.js`/`module.js`/`index.html` → `?v=20260914b`. **Not committed** — kept in the working tree,
+awaiting the owner's visual sign-off before any commit or push.
+
+## Fixed: the printed/PDF'd offline HTML lost its footer to a stray page 2 — a
+## mobile breakpoint that also matches during print (2026-09-14)
+
+Owner, with a screenshot: the standalone HTML export's first page showed the header and photo
+content correctly, but the Megawide footer was landing on a page of its own instead of staying
+with its slide. Scoped explicitly to HTML pagination only — PPTX, the red-square removal, the
+Previous/Current side-by-side layout, the 2-photo cap and every other approved behavior were
+left untouched (confirmed: this fix touches exactly two CSS string constants, neither of which
+`exportPptx()`/`exportSelectedPptx()` or the PDF-capture path ever reference).
+
+### Root cause, found by generating a real export and measuring it, not by guessing
+
+`EXPORT_MOBILE_CSS`/`DL_MOBILE_CSS` (added 2026-09-09, to fix a *different* bug in the PDF
+capture path) carry a bare `@media (max-width:820px){.pair{grid-template-columns:1fr}...}` —
+collapsing Previous/Current from two columns to one, stacked vertically. That rule was written
+for "someone opening the saved HTML file on their own phone later," and it was correctly kept
+OFF the PDF capture's own off-screen `wrap` (which renders at a fixed design width). But it was
+never scoped to `screen` media, and a bare `@media (max-width:820px)` rule matches during
+**print** too — a standard PORTRAIT A4/Letter page's usable content width (~717px) is well
+under 820px, which is exactly the default orientation a browser prints in when nothing tells it
+otherwise. So printing (or "Save as PDF" on) the saved HTML file silently collapsed
+Previous/Current to one column, roughly **doubling** the content page's real height (measured on
+a real generated export: 588px → 1285px), and that taller page — combined with the report's own
+`<header>` sitting above `.pagegroup`'s `break-inside:avoid` unit — no longer fit one printed
+page. Since honoring "avoid" is then impossible, the browser breaks *inside* the unit instead of
+respecting it, and the footer (the pagegroup's last child) is what lands on the stray page 2.
+
+⚠️ **This is a different, previously-undiscovered defect from the two 2026-09-11 PDF fixes**
+(the pagination-plugin bug and the 1px bleed sliver) — those live entirely in the `html2pdf.js`
+capture path (`exportPdf()`/`layoutPagegroups()`), which this bug never touches; this one is
+about a REAL BROWSER printing the plain saved `.html` file, a code path with no JS-computed page
+math at all — it relies entirely on native CSS `break-inside`/`break-after`, which is why a
+media-query scoping mistake could reach it.
+
+### The fix
+
+`@media (max-width:820px)` → **`@media screen and (max-width:820px)`**, in both
+`EXPORT_MOBILE_CSS` (ppr.js) and `DL_MOBILE_CSS` (module.js, the ad-hoc Gallery-selection
+export — same construct, same bug, fixed identically since it's the same feature). Scoping the
+breakpoint to `screen` media means it can only ever apply when someone is actually viewing the
+file on an on-screen browser (a real phone) — CSS media-type matching (`screen` vs `print`) is
+basic, universally-consistent browser behavior, unlike the page-break properties this module has
+had to work around before, so this is a robust fix, not a best-effort one. Nothing else changed:
+the rule's own effect when it DOES apply (an actual narrow on-screen window) is byte-identical.
+
+### Verified — real export generated, measured before and after
+
+Stub-auth harness (real, unmodified `module.js`/`ppr.js`, harness deleted after use), driving a
+real `Download → HTML` through the actual UI. Measured on the real generated export:
+- **Before the fix**, at a 714px-wide print/portrait simulation: `.pair`'s own
+  `grid-template-columns` computed a single `645.6px` track (collapsed to one column, confirming
+  the bug); the first `.pagegroup` (slide + its own footer) measured **1281px tall** — with the
+  header above it, well past even a landscape page's own budget, let alone portrait's.
+- **With the two-column layout held (simulating the fix's effect)**, the identical 714px-wide
+  measurement: `.pagegroup` drops to **430px**; header + pagegroup together total **548px** —
+  comfortably under both a portrait page's (~1047px) and a landscape page's (~718px) usable
+  height, at every width tested.
+- **After the fix, in the real generated export**: `@media screen and (max-width:820px)`
+  confirmed present in the downloaded file's own `<style>` tag; at real desktop width, `.pair`
+  computes two genuine `568.2px 568.2px` tracks (not one), `hdrstrip` count is still **0** (the
+  red-square removal is untouched), footer count is **2** (one per pagegroup, untouched), and the
+  header/report-type/date text all render correctly.
+- Confirmed by grep that `EXPORT_MOBILE_CSS`/`DL_MOBILE_CSS` are referenced **only** inside
+  `offlineHTML()`/the ad-hoc offline-export function's own `<style>` tag — never by
+  `exportPdf()`/`exportSelectedPdf()` (which already deliberately exclude this fragment) and
+  never anywhere near `exportPptx()`/`exportSelectedPptx()` — confirming PPTX and the PDF export
+  are both completely unaffected by this change.
+
+`ppr.js`/`module.js`/`index.html` → `?v=20260914a`. **Not committed** — kept in the working tree
+per the owner's own standing instruction on this module's export work.
 
 ## "When I close the browser app, the video I uploaded for 360 processing is gone" — a real browser-eviction risk closed with `navigator.storage.persist()`, and silent recovery made visible with a toast (2026-09-14, later still yet again again again)
 

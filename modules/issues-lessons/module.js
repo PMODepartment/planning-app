@@ -503,8 +503,17 @@ window.IssuesLessons = (function () {
       await load();
       try {
         var dl = new URLSearchParams(location.search);
+        /* ⚠⚠ FROM THE PORTFOLIO TABLE (2026-09-16). Owner: *"I want to be able to open those
+           specific meetings/items from the table as well from the portfolio view, not just a
+           viewing page."* A row in the cross-project register now links here with the issue's id;
+           portfolio-dash.js has already cleared portfolio scope and remembered the project, so by
+           the time this runs we are a NORMAL project-scoped load with `load()` awaited above —
+           which is what `openIssue()` needs, since it renders the detail drill-down immediately.
+           ⚠ FIRST, before the lesson links: an explicit "open THIS issue" is the most specific
+           thing the URL can ask for, and these are mutually exclusive branches. */
+        if (dl.get('openIssue')) openIssue(dl.get('openIssue'));
         // From Minutes of Meeting's "N lessons" / "Lesson captured" button.
-        if (dl.get('openLesson')) openLesson(dl.get('openLesson'));
+        else if (dl.get('openLesson')) openLesson(dl.get('openLesson'));
         // ⚠️ From Minutes of Meeting's "Capture lesson" button (owner item 8,
         // 2026-09-02: "when capturing lessons, it should go to the ordinary Add
         // Lessons Learned page. no linking needed"). It opens the SAME form the
@@ -636,31 +645,32 @@ window.IssuesLessons = (function () {
     // ⚠️ The per-screen Dashboard/Log toggle is GONE — Dashboard is its own top-level tab
     // now (see `.il-tabs` in the HTML), so there is nothing left to wire here.
 
-    // ---- ITEM 8: export menu ---------------------------------------------
-    var eb = $('il-export-btn'), em = $('il-export-menu');
-    if (eb) eb.onclick = function (e) {
-      e.stopPropagation();
-      em.classList.toggle('open');
-      eb.classList.toggle('is-active', em.classList.contains('open'));
-    };
-    // Outside-click closes it, same convention as the topbar filter panel.
-    document.addEventListener('click', function (e) {
-      var ew = $('il-exportwrap');
-      if (ew && em && em.classList.contains('open') && !ew.contains(e.target)) closeExportMenu();
-    });
-    if (em) em.querySelectorAll('[data-export]').forEach(function (b) {
-      b.onclick = function () {
-        closeExportMenu();
-        exportRegister(screen === 'lessons' ? 'lessons' : 'issues', b.dataset.export);
-      };
-    });
+    /* ---- ITEM 8: export menu, on the SHARED control ----------------------
+       ⚠⚠ This was a bespoke dropdown: its own wrapper class, its own `.open` CLASS for state,
+       its own outside-click listener and its own `is-active` bookkeeping — a second
+       implementation of the control Minutes of Meeting already had generically. It is
+       `UI.iconMenuHTML` / `UI.wireIconMenu` now (2026-09-16, the export-consistency pass).
+       ⚠ The shared version keeps its open/closed state on the `hidden` ATTRIBUTE rather than a
+       class, and binds ONE document-level outside-click listener for every menu on the page
+       instead of one per menu. This module used to add a listener here on every `wire()` — which
+       runs on every repaint. */
+    var mount = $('il-export-mount');
+    if (mount) {
+      mount.innerHTML = UI.iconMenuHTML('il-export', 'download', 'Export this list', [
+        { value: 'excel', label: 'Export as Excel (.xlsx)' },
+        { value: 'pdf',   label: 'Export as PDF' },
+        { value: 'html',  label: 'Export as HTML' }
+      ]);
+      if (window.Icons && Icons.hydrate) Icons.hydrate(mount);
+      UI.wireIconMenu(document, 'il-export', function (v) {
+        exportRegister(screen === 'lessons' ? 'lessons' : 'issues', v);
+      });
+    }
   }
 
-  function closeExportMenu() {
-    var em = $('il-export-menu'), eb = $('il-export-btn');
-    if (em) em.classList.remove('open');
-    if (eb) eb.classList.remove('is-active');
-  }
+  /* ⚠ Kept as a one-line forwarder: other code in this file closes the menu after acting, and
+     the shared control closes every open menu on the page rather than one by id. */
+  function closeExportMenu() { UI.closeIconMenus(document); }
 
   // ---- ITEM 8: export the currently-filtered/sorted Issues or Lessons list --
   // ⚠️ Reuses the SAME filtered+sorted list each list's own table already shows
@@ -933,7 +943,10 @@ window.IssuesLessons = (function () {
     // shown for the Issues/Lessons log, hidden while a single record's detail
     // is open (nothing to export there beyond the one record already on
     // screen) and hidden on the Dashboard tab (no register of its own).
-    var ew = $('il-exportwrap');
+    /* ⚠️ The MOUNT is what gets hidden, not the control inside it: the control's own markup is
+       built by `UI.iconMenuHTML` and re-emitted on every wire(), so anything set on it directly
+       would be thrown away on the next repaint. */
+    var ew = $('il-export-mount');
     if (ew) {
       var showExport = (screen === 'issues' || screen === 'lessons') && curMode !== 'detail';
       ew.style.display = showExport ? '' : 'none';
