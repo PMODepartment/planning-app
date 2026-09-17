@@ -103,6 +103,59 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (r) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
+
+⚠️ **Re-lettered `(h)` → `(q)` → `(r)`, TWICE on merge.** First a concurrent session independently
+used `(h)` on 2026-09-17 for its own, unrelated entry (*"Planners get every module"*, which widened
+`AppAuth.moduleVisible`'s default with `MODULE_ALL_ROLES`/`seesRestrictedModules`) — moved to `(q)`,
+the next free letter past that day's highest (`p`) at the time. A second concurrent session then
+independently ALSO picked `(q)`, for an unrelated Schedule Setup entry — kept whole, below, and this
+one moved again to `(r)`, the next free letter now that both `(p)` and `(q)` are spent. `(o)` is
+still skipped, as it reads deliberately absent elsewhere in this file's own convention.
+⚠️ **The two changes compose, not collide** — `moduleVisible` now checks `USER_ADMIN_ALLOWED`
+for role `user`/`admin` FIRST (returning false outright for anything outside the eight-module
+list), and only a role that survives that check reaches `!m.superAdminOnly || seesRestrictedModules(profile)`,
+so a `planner`'s wider access from `(h)` is untouched while `admin`'s is narrowed exactly as
+asked here.
+
+Owner: *"for user and admin, hide the rest of the modules and show only: Projects, Pormac, Dashboard,
+Meetings, Schedule, S-Curve, Issues and Concerns, Progress Photos."* Then, separately: *"for actions,
+instead of actions dropdown, show already the check, X, delete buttons."*
+
+**The module allowlist.** `AppAuth.moduleVisible(m, profile)` is the one predicate `UI.renderNav`,
+`ModulesGrid.visible` (which `dashboard.html`'s tile grid delegates to) and Portfolio Overview's
+hardcoded tab gate all already call — so this is a rule added to that one function, not four separate
+edits. ⚠️ A new `USER_ADMIN_ALLOWED` list sits **above** the existing `superAdminOnly` check and
+**below** the per-user `module_access` override: for role `user` or `admin` with no override, only
+`pormac`, `minutes-of-meeting` (Meetings), `project-schedule` (Schedule), `s-curve`, `issues-lessons`
+(Issues and Concerns) and `progress-photos` (Progress Photos) are visible — everything else,
+including `contracts-claims`, which was not `superAdminOnly` and so was still reaching `admin`, drops
+out. ⚠️ **Projects and Dashboard are not `MODULES` registry entries** — `projects.html` and
+`dashboard.html` are always-reachable shell pages, so there is nothing to gate for either. ⚠️ `planner`
+and `viewer` are untouched, and a per-user `module_access` override still wins in either direction,
+exactly as it already did for the `superAdminOnly` rule — the override is checked first and returns
+immediately.
+
+**The Users table's Actions column.** 2026-09-16 (w) had collapsed Approve / Reject / Delete into one
+"Actions ▾" popover menu. Reverted: each row now renders the three icon-only buttons (check / x /
+trash) directly in the cell, shown only when they apply (Approve hidden once approved, Reject once
+rejected, Delete on your own row) — the same gate the popover used, just without the trigger and the
+`position:fixed` menu it built and tore down on every render. `wireActionsMenus` / `closeActionMenus`
+/ `.pd-actions-menu` / `.pd-am-btn` are removed rather than left dead; the three buttons wire through
+plain `data-approve` / `data-reject` / `data-del` attributes, alongside the existing `data-role` /
+`data-dept` / `data-projects` / `data-modules` wiring in the same function.
+
+**Verified:** `node tools/wiring-check.js` **139 passed, 0 failed**; `node --check` on `auth.js` and
+admin.html's inline script; 0 NUL bytes in both files; `auth.js?v=` re-derived past the concurrent
+`(h)`/other 2026-09-17 bumps to `20260917zh`, across all **28** referencing pages, 0 stragglers.
+⚠️ **Not verified signed in** — no live login is possible in this environment; the role gate is
+checked by reading `moduleVisible`'s logic against every role/override combination, not by watching a
+real `user`/`admin` account's sidebar.
+
+`assets/js/auth.js?v=` → `20260917zh` (28 pages, shared) — sort-checked past every other
+`auth.js?v=` token this day's cascade of entries reached. No `MODULE_V` bump — no module
+`index.html` changed structurally; `admin.html` is fetched at its own URL and is not a module page.
+
 ### 2026-09-17 (q) — Schedule Setup: the Structure step splits in two, Next walks the tabs, Generate ends with the push, and the Flowline goes
 
 Owner, a twelve-item list across Schedule Setup, the schedule UI and the LSM, then three clarifications

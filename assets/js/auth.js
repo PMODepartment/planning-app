@@ -319,9 +319,30 @@
   // ⚠️ A retired module (`enabled:false`) is not this function's concern —
   //    every caller already filters on `enabled` separately, and an override
   //    naming a retired module's key is simply never asked about.
+  //
+  // ⚠️⚠️ USER_ADMIN_ALLOWED (2026-09-17, owner's call) — for role `user` and
+  //    role `admin` specifically, the module grid/nav shows ONLY these keys,
+  //    regardless of `superAdminOnly` (most of which already excluded admin
+  //    anyway — see below). This is a SECOND, NARROWER default that sits
+  //    ABOVE the superAdminOnly check but BELOW `module_access`: a per-user
+  //    override still wins in either direction, exactly as it already does
+  //    for the super-admin-only rule. `planner` and `viewer` are untouched —
+  //    they still follow the plain superAdminOnly rule as before.
+  // ⚠️ "Projects" and "Dashboard" are deliberately absent from this list —
+  //    neither is a MODULES registry entry (projects.html / dashboard.html
+  //    are always-reachable shell pages, not module tiles), so there is
+  //    nothing here to gate for them.
+  var USER_ADMIN_ALLOWED = [
+    'pormac', 'minutes-of-meeting', 'project-schedule', 's-curve',
+    'issues-lessons', 'progress-photos'
+  ];
   function moduleVisible(m, profile) {
     if (profile && Array.isArray(profile.module_access)) {
       return profile.module_access.indexOf(m.key) !== -1;
+    }
+    if (profile && (profile.role === 'user' || profile.role === 'admin') &&
+        USER_ADMIN_ALLOWED.indexOf(m.key) === -1) {
+      return false;
     }
     return !m.superAdminOnly || seesRestrictedModules(profile);
   }
