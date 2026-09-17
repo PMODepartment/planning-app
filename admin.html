@@ -69,37 +69,22 @@
       #users-table .pd-select { height:auto; min-height:var(--pd-tap); min-width:150px; }
     }
 
-    /* Actions menu — a single "Actions" trigger replacing three loose buttons,
-       with Approve/Reject/Delete as icon-only controls inside it (title=
-       carries the label, matching this app's icon-only-button convention).
-       ⚠️⚠️ Appended to <body> and positioned `fixed` from the trigger's own
-       rect, rather than nested `absolute` inside the table cell — the table's
-       card wrapper is `overflow:auto` (so a wide table scrolls), and a popover
-       nested inside it would be clipped by that same scroller the moment a row
-       near the bottom opened one. ⚠️ Toggled by a CLASS, never `[hidden]` —
-       dashboard.css already documents at length how `[hidden]` loses a
-       specificity tie against an author's own `display` rule on other
-       components in this app; a class sidesteps that whole trap rather than
-       risking it a third time. */
-    .pd-actions-menu {
-      display:none; position:fixed; z-index:var(--pd-z-escape);
-      background:var(--pd-card); border:1px solid var(--pd-line);
-      border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg);
-      padding:4px; gap:2px;
-    }
-    .pd-actions-menu.open { display:flex; }
-    .pd-am-btn {
+    /* Row actions (2026-09-17, reverted from the "Actions" dropdown menu):
+       Approve / Reject / Delete render as plain icon-only buttons directly in
+       the row's own cell — no trigger, no popover — each shown only when it
+       applies (Approve hidden once approved, Reject once rejected, Delete on
+       your own row). title= carries the label, matching this app's
+       icon-only-button convention elsewhere. */
+    .pd-rowact-btn {
       border:none; background:transparent; cursor:pointer; color:var(--pd-ink);
-      width:var(--pd-tap); height:var(--pd-tap); border-radius:var(--pd-radius);
+      width:30px; height:30px; border-radius:var(--pd-radius);
       display:inline-flex; align-items:center; justify-content:center;
     }
-    .pd-am-btn:hover { background:var(--pd-bg); }
-    .pd-am-btn.pd-am-approve:hover { background:var(--pd-ok-bg); color:var(--pd-ok-text); }
-    .pd-am-btn.pd-am-reject:hover  { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
-    .pd-am-btn.pd-am-danger { color:var(--pd-bad-text); }
-    .pd-am-btn.pd-am-danger:hover { background:var(--pd-bad-bg); }
-    /* .pd-actions-trigger needs no rules of its own — .pd-btn already gives it
-       inline-flex + gap, which is all "Actions <chevron>" needs. */
+    .pd-rowact-btn:hover { background:var(--pd-bg); }
+    .pd-rowact-btn.pd-am-approve:hover { background:var(--pd-ok-bg); color:var(--pd-ok-text); }
+    .pd-rowact-btn.pd-am-reject:hover  { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
+    .pd-rowact-btn.pd-am-danger { color:var(--pd-bad-text); }
+    .pd-rowact-btn.pd-am-danger:hover { background:var(--pd-bad-bg); }
   </style>
 </head>
 <body>
@@ -178,7 +163,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260917zb"></script>
-  <script src="assets/js/auth.js?v=20260917zf"></script>
+  <script src="assets/js/auth.js?v=20260917zh"></script>
   <script src="assets/js/db.js?v=20260917zg"></script>
   <script src="assets/js/ui.js?v=20260917zg"></script>
   <script src="assets/js/notebook.js?v=20260915d"></script>
@@ -395,23 +380,19 @@
           } else {
             moduleCell = '<span class="pd-nochip">—</span>';
           }
-          // ⚠️⚠️ Approve/Reject/Delete collapse into one "Actions" menu with icon-only
-          // controls (title= carries the label) rather than three loose buttons —
-          // `data-approve`/`data-reject`/`data-del` are unchanged, so the wiring
-          // below needs no change, only where the attribute is printed. A row with
-          // none of the three applicable (impossible today — Approve or Reject
-          // always applies) renders no trigger at all rather than a dead button.
-          // ⚠️ `Modules` is deliberately NOT in this menu — it rides beside the
-          // Modules column's own chip, the same place the Projects button rides
-          // beside the Projects column's chip list, rather than joining a menu
-          // meant for record-lifecycle actions (approve/reject/delete).
-          var hasMenu = (u.status!=='approved') || (u.status!=='rejected') || (u.id!==ME.id);
+          // ⚠️⚠️ Approve/Reject/Delete render as plain icon-only buttons directly
+          // in this cell (2026-09-17, reverted from the "Actions ▾" dropdown) —
+          // each shown only when it applies, same rule the menu used to gate on.
+          var actBtns =
+            (u.status!=='approved' ? '<button type="button" class="pd-rowact-btn pd-am-approve" title="Approve" data-approve="'+u.id+'">'+(window.Icons?Icons.svg('check',16):'✓')+'</button>' : '') +
+            (u.status!=='rejected' ? '<button type="button" class="pd-rowact-btn pd-am-reject" title="Reject" data-reject="'+u.id+'">'+(window.Icons?Icons.svg('x',16):'✕')+'</button>' : '') +
+            (u.id!==ME.id ? '<button type="button" class="pd-rowact-btn pd-am-danger" title="Delete" data-del="'+u.id+'">'+(window.Icons?Icons.svg('trash',16):'🗑')+'</button>' : '');
           /* ⚠⚠ NO CHECKBOX ON A ROW THIS ADMIN CANNOT WRITE. `locked` is the same rule the
              per-row selects already use (a plain admin may see a super_admin but not change one),
              and the DATABASE enforces it in `users_admin_update`. Offering a checkbox that can
              only ever produce a refusal is worse than offering nothing.
              ⚠ And never your OWN row: a bulk Reject that included you would lock you out of the
-             page you ran it from. The per-row Actions menu still lets you act on yourself
+             page you ran it from. The per-row buttons still let you act on yourself
              deliberately. */
           var pickable = !locked && u.id !== ME.id;
           return '<tr' + (attr || '') + (SEL[u.id] ? ' class="pd-rowsel"' : '') + '>' +
@@ -457,10 +438,7 @@
               '<button class="pd-btn pd-btn-sm" data-modules="'+u.id+'"'+lockAttr+'>Modules</button></div></td>' +
             '<td>' + activityCell(u) + '</td>' +
             '<td style="white-space:nowrap;">' + registeredCell(u) + '</td>' +
-            '<td>' + (hasMenu
-              ? '<button type="button" class="pd-btn pd-btn-sm pd-actions-trigger" data-actions-trigger="'+u.id+'">Actions '+(window.Icons?Icons.svg('chevronDown',13):'▾')+'</button>'
-              : '<span class="pd-nochip">—</span>') +
-            '</td>' +
+            '<td><div style="display:flex;gap:2px;">' + actBtns + '</div></td>' +
           '</tr>';
       };
 
@@ -697,65 +675,9 @@
       t.querySelectorAll('[data-dept]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.dept, { department: s.value || null }); }; });
       t.querySelectorAll('[data-projects]').forEach(function(b){ b.onclick = function(){ assignProjects(users.find(function(x){return x.id===b.dataset.projects;})); }; });
       t.querySelectorAll('[data-modules]').forEach(function(b){ b.onclick = function(){ moduleAccessModal(users.find(function(x){return x.id===b.dataset.modules;})); }; });
-      wireActionsMenus(t, users);
-    }
-
-    // Closes every open actions-menu popover. Page-scope and wired to
-    // document ONCE (below, outside loadUsers) rather than re-bound on every
-    // render — a listener re-added on each approve/reject/delete would stack
-    // a fresh, never-removed copy per call and accumulate for the life of the
-    // session, each one a no-op past its own render but still walking the DOM
-    // on every click.
-    function closeActionMenus() { document.querySelectorAll('.pd-actions-menu.open').forEach(function (m) { m.classList.remove('open'); }); }
-    document.addEventListener('click', closeActionMenus);
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeActionMenus(); });
-
-    // ⚠️⚠️ The menus are appended to <body>, not nested in the table cell — see
-    // the CSS comment on .pd-actions-menu for why. That means they OUTLIVE a
-    // table rebuild unless removed by hand first: loadUsers() re-renders on
-    // every approve/reject/delete/role/department change, and each call would
-    // otherwise leave the previous render's menus behind, accumulating in the
-    // DOM (and, since they're keyed by user id, silently reusing stale ids).
-    function wireActionsMenus(t, users) {
-      document.querySelectorAll('.pd-actions-menu').forEach(function (m) { m.remove(); });
-      t.querySelectorAll('[data-actions-trigger]').forEach(function (trig) {
-        var id = trig.dataset.actionsTrigger;
-        var u = users.find(function (x) { return x.id === id; });
-        if (!u) return;
-        var items = [];
-        if (u.status !== 'approved') items.push({ act:'approve', ico:'check',  label:'Approve', cls:'pd-am-approve' });
-        if (u.status !== 'rejected') items.push({ act:'reject',  ico:'x',      label:'Reject',  cls:'pd-am-reject'  });
-        if (u.id !== ME.id)          items.push({ act:'del',     ico:'trash',  label:'Delete',  cls:'pd-am-danger'  });
-        if (!items.length) return;
-        var menu = document.createElement('div');
-        menu.className = 'pd-actions-menu';
-        menu.innerHTML = items.map(function (it) {
-          return '<button type="button" class="pd-am-btn '+it.cls+'" title="'+it.label+'" data-am-act="'+it.act+'">'+(window.Icons?Icons.svg(it.ico,16):it.label)+'</button>';
-        }).join('');
-        document.body.appendChild(menu);
-        trig.onclick = function (e) {
-          e.stopPropagation();
-          var willOpen = !menu.classList.contains('open');
-          closeActionMenus();
-          if (willOpen) {
-            var r = trig.getBoundingClientRect();
-            menu.style.top = (r.bottom + 4) + 'px';
-            menu.style.right = (window.innerWidth - r.right) + 'px';
-            menu.style.left = 'auto';
-            menu.classList.add('open');
-          }
-        };
-        menu.querySelectorAll('[data-am-act]').forEach(function (b) {
-          b.onclick = function (e) {
-            e.stopPropagation();
-            closeActionMenus();
-            var act = b.dataset.amAct;
-            if (act === 'approve') setUser(u.id, { status:'approved' });
-            else if (act === 'reject') setUser(u.id, { status:'rejected' });
-            else if (act === 'del') deleteUser(u);
-          };
-        });
-      });
+      t.querySelectorAll('[data-approve]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.approve, { status:'approved' }); }; });
+      t.querySelectorAll('[data-reject]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.reject, { status:'rejected' }); }; });
+      t.querySelectorAll('[data-del]').forEach(function(b){ b.onclick = function(){ deleteUser(users.find(function(x){return x.id===b.dataset.del;})); }; });
     }
 
     function deleteUser(u) {
