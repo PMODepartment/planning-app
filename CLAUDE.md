@@ -104,6 +104,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (y) — The class-code preflight blocked the migration it was advising on
+
+Ran, and the chart came back **698 active / 4 retired / 702 total** — which is the state *before*
+section 2, not after it. Nothing had been written.
+
+Section 1 was a `DO` block containing three pieces of dynamic SQL, each embedding the full 466-code
+`values` list inside a nested dollar-quote. The editor stopped somewhere in it and **section 2 never
+executed at all**. The retirement itself was never the problem: its statement is untouched by this
+entry and was correct as written.
+
+⚠️⚠️ **A preflight that can block the migration it is advising on is worse than no preflight.**
+It writes nothing, so it has no business being the most fragile construct in the file. Rewritten as
+five plain `SELECT`s in one `union all` — **the file now contains no dollar sign at all**, in code or
+in comments, so there is nothing for a statement splitter to get wrong.
+
+⚠️ The preflight's membership test is the **short form** of the same set: everything the template
+drops is either a six-character sub-item code or one of 28 named five-character items. Verified
+against the sheet — it reproduces the 236 exactly and its complement is exactly the 466. **Section 2
+still carries the explicit 466**, because that one is authoritative and must not rest on a shape rule
+a later revision could break.
+
+
 ### 2026-09-17 (x) — The class-code library adopts template_1164: it is a retirement, not a re-seed
 
 Owner: *"Let's replace the current library of class codes in the app. Let's follow the Excel Temp
