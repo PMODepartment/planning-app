@@ -42927,6 +42927,17 @@
        titled with the phase name, and repeating it inside was the duplication the owner reported.
        The branch's own dotted code is stated in the block header instead, because that code is what
        the Schedule grid keys off and it is the one thing the card title does not say. */
+    /* ⚠️⚠️ DECLARED HERE, IN THE SCOPE BOTH FUNCTIONS SHARE, AND THAT IS THE WHOLE POINT.
+       This was `var _phIdx` inside `stPhases` while `phWbsBlock` — its SIBLING, not its child —
+       read it. That parses cleanly and throws `_phIdx is not defined` on the first card, which
+       took the entire Project Phases step out: heading, lede and toolbar rendered, and not one
+       card below them. Shipped live in 2026-09-17 (p).
+       ⚠️ The FIFTH time this repo has paid for a cross-closure reference (below/cfMonthLabel/
+       locKey/canWrite), and the first one written here rather than inherited.
+       ⚠️ The test could not see it: the suite slices `phWbsBlock` out and INJECTS `_phIdx` as
+       a parameter, so the scope it actually runs in was never exercised. Slice-and-inject proves
+       the arithmetic and is blind to where a name lives. */
+    var _phIdx = null;
     function phWbsBlock(code, label) {
       var b = (code === 'other') ? null
             : (code === 'milestones') ? (function () { var id = _wbsMilestonesRootId(); return id ? wbsById(id) : null; })()
@@ -42959,7 +42970,7 @@
       /* ⚠️ Built ONCE per render and shared by the six cards. `phWbsBlock` needs the per-node
          activity count and `_wbsBuildIndex` walks the whole tree; six calls would walk it six
          times for one number each. */
-      var _phIdx = null;
+      /* Rebuilt once per render into the SHARED `_phIdx` above; see the note on its declaration. */
       try { _phIdx = (WBS_NODES && WBS_NODES.length) ? _wbsBuildIndex() : null; } catch (e) { _phIdx = null; }
       var g = generate('int');
       var plan = sbPhasePlan(g), planBy = {};
