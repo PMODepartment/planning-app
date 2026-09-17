@@ -104,6 +104,53 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (v) — One rail per phase card: the two headers and the button bar become one
+
+Owner, on the Project Phases step: *"Can't we just move the reset/add to the 'In the schedule now'
+pane than a separate one?"*, and when asked which rail to move them to: *"if we move it on either can
+just make it just one?"*
+
+A phase card carried **three header strips** stacked down it — the `IN THE SCHEDULE NOW` rail, a
+second rail titled `PLANNED` in the same uppercase 700, and a bare action row under the table holding
+**+ Add activity** and **Reset to the typical set**. Two of the three only restated where the reader
+already was, and the second rail — identical in weight to the first — is what made one card read as
+two panes. Measured against `04b9297` with the same content in both: **356px → 311px**, three strips
+down to one, and the buttons off two rows onto one.
+
+Every button that acts on the card now rides on the **one** rail: `+ Add branch · + Add activity ·
+Reset to the typical set`, left to right in the order of the decisions the card asks for. `phWbsBlock`
+takes an `extra` argument for them, passed only when the phase is **on** — a switched-off phase has no
+planned list to add to, and its rail still has to show the branches it already has.
+
+### ⚠️ The planned label survives its rail, and that is the whole care in this change
+
+Whether the two lists are the same thing has been asked **twice** on this step, and the answer is that
+they are not: the list is `cfg.phases`, a recipe for what the next push will **create**; the tree above
+it is `wbs_nodes`, what the project **has**. Deleting the second rail outright would have taken that
+sentence with it and put the question straight back. It is kept as a one-**line** label —
+`**Planned** · created under this phase when you 7 · Push` — normal case, muted, 400, sharing the
+list's own top margin instead of opening 14px of its own. A line under a control strip is not a second
+pane.
+
+⚠️ `.sbld-phplanh` is deleted rather than left behind. A rule whose selector matches nothing is
+invisible in every tool, and this file has carried five of them before.
+
+### Measured, not eyeballed
+
+Rendered from the shipped stylesheet (pulled out of `index.html` at run time, not copied) over
+`dashboard.css`, in an iframe at 1400px and at 420px:
+
+- the three rail buttons sit on **one line**, gaps **8 / 8** px — which is the proof that
+  `.sbld-phwbs-add + .sbld-phwbs-add { margin-left:0 }` applies; without it they would read 18 / 18,
+  the 10px margin that only has to separate the first button from the tally;
+- `.sbld-phplanline` computes `#5A5858` / `none` / `400` against the rail's `#5A5858` / `uppercase` /
+  `700` — a line, not a heading;
+- all six sampled colours flip under `html.pd-dark`, so the module's own sheet is genuinely in the
+  cascade and not a harness illusion;
+- at 420px the rail wraps to two rows with **no horizontal scroll** on the rail, the card or the page;
+- inline `<script>` parses — one block, lines 5738–55757, which is the block the edit is in.
+
+
 ### 2026-09-17 (u) — A planned lifecycle activity can name the sub-WBS it lands in; `＋Act` dropped
 
 Owner, on the Project Phases step: *"What are these activities? From which sub-WBS do they go to? I

@@ -4155,7 +4155,12 @@
     .sbld-phwbs-n { font-variant-numeric:tabular-nums; color:var(--pd-ink); }
     .sbld-phcard-other .sbld-phname { color:var(--pd-muted); }
     .ps-wbs-rolock { color:var(--pd-muted); font-style:italic; }
-    .sbld-phplanh { margin-top:14px; }
+    /* ⚠️ A LINE, NOT A RAIL — and that is the whole point of the merge. The planned list used
+       to sit under a second `.sbld-phwbs-h` (uppercase, 700, its own 14px of air) identical in
+       weight to the rail above it, so one card read as two panes. This keeps the sentence and
+       drops the pane: normal case, muted, one line, sharing the list's own top margin. */
+    .sbld-phplanline { margin:12px 0 6px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .sbld-phplanline b { color:var(--pd-ink); font-weight:700; }
     /* ⚠️⚠️ THE ROW WAS CLIPPING, AND IT IS NOT THE HOVER. Owner 2026-09-17: *"Many are
        clashing/clipping."* The first guess was the hover reveal resizing the row — measured, and
        WRONG: `.ps-wbs-acts` is `visibility:hidden`, which still reserves its box, so showing it
@@ -4175,6 +4180,10 @@
     /* The tally and the Add button sit on the header row; neither wants the heading's uppercase. */
     .sbld-phwbs-n { text-transform:none; letter-spacing:0; font-weight:500; }
     .sbld-phwbs-add { text-transform:none; letter-spacing:0; margin-left:10px; flex:none; }
+    /* ⚠️ The rail now carries up to three buttons (Add branch · Add activity · Reset). The
+       10px only has to separate the first one from the tally; between buttons the rail's own 8px
+       `gap` is the spacing, and a second margin on top of it reads as a gap in the group. */
+    .sbld-phwbs-add + .sbld-phwbs-add { margin-left:0; }
     .sbld-phwbs-h { flex-wrap:wrap; }
     /* The Tools popover. ⚠️ Anchored to its own wrapper rather than to the toolbar, so it
        opens under the button wherever the toolbar has been borrowed to. */
@@ -43972,7 +43981,16 @@
       })(b.id, 1);
       return out.join('');
     }
-    function phWbsBlock(code, label) {
+    /* ⚠️⚠️ ONE RAIL PER CARD, NOT THREE. Owner 2026-09-17: *"Can't we just move the reset/add
+       to the 'In the schedule now' pane than a separate one?"*, then *"can just make it just one?"*.
+       A phase card carried THREE header strips: this rail, a second rail titled "Planned", and a
+       bare action row under the table holding + Add activity and Reset. Two of the three only said
+       where you already were. Every button that acts on the card now rides on THIS rail (`extra`),
+       and the planned list keeps a one-LINE label instead of a rail of its own.
+       ⚠️ The planned label is not deleted along with its rail. Whether the two lists are the
+       same thing was asked twice (see the card body below) — a table with no label at all puts that
+       question straight back. A line under a control strip is not a second pane. */
+    function phWbsBlock(code, label, extra) {
       var b = (code === 'other') ? null
             : (code === 'milestones') ? (function () { var id = _wbsMilestonesRootId(); return id ? wbsById(id) : null; })()
             : _phaseBranchAt(null, code);
@@ -44009,7 +44027,7 @@
         : '';
       return '<div class="sbld-phwbs-h"><span>' + (label || 'In the schedule now') + '</span>' +
         '<span class="sbld-phwbs-w">' + where + '</span>' +
-        '<span class="sbld-phwbs-n">' + tally + '</span>' + addBtn + '</div>' +
+        '<span class="sbld-phwbs-n">' + tally + '</span>' + addBtn + (extra || '') + '</div>' +
         '<div class="sbld-phwbs" data-phwbs="' + e2(code) + '"></div>';
     }
     function stPhases(host, noHead) {
@@ -44106,13 +44124,16 @@
              what the activities are filed INTO, so a card that asked for activities first was asking
              the planner to name work before deciding where it belongs. The block order now matches
              the order of the decisions. */
-          phWbsBlock(d.v) +
-          (on ? '<div class="sbld-phwbs-h sbld-phplanh"><span>Planned</span>' +
-                  '<span class="sbld-phwbs-w">Created under this phase when you <b>' + _stepNo('Generate') +
-                  ' \u00b7 Push</b></span></div>' +
-                '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' +
-                '<div class="sbld-sec-actions"><button class="pd-btn" data-phadd="' + d.v + '">+ Add activity</button>' +
-                '<button class="pd-btn" data-phreset="' + d.v + '">Reset to the typical set</button></div>' : '') +
+          /* \u26a0\ufe0f The planned list's two buttons ride on the rail above it, not on a strip of
+             their own \u2014 see the note on `phWbsBlock`. They are passed only when the phase is ON:
+             a switched-off phase has no list to add to, and the rail still shows its branches. */
+          phWbsBlock(d.v, null, on
+            ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phadd="' + d.v + '">+ Add activity</button>' +
+              '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phreset="' + d.v + '">Reset to the typical set</button>'
+            : '') +
+          (on ? '<p class="sbld-phplanline"><b>Planned</b> \u00b7 created under this phase when you <b>' +
+                  _stepNo('Generate') + ' \u00b7 Push</b></p>' +
+                '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' : '') +
           /* ⚠️ THE SUBTREE IS SHOWN WHETHER THE PHASE IS ON OR OFF. The activity list above is
              what the next push WILL create; the tree below is what the project HAS. A branch with
              branches already in it, on a phase switched off, is exactly the state a planner needs
