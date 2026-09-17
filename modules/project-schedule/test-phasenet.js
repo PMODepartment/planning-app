@@ -234,6 +234,11 @@ G('8 · the pushed predecessor string');
 var PUSH_DEPS =
   " var PHASE_LABELS={initiation:'Initiation Phase',planning:'Planning Phase',construction:'Execution Phase',closeout:'Close-out Phase'};\n" +
   " var pid='P1', UID='U1', usePkg=null;\n" +
+  /* ⚠️ `MS_CODE` lives at MODULE scope while `phaseTaskPayload` lives inside the builder's own
+     IIFE, so the shipped file resolves it up the scope chain — the sandbox has to supply it, and
+     this suite is what caught that it was now needed at all. */
+  " var MS_CODE='milestones';\n" +
+  " function sbPhTitle(v){ return PHASE_LABELS[v] || v; }\n" +
   " function uniqId(p){ return p; }\n" +
   " function iso2(d){ return d? d.toISOString().slice(0,10):null; }\n";
 function pushRunner(src, label, isNew) {
