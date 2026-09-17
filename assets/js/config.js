@@ -61,9 +61,15 @@ window.APP_CONFIG = {
   // out of issues-lessons.
   // ⚠️ `superAdminOnly: true` (2026-09-03, owner's call, "for now") hides a module
   // from the launcher grid, the project-mode sidebar and the portfolio-mode "every
-  // module" list for everyone but `super_admin` — read by `ModulesGrid` / `UI.renderNav`
-  // / `dashboard.html`'s own tile grid off `window.__role`, so no page has to pass a
-  // flag through for it. This is UI visibility only (the same "hidden, not blocked"
+  // module" list — read by `ModulesGrid` / `UI.renderNav` / `dashboard.html`'s own tile
+  // grid, all of which delegate to `AppAuth.moduleVisible`, so no page has to pass a
+  // flag through for it.
+  // ⚠⚠ THE NAME IS NOW A LIE, AND THE RULE IS NOT HERE. Owner 2026-09-17, *"planners
+  // should be able to access all modules"*: super_admin, admin AND planner all clear this
+  // flag now, and only `user` and `viewer` are held back by it. `MODULE_ALL_ROLES` in
+  // auth.js is the ONE place that says so — do not re-derive it from a role string here
+  // or on any page. The flag reads as "restricted by default"; renaming it is six entries
+  // below plus four read sites and is worth doing on a quiet tree, not mid-session. This is UI visibility only (the same "hidden, not blocked"
   // shape `enabled:false` already uses for the retired modules below) — it does not
   // touch RLS or the module's own table grants, so it is reversible in one line.
   MODULES: [

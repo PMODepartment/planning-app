@@ -414,7 +414,9 @@
     // override from admin.html's Modules editor — shared with ModulesGrid.visible() so the
     // sidebar and the launcher/dashboard tile grid cannot disagree about a module.
     function visible(m) {
-      return window.AppAuth ? AppAuth.moduleVisible(m, window.__profile) : (!m.superAdminOnly || superAdmin);
+      // ⚠ Fails closed and keeps no second copy of the role list — see the long note on the
+      //   matching fallback in modules-grid.js, and `MODULE_ALL_ROLES` in auth.js.
+      return window.AppAuth ? AppAuth.moduleVisible(m, window.__profile) : !m.superAdminOnly;
     }
     var html;
     if (mode === 'portfolio') {

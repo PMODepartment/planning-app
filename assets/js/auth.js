@@ -235,6 +235,26 @@
 
   function requireAdmin(cb) { return requireRole(['super_admin', 'admin'], cb); }
 
+  /* ==== WHICH ROLES SEE A RESTRICTED MODULE BY DEFAULT ======================================
+     Owner 2026-09-17: *"Let's revise module access. Planners should be able to access all
+     modules."*
+     ⚠⚠ `superAdminOnly` (config.js, 2026-09-03, "for now") KEEPS ITS NAME and no longer
+     means what it says. Renaming it is six config entries and four read sites in a repo two
+     other sessions are editing right now, and a half-applied rename of a PERMISSION flag is a
+     worse outcome than a stale name with the rule stated beside it. The flag now reads as
+     "restricted by default"; this list is the only place that says who clears it. Renaming it
+     is worth doing on a quiet tree — reported, not smuggled in here.
+     ⚠ admin and super_admin are in the list because it must not INVERT the hierarchy.
+     `ROLES` above is ordered by privilege, and a planner seeing a module their own admin
+     cannot is not a permission model, it is a bug. Only `user` and `viewer` are now excluded.
+     ⚠ Still UI visibility only — the same "hidden, not blocked" shape as before. It touches
+     no RLS policy and no table grant, so it is reversible in one line and grants nothing a
+     planner's own policies do not already allow. */
+  var MODULE_ALL_ROLES = ['super_admin', 'admin', 'planner'];
+  function seesRestrictedModules(profile) {
+    return MODULE_ALL_ROLES.indexOf((profile || {}).role) !== -1;
+  }
+
   function isAutoApprove(profile) {
     return AUTO_APPROVE.indexOf((profile || {}).role) !== -1;
   }
@@ -252,14 +272,15 @@
   // Overview's hardcoded tab list, so all three surfaces a module can appear
   // on cannot disagree about it.
   //
-  // ⚠️ `m.superAdminOnly` (config.js) is still the DEFAULT — untouched here —
+  // ⚠️ `m.superAdminOnly` (config.js) is still the DEFAULT — untouched here, and since
+  //    2026-09-17 it is cleared by `MODULE_ALL_ROLES` above rather than by super_admin alone —
   //    and `profile.module_access` (2026-09-15, admin.html's per-user Modules
   //    editor) is an OVERRIDE on top of it, not a second independent rule:
   //    - `module_access` absent/null → the role default alone decides, exactly
   //      as before this existed. This is "Reset to default"'s whole effect.
   //    - `module_access` a (possibly empty) array → it is the EXACT set of
   //      keys this user may see, in EITHER direction: it can grant a
-  //      `superAdminOnly` module to a non-super_admin, or withhold an
+  //      restricted module to a `user` or `viewer`, or withhold an
   //      ordinary module from anyone, role notwithstanding.
   //    A plain boolean-per-module map could not express "never touched" vs
   //    "deliberately set to nothing," which is exactly the distinction
@@ -271,7 +292,7 @@
     if (profile && Array.isArray(profile.module_access)) {
       return profile.module_access.indexOf(m.key) !== -1;
     }
-    return !m.superAdminOnly || !!profile && profile.role === 'super_admin';
+    return !m.superAdminOnly || seesRestrictedModules(profile);
   }
 
   async function login(email, password) {

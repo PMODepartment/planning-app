@@ -103,6 +103,134 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (h) — A question about the forecast turned out to be arithmetic; the bar beside it was a bug. Planners get every module
+
+Three asks in one prompt. The first was a question, and answering it properly is what found the second.
+
+### ⚠️⚠️ "The forecast bar is TALLER than the planned bar, yet the forecast LINE is below the plan"
+
+Owner, on DEMO01: *"How come the forecast this month is higher than the planned this month and yet
+the forecast to finish is still lower than the planned (cumulative) line?"* — reading *Nov 2026:
+planned 33.6% / forecast 29.2% cumulative, planned 18.3% / forecast 19% in the month.*
+
+**The chart is right, and the two readings are answering different questions.** A bar is a **rate**
+(what happens *inside* that month); a line is a **level** (where the project *has reached*). The
+forecast is anchored to the actual at the data date — `forecastC[ti] = actualC[ti]` — so it starts
+the 5.6 pp below plan that DEMO01 is already behind, and it has to reach 100% at a finish only
+**3 days** later than the plan's. So it must run marginally *faster* every month for the rest of the
+job. 19 against 18.3 is that catch-up: **0.7 pp a month against a 4.4 pp deficit.** Arithmetic on
+his own figures: 33.6 − 18.3 = 15.3 planned by end-Oct, 29.2 − 19.0 = 10.2 forecast — a 5.1 pp gap
+entering November, 4.4 leaving it. The gap closes; it does not close in one month.
+
+Reproduced by **executing the shipped engine and the shipped lens**, not by reading them: over a
+24-month fixture the gap runs 4.2 → 3.5 while the forecast bar sits at or above the planned bar,
+and the forecast still lands on 100% at the forecast finish.
+
+### ⚠️⚠️ AND THE SAME ANCHOR WAS DRAWING A BAR SIX TIMES TOO TALL
+
+`forecastC` is null everywhere before the data date and *starts* at it. `periodic()` looks backwards
+for the previous non-null point, finds none, and so reported the **whole cumulative actual** as that
+one month's forecast production.
+
+DEMO01 hides it perfectly: 0% is booked, so the bar is 0 and invisible. **Measured on a project 35%
+complete: a 35% bar where the real monthly forecasts are ~5% — 6.3× the tallest genuine bar.** And
+it is not one wrong bar: `perMax` is taken across planned **and** actual **and** forecast together,
+so that bar set the right-hand axis and squashed every real bar in the chart to a sixth of its
+height.
+
+⚠️ **This is the identical defect the renderer already fixes for the ACTUAL bar** (2026-09-11,
+`perA[L.ti] = null`, found by LOOKING at a 97% bar on a project that had done 35%). The actual and
+the forecast are anchored to the same value; the fix was simply never carried across. Fixed in
+`lens()` this time, not in the renderer, so the chart, the hover readout and the data table cannot
+disagree about it — and **null, not 0**: there is no such thing as this period's forecast
+production, because the forecast line *begins* there.
+
+### The notes under the chart
+
+Owner: *"Let's fix/improve this UI as well"*, quoting the two paragraphs under the plot — **187
+words of 12.5px grey prose, 180px tall at 1400px.**
+
+⚠️ **Nothing is deleted, it is demoted.** Every clause in those paragraphs stops a specific
+misreading this repo has already paid for: a bar read against the left-hand axis is out by an order
+of magnitude, an absent bar reads as a month of no work, and *"performance-based (SPI 0.1)"* read as
+an authoritative calculation on the day it forecast 2034. So the three questions a planner asks
+*every* time are answered as inline facts, and the reasoning moves into one disclosure, shut by
+default:
+
+> `Duration-weighted · 591 activities` `Bars on the right axis · peak 19.6%/month`
+> `Forecast finish 2027-07-10 · plan + 3-day slip` — then *“How to read this chart”.*
+
+**Measured at 1400px: 180px → 55px, and 187 visible words → 19**, with 263 words available — *more*
+than before, because the forecast bar now needs explaining too. A `<details>`, not a tooltip: it
+prints, Chrome's own Find opens it, and it is keyboard-reachable for free.
+
+⚠️ **The compact preview no longer drops anything.** It used to lose the sentences naming the sheet
+and the way back to Automatic, because the paragraph was the tallest thing on it. Collapsed, both
+cost one line.
+
+⚠️ Three incidental fixes fell out of doing this: the mount is a **`<div>`, not a `<p>`** (the parser
+closes an open `<p>` at a `<details>` start tag, and the disclosure would have landed *outside* the
+note with nothing reported); the legend said **"Planned this month" in the quarterly and yearly
+views**; and the unsaved-edits badge now goes into the facts row rather than below the disclosure,
+where the one claim that must not be missed would have been last.
+
+### Planners see every module
+
+Owner: *"Let's revise module access. Planners should be able to access all modules."*
+
+`MODULE_ALL_ROLES = ['super_admin', 'admin', 'planner']` in auth.js, and `moduleVisible` is the one
+place that reads it. **admin is in the list too** — `ROLES` is ordered by privilege and a planner
+seeing a module their own admin cannot is not a permission model, it is a bug. `user` and `viewer`
+are unchanged. Still UI visibility only: no RLS policy, no grant.
+
+⚠️⚠️ **The real work was the four surfaces that RESTATED the rule**, any one of which would have
+gone stale silently:
+- `ui.js` and `modules-grid.js` each carried a `__role === 'super_admin'` fallback for a missing
+  `AppAuth`. That branch is unreachable (auth.js is in `<head>` on every page that loads them), so
+  they now **fail closed** and carry no copy at all.
+- admin.html's Modules cell asserted `isSuper ? "+ all modules" : "6 modules hidden"` — it would
+  have gone on reporting *6 modules hidden* for planners who could by then open all six. Both
+  branches come from `AppAuth.moduleVisible` now, and the tooltip names the modules actually hidden
+  and the role hiding them.
+- The modal's *"(super_admin by default)"* label sat beside a **ticked** box; a planner would
+  reasonably have read the tick as a per-user grant and unticked it. It reads *"(planner and above
+  by default)"*.
+
+⚠️ **The flag keeps its name and the name is now a lie.** `superAdminOnly` is six config entries and
+four read sites in a tree two other sessions are editing; a half-applied rename of a *permission*
+flag is worse than a stale name with the rule stated beside it. Named in config.js as the next quiet
+-tree job, not smuggled in here.
+
+⚠️ **If the planners on this team are recorded with role `user`, nothing changes for them** — this
+moves the `planner` role, not the people in it. That is a call on the Users table, not in code.
+
+### Verified
+
+- **28** forecast assertions (new), the old lens sliced out of the pinned **`4fde147`** and executed
+  beside the shipped one: the contrast confirms the base drew that bar at the full cumulative
+  actual, so the suite bites. The carry is asserted on the **numbers**, not on equivalence.
+- **24** module-access assertions (new), run against the shipped `auth.js` + `config.js`: planner
+  13/13, admin 13/13, user 7/13, viewer 7/13, both override directions intact, no profile → hidden.
+  A **gate** first proves the flag still restricts *somebody*, and a further check proves **no file
+  re-derives the rule** — with `/* */` and `//` stripped first, so the checker cannot match its own
+  explanation. Contrast on `4fde147`: planner saw 7 of 13.
+- `tools/test-scurve-forecast.js` 28/28, `tools/wiring-check.js` 139/139, the 148KB inline script
+  parses, CSS braces 226/226, 0 NUL bytes.
+- **Rendered in an iframe** at 1400px and 390px, both themes: chips 12.5px / 11px compact, radius
+  999px, caret rotating on open, **no horizontal scroll at 390px** (chips wrap to 3 rows, widest
+  292px), and all **nine** colours resolving per theme — chip border `rgb(220,219,219)` →
+  `rgba(255,255,255,.12)`, body ink `rgb(90,88,88)` → `rgb(185,183,183)` — which is what proves the
+  stylesheet is in the cascade.
+- ⚠️ The caret first measured as *not rotating*, twice. `* { transition:none }` **does not match
+  pseudo-elements**, so the transition was live and the read caught it at t=0. `*, *::before,
+  *::after` settles it. The harness rule this repo already records had a hole in it.
+- ⚠️ **Not verified signed in.** No real planner has opened a restricted module, and the forecast
+  bar has never been seen on the owner's own data — DEMO01 is at 0%, which is exactly the case that
+  hides it.
+
+`auth.js` (28 pages), `config.js` (29), `ui.js` (23), `modules-grid.js` (2) → `?v=20260917zb`;
+`MODULE_V` → `20260917zb`, sort-checked past `20260917z` across 38 tokens in the tree.
+
 ### 2026-09-17 (g) — A 2027 programme forecast 2034, and the same line forecast "finished today" at the other end
 
 Owner, on DEMO01: *"finish is at Apr 23, 2027 but the s-curve has its own forecast finishing by
@@ -1663,7 +1791,7 @@ reachable from this environment; the fix targets the documented, standard WebKit
 disabled control's text (`-webkit-text-fill-color` + `opacity`), the same class of iOS-only override
 this file already carries for `input[type="date"]`.
 
-`dashboard.css?v=` → `20260917za` (29 pages, shared, re-derived past both this branch's own `20260916t`
+`dashboard.css?v=` → `20260917zb` (29 pages, shared, re-derived past both this branch's own `20260916t`
 and the `20260917z` main had reached by the time this merged — sort-checked past both). No
 `MODULE_V` bump — a shared stylesheet token-only change, no module `index.html` changed structurally.
 

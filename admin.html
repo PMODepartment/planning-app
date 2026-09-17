@@ -105,20 +105,22 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260915a"></script>
-  <script src="assets/js/auth.js?v=20260916a"></script>
+  <script src="assets/js/config.js?v=20260917zb"></script>
+  <script src="assets/js/auth.js?v=20260917zb"></script>
   <script src="assets/js/db.js?v=20260917a"></script>
-  <script src="assets/js/ui.js?v=20260916w"></script>
+  <script src="assets/js/ui.js?v=20260917zb"></script>
   <script src="assets/js/notebook.js?v=20260915d"></script>
   <script src="assets/js/icons.js?v=20260915f"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
-    // ⚠️ Modules only `super_admin` can open BY ROLE DEFAULT (config.js
-    // `superAdminOnly`, see the comment there). Read off the live registry
-    // rather than hardcoded, so this list can never drift from what
-    // ui.js/modules-grid.js actually gate. A per-user override (below) can
-    // still put any of these in reach of a non-super_admin, or take an
-    // ordinary module away from anyone — this list is only the DEFAULT.
+    // ⚠️ Modules RESTRICTED by role default — since 2026-09-17 that means
+    // `planner` and above can open them and `user`/`viewer` cannot (config.js
+    // `superAdminOnly`, whose name predates the change; `MODULE_ALL_ROLES` in
+    // auth.js is the rule). Read off the live registry rather than hardcoded,
+    // so this list can never drift from what ui.js/modules-grid.js actually
+    // gate. A per-user override (below) can still put any of these in reach of
+    // a `user`, or take an ordinary module away from anyone — this is only the
+    // DEFAULT.
     var RESTRICTED_MODULES = (window.APP_CONFIG && APP_CONFIG.MODULES || []).filter(function (m) { return m.superAdminOnly; });
     // Every module a user could plausibly be granted or denied — retired
     // (`enabled:false`) modules are not offered here, since there is nothing
@@ -219,12 +221,16 @@
             moduleCell = '<span class="pd-chip" title="Custom module access, set from the Modules button — no longer follows the '+Fmt.esc(u.role)+' role default">'+
               visibleCount+' of '+ENABLED_MODULES.length+' modules (custom)</span>';
           } else if (RESTRICTED_MODULES.length) {
-            // The 6 (today) modules config.js marks `superAdminOnly` are invisible to
-            // EVERY other role, admin included — this is the "super_admin sees all
-            // modules" guarantee, made visible rather than left implicit in code.
-            moduleCell = isSuper
+            /* ⚠⚠ ASKED, NOT ASSERTED. This read `isSuper ? all : hidden`, which was a second
+               copy of the role rule and was wrong for every planner the moment 2026-09-17
+               widened it — the table would have gone on reporting "6 modules hidden" for
+               people who could by then open all six. Both branches now come from
+               `AppAuth.moduleVisible`, the same function the sidebar and the launcher use, so
+               this cell restates nothing and cannot drift again. */
+            var hiddenMods = RESTRICTED_MODULES.filter(function (rm) { return !AppAuth.moduleVisible(rm, u); });
+            moduleCell = !hiddenMods.length
               ? '<span class="pd-chip" '+okChip+' title="'+Fmt.esc(restrictedNames)+'">+ all modules</span>'
-              : '<span class="pd-chip" title="'+Fmt.esc(restrictedNames)+' — visible to super_admin only">'+RESTRICTED_MODULES.length+' module'+(RESTRICTED_MODULES.length===1?'':'s')+' hidden</span>';
+              : '<span class="pd-chip" title="'+Fmt.esc(hiddenMods.map(function (rm) { return rm.name; }).join(', '))+' — not visible to the '+Fmt.esc(u.role)+' role">'+hiddenMods.length+' module'+(hiddenMods.length===1?'':'s')+' hidden</span>';
           } else {
             moduleCell = '<span style="color:var(--pd-muted);">—</span>';
           }
@@ -385,7 +391,10 @@
         return '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;">' +
           '<input type="checkbox" value="'+Fmt.esc(m.key)+'"'+(on?' checked':'')+'> ' +
           Fmt.esc(m.name) +
-          (m.superAdminOnly ? ' <span style="color:var(--pd-muted);font-size:11px;">(super_admin by default)</span>' : '') +
+          // ⚠ Names the actual default rather than the flag's stale name — a planner
+          //   reading "(super_admin by default)" beside a TICKED box would reasonably
+          //   conclude the tick was a per-user grant, and untick it.
+          (m.superAdminOnly ? ' <span style="color:var(--pd-muted);font-size:11px;">(planner and above by default)</span>' : '') +
           '</label>';
       }).join('');
       var m = UI.modal(

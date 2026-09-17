@@ -94,7 +94,37 @@
     html.pd-dark .sw-barp { background:#c7ccd1; }
     .sw-bara { background:var(--pd-red); opacity:.85; height:10px; }
     .sw-barf { background:var(--pd-red); opacity:.34; height:10px; }
-    .sc-axisnote { margin-top:6px; }
+    /* ---- The notes under the chart: the facts inline, the reasoning one click away ----
+       ⚠ A ROW OF FACTS, NOT A SENTENCE. The two paragraphs this replaces answered three
+       questions a planner asks every time (what is it weighted by, which axis are the bars on,
+       where does the forecast date come from) inside ~180 words of 13px grey prose, which is
+       read once and then skipped forever. */
+    .sc-notes { margin-top:10px; }
+    .sc-nfacts { display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center;
+      font-size:var(--pd-fs-sm); color:var(--pd-ink); }
+    .sc-nf { display:inline-flex; align-items:baseline; gap:5px; padding:3px 10px;
+      border:1px solid var(--pd-line); border-radius:999px; background:var(--pd-bg); }
+    .sc-nf i { font-style:normal; color:var(--pd-muted); }
+    .sc-why { margin-top:8px; }
+    /* ⚠ `list-style:none` AND the WebKit pseudo-element: Safari/older Chrome ignore the first
+       and would draw a second triangle beside the one drawn below. */
+    .sc-why > summary { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+      width:fit-content; list-style:none; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    .sc-why > summary::-webkit-details-marker { display:none; }
+    .sc-why > summary::before { content:'\25b8'; display:inline-block; font-size:11px; transition:transform .12s; }
+    .sc-why[open] > summary::before { transform:rotate(90deg); }
+    .sc-why > summary:hover { color:var(--pd-ink); }
+    .sc-why > summary:focus-visible { outline:2px solid var(--pd-red); outline-offset:2px; border-radius:3px; }
+    .sc-whybody { margin-top:8px; padding-left:12px; border-left:2px solid var(--pd-line);
+      display:grid; gap:8px; max-width:80ch; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.6; }
+    .sc-whybody p { margin:0; }
+    .sc-whybody b { color:var(--pd-ink); }
+    /* The compact preview above the manual sheet keeps every fact and takes less room than the
+       single paragraph it replaces — the reasoning is collapsed rather than cut. */
+    .sc-notes-sm .sc-nfacts { font-size:var(--pd-fs-xs); gap:4px 6px; }
+    .sc-notes-sm .sc-nf { padding:2px 8px; }
+    .sc-notes-sm .sc-why { margin-top:6px; }
+    .sc-notes-sm .sc-why > summary, .sc-notes-sm .sc-whybody { font-size:var(--pd-fs-xs); }
     /* ---- The filter bar ---------------------------------------------------------------------
        Owner 2026-09-10: *"a mode at the top to filter the trades being displayed. And then later
        on a filter for General Requirements vs Measured Works."* Two controls, coarse then fine:
@@ -352,7 +382,6 @@
     .sc-legend-sm { gap:8px 14px; margin-top:8px; font-size:var(--pd-fs-xs); }
     .sc-legend-sm .sw { width:14px; margin-right:5px; }
     .sc-legend-sm .sw-today { width:3px; height:10px; }
-    .sc-axisnote-sm { font-size:var(--pd-fs-micro); margin-top:5px; line-height:1.5; }
     /* ⚠️ Unsaved edits are marked in the BAD colour, not a neutral one: the curve above is drawn
        from them, so the state is "this chart is not what the database holds" — which is a warning,
        not a status. */
@@ -469,7 +498,10 @@
                renderFilters() so the trade list is the project's own. -->
           <div class="sc-filterbar" id="sc-filters"></div>
           <div id="sc-chart"></div>
-          <p class="sc-note" id="sc-basis"></p>
+          <!-- ⚠️ A <div>, NOT a <p>. renderChart puts a <details> in here, and the HTML parser
+               closes an open <p> at a <details> start tag — the disclosure would land as a
+               SIBLING of the note, outside its styling, and no error would be reported. -->
+          <div class="sc-note" id="sc-basis"></div>
         </div>
         <!-- What a clicked period is made of, by trade. Hidden until a period is clicked. -->
         <div class="sc-card" id="sc-bdcard" style="display:none;"></div>
@@ -490,12 +522,12 @@
 <div class="sc-loading" id="sc-loading" style="display:none;"><div class="sc-spin"></div><span>Loading schedule…</span></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260915a"></script>
-<script src="../../assets/js/auth.js?v=20260916a"></script>
+<script src="../../assets/js/config.js?v=20260917zb"></script>
+<script src="../../assets/js/auth.js?v=20260917zb"></script>
 <script src="../../assets/js/db.js?v=20260917a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/scurve.js?v=20260917a"></script>
-<script src="../../assets/js/ui.js?v=20260916w"></script>
+<script src="../../assets/js/ui.js?v=20260917zb"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/portfolio-dash.js?v=20260917w"></script>
@@ -1143,6 +1175,24 @@
     // Monthly periodic first, off the engine's own cumulative arrays — see periodic().
     var perP = periodic(d.plannedC, null), perA = periodic(d.actualC, null), perF = periodic(fc, d.ti);
     perA = perA.map(function (v, i) { return i <= d.ti ? v : null; });
+    /* ⚠⚠ THE DATA-DATE PERIOD HAS NO FORECAST BAR EITHER, and this is the same defect the
+       renderer already fixes for the ACTUAL bar one screen down — the fix was never carried to
+       the forecast series, which is anchored to the identical value.
+       `forecastC` is null everywhere before the data date and starts AT it, at `actualC[ti]`
+       (scurve.js: `forecastC[ti] = actualC[ti]`). `periodic` looks backwards for the previous
+       non-null point, finds none, and so reports the whole CUMULATIVE ACTUAL as that one period's
+       forecast production. Measured on a project 35% complete: a 35% bar where the real monthly
+       forecasts are ~5%, i.e. 6.3x the tallest genuine bar.
+       ⚠ It is not merely a wrong bar. `perMax` below is taken across planned AND actual AND
+       forecast together, so that one bar sets the right-hand axis and squashes every real bar in
+       the chart to a sixth of its height.
+       ⚠ null, NOT 0: there is no such thing as this period's forecast production. The forecast
+       line begins here, so its first point has no predecessor to difference against — which is
+       also why the readout must show nothing rather than a figure.
+       ⚠ Fixed in the LENS, not in the renderer, so the chart, the readout and the data table
+       cannot disagree about it. Unconditional: true in Manual mode too, where the forecast still
+       starts at the data date whatever the actual beside it means. */
+    perF[d.ti] = null;
     function sum(arr, b) {
       var t = null;
       for (var i = b.from; i <= b.to; i++) { if (arr[i] != null) t = (t == null ? 0 : t) + arr[i]; }
@@ -1576,9 +1626,17 @@
     /* ⚠️ A chart drawn from numbers that are not in the database yet MUST say so — a screenshot of
        it would otherwise assert data nobody has kept. Appended to renderChart's own note rather
        than replacing it, so the source and the weighting are still stated. */
+    /* ⚠ Into the FACTS ROW, not onto the end of the node. renderChart's note is a structured
+       block now (chips, then a collapsed disclosure), so appending here would have dropped the
+       badge BELOW the disclosure — the one claim on this preview that must not be missed, put
+       last and out of the reading order. Falls back to the node itself if the row is not there,
+       which is the empty-chart case. */
     if (note && nd) {
-      note.innerHTML = (note.innerHTML || '') +
-        ' <b class="sc-unsaved-inline">Includes ' + nd + ' unsaved edit' + (nd === 1 ? '' : 's') + '.</b>';
+      var badge = '<span class="sc-nf sc-unsaved-inline">Includes <b>' + nd + '</b> unsaved edit' +
+        (nd === 1 ? '' : 's') + '</span>';
+      var row = note.querySelector && note.querySelector('.sc-nfacts');
+      if (row) row.insertAdjacentHTML('beforeend', badge);
+      else note.innerHTML = (note.innerHTML || '') + ' ' + badge;
     }
   }
   /* Update only what an edit changes. ⚠️ Reads the SAME manValue / weights the renderer used, so a
@@ -1837,7 +1895,7 @@
       '<div class="sc-manchartwrap">' +
         '<div class="sc-mancap"><span class="t">Live preview</span>' +
         '<span class="s">redraws as you type, unsaved edits included</span></div>' +
-        '<div id="sc-manchart"></div><p class="sc-note" id="sc-mannote"></p></div>' +
+        '<div id="sc-manchart"></div><div class="sc-note" id="sc-mannote"></div></div>' +
       '<div class="sc-srcbar">' + srcLine + '</div>' +
       lockBar +
       '<div class="sc-filterbar sc-kindbar">' + kindSeg +
@@ -1989,6 +2047,36 @@
      ⚠️ The tip, the guide and the svg are found by CLASS through `host.querySelector`, never by id:
      both panes exist in the DOM at once (they are hidden, not removed), so an id would be
      duplicated and `getElementById` would return whichever came first. */
+  /* ==========================================================================================
+     THE NOTES UNDER THE CHART.
+     Owner 2026-09-17: *"Let's fix/improve this UI as well"*, on the two paragraphs that ran under
+     the plot — about 180 words of 13px grey prose between the legend and the next card.
+
+     ⚠⚠ NOTHING IS DELETED, IT IS DEMOTED. Every clause in those paragraphs was put there to
+     stop a specific misreading, and several are recorded in this file as defects that reached a
+     planner: a bar read against the left-hand axis is out by an order of magnitude, an absent bar
+     reads as a month of no work, and "performance-based (SPI 0.1)" read as an authoritative
+     calculation on the day it forecast 2034. Cutting them would re-open all three. So the three
+     questions a planner asks EVERY time — what is this weighted by, which axis are the bars on,
+     where did the forecast date come from — are answered inline as facts, and the reasoning
+     behind them moves into one disclosure that is shut by default.
+     ⚠ A <details>, not a tooltip or a modal: it prints, it is findable with the browser's own
+     Find, it is keyboard-reachable for free, and screenshots of this card end up in reports.
+     ⚠ ONE WRITER FOR THE NOTE NODE. The automatic branch used `.textContent`, the manual branch
+     `.innerHTML`, and the bars appended a third paragraph from inside the chart's own markup —
+     three writers, two of which could not see what the others had said. They now all contribute
+     to `facts` / `why` and this builds the node once, at the end. */
+  function notesHTML(facts, why, compact) {
+    var f = facts.filter(Boolean), w = why.filter(Boolean);
+    if (!f.length && !w.length) return '';
+    return '<div class="sc-notes' + (compact ? ' sc-notes-sm' : '') + '">' +
+      (f.length ? '<div class="sc-nfacts">' + f.map(function (t) {
+        return '<span class="sc-nf">' + t + '</span>'; }).join('') + '</div>' : '') +
+      (w.length ? '<details class="sc-why"><summary>How to read this chart</summary>' +
+        '<div class="sc-whybody">' + w.map(function (t) { return '<p>' + t + '</p>'; }).join('') +
+        '</div></details>' : '') + '</div>';
+  }
+
   function renderChart(d, opts) {
     opts = opts || {};
     var host = document.getElementById(opts.host || 'sc-chart');
@@ -2002,6 +2090,10 @@
     // ⚠️ NOT named `basis` — that is now the module-level weighting flag, and shadowing it here
     // would make the note element win inside this function.
     var basisNote = document.getElementById(opts.note || 'sc-basis') || { textContent: '', innerHTML: '' };
+    /* ⚠ Named slots rather than two arrays, because three separate places below fill these and
+       the READING ORDER is fixed (what it is weighted by → which axis the bars use → where the
+       forecast date came from). Pushing onto an array would order them by whichever branch ran. */
+    var nF = { weight: '', bars: '', fc: '' }, nW = { lines: '', bars: '', weight: '' };
     if (d.empty) {
       // The cost basis with no loading is its own message, with the way out named.
       host.innerHTML = '<div class="sc-empty">' + (
@@ -2044,16 +2136,19 @@
          planner where the sheet is and how to switch back to Automatic — both of which are on
          screen, a few pixels below, on the very tab this preview lives in. The Curve tab keeps the
          full paragraph, because there the sheet is a tab away and neither is in view. */
-      basisNote.innerHTML = compact
-        ? '<b>Manual curve</b> · trades weighted by ' + wWord + ' · ' +
-          (seenTxt.length ? 'entered: <b>' + seenTxt.join(', ') + '</b>'
-                          : '<b>nothing entered yet</b> — flat until the sheet below is filled in')
-        : '<b>Manual curve</b> — entered by hand, per trade, per month, in the sheet ' +
-          'below. Each trade is weighted by its share of the schedule (' + wWord + '), so the trades ' +
-          'roll up to the project in proportion to what they are worth. ' +
-          (seenTxt.length ? 'Entered so far: <b>' + seenTxt.join(', ') + '</b>. '
-                          : '<b>Nothing entered yet</b> — the curve is flat until the sheet below is filled in. ') +
-          'Switch to <b>Automatic</b> to read the same project from the schedule instead.';
+      /* ⚠⚠ THE COMPACT FORM NO LONGER DROPS ANYTHING. It used to lose the sentence naming the
+         sheet and the way back to Automatic, because the paragraph was the tallest piece of
+         furniture on the preview. Collapsed into the disclosure both sentences cost one line, so
+         the preview is SHORTER than the trimmed paragraph was and still makes every claim. */
+      nF.weight = '<b>Manual curve</b> · trades weighted by ' + wWord;
+      nF.fc = seenTxt.length ? 'Entered: <b>' + seenTxt.join(', ') + '</b>'
+                             : '<b>Nothing entered yet</b> — the curve is flat';
+      nW.lines = '<b>A manual curve.</b> Entered by hand, per trade, per month, in the sheet on the ' +
+        'Manual data tab. Each trade is weighted by its share of the schedule (' + wWord + '), so the ' +
+        'trades roll up to the project in proportion to what they are worth. ' +
+        (seenTxt.length ? 'Entered so far: <b>' + seenTxt.join(', ') + '</b>. '
+                        : 'Nothing has been entered yet, so the curve is flat until the sheet is filled in. ') +
+        'Switch to <b>Automatic</b> to read the same project from the schedule instead.';
     } else {
     /* ⚠️⚠️ THIS WAS AN EARLY `return`, AND IT MEANT THE CHART WAS NEVER DRAWN IN MANUAL MODE.
        Shipped that way this morning: the branch sets the manual basis note and then returned from
@@ -2064,12 +2159,29 @@
        above the manual sheet and getting an empty host back.
        ⚠️ An if/else, not a moved return: the two notes are alternatives, and the DRAWING below is
        common to both. */
-    basisNote.textContent = (d.money
-      ? 'Progress weighted by the COST loaded on each activity (' + peso(d.TOT) + ' across ' + d.priced + ' of ' + d.activities +
-        ' activities' + (d.priced < d.activities ? ' — the other ' + (d.activities - d.priced) + ' carry no cost and count for nothing here' : '') +
-        '), spread over each activity\'s dates ' + shapeNote(d.shapes) + '. '
-      : 'Progress weighted by activity duration across ' + d.activities + ' activities. ') +
-      'Solid = planned & actual (to data date). Red dashed = forecast to finish — ' +
+    /* ⚠ THE CHIP CARRIES THE FIGURES, THE DISCLOSURE CARRIES THE CAVEAT. On the cost basis the
+       caveat is not decoration: activities carrying no cost count for NOTHING in this curve, and a
+       planner reading "₱120M across 240 activities" off a schedule of 591 needs to be able to find
+       out what happened to the other 351 without being told every time. */
+    nF.weight = d.money
+      ? '<b>Cost-weighted</b> · ' + peso(d.TOT) + ' on ' + d.priced + ' of ' + d.activities + ' activities'
+      : '<b>Duration-weighted</b> · ' + d.activities + ' activities';
+    nW.weight = d.money
+      ? '<b>The weighting.</b> Progress is weighted by the cost loaded on each activity (' + peso(d.TOT) +
+        ' across ' + d.priced + ' of ' + d.activities + ' activities' +
+        (d.priced < d.activities ? ' — the other ' + (d.activities - d.priced) +
+          ' carry no cost and count for nothing here' : '') +
+        '), spread over each activity\'s dates ' + shapeNote(d.shapes) + '.'
+      : '<b>The weighting.</b> Progress is weighted by activity duration across ' + d.activities +
+        ' activities — a day of work is a day of work, whatever it costs. Switch the basis to ' +
+        '<b>Cost</b> in the toolbar to weight it by money instead.';
+    /* ⚠ The date is the fact; WHICH of the three methods produced it is the caveat. Both are
+       stated — the method in a short tag on the chip, at length in the disclosure. */
+    nF.fc = 'Forecast finish <b>' + iso(d.fcFinish) + '</b> <i>' +
+      (d.manual ? 'pinned' : d.basis === 'spi' ? 'SPI ' + (Math.round(d.spi * 100) / 100)
+        : d.basis === 'done' ? 'complete' : 'plan + ' + d.slipDays + '-day slip') + '</i>';
+    nW.lines = '<b>The lines.</b> Solid = planned &amp; actual, and the actual stops at the data date. ' +
+      'Red dashed = forecast to finish — ' +
       /* ⚠️⚠️ SAY WHICH METHOD ACTUALLY RAN. This printed "performance-based (SPI 0.1)" for every
          auto forecast, including the ones that were not performance-based at all — which is how
          DEMO01's 2034 finish read as an authoritative calculation rather than as a division by
@@ -2084,7 +2196,8 @@
             iso(d.autoFc) + '). Below ' + d.spiMinPct + '% complete an SPI forecast is not meaningful — ' +
             'the ratio of two very small percentages swings wildly — so the slip measured between ' +
             'the two curves is used instead') +
-      '; it follows the plan’s shape from the actual point up to 100%. Set a date to override, clear it to auto-forecast.';
+      '. It follows the plan’s shape from the actual point up to 100%. Set a date in the toolbar to ' +
+      'override it; clear the date to go back to the automatic forecast.';
     }
     /* ==========================================================================================
        THE COMPACT VARIANT.
@@ -2275,6 +2388,10 @@
       // The guide line that follows the pointer, moved by style rather than rebuilt per frame.
       hit = '<line class="sc-guide" x1="0" y1="' + padT + '" x2="0" y2="' + (H - padB) + '" style="display:none"></line>' + hit;
     })();
+    /* ⚠ The legend said "Planned this month" in the QUARTERLY and YEARLY views — three labels
+       hardcoded to one granularity while the bars beside them were quarters. The readout, the axis
+       title and the data table all derive this word; these three did not. */
+    var perWord = (L.per === 'year' ? 'year' : L.per === 'quarter' ? 'quarter' : 'month');
     // ⚠️ ORDER IS THE READING ORDER: bars, then the grid and the data-date rule, then the curves
     // on top. A line hidden behind a bar is a line the planner cannot follow.
     host.innerHTML = '<div class="sc-plot">' +
@@ -2292,33 +2409,42 @@
           '<span class="sc-lg"><span class="sw sw-forecast"></span> Forecast to finish</span>'
         : '') +
       (showBars
-        ? '<span class="sc-lg"><span class="sw sw-barp"></span> Planned this month</span>' +
-          '<span class="sc-lg"><span class="sw sw-bara"></span> Actual this month</span>' +
-          '<span class="sc-lg"><span class="sw sw-barf"></span> Forecast this month</span>'
+        ? '<span class="sc-lg"><span class="sw sw-barp"></span> Planned this ' + perWord + '</span>' +
+          '<span class="sc-lg"><span class="sw sw-bara"></span> Actual this ' + perWord + '</span>' +
+          '<span class="sc-lg"><span class="sw sw-barf"></span> Forecast this ' + perWord + '</span>'
         : '') +
       '<span class="sc-lg"><span class="sw sw-today"></span> Data date (today)</span>' +
       // ⚠️ Says the chart is interactive. A hover readout nobody knows about is a hover readout
       // nobody uses, and this one carries the only amounts on the screen.
-      '<span class="sc-lg sc-lg-hint">Hover a ' + (L.per === 'year' ? 'year' : L.per === 'quarter' ? 'quarter' : 'month') +
-      ' for its figures' + (interactive ? ' · click for the trade breakdown' : '') + '</span></div>' +
-      // ⚠️ Says what the bars' own axis is, because two y-axes on one chart is a thing a reader
-      // has to be TOLD about — a bar read against the left-hand axis is out by an order of
-      // magnitude, and nothing about the picture reveals that.
-      (showBars ? '<p class="sc-note sc-axisnote' + (compact ? ' sc-axisnote-sm' : '') + '">The bars are read against the <b>right-hand</b> axis — ' +
-        'each is that ' + (L.per === 'year' ? 'year' : L.per === 'quarter' ? 'quarter' : 'month') +
-        '\'s own share of the total, peaking at ' +
-        (maxV ? (Math.round(perMax / maxV * 1000) / 10) : 0) + '% in one ' +
-        (L.per === 'year' ? 'year' : L.per === 'quarter' ? 'quarter' : 'month') + '. ' +
+      '<span class="sc-lg sc-lg-hint">Hover a ' + perWord +
+      ' for its figures' + (interactive ? ' · click for the trade breakdown' : '') + '</span></div>';
+
+    /* ⚠⚠ THE BARS' AXIS IS A FACT, NOT A FOOTNOTE. Two y-axes on one chart is something a
+       reader has to be TOLD about — a bar read against the left-hand axis is out by an order of
+       magnitude and nothing in the picture reveals it — so it is a chip, not a sentence four
+       lines into a paragraph. This used to be a <p> emitted INSIDE the chart host, which is why
+       it could not be written beside the basis note it sat directly under. */
+    if (showBars) {
+      var peakPct = maxV ? (Math.round(perMax / maxV * 1000) / 10) : 0;
+      nF.bars = 'Bars on the <b>right</b> axis · peak <b>' + peakPct + '%</b>/' + perWord;
+      nW.bars = '<b>The bars.</b> They are read against the right-hand axis — each is that ' +
+        perWord + '\'s own share of the total, peaking at ' + peakPct + '% in one ' + perWord + '. ' +
         'They are the differences between the cumulative points, so they always add back up to the lines.' +
-        // ⚠️ An absent bar has to be explained, or it reads as a month of no work.
+        /* ⚠️ An absent bar has to be explained, or it reads as a period of no work. TWO are
+           absent at the data date now, not one: the actual bar has been suppressed since
+           2026-09-11, and the FORECAST bar since 2026-09-17 — same cause, same anchored value,
+           and the fix had simply never been carried across. See `perF[d.ti] = null` in lens(). */
         (!d.manMode
-          ? ' <b>The data-date ' + (L.per === 'year' ? 'year' : L.per === 'quarter' ? 'quarter' : 'month') +
-            ' has no actual bar</b>: the curve anchors that point to the ' +
-            'project\'s true recorded % complete, so the step into it carries the whole difference ' +
-            'between the modelled curve and what has been booked — that is not one month\'s ' +
-            'production, so it is not drawn as one. Enter it in <b>Manual</b> mode to state it.'
-          : '') +
-        '</p>' : '');
+          ? ' <b>The data-date ' + perWord + ' has no actual or forecast bar.</b> The curve anchors ' +
+            'that point to the project\'s true recorded % complete, so the step into it carries the ' +
+            'whole difference between the modelled curve and what has been booked, and the forecast ' +
+            'line begins there rather than stepping into it — neither is one ' + perWord + '\'s ' +
+            'production, so neither is drawn as one. Enter it in <b>Manual</b> mode to state it.'
+          : ' <b>The data-date ' + perWord + ' has no forecast bar</b> — the forecast line begins ' +
+            'there, so there is no step into it to draw.');
+    }
+    /* ⚠ ONE WRITE, at the end, after all three contributors have had their say. */
+    basisNote.innerHTML = notesHTML([nF.weight, nF.bars, nF.fc], [nW.lines, nW.bars, nW.weight], compact);
     /* ==========================================================================================
        WIRING THE READOUT AND THE BREAKDOWN.
        ⚠️ Bound here rather than once at init, because `host.innerHTML` above destroys the svg on
