@@ -104,10 +104,14 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-17 (ab) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
+### 2026-09-17 (ad) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
 
-⚠⚠ **Re-lettered `(aa)` → `(ab)` AND re-versioned `20260917zx` → `20260917zzb` on merge — the same
-two-sessions-one-token collision this log has now recorded six times, both halves of it at once.**
+⚠⚠ **Re-lettered `(aa)` → `(ab)` → `(ad)` across two merges, AND re-versioned `20260917zx` →
+`20260917zzb` — the same two-sessions-one-token collision this log has now recorded six times, both
+halves of it at once, and the letter half three times in a row: main independently reached for
+`(aa)`, then for `(ab)`, and is now at `(ac)`. ⚠ Which is the argument for re-deriving the letter
+from the merged file at the END rather than picking one when the entry is written — a letter chosen
+up front is stale the moment anyone else lands an entry the same day.**
 Every letter `a`–`z` was already spent for this date, so both sides independently reached for
 `(aa)`; and main's `04b92972` had independently taken `20260917zx` for `MODULE_V` while this was
 in flight. ⚠ The version half is the dangerous one and it does **not** conflict on its own — it
@@ -183,6 +187,153 @@ pre-existing and neither this change's nor the merge's.
 `MODULE_V` → `20260917zzb`, re-derived from what `origin/main` actually carries **after**
 integrating (`zza`) rather than guessed at beforehand — which is the rule that keeps failing to stick.
 No shared asset changed.
+
+### 2026-09-17 (ac) — The last `font-weight: 600` in the app, and there were four of them, not two
+
+Owner: *"fix the two 600s in progress-photos too"* — the two entry *(ab)* flagged and left alone.
+
+### ⚠️ A SCAN THAT READS BOTH SPELLINGS FOUND FOUR
+
+Entry *(ab)* reported two, from a grep for `font-weight`. Running the same question against **both**
+spellings turned up two more, hidden inside `font:` shorthands where a `font-weight` grep never
+looks — exactly the blind spot *(ab)* had just documented for the Project Schedule, one module over:
+
+| | file | spelling |
+|---|---|---|
+| `.pp-pending-summarytext` | `progress-photos/module.css` | longhand |
+| `.pp-pending-name` | `progress-photos/module.css` | longhand |
+| `.il-viewtoggle button` | `minutes-of-meeting/module.css` | **shorthand** |
+| `.il-mom-todaybtn` | `minutes-of-meeting/module.css` | **shorthand** |
+
+All four folded. **The app is now at zero live `font-weight: 600` declarations in either spelling**,
+finishing what the 2026-09-10 sweep started with 262 of them.
+
+### The fold is a measured no-op, and the pair check came first
+
+The app downloads Montserrat `400;500;700;800` and Gotham has no Semibold, so CSS font matching for a
+request above 500 looks **up**. Rendered widths of one string: `500 → 164.69px`, `600 → 170.86px`,
+`700 → 170.86px`. **600 already paints as 700 to the pixel** — nothing moves on screen, and the source
+stops asking for a cut that does not exist.
+
+⚠️⚠️ **The light/heavy-pair check ran first, because that is where this sweep has been wrong before.**
+The 2026-09-10 pass found ten cases where 600 and 700 were the two halves of *one* component, and
+folding both ends made the two states identical — a blanket `sed` would have destroyed a feature the
+log had added on purpose. None of these four is one of those: in `progress-photos` every
+`.pp-pending-*` sibling (`-meta`, `-status`, `-error`) sets no weight at all, and in Minutes of
+Meeting every other weighted rule in the file is already 700. They are single emphasis declarations
+against unweighted siblings — the majority case.
+
+### What was NOT changed, and why
+
+⚠️ **The two Minutes of Meeting shorthands stay shorthands.** The three this pass converted to
+longhand in the Project Schedule had reasons of their own — two carried literal px sizes and one
+(`font: 600 11.5px/1 inherit`) was invalid CSS the browser discarded entirely. These two are valid and
+already token-based for both size and family (`font: 700 var(--pd-fs-sm)/1 var(--pd-font)`), so the
+weight was the only thing wrong with them. Rewriting them would be churn in a module this change has
+no other business in, and the scanner now reads shorthands anyway.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · CSS brace
+balance in both module stylesheets identical to pinned `ad9641d`, both files genuinely differ · the
+whole diff is **four lines, each `600` → `700`**, plus two cache-bust tokens. A re-scan for both
+spellings across every `.css` and `.html` in the repo returns **none**.
+`progress-photos/module.css` `?v=` → `20260917a` (past `20260916z2`), `minutes-of-meeting/module.css`
+`?v=` → `20260917b` (past `20260917a` — the two must not collide, and they are bumped in the same
+commit that changes both files).
+
+### 2026-09-17 (ab) — The spreadsheet's number columns were left-aligned, and 319 lines of stylesheet had never been scanned
+
+Owner: *"Now do 4.2 for the tables"* — *"Tables should be more readable. Cleanup and follow
+consistency especially having the excel feature."*
+
+### ⚠️⚠️ THE GRID'S DURATION COLUMNS WERE LEFT-ALIGNED WITH PROPORTIONAL FIGURES
+
+`Interior (d)` and `Exterior (d)` are declared `num: true` in `XL_COLS` and their cells are emitted
+with `inputmode="numeric"` — and then rendered `text-align: start`, `font-variant-numeric: normal`.
+Measured on six rows: **12, 14, 10, 9, 5, 7 all flush left**, so a two-digit duration and a one-digit
+duration do not line up, and the digits change width from row to row. In a grid whose entire premise
+is that it behaves like Excel, that is the readability complaint in one place.
+
+⚠️⚠️ **And the module already held the answer.** `table.sbld-tbl td.num { text-align:right;
+font-variant-numeric:tabular-nums; }` — the Scope per zone table, forty lines up the same stylesheet.
+One of the two tables got it. This is not a new idea; it is the same idea applied to the table that
+needed it more. ⚠️ The value lives in an `<input>` that inherits `font` but not alignment, so the rule
+has to reach the input, not the cell.
+
+**Verified in the browser:** 12 numeric cells, all `text-align: right`, all `tabular-nums`, headers
+right-aligned to match.
+
+### A header that fitted by exactly nothing
+
+At the shipped 90px default, `Exterior (d)` measured **73px of label in 73px of available width — 0px
+of slack**, and `Interior (d)` had 3px. Not clipped today; clipped by the first thing that changes a
+glyph width — the Montserrat fallback where Gotham is not licensed, a browser zoom, a user font
+setting. Defaults are now 98px (slack 8px and 11px). ⚠️ `c.w` is only the starting point — `xColW`
+still overrides it the instant a planner drags the column edge, so this takes nothing away.
+
+### ⚠️⚠️ 319 LINES OF THIS STYLESHEET HAD NEVER BEEN SCANNED
+
+Every scanner in this 4.1/4.2 pass read the real `<style>` block as **hardcoded lines 15..4510**. The
+block now ends at **line 4829**. So `(u)` through `(aa)` each reported their counts — off-scale sizes,
+truncating rules, mixed weights — against **93% of the stylesheet**, and called the missing 7% clean
+by never looking at it. The bound is computed from the source now, not assumed. It was caught only
+because a rule this entry added at line 4531 did not apply in the harness.
+
+What the tail was hiding, re-run against the whole block:
+
+| | reported | actually |
+|---|---|---|
+| mixed 700/800 families | 3 | **4** (`.sbld-lvlsum` was outside the window) |
+| truncating rules | 13 | **14** |
+| off-scale font-size rules | 0 | **0** — this one held |
+
+### ⚠️⚠️ THE `font:` SHORTHAND IS A THIRD BLIND SPOT, AND ONE OF THE THREE WAS BEING DISCARDED
+
+A `font:` shorthand carries size, weight, line-height and family in **one** declaration, so every
+scan that greps `font-size:` or `font-weight:` walks straight past it. All three non-`inherit`
+shorthands in this stylesheet carried **weight 600 and a literal px size** — invisible to every check
+in this pass until they were read by eye.
+
+And **`.ps-m-seg button { font: 600 11.5px/1 inherit }` is invalid CSS.** A shorthand is
+all-or-nothing, and `inherit` is not a font-family in that position, so the browser discards the
+whole declaration. **Measured:** applying it to an element pre-set to `font-size:99px;
+font-weight:100` left both at 99 and 100, and `el.style.font` came back empty. That control — the
+mobile List/Gantt toggle, *not* a Setup table — has never had a size or a weight from this rule and
+has been falling through to the user agent's own button font the whole time. Fixed here because a
+declaration known to be discarded should not sit in the file, and the fix is the same one line as the
+other two. ⚠️ It is a **visible** change: that control has been rendering at the UA's ~13.3px.
+
+### Weight 600, folded — and the fold is a measured no-op
+
+Five live `font-weight: 600` declarations survived the 2026-09-10 sweep that folded 262 of them (two
+longhand, three hidden in shorthands). The app downloads Montserrat `400;500;700;800` and Gotham has
+no Semibold, so CSS font matching for a request above 500 looks **up**. Rendered widths of one string:
+
+| weight | 400 | 500 | **600** | **700** | 800 |
+|---|---|---|---|---|---|
+| px | 162.09 | 164.69 | **170.86** | **170.86** | 174.35 |
+
+**600 already paints as 700 to the pixel.** Folding changes nothing on screen and makes the source say
+what the browser does. ⚠️ Two more remain in `modules/progress-photos/module.css` — a different
+module, not touched here.
+
+### Left alone, with the reason
+
+**No row hover was added to the grid**, although `.pd-table tr:hover td` exists app-wide and both
+Setup tables lack it. The grid already layers three deliberate backgrounds — PDGrid's `.pdg-sel` /
+`.pdg-anchor` selection, `.xl-copied`'s marching ants, and the focused row's gutter going red — and
+the stylesheet reasons about that cascade explicitly. A hover tint would be a fourth background
+competing with three that each mean something. **Padding also stays** at 5/6/8px across the three
+tables: the design-system note is that 2px of gap is imperceptible while half a pixel of type is not,
+and these are 1px apart.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline
+scripts parse · CSS brace balance identical to pinned `830786a` · no NUL bytes · 0 off-scale
+font-size rules **and** 0 off-scale inline sizes **and** 0 problematic `font:` shorthands · 0 elements
+computing to weight 600 · 419 elements Gotham / 0 Arial. Every width above is a browser measurement
+taken behind a control assertion — the grid's declared inline width (1062px) against its rendered
+width (1063px) — because `visibilityState` read `hidden` while layout was live, and a gate on
+visibility alone would have discarded good numbers just as a gate on nothing would have accepted
+void ones. `modules-grid.js` `?v=` → `20260917zzb`.
 
 ### 2026-09-17 (aa) — The last five Setup ledes stop being instructions, and the wizard is fully on the type scale
 
