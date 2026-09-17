@@ -636,6 +636,14 @@ window.ContractsClaims = (function () {
        that project happens to sit. */
     var exposure = (pendVal == null && shortfall == null) ? null : (Number(pendVal || 0) + Number(shortfall || 0));
 
+    /* ⚠️ APPROVED CHANGE ORDERS ONLY — not claims, and not anything still pending. A change
+       order the client has approved has altered the contract sum; a cost claim is a recovery against
+       the existing one, and a pending anything has altered nothing yet. Through `PDClaims.sum` over
+       `PDClaims.decided`, like every other figure on this page, so the definition of "decided"
+       cannot drift from the pipeline table's. */
+    var varn = PDClaims.sum(
+      PDClaims.decided(PDClaims.ofType(claimish, 'Change Order')), 'approved_amount') || 0;
+
     /* ⚠️⚠️ THE SHARED COMPONENT, NOT A MODULE-LOCAL CARD. `UI.kpi` reserves the two lines a
        wrapping label needs so that a one-word and a three-word label still line their VALUES up
        across the row, and `UI.kpis` is the shared auto-fit strip. This is the 2026-09-10 (w2)
@@ -687,9 +695,24 @@ window.ContractsClaims = (function () {
         '<i id="cc-dash-comm" class="cc-dash-comm">reading the bill of quantities…</i></div>' +
 
       UI.kpis(
+        /* ==== THE REVISED CONTRACT SUM =====================================================
+           ⚠️⚠️ AN APPROVED VARIATION CHANGES THE CONTRACT, and this card did not say so.
+           Original + approved variations = the **revised contract sum**, which is the figure every
+           commercial report is measured against — valuation, retention, final account. The page
+           held both halves and printed only the first, so a project with ₱400M of approved change
+           orders showed the same "Contract value" as one with none.
+           ⚠️ The VALUE stays the original and the revision is named beneath it, rather than
+           quietly restating the headline. A planner comparing this screen to a signed contract must
+           find the signed number where they left it; the revision is the news, and news belongs in
+           the line that explains. */
         card('Contract value', money(ctVal),
-             pk.length ? 'across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's')
-                       : (contracts.length > 1 ? contracts.length + ' contract records' : 'no package breakdown')) +
+             varn ? '+' + short(varn) + ' approved · now ' + short(ctVal + varn)
+                  : (pk.length ? 'across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's')
+                       : (contracts.length > 1 ? contracts.length + ' contract records' : 'no package breakdown')),
+             varn ? 'warn' : null,
+             varn ? money(ctVal) + ' signed, plus ' + money(varn) +
+                    ' of approved change orders = a revised contract sum of ' + money(ctVal + varn)
+                  : '') +
         '<div id="cc-dash-certcard">' +
           card('Certified to date', '—', 'reading the bill of quantities…') + '</div>' +
         expCard + timeCard) +
@@ -935,10 +958,22 @@ window.ContractsClaims = (function () {
        disagrees with the list under it. Caught by a test asserting the count, not by reading. */
     var pendN = ag.n + ag.unsent + eotAg.n + eotAg.unsent;
     var oldTone = ag.oldest == null ? '' : (ag.oldest > 90 ? ' cc-v-bad' : (ag.oldest > 60 ? ' cc-v-warn' : ''));
+    /* ==== NAME THE RECORD, NOT ONLY THE NUMBER OF DAYS ======================================
+       ⚠️ *"oldest 45 days"* says there is a problem. It does not say which record to chase,
+       which is the only action the figure supports, and a planner then had to scroll the register
+       and sort it by hand to find out. `agingBuckets` now returns the row alongside the count.
+       ⚠️ Reference first, description second, clipped: a reference is what the record is
+       called in an email to the client, and it is short. The description is the reminder of what it
+       was about and is routinely 40 words. */
+    var oldRow = ag.oldestRow || (eotAg && eotAg.oldestRow) || null;
+    var oldName = oldRow
+      ? ((oldRow.reference_no || '').trim() || clean(descOf(oldRow)).slice(0, 44) || 'one record')
+      : null;
     return '<div class="cc-dash-h" title="Aging counts from DATE SUBMITTED, and only while a record is Pending. A record with no submitted date is listed separately — it is waiting on us, not on the client. Hand-off times average the records that carry both dates.">With the client ' +
         '<span class="cc-mini">' + pendN + ' pending' +
         (ag.oldest != null
-          ? ' · <b class="cc-oldest' + oldTone + '">oldest ' + ag.oldest + ' days</b>'
+          ? ' · <b class="cc-oldest' + oldTone + '">oldest ' + ag.oldest + ' days</b>' +
+            (oldName ? ' · ' + esc(oldName) : '')
           : '') + '</span></div>' +
       '<div class="cc-kpis">' +
         kpi('Pending value', money(pendVal), 'claims & change orders', pendVal ? 'warn' : '') +

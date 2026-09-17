@@ -1,5 +1,48 @@
 # Module: contracts-claims
 
+## 2026-09-17 (b) — The dashboard states the revised contract sum, and names the record to chase
+
+Owner: *"Contracts & Claims dashboard for project-level needs to be improved. Please suggest both
+information and UI improvements."* Two information gaps closed; the rest is written up in the reply
+rather than built, because they need data the register does not hold yet.
+
+### An approved variation changes the contract, and the card did not say so
+Original + approved variations = the **revised contract sum** — the figure every commercial report
+is measured against: valuation, retention, final account. The page held both halves and printed only
+the first, so a project with ₱400M of approved change orders showed the same *Contract value* as one
+with none.
+
+⚠️ **The headline VALUE stays the signed figure**, and the revision is named beneath it. A planner
+comparing this screen against a signed contract has to find the signed number where they left it;
+the revision is the news, and news belongs in the line that explains.
+
+⚠️ **Approved change orders only.** A cost claim is a recovery against the existing sum, not a
+change to it, and anything still pending has changed nothing yet. Computed through
+`PDClaims.decided` + `PDClaims.sum`, like every other figure here, so "decided" cannot drift from
+what the pipeline table means by it.
+
+### "oldest 45 days" named no record
+It says there is a problem; it does not say **which record to chase**, which is the only action the
+figure supports — and a planner then had to scroll the register and sort it by hand to find out.
+`PDClaims.agingBuckets` now returns `oldestRow` beside `oldest`, and the header names it: reference
+first (what the record is called in an email to the client, and short), description second, clipped.
+
+⚠️ Additive to the shared helper — every existing caller reads `oldest` and is untouched. That
+matters here: `agingBuckets` is read by **three** screens, and the point of `claims.js` is that they
+cannot describe the register differently.
+
+### Tests
+`tools/test-claims.js` — new, **15 passed, 0 failed**, loading `claims.js` the way the page does
+(a real `window`, then the IIFE assigns onto it) rather than a rewritten copy. Covers the cases that
+would each have named the wrong record: a **dateless** record has no age and must not win (it is
+waiting on us, not on the client), a **decided** record is not pending and cannot be the oldest
+thing with the client, and a **tie** resolves to the first stably so the header does not change on
+re-render. Plus the variation rule: approved change orders only, claims and pending excluded.
+
+⚠️ Negative-tested — dropping `oldestRow = r` turns 5 assertions red.
+
+`claims.js` → `?v=20260917a`; module → `?v=20260917b`.
+
 ## 2026-09-17 (a) — The record dialog stops clipping, amounts carry commas, and four sentences of glossary become tooltips
 
 Seven things the owner raised on the live project.
