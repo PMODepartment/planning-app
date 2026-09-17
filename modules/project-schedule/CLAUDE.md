@@ -138,7 +138,7 @@ tree and identically on `origin/main`.
 ⚠️ **Not verified signed in.** No real setup has been opened: the walk, the scope grid and the
 Generate step are the shipped renderers executed against fixtures, not a live project.
 
-⚠⚠ `MODULE_V` → `20260917zzb`, and it took TWO re-derivations. `zw` was the highest token on
+⚠⚠ `MODULE_V` → `20260917zzd`, and it took TWO re-derivations. `zw` was the highest token on
 any remote head when this was written; by the time it merged, main had run `zx` → `zy` → `zz` →
 `zza` across six commits — **including `20260917zx`, the exact token this branch had picked**. A
 version collision does not conflict on its own (two different values merge cleanly), so the loser's

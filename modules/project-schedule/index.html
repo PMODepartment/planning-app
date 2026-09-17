@@ -48132,6 +48132,10 @@
       hasStagedImport: function () { return !!imp; },
       /* Read the live schedule into the steps from outside the Setup (and the test surface). Returns
          the report so a caller can assert on what was read without going through the dialog. */
+      /* ⚠ The builder's dim→level resolver, exposed. The LSM fold needs to know which level is
+         the storey, and `_dimLevelMap` is the module's considered answer to that — built from two
+         real projects. Exposing it is what stops a second, weaker answer existing. */
+      floorLevelId: function () { var l = locLevelFor('floor'); return (l && l.id) || null; },
       deriveFromSchedule: function () { return sbDeriveFromSchedule(); },
       readScheduleIntoSteps: function () { return sbDoDerive(); },
       // Open the setup ON a named step. Used by the WBS Manager's "edit it in Schedule Setup" button:
@@ -52199,8 +52203,12 @@
            not see the ladder”*. Grouping by the FLOOR level ALONE makes every storey a
            top-level row: no ancestors above it, no zone or unit rows beneath it, and several
            activities deliberately sharing one bar — which is the reading, not lost detail.
-           ⚠️ Falls back to the full ladder when no floor level can be identified: one row
-           per storey is meaningless when nothing here names a storey. */
+           ⚠️ Falls back to the full ladder ONLY when the project has no location breakdown at
+           all. (This used to claim it fell back whenever no floor level “could be identified”,
+           which the code has never done: `_locFloorLevelId` always answers when there is any
+           breakdown, so `_want` is `locDims` only when `LOC_LEVELS` is empty — and that case is
+           caught by the `!locDims.length` toast above, not here. A comment describing a branch
+           that cannot be reached is worse than none.) */
         var _flId = _locFloorLevelId();
         var _want = _flId ? ['loc:' + _flId] : locDims;
         if (JSON.stringify(groupBys) !== JSON.stringify(_want)) {
@@ -52891,7 +52899,19 @@
      collapse to one level while the rate and the clashes were computed on another, and nothing on
      screen would say so. Extracted rather than copied. */
   function _locFloorLevelId() {
-    var m = LOC_LEVELS.filter(function (l) { return /floor|level|storey|story/i.test(l.name || ''); })[0];
+    /* ⚠⚠ ASK THE BUILDER'S RESOLVER FIRST — see the 5.1 note. Measured against seven
+       breakdowns, the regex below disagrees with it on three, and is wrong on all three:
+       it reads “level” inside a BUILDING's name, it has no “deck”, and when nothing looks
+       storey-ish it takes the DEEPEST level — one row per bay on a Block>Section>Pour>Bay
+       breakdown, which is the row explosion this fold exists to prevent. */
+    try {
+      var id = (typeof ScheduleBuilder !== 'undefined') && ScheduleBuilder &&
+        typeof ScheduleBuilder.floorLevelId === 'function' && ScheduleBuilder.floorLevelId();
+      if (id) return id;
+    } catch (e) {}
+    /* Fallback for a call before the builder has initialised. ⚠ “deck” added so the two lists
+       stop disagreeing for as long as both exist — `DIM_SYN.floor` has carried it all along. */
+    var m = LOC_LEVELS.filter(function (l) { return /floor|level|storey|story|deck/i.test(l.name || ''); })[0];
     return (m && m.id) || (LOC_LEVELS.length ? LOC_LEVELS[LOC_LEVELS.length - 1].id : null);
   }
   function stkDefaultLevel() {

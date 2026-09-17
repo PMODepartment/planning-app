@@ -1433,9 +1433,30 @@ function grpRow(name, anc, acts, idx, field) {
   ok(/setGroupBys\(_want\)/.test(st), 'and folds to that level alone');
   ok(/if \(!_flId\)[\s\S]{0,80}expandToLevel\(/.test(st),
      'so the ladder collapse runs ONLY on the fallback, where there is a ladder to collapse');
-  /* A breakdown with no recognisable floor name falls back rather than throwing. */
+  /* ⚠⚠ WHICH LEVEL IS THE STOREY IS ASKED OF `_dimLevelMap`, NOT OF A SECOND REGEX.
+     `_locFloorLevelId` used to name-match /floor|level|storey|story/ over LOC_LEVELS and take the
+     first hit, with the DEEPEST level as its fallback. Executed against seven breakdowns, that
+     disagreed with `_dimLevelMap().floor` on three and was wrong on all three:
+       [Building Level > Floor > Zone]  it read “level” in the BUILDING's name  -> one row per building
+       [Block > Section > Pour > Bay]   nothing storey-ish, so it took the deepest -> one row per bay
+       [Tower > Deck > Zone]            it has no “deck”; DIM_SYN.floor always did
+     The middle one is the row explosion this whole item exists to prevent, re-created by the
+     resolver meant to prevent it. Asserted on the SOURCE because `ScheduleBuilder` is a different
+     IIFE that this harness does not slice — executing it here would prove the harness, not the
+     shipped wiring. */
+  const flr = sliceFn('_locFloorLevelId') || '';
+  ok(/ScheduleBuilder\.floorLevelId\(\)/.test(flr),
+     'the storey level is resolved through the builder\'s dim map, not a second name regex');
+  ok(flr.indexOf('ScheduleBuilder.floorLevelId') < flr.indexOf('LOC_LEVELS.filter'),
+     'and it is asked FIRST, with the regex only as a pre-init fallback');
+  ok(/deck/.test(flr),
+     'the fallback regex carries “deck” too, so the two lists cannot disagree while both exist');
+  /* The fallback itself, executed. ⚠ This harness has no ScheduleBuilder, so these run the
+     pre-init path on purpose - which is the path that must not throw. */
   M.setLocLevels([{ id: 'A', name: 'Area' }, { id: 'B', name: 'Cell' }]);
-  eq(M.floorLevelId(), 'B', 'with no floor-ish name it falls back to the deepest level');
+  eq(M.floorLevelId(), 'B', 'with no floor-ish name the fallback takes the deepest level');
+  M.setLocLevels([{ id: 'A', name: 'Tower' }, { id: 'B', name: 'Deck' }, { id: 'C', name: 'Zone' }]);
+  eq(M.floorLevelId(), 'B', 'and a DECK is a storey to the fallback now, not a miss');
   M.setLocLevels([]);
   eq(M.floorLevelId(), null, 'and to null with no breakdown at all');
   M.setLocLevels(LV);
