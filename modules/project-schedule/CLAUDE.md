@@ -1,3 +1,141 @@
+## 2026-09-18 (a) — A step you cannot answer yet cannot be entered, and four references to a rail that had been renumbered twice
+
+Owner, closing the 9-step restructure: *"\*\*\* Users are unable to proceed the next step without
+defining the pre-requisites or preceding steps."*
+
+### ⚠️⚠️ IT BLOCKS WHAT IS UNREACHABLE IN PRINCIPLE, NEVER WHAT IS MERELY UNANSWERED
+
+This is the whole design, and the naive reading of the ask breaks the app. *"Location Sequence needs
+floors"* is obviously true and, as a gate, wrong: **General Requirements carries no tower, floor or
+zone** — `LOCLESS`, the rule this module added on 2026-09-17 (zo) precisely because mobilisation, the
+site office and the as-builts are not in a storey — so a project whose only trade is project-wide has
+no floors, **never will**, and would have been stranded one step short of Generate for ever with a
+message telling it to go and type something it cannot type.
+
+So `_stepReady(title)` returns the reason a step cannot be entered, or `''`:
+
+| step | blocked when |
+|---|---|
+| Floors & Zones · Location Sequence · Activity Sequence · Generate | there are **no activities at all** |
+| Location Sequence | the project **has** location-bearing trades **and** not one of them has a floor |
+
+⚠️ The floors test runs **only when `locGroups()` is non-empty**. That one condition is what lets the
+project-wide-only project through, and it is the assertion the suite is built around.
+⚠️ `'new'` path only. An import writes the schedule from a file and its steps do not depend on each
+other this way; and with no `cfg` there is nothing to measure.
+
+### The rail
+
+A blocked step is dimmed and carries the reason in its title. Clicking one does **not** refuse:
+
+- ⚠️⚠️ **A forward jump lands on the step BEFORE the block, not on the block itself.** Refusing and
+  leaving the planner where they were gives them nothing to do; landing on the blocked step would be
+  the gate not working. `_firstBlockedUpTo(i)` finds the first blocked step **at or before** the
+  target, so jumping from step 2 to step 8 lands short of the *first* thing that is missing rather
+  than the last.
+- ⚠️ **Going backwards is never blocked** (`if (_i > step)`). A planner must always be able to return
+  and answer what is missing — a gate that traps you is worse than no gate.
+- ⚠️ `_firstBlockedUpTo` starts at **k = 1**: Start is the path chooser and must always be reachable.
+- ⚠️⚠️ **This is the SCHEDULE SETUP rail, which calls `render()`.** Cost Loading has its own rail with
+  a byte-identical `[data-step]` selector that calls `paint()`, ~1,400 lines below. A whole-file match
+  on that pattern patches both and breaks Cost Loading's rail; the edit is anchored on the `render()`
+  variant alone.
+
+### The footer
+
+- ⚠️ `_nextBlock` is computed **once** and read by the label, the disabled state and the handler, so
+  the button cannot say one thing and do another.
+- ⚠️⚠️ **A tab walk within a step is never blocked.** The prerequisite belongs to the next **STEP**,
+  not to the next **view** of this one — so walking Tower Sequence → Zone sequence inside Location
+  Sequence is untouched, and `_nextBlock` is only computed when there is no next tab.
+- ⚠️ **Disabled *and* guarded.** The button is rebuilt on every render, and a `disabled` attribute is
+  one repaint away from being the only thing standing there.
+
+### Three CSS decisions that are not cosmetic
+
+- ⚠️⚠️ **`.sbld-step.locked` sets OPACITY AND CURSOR ONLY.** `.on` and `.locked` are both one class on
+  the same element, so any property **both** set would be decided by source order rather than by
+  meaning — and a step can be **both** (delete every activity while standing on Generate), where the
+  active state must still read as active. `.sbld-step.locked.on` restores full opacity explicitly.
+  This is the specificity tie that has now bitten this file three times.
+- ⚠️⚠️ **The reason is NOT a third child of `.sbld-foot`**, which is `justify-content:space-between` —
+  a third child there lands **between** Back and Next. It rides in a `.sbld-nextwrap` column beside
+  the Next button instead, so the foot still has exactly two children and `foot.querySelector('#b-next')`
+  still resolves.
+- ⚠️ **`--pd-warn-text`, never `--pd-warn`**: that one is a **surface** colour and measures 3.46:1 on
+  white, under AA for text this size. `dashboard.css` says so in its own token block.
+
+### Four cross-references left stale by the restructure
+
+- **The tower-link empty state sent planners to Floors & Zones to add a tower** — *"Add a second in
+  step 6"* — and towers moved to their own step on 2026-09-17. It names **Towers** now. That one was
+  on screen and actively wrong.
+- The location-breakdown hint said *"Steps 2–7 and the pushed schedule all use these names"*: hardcoded
+  numbers for a rail that is now nine steps. It names no numbers at all.
+- ⚠️ Two **comments** naming *"steps 2–7"* and *"steps 2 and 7"*. Fixed rather than left: a comment
+  that confidently describes the opposite of the code is worse than none, because it is what the next
+  reader trusts. This file already records that lesson twice.
+
+`chk` after: the rail is exactly the nine requested steps, **16 distinct `_stepNo` titles used, 0
+unresolved**, 11 aliases all pointing at a step the rail can show — so no cross-reference renders as a
+blank digit.
+
+### Verified
+
+**41 new assertions (`test-builder` 108 → 149), 0 failing.**
+
+⚠️⚠️ **NOTHING IS STUBBED.** `_stepReady`, `_firstBlockedUpTo`, `locGroups`, `usedGroups`, `locless`
+and `floorsOf` are **all** sliced out of the shipped file by name and executed, with `GROUPS` and
+`LOCLESS` lifted from the source too; only `cfg`, `mode` and `STEPS` — the scenario's own inputs —
+are supplied. Stubbing `locGroups` would have made the project-wide case a test of the stub rather
+than of the rule, which is the one case the whole design turns on. The rail's step titles are read out
+of the shipped `STEPS_NEW` rather than re-typed, so the fixture cannot drift from the rail.
+
+⚠️⚠️ **Four negative builds, each reverting ONE decision, and every one bites** — each failing exactly
+the assertion written for it and naming it:
+
+| mutation | fails with |
+|---|---|
+| land **on** the blocked step (`_blk` not `_blk - 1`) | *… lands on the step BEFORE the block* |
+| block backward jumps too | *going backwards is never blocked* |
+| drop the floors test | *a trade with no zoning entry reads as no floors rather than throwing* |
+| **strand the project-wide-only case** (`if (true)` for `if (loc.length)`) | ***got 6, want -1*** |
+
+That last row is the load-bearing one: it is the stranding this design exists to prevent, reproduced.
+
+⚠️ **The contrast is pinned to a SHA (`6047d600`), not to `HEAD`** — which becomes self-comparison the
+moment this commits, a trap on file here. It is asserted to have **run**, not skipped: the base has no
+`_stepReady`, no `_firstBlockedUpTo`, no blocked-reason style, and jumps to any step unconditionally.
+
+Whole battery on the merged tree: `builder` **149** · `actsetup` 50 · `syntax` 4 · `zoneplan` 50 ·
+`zoneoverlap` 57 · `shapeedit` 36 · `autotrace` 32 · `sitefit` 31 · `towerseq` 48 · `cpm` 28 ·
+`critwbs` 26 · `health` 30 · `wbsfile` 33 · `actdnd` 47 · `lsm` **683** — **1,304 assertions, 0
+failing**. `wiring-check` **139/0** over 3,972 references. The inline `<script>` **parses** (1 block —
+the scan resumes **after** each closing tag, or the print/export stylesheets' own literal tag opens
+bogus blocks and reports failures in correct code). CSS braces balanced comments-stripped,
+**+4 open / +4 close** — exactly the four new rules. **0 NUL bytes, pure LF.** Function set: **0 lost,
+2 added.**
+
+⚠️ **NOT VERIFIED SIGNED IN.** The anon key has no grants, so no real setup has been opened: the
+predicates are proved by execution against fixtures and the wiring by assertion against the shipped
+source. **The first things to try:** open Schedule Setup on a new project and check Floors & Zones
+onward are dimmed until an activity exists; then click straight from Activities to Generate and check
+you land on Floors & Zones with the reason in a toast rather than being refused.
+
+⚠️ **Merged `origin/main` (10 commits) before shipping.** `index.html` **auto-merged with no
+conflicts** — my edits sit in the step/rail/footer/CSS regions and PR #140's in the Activities step's
+holding list — but a clean auto-merge is not evidence, so **both sides were checked present
+afterwards**: the gating predicates, the locked style and the `.sbld-nextwrap`; and main's grouped
+holding list, its `#b-delrows` handler and its Internal/External rename. The whole battery was re-run
+on the merged tree, above.
+
+⚠️ **`stash@{0}` holds unfinished tower-footprint union work** (`zpUnionRings`, fuzz-measured LOST
+32059 across 291 lines), stashed with a message naming exactly why rather than shipped inside an
+unrelated change. It is recoverable, not discarded.
+
+`MODULE_V` → `20260918a` — re-derived from the merged tree **after** integrating (main had reached
+`20260917zzt`), and sort-checked as a plain string.
+
 ## 2026-09-17 (zzs) — The Activities step: two delete controls go, one of which main had wired while this branch called it dead
 
 ⚠️ **Re-lettered `(zz)` → `(zzs)` on merging `origin/main`, and it matters here rather than being

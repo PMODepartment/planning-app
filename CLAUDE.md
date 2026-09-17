@@ -104,6 +104,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (a) — Schedule Setup gates its own steps, and the gate had to be written so it cannot strand a project
+
+Owner, closing the 9-step Schedule Setup restructure: *"\*\*\* Users are unable to proceed the next
+step without defining the pre-requisites or preceding steps."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(a)`. Logged here
+for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **A PREREQUISITE GATE MUST BLOCK WHAT IS UNREACHABLE IN PRINCIPLE, NOT WHAT IS MERELY
+UNANSWERED — and the obvious reading of this ask breaks the app.** *"Location Sequence needs floors"*
+is plainly true and, as a gate, wrong: General Requirements is project-wide and carries no tower,
+floor or zone, so a project whose only trade is project-wide has no floors, **never will**, and would
+have been held one step short of the finish for ever by a message telling it to type something it
+cannot type. The floors test therefore runs **only when the project has location-bearing trades at
+all**. That single condition is the feature, and it is the one a negative build was written to prove:
+removing it fails with *got 6, want -1* — the stranding, reproduced.
+
+⚠️⚠️ **A BLOCKED CONTROL SHOULD SEND YOU SOMEWHERE, NOT REFUSE.** Clicking a gated step does not
+bounce; it lands on the step **before the first thing that is missing**, with the reason in a toast.
+Going **backwards** is never gated — a planner must always be able to return and answer what is
+missing, and a gate that traps you is worse than no gate. The same shape applies to the primary
+button: it is **disabled and its handler is guarded**, because a button is rebuilt on every render and
+a `disabled` attribute is one repaint away from being the only thing standing there.
+
+⚠️⚠️ **AND THE SPECIFICITY TIE BIT A THIRD TIME IN THIS REPO.** A "locked" state and an "active" state
+that are both one class on the same element cannot both set the same property — source order decides,
+not meaning — and an element can legitimately be **both** (delete every activity while standing on the
+last step). The locked rule sets **opacity and cursor only**, with the both-classes case restoring the
+active look explicitly. ⚠️ Its explanatory text uses `--pd-warn-text`, never `--pd-warn`: that one is a
+**surface** colour at 3.46:1 on white, which this file's own token block already warns about.
+
+**Verified:** 41 new assertions executing the shipped predicates with **nothing stubbed** — the whole
+`locGroups`/`usedGroups`/`locless`/`floorsOf` chain is sliced out of the shipped file and run, because
+stubbing the first of them would have made the project-wide case a test of the stub rather than of the
+rule. Four negative builds bite, each naming its own assertion; the contrast is pinned to a **SHA**
+rather than `HEAD`, which becomes self-comparison the moment this commits, and is asserted to have run
+rather than been skipped. Fifteen module suites green — **1,304 assertions, 0 failing** —
+`wiring-check` **139/0** over 3,972 references, the 3.4MB inline block parses, CSS braces balanced at
++4/+4, 0 NUL bytes.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so no real setup has been opened; the
+predicates are proved by execution against fixtures.
+
+⚠️ **Merged `origin/main` (10 commits) before shipping**, including PR #140, which had been open when
+this branch was cut. `modules/project-schedule/index.html` **auto-merged with no conflicts** — but a
+clean auto-merge is not evidence, so both sides were checked present afterwards and the whole battery
+re-run on the merged tree.
+
+`MODULE_V` → `20260918a`, re-derived from the merged tree **after** integrating (main had reached
+`20260917zzt`) rather than guessed beforehand, and sort-checked as a plain string across every token
+in the tree. No shared asset changed.
+
 ### 2026-09-17 (aw) — The 360° stitcher produced a cylinder and the viewer rendered it as a sphere
 
 Owner, five items off two screenshots of the Progress Photos review modal — a bowed mosaic inside
