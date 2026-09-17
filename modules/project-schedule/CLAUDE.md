@@ -1,3 +1,215 @@
+## 2026-09-18 (b) — Project Phases: one tree per phase, drawn as a Gantt you can draw relationships on
+
+Owner, five items on Schedule Setup ▸ Project Phases: *"remove the duplicate branch and paste outline
+buttons as well as add WBS. no other WBS is allowed aside from initiation, planning, execution
+(fixed), close-out. no need also for reset WBS in tools"* · *"remove also add branch for all the
+phases"* · *"when phase is clicked, provide button for add WBS and add activity. no need for reset to
+typical set inside phase"* · *"when add WBS, add it as a sibling WBS to the activity or WBS selected.
+WBS can be dragged to the left to make it a parent. activities can also be dragged to the WBS to
+place inside or outside the WBS. no need for the WBS branch column. no need also for the dates"* ·
+*"instead of a plain table, this should be a gantt chart per phase, in the gantt chart, users can
+draw lines between activities to define sequence. right clicking on arrow also allows user to define
+lag between activities as well as relationship type - FS, SS, FF, SF."*
+
+### ⚠️⚠️ THE FOUR-PHASE RULE IS NOW TRUE BY CONSTRUCTION, NOT BY CONVENTION
+
+Every control that could author a branch at the top level is gone: **Add WBS**, **Paste outline…**
+and **Duplicate branch…** off the tools row, **Reset WBS…** off the Tools popover, and
+**+ Add branch** off every phase rail. What replaces all five is one **+ Add WBS** per phase card,
+which resolves its parent inside that phase and cannot reach the top level at all.
+
+⚠️ **Their handlers were deleted in the same edit.** `getElementById(…).onclick` on a missing node
+throws *"Cannot set properties of null"* and kills every wiring line **below** it — so a button
+removed from the markup alone takes the rest of the page down. This repo has already paid for that
+shape once (2026-09-11 b1).
+⚠️ `openWbsOutline`, `wbsDuplicate` and `wbsResetTree` survive **uncalled**, named in a comment. Each
+is a large modal whose deletion is its own change; nothing else calls them.
+⚠️ **Adopt existing WBS stays.** It *repairs* an imported tree rather than authoring one, and it is
+what the "un-adopted branches" toasts send a planner to.
+⚠️ **Reported, not removed: `From project…` is still there and still copies a whole foreign WBS in at
+the top level.** It was not on the owner's list, so it is named here rather than taken out
+unasked — but it is the one remaining hole in the rule above.
+
+### ⚠️⚠️ ONE TREE, WHERE THERE WERE A LIST AND A TREE
+
+The card carried two blocks with a long note explaining that they are not two views of one thing: the
+planned activity **list** (`cfg.phases`, a plan) and the live WBS **tree** (`wbs_nodes`, a record).
+That is still true of the data — the activities are not in the database until the push — and it
+stopped being a reason to draw them apart the moment the owner asked to drag an activity **into** a
+branch: a drag needs both ends on screen at once.
+
+So a phase is one tree now, branches with their activities nested inside, and:
+
+| | |
+|---|---|
+| the **WBS column** | gone — tree position says which branch an activity is in |
+| the **Dates column** | gone — a Gantt states dates as bars, and a text column beside them is the same fact in the narrower form |
+| the **‖ concurrent tick** | gone — SS+0 says the same thing in the same vocabulary as the other three types |
+
+⚠️ `phWbsBlock` gained a `noTree` flag for the three editable cards. Leaving the `data-phwbs` host
+there as well would make `sbPhaseWbsViews` mount a **second** live tree over the same branches, so
+every rename would have two editors and one's collapse state would silently contradict the other.
+Milestones, Other branches and the read-only Execution card still use it — they have no Gantt.
+
+### ⚠️⚠️ A LIVE BUG THE COLUMN'S REMOVAL EXPOSED: `w` HAD NEVER SURVIVED A SAVE
+
+`normalize()` is a whitelist and carried `id, n, d, par`. It did **not** carry `w` — the per-activity
+WBS branch that shipped on 2026-09-17 (u) — so the branch a planner picked worked for the rest of the
+session and was gone on the next load, while `phaseTaskPayload` reads `t.r.act.w` at push time, which
+is the moment it was needed. The field sits **two lines below a comment warning, in bold, about
+exactly this trap** for `par`. Carried now, and only when set, so a setup that never used it is
+byte-identical to before.
+
+### The relationships, and why this is not a migration
+
+A phase is a **network**. `preds` is `[{id, type, lag}]` on each activity, validated in a second pass
+against that phase's own ids — a self-link, a link to a deleted activity or a duplicate between one
+pair is dropped rather than carried, because the scheduler would read an unknown predecessor as *no
+constraint* and quietly draw a different programme from the one the arrows show.
+
+⚠️⚠️ **EVERY SETUP SAVED BEFORE TODAY IS LEFT ALONE.** Rewriting them into explicit links on load
+would touch every saved setup in the database to change nothing anyone asked to change, and do it
+silently. `sbPhLinks` instead **derives** the old order + `par` chain as links whenever a phase
+carries none, so an untouched phase schedules to the dates it always did.
+
+⚠️⚠️ **THE CONVERSION IS PER PHASE, NEVER PER ACTIVITY.** If activity 3 carried a drawn link and
+activity 4 carried none, *"what does 4 follow?"* has no honest answer — it would appear to follow row
+3 while the arrows say nothing of the kind. So the first link drawn materialises that phase's whole
+implicit chain in one step (`sbPhMaterialise`), and the suite asserts **that step moves not one
+date**.
+
+⚠️ **The implicit chain reproduces the old GROUP semantics, which is subtler than "each row follows
+the one above".** Consecutive `par` rows were one group whose length was its longest member, and the
+next plain row followed **the group** — so it is linked FS to *every* member, not just the last. The
+scheduler takes the max over incoming links, so the longest drives. Linking only the last member
+would let a short final row release the next group early: the *"8508 days"* bug in reverse.
+
+⚠️⚠️ **`ph.net` IS THE MARKER, AND "DOES IT HAVE ANY LINKS?" WAS NOT ENOUGH — the suite caught it.**
+With the flag derived from the links alone, a converted phase stripped of its last arrow falls back
+to the implicit chain, so **deleting a link resurrects the dependency just deleted** and the bar jumps
+back. A phase that has been converted stays converted, with no links meaning no links.
+
+### The scheduler
+
+A forward pass in 0-based day indices, each activity occupying `[es, ef]` **inclusive** — the same
+model `generate()` and `addD` use, so a phase and the execution window it is measured against cannot
+disagree by a day.
+
+```
+FS+lag → es >= ef(pred) + 1 + lag      FF+lag → ef >= ef(pred) + lag
+SS+lag → es >= es(pred) + lag          SF+lag → ef >= es(pred) + lag
+```
+
+⚠️ The result is shifted so the earliest start is day 0: a negative lag can legally pull an activity
+before its predecessor, and without the shift the phase would start at a negative offset and overhang
+whatever sits beside it.
+⚠️⚠️ **A cycle must not hang the browser.** `sbPhLinkWouldCycle` refuses the link at **draw** time,
+with the reason, so the normal path never reaches an unschedulable network; Kahn's algorithm leaves
+anything cyclic unplaced and those are drawn at the phase start and reported, rather than iterated to
+a fixed point that does not exist.
+
+### ⚠️⚠️ ONE DELIBERATE BEHAVIOUR CHANGE, MEASURED RATHER THAN DISCOVERED
+
+Executing the old and new schedulers side by side over twelve phase shapes × three phases:
+
+| | |
+|---|---|
+| **span** (`sbPhDays`) | **identical in all 24 cases** |
+| **after-phases** | **byte-identical**, every row |
+| **before-phases** | concurrent members now **start** together; they used to **finish** together |
+
+The old backward walk aligned a group's members to the group's **finish** while the forward walk
+aligned them to its **start** — so `par` meant *"ends together"* in a before-phase and *"starts
+together"* in an after-phase, and the comment above it described only the forward case. SS+0 in both
+directions is what the drawn arrows will mean anyway; leaving the old alignment would make the dates
+**jump** the moment a planner drew their first link somewhere else in the phase.
+
+⚠️ The phase's **placement** is still back-scheduled — a before-phase finishes the day before
+execution starts. What is ASAP is its internal logic.
+⚠️ **`pp.start` / `pp.finish` are min/max over the rows now, never `rows[0]` and `rows[last]`.** A
+chain put rows in date order and a network does not, so on `[2, 9p, 3]` the old code reported the
+phase starting **seven days after its own earliest row**.
+
+### ⚠️⚠️ THE PUSH WROTE A CHAIN THAT CONTRADICTED ITS OWN DATES
+
+`phaseTaskPayload` gave every row the previous row's id as a bare FS predecessor — **including a row
+the dates placed alongside its neighbour**. So a pushed Planning Phase arrived with four activities
+dated to run together and a predecessor chain saying they run end to end, and the schedule's own CPM
+believes the relationships: the first recalculation pulls them apart. Both now come from
+`sbPhSchedule`'s network, serialised by **`serializeRels`, the schedule's own writer for that column**
+rather than a second spelling of `ID FS+2` that could drift from the parser reading it back.
+
+⚠️⚠️ **Every id is allocated before the first payload is built.** A relationship can point **forward**
+as easily as back — an SS link from a row further down the list is exactly what the Gantt exists to
+let a planner draw — and an id assigned lazily inside `phaseTaskPayload` would not exist when an
+earlier row asked for it. It would be dropped silently, so the one shape the old chain could not
+express would be the one the push threw away.
+
+### The chart
+
+Tree left, bars right, arrows between. ⚠️ **The arrow leaves and arrives at the end its type names** —
+FS leaves the predecessor's finish and arrives at the successor's start, SS leaves its start, FF
+arrives at its finish. Drawn corner-to-corner regardless of type, SS and FS would look identical and
+the type would exist only in a menu.
+
+⚠️ **Pointer events for the link drag, not HTML5 drag**: a native drag cannot draw a rubber band that
+follows the cursor, and a link you cannot see while drawing is one you aim by guesswork. The target is
+resolved with `elementFromPoint` at the **drop**, because the rubber band sits under the cursor and
+would otherwise be the element found every time.
+⚠️ **The arrow's hit target is a separate fat transparent twin** (`.sbld-ghit`, 11px). A 1.5px stroke
+is ~3px of clickable width; thickening the *visible* arrow instead would make six links unreadable.
+⚠️ The link handle sits just **outside** the bar's right edge — inside, a 4px bar would have no room
+for one, and the shortest activities are the likeliest hand-offs.
+⚠️ A mirrored (`source_kind`) branch never accepts a drop: its contents come from another app and the
+push may not add to it, so filing an activity there would be a promise the push breaks. Refused by
+not offering the target rather than by a toast afterwards.
+⚠️ **"directly on the phase"** on the Planned line is the way back **out** of every branch — without a
+target for it, an activity filed into a branch could never be taken out again.
+
+⚠️⚠️ **Every WBS edit asks for the step's own repaint.** `_wbsCommit` ends in `renderWbsManager()` +
+`psSetupChanged()`, which repaint the live tree views, the grid, the Gantt and the Vertical Stacking —
+and **not this panel**. That was fine while a phase card's branches were a live tree view; the Gantt
+draws its own, so without `.then(render)` a renamed branch keeps its old name on screen and a deleted
+one stays.
+
+### Verified
+
+**New `modules/project-schedule/test-phasenet.js` — 262 assertions, 0 failing**, every function
+sliced out of the shipped file and **executed**, with the pre-change file as the contrast. The
+equivalence block above is measured, not asserted; **three negative builds bite** (stripping the `net`
+marker fails 2, and the push contrast shows HEAD writing a bare FS onto a row it had just dated to
+start alongside its neighbour).
+
+**Rendered in Chromium against the shipped stylesheet**, the CSS sliced out of `index.html` rather
+than retyped: a four-activity phase across three nested branches draws **7 tree rows** at the right
+indents, **4 bars, 3 arrows** labelled `FS+2` / `SS` / `FF+3`, every bar's top **exactly 5px** below
+its own tree row (one uniform offset — the centring, not drift), no page horizontal scroll, **0 page
+errors**. ⚠️ In dark mode all five sampled colours change (bar `rgb(244,169,162)` → `rgb(110,42,37)`,
+card `rgb(255,255,255)` → `rgb(43,44,43)`), which is what proves they resolve through tokens rather
+than sticking at a literal.
+
+`test-lsm` 683/0 · `test-syntax` 4/0 · `test-builder` 149/0 · `test-calendar-editor` 23/0 ·
+`tools/test-calendar` 71/0 · `wiring-check` 139/0 · `dark-remap` 0 findings · `dead-hooks` 9, the
+documented baseline, identical before and after · inline script parses · CSS braces 2566/2566 · 0 NUL
+bytes.
+
+⚠️ **NOT VERIFIED SIGNED IN.** No link has been drawn against a real project, no branch created or
+dragged through the live tree, and no phase pushed. The engine and the render are proved by execution
+and measurement; the round trip is not. The first things to try are **+ Add WBS** with an activity
+selected, a drag from one bar's handle onto another, and a right-click on the arrow it makes.
+
+⚠️ Fixed in passing: the Execution card read *"built by steps 4–7"* after main split Repetition into
+four steps — `STEP_ALIAS` resolved the retired title to `Location Sequence`, the **first** of the
+four, for work defined as far as step 8. The alias did its job and the sentence was still wrong.
+
+⚠️ **Merged `origin/main` (10 commits) after committing.** No conflicts — main was working on the
+Calendars step and the rail while this was in Project Phases — and **a clean auto-merge is not a
+correct one**, so both sides' suites were re-run on the merged tree rather than assumed (above), and
+`_stepReady`'s new prerequisite gating was read to confirm it does not gate this step.
+
+`MODULE_V` → `20260918c`, re-derived from what `origin/main` actually carries (`20260918b`) **after**
+merging, and sort-checked as a plain string.
+
 ## 2026-09-18 (a) — A step you cannot answer yet cannot be entered, and four references to a rail that had been renumbered twice
 
 Owner, closing the 9-step restructure: *"\*\*\* Users are unable to proceed the next step without

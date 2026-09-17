@@ -46657,10 +46657,15 @@
       function win(st, fi) { return (st && fi) ? (fmtD(st) + ' → ' + fmtD(fi)) : '—'; }
       var execRow = '<div class="sbld-phcard is-exec">' +
         '<div class="sbld-phhead"><span class="sbld-phname">' + e2(PHASE_LABELS.construction) + '</span>' +
-        /* ⚠ Named by the STEP, not by a view inside it: 'Stacking' is no longer one of
-           Repetition's tabs, and a title the alias has to rescue is a reference waiting to read
-           as a blank. */
-        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Repetition') + '</span></div>' +
+        /* ⚠ Named by the STEP, not by a view inside it: a title the alias has to rescue is a
+           reference waiting to read as a blank.
+           ⚠️ 'Repetition' WAS exactly that. It stopped being a step when it was split into
+           Towers / Floors & Zones / Location Sequence / Activity Sequence, and `STEP_ALIAS` kept it
+           resolving — to `Location Sequence`, which is the number of the FIRST of the four, not the
+           last. So the range read "4–7" for work that is defined as far as step 8. The alias did its
+           job (a number rather than a blank) and the sentence was still wrong; naming the real end
+           of the range is the fix. */
+        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Activity Sequence') + '</span></div>' +
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
           ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
         phWbsBlock('construction') + '</div>';

@@ -103,6 +103,87 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+### 2026-09-18 (b) — Project Phases becomes a Gantt per phase, and two live bugs came out of building it
+
+Owner, five items on Schedule Setup → Project Phases: *"remove the duplicate branch and paste outline
+buttons as well as add WBS. no other WBS is allowed aside from initiation, planning, execution
+(fixed), close-out"*, *"remove also add branch for all the phases"*, *"when phase is clicked, provide
+button for add WBS and add activity"*, *"when add WBS, add it as a sibling WBS to the activity or WBS
+selected. WBS can be dragged to the left to make it a parent"*, and *"instead of a plain table, this
+should be a gantt chart per phase, in the gantt chart, users can draw lines between activities to
+define sequence. right clicking on arrow also allows user to define lag between activities as well as
+relationship type - FS, SS, FF, SF"*. Module work — the full entry, every ⚠️ decision and the
+verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(b)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **`normalize()` IS A WHITELIST, AND IT HAD NEVER CARRIED `w` — SO THE PER-ACTIVITY WBS PICKER
+SHIPPED YESTERDAY WAS NEVER PERSISTED.** Entry `(u)` built a control that lets a planned lifecycle
+activity name the sub-WBS it lands in, and that entry says in as many words that a key `normalize()`
+does not name is *"silently stripped on save and on load, so a new field that skips it appears to work
+all session and is gone on reload"*. It skipped it. The picker worked, the toast was right, the push
+read the value — and the next open had it back on the phase branch, with nothing on screen to say a
+choice had been discarded. Found by reading the whitelist before adding `preds` to it, not by a
+report. **A whitelist is only a whitelist if somebody checks it when the feature lands**, and this is
+the second time that function has been the thing a reader had to go and verify.
+
+⚠️⚠️ **THE PUSH WROTE A PREDECESSOR CHAIN THAT CONTRADICTED ITS OWN DATES.** `phaseTaskPayload`
+serialised a flat FS chain in row order while the dates were computed from the concurrent-group model
+— so two activities the setup deliberately started together arrived in the schedule dated together
+**and** linked `A FS B`, i.e. carrying logic saying they cannot be. Anything that later ran CPM over
+the pushed rows would have re-dated them and been right to. Now `_phLinksFor` routes through
+`sbPhLinks`, the same resolver the Gantt draws from, so the string and the bars cannot disagree —
+⚠️ and the ids are **pre-allocated before any payload is built**, because a forward link to an
+activity later in the list would otherwise serialise against an id that did not exist yet and be
+dropped without a word.
+
+⚠️⚠️ **AN IMPLICIT SEQUENCE NEEDS A MARKER, AND A TEST IS WHAT PROVED IT.** The old model stored an
+ORDER plus a parallel flag; the new one stores real links. Deriving the old shape on read is what lets
+every saved setup open unchanged and un-re-timed — but with derivation as the only fallback, a phase
+converted to explicit links and then emptied of them falls straight back to the implicit chain, so
+**deleting the last link resurrects the dependency it deleted**. `ph.net` records that a phase has
+been converted; a negative build stripping it fails 2 assertions. This is the same class as the empty
+array being truthy (`ensureCodes`, 2026-09-07 e): *"absent"* and *"deliberately none"* are different
+facts and a falsy test cannot tell them apart.
+
+⚠️ **THE EQUIVALENCE PASS REPORTED 39 DIFFERENCES AND THEY WERE CLASSIFIED RATHER THAN PATCHED OVER.**
+Span identical in all 24 cases, after-phases byte-identical, and every difference confined to
+concurrent members of a **before**-phase: the old walk finished them together (ALAP), the new forward
+pass starts them together (ASAP). That is the correct reading of *"these run in parallel"* — and the
+old `pp.start` / `pp.finish`, which read `rows[0]` and `rows[last]` rather than the min and max,
+reported a phase starting **seven days after its own earliest row** on the fixture `[2, 9p, 3]`. A
+suite that had simply been made green would have preserved that.
+
+**Verified:** new `modules/project-schedule/test-phasenet.js` **262/0** across eight blocks — the four
+relationship types' arithmetic executed, cycles refused at draw time, stale links dropped, the pushed
+predecessor string asserted with a **pinned-SHA** contrast (never `HEAD`, which becomes
+self-comparison the moment the change lands). Every other suite green on the merged tree — `test-lsm`
+683/0, `test-syntax` 4/0, `test-builder` 149/0, `test-calendar-editor` 23/0, `tools/test-calendar`
+71/0 — plus `wiring-check` **139/0**, `dark-remap` 0 findings, `dead-hooks` 9 (the documented
+baseline, byte-identical before and after). The chart was **rendered and driven in Chromium**: 7 tree
+rows at indents `[6,6,20,20,6,20,34]`, 4 bars, 3 arrows labelled `FS+2` / `SS` / `FF+3`, the rubber
+band live, no horizontal page scroll, 0 page errors — and the dark theme resolving through tokens
+(`bar rgb(110,42,37)` on `card rgb(43,44,43)`) rather than sticking at a light literal.
+
+⚠️ **A syntax error in this module's one inline `<script>` blanks the whole page**, and this change
+produced one: deleting the table builder left an orphaned `}).join('');` whose opener had gone. A
+bisect harness **timed out** — it is O(n²) over a 3MB script — and the thing that found it in seconds
+was extracting the block to a file and running `node --check`, which names the line. Worth keeping:
+the cheap tool beat the clever one.
+
+⚠️ **Fixed in passing, surfaced by main's merge:** the Execution card read `_stepNo('Repetition')`,
+which `STEP_ALIAS` resolved to **step 7** for work now defined as far as step 8 — a stale step
+reference reads as a broken cross-link rather than as an out-of-date label.
+
+⚠️ **Reported rather than done, because neither was on the owner's list.** `From project…` still
+copies a whole foreign WBS in at the top level, which is the one remaining hole in the four-phase
+rule; and the Milestones and *Other branches* cards still display existing top-level branches, kept
+deliberately — what was blocked is **creating** new ones, and hiding branches a project already has
+would hide real data.
+
+⚠️ **Not verified signed in.** `MODULE_V` → `20260918c`, re-derived from `origin/main` **after**
+merging its ten commits rather than guessed before, and sort-checked as a plain string.
+
 
 ### 2026-09-18 (a) — Schedule Setup gates its own steps, and the gate had to be written so it cannot strand a project
 
