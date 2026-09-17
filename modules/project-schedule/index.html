@@ -35152,7 +35152,8 @@
     // code), and a following trade stays a configurable number of floors BEHIND the one before it.
     function autoTrace() {
       var leaves = locList(); if (!leaves.length) return;
-      var lead = Math.max(1, +cfg.floorLead || 4);
+      /* ⚠️ `cfg.floorLead` is read by `batchKind` as the typical-kind default, never here — the
+         per-kind rewrite left a `var lead` behind that nothing consulted. */
       cfg.links = [];
       var present = GROUPS.filter(function (tr) { return floorsOf(tr).length && tradeActs(tr).length; });
       var idx = {}; present.forEach(function (tr) { idx[tr] = floorsOf(tr).map(function () { return {}; }); });
@@ -35222,15 +35223,43 @@
         var prev = present[t - 1], next = present[t];
         // Whole-trade "start at the same time" still wins — skip every cross-trade link (bookend → START).
         if (cfg.tradeParallel[prev]) continue;
-        var pF = floorsOf(prev), lastP = pF.length - 1, pByCode = {}, pByKind = {};
-        pF.forEach(function (f, i) { pByCode[f.code] = i; var k = floorKind(f); (pByKind[k] = pByKind[k] || []).push(i); });   // prev floor indices grouped by kind, build order
-        var nOrd = {};   // 0-based ordinal of the NEXT floor WITHIN its own kind
+        /* ⚠️⚠️ PER TOWER, AS THE VERTICAL CHAIN ABOVE ALREADY IS — and this half was not, until
+           today. `floorsOf` is ONE FLAT LIST across every tower, so grouping the leading trade's
+           floors by KIND alone put Tower A's typical floors and Tower B's in one ladder, and the
+           following trade's ordinal counted straight through both.
+           ⚠⚠ MEASURED on two 3-floor towers with a typical lead of 4: EVERY cross-trade link
+           crossed the tower. Architectural on Tower A floor 1 waited on Structural on TOWER B
+           floor 1, and Tower B's whole architectural run clamped onto Tower B's roof structure,
+           because the ordinal had already run off the end of the combined list. The note at the
+           top of the vertical chain says exactly this about chaining floorsOf() straight through;
+           the cross-trade pass never got the same treatment.
+           ⚠️ Keyed on (tower, kind), so "N levels behind" means N levels OF THAT KIND IN THAT
+           TOWER — which is what the dialog's own question means. A single-tower project resolves
+           every floor to the one tower, so it is byte-for-byte the previous behaviour. */
+        var pF = floorsOf(prev), lastP = pF.length - 1, pByCode = {}, pByCodeTw = {}, pByTw = {}, pByTK = {};
+        pF.forEach(function (f, i) {
+          var tw = towerIdOf(f), k = floorKind(f);
+          pByCode[f.code] = i; pByCodeTw[tw + '|' + f.code] = i;
+          (pByTw[tw] = pByTw[tw] || []).push(i);
+          (pByTK[tw + '|' + k] = pByTK[tw + '|' + k] || []).push(i);
+        });   // prev floor indices grouped by tower and by (tower, kind), build order
+        var nOrd = {};   // 0-based ordinal of the NEXT floor WITHIN its own TOWER and kind
         floorsOf(next).forEach(function (nf, j) {
-          var k = floorKind(nf), ord = (nOrd[k] = (nOrd[k] || 0)); nOrd[k]++;
+          var tw = towerIdOf(nf), k = floorKind(nf), ok = tw + '|' + k;
+          var ord = (nOrd[ok] = (nOrd[ok] || 0)); nOrd[ok]++;
           if (parallelKind(prev, k)) return;   // this kind runs in parallel → no trailing link (bookend → START)
-          var pk = pByKind[k] || [], si;
-          if (pk.length) { var L = batchKind(prev, k); si = pk[Math.min(ord + L - 1, pk.length - 1)]; }   // trail within the same kind by that kind's lead
-          else { si = (pByCode[nf.code] != null) ? pByCode[nf.code] : lastP; }   // leader has no floor of this kind → same code, else its top floor
+          var pk = pByTK[ok] || [], si;
+          if (pk.length) { var L = batchKind(prev, k); si = pk[Math.min(ord + L - 1, pk.length - 1)]; }   // trail within the same tower + kind by that kind's lead
+          else {
+            /* ⚠️ The leader has nothing of this KIND in this tower. Stay inside the tower while it
+               is there at all — the same floor code, else that tower's own top floor. Only a tower
+               the leading trade does not work at all falls back across towers, which is the old
+               behaviour and the only honest answer left. */
+            var own = pByTw[tw] || [], sc = pByCodeTw[ok.split('|')[0] + '|' + nf.code];
+            if (sc != null) si = sc;
+            else if (own.length) si = own[own.length - 1];
+            else si = (pByCode[nf.code] != null) ? pByCode[nf.code] : lastP;
+          }
           if (si < 0) si = 0;
           Object.keys(idx[next][j]).forEach(function (ck) { var pf = idx[prev][si][ck] || firstOf(idx[prev][si]); if (pf) tryLink(pf, idx[next][j][ck]); });
         });
@@ -51469,22 +51498,91 @@
   // latest-finishing child down each WBS level. Effective finish uses actual_finish
   // when set, else the planned end_date — so it updates as actuals/plans change.
   function drivingPath() {
-    var kids = {}; rows.forEach(function (r) { var p = (r._anc && r._anc.length) ? r._anc[r._anc.length - 1] : '__root__'; (kids[p] = kids[p] || []).push(r); });
-    function ef(r) { var d = pd(r.actual_finish || r.end_date); return d ? +d : null; }
-    var projF = null; rows.forEach(function (r) { var f = ef(r); if (f != null && (projF == null || f > projF)) projF = f; });
-    var queue = (kids['__root__'] || []).slice(); queue.forEach(function (r) { r._critical = true; });
-    var i = 0, guard = 0;
-    while (i < queue.length && guard++ < rows.length + 5) {
-      var node = queue[i++];
-      if (!isWbs(node)) continue;
-      var ch = kids[node.code] || []; if (!ch.length) continue;
-      var maxF = null; ch.forEach(function (c) { var f = ef(c); if (f != null && (maxF == null || f > maxF)) maxF = f; });
-      if (maxF == null) continue;
-      ch.forEach(function (c) { var f = ef(c); if (f != null && f === maxF) { c._critical = true; queue.push(c); } });
-    }
-    rows.forEach(function (r) { if (!isWbs(r)) { var f = ef(r); r._float = (f != null && projF != null) ? Math.round((projF - f) / 86400000) : null; r._near = (!r._critical && r._float != null && r._float > 0 && r._float <= NEARDAYS); } });
-  }
+    /* ==== WHY THIS DREW NO CRITICAL PATH AT ALL =======================================
+       Owner 2026-09-17: *"please fix the critical path method detection in the schedule. For the
+       test project DEMO01, there is no critical path."* — and the toast said so in those words
+       ("No critical path found"), which is only ever printed when the count of critical
+       ACTIVITIES is zero.
 
+       ⚠️⚠️ IT CANNOT BE ZERO UNDER `cpmLogic`. There, the task attaining `projEnd` has no
+       successor to pull its late finish in, so its float is exactly 0 and it reads critical — a
+       schedule with relationships always has a path. Zero therefore means this function ran, i.e.
+       not one predecessor resolved, which is exactly the case it exists for.
+
+       ⚠️⚠️ FAULT 1 — THE TREE WAS BUILT UNDER ONE KEY AND WALKED UNDER ANOTHER. `kids` is
+       keyed by the parent’s DOTTED CODE (`_anc`’s last segment) and the walk asked for
+       `kids[node.code]`. **A schedule row has no `code` field** — it carries `wbs` — so every
+       lookup was `kids[undefined]`, the walk stopped at the root, and the only rows ever marked
+       were the root ones. Those are WBS summaries, and the count the toast prints excludes them.
+       Measured on a fixture with no relationships: 0 activities marked, while the floats came out
+       correct (the driving activity at 0). The arithmetic was right and the marking never ran.
+
+       ⚠️⚠️ FAULT 2 — AND FIXING THE KEY ALONE WOULD HAVE MOVED THE WALL ONE LEVEL DOWN. The
+       old rule pushed a child onto the queue only when its own `end_date` equalled the level’s
+       latest. **A WBS summary row carries no `end_date` in this module** (spans are derived, see
+       `_spanMap`), so `ef()` is null for every branch, no branch ever equals the maximum, and no
+       branch was ever descended into. The walk could only ever have reached activities that sit
+       directly under the root.
+       So a row’s finish for this purpose is: its own, for an activity; and for a BRANCH, the
+       latest finish anywhere beneath it. That is what makes "follow the latest-finishing child
+       down each level" a walk rather than a single step.
+
+       ⚠️⚠️ FAULT 3 — THE ROOT WAS NOT SUBJECT TO THE RULE IT ENFORCES. Every row at the top
+       level used to be marked critical outright, before any comparison. On a project whose root
+       holds Initiation, Planning, Execution and Close-out that is four "critical" branches, one
+       of which finished months ago. The root is now one more level, judged by the same test.
+
+       ⚠️ Effective finish is `actual_finish` when set, else the planned `end_date`, so the path
+       moves as actuals and plans change — unchanged, and the whole point of the fallback.
+       ⚠️ Ties keep BOTH. Two branches finishing on the same day genuinely both drive the parent,
+       and picking one would be inventing a fact about a schedule that has no relationships to
+       decide it with. */
+    var kids = {};
+    rows.forEach(function (r) {
+      var p = (r._anc && r._anc.length) ? r._anc[r._anc.length - 1] : '__root__';
+      (kids[p] = kids[p] || []).push(r);
+    });
+    function ef(r) { var d = pd(r.actual_finish || r.end_date); return d ? +d : null; }
+    var projF = null;
+    rows.forEach(function (r) { var f = ef(r); if (f != null && (projF == null || f > projF)) projF = f; });
+    /* The finish a row CONTRIBUTES to its parent. ⚠️ Memoised per code and guarded: a hand-edited
+       code that made a row its own ancestor would otherwise recurse for ever, and this runs on
+       every data change. */
+    var _fin = {}, _busy = {};
+    function finOf(r) {
+      if (!isWbs(r)) return ef(r);
+      var k = (r.wbs == null) ? '' : String(r.wbs);
+      if (k in _fin) return _fin[k];
+      if (_busy[k]) return null;
+      _busy[k] = 1;
+      var mx = null;
+      (kids[k] || []).forEach(function (c) { var f = finOf(c); if (f != null && (mx == null || f > mx)) mx = f; });
+      _busy[k] = 0; _fin[k] = mx;
+      return mx;
+    }
+    /* One level: mark the children that finish last, and descend into the branches among them.
+       ⚠️ Depth-capped rather than trusted. `_anc` is built from strict prefixes so the code tree
+       cannot cycle, but this walks data that can be hand-edited and a runaway here would hang the
+       grid on every render. */
+    function markLevel(list, depth) {
+      if (!list || !list.length || depth > 64) return;
+      var mx = null;
+      list.forEach(function (c) { var f = finOf(c); if (f != null && (mx == null || f > mx)) mx = f; });
+      if (mx == null) return;
+      list.forEach(function (c) {
+        if (finOf(c) !== mx) return;
+        c._critical = true;
+        if (isWbs(c)) markLevel(kids[(c.wbs == null) ? '' : String(c.wbs)] || [], depth + 1);
+      });
+    }
+    markLevel(kids['__root__'] || [], 0);
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var f = ef(r);
+      r._float = (f != null && projF != null) ? Math.round((projF - f) / 86400000) : null;
+      r._near = (!r._critical && r._float != null && r._float > 0 && r._float <= NEARDAYS);
+    });
+  }
   window.PS = { edit: function (id) { var r = rows.find(function (x) { return x.id === id; }); if (r) openForm(r); } };
 
   // ----- init -----

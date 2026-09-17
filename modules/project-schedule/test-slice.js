@@ -62,7 +62,18 @@ function makeSlicer(src) {
     catch (e) { throw new Error('anonymous slice after ' + after + ' does not parse: ' + e.message); }
     return out;
   }
-  return { sliceFn, sliceVarLine, sliceAnon };
+  /* A `var NAME = { … };` whose initialiser spans lines. ⚠️ `sliceVarLine` stops at the first
+     newline, which silently hands back `var ALLAX = {` — a syntax error rather than a wrong
+     answer, but only by luck. This walks the braces the same way `endOf` does. */
+  function sliceVarObj(name) {
+    const i = mask.indexOf('var ' + name + ' = {');
+    if (i < 0) throw new Error('SLICE FAILED: var ' + name + ' = { — aborting rather than comparing nothing');
+    const out = src.slice(i, endOf(i)) + ';';
+    try { new Function(out); }
+    catch (e) { throw new Error('slice of var ' + name + ' does not parse: ' + e.message); }
+    return out;
+  }
+  return { sliceFn, sliceVarLine, sliceAnon, sliceVarObj };
 }
 
 module.exports = { makeSlicer };
