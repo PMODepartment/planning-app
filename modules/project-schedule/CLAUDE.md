@@ -1,3 +1,313 @@
+## 2026-09-17 (zx) — Repetition loses a tab it was drawing twice, and Scope per zone names the work
+
+Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
+clicking next, user should move from tower sequence to Zone Sequence, etc. before moving to next
+step"*, *"under scope per zone, instead of class codes, provide activity name"*, and *"no need for
+the vertical stacking in repetition step, move this to the generate step"*.
+
+### ⚠️⚠️ ITEM 2 WAS ALREADY BUILT, AND SAYING SO IS WORTH MORE THAN RE-BUILDING IT
+
+The footer's Next/Back has walked this step's tabs since 2026-09-17 (t) — `stepTabs(<step title>)`
+drives the button's label *and* its handler, so it cannot say one thing and do another. Executed
+rather than read: the shipped walker, sliced out of `render()`'s footer block and driven, goes
+**Tower Sequence → Zone sequence → Trade sequence → Scope per zone → Generate**, with Back landing
+on the step's *last* view so Back-then-Next cannot show two different screens.
+
+⚠️ What CAN look like the reported behaviour: the selected view is remembered
+(`ps_steptab_Repetition`), so clicking **Repetition in the rail** while the remembered view is the
+last one leaves Next with nowhere to go but Generate. Entering through Next always lands on the
+first view (`_enterStep(i, false)`), so the walk is complete every time it is *walked*. That is
+deliberate and is left alone; removing the fifth tab narrows the window anyway.
+
+### ⚠️⚠️ THE STACKING TAB WAS A SECOND COPY OF A DRAWING THE GENERATE STEP ALREADY MAKES
+
+`stGenerate` renders `_genBasisPanel` → `_genStackCards` → `stackTowerSVG` for **both** bases, side
+by side — the vertical stacking, on the Generate step, since 2026-09-17 (q). The Repetition tab drew
+the same buildings **one basis at a time behind a `<select>`**, in the step that describes how the
+building *repeats* rather than the step that shows what it *produces*.
+
+⚠⚠ **AND THE ENGINE WAS NEVER TOUCHED, WHICH IS WHY THE TAB WAS A SECOND COPY AT ALL.**
+`stackTowerSVG`, `zonesOfFloorStk`, `openStackUnits` and `_genStackCards` are unchanged and live on
+Generate. What the tab owned was a **shell** around them: chips, a basis `<select>`, the zoom and a
+how-panel.
+
+⚠⚠ **THAT SHELL IS KEPT, PARKED AND WIRED TO NOTHING — A REVERSAL OF THIS ENTRY'S FIRST CUT.**
+Owner 2026-09-17: *"make sure not yet to delete the code for stacking and just keep it in repo. this
+will be used later on in the generate step."* So `stStacking` and `var stackBasis` are back, verbatim,
+out of `STEP_TABS` and out of every call path. The part worth keeping is the **basis `<select>`**:
+Generate draws Internal and External side by side and has no way to look at one at a time, and that
+control is the only thing the tab could do that Generate cannot.
+⚠ This file's own rule — *a renderer nothing calls is the one the next editor wires back up beside
+the real thing* — is answered rather than waved off. The suite asserts the function **exists**, has
+**exactly one occurrence** (its own declaration, no call site), and is **not back in `STEP_TABS`**,
+which is the one place it must not return to.
+⚠⚠ **And parked is not preserved unless it still RUNS.** A separate suite wires it to a host and
+**executes** it — it draws its heading, both towers, the basis `<select>` with the current basis
+marked, and every control it emits is wired. So the day somebody revives it they get a working
+screen rather than a `ReferenceError`. `stackBasis` is kept for exactly that reason: deleting the
+state while keeping the function would have left a landmine on its first line.
+
+⚠️ **What the tab had and Generate did not, came across.** The **zoom** (`stackZoom`, which `stackTowerSVG`
+already read and Generate had no control for) and the notes that make a cell discoverable — a zone
+completes when its last unit does, a cell marked *"N units ▾"* is clickable, superstructure sits
+above the grade line. A clickable cell with nothing saying it is clickable is a feature nobody finds.
+⚠️ The basis `<select>` did **not** come across, and it is the one thing the parked renderer still
+holds that Generate has no answer for.
+⚠️ **One zoom for both panels**, because `stackTowerSVG` reads one variable: comparing Internal
+against External at two different cell widths is comparing two pictures rather than two schedules.
+⚠️ `stackBasis` is read by **nothing on screen** — Generate shows both bases at once — but it is
+kept beside the parked renderer, which does read it.
+⚠️ A browser holding `stack` in `ps_steptab_Repetition` is safe by construction: `stepTabKey`
+validates the stored key against the list and falls back to the first tab. Asserted, not assumed.
+
+### Tower links → Tower Sequence
+
+"Tower links" named a MECHANISM (a link between two towers) while its three siblings are named for
+the QUESTION they answer. ⚠️ `STEP_ALIAS` keeps the old title resolving — `_stepNo` answers an
+**empty string** for a name it cannot find, and a blank where a step number belongs reads as a
+broken reference. `'Stacking'` now aliases to **Generate**, which is where the stacking is.
+⚠️ The renderer stays `stTowerLinks`: it writes `cfg.towerLinks`, and renaming the function without
+renaming the field would leave the two disagreeing for no gain.
+
+### ⚠️⚠️ SCOPE PER ZONE: THE NAME, AND ONE SPECIFICITY TRAP THAT COST THE WHOLE FIX
+
+The header was `a.code || a.name` — a column of `03101` that nobody can read without the Finance
+chart open beside it, on the one grid whose entire job is deciding whether **that work** happens in
+**that place**. It is `a.name || a.code` now, with the code leading the tooltip.
+
+⚠️⚠️ **A name is wider than a five-digit code, so the header has to wrap — and the first rule I
+wrote did not.** `th.sbld-scope-col` is **(0,1,1)**; the base is
+`table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at **(0,1,2)**, which wins. That is
+not a harmless no-op: the `max-width` still applied while the `white-space` did not, so the header
+was capped **and** unwrappable and **three of eleven names rendered clipped**. Measured in a
+browser against the shipped stylesheets; reading the rule would never have shown it.
+`table.sbld-tbl th.sbld-scope-col` is (0,2,2) and wins.
+
+⚠️⚠️ **And the harness lied first, in the flattering direction.** Its `@import` strip was
+`/@import[^;]*;/` — and the Google Fonts URL **contains semicolons** (`wght@0,400;0,500;…`), so it
+cut inside the URL, left garbage that swallowed the following `:root` block, and every `--pd-*`
+token resolved to nothing. It measured an **unstyled** table at the browser's 16px default and
+reported widths ~35% too large. Caught by asserting a token (`--pd-fs-sm` came back empty), not by
+looking at the numbers, which were internally consistent and wrong.
+
+**Measured, 12 locations × N activities, panel 1096px, both builds:**
+
+| activities | header | code build | name build | clipped |
+|---|---|---|---|---|
+| 11 (the typical set) | 31 → **76px** | 1096 — fits | **1096 — fits** | 0 |
+| 12 | | 1096 — fits | 1185 — scrolls | 0 |
+| 16 | | 1139 — *already* scrolls | 1512 — scrolls | 0 |
+| 20 | | 1389 — *already* scrolls | 1876 — scrolls | 0 |
+
+⚠️ **The cost, stated rather than hidden:** above ~11 activities in one trade the table scrolls
+inside its own `.sbld-tablewrap` where codes did not. At 112px a column is already three lines for
+the longest name, and fitting 16 names in 1096px needs ~66px a column — about eight characters, too
+narrow for a name. So the scroll is **inherent to the ask**, not a tuning choice. Nothing is ever
+clipped, and the **page** never scrolls sideways at any count tested.
+⚠️ `vertical-align:bottom`, or a one-line name floats above a three-line neighbour and the header
+reads as a ragged edge rather than a row.
+
+### Verified
+
+**52 assertions across two suites, 0 failing**, every one executing code sliced out of the shipped
+file — and **every claim carries a contrast build against HEAD that bites**: HEAD has five tabs
+ending in Stacking and walks through it; HEAD renders `03101` as the label and no name; HEAD's
+`stGenerate` emits no zoom button; HEAD has `stStacking` and `stackBasis`.
+⚠️ **`stGenerate` is EXECUTED against a fake DOM**, not grepped — `node --check` cannot see a
+ReferenceError, which is this module's own z6 lesson. It runs clean, draws two basis panels with
+stacking in both, wires both zoom buttons, and **zoom 2× genuinely widens the SVG** (viewBox
+414 → 674), so the control is not merely bound to a variable nothing reads.
+⚠️ The titles checked against `_stepNo` are **read out of the source**, not from a list typed in the
+test: **14 call sites, 0 blanks**, and `_stepNo('Stacking')` no longer occurs anywhere.
+Rendered at 1180px against the real `dashboard.css` + the module's own `<style>` block, with the
+cascade proved by a **colour** (ink `rgb(35,31,32)` = `--pd-ink`, type 12.5px = `--pd-fs-sm`) rather
+than by tidy geometry on unstyled markup.
+
+`wiring-check` **139/139**; `toolbar-order` 15 bars / 0 out of order; `dark-remap` 0 findings;
+`dead-hooks` **byte-identical to HEAD**; `test-autotrace` 32/0, `test-cpm` 28/0, `test-towerseq`
+48/0, `test-syntax` 4/0, `test-critwbs` 26/0, `test-health` 30/0, `test-zoneoverlap` 56/0; the
+3.58MB inline block parses; CSS braces balanced (+3/+3, all three from the `{}` quoted inside the
+new comment); 0 NUL bytes; no duplicate ids among the ids touched.
+⚠️ **`test-builder` is 99/1 on `origin/main`'s OWN copy of the file** — a manual page for
+`Structure`, a step the 2026-09-17 merge retired. Pre-existing; left alone rather than folded in.
+⚠⚠ **And a correction: `test-lsm` was never failing — I was calling it wrong.** It takes the file
+to check as `process.argv[2]`; run bare it throws `ERR_INVALID_ARG_TYPE` on `readFileSync(undefined)`,
+which reads exactly like a broken suite. Invoked properly: **676 assertions, 0 failed** on the merged
+tree and identically on `origin/main`.
+
+⚠️ **Not verified signed in.** No real setup has been opened: the walk, the scope grid and the
+Generate step are the shipped renderers executed against fixtures, not a live project.
+
+⚠⚠ `MODULE_V` → `20260917zzd`, and it took TWO re-derivations. `zw` was the highest token on
+any remote head when this was written; by the time it merged, main had run `zx` → `zy` → `zz` →
+`zza` across six commits — **including `20260917zx`, the exact token this branch had picked**. A
+version collision does not conflict on its own (two different values merge cleanly), so the loser's
+bytes would have shipped under a token a browser already holds. `zzb` is past main's `zza`, and is
+sort-checked as a plain string because `zx` sorts *before* `zza` — “take theirs” would have been
+worse than the collision.
+
+## 2026-09-17 (zv) — Overlapping zones become an error the module can measure; the plan window opens on a zoneless floor with something to draw with; the building is stated in words
+
+Owner, on the Schedule Setup's Floors & Zones step: *"improve the overall UI, starting from defining
+the number of floors, zones, units etc."*, *"in the defining the plan layout of floors with no
+specified zones, users are allowed to add shapes still or trace"*, and *"for the definition of the
+floor plans, there should be like a system or error if there are overlapping zones."*
+
+### 1 · ⚠️⚠️ OVERLAPPING ZONES ARE MEASURED, NAMED AND PRICED — NOT JUST NOTICED
+
+**`zpInterArea` computes the exact area two traced areas share, and `zpOverlapsOf` reports every
+offending pair on a plate, worst first.** 56 assertions in a new suite, executed against the shipped
+functions.
+
+⚠️⚠️ **WHY THIS IS A CORRECTNESS CHECK AND NOT A TIDINESS ONE.** A floor's zones are *what the
+schedule is generated against* — one activity per zone per trade — and every quantity, scope split
+and percent-complete downstream is apportioned as if they **partition** the floor. Two zones
+overlapping by a third of their area are a third of that floor scheduled, measured and reported
+**twice**, and nothing downstream can tell: the 3D view draws both, the stacking colours both, the
+S-curve sums both. So the report is a **number** — *38% of the smaller* — not a red dot.
+
+⚠️⚠️ **TOUCHING IS NOT OVERLAPPING, and the whole feature is worthless if it is.** Zones are *meant*
+to share a wall — the snap grid exists so that they do — and two abutting rectangles share exactly
+zero area. That is a property of the clip, not a tolerance: a shared edge clips to a degenerate
+polygon. The suite asserts it for a shared wall, a shared corner, and **two interlocking Ls whose
+bounding boxes overlap across a 100×100 square and which share not one unit of area** — the single
+most common real floor layout there is, and the one a box test calls 100% broken.
+
+⚠️⚠️ **THE AREA IS EXACT, NOT SAMPLED OR RASTERISED.** A traced zone is an L, a T or a courtyard as
+often as a rectangle. The method is the triangle-fan identity — a simple polygon is the *signed* sum
+of the triangles fanned from its first corner, so `area(A∩B) = Σᵢ Σⱼ sᵢ·sⱼ·area(Tᵢ∩Tⱼ)` and every
+triangle pair is a convex-by-convex clip. Concave shapes need no special case; the negative fan
+triangles cancel the parts that are not in the polygon. Proved on a C-shaped zone with a courtyard: a
+zone sitting *in* the courtyard overlaps by 0, and one poking through the far wall overlaps by
+exactly the part that pokes.
+
+⚠️ **The tolerance is 0.5% of the SMALLER area, and it is not zero.** A shared wall needs no
+tolerance at all; this is for the hand-traced boundary that lands a unit or two past its neighbour
+with the snap off. Flagging those would put a warning on nearly every freehand floor, and a warning
+that is everywhere is one nobody reads — which costs the real double-counts their only chance of
+being seen. **Relative to the smaller area, never to the floor**: a 4 m² store wholly inside a 400 m²
+slab is 1% of the floor and 100% of itself, and it is the store that is double-counted. The measured
+percentage is always shown, so the planner judges the size of it rather than trusting the threshold.
+The threshold is **inclusive** and the suite pins that, because "exactly at the tolerance" is the one
+value a later edit to the comparison would flip without changing any other case.
+
+⚠️ **The whole-floor outline is not a zone** and is excluded on both sides — it is drawn *around* the
+zones on purpose, so counting it would report every correctly-traced floor as entirely broken. **Two
+areas carrying the same zone code are not a pair either**: `zpBox` already treats them as one zone
+traced in two pieces, and a zone cannot double-count itself.
+
+#### Reported in three places, because one is not enough
+
+| where | what it says |
+|---|---|
+| **the plan window** | a strip above the stage naming each pair and the percentage, with **Show** to select one of the two; both are marked on the drawing itself with a dashed amber stroke |
+| **the floor row** | the Plan/Shape button turns amber and gains a **!** — so a forty-storey list can be read down for faults without opening anything |
+| **the floor-plan panel** | a per-category count, a sentence saying what an overlap *costs*, and the category button becomes **Fix…** once everything is drawn |
+
+⚠️⚠️ **IT WARNS, IT DOES NOT BLOCK, and the suite asserts that the window cannot be refused over it.**
+Half a trace *is* an overlap — a planner drawing the second zone over the first and then pulling its
+corners back is in this state for the whole of that gesture. Refusing to close the window or to save
+would make the ordinary way of drawing a floor impossible, and the only escape would be deleting the
+work. The refusals in this module are for operations that create a fault *behind* the planner's back;
+a fault they can see and are in the middle of fixing is told, not fought.
+
+⚠️⚠️ **AN OVERLAP FORCES THE FLOOR-PLAN FOLD OPEN.** It is shut by default once anything is drawn, on
+the reasoning that a fully drawn tower has nothing left to say — which stops being true the moment one
+of those drawings is wrong. A fault reported only inside a fold nobody opens is not reported.
+
+⚠️ **Marked with a glyph AND a colour.** Colour is not a channel everyone has, and this is the one
+mark on the row that reports a defect rather than a state. The mark **replaces nothing**: a floor can
+be both incompletely traced and overlapping, and a button that could only say one of the two would
+hide whichever it did not pick.
+
+⚠️ **`--pd-warn-text`, never `--pd-warn`.** `--pd-warn` is the surface amber and measures 3.46:1 on
+white (under AA, measured in `dashboard.css`); every mark here is text or a stroke over a fill.
+
+⚠️ **Show selects, it does not repair.** There is no correct answer to *which of these two is in the
+wrong place*, and a button that guessed would move somebody's traced zone on their behalf. Selecting
+pushes no undo step and marks nothing dirty — asserted, because it changes nothing about the drawing.
+
+### 2 · ⚠️⚠️ The plan window opened on a zoneless floor with nothing to draw with
+
+Owner: *"in the defining the plan layout of floors with no specified zones, users are allowed to add
+shapes still or trace."* Exactly so, and the reason they could not is a one-line gate: the whole row
+carrying **Add, Trace, Copy, Paste, Delete, Orient, Snap and Undo** was emitted only `if (all.length)`
+— i.e. only if the floor had at least one **zone**. `allCodes()` excludes the whole-floor outline on
+purpose (it is not a zone), so on a zoneless floor it is empty and the row was not emitted at all.
+The window opened with the outline brush already loaded and no control able to draw it.
+
+⚠️ The gate was never about zones. Every control in that row acts on the **selected area** or on the
+**brush**, and the brush on a zoneless floor is the outline. Row 2 — which really is about zones —
+keeps its own empty state and says where zones come from.
+
+### 3 · Stating the building in words, not four abbreviations
+
+Owner: *"improve the overall UI, starting from defining the number of floors, zones, units etc."*
+The entry point read **`Quick: [ ] bsmt + [ ] flr × [ ] zn × [ ] un`** — four 50px boxes labelled
+with four abbreviations, in a sentence whose × signs suggested a multiplication that is not what
+happens (units are per zone, zones are per floor, basements are neither). The planner's first act on
+this step was to decode it.
+
+- Each box has a real label and a hint. The panel says in a sentence what **Generate** will produce —
+  including the count that actually matters, the number of **locations** the schedule will carry —
+  and what it will replace. That sentence is **live**, rewritten as the numbers are typed, so the
+  answer is read before the button is pressed rather than after.
+- ⚠️ **All four inputs are always emitted**, whatever the Activity level is. `qv()` reads them by id
+  with no null guard, so hiding one would throw the moment Generate was pressed. The ones the current
+  level ignores **say so** instead of disappearing.
+- **A floor-plan panel above the list, read by category.** Owner: *"improve the process flow of
+  defining the floor plans per floor and type."* A forty-storey tower is forty buttons that each say
+  "Plan…", and the planner had to scroll the list to learn that thirty-eight of them are the same
+  drawing. The row is the **category**, because that is the unit the work repeats on, and it carries
+  three numbers: how many storeys, how many **drawings** they share between them, and how many are
+  still bare. **Draw…** opens the first bare floor of that category — or the first one when they are
+  all drawn, so the button is never a dead end.
+- ⚠️ **What this tower and trade actually hold**, as four numbers plus one that could not be got at
+  all: **locations** is `leavesOfFloor`'s own count at the Activity level currently chosen, so it
+  moves when that select moves. A forty-storey tower with no zones and a twenty-storey tower with two
+  are the same size, and nothing said so.
+- **Copy from another tower… comes out of the ⋯ menu and onto the row**, beside the two buttons it is
+  an alternative to. The ⋯ entry stays — it is where you go to act on the tower itself — and both
+  open the same dialog.
+
+### 4 · The plan window's icons were never drawn
+
+⚠️ `UI.modal` does not hydrate and `paint()` writes `wrap.innerHTML` on every repaint, so **every
+`data-ico` in that window was an empty span** — the failure `ui.js` records at its line 1012, and the
+reason the site-plan hint's `layers` icon has never actually appeared. `Icons.hydrate(wrap)` after the
+write. Idempotent (`icoDone` guards each element) and scoped to `wrap`.
+
+### 5 · Per-tower zone sequencing, which had not shipped
+
+⚠️ The previous prompt's work — *"for the zone sequence, when there are multiple towers, users should
+be able to define the zone sequence per tower … But users are able to copy the zone sequence of a
+tower from another tower but if zones and number of floors and layout are not the same, these should
+not proceed"* — was complete and passing (48 assertions) but **uncommitted**. It ships here rather
+than being re-derived. `copyTowerSeq` copies links **by position**, and a position copy onto a tower
+with one floor fewer produces a schedule that is **wrong but plausible**: every arrow lands one storey
+out, the diagonal still looks like a diagonal, and nothing downstream can tell. The refusal is the
+feature, and the mismatch cases are asserted one at a time — a floor count, a category, a zone count,
+a unit count, and a trade present on one side only.
+
+### Verification
+
+`test-zoneoverlap` 56/56 (new), `test-towerseq` 48/48, `test-shapeedit` 36/36, `test-zoneplan` 27/27,
+`test-autotrace` 32/32, `test-sitefit` 31/31, `test-cpm` 28/28, `test-critwbs` 26/26, `test-health`
+30/30, `test-wbsfile` 33/33, `test-syntax` 4/4, `wiring-check` 139/139, `dark-remap` 0 findings.
+
+⚠️ **Two failures were checked against the pinned base and are NOT from this work**: `test-builder`
+99/1 (*"page 'Structure' belongs to a step the rail can show"*) and `test-lsm` 675/28 both fail
+identically on `bd4a2aee`. Recorded rather than quietly passed over.
+
+⚠️ The live screen could not be reached — the module redirects to sign-in and this session cannot
+authenticate — so the **behaviour** evidence is the executed suite, and the **layout** was checked by
+rendering the shipped CSS rules, extracted verbatim from `index.html`, against the real
+`dashboard.css` in light and dark. Nothing in that harness was committed (`_scratch*` is gitignored).
+
+`MODULE_V` → `20260917zv`.
+
+---
+
 ## 2026-09-17 (zo) — The browser's own dialogs leave the module; the shape editor gets numbers; General Requirements stops being in a tower
 
 Owner, on the Schedule Setup's Floors & Zones step: *"1. for adding floor plan, improve UI to edit

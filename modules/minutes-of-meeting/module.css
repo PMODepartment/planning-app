@@ -231,7 +231,7 @@
 .il-viewtoggle { display: inline-flex; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); overflow: hidden; flex: none; }
 .il-viewtoggle button {
   border: 0; background: var(--pd-card); color: var(--pd-muted);
-  font: 600 var(--pd-fs-sm)/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
+  font: 700 var(--pd-fs-sm)/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
 }
 .il-viewtoggle button + button { border-left: 1px solid var(--pd-line); }
 .il-viewtoggle button:hover:not(.on) { background: var(--pd-bg); color: var(--pd-ink); }
@@ -296,7 +296,7 @@
    own segments — "use the same label/button format for both." */
 .il-mom-todaybtn {
   border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); background: var(--pd-card); color: var(--pd-muted);
-  font: 600 var(--pd-fs-sm)/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
+  font: 700 var(--pd-fs-sm)/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
 }
 .il-mom-todaybtn:hover { background: var(--pd-card); border-color: var(--pd-red-mid); color: var(--pd-red); }
 .il-mom-calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }

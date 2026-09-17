@@ -104,7 +104,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-17 (aa) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
+### 2026-09-17 (ah) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
 
 Owner, two live reports: a 360° video upload sat reading "Starting…" with no further movement, and
 the topbar's Drafts button label ran off the edge next to "+ Add media" at a narrow window width.
@@ -122,13 +122,1127 @@ square every other unlabelled topbar tool already is.
 Verified: full suite 974/4 (the same 4 pre-existing, unrelated failures); `tools/wiring-check.js`
 139/0; CSS braces balanced; 0 duplicate DOM ids.
 
-`module.css`/`module.js` → `?v=20260917zq`; `MODULE_V` → `20260917zr`. Detail:
+`module.css`/`module.js` → `?v=20260917zq`; `MODULE_V` → `20260917zze`. Detail:
 [`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
 
-⚠️ **`MODULE_V` collided silently with the entry below at `zq` — both sessions picked the identical
-token off the same base, and git had nothing to conflict on in `modules-grid.js`/`dashboard.html`/
-`modules.html` because both sides wrote the same string.** Re-derived past both to `zr` on
-integrating; see that entry's own note on the same collision one letter earlier (`zg` → `zp`/`zq`).
+⚠️ **`MODULE_V` collided three separate times chasing `main` forward: silently with a sibling entry
+at `zq` (both sessions picked the identical token off the same base, so git had nothing to conflict
+on in `modules-grid.js`/`dashboard.html`/`modules.html` since both sides wrote the same string) —
+bumped to `zr` on integrating that. Merging this branch forward again once `main` had independently
+reached `zzd` collided a second time, this time as a real `<<<<<<<` conflict; re-derived past both
+to `zze`. Same recurring collision the entry below documents its own chain of (`zg` → `zp`/`zq` →
+… → `zzd`) — this is one token further along the same chain, not a separate incident.** Likewise
+re-lettered `(aa)` → `(ah)`, derived from the full merged changelog below rather than assumed.
+
+### 2026-09-17 (ag) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
+
+⚠⚠ **Re-lettered `(aa)` → `(ab)` → `(ad)` → `(ae)` across three merges, AND re-versioned `20260917zx` →
+`20260917zzd` — the same two-sessions-one-token collision this log has now recorded six times, both
+halves of it at once, and the letter half FOUR times in a row: main independently reached for `(aa)`,
+then `(ab)`, then `(ad)`. ⚠⚠ So the letter is now derived from the MERGED file at the end — the
+free suffix is computed from every `### 2026-09-17 (…)` heading present after resolving, rather
+than chosen when the entry is written. A letter picked up front is stale the moment anyone else
+lands an entry the same day, and on a busy day that is every single merge.**
+Every letter `a`–`z` was already spent for this date, so both sides independently reached for
+`(aa)`; and main's `04b92972` had independently taken `20260917zx` for `MODULE_V` while this was
+in flight. ⚠ The version half is the dangerous one and it does **not** conflict on its own — it
+is a different value on each side, so git merges it happily and the loser's bytes ship under a
+token a browser already holds. Re-derived to `zzb`, past main's own `zza`, and sort-checked as a
+plain string rather than assumed: `zx` sorts *before* `zza`, so “take theirs” would have been
+worse than a collision.
+
+Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
+clicking next, user should move from tower sequence to Zone Sequence, etc. before moving to next
+step"*, *"under scope per zone, instead of class codes, provide activity name"*, and *"no need for
+the vertical stacking in repetition step, move this to the generate step"*. Module work — the full
+entry is in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zx)`.
+Logged here for the `MODULE_V` bump and the three things that generalise:
+
+⚠️⚠️ **ITEM 2 WAS ALREADY BUILT, AND THE HONEST ANSWER WAS WORTH MORE THAN A REBUILD.** The footer's
+Next/Back has walked this step's tabs since `(t)` this morning — `stepTabs(<step title>)` drives the
+button's label *and* its handler, so it cannot say one thing and do another. Executed rather than
+read: the shipped walker, sliced out of `render()`'s footer block and driven, goes **Tower Sequence
+→ Zone sequence → Trade sequence → Scope per zone → Generate**. ⚠️ What *can* look like the
+complaint: the selected view is remembered, so reaching the step by clicking the **rail** while the
+remembered view is the last one leaves Next with nowhere to go but the next step. Entering through
+Next always lands on the first view, so the walk is complete every time it is *walked*. Recorded
+rather than "fixed" on a guess.
+
+⚠️⚠️ **A SPECIFICITY TIE THAT FAILED IN THE WORST HALF-WAY STATE.** The Scope-per-zone header now
+holds an activity name, so it has to wrap — and `th.sbld-scope-col` is **(0,1,1)** against the base
+`table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at **(0,1,2)**. That is not a harmless
+no-op: the `max-width` in the same rule **did** apply while the `white-space` did not, so the header
+was capped *and* unwrappable and **three of eleven names rendered clipped**. Only measuring found it.
+This file has recorded the *equal*-specificity version of this trap repeatedly (`[hidden]` losing to
+an author `display`); the unequal one is nastier, because half the rule still lands and the result
+looks deliberate.
+
+⚠️⚠️ **`/@import[^;]*;/` IS A BROKEN WAY TO STRIP AN @IMPORT, AND IT MADE THE HARNESS LIE.**
+`dashboard.css`'s Google Fonts URL **contains semicolons** (`wght@0,400;0,500;…`), so that regex cuts
+inside the URL and leaves garbage that swallows the following `:root` block — every `--pd-*` token
+then resolves to nothing and the harness measures an **unstyled** page at the browser's 16px default,
+reporting widths ~35% too large. Internally consistent, and wrong. Caught by asserting a token
+(`--pd-fs-sm` came back empty), not by reading the numbers. **Strip to end of line**, and any harness
+in this repo that inlines `dashboard.css` should assert a token before it reports a measurement.
+
+⚠⚠ **AND THE STACKING RENDERER IS KEPT, NOT DELETED — A REVERSAL, AT THE OWNER'S REQUEST.**
+*"make sure not yet to delete the code for stacking and just keep it in repo. this will be used later
+on in the generate step."* Worth being precise about what was ever at stake: the **drawing engine**
+(`stackTowerSVG`, `zonesOfFloorStk`, `openStackUnits`, `_genStackCards`) was never touched and is
+live on Generate today. What the retired tab owned was a **shell** around it — and that shell is now
+back, verbatim, parked out of `STEP_TABS` and out of every call path. The part worth keeping is its
+**basis `<select>`**, which shows Internal or External one at a time; Generate draws both side by
+side and has no way to do that.
+⚠ This repo's rule that *a renderer nothing calls is the one the next editor wires back up beside
+the real thing* is answered rather than waved off: the suite asserts the function exists, has exactly
+**one occurrence** (its declaration, no call site), and is **not back in `STEP_TABS`**.
+⚠⚠ **Parked is not preserved unless it still runs.** A separate suite wires it to a host and
+**executes** it, so a revival gets a working screen rather than a `ReferenceError` — which is also
+why `var stackBasis` came back with it rather than being left deleted under a function that reads it.
+
+⚠️ **Reported, not fixed** — pre-existing and confirmed on `origin/main`'s own copy rather than
+waved past: `modules/project-schedule/CLAUDE.md` holds **one NUL byte** (offset 30,736, inside an
+earlier entry), which makes `grep` treat the whole changelog as binary — the same trap 2026-09-14
+recorded and evidently not gone; and `test-builder` is **99/1** on a manual page for `Structure`, a
+step this morning's merge retired.
+
+⚠⚠ **A CORRECTION TO MY OWN REPORTING: `test-lsm` was never failing — I was calling it wrong.**
+It takes the file to check as `process.argv[2]`, and a bare `node test-lsm.js` throws
+`ERR_INVALID_ARG_TYPE` on `readFileSync(undefined)`. I ran it bare across every sweep and reported
+the crash as a pre-existing failure. Invoked properly it is **676 assertions, 0 failed** on the
+merged tree and identically on `origin/main`. A suite that needs an argument and is run without one
+reads exactly like a broken suite — which is how it got carried through three of this entry's
+verification passes unchallenged.
+
+**Verified:** 65 assertions across three suites, 0 failing, every one executing code sliced out of
+the shipped file, with contrasts pinned to `origin/main` (once this branch is committed, `HEAD` IS
+the change and every contrast becomes self-comparison — which is exactly what started happening, and
+how it was caught). ⚠️ `stGenerate` is
+**executed** against a fake DOM — `node --check` cannot see a ReferenceError, which is this module's
+own z6 lesson — drawing both bases' stacking, wiring both zoom buttons, and **zoom 2× genuinely
+widening the SVG** (viewBox 414 → 674), so the control is not merely bound to a variable nothing
+reads. Rendered at 1180px against the real stylesheets with the cascade proved by a **colour**
+(ink `rgb(35,31,32)` = `--pd-ink`) rather than by tidy geometry on unstyled markup.
+`wiring-check` **139/139**, `toolbar-order` 15 bars / 0 out of order, `dark-remap` 0 findings,
+`dead-hooks` **byte-identical to HEAD**, seven module suites green, the 3.58MB inline block parses,
+CSS braces balanced, 0 NUL bytes in the touched source.
+⚠️ **Not verified signed in.**
+
+⚠⚠ **AND I DESTROYED THE RESOLUTION ONCE, WITH `git checkout origin/main -- <file>`.** Mid-merge,
+to answer a side question (is `test-builder`'s one failure main's or mine?), I checked main's copy
+of two files into the worktree. That command does not just read — it **stages that ref's copy and
+marks the path resolved**, so both resolutions were silently gone and `git status` showed a tidy
+`M` rather than `UU`. Caught by grepping for my own four changes instead of assuming, recovered
+with `git merge --abort` (the branch tip was committed, so nothing was lost) and replayed from the
+content-anchored resolution scripts. **To read another ref during a merge, use
+`git show <ref>:<path> > /tmp/copy` and test the copy.** The answer was worth having — that failure
+is a manual page for `Structure`, and it is **99/1 on main's own copy of the file**, so it is
+pre-existing and neither this change's nor the merge's.
+
+`MODULE_V` → `20260917zzd`, re-derived from what `origin/main` actually carries **after**
+integrating (`zza`) rather than guessed at beforehand — which is the rule that keeps failing to stick.
+No shared asset changed.
+
+### 2026-09-17 (af) — The clash toggle has never fired: two handlers, overlapping selectors, and `onclick =` replaces
+
+Owner's item 5.2: *"Let's also add the option not to show the clashes."*
+
+The option was built and every part of it is correct — `_lsmClashShow`, `setLsmClashShow`, the
+`ps_lsmclash` localStorage key, the strip's Hide/Show button, and the reads in **both** the chip strip
+and the on-bar marks. None of it was reachable.
+
+### ⚠️⚠️ TWO BINDING LOOPS IN `renderActLegend()`, AND THE SECOND ATE THE FIRST
+
+```
+host.querySelectorAll('[data-lsmclash]')        -> setLsmClashShow(…)     (~52680)
+host.querySelectorAll('button[data-lsmclash]')  -> navigate to the storey (~52707)
+```
+
+Every clash chip **and** the toggle is a `<button type="button">` carrying `data-lsmclash`, so the
+second selector matched every element the first had just bound — and `onclick =` **replaces** rather
+than adds. The toggle's handler was overwritten before it could ever run.
+
+**Measured, not read.** The two loops were executed in their shipped order over the shipped markup
+(two chips + one Hide button): selector 1 matched 3, selector 2 matched the same 3, and clicking
+**Hide fired `NAVIGATE:0`**. After the fix, the same test fires `TOGGLE:0` then `NAVIGATE:row-7`,
+with **0 elements matched by both** selectors.
+
+⚠️ **And it was worse than a dead button.** The navigation handler guards with
+`var id = b2.dataset.lsmclash; if (!id) return;` — the toggle's value is the *string* `"0"`, which is
+truthy, so it proceeded: `selId = "0"`, a repaint, and a scroll hunt for a row that does not exist.
+Pressing **Hide** therefore silently **cleared the planner's row selection** and redrew, which reads as
+"the button did something" while the clashes stayed exactly where they were. A button that does
+nothing is findable; a button that does the wrong thing quietly is not.
+
+Both loops now select by class — `.ps-lsmclash-toggle` and `.ps-lsmclash-chip` — which are already on
+the markup and cannot overlap however the attribute is spelled.
+
+### ⚠️ A SOURCE ASSERTION THAT READ ITS OWN COMMENT
+
+The new negative check (*"neither still selects every element carrying the attribute"*) **failed on its
+first run against the fixed code**. The fix's explanatory comment quotes the old selector verbatim, and
+`sliceFn` returns the function *with its comments*, so the regex matched prose describing the bug
+rather than code containing it. It strips block comments before testing now. Every grep-the-source
+assertion in this suite has that exposure; this is the first one to have been bitten by it.
+
+One pre-existing assertion also asserted the **old** selector (*"and they are wired to navigate"*) and
+had to follow the fix — the same supersession shape as *(ad)*'s six.
+
+**Verified:** `test-lsm` **684/684** (was 680) · the same suite against the pre-fix source fails **4**,
+so every new check discriminates · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap`
+0 findings · inline scripts parse. `modules-grid.js` `?v=` → `20260917zzd`.
+
+### ⚠️ STILL OPEN, AND IT NEEDS THE OWNER: "the gantt bar still doesn't fold into one gantt bar"
+
+Reported mid-change, with a screenshot of OPW101. What the screenshot shows is that the **row** fold is
+working — the rows are `Ground Floor(96)`, `Floor 1(3)`, `2ND Floor(96)`, one per storey, no ladder —
+and that `Floor 1` carries **two** bars at different vertical offsets, which is `_lsmBarsHTML` drawing
+one **lane per keyed trade**.
+
+Read against the code, `_lsmAgg` already folds the way the owner described it in the first place:
+activities are bucketed by lane value, so **many activities of one trade on one storey become one
+bar**. What it does not do is merge *different trades* into a single bar — and it deliberately drops
+any activity whose trade is not a curated lane (`var ln = lm.map[v]; if (!ln) continue;` —
+*"not curated -> not on this chart"*), which is the most likely reason a 96-activity storey shows one
+short bar.
+
+So the design and the expectation differ, and the difference is a decision about his chart rather than
+a defect I can name: one bar per storey with every trade merged is a different chart from a
+time-location chart with a line per trade. **Asked rather than guessed.**
+
+### 2026-09-17 (ae) — The LSM fold was asking the wrong resolver which level is the storey
+
+Owner's item 5.1: *"The Gantt should be that the WBS should fold all into one row not see the ladder."*
+
+The fold itself was already right — `_lsmArrange` groups by the floor level **alone**, so every storey
+is a top-level row with no ancestors above it and no zone or unit rows beneath. What was wrong is
+**which level it folded on**.
+
+### ⚠️⚠️ TWO RESOLVERS FOR ONE QUESTION, AND THE FOLD WAS USING THE WEAKER ONE
+
+`_dimLevelMap()` is this module's considered answer to *"which LOC_LEVEL is the floor?"*: synonym
+lists per dimension (`DIM_SYN`), **claim-once** so one level cannot be two dimensions, and an ordered
+sweep whose `minIdx` only ever moves deeper so a dim can never be handed a level above its parent. Its
+comments cite the two real projects it was built from — Avesta (`Tower › Level › Zone › Orientation`)
+and SLN101 (`Tower › Level › Orientation › Zone › Cluster`).
+
+`_locFloorLevelId()` was a second answer, one line long: a regex over the level names, first hit wins,
+deepest level as the fallback. **Both resolvers executed against seven breakdowns. Three diverge, and
+the map is right in all three:**
+
+| breakdown | regex said | map says |
+|---|---|---|
+| `Building Level › Floor › Zone` | **Building Level** | `Floor` |
+| `Block › Section › Pour › Bay` | **Bay** | `Section` |
+| `Tower › Deck › Zone` | **Zone** | `Deck` |
+
+- The first reads *"level"* inside the **building's** name and folds one row per building — a
+  time-location chart of a tower block with three rows.
+- The second finds nothing storey-ish and takes the **deepest** level: one row per bay. That is the
+  *"ticking LSM widens the rows"* explosion this whole item exists to prevent, re-created by the
+  resolver meant to prevent it.
+- The third is the purest form of the drift: the two resolvers kept **different synonym lists**.
+  `DIM_SYN.floor` has carried `"deck"` all along; the regex never did, so it missed the storey
+  entirely and fell through to the deepest level.
+
+`ScheduleBuilder` exposes `floorLevelId()` now, and `_locFloorLevelId` asks it first. ⚠️ It goes
+through an export rather than calling `locLevelFor` directly because `_dimLevelMap` lives inside the
+`ScheduleBuilder` IIFE while `_locFloorLevelId` is in the module one — the *variable* is a sibling,
+the helpers inside it are not. The regex stays as the pre-init fallback and **gains `"deck"`**, so the
+two lists cannot disagree for as long as both exist.
+
+**Executed, after the fix** — `Building Level › Floor › Zone` → `Floor`, `Block › Section › Pour › Bay`
+→ `Section`, `Tower › Deck › Zone` → `Deck` on **both** paths, and the ordinary
+`Tower › Floor › Zone › Unit` → `Floor`, unchanged.
+
+### A comment describing a branch that cannot be reached
+
+`_lsmArrange` claimed it *"falls back to the full ladder when no floor level can be identified"*. The
+code has never done that: `_locFloorLevelId` always answers when there is any breakdown at all, so
+`_want` is `locDims` **only** when `LOC_LEVELS` is empty — and that case is caught by the
+`!locDims.length` toast above it, not here. The comment now says what the code does.
+
+### ⚠️ The new assertions were checked against the pre-fix source, because a test that cannot fail is not evidence
+
+Run against `8920785`, three of them fail, including an executed one:
+
+```
+x the storey level is resolved through the builder's dim map, not a second name regex
+x the fallback regex carries "deck" too, so the two lists cannot disagree while both exist
+x and a DECK is a storey to the fallback now, not a miss (expected "B")  [got: "C"]
+```
+
+⚠️ The wiring assertion is on the **source**, not executed: `ScheduleBuilder` is a different IIFE that
+this harness does not slice, so executing it here would prove the harness rather than the shipped
+wiring. The fallback assertions *are* executed, and they deliberately run the pre-init path — which is
+the path that must not throw.
+
+**Verified:** `test-lsm` **680/680** (was 676) · the same suite against the pre-fix source fails 3, so
+the new checks discriminate · the pinned-base contrast against `4d82fd4` still runs and is still loud
+(`20/53 fns, 7/21 vars`, full MISSING list) · `test-syntax` 4/4 · `wiring-check` 139/0 ·
+`dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline scripts parse · CSS brace balance
+identical to pinned `8920785`. `modules-grid.js` `?v=` → `20260917zzc` — the shipped module changed
+this time, unlike *(ad)*.
+
+### 2026-09-17 (ad) — Flowline was removed from the product and left a suite failing 28 assertions
+
+Owner's item 4.3: *"Flowline - let's remove"*.
+
+### The view was already gone; the tests were not
+
+`modules/project-schedule/index.html` contains the word **flowline zero times** — the view, its mode
+setter, its geometry constants and its CSS all went when the toolbar button did. What survived is
+`modules/project-schedule/test-lsm.js`, which still sliced `renderFlowline` and `setFlowlineMode`
+**by name** and asserted against them. Run against the working tree it said:
+
+```
+sliced 53/55 fns, 21/25 vars   MISSING FNS: setFlowlineMode,renderFlowline
+                               MISSING VARS: flowlineMode,FL_ROWH,FL_PADT,FL_PADR
+FAIL: 675 assertions passed, 28 failed
+```
+
+⚠️⚠️ **A suite that fails 28 assertions is worse than no suite**, because nobody reads the 29th. The
+next real regression in the LSM would have landed in a list that was already red and been indis­tin­guish­able
+from the noise. That is the actual cost of a half-finished removal, and it is why this is
+finished here rather than left as a known-red.
+
+**Now:** `sliced 53/53 fns, 21/21 vars` · `PASS: 676 assertions passed, 0 failed`.
+
+### ⚠️⚠️ SIX OF THE 28 WERE NOT FLOWLINE, AND EACH WAS CHECKED AGAINST THE SHIPPED CODE FIRST
+
+"Make the suite green" is exactly how a real regression gets buried, so every red assertion that did
+not obviously belong to the flowline was read against the product before it was touched. All six turned
+out to be **stale assertions against code that had been superseded**, and the product is right in
+every case:
+
+- **`_fi + 1`** (two sites). `_lsmArrange` now groups by the **floor level alone** — after that fold
+  there is one grouping dimension, so there are no descendant rows left for `expandToLevel` to close.
+  The shipped code guards it with `if (!_flId)`, and only the **fallback** ladder still collapses,
+  where `locDims.length` is the correct depth. The assertions now check the fold *and* the guard,
+  which says more than the old spelling did.
+- **`setGroupBys(locDims)`** (two sites). Same supersession: the call is `setGroupBys(_want)` where
+  `var _want = _flId ? ['loc:' + _flId] : locDims`. The property these assertions exist to protect is
+  that the arrange step sets a **location-led** grouping — `setGroupBys` drops the LSM mode when
+  `dims[0].indexOf('loc:') !== 0`, so an arrange step that set anything else would switch the mode off
+  the instant it turned it on. Asserting on `_want`'s *definition* checks that on **both** branches,
+  where the old assertion only checked one spelling.
+- **the clash chip count** (expected 3, got 4). The strip gained a Hide/Show toggle with
+  `_lsmClashShow`, and the toggle carries `data-lsmclash` too — so counting that attribute gives 4 for
+  3 clashes. Counted by the chip **class** now, and the toggle gets **its own assertion** rather than
+  being silently absorbed into the chip count.
+
+### What was kept
+
+⚠️ Slice 5 was titled *"THE FLOWLINE"* and held two IIFEs. The first asserted that the flowline
+derived nothing of its own — that it read `_lsmRate`, `_lsmSeq`, `_lsmClash` and `_lsmLanes` rather
+than re-deriving them. That went. **The second never mentioned the flowline**: it tests
+`_vsTowerModel` directly, which the row layout still reads, and it was passing. It stays, under a
+banner that now says what it is. The reason the model was extracted — this module once shipped a 3D
+view that put a floor somewhere else than the 2D view of the same data, with no way to tell which was
+right — outlives the view that prompted it.
+
+The six surviving mentions of the word in that file are all **comments recording what was removed and
+why**, including the two sentences that used to end *"and the flowline's footnote is the honest
+answer"* and *"which is what BOTH the row layout and the flowline call"*. The record stays; the code
+does not.
+
+**Verified:** working tree **676/676**, was 675/703 · the pinned-base contrast still runs and is still
+loud (`sliced 20/53 fns, 7/21 vars` against `4d82fd4`, with the full MISSING list printed — a base that
+stopped being a contrast would be silent) · `test-syntax.js` 4/4 · `wiring-check` 139/0 ·
+`dead-hooks` 9 (baseline) · `dark-remap` 0 findings.
+
+⚠️ **No cache-bust token was bumped, deliberately.** The only file that changed is a test that ships
+to nobody; bumping `MODULE_V` for it would force every planner to re-download the module page to
+receive a change to a file their browser never fetches.
+
+### 2026-09-17 (ac) — The last `font-weight: 600` in the app, and there were four of them, not two
+
+Owner: *"fix the two 600s in progress-photos too"* — the two entry *(ab)* flagged and left alone.
+
+### ⚠️ A SCAN THAT READS BOTH SPELLINGS FOUND FOUR
+
+Entry *(ab)* reported two, from a grep for `font-weight`. Running the same question against **both**
+spellings turned up two more, hidden inside `font:` shorthands where a `font-weight` grep never
+looks — exactly the blind spot *(ab)* had just documented for the Project Schedule, one module over:
+
+| | file | spelling |
+|---|---|---|
+| `.pp-pending-summarytext` | `progress-photos/module.css` | longhand |
+| `.pp-pending-name` | `progress-photos/module.css` | longhand |
+| `.il-viewtoggle button` | `minutes-of-meeting/module.css` | **shorthand** |
+| `.il-mom-todaybtn` | `minutes-of-meeting/module.css` | **shorthand** |
+
+All four folded. **The app is now at zero live `font-weight: 600` declarations in either spelling**,
+finishing what the 2026-09-10 sweep started with 262 of them.
+
+### The fold is a measured no-op, and the pair check came first
+
+The app downloads Montserrat `400;500;700;800` and Gotham has no Semibold, so CSS font matching for a
+request above 500 looks **up**. Rendered widths of one string: `500 → 164.69px`, `600 → 170.86px`,
+`700 → 170.86px`. **600 already paints as 700 to the pixel** — nothing moves on screen, and the source
+stops asking for a cut that does not exist.
+
+⚠️⚠️ **The light/heavy-pair check ran first, because that is where this sweep has been wrong before.**
+The 2026-09-10 pass found ten cases where 600 and 700 were the two halves of *one* component, and
+folding both ends made the two states identical — a blanket `sed` would have destroyed a feature the
+log had added on purpose. None of these four is one of those: in `progress-photos` every
+`.pp-pending-*` sibling (`-meta`, `-status`, `-error`) sets no weight at all, and in Minutes of
+Meeting every other weighted rule in the file is already 700. They are single emphasis declarations
+against unweighted siblings — the majority case.
+
+### What was NOT changed, and why
+
+⚠️ **The two Minutes of Meeting shorthands stay shorthands.** The three this pass converted to
+longhand in the Project Schedule had reasons of their own — two carried literal px sizes and one
+(`font: 600 11.5px/1 inherit`) was invalid CSS the browser discarded entirely. These two are valid and
+already token-based for both size and family (`font: 700 var(--pd-fs-sm)/1 var(--pd-font)`), so the
+weight was the only thing wrong with them. Rewriting them would be churn in a module this change has
+no other business in, and the scanner now reads shorthands anyway.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · CSS brace
+balance in both module stylesheets identical to pinned `ad9641d`, both files genuinely differ · the
+whole diff is **four lines, each `600` → `700`**, plus two cache-bust tokens. A re-scan for both
+spellings across every `.css` and `.html` in the repo returns **none**.
+`progress-photos/module.css` `?v=` → `20260917a` (past `20260916z2`), `minutes-of-meeting/module.css`
+`?v=` → `20260917b` (past `20260917a` — the two must not collide, and they are bumped in the same
+commit that changes both files).
+
+### 2026-09-17 (ab) — The spreadsheet's number columns were left-aligned, and 319 lines of stylesheet had never been scanned
+
+Owner: *"Now do 4.2 for the tables"* — *"Tables should be more readable. Cleanup and follow
+consistency especially having the excel feature."*
+
+### ⚠️⚠️ THE GRID'S DURATION COLUMNS WERE LEFT-ALIGNED WITH PROPORTIONAL FIGURES
+
+`Interior (d)` and `Exterior (d)` are declared `num: true` in `XL_COLS` and their cells are emitted
+with `inputmode="numeric"` — and then rendered `text-align: start`, `font-variant-numeric: normal`.
+Measured on six rows: **12, 14, 10, 9, 5, 7 all flush left**, so a two-digit duration and a one-digit
+duration do not line up, and the digits change width from row to row. In a grid whose entire premise
+is that it behaves like Excel, that is the readability complaint in one place.
+
+⚠️⚠️ **And the module already held the answer.** `table.sbld-tbl td.num { text-align:right;
+font-variant-numeric:tabular-nums; }` — the Scope per zone table, forty lines up the same stylesheet.
+One of the two tables got it. This is not a new idea; it is the same idea applied to the table that
+needed it more. ⚠️ The value lives in an `<input>` that inherits `font` but not alignment, so the rule
+has to reach the input, not the cell.
+
+**Verified in the browser:** 12 numeric cells, all `text-align: right`, all `tabular-nums`, headers
+right-aligned to match.
+
+### A header that fitted by exactly nothing
+
+At the shipped 90px default, `Exterior (d)` measured **73px of label in 73px of available width — 0px
+of slack**, and `Interior (d)` had 3px. Not clipped today; clipped by the first thing that changes a
+glyph width — the Montserrat fallback where Gotham is not licensed, a browser zoom, a user font
+setting. Defaults are now 98px (slack 8px and 11px). ⚠️ `c.w` is only the starting point — `xColW`
+still overrides it the instant a planner drags the column edge, so this takes nothing away.
+
+### ⚠️⚠️ 319 LINES OF THIS STYLESHEET HAD NEVER BEEN SCANNED
+
+Every scanner in this 4.1/4.2 pass read the real `<style>` block as **hardcoded lines 15..4510**. The
+block now ends at **line 4829**. So `(u)` through `(aa)` each reported their counts — off-scale sizes,
+truncating rules, mixed weights — against **93% of the stylesheet**, and called the missing 7% clean
+by never looking at it. The bound is computed from the source now, not assumed. It was caught only
+because a rule this entry added at line 4531 did not apply in the harness.
+
+What the tail was hiding, re-run against the whole block:
+
+| | reported | actually |
+|---|---|---|
+| mixed 700/800 families | 3 | **4** (`.sbld-lvlsum` was outside the window) |
+| truncating rules | 13 | **14** |
+| off-scale font-size rules | 0 | **0** — this one held |
+
+### ⚠️⚠️ THE `font:` SHORTHAND IS A THIRD BLIND SPOT, AND ONE OF THE THREE WAS BEING DISCARDED
+
+A `font:` shorthand carries size, weight, line-height and family in **one** declaration, so every
+scan that greps `font-size:` or `font-weight:` walks straight past it. All three non-`inherit`
+shorthands in this stylesheet carried **weight 600 and a literal px size** — invisible to every check
+in this pass until they were read by eye.
+
+And **`.ps-m-seg button { font: 600 11.5px/1 inherit }` is invalid CSS.** A shorthand is
+all-or-nothing, and `inherit` is not a font-family in that position, so the browser discards the
+whole declaration. **Measured:** applying it to an element pre-set to `font-size:99px;
+font-weight:100` left both at 99 and 100, and `el.style.font` came back empty. That control — the
+mobile List/Gantt toggle, *not* a Setup table — has never had a size or a weight from this rule and
+has been falling through to the user agent's own button font the whole time. Fixed here because a
+declaration known to be discarded should not sit in the file, and the fix is the same one line as the
+other two. ⚠️ It is a **visible** change: that control has been rendering at the UA's ~13.3px.
+
+### Weight 600, folded — and the fold is a measured no-op
+
+Five live `font-weight: 600` declarations survived the 2026-09-10 sweep that folded 262 of them (two
+longhand, three hidden in shorthands). The app downloads Montserrat `400;500;700;800` and Gotham has
+no Semibold, so CSS font matching for a request above 500 looks **up**. Rendered widths of one string:
+
+| weight | 400 | 500 | **600** | **700** | 800 |
+|---|---|---|---|---|---|
+| px | 162.09 | 164.69 | **170.86** | **170.86** | 174.35 |
+
+**600 already paints as 700 to the pixel.** Folding changes nothing on screen and makes the source say
+what the browser does. ⚠️ Two more remain in `modules/progress-photos/module.css` — a different
+module, not touched here.
+
+### Left alone, with the reason
+
+**No row hover was added to the grid**, although `.pd-table tr:hover td` exists app-wide and both
+Setup tables lack it. The grid already layers three deliberate backgrounds — PDGrid's `.pdg-sel` /
+`.pdg-anchor` selection, `.xl-copied`'s marching ants, and the focused row's gutter going red — and
+the stylesheet reasons about that cascade explicitly. A hover tint would be a fourth background
+competing with three that each mean something. **Padding also stays** at 5/6/8px across the three
+tables: the design-system note is that 2px of gap is imperceptible while half a pixel of type is not,
+and these are 1px apart.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline
+scripts parse · CSS brace balance identical to pinned `830786a` · no NUL bytes · 0 off-scale
+font-size rules **and** 0 off-scale inline sizes **and** 0 problematic `font:` shorthands · 0 elements
+computing to weight 600 · 419 elements Gotham / 0 Arial. Every width above is a browser measurement
+taken behind a control assertion — the grid's declared inline width (1062px) against its rendered
+width (1063px) — because `visibilityState` read `hidden` while layout was live, and a gate on
+visibility alone would have discarded good numbers just as a gate on nothing would have accepted
+void ones. `modules-grid.js` `?v=` → `20260917zzd`.
+
+### 2026-09-17 (aa) — The last five Setup ledes stop being instructions, and the wizard is fully on the type scale
+
+Owner: *"Continue with the remaining"* — Construction Library, Floors & Zones, and Repetition's five
+views plus Generate, closing the 4.1 pass over the Schedule Setup.
+
+### The lede states the purpose; the mechanics go in "How to use this step"
+
+That is `_sbldHow`'s own stated job. Its comment reads: *"a step's lede now states its **purpose** in
+a sentence or two and every keystroke / click sequence it used to spell out inline lives in here
+instead."* Five steps were not doing it. Measured, longest lede per step, before:
+
+| step | words | disclosure |
+|---|---|---|
+| `stTowerLinks` | **62** | none |
+| `stTradeSeq` | 50 | has one — instructions were in *both* places |
+| `stScope` | **42** | none |
+| `stLevels` | 36 | on the **other branch** only |
+| `stGenerate` | 36 | none |
+
+Every other step was already at 14–26 words. After: the longest lede in the entire wizard is 26 words
+(`stPhasesStep`), and **every step now has the disclosure**. ⚠️ Nothing was deleted — it moved one
+click away, which is what the component exists for.
+
+⚠️⚠️ **`stLevels` had already made this decision and applied it to one branch.** Its empty-state
+branch carries a nine-word lede and puts the step-by-step in `_sbldHow`, with a note reading *"the
+step-by-step that followed it is exactly what `_sbldHow` exists for"* — and then the main branch, the
+one a planner actually spends time in, kept the 36-word version. Two branches of one step introducing
+it two different ways is the drift this pass is for.
+
+### The last three off-scale sizes, and what they were
+
+⚠️⚠️ **Two `<select>`s pushed the control DOWN from `--pd-fs-sm` (12.5px) to `12px`.** `.pd-select`
+already sets 12.5px, so these were half-pixel overrides of the app's own control size with no stated
+reason — and half a pixel of type is precisely the difference that aggregates into a *"different
+people wrote this"* feel. The override is **deleted** rather than tokenised: the right value is the
+one the control already has. The third was `<h3 style="font-size:13px">` in Scope per zone — 13px *is*
+`--pd-fs-base`, on the scale by luck, on a bare `<h3>` that would otherwise take the browser's default
+heading size. The Setup had no `<h3>` treatment at all, so `.sbld-sech` is now it.
+
+**The Schedule Setup is now at 0 off-scale font-size declarations in BOTH places** — 0 in the
+stylesheet rules and 0 in the inline `style=` attributes its renderers write. The second number is the
+one entries *(t)*, *(u)* and *(v)* got wrong by only ever scanning rules.
+
+### The 700-vs-800 question, closed
+
+Carried open since *(u)*. It is down to **one** family, `.sbld-twr`, and that one is a deliberate
+pair, not drift: `.sbld-twr-tradehead` is an **uppercase** section label at 800 — the shape the app
+uses 800 for in 31 other places — and `.sbld-twr-lab` is a muted fixed-width row label at 700. Two
+roles, correctly distinguished. Setup totals are now 700×58 / 800×14. **No weight sweep is needed and
+none was done.**
+
+### ⚠️ VERIFIED STRUCTURALLY, NOT GEOMETRICALLY — AND THE DIFFERENCE MATTERS
+
+The overflow check reported 13 elements as cut. **Every one of them had `clientWidth: 0`**, which is
+not truncation — it is the hidden-tab artefact: the Browser pane was not drawing, and a hidden tab
+voids all layout geometry while still answering `getComputedStyle`. Gating on
+`visibilityState === 'visible' && document.body.clientWidth` returned `hidden` / `0` and the whole
+read was discarded. So for this entry:
+
+- **Valid** (DOM structure and computed style, neither of which needs layout): every Setup page
+  renders **one `<h2>`, one lede**, and **0 elements in a non-brand typeface** across all 7 harness
+  cases.
+- **Not measured**: any width. No overflow or truncation claim is made for this pass.
+
+Reporting the 13 as findings would have invented defects; reporting them as a pass would have invented
+coverage. Neither is written here.
+
+### ⚠️ THE CHANGELOG'S LETTERS HAVE COLLIDED AND SOMEBODY SHOULD DECIDE WHAT TO DO
+
+Today's entries no longer form one sequence. A concurrent session prepended its own `(o)`–`(y)` block
+above this one's `(a)`–`(z)` block, so **ten letters appear twice today and `(t)` appears three
+times** — 21 entries sharing 10 letters — and the file no longer descends: `(o)` now sits above `(z)`.
+Single letters for 2026-09-17 are **exhausted**, which is why this entry is `(aa)`. Re-lettering
+another session's eleven live entries mid-flight would conflict with whatever it does next, so this
+one does not attempt it and flags it instead.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline
+scripts parse · no NUL bytes · 0 off-scale font-size rules and 0 off-scale inline sizes · longest lede
+26 words · every step has its disclosure. ⚠️ Three duplicated selectors arrived upstream with the
+per-card phase rework (`.sbld-phcard.is-exec .sbld-phwbs`, `.sbld-phwbs-h`, `.sbld-phwbs-n`, each
+declared twice); checked, and unlike the `.sbld-note` this pass deleted, **all three are
+complementary** — no property is redeclared, nothing is dead. Left alone. `modules-grid.js` `?v=` →
+`20260917zza`: `zz` had been reached, and a longer string is the only way to keep sorting forward
+without misdating the token.
+
+### 2026-09-17 (y) — The class-code preflight blocked the migration it was advising on
+
+Ran, and the chart came back **698 active / 4 retired / 702 total** — which is the state *before*
+section 2, not after it. Nothing had been written.
+
+Section 1 was a `DO` block containing three pieces of dynamic SQL, each embedding the full 466-code
+`values` list inside a nested dollar-quote. The editor stopped somewhere in it and **section 2 never
+executed at all**. The retirement itself was never the problem: its statement is untouched by this
+entry and was correct as written.
+
+⚠️⚠️ **A preflight that can block the migration it is advising on is worse than no preflight.**
+It writes nothing, so it has no business being the most fragile construct in the file. Rewritten as
+five plain `SELECT`s in one `union all` — **the file now contains no dollar sign at all**, in code or
+in comments, so there is nothing for a statement splitter to get wrong.
+
+⚠️ The preflight's membership test is the **short form** of the same set: everything the template
+drops is either a six-character sub-item code or one of 28 named five-character items. Verified
+against the sheet — it reproduces the 236 exactly and its complement is exactly the 466. **Section 2
+still carries the explicit 466**, because that one is authoritative and must not rest on a shape rule
+a later revision could break.
+
+
+### 2026-09-17 (x) — The class-code library adopts template_1164: it is a retirement, not a re-seed
+
+Owner: *"Let's replace the current library of class codes in the app. Let's follow the Excel Temp
+(2)."* — `EPC. FIN. Class Code Mapping Template_1164.xlsx`, sheet **`Excel Temp (2)`**, 466 items.
+
+### ⚠️⚠️ Compared row by row before writing a line of SQL, and the answer changed the shape of the job
+
+The 466 codes on that sheet are a strict **subset** of the 702 already in `class_codes`, and nothing
+about the ones that stay has moved:
+
+| | |
+|---|---|
+| kept | **466** — every one already present |
+| added | **0** |
+| retired | **236** |
+| `desc_l1` / `desc_l2` / `desc_l3` changed | **0** |
+| `code_l1` / `code_l2` changed | **0** |
+| `trade` changed | **0** |
+| relative order | identical |
+
+So there is nothing to insert and nothing to correct. Written as a re-seed it would have rewritten
+466 rows to the values they already hold and called that a replacement.
+
+**What goes:** 208 of the 236 are the six-character **sub-item** codes (`010521` *Rental of Flat Bed
+Truck*, under `01052` *Demobilization*) — after this, every active code is five characters. The other
+28 are five-character items, four of which (`11011`, `11021`, `11031`, `11032`) were already retired
+by `2026-09-07-class-code-dedupe.sql` as de-zeroed twins, so the first run retires **232**. Eight
+Level-2 groups go with them: `12500`, `16450`, `17550`, `25700`, `25750`, `50000`, `51000`, `61000`.
+
+### ⚠️ The module was already speaking this template — which is why no code changes
+
+`CLASS_CODE_DB`, the Level-2 group chart a planner picks activities from, holds **197** groups. The
+new template holds **197** groups. They are the **same 197**: the eight the template drops are exactly
+the eight the module never had. Only the item-level table still carried the retired rows. No
+`index.html` change, no MODULE_V bump — the picker reads `class_codes` at run time and filters on
+`active`.
+
+### ⚠️⚠️ `active = false`, never `delete`, and the count is reported before anything is written
+
+`project_schedule.class_code`, `boq_class_map` and `boq_allocations` carry these strings with **no
+FK**, deliberately (2026-08-21): an imported P6 schedule can hold a code that predates a template
+revision, and an unresolved code is a *visible* data-quality signal where a deleted row is a silent
+one. `loadClassCodes()` filters on `active = true`, so a retired code stops being **offered** at once
+and anything already carrying one keeps it. Section 1 of the migration counts those rows across all
+three tables **before** the update runs, so the size of that is known rather than discovered, and the
+rollback is one line.
+
+`migrations/2026-09-17-class-code-template-1164.sql` — one statement does both directions (retire off
+the template, re-activate on it) as disjoint branches of a single `with`, so it is one transaction,
+one pass, and re-runnable; it also reports any template code **missing** from the chart rather than
+passing over it. `supabase-build.sql` regenerated (181 migrations). ⚠️ Not yet run — the owner runs
+migrations himself.
+
+
+### 2026-09-17 (w) — `body is not defined`: the calendar editor drew perfectly and could not save
+
+Owner, on the Working calendars step: *"There is an error when I click on the + New calendar."* The
+toast read **"Calendar editor could not attach its controls: body is not defined"**.
+
+`render()` declares its own `var body` (`#ps-cal-body`, the modal's content div) and `wire()` is its
+**sibling**, not a closure inside it. Three references to `body` arrived in `b9a937a` with the
+name-a-date feature — two inside click handlers, and one, `body.querySelectorAll('[data-lblhol]')`,
+**top-level in `wire()`**. That third one runs on the way down, so `wire()` threw there on every
+single render of the editor.
+
+### ⚠️⚠️ The blast radius was everything BELOW the throw, not the feature that owned it
+
+`render()` writes the markup and *then* calls `wire()`, so the editor drew correctly, looked
+completely normal, and had no handlers past the line that threw:
+
+| left unbound | what the planner saw |
+|---|---|
+| **Save calendar** | the button did nothing |
+| **Delete**, **Assign to project** | the same |
+| **Fold repeating dates into yearly ones** | the same |
+| **name-a-date** (`[data-lblhol]`) | the feature the broken line belongs to |
+
+Everything wired *above* line 7108 — picking a calendar, the filter box, the day checkboxes, hours,
+seasons, **+ Add date** and **+ Add yearly day** — kept working, which is why this reads as one odd
+button rather than a dead editor. **The calendar editor could not save, for anyone, all afternoon.**
+
+The fix is one line: `wire()` declares `body` with `render()`'s own expression rather than aliasing
+it to `root` (`m.el`), which would work today — `#ps-cal-body` is a descendant — and would be a
+second definition free to drift from the one the markup is actually written into.
+
+⚠️ **Fourth time in this repo**: a name that resolves only in a sibling scope, shipped green,
+because `node --check` parses it and the enclosing function is never executed by a sliced-out test.
+The others were the schedule's `below`, stakeholder-map's `canWrite`, and `boq.js`'s `locKey`. The
+tell is always the same — the feature the reference belongs to is not what visibly breaks.
+
+
+### 2026-09-17 (v) — One rail per phase card: the two headers and the button bar become one
+
+Owner, on the Project Phases step: *"Can't we just move the reset/add to the 'In the schedule now'
+pane than a separate one?"*, and when asked which rail to move them to: *"if we move it on either can
+just make it just one?"*
+
+A phase card carried **three header strips** stacked down it — the `IN THE SCHEDULE NOW` rail, a
+second rail titled `PLANNED` in the same uppercase 700, and a bare action row under the table holding
+**+ Add activity** and **Reset to the typical set**. Two of the three only restated where the reader
+already was, and the second rail — identical in weight to the first — is what made one card read as
+two panes. Measured against `04b9297` with the same content in both: **356px → 311px**, three strips
+down to one, and the buttons off two rows onto one.
+
+Every button that acts on the card now rides on the **one** rail: `+ Add branch · + Add activity ·
+Reset to the typical set`, left to right in the order of the decisions the card asks for. `phWbsBlock`
+takes an `extra` argument for them, passed only when the phase is **on** — a switched-off phase has no
+planned list to add to, and its rail still has to show the branches it already has.
+
+### ⚠️ The planned label survives its rail, and that is the whole care in this change
+
+Whether the two lists are the same thing has been asked **twice** on this step, and the answer is that
+they are not: the list is `cfg.phases`, a recipe for what the next push will **create**; the tree above
+it is `wbs_nodes`, what the project **has**. Deleting the second rail outright would have taken that
+sentence with it and put the question straight back. It is kept as a one-**line** label —
+`**Planned** · created under this phase when you 7 · Push` — normal case, muted, 400, sharing the
+list's own top margin instead of opening 14px of its own. A line under a control strip is not a second
+pane.
+
+⚠️ `.sbld-phplanh` is deleted rather than left behind. A rule whose selector matches nothing is
+invisible in every tool, and this file has carried five of them before.
+
+### Measured, not eyeballed
+
+Rendered from the shipped stylesheet (pulled out of `index.html` at run time, not copied) over
+`dashboard.css`, in an iframe at 1400px and at 420px:
+
+- the three rail buttons sit on **one line**, gaps **8 / 8** px — which is the proof that
+  `.sbld-phwbs-add + .sbld-phwbs-add { margin-left:0 }` applies; without it they would read 18 / 18,
+  the 10px margin that only has to separate the first button from the tally;
+- `.sbld-phplanline` computes `#5A5858` / `none` / `400` against the rail's `#5A5858` / `uppercase` /
+  `700` — a line, not a heading;
+- all six sampled colours flip under `html.pd-dark`, so the module's own sheet is genuinely in the
+  cascade and not a harness illusion;
+- at 420px the rail wraps to two rows with **no horizontal scroll** on the rail, the card or the page;
+- inline `<script>` parses — one block, lines 5738–55757, which is the block the edit is in.
+
+
+### 2026-09-17 (u) — A planned lifecycle activity can name the sub-WBS it lands in; `＋Act` dropped
+
+Owner, on the Project Phases step: *"What are these activities? From which sub-WBS do they go to? I
+want to be able to allocate it properly to a designated WBS."* — of **Project charter & scope
+sign-off**, **Contract award & notice to proceed**, **Permits & regulatory clearances**.
+
+They were the Initiation phase's planned activities, and the honest answer was: **none**. Push filed
+every one of a phase's activities directly on the phase branch, so a sub-WBS the planner had just
+built underneath it could not receive any of them. The branches came first in the sequence — *"by
+defining the sub-branches the planner would be able to determine what activities should be defined in
+the sub-WBS"* — and then nothing consumed that decision.
+
+Each planned row now carries a **WBS picker**: the phase branch itself (the default) plus every
+branch beneath it, indented by depth and prefixed with its dotted code, because two branches under
+different parents are routinely called the same thing. Unassigned stays valid and lands on the phase
+branch, which was the owner's explicit call: *"some activities does not necessarily need to be in a
+sub-wbs."*
+
+### ⚠️⚠️ The stored id is validated at push time, never trusted
+
+`cfg.phases` is a saved recipe that outlives the tree it points at. Between the day a branch is chosen
+and the day it is pushed it can be deleted, or **re-parented under a different phase** — and filing an
+Initiation activity under an Execution branch would put it in the wrong phase, on the wrong dates,
+with nothing on screen to say so. `_phTaskNode` re-checks that the node still exists, is not a
+mirrored (`source_kind`) branch, and is still inside *that* phase; anything failing falls back to the
+phase branch. ⚠️ The fallbacks are **counted and named in a toast**, not absorbed — silently filing
+activities somewhere other than where the screen said is the failure this feature exists to prevent.
+
+⚠️ Module scope, deliberately. It is read from the push and from the card renderer, which are
+siblings — a `var` inside one of them is exactly the fault that took this step off the screen earlier
+today.
+
+### ⚠️ `＋Act` is gone, at the owner's request
+
+*"In the 'In the Schedule Now' there is already a add activity button. What's the difference for the
++ Add Activity at the bottom?"* — none worth keeping. It did not add anything to the setup: it called
+`switchTab('schedule')` and opened the live new-activity form with the branch preselected, i.e. it
+silently left the step. Two controls a row apart, both saying "add activity", one writing the recipe
+and one navigating away to write the schedule. The planned list is the way in now, and it can name its
+own branch. `wbsAddActivity` and its two CSS rules are retired rather than left orphaned.
+
+### ⚠️ Two layout defects found by MEASURING, not by reading
+
+- **The picker rendered 50px tall against the row's 32px inputs.** A branch name is long and the
+  track is 190px, so the closed `<select>` wrapped its own label onto a second line — 2 × 18.125 +
+  12 + 2 = **50.25**, measured. The row's height would have followed whatever the longest branch name
+  a planner happened to type. Pinned to 32px with an ellipsis, matching every other builder row in
+  this file (`.sbld-row`, `.sbld-relrow`, `.sbld-improw` all pin their control height).
+- **On a phone the new column took the activity NAME down to 33px** — from 160px, measured at 390px.
+  The one field a planner reads down the list, made unreadable to fit a field they set once. The
+  picker now spans the full width on its own line beneath the row; the name is back to **160px,
+  identical to the base build**.
+
+⚠️ Both were invisible at the pane's own ~620px width, which applies the *phone* rules — measured
+inside an iframe set to the real width, per the 2026-09-15 (r) note.
+
+⚠️ Fixed in passing: the **Dates heading was already orphaned on a phone** before this change
+(`.sbld-phwin` hidden, its heading not), wrapping the header onto a third line. Leaving it beside a
+new column doing the same thing was not defensible. Header: 6 cells on 3 lines → **5 on 2**.
+
+### Verified
+
+**31 assertions**, `_phTaskNode` and `_phWbsOptions` sliced out of the shipped file and executed: a
+nested branch accepted, a deleted one resolved to null rather than crashing, **a branch in another
+phase refused**, a mirrored branch refused, and a deliberately cyclic parent chain terminating
+(<500ms) rather than hanging the push. The option list offers nested branches with their codes,
+returns the saved one selected, offers no mirrored branch, and says so for a phase with no branch yet.
+**Contrast pinned to `97eeaec`** — gated on the base having no `_phTaskNode` and still emitting
+`＋Act`, so the suite bites on the real change.
+
+Rendered against the real stylesheets at **1400px and 390px**: seven tracks and a 190px picker on the
+desktop line, the picker on its own line on a phone with days/tick/delete still on row 1, inside the
+row at both widths, no horizontal page scroll, and the background asserted as a **colour** so the
+stylesheet is provably in the cascade.
+
+`wiring-check` 139/139, the inline script parses, no patch-variable leaks.
+
+⚠️ **Not verified signed in.** The picker is asserted against a fixture, not against OPW101's own
+tree. On the next open each planned row should carry a WBS select defaulting to *"Directly on
+<phase>"*.
+
+`MODULE_V` → `20260917zx`.
+
+### 2026-09-17 (t) — "Whole branches are missing" from the WBS tree: Hide empty groups was deleting the structure
+
+Owner, on the Project Schedule grouped by **WBS tree (default)**: *"the WBS Tree (default) bugged out
+... whole branches are missing."*
+
+### ⚠️⚠️ Not a regression, and the grid was already telling him — in grey, in the footer
+
+`Hide empty groups` hides any WBS node with no visible activity anywhere below it. On OPW101 that is
+**Milestones, Initiation, Planning and Close-out** — all genuinely 0 activities — so the WBS tree
+rendered Execution Phase and nothing else. The footer read *"· 4 empty branches hidden"* with a
+tooltip naming them, added for this exact complaint on a previous pass.
+
+It was not enough, and on reflection it was the wrong trade to begin with: **a tree that omits four of
+its own five seeded branches is not showing the WBS**, whatever the checkbox is called. The notice
+explained a behaviour that should not have been happening.
+
+**A top-level branch is structure, not clutter.** `Hide empty groups` now exempts any WBS code with no
+dot in it, and keeps doing its real job everywhere else — an empty floor, zone or trade *inside* a
+branch is still hidden.
+⚠️ Keyed on **top-level**, not on `is_locked`: an imported root is equally a top-level branch and
+equally misleading to delete from a view whose whole job is to show the structure.
+⚠️ The footer stops claiming to hide what is now on screen — it reads *"· 4 branches empty"*, and says
+that the top level is always shown while the setting still hides empties inside it. A notice that went
+on describing the old behaviour would be the footer contradicting the grid.
+
+### ⚠️ And the "new preset" was neither new nor ours
+
+*"There is a new preset Schedule Setup structure which I don't want. This is a regression."* —
+`git log -S` puts it at **`86aeccd`, ethanrobles10, 2026-09-03**, two weeks before this work, on a
+request that *"the WBS tree default should be matched with what was defined in the schedule setup"*.
+It is `.filter(p => p.dims.length)`-gated, so it only appears once a project defines location levels,
+which OPW101 now does — which is why it looked like it arrived today. Owner's call after seeing that:
+keep it, the Schedule Setup **is** the WBS default. Nothing changed there.
+
+Recorded because the instinct to "fix" an unfamiliar control on the day something else broke is how a
+working feature gets reverted for the wrong reason.
+
+### Verified
+
+**22 assertions**, `hiddenRow` sliced out and executed. All four empty top-level branches shown; a
+populated one shown; **an empty branch INSIDE the tree still hidden**, and one three levels down too —
+without that the change would be a deletion of the feature dressed as a fix. A task row is untouched
+by the rule, and with the setting off nothing is hidden at all.
+**Contrast pinned to `01b96e7`**: the base hid all four (gated first on the base lacking the
+exemption), so the suite bites on exactly the shape the owner reported.
+
+`wiring-check` 139/139, the WBS view suite 62/62, the inline script parses, no patch-variable leaks.
+
+⚠️ The version bump tried `20260917zv` and the sort check **refused it** — a concurrent session had
+already taken that token. Re-derived to `zw`. Second time today that check has earned its place.
+
+⚠️ **Not verified signed in.** The fix is asserted against a fixture, not against OPW101's own 2,562
+activities. On the next open the four branches should appear as empty headings and the footer should
+read *"4 branches empty"* rather than *"hidden"*.
+
+`MODULE_V` → `20260917zw`.
+
+### 2026-09-17 (t) — Overlapping zones become a measurable error in the Floors & Zones step
+
+Owner: *"for the UI for the floors & zones, please improve the overall UI, starting from defining the
+number of floors, zones, units etc."*, *"in the defining the plan layout of floors with no specified
+zones, users are allowed to add shapes still or trace"*, and *"for the definition of the floor plans,
+there should be like a system or error if there are overlapping zones."*
+
+Module work — **the full entry is in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md)**
+under `(zu)`. Logged here only for the `MODULE_V` bump and the two things that are facts about the
+shell rather than the module:
+
+⚠️⚠️ **`UI.modal` does not hydrate icons, and nothing else was doing it for a modal that rewrites its
+own `innerHTML`.** Every `data-ico` inside the floor-plan window was an empty span — the failure
+`assets/js/ui.js` records at line 1012, and the reason that window's `layers` icon has never drawn.
+Fixed inside the module (`Icons.hydrate(wrap)` after each repaint), but the shape is general: **any
+modal built with `UI.modal` that writes markup after `modal()` returns has to hydrate its own
+icons**, and a missing icon is silent.
+
+⚠️ **`--pd-warn` is a SURFACE colour and keeps catching people.** The new overlap marks use
+`--pd-warn-text` / `-bg` / `-line` throughout; `--pd-warn` is 3.46:1 on white, as the token block in
+`dashboard.css` already says in as many words.
+
+⚠️ The per-tower zone sequencing from the previous prompt was complete and passing but had never been
+committed. It ships in this push rather than being re-derived; see `(zu)` §5.
+
+⚠️ **`test-builder` (99/1) and `test-lsm` (675/28) fail identically on `bd4a2aee`** — checked against
+the pinned base, not from this work. Recorded rather than quietly passed over.
+
+`MODULE_V` → `20260917zv`.
+
+### 2026-09-17 (s) — Branches before activities, a visible way to add one, and the clipping was not what I thought
+
+Owner: *"UI needs improvement. Many are clashing/clipping. How does one add branches?"* and *"I think
+it should be clear that the branches should come first before the activity in terms of sequence. By
+defining the sub-branches/sub-WBS the planner would be able to determine what activities should be
+defined in the sub-WBS."*
+
+### ⚠️⚠️ Branches now come first, and that is a sequence argument rather than a layout one
+
+He is right, and it is the stronger version of the point: the WBS is what the activities are filed
+**into**, so a card that asked for activities first was asking the planner to name work before
+deciding where it belongs. The block order now matches the order of the decisions — *In the schedule
+now* (the branches) above *Planned* (the activities the next Push will create).
+
+### ⚠️⚠️ "How does one add branches?" — there was no answer on screen
+
+The row's own add button lives in `.ps-wbs-acts`, which is `visibility:hidden` until the row is
+hovered or selected. **On an empty branch there is no row to hover**, so adding the first sub-branch
+was unreachable by mouse and discoverable only by knowing that Shift+Enter exists. Every block header
+now carries **+ Add branch**.
+⚠️ Not on the read-only Execution card, and not on a `source_kind` branch mirrored from another app:
+a button that can only raise a toast explaining itself is not a way in.
+⚠️ The parent is resolved **at click time**, never captured at render — a push between the two creates
+the phase branch, and a stale null would add a new TOP-LEVEL branch instead of a child, renumbering
+every sibling's dotted code.
+
+### ⚠️⚠️ And the clipping was not the hover. I guessed, measured, and was wrong
+
+My first fix assumed the ten action buttons appearing on hover stole ~270px from the name column.
+**Measured: they do not.** `visibility:hidden` still reserves its box, so showing it moves nothing —
+the name column is byte-identical idle and selected, at every width tested.
+
+What is actually happening, at a 424px row: **the content is 620px wide** (code + badges + name + ten
+buttons) and the row simply overflows and clips what does not fit. The fix is `min-width:max-content`
+on the row inside a card, so it keeps its natural width and the card's own `overflow:auto` scrolls to
+it instead of silently cutting it off. Measured before and after: **26 of 26 rows clipping at 520px →
+0 clipping**, at 520 / 1000 / 1593, with no page-level horizontal scroll.
+
+The wrong hypothesis is recorded rather than quietly replaced, because the shape of it matters: a
+plausible cause, a fix that looks right, and a measurement that says the fix changes nothing. Without
+the before/after numbers it would have shipped as a fix for a problem it does not touch.
+
+⚠️ `pointer-events:none` on the transparent actions is kept regardless — the buttons are laid out
+whether shown or not, and an invisible-but-clickable delete is the worst version of this.
+
+### Also
+
+The branch tally (*"3 branches · 0 activities"*) no longer inherits the header's uppercase, and the
+new button and the tally wrap rather than colliding on a narrow card.
+
+### Verified
+
+62/62 on the view suite, `wiring-check` 139/139, the inline script parses, CSS delta unchanged at 1.
+Rendered: five cards, **Add branch present on initiation / planning / closeout / other and absent on
+construction** (the read-only one), tally lowercase, actions reserving their space without being
+clickable, 0 clipping rows at three widths.
+
+⚠️ Two more patch-script variable leaks caught by the section-8 guard before they shipped — one in a
+toast string, where it would have printed `" + D + "` to the planner rather than throwing. The guard
+added this morning is now the thing catching them faster than I write them.
+
+⚠️ **Not verified signed in.** Add branch has never created a real node.
+
+`MODULE_V` → `20260917zu`.
+
+### 2026-09-17 (r) — HOTFIX: the Project Phases step rendered no cards at all
+
+Owner: *"Project Phases bugged out completely. I cannot see the default WBS."* Correct — the heading,
+the lede and the toolbar drew, and **not one card below them**. Live for about twenty minutes.
+
+⚠️⚠️ **`_phIdx` was declared inside `stPhases` and read by `phWbsBlock`, its SIBLING.** (p) added the
+shared WBS index so a card could state its own activity count, put the `var` inside the function that
+builds the cards, and left the reader one scope out. That parses cleanly and throws
+`_phIdx is not defined` on the first card, which aborts `stPhases` and leaves the step empty.
+
+⚠️ **The fifth cross-closure fault this repo has paid for** — after `below`, `cfMonthLabel`, `locKey`
+and stakeholder-map's `canWrite` — and the first one written here rather than inherited. Fixed the
+way it is fixed every time: the name moves to the scope both readers share.
+
+### ⚠️⚠️ Why 59 passing assertions missed it
+
+Section 8 of the suite exercises `phWbsBlock` by **slicing it out and injecting `_phIdx` as a
+parameter**. The harness supplied exactly the binding the page was missing, so the function was
+proved correct in a scope it never actually runs in. **Slice-and-inject proves the arithmetic and is
+blind to where a name lives** — and this module's own history should have warned me, because four
+earlier faults of this shape all survived their tests the same way.
+
+Section 9 asserts **nesting depth** instead: the declaration must sit at or outside the reader's own
+scope, and must not be re-declared inside `stPhases`. Run against the broken build it reports
+*"decl depth 4, reader depth 3"* and fails, so it bites on exactly the shape that shipped.
+
+⚠️ And a process note worth keeping: this entry did not ship with its own fix. The heredoc wrote the
+changelog to `/tmp/e.md`, which Git Bash resolves and Python does not, so the commit carried the code
+and no log line. Caught by reading `git show --stat` rather than the script's output — the same habit
+that caught the truncating write in 2026-08-26. Logged here in the follow-up.
+
+62/62 on the fix, `wiring-check` 139/139, the inline script parses.
+
+`MODULE_V` → `20260917zt`.
+
+### 2026-09-17 (q) — The step-list minimise toggle was two guillemets and a 60px pill
+
+Owner: *"Find the minimize button let's improve its UI."*
+
+What it was: a small bordered pill reading `« Minimise`, collapsing to a 6px-padded pill holding a
+single `»`. Those are **guillemets** — typographic quotation marks pressed into service as arrows, at
+whatever weight the body font gives them — while every other collapse control in this app draws
+`chevronLeft` / `chevronRight` from the shared icon set. Collapsed, it read as a stray character
+rather than a control.
+
+- A real chevron SVG, with a text fallback if `Icons` has not loaded.
+- **Expanded: full rail width** (240px measured), so it lines up with the step cards beneath it
+  instead of floating above their left edge — and the hit target is the whole strip rather than a
+  60px pill. 30px tall keeps it subordinate to the steps: it is chrome, not a step.
+- **Collapsed: a 34×34 square icon button**, the shape this app uses for every icon-only control and
+  the same target as the module-bar buttons, instead of a shrunken pill.
+- `border-radius` onto the shared `--pd-radius-md` token, a hover border, and a focus ring.
+
+⚠️ **What was already right and is untouched:** the label says what pressing it DOES, not what the
+state is — *"Minimise the step list"* / *"Show the step titles"* — with `aria-label` and
+`aria-expanded` kept in step. The existing comment records why, and a toggle labelled with its own
+current state is the one everybody reads backwards. The label is dropped from the button when
+collapsed only because the rail is 46px wide; the title and aria-label carry it there.
+
+⚠️ `innerHTML` rather than `textContent`, or the icon would be wiped on every sync.
+
+### Verified
+
+Rendered in an iframe, both states, against the real stylesheet: expanded **240×30** with one SVG and
+the text *"Minimise"*; collapsed **34×34**, one SVG, no text; `aria-expanded` flipping true→false;
+titles correct; and **zero guillemets in either state**. `Icons` confirmed loaded, so the fallback
+path was not the one measured.
+
+`wiring-check` 139/139, the WBS view suite 59/59, CSS delta unchanged from base at 1, the inline
+script parses.
+
+`MODULE_V` → `20260917zs`.
+
+### 2026-09-17 (p) — Three ReferenceErrors that parsed cleanly, the Execution lock, Milestones to the top, and the four sync buttons become one
+
+Owner, over four messages on the merged Project Phases step: *"Most of the phases are just blank."*
+· *"For execution Phase haven't we locked editing this phase? Let's lock this phase only."* ·
+*"For other branches, Milestones how can this be moved at the very top?"* · *"The four tool buttons
+... the sync buttons at the very bottom ... consolidate into one button."*
+
+### ⚠️⚠️ First, three bugs the suite found that `node --check` could not
+
+This file is edited by python patch scripts, and a name defined only in the **script** — `MID`, `D` —
+sails through a parse as a perfectly legal identifier reference and throws `ReferenceError` the first
+time that line runs.
+
+- `' + D + '` in the read-only row badge: **every locked Execution row would have thrown.**
+- `' + MID + '` in the branch-block header: **every card, on every render.**
+- `' + MID + '` on the *no-branch* path — **shipped in (o) and latent for a whole commit**, because it
+  only fires when a phase has no branch yet and every real project has all four.
+
+Section 8 of the suite now executes `phWbsBlock` on **both** paths and asserts no patch-script
+variable survives in the emitted code. The latent one is exactly the kind a spot check cannot reach:
+the branch never runs on real data until the day it does.
+
+⚠️ And the fix script itself crashed *printing* a ⚠️ to a cp1252 console **before** it wrote the file,
+so the first run reported four successful substitutions and changed nothing. Caught by re-grepping
+the file rather than trusting the log — `PYTHONIOENCODING=utf-8` on the rerun.
+
+### The four asks
+
+**Blank phases.** `.sbld-phwbs` was `height:240px`, so an empty phase reserved a quarter-screen void —
+and on a project that has not been pushed to, most phases are empty. It is `max-height` now: the cap
+still exists (the tree is virtualised off this box's own `clientHeight`, so a box that grows without
+limit has no viewport to window against), but under the cap it shrinks to fit, and an empty branch
+gets no box at all — a bordered panel holding one grey sentence reads as something that failed to load.
+
+**The Execution lock, and the answer to the question in it.** *"Haven't we locked editing this
+phase?"* — the branch **node** is `is_locked`, which only ever protected its own name and position;
+its children were always freely editable. Now the Execution view is read-only: no name inputs, not
+one mutating control, and the keyboard respects it too — a lock that only holds for the mouse is not
+a lock. The caret survives, because collapsing is reading. Each row says *"built by the setup"*.
+⚠️ **This phase only**, as asked. The trade: a generated branch can no longer be hand-fixed here, and
+the way to change it is the setup plus another push — which is what the card already claimed.
+
+**Milestones to the top.** It could not be moved: a skeleton root is locked and a locked row renders
+**no move buttons**, so no control has ever existed. Its position is fixed by `WBS_SKELETON`, which
+already puts it at code 1 — what was wrong was this step, showing it last inside *Other branches*,
+contradicting the order the schedule itself uses. It has its own card now, first.
+⚠️ Matched by **name**: `phaseFromName('Milestones')` is null by design, which is exactly why it fell
+into Other.
+
+**The four sync buttons.** Reset / Sync Engineering / Sync Procurement / Push need-by sat on their own
+row under the tree, taking the same visual weight as Add WBS while being used a handful of times a
+project. One **Tools** button in the main toolbar now, with the row as its popover.
+⚠️ **The buttons themselves are unmoved** — same ids, same handlers, same titles. Only the container
+moved and became a popover. Rewiring five live handlers to re-house them would have been the risky
+way to do a layout change. Closes on outside click, on Escape, and after any of its own actions.
+
+### ⚠️⚠️ And the duplicate question, asked a third time — which found a real hole
+
+*"Is the branches the sub-WBS? If yes then some activities are under some branches. Therefore we
+shall be able to merge."*
+
+**Yes, branches are the sub-WBS.** But the two lists are a **plan and a record**: the activity list is
+`cfg.phases` — what the next Push will create, not in the database yet — and the branch block is
+`wbs_nodes`, what the project has. They cannot merge into one list without merging an intention with
+a fact. The card now says so: *Planned — created under this phase when you 7 · Push* above one, *In
+the schedule now* above the other.
+
+⚠️⚠️ **But asking it exposed a real defect in (o).** A pushed lifecycle phase files its activities
+**directly on the phase branch**, not under a sub-branch — and the card counted only *children*. So a
+phase that had just had three activities pushed into it still read *"No branches here yet · 0"*. The
+card said the phase was empty when it was not. The header states both numbers now (*"0 branches · 3
+activities"*), and the empty line reads *"No sub-branches — anything pushed to this phase sits
+directly on it."*
+
+### Verified
+
+**59 assertions** (was 30), the renderer and the row builder sliced out and executed. New: the lock
+tested on the **real** `_wbsRowHTML` — ten mutating controls asserted absent by name, the caret
+asserted present; only `construction` gets the flag; and the patch-variable guard above.
+The equivalence contrast against pinned `d3caf64` still holds.
+`wiring-check` 139/139, `toolbar-order` 15 bars 0 out of order, CSS delta unchanged from base at 1,
+the 3.5MB inline script parses.
+
+⚠️ **Not verified signed in.** The Tools popover has never been opened against a real project, and the
+Execution lock has never been tried on a real generated branch. Worth watching on the first open: the
+branch/activity tally in each card header — those, with Other, must account for the whole tree.
+
+`MODULE_V` → `20260917zr`.
 
 ### 2026-09-17 (o) — The phase cards and the WBS tree merge: one tree became five, each inside the card it belongs to
 

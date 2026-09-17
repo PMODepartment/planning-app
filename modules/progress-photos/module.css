@@ -706,7 +706,7 @@
    needing its own dark-mode override. */
 .pp-pending { min-width: 0; }
 .pp-pending-summary { margin-bottom: 10px; }
-.pp-pending-summarytext { font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 600; }
+.pp-pending-summarytext { font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 700; }
 .pp-pending-empty {
   display: flex; align-items: center; gap: 8px; color: var(--pd-ok);
   font-size: var(--pd-fs-base); padding: 6px 0;
@@ -733,7 +733,7 @@
   background: color-mix(in srgb, var(--pd-red) 10%, var(--pd-card)); color: var(--pd-red);
 }
 .pp-pending-info { flex: 1 1 auto; min-width: 0; }
-.pp-pending-name { font-weight: 600; font-size: var(--pd-fs-base); color: var(--pd-ink); overflow-wrap: anywhere; }
+.pp-pending-name { font-weight: 700; font-size: var(--pd-fs-base); color: var(--pd-ink); overflow-wrap: anywhere; }
 .pp-pending-meta { font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 2px; }
 .pp-pending-status { font-size: var(--pd-fs-sm); color: var(--pd-ink); margin-top: 4px; }
 .pp-pending-error {
