@@ -56,6 +56,41 @@ console.log('plpgsql self-test: good=' + check(GOOD).ok + ' broken-caught=' + !c
             (selfOk ? '   OK' : '   ABORT'));
 if (!selfOk) process.exit(2);
 
+/* ⚠️⚠️ A DOLLAR QUOTE MAY CARRY A TAG, and until 2026-09-17 this file only ever
+   matched the BARE `$$`. So every `$fn$ ... $fn$` body was INVISIBLE to it and
+   the run reported "0 function bodies" — a clean exit that had checked nothing.
+   `supabase-schema.sql`, `supabase-setup.sql` and
+   `migrations/2026-09-07-class-code-dedupe.sql` ($q$) had never once been read.
+   ⚠️ A checker that silently skips its own subject is worse than no checker: it
+   spends the credibility of a green run on a file it did not open.
+   ⚠️ Bodies are located in the MASKED source (comments and string bodies blanked
+   by scanSql, offsets preserved) so a `$$` inside a comment or a literal cannot
+   open a phantom body — the same reason scanSql exists at all. The text handed
+   to check() is then sliced out of the RAW source at those offsets. */
+function bodiesOf(raw) {
+  const masked = scanSql(raw);
+  const re = /\$([a-zA-Z_][a-zA-Z_0-9]*)?\$/g;
+  const out = []; let m, open = null;
+  while ((m = re.exec(masked))) {
+    const tag = m[1] || '';
+    // ⚠️ A body ends only on its OWN tag. `$$ ... $q$ ... $$` is one body whose
+    // text happens to contain `$q$`, which is exactly why Postgres allows tags.
+    if (!open) open = { tag: tag, end: m.index + m[0].length };
+    else if (open.tag === tag) { out.push(raw.slice(open.end, m.index)); open = null; }
+  }
+  return out;
+}
+
+// ⚠️ Self-tested on the three shapes that broke it, before any file is read.
+const B_BARE = bodiesOf('create function f() as $$ begin null; end $$;');
+const B_TAG  = bodiesOf('create function f() as $fn$ begin null; end $fn$;');
+const B_CMT  = bodiesOf('-- a comment mentioning $$ and nothing else\nselect 1;');
+const bodyOk = B_BARE.length === 1 && B_TAG.length === 1 &&
+               B_TAG[0].indexOf('begin') >= 0 && B_CMT.length === 0;
+console.log('dollar-quote self-test: bare=' + B_BARE.length + ' tagged=' + B_TAG.length +
+            ' comment-ignored=' + (B_CMT.length === 0) + (bodyOk ? '   OK' : '   ABORT'));
+if (!bodyOk) process.exit(2);
+
 let bad = 0;
 // No arguments: every migration. There is no local Postgres here, so this is
 // the only structural gate these files get. A file with no function body just
@@ -68,8 +103,7 @@ if (!targets.length) {
 }
 for (const p of targets) {
   const raw = fs.readFileSync(p, 'utf8');
-  const bodies = []; const re = /\$\$([\s\S]*?)\$\$/g; let m;
-  while ((m = re.exec(raw))) bodies.push(m[1]);
+  const bodies = bodiesOf(raw);
   console.log('\n' + p.split('/').pop() + '  —  ' + bodies.length + ' function body/bodies');
   bodies.forEach((b, i) => {
     const r = check(b);

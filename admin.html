@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Users · Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260917za" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260917zg" />
   <style>
     /* ⚠ `nowrap`: a chip is one token — "6 modules hidden" broken over three lines reads as
        three separate facts. The row scrolls instead, which is what .pd-tablewrap is for. */
@@ -18,15 +18,40 @@
        "4 working days ago" broken over two lines reads as two facts. */
     .pd-subline { margin-top:3px; font-size:var(--pd-fs-xs); color:var(--pd-muted); white-space:nowrap; }
     .pd-uname { font-weight:700; white-space:nowrap; }
+    /* ⚠ The count beside a group heading. The heading row is uppercase/800 from the shared
+       `.pd-grp`, so the count is de-emphasised back to normal weight and case — otherwise it
+       reads as part of the department's name. */
+    .pd-grpn { font-weight:500; text-transform:none; letter-spacing:0; color:var(--pd-muted); }
+    /* The search bar. ⚠ The icon is absolutely positioned rather than placed in a flex row, so
+       the input stays one full-width control that a screen reader announces once. */
+    .pd-usearch { position:relative; margin-bottom:14px; }
+    .pd-usearch .pd-input { width:100%; padding-left:36px; }
+    .pd-usearch-ico { position:absolute; left:11px; top:50%; transform:translateY(-50%);
+      color:var(--pd-muted); display:inline-flex; pointer-events:none; }
+    .pd-nomatch { color:var(--pd-muted); padding:18px 10px; text-align:center; }
+    .pd-bulk { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px;
+      padding:9px 12px; border:1px solid var(--pd-red); border-radius:var(--pd-radius);
+      background:var(--pd-red-light); }
+    .pd-bulk-n { font-weight:700; margin-right:4px; }
+    /* ⚠⚠ THE SELECTS NEED AN EXPLICIT WIDTH. `.pd-select` is `width:100%` in the shared sheet
+       (correct — it is designed to fill a form field), so dropped into a flex row each one
+       claimed the whole line and the bar rendered 161px tall instead of 50. Measured, not
+       guessed: a three-line action bar above the table it acts on is worse than no bar. */
+    .pd-bulk .pd-select { width:auto; min-width:148px; flex:0 0 auto; }
+    /* ⚠ A fixed, narrow select column, so a table that was measured to fit does not lose that
+       property to a checkbox that grew. */
+    .pd-ckcol { width:34px; text-align:center; padding-left:6px !important; padding-right:6px !important; }
+    .pd-ckoff { color:var(--pd-line); }
+    .pd-table tr.pd-rowsel > td { background:var(--pd-red-light); }
     /* ⚠ Tighter gutters on THIS table only. Nine columns pay the cell padding nine times, so
        10px -> 7px each side recovers ~54px and is the difference between fitting a 1400px laptop
        and scrolling it. Scoped to #users-table rather than .pd-table: every other table in the
        app is fine at 10px and a shared change to make one screen fit is how a design system
        starts drifting. */
     #users-table th, #users-table td { padding-left:7px; padding-right:7px; }
-    .pd-status-pending { color:var(--pd-warn-text); font-weight:700; }
-    .pd-status-approved { color:var(--pd-ok-text); font-weight:700; }
-    .pd-status-rejected { color:var(--pd-bad-text); font-weight:700; }
+    /* ⚠ `.pd-status-*` RETIRED 2026-09-17 with the Status column. Their only consumer was
+       that cell; grouping states the status now. Left in place they would be three rules
+       matching nothing, which is what the next editor edits by mistake. */
 
     /* ⚠️⚠️ dashboard.css's own `.pd-app .pd-main table .pd-select { height:34px;
        min-height:0 }` (≤700px) exists so a SELECT inside a dense editable grid
@@ -120,6 +145,30 @@
              keeps its natural column widths and the wrapper scrolls cleanly.
              ⚠ It was already in the shared stylesheet and used on ZERO pages. Reviving it
              beats a third local copy of the same two rules. -->
+        <!-- ⚠ ABOVE THE CARD AND FULL WIDTH, matching the procurement dashboard's User
+             Management screen, which is what the owner pointed at. A search that filters a whole
+             table belongs over the table, not inside its first column. -->
+        <div class="pd-usearch">
+          <span class="pd-usearch-ico" data-ico="search" data-ico-size="16" aria-hidden="true"></span>
+          <input class="pd-input" id="users-q" type="search" autocomplete="off"
+                 placeholder="Search by name, email or department&hellip;"
+                 aria-label="Search users by name, email or department" />
+        </div>
+        <!-- ⚠ Appears only when something is selected, and sits where the selection is —
+             directly above the rows it acts on. A permanently visible bar reading "0 selected"
+             is a control that is disabled most of the time. -->
+        <div class="pd-bulk" id="users-bulk" hidden>
+          <span class="pd-bulk-n" id="users-bulk-n"></span>
+          <button class="pd-btn pd-btn-sm" data-bulk="approve">Approve</button>
+          <button class="pd-btn pd-btn-sm" data-bulk="reject">Reject</button>
+          <select class="pd-select pd-input-sm" id="users-bulk-role" aria-label="Set role for the selected users">
+            <option value="">Set role&hellip;</option>
+          </select>
+          <select class="pd-select pd-input-sm" id="users-bulk-dept" aria-label="Set department for the selected users">
+            <option value="">Set department&hellip;</option>
+          </select>
+          <button class="pd-btn pd-btn-sm" data-bulk="clear">Clear</button>
+        </div>
         <div class="pd-card pd-tablewrap" style="padding:0;">
           <table class="pd-table" id="users-table"></table>
         </div>
@@ -130,12 +179,36 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260917zb"></script>
   <script src="assets/js/auth.js?v=20260917zf"></script>
-  <script src="assets/js/db.js?v=20260917zf"></script>
-  <script src="assets/js/ui.js?v=20260917zb"></script>
+  <script src="assets/js/db.js?v=20260917zg"></script>
+  <script src="assets/js/ui.js?v=20260917zg"></script>
   <script src="assets/js/notebook.js?v=20260915d"></script>
   <script src="assets/js/icons.js?v=20260915f"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
+    /* Which group headings are folded. Page-scope so a re-render after `setUser` keeps them. */
+    var GRP_SHUT = {};
+    /* ⚠ The fetched rows and the current query, both page-scope. Typing must NOT re-read the
+       table — `getAllUsers` is a network round trip and this filters fourteen rows. `setUser`
+       still reloads for real, because a saved role has to come back from the database rather than
+       from whatever this cached a moment ago. */
+    var USERS_CACHE = null, USER_Q = '';
+    /* ⚠ The selection, by id. Page-scope so it survives the re-render that `setUser` triggers,
+       and CLEARED whenever the query changes — acting on rows the search has hidden is the one
+       behaviour a bulk control must never have. */
+    var SEL = {};
+    function selCount() { return Object.keys(SEL).filter(function (k) { return SEL[k]; }).length; }
+    /* ⚠ Matches name, email AND department, which is what the placeholder says. Department is
+       in there because the table is now grouped by it — typing "PMO" and getting nothing would
+       be the obvious thing to try and the obvious thing to get wrong. */
+    function filterUsers(list, q) {
+      q = String(q || '').trim().toLowerCase();
+      if (!q) return list;
+      return list.filter(function (u) {
+        return [u.name, u.email, u.department].some(function (v) {
+          return String(v || '').toLowerCase().indexOf(q) !== -1;
+        });
+      });
+    }
     // ⚠️ Modules RESTRICTED by role default — since 2026-09-17 that means
     // `planner` and above can open them and `user`/`viewer` cannot (config.js
     // `superAdminOnly`, whose name predates the change; `MODULE_ALL_ROLES` in
@@ -229,12 +302,12 @@
     });
 
     // -------- Users --------
-    async function loadUsers() {
-      var users = await PDb.getAllUsers();
+    async function loadUsers(fromCache) {
+      var users = (fromCache && USERS_CACHE) ? USERS_CACHE : (USERS_CACHE = await PDb.getAllUsers());
       // ⚠️ Kept here (not moved to projects.html) — the Assign Projects modal below is
       // still part of USER management (who can reach which project), even though
       // creating/editing/deleting the projects themselves is now projects.html's alone.
-      ALL_PROJECTS = await PDb.getProjects();
+      if (!ALL_PROJECTS.length) ALL_PROJECTS = await PDb.getProjects();
       var t = document.getElementById('users-table');
       // ⚠️ DEPARTMENTS is duplicated from modules/issues-lessons/module.js rather than
       // shared: the contract forbids a module editing shared assets, so promoting it to
@@ -260,8 +333,7 @@
       // visibility was a pure role default with nothing to override; it no longer
       // is, now that `users.module_access` can hold a per-user custom list.
       var restrictedNames = RESTRICTED_MODULES.map(function (m) { return m.name; }).join(', ');
-      t.innerHTML = '<thead><tr><th>User</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Modules</th><th>Activity</th><th>Registered</th><th>Actions</th></tr></thead><tbody>' +
-        users.map(function (u) {
+      var rowOf = function (u, attr) {
           var canSuper = ME.role === 'super_admin';
           var isSuper = u.role === 'super_admin';
           // ⚠️⚠️ A plain admin can SEE a super_admin's row in full — RLS
@@ -334,7 +406,21 @@
           // beside the Projects column's chip list, rather than joining a menu
           // meant for record-lifecycle actions (approve/reject/delete).
           var hasMenu = (u.status!=='approved') || (u.status!=='rejected') || (u.id!==ME.id);
-          return '<tr>' +
+          /* ⚠⚠ NO CHECKBOX ON A ROW THIS ADMIN CANNOT WRITE. `locked` is the same rule the
+             per-row selects already use (a plain admin may see a super_admin but not change one),
+             and the DATABASE enforces it in `users_admin_update`. Offering a checkbox that can
+             only ever produce a refusal is worse than offering nothing.
+             ⚠ And never your OWN row: a bulk Reject that included you would lock you out of the
+             page you ran it from. The per-row Actions menu still lets you act on yourself
+             deliberately. */
+          var pickable = !locked && u.id !== ME.id;
+          return '<tr' + (attr || '') + (SEL[u.id] ? ' class="pd-rowsel"' : '') + '>' +
+            '<td class="pd-ckcol">' + (pickable
+              ? '<input type="checkbox" data-pick="' + u.id + '"' + (SEL[u.id] ? ' checked' : '') +
+                ' aria-label="Select ' + Fmt.esc(u.name || u.email) + '">'
+              : '<span class="pd-ckoff" title="' + (u.id === ME.id ? 'This is you'
+                  : 'Only a super_admin can change a super_admin\u2019s account') + '">\u2014</span>') +
+            '</td>' +
             /* ⚠⚠ ONE CELL, NOT TWO. Owner 2026-09-17: *"squeeze the table … in a way that
                the table does not necessarily need to be scrollable."* Name and Email were two
                full columns holding THE SAME STRING for every account created from an email
@@ -366,7 +452,6 @@
               '<option value="">—</option>' +
               DEPARTMENTS.map(function(d){ return '<option'+(u.department===d?' selected':'')+'>'+d+'</option>'; }).join('') +
             '</select></td>' +
-            '<td class="pd-status-'+u.status+'">'+u.status+'</td>' +
             '<td><div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">'+projCell+projBtn+'</div></td>' +
             '<td><div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">'+moduleCell+
               '<button class="pd-btn pd-btn-sm" data-modules="'+u.id+'"'+lockAttr+'>Modules</button></div></td>' +
@@ -377,7 +462,236 @@
               : '<span class="pd-nochip">—</span>') +
             '</td>' +
           '</tr>';
-        }).join('') + '</tbody>';
+      };
+
+      /* ==== GROUPING — PENDING FIRST, THEN BY DEPARTMENT ======================================
+         Owner 2026-09-17: *"Can we also group the users by department? Let's follow the existing
+         grouping UI"* and *"Can we also segregate the users and the ones that are pending
+         approval."* Both answered by one ordering, because they are the same question asked twice:
+         what needs doing, and then who is who.
+
+         ⚠ THE APP'S OWN GROUPED-TABLE IDIOM, not a new one: `tr.pd-grp` heading rows inside the
+         SAME table, which `dashboard.css` already styles and already remaps for dark mode, and
+         which `modules/minutes-of-meeting/module.js` uses for its minutes-by-meeting view. One
+         table means the columns stay aligned across groups by construction rather than by tuning.
+         ⚠ `.pd-grptog` and `.pd-collapsed` were already in the shared stylesheet with NO consumer
+         — the same state `.pd-tablewrap` was in this morning. Reviving them beats inventing a
+         fourth caret.
+
+         ⚠⚠ PENDING IS FIRST AND IS NOT A DEPARTMENT. Someone awaiting approval has no
+         department yet in the usual case, and filing them under "No department" would bury the one
+         group on this page that needs an action. Rejected goes last for the mirror reason: it is
+         an archive, not a queue.
+         ⚠ "No department" sorts after the named ones rather than alphabetically, or an unset
+         field would lead the list.
+         ⚠ The collapsed set is page-scope, NOT rebuilt per render: every role or department
+         change calls `setUser`, which reloads and re-renders, and a fold that sprang open on each
+         save would be worse than no fold at all. */
+      var GRP_COLS = 9;
+      function userGroups(list) {
+        var pend = [], rej = [], byDept = {}, NO_DEPT = 'No department';
+        list.forEach(function (u) {
+          if (u.status === 'pending') { pend.push(u); return; }
+          if (u.status === 'rejected') { rej.push(u); return; }
+          var d = String(u.department || '').trim() || NO_DEPT;
+          (byDept[d] = byDept[d] || []).push(u);
+        });
+        var names = Object.keys(byDept).sort(function (a, b) {
+          if ((a === NO_DEPT) !== (b === NO_DEPT)) return a === NO_DEPT ? 1 : -1;
+          return a.localeCompare(b);
+        });
+        var out = [];
+        if (pend.length) out.push({ key: 'pending', label: 'Pending approval', rows: pend, act: true });
+        names.forEach(function (n) { out.push({ key: 'd:' + n, label: n, rows: byDept[n] }); });
+        if (rej.length) out.push({ key: 'rejected', label: 'Rejected', rows: rej });
+        return out;
+      }
+      function groupedBody(list) {
+        return userGroups(list).map(function (g) {
+          var shut = !!GRP_SHUT[g.key];
+          var n = g.rows.length;
+          var count = g.act
+            ? '<span class="pd-pill pd-pill-warn">' + n + ' awaiting</span>'
+            : '<span class="pd-grpn">' + n + (n === 1 ? ' person' : ' people') + '</span>';
+          return '<tr class="pd-grp"><td colspan="' + GRP_COLS + '">' +
+              '<button type="button" class="pd-grptog" data-grp="' + Fmt.esc(g.key) + '"' +
+                ' aria-expanded="' + (shut ? 'false' : 'true') + '"' +
+                ' title="' + (shut ? 'Show' : 'Hide') + ' these rows">' +
+                (shut ? '\u25b8' : '\u25be') + '</button>' +
+              Fmt.esc(g.label) + ' ' + count +
+            '</td></tr>' +
+            g.rows.map(function (u) {
+              return rowOf(u, ' data-ingrp="' + Fmt.esc(g.key) + '"' + (shut ? ' class="pd-collapsed"' : ''));
+            }).join('');
+        }).join('');
+      }
+
+      /* ⚠ The EMPTY RESULT is its own message, quoting what was typed. A grouped table that
+         simply renders no rows reads as a page that failed to load. */
+      var shown = filterUsers(users, USER_Q);
+      /* The rows a checkbox is offered on — the same `locked` rule the row uses, evaluated once
+         here so the header's select-all and the row cells cannot disagree about it. */
+      var meSuper = ME.role === 'super_admin';
+      var selectable = shown.filter(function (u) {
+        return !(u.role === 'super_admin' && !meSuper) && u.id !== ME.id;
+      });
+      /* ⚠⚠ THE STATUS COLUMN IS GONE, AND GROUPING IS WHY. Pending and Rejected are their
+         own headings now, so every remaining row said "approved" — a column of one repeated word.
+         Dropping it pays for the select column almost exactly, which is how a table that had just
+         been made to fit stays fitting. The status is still on screen for the two cases where it
+         varies: the heading above the row. */
+      var allBox = selectable.length
+        ? '<input type="checkbox" id="users-all" aria-label="Select all shown"' +
+          (selectable.length && selectable.every(function (u) { return SEL[u.id]; }) ? ' checked' : '') + '>'
+        : '';
+      t.innerHTML = '<thead><tr><th class="pd-ckcol">' + allBox + '</th><th>User</th><th>Role</th><th>Department</th><th>Projects</th><th>Modules</th><th>Activity</th><th>Registered</th><th>Actions</th></tr></thead><tbody>' + (shown.length
+        ? groupedBody(shown)
+        : '<tr><td colspan="' + GRP_COLS + '" class="pd-nomatch">No user matches \u201c' +
+          Fmt.esc(USER_Q) + '\u201d.</td></tr>') + '</tbody>';
+
+      /* ⚠ ONE delegated listener, bound ONCE. `t` survives every render (only its innerHTML is
+         replaced), so binding here without the guard would stack a fresh copy per reload — the
+         exact accumulation the note on `closeActionMenus` below already records. */
+      /* ==== BULK EDIT =========================================================================
+         Owner 2026-09-17: *"add bulk edit so that its convenient to approve/edit/update multiple
+         users."*
+         ⚠⚠ IT WRITES ONE ROW AT A TIME AND REPORTS EACH FAILURE. `users_admin_update` can
+         refuse an individual row (a plain admin may not touch a super_admin), so a bulk write is
+         not one operation that succeeds or fails — it is N of them. Swallowing that into a single
+         "Saved" is how an admin comes to believe they approved twelve people when they approved
+         eleven. The toast names the count and the refusals.
+         ⚠ Sequential, not Promise.all: twelve parallel UPDATEs on one table for no gain, and the
+         first rejection would mask the rest.
+         ⚠ NO BULK DELETE. Deletion is irreversible, frees the email for re-registration, and
+         `admin_delete_user` is a per-row RPC with its own confirmation. A convenience control for
+         "approve these ten" should not sit one button away from "delete these ten".
+         ⚠ Every bulk action CONFIRMS first, naming the action and the count — this is the one
+         control on the page that acts on people it is not pointing at. */
+      function bulkTargets(list) {
+        return list.filter(function (u) { return SEL[u.id]; });
+      }
+      async function bulkApply(patch, verb) {
+        var targets = bulkTargets(users);
+        if (!targets.length) return;
+        var okd = 0, bad = [];
+        for (var i = 0; i < targets.length; i++) {
+          try { await PDb.updateUser(targets[i].id, patch); okd++; }
+          catch (e) { bad.push((targets[i].name || targets[i].email) + ' (' + (e.message || e) + ')'); }
+        }
+        SEL = {};
+        UI.toast(bad.length
+          ? okd + ' updated \u00b7 ' + bad.length + ' refused: ' + bad.join('; ')
+          : verb + ' ' + okd + ' user' + (okd === 1 ? '' : 's'), bad.length ? 'error' : 'ok');
+        loadUsers();
+      }
+      function bulkConfirm(msg, run) {
+        var m = UI.modal('<h2 style="margin-top:0;">' + Fmt.esc(msg) + '</h2>' +
+          '<div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;">' +
+          '<button class="pd-btn" data-x>Cancel</button>' +
+          '<button class="pd-btn pd-btn-primary" data-go>Continue</button></div>');
+        /* ⚠ `m.el`, not `m`. UI.modal returns { el, close } — a bare `m.querySelector` parses
+           cleanly and throws "not a function" on the first click, which is the one place nobody
+           looks during a read-through. Every other modal on this page already writes `m.el`. */
+        m.el.querySelector('[data-x]').onclick = function () { m.close(); };
+        m.el.querySelector('[data-go]').onclick = function () { m.close(); run(); };
+      }
+      var bar = document.getElementById('users-bulk');
+      var barN = document.getElementById('users-bulk-n');
+      var bRole = document.getElementById('users-bulk-role');
+      var bDept = document.getElementById('users-bulk-dept');
+      function paintBar() {
+        var n = selCount();
+        if (bar) bar.hidden = !n;
+        if (barN) barN.textContent = n + ' selected';
+      }
+      /* the two selects offer exactly what the per-row ones offer */
+      if (bRole && bRole.options.length === 1)
+        AppAuth.ROLES.filter(function (r) { return r !== 'super_admin' || ME.role === 'super_admin'; })
+          .forEach(function (r) { bRole.add(new Option(r, r)); });
+      if (bDept && bDept.options.length === 1) {
+        bDept.add(new Option('\u2014 (clear)', '__none'));
+        DEPARTMENTS.forEach(function (dn) { bDept.add(new Option(dn, dn)); });
+      }
+      if (bar && !bar._wired) {
+        bar._wired = true;
+        bar.addEventListener('click', function (e) {
+          var b = e.target.closest && e.target.closest('[data-bulk]');
+          if (!b) return;
+          var n = selCount();
+          if (b.dataset.bulk === 'clear') { SEL = {}; loadUsers(true); return; }
+          if (!n) return;
+          var act = b.dataset.bulk === 'approve' ? 'Approve' : 'Reject';
+          bulkConfirm(act + ' ' + n + ' user' + (n === 1 ? '' : 's') + '?', function () {
+            bulkApply({ status: b.dataset.bulk === 'approve' ? 'approved' : 'rejected' }, act + 'd');
+          });
+        });
+        bRole.addEventListener('change', function () {
+          var v = bRole.value, n = selCount(); bRole.value = '';
+          if (!v || !n) return;
+          bulkConfirm('Set ' + n + ' user' + (n === 1 ? '' : 's') + ' to ' + v + '?',
+            function () { bulkApply({ role: v }, 'Updated'); });
+        });
+        bDept.addEventListener('change', function () {
+          var v = bDept.value, n = selCount(); bDept.value = '';
+          if (!v || !n) return;
+          var label = v === '__none' ? 'no department' : v;
+          bulkConfirm('Move ' + n + ' user' + (n === 1 ? '' : 's') + ' to ' + label + '?',
+            function () { bulkApply({ department: v === '__none' ? null : v }, 'Updated'); });
+        });
+      }
+      paintBar();
+
+      /* ⚠ One delegated listener for the row checkboxes and the select-all, bound once for the
+         same reason as everything else on this page. The select-all covers only the SELECTABLE
+         rows currently SHOWN — it must not silently pick up someone the filter is hiding or a
+         super_admin this admin cannot write. */
+      if (!t._pickWired) {
+        t._pickWired = true;
+        t.addEventListener('change', function (e) {
+          var el = e.target;
+          if (el.id === 'users-all') {
+            selectable.forEach(function (u) { if (el.checked) SEL[u.id] = true; else delete SEL[u.id]; });
+            loadUsers(true); return;
+          }
+          if (el.dataset && el.dataset.pick) {
+            if (el.checked) SEL[el.dataset.pick] = true; else delete SEL[el.dataset.pick];
+            var tr = el.closest('tr'); if (tr) tr.classList.toggle('pd-rowsel', el.checked);
+            var all = document.getElementById('users-all');
+            if (all) all.checked = selectable.length > 0 && selectable.every(function (u) { return SEL[u.id]; });
+            paintBar();
+          }
+        });
+      }
+
+      /* ⚠ Bound once, for the same reason as the group toggle below: the input survives every
+         render, so an unguarded listener would stack a copy per reload. Re-renders from the CACHE
+         — typing must not hit the network. */
+      var q = document.getElementById('users-q');
+      if (q && !q._wired) {
+        q._wired = true;
+        q.addEventListener('input', function () {
+          USER_Q = q.value;
+          SEL = {};            /* ⚠ see the note on SEL: never act on what the filter hid */
+          loadUsers(true);
+        });
+      }
+      if (q) q.value = USER_Q;   /* the value survives the re-render it triggers */
+
+      if (!t._grpWired) {
+        t._grpWired = true;
+        t.addEventListener('click', function (e) {
+          var b = e.target.closest && e.target.closest('.pd-grptog');
+          if (!b || !t.contains(b)) return;
+          var k = b.dataset.grp;
+          GRP_SHUT[k] = !GRP_SHUT[k];
+          var shut = !!GRP_SHUT[k];
+          b.textContent = shut ? '\u25b8' : '\u25be';
+          b.setAttribute('aria-expanded', shut ? 'false' : 'true');
+          b.title = (shut ? 'Show' : 'Hide') + ' these rows';
+          t.querySelectorAll('tr[data-ingrp="' + (window.CSS && CSS.escape ? CSS.escape(k) : k) + '"]')
+            .forEach(function (tr) { tr.classList.toggle('pd-collapsed', shut); });
+        });
+      }
 
       t.querySelectorAll('[data-role]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.role, { role: s.value }); }; });
       t.querySelectorAll('[data-dept]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.dept, { department: s.value || null }); }; });

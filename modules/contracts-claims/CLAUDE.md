@@ -1,5 +1,45 @@
 # Module: contracts-claims
 
+## 2026-09-17 (f) — A fourth merge, and this time nothing about this module actually changed
+
+Owner: *"resolve merge conflict."* `origin/main` had moved another 8 commits (to `26953880`), all
+of them about the Users table / `admin.html` — activity/registered columns, department grouping,
+bulk edit, the "personal sandbox" isolation change. **None of it touches this module.** The only
+conflict was in `modules/contracts-claims/index.html`, and it was two version-string lines, not code.
+
+⚠️⚠️ **CHECKED, NOT ASSUMED: `module.css` did not actually change on `main`'s side this round.**
+`git diff --stat` between the previous merge-base and this fetch's `origin/main` shows exactly one
+file touched anywhere under this module — `index.html`, 4 lines — and the CSS/JS files themselves
+are untouched. `main`'s conflicting line still pointed at `module.css?v=20260917d`, which is the
+**same stale token** from the (e) collision two entries below: `main` had bumped it there for the
+verdict-line dashboard CSS (`.cc-dash-verdict` / `.cc-who-*` / `.cc-trend`) that (e) already merged
+out, and nothing on `main` has touched that file since. Kept at **`?v=20260917c`**, unchanged — the
+same decision (e) made, re-confirmed with a fresh `git hash-object` against this branch's own
+committed blob rather than re-derived from habit.
+
+`dashboard.css` genuinely did change on `main` (+36 lines, part of the Users-table work — the
+sizing/spacing fixes below), and this branch made zero changes to that file at any point, so
+`main`'s new token (`?v=20260917zg`) is taken **verbatim**: `diff` against `origin/main`'s own copy
+confirms the working tree is now byte-identical to it.
+
+### Verified
+
+`git hash-object` on the resolved `module.css` and `module.js` both match this branch's already-
+committed `HEAD` blobs exactly — nothing moved. `node --check` clean on every touched script
+(`db.js`, `ui.js`, `portfolio-dash.js` — all shared files carried in by the Users-table commits —
+plus this module's own five). `node tools/wiring-check.js` **139/139**, including the asset pass
+that confirms every reference resolves to one version with zero splits. This module's own three
+suites, unmodified and unaffected: `test-boq.js` **66/0**, `tools/test-claims.js` **40/0**,
+`test-record.js` **24/0**. Repo-wide sweep for leftover conflict markers: zero. Root `CLAUDE.md`
+merged with no letter collision this round — the three new entries ((m)/(n)/(p) for 2026-09-17) are
+all Users-table work and none of them collide with anything this branch wrote.
+
+⚠️ Not verified signed in — no live project read since the merge, and none of this round's upstream
+changes reach this module's own code paths.
+
+No `?v=` bump beyond adopting `main`'s own `dashboard.css` token; `module.css` / `module.js` are
+untouched at `?v=20260917c` / `?v=20260917e`.
+
 ## 2026-09-17 (e) — A third collision, same shape: main kept extending the design (c) below already discarded, and this round found a real bug hiding inside it
 
 Owner: *"resolve merge conflict."* `origin/main` had moved 19 commits further (to `0f82c1b4`),
