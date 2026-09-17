@@ -103,6 +103,86 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (j) — "Are the forecast bars correct?" They are, and the chart now says why; the notes finally fill the panel
+
+Owner: *"Is the actual forecast bars correct? They're all over planned this month? If we add them
+all up (cumulative) the red forecast line should be above the planned (cumulative)."* — and
+separately, *"the wraps are not maximized with the whole panel."*
+
+### ⚠️⚠️ The bars ARE all over the planned ones, and that is forced arithmetic
+
+Added them up rather than reasoning about them. On a DEMO01-shaped fixture (22 months, 0.4% booked,
+forecast finishing 14 days after the plan), run through the shipped engine and the shipped lens:
+
+| | |
+|---|---|
+| forecast bar taller than planned in | **21 of 22** remaining months |
+| forecast bars total | **99.6%** |
+| planned bars total | **95.5%** |
+| difference | **4.1 pp** |
+| the plan's head start at the data date | **4.1 pp** — *exactly the same number* |
+
+⚠️ **The forecast starts at today's ACTUAL and must still reach 100%**, so it has strictly more work
+left than the plan does, over roughly the same time. Every month's bar is therefore a little taller
+— about **0.19 pp** — and the excess summed over the whole remainder equals the plan's head start
+and **nothing more**. Asserted as an identity, not a tolerance.
+
+⚠️⚠️ **And it still cannot overtake — 0 months above the planned line.** The owner's intuition is the
+natural one and the step it skips is this: adding the bars up gives the rise from the **forecast's
+own** starting point, which is the lower one. The forecast finishes *after* the plan, so it reaches
+100% later and can only converge from below. **The converse is asserted too**, or the claim would be
+untestable: pin a forecast finish EARLIER than the planned one and the red line goes above the black
+in **18** months. So this is a consequence of the dates, not a floor somewhere in the maths.
+
+**The chart now says so itself**, with the project's own figures rather than a generic note — *"The
+forecast bars sit above the planned ones, and they have to: the forecast starts at today's actual
+and must still reach 100%, so it carries the 4.1 pp the plan is already ahead by — about 0.19 pp a
+month over the 22 months left. The two curves meet at 100% rather than crossing, because the
+forecast finishes 2028-07-13, after the planned 2028-06-29."* It flips to the other claim when the
+forecast finish is pinned earlier, and a project exactly on plan gets **no sentence at all** rather
+than *"0 pp"*.
+
+### The notes still were not filling the panel
+
+⚠️ Entry (i) capped the block at `46ch * 3` — **1,190px** — and that still bit on the owner's own
+screen. Measured chain at 1920: sidebar 245 → `.pd-main` padding 24 → card border 1 + padding 16
+leaves a **1,593px** container, so 400px of it was still empty. The same complaint, one iteration
+smaller, which is what comes of picking a tasteful number instead of measuring the panel.
+
+At `64ch * 3 + 48px` = 1,635px the cap does not engage there and the three columns share the row
+exactly. It has to stay a cap: without one a 2,560px monitor collapses the empty tracks and hands
+each paragraph ~840px, about 130 characters to a line.
+
+Measured on the real chain — container, fill, characters per line:
+
+| viewport | card content | columns | column | fill | chars |
+|---|---|---|---|---|---|
+| 390 | 293px | 1 | 293px | **100%** | ~47 |
+| 820 | 738px | 2 | 357px | **100%** | ~57 |
+| **1675** | **1,593px** | **3** | **515px** | **100%** | ~82 |
+| 2400 | 2,318px | 3 | 530px | 71% *(capped, deliberately)* | ~85 |
+
+No horizontal scroll at any width. On the owner's screen the open block is **223px** — down from
+379px when this started — while carrying one more paragraph of explanation than it did then.
+
+### Verified
+
+**17 assertions** in a new adding-up suite, all executed against the shipped engine and the shipped
+lens: the bars add back up to their own lines; the excess equals the head start as an identity; the
+forecast never crosses; **and the converse fires**, which is what stops the "never crosses" result
+being true by accident.
+
+⚠️ The new sentence is **sliced out of the shipped file and executed** over the same fixture, so the
+figures in the note are checked against the ones computed independently — a note explaining the
+chart with the wrong number is worse than no note. ⚠️ The slice first returned the *function* rather
+than the sentence: a paren-depth scan from `(function () {` closes on the wrapper and leaves the
+calling `()` behind. Now asserted before use.
+
+`test-scurve-forecast` 28/28, the (h) forecast-bar suite 28/28, `wiring-check` 139/139, CSS braces
+226/226, the inline script parses.
+
+`MODULE_V` → `20260917zd`. No shared asset changed, so no app-wide bump.
+
 ### 2026-09-17 (i) — The chart notes wrapped to 41% of the card, and the obvious grid fix was worse than the bug
 
 Owner: *"Verify live"*, then *"Wrap text needs improvement as well."*

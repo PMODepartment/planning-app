@@ -130,13 +130,19 @@
        count comes off the floor and the tracks then share the row exactly.
        ⚠ `min(100%, 320px)` stops the floor exceeding the container on a phone, which is how an
        auto-fit grid earns a horizontal scrollbar.
-       ⚠ The `max-width` caps the block at three measures. Without it a 2,560px monitor collapses
-       the empty tracks and hands the three paragraphs ~840px each — 130 characters to a line.
+       ⚠⚠ THE CAP IS SET FROM THE REAL PANEL, NOT FROM A TASTEFUL NUMBER. At 46ch it still bit
+       at 1920: sidebar 245 + `.pd-main` padding 24 + card border/padding 17 leaves a 1,593px
+       container, and a 1,190px cap left 400px of it empty — the same complaint this was meant to
+       answer, just smaller. At 64ch the cap is 1,635px, so it does not bite there and the three
+       columns share the row exactly; it engages only beyond ~1,950px of viewport, where three
+       columns would otherwise run past 100 characters a line.
+       ⚠ It has to stay a cap. Without one a 2,560px monitor collapses the empty tracks and hands
+       the three paragraphs ~840px each — about 130 characters to a line.
        ⚠ The rule moves from the CONTAINER to each paragraph, or a single left border would
        run down the height of the tallest column beside two that had already ended. */
     .sc-whybody { margin-top:8px; display:grid; align-items:start; gap:12px 24px;
       grid-template-columns:repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-      max-width:calc(46ch * 3 + 48px);
+      max-width:calc(64ch * 3 + 48px);
       font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.6; }
     .sc-whybody p { margin:0; padding-left:12px; border-left:2px solid var(--pd-line); }
     .sc-whybody b { color:var(--pd-ink); }
@@ -2455,6 +2461,35 @@
            absent at the data date now, not one: the actual bar has been suppressed since
            2026-09-11, and the FORECAST bar since 2026-09-17 — same cause, same anchored value,
            and the fix had simply never been carried across. See `perF[d.ti] = null` in lens(). */
+        /* ⚠⚠ THE QUESTION THE OWNER HAD TO ASK, ANSWERED ON THE CHART. 2026-09-17:
+           *"Is the actual forecast bars correct? They're all over planned this month? If we add
+           them all up the red forecast line should be above the planned line."* Measured on a
+           DEMO01-shaped project: the forecast bar is the taller one in 21 of 22 remaining months,
+           and the bars total 99.6% against the plan's 95.5%.
+           It is forced arithmetic, not a glitch. The forecast starts at TODAY'S ACTUAL and must
+           still reach 100%, so it has strictly more work left than the plan does, in about the
+           same time -- and the excess summed over the remaining months equals the plan's head
+           start at the data date EXACTLY, nothing more.
+           ⚠ And it still cannot overtake: adding the bars up gives the rise from the FORECAST's
+           own starting point, which is lower. Where the forecast finish is later than the planned
+           finish the red line reaches 100% later and can only converge from below. Pin an
+           EARLIER finish and it does cross -- which is what proves this is a consequence of the
+           dates rather than a floor somewhere. */
+        (function () {
+          var head = d.TOT ? (d.plannedC[d.ti] - d.actualC[d.ti]) / d.TOT * 100 : 0;
+          var left = d.months.length - d.ti - 1;
+          if (!(head > 0.05) || left < 1 || !d.forecastC || d.forecastC[d.ti] == null) return '';
+          return ' <b>The forecast bars sit above the planned ones</b>, and they have to: the ' +
+            'forecast starts at today\'s actual and must still reach 100%, so it carries the ' +
+            (Math.round(head * 10) / 10) + ' pp the plan is already ahead by — about ' +
+            (Math.round(head / left * 100) / 100) + ' pp a ' + perWord + ' over the ' + left + ' ' +
+            perWord + (left === 1 ? '' : 's') + ' left. ' +
+            (d.fcFinish >= d.plannedEnd
+              ? 'The two curves meet at 100% rather than crossing, because the forecast finishes ' +
+                iso(d.fcFinish) + ', after the planned ' + iso(d.plannedEnd) + '.'
+              : 'The forecast line does rise above the plan here, because the forecast finish (' +
+                iso(d.fcFinish) + ') is EARLIER than the planned one (' + iso(d.plannedEnd) + ').');
+        })() +
         (!d.manMode
           ? ' <b>The data-date ' + perWord + ' has no actual or forecast bar.</b> The curve anchors ' +
             'that point to the project\'s true recorded % complete, so the step into it carries the ' +
