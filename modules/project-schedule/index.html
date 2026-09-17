@@ -3123,6 +3123,9 @@
     /* Weekly Work Plan (was the Planner Cockpit; these classes are still used by the
        Last Planner section and by the Schedule Setup's WBS card) */
     .ps-ck-bar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+    /* ⚠ An empty lede is still a flex item, and the bar's `gap:10px` would indent the Setups
+       button by 10px for no visible reason. In 'new' mode the lede is empty by design. */
+    #ps-bld-lede:empty { display:none; }
     /* Section divider between the cockpit KPIs/forecast and the merged Last Planner weekly section */
     .ps-ck-secdiv { display:flex; align-items:center; gap:8px; width:100%; margin:26px 0 14px; padding:18px 0 0; border:none; border-top:2px solid var(--pd-line); background:none; font:inherit; font-size:var(--pd-fs-md); font-weight:800; color:var(--pd-ink); letter-spacing:.01em; text-align:left; cursor:pointer; }
     .ps-ck-secdiv [data-ico] { color:var(--pd-red); }
@@ -5374,7 +5377,10 @@
         <div class="ps-ck-bar">
           <!-- Painted by ScheduleBuilder.render(): the bar has to say which of the two jobs is open
                (checking an import vs building a new programme), because they share this frame. -->
-          <span id="ps-bld-lede" style="font-size:12px;color:var(--pd-muted);">Set up the execution programme — activities, locations, sequencing, the lifecycle phases around it and the <b>WBS</b> — then push it into the Project Schedule. The generated preview stays here until you do.</span>
+          <!-- ⚠ Intentionally empty: ScheduleBuilder.render() fills it per mode, and the 'new'
+               mode now fills it with nothing. Leaving the old sentence here would flash it for a
+               frame on every entry to the builder, before render() clears it. -->
+          <span id="ps-bld-lede" style="font-size:12px;color:var(--pd-muted);"></span>
           <!-- Which package this setup builds, and the way into every other setup.
                Sits at the head of the builder because it is the first thing a planner
                on a multi-package project needs to be sure of. -->
@@ -48188,8 +48194,13 @@
       var lede = document.getElementById('ps-bld-lede');
       if (lede) lede.innerHTML = mode === 'import'
         ? 'Checking an imported programme. <b>Nothing is written to the schedule</b> until <b>Review &amp; import</b> \u2014 walk the steps and sanitise the file first.'
+        /* ⚠ 'new' IS DELIBERATELY EMPTY. Owner: *"its not needed"*. It described the wizard
+           the wizard is already showing — the step rail names the steps, and `.sbld-pending`
+           beside it says the one thing the sentence carried that the rail does not (*"the
+           generated preview stays here until you push"*) as a live count. The other two
+           branches stay: 'import' is a warning about writes, not a description. */
         : (mode === 'new'
-          ? 'Set up the execution programme \u2014 activities, locations, sequencing, the lifecycle phases around it and the <b>WBS</b> \u2014 then push it into the Project Schedule. The generated preview stays here until you do.'
+          ? ''
           : 'Start here: bring in an existing programme from Excel or P6, or build a new one step by step.');
       /* ⚠️ Computed ONCE per render and shown on every step, replacing the per-step sentences that
          each said the same thing. `generate('int')` is the same call the 5PMLC view already made

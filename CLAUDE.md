@@ -104,6 +104,53 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (an) — The builder’s top-bar lede is gone, and only the one he quoted
+
+Owner: *"Can we also remove the ‘Set up the execution programme — activities, locations, sequencing,
+the lifecycle phases around it and the WBS — then push it into the Project Schedule. The generated
+preview stays here until you do.’ in the schedule setup as well its not needed"*.
+
+⚠ `#ps-bld-lede` **is a three-way switch, not one sentence**, and only the `'new'` branch was
+removed. The other two stay, deliberately:
+
+| mode | copy | kept? |
+|---|---|---|
+| `import` | *“Nothing is written to the schedule until Review & import”* | **kept** — a warning about writes, not a description |
+| `new` | the sentence above | **removed** |
+| chooser | *“Start here: bring in an existing programme…”* | **kept** — the landing state’s only instruction |
+
+The removed sentence described the wizard the wizard is already showing: the step rail names the
+steps, and the one thing it carried that the rail does not — *“the preview stays here until you
+push”* — is what `.sbld-pending` beside it already says as a live count. That is the same
+argument entry *(t)* used to delete the per-step prose; this is the last sentence of it.
+
+### Three edits, not one
+
+1. The `'new'` branch in `ScheduleBuilder.render()` → `''`.
+2. **The static markup at the `#ps-view-builder` head, which is the easy one to miss.** `render()`
+   overwrites it, but it paints first — leaving the sentence there would flash it for a frame on
+   every entry to the builder.
+3. ⚠ `#ps-bld-lede:empty { display:none; }`. An empty `<span>` is still a flex item, and
+   `.ps-ck-bar` sets `gap:10px` — without this the Setups button sits 10px in from the bar’s
+   edge for no visible reason. Deleting text does not delete the box it lived in.
+
+**Measured**, on a 1398px panel, from a harness built out of the shipped stylesheet and the real bar
+markup sliced from `index.html` — not a retyped copy, which has lied here before:
+
+| | lede display | lede width | Setups button offset from bar edge |
+|---|---|---|---|
+| `new` (empty) | `none` | 0px | **0px** |
+| `import` (text) | `block` | 472px | 482px (= 472 + the 10px gap) |
+
+The second row is the control: it proves `:empty` is what hides the first, and that the import
+warning still renders. Bar height is **30px in both**, so nothing below it shifts.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · `"The generated preview stays here until you do"` returns
+**0** matches in the module. ⚠ Grepping the looser `"execution programme"` returns **2**, and both are
+unrelated — a comment on the start-date scan and a sentence in the import report about unresolved
+predecessors. Checked rather than reported as a leftover. `modules-grid.js` `?v=` → `20260917zzl`.
+
 ### 2026-09-17 (am) — The step lede loses its cap too
 
 Owner: *"the lede too"* — after *(al)* removed the cap from `.sbld-how` and reported that
