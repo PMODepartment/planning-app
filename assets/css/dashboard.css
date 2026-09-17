@@ -662,7 +662,19 @@ a:hover { text-decoration: underline; }
    the reference app at every size (toolbars, modals, tables all inherit this). */
 .pd-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
   border: 1px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
-  padding: 6px 13px; border-radius: var(--pd-radius-md); font-size: var(--pd-fs-sm); font-weight: 500; }
+  padding: 6px 13px; border-radius: var(--pd-radius-md);
+  /* ⚠⚠ `font-family: inherit` IS LOAD-BEARING — WITHOUT IT EVERY BUTTON IN THIS APP IS ARIAL.
+     A <button> carries the UA stylesheet's own `font: 400 13.333px Arial`, which is an author-
+     level-beating declaration on the ELEMENT's default — `body { font-family: var(--pd-font) }`
+     does not reach into a form control. This rule set font-size and font-weight and never the
+     family, so the size and weight were the brand's and the TYPEFACE was not.
+     ⚠ Measured on the shipped sign-in page before this line existed: `button.pd-btn` computed
+     to Arial while `a.pd-btn` — same class, same look, no UA font rule on <a> — computed to
+     Gotham. Two elements deliberately styled to be indistinguishable, in two different
+     typefaces, in every toolbar in the app.
+     ⚠ `.pd-input` / `.pd-select` / `.pd-textarea` never had this problem: they set the family
+     themselves. This is the same fix, in the idiom that was already here. */
+  font-family: inherit; font-size: var(--pd-fs-sm); font-weight: 500; }
 /* ⚠️⚠️ THE `hidden` ATTRIBUTE DID NOT WORK ON ANY .pd-btn IN THIS APP, ANYWHERE.
    The rule above is specificity (0,1,0) — exactly equal to the user agent's own
    `[hidden] { display: none }` — and an author rule always beats the UA default at

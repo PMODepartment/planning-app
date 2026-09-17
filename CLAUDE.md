@@ -103,6 +103,100 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (u) — Every button in the app was Arial; the Start step stops explaining its own labels
+
+Owner: *"Let's do 4.1 now let's do it per page in the schedule set-up one by one full check per page"*,
+then, quoting six paragraphs of the Start step back: *"Most of these texts are already been explained
+just by reading the title. Let's just remove the everything/shorten to 1-2 sentences only."*
+
+This is the first pass of 4.1 (*"multiple instances that the UI for texts are not optimized — bold
+fonts, font sizes, and typefaces, text wrapping"*): the Start and Working-calendars pages, plus the
+two defects that turned out not to be per-page at all.
+
+### ⚠️⚠️ `.pd-btn` NEVER SET A FONT-FAMILY, SO EVERY BUTTON IN THIS APP RENDERED IN ARIAL
+
+A `<button>` carries the user agent's own `font: 400 13.333px Arial`, which applies to the element
+directly — `body { font-family: var(--pd-font) }` does not reach into a form control. `.pd-btn` set
+`font-size` and `font-weight` and never the family, so the size and the weight were the brand's and
+the **typeface was not**.
+
+**Measured on the shipped sign-in page before anything was changed**, by appending probe elements and
+reading `getComputedStyle`: `button.pd-btn` → `Arial`. `a.pd-btn` → `Gotham`. Same class, same
+intended appearance, no UA font rule on `<a>` — so a link-button and a real button sitting next to
+each other in the same toolbar were in two different typefaces, in every module, on every page.
+`.pd-input` / `.pd-select` / `.pd-textarea` never had the problem; they set the family themselves.
+One `font-family: inherit` in `.pd-btn`, in the idiom that was already there.
+
+⚠️ **The cost is measured, not assumed.** Gotham is wider than Arial at the same size, so every button
+grows: **+3.6px to +28.3px**, mean ≈ +13px (measured per button by rendering each one, then forcing
+Arial and re-measuring). That is a real layout change, and the reason it is safe is that the
+containers that hold several buttons already wrap — `.pd-toolbar` and `.ps-topbar-tools` are
+`flex-wrap: wrap`, `.ps-toolbar` is `flex-direction: column`, and `.sbld-foot` holds two. A wider
+button reflows; nothing clips.
+
+### ⚠️ A CORRECTION, RECORDED BECAUSE THE HARNESS WAS WRONG AND LOOKED RIGHT
+
+The first measurement said the Setup's step `<h2>` rendered at **21px** — the browser default, well
+above `--pd-fs-lg` (16px), which the scale calls "the largest heading in the app". It was wrong. The
+harness mounted the markup in a private `.case` wrapper, so `.sbld-panel h2 { font-size:
+var(--pd-fs-lg) }` never matched. The real step host is `<div class="sbld-panel" id="ps-bld-panel">`,
+and in it the heading is **16px/700** and the lede **13px muted** — both on scale. The harness now
+mounts into `.sbld-panel`. **A harness that is not the ancestor the renderer really has measures a
+page that does not exist**, and it fails in the flattering direction: it reports a defect that is not
+there, which is the same class of error as reporting a pass that is not there.
+
+### The Start step, shortened
+
+Six paragraphs the owner quoted are gone or cut to one sentence. The three door cards each had two
+paragraphs restating what their own heading and button already said — *"Define the programme and let
+the setup generate it: the activity list with durations, the floors and zones, how trades follow each
+other, the lifecycle phases either side of construction, and the WBS"* under a card headed **Build a
+new schedule**, with a button reading **Build a new schedule →**. What survives is the one sentence per
+card that is *not* on a label: that a derive is a reading and writes nothing, that an imported file is
+held for checking before anything is written, and that a staged import is session-only.
+
+⚠️⚠️ **And the step counts were all wrong and all different.** One card said *"Ten steps"*, another
+*"the eleven steps"*, a comment said *"the original ten steps"* — the build rail has been **six** since
+Structure merged into Project Phases and the Library became a tab of Activities. A count written into
+prose goes stale on the first merge and then argues with the rail the planner is looking at, so these
+lost the number rather than gaining a corrected one. (The `11-step` nearby is a verbatim owner quote
+from 2026-09-02 and stays as written.)
+
+⚠️ The four door cards each carried `style="padding:12px 14px 14px;font-size:12.5px;line-height:1.6"`
+**inline** — four copies of one decision, with `12.5px` spelled as a literal. That literal *is*
+`--pd-fs-sm`: on the scale by luck, and off it the first time one of the four is edited. One
+`.ps-ck-txt` rule now.
+
+### Text that was cut with nowhere to read the rest
+
+⚠️⚠️ `.sbld-phwin` is the `.pd-kpi-sub` fault again. It holds a **date window** at `--pd-fs-xs` with
+`nowrap` + `ellipsis`, so a narrow column renders `12 Mar 2026 – 04 Ju…` — which does not read as a
+truncation, it reads as **a different finish date**. A cut number is worse than a wrapped one: it is
+wrong information rather than ugly information. It now carries a `title` built from the same `win()`
+call that fills it, so the tooltip cannot disagree with the text. Same treatment for the stacking
+tower's trade name and the Construction Library's grouping name. The column stays one line
+deliberately — on a narrow screen the existing rule hides the window rather than squeezing it.
+
+### Two rules that could never apply
+
+`.sbld-note` was declared twice at equal specificity, 260 lines apart; the later one redeclares every
+property the earlier sets, so the earlier has never once reached the screen while reading as the
+definition to whoever finds it first. Deleted. `.sbld-man-n` was the Setup's last off-scale
+`font-size` (`13px`, which is `--pd-fs-base` spelled as a literal) — **the Schedule Setup is now
+entirely on the type scale: 0 off-scale declarations.**
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline
+scripts parse · CSS brace balance identical to pinned `b9a937a` for both files, which genuinely
+differ · no NUL bytes · the 28 bump-only pages changed exactly one token line each. Rendered against
+the real stylesheet with the shipped renderers executed, not retyped: **91 elements Gotham, 0 Arial**
+(was 79/12), 3 `monospace` which is the `<code>.xer</code>`, **0 elements overflowing**.
+`dashboard.css` `?v=` → `20260917zh` across all 31 pages, `modules-grid.js` → `20260917zl`.
+
+⚠️ Still open in 4.1: the nine remaining Setup pages (Project phases, Activities, Construction
+Library, Floors & Zones, and Repetition's five views), and the 700-vs-800 question — the Setup mixes
+two bolds in seven component families, of which `.pscl-tbl` (header 800 / body 700 / empty 400) is a
+deliberate three-level hierarchy and the rest are not yet judged.
+
 ### 2026-09-17 (t) — Named non-working dates, groupings that can exist before their work, and Project Phases becomes one page
 
 Owner, picking the order off his own Schedule Setup list: *"Let's do 1.1 and 2.3 first before 4.1"* —
