@@ -18,6 +18,17 @@
        "4 working days ago" broken over two lines reads as two facts. */
     .pd-subline { margin-top:3px; font-size:var(--pd-fs-xs); color:var(--pd-muted); white-space:nowrap; }
     .pd-uname { font-weight:700; white-space:nowrap; }
+    /* ⚠ The count beside a group heading. The heading row is uppercase/800 from the shared
+       `.pd-grp`, so the count is de-emphasised back to normal weight and case — otherwise it
+       reads as part of the department's name. */
+    .pd-grpn { font-weight:500; text-transform:none; letter-spacing:0; color:var(--pd-muted); }
+    /* The search bar. ⚠ The icon is absolutely positioned rather than placed in a flex row, so
+       the input stays one full-width control that a screen reader announces once. */
+    .pd-usearch { position:relative; margin-bottom:14px; }
+    .pd-usearch .pd-input { width:100%; padding-left:36px; }
+    .pd-usearch-ico { position:absolute; left:11px; top:50%; transform:translateY(-50%);
+      color:var(--pd-muted); display:inline-flex; pointer-events:none; }
+    .pd-nomatch { color:var(--pd-muted); padding:18px 10px; text-align:center; }
     /* ⚠ Tighter gutters on THIS table only. Nine columns pay the cell padding nine times, so
        10px -> 7px each side recovers ~54px and is the difference between fitting a 1400px laptop
        and scrolling it. Scoped to #users-table rather than .pd-table: every other table in the
@@ -120,6 +131,15 @@
              keeps its natural column widths and the wrapper scrolls cleanly.
              ⚠ It was already in the shared stylesheet and used on ZERO pages. Reviving it
              beats a third local copy of the same two rules. -->
+        <!-- ⚠ ABOVE THE CARD AND FULL WIDTH, matching the procurement dashboard's User
+             Management screen, which is what the owner pointed at. A search that filters a whole
+             table belongs over the table, not inside its first column. -->
+        <div class="pd-usearch">
+          <span class="pd-usearch-ico" data-ico="search" data-ico-size="16" aria-hidden="true"></span>
+          <input class="pd-input" id="users-q" type="search" autocomplete="off"
+                 placeholder="Search by name, email or department&hellip;"
+                 aria-label="Search users by name, email or department" />
+        </div>
         <div class="pd-card pd-tablewrap" style="padding:0;">
           <table class="pd-table" id="users-table"></table>
         </div>
@@ -136,6 +156,25 @@
   <script src="assets/js/icons.js?v=20260915f"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
+    /* Which group headings are folded. Page-scope so a re-render after `setUser` keeps them. */
+    var GRP_SHUT = {};
+    /* ⚠ The fetched rows and the current query, both page-scope. Typing must NOT re-read the
+       table — `getAllUsers` is a network round trip and this filters fourteen rows. `setUser`
+       still reloads for real, because a saved role has to come back from the database rather than
+       from whatever this cached a moment ago. */
+    var USERS_CACHE = null, USER_Q = '';
+    /* ⚠ Matches name, email AND department, which is what the placeholder says. Department is
+       in there because the table is now grouped by it — typing "PMO" and getting nothing would
+       be the obvious thing to try and the obvious thing to get wrong. */
+    function filterUsers(list, q) {
+      q = String(q || '').trim().toLowerCase();
+      if (!q) return list;
+      return list.filter(function (u) {
+        return [u.name, u.email, u.department].some(function (v) {
+          return String(v || '').toLowerCase().indexOf(q) !== -1;
+        });
+      });
+    }
     // ⚠️ Modules RESTRICTED by role default — since 2026-09-17 that means
     // `planner` and above can open them and `user`/`viewer` cannot (config.js
     // `superAdminOnly`, whose name predates the change; `MODULE_ALL_ROLES` in
@@ -229,12 +268,12 @@
     });
 
     // -------- Users --------
-    async function loadUsers() {
-      var users = await PDb.getAllUsers();
+    async function loadUsers(fromCache) {
+      var users = (fromCache && USERS_CACHE) ? USERS_CACHE : (USERS_CACHE = await PDb.getAllUsers());
       // ⚠️ Kept here (not moved to projects.html) — the Assign Projects modal below is
       // still part of USER management (who can reach which project), even though
       // creating/editing/deleting the projects themselves is now projects.html's alone.
-      ALL_PROJECTS = await PDb.getProjects();
+      if (!ALL_PROJECTS.length) ALL_PROJECTS = await PDb.getProjects();
       var t = document.getElementById('users-table');
       // ⚠️ DEPARTMENTS is duplicated from modules/issues-lessons/module.js rather than
       // shared: the contract forbids a module editing shared assets, so promoting it to
@@ -260,8 +299,7 @@
       // visibility was a pure role default with nothing to override; it no longer
       // is, now that `users.module_access` can hold a per-user custom list.
       var restrictedNames = RESTRICTED_MODULES.map(function (m) { return m.name; }).join(', ');
-      t.innerHTML = '<thead><tr><th>User</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Modules</th><th>Activity</th><th>Registered</th><th>Actions</th></tr></thead><tbody>' +
-        users.map(function (u) {
+      var rowOf = function (u, attr) {
           var canSuper = ME.role === 'super_admin';
           var isSuper = u.role === 'super_admin';
           // ⚠️⚠️ A plain admin can SEE a super_admin's row in full — RLS
@@ -334,7 +372,7 @@
           // beside the Projects column's chip list, rather than joining a menu
           // meant for record-lifecycle actions (approve/reject/delete).
           var hasMenu = (u.status!=='approved') || (u.status!=='rejected') || (u.id!==ME.id);
-          return '<tr>' +
+          return '<tr' + (attr || '') + '>' +
             /* ⚠⚠ ONE CELL, NOT TWO. Owner 2026-09-17: *"squeeze the table … in a way that
                the table does not necessarily need to be scrollable."* Name and Email were two
                full columns holding THE SAME STRING for every account created from an email
@@ -377,7 +415,106 @@
               : '<span class="pd-nochip">—</span>') +
             '</td>' +
           '</tr>';
-        }).join('') + '</tbody>';
+      };
+
+      /* ==== GROUPING — PENDING FIRST, THEN BY DEPARTMENT ======================================
+         Owner 2026-09-17: *"Can we also group the users by department? Let's follow the existing
+         grouping UI"* and *"Can we also segregate the users and the ones that are pending
+         approval."* Both answered by one ordering, because they are the same question asked twice:
+         what needs doing, and then who is who.
+
+         ⚠ THE APP'S OWN GROUPED-TABLE IDIOM, not a new one: `tr.pd-grp` heading rows inside the
+         SAME table, which `dashboard.css` already styles and already remaps for dark mode, and
+         which `modules/minutes-of-meeting/module.js` uses for its minutes-by-meeting view. One
+         table means the columns stay aligned across groups by construction rather than by tuning.
+         ⚠ `.pd-grptog` and `.pd-collapsed` were already in the shared stylesheet with NO consumer
+         — the same state `.pd-tablewrap` was in this morning. Reviving them beats inventing a
+         fourth caret.
+
+         ⚠⚠ PENDING IS FIRST AND IS NOT A DEPARTMENT. Someone awaiting approval has no
+         department yet in the usual case, and filing them under "No department" would bury the one
+         group on this page that needs an action. Rejected goes last for the mirror reason: it is
+         an archive, not a queue.
+         ⚠ "No department" sorts after the named ones rather than alphabetically, or an unset
+         field would lead the list.
+         ⚠ The collapsed set is page-scope, NOT rebuilt per render: every role or department
+         change calls `setUser`, which reloads and re-renders, and a fold that sprang open on each
+         save would be worse than no fold at all. */
+      var GRP_COLS = 9;
+      function userGroups(list) {
+        var pend = [], rej = [], byDept = {}, NO_DEPT = 'No department';
+        list.forEach(function (u) {
+          if (u.status === 'pending') { pend.push(u); return; }
+          if (u.status === 'rejected') { rej.push(u); return; }
+          var d = String(u.department || '').trim() || NO_DEPT;
+          (byDept[d] = byDept[d] || []).push(u);
+        });
+        var names = Object.keys(byDept).sort(function (a, b) {
+          if ((a === NO_DEPT) !== (b === NO_DEPT)) return a === NO_DEPT ? 1 : -1;
+          return a.localeCompare(b);
+        });
+        var out = [];
+        if (pend.length) out.push({ key: 'pending', label: 'Pending approval', rows: pend, act: true });
+        names.forEach(function (n) { out.push({ key: 'd:' + n, label: n, rows: byDept[n] }); });
+        if (rej.length) out.push({ key: 'rejected', label: 'Rejected', rows: rej });
+        return out;
+      }
+      function groupedBody(list) {
+        return userGroups(list).map(function (g) {
+          var shut = !!GRP_SHUT[g.key];
+          var n = g.rows.length;
+          var count = g.act
+            ? '<span class="pd-pill pd-pill-warn">' + n + ' awaiting</span>'
+            : '<span class="pd-grpn">' + n + (n === 1 ? ' person' : ' people') + '</span>';
+          return '<tr class="pd-grp"><td colspan="' + GRP_COLS + '">' +
+              '<button type="button" class="pd-grptog" data-grp="' + Fmt.esc(g.key) + '"' +
+                ' aria-expanded="' + (shut ? 'false' : 'true') + '"' +
+                ' title="' + (shut ? 'Show' : 'Hide') + ' these rows">' +
+                (shut ? '\u25b8' : '\u25be') + '</button>' +
+              Fmt.esc(g.label) + ' ' + count +
+            '</td></tr>' +
+            g.rows.map(function (u) {
+              return rowOf(u, ' data-ingrp="' + Fmt.esc(g.key) + '"' + (shut ? ' class="pd-collapsed"' : ''));
+            }).join('');
+        }).join('');
+      }
+
+      /* ⚠ The EMPTY RESULT is its own message, quoting what was typed. A grouped table that
+         simply renders no rows reads as a page that failed to load. */
+      var shown = filterUsers(users, USER_Q);
+      t.innerHTML = '<thead><tr><th>User</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Modules</th><th>Activity</th><th>Registered</th><th>Actions</th></tr></thead><tbody>' + (shown.length
+        ? groupedBody(shown)
+        : '<tr><td colspan="' + GRP_COLS + '" class="pd-nomatch">No user matches \u201c' +
+          Fmt.esc(USER_Q) + '\u201d.</td></tr>') + '</tbody>';
+
+      /* ⚠ ONE delegated listener, bound ONCE. `t` survives every render (only its innerHTML is
+         replaced), so binding here without the guard would stack a fresh copy per reload — the
+         exact accumulation the note on `closeActionMenus` below already records. */
+      /* ⚠ Bound once, for the same reason as the group toggle below: the input survives every
+         render, so an unguarded listener would stack a copy per reload. Re-renders from the CACHE
+         — typing must not hit the network. */
+      var q = document.getElementById('users-q');
+      if (q && !q._wired) {
+        q._wired = true;
+        q.addEventListener('input', function () { USER_Q = q.value; loadUsers(true); });
+      }
+      if (q) q.value = USER_Q;   /* the value survives the re-render it triggers */
+
+      if (!t._grpWired) {
+        t._grpWired = true;
+        t.addEventListener('click', function (e) {
+          var b = e.target.closest && e.target.closest('.pd-grptog');
+          if (!b || !t.contains(b)) return;
+          var k = b.dataset.grp;
+          GRP_SHUT[k] = !GRP_SHUT[k];
+          var shut = !!GRP_SHUT[k];
+          b.textContent = shut ? '\u25b8' : '\u25be';
+          b.setAttribute('aria-expanded', shut ? 'false' : 'true');
+          b.title = (shut ? 'Show' : 'Hide') + ' these rows';
+          t.querySelectorAll('tr[data-ingrp="' + (window.CSS && CSS.escape ? CSS.escape(k) : k) + '"]')
+            .forEach(function (tr) { tr.classList.toggle('pd-collapsed', shut); });
+        });
+      }
 
       t.querySelectorAll('[data-role]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.role, { role: s.value }); }; });
       t.querySelectorAll('[data-dept]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.dept, { department: s.value || null }); }; });

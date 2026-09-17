@@ -103,6 +103,83 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (m) — The Users table groups by department with the approval queue on top, and gains a search bar
+
+Owner: *"Can we also group the users by department? Let's follow the existing grouping UI"*, then
+*"Can we also segregate the users and the ones that are pending approval"*. One ordering answers
+both, because they are the same question asked twice: **what needs doing, and then who is who.**
+
+```
+▾ PENDING APPROVAL  [2 awaiting]
+▾ COMMERCIAL AND CONTRACTS  1 person
+▾ ENGINEERING  2 people
+▾ PMO  3 people
+▾ NO DEPARTMENT  1 person
+▾ REJECTED  1 person
+```
+
+### ⚠️ The app's own grouped-table idiom, not a new one
+
+`tr.pd-grp` heading rows inside the **same** table — which `dashboard.css` already styles and
+already remaps for dark mode, and which `modules/minutes-of-meeting/module.js` uses for its
+minutes-by-meeting view. One table means the columns stay aligned across groups by construction
+rather than by tuning.
+
+⚠️ **`.pd-grptog` and `.pd-collapsed` were already in the shared stylesheet with no consumer** — the
+same state `.pd-tablewrap` was in this morning. Reviving them beats inventing a fourth caret.
+
+⚠️⚠️ **Pending is first and is not a department.** Someone awaiting approval usually has no
+department set, and filing them under *No department* would bury the one group on this page that
+needs an action. Rejected goes last for the mirror reason: it is an archive, not a queue. *No
+department* sorts after the named departments rather than alphabetically, or an unset field would
+lead the list.
+
+⚠️ The folded set is **page-scope, not rebuilt per render**: every role or department change calls
+`setUser`, which reloads and re-renders, and a fold that sprang open on each save would be worse
+than no fold at all. The delegated listener is bound **once** — `t` survives every render, so an
+unguarded `addEventListener` would stack a copy per reload, the hazard this file already records
+for `closeActionMenus`.
+
+### The search bar
+
+Above the card and full width, matching the procurement dashboard's User Management screen, which
+is what the owner pointed at. A search that filters a whole table belongs over the table, not inside
+its first column.
+
+⚠️ It matches **name, email and department** — department because the table is now grouped by it,
+and typing a heading you can see and getting nothing back is the obvious thing to try and the
+obvious thing to get wrong. The placeholder says all three.
+⚠️ **Typing re-renders from a cache, never from the network.** `getAllUsers` is a round trip and
+this filters fourteen rows; `setUser` still reloads for real, because a saved role has to come back
+from the database rather than from whatever was cached a moment ago.
+⚠️ An empty result is **its own message quoting the query** — a grouped table that simply renders no
+rows reads as a page that failed to load.
+
+### Verified
+
+**44 assertions**, `userGroups` / `groupedBody` / `filterUsers` **sliced out of admin.html and
+executed**. The one that matters most: **every person lands in exactly one group and nobody appears
+twice** — the failure a grouped table can have that looks like nothing at all. Also: a *pending* user
+*with* a department goes to Pending and not also to that department; a whitespace-only department
+counts as absent rather than becoming a group called `"   "`; singular/plural on the counts; the
+heading `colspan` asserted **equal to the real header column count**, so the two cannot drift.
+
+**Rendered in an iframe**: five groups in the right order, heading rows uppercase/800 on `--pd-bg`
+from the shared component, folding PMO hides **exactly** its two rows and the caret and
+`aria-expanded` both flip, unfolding restores all seven. **All eight measured colours flip per
+theme** (heading `rgb(244,244,244)` → `rgba(255,255,255,.05)`, pending pill `rgb(138,83,0)` →
+`rgb(224,160,8)`), which is what proves the stylesheet is in the cascade. Table still **1,543px in a
+1,545px container — no scroll** even with the grouping, and no page-level horizontal scroll at 390px.
+
+⚠️ **I broke the pinned-contrast rule again, and the suite caught it.** `test-activity` defaulted its
+contrast to `origin/main`, which became **self-comparison** the moment (l) landed — the base now
+contains the very thing the contrast asserts it lacks, so it "failed" for the opposite of the real
+reason. Both suites are pinned to SHAs now (`93ad9f9`, `0f82c1b`). This repo already records that
+rule; it is the second time today.
+
+No shared asset changed and `admin.html` is refetched on every load (`sw.js` forces
+`cache: 'reload'` on HTML), so **no version bump**.
+
 ### 2026-09-17 (l) — Activity and Registered on the Users table, a last_login that Microsoft sign-ins actually reach, and two columns removed to pay for them
 
 Owner: *"a feature tracking the activity and registered date in the users which is already available
