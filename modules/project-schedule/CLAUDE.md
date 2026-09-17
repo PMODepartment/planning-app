@@ -1,3 +1,217 @@
+## 2026-09-17 (zzr) — The tofu boxes were 30 bare arrow glyphs; the plan editor goes full screen behind an Excel-style ribbon; and an area can be drawn before it is tagged
+
+Owner, three items: *"firstly, the symbol of 13 still remains. fix that."*, *"when defining the plan
+per floor, make it full screen, and hopefully the controls are similar to an excel format wherein
+there is like a ribbon taskbar on top"*, and *"allow users to define the shapes / trace zones first,
+before tagging which zones are those or if that zone is the whole floor etc."*
+
+### 1 · ⚠️⚠️ THE "SYMBOL" WAS NEVER ONE SYMBOL — IT WAS THIRTY, AND TWICE I FIXED THE WRONG ONE
+
+The `(zy)` pass read the screenshot as the tower bar's `⋯` and labelled it **Tower options**. That
+was a real defect and it was **not the one in the picture**, which is why the owner had to report it
+again. Rather than guess a third time, every **bare non-ASCII glyph used as a control's whole label**
+was enumerated with `tools/scan.js` blanking the comments first — this file carries 2,000+ ⚠️ and
+arrows in prose, and a naive grep reports hundreds of them.
+
+⚠️⚠️ **AND THE FIRST ENUMERATION MISSED MOST OF THEM, WHICH IS THE PART WORTH KEEPING.** A scan for
+literal bytes found four. The plan editor writes its arrows as **HTML entities** — `&#8630;`,
+`&#8646;`, `&#8676;` — so they are pure ASCII in the source and invisible to any byte scan, while the
+browser renders them as the same rare codepoints. The real count was **30**:
+
+| where | codepoints | drawn as |
+|---|---|---|
+| Arrange ▸ Turn | U+21B6 / U+21B7 ×2 copies | `↶90 ↶ ↷ ↷90` |
+| Arrange ▸ Mirror | U+21C6 / U+21C5 ×2 copies | `⇆ ⇅` |
+| Arrange ▸ Align | U+21E4 U+2194 U+21E5 U+21E1 U+2195 U+21E3 | `⇤ ↔ ⇥ ⇡ ↕ ⇣` |
+| Arrange ▸ Size | U+2212 | `−` |
+| Floors & Zones steppers, tower zoom | U+2212 ×3 | `−` |
+| decorative, beside a word | U+25BE, U+25C9 ×2, U+270E ×2 | `▾ ◉ ✎` |
+
+⚠️⚠️ **EVERY ONE OF THOSE ARROWS IS IN A SMALL SQUARE BUTTON WITH NO TEXT BESIDE IT.** Supplemental
+arrows are absent from a great many Windows font stacks, and a missing glyph renders as a **tofu box
+carrying its own hex digits in a 2×2 grid** — a dark square with four tiny characters in it, which is
+exactly what the owner photographed. It is also why the report reads as *one* symbol: when the whole
+row tofus you point at one of them.
+
+**All 30 are now text that no font can fail to draw** — `-90°` `-15°` `+15°` `+90°`, `Flip H` /
+`Flip V`, `Left` `Centre` `Right` `Top` `Middle` `Bottom`, `-` — and the three decorative glyphs are
+gone, because their buttons already carry the word. ⚠️ `°` is U+00B0, Latin-1, present in every font
+this app can reach; it is not a fourth kind of gamble.
+
+- ⚠️ **The rewrite is count-asserted, rule by rule, and ABORTS before writing on a miscount.** A
+  silent partial rewrite of a 50,000-line file is far worse than a script that refuses to run — and
+  the guard **bit twice**: `◉ Inspect` and `✎ Link by hand` each occur **two** times (a toolbar copy
+  and a right-click-menu copy), where I had asserted one.
+- ⚠️ **Three prose strings were changed with them.** The tooltips and the scale note say *"use − / +
+  to size it"*; leaving them would have described buttons that now read `-` / `+`.
+- ⚠️ **The two remaining ⚠️ in dialog notes are deliberately left.** They sit inside a sentence rather
+  than being a control's whole label, so a fallback costs a pictograph and not the button's meaning.
+- ⚠️ **The braille grip goes too.** `.sbld-grab` was the literal `⠇` (U+2807, BRAILLE PATTERN
+  DOTS-123) at the head of every floor row — a symbol with no label, no title, and a codepoint most
+  machines lack. It is **painted with a background gradient** now, so there is no glyph to be
+  missing, and it carries a `title` saying what it is for.
+
+⚠️ **A caveat stated rather than buried:** I cannot read a codepoint off a 33×28 thumbnail, so I have
+not proved *which* of the 30 the owner photographed. What is proved is that the class is gone from
+both screens they named. **If a box survives, it is somewhere else and the screenshot's page is the
+thing to name.** ⚠️ A module page is cached at `index.html?v=MODULE_V`, so a hard refresh is worth
+trying first — this log has recorded that mistaken re-report twice.
+
+### 2 · The plan window is the screen, and the controls are a ribbon
+
+⚠️⚠️ **THE CAP WAS `min(1560px, 97vw)` INSIDE `.pd-modal`'S OWN 90vh**, so on a 1440px laptop the
+drawing — the one thing the window exists for — got about half the screen, and tracing a corner
+meant zooming and panning rather than looking at the floor.
+
+- `.pd-modal.zpw-modal` is `100vw × 100vh`, no radius, no padding. ⚠️ **The class goes on the
+  OVERLAY as well**: `.pd-modal-overlay` carries 20px of its own padding, and a "full screen" window
+  inset by 20px on every side is not one. ⚠️ Both selectors are **two classes deep**, because
+  `.pd-modal` is (0,1,0) and so is `.zpw-modal` — a tie would resolve on source order, correctly
+  today and silently wrongly the day this block moves.
+- ⚠️⚠️ **`min-height:0` on the column AND on the stage wrapper.** A flex item's default
+  `min-height:auto` refuses to shrink below its content, so without it the stage pushes the column
+  past 100vh and the footer leaves the screen — the exact failure this window had as a centred box.
+
+**The ribbon replaces the `Controls` fold**, and the fold's own reasoning is why: it put
+everything-that-is-not-the-drawing behind one button, so a planner had to open it, find the row, act,
+and shut it again. A tab is one press. Three tabs — **Home** (what to draw and how to start),
+**Arrange** (act on the area you picked), **Sheet** (the drawing underneath, the sheet's shape, the
+front) — which are the fold's own four rows regrouped, not new controls.
+
+- ⚠️⚠️ **EVERY PANE STAYS IN THE DOM and the inactive ones are hidden with CSS** — exactly what
+  `<details>` was doing for the fold, and for the reason its note gives: every control inside stays
+  wired precisely as it was, so switching tabs cannot unbind anything.
+- ⚠️ The tab state lives on `W.tab`, not in the DOM: this window repaints on **every gesture**, so a
+  tab read back out of the markup would reset itself under the planner's hand.
+- ⚠️ The band carries a **minimum height**, so switching between two one-row tabs does not nudge the
+  drawing underneath. It still grows for a tab that genuinely needs two rows.
+- ⚠️ **The selected-area strip sits under the ribbon and is always on screen while something is
+  selected** — where a spreadsheet puts the formula bar, and for the same reason. Inside a tab it
+  would be one press away from every gesture that moves the selection.
+
+⚠️⚠️ **AND THE LETTERBOX CLAIM IN AN EARLIER CUT OF THE STAGE RULE WAS FALSE.** It said
+`width:100%` + `aspect-ratio` + `max-height:100%` would bound the box on whichever axis ran out
+first. Measured in a browser, it does not: `max-height` clamps the **height** while the width stays
+at 100%, so on a wide window the stage came out **1412 × 551 against a sheet of 1000 × 620** —
+aspect 2.56 where the sheet is 1.61. The svg is stretched over that box with
+`preserveAspectRatio="none"`, so **every traced zone would have been drawn distorted and `ptOf()`
+would have stopped agreeing with what is on screen** — silently, and worst on the widest windows.
+
+The width has to be bounded by the height that is actually available, which is what container-query
+units buy: `100cqh` **is** the wrapper's own remaining height, whatever the ribbon above it costs
+today, so `min(100%, calc(100cqh * (W / H)))` is a real letterbox and the old hand-measured
+`calc(90vh - 360px)` chrome budget — which went stale the moment a row was added — is gone.
+⚠️ `width:100%` is declared **first** as the fallback: a browser without `cq` drops the `min()` line
+and keeps today's behaviour rather than losing the width entirely.
+
+⚠️ The foot is capped at `32vh` and scrolls on its own — it carries the "also use this plan on other
+floors" list, which on a forty-storey tower is forty rows, and uncapped it would push the drawing off
+a full-screen window.
+
+### 3 · ⚠️⚠️ AN AREA MAY NOW CARRY NO CODE — AND ONE DELETED LINE IS THE WHOLE FEATURE
+
+`zpNormPoly` opened `if (!code) return null;`, so a shape **could not exist without already
+answering** what it was: an area drawn before it was tagged vanished on the next load. That forced
+the order of work — decide, then draw — and on a floor plan the honest order is the other way round,
+because the drawing is what tells you where the boundaries fall.
+
+- ⚠️⚠️ **THE EMPTY STRING IS THE SENTINEL, NOT A RESERVED WORD**, and that is deliberate: a zone code
+  is free text a planner types, so any readable marker could collide with one. Nothing can type the
+  empty string, and every consumer already asks `if (!code)` or matches on a normalised code an
+  untagged area can never equal — so it is invisible to `zpBox`, `zpCodesOf` and the 3D lookup **by
+  construction** rather than by each of them being taught about it.
+- ⚠️ It gets a **colour of its own** rather than falling through to `zpAutoHue('')`, which hashes to
+  the **first zone hue** — an untagged area painted exactly like Zone 1 is the one thing this state
+  must never look like. Checked **before** the override map, because `bag.color['']` is a key nothing
+  can write and everything would read.
+- ⚠️ Drawn with a **dashed outline in neutral grey**: a zone drawn faintly reads as a zone somebody
+  has styled, and the planner would have no reason to go back to it.
+- ⚠️ **The brush OPENS on Untagged**, which is the owner's own order of work. It used to open on the
+  floor's first zone, so the first shape drawn was silently claimed by whichever zone sorted first —
+  and a planner who drew four areas before tagging any of them ended with four copies of Zone 1.
+- ⚠️ **Untagged leads the palette and is the way BACK**: picking it with an area selected untags it,
+  so a shape tagged by mistake is one press from being a question again rather than needing to be
+  deleted and redrawn.
+- ⚠️ A count strip reports the areas still waiting, and **Show the first** selects one — which puts
+  the palette into *"This area is"* and makes the next press the answer. It is a **count and a way
+  in, not a warning**: drawing first is the order that was asked for, so an untagged area is work in
+  progress. What it must not be is forgotten, because it is in no zone and so is scheduled against
+  nothing.
+
+#### ⚠️⚠️ TWO GUARDS WOULD HAVE MADE THE WHOLE FEATURE REFUSE TO WORK ON OPEN
+
+`addPreset` and the Trace button both began `if (!W.brush) { toast('Pick the zone… first'); return; }`.
+An empty brush **used to** mean *"nobody has said what this is"*; it now means `ZP_UNTAG`, which is
+the state the window **opens in**. Left standing, the planner's very first press of **Add** or
+**Trace** would have been met with *"Pick the zone this shape is… first"*, in the app's warning
+colour, refusing to do the one thing the owner asked for. Both removed.
+
+⚠️ Two smaller ones found with them: `Copy` toasted *"Copied the  area."* with a hole where the name
+goes (it printed the raw code, not `zpLabelOf`), and deleting the floor outline re-armed the brush
+with `ZP_ALL` — so the next shape would recreate the very thing just deleted. It falls back to
+Untagged now.
+
+### Verified
+
+**New `modules/project-schedule/test-zoneplan.js` §6 — 23 assertions**, the shipped `zpNormPoly` /
+`zpNorm` / `zpNormAll` / `zpCodesOf` / `zpBox` / `zpColorOfBag` / `zpShapeOfBag` / `zpLabelOf` sliced
+out by **name** and executed: an untagged area survives the whole-bag round trip and keeps its code
+**empty** rather than being handed an invented one; a code of nothing but spaces is untagged; but a
+two-point ring is **still dropped**, because this relaxes the CODE rule and not the geometry one.
+Its colour is its own, is **not** `zpAutoHue('')` and is not Zone 1's, and an override on the empty
+key cannot repaint it. `zpCodesOf` lists the tagged zone only, `zpBox` has no box for it — and, the
+assertion that matters, **an untagged area sitting beside Zone 1 does not widen Zone 1's box**.
+
+⚠️⚠️ **The contrast is executed against the pinned base and it BITES**: there `zpNormPoly` **drops**
+the untagged area, so draw-then-tag was impossible, and the untagged constants do not exist. A suite
+that passed on both files would prove nothing.
+⚠️ `zpShapeOfBag` **does** carry an untagged area to the stacking view, in the untagged grey — that
+is deliberate (it is part of the floor that was traced) and is asserted so it cannot be "fixed" by
+accident. It is invisible to everything keyed on a **code**, not invisible on the drawing.
+⚠️ The suite **refused to stub** and caught a genuine link failure — `zpNormHex`, reached through
+`zpNormColors` — rather than going green against a half-linked build.
+
+**The stage geometry was measured in a browser**, against the `.zpw-stagewrap` / `.zpw-stage` rules
+**sliced out of the shipped file** rather than retyped, at three viewports and three sheet aspects
+(1000×620, 1000×1400, 1000×300): every case letterboxes to the sheet's exact aspect, stays inside its
+wrapper, and is height-bound on a wide window — **1096.8 × 680 at 1600×900**, where the rejected rule
+gave 1412 × 551.
+
+**The emitted markup is tag-balanced** by a scanner that blanks comments and pulls string literals
+with a hand-rolled walker: the plan window's 733 literals balance across `div span p g svg button
+label select`, and so does the Floors & Zones step.
+
+Suites: `syntax` 4/0 · `zoneplan` **50/0** · `zoneoverlap` 57/0 · `shapeedit` 36/0 · `autotrace`
+32/0 · `sitefit` 31/0 · `towerseq` 48/0 · `cpm` 28/0 · `critwbs` 26/0 · `health` 30/0 · `wbsfile`
+33/0 · `lsm` **683/0**. `wiring-check` **139/0**. 0 NUL bytes, pure LF.
+
+⚠️ **`test-builder` is 99/1 and it is PRE-EXISTING** — *"manual: page 'Structure' belongs to a step
+the rail can show"*. Confirmed by stashing this work and running it against the unmodified file,
+where it fails identically. Not this change's, and not fixed here.
+
+⚠️ **NOT VERIFIED SIGNED IN.** The anon key has no grants, so no plan has been opened on a real
+project: the geometry is a browser measurement of the shipped CSS, the untagged state is the shipped
+functions executed against fixtures, and the ribbon's tab switching is asserted structurally. **The
+first things to try:** open a floor plan and check it fills the screen; press **Add shape** before
+touching the palette (it must draw, not refuse); and check the Arrange tab's buttons read `-90°` /
+`Flip H` / `Left` rather than boxes.
+
+### Also in this commit — the row the previous turn did not ship
+
+*"remove the one in the second image. It is of no use."* The **Activity level (whole project)** band
+— an uppercase label, a 240px select and the sentence *"Remaps the whole builder."* — stood between
+the tower bar and the trade chips for one answer given once per project.
+
+⚠️⚠️ **THE SELECT IS FILED, NOT DELETED, and that distinction is load-bearing:** it is the **only
+writer of `cfg.locLevel` anywhere in the app**, so a project already saved on *Floor level* would
+have had no route back to Auto — the zone controls stay hidden on every floor row while it is set, so
+the step would look broken with nothing on screen explaining why. It moves onto the **Location
+breakdown** bar, which already states which location levels the project HAS; this says which of them
+the schedule is generated at. ⚠️ Only the Floors & Zones step passes `level:true` — the import path's
+own step and the WBS screen show that bar for reference and do not own the builder's leaf level.
+⚠️ Its long explanation moved into the `title`, and `width:auto` is explicit, because this control
+has been clipped to *"Aut"* once already by a 62px rule it was never written for.
+
 ## 2026-09-17 (zzb) — Drag a class code onto the grid; Interior/Exterior become Internal/External; the grid drops a rung
 
 Owner, three items on **Schedule Setup ▸ Activities**: *"for activities, add option to drag and drop

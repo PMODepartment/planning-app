@@ -104,6 +104,64 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (au) — The "symbol" was thirty bare arrow glyphs; the floor-plan editor goes full screen behind a ribbon; an area can be drawn before it is tagged
+
+Owner, three items on Schedule Setup: *"firstly, the symbol of 13 still remains. fix that."*, *"when
+defining the plan per floor, make it full screen, and hopefully the controls are similar to an excel
+format wherein there is like a ribbon taskbar on top"*, and *"allow users to define the shapes /
+trace zones first, before tagging which zones are those."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzr)`. Logged
+here for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **A GREP FOR LITERAL BYTES CANNOT FIND A GLYPH DEFECT, AND MINE MISSED 26 OF 30.** The `(as)`
+pass read the owner's screenshot as the tower bar's `⋯` and was wrong — which is why it came back.
+Enumerating properly this time found the plan editor writes its arrows as **HTML entities**
+(`&#8630;`, `&#8646;`, `&#8676;`), so they are **pure ASCII in the source** and invisible to any byte
+scan, while the browser renders U+21B6 / U+21C6 / U+21E4 and friends. All 30 sat in **small square
+buttons with no text beside them**, and supplemental arrows are absent from a great many Windows font
+stacks — so the whole row draws as tofu boxes carrying their own hex digits, which is the thing that
+was photographed. **Scan the rendered codepoints, not the file's bytes**, and treat a bare symbol in
+an unlabelled button as a defect class rather than an instance.
+
+⚠️⚠️ **`width:100%` + `aspect-ratio` + `max-height:100%` IS NOT A LETTERBOX, and an earlier cut of
+this work claimed it was.** Measured in a browser: `max-height` clamps the **height** while the width
+stays at 100%, so a stage meant to hold a 1000×620 sheet came out **1412 × 551** on a wide window.
+The svg is stretched over that box with `preserveAspectRatio="none"`, so every traced zone would have
+been drawn **distorted** and the pointer-to-plan-unit conversion would have stopped agreeing with the
+screen — silently, and worst on the widest windows. Bounding the width by the height that is actually
+available needs container-query units (`100cqh`), with `width:100%` declared **first** so a browser
+without `cq` keeps today's behaviour rather than losing the width entirely.
+
+⚠️⚠️ **A SENTINEL THAT MEANS "NOT ANSWERED YET" SHOULD BE THE EMPTY STRING, NOT A READABLE MARKER.**
+A zone code is free text a planner types, so any word could collide with one. The empty string cannot
+be typed, and every consumer already asks `if (!code)` — so an untagged area is invisible to every
+lookup **by construction** rather than by each of them being taught about it. ⚠️ The cost to watch
+for is the opposite direction: two guards elsewhere read a falsy value as *"nothing chosen"* and
+would have refused the first press of **Add** and **Trace** on every open, in the app's warning
+colour, refusing to do the one thing the feature exists for.
+
+**Verified:** 23 new assertions executing the shipped normaliser and readers, gated against a pinned
+base that must **drop** an untagged area (a suite passing on both files proves nothing); the stage
+geometry measured in a browser against CSS **sliced out of the shipped file** at three viewports ×
+three sheet aspects; the emitted markup tag-balanced by a comment-blanking scanner. Twelve module
+suites green — `zoneplan` **50/0**, `lsm` **683/0**, `syntax` 4/0, plus nine others — and
+`wiring-check` **139/0**. ⚠️ `test-builder` **99/1** is **pre-existing**, confirmed by stashing this
+work and re-running against the unmodified file.
+
+⚠️ **The glyph rewrite is count-asserted rule by rule and ABORTS before writing on a miscount** — a
+silent partial rewrite of a 50,000-line file is far worse than a script that refuses to run, and the
+guard bit twice (two controls each had a toolbar copy *and* a right-click-menu copy where I had
+asserted one).
+
+⚠️ **Not verified signed in**, and ⚠️ **I cannot prove which of the 30 was photographed** — a 33×28
+thumbnail does not carry a codepoint. What is proved is that the class is gone from both screens the
+owner named; if a box survives it is elsewhere, and a hard refresh is worth trying first, since a
+module page is cached at `index.html?v=MODULE_V`.
+
+`MODULE_V` → `20260917zzr`, re-derived from the remote **after** rebasing onto it (which had already
+moved to `zzq`) and sort-checked as a plain string.
+
 ### 2026-09-17 (at) — Schedule Setup ▸ Activities: drag a class code onto the grid, and Interior/Exterior become Internal/External
 
 Owner's three remaining items on that step: *"add option to drag and drop from all class codes to

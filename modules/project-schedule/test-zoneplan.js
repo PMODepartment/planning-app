@@ -45,6 +45,13 @@ function buildMapper(src) {
     S.sliceVarLine('GLABEL'), S.sliceVarLine('GWORK'),
     S.sliceVarLine('ZP_HUES'), S.sliceVarLine('ZP_EDGES')
   ];
+  /* ⚠️ The UNTAGGED constants, linked from the module's OWN declaration and never stubbed — a
+     stubbed colour would make this suite agree with itself rather than with the app.
+     ⚠️ Guarded because the pinned contrast base predates them: it neither declares them nor
+     reads them, so a hard slice would fail the base for the wrong reason. */
+  ['ZP_UNTAG', 'ZP_UNTAG_COLOR'].forEach(function (n) {
+    try { parts.push(S.sliceVarLine(n)); } catch (e) { /* base build: not declared */ }
+  });
   ['floorKind', 'zpH', 'zpNewId', 'zpBlank', 'zpClamp', 'zpNormCode', 'zpNormFront', 'zpNormMark',
    'zpNormPoly', 'zpNorm', 'zpNormColors', 'zpNormAll', 'zpAutoHue', 'zpColorOfBag', 'zpShapeOfBag',
    'zpByLabelOf'].forEach(n => parts.push(S.sliceFn(n)));
@@ -191,7 +198,96 @@ const mapOf = buildMapper(src);
   eq(bbox(L.forFn('— No level —', null, 'Tower 2')).w, 0.5, 'the band resolves, whichever tower asks (2)');
 }
 
-/* ---- 6 · THE CONTRAST: the pinned base must reproduce the collapse ------------------------- */
+/* ---- 6 · DRAW FIRST, TAG AFTER — an area that carries no code ------------------------------
+   Owner 2026-09-17: *"allow users to define the shapes / trace zones first, before tagging which
+   zones are those or if that zone is the whole floor etc."*
+
+   ⚠️⚠️ THE WHOLE FEATURE RESTS ON ONE DELETED LINE — `zpNormPoly`'s `if (!code) return null;`.
+   Every claim made in its place is asserted here against the SHIPPED functions: that an untagged
+   area survives a save/load round trip, that it is invisible to the consumers keyed on a code,
+   and that it cannot be mistaken on screen for Zone 1. The contrast in §7 runs the first of
+   those against the pinned base, which must still drop it.
+   ⚠️ Its own builder, because these are the sanitiser and the readers rather than the map: the
+   map builder returns `zpByLabelOf` alone and stubbing a second return out of it would make the
+   two halves of this file disagree about what was linked. */
+function buildZones(source) {
+  const S = makeSlicer(source);
+  const parts = [
+    'var ZP_W = 1000, ZP_HDEF = 620, ZP_MAXPTS = 60;',
+    S.sliceVarLine('ZP_HUES'), S.sliceVarLine('ZP_EDGES'),
+    S.sliceVarLine('ZP_ALL'), S.sliceVarLine('ZP_ALL_LABEL')
+  ];
+  /* ⚠️ Guarded exactly as in `buildMapper`: the pinned base declares none of these, and a hard
+     slice would fail the contrast for the wrong reason — missing constants rather than the
+     behaviour being contrasted. `has` is what the assertions below branch on. */
+  let has = true;
+  ['ZP_UNTAG', 'ZP_UNTAG_LABEL', 'ZP_UNTAG_COLOR'].forEach(function (n) {
+    try { parts.push(S.sliceVarLine(n)); } catch (e) { has = false; }
+  });
+  const fns = ['zpH', 'zpClamp', 'zpNewId', 'zpBlank', 'zpNormCode', 'zpNormFront', 'zpNormMark',
+    'zpNormPoly', 'zpNorm', 'zpNormHex', 'zpNormColors', 'zpNormAll', 'zpAutoHue', 'zpColorOfBag',
+    'zpShapeOfBag', 'zpCodesOf', 'zpBox', 'zpIsAll', 'zpLabelOf'];
+  fns.forEach(n => parts.push(S.sliceFn(n)));
+  if (has) parts.push(S.sliceFn('zpIsUntagged'));
+  const api = '{ has: ' + has + ', norm: zpNorm, normAll: zpNormAll, normPoly: zpNormPoly,' +
+    ' codesOf: zpCodesOf, box: zpBox, colorOf: zpColorOfBag, shapeOf: zpShapeOfBag,' +
+    ' autoHue: zpAutoHue, labelOf: zpLabelOf, isAll: zpIsAll,' +
+    ' UNTAG: ' + (has ? 'ZP_UNTAG' : 'null') + ', COLOR: ' + (has ? 'ZP_UNTAG_COLOR' : 'null') + ' }';
+  return new Function(parts.join(String.fromCharCode(10)) + ';return ' + api + ';')();
+}
+
+const Z = buildZones(src);
+ok(Z.has, 'the untagged constants are declared in the shipped file');
+{
+  // one tagged area and one that nobody has said anything about yet
+  const plate = { h: 620, polys: [rect('Z1', 100, 100, 400, 500),
+                                  { id: 'qU', code: '', pts: [[500, 100], [900, 100], [900, 500], [500, 500]] }] };
+
+  /* ---- it survives being saved and loaded ---- */
+  eq(Z.norm(plate).polys.length, 2, 'an untagged area survives zpNorm — the deleted `if (!code)`');
+  const bag = Z.normAll({ plate: { pA: plate }, of: { f1a: 'pA' } });
+  eq(bag.plate.pA.polys.length, 2, 'and the whole-bag round trip keeps it too');
+  eq(bag.plate.pA.polys[1].code, '', 'and keeps its code EMPTY rather than inventing one');
+  ok(Z.normPoly({ code: '   ', pts: plate.polys[1].pts }, 620) !== null,
+    'a code of nothing but spaces is untagged, not a poly to throw away');
+  ok(Z.normPoly({ code: '', pts: [[0, 0], [10, 0]] }, 620) === null,
+    'but a two-point ring is still dropped — untagged relaxes the CODE rule, not the geometry one');
+
+  /* ---- what it is called ---- */
+  eq(Z.labelOf(''), 'Untagged', 'zpLabelOf names it');
+  eq(Z.labelOf('*floor*'), 'Whole floor', 'and still names the floor outline');
+  eq(Z.labelOf('Z1'), 'Z1', 'and leaves a real zone alone');
+  ok(!Z.isAll(''), 'untagged is NOT the whole-floor outline — the two states cannot collide');
+
+  /* ---- what colour it is ---- */
+  eq(Z.colorOf(bag, ''), Z.COLOR, 'it gets its own colour');
+  /* ⚠️⚠️ THE CLAIM THE COMMENT MAKES: falling through to `zpAutoHue('')` would hash to the FIRST
+     zone hue, so an untagged area would be painted exactly like Zone 1 — the one thing this
+     state must never look like. */
+  ok(Z.colorOf(bag, '') !== Z.autoHue(''), 'and NOT the hash of the empty string');
+  ok(Z.colorOf(bag, '') !== Z.colorOf(bag, 'Z1'), 'and not Zone 1’s colour');
+  const over = Z.normAll({ plate: { pA: plate }, of: { f1a: 'pA' }, color: { '': '#ff0000' } });
+  eq(Z.colorOf(over, ''), Z.COLOR, 'an override on the empty key cannot repaint it — checked first');
+
+  /* ---- and that every consumer keyed on a code simply does not see it ---- */
+  const p = Z.norm(plate);
+  eq(Z.codesOf(p).length, 1, 'zpCodesOf lists the tagged zone only');
+  eq(Z.codesOf(p)[0], 'Z1', 'and it is the right one');
+  ok(Z.box(p, '') === null, 'zpBox has no box for it');
+  /* ⚠️ The untagged area spans x 500..900 and Z1 spans 100..400. If zpBox let an empty code match
+     anything, Z1's box would stretch to 800 wide instead of 300. */
+  eq(Z.box(p, 'Z1').w, 0.3, 'and an untagged area sitting beside a zone does not widen that zone');
+
+  /* ---- what DOES carry it: the outline handed to the 3D view ---- */
+  /* ⚠️ DELIBERATE, and asserted so it cannot be "fixed" by accident: an untagged area is part of
+     the floor that was traced, so the stacking draws it — in the untagged grey, tagged as no
+     zone. It is invisible to everything keyed on a CODE, not invisible on the drawing. */
+  const sh = Z.shapeOf(bag, p);
+  eq(sh.polys.length, 2, 'zpShapeOfBag carries the untagged area to the stacking view');
+  eq(sh.polys[1].color, Z.COLOR, 'in the untagged colour, so it reads as unfinished there too');
+}
+
+/* ---- 7 · THE CONTRAST: the pinned base must reproduce the collapse ------------------------- */
 {
   let base = null;
   try {
@@ -212,6 +308,16 @@ const mapOf = buildMapper(src);
     ok(b1.w === b2.w, 'BASE: and both towers are the same building');
     const now = bbox(buildLookup(src, mapOf(cfgBothTowers())).forFn('F1', null, 'Tower 1'));
     ok(now.w !== b1.w, 'BASE vs now: the same fixture answers differently');
+
+    /* ⚠️⚠️ AND THE CONTRAST FOR §6. The base must THROW THE UNTAGGED AREA AWAY — that is the
+       behaviour the owner's ask exists to change, and a §6 that passed on both files would be
+       asserting nothing about this change. */
+    const bZ = buildZones(base);
+    ok(!bZ.has, 'BASE: the untagged constants do not exist yet');
+    const bPlate = { h: 620, polys: [rect('Z1', 100, 100, 400, 500),
+                                     { id: 'qU', code: '', pts: [[500, 100], [900, 100], [900, 500], [500, 500]] }] };
+    eq(bZ.norm(bPlate).polys.length, 1, 'BASE: the untagged area is DROPPED — draw-then-tag was impossible');
+    eq(Z.norm(bPlate).polys.length, 2, 'BASE vs now: the same plate survives differently');
   }
 }
 
