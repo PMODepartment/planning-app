@@ -4295,6 +4295,10 @@
     .sbld-hold-item:hover { background:var(--pd-bg); }
     .sbld-hold-item.sel { outline:2px solid var(--pd-red); outline-offset:1px; background:var(--pd-red-light,rgba(238,49,36,.08)); }
     .sbld-hold-desc { font-size:var(--pd-fs-sm); font-weight:700; line-height:1.2; }
+    /* ⚠ Both of these were inline `font-size` literals (10.5px / 11.5px) — off the scale by a
+       pixel each, and in a JS string where no stylesheet sweep would ever see them. */
+    .sbld-hold-n { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-hold-empty { padding:10px; font-size:var(--pd-fs-xs); }
     .sbld-hold-code { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
@@ -35896,8 +35900,11 @@
      remembered index would point at a different step on the other path. */
     var STEP_TABS = {
       'Activities': [
-        { k: 'acts', t: 'Activities',            sub: 'class-code list + duration', fn: function (h) { stActivities(h); } },
-        { k: 'lib',  t: 'Construction Library', sub: 'places, groupings and items', fn: function (h) { stLibrary(h); } }
+        /* ⚠ `true` is `noHead`: the tabbed shell emits the one heading and the one lede, exactly
+           as the Project Phases step does for its two halves. Without it each view adds a second
+           of each under the tab strip. */
+        { k: 'acts', t: 'Activities',            sub: 'class-code list + duration', fn: function (h) { stActivities(h, true); } },
+        { k: 'lib',  t: 'Construction Library', sub: 'places, groupings and items', fn: function (h) { stLibrary(h, true); } }
       ],
       /* ⚠ Repetition draws its own tab strip (see `stRepetition`) — only the SELECTION lives
          here, so the footer's Next/Back walk these five before moving on to Generate. No `sub`
@@ -35938,7 +35945,10 @@
     function stTabbed(host, title, lede) {
       var T = stepTabs(title), k = stepTabKey(title);
       var cur = T.filter(function (x) { return x.k === k; })[0] || T[0];
-      host.innerHTML = '<h2>' + _stepNo(title) + ' · ' + e2(title) + ' — ' + e2(cur.t) + '</h2>' +
+      /* ⚠ “Activities — Activities” is what this produced on the first tab. A view named after
+         its own step adds nothing to the heading; the strip below already shows which is on. */
+      host.innerHTML = '<h2>' + _stepNo(title) + ' · ' + e2(title) +
+          (cur.t === title ? '' : ' — ' + e2(cur.t)) + '</h2>' +
         (lede ? '<p class="sbld-lede">' + lede + '</p>' : '') +
         '<div class="sbld-strtabs" role="tablist">' +
         T.map(function (x) {
@@ -36768,7 +36778,7 @@
       h += n.kids.map(function (k) { return libNodeHTML(k); }).join('');
       return h;
     }
-    function stLibrary(host) {
+    function stLibrary(host, noHead) {
       // ⚠️ All three are per-render: the node registry the menus index into, the render order a
       // shift-click range walks, and any menu left open over the pane this call is replacing.
       _libNodes = [];
@@ -36829,14 +36839,15 @@
           }).join('') + '</div></div>') +
         '</div></div>';
 
-      // ⚠️ No <h2>: this is the Construction Library TAB of the Activities step, and stTabbed
-      // owns the heading and the tabs. The lede stays — it describes THIS view's two panes.
-      host.innerHTML =
-        '<p class="sbld-lede">The two halves of the <b>execution phase</b> this schedule is read through: <b>where</b> the work happens ' +
-        'on the left, and <b>what</b> the work is on the right. A migrated schedule already names both in its WBS — ' +
-        'read them in rather than typing them, then correct what the reader got wrong.</p>' +
+      // ⚠️ No <h2> ever, and no lede under `noHead`: this is the Construction Library TAB of
+      // the Activities step, and the tabbed shell emits the one heading and the one lede. Its
+      // lede described “where the work happens on the left, what the work is on the right” — which
+      // is the two panes directly below it, each with its own header.
+      host.innerHTML = (noHead ? '' :
+        '<p class="sbld-lede"><b>Where</b> the work happens on the left, <b>what</b> the work is on the right.</p>') +
         '<div class="sbld-libbar">' +
-          '<button class="pd-btn pd-btn-primary" id="b-libloc"' + (imported ? '' : ' disabled title="This project has no imported WBS branches to read"') + '>Read locations from the WBS…</button>' +
+          '<button class="pd-btn pd-btn-primary" id="b-libloc"' +
+            (imported ? ' title="An imported schedule already names its floors and zones in the WBS — read them in rather than typing them, then correct what the reader got wrong."' : ' disabled title="This project has no imported WBS branches to read"') + '>Read locations from the WBS…</button>' +
           '<button class="pd-btn" id="b-libtrade"' + (imported ? '' : ' disabled title="This project has no imported WBS branches to read"') + '>Match WBS to trades…</button>' +
           '<span class="sbld-libspacer"></span>' +
           '<button class="pd-btn" id="b-libgoloc">Edit floors &amp; zones →</button>' +
@@ -37268,7 +37279,7 @@
       }
       return '<span class="sbld-liblvpick">' + b(lv - 1, '‹', 'out') + b(lv + 1, '›', 'in') + '</span>';
     }
-    function stActivities(host) {
+    function stActivities(host, noHead) {
       var cols = XL_COLS;
       var CW = function (c) { return xColW[c.k] || (c.w || (c.k === 'name' ? 260 : 110)); };
       var totalW = 40 + cols.reduce(function (t, c) { return t + CW(c); }, 0) + 40;
@@ -37309,7 +37320,7 @@
           '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
       }).join('');
       var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
-        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') +
+        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
         /* ⚠️ The BOQ button is FIRST and primary. It loads the codes this project is actually
            priced on — a few dozen — where + Library loads the whole 197-entry chart; and its codes
            are the ones that resolve as a `class_code` (see loadBoqCodes). Offering the general
@@ -37319,10 +37330,14 @@
            it lives in the title, which is where the long form belongs. */
         '<button class="pd-btn pd-btn-primary sbld-libbtn" id="b-boq" title="Load only the class codes this project&rsquo;s current BOQ carries, from Contracts &amp; Claims">+ From BOQ</button>' +
         '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
-        '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty" style="padding:10px;font-size:11.5px;">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
+        '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
-      host.innerHTML = '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
-        '<p class="sbld-lede">The class codes this programme is built from — code, name, trade, <b>scope</b> and its interior/exterior duration — as a spreadsheet, beside a holding list of every code available.</p>' +
+      /* ⚠ Both suppressed under `noHead`. The lede enumerated “code, name, trade, scope and its
+         interior/exterior duration” — which is the grid's own column headers, read out in prose
+         directly above the grid. Kept when this view is opened on its own. */
+      host.innerHTML = (noHead ? '' :
+        '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
+        '<p class="sbld-lede">The class codes this programme is built from, as a spreadsheet, beside a holding list of every code available.</p>') +
         /* ⚠️ Counted, not implied. A per-cell mark alone is easy to scroll past; the number
            is what tells the planner whether this is one typo or the whole programme. */
         (_badCodeN ? '<p class="pd-caution" style="margin:0 0 8px;"><b>' + _badCodeN +

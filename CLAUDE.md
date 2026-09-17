@@ -104,6 +104,89 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (x) — The Activities step still had the doubled heading from the owner's screenshot
+
+Owner: *"continue with activities"* — page three of the 4.1 pass.
+
+### ⚠️⚠️ IT IS THE SAME DEFECT HE PHOTOGRAPHED, STILL LIVE
+
+Rendered, the Activities step read:
+
+> **3 · Activities — Activities**
+> Two views of one list. **Activities** is what is being built and how long each takes; **Construction
+> Library** is those same items arranged by place and grouping.
+> `[ Activities | Construction Library ]`
+> **3 · Activities & required duration**
+> The class codes this programme is built from — code, name, trade, **scope** and its
+> interior/exterior duration — as a spreadsheet, beside a holding list of every code available.
+
+Two headings, two ledes, and the tab name repeating the step name. That is **exactly** the shape of
+the screenshot the owner sent this morning — *"3 · Project phases — Project phases"* followed by
+*"3 · The phases either side of construction"*. Project Phases stopped showing it because that step
+was merged into one page and lost its tabs, which removed the symptom and left the cause in the
+shell. Activities genuinely needs its two views, so this time the **shell** is fixed:
+
+- the heading drops the repetition when the view's name *is* the step's name — `3 · Activities` on the
+  first tab, `3 · Activities — Construction Library` on the second;
+- both views are dispatched with `noHead`, the flag they already understand from Project Phases as
+  *"the step above owns the introduction"*.
+
+`stActivities`'s lede enumerated *"code, name, trade, scope and its interior/exterior duration"* —
+which is the grid's own column headers, read out in prose directly above the grid. `stLibrary`'s said
+*"**where** the work happens on the left, **what** the work is on the right"* — which is the two panes
+below it, each with its own header. Both are suppressed under `noHead` and kept, shortened, for when
+a view is opened on its own. The one sentence in the Library lede that was **not** restating the
+screen — that an imported schedule already names its floors and zones in the WBS and can be read in
+rather than retyped — moves onto the **Read locations from the WBS…** button's `title`, where it is
+read at the moment it can be acted on.
+
+### ⚠️ Two off-scale sizes the previous pass reported as zero
+
+*(t)* and *(u)* both claimed the Setup was entirely on the type scale. That was true of its **CSS
+rules** and the scan that produced it only read rules. These two were `style=` attributes inside JS
+strings — `font-size:10.5px` on the holding list's "N ticked" count and `font-size:11.5px` on its
+empty state. Both are a rung missed by a single pixel (`--pd-fs-micro` is 10, `--pd-fs-xs` is 11),
+and no stylesheet sweep would ever have seen them. They are `.sbld-hold-n` and `.sbld-hold-empty`
+now, and there is a scanner for the blind spot: **3 remain**, in `stLevels` (×2) and `stScope`, which
+are pages 4 and 5 of this pass and will be fixed there.
+
+### ⚠️⚠️ THE HARNESS LIED THREE MORE TIMES, AND THE THIRD IS THE INSTRUCTIVE ONE
+
+1. **Built-ins resolved to the no-op.** The scope proxy answered *every* identifier, so `String`,
+   `Math`, `JSON` and `Date` were the stub rather than the global. A real global now wins over the
+   catch-all; only genuinely unknown names get a no-op.
+2. **The no-op returned its target instead of itself**, so a property chain died at the second hop —
+   `document.documentElement.classList` was `undefined`, which reads as a missing DOM rather than a
+   missing stub.
+3. **`with` was INSIDE the compiled function, so it shadowed that function's own parameters.**
+   `stTabbed(host, title, lede)` had all three answered by the scope object, and the heading rendered
+   as `"? ·  — Activities"` — the title the caller passed thrown away. Moving the `with` outside the
+   function is what JavaScript scoping already does correctly, and it made the earlier `host` /
+   `noHead` special-case unnecessary, so that went too.
+
+And the one worth writing down: **the harness's tab table was a hand-written copy of `STEP_TABS`.**
+The fix under test was a change to how those entries *call* their views (`stActivities(h, true)`), so
+the copy went on calling them the old way and the harness reported the defect as **unfixed** after it
+had been fixed. It now reads the shipped `STEP_TABS` out of the source and evaluates it with the
+compiled views. *A stub of a rule is a second copy of that rule* — this repo's own words, and this is
+the second time this week they have been earned.
+
+### Left alone, deliberately, with the measurement
+
+The Setup has **three** table-header treatments: `.pd-table th` (the app's own — 11px/700/uppercase/
+muted), `.pscl-tbl th` (the same, one weight heavier at 800) and `table.sbld-xl thead th` (12.5px/700,
+normal case). The spreadsheet grid's is arguably right *as a spreadsheet* and the `.pscl-tbl` one is
+probably drift, but both belong to pages not yet reviewed, and the last blanket weight sweep in this
+repo got ten cases wrong. They are recorded here rather than swept.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline
+scripts parse · CSS brace balance identical to pinned `33542aa`, file genuinely differs · no NUL
+bytes · 0 off-scale font-size **rules** in the Setup. Rendered against the shipped stylesheet with the
+shipped renderers and the shipped `STEP_TABS`: Activities is **one** `<h2>` (`3 · Activities`) and
+**one** lede, was two of each; Project Phases unchanged at one and one; **193 elements Gotham, 0
+Arial**; **0 elements with text cut** (`overflow:hidden` and wider than its box — the grid's own
+horizontal scroller is excluded, it is a scroller by design). `modules-grid.js` `?v=` → `20260917zn`.
+
 ### 2026-09-17 (w) — Project Phases printed its own lede twice, and that one was mine
 
 ⚠️ Re-lettered from `(v)` on rebase: a concurrent session landed its own 2026-09-17 `(v)` (below)
