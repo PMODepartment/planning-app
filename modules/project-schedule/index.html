@@ -1742,9 +1742,16 @@
     .ps-mile.ps-crit { outline:2px solid #f59e0b; }
     .ps-critrow .c-name { color:var(--pd-red); font-weight:700; }
     /* Critical-path focus: dim everything non-critical so the chain stands out */
+    /* ⚠️⚠️ `.ps-sum` WAS DIMMED UNCONDITIONALLY, and that is the whole of the owner's report.
+       Every WBS bracket faded to 22% in critical mode — including the branches the critical chain
+       runs straight through — so the view that exists to answer "where is the critical work" hid
+       the structure that says where. A bracket now dims only if nothing under it is critical. */
     .ps-gantt-pane.ps-critmode .ps-bar:not(.ps-crit),
-    .ps-gantt-pane.ps-critmode .ps-sum,
+    .ps-gantt-pane.ps-critmode .ps-sum:not(.ps-crit),
     .ps-gantt-pane.ps-critmode .ps-mile:not(.ps-crit) { opacity:.22; }
+    /* The bracket takes the same amber the critical bars wear. `outline`, not `box-shadow`: a
+       bracket is a thin rule and a shadow hugging it reads as a thicker bar. */
+    .ps-sum.ps-crit { outline:2px solid #f59e0b; outline-offset:1px; }
     .ps-grid-scroll.ps-critmode .ps-grid-row:not(.ps-critrow):not(.ps-wbs-row):not(.ps-group-row) { opacity:.5; }
     /* Progress Spotlight: highlight activities that should have progressed in the advanced window */
     .ps-bar.ps-spot { outline:2px solid #2563EB; outline-offset:1px; box-shadow:0 0 0 1px #2563EB; }
@@ -10302,6 +10309,9 @@
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
   var _sorted = [], _min = null, _max = null, _spanMap = {}, _blSpanMap = {}, _costMap = {}, _seqByCode = {};
+  /* Which WBS branches contain critical work — keyed by dotted code and by real node id, exactly
+     like _spanMap / _spanMapN, because the codes and the tree can disagree. See the span pass. */
+  var _critMap = {}, _critMapN = {};
   // The same two span roll-ups keyed by wbs_node_id instead of by dotted code — the tree the WBS
   // Manager shows, rather than whatever the code strings currently spell. See the note in rebuild().
   var _spanMapN = {}, _blSpanMapN = {};
@@ -10507,6 +10517,16 @@
     // pass is about to recompute, so carrying it over would date the display from the previous state.
     _clearMainOnlyShift();
     _spanMap = {}; _blSpanMap = {}; _spanMapN = {}; _blSpanMapN = {};
+    /* ⚠️⚠️ THE CRITICAL PATH ROLLS UP TOO. Owner 2026-09-17: *"can we have a feature to have
+       the critical path also show up to WBS level."* It could not: `_critical` is set by
+       `computeCPM` on ACTIVITIES only, and in critical mode the pane dimmed
+       `.ps-gantt-pane.ps-critmode .ps-sum` unconditionally — every summary bracket faded to 22%,
+       including the branches the critical chain actually runs through. So the one view that is
+       supposed to answer "where is the critical work" hid the structure that says where.
+       ⚠️ Ridden along with the span pass rather than added as a second walk: same rows, same
+       `codes`/`nodes` ancestry, same memo. This runs on 4k-activity projects and a second traversal
+       would cost what that pass was rewritten to stop costing. */
+    _critMap = {}; _critMapN = {};
     // ⚠️ Hoisted so the span pass and the cost pass below share ONE parent map and one memo. Walking
     // WBS_NODES.find() per row per level is O(rows x depth x nodes), and this runs on 4k-activity
     // projects; building it twice was pure waste on top of that.
@@ -10534,6 +10554,12 @@
       // ⚠️ And up the REAL tree. This is the half that makes a branch report its descendants when the
       // codes have drifted — see the note above this function.
       var nodes = _ancNodes(r.wbs_node_id);
+      /* ⚠️ Marked from the ACTIVITY's own flag, before any date test: a critical activity with
+         no dates still makes its branch critical, and the span merge below would have skipped it. */
+      if (r._critical) {
+        for (var _ci = 0; _ci < codes.length; _ci++) _critMap[codes[_ci]] = true;
+        for (var _ni = 0; _ni < nodes.length; _ni++) _critMapN[nodes[_ni]] = true;
+      }
       var s = pd(dispStart(r)), e = pd(dispFin(r)); if (s || e) { if (!s) s = e; if (!e) e = s;
         _mergeSpan(_spanMap, codes, +s, +e); _mergeSpan(_spanMapN, nodes, +s, +e); }
       // Baseline roll-up (BL0) — same tree walk, from bl_start/bl_finish, so WBS summaries get a
@@ -14445,6 +14471,18 @@
   function wbsSpan(w) {
     var m = _dspan[dcode(w)] || (w.wbs_node_id ? _spanMapN[w.wbs_node_id] : null); if (!m) return null;
     return { s: new Date(m.s), e: new Date(m.e) };
+  }
+  /* ==== DOES THIS BRANCH CONTAIN CRITICAL WORK? =============================================
+     Owner 2026-09-17: *"can we have a feature to have the critical path also show up to WBS
+     level."* Filled by the span pass — see `_critMap` there.
+     ⚠️ Both keys are tried, in the same order and for the same reason as `wbsSpan` above: a
+     branch is found by its dotted code OR by its real node id, because imported codes and the real
+     tree routinely disagree and a branch that answers to only one of them must still light up. */
+  function wbsIsCritical(w) {
+    if (!w) return false;
+    return !!(_critMap[dcode(w)] ||
+              (w.wbs_node_id && _critMapN[w.wbs_node_id]) ||
+              (w.wbs && _critMap[w.wbs]));
   }
   // Rolled-up BASELINE span for a WBS summary.
   function wbsBlSpan(w) {
@@ -24493,7 +24531,7 @@
     var durShown = durDone ? actualDurLive(r) : dur; if (durShown == null) durShown = '';
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
     var fmt = _fmtRules.length ? _rowFmt(r) : null;
-    return '<div class="ps-grid-row' + altc + _scopeDimCls(r) + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + (isChangeOrder(r)?' ps-corow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
+    return '<div class="ps-grid-row' + altc + _scopeDimCls(r) + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && (r._critical || (isWbs(r) && wbsIsCritical(r))))?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + (isChangeOrder(r)?' ps-corow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
       '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text" style="padding-left:' + idPad + 'px;">' + esc(r.activity_id || '') + '</div>' +
       // ⚠️ _dlabel = this row IS the deepest grouping level (a one-activity bucket merged into its
@@ -26316,7 +26354,11 @@
       if (r._dkind === 'group') sumPct = r._gpct || 0;
       var _gBg = _gce ? catTint(_gce.color) : (wcS ? 'background:' + wcS + ';' : '');
       var _fillStyle = _gce ? catStyle(_gce.color, _gce.tex) : '';
-      out += '<div class="ps-sum' + (_segs ? ' ps-sum-comp' : '') + _coSum + (r._dkind === 'group' ? (_gce ? ' ps-sum-gcat' : ' ps-sum-group') : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + _gBg + '">' +
+      /* ⚠️ In critical mode a bracket that contains critical work keeps its opacity and takes the
+         same amber outline the critical bars wear — see `.ps-sum.ps-crit`. Outside critical mode
+         this is empty, so nothing about the normal Gantt changes. */
+      var _sumCrit = (critMode && wbsIsCritical(r)) ? ' ps-crit' : '';
+      out += '<div class="ps-sum' + (_segs ? ' ps-sum-comp' : '') + _coSum + _sumCrit + (r._dkind === 'group' ? (_gce ? ' ps-sum-gcat' : ' ps-sum-group') : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + _gBg + '">' +
         ((sumPct > 0) ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;' + _fillStyle + '"></i>' : '') + '</div>';
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
@@ -52446,6 +52488,38 @@
     function onVScroll() { if (winRaf) return; winRaf = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { winRaf = false; renderWindow(); }); }
     gs.addEventListener('scroll', function () { if (gHead) gHead.scrollLeft = gs.scrollLeft; if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; } onVScroll(); });
     gz.addEventListener('scroll', function () { if (!lock) { lock = true; gs.scrollTop = gz.scrollTop; lock = false; } gh.scrollLeft = gz.scrollLeft; onVScroll(); });
+
+    /* ==== RIGHT-CLICK ON A BAR, NOT JUST ON ITS ROW =========================================
+       Owner 2026-09-17: *"should we allow to right click in the schedule?"* It already was — on the
+       ACTIVITY GRID, where `openRowMenu` has had a full menu with Excel-style selection for a long
+       time. The Gantt pane had nothing, so a right-click on a BAR fell through to the browser's own
+       menu (Back / Refresh / Save as …), which is what the owner's screenshot shows. Two halves of
+       one screen answering the same gesture differently is worse than neither answering it.
+       ⚠️⚠️ THE SAME MENU, NOT A SECOND ONE. `openRowMenu` is reused verbatim, so the bar and
+       its row offer exactly the same verbs and a change to one can never drift from the other.
+       ⚠️ ONE LISTENER ON THE PANE, resolved with `closest()` — the same reasoning as the grid's
+       own: this pane re-serialises every bar on each repaint, and binding per bar would mean a
+       handler per activity on a 2,500-activity schedule.
+       ⚠️ A right-click on EMPTY chart space is deliberately left to the browser. Suppressing
+       the native menu over background buys nothing and takes away Inspect — the rule the Schedule
+       Builder's pane already states in as many words. */
+    gz.addEventListener('contextmenu', function (e) {
+      var el = e.target && e.target.closest
+        ? e.target.closest('.ps-bar[data-id], .ps-sum[data-id], .ps-mile[data-id]') : null;
+      if (!el) return;                                  // empty space: the browser keeps it
+      var id = el.dataset.id;
+      var r = rows.find(function (x) { return x.id === id; });
+      if (!r) return;
+      e.preventDefault();
+      /* Selection follows the click exactly as the grid's handler does: a bar outside the current
+         selection selects just it; a bar inside one keeps the whole selection so the verb applies
+         to all of it. */
+      if (!_selSet.has(id)) { _selSet = new Set([id]); _selAnchor = id; }
+      selId = id;
+      _wbsSel = r.wbs_node_id || null;
+      highlightRow();
+      openRowMenu(e, r);
+    });
     /* ⚠️⚠️ TWO ZOOMS, SPLIT BY WHICH PANE THE POINTER IS OVER — no modifier to remember.
        Owner 2026-09-02: *"How does the planner zoom in/out the grid? Could this be easily done via
        ctrl + mouse scroll or two finger pan by the trackpad?"* Yes, and it needs no Shift, because

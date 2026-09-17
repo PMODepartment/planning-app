@@ -103,6 +103,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (e) — The critical path reaches WBS level, and the Gantt answers right-click like the grid
+
+#### Critical path at WBS level
+Owner: *"can we have a feature to have the critical path also show up to WBS level."*
+
+`computeCPM` sets `_critical` on **activities** only. ⚠️⚠️ And the pane dimmed
+`.ps-gantt-pane.ps-critmode .ps-sum` **unconditionally** — every WBS bracket faded to 22% in
+critical mode, *including the branches the critical chain runs straight through*. The one view whose
+job is to answer "where is the critical work" was hiding the structure that says where.
+
+`_critical` now rolls up the WBS tree, and a bracket dims only when nothing under it is critical.
+A critical bracket takes the same amber outline the critical bars wear, and the grid row goes red.
+
+⚠️ **Ridden along with the span pass, not added as a second walk.** Same rows, same `codes`/`nodes`
+ancestry, same memo. That pass was rewritten once already to stop being O(rows x depth x nodes) on
+4k-activity projects, and a second traversal would put the cost straight back.
+
+⚠️ **Marked BEFORE the span merge, deliberately.** The merge skips any row with neither a start nor
+a finish; rolling up after it would have silently dropped exactly the rows most likely to be sitting
+on a broken critical chain.
+
+⚠️ Both keys are tried on lookup — dotted code **and** real node id — for the same reason `wbsSpan`
+does: imported codes and the real tree routinely disagree, and a branch that answers to only one of
+them must still light up.
+
+#### Right-click in the schedule
+Owner: *"should we allow to right click in the schedule?"* **It already was** — on the activity
+grid, where `openRowMenu` has had a full menu with Excel-style selection for a long time. The
+**Gantt pane had no handler**, so a right-click on a bar fell through to the browser's own menu
+(Back / Refresh / Save as …), which is what the screenshot showed. Two halves of one screen
+answering the same gesture differently is worse than neither answering it.
+
+The pane now opens **the same menu**, reusing `openRowMenu` verbatim so the bar and its row can
+never drift apart. One listener on the pane resolved with `closest()`, not one per bar — the grid's
+own reasoning, on a pane that re-serialises every bar on each repaint.
+
+⚠️ A right-click on **empty chart space is still the browser's**. Suppressing the native menu over
+background buys nothing and takes away Inspect — the rule the Schedule Builder's pane already states
+in as many words.
+
+#### Tests
+`modules/project-schedule/test-critwbs.js` — **26 passed, 0 failed**. The roll-up block and
+`wbsIsCritical` are **sliced out of `index.html` and executed**, not retyped. Negative-tested:
+reverting the `:not(.ps-crit)` selector and the node-map loop turns 4 assertions red.
+
+⚠️ The context-menu assertions are **structural and labelled as such** — DOM event wiring on a pane
+that only exists in a browser. What they honestly check is that the listener is bound, that it
+reuses the grid's menu rather than growing a second one, that `preventDefault` happens only after a
+bar is found, and that the grid's own handler is still there.
+
+---
+
 ### 2026-09-17 (d) — Schedule Health called a schedule with negative float everywhere "91% — green"
 
 Owner: *"let's debug the schedule health if it's working properly."* It was not.
