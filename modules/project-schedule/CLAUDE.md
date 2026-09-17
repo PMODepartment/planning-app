@@ -1,4 +1,4 @@
-## 2026-09-17 (zn) — The browser's own dialogs leave the module; the shape editor gets numbers; General Requirements stops being in a tower
+## 2026-09-17 (zo) — The browser's own dialogs leave the module; the shape editor gets numbers; General Requirements stops being in a tower
 
 Owner, on the Schedule Setup's Floors & Zones step: *"1. for adding floor plan, improve UI to edit
 shapes 2. when defining floor plan, delete the checkbox of no label band checkbox 3. when adding
@@ -189,7 +189,7 @@ Y / W / H.
 conflict hunks, both resolved by **keeping both sides**: `origin/main`'s `_xlBatch` batch guard with
 this branch's dialog, and its `libUndeclare` half of the grouping delete with this branch's confirm.
 
-`MODULE_V` → `20260917zn`, re-derived from what the **live site** actually serves (`20260917zm`) after
+`MODULE_V` → `20260917zo`, re-derived from what the **live site** actually serves (`20260917zm`) after
 merging, never guessed before — the tree still said `zl` at that moment.
 
 ## 2026-09-16 (zc) — Activities filed under branches that no longer exist: three holes in one chain
