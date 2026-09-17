@@ -33,8 +33,13 @@ function slice(startNeedle, endNeedle) {
   const j = src.indexOf(endNeedle, i); if (j < 0) return null;
   return src.slice(i, j);
 }
-const MOVER  = slice('      function _catLoad(ids) {', '      host.querySelector(\'#b-load\').onclick');
-const WIRING = slice('      function _catLoad(ids) {', '      host.querySelector(\'#b-unload\')');
+/* ⚠️ ANCHORED ON THE NAME, NOT THE FULL SIGNATURE. This read `function _catLoad(ids) {` and
+   aborted the moment the 2026-09-18 pass gave the mover a second parameter (`opts`, which carries
+   an L1 drag's merge instruction). The abort was the design working — a slicer that quietly
+   matched nothing would have reported a pass over an empty string — but the anchor itself was
+   needlessly brittle, so it now matches the declaration rather than its arity. */
+const MOVER  = slice('      function _catLoad(ids', '      host.querySelector(\'#b-load\').onclick');
+const WIRING = slice('      function _catLoad(ids', '      host.querySelector(\'#b-unload\')');
 
 if (IS_BASE) {
   /* The contrast: none of this exists before the change, and a base that has stopped being a
@@ -62,8 +67,15 @@ ok(/data-cat="' \+ a\.id \+ '" draggable="true"/.test(src),
 eq((src.match(/function _catLoad\s*\(/g) || []).length, 1, 'exactly ONE _catLoad is declared');
 ok(/#b-load'\)\.onclick = function \(\) \{[\s\S]{0,260}?_catLoad\(catSel\.slice\(\)\)/.test(src),
    'the ← button goes through _catLoad');
-ok(/addEventListener\('drop'[\s\S]{0,420}?_catLoad\(ids\)/.test(WIRING),
+/* ⚠️ RETARGETED: the drop now passes a second argument — an L1 drag's merge instruction — so the
+   old exact-arity pattern `_catLoad(ids)` stopped matching. The property under test is unchanged
+   and is the one that matters: the drop reaches the SAME mover the button does. */
+ok(/addEventListener\('drop'[\s\S]{0,520}?_catLoad\(ids\b/.test(WIRING),
    'the drop goes through the SAME _catLoad');
+/* ---- the 2026-09-18 L1 drag ------------------------------------------------------------- */
+ok(/\[data-sapl1\]/.test(WIRING) || /data-sapl1/.test(src), 'an L1 heading is wired for dragstart');
+ok(/_dragMerge = null/.test(WIRING), '⚠ a plain code drag CLEARS the L1 flag — a stale one would merge rows nobody asked to merge');
+ok(/mergeAll: true/.test(WIRING), 'an L1 drop asks the mover to merge outright');
 
 // ⚠⚠ preventDefault on dragover is what MAKES a drop legal. Without it the browser refuses
 //    the drop and the whole gesture silently does nothing.
@@ -106,20 +118,48 @@ ok(/id="b-load"/.test(src), 'the ← button is still there — drag ADDS a gestu
      because what this suite tests is the MOVE; `test-actsetup` executes the merge itself.
      ⚠ `psConfirm` is a no-op rather than an auto-yes: a stub that accepted would make every
      assertion below measure a merged row instead of the rows that moved. */
-  let asked = 0;
-  const api = new Function('cfg', 'markDirty', 'render', 'psConfirm', 'GLABEL', 'sortActivities', `
+  let asked = 0, merged = 0, mergedName = null;
+  /* ⚠️⚠️ `actIsMerged` AND `sapMergeKids` ARE SLICED, NOT STUBBED, and `SAP_L3` is the real table.
+     The 2026-09-18 pass made the mover attach an SAP group's level-3 items on the way in, and that
+     IS a rule — a stub of it would have this suite proving that MY hierarchy is attached rather
+     than the shipped one. `mergeActs` stays a counter: what it does is `test-actsetup`'s subject,
+     what matters here is that an L1 drag reaches it at all and an ordinary one does not. */
+  function sliceVar(name) {
+    const re = new RegExp('\\n\\s*var ' + name + ' = ([\\[{])');
+    const m = re.exec(src); if (!m) return null;
+    let j = src.indexOf(m[1], m.index), depth = 0, inStr = null;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (inStr) { if (c === '\\') { j++; continue; } if (c === inStr) inStr = null; continue; }
+      if (c === '"' || c === "'") { inStr = c; continue; }
+      if (c === '[' || c === '{') depth++;
+      else if (c === ']' || c === '}') { depth--; if (!depth) return src.slice(src.indexOf(m[1], m.index), j + 1); }
+    }
+    return null;
+  }
+  const L3SRC = sliceVar('SAP_L3');
+  const FN = (n) => { const i = src.indexOf('\n    function ' + n + '('); if (i < 0) return ''; 
+    let j = src.indexOf('{', i), d = 0; for (; j < src.length; j++) { const c = src[j];
+      if (c === '{') d++; else if (c === '}') { d--; if (!d) return src.slice(i + 1, j + 1); } } return ''; };
+  const DEPS = 'var SAP_L3 = ' + L3SRC + ';\n' + FN('sapKids') + '\n' + FN('sapMergeKids') + '\n' + FN('actIsMerged') + '\n';
+  const api = new Function('cfg', 'markDirty', 'render', 'psConfirm', 'GLABEL', 'sortActivities', 'mergeActs', `
     var catSel = ['c3', 'c1'];
     var actSel = [];
+    ${DEPS}
     ${MOVER}
     return { load: _catLoad, ticked: function () { return catSel.slice(); },
              picked: function () { return actSel.slice(); } };
-  `)(cfg, () => { dirty++; }, () => { renders++; }, () => { asked++; }, {}, () => {});
+  `)(cfg, () => { dirty++; }, () => { renders++; }, () => { asked++; }, {}, () => {},
+     (nm) => { merged++; mergedName = nm; return true; });
 
   eq(api.load([]), false, 'an empty id list moves nothing and reports it');
   eq(api.load(['nope']), false, 'an id that is not in the list moves nothing');
   eq(dirty, 0, '… and neither marks the setup dirty');
 
   eq(api.load(['c2']), true, 'moving one code reports it moved');
+  /* ---- 2026-09-18: an SAP group arrives carrying its level-3 items -------------------------- */
+  eq(cfg.activities.find(a => a.id === 'c2').kids, undefined,
+     '⚠ a row whose code is NOT an SAP group gets no children — nothing becomes merged by accident');
   eq(cfg.activities.map(a => a.id), ['a0', 'c2'], 'the code lands at the END of the build');
   eq(cfg.catalog.map(a => a.id), ['c1', 'c3'], 'and leaves the list');
   eq(dirty, 1, 'the move marks the setup dirty');
@@ -137,6 +177,44 @@ ok(/id="b-load"/.test(src), 'the ← button is still there — drag ADDS a gestu
   eq(asked, 1, 'a multi-code move OFFERS a merge, once');
   eq(cfg.activities.map(a => a.id), ['a0', 'c2', 'c1', 'c3'],
      '… and the rows are already in the build when it asks');
+
+  /* ==========================================================================================
+     2026-09-18 — an SAP group arrives carrying its level-3 items, and an L1 drag merges outright
+     ⚠ EXECUTED against the REAL `SAP_L3`, so these assert the shipped hierarchy rather than a
+     fixture of my own. `01050` is General Requirement › Mobilization / Demobilization, which the
+     workbook gives exactly two items.
+     ========================================================================================== */
+  cfg.catalog = [{ id: 'g1', code: '01050', name: 'Mob/Demob', group: 'GR' },
+                 { id: 'g2', code: '01100', name: 'Temp facilities', group: 'GR' },
+                 { id: 'g3', code: 'ZZZZZ', name: 'Not a group', group: 'GR' }];
+  cfg.activities = [];
+  asked = 0; merged = 0; mergedName = null;
+  api.load(['g1']);
+  const got = cfg.activities.find(a => a.id === 'g1');
+  ok(!!(got && got.kids && got.kids.length === 2),
+     '⚠⚠ dragging a LEVEL 2 brings its level-3 items in with it, as one merged activity',
+     got && got.kids);
+  eq((got.kids || []).map(k => k.code).join(','), '01051,01052',
+     '… the real item codes from the workbook, padded');
+  ok(!(got.kids || []).some(k => k.code === '01050'),
+     '⚠ the group’s OWN code is never among its children — actCodes prepends it');
+  eq(got.code, '01050', '… and the row itself still IS the group');
+  eq(merged, 0, 'a single L2 drag does not go through mergeActs — there is nothing to merge');
+
+  api.load(['g3']);
+  eq(cfg.activities.find(a => a.id === 'g3').kids, undefined,
+     '⚠ a code that is not an SAP group arrives exactly as before — additive, never a surprise');
+
+  /* An L1 drag: several groups, merged outright, named for the L1 rather than the first group. */
+  cfg.catalog = [{ id: 'h1', code: '01050', name: 'Mob/Demob', group: 'GR' },
+                 { id: 'h2', code: '01100', name: 'Temp facilities', group: 'GR' }];
+  cfg.activities = []; asked = 0; merged = 0;
+  api.load(['h1', 'h2'], { mergeAll: true, name: 'General Requirement' });
+  eq(merged, 1, '⚠⚠ an L1 drag merges OUTRIGHT — it is what the gesture MEANS, not an offer');
+  eq(mergedName, 'General Requirement', '… named for the L1, not for the first group under it');
+  eq(asked, 0, '⚠ …and it never asks, unlike an ordinary multi-row arrival');
+  ok(cfg.activities.every(a => a.kids && a.kids.length),
+     '… every group still arrived carrying its own items for the merge to flatten');
 })();
 
 /* ==========================================================================================

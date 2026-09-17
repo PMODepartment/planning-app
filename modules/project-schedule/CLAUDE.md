@@ -1,3 +1,231 @@
+## 2026-09-18 (g) — The Activities step reads SAP levels 1–3, and a merged activity carries every code it covers
+
+Owner, six items on Schedule Setup ▸ Activities, with `Book2.xlsx` attached: *"1. reduce font sizes
+and reduce words/descriptions/instructions. make page minimalist. 2. the SAP activities are listed in
+this excel file from level 1 to level 3 … by default the SAP activities list should only show up to
+level 2. but for each level 2, provide collapse button to show level 3. 3. if level 2 is dragged to
+the selection, this activity carries level 3 activities inside it as a merged activity. if level 1 is
+dragged … it carries all the level 3 activities as a merged activity. 4. when merging activities from
+different trades, although it does not push thru, provide error notif. 5. if an activity is a merged
+activity, it should carry multiple class codes to schedule. 6. please review also the schedule module.
+in narrow width, when scrolling down, the sticky tab for the steps overlaps."*
+
+### ⚠️⚠️ THE WORKBOOK IS THE REFERENCE FOR LEVEL 3 ONLY, AND COMPARING IT ROW BY ROW IS WHAT SETTLED THAT
+
+The obvious reading of item 2 is *"re-seed the list from the file"*. Parsed and diffed against
+`CLASS_CODE_DB` with every code padded to five characters, that would have silently undone two
+decisions this log already records:
+
+| | |
+|---|---|
+| in the chart, not in the workbook | **0** |
+| in the workbook, not in the chart | **7** — `39100 39150 39200 39250 39300 39350 39400` |
+| name disagreements | 7 |
+| trade disagreements | **0** |
+
+The seven are the **LD sub-works the owner retired on 2026-09-17**, and two of the seven name
+disagreements (`25200`, `25550`) are this module's own **deliberate corrections** of a chart
+copy-down error, recorded under `(d)`. A re-seed would have reinstated all nine, in a diff that reads
+as an ordinary data refresh. So level 2 keeps its names, trades and membership exactly as the module
+has them, and the workbook supplies **level 3 and the level-1 grouping** — the two things the module
+did not have. 466 level-3 rows, 197 level-2, 39 level-1, 7 trades; every L3 code unique and none
+colliding with an L2 code, both asserted.
+
+**`SAP_L1` and `SAP_L3` are literals beside `CLASS_CODE_DB`**, not a table: they are the *chart*, the
+same kind of thing the 190 level-2 entries already are, and a fetch would make an offline setup step
+worse at the one job it has. ⚠️ Codes are **strings throughout** — `'01050'` must never become
+`'1050'`, because the de-zeroed space is not unique (`015051` collides with `15051`) and
+`docs/boq-and-pmi.md` forbids the transformation outright.
+
+### Item 2 — level 2 shows, level 3 folds
+
+Each level-2 row gains a caret (`.sbld-hold-tog`) and a `+N` badge naming how many level-3 items it
+holds; opening it draws them as `.sbld-hold-kid` rows. ⚠️ A level 2 with **no** children gets a
+`.is-leaf` **spacer of the same width**, not a missing button — a ragged left edge across 190 rows
+reads as a rendering fault, and an inert caret reads as a broken control.
+
+⚠️ **A level-1 heading is drawn only where it holds more than one level 2.** `PDProgram.labelOf`'s
+own rule is that a heading above a single item invents a hierarchy that is not there; 21 of the 39
+level-1 groups hold more than one level 2 and **18 hold exactly one**, so nearly half the list would
+otherwise have gained a heading saying the same thing as the row under it.
+
+⚠️ **The search reaches level 3 even when it is folded.** `_holdHit` matches a level-2 row when the
+query hits any of its children's code or name — otherwise typing a level-3 name would return nothing
+while the item sits one caret away.
+
+⚠️ **`holdExp` is module scope and is cleared on a project switch**, beside `holdQ` and `holdCol`.
+A fold must outlive a render (every tick repaints the pane) and must not outlive the session: a list
+still folded tomorrow hides codes nobody chose to hide.
+
+### Item 3 — dragging a group carries what is inside it
+
+`sapMergeKids(code, group)` turns a level-2 code into the flat `{code,name,group}` kid array the merge
+model already uses, and a level-1 heading is draggable too, resolving to every level-2 under it.
+
+⚠️⚠️ **THE KIDS ARE ATTACHED IN `_catLoad`, THE ONE MOVER, AND THAT IS THE WHOLE OF WHY `←` AND DROP
+CANNOT DISAGREE.** That function's own note says it is the single place a catalogue row becomes a
+build row; attaching kids at the drop handler instead would have given a dragged group its level 3
+and a ticked-and-`←`'d group nothing, from the same list, with nothing on screen to say why.
+
+⚠️ A level-1 drag then merges what it loaded (`opts.mergeAll`) and **rolls the selection back if the
+merge is refused** — a half-loaded selection left behind by a refusal is worse than nothing arriving.
+
+### ⚠️⚠️ Item 3 also exposed a latent bug in `mergeActs`, lossy only in the case this pass creates
+
+The flatten read *"if the row is merged take its kids, else take its own code"*. Harmless while a
+merged row's own `code` was always its first kid's — which it was, because merging was only ever
+reachable from hand-picked rows. An SAP group arrives carrying a code that is **not** among its
+children, so that branch would have dropped it. `mergeActs` now unions the row's own code **and** its
+kids, deduped. ⚠️ A blank code is deliberately **not** deduped: two custom activities both carrying no
+code are two activities, and folding them would delete one.
+
+### Item 4 — the refusal says which trades
+
+Merging across trades was already impossible; it was impossible *silently*, because the button's own
+enable test was `sel.length > 1 && !!tr` and `tr` is null for a mixed selection. So the control simply
+stayed dead and the planner had no way to learn why. The button is enabled on `sel.length > 1` and
+`mergeActs` refuses with a toast naming the count and **every trade in the selection**.
+
+### Item 5 — a merged activity pushes every code it covers
+
+**Run `migrations/2026-09-18-schedule-class-codes.sql`.** New `project_schedule.class_codes text[]`,
+additive, with a GIN index.
+
+⚠️⚠️ **NOT a delimited `class_code`, and the reason is that every consumer matches on EXACT equality**
+— `scheduleSeedPlan` buckets on it, `boq_allocations` gates on it, `ccByCode`/`ccLevelOf` resolve it
+against the Finance chart, the grid's Class Code cell is an enum editor over it, and the `cc1`/`cc2`/
+`cc3` grouping dims use it as a bucket key. `"01050, 01100"` resolves to **nothing** in all of them,
+and would read on screen as an off-chart code: a merged activity would go from matching one code to
+matching none, silently.
+⚠️⚠️ **And NOT `activity_codes`**, which is a jsonb map of `code_type_id → code_value_id` — **one**
+value per type, read as `r.activity_codes[typeId]` by ~10 callers. An array under a type key breaks
+every one.
+⚠️ `class_code` is **unchanged** and stays canonical (the first code); `class_codes` is the full set
+with its first element equal to it, so every existing reader keeps working untouched.
+⚠️ **No backfill, deliberately.** A row written before today carries one code and a null array, and
+every reader in this repo falls back to `class_code` when the array is null or empty — so null means
+*"this row has one code"*, not *"unknown"*. Backfilling 150k rows to restate the adjacent column is
+churn with a lock attached.
+⚠️ **The push degrades** rather than failing: a database without the column refuses the insert, the
+error is matched on the column name **and** a `column|schema cache` test (matching the bare word
+`class_codes` also matches the Finance chart **table**, which is how a loose regex would swallow an
+unrelated refusal), the key is dropped once per session and the summary names the migration file.
+`modules/contracts-claims/boq.js` reads the array the same way, with the same guarded fallback, so a
+bill line can match on any element.
+
+### Item 6 — the step rail stops painting over the panel
+
+⚠️⚠️ **`origin/main`'s own rail pass landed the same day and does NOT fix this, which only measuring
+showed.** Main rebuilt the narrow-width strip properly — grid areas so the markup order stays the
+reading order, left/right arrows in place of a scrollbar, the toggle pinned above rather than centred,
+the chevron rotated to point up — and never clears the base rule's `position:sticky; top:12px;
+max-height; overflow-y:auto`. Measured on the **merged** tree at `scrollY 900`:
+
+| viewport | before | after |
+|---|---|---|
+| 1400px | 0 overlap (two columns, correct) | 0 |
+| 760px | **736 × 105**, `position:sticky`, rail at `top:12` over a panel at `-765` | **0** |
+| 420px | **396 × 105** | **0** |
+
+with `elementFromPoint` at the rail's own centre returning a **step** before the fix and nothing
+after. Four declarations go **into** main's block rather than replacing it, and main's grid areas,
+arrows and no-horizontal-scroll were re-measured intact afterwards.
+⚠️ `max-height` and `overflow` travel with `position`: capping to the viewport is what makes a **tall
+sticky column** reachable at its bottom, and on a static single-row strip it can only clip the toggle
+above it and give a one-column page a second scrollbar.
+⚠️⚠️ **I had written the opposite into the resolution comment** — reasoning that a sticky grid *item*
+cannot travel outside its own grid area — and shipped that reasoning as a claim before running the
+harness. The harness disagreed and the harness is right; the comment now carries the measurement.
+
+### Item 1 — 8 words where there were 18, and the type ramp one rung down
+
+The prose half: the lede cut **18 → 8 words**, the heading lost *"& required duration"* (the grid's
+own column headers said it), `_sbldHow` compressed, and **the two duplicate off-chart warnings folded
+into one** — measured **285 → 201 visible words, −29%** against the branch point, while *adding* a
+sentence documenting the new `▸` / level-1-drag gesture.
+
+The type half, measured in a browser against the shipped stylesheet with `--pd-ink` asserted present
+(the first run reported everything at 16px because the harness linked `dashboard.css` over `file://`
+from an `http` page and served an **unstyled** document — the third harness in this repo to report a
+correct page as broken):
+
+| | before | after |
+|---|---|---|
+| step heading | 16 (`--pd-fs-lg`) | **15** (`--pd-fs-md`) |
+| lede | 13 (`--pd-fs-base`) | **12.5** (`--pd-fs-sm`) |
+| hint | 12.5 | **11** (`--pd-fs-xs`) |
+| SAP row box | **14** (`--pd-fs-body`, from a bare `font:inherit`) | **12.5** |
+| header block (h2 + lede) | 46px | 44px |
+| panel height @1440 / @1100 | 851 / 914 | 847 / 910 |
+
+⚠️ **Stated plainly: the type change buys 4px, not a screenful.** The step was already on the scale
+and already tight — the space the owner asked for came from the prose, and the type change is a
+consistency change. `--pd-fs-lg` is the token block's own *"largest heading in the app"*, which a
+wizard step under a module bar that already names the module is not; `--pd-fs-sm` is its *"secondary
+body"*, which is what a muted purpose line is.
+⚠️ **The lede, hint and empty-state classes are shared by all six Setup steps and Cost Loading's
+four**, so this is a wizard-wide change, not a page-local one. Said here rather than discovered.
+⚠️ The `font:inherit` on the SAP row left the row **box** at 14px — the largest type box in a pane
+whose trade headings are 11 and whose name span is 12.5. Nothing rendered at 14; it only sized the
+flex line box. ⚠️ Row height is unchanged at 25px: it is padding-bound, not font-bound.
+
+### ⚠️⚠️ A live bug found by measuring rather than reported: every `+ Library` row was marked off-chart
+
+`_seedCodeUnknown` — which paints the Class Code cell red and drives the banner under the grid —
+resolved through the **item-only** `ccByCode`, while `offChartCount` beside it used `ccLevelOf`. Every
+`+ Library` row carries a **level-2 group** code, so on a healthy build all of them rendered red and
+were counted as off-chart. `offChartCount` had been corrected for exactly this on 2026-09-10 and the
+per-cell mark was left behind. Now `!ccLevelOf(k)`, and the two duplicate warnings are one banner.
+⚠️ `offChartCount` and `groupLevelCount` are **deleted, not left unreferenced** — both had zero callers
+afterwards, and a renderer nothing calls is the one the next editor wires back up beside the real
+thing.
+⚠️ The chart-not-loaded guard survives: with the chart empty `ccLevelOf` answers null for everything,
+and an unguarded test would accuse a perfectly good programme.
+
+### Verified
+
+**Three suites, all slicing the shipped functions out of the file by name and executing them**, with
+contrasts pinned to SHAs rather than `HEAD`:
+
+| | |
+|---|---|
+| `test-sap` (new) | **114 / 0** — the reference tables (39 / 190 / 447), the padding rule, the seven retired codes absent, the 21-vs-18 level-1 split, `25200`/`25550` names preserved, `sapKids`/`sapMergeKids`, level-2 arrival, merging and the cross-trade refusal, the push payload, the pane markup |
+| `test-actsetup` | **142 / 0** (was 133) — the real `SAP_L1`/`SAP_L3`/`SAP_L1_OF` in the sandbox, an honest `ccLevelOf` stub, and a new section for the group-code mark |
+| `test-actdnd` | **62 / 0** (was 48) — level-2 arrival and level-1 outright merge, executed |
+
+⚠️ **`test-lsm` was RETARGETED, not weakened, and the retarget is proved to bite.** It injected
+`ccByCode` into `_seedCodeUnknown`'s sandbox and aborted the moment that function moved onto
+`ccLevelOf`. It now injects **both**, so a build reverting to the item-only lookup still *runs* and
+fails by name: reverting `!ccLevelOf(k)` to `!ccByCode(k)` in a throwaway copy gives **683 passed,
+1 failed** — the new *"a GROUP code is not flagged either"* assertion — against **684 / 0** shipped.
+
+Every project-schedule suite green on the merged tree: `test-lsm` 684, `test-phasenet` 135,
+`test-phasecard` **85** (main's own new suite, which this session had never run), `test-builder` 149,
+`test-towertypes` 79, `test-zoneoverlap` 57, `test-zoneplan` 50, `test-shapeedit` 36, `test-sitefit`
+31, `test-autotrace` 32, `test-towerseq` 48, `test-cpm` 28, `test-wbsfile` 28, `test-critwbs` 26,
+`test-health` 30, `test-calendar-editor` 23, `test-syntax` 4 — **0 failing.**
+
+`wiring-check` 139/0 · `dead-hooks` **9**, the documented baseline · `dark-remap` 0 findings ·
+`toolbar-order` 15 bars / 0 out of order · `loc-key-agree` clean · `selectall-key` **100 safe /
+0 broken** · the inline `<script>` parses (**3.83MB**) · CSS braces **2535/2535**, comments 636/636 ·
+`boq.js` parses · **0 NUL bytes in every file this change touches.**
+
+⚠️ **`selectall-key` reports one advisory that is mine and is not a defect:** `boq.js:793` builds its
+cols as `COLS + ',class_codes'`, which the resolver cannot read. `COLS` is resolved at the sibling
+call site on the next line and **starts with `id,`**, so the keyset cursor is present. Named rather
+than left in an unreadable list where a fixed site and a broken one look alike.
+
+⚠️ **Reported, NOT fixed — two pre-existing NUL bytes in files this change does not touch:**
+`tools/dark-remap.js` at offset 5602 and `modules/project-schedule/test-wbsfile.js` at offset 8138,
+both a unicode-zero sentinel written as the raw byte rather than as its six-character escape, and both
+present on `HEAD` before this branch. `grep` classifies both files as binary. It is a two-character
+repair, and it does not belong in a commit about the Activities step.
+
+⚠️ **NOT VERIFIED SIGNED IN**, and that gap is specific here: the migration has not been run, so no
+merged activity has been pushed and read back, and `class_codes` has never reached a real BOQ match.
+Everything above is the shipped code executed against fixtures, plus browser measurements against the
+shipped stylesheet.
+
 ## 2026-09-18 (f) — Project Phases: twelve items on the card shipped yesterday, and the two that were geometry rather than taste
 
 Owner, twelve items on Schedule Setup ▸ Project Phases — the per-phase Gantt from `(c)`:

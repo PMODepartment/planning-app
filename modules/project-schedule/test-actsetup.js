@@ -64,7 +64,25 @@ const WANT = ['stActivities', 'xlCellCtl', 'gc'];
    pinned base, and the base's own `xlCellCtl` therefore never calls them — so nothing is being
    stubbed in for the function under test. On the working tree both must slice, and 6.0 asserts
    exactly that, so a rename fails loudly instead of quietly reverting the lock. */
-const OPTIONAL = ['sortCatalog', 'xlFieldLocked', 'actIsSap',
+/* ⚠️⚠️ THE REAL REFERENCE TABLES, SLICED — NOT STUBBED. The 2026-09-18 pass made the pane read
+   `SAP_L1_OF` / `sapKids`, and a stub of a 190-row lookup is a second copy of it: the renderer
+   would then be drawing MY hierarchy and the suite would prove nothing about the shipped one. They
+   are `null` on the pinned base, where the renderer never calls them. */
+function sliceVar(name) {
+  const re = new RegExp('\\n\\s*var ' + name + ' = ([\\[{])');
+  const m = re.exec(src); if (!m) return null;
+  let j = src.indexOf(m[1], m.index), depth = 0, inStr = null;
+  for (; j < src.length; j++) {
+    const c = src[j];
+    if (inStr) { if (c === '\\') { j++; continue; } if (c === inStr) inStr = null; continue; }
+    if (c === '"' || c === "'") { inStr = c; continue; }
+    if (c === '[' || c === '{') depth++;
+    else if (c === ']' || c === '}') { depth--; if (!depth) return src.slice(src.indexOf(m[1], m.index), j + 1); }
+  }
+  return null;
+}
+const SAP_L1_SRC = sliceVar('SAP_L1'), SAP_L3_SRC = sliceVar('SAP_L3');
+const OPTIONAL = ['sortCatalog', 'xlFieldLocked', 'actIsSap', 'sapKids', 'sapMergeKids', 'actL2Codes',
   /* the merge model — all absent on the base, and the base's renderer calls none of them */
   'actIsMerged', 'actCodes', 'normKids', 'sortActivities', 'actSelActs', 'actSelTrade',
   'actMergeCodeCount', 'mergeActs'];   // absent on the base build, which is the point
@@ -139,6 +157,19 @@ function render(cfg, holdCol, catSel, holdQ, actSel, actExp) {
     GLABEL: { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', SD: 'Site Development', ALLIED: 'Allied Services', OT: 'Others' },
     SCOPE_OPTS: [['zone', 'Per zone'], ['floor', 'Per floor']], CONTRACT_OPTS: [['main', 'Main Contract'], ['change_order', 'Change Order']],
     CLASS_CODE_DB: new Array(197),
+    /* ⚠ `holdExp` is the L2→L3 fold state the 2026-09-18 pass added; empty here, so the default
+       "show only to level 2" is what every assertion below measures — which is the owner's own
+       stated default and therefore the right state to be testing. */
+    holdExp: {},
+    SAP_L1: SAP_L1_SRC ? eval('(' + SAP_L1_SRC + ')') : [],
+    SAP_L3: SAP_L3_SRC ? eval('(' + SAP_L3_SRC + ')') : {},
+    SAP_L1_OF: (function () {
+      if (!SAP_L1_SRC) return {};
+      const m = {}; eval('(' + SAP_L1_SRC + ')').forEach(function (g, i) {
+        (g[2] || []).forEach(function (c) { m[c] = { i: i, name: g[0], trade: g[1] }; });
+      });
+      return m;
+    })(),
     /* ⚠ The real palettes, read out of the file rather than invented, so 4.8 is asserting the
        colour the page actually paints on the heading. */
     GCOLOR: eval('(' + /var GCOLOR = (\{[^}]*\})/.exec(src)[1] + ')'),
@@ -146,7 +177,11 @@ function render(cfg, holdCol, catSel, holdQ, actSel, actExp) {
     // the chart IS loaded, so the off-chart marks are live — 'ZZZZZ' must be flagged, '' must not
     CLASS_CODES: [{ code: '03051' }, { code: '16401' }],
     ccByCode: (c) => (c === '03051' || c === '16401' ? { code: c } : null),
-    offChartCount: () => 1,
+    /* ⚠⚠ THE GROUP LEVEL IS IN THE STUB, and it has to be: `_seedCodeUnknown` moved off the
+       item-only `ccByCode` onto `ccLevelOf` on 2026-09-18 because every `+ Library` row — the
+       standard way of filling this grid — is a level-2 GROUP code and was being marked red on a
+       build with nothing wrong. A stub that resolved only items would let that bug pass again. */
+    ccLevelOf: (c) => (c === '03051' || c === '16401' ? 'item' : (c === '03050' ? 'group' : null)),
     xlGet: (a, k) => (a[k] == null ? '' : String(a[k])),
     scopeLabel: (v) => v || 'zone', contractLabel: (v) => v || 'main',
     e2: (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
@@ -548,8 +583,16 @@ if (!IS_BASE) {
     const r = run(mk(), ['m1', 'm3']);
     ok(r.outcome === false, '11.10 EXECUTED: a cross-trade merge is REFUSED');
     eq(r.cfg.activities.length, 3, '11.11 …and nothing is changed');
-    ok(r.toasts.some(t => /warn/.test(t) && /different trades/.test(t)),
-       '11.12 …with the reason named, not silently');
+    /* ⚠️⚠️ RETARGETED, NOT WEAKENED — the property under test is unchanged and the bar is HIGHER.
+       This read `/warn/ && /different trades/`. Owner 2026-09-18: *"when merging activities from
+       different trades, although it does not push thru, provide error notif."* So the refusal is
+       now an `error` rather than a `warn` (nothing happened — a warn toast in this app reads as
+       "it went through, with a caveat"), and it NAMES the trades instead of saying only that they
+       differ. Both are asserted; the old wording would now pass a message that named neither. */
+    ok(r.toasts.some(t => /error/.test(t) && /Cannot merge/.test(t)),
+       '11.12 …refused out loud, as an error rather than a warning');
+    ok(r.toasts.some(t => /Structural/.test(t) && /Architectural/.test(t)),
+       '11.12b …and the message NAMES both trades, which is what makes it actionable', r.toasts);
   }
   // --- one row is not a merge
   {
@@ -659,6 +702,37 @@ if (!IS_BASE) {
     ok(h.indexOf('sbld-xlgrp') !== -1, '14.3 the build grid carries trade headings');
     ok(h.indexOf('id="b-merge"') !== -1, '14.4 …and a Merge control');
   }
+}
+
+
+/* =============================================================================================
+   15 · THE OFF-CHART MARK RESOLVES BOTH LEVELS  (2026-09-18)
+   ⚠️⚠️ THE BUG THIS CATCHES: `_seedCodeUnknown` used the ITEM-ONLY `ccByCode`, so every level-2
+   GROUP code read as "not in the chart" — and `+ Library`, the standard way of filling this grid,
+   loads nothing but group codes. A healthy build lit a red mark on all 190 of its own rows and a
+   counted caution above them. `offChartCount` at the foot of the step had been corrected for
+   exactly this on 2026-09-10; the per-cell mark and its banner were left behind.
+   ============================================================================================= */
+if (!IS_BASE) {
+  const cfg = { activities: [
+      { id: 'g1', code: '03050', name: 'Rebar (group)', group: 'ST', durInt: 1, durExt: 1 },
+      { id: 'g2', code: '03051', name: 'Rebar (item)', group: 'ST', durInt: 1, durExt: 1 },
+      { id: 'g3', code: 'ZZZZZ', name: 'Off chart', group: 'ST', durInt: 1, durExt: 1 },
+      { id: 'g4', code: '', name: 'Custom', group: 'ST', durInt: 1, durExt: 1 }
+    ], catalog: [] };
+  const H = render(cfg, {}, [], '').host.innerHTML;
+  const bad = (H.match(/sbld-badcode/g) || []).length;
+  eq(bad, 1, '15.1 ⚠⚠ exactly ONE row is marked off-chart — the group code is NOT accused', bad);
+  ok(/<b>1<\/b> of 4 codes/.test(H), '15.2 …and the banner counts the same one', H.slice(H.indexOf('pd-caution'), H.indexOf('pd-caution') + 140));
+  ok(!/is not in the class-code chart/.test(H), '15.3 the old wording is gone — banner AND cell tooltip');
+  ok(/at either level/.test(H), '15.4 …replaced by one that says which levels were tried');
+  ok(/re-pick from/i.test(H), '15.5 …and names the remedy the lower warning used to carry');
+  /* ⚠️ ONE warning, not two: the foot of the step used to restate this 200px lower. */
+  eq((H.match(/at either level/g) || []).length, 1, '15.6 ⚠ stated ONCE, not at both ends of the screen');
+  /* And a clean build says nothing at all. */
+  const clean = render({ activities: [{ id: 'c1', code: '03050', name: 'Rebar', group: 'ST', durInt: 1, durExt: 1 }], catalog: [] }, {}, [], '').host.innerHTML;
+  eq((clean.match(/sbld-badcode/g) || []).length, 0, '15.7 a build of GROUP codes is marked nowhere');
+  ok(!/pd-caution/.test(clean), '15.8 …and raises no caution at all');
 }
 
 console.log((fail ? 'FAIL' : 'PASS') + ': ' + pass + ' assertions passed, ' + fail + ' failed');

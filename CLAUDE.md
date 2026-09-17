@@ -104,6 +104,98 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (i) — Schedule Setup ▸ Activities reads SAP levels 1–3, and a merged activity carries every class code it covers
+
+Owner's six items on that step, with `Book2.xlsx` attached — fewer words and smaller type, the SAP
+list showing level 2 with level 3 behind a caret, dragging a level 2 or a level 1 into the build as a
+**merged** activity, an error notification when a merge spans trades, a merged activity pushing
+**every** class code it covers, and the Setup's step rail overlapping the panel at narrow width.
+Module work — the full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(g)`. Logged here
+for the migration, the `MODULE_V` bump and the four things that are not facts about one module:
+
+**Run `migrations/2026-09-18-schedule-class-codes.sql`** — `project_schedule.class_codes text[]`,
+additive, with a GIN index and no backfill.
+
+⚠️⚠️ **A NEW COLUMN RATHER THAN A DELIMITED `class_code`, BECAUSE EVERY CONSUMER MATCHES ON EXACT
+EQUALITY.** `scheduleSeedPlan` buckets activities on it, `boq_allocations` gates on it, the schedule's
+`ccByCode`/`ccLevelOf` resolve it against the Finance chart, the grid's Class Code cell is an enum
+editor over it, and three grouping dims use it as a bucket key. Putting `"01050, 01100"` in there
+resolves to **nothing** in every one of those, and renders on screen as an off-chart code — so a
+merged activity would go from matching one code to matching none, **silently**. ⚠️ And not
+`activity_codes`, which is a jsonb map of `code_type_id → code_value_id`: **one** value per type, read
+as `r.activity_codes[typeId]` by about ten callers, all of which an array under a type key breaks.
+⚠️ `class_code` is untouched and stays canonical, so every existing reader keeps working and only the
+readers that want the whole set opt in — which is also why there is **no backfill**: null means *"this
+row has one code"*, not *"unknown"*, and every reader already falls back to `class_code`.
+
+⚠️⚠️ **A LOOSE ERROR REGEX WOULD HAVE SWALLOWED AN UNRELATED REFUSAL, AND THE BASE GATE IS WHAT
+CAUGHT IT.** Both the schedule's push degrade and `modules/contracts-claims/boq.js`'s read fallback
+recognise *"this database has not run the migration"* by matching the error text. Matching the bare
+word `class_codes` also matches the **Finance chart table of that name**, so a refusal that had
+nothing to do with the column would have been quietly absorbed as *"not migrated"* — the same shape
+this log records for `boq_allocations_method_check`. Both now require a `column|schema cache` test
+alongside the column name. Found because a suite's own base gate failed for the wrong reason.
+
+⚠️⚠️ **`origin/main` ANSWERED THE OWNER'S ITEM 6 ON THE SAME DAY AND DID NOT FIX IT — MEASURING IS
+THE ONLY REASON I KNOW THAT.** Main's rail pass (2026-09-18 `(f)`) rebuilt the narrow-width step strip
+properly, with grid areas, left/right arrows and a rotated chevron, and never clears the base rule's
+`position:sticky; top:12px; max-height; overflow-y:auto`. Measured on the **merged** tree at
+`scrollY 900`: the rail pinned at `top:12` over a panel at `-765`, overlapping **736 × 105** at 760px
+and **396 × 105** at 420px, with `elementFromPoint` at the rail's own centre returning a step. Four
+declarations go **into** main's block rather than replacing it — 0px of overlap at 1400 / 760 / 420,
+with main's grid areas, arrows and no-horizontal-scroll re-measured intact.
+⚠️⚠️ **I had written the opposite into the merge-resolution comment before running the harness**,
+reasoning that a sticky grid *item* cannot travel outside its own grid area. The harness disagreed and
+the harness is right; the comment now carries the measurement instead of the reasoning. A clean
+auto-merge is not evidence, and neither is a plausible argument about the cascade.
+
+⚠️⚠️ **A HARNESS REPORTED A CORRECT PAGE AS UNSTYLED, FOR THE THIRD TIME IN THIS REPO.** The type
+measurement first came back with every element at **16px** and `--pd-ink` empty — because the harness
+served the page over `http` while linking `dashboard.css` over `file://`, which the browser refuses.
+The same run also matched a `<style>` opener **inside an HTML comment**, so CSS error recovery ate the
+first real rule. Assert a token before believing a single number; both faults are fixed in the
+generator rather than worked around in the numbers.
+
+**Verified:** `test-sap` **114/0** (new), `test-actsetup` **142/0**, `test-actdnd` **62/0**,
+`test-lsm` **684/0** — and every other project-schedule suite green on the merged tree, **1,843
+assertions across twenty suites, 0 failing**, including main's own new `test-phasecard` **85/0**,
+which this session had never run. ⚠️ `test-lsm` was **retargeted, not weakened**: reverting the
+off-chart lookup in a throwaway copy takes it to 683/1, naming the assertion. `wiring-check` 139/0 ·
+`dead-hooks` 9, the documented baseline · `dark-remap` 0 · `toolbar-order` 15/0 · `loc-key-agree`
+clean · `selectall-key` 100 safe / 0 broken · the inline block parses (3.83MB) · CSS braces 2535/2535
+· 0 NUL bytes in every file this change touches.
+
+⚠️ **Fixed in passing, found by measuring rather than reported:** the Activities grid's off-chart
+mark resolved through the **item-only** `ccByCode` while the banner beside it used `ccLevelOf`, so on
+a healthy build **every `+ Library` row — a level-2 group code — rendered red and was counted as
+off-chart.** `offChartCount` had been corrected for exactly this on 2026-09-10 and the per-cell mark
+was left behind; the two duplicate warnings are now one banner, and both now-callerless counters are
+deleted rather than left to be wired back up.
+
+⚠️ **Reported, NOT fixed — two pre-existing NUL bytes in files this change does not touch**, both a
+unicode-zero sentinel written as the raw byte rather than its six-character escape:
+`tools/dark-remap.js` (offset 5602) and `modules/project-schedule/test-wbsfile.js` (offset 8138), both
+present on `HEAD` before this branch, and both making `grep` treat the whole file as binary. Fifth
+recurrence of a trap this log already records. A two-character repair that does not belong in a commit
+about the Activities step.
+
+⚠️ **Not verified signed in, and the migration has not been run** — no merged activity has been pushed
+and read back, and `class_codes` has never reached a real BOQ match.
+
+⚠️ **Merged `origin/main` (15 commits) before shipping** — the Project Phases twelve-item pass, the
+Schedule Setup rail pass and three 360°-stitcher commits, **758 lines of the same file**. Two
+conflicts, both resolved on the merits rather than by taking a side: main's rail block ships and this
+branch's single declaration composes into it (above), and the off-chart hunk resolves to **this
+branch's empty string**, because main's side calls `offChartCount()` — a function this branch deleted
+in the same pass that folded the duplicate warnings, so taking main's side would have been a
+ReferenceError on every render of the step. `modules/progress-photos/` and `supabase/` are
+byte-identical to main; its suite's 5 failures are main's own pre-existing ones, unchanged.
+
+`MODULE_V` → `20260918i`, re-derived from what the merged tree actually carries **after** integrating
+(main had reached `20260918h`) and sort-checked as a plain string past every `20260918*` token in the
+tree. No shared asset changed.
+
 ### 2026-09-18 (h) — Twelve items on Project Phases, and the two that were geometry rather than taste
 
 Owner, twelve items on Schedule Setup → Project Phases — the per-phase Gantt shipped in `(c)`: shrink
