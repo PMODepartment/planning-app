@@ -104,7 +104,12 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-17 (ah) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
+### 2026-09-17 (aj) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
+
+⚠️ Re-lettered `(aa)` → `(ah)` → `(aj)` across three catch-up merges: `(ah)` collided with two
+newer entries `main` had landed in the interim (this file's own `(ai)` Floors & Zones and `(ah)`
+grid-controls entries below), so the entry that was still catching up moved again, per this file's
+"the one merging in gets bumped" rule.
 
 Owner, two live reports: a 360° video upload sat reading "Starting…" with no further movement, and
 the topbar's Drafts button label ran off the edge next to "+ Add media" at a narrow window width.
@@ -122,25 +127,177 @@ square every other unlabelled topbar tool already is.
 Verified: full suite 974/4 (the same 4 pre-existing, unrelated failures); `tools/wiring-check.js`
 139/0; CSS braces balanced; 0 duplicate DOM ids.
 
-`module.css`/`module.js` → `?v=20260917zq`; `MODULE_V` → `20260917zze`. Detail:
+`module.css`/`module.js` → `?v=20260917zq`; `MODULE_V` → `20260917zzg`. Detail:
 [`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
 
-⚠️ **`MODULE_V` collided three separate times chasing `main` forward: silently with a sibling entry
-at `zq` (both sessions picked the identical token off the same base, so git had nothing to conflict
-on in `modules-grid.js`/`dashboard.html`/`modules.html` since both sides wrote the same string) —
-bumped to `zr` on integrating that. Merging this branch forward again once `main` had independently
-reached `zzd` collided a second time, this time as a real `<<<<<<<` conflict; re-derived past both
-to `zze`. Same recurring collision the entry below documents its own chain of (`zg` → `zp`/`zq` →
-… → `zzd`) — this is one token further along the same chain, not a separate incident.** Likewise
-re-lettered `(aa)` → `(ah)`, derived from the full merged changelog below rather than assumed.
+⚠️ **`MODULE_V` collided four separate times chasing `main` forward: silently with a sibling entry
+at `zq` — bumped to `zr` on integrating that. A real `<<<<<<<` conflict once `main` reached `zzd` —
+re-derived to `zze`. `main` then independently bumped again to `zzg` while this branch sat at `zze`;
+that merged with no conflict since only one side had moved. Same recurring collision the entry below
+documents its own chain of (`zg` → `zp`/`zq` → … → `zzg`) — this is further along the same chain,
+not a separate incident.**
 
-### 2026-09-17 (ai) — One bar per storey: the LSM row folds every trade into a single merged bar
+### 2026-09-17 (ai) — Floors & Zones: every control in the floor row was asking for the whole row
 
-⚠️ Re-lettered `(ag)` → `(ah)` on rebase, then `(ah)` → `(ai)` on a later catch-up merge: this entry
-independently claimed `(ah)` the same way the entry above did, and with both already committed to
-their own branches by the time they met, the one merging in (this one) is the one that moves. Both
-entries kept in full; bumped past the collision rather than either side guessing, per the rule in
-this file's header.
+Owner, with a screenshot of OPW101: *"UI sweep for floors & zones. multiple clipping and unnecessary
+wrapping"* — the category select reading **"Basemen"** and running into the **"Zones"** label beside
+it, and the floor name reading **"Ground F"**.
+
+⚠️ The previous entry reported this page as *"measured clean"* on the type checks, and it was: 0
+off-scale sizes, 0 off-scale weights. **The defect was never a type defect — it was geometry**, which
+those scanners do not look at. Recorded because "clean on the checks I ran" is not "clean".
+
+### ⚠️⚠️ THE CAUSE IS `width: 100%`, INHERITED FROM A STACKED-FORM DEFAULT
+
+`.pd-input` and `.pd-select` are `width: 100%` in `dashboard.css`. That is right for a form where each
+control owns its line, and wrong in a flex **row**: every control asks for the whole row, so they all
+shrink in lockstep by the same proportion regardless of what any of them needs.
+
+**Measured across container widths, the name input and the category select came out at identical
+widths every time** — 322 / 222 / 158 / 122 / 82 / 52 px at 1100 / 900 / 772 / 700 / 620 / 560. The
+select's longest option, *"Podium / Commercial"*, needs **137px**, so it stopped fitting below about
+775px — which is roughly the width this panel actually gets.
+
+Three changes, each earning its place:
+
+- `.sbld-flr-h .pd-input, .sbld-flr-h .pd-select { width: auto }` — the row's controls stop inheriting
+  the stacked-form default.
+- `.sbld-flr-h .sbld-kind { flex: 0 0 auto; width: auto }` — the category sizes to its own longest
+  option and never shrinks. A four-word fixed vocabulary reading "Basemen" is worse than a narrower
+  name box beside it.
+- `.sbld-flr-h .grow { flex: 1 1 90px }` — the floor NAME is the only thing that gives, which is what
+  `.grow` was always for.
+
+### ⚠️⚠️ `min-width` WAS THE WRONG LEVER, AND ONLY MEASURING SHOWED IT
+
+The first attempt paired `flex: 1 1 auto` with `min-width: 90px` and the row still wrapped at 800px —
+even though the arithmetic said 123px was free for a 90px name. **Flexbox breaks lines on each item's
+*hypothetical* main size** — flex-basis clamped by min/max — and for an `<input>` a basis of `auto` is
+its **intrinsic** width, about 250px. So the line measured 549 fixed + 80 gaps + 20 padding + 250 =
+899px and wrapped, while `min-width` never entered the calculation. Only `flex-basis` lowers the
+hypothetical size. `flex: 1 1 90px`.
+
+⚠️ And a wrong measurement nearly hid it: the first line-counter divided row height by the tallest
+child, which with `align-items: center` and mixed control heights reported **2 lines at 900px where
+there was 1**. Clustering the children by their vertical CENTRE is what actually answers "did this
+wrap".
+
+### `flex-wrap: wrap`, which is not the wrapping that was reported
+
+With every control finally declaring a real width the row can genuinely run out of space — and an
+un-wrapping flex row does not clip, it **overflows the panel**. Measured: below ~620px it ran past its
+container. `flex-wrap: wrap` costs nothing while it fits and is the honest answer when it does not.
+This is the opposite of the "unnecessary wrapping" the owner reported: that was controls squeezed to
+nothing at a width where everything could have fitted.
+
+**Before → after, measured at the panel's real width (772px):**
+
+| | before | after |
+|---|---|---|
+| lines used | 1 (clipped) | **1** |
+| `Podium / Commercial` fits | **no** (136px for 137px) | **yes** |
+| `Ground Floor` fits | shared-shrink | **yes**, 120px box |
+| horizontal overflow | none (it clipped instead) | none |
+| first width that wraps | — | **~740px**, where it must |
+
+**Verified:** `test-lsm` 683/683 · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0
+findings · inline scripts parse · CSS brace balance identical to pinned `4593864` · the Setup still at
+0 off-scale font-size rules. Every width above is a browser measurement at seven container sizes, not
+a reading of the CSS. `modules-grid.js` `?v=` → `20260917zzg`.
+
+### 2026-09-17 (ah) — The grid's controls were painting over every highlight; the Grouping rungs stop appearing when there is nothing to group
+
+Three owner reports in one pass: *"These groupings should only appear when there is a grouping
+available"*, *"Let's include the pop-up window in the UI sweep"*, and *"The highlight UI is not
+working properly. Its clipping."*
+
+### ⚠️⚠️ ONE CAUSE, THREE SYMPTOMS: THE INPUTS WERE OPAQUE
+
+`table.sbld-xl input, select` carried `background: var(--pd-card)`. Every mark this grid makes is
+painted on the **`<td>`**, behind its children — so the control covered all of them:
+
+- PDGrid's selection, `.pdg-sel { box-shadow: inset 0 0 0 9999px rgba(238,49,36,.22) }`
+- the bad-code marking, `.sbld-badcode { background: var(--pd-warn-bg) }`
+- the copy marquee's marching ants, a `background-image` on the cell
+
+**Measured before the fix:** the cell computed to `rgba(199,119,0,0.12)` at **43px** tall while its
+input computed to opaque `rgb(255,255,255)` at **24px**. So the mark was hidden behind the text and
+survived only as a **19px strip below it** — which is exactly the reported "clipping": a highlight
+that reads as a band under the row instead of a filled cell.
+
+⚠️ **Transparent costs nothing here, and that was checked rather than assumed.** Walking up from the
+cell: `td`, `tr`, `tbody`, `table.sbld-xl` and `.sbld-xlwrap` are all `rgba(0,0,0,0)`; the first
+painted ancestor is the panel's own white. An unmarked cell is pixel-identical, and the marked ones
+finally show.
+
+⚠️ A second, smaller half: the cell's **colour** never reached the text either. The generic rule sets
+`color: var(--pd-ink)` on every input, which beats inheritance — so a bad code rendered bold (the
+weight *does* arrive, via `font: inherit`) but in ordinary ink. `.sbld-badcode input` carries the warn
+colour now. **Verified after:** input background `rgba(0,0,0,0)`, colour `rgb(138,83,0)` matching the
+cell, and a `.pdg-sel` cell's input no longer covers the selection.
+
+### A Grouping rung only appears when there is a grouping for it
+
+`agroup`…`agroup4` are the four rungs of the Construction Library's grouping path. On a project that
+groups nothing they were four rows that can never build — `willBuild` already returned false for them
+— sitting above the summary line as inert controls.
+
+⚠️ **The rows are hidden; the state is not.** `cfg.wbsOrder` is rebuilt from `work`/`incl`, never from
+the rendered rows, so a rung ticked in a saved setup keeps its tick and simply reappears the day the
+project has a grouping that deep. Hiding a row cannot silently drop it — which is the thing worth
+checking before hiding anything in a dialog that writes settings.
+
+⚠️⚠️ **And the ↑/↓ indices had to follow.** They were positions in `work`. With rows hidden, a swap
+keyed on the rendered index would have moved a different dim, and swapping with a *hidden* neighbour
+would have looked like a button that does nothing. They swap by **identity** now — the nearest visible
+dim, located in `work` — so hidden rungs stay where they are and every arrow moves the row it is on.
+
+⚠️ **Tower is deliberately not hidden by this.** It shows with its own *"skipped — this project has
+one tower, so it would be a level with a single branch"* note, which is a fact about the project worth
+reading. A grouping rung has no such story: it is simply not part of this project's structure.
+
+### The pop-ups join the UI sweep
+
+The 4.1 scanner only walked the **step renderers**, so a dialog opened *from* a step was never covered
+by it. Both are now at **0 off-scale inline font-sizes**:
+
+- `openPushModal` — five: `12px` four times (not a rung; `--pd-fs-sm` is 12.5) and `16px` once.
+- `openFileUnderPackage` — four more.
+
+⚠️⚠️ **The `16px` was fighting a rule that already exists.** `.pd-modal-header > h3` is `font: inherit`
+in `dashboard.css` precisely so a modal title takes the header's own `--pd-fs-lg`/700 — the inline
+literal overrode it and pinned this one dialog to a number that will not follow the token. Deleted, not
+re-tokenised.
+
+⚠️ **Six hand-written copies of one label, five of them agreeing.** The same
+`display:block;font-size:12px;font-weight:700;margin:12px 0 4px` block appears across three dialogs.
+The sixth says `margin:10px 0 4px` — two pixels of top margin is the only thing that kept it out of an
+exact-string sweep, which is this whole problem in miniature. All six are `.sbld-pushlbl` now.
+
+### Floors & Zones: measured, and it is already clean
+
+Asked for a sweep, and on the objective checks there is nothing left to sweep: `stLevels` has **0
+off-scale inline font-sizes** (the two `<select>`s were fixed in *(aa)*), and its CSS families —
+`.sbld-lvl*`, `.sbld-flr*`, `.sbld-zn*`, `.zpw-*`, `.sbld-twr*` — are **50 type-bearing rules with 0
+off-scale**. The one flagged value is `.zpw-mark text` at `calc(22px * var(--zs,1))`, which is **SVG
+text** and the scale's documented exemption (font-size in user units). `.sbld-twmore > summary` at 800
+was looked at and left: it is the glyph inside a 30×30 icon button, not body text. **Said plainly
+rather than sweeping something to look busy** — what the owner is seeing there is not visible to these
+checks, and is asked about instead.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · inline scripts parse · CSS brace balance identical to pinned
+`9884985` · 0 off-scale font-size rules and 0 off-scale inline sizes across the Setup and both
+dialogs. The highlight fix is a browser measurement before and after, not a reading of the CSS.
+`modules-grid.js` `?v=` → `20260917zzf`.
+
+### 2026-09-17 (ak) — One bar per storey: the LSM row folds every trade into a single merged bar
+
+⚠️ Re-lettered `(ag)` → `(ah)` on rebase, then `(ah)` → `(ai)` on a later catch-up merge, then
+`(ai)` → `(ak)` on this one: `main` independently landed its own new `(ai)` (the Floors & Zones
+entry above) in the interim, so this carried-over entry moved a third time rather than collide.
+Both entries kept in full; bumped past the collision rather than either side guessing, per the
+rule in this file's header.
 
 Owner: *"The gantt bar still doesn't fold into one gantt bar to show the LSM. Let's fix."* Asked which
 of three shapes he meant, he chose **one bar per storey, all trades merged** over keeping a lane per

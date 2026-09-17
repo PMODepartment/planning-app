@@ -4108,8 +4108,32 @@
     .sbld-flr-sub { border-style:dashed; }
     .sbld-flr-sub .sbld-flr-h { background:var(--pd-red-light); }
     .sbld-subtag { flex:none; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em; color:var(--pd-red); border:1px solid var(--pd-red-mid); border-radius:var(--pd-radius); padding:2px 5px; }
-    .sbld-flr-h { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
-    .sbld-flr-h .grow { flex:1 1 auto; min-width:0; }
+    /* ⚠ WRAPS ONLY WHEN IT MUST. With every control finally declaring a real width the row can
+       genuinely run out of space, and an un-wrapping flex row does not clip - it OVERFLOWS the
+       panel. Measured: below ~620px the row ran past its container. `flex-wrap:wrap` costs nothing
+       while it fits (no wrap occurs) and is the honest answer when it does not. This is not the
+       “unnecessary wrapping” the owner reported - that was controls squeezed to nothing.
+       ⚠ Paired with a floor-NAME that stops collapsing (min-width below), so the row wraps at a
+       sensible point instead of grinding the name box down to 22px first. */
+    .sbld-flr-h { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
+    /* ⚠⚠ `width:auto`, OVERRIDING `.pd-input`/`.pd-select`'s `width:100%` — see the note above.
+       In a flex row that default makes every control demand the whole row and shrink in lockstep,
+       which is why the name box and the category select measured the same width at every
+       container size while needing very different amounts. */
+    .sbld-flr-h .pd-input, .sbld-flr-h .pd-select { width:auto; }
+    /* The NAME is the one control that gives: it takes the slack and it is the only thing that
+       shrinks, so a long floor name is what yields, not the label of a fixed vocabulary. */
+    /* ⚠⚠ `flex-basis: 90px`, NOT `auto` with a min-width. Flexbox breaks lines on each
+       item’s HYPOTHETICAL main size — flex-basis clamped by min/max — and for an <input> a basis
+       of `auto` is its INTRINSIC width, about 250px. So the row measured 549 + 80 gaps + 20 padding
+       + 250 = 899px and wrapped at 800px even though only 90px of name was actually required.
+       min-width does not lower the hypothetical size; only the basis does. Measured before and
+       after: wrapped at 800px, now stays on one line down to ~740px. */
+    .sbld-flr-h .grow { flex:1 1 90px; min-width:90px; }
+    /* ⚠ The category select sizes to its OWN longest option (“Podium / Commercial”, 137px) and
+       never shrinks below it. A four-word fixed vocabulary that reads “Basemen” is worse than a
+       narrower name box beside it. */
+    .sbld-flr-h .sbld-kind { flex:0 0 auto; width:auto; }
     .sbld-flr-h .pd-input { height:32px; font-size:var(--pd-fs-base); }
     .sbld-addzone { flex:none; font-size:var(--pd-fs-sm); height:30px; }
     .sbld-znwrap { padding:6px 10px 8px; display:flex; flex-direction:column; gap:6px; }
@@ -4513,6 +4537,12 @@
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     /* push modal — WBS structure editor */
+    /* The push dialog's form labels — “Start date”, “Contract package”, “WBS structure”. Written
+       inline four times at a literal 12px, which is not a rung: --pd-fs-sm (12.5px) is the scale's
+       designated control size and is what they are now. */
+    .sbld-pushlbl { display:block; font-size:var(--pd-fs-sm); font-weight:700; margin:12px 0 4px; }
+    .sbld-pushlbl.tight { margin:0 0 4px; }
+    .sbld-pushlbl em { font-weight:400; font-style:normal; color:var(--pd-muted); }
     .sbld-wbsrows { display:flex; flex-direction:column; gap:5px; }
     .sbld-wbsrow { display:flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); font-size:var(--pd-fs-base); }
     .sbld-wbslvl { display:inline-block; min-width:22px; text-align:center; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); }
@@ -4553,7 +4583,11 @@
     table.sbld-xl td.xl-num input { text-align:right; font-variant-numeric:tabular-nums; }
     table.sbld-xl td.xl-rowact { width:38px; text-align:center; }
     table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
-    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
+    /* ⚠⚠ `background: transparent`, NOT `--pd-card`. See the note above: an opaque control hides
+       every mark this grid paints on the CELL — the selection, the bad-code tint and the copy
+       marquee are all drawn on the <td>, behind its children. The first painted ancestor is the
+       panel's own surface, so an unmarked cell is unchanged. */
+    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:transparent; color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
     /* ⚠️ The shared focus ring is `outline-offset:2px`, which OVERLAPS the neighbouring cell in a
        table this dense. Pulled inside for grid cells only - the ring is still 2px and still the
        same colour, it just draws within the cell it belongs to. */
@@ -4666,6 +4700,10 @@
        intends to cost-load. Uses the warn token pair, never `--pd-warn` as a text colour. */
     .sbld-xl td.xl-cell.sbld-badcode { background:var(--pd-warn-bg); color:var(--pd-warn-text);
       box-shadow:inset 2px 0 0 var(--pd-warn-line); font-weight:700; }
+    /* ⚠ The CELL's colour does not reach the control: the generic rule above sets
+       `color: var(--pd-ink)` on every input, which wins over inheritance. The weight does reach
+       it (`font: inherit`), which is why the code read bold-but-black. */
+    .sbld-xl td.xl-cell.sbld-badcode input { color:var(--pd-warn-text); }
     /* Step-3 tower relationships — one readable sentence per row. */
     /* The Tower-links form. See the note in stTowerLinks: these are labelled, auto-width
        controls laid out as a sentence, never `.sbld-mini`. */
@@ -31762,15 +31800,15 @@
     var topBranches = (WBS_NODES || []).filter(function (n) { return !n.parent_id && !n.is_package_root; });
 
     var m = UI.modal('<h2 style="margin-top:0;">File existing work under a contract package</h2>' +
-      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">Work planned before this project was ' +
+      '<p class="sbld-hint" style="margin-top:0;">Work planned before this project was ' +
       'split into contract packages belongs to no lot, so it appears in no package total. This files it, and ' +
       'moves its top-level branches under the package\'s own row so the grid reads contract-first.</p>' +
-      '<label style="display:block;font-size:12px;font-weight:700;margin:10px 0 4px;">Contract package</label>' +
+      '<label class="sbld-pushlbl">Contract package</label>' +
       '<select class="pd-select" id="fp-pkg" style="width:100%;">' +
         PACKAGES.map(function (k) {
           return '<option value="' + esc(k.id) + '">' + esc((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
         }).join('') + '</select>' +
-      '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">What to file</label>' +
+      '<label class="sbld-pushlbl">What to file</label>' +
       '<select class="pd-select" id="fp-scope" style="width:100%;">' +
         '<option value="unassigned">Everything not yet in a package</option>' +
         '<option value="branch">One WBS branch and everything under it</option>' +
@@ -31780,7 +31818,7 @@
           '<option value="">— Choose a branch —</option>' +
           topBranches.map(function (n) { return '<option value="' + esc(n.id) + '">' + esc(n.name || 'WBS') + '</option>'; }).join('') +
         '</select></div>' +
-      '<div id="fp-what" style="margin:12px 0;font-size:13px;"></div>' +
+      '<div id="fp-what" style="margin:12px 0;font-size:var(--pd-fs-base);"></div>' +
       '<div style="text-align:right;"><button class="pd-btn" id="fp-x">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="fp-go">File</button></div>');
 
@@ -31797,7 +31835,7 @@
       what.innerHTML = '<strong>' + c.acts.length + '</strong> activity/activities and <strong>' + c.branches.length +
         '</strong> WBS branch(es) will be filed under <strong>' + esc(nm) + '</strong>' +
         (c.tops.length ? ', and <strong>' + c.tops.length + '</strong> top-level branch(es) will move under its row.' : '.') +
-        '<div style="color:var(--pd-muted);font-size:12px;margin-top:6px;">' +
+        '<div class="sbld-hint" style="margin-top:6px;">' +
         'Work already filed under a <em>different</em> package is never touched. Only top-level branches move — ' +
         'deeper ones are re-tagged where they are. Nothing is deleted, and no dates or progress change.</div>';
     }
@@ -46466,7 +46504,7 @@
       // clears the whole project and its inserts carry no package_id, so offering a package there
       // would promise scoping the import does not do.
       var pkgHtml = (imp.kind === 'xlsx' && (PACKAGES || []).length)
-        ? '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Contract package</label>' +
+        ? '<label class="sbld-pushlbl">Contract package</label>' +
           '<select class="pd-select" id="b-imppkg" style="width:100%;max-width:420px;">' +
           '<option value="">— No package (assign later in the grid) —</option>' +
           (PACKAGES || []).map(function (k) { return '<option value="' + e2(k.id) + '"' + (imp.pkgId === k.id ? ' selected' : '') + '>' + e2((k.code ? k.code + ' — ' : '') + k.name) + '</option>'; }).join('') +
@@ -46903,10 +46941,10 @@
       // none is defined, ask the user to pick a start date.
       var ddSet = !!dataDate, ddISO = ddSet ? iso2(dataDate) : (cfg.startDate || iso2(wallToday()));
       var startBlock = ddSet
-        ? '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Start date</label>' +
+        ? '<label class="sbld-pushlbl">Start date</label>' +
           '<input class="pd-input" type="date" id="sbpush-start" value="' + e2(ddISO) + '" readonly style="width:100%;height:34px;background:var(--pd-bg);">' +
           '<p class="sbld-hint" style="margin:4px 0 0;">Using the project <b>Data Date</b> (' + e2(ddISO) + '). Change it via the Data Date badge on the schedule toolbar.</p>'
-        : '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Start date <span style="color:var(--pd-red);">*</span></label>' +
+        : '<label class="sbld-pushlbl">Start date <span style="color:var(--pd-red);">*</span></label>' +
           '<input class="pd-input" type="date" id="sbpush-start" value="' + e2(ddISO) + '" style="width:100%;height:34px;">' +
           '<p class="sbld-hint" style="margin:4px 0 0;">No project <b>Data Date</b> is set — choose the date the schedule should start from.</p>';
       // Which contract package this push lands in. ⚠️ Shown even when there is only one
@@ -46915,7 +46953,7 @@
       // owner could not see.
       var pkgSel = curPkgId || '';
       var pkgBlock = !(PACKAGES || []).length ? '' :
-        '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Contract package</label>' +
+        '<label class="sbld-pushlbl">Contract package</label>' +
         '<select class="pd-select" id="sbpush-pkg" style="width:100%;">' +
           (PACKAGES || []).map(function (k) {
             return '<option value="' + e2(k.id) + '"' + (String(pkgSel) === String(k.id) ? ' selected' : '') + '>' +
@@ -46926,7 +46964,7 @@
         '<p class="sbld-hint" id="sbpush-pkghint" style="margin:4px 0 0;"></p>';
       // (the WBS picker was removed — a builder push always files under Execution Phase)
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 500;
-      ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+      ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3>Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:16px;">' +
         '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + gI.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule with their <b>relationships</b> (FS/SS/FF/SF + lag) as predecessors. Nothing is replaced.</p>' +
         // ⚠️ Stated before the push, not only in the summary after it. A push that quietly created
@@ -47019,16 +47057,19 @@
           if (ad >= 0 && absMaxDepth() <= ad) return false;
           return true;
         }
+        /* A grouping rung is only OFFERED when some item is filed that deep — see the note above. */
+        function offered(d) { var ad = absDimDepth(d); return ad < 0 || ad < absMaxDepth(); }
+        var vis = work.filter(offered);
         var lvl = 0;
-        host.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">WBS structure <span style="font-weight:400;color:var(--pd-muted);">(drag order with ↑/↓; tick to include)</span></div>' +
-          '<div class="sbld-wbsrows">' + work.map(function (d, i) {
+        host.innerHTML = '<div class="sbld-pushlbl tight">WBS structure <em>(drag order with ↑/↓; tick to include)</em></div>' +
+          '<div class="sbld-wbsrows">' + vis.map(function (d, i) {
             var on = incl[d], build = willBuild(d); if (build) lvl++;
             var skipped = on && !build;
             return '<div class="sbld-wbsrow"' + (skipped ? ' style="opacity:.6;"' : '') + '><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
               '<span class="sbld-wbslvl">' + (build ? 'L' + lvl : '—') + '</span> ' + e2(dimLabelOf(d)) +
               (skipped ? '<span class="sbld-hint" style="margin:0;">skipped — ' + e2(_dimSkipWhy(d)) + '</span>' : '') + '</label>' +
               '<button class="pd-btn sbld-wbsmv" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
-              '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === work.length - 1 ? ' disabled' : '') + '>↓</button></div>';
+              '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === vis.length - 1 ? ' disabled' : '') + '>↓</button></div>';
           }).join('') + '</div>' +
           /* ⚠️ NAME THE TOP OF THE TREE, not just the chain. The order line alone reads as a list of
              things that will be present, and a planner who wants trade branches under the Execution
@@ -47040,8 +47081,11 @@
           (lvl ? '<p class="sbld-hint" style="margin:2px 0 0;opacity:.8;">Directly under the Execution Phase you will see <b>' +
             e2(dimLabelOf(work.filter(willBuild)[0])) + '</b> branches; everything below it nests inside them. Drag with ↑/↓ to change what leads.</p>' : '');
         host.querySelectorAll('[data-dim]').forEach(function (c) { c.onchange = function () { incl[c.dataset.dim] = c.checked; renderStruct(); }; });
-        host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; var t = work[i - 1]; work[i - 1] = work[i]; work[i] = t; renderStruct(); }; });
-        host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; var t = work[i + 1]; work[i + 1] = work[i]; work[i] = t; renderStruct(); }; });
+        /* ⚠ Swap by IDENTITY in `work`, not by the rendered index: hidden rungs still sit in
+           `work`, so a positional swap would move one of them instead of the row that was clicked. */
+        function swap(x, y) { var a = work.indexOf(x), b2 = work.indexOf(y); var t = work[a]; work[a] = work[b2]; work[b2] = t; renderStruct(); }
+        host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; swap(vis[i - 1], vis[i]); }; });
+        host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; swap(vis[i], vis[i + 1]); }; });
       }
       renderStruct();
       function close() { ov.remove(); }
