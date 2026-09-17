@@ -270,6 +270,94 @@
     return map;
   }
 
+  // ---- Portfolio provenance: which project a consolidated row came from ----
+  // In portfolio scope every module's list mixes rows from every project the
+  // planner can see, and a row that does not say WHICH project it belongs to
+  // cannot be acted on — the Meetings list rendered six rows all reading
+  // "Meeting Aug 31, 2026" with nothing whatsoever to tell them apart.
+  // Owner (2026-09-15): in a LIST, group by project; everywhere else, mark the
+  // row with the project CODE.
+  //
+  // ⚠️⚠️ SHARED, BECAUSE FOUR MODULES CONSOLIDATE. minutes-of-meeting,
+  // issues-lessons, contracts-claims and progress-photos each read across every
+  // project, and four hand-rolled id→label lookups is precisely the drift this
+  // repo has already paid for three times over (the location normaliser, the
+  // S-curve maths copied into portfolio-overview, the change-order insert).
+  // One cache, one label rule, one chip, one group header.
+  //
+  // ⚠️ THE PROJECT ID *IS* THE CODE — `projects.id` is text ('AVR101'), the PK,
+  // which is why the code needs no lookup and is right on the very first paint.
+  // Only the NAME is async (it rides the project-selector's own warm cache), so
+  // a label asked for before that read lands degrades to the bare code rather
+  // than to a blank cell or the word "undefined".
+  function projectCode(id) { return id ? String(id) : ''; }
+  function projectName(id) {
+    var row = (_pdProjCache || []).filter(function (p) { return p.id === id; })[0];
+    return row ? (row.name || '') : '';
+  }
+  function projectLabel(id) {
+    var n = projectName(id);
+    return n ? (projectCode(id) + ' — ' + n) : projectCode(id);
+  }
+  // The marker for a row that is NOT in a grouped list — a kanban card, a
+  // calendar chip, a photo tile. ⚠️ The CODE alone, never "CODE — Name": these
+  // sit inside dense furniture where the full label would be the longest thing
+  // on the card. The name is still reachable, in the chip's own `title`.
+  function projectTagHTML(id, opts) {
+    if (!id) return '';
+    opts = opts || {};
+    // ⚠️ `opts.title` exists for a caller that already holds the project's name
+    // from its OWN read — portfolio-dash.js does, and `PDb.getProjects()` is not
+    // cached, so making it warm this file's cache instead would cost a second
+    // network round trip for a string it already has.
+    return '<span class="pd-projtag' + (opts.cls ? ' ' + esc(opts.cls) : '') + '" title="' +
+      esc(opts.title || projectLabel(id)) + '">' + esc(projectCode(id)) + '</span>';
+  }
+  // Group rows for a LIST. Returns [{ id, code, name, label, rows }] ordered by
+  // code, so one project sits in the same place on every module's screen.
+  // ⚠️ A row carrying no project_id is NOT dropped — it gathers in a named
+  // bucket at the end, because silently losing a row is worse than an ugly one.
+  // ⚠️ ROW ORDER WITHIN A GROUP IS THE CALLER'S, UNTOUCHED. This regroups; it
+  // never re-sorts, so a list the planner has sorted by date stays sorted by
+  // date inside each project.
+  function groupByProject(rows, getId) {
+    var pick = getId || function (r) { return r && r.project_id; };
+    var map = {}, order = [];
+    (rows || []).forEach(function (r) {
+      var id = pick(r) || '';
+      if (!map[id]) { map[id] = []; order.push(id); }
+      map[id].push(r);
+    });
+    order.sort(function (a, b) {
+      if (!a !== !b) return a ? -1 : 1;                 // the no-project bucket last
+      return String(a).localeCompare(String(b));
+    });
+    return order.map(function (id) {
+      return {
+        id: id, code: projectCode(id), name: projectName(id),
+        label: id ? projectLabel(id) : 'No project recorded',
+        rows: map[id]
+      };
+    });
+  }
+  // One header row for a grouped <table>. ⚠️ `colspan` is the CALLER'S own
+  // column count — a <tr> narrower than the table it sits in draws a visible
+  // notch down the side of every group.
+  function projectGroupRowHTML(g, colspan) {
+    // ⚠️⚠️ THE FLEX LIVES ON AN INNER <div>, NEVER ON THE <td>, AND ONLY
+    // RENDERING FOUND THIS. `display:flex` on a table cell takes it out of the
+    // table box model — the browser generates an anonymous cell around it and
+    // DROPS `colspan` entirely. Measured: the band came out 342px wide inside a
+    // 1398px table, a notch down the side of every group, while the markup and
+    // the colspan attribute both looked perfectly correct in the source.
+    return '<tr class="pd-projgrouprow"><td class="pd-projgroupcell" colspan="' + (colspan || 1) + '">' +
+      '<div class="pd-projgroup">' +
+        '<span class="pd-projgroup-code">' + esc(g.id ? g.code : g.label) + '</span>' +
+        (g.id && g.name ? '<span class="pd-projgroup-name">' + esc(g.name) + '</span>' : '') +
+        '<span class="pd-projgroup-n">' + g.rows.length + '</span>' +
+      '</div></td></tr>';
+  }
+
   // ---- Project selector (shared group-head browser) ------------------------
   // Upgrades a native project <select> into a button that opens the shared
   // nav tree above (Portfolio + Group-Head-grouped projects). The <select>
@@ -1244,5 +1332,8 @@
                 renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
                 wireFilterToggle: wireFilterToggle, allProjectIds: allProjectIds,
                 projectsById: projectsById,
+                projectCode: projectCode, projectName: projectName,
+                projectLabel: projectLabel, projectTagHTML: projectTagHTML,
+                groupByProject: groupByProject, projectGroupRowHTML: projectGroupRowHTML,
                 kpi: kpi, kpis: kpis };
 })();

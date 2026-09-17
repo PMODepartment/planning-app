@@ -1,3 +1,197 @@
+## 2026-09-17 (zn) — The browser's own dialogs leave the module; the shape editor gets numbers; General Requirements stops being in a tower
+
+Owner, on the Schedule Setup's Floors & Zones step: *"1. for adding floor plan, improve UI to edit
+shapes 2. when defining floor plan, delete the checkbox of no label band checkbox 3. when adding
+towers, floors, UI usually gives browser pop-up. instead of browser pop-up create an app pop-up
+window where user can input the fields. apply this across the whole schedule module 4. general
+requirements should have no tower, floor, or zones"*, and *"improve the process flow of defining
+the floor plans per floor and type."*
+
+### 1 · ⚠️⚠️ THE BROWSER DIALOGS ARE GONE — ALL 104 OF THEM, NOT THE TWO THAT WERE REPORTED
+
+**`psAsk` / `psPrompt` / `psConfirm`, plus their `await` forms `psOk` / `psAskText` /
+`psAskAsync`.** 33 `prompt()` and 71 `confirm()` call sites converted; the module now contains
+**zero** of either, and a new suite asserts that it stays that way.
+
+The owner named towers and floors, and adding a tower is the clearest case of why: it asked **two
+`prompt()`s back to back** — the name, then the code. So a planner who changed their mind about the
+name after typing the code had no way back, the second box could not say what a code is *for*, it
+could not show the name it was about to use, and nothing could be validated until both were already
+answered. It is one form now, and the code is **required** where it used to be silently defaulted —
+it is what every generated activity id and location label is built from, so a blank one produced
+codes with a hole in them that nobody found out about until the push.
+
+- ⚠️⚠️ **AND `prompt()` IS THE ONE DIALOG THIS APP CANNOT STYLE.** It renders in the browser chrome:
+  no dark mode, no project typography — and on Chrome a *second* one in the same gesture carries a
+  **"prevent this page from creating more dialogs"** checkbox that disables every dialog on the page
+  for the rest of the session. Two sequential prompts per tower is exactly the pattern that trips it.
+- ⚠️⚠️ **ASYNCHRONOUS, AND THAT IS NOT NEGOTIABLE.** `prompt()` blocks; a DOM dialog cannot. So the
+  rule for converting a site is: *everything after the answer moves inside*. A site that leaves work
+  behind the call runs it before the planner has answered — the one failure mode of this change, and
+  invisible until the answer is "cancel". Every site was read and converted individually.
+- ⚠️ Roughly half were already `async`, and there the honest conversion is **one line**:
+  `if (!(await psOk(M, opts))) return;`. `psOk` resolves **false** on cancel rather than rejecting —
+  a rejection would need catching at every site or the ordinary act of changing your mind becomes an
+  unhandled rejection in the console.
+- ⚠️ **Required fields are checked by the dialog, not by the caller.** `prompt()` returns `''` for an
+  empty box and every call site had to remember to test it; half of them did not.
+
+**Three sites stopped being a decode job and became a control:**
+
+| was | now |
+|---|---|
+| *Add a threshold* — **three** prompts: a hand-numbered menu of 7 metrics asking for a number, then a value with no idea which metric it belonged to, then a severity as free text that quietly became "Medium" if misspelled | one form, three `<select>`s and a number, validated |
+| *Copy another tower into this one* — a prompt printing `1) Tower A / 2) Tower B … Type a number:`, then a **second** box warning what it would replace | one dialog: a list showing each tower's floor count, with the warning beside the question |
+| *Replace or append the uploaded activities* — a confirm whose message read *"OK = replace · Cancel = append"*, so two buttons had to be decoded into three outcomes | a select, and Cancel means cancel |
+
+- ⚠️ *Splice the change order, or leave it in parallel* was the same shape: both answers are real, and
+  `confirm()` could only call them OK and Cancel. The buttons are named now.
+- ⚠️ **The `_xlBatch` guard from `origin/main` is kept, and it matters more than before.** `psAsk`
+  closes any dialog already open, so filling "Change Order" down forty rows would have asked forty
+  times and kept only the last answer — each replacing the one before it too fast to read.
+
+### 2 · The "no level" band checkbox is gone
+
+⚠️ It was the odd one out in a list of floors: every other tick in that panel names a storey the
+planner typed, and this one named a row the Vertical Stacking **invents** for work carrying no floor
+at all. Asking, on F7's floor-plan window, whether F7's outline should stand in for "activities
+nobody filed anywhere" is a question about a different screen's fallback.
+
+⚠️⚠️ **The pointer itself is NOT removed.** `ZP_NOLEV_ID` is still read by the stacking and still
+survives `normalize`, so a project that ticked this before today keeps the shape it chose — deleting
+data to remove a control would silently repaint somebody's stacking. What is gone is the way to set
+it. Nothing in the setup writes that pointer any more.
+
+### 3 · Editing a shape by the numbers, and by the keyboard
+
+Every edit in the plan window was a **drag**, and a drag cannot state a number. Two zones that are
+meant to be the same width could only be made so by eye.
+
+- **A row of four boxes for the selected area — X, Y, W, H**, in plan units, plus six buttons that put
+  it against an edge of the sheet or in the middle. ⚠️ It is the **bounding box**, not the corners:
+  four numbers for a shape of any complexity. The corners still belong to the drag.
+  ⚠️⚠️ **`zpSetBoxPts` is NON-UNIFORM, and it is the one place in this file that is.** `zpScalePts`
+  is uniform because a tower footprint brought in from its own floor plan has no dimensions, so only
+  its proportions are true. These four boxes are the planner *stating* the dimensions, and refusing
+  width without height would make the control unable to say the thing it exists for.
+  ⚠️ W and H are disabled on a **locked** footprint; its position still is not.
+- **Mirror — `⇆` and `⇅`.** ⚠️⚠️ A handed plan (the east tower's L against the west tower's) **cannot
+  be reached by any rotation**, so until now the only way to draw the second one was to trace it again
+  by hand. The suite proves it by signed area: every rotation preserves the sign, a mirror flips it.
+- **Arrow keys nudge** the selected area — by the snap grid when one is on, by 1 unit when it is off,
+  ×10 with Shift. ⚠️ Clamped by the bounding box, the same rule the body drag follows.
+  ⚠️ **One undo snapshot per burst**: a held arrow repeats ~30×/s and would fill the 50-step history
+  in under two seconds. A pause over half a second starts a new gesture.
+- **Tab walks the areas**, wrapping. On a floor traced into eight zones, the one *underneath* another
+  could only be selected from the chip list — a click on the drawing always takes the shape on top.
+- **Delete** removes the selection. ⚠️⚠️ Every one of these is gated on **not typing**: the window now
+  holds four number boxes, and an arrow key inside one means *step the value*.
+
+### 4 · Floor plans per floor **and type**
+
+- **A coverage panel above the floor list**, one row per floor **category**: how many storeys, how
+  many *drawings* they share between them, how many are still bare, and a **Draw…** button that opens
+  the first bare floor of that category. The shape of the work — *draw one typical floor, one podium,
+  one roof, and point everything else at them* — was invisible behind forty buttons all saying "Plan…".
+- **Inside the plan window, "All floors of one category"** — one press points every storey of that
+  type at this drawing. ⚠️ It is a **shortcut into the same ticks**, writing `of[floorId]` through
+  `zpAssign` exactly as ticking by hand does; there is no second "assigned by category" state to
+  diverge from the ticks, which is the trap the legacy `kind:` pointer fell into. ⚠️ Only categories
+  that are not already fully on this plate get a button, and each says how many floors it would take.
+- ⚠️ Every row in the share list now prints its **category**, because the buttons act on it and a list
+  that cannot be read by category makes them unverifiable.
+- **`+ Add floor` / `+ Basement` are one form**, with `How many` — a tower is built ten floors at a
+  time, and the count is the field that was missing. ⚠️ The defaults reproduce the old buttons exactly
+  (one floor, the next auto code, Typical, no zones), so pressing Enter the moment it opens is the
+  gesture that was there before. ⚠️ The **category** is asked at birth because it is what the zone
+  sequence branches on and what the sharing above acts on. ⚠️ The number is taken off the **end** of
+  the typed code and counted up, so `PODIUM` gives `PODIUM, PODIUM 2` rather than `PODIUM1`.
+
+### 5 · ⚠️⚠️ General Requirements carries no tower, floor or zone — and this overturns an earlier answer
+
+`var LOCLESS = { GR: 1 }` — **one list, read in four places**: the editor (no floors can be typed for
+it), `locList` (no leaves come out of it), `catalogueFrom` (none of its floors reach the location
+catalogue) and `generate` (its single occurrence carries **no tower**).
+
+⚠️⚠️ **It contradicts the note in `generate()` recording the owner on 2026-09-03** — *"i dont think if
+there is no floors or zones under a trade, it should have an all location. if it is still under tower
+1, then it is under tower 1."* That was about a trade that merely has **no floors typed in yet**, and
+it is still right for one. General Requirements is a different thing: mobilisation, the site office,
+insurances, the safety programme and the as-builts are not in a storey or a tower, they are the job.
+Giving them one tower out of seven is not a conservative default — it is a claim, it lands them inside
+that tower's WBS branch, and it makes the stacking draw preliminaries as if they happened on a floor.
+
+- ⚠️ **One list, not four `=== 'GR'` tests**, because the first change to the rule would leave three
+  behind. The suite asserts each of the four call sites individually.
+- ⚠️ **Its zoning is not deleted.** It is ignored, so a project that typed floors under General
+  Requirements before today can be moved back by removing one key.
+- ⚠️ The Floors & Zones chip row shows it as a **dead, dashed chip reading "project-wide"** rather than
+  dropping it. A planner who used it in step 1 and cannot find it here has to be told why, once, where
+  they are looking — the emptiest possible bug report is *"I set up the floors and nothing happened"*.
+- ⚠️ `dimKey` already returns the ` ` "no value at this level" sentinel for a null tower, so the
+  pushed row attaches to its parent and builds no tower branch. That path is unchanged.
+
+### Verified
+
+**New `test-syntax.js`** — the shipped file's inline `<script>` is handed to the engine verbatim and
+**parses**, and **no native `prompt(` or `confirm(` remains** (comments blanked through `tools/scan.js`
+first; this file describes what it replaced, in prose, dozens of times).
+⚠️⚠️ It exists because every other suite here slices ONE function and runs it, so **all of them pass
+while the file as shipped does not parse** — and a browser reports a syntax error in a 53,000-line
+inline script as a blank page.
+
+**New `test-shapeedit.js` — 36 assertions, 0 failing**, `zpFlipPts` / `zpNudgePts` / `zpSetBoxPts`
+sliced out of the shipped file and executed: the mirror's box does not move and its winding reverses
+(so it is not a turn), mirroring twice is the identity point-for-point, a nudge past the edge stops
+**at** the edge while one that cannot move at all returns null, the numeric box sets width and height
+independently and clamps onto the sheet, and a degenerate ring is **refused** rather than silently
+given an area. The four `locless` call sites are asserted individually.
+⚠️ **The contrast bites**: the pinned base has no mirror, no nudge, no numeric box, no `LOCLESS`, no
+dialog kit — and still carries `zpw-nolev`, which this file does not.
+
+**Rendered and driven in a browser** against the app's real `dashboard.css` and this module's own
+`<style>`, through a gitignored `_scratch-*` harness (deleted): the tower form, the confirm and the
+five-field Add-floors form, in **both themes**. Dark-mode contrast measured — body text **12.22**,
+the note **7.02**, the danger button **6.14**, all clear of AA. Validation keeps the dialog open and
+names the field; **Escape** closes; **Enter** commits from a single-line field and does **not** commit
+from a `<select>`; a required empty field blocks with *"Code of the first one is required."*; no stray
+overlays are left behind. At **375px** it becomes the app's own bottom sheet — full width, body
+scrolling, footer on screen, nothing clipped, no horizontal page scroll.
+
+`test-zoneplan` **27/27**, `test-sitefit` **31/31**, `test-wbsfile` **33/33**, `test-cpm` **28/28**,
+`test-critwbs` **26/26**, `test-health` **30/30**, `test-autotrace` **32/32**, `wiring-check`
+**139/139**, `scan` self-test clean, `dead-hooks` **unchanged** against the pre-change tree (so every
+new class is emitted).
+
+⚠️ **`test-autotrace` and `test-lsm` needed their slice lists widened, not their expectations
+weakened.** Both slice `locList`, which gained the `locless` gate — and `catalogueFrom` wraps its body
+in `try/catch`, so an unlinked name there does **not** throw: it returns `{}` and every assertion
+fails with *"expected 4, got 0"*, which reads as a broken catalogue rather than a broken harness. Both
+now link the **real** function and its table. `test-lsm`'s catalogue fixture moved its first floor off
+`GR` onto `SW` — the multi-trade property it exists to prove is untouched, and the GR floor now proves
+the **exclusion** instead.
+
+⚠️⚠️ **Two suites fail on `origin/main` as well, and they are not this change's.** `test-builder` is
+**99/1** and `test-lsm` **675/28**, both identically on a pristine `origin/main` worktree: the
+flowline was removed upstream and `_lsmClashShow` added, neither with a suite update. The failure sets
+were diffed and there are **zero** regressions from this work — the only difference is one assertion
+this change *fixes*. `test-lsm`'s crash was closed here (one real var linked, never stubbed) so the
+suite runs at all; repairing its flowline sections belongs to whoever removed the flowline.
+
+⚠️ **Not verified signed in.** The anon key has no grants, so no dialog has been opened on a real
+project, no floor has been added through the new form, and no General Requirements activity has been
+pushed without a tower. **The first things to check:** *Floors & Zones* should show General
+Requirements as a dead "project-wide" chip and no floors for it; `+ Add floor` should open a form
+whose Enter key behaves like the old button; and the plan window's selected-area row should carry X /
+Y / W / H.
+
+⚠️ **Integrated across 32 incoming commits**, two of which rewrote the Schedule Setup steps. Two
+conflict hunks, both resolved by **keeping both sides**: `origin/main`'s `_xlBatch` batch guard with
+this branch's dialog, and its `libUndeclare` half of the grouping delete with this branch's confirm.
+
+`MODULE_V` → `20260917zn`, re-derived from what the **live site** actually serves (`20260917zm`) after
+merging, never guessed before — the tree still said `zl` at that moment.
+
 ## 2026-09-16 (zc) — Activities filed under branches that no longer exist: three holes in one chain
 
 Owner, with the WBS tree open on a builder-pushed schedule: *"pls fix the logic of the grouping or

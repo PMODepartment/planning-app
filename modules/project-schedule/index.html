@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zg" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zh" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
@@ -3198,6 +3198,12 @@
       border-bottom:1px solid var(--pd-line); background:var(--pd-bg); }
     .ps-ck-h [data-ico] { color:var(--pd-red); }
     .ps-ck-body { max-height:340px; overflow:auto; }
+    /* ⚠ The door-card body type, in ONE place. It was inline on all four cards, and the
+       hardcoded 12.5px was `--pd-fs-sm` spelled as a literal — on the scale by luck. */
+    .ps-ck-txt { padding:12px 14px 14px; font-size:var(--pd-fs-sm); line-height:1.6; }
+    .ps-ck-txt p { margin:0 0 8px; }
+    .ps-ck-txt p:last-of-type { margin-bottom:10px; }
+    .ps-ck-txt p.m { color:var(--pd-muted); }
     .ps-ck-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--pd-line); cursor:pointer; font-size:var(--pd-fs-sm); }
     .ps-ck-row:hover { background:var(--pd-red-light); }
     .ps-ck-row .id { font-weight:700; color:var(--pd-muted); min-width:56px; flex:none; }
@@ -3790,7 +3796,6 @@
       background:transparent; border-color:transparent; }
     .sbld-libgin:hover, .sbld-libgin:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .sbld-libgin:not([value=""]) { border-color:var(--pd-line); }
-    .sbld-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin:0 0 10px; }
     @media (max-width:900px) { .sbld-lib { grid-template-columns:1fr; } .sbld-libbody { max-height:340px; } }
     .sbld-znplus, .sbld-znminus, .sbld-unplus, .sbld-unminus { width:30px; height:30px; padding:0; flex:none; font-size:var(--pd-fs-lg); font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
     .sbld-zncount { min-width:22px; text-align:center; font-variant-numeric:tabular-nums; font-weight:700; font-size:var(--pd-fs-body); }
@@ -4411,7 +4416,7 @@
     .sbld-man-page { flex:1; min-width:0; overflow:auto; padding:16px 18px; }
     .sbld-man-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
     .sbld-man-n { flex:none; width:26px; height:26px; border-radius:50%; background:var(--pd-red); color:#fff;
-                  display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; }
+                  display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:var(--pd-fs-base); }
     .sbld-man-why { margin:0 0 4px; font-size:var(--pd-fs-base); color:var(--pd-ink); line-height:1.55; }
     .sbld-help-body h5 { margin:14px 0 5px; font-size:var(--pd-fs-sm); text-transform:uppercase;
                          letter-spacing:.04em; color:var(--pd-muted); }
@@ -36258,7 +36263,8 @@
        of thing that reads fine and breaks one caller. */
     var STEPS = [];
     var STEP_START = { t: 'Start', s: 'Import, or build new', fn: stStart };
-    // The generation path — the original ten steps, in the original order.
+    // The generation path. ⚠ It was ten steps and is SIX — Structure merged into Project Phases
+    // and the Library became a tab of Activities. Count it here, never in prose.
     var STEPS_NEW = [
       /* ⚠️⚠️ THE WBS STEP IS GONE FROM HERE — IT IS A VIEW OF `Structure` NOW.
          Owner 2026-09-08: *"can you merge the WBS in step 2 into step 6— Call the view for the
@@ -37374,7 +37380,7 @@
         h += '<div class="sbld-libL' + lv + ' sbld-libgrp" data-libnode="' + _ni + '">' +
           libGrip('node', _ni) +
           libLv(lv, 'grp', n.path.length === 1 ? 'Grouping' : ('Grouping ' + n.path.length)) +
-          '<span class="sbld-libnm">' + e2(n.name) + '</span>' + libNodeTools(n) +
+          '<span class="sbld-libnm" title="' + e2(n.name) + '">' + e2(n.name) + '</span>' + libNodeTools(n) +
           '<button class="sbld-libadd" data-libadd="' + e2(n.g) + '" data-libaddp="' + e2(JSON.stringify(n.path)) + '" title="Add a grouping inside this one">+ Sub</button>' +
           '<span class="sbld-libwho" title="' + e2(n.acts.length + ' item(s) under this grouping') + '">' + n.acts.length + '</span></div>';
       }
@@ -42604,7 +42610,13 @@
               ? 'The first activity in a phase has nothing above it to run alongside.'
               : 'Run this alongside “' + e2(String((ph.acts[i - 1] || {}).n || 'the row above')) + '” instead of after it. Concurrent rows form one block whose length is the longest of them.') + '">' +
               '<input type="checkbox" data-phpar="' + d.v + '" data-i="' + i + '"' + (a.par ? ' checked' : '') + (i === 0 ? ' disabled' : '') + '></label>' +
-            '<span class="sbld-phwin">' + (on && pl && pl.rows[i] ? e2(win(pl.rows[i].start, pl.rows[i].finish)) : '&mdash;') + '</span>' +
+            /* ⚠ title AND body from the same call — two calls could not disagree here today,
+               but a cut date whose tooltip says something else is the worst of both. */
+            (function () {
+              var w = (on && pl && pl.rows[i]) ? win(pl.rows[i].start, pl.rows[i].finish) : null;
+              return '<span class="sbld-phwin"' + (w ? ' title="' + e2(w) + '"' : '') +
+                '>' + (w ? e2(w) : '&mdash;') + '</span>';
+            })() +
             '<button class="pd-btn sbld-del" data-phdel="' + d.v + '" data-i="' + i + '" title="Remove this activity"><span data-ico="trash" data-ico-size="14"></span></button>' +
             '</div>';
         }).join('');
@@ -43730,8 +43742,10 @@
       var liveActs = (typeof rows !== 'undefined' && rows) ? rows.filter(function (r) { return !isWbs(r); }).length : 0;
       var setupActs = (cfg && cfg.activities) ? cfg.activities.length : 0;
       var state = liveActs
-        ? '<p class="sbld-lede">This project already has <b>' + liveActs.toLocaleString() + '</b> activities in the Project Schedule. An import can <b>replace</b> them or land <b>alongside</b> them — that choice is made on the last step, where you can see what is about to be written.</p>'
-        : '<p class="sbld-lede">This project has <b>no schedule yet</b>. Bring one in from Excel or P6, or build it here step by step.</p>';
+        ? '<p class="sbld-lede">This project already has <b>' + liveActs.toLocaleString() + '</b> activities. An import can replace them or land alongside them — you choose on the last step.</p>'
+        /* ⚠ The three cards directly below ARE the options — naming them here as well is the
+           screen explaining its own buttons. */
+        : '<p class="sbld-lede">This project has <b>no schedule yet</b>.</p>';
 
       // A staged import is the most important thing on this screen when there is one: it is
       // unsaved, session-only work, and it must be impossible to wander past.
@@ -43740,12 +43754,13 @@
         var tt = impPhaseTotals();
         staged = '<div class="pd-card ps-ck-card" style="margin:0 0 14px;">' +
           '<div class="ps-ck-h"><span data-ico="box" data-ico-size="15"></span> Staged import · ' + e2(imp.fname) + '</div>' +
-          '<div style="padding:12px 14px 14px;font-size:12.5px;line-height:1.6;">' +
-          '<p style="margin:0 0 8px;"><b>' + impLeaves().length.toLocaleString() + '</b> activities and <b>' +
-            impBranches().length.toLocaleString() + '</b> WBS branches are parked, waiting for you to check them. ' +
+          '<div class="ps-ck-txt">' +
+          '<p><b>' + impLeaves().length.toLocaleString() + '</b> activities and <b>' +
+            impBranches().length.toLocaleString() + '</b> WBS branches are parked. ' +
             (tt.dropped ? '<b>' + tt.dropped.toLocaleString() + '</b> excluded so far. ' : '') +
             '<b>Nothing has been written to the schedule.</b></p>' +
-          '<p style="margin:0 0 10px;color:var(--pd-muted);">This lives in the browser for this session only — it is a parsed file, not a saved setup. Reloading the page loses it and you would import the file again.</p>' +
+          /* ⚠ The one caveat that is not on any label and costs real work if missed. */
+          '<p class="m">Session only — reloading the page loses it.</p>' +
           '<button class="pd-btn pd-btn-primary" id="b-impgo">Continue checking the import →</button> ' +
           '<button class="pd-btn" id="b-impdrop">Discard it</button>' +
           '</div></div>';
@@ -43753,17 +43768,17 @@
 
       var newCard = '<div class="pd-card ps-ck-card">' +
         '<div class="ps-ck-h"><span data-ico="layers" data-ico-size="15"></span> Build a new schedule</div>' +
-        '<div style="padding:12px 14px 14px;font-size:12.5px;line-height:1.6;">' +
-        '<p style="margin:0 0 8px;">Define the programme and let the setup generate it: the activity list with durations, the floors and zones, how trades follow each other, the lifecycle phases either side of construction, and the WBS. The result is previewed here and pushed when you are happy with it.</p>' +
-        '<p style="margin:0 0 10px;color:var(--pd-muted);">' + (setupActs ? 'This setup already has <b>' + setupActs + '</b> activities — continuing picks up where you left off.' : 'Ten steps, and you can stop and save at any point.') + '</p>' +
+        '<div class="ps-ck-txt">' +
+        '<p>Define the programme and let the setup generate it.</p>' +
+        '<p class="m">' + (setupActs ? 'This setup already has <b>' + setupActs + '</b> activities.' : 'Stop and save at any point.') + '</p>' +
         '<button class="pd-btn pd-btn-primary" id="b-modenew">' + (setupActs ? 'Continue building →' : 'Build a new schedule →') + '</button>' +
         '</div></div>';
 
       var impCard = '<div class="pd-card ps-ck-card">' +
         '<div class="ps-ck-h"><span data-ico="box" data-ico-size="15"></span> Import an existing programme</div>' +
-        '<div style="padding:12px 14px 14px;font-size:12.5px;line-height:1.6;">' +
-        '<p style="margin:0 0 8px;">An Excel activity list, an OPC export or a Primavera P6 <code>.xer</code>. The file is <b>read and held here</b> so you can check it before any of it becomes this project’s schedule: which branch belongs to which phase, what to leave out, how location is derived, and whether to keep the file’s own relationships.</p>' +
-        '<p style="margin:0 0 10px;color:var(--pd-muted);">Four steps, then one <b>Import</b>. A P6 file also brings its calendars, activity codes, user-defined fields and resource master.</p>' +
+        '<div class="ps-ck-txt">' +
+        '<p>An Excel activity list, an OPC export or a Primavera P6 <code>.xer</code>.</p>' +
+        '<p class="m">Read and held here so you can check it before anything is written.</p>' +
         '<button class="pd-btn pd-btn-primary" id="b-impfile"><span data-ico="download" data-ico-size="14"></span> Choose a file…</button>' +
         '</div></div>';
 
@@ -43778,9 +43793,11 @@
       var _execN = sbExecActs().length;
       var readCard = _execN ? '<div class="pd-card ps-ck-card">' +
         '<div class="ps-ck-h"><span data-ico="refresh" data-ico-size="15"></span> Read the schedule that is already here</div>' +
-        '<div style="padding:12px 14px 14px;font-size:12.5px;line-height:1.6;">' +
-        '<p style="margin:0 0 8px;">Turn this project’s <b>' + _execN.toLocaleString() + '</b> execution-phase activities back into the eleven steps: the activity list with durations, the trades, the towers, floors and zones, the sequence between activities, and the lifecycle phases either side. Then edit and save it as a setup.</p>' +
-        '<p style="margin:0 0 10px;color:var(--pd-muted);">A <b>reading</b>, not a copy — the schedule stores what was planned, the steps store the rules that would generate it, and a few of those rules (trade hand-offs, tower interfaces) cannot be recovered from a finished programme. Nothing is written, and the schedule is only read.</p>' +
+        '<div class="ps-ck-txt">' +
+        '<p>Turn this project’s <b>' + _execN.toLocaleString() + '</b> execution-phase activities back into the steps, then edit and save as a setup.</p>' +
+        /* ⚠ Kept, shortened: “reading” vs “copy” is the one thing here that is NOT on the
+           button, and it is what tells the planner the schedule is safe. */
+        '<p class="m">A reading, not a copy — nothing is written.</p>' +
         '<button class="pd-btn pd-btn-primary" id="b-modederive"><span data-ico="layers" data-ico-size="14"></span> Read it into the steps →</button>' +
         '</div></div>' : '';
 
@@ -44952,7 +44969,7 @@
           var fl = floorsOfTower(tr, tw.id);
           if (!fl.length) return '';
           return '<div class="sbld-stacktower" style="--tc:' + gc(tr) + '">' +
-            '<div class="sbld-towerh"><span class="sbld-stkh-name"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
+            '<div class="sbld-towerh"><span class="sbld-stkh-name" title="' + e2(GLABEL[tr]) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
             (multiTower() ? '<span style="font-weight:700;color:var(--pd-muted);"> · ' + e2(towerLabel(tw.id)) + '</span>' : '') + '</span>' +
             '<span class="sbld-stkh-ct">' + fl.length + ' floor' + (fl.length === 1 ? '' : 's') + '</span></div>' +
             stackTowerSVG(tr, finBy, tw.id) + '</div>';
@@ -45118,7 +45135,7 @@
           // combination would be most of the grid on a project where trades differ by tower.
           if (!fl.length) return '';
           return '<div class="sbld-stacktower" style="--tc:' + gc(tr) + '">' +
-            '<div class="sbld-towerh"><span class="sbld-stkh-name"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
+            '<div class="sbld-towerh"><span class="sbld-stkh-name" title="' + e2(GLABEL[tr]) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
             (multiTower() ? '<span style="font-weight:700;color:var(--pd-muted);"> · ' + e2(towerLabel(tw.id)) + '</span>' : '') + '</span>' +
             '<span class="sbld-stkh-ct">' + fl.length + ' floor' + (fl.length === 1 ? '' : 's') + '</span></div>' +
             stackTowerSVG(tr, finBy, tw.id) + '</div>';
