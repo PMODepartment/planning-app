@@ -65,6 +65,27 @@
       .po-bar-tools { margin-left:0; flex:1 1 100%; }
     }
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
+    /* ==== AN EMPTY FILTER BAR MUST NOT RESERVE A ROW ========================================
+       Owner 2026-09-17: *"there is a big gap between the 4 KPI cards and the titlebar — check
+       across all of the modules."* Measured in a harness against the real stylesheets, module bar
+       to the first KPI card:
+
+         portfolio-overview ... 50px        risk-register .... 20px
+         issues-lessons ....... 20px        stakeholder-map .. 20px
+
+       So 20px is the app's spacing and this ONE page was 30px over. ⚠️⚠️ THE CAUSE IS A BOX
+       WITH NO HEIGHT THAT STILL COSTS 30px. When the funnel is shut, `.po-toolbar-fields` goes
+       `display:none` — but its WRAPPER stays `display:flex` at zero height, and a zero-height box is
+       still a box: it keeps this `margin-bottom:14px` and it still takes a slot in
+       `#po-view-overview`'s `gap:16px`. 16 + 14 = the 30px, paid for nothing on screen. Every other
+       module hides its filter row itself and has no wrapper, which is why only this page showed it.
+       ⚠️ Scoped so it can only ever collapse a bar whose ONLY child is that shut filter row.
+       `.po-toolbar` is also used by the eleven portfolio views, where `mount()` force-opens the
+       fields and several bars carry other controls — those keep their row. */
+    .po-toolbar:not(:has(.po-toolbar-fields.open)):not(:has(> :not(.po-toolbar-fields))) { display:none; }
+    /* And when it IS showing, the parent's `gap` is already the space below it. A margin on top of
+       a flex gap is the same double-spacing the `> .pd-kpis` rule further down already guards. */
+    #po-view-overview > .po-toolbar { margin-bottom:0; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
     /* Filters (incl. each tab's search box) collapse behind one funnel toggle
        instead of sitting permanently open — UI.wireFilterToggle (ui.js) shows/

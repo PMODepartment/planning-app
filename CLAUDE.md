@@ -103,6 +103,79 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (d) — Schedule Health called a schedule with negative float everywhere "91% — green"
+
+Owner: *"let's debug the schedule health if it's working properly."* It was not.
+
+#### What the old score did
+`score = 100 - mean(pct)` over however many of the sixteen checks happened to apply. Replaying that
+formula on constructed schedules:
+
+| the schedule | old score | |
+|---|---|---|
+| every activity on **negative float** | 91% | GREEN |
+| 30% on negative float | 97% | GREEN |
+| 10% of actual dates beyond the data date | 99% | GREEN |
+| a year late — 100% missed vs baseline | 92% | GREEN |
+| **no logic at all** — every activity dangling | 64% | amber |
+
+Negative float and invalid actuals are **zero-tolerance** findings in DCMA-14 — the standard the
+44-day thresholds at the top of that function already cite by name. The scoring simply never used
+DCMA's pass marks; it averaged raw percentages, so any single catastrophic finding was divided by
+about eleven.
+
+⚠️ **And the divisor moved with the data.** Checks with an empty denominator were dropped from the
+mean, so a project with no baseline averaged 11 checks and one with a baseline 12 — two different
+scales. Recording a baseline, or linking procurement, could LOWER the score with nothing about the
+schedule having changed. Scores were not comparable between projects or against last month.
+
+#### What it does now
+Every check carries its DCMA-14 **limit** (5% on the countable ones; **zero** on leads,
+out-of-sequence work, invalid actual dates and negative float) and a **weight** — 3 structural or
+zero-tolerance, 2 serious, 1 advisory, 0 informational.
+
+⚠️⚠️ **A zero-tolerance check is judged on the COUNT, never the percentage.** `pct` is rounded for
+display, and on this project's 2,561 activities one invalid actual date is 0.04% — which rounds to
+0 and would have passed a `pct <= 0` test. The one thing these checks exist to catch is the single
+bad row.
+
+⚠️ **The number is not the verdict.** A weighted average still dilutes: one failed zero-tolerance
+check out of twenty weighted points is 85%, which reads as healthy. So the score is for TREND and
+the **band comes from the worst failing check** — any weight-3 failure is red however good the
+average looks. The panel now leads with *"N of M checks failed"*, and each row shows **pass** /
+**fail** / **info** against its own limit, in a word rather than a hue.
+
+⚠️ Soft constraints and "package has no install date" are weight 0 — counted and listed, never
+scored. An "as late as possible" is a planning decision, not a defect, and scoring it would penalise
+normal practice.
+
+#### Tested against the shipped function
+`modules/project-schedule/test-health.js` — **30 passed, 0 failed**. `computeHealth` is **sliced out
+of `index.html` and executed**, not reimplemented: a copy of the formula in a test only proves the
+copy works. The suite includes the old rule re-run over the same metric objects, so if the rework is
+ever undone the difference disappears and the test says so.
+
+#### Also
+**"pp" is gone from the screen.** Owner: *"what does the pp mean in the behind plan? it's not a
+widely used unit of measurement."* It was percentage points — correct, and read by almost nobody —
+and under a card headed *Behind plan* the minus sign made `−4.2 pp` a double negative. One shared
+`Fmt.vsPlan` now says **"4.2% behind"** / **"1.3% ahead"** / **"on plan"**, replacing three copies.
+Rounding decides the word, so a +0.04 that prints "0.0" says *on plan* rather than *ahead*.
+Negative-tested: restoring the old wording turns five assertions red.
+
+**The 30px of nothing under the Portfolio Dashboard title.** Owner: *"there is a big gap between the
+4 KPI cards and the titlebar — check across all of the modules."* Measured, module bar to first KPI
+card: portfolio-overview **50px**, risk-register / issues-lessons / stakeholder-map **20px**. A
+zero-height box is still a box — with the funnel shut, `.po-toolbar-fields` goes `display:none` but
+its wrapper stayed `display:flex` at 0px, keeping `margin-bottom:14px` and a slot in the parent's
+`gap:16px`. Now 20px, matching every other module; verified that the bar returns at 36px when the
+filter opens, and that a bar carrying other controls never collapses.
+
+`wiring-check` 139/0, `toolbar-order` 0, `dark-remap` 0, `test-portfolio-dash` 398/0,
+`test-portfolio` 173/0. `db.js` and `portfolio-dash.css` bumped to `?v=20260917a`.
+
+---
+
 ### 2026-09-17 (c) — The Schedule toolbar's three marooned controls, and the fourteenth divider
 
 Owner: *"the 3 buttons (bar colors, keyboard shortcuts, and search bar) look out of place among the

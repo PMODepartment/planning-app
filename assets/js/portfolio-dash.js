@@ -1976,7 +1976,7 @@
       var v = r1(d.variance);
       host.innerHTML = kpi2('Activities', String(d.activities)) + kpi2('Overall Progress', r1(d.overallPct) + '%') +
         kpi2('Planned to date', r1(d.plannedPct) + '%') + kpi2('Actual to date', r1(d.actualPct) + '%') +
-        kpi2('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? '--pd-ok' : '--pd-bad');
+        kpi2('Schedule Variance', Fmt.vsPlan(v), v >= 0 ? '--pd-ok' : '--pd-bad');
     }
     var scLoadedIds = null, scAggs = [];
     /* ⚠️ A monotonic load token. Two overlapping loads used to BOTH paint, and whichever

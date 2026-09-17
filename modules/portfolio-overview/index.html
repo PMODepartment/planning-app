@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917y" />
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916w" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
 </head>
 <body>
 <div class="pd-app">
@@ -191,7 +191,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260916a"></script>
-<script src="../../assets/js/db.js?v=20260916d"></script>
+<script src="../../assets/js/db.js?v=20260917a"></script>
 <!-- ⚠️ BACK, and deliberately. This page dropped the curve engine on 2026-09-16 (g) when the
      S-Curve pane moved into its own module. D4 draws the portfolio curve here again - through
      PDScurve's own fan-out, so there is no second copy of the maths and no second RPC. -->
@@ -486,7 +486,7 @@
   function ppCell(p) {
     var v = behindPP(p);
     if (v == null) return '<span class="po-dash">—</span>';
-    var t = (v > 0 ? '+' : '') + v.toFixed(1) + ' pp';
+    var t = Fmt.vsPlan(v);            /* was `+/-N pp` — see the note on Fmt.vsPlan */
     return '<span class="' + (v <= -5 ? 'po-bad' : v < 0 ? 'po-warn' : 'po-ok') + '">' + t + '</span>';
   }
   function slipCell(p) {
@@ -609,11 +609,12 @@
     });
     var pp = tot > 0 ? ((done - plan) / tot) * 100 : null;
     var ppTxt = pp == null ? (ovX.err.status ? 'unavailable' : measured || !ovX.status ? '…' : '—')
-                           : (pp > 0 ? '+' : '') + pp.toFixed(1) + ' pp';
+                           : Fmt.vsPlan(pp);
     var ppCls = pp == null ? '' : pp <= -5 ? 'pd-kpi-bad' : pp < 0 ? 'pd-kpi-warn' : 'pd-kpi-ok';
     var ppSub = ovX.err.status ? 'run migrations/2026-09-15-scurve-status-per-project.sql'
               : pp == null ? 'no project in scope reports a dated schedule'
-              : 'duration-weighted across ' + measured + ' of ' + list.length + ' project(s), as of today';
+              : 'actual minus planned % complete, duration-weighted across ' + measured +
+                ' of ' + list.length + ' project(s), as of today';
 
     /* 2 · Money — one card where there were four, and it says "not captured" rather
        than printing four dashes that read as a broken page. */

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917y" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
-  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260916w" />
+  <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -3093,6 +3093,16 @@
     .ps-health-row-head .cnt { background:var(--pd-bg); color:var(--pd-ink); font-size:var(--pd-fs-xs); font-weight:700;
       border-radius:var(--pd-radius-pill); padding:2px 8px; min-width:20px; text-align:center; }
     .ps-health-row-desc { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:3px; }
+    /* ⚠️ The verdict is a WORD, not only a colour: "3%" beside a green bar and "3%" beside a red
+       one differ by hue alone, which is the one channel a reviewer may not have. */
+    .ps-health-tag { font-size:var(--pd-fs-micro); font-weight:800; text-transform:uppercase;
+      letter-spacing:.04em; padding:1px 6px; border-radius:999px; flex:none; }
+    .ps-health-pass { background:var(--pd-ok-light, rgba(38,138,73,.14)); color:var(--pd-ok); }
+    .ps-health-fail { background:var(--pd-red-light, rgba(238,49,36,.12)); color:var(--pd-red); }
+    .ps-health-info { background:var(--pd-bg); color:var(--pd-muted); }
+    .ps-health-sub { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .ps-health-v-ok { color:var(--pd-ok); font-weight:700; }
+    .ps-health-v-bad { color:var(--pd-red); font-weight:700; }
     .ps-health-bar { height:3px; background:var(--pd-line); border-radius:2px; margin-top:7px; overflow:hidden; }
     .ps-health-bar > div { height:100%; }
     .ps-health-items { display:none; margin-top:8px; max-height:160px; overflow:auto; border-top:1px dashed var(--pd-line); padding-top:6px; }
@@ -5353,7 +5363,8 @@
     <div class="ps-health-score" id="ps-health-score">—</div>
     <div>
       <h3>Schedule Health</h3>
-      <p><span id="ps-health-total">0</span> activities checked</p>
+      <p><span id="ps-health-verdict"></span></p>
+      <p class="ps-health-sub"><span id="ps-health-total">0</span> activities · DCMA-14 thresholds</p>
     </div>
     <button class="ps-health-close" id="ps-health-close" title="Close">&times;</button>
   </div>
@@ -5403,7 +5414,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260915a"></script>
 <script src="../../assets/js/auth.js?v=20260916a"></script>
-<script src="../../assets/js/db.js?v=20260916d"></script>
+<script src="../../assets/js/db.js?v=20260917a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <!-- ⚠️ The SHARED curve engine, for the Summary's progress chart. Loaded rather than
        reimplemented: portfolio-overview carried a hand-copied copy of this maths until
@@ -47406,9 +47417,44 @@
     var largeFloat = floatElig.filter(function (r) { return r._float > HEALTH_LARGE_FLOAT; });
     var largeDur = durElig.filter(function (r) { return (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) > HEALTH_LARGE_DUR; });
 
-    function mk(key, label, desc, items, denom) {
-      return { key: key, label: label, desc: desc, items: items, denom: denom.length, count: items.length,
-        pct: denom.length ? Math.round(items.length / denom.length * 100) : 0 };
+    /* ==== EACH CHECK CARRIES ITS DCMA THRESHOLD AND ITS SEVERITY =============================
+       Owner 2026-09-17: *"let's debug the schedule health if it's working properly."* It was not.
+       ⚠️⚠️ THE SCORE WAS A FLAT MEAN OF UP TO SIXTEEN PERCENTAGES — `100 - avg(pct)` — so a
+       single catastrophic finding was divided by however many checks happened to apply. Replaying
+       the old formula on constructed schedules:
+
+         every activity on NEGATIVE FLOAT .................. 91%  GREEN
+         30% of activities on negative float ............... 97%  GREEN
+         10% of actual dates beyond the data date .......... 99%  GREEN
+         a schedule a year late, 100% missed vs baseline ... 92%  GREEN
+         NO LOGIC AT ALL — every activity dangling ......... 64%  amber
+
+       Negative float and invalid actuals are ZERO-TOLERANCE findings in DCMA-14, and the panel was
+       reporting them as a healthy schedule. The 44-day thresholds at the top of this function
+       already cite DCMA-14; the scoring simply never used DCMA's pass marks.
+       ⚠️ AND THE DIVISOR MOVED WITH THE DATA. Metrics with an empty denominator were dropped
+       from the mean, so a project with no baseline averaged 11 checks and one with a baseline 12 —
+       two different scales. Recording a baseline, or linking procurement, could LOWER the score
+       without anything about the schedule changing. Scores were not comparable between projects,
+       or against the same project last month.
+       ⚠️ `limit` is the share of the denominator DCMA-14 allows; `weight` is how much a
+       failure matters. Weight 0 is INFORMATIONAL — counted, listed, never scored: soft constraints
+       and packages with no install date are facts about a schedule, not defects in it. */
+    function mk(key, label, desc, items, denom, limit, weight) {
+      var d = denom.length, c = items.length;
+      var ratio = d ? c / d * 100 : 0;
+      /* ⚠️⚠️ A ZERO-TOLERANCE CHECK IS JUDGED ON THE COUNT, NEVER THE PERCENTAGE. `pct` is
+         rounded for display, and on this project's 2,561 activities one invalid actual date is
+         0.04% — which rounds to 0 and would have passed a `pct <= 0` test. The one thing these
+         checks exist to catch is the single bad row. */
+      var ok = (limit === 0) ? (c === 0) : (ratio <= limit);
+      return { key: key, label: label, desc: desc, items: items, denom: d, count: c,
+        pct: d ? Math.round(ratio) : 0, ratio: ratio,
+        limit: limit, weight: weight, ok: ok, applies: d > 0,
+        /* Full marks at or under the limit, then straight down to zero at 100%. A check that is
+           merely over its limit is not the same as one that is over it everywhere, and a pass/fail
+           score would have said it was. */
+        grade: !d ? 1 : (ok ? 1 : (limit === 0 ? 0 : Math.max(0, 1 - (ratio - limit) / (100 - limit)))) };
     }
     // ---- Procurement alignment -------------------------------------------------
     // Only meaningful on activities that ARE linked, so every denominator here is the
@@ -47427,46 +47473,91 @@
     });
     var wpNoInst = wpLinked.filter(function (r) { var w = wpOf(r); return !!w && !w.target_installation; });
 
+    /* Limits are DCMA-14's: 5% on the countable checks, ZERO on leads, out-of-sequence work,
+       invalid actual dates and negative float. Weights are severity — 3 structural or
+       zero-tolerance, 2 serious, 1 advisory, 0 informational (listed, never scored). */
     var metrics = [
-      mk('open', 'Open Ends', 'No predecessor and no successor', openEnds, tasks),
-      mk('dstart', 'Dangling Start', 'No predecessor', dangStart, tasks),
-      mk('dfinish', 'Dangling Finish', 'No successor', dangFinish, tasks),
-      mk('lag', 'Predecessor Lag', 'Has a lead/lag on a relationship', lagged, tasks),
-      mk('neglag', 'Predecessor Negative Lag', 'Has a negative lag (lead)', negLag, tasks),
-      mk('oos', 'Out of Sequence', 'Started before its predecessor logic allows', oos, started),
-      mk('hardcon', 'Hard Constraint', 'A Must/Mandatory Start or Finish constraint', hardCon, tasks),
-      mk('softcon', 'Soft Constraint', 'Any other date constraint', softCon, tasks),
-      mk('invprog', 'Invalid Progress Date', 'An actual date is set in the future', invalidProg, tasks),
-      mk('late', 'Late Activity', 'Finishing later than its baseline', late, lateElig),
-      mk('negfloat', 'Negative Float', 'Total float is negative', negFloat, floatElig),
-      mk('largefloat', 'Large Float (> ' + HEALTH_LARGE_FLOAT + 'd)', 'Total float exceeds ' + HEALTH_LARGE_FLOAT + ' days', largeFloat, floatElig),
-      mk('largedur', 'Large Duration (> ' + HEALTH_LARGE_DUR + 'd)', 'Duration exceeds ' + HEALTH_LARGE_DUR + ' days', largeDur, durElig),
-      mk('wplate', 'Procurement Behind Need-by', 'Its work package installs after this activity starts', wpLate, wpInstElig),
-      mk('wpnoinst', 'Work Package Has No Install Date', 'Linked package carries no Target Installation to check against', wpNoInst, wpLinked),
-      mk('wpstale', 'Stale Work-Package Link', 'Points at a work package the Procurement app does not have', wpStale, wpLinked)
+      mk('open', 'Open Ends', 'No predecessor and no successor', openEnds, tasks, 5, 3),
+      mk('dstart', 'Dangling Start', 'No predecessor', dangStart, tasks, 5, 2),
+      mk('dfinish', 'Dangling Finish', 'No successor', dangFinish, tasks, 5, 2),
+      mk('lag', 'Predecessor Lag', 'Has a lead/lag on a relationship', lagged, tasks, 5, 1),
+      mk('neglag', 'Predecessor Negative Lag', 'Has a negative lag (lead)', negLag, tasks, 0, 2),
+      mk('oos', 'Out of Sequence', 'Started before its predecessor logic allows', oos, started, 0, 2),
+      mk('hardcon', 'Hard Constraint', 'A Must/Mandatory Start or Finish constraint', hardCon, tasks, 5, 2),
+      /* ⚠️ INFORMATIONAL. DCMA-14 sets no limit on soft constraints and they are ordinary
+         planning — an "as late as possible" is a decision, not a defect. Counted and listed so a
+         reviewer can see them; never scored, because scoring them would penalise normal practice. */
+      mk('softcon', 'Soft Constraint', 'Any other date constraint', softCon, tasks, 100, 0),
+      mk('invprog', 'Invalid Progress Date', 'An actual date falls after the data date', invalidProg, tasks, 0, 3),
+      /* ⚠️ PERFORMANCE, NOT QUALITY, so it is weighted 1. A project can be a year late on a
+         technically immaculate schedule; that is a reporting fact, and the rest of this module
+         exists to say it. Dropping it entirely would hide it from the one panel a reviewer opens. */
+      mk('late', 'Late Activity', 'Finishing later than its baseline', late, lateElig, 5, 1),
+      mk('negfloat', 'Negative Float', 'Total float is negative', negFloat, floatElig, 0, 3),
+      mk('largefloat', 'Large Float (> ' + HEALTH_LARGE_FLOAT + 'd)', 'Total float exceeds ' + HEALTH_LARGE_FLOAT + ' days', largeFloat, floatElig, 5, 1),
+      mk('largedur', 'Large Duration (> ' + HEALTH_LARGE_DUR + 'd)', 'Duration exceeds ' + HEALTH_LARGE_DUR + ' days', largeDur, durElig, 5, 1),
+      mk('wplate', 'Procurement Behind Need-by', 'Its work package installs after this activity starts', wpLate, wpInstElig, 5, 1),
+      mk('wpnoinst', 'Work Package Has No Install Date', 'Linked package carries no Target Installation to check against', wpNoInst, wpLinked, 100, 0),
+      mk('wpstale', 'Stale Work-Package Link', 'Points at a work package the Procurement app does not have', wpStale, wpLinked, 0, 1)
     ];
-    var scoredPcts = metrics.filter(function (m) { return m.denom > 0; }).map(function (m) { return m.pct; });
-    var avgBad = scoredPcts.length ? scoredPcts.reduce(function (s, p) { return s + p; }, 0) / scoredPcts.length : 0;
-    var score = Math.max(0, Math.min(100, Math.round(100 - avgBad)));
-    return { score: score, total: tasks.length, metrics: metrics };
+    /* ⚠️⚠️ WEIGHTED BY SEVERITY, AND THE BAND COMES FROM THE WORST FAILURE, NOT THE SCORE.
+       A weighted average still dilutes — one failed zero-tolerance check out of twenty weighted
+       points is 85%, which reads as healthy. So the number and the verdict are separated: the SCORE
+       is for trend (is this schedule better than last month), and the BAND is triage. Any weight-3
+       check failing is red however good the average looks, because "every activity has negative
+       float" is not an 85%-healthy schedule. */
+    var scored = metrics.filter(function (m) { return m.applies && m.weight > 0; });
+    var wTot = scored.reduce(function (t, m) { return t + m.weight; }, 0);
+    var wGot = scored.reduce(function (t, m) { return t + m.weight * m.grade; }, 0);
+    var score = wTot ? Math.max(0, Math.min(100, Math.round(wGot / wTot * 100))) : 100;
+    var failed = scored.filter(function (m) { return !m.ok; });
+    var band = failed.some(function (m) { return m.weight >= 3; }) ? 'bad'
+             : (failed.length ? 'warn' : 'ok');
+    return { score: score, total: tasks.length, metrics: metrics,
+             checks: scored.length, failed: failed.length, band: band,
+             worst: failed.slice().sort(function (a, b) { return (b.weight - a.weight) || (b.ratio - a.ratio); }) };
   }
   function healthColor(pct) { return pct >= 80 ? 'var(--pd-ok)' : pct >= 50 ? 'var(--pd-warn)' : 'var(--pd-bad)'; }
   function renderHealthPanel() {
     var h = computeHealth();
     var scoreEl = document.getElementById('ps-health-score');
     scoreEl.textContent = h.score + '%';
-    scoreEl.style.background = healthColor(h.score);
+    /* ⚠️⚠️ COLOURED BY THE VERDICT, NOT BY THE NUMBER. `healthColor(h.score)` turned a
+       schedule where EVERY activity carried negative float green, because the old flat mean put it
+       at 91%. The band comes from the worst failing check — see computeHealth. */
+    scoreEl.style.background = h.band === 'ok' ? 'var(--pd-ok)'
+                             : h.band === 'warn' ? 'var(--pd-warn)' : 'var(--pd-bad)';
+    var vEl = document.getElementById('ps-health-verdict');
+    if (vEl) {
+      vEl.textContent = h.failed
+        ? h.failed + ' of ' + h.checks + ' checks failed'
+        : 'all ' + h.checks + ' checks passed';
+      vEl.className = h.failed ? 'ps-health-v-bad' : 'ps-health-v-ok';
+    }
     document.getElementById('ps-health-total').textContent = h.total;
     var list = document.getElementById('ps-health-list');
     if (!h.total) { list.innerHTML = '<div class="ps-health-empty">No activities to check yet.</div>'; return; }
     list.innerHTML = h.metrics.map(function (m) {
-      var barPct = Math.min(100, m.pct), color = healthColor(100 - m.pct);
+      /* ⚠️ The bar shows the share found; its colour shows whether that share is ALLOWED.
+         Shading by percentage alone said 3% negative float was nearly fine — DCMA allows none. */
+      var barPct = Math.min(100, m.pct);
+      var color = m.weight === 0 ? 'var(--pd-muted)'
+                : m.ok ? 'var(--pd-ok)'
+                : (m.weight >= 3 ? 'var(--pd-bad)' : 'var(--pd-warn)');
+      var verdict = m.weight === 0 ? '<span class="ps-health-tag ps-health-info">info</span>'
+                  : !m.applies ? '<span class="ps-health-tag">n/a</span>'
+                  : m.ok ? '<span class="ps-health-tag ps-health-pass">pass</span>'
+                         : '<span class="ps-health-tag ps-health-fail">fail</span>';
+      var allow = m.weight === 0 ? 'not scored'
+                : (m.limit === 0 ? 'allowed: none' : 'allowed: up to ' + m.limit + '%');
       var items = m.items.slice(0, 200).map(function (r) {
         return '<div class="ps-health-item" data-goto="' + esc(r.id) + '"><b>' + esc(r.activity_id || '') + '</b> ' + esc(r.activity_name || '') + '</div>';
       }).join('') || '<div class="ps-health-item" style="cursor:default;color:var(--pd-muted);">None — clean.</div>';
       return '<div class="ps-health-row" data-key="' + m.key + '">' +
-        '<div class="ps-health-row-head"><span class="lbl">' + esc(m.label) + '</span><span class="pct">' + m.pct + '%</span><span class="cnt">' + m.count + '</span></div>' +
-        '<div class="ps-health-row-desc">' + esc(m.desc) + ' — ' + m.count + ' of ' + m.denom + '</div>' +
+        '<div class="ps-health-row-head"><span class="lbl">' + esc(m.label) + '</span>' + verdict +
+          '<span class="pct">' + m.pct + '%</span><span class="cnt">' + m.count + '</span></div>' +
+        '<div class="ps-health-row-desc">' + esc(m.desc) + ' — ' + m.count + ' of ' + m.denom +
+          ' · ' + allow + '</div>' +
         '<div class="ps-health-bar"><div style="width:' + barPct + '%;background:' + color + ';"></div></div>' +
         '<div class="ps-health-items">' + items + '</div>' +
         '</div>';
@@ -47749,9 +47840,12 @@
       card('Critical', nFmt(d.cpm.critical),
            d.cpm.negFloat ? nFmt(d.cpm.negFloat) + ' with negative float' : 'none with negative float',
            d.cpm.negFloat ? 'bad' : '') +
+      /* ⚠️ Banded by the VERDICT, like the panel — not by the score. A `>= 80 ? good` test is
+         what let a schedule with negative float everywhere report as healthy here too. */
       card('Health', d.health.score + '%',
-           'over ' + nFmt(d.health.total) + ' activities',
-           d.health.score >= 80 ? 'good' : (d.health.score < 50 ? 'bad' : 'warn'));
+           d.health.failed ? d.health.failed + ' of ' + d.health.checks + ' checks failed'
+                           : 'all ' + d.health.checks + ' checks passed',
+           d.health.band === 'ok' ? 'good' : (d.health.band === 'bad' ? 'bad' : 'warn'));
 
     /* ---- 4 · WHAT IS DRIVING THE FINISH ------------------------------------------------------
        ⚠️ The same rows the old page called "Biggest slips", given the weight of being an answer:

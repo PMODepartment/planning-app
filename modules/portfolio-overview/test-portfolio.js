@@ -392,6 +392,33 @@ function report() {
   ok(!/po-kpi2/.test(plain), 'kpi2 emits no private class');
   ok(/pd-kpi-label/.test(plain) && /pd-kpi-value/.test(plain), 'kpi2 keeps label and value');
 
+  /* ==== "pp" IS GONE FROM THE SCREEN ========================================================
+     Owner 2026-09-17: *"what does the pp mean in the behind plan? it's not a widely used unit of
+     measurement."* It was percentage points — correct, and read by almost nobody — and under a card
+     headed "Behind plan" the minus sign made it a double negative.
+     ⚠️⚠️ THE SHIPPED FORMATTER, NOT A COPY OF IT. `Fmt.vsPlan` is sliced out of db.js and
+     run here, so this fails if the wording is reverted OR if the rounding stops deciding the word.
+     ⚠️ The last case is the one that is easy to get wrong: +0.04 prints as "0.0", so it must
+     say "on plan" rather than "0.0% ahead" — otherwise the number and the word disagree on screen. */
+  {
+    const DB = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'js', 'db.js'), 'utf8');
+    const i = DB.indexOf('vsPlan: function'), j = DB.indexOf('moneyShort: function');
+    if (i < 0 || j < 0 || j < i) throw new Error('SLICE FAILED: Fmt.vsPlan');
+    const body = DB.slice(i, j).replace(/,\s*$/, '').replace(/^vsPlan:\s*/, '');
+    const F = {};
+    new Function('F', 'F.vsPlan = (' + body + ');')(F);
+    eq(F.vsPlan(-4.2), '4.2% behind', 'vsPlan: behind is said in words, with no sign to misread');
+    eq(F.vsPlan(4.2), '4.2% ahead', 'vsPlan: and ahead likewise');
+    eq(F.vsPlan(0), 'on plan', 'vsPlan: dead level is neither');
+    eq(F.vsPlan(0.04), 'on plan', 'vsPlan: and so is anything that ROUNDS to nothing');
+    eq(F.vsPlan(null), '—', 'vsPlan: no measurement is a dash, not a zero');
+    ok(!/ pp/.test(F.vsPlan(-4.2) + F.vsPlan(4.2) + F.vsPlan(0)),
+       'vsPlan: the string "pp" appears nowhere in what it produces');
+  }
+  /* And the page itself must not have kept a second spelling. */
+  ok(!/'\s*pp'|" pp"/.test(JS),
+     'portfolio-overview no longer formats anything as "pp"');
+
   const bad = kpiFns.kpi2('Schedule Variance', '-8 pp', '--pd-bad');
   ok(/pd-kpi-bad/.test(bad), 'kpi2 maps --pd-bad to the shared semantic variant');
   ok(!/style="color:var\(--pd-bad\)/.test(bad),

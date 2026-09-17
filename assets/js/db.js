@@ -722,6 +722,27 @@
       if (n == null || isNaN(n)) return '—';
       return '₱' + Number(n).toLocaleString('en-PH', { maximumFractionDigits: 2 });
     },
+    /* ==== HOW FAR AHEAD OF, OR BEHIND, PLAN =================================================
+       Owner 2026-09-17: *"what does the pp mean in the behind plan? it's not a widely used unit of
+       measurement."* It meant **percentage points** — actual percent complete minus planned
+       percent complete, which genuinely is points and not a percentage of anything. The notation is
+       correct and almost nobody outside statistics reads it.
+       ⚠️⚠️ AND UNDER A CARD TITLED "BEHIND PLAN" IT WAS A DOUBLE NEGATIVE. `−4.2 pp` on a
+       card headed *Behind plan* can be read as four points behind or as four points less behind
+       than before; the sign carried meaning the label had already claimed. Saying the direction in
+       WORDS removes both problems — "4.2% behind" cannot be read backwards.
+       ⚠️ Shared rather than copied: three screens printed this — the Portfolio Dashboard's
+       headline card, its per-project column, and the portfolio S-Curve's Schedule Variance — and
+       three copies is how one of them ends up still saying "pp" a year from now. */
+    vsPlan: function (pp, opts) {
+      if (pp == null || isNaN(pp)) return '—';
+      var o = opts || {};
+      var d = Math.abs(pp).toFixed(o.dp == null ? 1 : o.dp);
+      /* Rounding decides the word, not the raw value: a +0.04 that prints as "0.0" must not say
+         "ahead", or the number and the word on screen disagree. */
+      if (parseFloat(d) === 0) return o.zero || 'on plan';
+      return d + '% ' + (pp > 0 ? 'ahead' : 'behind');
+    },
     moneyShort: function (n) {
       if (n == null || isNaN(n)) return '—';
       var a = Math.abs(n);
