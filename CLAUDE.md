@@ -103,6 +103,80 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (g) — A 2027 programme forecast 2034, and the same line forecast "finished today" at the other end
+
+Owner, on DEMO01: *"finish is at Apr 23, 2027 but the s-curve has its own forecast finishing by
+2034. Let's check and debug."*
+
+#### The line
+```js
+var spi = plPctNow > 0 ? pctNow / plPctNow : 1;
+spi = Math.max(0.1, Math.min(spi, 3));
+var remMs = Math.max(0, +plannedEnd - +tnow);
+var autoFc = pctNow >= 100 ? tnow : new Date(+tnow + remMs / spi);
+```
+
+⚠️⚠️ **SPI IS MEANINGLESS AT BOTH ENDS OF A JOB, AND THIS USED IT AT BOTH.**
+
+* **At the start.** DEMO01 was three days into a 296-day programme with about 0.5% booked against
+  ~5% planned. SPI is then 0.1 — so the clamp did not *protect* anything, it **guaranteed a tenfold
+  stretch** of the remaining programme. 293 remaining days became 2,930, and the caption reported
+  `SPI 0.1, auto finish 2034-09-25` as though it were a calculation rather than a division by
+  something close to zero.
+* **At the end.** Past the planned finish, `remMs` is **zero**, so `now + 0 / spi` is the data date
+  — a project 40% complete and six months late forecast **finishing today**. Found while
+  negative-testing the first half; the test now pins it.
+
+One defect seen from two sides: an expression only meaningful in the middle of a job, used at its
+edges.
+
+#### What it does now
+Performance forecasting is **gated on maturity** (10% of the work — the conventional EVM threshold;
+SPI is unreliable below roughly a tenth and converges to 1.0 near the end whatever happens) and on
+there being remaining duration to stretch. Below that, the forecast is the planned finish plus the
+**slip already measured horizontally between the two curves** — the Earned Schedule read: *the plan
+said we would be here on the 15th, it is the 17th.* Bounded, derived from the same data, and never
+more wrong than the slip itself.
+
+⚠️ **The clamp is kept** and now only bites where SPI is used at all. A genuinely half-speed project
+must still forecast twice its remaining duration; a "fix" that made every forecast look like the
+plan would be worse than the bug, and a test asserts the stretch survives.
+
+⚠️ **Ahead of plan does not pull the finish in early on.** Slip is clamped at zero: three days of
+good numbers is not evidence the rest will go faster, and beating the programme on that basis is the
+same overconfidence as 2034 pointing the other way. Above the threshold, SPI may legitimately bring
+it in.
+
+⚠️ **The caption says which method ran.** It printed *"performance-based (SPI 0.1)"* for every auto
+forecast including the ones that were not performance-based — which is how the 2034 figure read as
+authoritative. `basis` now comes back as `spi` / `slip` / `done` and the wording follows it.
+
+#### There were two copies
+⚠️⚠️ Project Schedule's cockpit chart (`_ckSCurveCompute`) carried the **identical four lines** —
+its own comment says *"same math, verbatim"*, which is exactly how the copy stayed in step with the
+bug and not with a fix. One screen would have told a planner 2034 while the schedule beside it said
+2027. The decision is now `PDScurve.forecast`, called by both, and **a test asserts the arithmetic
+appears in exactly one file**.
+
+The cockpit passes no slip — it holds a monthly series and cannot measure the gap to a day — so its
+immature forecast is the planned finish. An honest answer where 2034 was not.
+
+#### Tests
+`tools/test-scurve-forecast.js` — new, **28 passed, 0 failed**, loading `scurve.js` the way the page
+does. Covers the reported DEMO01 case, the gate either side of 10%, the overrun case, pinned dates,
+ahead-of-plan, the slip measure itself, and the single-copy guard.
+
+⚠️ Negative-tested: restoring the old rule turns **6** red; removing the `remMs > 0` guard turns 2
+red and prints the forecast as the data date itself.
+
+⚠️ Two assertions failed first against a product that was correct — the test formatted dates with
+`toISOString()` while `pd()` parses to local midnight, so in Manila every date read one day early.
+The formatter was the bug, not the forecast.
+
+`scurve.js` → `?v=20260917a`.
+
+---
+
 ### 2026-09-17 (f) — The dropdown LIST finally matches the app, in CSS, with no JavaScript
 
 Owner: *"meeting description dropdown in Meetings module needs to be improved. We've already done a
