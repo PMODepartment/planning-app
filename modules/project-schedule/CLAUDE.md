@@ -1,4 +1,4 @@
-## 2026-09-18 (b) — Project Phases: one tree per phase, drawn as a Gantt you can draw relationships on
+## 2026-09-18 (c) — Project Phases: one tree per phase, drawn as a Gantt you can draw relationships on
 
 Owner, five items on Schedule Setup ▸ Project Phases: *"remove the duplicate branch and paste outline
 buttons as well as add WBS. no other WBS is allowed aside from initiation, planning, execution
@@ -207,8 +207,166 @@ Calendars step and the rail while this was in Project Phases — and **a clean a
 correct one**, so both sides' suites were re-run on the merged tree rather than assumed (above), and
 `_stepReady`'s new prerequisite gating was read to confirm it does not gate this step.
 
-`MODULE_V` → `20260918c`, re-derived from what `origin/main` actually carries (`20260918b`) **after**
-merging, and sort-checked as a plain string.
+⚠️⚠️ **Re-lettered `(b)` → `(c)` on merging `origin/main` again, and this time BOTH SIDES HAD TAKEN
+`(b)` AND BOTH HAD TAKEN `MODULE_V = 20260918c`.** Main landed its own `2026-09-18 (b)` — the tower
+TYPES restructure below — while this was in flight, so the letter half conflicted loudly and was
+resolved as the union (both entries kept whole, this one moving past main's per this file's own
+rule). ⚠️⚠️ **The version half did NOT conflict, and that is the dangerous half:** both sides wrote
+the identical string, so git had nothing to flag and merged it silently — leaving one cache-bust
+token covering two different builds, where a browser holding main's `20260918c` would never have
+fetched these bytes. Ninth time this log has recorded that shape, and the second time it has been
+caught in a merge that reported no conflict on the token at all.
+
+⚠️ **The index.html auto-merge is not taken as evidence.** Main rewrote `stTowers` into tower types
+and moved Floors & Zones into a pop-up; this branch rewrote Project Phases into a Gantt. The two sets
+of hunks are thousands of lines apart and merged without a conflict — so both sides' functions were
+asserted present on the merged tree by name, and the whole battery (this branch's suites **and**
+main's own `test-towertypes.js`, which this session had never run) was re-run on it.
+
+`MODULE_V` → `20260918d`, re-derived from what the merged tree actually carries **after** integrating
+rather than guessed beforehand, and sort-checked as a plain string past both sides' `20260918c`.
+
+## 2026-09-18 (b) — A tower is an INSTANCE of a TYPE, and Floors & Zones asks in a pop-up
+
+Owner: *"the idea for the towers is that, users are to define the types of towers there are. Meaning
+Type 1 Tower has 16F and same footprints, number of zones, same sizing etc... and users are to define
+how many type 1 towers there are in the project. Next for the floor & zones, based on the defined
+types of towers in the preceding step, users are then to define the number of floors and what their
+corresponding category floor (basement, podium / commercial, typical, roof deck). This is processed
+by letting the user use the quick setup but in a pop-up window. Then if there are changes to be made
+later on, the detailed pane below can be adjusted (which is what is defined currently)."*
+
+### ⚠️⚠️ THIS REVERSES A DECISION `stTowers`' OWN HELP TEXT ARGUED FOR, AND THE OLD SENTENCE IS KEPT
+
+That step used to read, in as many words: *"identical towers are just several towers carrying the
+same floors — that is how a tower 'type' is expressed; there is no separate type field."* The
+reasoning was that a type is only ever a shorthand for "these towers are the same", so storing one
+would be a second source of truth about a fact the floors already carry.
+
+It is wrong about the **work**, which is what the owner is reporting. Expressing "sixteen towers of
+Type 1" by creating sixteen towers and laying out sixteen identical sets of floors is sixteen chances
+to diverge, and nothing in the file could say they were *meant* to be the same — so a floor added to
+one of them silently made it a different building with no warning anywhere. The shipped help text is
+rewritten; ⚠️ a comment above it **quotes the old sentence and records that this is a reversal**,
+because a reversal with no record is a reversal that gets reversed back.
+
+### The model: floors are stored ONCE, on the type's first instance
+
+`cfg.towerTypes` is the new store — `{ id, code, name }` — and every tower carries a `typeId`.
+
+⚠️⚠️ **THE FLOORS ARE NOT COPIED PER INSTANCE, AND THAT IS THE WHOLE DESIGN.** They stay on the
+type's **representative** — its first instance — so:
+
+- `f.towerId` keeps its historical meaning, and every reader written before types existed is
+  unchanged;
+- *"every Type 1 tower is identical"* holds **by construction** rather than by discipline, because
+  there is only one set of floors to be identical to;
+- the fan-out happens in exactly **two** places: `floorsOfTower` on read, and `locList` on push.
+
+⚠️⚠️ **AND THE FIRST INSTANCE'S LEAF `uid` IS PRESERVED BYTE-FOR-BYTE.** `cfg.links`,
+`cfg.actLinks` and `cfg.scopeOff` are all keyed on those uids, so a generated uid for instance 0
+would have silently orphaned every zone sequence and every scope exclusion on every existing
+project. Instance 0 keeps the historical string; only `ti > 0` gets the new
+`trade@towerId/<tail>` form.
+
+### ⚠️⚠️ NO GUESSING: AN UNTYPED TOWER IS ITS OWN TYPE
+
+`typeOfTower` returns `''` for a tower carrying no `typeId`, `towersOfType('')` returns `[]`, and
+`repTowerOfTower` then falls back to the tower itself. An earlier cut fell back to *"the first
+type"* and **collapsed every tower onto tower 1's floors** — caught by `test-towerseq` with 20
+failures, which is the only reason it is not in this commit.
+
+`normalize()` migrates a setup saved before today: it builds `towerTypes`, gives each untyped tower
+**its own** type named after it (so nothing merges), and filters out types nothing instantiates.
+
+### The count control
+
+`− N +` per type on the Towers step, with the instance names listed under it.
+
+- ⚠️⚠️ **ADDED ONE AT A TIME, AND THE ORDER IS THE POINT.** `_twNewInstance` reads `towerList()` to
+  find a name and code nothing is using, so each new tower must be **in** the list before the next
+  is named. The first cut built them all first and appended afterwards — so they were every one
+  named against the same list, and raising a two-tower type to four produced **"Tower 3" twice**.
+  Two towers with one name is exactly what makes an area traced on the site development plan
+  ambiguous. Caught by the new suite; the comment beside it had warned about it and the code did it
+  anyway.
+- ⚠️ **REMOVED FROM THE END, NEVER THE FIRST.** The first instance is the representative that holds
+  the floors; dropping it would take the type's whole layout with it. Their `towerLinks` go with
+  them, or the sequence would point at towers that no longer exist.
+- ⚠️ **A NEW TOWER IS NAMED GLOBALLY** — *"Tower 4"*, not *"Type 1 4"*. The site plan joins towers
+  on their names, and a name scoped to a type would stop matching what a planner traced.
+- Renaming a **type** with exactly one instance renames that tower too; with several, a note says
+  the towers keep their own names.
+
+### Floors & Zones: the quick setup becomes a dialog
+
+The inline strip had room for four number boxes on one line — which is why it only ever asked for
+basements and floors. A fifth and sixth would have wrapped, and the owner is asking for **four floor
+categories plus zones and units**.
+
+- ⚠️ `psAsk`, this module's own dialog kit, with a **live sentence** rebuilt on every keystroke: how
+  many storeys with a breakdown by category, the zones, the units, the **location count** computed by
+  `leavesOfFloor`'s own rule, and the replace clause naming what it will overwrite.
+- ⚠️⚠️ **ONE ABOVE-GRADE SEQUENCE `F1…Fn`, NOT `P1…` / `F1…` / `R1`.** The categories say what each
+  floor **is**; they do not restart the count. Every location label and every generated activity id
+  is built from the code, so three separate sequences would produce three floors that all read as
+  the building's first.
+- ⚠️ Basements are emitted **deepest-first** (`B{n}` down to `B1`), which is the order the stacking
+  draws them in.
+- ⚠️ **The second `psConfirm` is dropped.** It counted `zn.floors.length` — *every* tower's floors —
+  while the generator only ever replaces **this** tower's, so it overstated what was at stake on
+  every multi-tower project. The dialog's own note carries the accurate count.
+- ⚠️ `_clampN` bounds every field, and `validate` refuses a run with no storeys at all rather than
+  silently producing an empty tower.
+- The detailed pane below is **unchanged** — it is still how a floor is adjusted afterwards, which is
+  the second half of the owner's sentence.
+
+### Verified
+
+**New `modules/project-schedule/test-towertypes.js` — 79 assertions, 0 failing**, every function
+sliced out of the shipped file **by name** and executed: the vocabulary, the no-guessing rule, *one
+set of floors / N buildings*, the uid contract, the count control, the naming, the migration (lifted
+out of `normalize` by regex and wrapped as `migrateTypes`), the clamp, and nine assertions reading
+the shipped step.
+
+⚠️⚠️ **The contrast is pinned to a SHA (`46b67299`), never `HEAD`** — which becomes self-comparison
+the moment this commits. The base has **none** of it: its `floorsOfTower('ST','tw2')` returns **0**
+floors where this returns 3, and its `locList()` returns **5** leaves where this returns 6.
+
+⚠️ **Three of my own assertions were wrong before the code was**, each left in the suite rather than
+quietly corrected:
+- **the arithmetic**: I asserted 5 leaves where the fixture has **6** (B1 with 1 zone + F1 with 2 +
+  F2 with 2 = 5 per tower, plus 1 for the second tower). §3.3 had already measured 5 per tower and
+  passed, which is what settled it;
+- **an assertion measuring its own explanation**: *"the help text that said the opposite is gone"*
+  failed because the ⚠️ comment recording the reversal **quotes** it. Re-aimed at the source with
+  comments blanked through `tools/scan.js` — ⚠️ `blankComments`, not `clean`, because the help text
+  **is** a string literal and that is the thing being tested for — with a second assertion that the
+  comment **is** kept;
+- and the `_twSetCount` naming defect above, which was a real bug rather than a bad assertion.
+
+Whole battery on the merged tree: `builder` 149 · `towerseq` 48 · `autotrace` 32 · `zoneplan` 50 ·
+`sitefit` 31 · `cpm` 28 · `critwbs` 26 · `health` 30 · `wbsfile` 33 · `zoneoverlap` 57 · `shapeedit`
+36 · `towertypes` **79** · `calendar-editor` 23 · `syntax` 4 · `lsm` 683 · `actdnd` 47 · `actsetup`
+50 · `test-calendar` 71 — **1,477 assertions, 0 failing**. `wiring-check` **139/0**. The inline
+`<script>` parses (1 block). 0 NUL bytes.
+
+⚠️ **NOT VERIFIED SIGNED IN.** The anon key has no grants, so no real setup has been opened: the
+model, the count control, the migration and the quick-setup generator are proved by execution against
+fixtures. **The first things to try:** raise a type's count to three and check the three towers carry
+the same floors; then run **Quick setup…** and check the location count on screen matches what the
+step reports afterwards.
+
+⚠️ **Merged `origin/main` (4 commits, PR #145's Calendars work) before shipping.**
+`modules/project-schedule/index.html` **auto-merged with no conflicts** — but a clean auto-merge is
+not evidence, so both sides were checked present afterwards (this side's `blankTowerTypes`,
+`_twSetCount`, `_twNewInstance`, `floorsOfTower`, `_qsSentence`, `_clampN`; main's
+`renderCalendarsInto`, `#ps-cal-close`, `day_hours`) and the whole battery re-run on the merged tree
+— **including main's own two new suites, which this session had never run**.
+
+`MODULE_V` → `20260918c`, re-derived from the merged tree **after** integrating (main had reached
+`20260918b`) and sort-checked as a plain string.
+
 
 ## 2026-09-18 (a) — A step you cannot answer yet cannot be entered, and four references to a rail that had been renumbered twice
 

@@ -37,7 +37,12 @@ const FNS = ['autoTrace', 'zoneGroupsOfFloor', 'floorGateOf', 'floorLagOf', 'try
    function the base has never heard of.
    ⚠️ It is not stubbed: where the name exists the REAL function is linked, and an assertion below
    requires the current file to define it, so this cannot quietly hide the gate going missing. */
-const FNS_OPT = ['locless'];
+/* ⚠️ Tower TYPES (2026-09-18) join `locless` under the same rule and for the same reason: locList
+   now resolves a floor's type to its instances, so these are real dependencies of a function this
+   suite slices — but the PINNED BASE defines none of them, and slicing unconditionally would fail
+   the contrast build on functions it has never heard of. Where the name exists the REAL function is
+   linked; nothing here is stubbed. */
+const FNS_OPT = ['locless', 'towerById', 'blankTowerTypes', 'typeList', 'typeById', 'typeOfTower', 'towersOfType', 'repTowerOf', 'repTowerOfTower'];
 
 function build(src) {
   const S = makeSlicer(src);
@@ -266,7 +271,9 @@ console.log('\n8 · the source');
      CURRENT file is required to define it, and `locList` is required to call it. Without these
      two, deleting the gate would make the suite pass by falling back to the base's behaviour. */
   ok(/function locless\s*\(/.test(code), 'the current file defines locless');
-  ok(/function locList\(\)[^\n]*if \(locless\(tr\)\) return;/.test(code),
+  // ⚠️ Bounded to 400 characters so this still matches locList's OWN gate and not another
+  //    function's — locList stopped being a one-liner when tower types landed.
+  ok(/function locList\(\)\s*\{[\s\S]{0,400}?if \(locless\(tr\)\) return;/.test(code),
      'locList gates on it, so a loc-less trade produces no leaves');
   ok(!/function locless\s*\(/.test(base), 'BASE has no locless — which is why the slice is optional');
 }

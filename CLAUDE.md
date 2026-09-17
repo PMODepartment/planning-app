@@ -103,7 +103,7 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
-### 2026-09-18 (b) — Project Phases becomes a Gantt per phase, and two live bugs came out of building it
+### 2026-09-18 (c) — Project Phases becomes a Gantt per phase, and two live bugs came out of building it
 
 Owner, five items on Schedule Setup → Project Phases: *"remove the duplicate branch and paste outline
 buttons as well as add WBS. no other WBS is allowed aside from initiation, planning, execution
@@ -114,7 +114,7 @@ should be a gantt chart per phase, in the gantt chart, users can draw lines betw
 define sequence. right clicking on arrow also allows user to define lag between activities as well as
 relationship type - FS, SS, FF, SF"*. Module work — the full entry, every ⚠️ decision and the
 verification are in
-[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(b)`. Logged here
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(c)`. Logged here
 for the `MODULE_V` bump and the four things that are not facts about one module:
 
 ⚠️⚠️ **`normalize()` IS A WHITELIST, AND IT HAD NEVER CARRIED `w` — SO THE PER-ACTIVITY WBS PICKER
@@ -181,8 +181,85 @@ rule; and the Milestones and *Other branches* cards still display existing top-l
 deliberately — what was blocked is **creating** new ones, and hiding branches a project already has
 would hide real data.
 
-⚠️ **Not verified signed in.** `MODULE_V` → `20260918c`, re-derived from `origin/main` **after**
-merging its ten commits rather than guessed before, and sort-checked as a plain string.
+⚠️ **Not verified signed in.**
+
+⚠️⚠️ **Re-lettered `(b)` → `(c)` on merging `origin/main`, AND both sides had independently taken
+`MODULE_V = 20260918c`.** Main published its own `2026-09-18 (b)` — the tower-types restructure below
+— while this was in flight, so both sides prepended a different entry under one letter. Both are kept
+whole and this one moves past main's, per this file's own rule: take only the NEW entries from each
+side, never both copies of the log. ⚠️⚠️ **The version half did NOT conflict, and that is the half
+that ships broken:** git saw the identical string on both sides of all three token lines and merged
+them **silently**, leaving one cache-bust token covering two different builds — a browser holding
+main's `20260918c` would never have fetched this branch's bytes. Ninth time this log has recorded that
+shape. Found by listing every `20260918*` token on **both** refs before resolving rather than after.
+
+⚠️ **A clean auto-merge of `modules/project-schedule/index.html` is not evidence of a correct one.**
+Main rewrote the towers step and moved Floors & Zones into a pop-up; this branch rewrote Project
+Phases. Both sides' functions were asserted present on the merged tree by name and the whole battery
+re-run on it, **including main's own new `test-towertypes.js`, which this session had never run**.
+
+`MODULE_V` → `20260918d`, re-derived from what the merged tree actually carries **after** integrating
+rather than guessed beforehand, and sort-checked as a plain string past both sides' `20260918c`.
+
+
+### 2026-09-18 (b) — A tower becomes an instance of a type, and the thing that made it safe was NOT copying the floors
+
+Owner, on the Schedule Setup restructure: *"users are to define the types of towers there are …
+and users are to define how many type 1 towers there are in the project"*, and for the next step,
+*"this is processed by letting the user use the quick setup but in a pop-up window. Then if there
+are changes to be made later on, the detailed pane below can be adjusted."* Module work — the full
+entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(b)`. Logged here
+for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **THE FEATURE IS A REVERSAL OF A DECISION THE SCREEN ITSELF ARGUED FOR, AND THE OLD SENTENCE IS
+KEPT RATHER THAN DELETED.** That step's help text read *"identical towers are just several towers
+carrying the same floors — that is how a tower 'type' is expressed; there is no separate type
+field."* The reasoning was sound about the data and wrong about the **work**: expressing sixteen
+identical towers by laying out sixteen identical sets of floors is sixteen chances to diverge, and
+nothing in the file could say they were *meant* to match — so a floor added to one of them silently
+made it a different building. The shipped text is rewritten and a comment above it **quotes the old
+sentence and records the reversal**, because a reversal with no record is one that gets reversed
+back.
+
+⚠️⚠️ **WHAT MADE IT SAFE IS THAT NOTHING WAS COPIED.** Floors stay stored **once**, on the type's
+first instance, so `f.towerId` keeps its historical meaning, every reader written before types
+existed is untouched, *"every Type 1 tower is identical"* holds by construction rather than by
+discipline, and the fan-out happens in exactly **two** places. The load-bearing detail is that the
+first instance's leaf `uid` is preserved **byte-for-byte**: `cfg.links`, `cfg.actLinks` and
+`cfg.scopeOff` are all keyed on those uids, so generating a fresh one would have silently orphaned
+every zone sequence and scope exclusion on every existing project. A migration with a no-guessing
+rule — an untyped tower is **its own** type — covers setups saved before today; an earlier cut fell
+back to *"the first type"* and collapsed every tower onto tower 1's floors, which a suite caught
+with 20 failures.
+
+⚠️⚠️ **AND A REAL DEFECT THE NEW SUITE CAUGHT, WHICH THE COMMENT BESIDE IT HAD ALREADY WARNED
+ABOUT.** The count control builds each new tower by reading the list to find a name nothing is
+using — so every instance must be **in** the list before the next one is named. The first cut built
+them all first and appended afterwards, naming them all against the same list: raising a two-tower
+type to four produced **"Tower 3" twice**, and two towers with one name is exactly what makes an
+area traced on the site development plan ambiguous. The warning was written beside the code and the
+code did the opposite.
+
+**Verified:** a new suite of **79 assertions** executing the shipped functions sliced out by name,
+with the contrast pinned to a **SHA** rather than `HEAD` (which becomes self-comparison the moment
+this commits) and asserted to have run — the base returns **0** floors where this returns 3.
+Eighteen suites green on the merged tree — **1,477 assertions, 0 failing** — `wiring-check`
+**139/0**, the inline block parses, 0 NUL bytes. ⚠️ Three of my own assertions were wrong before the
+code was, including one **measuring its own explanation** (a "this text is gone" check tripping on
+the comment that records it went), fixed by reading the source with comments blanked.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so the model, the migration and the
+generator are proved by execution against fixtures rather than against a real setup.
+
+⚠️ **Merged `origin/main` (4 commits, PR #145's Calendars work) before shipping.**
+`modules/project-schedule/index.html` **auto-merged with no conflicts** — but a clean auto-merge is
+not evidence, so both sides were checked present afterwards and the whole battery re-run on the
+merged tree, **including main's own two new calendar suites, which this session had never run**.
+
+`MODULE_V` → `20260918c`, re-derived from the merged tree **after** integrating (main had reached
+`20260918b`) rather than guessed beforehand, and sort-checked as a plain string. No shared asset
+changed.
 
 
 ### 2026-09-18 (a) — Schedule Setup gates its own steps, and the gate had to be written so it cannot strand a project
