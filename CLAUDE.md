@@ -104,6 +104,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (c) — Schedule Setup ▸ Activities: SAP Activities, one heading per trade, and an activity that can be several
+
+Owner's nine numbered items on that step — the pane renamed to **SAP Activities**, a library code
+already in the build no longer offered again, the grid tile fitted to its own table, the build grouped
+by trade, four class codes moved to Others and seven retired, `+ Custom` beside `Load typical set`, a
+custom activity's code locked blank and a SAP activity's trade locked, **checkboxes and activity
+merging** in place of the row-number gutter, and the Construction Library removed. Module work — the
+full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(c)`. Logged here
+for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **A RULE THAT IS IN THE CASCADE AND LOSING READS EXACTLY LIKE A RULE THAT WORKS.** The locked
+cell's muted ink was `.sbld-xl input.sbld-lock` at **(0,2,1)**, against a generic control rule at
+**(0,2,2)** setting `color:var(--pd-ink)`. So every locked cell rendered identical to an editable one
+— the single thing the class exists to signal — and nothing about the source looks wrong: the rule is
+there, it is specific, it names the right element. Only measuring the computed colour found it. The
+fix is source order, not more specificity: tie at (0,2,2) and declare it after. ⚠️ This is the third
+specificity trap this log has recorded in a month, and the first where the losing rule was a *colour*
+rather than a `display`.
+
+⚠️⚠️ **BRAND RED IS A FILL, AND AT 10px IT IS NOT TEXT.** Two new badges used `color:var(--pd-red)`
+and measured **4.12 light / 3.40 dark** and **3.74 / 4.14** composited over the ground they actually
+paint on — both under AA's 4.5 for small text, in one theme or the other. The same shape this file
+already records for `--pd-warn` (*"a SURFACE colour at 3.46:1 on white"*), and the same answer
+`.ps-vs-chip.on` arrived at in September: **ink on the red tint**, which keeps the brand cue and
+measures **13.30 / 10.98** and **12.18 / 13.17**. ⚠️ The tint is a fixed brand `rgba` rather than a
+token pair — it composites over whatever ground it lands on, so one value is right in both themes,
+which is why `dark-remap` exempts a brand colour rather than flagging it.
+
+⚠️⚠️ **AND BOTH HARNESSES LIED, IN OPPOSITE DIRECTIONS.** The render harness serves a page generated
+**once** from the shipped file, so every measurement in this pass was taken against a build several
+fixes old — the locked-cell fix appeared not to take, twice, and the geometry described a file that no
+longer existed. **Regenerate before measuring, or the harness is testing history.** Then the contrast
+harness read a **14% tint as an opaque colour** and reported the accessible fix above as **3.96 /
+3.59** — worse than what it replaced — because `groundOf` stopped at the first non-zero alpha instead
+of compositing up. Both are corrections this repo has already had to make once (the sandbox card's own
+contrast probe); neither is visible in a number that looks plausible.
+
+**Verified:** `test-actsetup` **133 assertions, 0 failing**, the renderer and the whole merge model
+sliced out of the shipped file by name and executed, with the contrast pinned to the SHA `d0da7cd` —
+where it **fails 30**. `test-actdnd` 48/0, one assertion **retargeted rather than weakened** (the
+checkbox fix moved a selector; the property under test is unchanged). Every project-schedule suite
+green on the merged tree — **1,410 assertions across seventeen suites** — plus `wiring-check`
+**139/0**, `dark-remap` 0, `dead-hooks` 9 (the documented baseline), `loc-key-agree` clean,
+`selectall-key` 99 safe / 0 broken. CSS braces 2422/2422, 0 NUL bytes, the 3.4MB inline block parses.
+Measured in a browser at four widths: the tile fits its table, the pane widens and shrinks with it,
+the page never scrolls sideways, 0 page errors, and **every new colour resolves through a `--pd-*`
+token** under a dark-mode pass.
+
+⚠️ **Not verified signed in** — no merged activity has been saved to a real setup or pushed, so what
+the schedule receives for a merged row (one `class_code`, the first child's, with the rest on `kids`)
+is proved by execution against fixtures.
+
+⚠️ **Merged `origin/main` (7 commits) before shipping** — the tower-types restructure and the
+Calendars rework, **1,729 lines of the same file**. It auto-merged with no conflicts, and a clean
+auto-merge is not evidence: both sides were checked present afterwards and **main's own two new
+suites were re-run on the merged tree** (`test-towertypes` 79/0, `test-calendar-editor` 23/0).
+
+`MODULE_V` → `20260918d`, re-derived from what the remote actually carries **after** integrating
+(main had reached `20260918c`) rather than guessed beforehand, and sort-checked as a plain string. No
+shared asset changed.
+
 ### 2026-09-18 (b) — A tower becomes an instance of a type, and the thing that made it safe was NOT copying the floors
 
 Owner, on the Schedule Setup restructure: *"users are to define the types of towers there are …
