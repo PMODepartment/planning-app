@@ -104,6 +104,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (v) — supabase-build.sql / VERIFY-schema.sql regenerated, and a real bug found in the checker doing it
+
+⚠️ Re-lettered from `(u)` on merge: a concurrent session independently landed its own 2026-09-17 `(u)`
+entry (below) first. Both entries kept in full; this one bumped past it rather than guessed at before
+integrating, per the rule this log has now recorded more than once.
+
+Owner: *"help me re-push database schema based on latest."* Both generated files had not been
+regenerated since 2026-09-16 (`9feb48c`), so 3 same-day migrations —
+`2026-09-17-calendar-holiday-labels.sql` / `-contracts-claims-owner.sql` / `-sandbox-project.sql` —
+were missing from both.
+
+⚠️⚠️ **`migrations/gen-verify.js`'s own create/drop regexes ran against raw file text with no notion
+of a SQL comment or string literal** — the exact class of bug this repo's other checkers
+(`tools/scan.js`, `tools/wiring-check.js`) have already been bitten by and fixed, just never applied
+here. Three real instances, all silently cancelling a table or function the migration genuinely
+creates:
+- `2026-09-10-scurve-manual-poc.sql`'s `raise exception '...drop table if exists scurve_manual...'`
+  — an operator instruction **inside a string literal**.
+- `2026-09-12-pormac.sql`'s commented-out rollback notes, `-- drop table if exists
+  pormac_conversations;` and three more — real UNDO instructions, not code.
+- `2026-09-10-drop-gift-tier.sql`'s `-- create table if not exists _archive_gift_tier_...` — a
+  suggested archive step, in a comment, never actually run.
+
+Each one made a genuinely live object vanish from the "what should exist" list, which is exactly
+backwards for a checker whose entire job is "tell someone if something is missing." Fixed with a
+`maskSql()` pass (comments, `'...'` string literals with `''` escaping, `$tag$...$tag$` dollar-quoted
+bodies) run before either regex pass, self-tested against these exact three shapes plus a real-drop
+control and a dollar-quoted-body case — so a regression here fails loudly rather than going quiet.
+
+⚠️⚠️ **A second, larger pre-existing gap, found while fixing the first:** the add/drop-column regex
+required `alter table X` immediately before `add column`, which is only ever true **once** per
+statement — so a comma-chained `alter table X add column a, add column b, …` only ever tracked its
+**first** column. `2026-07-01-project-schedule-opc-fields.sql` chains 17 columns onto one
+`alter table project_schedule`; 16 of them have never been tracked since the file was written. Fixed
+by scanning each whole `alter table … ;` statement block for every `add column`/`drop column` clause
+inside it, rather than the single clause right after the table name — also self-tested against the
+real 17-column shape.
+
+⚠️ `migrations/gen-build.js` (the file that actually concatenates everything into the runnable build)
+was checked for the same class of bug and left alone: its own `create table`/`alter table` regex only
+ever matches text inside dynamic-SQL string literals like `execute format('alter table %I enable row
+level security', t)` — and every real match found (`alter table schedule_audit enable row level
+security`, `alter table floor_plans …`, etc.) happens to be a dependency that is **already true** and
+**already satisfied by filename order**, so no build ordering was ever actually wrong. Not a live bug;
+not touched.
+
+**Verified:** both generators' own sanity gates hold (base schema still declares `projects`/`users`;
+180 migrations found; 0 dependency cycles); `node --check` clean on both; 0 NUL bytes in the rebuilt
+`supabase-build.sql`; every newly-surfaced object (`scurve_manual`/`scurve_manual_meta`,
+`pormac_conversations`/`pormac_messages`/`pormac_usage`/`pormac_can_use`, the 17 OPC-fields columns,
+`eng_design_progress`, `users_guard_self_escalation`/`users_guard_self_insert`) confirmed present in
+the regenerated `supabase-build.sql` by direct grep.
+⚠️⚠️ **Not run against a database from here — this environment has no Supabase access.** Both files
+are regenerated **from the migrations already in the repo**; the actual "push" is the owner pasting
+`supabase-build.sql` (fresh install) or running `migrations/VERIFY-schema.sql` first (existing
+database, to see what's actually missing) into the Supabase SQL editor.
+
 ### 2026-09-17 (u) — Every button in the app was Arial; the Start step stops explaining its own labels
 
 Owner: *"Let's do 4.1 now let's do it per page in the schedule set-up one by one full check per page"*,
