@@ -494,7 +494,7 @@
 <script src="../../assets/js/auth.js?v=20260916a"></script>
 <script src="../../assets/js/db.js?v=20260917a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/scurve.js?v=20260916r"></script>
+<script src="../../assets/js/scurve.js?v=20260917a"></script>
 <script src="../../assets/js/ui.js?v=20260916w"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
@@ -2070,7 +2070,20 @@
         '), spread over each activity\'s dates ' + shapeNote(d.shapes) + '. '
       : 'Progress weighted by activity duration across ' + d.activities + ' activities. ') +
       'Solid = planned & actual (to data date). Red dashed = forecast to finish — ' +
-      (d.manual ? 'pinned to ' + iso(d.fcFinish) : 'performance-based (SPI ' + (Math.round(d.spi * 100) / 100) + ', auto finish ' + iso(d.autoFc) + ')') +
+      /* ⚠️⚠️ SAY WHICH METHOD ACTUALLY RAN. This printed "performance-based (SPI 0.1)" for every
+         auto forecast, including the ones that were not performance-based at all — which is how
+         DEMO01's 2034 finish read as an authoritative calculation rather than as a division by
+         something close to zero. `basis` comes back from PDScurve.compute and says which of the
+         three produced the date. */
+      (d.manual ? 'pinned to ' + iso(d.fcFinish)
+        : d.basis === 'spi'
+          ? 'performance-based (SPI ' + (Math.round(d.spi * 100) / 100) + ', auto finish ' + iso(d.autoFc) + ')'
+        : d.basis === 'done'
+          ? 'complete — the forecast is the data date'
+          : 'the planned finish plus the ' + d.slipDays + '-day slip already incurred (auto finish ' +
+            iso(d.autoFc) + '). Below ' + d.spiMinPct + '% complete an SPI forecast is not meaningful — ' +
+            'the ratio of two very small percentages swings wildly — so the slip measured between ' +
+            'the two curves is used instead') +
       '; it follows the plan’s shape from the actual point up to 100%. Set a date to override, clear it to auto-forecast.';
     }
     /* ==========================================================================================

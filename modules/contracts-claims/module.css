@@ -1539,6 +1539,35 @@ html.pd-dark .pmi-chtab tr.pmi-ch-cleared td { background:rgba(78,209,139,.08); 
    ordinary div it would become the grid item and the card inside it would stop sharing the
    strip's own sizing, so the Certified card would be the one card that did not line up. */
 #cc-dash-certcard { display: contents; }
+/* ==== WHO IS CHASING WHAT ==================================================================
+   ⚠️ The unassigned row is marked, not hidden — see `ccWhoHTML`. It sorts first and reads as
+   a prompt rather than as a person, because "six records nobody owns" is the finding this band
+   exists to surface and a muted grey row would bury it under the names that DO have an owner. */
+.cc-who-none > td:first-child { font-style: italic; color: var(--pd-red); font-weight: 700; }
+.cc-who td, .cc-who th { white-space: nowrap; }
+.cc-who td:first-child, .cc-who th:first-child { white-space: normal; }
+
+/* ==== EXPOSURE OVER THE LAST 12 MONTHS =====================================================
+   Owner 2026-09-17: every figure on this page was a snapshot. See `ccTrendHTML` for where the
+   history comes from (the record dates, not a snapshot table).
+   ⚠️ A COLUMN CHART IN LIST MARKUP, no SVG. Twelve values with no axis to scale, no
+   interpolation and no curve — an `<li>` per month with a percentage height is the whole thing,
+   it inherits every theme token for free, and a screen reader gets an actual list with the figures
+   on each `title`. The one thing SVG would add here is a second way to draw a rectangle. */
+.cc-trend { display: flex; align-items: flex-end; gap: 4px; list-style: none;
+  margin: 10px 0 6px; padding: 0; height: 96px; }
+.cc-tr-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+  justify-content: flex-end; align-items: stretch; height: 100%; gap: 4px; }
+/* ⚠️ The bar is a flex COLUMN justified to the end, so the shortfall `<i>` grows from the
+   BOTTOM of the bar. Stacked the other way the darker part would float, and "how much of this
+   month's exposure is money already cut" is the one thing the split is there to say. */
+.cc-tr-bar { display: flex; flex-direction: column; justify-content: flex-end;
+  background: var(--pd-warn); border-radius: 3px 3px 0 0; min-height: 0; }
+.cc-tr-bar > i { display: block; background: var(--pd-red); border-radius: 0 0 3px 3px; }
+.cc-tr-l { font-size: var(--pd-fs-micro); color: var(--pd-muted); text-align: center;
+  overflow: hidden; white-space: nowrap; }
+.cc-tr-note { margin: 0 0 4px; }
+
 .cc-dash-facts {
   list-style: none; margin: 0 0 10px; padding: 0;
   display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 18px;

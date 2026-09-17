@@ -169,6 +169,53 @@
     return 'by their spread curves (' + ks.map(function (k) { return sh[k] + ' ' + LBL[k]; }).join(', ') + ')';
   }
 
+  /* ==== WHICH FORECAST, AND WHY — THE WHOLE DECISION, IN ONE PLACE =========================
+     Owner 2026-09-17, on DEMO01: *"finish is at Apr 23, 2027 but the s-curve has its own forecast
+     finishing by 2034."*
+
+     ⚠️⚠️ SPI IS MEANINGLESS AT BOTH ENDS OF A JOB, AND THE OLD RULE USED IT AT BOTH.
+     It was `finish = now + remaining / SPI` with SPI clamped to a floor of 0.1:
+       · At the START — three days in, 0.5% booked against 5% planned — SPI is 0.1, so the clamp
+         did not protect anything, it GUARANTEED a tenfold stretch. DEMO01: 293 remaining days
+         became 2,930, and a 2027 programme forecast 2034.
+       · At the END — past the planned finish — `remaining` is ZERO, so `now + 0 / spi` is the data
+         date, and a project 40% complete and six months late forecast **finishing today**.
+     One defect, seen from two sides: an expression only meaningful in the middle of a job, used at
+     its edges.
+
+     ⚠️ So performance forecasting is GATED, and the fallback is the slip already measured
+     between the two curves — bounded, derived from the same data, and never more wrong than the
+     slip itself. `minPct` is the conventional EVM threshold: SPI is unreliable below roughly a
+     tenth of the work, and converges to 1.0 near the end whatever happens.
+
+     ⚠️ THE CLAMP IS KEPT, and only bites where SPI is used at all. A genuinely half-speed
+     project should forecast twice its remaining duration; clamping that away would hide a real
+     finding. It is there to stop an arithmetic blow-up, not to flatten bad news.
+
+     ⚠️⚠️ EXPORTED BECAUSE THERE IS A SECOND COPY OF THIS ARITHMETIC. Project Schedule's
+     cockpit chart (`_ckSCurveCompute`) is a verbatim port of this maths — its own comment says so —
+     and it carried the identical defective line. Two copies of a forecast is how one screen tells a
+     planner 2034 and another tells them 2027 about the same project.
+
+     `slipMs` is optional: a caller that cannot measure the horizontal gap passes nothing and the
+     immature forecast is the planned finish, which is still an answer rather than a blow-up. */
+  function forecast(o) {
+    var MIN_PCT = 10;
+    var pctNow = o.pctNow || 0, plPctNow = o.plPctNow || 0;
+    var tnow = o.tnow, plannedEnd = o.plannedEnd;
+    var slipMs = Math.max(0, o.slipMs || 0);
+    var remMs = Math.max(0, +plannedEnd - +tnow);
+    var spiRaw = plPctNow > 0 ? pctNow / plPctNow : 1;
+    var spi = Math.max(0.1, Math.min(spiRaw, 3));
+    var mature = pctNow >= MIN_PCT && plPctNow >= MIN_PCT && remMs > 0;
+    var basis = pctNow >= 100 ? 'done' : (mature ? 'spi' : 'slip');
+    var autoFc = pctNow >= 100 ? tnow
+      : mature ? new Date(+tnow + remMs / spi)
+               : new Date(+plannedEnd + slipMs);
+    return { autoFc: autoFc, spi: spi, spiRaw: spiRaw, basis: basis,
+             minPct: MIN_PCT, slipDays: Math.round(slipMs / 86400000) };
+  }
+
   /* compute(rows, opts)
        opts.basis          'dur' (default) | 'cost'
        opts.forecastFinish Date | null — a pinned finish overrides the SPI projection
@@ -186,15 +233,57 @@
     if (!TOT || !minDate || !plannedEnd) return { empty: true };
 
     var tnow = opts.today ? pd(opts.today) : today();
-    // Performance-based (SPI) forecast finish: SPI = actual% ÷ planned% at the data date; the
-    // remaining planned duration is stretched by 1/SPI (behind → later finish). A pinned date
-    // overrides; the timeline extends to cover whichever is later.
     var pctNow = TOT ? overallDone / TOT * 100 : 0;
     var plPctNow = TOT ? plannedAt(tnow) / TOT * 100 : 0;
-    var spi = plPctNow > 0 ? pctNow / plPctNow : 1;
-    spi = Math.max(0.1, Math.min(spi, 3));
     var remMs = Math.max(0, +plannedEnd - +tnow);
-    var autoFc = pctNow >= 100 ? tnow : new Date(+tnow + remMs / spi);
+
+    /* ==== HOW FAR BEHIND, IN TIME ============================================================
+       The date the PLAN said we would be at today's actual percentage. The gap between that date
+       and the data date is the slip, in days, and it is the Earned Schedule measure.
+       ⚠️ This is a horizontal read of the two curves, where SPI is a vertical one — and the
+       horizontal read is the stable one early on. At 0.5% complete the ratio of two tiny
+       percentages swings wildly on rounding; "the plan expected this much work by the 15th, it is
+       now the 17th" does not.
+       ⚠️ Walks DAILY from the project start. `plannedAt` is monotonic, so the first date at
+       or above the target is the answer; a bisection would be faster and this runs once per
+       render over a few thousand days. */
+    function earnedDate(targetPct) {
+      if (!(targetPct > 0)) return minDate;
+      var lo = +minDate, hi = +plannedEnd, DAY = 86400000;
+      if (hi <= lo) return minDate;
+      for (var t = lo; t <= hi; t += DAY) {
+        var d = new Date(t);
+        if (TOT && plannedAt(d) / TOT * 100 >= targetPct) return d;
+      }
+      return plannedEnd;
+    }
+    var esDate = pctNow > 0 ? earnedDate(pctNow) : minDate;
+    var slipMs = Math.max(0, +tnow - +esDate);
+
+    /* ==== THE FORECAST, AND WHY IT IS NOT ALWAYS SPI ==========================================
+       Owner 2026-09-17, on DEMO01: *"finish is at Apr 23, 2027 but the s-curve has its own forecast
+       finishing by 2034. Let's check and debug."*
+
+       ⚠️⚠️ SPI IS MEANINGLESS AT THE START OF A PROJECT, AND THE CLAMP MADE IT WORSE. The old
+       line was `spi = max(0.1, min(spi, 3))` and then `finish = now + remaining / spi`. On a project
+       three days old with 0.5% booked against 5% planned, SPI is 0.1 — so the clamp did not protect
+       anything, it GUARANTEED a ten-fold stretch of the remaining programme. DEMO01: 293 days
+       remaining × 10 = 2,930 days, and a forecast finish of 2034 for a schedule that ends in 2027.
+       A number that large is not a forecast, it is a division by something close to zero.
+
+       ⚠️ So performance-based forecasting is GATED ON MATURITY. Below `SPI_MIN_PCT` of the work
+       there is not enough signal, and the forecast is the planned finish plus the slip already
+       incurred — bounded, derived from the same two curves, and never more wrong than the slip
+       itself. Above it, SPI is used as before. The threshold is the conventional EVM one: SPI is
+       unreliable below roughly a tenth of the work, and it also converges to 1.0 near the end
+       whatever happens, which is the other half of why it cannot be the only method.
+
+       ⚠️ The CLAMP IS KEPT but only matters where SPI is now used at all: a genuinely
+       half-speed project should forecast twice its remaining duration, and clamping that away would
+       hide a real finding. It exists to stop an arithmetic blow-up, not to flatten bad news. */
+    var f = forecast({ pctNow: pctNow, plPctNow: plPctNow, plannedEnd: plannedEnd,
+                       tnow: tnow, slipMs: slipMs });
+    var SPI_MIN_PCT = f.minPct, spiRaw = f.spiRaw, spi = f.spi, basis = f.basis, autoFc = f.autoFc;
     var manual = !!opts.forecastFinish;
     var fc = manual ? pd(opts.forecastFinish) : autoFc;
     var domainMax = new Date(Math.max(+plannedEnd, +tnow, +fc));
@@ -236,7 +325,12 @@
       empty: false, months: months, plannedC: plannedC, actualC: actualC, forecastC: forecastC,
       TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct,
       variance: actualPct - plannedPct, ti: ti, activities: base.nAct, plannedEnd: plannedEnd,
-      fcFinish: fc, autoFc: autoFc, spi: spi, manual: manual,
+      /* ⚠️ `basis` says WHICH method produced `autoFc` — 'spi', 'slip' or 'done'. A caller that
+         prints "performance-based (SPI 0.1)" over a slip-based forecast is describing a
+         calculation that did not happen, which is how the 2034 figure read as authoritative. */
+      fcFinish: fc, autoFc: autoFc, spi: spi, spiRaw: spiRaw, basis: basis,
+      slipDays: Math.round(slipMs / 86400000), esDate: esDate,
+      spiMinPct: SPI_MIN_PCT, manual: manual,
       money: !!base.money, priced: base.priced || 0, shapes: base.shapes || null
     };
   }
@@ -355,7 +449,7 @@ function computeFromAgg(a) {
     pd: pd, today: today, isWbs: isWbs,
     curveCdf: curveCdf, curveOfRow: curveOfRow,
     durSeries: durSeries, costSeries: costSeries,
-    shapeNote: shapeNote, compute: compute,
+    shapeNote: shapeNote, compute: compute, forecast: forecast,
     /* the portfolio trio (plus the carry they share) — see the block above */
     fanOutAgg: fanOutAgg, carry: carry, mergeAggs: mergeAggs, computeFromAgg: computeFromAgg
   };
