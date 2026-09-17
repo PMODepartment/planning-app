@@ -104,6 +104,115 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ag) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
+
+⚠⚠ **Re-lettered `(aa)` → `(ab)` → `(ad)` → `(ae)` across three merges, AND re-versioned `20260917zx` →
+`20260917zzd` — the same two-sessions-one-token collision this log has now recorded six times, both
+halves of it at once, and the letter half FOUR times in a row: main independently reached for `(aa)`,
+then `(ab)`, then `(ad)`. ⚠⚠ So the letter is now derived from the MERGED file at the end — the
+free suffix is computed from every `### 2026-09-17 (…)` heading present after resolving, rather
+than chosen when the entry is written. A letter picked up front is stale the moment anyone else
+lands an entry the same day, and on a busy day that is every single merge.**
+Every letter `a`–`z` was already spent for this date, so both sides independently reached for
+`(aa)`; and main's `04b92972` had independently taken `20260917zx` for `MODULE_V` while this was
+in flight. ⚠ The version half is the dangerous one and it does **not** conflict on its own — it
+is a different value on each side, so git merges it happily and the loser's bytes ship under a
+token a browser already holds. Re-derived to `zzb`, past main's own `zza`, and sort-checked as a
+plain string rather than assumed: `zx` sorts *before* `zza`, so “take theirs” would have been
+worse than a collision.
+
+Owner, four items on Schedule Setup → Repetition: *"Rename tower links to Tower Sequence"*, *"when
+clicking next, user should move from tower sequence to Zone Sequence, etc. before moving to next
+step"*, *"under scope per zone, instead of class codes, provide activity name"*, and *"no need for
+the vertical stacking in repetition step, move this to the generate step"*. Module work — the full
+entry is in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zx)`.
+Logged here for the `MODULE_V` bump and the three things that generalise:
+
+⚠️⚠️ **ITEM 2 WAS ALREADY BUILT, AND THE HONEST ANSWER WAS WORTH MORE THAN A REBUILD.** The footer's
+Next/Back has walked this step's tabs since `(t)` this morning — `stepTabs(<step title>)` drives the
+button's label *and* its handler, so it cannot say one thing and do another. Executed rather than
+read: the shipped walker, sliced out of `render()`'s footer block and driven, goes **Tower Sequence
+→ Zone sequence → Trade sequence → Scope per zone → Generate**. ⚠️ What *can* look like the
+complaint: the selected view is remembered, so reaching the step by clicking the **rail** while the
+remembered view is the last one leaves Next with nowhere to go but the next step. Entering through
+Next always lands on the first view, so the walk is complete every time it is *walked*. Recorded
+rather than "fixed" on a guess.
+
+⚠️⚠️ **A SPECIFICITY TIE THAT FAILED IN THE WORST HALF-WAY STATE.** The Scope-per-zone header now
+holds an activity name, so it has to wrap — and `th.sbld-scope-col` is **(0,1,1)** against the base
+`table.sbld-tbl th, table.sbld-tbl td { white-space:nowrap }` at **(0,1,2)**. That is not a harmless
+no-op: the `max-width` in the same rule **did** apply while the `white-space` did not, so the header
+was capped *and* unwrappable and **three of eleven names rendered clipped**. Only measuring found it.
+This file has recorded the *equal*-specificity version of this trap repeatedly (`[hidden]` losing to
+an author `display`); the unequal one is nastier, because half the rule still lands and the result
+looks deliberate.
+
+⚠️⚠️ **`/@import[^;]*;/` IS A BROKEN WAY TO STRIP AN @IMPORT, AND IT MADE THE HARNESS LIE.**
+`dashboard.css`'s Google Fonts URL **contains semicolons** (`wght@0,400;0,500;…`), so that regex cuts
+inside the URL and leaves garbage that swallows the following `:root` block — every `--pd-*` token
+then resolves to nothing and the harness measures an **unstyled** page at the browser's 16px default,
+reporting widths ~35% too large. Internally consistent, and wrong. Caught by asserting a token
+(`--pd-fs-sm` came back empty), not by reading the numbers. **Strip to end of line**, and any harness
+in this repo that inlines `dashboard.css` should assert a token before it reports a measurement.
+
+⚠⚠ **AND THE STACKING RENDERER IS KEPT, NOT DELETED — A REVERSAL, AT THE OWNER'S REQUEST.**
+*"make sure not yet to delete the code for stacking and just keep it in repo. this will be used later
+on in the generate step."* Worth being precise about what was ever at stake: the **drawing engine**
+(`stackTowerSVG`, `zonesOfFloorStk`, `openStackUnits`, `_genStackCards`) was never touched and is
+live on Generate today. What the retired tab owned was a **shell** around it — and that shell is now
+back, verbatim, parked out of `STEP_TABS` and out of every call path. The part worth keeping is its
+**basis `<select>`**, which shows Internal or External one at a time; Generate draws both side by
+side and has no way to do that.
+⚠ This repo's rule that *a renderer nothing calls is the one the next editor wires back up beside
+the real thing* is answered rather than waved off: the suite asserts the function exists, has exactly
+**one occurrence** (its declaration, no call site), and is **not back in `STEP_TABS`**.
+⚠⚠ **Parked is not preserved unless it still runs.** A separate suite wires it to a host and
+**executes** it, so a revival gets a working screen rather than a `ReferenceError` — which is also
+why `var stackBasis` came back with it rather than being left deleted under a function that reads it.
+
+⚠️ **Reported, not fixed** — pre-existing and confirmed on `origin/main`'s own copy rather than
+waved past: `modules/project-schedule/CLAUDE.md` holds **one NUL byte** (offset 30,736, inside an
+earlier entry), which makes `grep` treat the whole changelog as binary — the same trap 2026-09-14
+recorded and evidently not gone; and `test-builder` is **99/1** on a manual page for `Structure`, a
+step this morning's merge retired.
+
+⚠⚠ **A CORRECTION TO MY OWN REPORTING: `test-lsm` was never failing — I was calling it wrong.**
+It takes the file to check as `process.argv[2]`, and a bare `node test-lsm.js` throws
+`ERR_INVALID_ARG_TYPE` on `readFileSync(undefined)`. I ran it bare across every sweep and reported
+the crash as a pre-existing failure. Invoked properly it is **676 assertions, 0 failed** on the
+merged tree and identically on `origin/main`. A suite that needs an argument and is run without one
+reads exactly like a broken suite — which is how it got carried through three of this entry's
+verification passes unchallenged.
+
+**Verified:** 65 assertions across three suites, 0 failing, every one executing code sliced out of
+the shipped file, with contrasts pinned to `origin/main` (once this branch is committed, `HEAD` IS
+the change and every contrast becomes self-comparison — which is exactly what started happening, and
+how it was caught). ⚠️ `stGenerate` is
+**executed** against a fake DOM — `node --check` cannot see a ReferenceError, which is this module's
+own z6 lesson — drawing both bases' stacking, wiring both zoom buttons, and **zoom 2× genuinely
+widening the SVG** (viewBox 414 → 674), so the control is not merely bound to a variable nothing
+reads. Rendered at 1180px against the real stylesheets with the cascade proved by a **colour**
+(ink `rgb(35,31,32)` = `--pd-ink`) rather than by tidy geometry on unstyled markup.
+`wiring-check` **139/139**, `toolbar-order` 15 bars / 0 out of order, `dark-remap` 0 findings,
+`dead-hooks` **byte-identical to HEAD**, seven module suites green, the 3.58MB inline block parses,
+CSS braces balanced, 0 NUL bytes in the touched source.
+⚠️ **Not verified signed in.**
+
+⚠⚠ **AND I DESTROYED THE RESOLUTION ONCE, WITH `git checkout origin/main -- <file>`.** Mid-merge,
+to answer a side question (is `test-builder`'s one failure main's or mine?), I checked main's copy
+of two files into the worktree. That command does not just read — it **stages that ref's copy and
+marks the path resolved**, so both resolutions were silently gone and `git status` showed a tidy
+`M` rather than `UU`. Caught by grepping for my own four changes instead of assuming, recovered
+with `git merge --abort` (the branch tip was committed, so nothing was lost) and replayed from the
+content-anchored resolution scripts. **To read another ref during a merge, use
+`git show <ref>:<path> > /tmp/copy` and test the copy.** The answer was worth having — that failure
+is a manual page for `Structure`, and it is **99/1 on main's own copy of the file**, so it is
+pre-existing and neither this change's nor the merge's.
+
+`MODULE_V` → `20260917zzd`, re-derived from what `origin/main` actually carries **after**
+integrating (`zza`) rather than guessed at beforehand — which is the rule that keeps failing to stick.
+No shared asset changed.
+
 ### 2026-09-17 (af) — The clash toggle has never fired: two handlers, overlapping selectors, and `onclick =` replaces
 
 Owner's item 5.2: *"Let's also add the option not to show the clashes."*
@@ -461,7 +570,7 @@ computing to weight 600 · 419 elements Gotham / 0 Arial. Every width above is a
 taken behind a control assertion — the grid's declared inline width (1062px) against its rendered
 width (1063px) — because `visibilityState` read `hidden` while layout was live, and a gate on
 visibility alone would have discarded good numbers just as a gate on nothing would have accepted
-void ones. `modules-grid.js` `?v=` → `20260917zzb`.
+void ones. `modules-grid.js` `?v=` → `20260917zzd`.
 
 ### 2026-09-17 (aa) — The last five Setup ledes stop being instructions, and the wizard is fully on the type scale
 
