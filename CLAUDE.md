@@ -104,7 +104,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-17 (av) — The 360° stitcher produced a cylinder and the viewer rendered it as a sphere
+### 2026-09-17 (aw) — The 360° stitcher produced a cylinder and the viewer rendered it as a sphere
 
 Owner, five items off two screenshots of the Progress Photos review modal — a bowed mosaic inside
 curved black bands, with the dialog scrolling — plus a sixth mid-flight: fit the viewer to the modal;
@@ -174,8 +174,155 @@ rotating-camera frames; the function's wiring around it is checked structurally.
 capture after `supabase functions deploy pano360-process` is the test**, and the job's own done
 message now names the measured coverage and how many over-rotated frames were trimmed.
 
-`MODULE_V` → `20260917zzs`, re-derived from what `origin/main` actually carries and sort-checked as a
-plain string; `module.css` / `module.js` / `pano360.js` bumped with it.
+⚠️ **Re-lettered `(av)` → `(aw)` on merging `origin/main`.** Main had independently published its own
+`2026-09-17 (av)` while this was in flight, so both sides prepended a different entry under one letter.
+Both are kept whole and this one moves past it, per this file's own rule: take only the NEW entries from
+each side, never both copies of the log. Verified after resolving — **310 dated headings, 310 distinct**
+(base 308, one new entry from each side), and the line count lands on base + both sides exactly
+(18,989 + 134 + 73 = **19,196**, plus the 12 lines of this note).
+
+⚠️⚠️ **`MODULE_V` → `20260917zzt`, AND THE COLLISION IT AVOIDS DID NOT CONFLICT.** Both sides
+independently re-derived `20260917zzs` from the same base — so git saw the identical string on both
+sides of every one of the three token lines and **merged them silently**, leaving one cache-bust token
+covering two different builds. A browser holding main's `zzs` would never have fetched this branch's
+bytes. Found by listing every `20260917zz*` token on **both** refs before resolving rather than after;
+the seventh time this log has recorded that shape, and the first time it was caught pre-push in a merge
+that reported no conflict on the file at all. Re-derived past both and sort-checked as a plain string
+(`zzs` < `zzt`); `module.css` / `module.js` / `pano360.js` bumped with it.
+
+### 2026-09-17 (av) — Schedule Setup ▸ Activities: two delete controls go, one of them wired days after this branch called it dead
+
+⚠️ **Re-lettered `(at)` → `(av)` on merging `origin/main`.** Main had independently published its own
+`2026-09-17 (at)` — *"drag a class code onto the grid"*, on this very step — and an `(au)` above it, so
+both sides prepended a different entry under one letter. Both are kept whole and this one moves past
+both, per this file's own rule: take only the NEW entries from each side, never both copies of the log.
+
+
+Owner's four items on that step. Detail, every ⚠️ decision and the measurements:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzs)`. Module only —
+no migration, no shared asset changed.
+
+⚠⚠ **AND THE MERGE THAT LANDED IT IS HALF THE STORY.** `main` moved 8 commits while this sat open
+and answered two of the same four items in its own words — a **native `<details>` grouped holding
+list with a search box** (`(ao)`, PR #138) where this branch had built a button-and-`.fold` one, and a
+**wired `#b-delrows`** (`(ak)`) where this branch had deleted it as dead. Resolved hunk by hunk on the
+merits: main's grouping ships (it is keyboard- and screen-reader-native for free and carries a search
+this never had), main's drag gesture and Internal/External rename are kept, and this branch's compact
+one-line row and code-sorted `+ Library` ride on top of them.
+
+⚠⚠ **THE PART A CLEAN AUTO-MERGE HID: five CSS rules left matching nothing.** The renderer
+conflicted and main's won; the *stylesheet* did not conflict, so this branch's `.sbld-hold-gh` group
+header rules merged in silently beside a renderer that emits none of them — plus two duplicate
+declarations main's own copies were already winning over on source order. **A clean merge is not a
+correct one.** Deleted, with the two consequences of putting a compact row under main's markup carried
+through rather than left half-applied: the per-row trade label goes (the heading above it says the same
+thing 197 times) and so does the row's now-unread `--zc`.
+
+⚠ **Two test suites retargeted, neither weakened** — this branch's own would not even start
+(`ReferenceError: holdQ is not defined`, its harness still supplying the fold-state name it invented),
+and main's asserted against the upload chain the owner asked to remove. Both now assert the shipped
+behaviour, and both contrasts still bite: **29 failures against the original pin, 18 against
+`origin/main` as it stands today** — the second being the one that means anything now.
+
+### ⚠️⚠️ A CLAIM THIS ENTRY MADE WENT STALE BEFORE IT MERGED, AND IT IS CORRECTED RATHER THAN QUIETLY DROPPED
+
+*"no need for the delete selected rows button. user will just use the right button arrow."* This entry
+first read *"`#b-delrows` occurred exactly once in the file — in the markup — with no handler
+anywhere, so it has never removed a row"*. That was true of the file this branch was cut from, and
+**it stopped being true days later**: the `(ak)` *"let's check for dead buttons across the schedule
+setup"* pass **wired it**, and that fix was already on `main` by the time this branch merged. So the
+control removed here was a working one, and it goes **on the owner's word alone**, not because it did
+nothing. Its handler is deleted with the button rather than left querying an id nothing emits — that
+would throw on the first render of the step, which is the `#pk-boq` shape this repo has shipped once.
+⚠️⚠️ **The half of the original claim that still holds is the per-row trash column** — `data-del` emitted per row, every `[data-del]` handler in the file
+scoped to a different list. Not asked for, removed anyway: a trash icon on every row that does nothing
+is worse to leave behind than to take out, one click after being told `→` is how a row leaves.
+**Reported rather than done quietly**, so it can be pushed back on. ⚠️ That distinction is the whole
+point of the correction above: one of the two really was dead and one had just been fixed, and an
+entry claiming both were dead would have taught the next reader the wrong thing about a live control. The grid goes **9 header cells / 9
+body cells → 8 / 8**, measured on both sides — a header and a body disagreeing by one is the
+column-misalignment defect this repo has a checker for.
+
+### ⚠️ The add control moved into the class-code list, and adds a row with no code
+
+*"user can add activity from the all class code list but class code will be left blank. activities
+without class code are identified as custom activities."* **+ Custom** sits in that list's header and
+adds a row to the **build**, not to the list — a catalog entry is a plain button with no editable
+field, so a blank one would render as *"(unnamed)"* with no way to name it. ⚠️ It focuses the **name**
+cell; the old `+ Add row` focused the first match, which is the **Code** cell — the one field a custom
+activity is not going to have. The identification is that cell's own placeholder, `custom`: nothing
+stored, so nothing can go stale, and **both** off-chart warnings already ignored a blank code, so a
+custom activity has never been accused of carrying an unrecognised one.
+
+### The list is grouped, collapsible, and shorter than the flat one it replaces
+
+Measured in a browser against the shipped stylesheet on the **real 197-entry chart**, loaded through
+the shipped loader: row height **43 → 25px**, list content **9,439 → 5,014px**, **20.7 → 11.0 screens
+of scrolling**, **8 → 15 codes visible** at the pane's default width — with **seven trade headings
+added**. Every group folded, the whole library is **188px**. Names go from weight **700 → 400** (*"no
+need to make these labels bold"* — and every row bold is no emphasis at all), and the per-row trade
+label goes because it restated the heading it now sits under. Counts **17/15/5/101/46/5/8 = 197**, each
+group code-ascending, heading sticky with exactly one pinned mid-scroll.
+
+⚠️ **Folding never touches `cfg` and never calls `markDirty()`** — a collapsed trade is not an unsaved
+change — and it is module scope rather than `localStorage`: it must outlive a render, but a list folded
+to read one trade today must not still be folded tomorrow, hiding codes nobody chose to hide.
+
+### ⚠️⚠️ SORTING THE VIEW WOULD HAVE BEEN WORSE THAN NOT SORTING
+
+*"when clicking + Library, sort by class code."* `←` concatenates **`cfg.catalog`'s own order** into
+the build, and this step's own hint says *"Row order is the fallback sequence"* — so a renderer that
+sorted only what it drew would show a sorted list and load it scrambled. `sortCatalog()` sorts the
+**array**, so what is on screen is the order `←` loads them in. ⚠️ Codes compare as **strings, never
+numbers**: `'01050'` must not become `1050`, because the de-zeroed space is not unique (`015051`
+collides with `15051`) — this table's own note forbids it outright. ⚠️ `normalize()` runs it too, which
+the owner's wording does not cover: sorting only inside the button would leave a setup **saved before
+this change** unsorted until somebody happened to press it.
+
+The **Download template / Upload CSV** pair went with all four of its functions (`actTemplateCsv`,
+`parseCsv`, `importActivities`, `uploadActivities`) — a closed chain whose only entry points were those
+buttons. ⚠️ Its sample rows carried `MOB`/`EXC`/`REBAR`, mnemonics rather than chart codes, which is
+the exact defect *Load typical set* was corrected for; they go rather than outlive it. Pasting from
+Excel into the grid is untouched.
+
+### Verified
+
+**New `modules/project-schedule/test-actsetup.js` — 47 assertions, 0 failing**, the shipped renderer
+sliced **by name** and executed. ⚠️⚠️ The fake host returns `null` for an id the markup does not carry,
+which is what a browser does — so a handler left wired to a removed button throws in the suite exactly
+as it would on the page; the wiring is executed, not grepped. ⚠️⚠️ **Contrast pinned to the SHA
+`d0da7cd`, never `HEAD`: it fails 28.** Every other project-schedule suite is **identical on this build
+and on that base** (`test-lsm` 684/0, and `test-builder`'s single failure is pre-existing, not mine).
+`wiring-check` 139/0 · `dead-hooks` 9, the documented baseline · `dark-remap` 0 · `toolbar-order`
+15/0 · `loc-key-agree` clean · inline script parses · 0 NUL bytes.
+
+⚠️ **Three harness faults, each of which accused correct code**, recorded because two of them are on
+file here already: a missing `.pd-main`/`.pd-content` reported a horizontal page scroll that does not
+exist (**the contracts-claims harness's own documented omission** — with the real ancestors,
+`pageScrollsX: false` on *both* builds); counting header rows by `top` reported 4 where there are 2,
+the centred-flex-line artefact the module-bar pass had to correct; and a `querySelector` returning a
+fresh stub each call made a correctly-wired button read as unwired. The header measured **2 rows / 63px
+before and after** — the third button cost nothing.
+
+⚠️ **NOT VERIFIED SIGNED IN** — fixtures and the real 197-code chart, never a saved `schedule_builder`
+row.
+
+⚠️ Fixed in passing: `modules/project-schedule/CLAUDE.md` held a **literal NUL byte**, so `grep`
+answered *"Binary file matches"* for every search of that changelog. Third occurrence in this repo, and
+the 2026-09-14 entry that fixed the last one warns about it in as many words.
+
+⚠️⚠️ And a process note: **a `git stash -q` in a throwaway guard swallowed this entire change**, and
+`git status` came back clean with the work gone. Caught within seconds by reading `git diff --stat`
+rather than the command's own output, and recovered from `stash@{0}`. **This log already records that
+exact failure, in bold, from 2026-09-17 (q)** — *"the lesson is not 'check the diff', it is do not
+stash in a shared clone at all"* — and I did it anyway.
+
+`MODULE_V` → `20260917zzg`. ⚠️ Re-derived from `origin/main` **after** merging its ten commits, not
+guessed before: main had reached `zzf` while this was in flight, and a token that sorts earlier than one
+a browser already holds is worse than a collision. One conflict, in the grid CSS, resolved as a
+**union** — main's `background: transparent` on the cell controls kept whole beside this change's
+deletion of the now-unmatchable `.xl-rowact` rules — and every removal in the merged file was then
+audited line by line against `origin/main`.
 
 ### 2026-09-17 (au) — The "symbol" was thirty bare arrow glyphs; the floor-plan editor goes full screen behind a ribbon; an area can be drawn before it is tagged
 
