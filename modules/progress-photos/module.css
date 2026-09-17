@@ -688,6 +688,16 @@
   display: flex; align-items: center; gap: 5px;
 }
 .pp-syncbtn:hover { background: var(--pd-red); color: #fff; }
+/* Narrow window: reported live -- "Drafts" ran off the edge of the topbar
+   next to "+ Add media", with nothing giving either labelled button's text
+   room to go. Below the breakpoint the label hides and the button collapses
+   to the same 34px icon-only square every other unlabelled topbar tool
+   already is (dashboard.css's own .pd-tb-labeled sibling rule) -- the icon
+   alone (+ the tooltip) is enough to reopen either panel. */
+@media (max-width: 700px) {
+  .pp-syncbtn .pp-tb-label { display: none; }
+  .pp-syncbtn { width: 34px; height: 34px; padding: 0; gap: 0; justify-content: center; }
+}
 
 /* ---- Pending uploads panel --------------------------------------------- */
 /* Opened from the #pp-sync topbar pill above, which used to call flushQueue()

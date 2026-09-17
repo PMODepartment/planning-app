@@ -104,6 +104,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (aa) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
+
+Owner, two live reports: a 360° video upload sat reading "Starting…" with no further movement, and
+the topbar's Drafts button label ran off the edge next to "+ Add media" at a narrow window width.
+
+The stuck status traces to the 2026-09-16 server-side stitching rewrite's own documented, one-time
+setup gap — a job sits at `queued` forever until the migration's Vault secrets are created in the
+SQL editor, which no migration or CI deploy can do automatically. `trackJobToCompletion` now counts
+consecutive stuck poll ticks and, past a threshold that a healthy job would never reach (a real job
+flips off `queued` near-instantly), replaces the silent fallback with an honest message naming the
+likely cause and the two ways forward (keep waiting, or Discard) — self-healing the moment the real
+fix lands, since the counter resets the instant status genuinely advances. The Drafts/Sync buttons'
+labels are now their own `<span>`, hidden at ≤700px so the button collapses to the same icon-only
+square every other unlabelled topbar tool already is.
+
+Verified: full suite 974/4 (the same 4 pre-existing, unrelated failures); `tools/wiring-check.js`
+139/0; CSS braces balanced; 0 duplicate DOM ids.
+
+`module.css`/`module.js` → `?v=20260917zq`; `MODULE_V` → `20260917zq`. Detail:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
 ### 2026-09-17 (z) — A named holiday was cut at 25 characters and the tooltip answered with the date
 
 Owner: *"Next is working calendars first"* — page one of the rail, done properly this time. The first

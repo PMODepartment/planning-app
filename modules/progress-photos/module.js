@@ -5926,6 +5926,15 @@ window.ProgressPhotos = (function () {
   var JOB_FRAME_JPEG_Q = 0.82;
   var JOB_UPLOAD_CONCURRENCY = 4;
   var PANO360_POLL_MS = 4000;
+  // A healthy job flips 'queued' -> 'aligning' on its very first invocation
+  // (pano360-process/index.ts's own first branch, fired near-instantly by
+  // the insert trigger's self-chain) -- so staying 'queued' for several
+  // ticks in a row is a strong, cheap signal that the self-chain never
+  // reached the worker at all (the Vault secrets/pano360_invoke setup this
+  // migration's own header documents as a real, easy-to-miss one-time step,
+  // never done automatically by any migration or CI deploy). See the stuck
+  // detector in trackJobToCompletion below.
+  var PANO360_STUCK_TICKS = 5; // ~20s at PANO360_POLL_MS
   var PANO360_DRAFTS = [];
   var _pano360DraftSeq = 0;
   function pano360DraftsForProject() { return PANO360_DRAFTS.filter(function (d) { return d.pid === pid; }); }
@@ -6548,10 +6557,28 @@ window.ProgressPhotos = (function () {
       var job = await pollPano360Job(jobId, function (j) {
         if (!findPano360Draft(draft.id)) return;
         if (j.status === 'aligning' || j.status === 'compositing') {
+          draft._queuedTicks = 0;
           var pct = Math.round(j.progress_pct || 0);
           draft.progressMsg = (j.progress_msg || (j.status === 'aligning' ? 'Aligning frames' : 'Building panorama')) + ' — ' + pct + '%';
         } else {
-          draft.progressMsg = j.progress_msg || 'Starting…';
+          // ⚠️⚠️ 2026-09-17: "Starting…" used to be the fallback FOREVER --
+          // reported live, and it matches this stack's own documented gap
+          // exactly: a job sitting at 'queued' with nothing driving it
+          // forward, because pano360_invoke is a deliberate no-op until the
+          // Vault secrets from the 2026-09-16 migration are set. Counting
+          // consecutive stuck ticks (rather than a wall-clock timestamp, which
+          // would need its own persisted field to survive a resume) turns a
+          // silent, indefinite "Starting…" into an honest, actionable message
+          // -- and self-heals the moment the job actually starts moving,
+          // since the tick count resets above the instant status changes.
+          draft._queuedTicks = (draft._queuedTicks || 0) + 1;
+          if (draft._queuedTicks >= PANO360_STUCK_TICKS) {
+            draft.progressMsg = 'Still queued, waiting for server-side processing to start. This usually means the ' +
+              '360° background worker has not finished being set up yet -- you can keep waiting, or Discard and try ' +
+              'again once it is ready.';
+          } else {
+            draft.progressMsg = j.progress_msg || 'Starting…';
+          }
         }
         touchPano360Draft(draft);
       });
