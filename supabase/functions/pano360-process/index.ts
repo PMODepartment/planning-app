@@ -60,7 +60,6 @@ import {
   makeCanvas,
   centerCropRect,
   cropRgb,
-  resizeRgbNearest,
   THUMB_ASPECT,
   // 2026-09-17 — cylindrical reprojection + equirectangular output. See
   // stitch-core.mjs's own header for the geometry and for the synthetic
@@ -75,6 +74,14 @@ import {
   pasteFrameBand,
   bandForFrame,
   cylStripToEquirect,
+  // 2026-09-17 (second pass) — the exposure/seam/coverage round. See each
+  // function's own comment in stitch-core.mjs; all three answer a symptom the
+  // owner reported against the first pass.
+  resizeRgbArea,
+  featherSignFor,
+  overlapMeanRatio,
+  gainChain,
+  applyGainRgb,
 } from "./stitch-core.mjs";
 
 const CORS = {
@@ -123,6 +130,13 @@ const FEATHER_FRACTION = 0.02;
 // 2π·focal composite pixels (~3150 for a 640-wide landscape frame at 65°), so
 // this preserves the strip's own horizontal resolution without inventing any.
 const EQUIRECT_MAX_WIDTH = 3200;
+
+// How wide, in degrees of yaw, the 360° wrap join is cross-faded. Small on
+// purpose: the two ends of a capture are the same place seen at the start and
+// at the finish of the recording, and after a hundred chained alignments they
+// agree to within a few pixels, not exactly. A narrow fade turns the butt join
+// into a join; a wide one turns it into a visible GHOST of everything in it.
+const WRAP_BLEND_DEG = 1.5;
 
 // How far the running vertical placement may wander from the first frame's
 // row, as a fraction of the (warped) frame height. See
@@ -182,7 +196,19 @@ async function decodeFrameForComposite(
     return { rgb, width: decoded.width, height: decoded.height };
   }
   const targetHeight = Math.max(1, Math.round((decoded.height * clampedTarget) / decoded.width));
-  const resized = resizeRgbNearest(rgb, decoded.width, decoded.height, clampedTarget, targetHeight);
+  // ⚠️⚠️ AREA-AVERAGED, AND THIS IS THE SINGLE BIGGEST SHARPNESS FIX IN THE
+  // 2026-09-17 SECOND PASS. Every frame of every capture passes through here:
+  // a 1920-wide phone frame down to 640 is a 3× reduction, and `nearest` does
+  // that by KEEPING ONE COLUMN IN EVERY THREE AND THROWING THE OTHER TWO AWAY.
+  // That is not merely soft — it is aliased: the detail that survives is
+  // whatever happened to land on the sampling grid, and because each frame
+  // sits at its own sub-pixel phase, consecutive frames keep DIFFERENT detail.
+  // So it degrades the alignment search (the two frames genuinely disagree
+  // about fine structure) AND leaves the composite's bands visibly
+  // inconsistent with each other. Averaging the 3×3 source block each output
+  // pixel covers is the standard prefilter and costs one pass over pixels that
+  // are already decoded and in memory.
+  const resized = resizeRgbArea(rgb, decoded.width, decoded.height, clampedTarget, targetHeight);
   return { rgb: resized, width: clampedTarget, height: targetHeight };
 }
 
@@ -202,6 +228,8 @@ type CompositeState = {
   validY0: number;     // first canvas row covered by EVERY kept frame
   validH: number;      // how many rows are covered by every kept frame
   coverageDeg: number; // how far the capture actually turned — reported, never guessed
+  gains: number[];     // per-frame exposure gain, one per KEPT frame (see gainChain)
+  fullTurn: boolean;   // did the capture come all the way round? decides the wrap blend
 };
 
 // -----------------------------------------------------------------------------
@@ -376,8 +404,23 @@ Deno.serve(async (req) => {
         { subPixel: true },
       );
 
+      // ⚠️⚠️ EXPOSURE, MEASURED HERE BECAUSE HERE IS THE ONLY PLACE BOTH FRAMES
+      // ARE IN MEMORY AT ONCE. The compositor works one frame per invocation
+      // and never sees a neighbour, so it could not measure this even if it
+      // wanted to — but it is exactly what the chunking makes cheap here: the
+      // overlap window is already known (it is the offset just estimated), so
+      // the ratio costs one more pass over pixels already decoded and warped.
+      // A phone re-exposes as it turns towards a window; without this, each
+      // frame's band lands at its own brightness and the panorama gets a
+      // ladder of hard vertical brightness steps. See gainChain.
+      const ratio = overlapMeanRatio(
+        prevGray.gray, prevGray.width, prevGray.height,
+        currGray.gray, currGray.width, currGray.height,
+        offset.dx, offset.dy,
+      ).ratio;
+
       const offsets = Array.isArray(job.offsets) ? job.offsets.slice() : [];
-      offsets.push(offset);
+      offsets.push({ ...offset, gain: ratio });
       const fallbackCount = (job.pairs_fallback || 0) + (offset.fallback ? 1 : 0);
       const nextCursor = cursor + 1;
 
@@ -426,6 +469,20 @@ Deno.serve(async (req) => {
         const coverage = coverageYaw(offsets, alignCyl.focal);
         const keepFrames = Math.min(frameCount, framesForFullTurn(offsets, alignCyl.focal));
         const keptOffsets = offsets.slice(0, Math.max(0, keepFrames - 1));
+        // A capture "came all the way round" when the kept arc plus one frame's
+        // own field covers a full turn — that is the condition for the strip to
+        // hold the start yaw twice, which is what both the one-turn crop and the
+        // wrap blend need. Derived from the geometry, never from the frame count.
+        const keptYaw = Math.abs(coverageYaw(keptOffsets, alignCyl.focal));
+        const fullTurn = keptYaw + hfov >= Math.PI * 2 - 0.02;
+        // ⚠️ The gain chain is closed only on a full turn: the last kept frame
+        // then genuinely looks at the same scene as the first, so its exposure
+        // ought to match and any residual is measurement bias worth removing.
+        // On a partial capture the two ends are different places and forcing
+        // them to agree would invent a brightness ramp across the panorama.
+        const gains = Array.from(
+          gainChain(keptOffsets.map((o: any) => (typeof o.gain === "number" ? o.gain : 1)), { closeLoop: fullTurn }),
+        );
 
         const driftRaw = Math.max(1, Math.round(cylRaw.height * DRIFT_CLAMP_FRACTION));
         const rawPlacements = cumulativePlacementsClamped(keptOffsets, scaleFactorRaw, driftRaw);
@@ -469,18 +526,27 @@ Deno.serve(async (req) => {
               - (Math.max(...placements.map((q) => q.y)) - bounds.minY),
           ),
           coverageDeg: Math.round(Math.abs(coverage) * (180 / Math.PI)),
+          gains,
+          fullTurn,
         };
 
         const canvas = makeCanvas(state.width, state.height, [20, 20, 20]);
         const warped0 = warpToCylindrical(firstRaw.rgb, firstRaw.width, firstRaw.height, hfov);
+        // ⚠️ AREA-AVERAGED, not nearest. A portrait capture is scaled down by
+        // ~0.68 here, and nearest simply drops one column in every 1.47 — with
+        // a different phase per frame, which beats against the band boundaries
+        // as vertical streaks. See resizeRgbArea.
         const frame0 = cap === 1
           ? warped0
-          : { rgb: resizeRgbNearest(warped0.rgb, warped0.width, warped0.height, frameWidth, frameHeight), width: frameWidth, height: frameHeight };
+          : { rgb: resizeRgbArea(warped0.rgb, warped0.width, warped0.height, frameWidth, frameHeight), width: frameWidth, height: frameHeight };
+        applyGainRgb(frame0.rgb, gains[0] || 1);
         const feather0 = Math.max(1, Math.round(frameWidth * FEATHER_FRACTION));
         const band0 = bandForFrame(placements, 0, frameWidth, feather0);
+        // Frame 0 blends into nothing (the canvas is bare), so it is pasted with
+        // hard edges — a feather here would fade it into the background colour.
         pasteFrameBand(
           canvas, state.width, state.height, frame0.rgb, frame0.width, frame0.height,
-          state.shiftX + placements[0].x, state.shiftY + placements[0].y, band0.x0, band0.x1, feather0,
+          state.shiftX + placements[0].x, state.shiftY + placements[0].y, band0.x0, band0.x1, 0,
         );
         await uploadBytes(admin, state.storagePath, canvas, "application/octet-stream");
 
@@ -512,7 +578,12 @@ Deno.serve(async (req) => {
       // degrades to a poor stitch, not a crash — a one-deploy transient a
       // planner can Discard and re-record. Adding a provenance marker would
       // need a column, which is not worth a migration for a minutes-long job.
-      if (!state || typeof state.hfov !== "number" || typeof state.keepFrames !== "number") {
+      // ⚠️ `gains` joins the same guard (2026-09-17, second pass): a job that
+      // reached compositing under the previous deploy has frames already pasted
+      // at their own exposure and with the old both-edges feather. Carrying on
+      // would mix two conventions down one panorama, which is a worse result
+      // than rebuilding a layout that costs one extra invocation to re-derive.
+      if (!state || typeof state.hfov !== "number" || typeof state.keepFrames !== "number" || !Array.isArray(state.gains)) {
         const updated = await commitStep(cursor, {
           composite_state: null,
           step_cursor: 0,
@@ -548,7 +619,15 @@ Deno.serve(async (req) => {
         // `vaov = 360 * height / width` reads the correct vertical field
         // straight off the aspect ratio.
         const outWidth = Math.min(EQUIRECT_MAX_WIDTH, Math.max(320, Math.round(state.width)));
-        const equi = cylStripToEquirect(strip, state.width, stripH, state.focal, (stripH - 1) / 2, outWidth);
+        // ⚠️ The wrap blend is offered ONLY when the capture came all the way
+        // round, because only then does the strip hold the starting yaw twice
+        // and there is genuinely something to blend the start into. A partial
+        // capture is stretched instead, and must not have a join invented for
+        // it. WRAP_BLEND_DEG is deliberately small — see cylStripToEquirect.
+        const wrapBlendPx = state.fullTurn
+          ? Math.max(1, Math.round((outWidth / 360) * WRAP_BLEND_DEG))
+          : 0;
+        const equi = cylStripToEquirect(strip, state.width, stripH, state.focal, (stripH - 1) / 2, outWidth, { wrapBlendPx });
 
         const canvas = equi.rgb;
         const finalJpeg = encodeJpeg(canvas, equi.width, equi.height, JPEG_QUALITY);
@@ -558,7 +637,10 @@ Deno.serve(async (req) => {
         const cropRect = centerCropRect(equi.width, equi.height, THUMB_ASPECT);
         const cropped = cropRgb(canvas, equi.width, equi.height, cropRect);
         const thumbHeight = Math.max(1, Math.round(THUMB_WIDTH / THUMB_ASPECT));
-        const thumbRgb = resizeRgbNearest(cropped, cropRect.width, cropRect.height, THUMB_WIDTH, thumbHeight);
+        // Area-averaged here too: this is a ~7× reduction off a 3200-wide
+        // panorama, where nearest keeps one pixel in seven and the thumbnail
+        // reads as noise rather than as a small picture of the panorama.
+        const thumbRgb = resizeRgbArea(cropped, cropRect.width, cropRect.height, THUMB_WIDTH, thumbHeight);
         const thumbJpeg = encodeJpeg(thumbRgb, THUMB_WIDTH, thumbHeight, JPEG_QUALITY);
         const thumbPath = `${job.project_id}/pano360-jobs/${jobId}/thumb.jpg`;
         await uploadBytes(admin, thumbPath, thumbJpeg, "image/jpeg");
@@ -602,7 +684,12 @@ Deno.serve(async (req) => {
       const warped = warpToCylindrical(frameRaw.rgb, frameRaw.width, frameRaw.height, state.hfov);
       const rgb = warped.width === state.frameWidth && warped.height === state.frameHeight
         ? warped.rgb
-        : resizeRgbNearest(warped.rgb, warped.width, warped.height, state.frameWidth, state.frameHeight);
+        : resizeRgbArea(warped.rgb, warped.width, warped.height, state.frameWidth, state.frameHeight);
+      // Bring this frame onto the panorama's common exposure before it is
+      // pasted, so its band cannot land as a brightness step against its
+      // neighbours. `gains` is absent on a job that started under the previous
+      // deploy; 1 is then an exact no-op.
+      applyGainRgb(rgb, (state.gains && state.gains[cursor]) || 1);
 
       const offsets = Array.isArray(job.offsets) ? job.offsets : [];
       const keptOffsets = offsets.slice(0, Math.max(0, state.keepFrames - 1));
@@ -615,9 +702,14 @@ Deno.serve(async (req) => {
       const p = placements[cursor];
       const featherPx = Math.max(1, Math.round(state.frameWidth * FEATHER_FRACTION));
       const band = bandForFrame(placements, cursor, state.frameWidth, featherPx);
+      // ⚠️ SIGNED — feather only the edge facing the frame pasted before this
+      // one, because that is the only side with anything on the canvas to blend
+      // into. Feathering the other edge fades this frame out into the bare
+      // background: one dark vertical streak per seam. See pasteFrameBand.
       pasteFrameBand(
         canvas, state.width, state.height, rgb, state.frameWidth, state.frameHeight,
-        state.shiftX + p.x, state.shiftY + p.y, band.x0, band.x1, featherPx,
+        state.shiftX + p.x, state.shiftY + p.y, band.x0, band.x1,
+        featherSignFor(placements, cursor, featherPx),
       );
       await uploadBytes(admin, state.storagePath, canvas, "application/octet-stream");
 

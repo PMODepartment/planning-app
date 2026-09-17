@@ -104,6 +104,328 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (e) — The 360° stitcher's last three defects, and a sub-pixel fit that was solving the wrong problem
+
+Owner, against the pass that shipped a few hours earlier: *"there is a deadspace connecting the start
+and finish of the video recording"*, *"line streaks vertically across"*, *"still blurry and misaligned
+areas"*, *"add more frames"*, and *"remove also the thumbnail preview when adding 360"*. Module work —
+the full entry, all seven causes, every ⚠️ decision and the measurements are in
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md) under *"the second pass"*.
+Logged here for the `MODULE_V` bump and the five things that are not facts about one module.
+
+⚠️⚠️ **Re-lettered `(c)` → `(e)` on merging, AND THE VERSION HALF COLLIDED TWICE OVER.** Two concurrent
+sessions and this one all reached for `2026-09-18 (c)`, and main's own merge commit records that **both of
+its sides independently took `MODULE_V 20260918d`** — the very token this branch had derived. Main has
+since moved to `20260918e`, which sorts **after** `d`, so shipping `d` would have put these bytes behind a
+token a browser already holds and they would simply never have arrived. Re-derived past main's `e` to
+`20260918f` **after** integrating, and sort-checked as a plain string. Both `(c)` entries are kept whole;
+this one moves past main's `(d)`, per this file's own rule that the entry merging in is the one that moves.
+⚠️ Dated 2026-09-18 to keep the log descending — the code's own comments call it the *2026-09-17 second
+pass*, which is when the work was done.
+
+**The headline, on a capture shaped like the one reported** (a 3-frame backward settle, hand jitter,
+and a 30% auto-exposure dip through a window): unpainted background **1.501% → 0.000%**, edge holes at
+the wrap **21 columns → 0**, seam banding **12.444 → 1.957**, recovered-scene error **14.221 → 4.122**.
+
+⚠️⚠️ **A SUB-PIXEL INTERPOLANT HAS TO MATCH THE COST SURFACE IT IS FITTING, AND GETTING THAT WRONG
+COSTS MORE THAN ACCURACY — IT MAKES THE RESULT DEPEND ON AN ARBITRARY SAMPLING CHOICE.** A parabola is
+right for a **squared**-difference surface. This one is mean-absolute-difference — **L1**, which near
+its minimum is a **V, not a bowl** — so the fitted vertex was systematically wrong by an amount that
+depends on where the true shift sits between two pixels. Chained over a hundred pairs that does not
+average out, it **biases**. Measured against exact ground truth, accumulated rotation error over a full
+turn ran **0.16–0.98% with the parabola and swung by a factor of six across frame counts**; the
+equiangular fit is **0.01–0.06% at every count from 72 to 144 — flat**. The flatness is the more
+useful half: it is what makes a frame count a question about cost rather than about correctness, and
+it is why *"more frames is safer"* — the argument every previous increase of that constant rested on —
+was **false until this was fixed**. 108 → 144 is the first of those steps taken on a measurement.
+
+⚠️⚠️ **A FEATHER BLENDS INTO WHAT IS ALREADY THERE, SO IT HAS A DIRECTION.** Ramping alpha at both
+edges of a composited band fades one of them into the **bare background**, which is a dark vertical
+streak — one per seam. On a monotonic pan the trailing edge happens to be overwritten a moment later,
+which is why it hid; the instant the pan reverses, the darkened columns are the last thing written and
+they stay. Reproduced: on a flat source of 160 the old rule dragged a painted column to **34**.
+
+⚠️⚠️ **NEAREST-NEIGHBOUR DOWNSCALING IS NOT "SLIGHTLY SOFT" — IT IS ALIASING WHOSE PHASE VARIES PER
+SOURCE, AND THAT BECOMES A PATTERN WHEREVER EACH SOURCE OWNS ITS OWN REGION OF THE OUTPUT.** A 3×
+reduction keeps one column in three and throws two away; which detail survives depends on each frame's
+own sub-pixel phase, so consecutive frames keep **different** detail. It degrades the alignment search
+(the two frames genuinely disagree about fine structure) *and* beats against the band boundaries as
+visible streaks. A box prefilter collapses a fine grating's **176-level** beat to **58**.
+
+⚠️⚠️ **A CORRECTION BUILT ON A NOISY PER-STEP MEASUREMENT, CHAINED, IS A RANDOM WALK — AND WITHOUT A
+DEADBAND IT INVENTS THE ARTEFACT IT EXISTS TO REMOVE.** The new exposure compensation chained ~107
+per-pair brightness ratios and produced a **±2% ramp across a panorama whose frames were all
+identically exposed** (seam banding 1.85 → **2.72** on a clean capture — worse than doing nothing). The
+deadband is not a tuning knob: measured, pure noise reaches **0.0037** and a real 30% exposure swing
+reaches **0.033**, an order of magnitude apart, so **0.004** sits in the gap. ⚠️ Hard, not soft — a soft
+threshold shaves every genuine step too and under-corrects a long ramp.
+
+⚠️⚠️ **AND A METRIC THAT CANNOT SEE A DEGREE OF FREEDOM WILL REPORT A BETTER RESULT AS A WORSE ONE.**
+The synthetic harness's headline figure **went the wrong way** — full-turn recovered-scene error 0.95
+on the base against 1.63 here. Rather than write that off, every change was **reverted one at a time**
+against the same harness until exactly one moved it (the estimator), and then the **metric** was
+examined: it searches only for a translation phase and is blind to a uniform horizontal **scale**.
+Allowed to search scale, the new panorama is **0.94 against the old 0.99** — it is not misaligned, it
+is magnified **0.45%** in yaw — and the old fit's `k` was exactly 1.0000 only because its per-pair
+over-estimate cancelled that residual at this one frame count. Two independent readings agree
+alignment improved: measured coverage of a true 360° turn goes **362° → 360°, exact**. ⚠️ The 0.45%
+residual is **named rather than chased** — 1.6° over a whole turn, and the viewer stays self-consistent
+through it because it derives its vertical field from the image's own aspect ratio.
+
+⚠️ **The 2026-09-16 audit note in `stitch-core.mjs` is DELETED rather than left standing.** It said this
+pipeline does no cylindrical reprojection and refused to fix that without a synthetic harness. The
+harness was built, the warp shipped, and the note stopped being true the same day. A comment that
+confidently describes the opposite of the code sends the next reader looking for a gap that is closed.
+
+**Verified:** the server suite **118 passed, 0 failed** (was 80), with seven new blocks that each
+reproduce the defect before the fix; Progress Photos' own suite **976 passed, 5 failed**, ⚠️
+**byte-identical to the base** (976/5, same five, confirmed against a clean `git archive HEAD` tree
+rather than by stashing in a shared clone). ⚠️⚠️ **Both contrasts bite:** the server suite against the
+base fails the prefilter and hole assertions and then **throws** on `featherSignFor` not existing; the
+module suite against the base fails **6 more**, every one a 144-frame assertion naming `got 108 want
+144`. Every changed file parses, 0 NUL bytes across all six, and — the check `node --check` cannot do —
+all **24** names `index.ts` imports from `stitch-core.mjs` resolve against the module's real exports,
+which is the z6-shape failure this repo has already paid for. `wiring-check` **139/0**, every asset on
+one version.
+
+⚠️⚠️ **Not verified against a real recording, and the Edge Function was not executed** — no Deno
+runtime, no deployment, no phone video here. **The first real capture after
+`supabase functions deploy pano360-process` is the test.**
+
+`MODULE_V` → `20260918f`, re-derived from what the tree carries **after** fast-forwarding onto
+`origin/main` (which had by then reached `20260918e`) rather than guessed beforehand, and sort-checked as a
+plain string. `pano360.js` and `module.js` bumped with it; ⚠️ `module.css` deliberately **not** — it
+did not change this round, and bumping an unchanged asset invalidates a cache for nothing.
+
+### 2026-09-18 (d) — Schedule Setup ▸ Activities: SAP Activities, one heading per trade, and an activity that can be several
+
+Owner's nine numbered items on that step — the pane renamed to **SAP Activities**, a library code
+already in the build no longer offered again, the grid tile fitted to its own table, the build grouped
+by trade, four class codes moved to Others and seven retired, `+ Custom` beside `Load typical set`, a
+custom activity's code locked blank and a SAP activity's trade locked, **checkboxes and activity
+merging** in place of the row-number gutter, and the Construction Library removed. Module work — the
+full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(c)`. Logged here
+for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **A RULE THAT IS IN THE CASCADE AND LOSING READS EXACTLY LIKE A RULE THAT WORKS.** The locked
+cell's muted ink was `.sbld-xl input.sbld-lock` at **(0,2,1)**, against a generic control rule at
+**(0,2,2)** setting `color:var(--pd-ink)`. So every locked cell rendered identical to an editable one
+— the single thing the class exists to signal — and nothing about the source looks wrong: the rule is
+there, it is specific, it names the right element. Only measuring the computed colour found it. The
+fix is source order, not more specificity: tie at (0,2,2) and declare it after. ⚠️ This is the third
+specificity trap this log has recorded in a month, and the first where the losing rule was a *colour*
+rather than a `display`.
+
+⚠️⚠️ **BRAND RED IS A FILL, AND AT 10px IT IS NOT TEXT.** Two new badges used `color:var(--pd-red)`
+and measured **4.12 light / 3.40 dark** and **3.74 / 4.14** composited over the ground they actually
+paint on — both under AA's 4.5 for small text, in one theme or the other. The same shape this file
+already records for `--pd-warn` (*"a SURFACE colour at 3.46:1 on white"*), and the same answer
+`.ps-vs-chip.on` arrived at in September: **ink on the red tint**, which keeps the brand cue and
+measures **13.30 / 10.98** and **12.18 / 13.17**. ⚠️ The tint is a fixed brand `rgba` rather than a
+token pair — it composites over whatever ground it lands on, so one value is right in both themes,
+which is why `dark-remap` exempts a brand colour rather than flagging it.
+
+⚠️⚠️ **AND BOTH HARNESSES LIED, IN OPPOSITE DIRECTIONS.** The render harness serves a page generated
+**once** from the shipped file, so every measurement in this pass was taken against a build several
+fixes old — the locked-cell fix appeared not to take, twice, and the geometry described a file that no
+longer existed. **Regenerate before measuring, or the harness is testing history.** Then the contrast
+harness read a **14% tint as an opaque colour** and reported the accessible fix above as **3.96 /
+3.59** — worse than what it replaced — because `groundOf` stopped at the first non-zero alpha instead
+of compositing up. Both are corrections this repo has already had to make once (the sandbox card's own
+contrast probe); neither is visible in a number that looks plausible.
+
+**Verified:** `test-actsetup` **133 assertions, 0 failing**, the renderer and the whole merge model
+sliced out of the shipped file by name and executed, with the contrast pinned to the SHA `d0da7cd` —
+where it **fails 30**. `test-actdnd` 48/0, one assertion **retargeted rather than weakened** (the
+checkbox fix moved a selector; the property under test is unchanged). Every project-schedule suite
+green on the merged tree — **1,410 assertions across seventeen suites** — plus `wiring-check`
+**139/0**, `dark-remap` 0, `dead-hooks` 9 (the documented baseline), `loc-key-agree` clean,
+`selectall-key` 99 safe / 0 broken. CSS braces 2422/2422, 0 NUL bytes, the 3.4MB inline block parses.
+Measured in a browser at four widths: the tile fits its table, the pane widens and shrinks with it,
+the page never scrolls sideways, 0 page errors, and **every new colour resolves through a `--pd-*`
+token** under a dark-mode pass.
+
+⚠️ **Not verified signed in** — no merged activity has been saved to a real setup or pushed, so what
+the schedule receives for a merged row (one `class_code`, the first child's, with the rest on `kids`)
+is proved by execution against fixtures.
+
+⚠️ **Merged `origin/main` (7 commits) before shipping** — the tower-types restructure and the
+Calendars rework, **1,729 lines of the same file**. It auto-merged with no conflicts, and a clean
+auto-merge is not evidence: both sides were checked present afterwards and **main's own two new
+suites were re-run on the merged tree** (`test-towertypes` 79/0, `test-calendar-editor` 23/0).
+
+⚠️⚠️ **RE-LETTERED `(c)` → `(d)`, AND `MODULE_V` RE-DERIVED TO `20260918e` — MAIN TOOK BOTH OF MINE,
+AND ONLY ONE OF THEM CONFLICTED.** Main's Project Phases work independently published a
+`2026-09-18 (c)` in both changelogs **and** independently chose `MODULE_V = 20260918d`, the identical
+string this branch had already picked. The letter conflicts loudly. ⚠️ **The token does not:** both
+sides wrote the same characters, so `modules-grid.js`, `dashboard.html` and `modules.html` merged
+**silently, with no conflict reported at all**, leaving one cache-bust token over two different
+builds — a browser holding main's `d` would never have fetched this branch's bytes. Caught by listing
+every `20260918*` token on **both refs before resolving** rather than after, which is the only thing
+that finds it. Eighth time this log has recorded this shape, second time in two days. Both entries are
+kept whole and the one merging in is the one that moves, per this file's own header rule.
+`MODULE_V` → `20260918e`, sort-checked past both sides' `d`. No shared asset changed.
+
+### 2026-09-18 (c) — Project Phases becomes a Gantt per phase, and two live bugs came out of building it
+
+Owner, five items on Schedule Setup → Project Phases: *"remove the duplicate branch and paste outline
+buttons as well as add WBS. no other WBS is allowed aside from initiation, planning, execution
+(fixed), close-out"*, *"remove also add branch for all the phases"*, *"when phase is clicked, provide
+button for add WBS and add activity"*, *"when add WBS, add it as a sibling WBS to the activity or WBS
+selected. WBS can be dragged to the left to make it a parent"*, and *"instead of a plain table, this
+should be a gantt chart per phase, in the gantt chart, users can draw lines between activities to
+define sequence. right clicking on arrow also allows user to define lag between activities as well as
+relationship type - FS, SS, FF, SF"*. Module work — the full entry, every ⚠️ decision and the
+verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(c)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **`normalize()` IS A WHITELIST, AND IT HAD NEVER CARRIED `w` — SO THE PER-ACTIVITY WBS PICKER
+SHIPPED YESTERDAY WAS NEVER PERSISTED.** Entry `(u)` built a control that lets a planned lifecycle
+activity name the sub-WBS it lands in, and that entry says in as many words that a key `normalize()`
+does not name is *"silently stripped on save and on load, so a new field that skips it appears to work
+all session and is gone on reload"*. It skipped it. The picker worked, the toast was right, the push
+read the value — and the next open had it back on the phase branch, with nothing on screen to say a
+choice had been discarded. Found by reading the whitelist before adding `preds` to it, not by a
+report. **A whitelist is only a whitelist if somebody checks it when the feature lands**, and this is
+the second time that function has been the thing a reader had to go and verify.
+
+⚠️⚠️ **THE PUSH WROTE A PREDECESSOR CHAIN THAT CONTRADICTED ITS OWN DATES.** `phaseTaskPayload`
+serialised a flat FS chain in row order while the dates were computed from the concurrent-group model
+— so two activities the setup deliberately started together arrived in the schedule dated together
+**and** linked `A FS B`, i.e. carrying logic saying they cannot be. Anything that later ran CPM over
+the pushed rows would have re-dated them and been right to. Now `_phLinksFor` routes through
+`sbPhLinks`, the same resolver the Gantt draws from, so the string and the bars cannot disagree —
+⚠️ and the ids are **pre-allocated before any payload is built**, because a forward link to an
+activity later in the list would otherwise serialise against an id that did not exist yet and be
+dropped without a word.
+
+⚠️⚠️ **AN IMPLICIT SEQUENCE NEEDS A MARKER, AND A TEST IS WHAT PROVED IT.** The old model stored an
+ORDER plus a parallel flag; the new one stores real links. Deriving the old shape on read is what lets
+every saved setup open unchanged and un-re-timed — but with derivation as the only fallback, a phase
+converted to explicit links and then emptied of them falls straight back to the implicit chain, so
+**deleting the last link resurrects the dependency it deleted**. `ph.net` records that a phase has
+been converted; a negative build stripping it fails 2 assertions. This is the same class as the empty
+array being truthy (`ensureCodes`, 2026-09-07 e): *"absent"* and *"deliberately none"* are different
+facts and a falsy test cannot tell them apart.
+
+⚠️ **THE EQUIVALENCE PASS REPORTED 39 DIFFERENCES AND THEY WERE CLASSIFIED RATHER THAN PATCHED OVER.**
+Span identical in all 24 cases, after-phases byte-identical, and every difference confined to
+concurrent members of a **before**-phase: the old walk finished them together (ALAP), the new forward
+pass starts them together (ASAP). That is the correct reading of *"these run in parallel"* — and the
+old `pp.start` / `pp.finish`, which read `rows[0]` and `rows[last]` rather than the min and max,
+reported a phase starting **seven days after its own earliest row** on the fixture `[2, 9p, 3]`. A
+suite that had simply been made green would have preserved that.
+
+**Verified:** new `modules/project-schedule/test-phasenet.js` **262/0** across eight blocks — the four
+relationship types' arithmetic executed, cycles refused at draw time, stale links dropped, the pushed
+predecessor string asserted with a **pinned-SHA** contrast (never `HEAD`, which becomes
+self-comparison the moment the change lands). Every other suite green on the merged tree — `test-lsm`
+683/0, `test-syntax` 4/0, `test-builder` 149/0, `test-calendar-editor` 23/0, `tools/test-calendar`
+71/0 — plus `wiring-check` **139/0**, `dark-remap` 0 findings, `dead-hooks` 9 (the documented
+baseline, byte-identical before and after). The chart was **rendered and driven in Chromium**: 7 tree
+rows at indents `[6,6,20,20,6,20,34]`, 4 bars, 3 arrows labelled `FS+2` / `SS` / `FF+3`, the rubber
+band live, no horizontal page scroll, 0 page errors — and the dark theme resolving through tokens
+(`bar rgb(110,42,37)` on `card rgb(43,44,43)`) rather than sticking at a light literal.
+
+⚠️ **A syntax error in this module's one inline `<script>` blanks the whole page**, and this change
+produced one: deleting the table builder left an orphaned `}).join('');` whose opener had gone. A
+bisect harness **timed out** — it is O(n²) over a 3MB script — and the thing that found it in seconds
+was extracting the block to a file and running `node --check`, which names the line. Worth keeping:
+the cheap tool beat the clever one.
+
+⚠️ **Fixed in passing, surfaced by main's merge:** the Execution card read `_stepNo('Repetition')`,
+which `STEP_ALIAS` resolved to **step 7** for work now defined as far as step 8 — a stale step
+reference reads as a broken cross-link rather than as an out-of-date label.
+
+⚠️ **Reported rather than done, because neither was on the owner's list.** `From project…` still
+copies a whole foreign WBS in at the top level, which is the one remaining hole in the four-phase
+rule; and the Milestones and *Other branches* cards still display existing top-level branches, kept
+deliberately — what was blocked is **creating** new ones, and hiding branches a project already has
+would hide real data.
+
+⚠️ **Not verified signed in.**
+
+⚠️⚠️ **Re-lettered `(b)` → `(c)` on merging `origin/main`, AND both sides had independently taken
+`MODULE_V = 20260918c`.** Main published its own `2026-09-18 (b)` — the tower-types restructure below
+— while this was in flight, so both sides prepended a different entry under one letter. Both are kept
+whole and this one moves past main's, per this file's own rule: take only the NEW entries from each
+side, never both copies of the log. ⚠️⚠️ **The version half did NOT conflict, and that is the half
+that ships broken:** git saw the identical string on both sides of all three token lines and merged
+them **silently**, leaving one cache-bust token covering two different builds — a browser holding
+main's `20260918c` would never have fetched this branch's bytes. Ninth time this log has recorded that
+shape. Found by listing every `20260918*` token on **both** refs before resolving rather than after.
+
+⚠️ **A clean auto-merge of `modules/project-schedule/index.html` is not evidence of a correct one.**
+Main rewrote the towers step and moved Floors & Zones into a pop-up; this branch rewrote Project
+Phases. Both sides' functions were asserted present on the merged tree by name and the whole battery
+re-run on it, **including main's own new `test-towertypes.js`, which this session had never run**.
+
+`MODULE_V` → `20260918d`, re-derived from what the merged tree actually carries **after** integrating
+rather than guessed beforehand, and sort-checked as a plain string past both sides' `20260918c`.
+
+
+### 2026-09-18 (b) — A tower becomes an instance of a type, and the thing that made it safe was NOT copying the floors
+
+Owner, on the Schedule Setup restructure: *"users are to define the types of towers there are …
+and users are to define how many type 1 towers there are in the project"*, and for the next step,
+*"this is processed by letting the user use the quick setup but in a pop-up window. Then if there
+are changes to be made later on, the detailed pane below can be adjusted."* Module work — the full
+entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(b)`. Logged here
+for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **THE FEATURE IS A REVERSAL OF A DECISION THE SCREEN ITSELF ARGUED FOR, AND THE OLD SENTENCE IS
+KEPT RATHER THAN DELETED.** That step's help text read *"identical towers are just several towers
+carrying the same floors — that is how a tower 'type' is expressed; there is no separate type
+field."* The reasoning was sound about the data and wrong about the **work**: expressing sixteen
+identical towers by laying out sixteen identical sets of floors is sixteen chances to diverge, and
+nothing in the file could say they were *meant* to match — so a floor added to one of them silently
+made it a different building. The shipped text is rewritten and a comment above it **quotes the old
+sentence and records the reversal**, because a reversal with no record is one that gets reversed
+back.
+
+⚠️⚠️ **WHAT MADE IT SAFE IS THAT NOTHING WAS COPIED.** Floors stay stored **once**, on the type's
+first instance, so `f.towerId` keeps its historical meaning, every reader written before types
+existed is untouched, *"every Type 1 tower is identical"* holds by construction rather than by
+discipline, and the fan-out happens in exactly **two** places. The load-bearing detail is that the
+first instance's leaf `uid` is preserved **byte-for-byte**: `cfg.links`, `cfg.actLinks` and
+`cfg.scopeOff` are all keyed on those uids, so generating a fresh one would have silently orphaned
+every zone sequence and scope exclusion on every existing project. A migration with a no-guessing
+rule — an untyped tower is **its own** type — covers setups saved before today; an earlier cut fell
+back to *"the first type"* and collapsed every tower onto tower 1's floors, which a suite caught
+with 20 failures.
+
+⚠️⚠️ **AND A REAL DEFECT THE NEW SUITE CAUGHT, WHICH THE COMMENT BESIDE IT HAD ALREADY WARNED
+ABOUT.** The count control builds each new tower by reading the list to find a name nothing is
+using — so every instance must be **in** the list before the next one is named. The first cut built
+them all first and appended afterwards, naming them all against the same list: raising a two-tower
+type to four produced **"Tower 3" twice**, and two towers with one name is exactly what makes an
+area traced on the site development plan ambiguous. The warning was written beside the code and the
+code did the opposite.
+
+**Verified:** a new suite of **79 assertions** executing the shipped functions sliced out by name,
+with the contrast pinned to a **SHA** rather than `HEAD` (which becomes self-comparison the moment
+this commits) and asserted to have run — the base returns **0** floors where this returns 3.
+Eighteen suites green on the merged tree — **1,477 assertions, 0 failing** — `wiring-check`
+**139/0**, the inline block parses, 0 NUL bytes. ⚠️ Three of my own assertions were wrong before the
+code was, including one **measuring its own explanation** (a "this text is gone" check tripping on
+the comment that records it went), fixed by reading the source with comments blanked.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so the model, the migration and the
+generator are proved by execution against fixtures rather than against a real setup.
+
+⚠️ **Merged `origin/main` (4 commits, PR #145's Calendars work) before shipping.**
+`modules/project-schedule/index.html` **auto-merged with no conflicts** — but a clean auto-merge is
+not evidence, so both sides were checked present afterwards and the whole battery re-run on the
+merged tree, **including main's own two new calendar suites, which this session had never run**.
+
+`MODULE_V` → `20260918c`, re-derived from the merged tree **after** integrating (main had reached
+`20260918b`) rather than guessed beforehand, and sort-checked as a plain string. No shared asset
+changed.
+
+
 ### 2026-09-18 (a) — Schedule Setup gates its own steps, and the gate had to be written so it cannot strand a project
 
 Owner, closing the 9-step Schedule Setup restructure: *"\*\*\* Users are unable to proceed the next

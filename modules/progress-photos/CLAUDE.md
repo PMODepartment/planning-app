@@ -1,5 +1,262 @@
 # Module: progress-photos
 
+## The stitcher's three remaining defects, each root-caused: a deadspace at the wrap, vertical streaks, and a sub-pixel fit for the wrong surface (2026-09-17, second pass)
+
+Owner, against the pass that shipped a few hours earlier, with a screenshot of the result:
+
+1. *"there is a deadspace connecting the start and finish of the video recording"*
+2. *"line streaks vertically across"*
+3. *"still blurry and misaligned areas"*
+4. *"add more frames"*
+5. *"remove also the thumbnail preview when adding 360"*
+
+⚠️⚠️ **NONE OF THE THREE WAS A TUNING PROBLEM, AND TWO OF THEM HAD TWO CAUSES EACH.** Every fix below
+is at a cause, and every one has a harness case that reproduces the defect first and then the fix, on
+the same input (`test.mjs` section **[12]**, seven blocks, `[12a]`–`[12g]`).
+
+### The headline, on a capture shaped like the one that was reported
+
+The harness renders an owner-shaped capture: a **3-frame backward settle** at the start (a planner
+pressing record and steadying), hand jitter of ±1.2°, and a **30% auto-exposure dip** partway round
+(turning past a window). Same scene, same geometry, HEAD against this:
+
+| | HEAD (108 frames) | this pass (144 frames) |
+|---|---|---|
+| unpainted background | **1.501%** | **0.000%** |
+| edge holes at the wrap | **21 columns left / 0 right** | **0 / 0** |
+| seam banding (mean abs deviation) | **12.444** | **1.957** |
+| recovered-scene error vs ground truth | **14.221** | **4.122** |
+
+**6.4× less banding, 3.4× less scene error, and the deadspace gone.** Coverage reads 353.5° against a
+true 360° in both, which is the capture's own settle, not a stitching error.
+
+---
+
+### 1 · The deadspace — `bandForFrame` extended the first and last frame **in time**, not in space
+
+The canvas spans `min(x) .. max(x) + frameWidth` over **all** placements, so the frame that owns an
+edge is the **spatial** extreme. The band rule gave frame 0 its own left edge and the last frame its
+own right edge, which is the same thing **only while the pan is monotonic** — and a hand-held capture
+very often is not.
+
+⚠️⚠️ **THE WORST CASE IS AN ENTIRELY ORDINARY CAPTURE: TURNING ANTICLOCKWISE.** Every placement is
+then negative, so the first frame in time is the **rightmost** in space and the last is the
+**leftmost** — each was extended to the wrong edge and **neither end of the strip was ever painted**.
+Measured: **518 of 3,726 strip columns (13.9%) bare, 259 at each end — about 25° of black on either
+side of the wrap.** A rightward pan was never affected, which is exactly why this survived: the
+capture guide happens to show one.
+
+The milder case is the one in the screenshot: a 3-frame backward settle at the start left **53 of
+3,726 columns (1.42%)** bare at the left edge — a hard-edged wedge up to half a frame wide, sitting
+precisely where the 360° wrap puts it, *between where the recording started and where it finished*.
+Drifting backward at the **end** is the mirror image, same 53 columns at the right.
+
+The extremes are found by scanning the placements now. ⚠️ Frame 0 and the last frame **keep** their
+extension as well: on a monotonic pan they *are* the extremes, and on a non-monotonic one giving them
+their own outer edge costs nothing — whatever they overpaint is the same scene, and a later band
+overwrites it anyway. All three broken cases go to **zero** unpainted columns; a monotonic pan is
+**unchanged**, so the fix cannot have been a no-op that only looked right on the broken case.
+
+### 2 · The vertical streaks — three causes, and the feather was pointed at nothing
+
+**(a) The feather had no direction.** `pasteFrameBand` ramped alpha in at the band's left edge *and*
+out at its right. But a feather **alpha-blends into whatever the canvas already has**, so it only
+means anything on the edge facing already-painted content. The other edge faded the frame out into
+the bare background colour — **one dark vertical streak per seam**. Reproduced: on a flat source of
+160, the old rule dragged a painted column down to **34**.
+
+The feather is **signed** now (`featherSignFor`): positive feathers the left edge only, negative the
+right, zero means hard edges (frame 0, which has nothing to blend into). ⚠️ The un-feathered edge is a
+hard cut and leaves **no gap**, because the neighbouring band always starts a full feather *inside*
+it. ⚠️ On an ordinary forward pan the trailing edge happens to be overwritten by the next band a
+moment later, which is why this hid for so long; the moment the pan reverses, the darkened columns are
+the last thing written there and they stay. After: **every painted column is exactly the source
+value, and nothing is left bare.**
+
+**(b) Auto-exposure.** ⚠️⚠️ **A PHONE RE-EXPOSES AS IT TURNS.** Two consecutive frames of the same
+scene are photometrically different pictures, and band compositing gives each its own vertical slice —
+so those steps land as a ladder of hard brightness edges marching across the panorama, strongest
+exactly where the scene's brightness changes fastest. `overlapMeanRatio` measures the ratio **over the
+region the two frames share** (never the whole frame — a panning camera sees different scenes, so a
+whole-frame ratio is dominated by what entered and left the view), and it is measured **in the
+alignment step**, the only place both frames are ever in memory at once. `gainChain` turns those
+ratios into a per-frame gain in log space, closing the loop on a full turn and centring the result.
+
+⚠️⚠️ **THE DEADBAND IS NOT A TUNING KNOB — WITHOUT IT THIS FEATURE MAKES A CLEAN CAPTURE WORSE, AND
+THAT WAS MEASURED RATHER THAN FEARED.** The per-pair ratio is estimated from two resampled,
+sub-pixel-misaligned views, so it is never exactly 1 even when the exposure genuinely did not change.
+Chaining ~107 of those is a random walk, and it produced a **±2% brightness ramp across a panorama
+whose frames were all identically exposed** — i.e. the correction invented the very banding it exists
+to remove (seam banding **1.85 → 2.72** on a constant-exposure capture). Measured, `|log ratio|`
+separates cleanly: pure noise reaches **0.0037** at its worst, a real 30% swing reaches **0.033** — an
+order of magnitude apart, and **0.004** sits in the gap. ⚠️ A **hard** deadband, not a soft threshold:
+soft-thresholding subtracts the epsilon from every real step too and systematically under-corrects a
+long ramp. ⚠️ The cost, stated: a real drift slower than 0.4% per frame is treated as no drift.
+
+**(c) Nearest-neighbour downscaling.** Every frame passes through a resize on the way to the composite
+width — a portrait capture by ~0.68, a 1920-wide phone frame to 640 by 3× — and `resizeRgbNearest`
+does that by **keeping one column in every N and discarding the rest**. The kept columns land on the
+same grid in every frame, but each frame is pasted at a **different canvas x**, so the decimation
+phase changes from band to band and the aliasing **beats against the band boundaries**: a regular
+pattern of vertical streaks following the seams. New `resizeRgbArea` averages the source rectangle
+each destination pixel covers. Measured on a fine grating: nearest turns it into a **176-level beat**
+across the row, area-averaging collapses it to **58 — a 3.0× reduction** — and it is genuinely the
+local mean, not a blur that also shifts the image. ⚠️ `resizeRgbNearest` is **kept and unchanged**: it
+is still the right, provably colour-preserving choice for a thumbnail nobody aligns against, and this
+suite asserts that property.
+
+### 3 · "Blurry and misaligned" — the sub-pixel fit was a parabola on an L1 surface
+
+⚠️⚠️ **THE LARGEST SINGLE ACCURACY GAIN IN THE FILE, AND IT IS ONE LINE.** A parabola is the right
+interpolant for a **squared**-difference surface. `meanAbsDiff` is **L1**, and near its minimum an L1
+surface is locally piecewise linear — **a V, not a bowl**. Fitting a parabola to a V puts the vertex
+systematically in the wrong place, and *how* wrong depends on where the true offset happens to sit
+between two pixels, so the error does not average out along the chain — it **biases** it.
+
+Against exact ground truth on the synthetic rotating-camera scene, as accumulated rotation error over
+a whole turn:
+
+| frames | integer-only | parabola | equiangular |
+|---|---|---|---|
+| 72 | 1.98% | 0.48% | **0.02%** |
+| 96 | 3.68% | 0.26% | **0.01%** |
+| 108 | 0.55% | 0.22% | **0.06%** |
+| 132 | 0.38% | 0.16% | **0.05%** |
+| 144 | 3.34% | 0.98% | **0.06%** |
+
+⚠️⚠️ **THE SECOND COLUMN IS THE MORE USEFUL READING.** With the parabola the error swings by a factor
+of six **across frame counts**, because each count puts the true per-pair shift at a different
+sub-pixel phase — so the finished panorama's geometry depended on an arbitrary sampling choice. The
+equiangular fit (Shimizu & Okutomi: the two lines through the minimum have slopes set by the *larger*
+shoulder) flattens it to 0.01–0.06% everywhere. On a synthetic V surface it is **exact to 5.6e-17px**
+where the parabola is out by 0.086px.
+
+**And that is what made item 4 possible at all — see below.**
+
+### 4 · The aspect error nobody would have called an aspect error
+
+`equirectDims` took its vertical scale as `outWidth / 2π` px/rad. Correct whenever the strip really is
+one full turn. **Not** correct on an under-rotated capture: there `cylStripToEquirect` stretches the
+shorter arc across the whole output (a uniform yaw scale in place of a black wedge), so the horizontal
+scale becomes `outWidth / A` for a covered arc `A < 2π` while the vertical stayed behind. Measured: a
+250° capture came out **14% horizontally stretched relative to vertically** — which reads as "blurry
+and misaligned" long before anyone works out it is an aspect error rather than a stitching one. Both
+axes now take the same factor, so the result is a **uniform angular magnification**: straight lines
+stay straight, and the viewer stays self-consistent because it derives `vaov` from the image's own
+aspect ratio, which is magnified by exactly the same factor.
+
+### 5 · The wrap seam itself
+
+With the hole gone, what is left at the wrap is a **butt join**: output column 0 is the yaw the
+recording started at, and on a full turn the strip holds that same yaw again a turn further along —
+the finish. After a hundred chained alignments those two views agree to within a few pixels, not
+exactly. A **1.5°** cross-fade turns the cut into a join. ⚠️ Deliberately narrow: a wide cross-fade
+over two views that do not quite agree is a **ghost**, which is worse than the cut it replaces.
+⚠️ Offered **only** on a full turn, and the full-turn test is derived from the geometry (`kept arc +
+one frame's own field ≥ 2π`), never from the frame count — an under-rotated capture has no second view
+of that yaw and must not have a join invented for it.
+
+---
+
+### 6 · 108 → 144 frames, and this is the first of these steps taken on a measurement
+
+⚠️⚠️ **UNTIL THIS PASS, MORE FRAMES MADE THE PANORAMA WORSE** — which is why each of the last three
+increases was defended on *"more is safer"* rather than on a number. More frames means a **smaller
+shift per pair**, so the parabola's relative bias grows while the number of pairs it accumulates over
+grows too: the table above reads 0.22% at 108 and **0.98% at 144**. Raising the count cost real
+accuracy.
+
+With the fit corrected the error is flat at every count, so density no longer pays for accuracy and is
+worth buying. Five different simulated hand-held captures, everything else identical:
+
+| | 108 frames | 144 frames |
+|---|---|---|
+| recovered-scene error | 6.332 | **5.393** (−15%, and better at **5 of 5**) |
+| seam banding | 2.914 | 2.858 (unchanged) |
+
+The gain is geometric and is the mechanism this constant has always been about: each frame contributes
+only the band around its own optical centre, so 144 narrows that band from **3.36° to 2.52°** of yaw —
+less off-axis, less distorted, better aligned. ⚠️ The cost is unchanged in kind and **+33% in size**:
+144 uploads from the phone and 144 compositor invocations, each still reading and rewriting the whole
+intermediate canvas. Beyond this the returns are visibly flat while the I/O keeps growing linearly, so
+**this is not a step to repeat without re-measuring it**.
+
+### 7 · The thumbnail preview is removed
+
+*"remove also the thumbnail preview when adding 360."* ⚠️ `paintThumb()` and its four call sites are
+**deleted with the markup**, not left as no-ops — a painter nothing calls is what the next editor wires
+a control back up for. ⚠️ **What it previewed is not gone:** `draft.repBlob` / `draft.repUrl` are
+captured exactly as before and are still what is uploaded as the photo's thumbnail on Confirm & Save.
+The panel had become a second, much smaller copy of the panorama already filling the viewer directly
+above it — and since the last view *is* the thumbnail, the viewer is the preview.
+
+### 8 · The 2026-09-16 audit note is deleted, because it is now false
+
+It recorded that this pipeline aligned raw perspective frames by pure translation with no cylindrical
+reprojection, and refused to fix that without *"a SYNTHETIC rotating-camera test scene … do not ship it
+on inspection alone."* The harness was built, the warp shipped, and the note stopped being true the
+same day. ⚠️ A comment that confidently describes the opposite of the code is worse than no comment: it
+sends the next reader looking for a gap that is closed.
+
+---
+
+### ⚠️⚠️ A MEASUREMENT THAT LOOKS LIKE A REGRESSION AND IS NOT — REPORTED BECAUSE IT WOULD BE EASY TO HIDE
+
+On the synthetic section-[11] harness the headline number **went the wrong way**: the full-turn
+recovered-scene error reads **0.95 on HEAD and 1.63 here**, and the wobble case **1.16 → 1.88**. Rather
+than write that off, each change was reverted **one at a time** against the same harness. Exactly one
+moved it: **the equiangular fit** (reverting only the estimator restores 0.99 / 1.11 and nothing else
+does).
+
+That is the opposite of what the estimator is supposed to do, so the metric itself was checked.
+`bestDiff` searches only for a **translation** phase — it cannot see a uniform horizontal **scale**.
+Allowing it to search scale as well:
+
+| case | parabola: translation-only / scale-aware / best k | equiangular: translation-only / scale-aware / best k |
+|---|---|---|
+| full turn | 0.99 / 0.99 / **1.0000** | 1.63 / **0.94** / 1.0045 |
+| wobble | 1.11 / 1.11 / **1.0000** | 1.88 / **1.15** / 1.0050 |
+| 430° trimmed | 2.00 / 0.64 / 1.0065 | 1.66 / 0.78 / 1.0050 |
+
+So the equiangular panorama is **not misaligned — it is uniformly magnified by ~0.45% in yaw**, and
+once that is allowed for it is *better* than the parabola (0.94 against 0.99). The parabola's `k` is
+exactly 1.0000 because its per-pair **over**-estimate happened to cancel that residual at this frame
+count — a coincidence of this scene, and precisely the frame-count dependence the table above measures.
+Two other readings agree the alignment genuinely improved: measured coverage of a true 360° turn goes
+**362° → 360°, exact**, and the over-rotated case goes 2.00 → 1.66.
+
+⚠️ **The ~0.45% residual is real and is named rather than chased.** It is a half-percent magnification
+of the whole panorama — 1.6° over a full turn — and the viewer stays self-consistent through it,
+because vaov is derived from the aspect ratio. The likely source is the strip→equirect crop
+(`fullTurnCrop` uses a geometric one-turn width while the content scale comes from the measured
+placements); it is the next thing to look at, and it is not worth chasing on a synthetic scene ahead
+of a real capture.
+
+### Verified
+
+- **Server suite 118 passed, 0 failed** (was 80), section **[12]** adding seven blocks that each
+  reproduce the defect before the fix.
+- ⚠️⚠️ **The contrast bites hard.** The same suite against HEAD's `stitch-core.mjs` fails section
+  **[1]** (the box prefilter), fails three of section **[12a]**'s hole assertions, and then **throws**
+  on `featherSignFor` not existing at all.
+- **Progress Photos suite 976 passed, 5 failed** — ⚠️ byte-identical to HEAD, which is **976/5 with the
+  same 5**, confirmed by running the suite against a clean `git archive HEAD` tree rather than by
+  stashing in a shared clone. None of the five touches these files (print CSS, `addStagedFiles`, filter
+  density, `capture.js`).
+- ⚠️ **Its contrast bites too:** this suite against HEAD's `pano360.js` fails **6 more** — every one of
+  them the 144-frame assertions, naming `got 108 want 144`.
+- Every changed file parses (`node --check` / `--input-type=module`), **0 NUL bytes** across all six.
+- ⚠️ **Cross-file, the check `node --check` cannot do:** all **24** names `index.ts` imports from
+  `stitch-core.mjs` resolve against the module's real exports — the z6-shape failure this repo has paid
+  for. `tools/wiring-check.js` **139 passed, 0 failed**, every asset on one version.
+
+⚠️⚠️ **NOT VERIFIED AGAINST A REAL RECORDING, AND THE EDGE FUNCTION HAS NOT BEEN EXECUTED.** There is
+no Deno runtime, no deployment and no real phone video here. What is proven is that `stitch-core.mjs`
+(zero imports, runs identically under Node) recovers a known scene from synthetic rotating-camera
+frames, and that every defect above reproduces and then stops reproducing on the same input. **The
+first real capture after `supabase functions deploy pano360-process` is the test** — and the two things
+to look at are the wrap seam and the brightness across a window, which are the two the owner reported.
+
 ## The 360° pipeline produced a cylinder and the viewer rendered it as a sphere: warp, equirect, over-rotation, and a viewer that fits (2026-09-17, later still)
 
 Owner, five items off two screenshots of the review modal — a bowed mosaic inside curved black

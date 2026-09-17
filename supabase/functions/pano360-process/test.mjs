@@ -83,7 +83,12 @@ function cropFrame(scene, sceneWidth, sceneHeight, frameWidth, frameHeight, x, y
   const { width, height, gray } = SC.toGrayscaleDownsampled(rgba, w, h, 20);
   ok('[1] downsample halves width', width === 20);
   ok('[1] downsample scales height proportionally', height === 10);
-  const expectedLuma = ((100 * 299 + 150 * 587 + 200 * 114) / 1000) | 0;
+  // ⚠ ROUNDED, not truncated — changed with the box prefilter (2026-09-17).
+  // Truncating every sample biases the whole grayscale image down by an average
+  // of half a level, which is a systematic offset on a signal whose per-pair
+  // differences are then summed along a 100+ frame chain. The value here is the
+  // arithmetic, not a fudge: 140.75 rounds to 141.
+  const expectedLuma = Math.round((100 * 299 + 150 * 587 + 200 * 114) / 1000);
   ok('[1] luma matches Rec.601 weights', gray[0] === expectedLuma);
   ok('[1] every pixel uniform for a uniform source', gray.every((v) => v === expectedLuma));
 }
@@ -397,11 +402,11 @@ function cropFrame(scene, sceneWidth, sceneHeight, frameWidth, frameHeight, x, y
 }
 
 // ===========================================================================
-// [8f] The cylindrical-warp gap found on the 2026-09-16 audit is DOCUMENTED,
-//      not silently absent. This never proves the geometry is right — a
-//      cylindrical warp isn't implemented at all — it only proves the next
-//      reader isn't left to rediscover a known, real gap from scratch. See
-//      the header comment in stitch-core.mjs for the full reasoning.
+// [8f] The cylindrical-warp gap the 2026-09-16 audit recorded is CLOSED, and
+//      stays closed. These are structural assertions only — the geometry
+//      itself is proved by executing the pipeline against a known scene in
+//      section [11]; this block only guards against the warp being removed or
+//      the file going back to claiming it does not reproject.
 // ===========================================================================
 {
   const stitchCorePath = fileURLToPath(new URL('./stitch-core.mjs', import.meta.url));
@@ -695,6 +700,375 @@ function cropFrame(scene, sceneWidth, sceneHeight, frameWidth, frameHeight, x, y
   ok(`[11] …and it too has no uncovered pixels (${over.bgPct.toFixed(2)}%)`, over.bgPct < 0.01);
   ok('[11] the output is LANDSCAPE and wider than 2:1 — a panorama, never the bowed arc it replaced',
     after.equi.width / after.equi.height > 2);
+}
+
+// ===========================================================================
+// [12] THE 2026-09-17 SECOND PASS — the owner's three reports against the
+//      first one: "a deadspace connecting the start and finish of the video
+//      recording", "line streaks vertically across", "still blurry and
+//      misaligned areas".
+//
+// Each block below reproduces the DEFECT first (so the metric is known to
+// bite) and then the fix, on the same input. Where the old behaviour is a
+// four-line rule it is re-stated inline and labelled as such rather than
+// imported, so a reader can see exactly what changed without a second file.
+// ===========================================================================
+{
+  // -------------------------------------------------------------------------
+  // [12a] THE DEADSPACE. The canvas spans min(x)..max(x)+frameWidth over ALL
+  // placements, so the frame that owns an edge is the SPATIAL extreme — which
+  // on a hand-held capture is very often not the first or last frame in time.
+  // Model: a planner presses record, settles backward for three frames, then
+  // turns. Pure placement arithmetic; no pixels needed.
+  // -------------------------------------------------------------------------
+  const FW = 570;
+  const FEATHER = Math.max(1, Math.round(FW * 0.02));
+  const FOCAL = 502.3;
+  const N = 108;
+  const DEG = Math.PI / 180;
+
+  // THE RULE THIS REPLACED, restated so the contrast is visible: first/last in
+  // TIME got the frame's own outer edge.
+  function bandOld(pl, i, fw, feather) {
+    const c = fw / 2;
+    const here = pl[i].x;
+    const prev = i > 0 ? pl[i - 1].x : null;
+    const next = i < pl.length - 1 ? pl[i + 1].x : null;
+    const x0 = prev === null ? 0 : c - Math.abs(here - prev) / 2 - feather;
+    const x1 = next === null ? fw : c + Math.abs(next - here) / 2 + feather;
+    return { x0: Math.max(0, x0), x1: Math.min(fw, Math.max(x0 + 1, x1)) };
+  }
+  function uncovered(pl, bandFn) {
+    const minX = Math.min(...pl.map((p) => p.x));
+    const maxX = Math.max(...pl.map((p) => p.x)) + FW;
+    const W = Math.ceil(maxX - minX);
+    const cov = new Uint8Array(W);
+    for (let i = 0; i < pl.length; i++) {
+      const b = bandFn(pl, i, FW, FEATHER);
+      const s = Math.max(0, Math.floor(pl[i].x - minX + b.x0));
+      const e = Math.min(W, Math.ceil(pl[i].x - minX + b.x1));
+      for (let x = s; x < e; x++) cov[x] = 1;
+    }
+    let total = 0;
+    let left = 0;
+    let right = 0;
+    for (let x = 0; x < W; x++) if (!cov[x]) total++;
+    while (left < W && !cov[left]) left++;
+    while (right < W && !cov[W - 1 - right]) right++;
+    return { W, total, left, right };
+  }
+  const yawTo = (f) => { const a = []; for (let i = 0; i < N; i++) a.push({ x: Math.round(f(i) * FOCAL), y: 0 }); return a; };
+  const monotonic = yawTo((i) => 360 * DEG * i / (N - 1));
+  const settleStart = yawTo((i) => (i < 4 ? -2.0 * DEG * Math.min(i, 3) : 360 * DEG * (i - 3) / (N - 4) - 6 * DEG));
+  const driftEnd = yawTo((i) => (i > N - 5 ? 360 * DEG + 2.0 * DEG * (N - 1 - i) : 360 * DEG * i / (N - 5)));
+
+  const leftward = yawTo((i) => -360 * DEG * i / (N - 1));
+
+  const oldLeft = uncovered(leftward, bandOld);
+  const newLeft = uncovered(leftward, SC.bandForFrame);
+  const oldSettle = uncovered(settleStart, bandOld);
+  const newSettle = uncovered(settleStart, SC.bandForFrame);
+  const oldDrift = uncovered(driftEnd, bandOld);
+  const newDrift = uncovered(driftEnd, SC.bandForFrame);
+  const oldMono = uncovered(monotonic, bandOld);
+  const newMono = uncovered(monotonic, SC.bandForFrame);
+
+  ok(`[12a] THE WORST CASE, AND AN ENTIRELY ORDINARY CAPTURE: turning ANTICLOCKWISE left ${oldLeft.total} of ${oldLeft.W} strip columns (${(100 * oldLeft.total / oldLeft.W).toFixed(1)}%) unpainted — ${oldLeft.left} at each end, about 25° of black on either side of the wrap. Every placement is negative, so the FIRST frame in time is the rightmost in space and the LAST is the leftmost: each was extended to the wrong edge and neither end of the strip was ever painted`,
+    oldLeft.total > 0 && oldLeft.left > 0 && oldLeft.right > 0);
+  ok('[12a] …and a leftward pan is now pixel-complete, like a rightward one',
+    newLeft.total === 0);
+  ok('[12a] …while a RIGHTWARD pan was never affected, which is why this survived: the capture guide happens to show one',
+    uncovered(monotonic, bandOld).total === 0);
+
+  ok(`[12a] THE DEFECT: a 3-frame backward settle at the START left ${oldSettle.total} of ${oldSettle.W} strip columns (${(100 * oldSettle.total / oldSettle.W).toFixed(2)}%) unpainted, all of them at the left edge — the wedge sits exactly where the 360° wrap puts it, between where the recording started and where it finished`,
+    oldSettle.total > 0 && oldSettle.left === oldSettle.total);
+  ok('[12a] …and it is gone: the same placements now leave ZERO unpainted columns',
+    newSettle.total === 0);
+  ok(`[12a] THE MIRROR CASE: drifting backward at the END used to leave ${oldDrift.total} columns unpainted at the RIGHT edge`,
+    oldDrift.total > 0 && oldDrift.right === oldDrift.total);
+  ok('[12a] …also gone', newDrift.total === 0);
+  ok('[12a] a monotonic pan was never affected and is unchanged — the fix cannot have been a no-op that only looked right on the broken case',
+    oldMono.total === 0 && newMono.total === 0);
+
+  // -------------------------------------------------------------------------
+  // [12b] THE VERTICAL STREAKS, cause one: a feather blends into WHATEVER THE
+  // CANVAS ALREADY HAS. On the edge facing nothing, that is the bare
+  // background colour, so the frame fades to black there. Flat grey frames on
+  // a dark canvas: every deviation from the source value is an artefact.
+  // -------------------------------------------------------------------------
+  {
+    const fw = 200;
+    const fh = 8;
+    const feather = 10;
+    const src = 160;
+    // A LEFTWARD pan — the case [12a] showed was already losing a third of its
+    // strip. Flat grey frames on a dark canvas, so every value that is neither
+    // the source nor the bare background is an artefact of the blend.
+    const pl = [0, -40, -80, -120, -160, -200].map((x) => ({ x, y: 0 }));
+    const frame = new Uint8Array(fw * fh * 3).fill(src);
+    function bandOldLocal(p, i, w, f) {
+      const c = w / 2;
+      const here = p[i].x;
+      const prev = i > 0 ? p[i - 1].x : null;
+      const next = i < p.length - 1 ? p[i + 1].x : null;
+      const x0 = prev === null ? 0 : c - Math.abs(here - prev) / 2 - f;
+      const x1 = next === null ? w : c + Math.abs(next - here) / 2 + f;
+      return { x0: Math.max(0, x0), x1: Math.min(w, Math.max(x0 + 1, x1)) };
+    }
+    const build = (bandFn, signed) => {
+      const minX = Math.min(...pl.map((p) => p.x));
+      const W = Math.max(...pl.map((p) => p.x)) + fw - minX;
+      const canvas = SC.makeCanvas(W, fh, [20, 20, 20]);
+      for (let i = 0; i < pl.length; i++) {
+        const b = bandFn(pl, i, fw, feather);
+        const f = signed ? SC.featherSignFor(pl, i, feather) : (i === 0 ? 0 : feather);
+        SC.pasteFrameBand(canvas, W, fh, frame, fw, fh, pl[i].x - minX, pl[i].y, b.x0, b.x1, f);
+      }
+      let darkest = 255;
+      let bare = 0;
+      for (let x = 0; x < W; x++) {
+        const v = canvas[(((fh >> 1) * W) + x) * 3];
+        if (v === 20) { bare++; continue; }
+        if (v < darkest) darkest = v;
+      }
+      return { darkest, bare, W };
+    };
+    const before = build(bandOldLocal, false);
+    const after = build(SC.bandForFrame, true);
+    ok(`[12b] THE DEFECT, both halves at once: the old band rule left ${before.bare} of ${before.W} columns bare, and where the old feather ran out into that bare canvas it dragged a painted column down to ${before.darkest} on a flat ${src} source — a dark vertical streak, which is what a feather pointed at nothing always produces`,
+      before.bare > 0 && before.darkest < src - 10);
+    ok(`[12b] …every painted column is now exactly the source value (${after.darkest}) and nothing is left bare (${after.bare})`,
+      after.darkest === src && after.bare === 0);
+    ok('[12b] the hard-cut edge leaves no gap — the neighbouring band always starts a full feather INSIDE it, which is what makes cutting safe',
+      after.bare === 0);
+    // ⚠ Said plainly: with the band rule fixed, a both-edges feather no longer
+    // darkens anything on ANY placement sequence — searched exhaustively over
+    // 3,125 five-step pans and found none. So the signed feather is not
+    // independently demonstrable today; it removes the MECHANISM rather than
+    // relying on the band rule to keep covering for it.
+    let anyDark = false;
+    const steps = [-40, -20, 20, 40, 60];
+    (function rec(p) {
+      if (anyDark) return;
+      if (p.length > 5) { if (build(SC.bandForFrame, false).darkest < src - 5) anyDark = true; return; }
+      for (const st of steps) rec(p.concat([{ x: p[p.length - 1].x + st, y: 0 }]));
+    })([{ x: 0, y: 0 }]);
+    ok('[12b] and the two fixes are belt and braces, stated as such: with the band rule corrected, the OLD both-edges feather no longer darkens any column either',
+      anyDark === false);
+  }
+
+  // -------------------------------------------------------------------------
+  // [12c] THE VERTICAL STREAKS, cause two: auto-exposure. A phone re-exposes
+  // as it turns towards a window, so consecutive frames are photometrically
+  // different pictures and each band lands at its own brightness.
+  // -------------------------------------------------------------------------
+  {
+    // A clean 12% step at pair 5, nothing anywhere else.
+    const ratios = new Array(20).fill(1);
+    ratios[5] = 1.12;
+    const g = SC.gainChain(ratios, {});
+    ok('[12c] a real exposure STEP is carried through the chain: every frame after it is scaled differently from every frame before it',
+      g[6] / g[4] > 1.10 && g[6] / g[4] < 1.14);
+    ok('[12c] …and the chain is CENTRED, so the panorama keeps the capture\'s own exposure instead of being dragged onto frame 0\'s',
+      Math.min(...g) < 1 && Math.max(...g) > 1);
+
+    // The regression this feature nearly shipped: measurement noise on a
+    // capture whose exposure never actually changed.
+    const noisy = [];
+    for (let i = 0; i < 107; i++) noisy.push(1 + ((i * 37) % 7 - 3) * 0.0009);   // |log r| <= 0.0027
+    const gn = SC.gainChain(noisy, {});
+    ok('[12c] THE REGRESSION THIS AVOIDS: per-pair noise below the measured floor is treated as no change at all, so a constant-exposure capture gets gains of exactly 1 — without the deadband this correction INVENTED a ±2% brightness ramp, i.e. the very banding it exists to remove',
+      Array.from(gn).every((v) => v === 1));
+    const justAbove = new Array(107).fill(1);
+    justAbove[10] = Math.exp(0.02);
+    ok('[12c] …while a change an order of magnitude above the noise floor passes through UNCHANGED — a hard deadband, not a soft threshold that would shave every real step',
+      Math.abs(Math.log(SC.gainChain(justAbove, {})[11] / SC.gainChain(justAbove, {})[9]) - 0.02) < 1e-9);
+
+    // Loop closure and clamping.
+    const creep = [];
+    for (let i = 0; i < 100; i++) creep.push(Math.exp(0.01));   // a steady 1%/frame drift
+    const open = SC.gainChain(creep, { closeLoop: false });
+    const closed = SC.gainChain(creep, { closeLoop: true });
+    ok(`[12c] on a FULL TURN the chain is closed: the last frame looks at the same scene as the first, so its gain matches (${closed[closed.length - 1].toFixed(4)} vs ${closed[0].toFixed(4)})`,
+      Math.abs(closed[closed.length - 1] - closed[0]) < 1e-6);
+    ok('[12c] …and NOT closed on a partial capture, where the two ends are different places and forcing them to agree would invent a brightness ramp',
+      Math.abs(open[open.length - 1] - open[0]) > 0.5);
+    ok('[12c] every gain is bounded whatever the chain says, so one pathological pair cannot black out or blow out a frame',
+      Array.from(open).every((v) => v >= SC.GAIN_MIN - 1e-9 && v <= SC.GAIN_MAX + 1e-9));
+
+    // applyGainRgb: clamps, rounds, and is a genuine no-op at 1.
+    const buf = new Uint8Array([10, 128, 250]);
+    SC.applyGainRgb(buf, 1.4);
+    ok('[12c] applyGainRgb scales and CLAMPS rather than wrapping a channel round past 255',
+      buf[0] === 14 && buf[1] === 179 && buf[2] === 255);
+    const same = new Uint8Array([10, 128, 250]);
+    SC.applyGainRgb(same, 1);
+    ok('[12c] …and a gain of 1 touches nothing', same[0] === 10 && same[1] === 128 && same[2] === 250);
+
+    // overlapMeanRatio refuses the cases where a ratio means nothing.
+    const g8 = new Uint8Array(64).fill(100);
+    const g8b = new Uint8Array(64).fill(150);
+    const r = SC.overlapMeanRatio(g8, 8, 8, g8b, 8, 8, 0, 0);
+    ok(`[12c] overlapMeanRatio measures the ratio over the shared region (${r.ratio.toFixed(3)} for 100 against 150)`,
+      approx(r.ratio, 100 / 150, 1e-9));
+    const dark = new Uint8Array(64).fill(1);
+    ok('[12c] …and refuses a near-black overlap rather than dividing by something close to zero',
+      SC.overlapMeanRatio(dark, 8, 8, g8, 8, 8, 0, 0).ratio === 1);
+    ok('[12c] …and refuses an overlap too small to trust',
+      SC.overlapMeanRatio(g8, 8, 8, g8b, 8, 8, 7, 0).ratio === 1);
+  }
+
+  // -------------------------------------------------------------------------
+  // [12d] BLURRY AND MISALIGNED, cause one: the sub-pixel fit. `meanAbsDiff`
+  // is an L1 surface, which near its minimum is a V — so a PARABOLA puts the
+  // vertex in the wrong place, by an amount that depends on where the true
+  // offset sits between two pixels. Those offsets are summed along the chain.
+  //
+  // Synthetic V with known vertex: score(d) = |d - t| + base. Exact answer
+  // available, so this measures the estimator itself rather than a stitch.
+  // -------------------------------------------------------------------------
+  {
+    let worstPara = 0;
+    let worstEqui = 0;
+    for (let k = 1; k < 20; k++) {
+      const t = -0.5 + k / 20;                       // true sub-pixel offset
+      const s0 = Math.abs(0 - t);
+      const sL = Math.abs(-1 - t);
+      const sR = Math.abs(1 - t);
+      const para = (0.5 * (sL - sR)) / (sL - 2 * s0 + sR);
+      const equi = (0.5 * (sL - sR)) / ((sL > sR ? sL : sR) - s0);
+      worstPara = Math.max(worstPara, Math.abs(para - t));
+      worstEqui = Math.max(worstEqui, Math.abs(equi - t));
+    }
+    ok(`[12d] on a V-shaped (L1) score surface the equiangular fit is EXACT (worst error ${worstEqui.toExponential(1)}px) where a parabola is not (${worstPara.toFixed(3)}px)`,
+      worstEqui < 1e-12 && worstPara > 0.08);
+    // ⚠ 0.086px on a PERFECT V understates it. The gain on real data is much
+    // larger, because a real surface is noisy as well as V-shaped and the bias
+    // then interacts with the noise: measured against exact ground truth on the
+    // synthetic rotating-camera scene, accumulated rotation error over a full
+    // turn fell from 0.16–0.98% (parabola) to 0.01–0.06% (equiangular), and
+    // stopped depending on the frame count at all. The table is in
+    // estimateOffset's own comment.
+
+    // And the shipped estimator really uses it: a known half-pixel shift.
+    const w = 64;
+    const h = 24;
+    const mk = (shift) => {
+      const g = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          g[y * w + x] = Math.max(0, Math.min(255, Math.round(128 + 90 * Math.sin((x - shift) * 0.21) * Math.cos(y * 0.13))));
+        }
+      }
+      return g;
+    };
+    const a = mk(0);
+    const b = mk(3.5);
+    const est = SC.estimateOffset(a, w, h, b, w, h, { maxDx: 8, maxDy: 1, subPixel: true });
+    const plain = SC.estimateOffset(a, w, h, b, w, h, { maxDx: 8, maxDy: 1 });
+    ok(`[12d] the shipped estimator recovers a known 3.5px shift to ${est.dx.toFixed(2)}px, where the integer search alone can only say ${plain.dx}`,
+      Math.abs(Math.abs(est.dx) - 3.5) < 0.2 && Number.isInteger(plain.dx));
+    ok('[12d] …and sub-pixel refinement stays OPT-IN: without it the answer is still a whole number, which every existing caller expects',
+      Number.isInteger(plain.dx));
+  }
+
+  // -------------------------------------------------------------------------
+  // [12e] BLURRY AND MISALIGNED, cause two: NEAREST-NEIGHBOUR DOWNSCALING.
+  // Every frame of every capture is reduced to the composite width, often by a
+  // non-integer factor — where nearest keeps whichever pixels land on the grid
+  // and throws the rest away. A fine vertical grating is the clearest case:
+  // area-averaging resolves it to its true mean, nearest turns it into a
+  // low-frequency beat that moves with the sampling phase.
+  // -------------------------------------------------------------------------
+  {
+    const sw = 441;
+    const sh = 4;
+    const dw = 300;                                   // 1.47x, the portrait-capture ratio
+    const grating = new Uint8Array(sw * sh * 3);
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const v = x % 2 === 0 ? 40 : 216;             // mean 128
+        const i = (y * sw + x) * 3;
+        grating[i] = v; grating[i + 1] = v; grating[i + 2] = v;
+      }
+    }
+    const spread = (buf) => {
+      let lo = 255;
+      let hi = 0;
+      for (let x = 0; x < dw; x++) { const v = buf[x * 3]; if (v < lo) lo = v; if (v > hi) hi = v; }
+      return hi - lo;
+    };
+    const near = SC.resizeRgbNearest(grating, sw, sh, dw, sh);
+    const area = SC.resizeRgbArea(grating, sw, sh, dw, sh);
+    ok(`[12e] THE DEFECT: nearest turns a fine grating into a ${spread(near)}-level beat across the row — aliasing whose phase differs per frame, which is what lands as vertical streaks once each frame owns its own band`,
+      spread(near) > 150);
+    ok(`[12e] …area-averaging collapses the same grating towards its true mean: spread ${spread(area)} against ${spread(near)}, a ${(spread(near) / spread(area)).toFixed(1)}× reduction`,
+      spread(area) * 2 < spread(near));
+    // ⚠ NOT zero, and it should not be: at 1.47× each destination pixel covers
+    // two or three source pixels, and a 2-pixel grating averages to 128 over an
+    // even box and to 99 or 157 over an odd one. That residual is the honest
+    // floor for a box filter at a non-integer ratio — what matters is that it
+    // no longer swings the full black-to-white of the source.
+    ok('[12e] …and it is genuinely the local mean, not a blur that also shifts the image',
+      Math.abs(area[3 * (dw >> 1)] - 128) <= 45);
+    ok('[12e] resizeRgbNearest is KEPT and unchanged — it is still the right, provably colour-preserving choice for a thumbnail nobody aligns against',
+      Array.from(SC.resizeRgbNearest(grating, sw, sh, 8, 2)).every((v) => v === 40 || v === 216));
+  }
+
+  // -------------------------------------------------------------------------
+  // [12f] THE UNDER-ROTATED CAPTURE: stretched to fill 360° rather than left
+  // with a black wedge — but stretched in BOTH axes, or the panorama comes out
+  // horizontally elongated, which reads as "blurry and misaligned" long before
+  // anyone works out that it is an aspect error.
+  // -------------------------------------------------------------------------
+  {
+    const focal = 300;
+    const stripH = 121;
+    const outW = 720;
+    const strip = new Uint8Array(900 * stripH * 3).fill(120);
+    const short = SC.cylStripToEquirect(strip, 900, stripH, focal, (stripH - 1) / 2, outW);   // 900 < 2π·300 = 1885
+    const full = SC.cylStripToEquirect(new Uint8Array(2400 * stripH * 3).fill(120), 2400, stripH, focal, (stripH - 1) / 2, outW);
+    ok(`[12f] on a FULL turn the scale is the plain one turn across the output (${short.pxPerRad ? '' : ''}${full.pxPerRad.toFixed(2)} px/rad vs ${(outW / (Math.PI * 2)).toFixed(2)})`,
+      approx(full.pxPerRad, outW / (Math.PI * 2), 1e-6));
+    ok(`[12f] on an UNDER-ROTATED capture the vertical scale follows the stretched horizontal one (${short.pxPerRad.toFixed(2)} px/rad, ${(short.pxPerRad / (outW / (Math.PI * 2))).toFixed(2)}× the un-stretched scale) instead of staying behind it`,
+      short.pxPerRad > outW / (Math.PI * 2) * 1.5);
+    ok('[12f] …so the result is a uniform angular magnification: the output is TALLER in proportion, not squashed',
+      short.height > full.height);
+  }
+
+  // -------------------------------------------------------------------------
+  // [12g] THE WRAP JOIN. Once the hole is gone, the start and the finish of
+  // the recording still meet as a butt join. Cross-fade it — but only when the
+  // capture genuinely came round far enough for the strip to hold that yaw
+  // twice, because a partial capture has nothing to blend with.
+  // -------------------------------------------------------------------------
+  {
+    const focal = 300;
+    const stripH = 61;
+    const turn = Math.round(Math.PI * 2 * focal);
+    const outW = 720;
+    // A strip whose two ends disagree: left half dark, the duplicated tail bright.
+    const wide = turn + 400;
+    const strip = new Uint8Array(wide * stripH * 3);
+    for (let y = 0; y < stripH; y++) {
+      for (let x = 0; x < wide; x++) {
+        const i = (y * wide + x) * 3;
+        const v = x >= turn ? 220 : 60;
+        strip[i] = v; strip[i + 1] = v; strip[i + 2] = v;
+      }
+    }
+    const blended = SC.cylStripToEquirect(strip, wide, stripH, focal, (stripH - 1) / 2, outW, { wrapBlendPx: 12 });
+    const plain = SC.cylStripToEquirect(strip, wide, stripH, focal, (stripH - 1) / 2, outW, { wrapBlendPx: 0 });
+    const col = (r, x) => r.rgb[(((r.height >> 1) * r.width) + x) * 3];
+    ok(`[12g] the join is cross-faded: column 0 leads with the FINISH (${col(blended, 0)}) and has reached the START by the end of the fade (${col(blended, 11)})`,
+      col(blended, 0) > 150 && col(blended, 11) < 120 && col(blended, 0) > col(blended, 11));
+    ok('[12g] …and without it the same strip meets as a hard cut', col(plain, 0) === col(plain, 11));
+    ok(`[12g] the fade is NARROW — a wide one over two views that do not quite agree is a ghost, which is worse than the cut it replaces (${blended.blendPx} of ${outW} columns)`,
+      blended.blendPx > 0 && blended.blendPx <= outW / 20);
+    const partial = SC.cylStripToEquirect(new Uint8Array(900 * stripH * 3).fill(120), 900, stripH, focal, (stripH - 1) / 2, outW, { wrapBlendPx: 12 });
+    ok('[12g] an UNDER-ROTATED capture gets no blend at all — there is no second view of that yaw, and inventing one would be a join the capture never had',
+      partial.blendPx === 0);
+  }
 }
 
 // ---------------------------------------------------------------------------
