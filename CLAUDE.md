@@ -122,8 +122,104 @@ square every other unlabelled topbar tool already is.
 Verified: full suite 974/4 (the same 4 pre-existing, unrelated failures); `tools/wiring-check.js`
 139/0; CSS braces balanced; 0 duplicate DOM ids.
 
-`module.css`/`module.js` → `?v=20260917zq`; `MODULE_V` → `20260917zq`. Detail:
+`module.css`/`module.js` → `?v=20260917zq`; `MODULE_V` → `20260917zr`. Detail:
 [`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
+⚠️ **`MODULE_V` collided silently with the entry below at `zq` — both sessions picked the identical
+token off the same base, and git had nothing to conflict on in `modules-grid.js`/`dashboard.html`/
+`modules.html` because both sides wrote the same string.** Re-derived past both to `zr` on
+integrating; see that entry's own note on the same collision one letter earlier (`zg` → `zp`/`zq`).
+
+### 2026-09-17 (o) — The phase cards and the WBS tree merge: one tree became five, each inside the card it belongs to
+
+Owner, on the Project Phases step: *"The Work breakdown structure below just shows the same
+information from the initiation phase, planning phase, execution phase, and close-out phase. Let's
+just remove the first 4 since this is a duplicate not unless you tell me its not."*
+
+**It was not a duplicate, and the check mattered.** The card holds a phase's *activities* — Initiation
+defaults to charter 5d / contract award 10d / permits 20d, each with a duration, a parallel tick and
+computed dates, stored in `cfg.phases` and nowhere else. The WBS row is *one folder node*: the push
+does `ensureNode('PH_' + phase, …)` once and files those activities **under** it. Deleting the cards
+removes the only editor for three phases; deleting the branches removes the destination — and they
+would come back anyway, because `WBS_SKELETON` seeds them **locked** and `ensureWbsSkeleton()` runs
+from `load()` on every open. Worse, when the push cannot *find* a phase branch it creates one, which
+this file already records going wrong: a sixth top-level branch appeared, renumbered its siblings,
+and **re-coded Execution Phase out from under the activities just filed there.**
+
+So the owner chose the merge, and the expensive form of it: each card fully editable at once.
+
+### ⚠️⚠️ What made it a rewrite rather than a layout change
+
+`sbWbsPark`'s own comment said it: *"a second instance would share that state and fight over it."*
+The tree was ONE node borrowed between hosts, virtualised off its own `clientHeight`, with a single
+selection and keyboard model.
+
+**What actually had to become per-view turned out to be small, and that is why this was safe to do.**
+Every row handler is *delegated on the tree host* — five listeners per view, not thirty per row. So
+per-view state is just the flattened row list, the painted-window key, the scroll rAF latch and the
+wired flag. **Selection, collapse and search stay global**, deliberately: `_wbsSel` being one node
+app-wide is what lets ONE toolbar act unambiguously on whatever is selected in whichever card, and
+`_wbsCollapsed` is keyed by node id, which cannot collide because a node appears in exactly one view.
+
+### The step now
+
+One toolbar and one repair row (still borrowed — they act on the global selection), then five cards:
+the four phases, each showing **its branch's children** under its own activity list, and **Other
+branches** for everything else.
+
+⚠️⚠️ **The fifth card is not optional.** Milestones is a seeded root with no phase, and an import can
+leave more behind. `_wbsOtherRootIds()` excludes the four node **IDs the cards actually used**, not
+roots *by phase* — because a project can carry two roots resolving to the same phase (the skeleton's
+locked one and an import's), only one can be a card scope, and excluding by phase would leave the
+other on **no card at all**: invisible, un-editable, and still renumbering its siblings' codes.
+
+⚠️ A card shows its subtree whether the phase is switched **on or off**. The activity list is what the
+next push *will* create; the tree is what the project *has*.
+⚠️ The row's phase badge is hidden inside a phase card — on Planning it printed "Planning Phase" four
+more times, which is the duplication this merge was asked for. Kept in Other, where a root's phase is
+how you would spot a duplicate phase branch.
+⚠️ `stWbs` and `sbWbsMount` are **retired**, not left unreferenced: the cards were their only caller,
+and a renderer nothing calls is the one the next editor wires back up beside the real thing.
+
+### ⚠️⚠️ A regression I introduced, caught by rendering it
+
+With one tree, a throw in the paint meant "the tree is broken" — visible. With five, an uncaught
+throw **ends the forEach**, so the cards after it render as empty boxes with nothing on screen.
+Measured exactly that in the harness when the row builder hit a missing dependency: two cards
+painted, three were silently blank and the console was the only clue. Each view now paints inside a
+try/catch and a failed card says so in its own box.
+
+### Verified
+
+**30 assertions**, the renderer sliced out and executed. The one that proves this is a *move*:
+**EQUIVALENCE against the pinned base `d3caf64`** — one view over every root flattens to a byte-identical
+row list (id, depth and dotted code) versus the old single panel. Gated first on the base still
+*being* the single-panel renderer, or the comparison would be self-comparison.
+And the one that matters for the split: over a five-card partition, **every node appears exactly
+once, no node twice, and the four phase branches are not repeated inside their own cards** — a card
+silently dropping a branch is how activities end up filed under a node nobody can see. Also: codes
+stay project-wide rather than renumbering per card; arrows stop at the card boundary; a detached host
+is pruned; an empty card says "No branches here yet" rather than blaming a search nobody set.
+
+**Rendered in an iframe**: five cards, Execution virtualising *inside* its own 360px box (19 rows
+windowed of 22, 748px spacer), Planning showing `3.1 / 3.2 / 3.2.1 / 3.3` with editable name inputs,
+24 phase badges suppressed and 0 visible, all five measured colours flipping per theme, no page-level
+horizontal scroll.
+
+`wiring-check` 139/139, `toolbar-order` 15 bars 0 out of order, `dead-hooks` **identical before and
+after** (its four findings are pre-existing), CSS brace delta unchanged from the base at 1, the 3.5MB
+inline script parses.
+
+⚠️ **Not verified signed in.** No real 460-node tree has been split across these cards; the fixture is
+hand-built. The figure to watch on the first real open is the per-card branch count in each header —
+they must sum, with Other, to the tree's own total.
+
+⚠️ The version bump tried `20260917zg` and the sort check **refused it**: a concurrent session had
+already reached `20260917zp`, so `zg` would have shipped these bytes under a token that sorts
+*earlier* than one browsers already hold. Re-derived to `20260917zq`.
+
+`MODULE_V` → `20260917zr`, re-derived past the entry above rather than the `zq` this entry originally
+shipped with — see its note.
 
 ### 2026-09-17 (z) — A named holiday was cut at 25 characters and the tooltip answered with the date
 
