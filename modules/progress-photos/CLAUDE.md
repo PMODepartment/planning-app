@@ -1,5 +1,183 @@
 # Module: progress-photos
 
+## The 360° pipeline produced a cylinder and the viewer rendered it as a sphere: warp, equirect, over-rotation, and a viewer that fits (2026-09-17, later still)
+
+Owner, five items off two screenshots of the review modal — a bowed mosaic inside curved black
+bands, with scrollbars on the dialog — plus a sixth mid-flight:
+
+1. *"fit 360 viewer to pop-up window frame"*
+2. *"there is error in stitching. code assumes video starts at 0 and ends at 360, but sometimes 360 extends"*
+3. *"improve stitching, third photo shows blurry images"*
+4. *"reference second photo for stitching, there is no black space. also use landscape"* (a real 360-camera equirectangular, 2:1, filled edge to edge)
+5. *"add frames, change from 72 to 108"*
+6. *"the Use this view as thumbnail also does not work but it does not need to be shown already. by default, the last view will be the thumbnail."*
+
+### ⚠️⚠️ THE 2026-09-16 AUDIT NOTE PREDICTED ALL OF THIS, AND ITS PRECONDITION IS NOW MET
+
+`stitch-core.mjs` has carried a note since 2026-09-16 naming this exact gap and deliberately leaving
+it open: the server pipeline aligns and composites **raw perspective frames by pure translation**,
+with no cylindrical reprojection, and *"the identical failure mode is reachable here on the same
+real capture that would trigger it client-side."* It also set the condition for ever closing it:
+
+> *"build an isolated harness with a SYNTHETIC rotating-camera test scene … before trusting any
+> cylindrical-warp arithmetic here — do not ship it on inspection alone."*
+
+That harness is now `test.mjs` section **[11]**. It renders perspective frames out of a known
+equirectangular scene at known yaw angles, pushes them through the shipped pipeline, and compares
+the recovered panorama against the ground truth it came from. Nothing below was shipped on
+inspection.
+
+### Four separate causes, three in the stitch and one in the viewer
+
+**(a) No cylindrical warp.** A camera turning on the spot relates two frames by a **rotation**, not a
+shift. Reprojecting onto a cylinder first makes a pure yaw rotation become exactly the horizontal
+translation `estimateOffset` already searches for — so the warp is not a polish pass, it is what
+makes the existing alignment *valid*. Measured, warped against raw, on the same frame pairs:
+
+| yaw step | raw-frame match residual | cylindrical |
+|---|---|---|
+| 2° | 1.63 | 0.43 |
+| 5° | 3.51 | 0.30 |
+| 8° | 5.16 | 0.33 |
+
+The raw residual **grows with the angle**; the warped one does not. That growing residual *is* the
+ghosting the owner reported as blur.
+
+**(b) The panorama was built from every frame's softest edge.** With whole frames pasted in order,
+each overwrites its predecessor wherever they overlap — so for a left-to-right pan the pixel you
+finally see always comes from near some frame's **left edge**: furthest off-axis, worst lens
+distortion, largest alignment error. At 108 frames consecutive frames overlap enormously, so this
+was discarding almost every frame's sharp centre. `pasteFrameBand` + `bandForFrame` paste only the
+slice from halfway back to the previous frame's centre to halfway on to the next — the standard
+"seam at the midpoint" rule. `FEATHER_FRACTION` drops 0.12 → 0.02 with it: a band only has to hide a
+seam, not blend a whole frame.
+
+**(c) Vertical drift was an unbounded random walk.** `cumulativePlacements` summed every pair's `dy`
+with nothing bounding it; over ~100 pairs a ±1px estimate jitter wanders tens of pixels and the
+mosaic **bows**. The bounding box then covers the whole excursion and everything the arc misses is
+empty canvas — the curved black band in the screenshots. `cumulativePlacementsClamped` bounds the
+cumulative y; the strip is then cropped to the band **every** frame covered.
+
+**(d) ⚠️⚠️ THE VIEWER WAS TOLD THE CYLINDER WAS A SPHERE.** `mountPannellumViewer` declares
+`type: 'equirectangular'`, and the pipeline handed it a **cylindrical** mosaic. The two agree across
+x (both linear in yaw) and disagree down y — a cylinder is linear in `tan(elevation)`, an
+equirectangular image is linear in elevation. Feeding one to the other bends every horizontal line
+into an arc. `cylStripToEquirect` remaps the one axis that differs.
+
+### ⚠️⚠️ THE HARNESS CAUGHT TWO REAL BUGS THAT WERE INVISIBLE BY READING
+
+1. **The strip is `rotation + HFOV` wide, not `rotation`.** Frames are placed by their offsets, so
+   first-to-last centre distance is the rotation — but the strip also keeps half a frame of real
+   content at each end. Mapping the whole strip onto 360° squeezed a ~425° strip into a 360° output:
+   a silent **~18% horizontal scale error**. `fullTurnCrop` maps exactly `2π·focal` instead.
+2. **Cropping the drift band by the CLAMP is wrong on a capture that wobbles.** Some frames sit at 0
+   and some at ±clamp, so the covered band is narrower than the clamp implies. Measured with a 2°
+   pitch wobble: **1.34% of the panorama still black**; with the intersection-of-placements crop,
+   **0%**.
+
+### ⚠️⚠️ AND A THIRD, FOUND ONLY BECAUSE THE HARNESS PUT A NUMBER ON IT: INTEGER OFFSETS
+
+These offsets are **summed along the chain**, so a rounding bias does not average out, it
+accumulates. A true 360° turn whose real per-pair shift is 12.56px rounds to 13 every single time,
+and 48 pairs later the chain reports the capture turned **372°**. The panorama is then normalised as
+if those pixels were a full turn — every feature displaced up to ~3.4% of a revolution, about 12°.
+Standard parabolic sub-pixel refinement (`opts.subPixel`, opt-in so existing integer-offset callers
+and tests are untouched) fixes it: **372° → 362°**, and the recovered-scene error **8.53 → 0.95**.
+
+### Item 2 — over-rotation, now measurable rather than assumed
+
+Nothing upstream ever measured how far the camera actually turned; frames were laid end to end.
+Once they are cylindrical the measurement is free and exact — arc length ÷ focal length **is** the
+yaw. `framesForFullTurn` finds where the capture comes back round, so the duplicated tail is dropped
+instead of being pasted over the beginning. On a synthetic 430° capture: 108 frames → **92 kept**.
+⚠️ Under-rotation is **not** solved by throwing frames away — a short arc is stretched to fill 360°
+(a uniform yaw scale error in place of a black wedge) and the measured coverage is **reported on the
+job** either way, so the stretch is stated rather than hidden.
+
+### Item 1 — the viewer's own sizing was a dead CSS selector
+
+⚠️⚠️ `module.css` carried a rule shrinking the review modal's viewer to a modal-appropriate size —
+written for `#pp360-panowrap`, the **old** `open360Upload()` modal's id. The 2026-09-13 draft rewrite
+renamed every id in that modal to the `pp360rv-*` prefix and this selector was never carried across,
+so it has matched **nothing** since. The stage silently inherited the full lightbox sizing,
+`width:88vw; height:78vh`, inside a 640px modal — and while `88vw` is at least clamped by the modal's
+width, **nothing clamped `78vh`**. Retargeted to `#pp360rv-panowrap`, plus a bounded scroller on
+`#pp360rv-body` (which is `.pp-form`, not `.pd-modal-body`, so the whole dialog was the scroller and
+Confirm & Save sat below the fold).
+
+### Item 4's other half — the black is now UNREACHABLE, not painted over
+
+A phone walk-around genuinely captures a horizontal **band** of the sphere, roughly 40°–75° of 180°.
+An honest equirectangular panorama of one therefore has nothing above or below that band, and the
+viewer opened at `hfov: 100` — whose vertical field in a wide, short preview box far exceeds the band
+— so the empty sphere was on screen from the first frame, as two arcs (a band edge on a sphere seen
+through a rectilinear viewport *is* an arc). **Nothing is faked to cover it.** `clampViewerToCoverage`
+caps the viewport so its vertical field can never exceed the band and bounds pitch to whatever room
+is left. A planner still pans the full 360°, and zooming in genuinely *unlocks* looking up and down
+(a narrower hfov means a narrower vertical field, which buys pitch room). Recomputed on resize and
+on entering/leaving fullscreen, since both change the container's aspect.
+
+### Item 6 — why that button never worked, kept on record now that it is gone
+
+`captureViewerThumbnail` reads Pannellum's **WebGL** canvas with `drawImage`. A WebGL drawing buffer
+is cleared after each composite unless the context was created with `preserveDrawingBuffer: true`,
+which Pannellum does not set and does not expose. Reading it from a click handler — a different task
+from the frame that drew it — reliably returns an empty buffer. No retry fixes that.
+`viewThumbFromPano` renders the same view from the **panorama image** instead: a plain 2D rectilinear
+reprojection at the viewer's live yaw/pitch/hfov, no WebGL readback anywhere. It runs at Confirm &
+Save, so the last view *is* the thumbnail with nothing to press.
+⚠️ Best-effort by design — no viewer, or a signed URL that taints the canvas, resolves null and the
+server's own centre-crop thumbnail is reused exactly as before. A thumbnail that could not be
+re-framed must never block a save. ⚠️ `vaov` is passed and is **not** 180: these panoramas are a band,
+and treating the image height as a full hemisphere would squash the thumbnail ~4×.
+
+### Verified
+
+`test.mjs` **80 passed, 0 failed** (was 66/3 — the 3 were pinning the signed-feather mechanism band
+compositing replaces, retargeted rather than deleted). Section [11], executing the shipped pipeline
+against ground truth:
+
+| | before (no warp, whole-frame paste, unbounded drift) | after |
+|---|---|---|
+| recovered-scene error | **24.24 / 255** | **0.95 / 255** |
+| uncovered (black) pixels | **2.49 %** | **0.00 %** |
+| with a 2° pitch wobble | — | 1.16 error, **0.00 %** black |
+| 430° over-rotation | — | 40 of 48 frames kept, error 2.00 |
+| output shape | bowed arc | **8.5:1 landscape** |
+
+⚠️ The scene is deliberately **low-frequency**: the metric is a mean absolute difference, and a fine
+checkerboard would be dominated by sub-pixel phase rather than geometry — which is exactly how a
+correct stitch can be made to look wrong. ⚠️ And the phase search covers the **whole width**: the
+capture starts at an arbitrary yaw, and a narrow search reported a correct stitch as badly wrong,
+which cost a full diagnostic pass.
+
+Rendered and looked at, at production settings (108 frames, 640×480, 395° over-rotated with a tilt
+drift and wobble): measured coverage **393.3°**, 98 of 108 frames kept, **0 fallback joins**, final
+**3200×378, 0 background pixels** — straight verticals, a level horizon, rectangular windows.
+
+Module suite **976 passed, 5 failed** — the same 5 pre-existing failures, confirmed by stashing this
+work and re-running (973/5 on the base). `wiring-check` **139/0**. CSS braces balanced 574/574, 0 NUL
+bytes across every changed file.
+
+⚠️⚠️ **NOT verified against a real recording, and `index.ts` was NOT executed.** This environment has
+no Deno runtime, no Supabase deployment and no real phone video. What is proven is that
+`stitch-core.mjs` — which has zero imports and runs identically under Node — recovers a known scene
+from synthetic rotating-camera frames. The Edge Function's own wiring around it is checked
+structurally (every imported name is exported by the core, every core call is imported, no residual
+call to the three retired functions, every new `composite_state` field is read). **The first real
+capture after `supabase functions deploy pano360-process` is the test**, and the thing to read is the
+job's own done message: it now names the measured coverage and how many over-rotated frames were
+trimmed.
+
+⚠️ **The cost of 108 frames is real and is not free:** 108 uploads from the phone, and the chunked
+compositor reads and rewrites the whole intermediate canvas once per frame — ~50% more of both than
+72. That is the deliberate trade for the density. It is partly offset by the strip now being much
+shorter than it used to be (its height is cropped to the all-valid band, and its width is bounded by
+one turn plus one frame because anything past a full turn is trimmed rather than pasted).
+
+Assets → `?v=20260917zzs` (`module.css`, `module.js`, `pano360.js`); `MODULE_V` → `20260917zzs`,
+sort-checked past everything `origin/main` carries.
+
 ## The real reason "queued" never advanced: the service-role auth check couldn't survive a key-format rotation (2026-09-17, later same day)
 
 Owner set up the Vault secrets, deployed `pano360-process`, and the job still sat at `queued`

@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zi" />
-  <link rel="stylesheet" href="module.css?v=20260917zzf" />
+  <link rel="stylesheet" href="module.css?v=20260917zzt" />
   <!-- Item 5 (2026-09-11, third round): "use open source Pannellum for 360
        viewer" — a real, MIT-licensed panorama viewer, pinned exact version,
        loaded the same way every other feature library on this page is
@@ -396,6 +396,13 @@
        upload-time preview, replacing the earlier plain drag-to-pan strip
        image. Pinned exact version, matching this page's own convention. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.7/pannellum.min.js"></script>
+  <!-- Resumable (TUS-protocol) uploads for large videos/photos — Supabase
+       Storage's own built-in `/storage/v1/upload/resumable` endpoint needs
+       no backend change, only this client library. Pinned exact version;
+       confirmed against the real, live jsdelivr CDN (this exact URL/version
+       resolves to a real UMD build exposing window.tus) before committing.
+       See module.js's tusUploadToBucket() for what it's used for. -->
+  <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js"></script>
   <script src="../../assets/js/config.js?v=20260917zb"></script>
   <script src="../../assets/js/auth.js?v=20260917zh"></script>
   <script src="../../assets/js/db.js?v=20260917zg"></script>
@@ -413,8 +420,8 @@
        from origin/main's own parallel session, 2026-09-12. -->
   <script src="../../assets/js/portfolio-dash.js?v=20260917zg"></script>
   <script src="capture.js?v=20260912c"></script>
-  <script src="pano360.js?v=20260916zb"></script>
-  <script src="module.js?v=20260917zq"></script>
+  <script src="pano360.js?v=20260917zzt"></script>
+  <script src="module.js?v=20260917zzt"></script>
   <script src="ppr.js?v=20260916z1"></script>
   <script src="bim.js?v=20260912o"></script>
   <script>

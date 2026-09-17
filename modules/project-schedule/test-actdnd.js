@@ -134,8 +134,6 @@ const LABELS = [
   ["[['int', 'Internal'], ['ext', 'External']]", 1, 'the trade-sequence Dur toggle reads Internal / External'],
   ["<b>Internal / External</b> duration.", 1, 'the how-to bullet reads Internal / External'],
   ["(tradeBasis === 'ext' ? 'external' : 'internal')", 1, 'the trade-sequence caption names the live basis in the new words'],
-  ["'Code,Activity Name,Trade,Scope,Internal Duration (days),External Duration (days)'", 1,
-   'the downloadable CSV template heads its duration columns Internal / External'],
 ];
 LABELS.forEach(([needle, n, msg]) => eq((src.split(needle).length - 1), n, msg));
 
@@ -149,13 +147,26 @@ ok(src.indexOf('durInt') > 0 && src.indexOf('durExt') > 0, 'durInt / durExt fiel
 ok(/\[\['int', 'Internal \(target\)'\], \['ext', 'External \(contract\)'\]\]/.test(src),
    "the stacking's own basis values are still 'int' / 'ext'");
 
-// ⚠ the upload matcher stays tolerant of BOTH spellings: a planner may upload a template
-//   downloaded before the rename, and dropping 'interior' would read their durations as 0 —
-//   a silent wrong answer rather than a failure.
-ok(/ii = idx\(\['internal', 'interior', 'int'\]\)/.test(src),
-   'the upload matcher still accepts the OLD spelling (internal, interior, int)');
-ok(/ei = idx\(\['external', 'exterior', 'ext'\]\)/.test(src),
-   'the upload matcher still accepts the OLD spelling (external, exterior, ext)');
+/* ⚠⚠ THREE ASSERTIONS WERE RETIRED HERE, AND THE SUBJECT THEY GUARDED NO LONGER EXISTS — which
+   is a different thing from them having been wrong. They pinned the CSV template's own header row
+   and the upload matcher's tolerance of the OLD `interior`/`exterior` spelling, so that a planner
+   uploading a template downloaded before the rename would not silently read 0-day durations. Both
+   were correct. The owner then asked for the surface itself: *"remove download template and upload
+   excel buttons. no need for this"*, and the whole chain — `actTemplateCsv`, `parseCsv`,
+   `importActivities`, `uploadActivities` — went with the two buttons that were its only callers.
+   An assertion against a deleted function is a suite that cannot go green, so they are replaced by
+   the stronger statement: the chain is gone WHOLE, not half-deleted, and nothing still calls it. */
+/* ⚠ COUNTED IN CODE, NOT IN PROSE. The deletion note left at the old call site NAMES all four
+   functions, so a raw scan over the file reports the comment that explains the removal as evidence
+   the removal did not happen — a checker measuring its own explanation. `tools/scan.js` is this
+   repo's own string- and comment-aware blanker, self-tested before any caller trusts it. */
+const CODE = require('../../tools/scan.js').blankComments(src);
+['actTemplateCsv', 'parseCsv', 'importActivities', 'uploadActivities'].forEach(function (fn) {
+  eq((CODE.split(new RegExp('\\b' + fn + '\\b')).length - 1), 0,
+     'the CSV template / upload chain is gone whole — no trace of ' + fn + ' in code');
+});
+ok(src.indexOf('id="b-tmpl"') < 0 && src.indexOf('id="b-upl"') < 0,
+   '…and neither button that called it survives to throw on a missing handler');
 
 // ⚠⚠ The legitimate survivors, named so a future sweep does not "fix" them. Each is a
 //    DIFFERENT SUBJECT from the duration basis, and renaming it would make the file wrong.

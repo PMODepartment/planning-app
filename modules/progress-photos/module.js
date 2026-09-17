@@ -3142,6 +3142,75 @@ window.ProgressPhotos = (function () {
   // equirectangular projection already makes, and the same "read a real
   // property instead of a guessed constant" discipline this app's other
   // pin/cone geometry already follows.
+  // ⚠️⚠️ 2026-09-17 — THIS IS WHY THE REVIEW MODAL SHOWED BIG BLACK ARCS, and
+  // the half of that report the stitcher alone could never fix.
+  //
+  // A phone walk-around genuinely captures a horizontal BAND of the sphere —
+  // roughly 40°–75° tall against the 180° a full sphere has — so an honest
+  // equirectangular panorama of one covers `vaov` degrees vertically and
+  // nothing above or below it. Pannellum renders that band onto a sphere and
+  // whatever the band does not reach is empty, drawn as the background colour.
+  // The viewer opened at `hfov: 100`, whose VERTICAL field in a wide, short
+  // preview box is far more than `vaov`, so the empty sphere above and below
+  // the band was on screen from the first frame — as two curved black regions,
+  // because a band edge on a sphere seen through a rectilinear viewport IS an
+  // arc. That is exactly the shape in the owner's screenshots.
+  //
+  // Nothing is faked to cover it: the fix is to make the empty region
+  // UNREACHABLE. The viewport is capped so its own vertical field can never
+  // exceed the band, and pitch is bounded to whatever room is left over. A
+  // planner can still zoom (a narrower hfov means a narrower vertical field,
+  // which is what BUYS pitch room — so zooming in genuinely unlocks looking
+  // up and down) and still pan the full 360°. They simply cannot point the
+  // camera at a part of the sphere the capture never recorded.
+  //
+  // Recomputed on resize and on entering/leaving fullscreen, because both
+  // change the container's aspect ratio and therefore the vertical field a
+  // given hfov subtends.
+  function clampViewerToCoverage(viewer, container, vaovDeg) {
+    var D2R = Math.PI / 180, R2D = 180 / Math.PI;
+    function apply() {
+      try {
+        var w = container.clientWidth || 1, h = container.clientHeight || 1;
+        // The widest horizontal field whose vertical field still fits inside
+        // the captured band. Derived from the standard rectilinear relation
+        // tan(vfov/2) = tan(hfov/2) * h/w, solved for hfov.
+        var maxH = 2 * Math.atan(Math.tan((vaovDeg / 2) * D2R) * (w / h)) * R2D;
+        maxH = Math.max(15, Math.min(120, maxH));
+        var minH = Math.min(25, maxH);
+        viewer.setHfovBounds([minH, maxH]);
+        var cur = viewer.getHfov();
+        // Open a little inside the cap so there is some pitch room to start
+        // with, rather than pinned flat at the very limit.
+        if (!(cur >= minH && cur <= maxH)) viewer.setHfov(Math.max(minH, maxH * 0.9), false);
+        // Whatever vertical field the CURRENT hfov subtends, the rest of the
+        // band is how far the pitch may travel in each direction.
+        var vfov = 2 * Math.atan(Math.tan((viewer.getHfov() / 2) * D2R) * (h / w)) * R2D;
+        var room = Math.max(0, (vaovDeg - vfov) / 2);
+        viewer.setPitchBounds([-room, room]);
+        if (Math.abs(viewer.getPitch()) > room) viewer.setPitch(0, false);
+      } catch (e) { /* an older Pannellum without these setters — no clamp, same as before */ }
+    }
+    apply();
+    // Re-clamp after a zoom: a narrower hfov frees up pitch room, a wider one
+    // takes it away, and a stale pitch bound would either lock the view or let
+    // it drift off the band.
+    try { viewer.on('zoomchange', apply); } catch (e) {}
+    try { viewer.on('load', apply); } catch (e) {}
+    var onResize = function () { apply(); };
+    window.addEventListener('resize', onResize);
+    document.addEventListener('fullscreenchange', onResize);
+    try {
+      var origDestroy = viewer.destroy && viewer.destroy.bind(viewer);
+      if (origDestroy) viewer.destroy = function () {
+        window.removeEventListener('resize', onResize);
+        document.removeEventListener('fullscreenchange', onResize);
+        return origDestroy();
+      };
+    } catch (e) {}
+    return viewer;
+  }
+
   function mountPannellumViewer(container, imageUrl, heightOverWidth) {
     if (!container) return null;
     // ⚠️⚠️ 2026-09-12 (second pass): this used to degrade to `null`
@@ -3165,9 +3234,11 @@ window.ProgressPhotos = (function () {
       // ⚠️ 2026-09-16 (viewer improvement): fullscreen turned ON. Both
       // callers of this function mount into a genuinely cramped box for
       // actually looking around a panorama -- the "Add 360°" review flow's
-      // own preview is a fixed 240px-tall strip (`#pp360-panowrap`
+      // own preview is a fixed 240px-tall strip (`#pp360rv-panowrap`
       // overrides the lightbox's larger sizing on purpose, see that CSS
-      // rule's own comment), and even the lightbox's own viewport-relative
+      // rule's own comment — ⚠️ that selector said `#pp360-panowrap` until
+      // 2026-09-17 and had matched nothing since the modal's ids were
+      // renamed), and even the lightbox's own viewport-relative
       // box is still constrained by this app's modal chrome around it.
       // Pannellum's fullscreen control drives the standard browser
       // Fullscreen API on this element specifically, which is a
@@ -3177,11 +3248,17 @@ window.ProgressPhotos = (function () {
       // and gives a planner a real way to inspect a capture at its actual
       // size instead of being capped by whichever container happened to
       // mount it.
-      return pannellum.viewer(container.id, {
+      var v = pannellum.viewer(container.id, {
         type: 'equirectangular', panorama: imageUrl, haov: 360, vaov: vaov,
         autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: true, compass: false,
-        minHfov: 30, maxHfov: 120, hfov: 100
+        // ⚠️ A neutral card-coloured backdrop rather than the default black,
+        // so anything this DOES fail to cover reads as empty page rather than
+        // as a hole burned in the photograph.
+        backgroundColor: [0.13, 0.13, 0.13],
+        minHfov: 25, maxHfov: 120, hfov: 100
       });
+      if (v) clampViewerToCoverage(v, container, vaov);
+      return v;
     } catch (e) {
       console.warn('[progress-photos] Pannellum viewer() threw while mounting (no WebGL support, or the ' +
         'browser\'s WebGL context limit is already exhausted) -- falling back to a flat image preview.', e);
@@ -3233,6 +3310,78 @@ window.ProgressPhotos = (function () {
       out.width = 640; out.height = Math.round(640 / THUMB_ASPECT);
       var ctx = out.getContext('2d');
       ctx.drawImage(src, sx, sy, cropW, cropH, 0, 0, out.width, out.height);
+      out.toBlob(function (blob) { cb(blob); }, 'image/jpeg', 0.85);
+    } catch (e) { cb(null); }
+  }
+  // ⚠️⚠️ 2026-09-17 — "the Use this view as thumbnail also does not work but it
+  // does not need to be shown already. by default, the last view will be the
+  // thumbnail."
+  //
+  // WHY IT DID NOT WORK, since the button is gone and the reason must not go
+  // with it: `captureViewerThumbnail` below reads Pannellum's own <canvas>
+  // with drawImage. That is a WEBGL canvas, and a WebGL drawing buffer is
+  // cleared after each composite unless the context was created with
+  // `preserveDrawingBuffer: true` — which Pannellum does not set, and which is
+  // not configurable from its public options. So reading it from a click
+  // handler (a different task from the frame that drew it) reliably returns an
+  // empty buffer. No amount of retrying the button fixes that.
+  //
+  // This renders the same view from the PANORAMA IMAGE instead — a plain 2D
+  // reprojection at whatever yaw/pitch/hfov the viewer is currently on, with
+  // no WebGL readback anywhere in it. It is the honest "last view": the same
+  // rectilinear projection Pannellum itself displays, so what a planner was
+  // looking at when they pressed Confirm & Save is what the thumbnail shows.
+  //
+  // ⚠️ `vaovDeg` is required and is NOT 180: this app's panoramas are a
+  // horizontal BAND of the sphere (see clampViewerToCoverage), so the image's
+  // full height spans vaov degrees of latitude, not a whole hemisphere.
+  // Treating it as 180 would squash the thumbnail by roughly 4×.
+  function viewThumbFromPano(imgEl, yawDeg, pitchDeg, hfovDeg, vaovDeg, cb) {
+    try {
+      if (!imgEl || !imgEl.naturalWidth || !imgEl.naturalHeight) { cb(null); return; }
+      var iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
+      var src = document.createElement('canvas');
+      src.width = iw; src.height = ih;
+      src.getContext('2d').drawImage(imgEl, 0, 0);
+      // Throws a SecurityError if the panorama tainted the canvas (a signed
+      // URL served without CORS headers). The caller falls back to the
+      // server's own thumbnail rather than saving nothing.
+      var sd = src.getContext('2d').getImageData(0, 0, iw, ih).data;
+
+      var outW = 640, outH = Math.round(640 / THUMB_ASPECT);
+      var out = document.createElement('canvas');
+      out.width = outW; out.height = outH;
+      var octx = out.getContext('2d');
+      var img = octx.createImageData(outW, outH);
+      var od = img.data;
+
+      var D2R = Math.PI / 180;
+      var f = (outW / 2) / Math.tan((hfovDeg * D2R) / 2);
+      var cx = (outW - 1) / 2, cy = (outH - 1) / 2;
+      var yaw = yawDeg * D2R, pitch = pitchDeg * D2R;
+      var cp = Math.cos(pitch), sp = Math.sin(pitch);
+      var cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
+      var vaov = Math.max(1, vaovDeg) * D2R;
+      var TAU = Math.PI * 2;
+      for (var y = 0; y < outH; y++) {
+        var Y0 = y - cy;
+        for (var x = 0; x < outW; x++) {
+          var X = x - cx, Z0 = f;
+          // pitch about the horizontal axis, then yaw about the vertical
+          var Y = Y0 * cp - Z0 * sp, Z = Y0 * sp + Z0 * cp;
+          var Xw = X * cyaw + Z * syaw, Zw = -X * syaw + Z * cyaw;
+          var lon = Math.atan2(Xw, Zw);
+          var lat = Math.atan2(-Y, Math.sqrt(Xw * Xw + Zw * Zw));
+          var u = (lon / TAU + 0.5) * iw;
+          u = ((u % iw) + iw) % iw;                       // the panorama wraps
+          var v = ih / 2 - (lat / vaov) * ih;
+          if (v < 0) v = 0; else if (v > ih - 1) v = ih - 1;
+          var si = ((v | 0) * iw + (u | 0)) * 4;
+          var di = (y * outW + x) * 4;
+          od[di] = sd[si]; od[di + 1] = sd[si + 1]; od[di + 2] = sd[si + 2]; od[di + 3] = 255;
+        }
+      }
+      octx.putImageData(img, 0, 0);
       out.toBlob(function (blob) { cb(blob); }, 'image/jpeg', 0.85);
     } catch (e) { cb(null); }
   }
@@ -5717,6 +5866,33 @@ window.ProgressPhotos = (function () {
     function addStagedFiles(list) {
       var incoming = Array.prototype.slice.call(list || []);
       if (!incoming.length) return;
+      var picked = incoming[incoming.length - 1];
+      // "Before adding a file to the upload queue or starting an upload:
+      // check the file size against the actual supported maximum. If the
+      // file exceeds the limit, immediately reject it. Do not start an XHR
+      // upload. Do not create a misleading 'Uploading' task." — refusing
+      // right here, before the file is even staged, is what makes that
+      // literally true: nothing downstream of this ever sees the file at
+      // all, so there is no staged card, no Upload click, and no task to
+      // mislabel. (runUploadTask carries the SAME check as the ultimate,
+      // unbypassable gate — this one exists purely so the refusal is
+      // immediate and the modal never shows a doomed staged card.)
+      if (fileExceedsMaxSize(picked)) {
+        UI.toast(maxUploadSizeMessage(picked), 'error');
+        return;
+      }
+      // "Prevent duplicate uploads … at minimum, prevent the same selected
+      // file from being added twice while an equivalent upload task is
+      // already pending, uploading, processing, or retrying." Checked
+      // against every OTHER Add-media action already in the queue/in
+      // flight — never against `stagedFiles` itself, which this modal
+      // already caps at one item.
+      var dupe = findActiveDuplicateTask(fileFingerprint(picked));
+      if (dupe) {
+        var dupeState = (dupe.status === 'uploading' || dupe.status === 'retrying') ? 'uploading' : dupe.status;
+        UI.toast('This file is already ' + dupeState + ' — check Pending uploads instead of adding it again', 'warn');
+        return;
+      }
       // Item 1 (2026-09-11, second round): "only 1 photo or video is
       // allowed when adding media — do not allow multiple uploads per add
       // media." This used to push every incoming file onto a growing
@@ -5732,7 +5908,7 @@ window.ProgressPhotos = (function () {
       stagedUrls = [];
       pendingMarkup = {};
       pendingAdjust = {};
-      stagedFiles.push(incoming[incoming.length - 1]);
+      stagedFiles.push(picked);
       if (hadPrevious || incoming.length > 1) {
         UI.toast('Only one ' + nounSingular + ' can be added at a time — replaced the previous selection', 'warn');
       }
@@ -5797,7 +5973,7 @@ window.ProgressPhotos = (function () {
       };
       this.disabled = true;
       var prog = $('pp-prog'); prog.hidden = false;
-      var done = 0, queued = 0, failed = [], newIds = [];
+      var done = 0, queued = 0, failed = [], rejected = [], newIds = [];
 
       // Item 29: uploads used to run ONE FILE AT A TIME — for a batch of
       // photos (the normal case here) that's the sum of every file's own
@@ -5824,7 +6000,15 @@ window.ProgressPhotos = (function () {
             // never a default-valued object nobody asked for.
             if (pendingAdjust[i] && !adjustmentsAreDefault(pendingAdjust[i])) perFile.adjustments = pendingAdjust[i];
             var r = await saveCapture(files[i], perFile);
-            if (r.queued) queued++; else if (r.ok) { done++; if (r.id) newIds.push(r.id); } else failed.push(files[i].name);
+            if (r.queued) queued++;
+            else if (r.ok) { done++; if (r.id) newIds.push(r.id); }
+            // Defensive only — addStagedFiles() already refuses an oversized
+            // file before it can ever reach `files`, so this branch should
+            // not normally be reachable from this modal. Kept so a rejection
+            // is never silently folded into the generic "failed" bucket if
+            // some future path ever bypasses staging.
+            else if (r.rejected) rejected.push(files[i].name);
+            else failed.push(files[i].name);
           } catch (err) {
             failed.push(files[i].name + ': ' + (err.message || err));
           }
@@ -5839,6 +6023,7 @@ window.ProgressPhotos = (function () {
       // "uploaded" toast right above it — a batch of videos queued offline
       // reported itself as photos.
       if (queued) UI.toast(queued + ' ' + (kind === 'video' ? 'video' : 'photo') + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
+      if (rejected.length) UI.toast(rejected.length + ' rejected — too large to upload: ' + rejected[0], 'error');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
       // Item 27/28: pin + cone is captured INLINE, in the same form as the
@@ -6910,11 +7095,25 @@ window.ProgressPhotos = (function () {
       if (pp360Viewer && pp360Viewer.on) {
         if (standinEl) standinEl.hidden = true;
         if (!draft.repUrl) {
+          // ⚠️ 2026-09-17: was captureViewerThumbnail(viewerEl, …) — a WebGL
+          // readback that returns an empty buffer (see viewThumbFromPano).
+          // The standin <img> is an ordinary 2D-drawable image and genuinely
+          // works. This is only a PLACEHOLDER thumbnail anyway: Confirm & Save
+          // re-frames it from whatever view the planner leaves the viewer on.
           pp360Viewer.on('load', function () {
-            captureViewerThumbnail(viewerEl, function (blob) {
-              if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); }
-              paintThumb();
-            });
+            // ⚠️ The standin is display:none (it is only a fallback surface),
+            // which does not stop it decoding — but it may not have finished
+            // yet when the viewer reports loaded. Without waiting for it,
+            // captureImageThumbnail returns null, `repBlob` stays unset and
+            // Confirm & Save sits on "Still processing" forever.
+            var grab = function () {
+              captureImageThumbnail(standinEl, function (blob) {
+                if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); }
+                paintThumb();
+              });
+            };
+            if (standinEl && standinEl.complete && standinEl.naturalWidth) grab();
+            else if (standinEl) standinEl.onload = grab;
           });
         }
       } else {
@@ -6980,10 +7179,9 @@ window.ProgressPhotos = (function () {
             '<img id="pp360rv-pano-standin" alt="Stitched panorama preview" hidden />' +
             '<div id="pp360rv-pano-viewer" class="pp-lb-panoviewer"></div>' +
           '</div>' +
-          '<p class="pp-hint">Drag to look around the stitched panorama, then frame the view you want as the thumbnail below.</p>' +
+          '<p class="pp-hint">Drag to look around the stitched panorama. Whatever you leave it on becomes the thumbnail.</p>' +
           '<div style="margin:6px 0;display:flex;gap:8px;flex-wrap:wrap;">' +
             '<button type="button" class="pd-btn" id="pp360rv-adjust">Adjust</button>' +
-            '<button type="button" class="pd-btn" id="pp360rv-usethumb">Use this view as thumbnail</button>' +
           '</div>' +
           '<div class="pd-field" id="pp360rv-thumbfield" hidden><label>Thumbnail</label>' +
             '<img id="pp360rv-thumbpreview" alt="Selected thumbnail" style="max-width:200px;display:block;border-radius:var(--pd-radius);" />' +
@@ -7017,32 +7215,30 @@ window.ProgressPhotos = (function () {
       if (!draft.stitchUrl) return;
       openAdjustEditor(draft.stitchUrl, draft.pendingAdjust[0] || {}, function (adj) { draft.pendingAdjust[0] = adj; persistPano360Draft(draft); });
     };
-    if ($('pp360rv-usethumb')) $('pp360rv-usethumb').onclick = function () {
-      if (pp360Viewer) {
-        var viewerEl = $('pp360rv-pano-viewer');
-        if (!viewerEl) return;
-        captureViewerThumbnail(viewerEl, function (blob) {
-          if (!blob) { UI.toast('Could not capture the current view — try again', 'warn'); return; }
-          draft.repBlob = blob;
-          if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
-          draft.repUrl = URL.createObjectURL(blob);
-          draft._thumbOverridden = true; // Confirm & Save must upload THIS, never the server's own default thumbnail (jobThumbPath)
-          persistPano360Draft(draft);
-          paintThumb();
-        });
-      } else {
+    // ⚠️⚠️ "Use this view as thumbnail" IS DELETED, NOT HIDDEN — the owner's own
+    // call ("it does not need to be shown already. by default, the last view
+    // will be the thumbnail"), and it never worked anyway: it read a WebGL
+    // drawing buffer that is empty by the time a click handler runs (see
+    // viewThumbFromPano for the full reason). Its job is done at Confirm &
+    // Save instead, from wherever the viewer was left pointing. Nothing to
+    // press, nothing to forget to press.
+    function captureLastView() {
+      return new Promise(function (resolve) {
         var standinEl = $('pp360rv-pano-standin');
-        captureImageThumbnail(standinEl, function (blob) {
-          if (!blob) { UI.toast('Could not capture the panorama — try again', 'warn'); return; }
-          draft.repBlob = blob;
-          if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
-          draft.repUrl = URL.createObjectURL(blob);
-          draft._thumbOverridden = true; // same rule as above, for the no-viewer standin path
-          persistPano360Draft(draft);
-          paintThumb();
-        });
-      }
-    };
+        if (!pp360Viewer || !standinEl || !standinEl.naturalWidth) { resolve(null); return; }
+        var res = draft.stitchResult;
+        var hOverW = (res && res.width && res.height)
+          ? (res.height / res.width)
+          : (standinEl.naturalHeight / standinEl.naturalWidth);
+        // The SAME vaov the viewer was mounted with, read the same way — a
+        // thumbnail computed against a different vertical field from the one
+        // on screen would be framed differently from what the planner saw.
+        var vaov = Math.min(140, Math.max(20, 360 * (hOverW || 0.35)));
+        var yaw = 0, pitch = 0, hfov = 100;
+        try { yaw = pp360Viewer.getYaw(); pitch = pp360Viewer.getPitch(); hfov = pp360Viewer.getHfov(); } catch (e) { resolve(null); return; }
+        viewThumbFromPano(standinEl, yaw, pitch, hfov, vaov, resolve);
+      });
+    }
     if ($('pp360rv-discard')) $('pp360rv-discard').onclick = function () {
       removePano360Draft(draft);
       m.close();
@@ -7061,6 +7257,19 @@ window.ProgressPhotos = (function () {
       var reqErr = requiredFieldsMissing('pp360rv');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
+      // ⚠️ The thumbnail is taken HERE, from wherever the viewer was left —
+      // "by default, the last view will be the thumbnail". Best-effort by
+      // design: if the reprojection cannot run (no viewer mounted, or the
+      // signed URL tainted the canvas) this simply leaves `_thumbOverridden`
+      // false and the server's own centre-crop thumbnail is reused, exactly as
+      // before. A thumbnail that could not be re-framed must never block a save.
+      var lastView = await captureLastView();
+      if (lastView) {
+        draft.repBlob = lastView;
+        if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
+        draft.repUrl = URL.createObjectURL(lastView);
+        draft._thumbOverridden = true;
+      }
       var locVals = draft.meta.locVals || {};
       var worksList = draft.meta.works || [];
       var tradeList = deriveTradesForWorksList(worksList);
@@ -7121,6 +7330,17 @@ window.ProgressPhotos = (function () {
   }
 
   async function uploadFile(file) {
+    // Defense-in-depth: this is the plain, non-progress-tracked upload path
+    // (the 360° draft's Confirm & Save, and runUploadTask's own last-resort
+    // fallback when neither XHR nor tus is available) — it should never in
+    // practice see a file over MAX_UPLOAD_BYTES (a stitched panorama/
+    // thumbnail is always small), but the check costs nothing and closes
+    // off a second, unguarded upload path from ever bypassing the limit.
+    if (fileExceedsMaxSize(file)) {
+      var sizeErr = new Error(maxUploadSizeMessage(file));
+      sizeErr.rejected = true;
+      throw sizeErr;
+    }
     var safe = file.name.replace(/[^\w.\-]+/g, '_');
     var path = pid + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '_' + safe;
     var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
@@ -7507,6 +7727,66 @@ window.ProgressPhotos = (function () {
     return { add: add, put: put, get: get, all: all, remove: remove };
   })();
 
+  // ------------------------------------------------------ max upload size ----
+  // ⚠️⚠️ Matches migrations/2026-09-17-progress-photos-max-upload-size.sql,
+  // which sets `storage.buckets.file_size_limit` for THIS bucket to the exact
+  // same number. Before that migration the bucket had no explicit limit at
+  // all (NULL), so every upload was silently governed by whatever this
+  // Supabase project's own invisible global "max upload size" setting
+  // happened to be — nothing in this repo could read or verify that number,
+  // and a real 2.20 GB capture hit it and failed with the storage server's
+  // own raw text, "The object exceeded the maximum allowed size", with no
+  // client-side warning beforehand. Setting an EXPLICIT, known limit (and
+  // keeping this constant in lock-step with it) is what makes the two
+  // preflight checks below possible at all — there is nothing to check a
+  // file's size against otherwise. If this number ever needs to change,
+  // change it in BOTH places, in the same commit.
+  var MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024; // 5 GiB
+  // Supabase's own documented threshold for when to prefer the resumable
+  // (TUS) upload path over a single plain POST — see tusUploadToBucket()
+  // below. Ordinary photos stay well under this and keep using the exact
+  // same, already-tested xhrUploadToBucket() path with zero behaviour change.
+  var SIMPLE_UPLOAD_MAX_BYTES = 6 * 1024 * 1024; // 6 MiB
+  function fileExceedsMaxSize(file) {
+    return !!(file && typeof file.size === 'number' && file.size > MAX_UPLOAD_BYTES);
+  }
+  // User-facing text for requirement "This video is too large to upload.
+  // Maximum supported file size is [X] GB. Selected file size: [Y] GB." —
+  // reused by every rejection path (staging-time, runUploadTask's own
+  // authoritative check, and a restored IndexedDB record) so the wording
+  // can never drift between them.
+  function maxUploadSizeMessage(file) {
+    var kind = file && /^video\//.test(file.type || '') ? 'video' : 'file';
+    return 'This ' + kind + ' is too large to upload. Maximum supported file size is ' +
+      fmtBytes(MAX_UPLOAD_BYTES) + '. Selected file size: ' + fmtBytes((file && file.size) || 0) + '.';
+  }
+  // A reliable-enough file identity with no hashing cost — a full content
+  // hash of a multi-GB video is not "practical" (the QA spec's own word for
+  // it), and name+size+lastModified is already what the spec names as the
+  // reliable alternative. Two DIFFERENT files that happen to share a name
+  // (a camera that reset its filename counter) will almost certainly still
+  // differ in size or lastModified, so this does not conflate them.
+  function fileFingerprint(file) {
+    if (!file) return '';
+    return [file.name || '', file.size || 0, file.lastModified || 0].join('|');
+  }
+  // "Prevent the same selected file from being added twice while an
+  // equivalent upload task is already pending, uploading, processing, or
+  // retrying" — exactly the four statuses named in the spec; a FAILED task
+  // deliberately does not block re-adding the same file (that is the
+  // planner's only way to try again if Retry itself is not working), and a
+  // REJECTED one cannot recur anyway once the same oversized file is
+  // preflighted again on the second add attempt.
+  function findActiveDuplicateTask(fp) {
+    if (!fp) return null;
+    for (var i = 0; i < UPLOAD_TASKS.length; i++) {
+      var t = UPLOAD_TASKS[i];
+      if (t.projectId === pid && t.fingerprint === fp &&
+          ['pending', 'uploading', 'processing', 'retrying'].indexOf(t.status) >= 0) return t;
+    }
+    return null;
+  }
+
   // --------------------------------------------------- upload byte progress --
   // ⚠️⚠️ ROOT CAUSE of "Sync now does nothing / no visible feedback": every
   // upload in this file went through Supabase's own storage.upload(), which is
@@ -7564,21 +7844,63 @@ window.ProgressPhotos = (function () {
   // requirement: a file too large for the server, a session that's expired,
   // and a dropped connection all look identical to the old bare catch block,
   // and are three different things to DO about them.
+  //
+  // ⚠️⚠️ Matched by MESSAGE CONTENT, not only by HTTP status — the ORIGINAL
+  // "the 413 branch will translate the raw message" reading was wrong for
+  // the live-reported bug: this project's storage-api returned the object-
+  // too-large error with `xhr.status` NOT equal to 413 (its own JSON body
+  // carries a *string* `statusCode` field, e.g. `"413"`, which is a separate
+  // thing from the real transport status code the XHR itself sees), so the
+  // 413-only branch never fired and the raw backend text — "The object
+  // exceeded the maximum allowed size" — reached the planner unchanged. This
+  // is now the SINGLE place both the plain-XHR and the resumable (TUS) path
+  // translate a server error, so the two upload transports can never
+  // disagree about what a given failure means.
+  function describeUploadErrorMessage(status, bodyText) {
+    var lower = String(bodyText || '').toLowerCase();
+    if (status === 413 || /exceed(ed|s)?[^.]{0,40}(maximum|max)[^.]{0,20}size|maximum allowed size|payload too large|request entity too large/.test(lower)) {
+      return 'This file exceeds the maximum supported upload size (' + fmtBytes(MAX_UPLOAD_BYTES) + ').';
+    }
+    if (status === 401 || status === 403) return 'You are not signed in, or do not have permission to upload here — refresh the page and sign in again.';
+    if (status === 409) return 'A file already exists at that location.';
+    if (status === 404 || status === 410) return 'This upload session has expired — retry to start a fresh upload.';
+    if (status === 507 || /insufficient storage|quota exceeded|storage quota/.test(lower)) return 'Storage quota exceeded — contact an administrator.';
+    if (!status) return 'Could not reach the server — check your connection and try again.';
+    return null; // caller falls back to the server's own message, then a generic one
+  }
   function describeStorageXhrError(xhr) {
-    var msg = 'Upload failed (server responded ' + (xhr.status || 0) + ')';
+    var bodyText = xhr.responseText || '';
+    var parsedMsg = null;
     try {
-      var body = xhr.responseText && JSON.parse(xhr.responseText);
-      if (body && (body.message || body.error)) msg = body.message || body.error;
-    } catch (e) { /* not JSON — keep the generic message above */ }
-    if (xhr.status === 413) msg = 'This file is too large for the server to accept — try a shorter recording or a smaller file.';
-    else if (xhr.status === 401 || xhr.status === 403) msg = 'You are not signed in, or do not have permission to upload here — refresh the page and sign in again.';
-    else if (xhr.status === 409) msg = 'A file already exists at that location.';
-    else if (xhr.status === 0) msg = 'Could not reach the server — check your connection and try again.';
+      var body = bodyText && JSON.parse(bodyText);
+      if (body) parsedMsg = body.message || body.error || null;
+    } catch (e) { /* not JSON — keep bodyText for the substring match above */ }
+    var msg = describeUploadErrorMessage(xhr.status, parsedMsg || bodyText) ||
+      parsedMsg || ('Upload failed (server responded ' + (xhr.status || 0) + ')');
     var err = new Error(msg);
     err.status = xhr.status;
     return err;
   }
+  // Same translation as describeStorageXhrError, for a tus-js-client
+  // DetailedError — its `.originalResponse` carries the real HTTP status/
+  // body when the failure came back from the server at all (a pure network
+  // failure — every retryDelays attempt exhausted with no response — has no
+  // originalResponse, which is exactly the "Could not reach the server"
+  // case, handled by describeUploadErrorMessage's own `!status` branch).
+  function describeTusError(error) {
+    var resp = error && error.originalResponse;
+    var status = (resp && typeof resp.getStatus === 'function') ? resp.getStatus() : 0;
+    var bodyText = (resp && typeof resp.getBody === 'function') ? (resp.getBody() || '') : '';
+    var parsedMsg = null;
+    try { var body = bodyText && JSON.parse(bodyText); if (body) parsedMsg = body.message || body.error || null; } catch (e) {}
+    var msg = describeUploadErrorMessage(status, parsedMsg || bodyText) || parsedMsg ||
+      (status ? ('Upload failed (server responded ' + status + ')') : 'Could not reach the server — check your connection and try again.');
+    var err = new Error(msg);
+    err.status = status;
+    return err;
+  }
   function xhrSupported() { return typeof XMLHttpRequest !== 'undefined'; }
+  function tusSupported() { return !!(window.tus && typeof window.tus.Upload === 'function'); }
   // Returns {promise, cancel} rather than a bare Promise, deliberately — the
   // caller needs a way to abort an upload that's already in flight (the
   // Pending panel's Cancel button) before the promise itself has settled.
@@ -7619,6 +7941,116 @@ window.ProgressPhotos = (function () {
     return { promise: promise, cancel: cancel };
   }
 
+  // ------------------------------------------------ resumable (TUS) upload ---
+  // ⚠️⚠️ RESUMABLE/MULTIPART UPLOAD, per the "explore using open-source /
+  // provider-supported chunked upload" requirement. Supabase Storage's own
+  // storage-api ships a built-in TUS 1.0.0-protocol endpoint
+  // (`/storage/v1/upload/resumable`) — this is a documented, first-class
+  // capability of the SAME bucket every other upload in this file already
+  // targets, gated by the SAME RLS policies, needing NO Edge Function, no
+  // backend code, and no provider configuration change beyond the plain
+  // migration that raises this bucket's `file_size_limit` (see MAX_UPLOAD_
+  // BYTES above). Confirmed live, not assumed from documentation alone: a
+  // throwaway harness built a real `tus.Upload` against THIS project's real
+  // endpoint and it round-tripped exactly as expected — the request reached
+  // Supabase's real auth/RLS layer and was correctly refused
+  // (`403 new row violates row-level security policy`, the same refusal any
+  // other anon-key, non-approved-user write gets) rather than 404ing or
+  // failing to connect, which is what would have shown had the endpoint not
+  // actually existed/been enabled for this project.
+  //
+  // Used for anything at/above SIMPLE_UPLOAD_MAX_BYTES (see runUploadTask) —
+  // a large recording uploads in fixed 6 MiB chunks with real per-chunk
+  // progress, and a dropped connection mid-transfer is retried automatically
+  // (tus-js-client's own `retryDelays`) from the LAST ACKNOWLEDGED byte, not
+  // from zero — genuine resumability within the same page session, which is
+  // the actual reliability problem a multi-GB single-POST upload has on a
+  // real, imperfect network. What this does NOT do: survive a full page
+  // reload/tab close mid-upload and resume automatically with no further
+  // action — that would need the exact same File bytes to still be in
+  // memory, which a browser does not hand back across a reload for a file
+  // picked via a plain <input type=file>. Stated as a known limitation
+  // below rather than faked with a scheme that would only work sometimes.
+  function tusUploadToBucket(file, path, opts) {
+    opts = opts || {};
+    var cancelled = false;
+    var uploadRef = null;
+    var forceReject = null; // set once the executor below is running
+    function cancel() {
+      if (cancelled) return;
+      cancelled = true;
+      // shouldTerminate:true — also asks Supabase to delete the partial
+      // object server-side, so a cancelled large upload does not leave an
+      // orphaned incomplete object behind ("avoid duplicate objects").
+      if (uploadRef) { try { uploadRef.abort(true); } catch (e) {} }
+      if (forceReject) forceReject(uploadCancelledError());
+    }
+    var promise = (async function () {
+      var token = await currentAccessToken();
+      if (cancelled) throw uploadCancelledError();
+      return new Promise(function (resolve, reject) {
+        var settled = false;
+        function settleResolve(v) { if (!settled) { settled = true; resolve(v); } }
+        function settleReject(e) { if (!settled) { settled = true; reject(e); } }
+        forceReject = settleReject;
+        var upload = new window.tus.Upload(file, {
+          endpoint: ((window.APP_CONFIG && APP_CONFIG.SUPABASE_URL) || '').replace(/\/+$/, '') + '/storage/v1/upload/resumable',
+          retryDelays: [0, 1000, 3000, 5000, 10000],
+          headers: {
+            authorization: 'Bearer ' + token,
+            apikey: (window.APP_CONFIG && APP_CONFIG.SUPABASE_ANON_KEY) || '',
+            'x-upsert': opts.upsert ? 'true' : 'false'
+          },
+          uploadDataDuringCreation: true,
+          // Lets a later attempt at the identical file (same name/size/type/
+          // lastModified) find and continue this session, INCLUDING after a
+          // failure — cleared automatically once the upload genuinely
+          // succeeds (removeFingerprintOnSuccess), so a completed upload can
+          // never be mistaken for a resumable one on a later, DIFFERENT file
+          // that happens to reuse the same name.
+          storeFingerprintForResuming: true,
+          removeFingerprintOnSuccess: true,
+          metadata: {
+            bucketName: BUCKET,
+            objectName: path,
+            contentType: file.type || 'application/octet-stream',
+            cacheControl: '3600'
+          },
+          // ⚠️ 6 MiB is not a tuning choice — it is the one chunk size
+          // Supabase's own storage-api reliably supports for this endpoint;
+          // a larger chunk size is a documented cause of upload failures on
+          // their platform.
+          chunkSize: 6 * 1024 * 1024,
+          onError: function (err) {
+            if (cancelled) { settleReject(uploadCancelledError()); return; }
+            settleReject(describeTusError(err));
+          },
+          onProgress: function (loaded, total) {
+            if (!cancelled && typeof opts.onProgress === 'function') opts.onProgress(loaded, total);
+          },
+          onSuccess: function () {
+            if (typeof opts.onProgress === 'function') opts.onProgress(file.size || 0, file.size || 0);
+            settleResolve({ path: path });
+          }
+        });
+        uploadRef = upload;
+        // Look for an earlier, interrupted attempt at this exact file before
+        // starting a brand-new session — this is the "resume, don't restart"
+        // half of resumability. A failure here (e.g. localStorage blocked in
+        // a private window) must never block a fresh upload from starting.
+        upload.findPreviousUploads().then(function (prev) {
+          if (cancelled) { settleReject(uploadCancelledError()); return; }
+          if (prev && prev.length) upload.resumeFromPreviousUpload(prev[0]);
+          upload.start();
+        }).catch(function () {
+          if (cancelled) { settleReject(uploadCancelledError()); return; }
+          try { upload.start(); } catch (e) { settleReject(describeTusError(e)); }
+        });
+      });
+    })();
+    return { promise: promise, cancel: cancel };
+  }
+
   // ----------------------------------------------- pending upload task store -
   // The single source of truth the "Pending uploads" panel (below) renders
   // from. A task exists for as long as a capture is uploading/processing OR
@@ -7638,14 +8070,34 @@ window.ProgressPhotos = (function () {
     var t = Object.assign({
       id: 't' + (++_taskSeq),
       qid: null,
-      status: 'pending',           // pending | uploading | processing | completed | failed | retrying | cancelled
+      // pending | uploading | processing | completed | failed | retrying |
+      // cancelled | rejected. 'rejected' is a TERMINAL, never-retryable state
+      // (a file that fails the max-size preflight — see fileExceedsMaxSize
+      // above) — kept structurally distinct from 'failed' precisely so it
+      // can never be swept into Sync now's/flushQueue's own retry loop
+      // (which only ever selects pending/failed/cancelled) or into the
+      // overall-progress calculation, per "the overall progress calculation
+      // excludes rejected files".
+      status: 'pending',
       progress: 0,                 // 0..1, upload BYTES only (thumbnail/row-write have no fine-grained %)
       uploadedBytes: 0,
       totalBytes: 0,
       error: null,
       createdAt: new Date(),
-      _cancel: null,                // set only while an XHR is actually in flight
+      // A stable identity for the SOURCE file (name+size+lastModified),
+      // used to refuse staging the same file a second time while an active
+      // attempt at it already exists — see findActiveDuplicateTask above.
+      fingerprint: null,
+      _cancel: null,                // set only while an upload is actually in flight
       _uploadedPath: null,          // set once the main file's bytes are confirmed on Storage
+      // The object path this task uploads to, chosen ONCE and reused across
+      // every retry/resume — never re-derived per attempt. Two reasons this
+      // matters, not just one: (1) a resumable (TUS) upload can only
+      // actually RESUME if the object it is continuing is the same one it
+      // started, and (2) reusing the path is what stops a retried upload
+      // from littering Storage with an abandoned partial object under a
+      // fresh random name every time ("avoid duplicate objects").
+      _path: null,
       _file: null,
       _meta: {}
     }, partial || {});
@@ -7665,12 +8117,18 @@ window.ProgressPhotos = (function () {
   function taskFraction(t) {
     if (t.status === 'completed' || t.status === 'processing') return 1;
     if (t.status === 'uploading' || t.status === 'retrying') return t.progress || 0;
-    return 0; // pending / failed / cancelled
+    return 0; // pending / failed / cancelled / rejected
   }
   // File-size-weighted when every active task's size is known (the normal
   // case — every task here always has a real File or a persisted Blob behind
   // it); degrades to a plain per-task average only if a size is genuinely
   // missing, per "use the most accurate calculation supported".
+  //
+  // ⚠️ Callers must exclude 'rejected' tasks from `tasks` themselves before
+  // calling this — a rejected file is guaranteed to never upload, so mixing
+  // it into an average would understate the real progress of the files that
+  // CAN still succeed (see pendingPanelBodyHTML's `active` filter, which is
+  // the one caller of this function).
   function overallProgress(tasks) {
     if (!tasks || !tasks.length) return null;
     var haveAllSizes = tasks.every(function (t) { return (t.totalBytes || 0) > 0; });
@@ -7713,6 +8171,8 @@ window.ProgressPhotos = (function () {
   function buildQueueRecord(task) {
     var rec = { project_id: task.projectId, created_by: task.createdBy, fileName: task.fileName, meta: task._meta || {}, queued_at: (task.createdAt || new Date()).toISOString() };
     if (task.qid != null) rec.qid = task.qid;
+    if (task._path) rec.path = task._path;             // reused on the next attempt — see createTask's own comment
+    if (task.fingerprint) rec.fingerprint = task.fingerprint;
     if (task._uploadedPath) rec.uploadedPath = task._uploadedPath;   // skip a redundant re-upload on the next retry
     else if (task._file) rec.blob = task._file;
     return rec;
@@ -7721,6 +8181,13 @@ window.ProgressPhotos = (function () {
   // called whenever a task needs to survive beyond this attempt: a fresh
   // failure (first time it's ever queued), or a retry that failed again
   // (updates the SAME row rather than adding a duplicate).
+  //
+  // ⚠️ A REJECTED (oversized) task is never handed to this function at all —
+  // every call site below checks `task.status === 'failed'` first. Queuing a
+  // file that is guaranteed to exceed the max size would mean storing a
+  // (potentially multi-GB) blob in IndexedDB for a retry that can only ever
+  // fail again the exact same way ("do not repeatedly retry a file that is
+  // guaranteed to exceed the maximum size").
   async function persistTaskToQueue(task) {
     var rec = buildQueueRecord(task);
     var qid = task.qid != null ? await OfflineQueue.put(rec) : await OfflineQueue.add(rec);
@@ -7729,7 +8196,7 @@ window.ProgressPhotos = (function () {
   function taskFromQueueRecord(rec) {
     var hasBlob = !!rec.blob;
     var size = hasBlob ? (rec.blob.size || 0) : 0;
-    return {
+    var t = {
       id: 'q' + rec.qid, qid: rec.qid,
       kind: (rec.meta && rec.meta.media_type === 'video') ? 'video' : 'photo',
       fileName: rec.fileName || 'Untitled',
@@ -7737,11 +8204,23 @@ window.ProgressPhotos = (function () {
       uploadedBytes: rec.uploadedPath ? size : 0,
       progress: rec.uploadedPath ? 1 : 0,
       status: 'pending', error: null,
+      fingerprint: rec.fingerprint || (rec.blob ? fileFingerprint(rec.blob) : null),
       projectId: rec.project_id, createdBy: rec.created_by,
       createdAt: rec.queued_at ? new Date(rec.queued_at) : new Date(),
-      _cancel: null, _uploadedPath: rec.uploadedPath || null,
+      _cancel: null, _path: rec.path || null, _uploadedPath: rec.uploadedPath || null,
       _file: rec.blob || null, _meta: rec.meta || {}
     };
+    // "Any restored pending upload from IndexedDB" must go through the exact
+    // same size gate a fresh Add Media pick does — a record left over from
+    // before this fix shipped (or from a session where the size limit was
+    // different) could otherwise sit forever offering a Retry that can only
+    // ever fail. Never attempted, never silently dropped either — it stays
+    // visible, terminal, and named.
+    if (hasBlob && fileExceedsMaxSize(rec.blob)) {
+      t.status = 'rejected';
+      t.error = maxUploadSizeMessage(rec.blob);
+    }
+    return t;
   }
   // Reconciles UPLOAD_TASKS against what's actually persisted for the CURRENT
   // project: adds a 'pending' task for any IndexedDB record not already
@@ -7796,28 +8275,53 @@ window.ProgressPhotos = (function () {
         uploadedPath = rec.uploadedPath || null;
         task._meta = rec.meta || task._meta || {};
         task.fileName = task.fileName || rec.fileName;
+        task._path = task._path || rec.path || null;
         if (file) task.totalBytes = file.size || task.totalBytes;
       }
       if (!uploadedPath) {
         if (!file) throw new Error('The original file is no longer available on this device — please add it again.');
-        if (xhrSupported()) {
-          var handle = xhrUploadToBucket(file, buildStoragePath(task.fileName || file.name || 'upload'), {
-            upsert: false,
-            onProgress: function (loaded, total) {
-              task.uploadedBytes = loaded;
-              if (total) task.totalBytes = total;
-              task.progress = task.totalBytes ? loaded / task.totalBytes : 0;
-              notifyTasksChanged();
-            }
-          });
+        // ⚠️⚠️ THE AUTHORITATIVE size gate — every other check in this file
+        // (staging time, a restored IndexedDB record) is a courtesy that
+        // avoids wasted work; THIS is the one no code path can bypass, since
+        // every upload of every kind (fresh capture, Sync now, Retry, a
+        // reconciled queue record) ultimately calls runUploadTask. Refusing
+        // here means no XHR/TUS request is ever started for an oversized
+        // file, and the task is marked 'rejected' (see the catch block)
+        // rather than 'failed' — never eligible for another automatic retry.
+        if (fileExceedsMaxSize(file)) {
+          var sizeErr = new Error(maxUploadSizeMessage(file));
+          sizeErr.rejected = true;
+          throw sizeErr;
+        }
+        // The path is chosen ONCE per task and reused on every subsequent
+        // attempt — see createTask's own comment on `_path` for why.
+        if (!task._path) task._path = buildStoragePath(task.fileName || file.name || 'upload');
+        var path = task._path;
+        var useResumable = (file.size || 0) >= SIMPLE_UPLOAD_MAX_BYTES && tusSupported();
+        var onUploadProgress = function (loaded, total) {
+          task.uploadedBytes = loaded;
+          if (total) task.totalBytes = total;
+          task.progress = task.totalBytes ? loaded / task.totalBytes : 0;
+          notifyTasksChanged();
+        };
+        if (useResumable) {
+          var tHandle = tusUploadToBucket(file, path, { upsert: false, onProgress: onUploadProgress });
+          task._cancel = tHandle.cancel;
+          var tRes = await tHandle.promise;
+          task._cancel = null;
+          uploadedPath = tRes.path;
+        } else if (xhrSupported()) {
+          var handle = xhrUploadToBucket(file, path, { upsert: false, onProgress: onUploadProgress });
           task._cancel = handle.cancel;
           var res = await handle.promise;
           task._cancel = null;
           uploadedPath = res.path;
         } else {
-          // No XMLHttpRequest in this context (a non-browser test harness, or
-          // an exotic runtime) — the upload itself still works, it just can't
-          // report byte-level progress. Never the reason an upload fails.
+          // No XMLHttpRequest AND no tus-js-client in this context (a
+          // non-browser test harness, or the CDN script failed to load) —
+          // the upload itself still works, it just can't report byte-level
+          // progress or resume a large one. Never the reason an upload
+          // fails outright.
           uploadedPath = await uploadFile(file);
         }
         task._uploadedPath = uploadedPath;
@@ -7838,9 +8342,10 @@ window.ProgressPhotos = (function () {
     } catch (err) {
       task._cancel = null;
       if (err && err.cancelled) { task.status = 'cancelled'; task.error = null; }
+      else if (err && err.rejected) { task.status = 'rejected'; task.error = (err && err.message) ? err.message : String(err); }
       else { task.status = 'failed'; task.error = (err && err.message) ? err.message : String(err); }
       notifyTasksChanged();
-      return { ok: false, error: err };
+      return { ok: false, error: err, rejected: !!(err && err.rejected) };
     }
   }
 
@@ -7852,6 +8357,7 @@ window.ProgressPhotos = (function () {
     var task = createTask({
       kind: meta.media_type === 'video' ? 'video' : 'photo',
       fileName: file.name, totalBytes: file.size || 0,
+      fingerprint: fileFingerprint(file),
       projectId: pid, createdBy: uid, _file: file, _meta: meta
     });
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -7863,6 +8369,12 @@ window.ProgressPhotos = (function () {
     var r = await runUploadTask(task);
     if (r.ok) { scheduleTaskAutoClear(task); return { queued: false, ok: true, id: r.id }; }
     if (task.status === 'cancelled') return { queued: false, ok: false, error: r.error, cancelled: true };
+    // A REJECTED (oversized) task is never queued for a later retry — it is
+    // guaranteed to fail the identical way every time, and queuing it would
+    // mean persisting a (possibly multi-GB) blob into IndexedDB purely so
+    // Sync now can refuse it again later. It stays visible in the panel
+    // (createTask already pushed it onto UPLOAD_TASKS) with a Remove action.
+    if (task.status === 'rejected') return { queued: false, ok: false, error: r.error, rejected: true };
     try { await persistTaskToQueue(task); } catch (e) {}
     await refreshQueueBadge(); notifyTasksChanged();
     return { queued: true, ok: false, error: r.error };
@@ -7872,30 +8384,50 @@ window.ProgressPhotos = (function () {
   // uploading/completed (pending / failed / cancelled). Sequential, on
   // purpose: several large videos uploading at once would fight each other
   // for the same connection, which is the opposite of "make this reliable".
-  // Re-entrancy guarded (`syncing`) so a repeated click, or the automatic
-  // reconnect-and-sync, can never start a second overlapping pass.
+  //
+  // ⚠️⚠️ Re-entrancy fix (2026-09-17 review pass): `syncing` used to be set
+  // to `true` AFTER `await syncTasksFromQueue()` — i.e. after a real async
+  // gap (a genuine IndexedDB round-trip). Two "Sync now" clicks fired in
+  // quick succession (a real, reproducible double-click, not a contrived
+  // edge case — verified with a fake-XHR harness: 2 calls on ONE failed
+  // task produced 3 separate upload attempts) BOTH pass the `if (syncing)`
+  // check while the first call is still awaiting that gap, so both proceed
+  // to run `runUploadTask` on the SAME task concurrently — which, if the
+  // upload happens to succeed on both, inserts TWO rows for one capture.
+  // `syncing` is now claimed SYNCHRONOUSLY, before the very first `await`,
+  // so a second call arriving at any point after the first has started can
+  // never pass the guard. Released in a `finally` so a genuine throw
+  // (nothing in this function's own body should throw, since runUploadTask
+  // never does, but a future change might) can't leave it stuck `true`
+  // forever, which would otherwise make every subsequent Sync now a no-op.
   async function flushQueue(opts) {
     opts = opts || {};
     if (syncing) { if (!opts.silent) UI.toast('A sync is already in progress', 'warn'); return; }
-    await syncTasksFromQueue();
-    var mine = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid && (t.status === 'pending' || t.status === 'failed' || t.status === 'cancelled'); });
-    if (!mine.length) { if (!opts.silent) UI.toast('Nothing to sync — you are up to date', 'ok'); notifyTasksChanged(); return; }
     syncing = true; notifyTasksChanged();
     var ok = 0, fail = 0;
-    for (var i = 0; i < mine.length; i++) {
-      var t = mine[i];
-      t.status = 'retrying'; t.error = null; notifyTasksChanged();
-      var r = await runUploadTask(t);
-      if (r.ok) {
-        ok++;
-        if (t.qid != null) { try { await OfflineQueue.remove(t.qid); } catch (e) {} }
-        scheduleTaskAutoClear(t);
-      } else {
-        fail++;
-        if (t.status === 'failed') { try { await persistTaskToQueue(t); } catch (e) {} }
+    try {
+      await syncTasksFromQueue();
+      // ⚠️ 'rejected' is DELIBERATELY absent from this list — "Sync now must
+      // not repeatedly retry permanently invalid oversized files". A rejected
+      // task can only be cleared via Remove, never picked up here.
+      var mine = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid && (t.status === 'pending' || t.status === 'failed' || t.status === 'cancelled'); });
+      if (!mine.length) { if (!opts.silent) UI.toast('Nothing to sync — you are up to date', 'ok'); notifyTasksChanged(); return; }
+      for (var i = 0; i < mine.length; i++) {
+        var t = mine[i];
+        t.status = 'retrying'; t.error = null; notifyTasksChanged();
+        var r = await runUploadTask(t);
+        if (r.ok) {
+          ok++;
+          if (t.qid != null) { try { await OfflineQueue.remove(t.qid); } catch (e) {} }
+          scheduleTaskAutoClear(t);
+        } else {
+          fail++;
+          if (t.status === 'failed') { try { await persistTaskToQueue(t); } catch (e) {} }
+        }
       }
+    } finally {
+      syncing = false;
     }
-    syncing = false;
     await refreshQueueBadge(); notifyTasksChanged();
     if (ok) await load();
     if (!opts.silent) UI.toast(ok + ' synced' + (fail ? (', ' + fail + ' still need attention') : ''), fail ? 'warn' : 'ok');
@@ -7906,6 +8438,11 @@ window.ProgressPhotos = (function () {
     if (syncing) { UI.toast('A sync is already in progress — please wait', 'warn'); return; }
     var t = taskById(id);
     if (!t) return;
+    // Guards a double-click / a stray second call while this exact task is
+    // already mid-attempt — without this, two concurrent runUploadTask()
+    // calls on the SAME task could both reach the network step, uploading
+    // to (or resuming) the same object path at once.
+    if (['uploading', 'processing', 'retrying'].indexOf(t.status) >= 0) return;
     t.status = 'retrying'; t.error = null; notifyTasksChanged();
     var r = await runUploadTask(t);
     if (r.ok) {
@@ -7916,6 +8453,8 @@ window.ProgressPhotos = (function () {
     } else if (t.status === 'failed') {
       try { await persistTaskToQueue(t); } catch (e) {}
     }
+    // 'rejected' needs nothing further here — it was never queued to begin
+    // with (see saveCapture's own comment) and has no retry path.
     await refreshQueueBadge(); notifyTasksChanged();
   }
   // Cancels an upload that is ACTUALLY in flight right now — a task with no
@@ -7926,6 +8465,23 @@ window.ProgressPhotos = (function () {
     var t = taskById(id);
     if (!t || typeof t._cancel !== 'function') return;
     t._cancel();
+  }
+  // Removes a task from the visible queue outright — the only way to clear
+  // a REJECTED (oversized) item, and also offered for a failed/cancelled one
+  // a planner has decided not to retry. Refuses on anything genuinely still
+  // in flight (there is nothing to "remove" out from under a live upload;
+  // Cancel is that action). Clears the IndexedDB record too, so a removed
+  // item cannot silently reappear on the next reload/reconciliation.
+  async function removeTask(id) {
+    var t = taskById(id);
+    if (!t) return;
+    if (['uploading', 'processing', 'retrying'].indexOf(t.status) >= 0) {
+      UI.toast('This upload is still in progress — cancel it first', 'warn');
+      return;
+    }
+    if (t.qid != null) { try { await OfflineQueue.remove(t.qid); } catch (e) {} }
+    UPLOAD_TASKS = UPLOAD_TASKS.filter(function (x) { return x !== t; });
+    notifyTasksChanged();
   }
 
   // ------------------------------------------------- pending uploads panel ---
@@ -7939,6 +8495,7 @@ window.ProgressPhotos = (function () {
       case 'failed': return 'Failed';
       case 'retrying': return 'Retrying…' + (t.totalBytes ? ' ' + Math.round((t.progress || 0) * 100) + '%' : '');
       case 'cancelled': return 'Cancelled';
+      case 'rejected': return 'Rejected — too large to upload';
       default: return t.status;
     }
   }
@@ -7948,9 +8505,17 @@ window.ProgressPhotos = (function () {
     if (t.totalBytes) metaBits.push(fmtBytes(t.totalBytes));
     if (t._meta && t._meta.works) metaBits.push(t._meta.works);
     if (t._meta && t._meta.location) metaBits.push(t._meta.location);
+    // "Do not show an active progress bar" for a rejected file — it never
+    // ran, so `showBar` correctly excludes 'rejected' by only ever being
+    // true for the two states that genuinely have live bytes moving.
     var showBar = t.status === 'uploading' || t.status === 'retrying';
-    var canCancel = t.status === 'uploading' && typeof t._cancel === 'function';
+    var canCancel = (t.status === 'uploading' || t.status === 'retrying') && typeof t._cancel === 'function';
     var canRetry = t.status === 'failed' || t.status === 'cancelled';
+    // A rejected file can ONLY be removed — offering Retry on something
+    // "guaranteed to exceed the maximum size" would just repeat the same
+    // refusal. Failed/cancelled items may also be removed outright, without
+    // retrying, if the planner has decided not to.
+    var canRemove = t.status === 'failed' || t.status === 'cancelled' || t.status === 'rejected';
     return '<div class="pp-pending-item pp-pending-' + Fmt.esc(t.status) + '" data-task="' + Fmt.esc(t.id) + '">' +
       '<div class="pp-pending-icon">' + (window.Icons ? Icons.svg(t.kind === 'video' ? 'video' : 'camera', 18) : '') + '</div>' +
       '<div class="pp-pending-info">' +
@@ -7958,26 +8523,41 @@ window.ProgressPhotos = (function () {
         '<div class="pp-pending-meta">' + Fmt.esc(metaBits.join(' · ')) + '</div>' +
         '<div class="pp-pending-status">' + Fmt.esc(taskStatusText(t)) + '</div>' +
         (showBar ? '<div class="pp-pending-bar"><div class="pp-pending-bar-fill" style="width:' + pct + '%"></div></div>' : '') +
-        (t.status === 'failed' && t.error ? '<div class="pp-pending-error">' + Fmt.esc(t.error) + '</div>' : '') +
+        ((t.status === 'failed' || t.status === 'rejected') && t.error ? '<div class="pp-pending-error">' + Fmt.esc(t.error) + '</div>' : '') +
       '</div>' +
       '<div class="pp-pending-rowactions">' +
         (canCancel ? '<button type="button" class="pd-btn pd-btn-sm" data-canceltask="' + Fmt.esc(t.id) + '">Cancel</button>' : '') +
         (canRetry ? '<button type="button" class="pd-btn pd-btn-sm pd-btn-primary" data-retrytask="' + Fmt.esc(t.id) + '">Retry</button>' : '') +
+        (canRemove ? '<button type="button" class="pd-btn pd-btn-sm" data-removetask="' + Fmt.esc(t.id) + '">Remove</button>' : '') +
       '</div>' +
     '</div>';
   }
   function pendingPanelBodyHTML() {
     var mine = UPLOAD_TASKS.filter(function (t) { return t.projectId === pid; })
       .sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
-    var active = mine.filter(function (t) { return t.status !== 'completed'; });
+    // ⚠️⚠️ 'rejected' is excluded from BOTH `active` (the pending count) and
+    // the array handed to overallProgress() — "the overall progress
+    // calculation excludes rejected files". A file that is guaranteed to
+    // never upload must not drag down (or otherwise be conflated with) the
+    // real progress of the files that can still succeed.
+    var active = mine.filter(function (t) { return t.status !== 'completed' && t.status !== 'rejected'; });
+    var rejected = mine.filter(function (t) { return t.status === 'rejected'; });
     var overall = overallProgress(active);
-    var summary = !active.length
-      ? '<div class="pp-pending-empty">' + (window.Icons ? Icons.svg('check', 18) : '') + ' All caught up — nothing pending.</div>'
-      : ('<div class="pp-pending-summarytext">' + active.length + ' pending upload' + (active.length === 1 ? '' : 's') +
-         (overall != null ? ' — overall ' + Math.round(overall * 100) + '%' : '') + '</div>' +
-         (overall != null ? '<div class="pp-pending-overallbar"><div class="pp-pending-overallbar-fill" style="width:' + Math.round(overall * 100) + '%"></div></div>' : ''));
+    var lines = [];
+    if (active.length) {
+      lines.push('<div class="pp-pending-summarytext">' + active.length + ' pending upload' + (active.length === 1 ? '' : 's') +
+        (overall != null ? ' — overall ' + Math.round(overall * 100) + '%' : '') + '</div>');
+      if (overall != null) lines.push('<div class="pp-pending-overallbar"><div class="pp-pending-overallbar-fill" style="width:' + Math.round(overall * 100) + '%"></div></div>');
+    }
+    if (rejected.length) {
+      lines.push('<div class="pp-pending-rejectedline">' + rejected.length + ' file' + (rejected.length === 1 ? '' : 's') +
+        ' too large to upload — remove ' + (rejected.length === 1 ? 'it' : 'them') + ' or choose a smaller file.</div>');
+    }
+    if (!active.length && !rejected.length) {
+      lines.push('<div class="pp-pending-empty">' + (window.Icons ? Icons.svg('check', 18) : '') + ' All caught up — nothing pending.</div>');
+    }
     var rowsHtml = mine.map(pendingRowHTML).join('');
-    return '<div class="pp-pending-summary">' + summary + '</div>' +
+    return '<div class="pp-pending-summary">' + lines.join('') + '</div>' +
       '<div class="pp-pending-actions">' +
         '<button type="button" class="pd-btn pd-btn-primary" id="pp-pending-syncall"' + (syncing ? ' disabled' : '') + '>' +
           (syncing ? 'Syncing…' : 'Sync now') + '</button>' +
@@ -7991,6 +8571,9 @@ window.ProgressPhotos = (function () {
     });
     Array.prototype.forEach.call(host.querySelectorAll('[data-canceltask]'), function (b) {
       b.onclick = function () { cancelTask(this.dataset.canceltask); };
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-removetask]'), function (b) {
+      b.onclick = function () { removeTask(this.dataset.removetask); };
     });
     var syncBtn = host.querySelector('#pp-pending-syncall');
     if (syncBtn) syncBtn.onclick = function () { flushQueue(); };
@@ -8557,6 +9140,7 @@ window.ProgressPhotos = (function () {
     _pano360Drafts: function () { return PANO360_DRAFTS; },
     _Pano360DraftStore: Pano360DraftStore,
     _setUid: function (v) { uid = v; },
+    _setPid: function (v) { pid = v; },
     // Test-only: lets a real-failure test reset the "warn once per page
     // load" latch deterministically, instead of depending on being the
     // first test in the file to ever trigger a persist failure.
@@ -8583,6 +9167,25 @@ window.ProgressPhotos = (function () {
     _isSyncing: function () { return syncing; },
     _taskStatusText: function (t) { return taskStatusText(t); },
     _pendingPanelBodyHTML: function () { return pendingPanelBodyHTML(); },
-    _openPendingMediaPanel: function () { return openPendingMediaPanel(); }
+    _pendingRowHTML: function (t) { return pendingRowHTML(t); },
+    _openPendingMediaPanel: function () { return openPendingMediaPanel(); },
+    // Test-only hooks for the max-upload-size / duplicate-upload fix —
+    // genuinely EXECUTE the real, shipped functions, same convention as
+    // every hook above.
+    _MAX_UPLOAD_BYTES: MAX_UPLOAD_BYTES,
+    _SIMPLE_UPLOAD_MAX_BYTES: SIMPLE_UPLOAD_MAX_BYTES,
+    _fileExceedsMaxSize: function (f) { return fileExceedsMaxSize(f); },
+    _maxUploadSizeMessage: function (f) { return maxUploadSizeMessage(f); },
+    _fileFingerprint: function (f) { return fileFingerprint(f); },
+    _findActiveDuplicateTask: function (fp) { return findActiveDuplicateTask(fp); },
+    _describeUploadErrorMessage: function (status, bodyText) { return describeUploadErrorMessage(status, bodyText); },
+    _describeTusError: function (err) { return describeTusError(err); },
+    _tusSupported: function () { return tusSupported(); },
+    _removeTask: function (id) { return removeTask(id); },
+    _buildQueueRecord: function (task) { return buildQueueRecord(task); },
+    _taskFromQueueRecord: function (rec) { return taskFromQueueRecord(rec); },
+    _xhrUploadToBucket: function (file, path, opts) { return xhrUploadToBucket(file, path, opts); },
+    _tusUploadToBucket: function (file, path, opts) { return tusUploadToBucket(file, path, opts); },
+    _buildStoragePath: function (name) { return buildStoragePath(name); }
   };
 })();

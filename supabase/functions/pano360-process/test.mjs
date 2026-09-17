@@ -376,12 +376,24 @@ function cropFrame(scene, sceneWidth, sceneHeight, frameWidth, frameHeight, x, y
 {
   const indexTsPath = fileURLToPath(new URL('./index.ts', import.meta.url));
   const src = readFileSync(indexTsPath, 'utf8');
-  ok('[8e] the compositing step reads the previous pair\'s own dx before choosing a feather sign',
-    /offsets\[cursor\s*-\s*1\]/.test(src));
-  ok('[8e] a negative pair dx flips the feather sign (so pasteFrame is told which edge to feather)',
-    /pairDx\s*<\s*0\s*\?\s*-featherMag\s*:\s*featherMag/.test(src));
-  ok('[8e] pasteFrame is called with the derived SIGNED value, not the bare magnitude',
-    /pasteFrame\([^)]*featherPx\)/.test(src) && !/pasteFrame\([^)]*featherMag\)/.test(src));
+  // ⚠️⚠️ 2026-09-17 — RETARGETED, and the reason matters more than the new
+  // assertions do. These three used to pin the SIGNED-feather fix: with whole
+  // frames pasted over each other, the feather had to know which edge of the
+  // incoming frame overlapped the canvas, and getting the sign wrong put a
+  // hard seam exactly where the blend was supposed to be. Band compositing
+  // (pasteFrameBand) removes that question entirely — a frame now contributes
+  // only the slice between the midpoints to its neighbours, feathered at BOTH
+  // ends, so there is no single overlapping edge to pick. Keeping the old
+  // assertions would pin a mechanism the file no longer has; what replaces
+  // them pins the property the old ones were protecting (no hard seam) in the
+  // terms the new compositor actually works in.
+  ok('[8e] the compositing step pastes a centre BAND, not a whole frame — so the panorama is built from each frame\'s sharp middle rather than its soft leading edge',
+    /pasteFrameBand\(/.test(src) && !/\bpasteFrame\(/.test(src));
+  ok('[8e] the band is derived from the neighbouring placements (bandForFrame), so consecutive bands meet at the midpoint and overlap only by the feather',
+    /bandForFrame\(placements, cursor, state\.frameWidth, featherPx\)/.test(src));
+  ok('[8e] the WHOLE placement chain is rebuilt each step, not truncated at the cursor — bandForFrame needs the NEXT frame\'s placement or every frame pastes to its own right edge',
+    /cumulativePlacementsClamped\(keptOffsets, state\.scaleFactor, state\.driftClamp\)/.test(src) &&
+    /const keptOffsets = offsets\.slice\(0, Math\.max\(0, state\.keepFrames - 1\)\)/.test(src));
 }
 
 // ===========================================================================
@@ -394,12 +406,18 @@ function cropFrame(scene, sceneWidth, sceneHeight, frameWidth, frameHeight, x, y
 {
   const stitchCorePath = fileURLToPath(new URL('./stitch-core.mjs', import.meta.url));
   const src = readFileSync(stitchCorePath, 'utf8');
-  ok('[8f] the file states there is no cylindrical reprojection step',
-    /no cylindrical[\s\S]{0,20}reprojection step/i.test(src));
-  ok('[8f] the file names the client pipeline\'s own 2026-09-12 fix as the precedent for this gap',
-    /2026-09-12/.test(src) && /cylindrical/i.test(src));
-  ok('[8f] the file states why a from-scratch remap was not shipped this round (unverifiable here)',
-    /NOT.{0,40}implemented from scratch/is.test(src));
+  // ⚠️⚠️ 2026-09-17 — THE GAP THESE ASSERTIONS DOCUMENTED IS NOW CLOSED, so
+  // they assert its ABSENCE instead of its presence. The 2026-09-16 note they
+  // were written for said the cylindrical warp must not be shipped on
+  // inspection alone and asked for "a SYNTHETIC rotating-camera test scene"
+  // first. That harness is section [11] below, and it is what the warp was
+  // developed against.
+  ok('[8f] the cylindrical warp exists and is exported',
+    /export function warpToCylindrical\(/.test(src) && /export function cylindricalDims\(/.test(src));
+  ok('[8f] the equirectangular conversion exists — the viewer declares the image equirectangular, so the pipeline has to actually produce one',
+    /export function cylStripToEquirect\(/.test(src));
+  ok('[8f] the file no longer claims there is no cylindrical reprojection step',
+    !/there is no[\s\S]{0,40}cylindrical reprojection step/i.test(src));
 }
 
 // ===========================================================================
@@ -492,6 +510,191 @@ function cropFrame(scene, sceneWidth, sceneHeight, frameWidth, frameHeight, x, y
     if (canvas[i] === 30 && canvas[i + 1] === 30 && canvas[i + 2] === 30) stillBackground++;
   }
   ok(`[10] the composite's covered region is actually painted (${stillBackground} untouched px out of ${bounds.width})`, stillBackground < bounds.width * 0.05);
+}
+
+// ===========================================================================
+// [11] THE SYNTHETIC ROTATING-CAMERA HARNESS.
+//
+// ⚠️⚠️ THIS SECTION IS THE PRECONDITION THE 2026-09-16 AUDIT NOTE SET FOR
+// SHIPPING ANY CYLINDRICAL-WARP ARITHMETIC AT ALL: "build an isolated harness
+// with a SYNTHETIC rotating-camera test scene ... do not ship it on inspection
+// alone." It renders perspective frames out of a KNOWN equirectangular scene
+// at KNOWN yaw angles — the real geometry of a planner standing in one spot
+// and turning — pushes them through the actual shipped pipeline, and compares
+// the recovered panorama against the ground truth it came from.
+//
+// It is also the only thing that caught two real bugs during development, and
+// neither was visible by reading the code:
+//   • the strip is `rotation + HFOV` wide, not `rotation` — mapping all of it
+//     onto 360° was a silent ~18% horizontal scale error (see fullTurnCrop);
+//   • cropping the drift band by the CLAMP rather than by where the frames
+//     actually landed left a thin black strip on a capture that wobbles.
+// ===========================================================================
+{
+  const TAU = Math.PI * 2;
+  const SW = 720, SH = 360;              // ground-truth equirectangular scene
+  const HFOV = 65 * Math.PI / 180;
+  const FW = 160, FH = 120;              // small frames — this has to run fast
+  const ALIGN_W = 120;
+
+  // Smooth, globally-unique scene. Deliberately LOW frequency: the metric
+  // below is a mean absolute difference, and a fine checkerboard would be
+  // dominated by sub-pixel phase rather than by geometry, which is exactly how
+  // a correct stitch can be made to look wrong (and a wrong one right).
+  const scene = new Uint8Array(SW * SH * 3);
+  for (let y = 0; y < SH; y++) {
+    for (let x = 0; x < SW; x++) {
+      const i = (y * SW + x) * 3, lon = (x / SW) * TAU;
+      scene[i] = 128 + 100 * Math.sin(lon * 3) * Math.cos((y / SH) * TAU);
+      scene[i + 1] = 128 + 100 * Math.sin(lon * 5 + 1.1);
+      scene[i + 2] = 128 + 100 * Math.cos(lon * 2 + (y / SH) * 4);
+    }
+  }
+  function sampleScene(lon, lat, out) {
+    let u = (lon / TAU + 0.5) * SW;
+    u = ((u % SW) + SW) % SW;
+    const v = Math.max(0, Math.min(SH - 1, (0.5 - lat / Math.PI) * SH));
+    const x0 = Math.floor(u), y0 = Math.floor(v), x1 = (x0 + 1) % SW, y1 = Math.min(SH - 1, y0 + 1);
+    const fx = u - x0, fy = v - y0;
+    for (let c = 0; c < 3; c++) {
+      out[c] = scene[(y0 * SW + x0) * 3 + c] * (1 - fx) * (1 - fy)
+        + scene[(y0 * SW + x1) * 3 + c] * fx * (1 - fy)
+        + scene[(y1 * SW + x0) * 3 + c] * (1 - fx) * fy
+        + scene[(y1 * SW + x1) * 3 + c] * fx * fy;
+    }
+    return out;
+  }
+  // A real perspective camera at yaw ψ (and an optional pitch wobble) — the
+  // INVERSE of what the pipeline has to undo.
+  function renderFrame(yaw, pitch) {
+    const f = (FW / 2) / Math.tan(HFOV / 2);
+    const out = new Uint8Array(FW * FH * 3);
+    const cx = (FW - 1) / 2, cy = (FH - 1) / 2;
+    const cp = Math.cos(pitch || 0), sp = Math.sin(pitch || 0);
+    const px = [0, 0, 0];
+    for (let y = 0; y < FH; y++) {
+      for (let x = 0; x < FW; x++) {
+        const X = x - cx, Y0 = y - cy, Z0 = f;
+        const Y = Y0 * cp - Z0 * sp, Z = Y0 * sp + Z0 * cp;
+        const Xw = X * Math.cos(yaw) + Z * Math.sin(yaw);
+        const Zw = -X * Math.sin(yaw) + Z * Math.cos(yaw);
+        sampleScene(Math.atan2(Xw, Zw), Math.atan2(-Y, Math.hypot(Xw, Zw)), px);
+        const di = (y * FW + x) * 3;
+        out[di] = px[0]; out[di + 1] = px[1]; out[di + 2] = px[2];
+      }
+    }
+    return out;
+  }
+  const toGray = (rgb, w, h) => {
+    const g = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < g.length; i++, j += 3) g[i] = ((rgb[j] * 299 + rgb[j + 1] * 587 + rgb[j + 2] * 114) / 1000) | 0;
+    return g;
+  };
+
+  // The shipped pipeline, in the same order index.ts runs it.
+  function run(turnDeg, n, pitchJitter, useWarp) {
+    const frames = [];
+    for (let i = 0; i < n; i++) frames.push(renderFrame((turnDeg * Math.PI / 180) * i / (n - 1), Math.sin(i * 0.6) * (pitchJitter || 0)));
+    const alignCyl = SC.cylindricalDims(ALIGN_W, Math.round((FH * ALIGN_W) / FW), HFOV);
+    let offsets, alignWidth, focalAlign, warped, cw, ch;
+    if (useWarp) {
+      const small = frames.map((f) => SC.warpRgbaToCylindricalGray(SC.rgbToRgba(f, FW, FH), FW, FH, ALIGN_W, HFOV));
+      offsets = [];
+      for (let i = 0; i + 1 < small.length; i++) {
+        offsets.push(SC.estimateOffset(small[i].gray, small[i].width, small[i].height, small[i + 1].gray, small[i + 1].width, small[i + 1].height, { maxDx: 40, maxDy: 5, subPixel: true }));
+      }
+      alignWidth = alignCyl.width; focalAlign = alignCyl.focal;
+      warped = frames.map((f) => SC.warpToCylindrical(f, FW, FH, HFOV));
+      cw = warped[0].width; ch = warped[0].height;
+    } else {
+      // The BEFORE pipeline, for contrast: no warp, whole-frame paste,
+      // unbounded vertical drift — exactly what shipped before this round.
+      const small = frames.map((f) => SC.toGrayscaleDownsampled(SC.rgbToRgba(f, FW, FH), FW, FH, ALIGN_W));
+      offsets = [];
+      for (let i = 0; i + 1 < small.length; i++) {
+        offsets.push(SC.estimateOffset(small[i].gray, small[i].width, small[i].height, small[i + 1].gray, small[i + 1].width, small[i + 1].height, { maxDx: 40, maxDy: 5, subPixel: true }));
+      }
+      alignWidth = ALIGN_W; focalAlign = (ALIGN_W / 2) / Math.tan(HFOV / 2);
+      warped = frames.map((f) => ({ rgb: f, width: FW, height: FH, focal: (FW / 2) / Math.tan(HFOV / 2) }));
+      cw = FW; ch = FH;
+    }
+    const sf = cw / alignWidth;
+    const keep = Math.min(n, SC.framesForFullTurn(offsets, focalAlign));
+    const kept = offsets.slice(0, keep - 1);
+    const clamp = Math.max(1, Math.round(ch * 0.02));
+    const pl = useWarp ? SC.cumulativePlacementsClamped(kept, sf, clamp) : SC.cumulativePlacements(kept, sf);
+    const b = SC.computeBounds(pl, cw, ch);
+    const canvas = SC.makeCanvas(b.width, b.height, [20, 20, 20]);
+    const feather = Math.max(1, Math.round(cw * (useWarp ? 0.02 : 0.12)));
+    for (let i = 0; i < keep; i++) {
+      if (useWarp) {
+        const bd = SC.bandForFrame(pl, i, cw, feather);
+        SC.pasteFrameBand(canvas, b.width, b.height, warped[i].rgb, cw, ch, pl[i].x - b.minX, pl[i].y - b.minY, bd.x0, bd.x1, feather);
+      } else {
+        SC.pasteFrame(canvas, b.width, b.height, warped[i].rgb, cw, ch, pl[i].x - b.minX, pl[i].y - b.minY, i === 0 ? 0 : feather);
+      }
+    }
+    let y0 = 0, hh = b.height;
+    if (useWarp) {
+      const ys = pl.map((q) => q.y);
+      y0 = Math.max(...ys) - b.minY;
+      hh = Math.max(1, Math.min(...ys) + ch - b.minY - y0);
+    }
+    const strip = SC.cropRgb(canvas, b.width, b.height, { x: 0, y: y0, width: b.width, height: hh });
+    let bg = 0;
+    for (let i = 0; i < strip.length; i += 3) if (strip[i] === 20 && strip[i + 1] === 20 && strip[i + 2] === 20) bg++;
+    const equi = SC.cylStripToEquirect(strip, b.width, hh, warped[0].focal, (hh - 1) / 2, 720);
+    return { equi, keep, n, bgPct: (100 * bg) / (b.width * hh), coverageDeg: Math.abs(SC.coverageYaw(offsets, focalAlign)) * 180 / Math.PI };
+  }
+
+  // Ground truth at the recovered panorama's own size and vertical field. The
+  // capture starts at an arbitrary yaw, so the comparison searches the whole
+  // width for the phase — ⚠️ a narrow search here reports a CORRECT stitch as
+  // badly wrong, which cost a full diagnostic pass during development.
+  function bestDiff(equi) {
+    const vaov = (equi.height / equi.width) * TAU, phiMax = vaov / 2, px = [0, 0, 0];
+    const at = (x, y, sx, sy) => {
+      const phi = phiMax - ((y + sy) / equi.height) * vaov;
+      return sampleScene(((x + sx) / equi.width) * TAU - Math.PI, phi, px);
+    };
+    const score = (sx, sy) => {
+      let s = 0, c = 0;
+      for (let y = 2; y < equi.height - 2; y += 3) {
+        for (let x = 0; x < equi.width; x += 3) {
+          const g = at(x, y, sx, sy);
+          for (let k = 0; k < 3; k++) { s += Math.abs(equi.rgb[(y * equi.width + x) * 3 + k] - g[k]); c++; }
+        }
+      }
+      return s / c;
+    };
+    let best = { v: Infinity, sx: 0, sy: 0 };
+    for (let sx = 0; sx < equi.width; sx += 6) for (let sy = -4; sy <= 4; sy += 1) { const v = score(sx, sy); if (v < best.v) best = { v, sx, sy }; }
+    for (let sx = best.sx - 6; sx <= best.sx + 6; sx += 1) for (let sy = best.sy - 1; sy <= best.sy + 1; sy += 0.5) { const v = score(sx, sy); if (v < best.v) best = { v, sx, sy }; }
+    return best.v;
+  }
+
+  const after = run(360, 48, 0, true);
+  const before = run(360, 48, 0, false);
+  const wobble = run(360, 48, 0.035, true);
+  const over = run(430, 48, 0, true);
+
+  ok(`[11] a full turn recovers the scene it was rendered from (mean abs diff ${after.d = bestDiff(after.equi).toFixed(2)}/255 — the scene's own contrast is ~64)`,
+    (after.d = +after.d) < 4);
+  ok(`[11] …and the un-warped pipeline this replaces does NOT (${before.d = bestDiff(before.equi).toFixed(2)}/255), so the metric genuinely discriminates`,
+    +before.d > +after.d * 8);
+  ok(`[11] the panorama has NO uncovered pixels (${after.bgPct.toFixed(2)}% background)`, after.bgPct < 0.01);
+  ok(`[11] …while the un-warped pipeline leaves real holes (${before.bgPct.toFixed(2)}%) — the owner's "black space"`, before.bgPct > 1);
+  ok(`[11] a capture that WOBBLES vertically still has no uncovered pixels (${wobble.bgPct.toFixed(2)}%) — the covered-band crop, not the drift clamp, is what guarantees this`,
+    wobble.bgPct < 0.01);
+  ok(`[11] …and still recovers the scene (${wobble.d = bestDiff(wobble.equi).toFixed(2)}/255)`, +wobble.d < 4);
+  ok(`[11] the measured coverage of a true 360° turn is accurate (${after.coverageDeg.toFixed(0)}°)`,
+    Math.abs(after.coverageDeg - 360) < 8);
+  ok(`[11] OVER-ROTATION IS TRIMMED: a 430° capture keeps ${over.keep} of ${over.n} frames, not all of them`,
+    over.keep < over.n && over.keep > over.n * 0.6);
+  ok(`[11] …and the trimmed panorama is still a correct one (${over.d = bestDiff(over.equi).toFixed(2)}/255), not merely shorter`, +over.d < 6);
+  ok(`[11] …and it too has no uncovered pixels (${over.bgPct.toFixed(2)}%)`, over.bgPct < 0.01);
+  ok('[11] the output is LANDSCAPE and wider than 2:1 — a panorama, never the bowed arc it replaced',
+    after.equi.width / after.equi.height > 2);
 }
 
 // ---------------------------------------------------------------------------
