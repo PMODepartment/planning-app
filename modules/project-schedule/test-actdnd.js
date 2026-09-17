@@ -101,11 +101,19 @@ ok(/id="b-load"/.test(src), 'the ← button is still there — drag ADDS a gestu
   };
   // the mover reassigns `catSel`, so it must be a closure var of the compiled scope, exactly
   // as it is a closure var of stActivities. A parameter would take the assignment instead.
-  const api = new Function('cfg', 'markDirty', 'render', `
+  /* ⚠ `_catLoad` gained three dependencies on 2026-09-17 — it now sorts the build into trade
+     order and OFFERS a merge when several same-trade codes arrive at once. They are stubbed here
+     because what this suite tests is the MOVE; `test-actsetup` executes the merge itself.
+     ⚠ `psConfirm` is a no-op rather than an auto-yes: a stub that accepted would make every
+     assertion below measure a merged row instead of the rows that moved. */
+  let asked = 0;
+  const api = new Function('cfg', 'markDirty', 'render', 'psConfirm', 'GLABEL', 'sortActivities', `
     var catSel = ['c3', 'c1'];
+    var actSel = [];
     ${MOVER}
-    return { load: _catLoad, ticked: function () { return catSel.slice(); } };
-  `)(cfg, () => { dirty++; }, () => { renders++; });
+    return { load: _catLoad, ticked: function () { return catSel.slice(); },
+             picked: function () { return actSel.slice(); } };
+  `)(cfg, () => { dirty++; }, () => { renders++; }, () => { asked++; }, {}, () => {});
 
   eq(api.load([]), false, 'an empty id list moves nothing and reports it');
   eq(api.load(['nope']), false, 'an id that is not in the list moves nothing');
@@ -123,6 +131,12 @@ ok(/id="b-load"/.test(src), 'the ← button is still there — drag ADDS a gestu
      'a multi-code move keeps the LIST order (c1 before c3), not the order given');
   // ⚠ the ticks go with them, or ← would try to move rows that are no longer in the list
   eq(api.ticked(), [], 'the moved codes lose their ticks');
+  /* ⚠ The two-code move above is all one (absent) trade, so the merge offer fires — and the rows
+     are in the build BEFORE it is asked. That ordering is the point: cancelling must leave the
+     planner with what they asked for, not with nothing and a dismissed dialog. */
+  eq(asked, 1, 'a multi-code move OFFERS a merge, once');
+  eq(cfg.activities.map(a => a.id), ['a0', 'c2', 'c1', 'c3'],
+     '… and the rows are already in the build when it asks');
 })();
 
 /* ==========================================================================================
@@ -173,7 +187,11 @@ ok(src.indexOf('id="b-tmpl"') < 0 && src.indexOf('id="b-upl"') < 0,
 const SURVIVORS = [
   ['PC Exterior Walls',   "Finance's own class-code chart name"],
   ['PC Interior Walls',   "Finance's own class-code chart name"],
-  ['LD Exterior Lighting Works', "Finance's own class-code chart name"],
+  /* ⚠ `LD Exterior Lighting Works` WAS on this list and is not any more — not because the
+     Interior/Exterior sweep took it, but because the owner retired class code 39350 outright on
+     2026-09-17 along with the other six LD sub-works. Dropped from the guard rather than the guard
+     being weakened: the five below still carry "Interior"/"Exterior" for reasons that have nothing
+     to do with a duration basis, and this suite still fails if a sweep renames any of them. */
   ['exterior concrete',   'WEATHER EXPOSURE, not the duration basis'],
   ['interior fit-out',    'WEATHER EXPOSURE, not the duration basis'],
   ['Exterior Wall Complete', "verbatim from the LSM training deck's own chart"],
@@ -192,8 +210,13 @@ ok(/table\.sbld-xl th, table\.sbld-xl td \{ border:1px solid var\(--pd-line\); p
    'cell padding tightens with the type (smaller type in the same box reads as a gap)');
 ok(/table\.sbld-xl thead th \{[^}]*color:var\(--pd-muted\)/.test(src),
    'the header is muted, matching .pd-table th — it was competing with the data for the eye');
-// ⚠ font:inherit on the cell controls is what carries the rung into every editable cell
-ok(/table\.sbld-xl input, table\.sbld-xl select \{[^}]*font:inherit/.test(src),
+// ⚠ font:inherit on the cell controls is what carries the rung into every editable cell.
+// ⚠⚠ RETARGETED, NOT WEAKENED: this used to pin the literal selector
+// `table.sbld-xl input, table.sbld-xl select {`. That rule now excludes checkboxes
+// (`input:not([type="checkbox"])`), because the bare `width:100%` in it was stretching the new
+// gutter checkbox across its whole cell - the third time a text-field width rule has caught a
+// checkbox in this app. The property under test is unchanged; only the selector moved.
+ok(/table\.sbld-xl input:not\(\[type="checkbox"\]\), table\.sbld-xl select \{[^}]*font:inherit/.test(src),
    'the editable cells inherit the rung rather than restating it');
 
 report();
