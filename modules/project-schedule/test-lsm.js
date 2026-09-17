@@ -1221,6 +1221,28 @@ function grpRow(name, anc, acts, idx, field) {
   const h = M.clashHTML();
   ok(/ps-lsmclash-strip/.test(h), 'the strip renders');
   eq((h.match(/ps-lsmclash-chip/g) || []).length, 3, 'one navigable chip per clash');
+  /* ⚠⚠ THE TOGGLE AND THE CHIPS MUST NOT BE SELECTABLE BY ONE ANOTHER'S HANDLER.
+     `renderActLegend` binds two loops over this strip: one turns the clash drawing off, the
+     other navigates to a storey. Both controls are `<button type="button">` carrying
+     `data-lsmclash`, so while the loops selected `[data-lsmclash]` and `button[data-lsmclash]`
+     the second matched every element the first had bound — and `onclick =` replaces rather than
+     adds. The toggle was overwritten before it could ever run, and because its value is the
+     STRING "0" (truthy), pressing Hide ran the NAVIGATION handler with "0" as a row id:
+     selection cleared, repaint, clashes unchanged. Executed over the shipped markup, clicking
+     Hide fired NAVIGATE:0.
+     Two assertions, because either alone can be satisfied while the bug is present: the markup
+     must keep the classes disjoint, AND the handlers must select by them. */
+  ok(!/class="[^"]*ps-lsmclash-chip[^"]*ps-lsmclash-toggle|class="[^"]*ps-lsmclash-toggle[^"]*ps-lsmclash-chip/.test(h),
+     'no element is both a clash chip and the Hide toggle');
+  const leg = sliceFn('renderActLegend') || '';
+  ok(/querySelectorAll\('button\.ps-lsmclash-toggle\[data-lsmclash\]'\)/.test(leg),
+     'the toggle handler selects the TOGGLE class, not the bare attribute');
+  ok(/querySelectorAll\('button\.ps-lsmclash-chip\[data-lsmclash\]'\)/.test(leg),
+     'and the navigation handler selects the CHIP class');
+  const legCode = leg.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  ok(!/querySelectorAll\('\[data-lsmclash\]'\)/.test(legCode) &&
+     !/querySelectorAll\('button\[data-lsmclash\]'\)/.test(legCode),
+     'and neither still selects every element carrying the attribute');
   /* ⚠️ Counted by CLASS, not by `data-lsmclash=`: the Hide/Show toggle carries that attribute
      too, so the attribute count is 4 for 3 clashes. The toggle is asserted, not absorbed. */
   eq((h.match(/ps-lsmclash-toggle/g) || []).length, 1, 'and one Hide toggle beside them');
@@ -1820,7 +1842,10 @@ function grpRow(name, anc, acts, idx, field) {
     });
   ok(/_setLsmTop\s*\(/.test(code), 'the Roof/Ground buttons call the persisting setter');
   ok(/data-lsmclash="/.test(code), 'clash chips are emitted');
-  ok(/querySelectorAll\('button\[data-lsmclash\]'\)/.test(code), 'and they are wired to navigate');
+  /* ⚠ Was `button[data-lsmclash]`, which is precisely the selector that swallowed the Hide
+     toggle's own handler — see the note beside the chip-count assertion above. */
+  ok(/querySelectorAll\('button\.ps-lsmclash-chip\[data-lsmclash\]'\)/.test(code),
+     'and they are wired to navigate, by the CHIP class');
   ok(/_lsmClashHTML\(\)/.test(code), 'the clash strip is rendered by the legend');
   ok(/cmpWorkName/.test(sliceFn('_lsmSeq') || ''), 'the declared sequence reuses cmpWorkName');
   ok(code.indexOf('id="ps-alg-lsmstat"') !== -1, 'the Status switch is emitted');

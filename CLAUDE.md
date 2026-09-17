@@ -104,7 +104,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-17 (af) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
+### 2026-09-17 (ag) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
 
 ⚠⚠ **Re-lettered `(aa)` → `(ab)` → `(ad)` → `(ae)` across three merges, AND re-versioned `20260917zx` →
 `20260917zzd` — the same two-sessions-one-token collision this log has now recorded six times, both
@@ -212,6 +212,73 @@ pre-existing and neither this change's nor the merge's.
 `MODULE_V` → `20260917zzd`, re-derived from what `origin/main` actually carries **after**
 integrating (`zza`) rather than guessed at beforehand — which is the rule that keeps failing to stick.
 No shared asset changed.
+
+### 2026-09-17 (af) — The clash toggle has never fired: two handlers, overlapping selectors, and `onclick =` replaces
+
+Owner's item 5.2: *"Let's also add the option not to show the clashes."*
+
+The option was built and every part of it is correct — `_lsmClashShow`, `setLsmClashShow`, the
+`ps_lsmclash` localStorage key, the strip's Hide/Show button, and the reads in **both** the chip strip
+and the on-bar marks. None of it was reachable.
+
+### ⚠️⚠️ TWO BINDING LOOPS IN `renderActLegend()`, AND THE SECOND ATE THE FIRST
+
+```
+host.querySelectorAll('[data-lsmclash]')        -> setLsmClashShow(…)     (~52680)
+host.querySelectorAll('button[data-lsmclash]')  -> navigate to the storey (~52707)
+```
+
+Every clash chip **and** the toggle is a `<button type="button">` carrying `data-lsmclash`, so the
+second selector matched every element the first had just bound — and `onclick =` **replaces** rather
+than adds. The toggle's handler was overwritten before it could ever run.
+
+**Measured, not read.** The two loops were executed in their shipped order over the shipped markup
+(two chips + one Hide button): selector 1 matched 3, selector 2 matched the same 3, and clicking
+**Hide fired `NAVIGATE:0`**. After the fix, the same test fires `TOGGLE:0` then `NAVIGATE:row-7`,
+with **0 elements matched by both** selectors.
+
+⚠️ **And it was worse than a dead button.** The navigation handler guards with
+`var id = b2.dataset.lsmclash; if (!id) return;` — the toggle's value is the *string* `"0"`, which is
+truthy, so it proceeded: `selId = "0"`, a repaint, and a scroll hunt for a row that does not exist.
+Pressing **Hide** therefore silently **cleared the planner's row selection** and redrew, which reads as
+"the button did something" while the clashes stayed exactly where they were. A button that does
+nothing is findable; a button that does the wrong thing quietly is not.
+
+Both loops now select by class — `.ps-lsmclash-toggle` and `.ps-lsmclash-chip` — which are already on
+the markup and cannot overlap however the attribute is spelled.
+
+### ⚠️ A SOURCE ASSERTION THAT READ ITS OWN COMMENT
+
+The new negative check (*"neither still selects every element carrying the attribute"*) **failed on its
+first run against the fixed code**. The fix's explanatory comment quotes the old selector verbatim, and
+`sliceFn` returns the function *with its comments*, so the regex matched prose describing the bug
+rather than code containing it. It strips block comments before testing now. Every grep-the-source
+assertion in this suite has that exposure; this is the first one to have been bitten by it.
+
+One pre-existing assertion also asserted the **old** selector (*"and they are wired to navigate"*) and
+had to follow the fix — the same supersession shape as *(ad)*'s six.
+
+**Verified:** `test-lsm` **684/684** (was 680) · the same suite against the pre-fix source fails **4**,
+so every new check discriminates · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap`
+0 findings · inline scripts parse. `modules-grid.js` `?v=` → `20260917zzd`.
+
+### ⚠️ STILL OPEN, AND IT NEEDS THE OWNER: "the gantt bar still doesn't fold into one gantt bar"
+
+Reported mid-change, with a screenshot of OPW101. What the screenshot shows is that the **row** fold is
+working — the rows are `Ground Floor(96)`, `Floor 1(3)`, `2ND Floor(96)`, one per storey, no ladder —
+and that `Floor 1` carries **two** bars at different vertical offsets, which is `_lsmBarsHTML` drawing
+one **lane per keyed trade**.
+
+Read against the code, `_lsmAgg` already folds the way the owner described it in the first place:
+activities are bucketed by lane value, so **many activities of one trade on one storey become one
+bar**. What it does not do is merge *different trades* into a single bar — and it deliberately drops
+any activity whose trade is not a curated lane (`var ln = lm.map[v]; if (!ln) continue;` —
+*"not curated -> not on this chart"*), which is the most likely reason a 96-activity storey shows one
+short bar.
+
+So the design and the expectation differ, and the difference is a decision about his chart rather than
+a defect I can name: one bar per storey with every trade merged is a different chart from a
+time-location chart with a line per trade. **Asked rather than guessed.**
 
 ### 2026-09-17 (ae) — The LSM fold was asking the wrong resolver which level is the storey
 

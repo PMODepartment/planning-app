@@ -52771,7 +52771,14 @@
        this same render — a handler bound anywhere else would be pointing at a node this
        function has already replaced. The button carries the state it sets rather than a
        toggle, so a stale button cannot invert the flag. */
-    host.querySelectorAll('[data-lsmclash]').forEach(function (b) {
+    /* ⚠⚠ SELECTED BY CLASS, NOT BY THE BARE ATTRIBUTE. This used to be
+       `querySelectorAll('[data-lsmclash]')`, which also matched every clash CHIP — and the
+       navigation loop further down binds `button[data-lsmclash]`, which matched all of them
+       again. `onclick =` replaces, so the later loop overwrote this one on every element
+       including the toggle itself, and pressing Hide ran the NAVIGATION handler with the
+       string "0" as a row id: selection cleared, repaint, clashes unchanged. The two loops
+       now select disjoint classes and cannot reach each other's buttons. */
+    host.querySelectorAll('button.ps-lsmclash-toggle[data-lsmclash]').forEach(function (b) {
       b.onclick = function () { setLsmClashShow(b.dataset.lsmclash === '1'); };
     });
     applyLegendFold();
@@ -52798,7 +52805,8 @@
        it would need a two-pass build. Selecting and revealing the storey answers the same question
        ("show me that floor") with the machinery that already exists, and leaves every other floor on
        screen for comparison, which is the whole point of the chart. */
-    host.querySelectorAll('button[data-lsmclash]').forEach(function (b2) {
+    /* ⚠ `.ps-lsmclash-chip` only — see the note on the toggle loop above. */
+    host.querySelectorAll('button.ps-lsmclash-chip[data-lsmclash]').forEach(function (b2) {
       b2.onclick = function () {
         var id = b2.dataset.lsmclash; if (!id) return;
         selId = id;
