@@ -3365,7 +3365,8 @@
     .ps-sc-tbl { width:100%; border-collapse:collapse; font-size:var(--pd-fs-sm); }
     .ps-sc-tbl td { padding:3px 0; vertical-align:top; color:var(--pd-ink); }
     .ps-sc-tbl td.k { white-space:nowrap; padding-right:12px; width:1%; }
-    .ps-kbd { display:inline-block; font:600 11px/1.4 var(--pd-font,inherit); background:var(--pd-bg); border:1px solid var(--pd-line);
+    .ps-kbd { display:inline-block; font-weight:700; font-size:var(--pd-fs-xs); line-height:1.4;
+      background:var(--pd-bg); border:1px solid var(--pd-line);
       border-bottom-width:2px; border-radius:var(--pd-radius); padding:1px 5px; color:var(--pd-ink); }
 
     /* ---- PHONE read-only list (<=700px) ---------------------------------
@@ -3444,7 +3445,15 @@
       .ps-m-more { margin-top:4px; }
       /* List/Gantt toggle */
       .ps-m-seg { display:inline-flex; margin-left:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); overflow:hidden; }
-      .ps-m-seg button { border:0; background:var(--pd-card); color:var(--pd-muted); font:600 11.5px/1 inherit; padding:6px 13px; cursor:pointer; }
+      /* ⚠⚠ WAS `font:600 11.5px/1 inherit`, which is INVALID — `inherit` is not a font-family in
+         a shorthand, so the whole declaration was discarded and this button had NO size, NO weight
+         and the user agent's own font. Longhand, so each part stands or falls on its own.
+         ⚠ This is a VISIBLE change: the control has been rendering at the UA's ~13.3px, not at the
+         11.5px the shorthand appeared to ask for. --pd-fs-xs (11px) is the nearest rung to the
+         author's intent; it is the first time the rule has had any effect at all. */
+      .ps-m-seg button { border:0; background:var(--pd-card); color:var(--pd-muted);
+        font-family:inherit; font-weight:700; font-size:var(--pd-fs-xs); line-height:1;
+        padding:6px 13px; cursor:pointer; }
       .ps-m-seg button.on { background:var(--pd-red); color:#fff; }
       .ps-m-ro { margin-left:0; }
       /* --- Mobile Gantt (read-only, touch-scroll; self-contained, not the desktop pane) --- */
@@ -4521,6 +4530,15 @@
        rules could never match again, and a rule that cannot match reads as working styling to
        everyone who comes after. */
     table.sbld-xl td.xl-cell { min-width:70px; max-width:340px; padding:0; }
+    /* ⚠⚠ NUMBERS RIGHT, AND TABULAR. These columns are `num: true` in XL_COLS and their cells
+       already say `inputmode="numeric"`; they were still rendering flush left with proportional
+       figures, so 7 and 14 and 120 did not line up and the digits shifted row to row. The rule
+       reaches the <input>, not the cell: the cell has padding:0 and the input is the thing with
+       the text in it (it inherits `font` but never inherited alignment).
+       ⚠ `table.sbld-tbl td.num` up at the Scope table has had exactly this since it was written.
+       One of the two tables got it; this is the same decision, not a new one. */
+    table.sbld-xl th.xl-num { text-align:right; }
+    table.sbld-xl td.xl-num input { text-align:right; font-variant-numeric:tabular-nums; }
     table.sbld-xl td.xl-rowact { width:38px; text-align:center; }
     table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
     table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
@@ -4607,7 +4625,7 @@
                        border-bottom:1px solid var(--pd-line); }
       .sbld-man-step { width:auto; flex:none; white-space:nowrap; }
     }
-    .sbld-help-body kbd { display:inline-block; padding:1px 6px; border:1px solid var(--pd-line); border-bottom-width:2px; border-radius:var(--pd-radius); background:var(--pd-bg); font:600 11px/1.4 monospace; color:var(--pd-ink); }
+    .sbld-help-body kbd { display:inline-block; padding:1px 6px; border:1px solid var(--pd-line); border-bottom-width:2px; border-radius:var(--pd-radius); background:var(--pd-bg); font-family:var(--pd-mono); font-weight:700; font-size:var(--pd-fs-xs); line-height:1.4; color:var(--pd-ink); }
     .sbld-tb-sep2 { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
     /* Copied cells — Excel's marching ants, so a Ctrl+C is visibly a Ctrl+C. Drawn as an inset
        box-shadow rather than an outline so it survives the cell's own borders and never shifts
@@ -4744,7 +4762,7 @@
     .sbld-flow-s > i { font-style:normal; font-weight:800; font-size:var(--pd-fs-micro);
       width:17px; height:17px; flex:none; border-radius:50%; display:inline-flex;
       align-items:center; justify-content:center; background:var(--pd-line); color:var(--pd-ink); }
-    .sbld-flow-s.now { color:var(--pd-ink); font-weight:600; }
+    .sbld-flow-s.now { color:var(--pd-ink); font-weight:700; }
     .sbld-flow-s.now > i { background:var(--pd-red); color:#fff; }
     .sbld-flow-s.done > i { background:var(--pd-ok); color:#fff; }
     .sbld-flow-hint { flex:1 1 220px; line-height:1.5; }
@@ -4785,7 +4803,7 @@
       font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .sbld-lvlsum b { font-size:var(--pd-fs-body); font-weight:800; color:var(--pd-ink);
       font-variant-numeric:tabular-nums; margin-right:2px; }
-    .sbld-lvlsum-key { padding-left:14px; border-left:1px solid var(--pd-line); color:var(--pd-ink); font-weight:600; }
+    .sbld-lvlsum-key { padding-left:14px; border-left:1px solid var(--pd-line); color:var(--pd-ink); font-weight:700; }
     .sbld-lvlsum-tw { margin-left:auto; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
     @media (max-width:760px){ .sbld-lvlsum-tw { margin-left:0; } .sbld-flow { gap:8px; } }
     /* ==== psAsk — the app's own prompt()/confirm() =====================================
@@ -34058,7 +34076,7 @@
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
-    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
+    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 98, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 98, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
     // activity the push creates. Everything the builder produces lands in the EXECUTION phase, so
@@ -38486,7 +38504,7 @@
       var CW = function (c) { return xColW[c.k] || (c.w || (c.k === 'name' ? 260 : 110)); };
       var totalW = 40 + cols.reduce(function (t, c) { return t + CW(c); }, 0) + 40;
       var colgroup = '<colgroup><col style="width:40px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '<col style="width:40px" /></colgroup>';
-      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c, ci) { return '<th data-ci="' + ci + '">' + e2(c.label) + '<span class="xl-colgrip" data-ci="' + ci + '" title="Drag to resize this column"></span></th>'; }).join('') + '<th class="xl-rowact"></th></tr>';
+      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c, ci) { return '<th data-ci="' + ci + '"' + (c.num ? ' class="xl-num"' : '') + '>' + e2(c.label) + '<span class="xl-colgrip" data-ci="' + ci + '" title="Drag to resize this column"></span></th>'; }).join('') + '<th class="xl-rowact"></th></tr>';
       /* ⚠️⚠️ THE GUARD IS THE IMPORTANT HALF. With the chart not yet loaded, `ccByCode`
          answers null for EVERY code, and an unguarded test would mark a correct programme as
          entirely unmatchable — a false accusation is worse than no warning. Says nothing until
@@ -38508,7 +38526,7 @@
                reporting "not scheduled". Covers `+ Library` and hand-typed codes too, not just
                the seed. */
             var _bad = (c.k === 'code') && _seedCodeUnknown(a.code);
-            return '<td class="xl-cell' + (_bad ? ' sbld-badcode' : '') + '" data-r="' + r +
+            return '<td class="xl-cell' + (c.num ? ' xl-num' : '') + (_bad ? ' sbld-badcode' : '') + '" data-r="' + r +
               '" data-c="' + ci + '"' +
               (_bad ? ' title="' + e2('This code is not in the class-code chart, so a BOQ line can never'
                 + ' match it. Pick one from the library, or read the codes off the project BOQ.') + '"' : '') +
