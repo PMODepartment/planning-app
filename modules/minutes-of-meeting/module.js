@@ -1451,34 +1451,50 @@ window.MinutesOfMeeting = (function () {
     if (!meetings.length) {
       return '<div class="il-empty" style="padding:20px;">No meeting matches this filter.</div>';
     }
-    return meetings.map(function (m) {
+    /* ==== ONE TABLE, WITH A GROUP ROW PER MEETING ==========================================
+       Owner 2026-09-17: *"minutes by meeting tables are not aligned — fix this."*
+       ⚠️⚠️ THEY COULD NOT BE ALIGNED: THERE WERE THREE OF THEM. Each meeting rendered its
+       OWN `<table>` inside its own card, and a table sizes its columns from its own content — so
+       *Department*, *Status* and *Responsible* landed at a different x in every card, and a meeting
+       whose longest minute was 90 characters pushed them somewhere else again. No amount of width
+       tuning fixes that while they are separate tables; the columns have to be the SAME columns.
+       ⚠️ This is the app's shared grouped-table idiom — `pd-table pd-proj-table` with
+       `tr.pd-grp` heading rows, which `dashboard.css` already styles and already remaps for dark
+       mode. It is the same pattern the portfolio tables were unified onto, so alignment is a
+       property of the markup rather than something to maintain.
+       ⚠️ The meeting heading keeps `data-openmom`, so clicking a group still opens that
+       meeting — the behaviour the card head used to carry. */
+    var COLS = '<colgroup><col style="width:56px;"><col><col style="width:150px;">' +
+               '<col style="width:120px;"><col style="width:170px;"></colgroup>';
+    var body = meetings.map(function (m) {
       var its = momItemsOf(m.id);
       var open = its.filter(function (it) { return momItemStatus(it) !== 'Closed'; }).length;
-      return '<div class="pd-card il-mom-mgroup">' +
-        '<div class="il-mom-mgrouphead" data-openmom="' + Fmt.esc(m.id) + '">' +
-          '<span class="il-mom-mgroupt">' + Fmt.esc(m.title || '(untitled)') + '</span>' +
-          '<span class="il-mom-mgroupm">' +
-            (m.meeting_date ? Fmt.esc(Fmt.date(m.meeting_date)) + ' · ' : '') +
-            its.length + ' minute' + (its.length === 1 ? '' : 's') +
-            (its.length ? ' · ' + open + ' open' : '') +
-            (momDashStarred(m) ? ' · ★' : '') +
-          '</span></div>' +
-        (its.length
-          ? '<table class="pd-table il-mom-mgrouptbl"><thead><tr><th>No.</th><th>Minute</th>' +
-            '<th>Department</th><th>Status</th><th>Responsible</th></tr></thead><tbody>' +
-            its.map(function (it, i) {
-              return '<tr data-openmom="' + Fmt.esc(m.id) + '">' +
-                '<td>' + Fmt.esc(it.item_no || String((it.seq == null ? i : it.seq) + 1)) + '</td>' +
-                '<td>' + Fmt.esc(clip(it.action_item || it.description || it.issue || '(blank)', 90)) + '</td>' +
-                '<td>' + Fmt.esc(momItemDept(it) || '—') + '</td>' +
-                '<td><span class="il-pill ' + statusClass(momItemStatus(it)) + '">' +
-                  Fmt.esc(momItemStatus(it)) + '</span></td>' +
-                '<td>' + Fmt.esc(championText(it.owner_ids, it.owner) || '—') + '</td>' +
-              '</tr>';
-            }).join('') + '</tbody></table>'
-          : '<p class="il-mom-note">No minute was recorded at this meeting.</p>') +
-      '</div>';
+      var head = '<tr class="pd-grp il-mom-grp" data-openmom="' + Fmt.esc(m.id) + '"><td colspan="5">' +
+        '<span class="il-mom-grpt">' + Fmt.esc(m.title || '(untitled)') + '</span>' +
+        '<span class="il-mom-grpm">' +
+          (m.meeting_date ? Fmt.esc(Fmt.date(m.meeting_date)) + ' · ' : '') +
+          its.length + ' minute' + (its.length === 1 ? '' : 's') +
+          (its.length ? ' · ' + open + ' open' : '') +
+          (momDashStarred(m) ? ' · ★' : '') +
+        '</span></td></tr>';
+      if (!its.length) {
+        return head + '<tr class="il-mom-grpempty"><td colspan="5">' +
+          'No minute was recorded at this meeting.</td></tr>';
+      }
+      return head + its.map(function (it, i) {
+        return '<tr data-openmom="' + Fmt.esc(m.id) + '">' +
+          '<td>' + Fmt.esc(it.item_no || String((it.seq == null ? i : it.seq) + 1)) + '</td>' +
+          '<td class="il-mom-mintxt">' + Fmt.esc(clip(it.action_item || it.description || it.issue || '(blank)', 90)) + '</td>' +
+          '<td>' + Fmt.esc(momItemDept(it) || '—') + '</td>' +
+          '<td><span class="il-pill ' + statusClass(momItemStatus(it)) + '">' +
+            Fmt.esc(momItemStatus(it)) + '</span></td>' +
+          '<td>' + Fmt.esc(championText(it.owner_ids, it.owner) || '—') + '</td>' +
+        '</tr>';
+      }).join('');
     }).join('');
+    return '<div class="il-mom-alltblwrap"><table class="pd-table pd-proj-table il-mom-alltbl">' +
+      COLS + '<thead><tr><th>No.</th><th>Minute</th><th>Department</th><th>Status</th>' +
+      '<th>Responsible</th></tr></thead><tbody>' + body + '</tbody></table></div>';
   }
 
   function renderMomDashboard() {
@@ -1577,7 +1593,10 @@ window.MinutesOfMeeting = (function () {
           (byMeetingList.length ? barLegendBottom : '') +
         '</div>' +
       '</div>' +
-      '<h4 class="il-mom-dashsec">Minutes by meeting</h4>' +
+      /* ⚠️ WAS ALSO "Minutes by meeting" — the same words as the chart card directly above it,
+         twice on one screen, for two different things. The card is a comparison; this is the
+         register underneath it. */
+      '<h4 class="il-mom-dashsec">Minutes in detail</h4>' +
       momDashByMeetingHTML();
 
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);

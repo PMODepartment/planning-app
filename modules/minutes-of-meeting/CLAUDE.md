@@ -1,5 +1,51 @@
 # Module: minutes-of-meeting
 
+## 2026-09-17 (a) — The minutes were three tables pretending to be one
+
+Owner: *"minutes by meeting tables are not aligned — fix this. Let's improve the UI for both light
+and dark mode. The current page looks a very early stage of a dashboard."*
+
+### They could not be aligned: there were three of them
+Every meeting rendered its **own `<table>`** inside its own card, and a table sizes its columns from
+its own content. Measured in a harness against the real stylesheets, at a 1,400px table, with the
+owner's own spread of minute lengths — the left edge of each column, per table:
+
+```
+BEFORE   table 0:   17,  75, 1022, 1165, 1269
+         table 1:   17,  82,  960, 1122, 1251
+         table 2:   17, 156,  466,  813, 1063     <- Department 556px from where it was above
+AFTER    every row: 17,  73,  976, 1126, 1246
+```
+
+Four of the five columns landed somewhere different in each card. No width tuning fixes that while
+they are separate tables — the columns have to BE the same columns.
+
+### One table, with a group row per meeting
+The app's shared grouped-table idiom: `pd-table pd-proj-table` with `tr.pd-grp` heading rows, which
+`dashboard.css` already styles and already remaps for dark mode. The same pattern the portfolio
+tables were unified onto in this session, so alignment is a property of the markup rather than
+something to keep tuning. The meeting heading keeps `data-openmom`, so clicking a group still opens
+that meeting.
+
+⚠️ `table-layout:fixed` with a `<colgroup>`, not auto layout: without it one 300-character minute
+still drags the other four columns around. The Minute column is the only one with no declared width,
+so it takes whatever the others leave — it is the column with something to say. Row heights measured
+uniform at 35px afterwards, with a 300-character minute in the first row.
+
+### And two things that made it read as unfinished
+**The heading appeared twice.** *"Minutes by meeting"* was the chart card AND the section under it —
+same words, one screen, two different things. The section is now **Minutes in detail**: the card is
+a comparison, this is the register.
+
+**The wide chart reserved 260px whatever it held.** ⚠️⚠️ The three tiles above it must keep that
+height — it is what makes Status / Department / Responsible line up as a row of three, which is the
+note on the rule itself. `.il-dash-wide` is alone on its own row, so the height buys no alignment
+there: a project with three meetings drew three bars above ~180px of nothing. Now `height:auto` with
+`max-height:260px`, so it grows to its content and then scrolls.
+
+Eight now-dead `.il-mom-mgroup*` rules removed with the cards they styled. `dark-remap` 0 findings.
+Bumped to `?v=20260917a`.
+
 ## 2026-09-16 (later) — The icon-dropdown this module wrote is now the app's — fmlozano
 
 See the root `CLAUDE.md` (2026-09-16 (c7)).
