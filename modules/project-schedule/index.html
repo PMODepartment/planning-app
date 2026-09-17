@@ -4068,6 +4068,28 @@
     /* ⚠️ The card arrives with the Cockpit's card classes on it (.pd-card.ps-ck-card) because that is
        where it is declared. Inside the setup panel it must not carry a second card's margin. */
     #sbld-wbs-host > .pd-card { margin:0; }
+    /* ---- The branch block inside a phase card (2026-09-17). ----
+       ⚠️ A CAPPED, SCROLLING BOX, not an auto-height one. The tree is virtualised off its
+       host's own clientHeight, so a host that grows to fit its content has no viewport to window
+       against and would paint every row — which on Execution's several hundred branches is the
+       thing virtualisation exists to prevent. The cap IS the viewport. */
+    .sbld-phwbs { height:240px; overflow:auto; border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); background:var(--pd-card); }
+    .sbld-phcard.is-exec .sbld-phwbs { height:360px; }   /* it holds most of the tree */
+    .sbld-phwbs-h { display:flex; align-items:baseline; gap:8px; margin:12px 0 6px;
+      font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em;
+      font-weight:700; color:var(--pd-muted); }
+    .sbld-phwbs-w { flex:1; text-transform:none; letter-spacing:0; font-weight:500; }
+    .sbld-phwbs-n { font-variant-numeric:tabular-nums; color:var(--pd-ink); }
+    .sbld-phcard-other .sbld-phname { color:var(--pd-muted); }
+    /* ⚠️⚠️ NO PHASE BADGE INSIDE A PHASE CARD. Every row carries a badge naming its phase,
+       which is useful in a tree of everything and is pure repetition in a card already titled
+       with that phase — on Planning it printed "Planning Phase" four more times, which is the
+       duplication this whole merge was asked for. INHERITED badges go too: they say the row
+       takes its phase from an ancestor, and inside the card that ancestor IS the card.
+       ⚠️ Kept in the Other card, where a root's phase is genuinely informative — that is
+       where a duplicate phase branch would show up, and its badge is how you would spot it. */
+    .sbld-phcard:not(.sbld-phcard-other) .sbld-phwbs .ps-wbs-phase { display:none; }
     /* step — lifecycle phases (Initiation / Planning / Close-out around the generated Execution
        Phase). Deliberately built on the builder's own .sbld-* look; only what this step needs is new. */
     /* Step note — states a fact about the step rather than instructing, so it is quieter than
@@ -5827,6 +5849,31 @@
   function _phaseBranchName(code) {
     var hit = (WBS_SKELETON || []).filter(function (n) { return phaseFromName(n.name) === code; })[0];
     return (hit && hit.name) || PHASE_LABELS[code] || code;
+  }
+  /* ==== WHICH ROOT BELONGS TO WHICH PHASE CARD ==============================================
+     The Project Phases step shows one card per lifecycle phase, each holding that branch's
+     subtree, plus an "Other branches" card for everything else.
+     ⚠️⚠️ THE PARTITION IS COMPUTED FROM THE FOUR CARDS' OWN SCOPE NODES, NOT FROM
+     `phaseFromName`. A project can carry TWO roots that both resolve to the same phase — the
+     skeleton's locked one and an import's unlocked one, which is a duplicate-root shape this
+     module has already shipped a bug for. Only ONE of them can be a card's scope, and if "Other"
+     excluded roots by PHASE the second would appear in no card at all: hidden, un-editable, and
+     still renumbering its siblings' dotted codes. Other therefore excludes the four node IDS the
+     cards actually used, so every root is either a card scope or visible in Other. */
+  function _sbPhaseScopeIds() {
+    var out = {};
+    ['initiation', 'planning', 'construction', 'closeout'].forEach(function (c) {
+      var b = _phaseBranchAt(null, c);
+      if (b) out[c] = b.id;
+    });
+    return out;
+  }
+  function _wbsOtherRootIds() {
+    var used = _sbPhaseScopeIds(), taken = {};
+    Object.keys(used).forEach(function (k) { taken[used[k]] = 1; });
+    return (WBS_NODES || []).filter(function (n) { return !(n.parent_id || null) && !taken[n.id]; })
+      .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); })
+      .map(function (n) { return n.id; });
   }
   function _nodePhase(nodeId) {
     if (!nodeId) return null;
@@ -7635,11 +7682,51 @@
   var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
   var _wbsCollapseInit = false;   // have we applied the large-tree default-collapse once?
   var WBS_ROWH = 34;        // fixed WBS-row height (must match .ps-wbs-row height) for virtualization
-  var _wbsFlat = [];        // flattened visible-row descriptors (source for the virtual window)
-  var _wbsWired = false;    // delegated listeners attached to #ps-wbs-tree once
-  var _wbsScrollRaf = false;
+  /* ==== THE TREE IS N VIEWS NOW, NOT ONE PANEL ===============================================
+     Owner 2026-09-17, on the Project Phases step: the four phase cards and the four top-level WBS
+     branches carry the same four names, and he asked for them merged so each card holds its own
+     branch's subtree. That needs the tree rendered in five places at once, which the old shape
+     could not do: it was ONE node borrowed between hosts, and the comment on sbWbsPark said so
+     outright — *"a second instance would share that state and fight over it."*
+
+     ⚠️⚠️ WHAT ACTUALLY HAD TO BECOME PER-VIEW IS SMALL, and that is why this is safe.
+     Every row handler is DELEGATED on the tree host (click / focusin / change / keydown / scroll),
+     so there are five listeners per view, not thirty per row. Only the flattened row list, the
+     painted-window key, the scroll rAF latch and the wired flag are per-view.
+     ⚠️ SELECTION, COLLAPSE AND SEARCH STAY GLOBAL, deliberately. `_wbsSel` is one node
+     app-wide, which is what lets ONE toolbar act unambiguously on whatever is selected in whichever
+     card. `_wbsCollapsed` is keyed by node id and a node appears in exactly one view, so it cannot
+     collide. Making these per-view would give five selections and five Add-WBS targets.
+     ⚠️ `tops` is the list of node ids a view renders at depth 0 — null means
+     "every root", which is the old behaviour exactly. A phase card passes its branch's CHILDREN, so
+     the branch name is not repeated inside the card that is already named after it. */
+  var WBS_VIEWS = [];
+  function wbsResetViews() { WBS_VIEWS.length = 0; }
+  function wbsAddView(host, tops) {
+    if (!host) return null;
+    var v = { host: host, tops: tops || null, flat: [], wired: false, raf: false, winKey: '' };
+    WBS_VIEWS.push(v); _wbsWire(v); return v;
+  }
+  /* ⚠️ Prune detached hosts on every read. The builder repaints its panel with innerHTML on
+     every step change, so a view's host can be orphaned without anything telling us; a stale entry
+     would then paint into a node no one can see and, worse, answer _wbsViewOf() for a row that is
+     no longer on screen. */
+  function _wbsLiveViews() {
+    WBS_VIEWS = WBS_VIEWS.filter(function (v) { return v.host && v.host.isConnected; });
+    return WBS_VIEWS;
+  }
+  function _wbsViewOf(id) {
+    if (!id) return null;
+    var vs = _wbsLiveViews();
+    for (var i = 0; i < vs.length; i++) {
+      for (var k = 0; k < vs[i].flat.length; k++) if (vs[i].flat[k].id === id) return vs[i];
+    }
+    return null;
+  }
+  /* The view the keyboard is talking to: the one holding the selection, else the first live one so
+     the first Arrow still has somewhere to land. */
+  function _wbsActiveView() { return _wbsViewOf(_wbsSel) || _wbsLiveViews()[0] || null; }
   var _wbsSel = null;   // selected WBS node id (drives the Add-activity parent preselect)
-  var _wbsWinKey = '';  // slice currently painted in the virtual window (skip no-op repaints — see _wbsRenderWindow)
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
   function calName(id, legacyText) { var c = calById(id); return c ? c.name : (legacyText || '—'); }
@@ -25242,7 +25329,7 @@
   }
   // ⚠️ `force` = "state changed, repaint regardless". Scroll passes nothing and is guarded by
   // `_gridWinKey` below; every other caller MUST force, or an edit/selection/filter would leave the
-  // painted window stale. Same pattern the WBS Manager already uses (`_wbsWinKey`).
+  // painted window stale. Same pattern the WBS Manager already uses (a per-view `winKey`).
   var _gridWinKey = '';
   function renderWindow(force) {
     if (!DL.length) { _gridWinKey = ''; return; }
@@ -29039,12 +29126,17 @@
       '<span class="ps-wbs-badge">' + (e.nKids ? e.nKids + ' sub' + (e.nKids === 1 ? '' : 's') + ' · ' : '') + e.nAct + ' activit' + (e.nAct === 1 ? 'y' : 'ies') + '</span>' +
       '<span class="ps-wbs-acts">' + acts + '</span></div>';
   }
-  // Paint only the rows in the current scroll viewport (+buffer) from _wbsFlat, offset by translateY.
+  // Paint only the rows in the current scroll viewport (+buffer) from the VIEW's own flat list,
+  // offset by translateY. One call per view; no argument means every live view.
   // This keeps the DOM small no matter how many rows are visible — broad searches / Expand-all included.
-  function _wbsRenderWindow() {
-    var host = document.getElementById('ps-wbs-tree'); if (!host) return;
+  function _wbsRenderWindow(v) {
+    /* ⚠️ No argument = every live view. 17 call sites say `renderWbsManager()` and several
+       say `_wbsRenderWindow()`; keeping the no-arg form meaning "all of them" is what let this
+       change stay surgical instead of touching every caller. */
+    if (!v) { _wbsLiveViews().forEach(function (x) { _wbsRenderWindow(x); }); return; }
+    var host = v.host; if (!host) return;
     var win = host.querySelector('.ps-wbs-win'); if (!win) return;
-    var total = _wbsFlat.length, vh = host.clientHeight || 500, top = host.scrollTop;
+    var total = v.flat.length, vh = host.clientHeight || 500, top = host.scrollTop;
     var first = Math.max(0, Math.floor(top / WBS_ROWH) - 8);
     var last = Math.min(total, Math.ceil((top + vh) / WBS_ROWH) + 8);
     // ⚠️ Skip the repaint when the same slice is already painted. Scrolling a row into view to focus
@@ -29052,10 +29144,10 @@
     // innerHTML — destroying the input we just focused mid-typing. The skeleton rebuild in
     // renderWbsManager() always empties `win`, so a genuine re-render still paints.
     var key = first + ':' + last + ':' + total;
-    if (key === _wbsWinKey && win.childElementCount) return;
-    _wbsWinKey = key;
+    if (key === v.winKey && win.childElementCount) return;
+    v.winKey = key;
     var h = '';
-    for (var i = first; i < last; i++) h += _wbsRowHTML(_wbsFlat[i]);
+    for (var i = first; i < last; i++) h += _wbsRowHTML(v.flat[i]);
     win.style.transform = 'translateY(' + (first * WBS_ROWH) + 'px)';
     win.innerHTML = h;
   }
@@ -29065,12 +29157,16 @@
   // `editableOnly` skips locked / synced rows — they render fixed text instead of an input, so the
   // name-editing keys must jump over them. Plain row SELECTION can land on them, so it passes false.
   function _wbsNeighbourId(id, step, editableOnly) {
-    var i = -1;
-    for (var k = 0; k < _wbsFlat.length; k++) if (_wbsFlat[k].id === id) { i = k; break; }
+    /* ⚠️ WITHIN ONE VIEW, and it stops at the card boundary rather than leaping into the
+       next phase's card. Arrowing off the bottom of Initiation and landing in Planning would move
+       the cursor to a branch the planner cannot see without scrolling the page. */
+    var _v = _wbsViewOf(id); if (!_v) return null;
+    var F = _v.flat, i = -1;
+    for (var k = 0; k < F.length; k++) if (F[k].id === id) { i = k; break; }
     if (i < 0) return null;
-    for (var j = i + step; j >= 0 && j < _wbsFlat.length; j += step) {
-      if (!editableOnly) return _wbsFlat[j].id;
-      var n = wbsById(_wbsFlat[j].id);
+    for (var j = i + step; j >= 0 && j < F.length; j += step) {
+      if (!editableOnly) return F[j].id;
+      var n = wbsById(F[j].id);
       if (n && !n.is_locked && !n.source_kind) return n.id;
     }
     return null;
@@ -29084,14 +29180,15 @@
     while (a) { delete _wbsCollapsed[a]; a = (wbsById(a) || {}).parent_id; }
     _wbsSel = id;
     renderWbsManager();
-    var host = document.getElementById('ps-wbs-tree'); if (!host) return;
+    var _v = _wbsViewOf(id); if (!_v) return;
+    var host = _v.host; if (!host) return;
     var idx = -1;
-    for (var k = 0; k < _wbsFlat.length; k++) if (_wbsFlat[k].id === id) { idx = k; break; }
+    for (var k = 0; k < _v.flat.length; k++) if (_v.flat[k].id === id) { idx = k; break; }
     if (idx < 0) return;
     var top = idx * WBS_ROWH, vh = host.clientHeight || 400;
     if (top < host.scrollTop) host.scrollTop = top;
     else if (top + WBS_ROWH > host.scrollTop + vh) host.scrollTop = top + WBS_ROWH - vh;
-    _wbsRenderWindow();
+    _wbsRenderWindow(_v);
     var inp = edit && host.querySelector('[data-wbs-name="' + id + '"]');
     if (inp) { inp.focus(); inp.select(); return; }
     var row = host.querySelector('.ps-wbs-row[data-wid="' + id + '"]');
@@ -29138,13 +29235,13 @@
   }
   // Delegated listeners on the (persistent) tree container — attached once, so they survive every
   // window re-paint (per-row onclick handlers can't, since the window's rows are recreated on scroll).
-  function _wbsWire() {
-    if (_wbsWired) return;
-    var host = document.getElementById('ps-wbs-tree'); if (!host) return;
-    _wbsWired = true;
+  function _wbsWire(v) {
+    if (!v || v.wired) return;
+    var host = v.host; if (!host) return;
+    v.wired = true;
     host.addEventListener('scroll', function () {
-      if (_wbsScrollRaf) return; _wbsScrollRaf = true;
-      (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { _wbsScrollRaf = false; _wbsRenderWindow(); });
+      if (v.raf) return; v.raf = true;
+      (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { v.raf = false; _wbsRenderWindow(v); });
     });
     host.addEventListener('click', function (e) {
       var row = e.target.closest('.ps-wbs-row'); if (!row) return;
@@ -29236,7 +29333,8 @@
   // physically relocated into the Schedule Setup's WBS step and returned to a hidden park slot
   // afterwards. Why relocation rather than a second editor in the builder:
   //   • the tree is a virtualized outliner with a keyboard model, a selection, a collapse map and a
-  //     search filter, all held in module state (_wbsSel / _wbsCollapsed / _wbsSearch / _wbsFlat).
+  //     search filter. Selection/collapse/search are module state (_wbsSel / _wbsCollapsed /
+  //     _wbsSearch) and stay shared; the flattened row list is per view (WBS_VIEWS).
   //     A second instance would share that state and fight over it;
   //   • every one of its ~30 handlers is bound by id, so a copy means either duplicate ids (the
   //     first one wins, silently) or a parallel set of handlers to keep in step forever.
@@ -29256,30 +29354,74 @@
   // `intHost` is optional only so a caller that has no room for the repair/mirror row still works;
   // the WBS step always passes one, because with the WBS Manager gone this is the ONLY way in to
   // Adopt / Reset and the Engineering + Procurement mirrors.
-  function sbWbsMount(toolsHost, treeHost, intHost) {
-    var tools = document.getElementById('ps-wbs-edittools'), card = document.getElementById('ps-wbs-card');
+  /* The toolbar and the repair/mirror row are still ONE node each, borrowed — they act on the
+     global selection, so there is exactly one of them however many cards are on screen. Only the
+     TREE is instanced. Returns false when the nodes are missing (a half-loaded page). */
+  function sbWbsMountTools(toolsHost, intHost) {
+    var tools = document.getElementById('ps-wbs-edittools');
     var integ = document.getElementById('ps-wbs-integrations');
-    if (!tools || !card || !toolsHost || !treeHost) return false;
+    if (!tools || !toolsHost) return false;
     toolsHost.appendChild(tools);
     if (integ && intHost) intHost.appendChild(integ);
-    treeHost.appendChild(card);
-    // ⚠️ Re-render AFTER the move: the tree is virtualized off its own clientHeight, and a walk
-    // measured while the node was parked (hidden, so zero height) paints an empty viewport.
-    renderWbsManager();
     return true;
   }
+  /* Register one view per phase card. ⚠️ Called after EVERY repaint of the cards, because
+     `stPhases` rebuilds them with innerHTML and the old hosts are then detached — a view
+     pointing at a detached host paints into nothing. `tops` is a function for the same reason:
+     a push adds children to a phase branch and the card must show them without remounting. */
+  function sbPhaseWbsViews(scope) {
+    if (!scope) return;
+    wbsResetViews();
+    scope.querySelectorAll('[data-phwbs]').forEach(function (h) {
+      var code = h.getAttribute('data-phwbs');
+      if (code === 'other') { wbsAddView(h, function () { return _wbsOtherRootIds(); }); return; }
+      wbsAddView(h, function () {
+        var b = _phaseBranchAt(null, code);
+        return b ? wbsChildren(b.id).map(function (n) { return n.id; }) : [];
+      });
+    });
+  }
+  /* ⚠️ `sbWbsMount` RETIRED 2026-09-17 with its only caller, stWbs. It borrowed the whole
+     editor — toolbar, repair row AND tree — into one host. The tree is instanced now, so what
+     survives is `sbWbsMountTools` above, which borrows only the two nodes that are still single.
+     `sbWbsPark` stays and is still called unconditionally from render(): those two borrowed nodes
+     must be parked before the panel repaints, exactly as before. */
+
+  /* The node ids a view renders at depth 0. `tops` may be a FUNCTION, and on a phase card it is:
+     the card shows its branch's CHILDREN, and a push adds children — a list captured at mount
+     time would leave the card empty after the very push it exists to show. */
+  function _wbsTopNodes(v, childrenOf, byId) {
+    if (!v.tops) return childrenOf.get(null) || [];
+    var ids = (typeof v.tops === 'function') ? (v.tops() || []) : v.tops;
+    var out = [];
+    ids.forEach(function (id) { var n = byId.get(id); if (n) out.push(n); });
+    return out;
+  }
   function renderWbsManager() {
-    var host = document.getElementById('ps-wbs-tree'), cnt = document.getElementById('ps-wbs-count');
-    if (!host) return;
-    _wbsWire();
-    var savedTop = host.scrollTop;   // keep the scroll position across a full re-render (caret/rename/move)
-    if (!pid) { _wbsFlat = []; host.innerHTML = '<div class="ps-wbs-empty">Select a project.</div>'; if (cnt) cnt.textContent = ''; return; }
+    var views = _wbsLiveViews(), cnt = document.getElementById('ps-wbs-count');
+    if (!views.length) return;
+    views.forEach(function (v) { _wbsWire(v); });
+    if (!pid) {
+      views.forEach(function (v) {
+        v.flat = []; v.winKey = '';
+        v.host.innerHTML = '<div class="ps-wbs-empty">Select a project.</div>';
+      });
+      if (cnt) cnt.textContent = '';
+      return;
+    }
     var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id; }).length;
     var adoptBtn = document.getElementById('ps-wbs-adopt'); if (adoptBtn) adoptBtn.style.display = legacy ? '' : 'none';
     if (!WBS_NODES.length) {
-      _wbsFlat = [];
+      views.forEach(function (v) { v.flat = []; v.winKey = ''; });
       if (cnt) cnt.textContent = '';
       _wbsSetHint(null, null);
+      /* ⚠️ THE WAY-IN IS OFFERED ONCE. Five cards each showing "No WBS yet — pick the
+         quickest way in" with its own three buttons is five copies of one decision, and four of
+         them would file the new branch under the wrong phase. The rest just say they are empty. */
+      var host = views[0].host;
+      views.slice(1).forEach(function (v) {
+        v.host.innerHTML = '<div class="ps-wbs-empty">Nothing here yet.</div>';
+      });
       host.innerHTML = '<div class="ps-wbs-empty">' + (legacy ?
         'This project has ' + legacy + ' WBS summary rows from an import / the old model. Click <strong>Adopt existing WBS</strong> above to load them into the tree editor.' :
         'No WBS yet — pick the quickest way in:' +
@@ -29318,23 +29460,50 @@
     if (cnt) cnt.innerHTML = WBS_NODES.length + ' node' + (WBS_NODES.length === 1 ? '' : 's') +
       (q ? '<span class="ps-wbs-matchcount">' + nMatch + ' match' + (nMatch === 1 ? '' : 'es') + '</span>' : '');
     _wbsSetHint(_wbsSel && byId.get(_wbsSel), codeOf);
-    // Flatten the visible tree into an ordered row list (the virtual window renders slices of it).
-    var flat = [];
-    (function walk(parentId, depth) {
-      (childrenOf.get(parentId) || []).forEach(function (n) {
-        if (visible && !visible.has(n.id)) return;
-        var kids = childrenOf.get(n.id), nKids = kids ? kids.length : 0;
-        var open = q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id];
-        flat.push({ id: n.id, depth: depth, code: codeOf[n.id], name: n.name, nKids: nKids, nAct: actCount.get(n.id) || 0, open: open, custom: !!n.code_custom });
-        if (nKids && open) walk(n.id, depth + 1);
-      });
-    })(null, 0);
-    _wbsFlat = flat;
-    if (!flat.length) { host.innerHTML = '<div class="ps-wbs-empty">No WBS matches “' + esc(_wbsSearch) + '”.</div>'; return; }
-    // Skeleton: spacer reserves the full scroll height; the window holds only the visible slice.
-    host.innerHTML = '<div class="ps-wbs-spacer" style="height:' + (flat.length * WBS_ROWH) + 'px;"><div class="ps-wbs-win"></div></div>';
-    host.scrollTop = _wbsSearch ? 0 : savedTop;   // searches jump to top; edits keep position (browser clamps)
-    _wbsRenderWindow();
+    /* Flatten the visible tree into an ordered row list per view (the virtual window renders
+       slices of it). ⚠️ `savedTop` is read per view, immediately before that view is
+       repainted — one shared value would scroll four cards to a fifth card's position. */
+    views.forEach(function (v) {
+      /* ⚠️⚠️ ONE BAD CARD MUST NOT BLANK THE ONES AFTER IT. With a single tree a throw in
+         here meant "the tree is broken", which is at least visible. With five cards an uncaught
+         throw ends the forEach, so cards 3, 4 and 5 render as empty boxes with no error on screen
+         — measured exactly that in the harness when `_wbsRowHTML` hit a missing dependency:
+         two cards painted, three were silently blank and the console was the only clue. */
+      try { _wbsPaintView(v); } catch (e) {
+        v.flat = []; v.winKey = '';
+        try { v.host.innerHTML = '<div class="ps-wbs-empty">This branch could not be drawn: ' +
+          esc(e && e.message ? e.message : e) + '</div>'; } catch (e2) {}
+      }
+    });
+    function _wbsPaintView(v) {
+      var savedTop = v.host.scrollTop;
+      var flat = [];
+      (function walk(list, depth) {
+        list.forEach(function (n) {
+          if (visible && !visible.has(n.id)) return;
+          var kids = childrenOf.get(n.id), nKids = kids ? kids.length : 0;
+          var open = q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id];
+          flat.push({ id: n.id, depth: depth, code: codeOf[n.id], name: n.name, nKids: nKids, nAct: actCount.get(n.id) || 0, open: open, custom: !!n.code_custom });
+          if (nKids && open) walk(childrenOf.get(n.id) || [], depth + 1);
+        });
+      })(_wbsTopNodes(v, childrenOf, byId), 0);
+      v.flat = flat;
+      if (!flat.length) {
+        v.winKey = '';
+        /* ⚠️ A card with nothing in it is NOT the same as a search that matched nothing, and
+           saying "no match" on an empty branch would send a planner looking for a filter they had
+           not set. */
+        v.host.innerHTML = '<div class="ps-wbs-empty">' + (_wbsSearch
+          ? 'No WBS matches “' + esc(_wbsSearch) + '”.'
+          : (v.tops ? 'No branches here yet.' : 'No WBS yet.')) + '</div>';
+        return;
+      }
+      // Skeleton: spacer reserves the full scroll height; the window holds only the visible slice.
+      v.winKey = '';
+      v.host.innerHTML = '<div class="ps-wbs-spacer" style="height:' + (flat.length * WBS_ROWH) + 'px;"><div class="ps-wbs-win"></div></div>';
+      v.host.scrollTop = _wbsSearch ? 0 : savedTop;   // searches jump to top; edits keep position
+      _wbsRenderWindow(v);
+    }
   }
   // Persist code / name / activity-code changes across nodes + their projected WBS-Summary rows +
   // child activities, then refresh. Recomputes codes each call so any structural change re-numbers.
@@ -36579,9 +36748,34 @@
       host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · Project Phases</h2>' +
         '<p class="sbld-lede">The lifecycle around <b>Execution</b>: what sits either side of ' +
         'construction, and the tree those phases produce. No locations here, and nothing repeats per zone.</p>' +
-        '<div id="sbld-ph-a"></div><div id="sbld-ph-b"></div>';
+        /* ⚠️ Shown only when it is TRUE, and it is the one thing a full-looking tree cannot
+           explain about itself: every branch reads 0 because nothing has ever been pushed. */
+        (function () {
+          var _live = 0, _gen = 0;
+          try { _live = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
+          try { _gen = generate('int').rows.length; } catch (e) {}
+          return (_gen && !_live)
+            ? '<p class="sbld-note sbld-note-warn">Every branch reads <b>0</b> because nothing has been pushed yet.</p>'
+            : (_sbldWbsCount() <= 5
+              ? '<p class="sbld-hint">A near-empty tree is normal — <b>' + _stepNo('Generate') +
+                ' · Push</b> creates the branches.</p>'
+              : '');
+        })() +
+        '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
+        '<div id="sbld-ph-a"></div>' +
+        '<div class="sbld-wbsmount-tools" id="sbld-wbs-integ" style="margin-top:2px;"></div>';
+      /* ⚠️⚠️ THE TOOLBAR IS BORROWED AND THE TREE IS NOT. `#ps-wbs-edittools` and
+         `#ps-wbs-integrations` are still ONE node each — they act on the single global
+         selection, so there is exactly one of them however many cards are on screen. The TREE is
+         now five instances, one per card, created here rather than moved.
+         ⚠️ Order matters: mount the toolbar BEFORE the cards are drawn (it sits above
+         them), draw the cards, THEN register a view per card and paint. Registering before the
+         cards exist would bind views to hosts that are not in the document yet, and
+         `_wbsLiveViews` would drop every one of them on the first paint. */
+      sbWbsMountTools(host.querySelector('#sbld-wbs-tools'), host.querySelector('#sbld-wbs-integ'));
       stPhases(host.querySelector('#sbld-ph-a'), true);
-      stWbs(host.querySelector('#sbld-ph-b'), true);
+      sbPhaseWbsViews(host.querySelector('#sbld-ph-a'));
+      renderWbsManager();
     }
     function stActivitiesStep(host) {
       stTabbed(host, 'Activities',
@@ -42587,6 +42781,27 @@
     // ⚠️ This step does NOT generate anything. Every other step feeds the generator; this one edits
     // a flat list per phase and prints the window it will occupy, because there is nothing about a
     // charter or a turnover that repeats per floor or per zone.
+    /* The branch block that turns a phase card into the phase's whole editor.
+       ⚠️ It renders the branch's CHILDREN, not the branch itself — the card is already
+       titled with the phase name, and repeating it inside was the duplication the owner reported.
+       The branch's own dotted code is stated in the block header instead, because that code is what
+       the Schedule grid keys off and it is the one thing the card title does not say. */
+    function phWbsBlock(code, label) {
+      var b = (code === 'other') ? null : _phaseBranchAt(null, code);
+      var n = (code === 'other') ? _wbsOtherRootIds().length : (b ? wbsChildren(b.id).length : 0);
+      var where = (code === 'other')
+        ? 'Top-level branches outside the four phases'
+        /* ⚠ NAME ONLY. A node's `code` column is set only when it is custom-coded;
+           the dotted code is otherwise DERIVED from tree position, and there is no accessor for
+           one node's derived code outside the index build. The rows inside the card already
+           print their codes, so stating the branch by name here costs nothing and invents no API. */
+        : (b ? 'Under <b>' + e2(b.name) + '</b>'
+             : 'This phase has no branch yet ' + MID + ' <b>' + _stepNo('Generate') + ' ' + MID + ' Push</b> creates it');
+      return '<div class="sbld-phwbs-h"><span>' + (label || 'Branches') + '</span>' +
+        '<span class="sbld-phwbs-w">' + where + '</span>' +
+        '<span class="sbld-phwbs-n">' + n + '</span></div>' +
+        '<div class="sbld-phwbs" data-phwbs="' + e2(code) + '"></div>';
+    }
     function stPhases(host, noHead) {
       var g = generate('int');
       var plan = sbPhasePlan(g), planBy = {};
@@ -42596,7 +42811,8 @@
         '<div class="sbld-phhead"><span class="sbld-phname">' + e2(PHASE_LABELS.construction) + '</span>' +
         '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Stacking') + '</span></div>' +
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
-          ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p></div>';
+          ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
+        phWbsBlock('construction') + '</div>';
       var cards = SB_PHASE_DEFS.map(function (d) {
         if (d.when === 'exec') return execRow;
         var ph = sbPhases()[d.v], pl = planBy[d.v], on = !!ph.on;
@@ -42650,8 +42866,22 @@
           (on ? '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' +
                 '<div class="sbld-sec-actions"><button class="pd-btn" data-phadd="' + d.v + '">+ Add activity</button>' +
                 '<button class="pd-btn" data-phreset="' + d.v + '">Reset to the typical set</button></div>' : '') +
+          /* ⚠️ THE SUBTREE IS SHOWN WHETHER THE PHASE IS ON OR OFF. The activity list above is
+             what the next push WILL create; the tree below is what the project HAS. A branch with
+             branches already in it, on a phase switched off, is exactly the state a planner needs
+             to see — hiding it with the list would make the card lie about the project. */
+          phWbsBlock(d.v) +
           '</div>';
       }).join('');
+      /* ⚠️⚠️ THE FIFTH CARD IS NOT OPTIONAL. Milestones is a seeded skeleton root with no
+         lifecycle phase, and an import can leave further roots behind. Without this card they would
+         be on no card at all: invisible, un-editable, and still renumbering their siblings' dotted
+         codes. It is rendered even when empty, so "there is nothing outside the phases" is a
+         statement the screen makes rather than something the reader has to infer from absence. */
+      cards += '<div class="sbld-phcard sbld-phcard-other">' +
+        '<div class="sbld-phhead"><span class="sbld-phname">Other branches</span>' +
+        '<span class="sbld-phlock">outside the lifecycle phases</span></div>' +
+        phWbsBlock('other') + '</div>';
       var span = (function () {
         if (!g.start) return '';
         var a = (plan.length && plan[0].when === 'before' && plan[0].start) ? plan[0].start : g.start;
@@ -44901,68 +45131,13 @@
     // ⚠️ This step OWNS no markup of its own beyond the frame: the editor is the WBS Manager's real
     // tree, relocated in (sbWbsMount). See the note on sbWbsPark for why it is borrowed and not
     // rebuilt — and for why the panel must never be repainted while it is here.
-    function stWbs(host, noHead) {
-      var n = (typeof WBS_NODES !== 'undefined' && WBS_NODES) ? WBS_NODES.length : 0;
-      var _liveActs = 0, _gen = 0;
-      try { _liveActs = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
-      try { _gen = generate('int').rows.length; } catch (e) {}
-      // ⚠️ No <h2> of its own when `noHead` is set: this is the lower half of the Project
-      // Phases step, which emits the one heading and the one lede. (It said “the 5PMLC TAB …
-      // stTabbed owns the heading, the tabs and the bridge line” — there are no tabs and no
-      // bridge line here any more, and a comment describing deleted machinery is worse than
-      // none: it sends the next reader looking for a tab strip that cannot be found.)
-      host.innerHTML =
-        // ⚠️ Stated before the tree, not after it: the count on every row is what the LIVE schedule
-        // holds, which is 0 on a project that has never been pushed to — and that is not a report
-        // about the programme the Generate step previews.
-        /* ⚠️ THIS PARAGRAPH IS NOW THE BAR AT THE TOP. It said the same thing on one step that the
-           pending strip now says on all of them, and the strip says it as a number. What is kept is
-           the one case the count alone cannot explain: a tree whose rows all read 0 because nothing
-           has ever been pushed, which without a word reads as a fault. */
-        (_gen && !_liveActs
-          ? '<p class="sbld-note sbld-note-warn">Every branch reads <b>0</b> because nothing has ' +
-            'been pushed yet.</p>'
-          : '') +
-        /* ⚠️ FOUR PARAGRAPHS BECAME ONE LINE. What went and why:
-             • the push’s branch order (trade › grouping › tower › floor › zone) and which location
-               levels it uses — both belong to the push DIALOG, which is where the planner sets them;
-             • "the five top-level branches are held in a fixed order" — the tree shows that order;
-             • the long "almost-empty tree" paragraph — the one sentence a planner needs is kept and
-               is shown ONLY when the tree really is almost empty, instead of on every visit. */
-        /* ⚠ The lede (“The project’s live WBS. Saved as you type.”) is GONE at the owner’s
-           request. The tree is plainly a tree, and the step’s own lede above already says what
-           this half is — a second sentence between them was restating the obvious. */
-        /* ⚠️ REWRITTEN WHEN THE STEP MERGED. This used to read "this step is early on purpose",
-           which was true while the tree was step 2 and is now simply FALSE on screen — the kind of
-           stale sentence that teaches a planner to stop trusting the page. What survives is the part
-           that is still true and still needed: an almost-empty tree here is CORRECT on a new project,
-           and a planner who is not told that reads it as a fault. */
-        /* ⚠️ Shown only when it is TRUE. A planner looking at a full tree does not need to be told
-           an empty one would be fine, and printing it every visit is how a page teaches people to
-           skip its text. `nWbs` counts the branches the tree actually has. */
-        ((_sbldWbsCount() <= 5)
-          ? '<p class="sbld-hint">A near-empty tree is normal — <b>' + _stepNo('Generate') +
-            ' · Push</b> creates the branches.</p>'
-          : '') +
-        '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
-        // ⚠️ The repair + mirror row. It is on its OWN line under the edit tools, not merged into
-        // them: Adopt/Reset are recovery over a whole imported project and the two Sync buttons are
-        // other teams' data, so mixing them into "Add WBS / Paste outline" would read as five more
-        // ways to author a branch. With the WBS Manager screen gone this is their only home.
-        '<div class="sbld-wbsmount-tools" id="sbld-wbs-integ" style="margin-top:2px;"></div>' +
-        /* ⚠️ AN 80-WORD PARAGRAPH DELETED, NOT SHORTENED. Every claim in it was already the
-           `title=` of the button it described — the screen was printing its own tooltips as body
-           text. The only fact the tooltips did not carry (Sync no longer runs on load; the date is
-           the freshness) now sits on the two Sync buttons themselves. */
-        '<div id="sbld-wbs-host"></div>';
-      var ok = sbWbsMount(host.querySelector('#sbld-wbs-tools'), host.querySelector('#sbld-wbs-host'), host.querySelector('#sbld-wbs-integ'));
-      if (!ok) {
-        host.querySelector('#sbld-wbs-host').innerHTML =
-          '<div class="sbld-empty">The WBS editor could not be loaded on this page. Reload, then reopen this step.</div>';
-        return;
-      }
-      if (!n) return;   // the tree paints its own "no WBS yet" state, with the three ways in
-    }
+    /* ⚠️ `stWbs` RETIRED 2026-09-17. It drew the WBS as one panel below the phase cards,
+       and the phase cards now hold the tree themselves — five views, one per branch — so it
+       had exactly one caller and that caller is gone. Deleted rather than left unreferenced:
+       a renderer nothing calls is the one the next editor wires back up beside the real thing,
+       and then the step has two trees again. Its two notes that still earn their place (the
+       'every branch reads 0' warning and the near-empty hint) moved into stPhasesStep. */
+
 
     /* ==========================================================================================
        GENERATE — read the building back, then push.
@@ -53308,15 +53483,20 @@
       // Schedule Setup's WBS step (see sbWbsMount), and this used to test `#ps-view-wbs` — which is
       // hidden there, so the entire type-to-build keyboard (Enter, Tab, Alt+arrows, Del) would have
       // gone dead on the screen that now owns the editing. Asking the tree where it is works on both.
-      var _wt = document.getElementById('ps-wbs-tree');
-      if (!_wt || _wt.offsetParent === null) return;
-      if (!_wbsFlat.length) return;
+      /* ⚠️ ASK THE VIEWS, not a fixed id. With the tree instanced per phase card there may be
+         no `#ps-wbs-tree` on screen at all, and gating on it would kill the whole type-to-build
+         keyboard on the step that now owns the editing — the same failure this check was
+         already rewritten once to avoid, in its previous form. */
+      var _av = _wbsActiveView();
+      if (!_av || !_av.host || _av.host.offsetParent === null) return;
+      var _fl = _av.flat;
+      if (!_fl.length) return;
       var k = e.key;
       // Nothing selected (or the selection was filtered out): the first Arrow lands on the top row,
       // so the keyboard is always a way in rather than needing a click first.
-      var onList = _wbsSel && _wbsFlat.some(function (r) { return r.id === _wbsSel; });
+      var onList = _wbsSel && _fl.some(function (r) { return r.id === _wbsSel; });
       if (!onList) {
-        if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); _wbsGoto(_wbsFlat[0].id, false); }
+        if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); _wbsGoto(_fl[0].id, false); }
         return;
       }
       var id = _wbsSel, n = wbsById(id); if (!n) return;
@@ -53341,7 +53521,9 @@
         else if (n.parent_id) _wbsGoto(n.parent_id, false);
         return;
       }
-      if (k === 'Home' || k === 'End') { e.preventDefault(); _wbsGoto(_wbsFlat[k === 'Home' ? 0 : _wbsFlat.length - 1].id, false); return; }
+      /* Home/End within the CARD the cursor is in, for the same reason the arrows stop at the
+         card boundary — see _wbsNeighbourId. */
+      if (k === 'Home' || k === 'End') { e.preventDefault(); _wbsGoto(_fl[k === 'Home' ? 0 : _fl.length - 1].id, false); return; }
       if (k === 'Escape') { e.preventDefault(); _wbsSel = null; renderWbsManager(); return; }
       if (ro) return;                                 // everything below mutates the tree
       if (k === 'Enter' || k === 'F2') {
