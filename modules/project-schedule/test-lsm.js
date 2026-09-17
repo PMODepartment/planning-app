@@ -1581,18 +1581,28 @@ function grpRow(name, anc, acts, idx, field) {
   const fnSrc = sliceFn('_seedCodeUnknown', 6) || '';
   ok(fnSrc !== '', '_seedCodeUnknown is sliceable');
   if (!fnSrc) { ok(false, 'cannot execute the flag'); return; }
-  const make = (chart) => new Function('CLASS_CODES', 'ccByCode',
-    fnSrc + '; return _seedCodeUnknown;')(chart, function (k) { return chart.indexOf(k) >= 0 ? { code: k } : null; });
+  /* \u26a0\u26a0 RETARGETED, NOT WEAKENED (2026-09-18). The flag used to resolve through the
+     item-only `ccByCode`; it resolves through `ccLevelOf` now, which answers 'item' | 'group' |
+     null. That was a live defect, not a refactor: every `+ Library` row carries a LEVEL-2 GROUP
+     code, so on a healthy build the item-only lookup marked all of them red. The group case below
+     is the assertion that bites on the old expression. */
+  /* Both resolvers are in the sandbox so a build that reverts to the item-only one still RUNS
+     and fails the group assertion by name, rather than aborting on an unresolved identifier. */
+  const make = (items, groups) => new Function('CLASS_CODES', 'ccLevelOf', 'ccByCode',
+    fnSrc + '; return _seedCodeUnknown;')(items,
+      function (k) { return items.indexOf(k) >= 0 ? 'item' : (groups.indexOf(k) >= 0 ? 'group' : null); },
+      function (k) { return items.indexOf(k) >= 0 ? { code: k } : null; });
 
-  const loaded = make(['03051', '04051']);
+  const loaded = make(['03051', '04051'], ['03050']);
   eq(loaded('03051'), false, 'a code the chart knows is not flagged');
+  eq(loaded('03050'), false, 'a GROUP code is not flagged either - that is the whole fix');
   eq(loaded('REBAR'), true, 'a code the chart does not know IS flagged');
   eq(loaded(''), false, 'a BLANK code is not flagged - not chosen yet is not the same as wrong');
   eq(loaded(null), false, 'and neither is a null');
   /* \u26a0\u26a0 THE GUARD. With the chart not yet loaded ccByCode answers null for EVERYTHING, and an
      unguarded test would mark a perfectly good programme as entirely unmatchable. A false
      accusation is worse than no warning. */
-  const notLoaded = make([]);
+  const notLoaded = make([], []);
   eq(notLoaded('03051'), false, 'chart not loaded -> says nothing about a good code');
   eq(notLoaded('REBAR'), false, 'chart not loaded -> says nothing about a bad one either');
 })();
