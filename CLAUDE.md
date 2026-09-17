@@ -104,6 +104,45 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ar) — Progress Photos: the stuck "Starting…" status gets an honest message, and the Drafts button stops overflowing a narrow window
+
+⚠️ Re-lettered `(aa)` → `(ah)` → `(aj)` → `(ap)` → `(ar)` across five catch-up merges: each time,
+`main` had independently landed newer entries claiming whichever letter this one was sitting on
+in the interim (most recently, `main`'s own new "Pushing the internal plan as a scenario…" entry
+below took `(ap)` the same way earlier merges' entries took `(ah)` and `(aj)`), so the entry that
+was still catching up moved again each time, per this file's "the one merging in gets bumped" rule.
+
+Owner, two live reports: a 360° video upload sat reading "Starting…" with no further movement, and
+the topbar's Drafts button label ran off the edge next to "+ Add media" at a narrow window width.
+
+The stuck status traces to the 2026-09-16 server-side stitching rewrite's own documented, one-time
+setup gap — a job sits at `queued` forever until the migration's Vault secrets are created in the
+SQL editor, which no migration or CI deploy can do automatically. `trackJobToCompletion` now counts
+consecutive stuck poll ticks and, past a threshold that a healthy job would never reach (a real job
+flips off `queued` near-instantly), replaces the silent fallback with an honest message naming the
+likely cause and the two ways forward (keep waiting, or Discard) — self-healing the moment the real
+fix lands, since the counter resets the instant status genuinely advances. The Drafts/Sync buttons'
+labels are now their own `<span>`, hidden at ≤700px so the button collapses to the same icon-only
+square every other unlabelled topbar tool already is.
+
+Verified: full suite 974/4 (the same 4 pre-existing, unrelated failures); `tools/wiring-check.js`
+139/0; CSS braces balanced; 0 duplicate DOM ids.
+
+`module.css`/`module.js` → `?v=20260917zq`; `MODULE_V` → `20260917zzg`. Detail:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
+⚠️ **`MODULE_V` collided four separate times chasing `main` forward: silently with a sibling entry
+at `zq` — bumped to `zr` on integrating that. A real `<<<<<<<` conflict once `main` reached `zzd` —
+re-derived to `zze`. `main` then independently bumped again to `zzg` while this branch sat at `zze`;
+that merged with no conflict since only one side had moved. Same recurring collision the entry below
+documents its own chain of (`zg` → `zp`/`zq` → … → `zzg`) — this is further along the same chain,
+not a separate incident.** ⚠️ Note: by the time of this merge `main`'s own `assets/js/modules-grid.js`
+internal `MODULE_V` fallback literal reads `20260917zzk` while its `dashboard.html`/`modules.html`
+references already say `20260917zzm` — a pre-existing mismatch on `main` itself (not introduced by
+this merge, and invisible to `wiring-check`'s per-file version check since it only compares HTML
+references to each other). Left as-is rather than fixed here, since it belongs to whichever `main`
+commit moved the HTML refs without the fallback literal.
+
 ### 2026-09-17 (ap) — Pushing the internal plan as a scenario captured correctly and **restored destructively**
 
 Owner: *"Check the push to project schedule: Does the internal schedule function properly by
@@ -709,11 +748,13 @@ checks, and is asked about instead.
 dialogs. The highlight fix is a browser measurement before and after, not a reading of the CSS.
 `modules-grid.js` `?v=` → `20260917zzf`.
 
-### 2026-09-17 (ah) — One bar per storey: the LSM row folds every trade into a single merged bar
+### 2026-09-17 (aq) — One bar per storey: the LSM row folds every trade into a single merged bar
 
-⚠️ Re-lettered from `(ag)` on rebase: a concurrent session landed its own 2026-09-17 `(ag)` (below)
-first. Both entries kept in full; this one bumped past it rather than either side guessing, per the
-rule in this file’s header.
+⚠️ Re-lettered `(ag)` → `(ah)` → `(ai)` → `(ak)` → `(aq)` across four catch-up merges, each time
+because `main` had independently landed a fresh entry claiming whichever letter this one was
+sitting on (`(ai)` collided with `main`'s own Floors & Zones entry above; `(ak)` collided with
+`main`'s own "Two dead controls in the Setup" entry further up). Every entry involved is kept in
+full; the carried-over one is what moves each time, per the rule in this file's header.
 
 Owner: *"The gantt bar still doesn't fold into one gantt bar to show the LSM. Let's fix."* Asked which
 of three shapes he meant, he chose **one bar per storey, all trades merged** over keeping a lane per
@@ -1979,7 +2020,8 @@ they must sum, with Other, to the tree's own total.
 already reached `20260917zp`, so `zg` would have shipped these bytes under a token that sorts
 *earlier* than one browsers already hold. Re-derived to `20260917zq`.
 
-`MODULE_V` → `20260917zq`. No shared asset changed.
+`MODULE_V` → `20260917zr`, re-derived past the entry above rather than the `zq` this entry originally
+shipped with — see its note.
 
 ### 2026-09-17 (z) — A named holiday was cut at 25 characters and the tooltip answered with the date
 
