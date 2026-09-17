@@ -103,6 +103,82 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (n) — Bulk edit on the Users table, paid for by the column grouping had just made redundant
+
+Owner: *"add bulk edit so that its convenient to approve/edit/update multiple users."*
+
+A select column, and a bar that appears above the rows only when something is selected:
+**N selected · Approve · Reject · Set role… · Set department… · Clear.**
+
+### ⚠️ The Status column paid for the select column
+
+Adding a checkbox to a table that had *just* been measured to fit without scrolling would have
+broken it again. But grouping (m) had already made **Status redundant**: pending and rejected are
+their own headings now, so every remaining row said *"approved"* — a column of one repeated word.
+Dropping it funds the select column almost exactly. Measured: **1,543px in a 1,545px container,
+unchanged, still no scroll.** The status is still on screen for the two cases where it varies — the
+heading above the row.
+
+⚠️ `.pd-status-pending/-approved/-rejected` are **retired with it**. Their only consumer was that
+cell; three rules matching nothing is what the next editor edits by mistake.
+
+### ⚠️⚠️ What a bulk control must not do
+
+- **No checkbox on a row this admin cannot write.** `locked` is the same rule the per-row selects
+  already use (a plain admin may *see* a super_admin but not change one) and the database enforces
+  it in `users_admin_update`. A checkbox that can only ever produce a refusal is worse than none.
+- **Never your own row.** A bulk Reject that included you would lock you out of the page you ran it
+  from. The per-row Actions menu still lets you act on yourself deliberately.
+- **Never a row the search has hidden.** The selection is cleared whenever the query changes, and
+  select-all covers the *selectable, currently shown* set rather than everything fetched.
+- **N writes are N outcomes.** `users_admin_update` can refuse an individual row, so a bulk write is
+  not one operation that succeeds or fails. Each failure is collected and the toast names it:
+  *"11 updated · 1 refused: Rachelle Lungsod (…)"*. Swallowing that into a single *"Saved"* is how
+  an admin comes to believe they approved twelve people when they approved eleven.
+  ⚠️ Sequential, not `Promise.all` — twelve parallel UPDATEs on one table for no gain, and the
+  first rejection would mask the rest.
+- **No bulk delete.** Deletion is irreversible, frees the email for re-registration, and
+  `admin_delete_user` is a per-row RPC with its own confirmation. A convenience control for
+  *"approve these ten"* should not sit one button away from *"delete these ten"*.
+- **Every bulk action confirms, naming the action and the count** — this is the one control on the
+  page that acts on people it is not pointing at.
+
+### ⚠️⚠️ Two defects caught before shipping, neither by the parser
+
+1. **`m.querySelector` instead of `m.el.querySelector`.** `UI.modal` returns `{ el, close }`, not a
+   node — so every bulk confirmation would have thrown *"not a function"* on its first click. It
+   parses cleanly, and every other modal on this page already writes `m.el`. Found by reading the
+   real API instead of the call site I had just written; a sweep now asserts **zero** bare
+   `m.querySelector` in the file against **twelve** correct ones.
+2. **The bar rendered 161px tall.** `.pd-select` is `width:100%` in the shared sheet — correct for a
+   form field, wrong in a flex row, where each control claimed its own line. Measured, not eyeballed:
+   **161px → 54px** with an explicit width.
+
+### Verified
+
+**65 assertions** (`test-usergroups`, up from 44) and **43** (`test-activity`). `selCount`,
+`userGroups`, `groupedBody` and `filterUsers` sliced out and executed; the bulk handlers close over
+`loadUsers`'s locals and cannot be lifted, so what is asserted there is the *set of properties a
+bulk control gets wrong* — one write per row, failures collected not thrown, every path confirming,
+select-all over `selectable` not `shown`, the two exclusions present, and **no bulk delete beside
+the bulk approve**.
+
+⚠️ Both suites counted `<th>` and reported **8** for a 9-column header, because the select column
+carries a class — the checker wrong in the same direction as the bug it exists to catch. Now `<th[ >]`.
+
+**Rendered in an iframe at 1593 and 390**: nine columns with Status gone, select column 34px, six of
+seven rows pickable (the super_admin correctly not), selected rows tinted, the locked cell a muted
+dash, bar 54px at desktop and wrapping to 160px on a phone with no page-level horizontal scroll
+either way. Colours flip per theme except the bar's border, which is `--pd-red` — the brand red,
+fixed in both themes by design.
+
+⚠️ **Not verified signed in.** No bulk write has been executed against the database, so the
+partial-failure path — the one this is most carefully built for — has been reasoned about and
+asserted in source, not seen. The first real use to watch is a bulk action that includes a
+super_admin while signed in as a plain admin: it should report a refusal, not fail silently.
+
+No shared asset changed, so no version bump.
+
 ### 2026-09-17 (m) — The Users table groups by department with the approval queue on top, and gains a search bar
 
 Owner: *"Can we also group the users by department? Let's follow the existing grouping UI"*, then
