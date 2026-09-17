@@ -103,6 +103,104 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (s) — The Schedule Setup grids become PDGrid, and two copies of one engine go
+
+Owner: *"Tables should be more readable. Cleanup and follow consistency especially having the excel
+feature"*, then, asked whether that meant adopting the shared grid layer: *"Let's adopt PDGrid for the
+setup tables."*
+
+### ⚠️⚠️ WHAT THIS REPLACES IS THE SAME ENGINE WRITTEN TWICE
+
+`wireXlGrid` (101 lines, the Activities step) and `wireT4Grid` (77 lines, the Trade-sequence step)
+each carried their own focus model, range paint, mousedown/mouseover drag, dblclick-to-edit,
+Tab/Enter/arrow handling, clipboard paste and copy. Read side by side they are near-identical —
+`cellEl`, `paint`, `bounds` and all three mouse handlers match line for line, differing mainly in
+whether the edit flag is called `xEditing` or `t4edit`. That is the two-copies-drift shape this
+module keeps paying for, and `assets/js/xlgrid.js` has been that engine since 2026-09-07, already
+shipped and already used by the BOQ and the S-curve.
+
+**178 lines of duplicated grid engine deleted; net −56 lines in the module.**
+
+### ⚠️⚠️ AND IT IS A DELIBERATE TRADE, NOT A FREE WIN — MEASURED BEFORE COMMITTING TO IT
+
+The bespoke grids were **not** poorer than PDGrid. Measured against the shipped source, they already
+had arrow keys, Tab, Enter, Escape, type-to-edit, click-drag range selection, clipboard copy **and**
+paste — plus two things PDGrid does not have:
+
+| | bespoke setup grids | PDGrid |
+|---|---|---|
+| selection | **rectangle** (r0..r1 × c0..c1) | column run |
+| Ctrl+D fill | across a rectangle | one column |
+| Delete | clears a rectangle | clears a column run |
+| Ctrl+Z undo | **none** | **yes** |
+| cell model | `<td>` + an edit overlay | real inputs |
+
+So the honest question was whether "adopt PDGrid" meant accepting a **narrower** selection. It does —
+and PDGrid's own note already argues the case: *"the operations a planner actually wants here are
+'put this rate down the rest of the trade' and 'clear this column' — both vertical. A rectangular
+model would cost range maths in every operation to serve a case (multi-column fill) that a paste
+already covers better."* That reasoning holds for these columns too: what gets filled down is
+Interior (d) or Exterior (d), one at a time; code and name are per-row unique. And PDGrid's paste
+still spills in **2-D**, so the pasted case is unaffected. Recorded here rather than left for somebody
+to discover that a rectangle no longer selects.
+
+### ⚠️ A `type="number"` PASTE TRAP GOES WITH IT, FOR THE THIRD RECORDED TIME
+
+The old inline editor built its control as `ctl.type = col.num ? 'number' : 'text'`. A number input
+**reads back an EMPTY STRING for anything the spec cannot parse**, so a pasted `1,000` silently became
+blank. This repo has now recorded that same trap in the BOQ grid, the Contracts & Claims money fields
+and the Cash Flow inputs. The duration cells are `type="text"` with `inputmode="numeric"`.
+
+### Three defects found while converting, each of which would have shipped quietly
+
+- ⚠️⚠️ **`+ Add row` wrote the retired focus pair.** With `xa`/`xf`/`xWantFocus` deleted it is a
+  **ReferenceError on the first click** — and `node --check` cannot see it, which is this module's own
+  z6 lesson. The intent (land the caret in the new row) is kept, asked of the DOM instead of a flag.
+- ⚠️⚠️ **`Unload selected rows` read `xa`/`xf` too — and would NOT have thrown.** Those were
+  declared at module scope, so it kept parsing and running, and would simply have unloaded **row 0
+  every time, whatever was selected**: a silent wrong answer, which is the worse failure. PDGrid had no
+  way to answer "which rows are selected", so it gains a small read-only **`selectedIds()`** rather
+  than the module reaching into `.pdg-sel`, which is that file's private paint class and one rename
+  from breaking silently.
+- ⚠️ **`td.xl-cell` carried `user-select:none` and `cursor:cell`** — correct for a `<td>` you
+  select, wrong for one that now holds an input. `user-select` inherits, so a planner double-clicking
+  a code to replace it would have found nothing selectable.
+
+### What else went, and what deliberately stayed
+
+`xlSetCell(row, col, text)` is **deleted**, not left beside its replacement: two setters parsing the
+same labels is how they come to disagree about what a pasted "Change Order" means. One
+`xlSetById(id, field, text)` carries the identical parsing. ⚠️⚠️ **It refuses to `prompt()` inside a
+batch** — filling "Change Order" down forty rows through the old grid meant **forty dialogs**, one per
+cell, which is not a thing anybody can finish; in a batch the contract is set and the reference is left
+for the Change Order Ref column. `.xl-sel`/`.xl-active` went too — PDGrid paints `pdg-sel`, so those
+rules could never match again, and a rule that cannot match reads as working styling to everyone after.
+⚠️ **The column-resize grips stay**: PDGrid attaches rather than renders, so `data-r`/`data-c` remain
+on the `<td>` for the grips and the row-number gutter, and `data-i`/`data-f` go on the control inside.
+
+Both tables take `pdg-grid`, so the setup grids now read as the same lattice as the BOQ — which is the
+"follow consistency" half of the ask, and it is the skin the owner asked for by name on 2026-09-07
+(*"we can just follow the all work packages grid design"*).
+
+### Verified
+
+Inline block **parses, 0 failures**; `xlgrid.js` parses; every name the new code calls is checked for a
+declaration, and a sweep for references to the retired grid state (`xa`, `xf`, `xEditing`,
+`xWantFocus`, `t4edit`, `t4f`, `t4a`, `clampRowIdx`, `xlSetCell`) returns **comments only**.
+`wiring-check` **139 passed, 0 failed** — ⚠️ and it **bit**: the first pass loaded
+`xlgrid.js?v=20260907a`, a token I guessed, against the `20260907e` the other two consumers carry,
+and the asset audit reported the split rather than letting a stale copy ship. `dead-hooks` **9**, the
+documented baseline; 0 NUL bytes; CSS braces **2277/2276** against `origin/main`'s **2279/2278** — the
+delta of 1 is this file's own recorded off-by-one, identical on both sides.
+
+⚠️ **NOT VERIFIED SIGNED IN.** Nothing here has been typed into: the grids need a loaded project, and
+what is proven is that the module parses, that every identifier resolves and that the two engines are
+gone. The first things to try are **Tab across a row**, **Shift+↓ then Ctrl+D** down Interior (d),
+**a paste of two columns out of Excel**, **Ctrl+Z**, and **Unload** with a range selected — that last
+one is the path that would have silently taken row 0.
+
+`xlgrid.js` → `?v=20260917zj` across all 3 referencing pages; `MODULE_V` → `20260917zj`,
+sort-checked past `20260917zh`.
 ### 2026-09-17 (r) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
 
 ⚠️ **Re-lettered `(h)` → `(q)` → `(r)`, TWICE on merge.** First a concurrent session independently

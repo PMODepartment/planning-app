@@ -699,6 +699,19 @@ window.PDGrid = (function () {
         clearPaint();
       },
       refresh: layout,
+      /* The row ids the selection currently covers, top to bottom.
+         ⚠ ADDED FOR A HOST THAT ACTS ON THE SELECTION RATHER THAN EDITING IT — Schedule
+         Setup’s “unload these rows back to the catalogue” button. Before this, a host had to read
+         `.pdg-sel` out of the DOM, which is reaching into this file’s private paint classes; one
+         rename here would break it silently. The range is a column run, so the ids are the rows
+         it spans — which column it sits in does not matter to a row action.
+         ⚠ Returns [] rather than null when nothing is focused, so a caller can always iterate. */
+      selectedIds: function () {
+        var r = range(); if (!r) return [];
+        var out = [];
+        for (var i = r.r1; i <= r.r2; i++) if (rows[i] != null) out.push(rows[i]);
+        return out;
+      },
       /* How many required cells are still empty - the host renders the legend, since only it
          knows where to put it. */
       missing: missingCount,

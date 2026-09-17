@@ -4299,9 +4299,15 @@
     .sbld-holdgrip { flex:0 0 8px; align-self:stretch; cursor:col-resize; border-radius:3px; margin:0 2px; }
     .sbld-holdgrip:hover, .sbld-holdgrip.drag { background:var(--pd-red); opacity:.5; }
     table.sbld-xl td.xl-rn { background:var(--pd-bg); color:var(--pd-muted); text-align:center; width:36px; user-select:none; font-variant-numeric:tabular-nums; }
-    table.sbld-xl td.xl-cell { cursor:cell; user-select:none; min-width:70px; overflow:hidden; text-overflow:ellipsis; max-width:340px; }
-    table.sbld-xl td.xl-cell.xl-sel { background:rgba(47,111,237,.14); }
-    table.sbld-xl td.xl-cell.xl-active { outline:2px solid var(--pd-red); outline-offset:-2px; background:var(--pd-card); }
+    /* ⚠⚠ `user-select:none` AND `cursor:cell` BELONG TO A <td> YOU SELECT, NOT ONE THAT
+       HOLDS AN INPUT. `user-select` inherits, so leaving it here would have fought the caret in
+       every cell of a grid whose whole point is that the cell IS the editor — a planner
+       double-clicking a code to replace it would have found nothing selectable. Both went with
+       the engine that needed them.
+       ⚠ `.xl-sel` / `.xl-active` went too: PDGrid paints `pdg-sel` / `pdg-anchor`, so those two
+       rules could never match again, and a rule that cannot match reads as working styling to
+       everyone who comes after. */
+    table.sbld-xl td.xl-cell { min-width:70px; max-width:340px; padding:0; }
     table.sbld-xl td.xl-rowact { width:38px; text-align:center; }
     table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
     table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
@@ -4393,8 +4399,8 @@
     /* Copied cells — Excel's marching ants, so a Ctrl+C is visibly a Ctrl+C. Drawn as an inset
        box-shadow rather than an outline so it survives the cell's own borders and never shifts
        layout, and animated on background-position so it costs no layout/paint work per frame.
-       Sits UNDER .xl-sel/.xl-active in the cascade — the selection is where you are now, the
-       marquee is where the data came from, and both must be readable at once. */
+       Sits UNDER PDGrid’s own .pdg-sel / .pdg-anchor in the cascade — the selection is where
+       you are now, the marquee is where the data came from, and both must be readable at once. */
     @keyframes ps-ants { to { background-position: 14px 0, -14px 0, 0 -14px, 0 14px; } }
     .sbld-xl td.xl-cell.xl-copied {
       background-image:
@@ -5386,6 +5392,7 @@
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/calendar.js?v=20260911uc"></script>
+<script src="../../assets/js/xlgrid.js?v=20260917zj"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="../../assets/js/co-insert.js?v=20260909r"></script>
@@ -32882,7 +32889,9 @@
     function inPendAct(u) { return pendActSet.indexOf(u) >= 0; }
     function inActDst(u) { return pendActDst.indexOf(u) >= 0; }
     // step-1 Excel-style grid state (anchor/focus cell, edit flag, focus-restore across re-renders)
-    var xa = { r: 0, c: 0 }, xf = { r: 0, c: 0 }, xEditing = false, xWantFocus = false;
+    /* ⚠ The old grid’s focus pair (`xa`/`xf`/`xEditing`/`xWantFocus`) is GONE with the engine.
+       Left declared, they would have kept every reader parsing and answering row 0 for ever — the
+       failure the Unload button above was one line from shipping. PDGrid owns focus now. */
     // The rect Ctrl+C last copied, per grid — drawn with marching ants so a copy is visibly a copy.
     // Lives out here (not in the wiring closure) so it survives the re-render every commit triggers.
     var xCopied = null, t4Copied = null;
@@ -33359,22 +33368,77 @@
        trade (94 codes) and "we could not tell" must not be silently filed as if it were. */
     function finTradeGroup(trade) { return parseTrade(trade) || 'OT'; }
     function xlGet(a, k) { if (!a) return ''; if (k === 'group') return GLABEL[a.group] || a.group || ''; if (k === 'scope') return scopeLabel(a.scope); if (k === 'contract') return contractLabel(a.contract) + (a.contract === 'change_order' && a.coRef ? ' · ' + a.coRef : ''); if (k === 'durInt' || k === 'durExt') return a[k] ? String(a[k]) : ''; return a[k] || ''; }
-    function xlSetCell(r, c, text) {
-      while (cfg.activities.length <= r) cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, scope: 'zone', contract: 'main', coRef: '' });
-      var a = cfg.activities[r], k = XL_COLS[c].k;
+  /* ==========================================================================================
+     THE SETUP GRIDS ARE PDGrid NOW.
+     Owner 2026-09-17: *“Tables should be more readable. Cleanup and follow consistency
+     especially having the excel feature”*, then *“Let’s adopt PDGrid for the setup tables”*.
+     ⚠⚠ WHAT THIS REPLACES IS TWO NEAR-IDENTICAL HAND-ROLLED GRIDS. `wireXlGrid` (101 lines)
+     and `wireT4Grid` (77) each carried their own focus model, range paint, mousedown/mouseover
+     drag, dblclick-to-edit, Tab/Enter/arrow handling, paste and copy — the same engine written
+     twice, differing mainly in whether the edit flag was called `xEditing` or `t4edit`. That is
+     the two-copies-drift shape this module keeps paying for, and `assets/js/xlgrid.js` already
+     is that engine: shipped, and already used by the BOQ and the S-curve.
+     ⚠⚠ IT IS A DELIBERATE TRADE, NOT A FREE WIN. The bespoke grids selected a RECTANGLE;
+     PDGrid selects a COLUMN RUN, and its own note says why — *“the operations a planner actually
+     wants here are ‘put this rate down the rest of the trade’ and ‘clear this column’ — both
+     vertical”*, with multi-column fill better served by a paste, which PDGrid spills in 2-D
+     anyway. So a rectangular Delete and a rectangular Ctrl+D are given up; Ctrl+Z undo, one
+     engine and the BOQ’s own cell skin are gained. Recorded here rather than discovered later.
+     ⚠ The cells become REAL inputs and selects — PDGrid’s contract — which deletes a whole
+     class of state with them: no “am I editing?” flag, and a half-typed value can no longer be
+     lost to a re-render that lands mid-edit.
+     ⚠⚠ A DURATION CELL IS `type=“text”` WITH `inputmode`, NEVER `type=“number”` — which is
+     what the old inline editor used (`ctl.type = col.num ? ‘number’ : ‘text’`). A number input
+     reads back “” for anything the spec cannot parse, so a pasted “1,000” silently became blank.
+     Third time this repo has recorded that trap: the BOQ grid, the Contracts money fields, the
+     Cash Flow inputs. */
+    /* ⚠ This REPLACES the old `xlSetCell(row, col, text)` rather than sitting beside it — that
+       one was the index-addressed twin and is deleted, because two setters parsing the same
+       labels is exactly how they come to disagree about what a pasted “Change Order” means. */
+    var _xlBatch = false;   // true while PDGrid is applying a paste or a fill-down
+    var _xlG = null, _t4G = null;   // live PDGrid handles, detached before each re-attach
+    function xlActById(id) {
+      for (var i = 0; i < cfg.activities.length; i++)
+        if (String(cfg.activities[i].id) === String(id)) return cfg.activities[i];
+      return null;
+    }
+    function xlSetById(id, k, text) {
+      var a = xlActById(id); if (!a) return;
       if (k === 'group') { var g = parseTrade(text); if (g) a.group = g; }
-      else if (k === 'scope') { var s = parseScope(text); if (s) a.scope = s; }
+      else if (k === 'scope') { var sc = parseScope(text); if (sc) a.scope = sc; }
       else if (k === 'contract') {
         var ct = parseContract(text); if (!ct) return;
         var was = a.contract; a.contract = ct;
-        if (ct === 'change_order' && was !== 'change_order' && !a.coRef) {
-          var ref = prompt('Change order reference for "' + (a.name || a.code || 'this activity') + '" (e.g. VO-014 — leave blank to fill in later):', '');
+        /* ⚠⚠ NEVER PROMPT INSIDE A BATCH. Filling “Change Order” down forty rows through the
+           old grid meant forty `prompt()` dialogs, one per cell — not a thing anybody can finish.
+           In a batch the contract is set and the reference is left for the Change Order Ref
+           column; on a single edit the prompt is still the quickest way to ask. */
+        if (ct === 'change_order' && was !== 'change_order' && !a.coRef && !_xlBatch) {
+          var ref = prompt('Change order reference for this activity (e.g. VO-014 — leave blank to fill in later):', '');
           if (ref != null) a.coRef = String(ref).trim();
         }
         if (ct !== 'change_order') a.coRef = '';   // a ref on a main-contract line is worse than none
       }
       else if (k === 'durInt' || k === 'durExt') a[k] = Math.max(0, parseInt(text, 10) || 0);
       else a[k] = String(text == null ? '' : text);
+    }
+    /* The control a setup grid cell renders. One builder for both grids, so the Activities step
+       and the Trade-sequence step cannot end up with different-looking cells for the same field. */
+    function xlCellCtl(a, col, valText) {
+      var at = ' class="sbld-cell" data-i="' + e2(a.id) + '" data-f="' + e2(col.k) + '"';
+      function opts(list, cur) {
+        return list.map(function (o) {
+          return '<option value="' + e2(o[1]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + e2(o[1]) + '</option>';
+        }).join('');
+      }
+      /* ⚠ The option VALUE is the label, not the internal key, because every setter above
+         parses a label (`parseTrade` / `parseScope` / `parseContract`) — which is also what makes
+         a paste of “Architectural” out of Excel land correctly. */
+      if (col.trade) return '<select' + at + '>' + opts(GROUPS.map(function (g) { return [g, GLABEL[g] || g]; }), a.group) + '</select>';
+      if (col.scope) return '<select' + at + '>' + opts(SCOPE_OPTS, a.scope || 'zone') + '</select>';
+      if (col.contract) return '<select' + at + '>' + opts(CONTRACT_OPTS, a.contract || 'main') + '</select>';
+      return '<input type="text"' + (col.num ? ' inputmode="numeric"' : '') + at +
+        ' value="' + e2(valText) + '">';
     }
     var autoChainType = 'FS';  // step-4 Auto-chain relationship type (FS / SS / FF / SF)
     var tradeView = 'flow';    // step-4 right pane: 'flow' (equal blocks) | 'gantt' (time-scaled)
@@ -33415,8 +33479,8 @@
     function setFocus(uids) { seqFocus = (uids || []).slice(); }
     var actFocus = null;      // step-4: class-code id highlighted across the list & chart
     function isActFocus(id) { return actFocus && actFocus === id; }
-    // step-4 Excel-style class-code grid state (its own cursor, separate from step-1's xa/xf)
-    var t4a = { r: 0, c: 0 }, t4f = { r: 0, c: 0 }, t4edit = false, t4want = false;
+    /* ⚠ The trade-sequence grid’s own cursor is gone with its engine too — PDGrid keeps its
+       own focus per attached table, so the two grids no longer need a cursor each. */
     var T4_COLS = [{ k: 'code', label: 'Code', w: 100 }, { k: 'name', label: 'Activity name', w: 190 }, { k: 'durInt', label: 'Interior (d)', w: 84, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 84, num: true }];
     // Tower display nodes for one floor at the current collapse level. Each node carries ALL its
     // descendant leaf uids (so a collapsed node links/highlights its whole group). L1 is handled at
@@ -37075,7 +37139,7 @@
               '" data-c="' + ci + '"' +
               (_bad ? ' title="' + e2('This code is not in the class-code chart, so a BOQ line can never'
                 + ' match it. Pick one from the library, or read the codes off the project BOQ.') + '"' : '') +
-              '>' + e2(xlGet(a, c.k)) + '</td>';
+              '>' + xlCellCtl(a, c, xlGet(a, c.k)) + '</td>';
           }).join('') +
           '<td class="xl-rowact"><button class="sbld-del" data-del="' + r + '" title="Delete row"><span data-ico="trash" data-ico-size="14"></span></button></td></tr>';
       }).join('');
@@ -37115,7 +37179,7 @@
         '<button class="pd-btn" id="b-upl"><span data-ico="box" data-ico-size="14"></span> Upload CSV / Excel</button>' +
         '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>' +
         (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
-        '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
+        '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl pdg-grid" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
         /* ⚠️ The accepted-code list moved into this step's existing "How to use this step"
            collapsible, beside the other per-column notes — NOT onto the column header, which is
            what I first wrote here: this grid builds its headers from a column spec and there was no
@@ -37137,7 +37201,18 @@
             'Re-pick from <b>+ Library</b> (group level) or <b>+ From BOQ</b> (item level).</p>';
         })();
       // toolbar
-      host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };
+      host.querySelector('#b-add').onclick = function () {
+        var nid = uidv();
+        cfg.activities.push({ id: nid, code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' });
+        markDirty(); render();
+        /* ⚠ AFTER the render, because render() rebuilds the table and the node focused before
+           it would be one PDGrid has already replaced. Focusing the new row’s first cell is what
+           the retired `xWantFocus` flag existed to do; asking the DOM for it needs no state. */
+        try {
+          var c0 = document.querySelector('#b-xl .sbld-cell[data-i="' + nid + '"]');
+          if (c0) { c0.focus(); if (c0.select) c0.select(); }
+        } catch (e) {}
+      };
       host.querySelector('#b-tmpl').onclick = actTemplateCsv;
       var uf = host.querySelector('#b-uplfile');
       host.querySelector('#b-upl').onclick = function () { uf.click(); };
@@ -37194,118 +37269,39 @@
       };
       host.querySelector('#b-unload').onclick = function () {
         if (!cfg.activities.length) return;
-        var r0 = Math.min(xa.r, xf.r), r1 = Math.max(xa.r, xf.r);
-        var moved = cfg.activities.slice(r0, r1 + 1); cfg.activities.splice(r0, r1 - r0 + 1);
+        /* ⚠⚠ READ FROM THE GRID, NOT FROM `xa`/`xf`. Those were the old hand-rolled grid’s
+           own focus pair; they are still DECLARED at module scope, so this kept parsing and
+           running after the engine was replaced — it would simply have unloaded row 0 every time,
+           whatever was selected. A silent wrong answer, not an error. */
+        var ids = _xlG ? _xlG.selectedIds() : [];
+        if (!ids.length) { UI.toast('Select the rows to unload first — click a cell, then Shift+↓ to extend.', 'warn'); return; }
+        var take = {}; ids.forEach(function (id) { take[String(id)] = 1; });
+        var moved = cfg.activities.filter(function (a) { return take[String(a.id)]; });
+        if (!moved.length) return;
+        cfg.activities = cfg.activities.filter(function (a) { return !take[String(a.id)]; });
         cfg.catalog = cfg.catalog.concat(moved);
-        xf = { r: clampRowIdx(r0), c: xf.c }; xa = { r: xf.r, c: xf.c }; markDirty(); render();
+        markDirty(); render();
       };
-      wireXlGrid(host);
-    }
-    function clampRowIdx(r) { return Math.max(0, Math.min(r, Math.max(0, cfg.activities.length - 1))); }
-
-    // Excel-like grid engine for step 1 — cell selection, drag/shift range, copy/paste/fill, inline edit.
-    function wireXlGrid(host) {
-      var cols = XL_COLS, wrap = host.querySelector('#b-xl'); if (!wrap) return;
-      var nR = function () { return cfg.activities.length; };
-      function clampR(r) { return Math.max(0, Math.min(r, Math.max(0, nR() - 1))); }
-      function clampC(c) { return Math.max(0, Math.min(c, cols.length - 1)); }
-      function cellEl(r, c) { return wrap.querySelector('td.xl-cell[data-r="' + r + '"][data-c="' + c + '"]'); }
-      function bounds() { return { r0: Math.min(xa.r, xf.r), r1: Math.max(xa.r, xf.r), c0: Math.min(xa.c, xf.c), c1: Math.max(xa.c, xf.c) }; }
-      function paint() {
-        wrap.querySelectorAll('td.xl-cell.xl-sel,td.xl-cell.xl-active').forEach(function (td) { td.classList.remove('xl-sel', 'xl-active'); });
-        paintCopied(wrap, xCopied);
-        if (!nR()) return; var b = bounds();
-        for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) { var td = cellEl(r, c); if (td) td.classList.add('xl-sel'); }
-        var af = cellEl(xf.r, xf.c); if (af) { af.classList.add('xl-active'); af.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
-      }
-      function setFocus(r, c, extend) { xf = { r: clampR(r), c: clampC(c) }; if (!extend) xa = { r: xf.r, c: xf.c }; paint(); }
-      // restore selection + focus after a re-render
-      xa = { r: clampR(xa.r), c: clampC(xa.c) }; xf = { r: clampR(xf.r), c: clampC(xf.c) };
-      paint(); if (xWantFocus) { wrap.focus(); xWantFocus = false; }
-
-      function commitRender() { markDirty(); xWantFocus = true; render(); }
-      function beginEdit(seed) {
-        if (!nR()) return; var r = xf.r, c = xf.c, a = cfg.activities[r], col = cols[c], td = cellEl(r, c); if (!td) return;
-        xEditing = true; var ctl;
-        if (col.trade) {
-          ctl = document.createElement('select');
-          ctl.innerHTML = GROUPS.map(function (g) { return '<option value="' + g + '"' + (a.group === g ? ' selected' : '') + '>' + e2(GLABEL[g]) + '</option>'; }).join('');
-        } else if (col.scope) {
-          ctl = document.createElement('select');
-          ctl.innerHTML = SCOPE_OPTS.map(function (o) { return '<option value="' + o[0] + '"' + ((a.scope || 'zone') === o[0] ? ' selected' : '') + '>' + e2(o[1]) + '</option>'; }).join('');
-        } else if (col.contract) {
-          ctl = document.createElement('select');
-          ctl.innerHTML = CONTRACT_OPTS.map(function (o) { return '<option value="' + o[0] + '"' + ((a.contract || 'main') === o[0] ? ' selected' : '') + '>' + e2(o[1]) + '</option>'; }).join('');
-        } else {
-          ctl = document.createElement('input'); ctl.type = col.num ? 'number' : 'text'; if (col.num) ctl.min = '0';
-          ctl.value = seed != null ? seed : xlGet(a, col.k);
+      /* ⚠ Re-attached on every render because the table is rebuilt wholesale; PDGrid holds no
+         state across that, and its own `detach` is what the previous handle is dropped for. */
+      if (_xlG) { try { _xlG.detach(); } catch (e) {} }
+      _xlG = PDGrid.attach({
+        root: host.querySelector('#b-xl'), cell: '.sbld-cell',
+        onSet: function (id, f, v) { xlSetById(id, f, v); markDirty(); render(); },
+        onBatch: function (ch) {
+          _xlBatch = true;
+          try { ch.forEach(function (c) { xlSetById(c.id, c.field, c.value); }); }
+          finally { _xlBatch = false; }
+          markDirty(); render();
         }
-        td.textContent = ''; td.appendChild(ctl); ctl.focus();
-        if (ctl.select && !col.trade && !col.scope && !col.contract) ctl.select();
-        function commit(move) { if (!xEditing) return; xEditing = false; xlSetCell(r, c, ctl.value); if (move) { if (move === 'down') xf = { r: clampR(r + 1), c: c }; else if (move === 'right') xf = { r: r, c: clampC(c + 1) }; xa = { r: xf.r, c: xf.c }; } commitRender(); }
-        ctl.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') { e.preventDefault(); commit('down'); }
-          else if (e.key === 'Tab') { e.preventDefault(); commit('right'); }
-          else if (e.key === 'Escape') { e.preventDefault(); xEditing = false; xWantFocus = true; render(); }
-          e.stopPropagation();
-        });
-        ctl.addEventListener('blur', function () { commit(null); });
-        if (col.trade || col.contract) ctl.addEventListener('change', function () { commit(null); });
-      }
+      });
 
-      // mouse: click to select, drag / shift-click to extend a range
-      var dragging = false;
-      wrap.addEventListener('mousedown', function (e) { var td = e.target.closest && e.target.closest('td.xl-cell'); if (!td) return; if (xEditing) return; e.preventDefault(); wrap.focus(); setFocus(+td.dataset.r, +td.dataset.c, e.shiftKey); dragging = true; });
-      wrap.addEventListener('mouseover', function (e) { if (!dragging) return; var td = e.target.closest && e.target.closest('td.xl-cell'); if (td) setFocus(+td.dataset.r, +td.dataset.c, true); });
-      document.addEventListener('mouseup', function () { dragging = false; });
-      wrap.addEventListener('dblclick', function (e) { var td = e.target.closest && e.target.closest('td.xl-cell'); if (!td) return; setFocus(+td.dataset.r, +td.dataset.c, false); beginEdit(); });
-
-      wrap.addEventListener('keydown', function (e) {
-        if (xEditing) return;
-        var k = e.key;
-        if (k === 'ArrowDown') { e.preventDefault(); setFocus(xf.r + 1, xf.c, e.shiftKey); }
-        else if (k === 'ArrowUp') { e.preventDefault(); setFocus(xf.r - 1, xf.c, e.shiftKey); }
-        else if (k === 'ArrowRight') { e.preventDefault(); setFocus(xf.r, xf.c + 1, e.shiftKey); }
-        else if (k === 'ArrowLeft') { e.preventDefault(); setFocus(xf.r, xf.c - 1, e.shiftKey); }
-        else if (k === 'Tab') { e.preventDefault(); setFocus(xf.r, xf.c + (e.shiftKey ? -1 : 1), false); }
-        else if (k === 'Enter') { e.preventDefault(); beginEdit(); }
-        else if (k === 'F2') { e.preventDefault(); beginEdit(); }
-        else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); var b = bounds(); for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) xlSetCell(r, c, ''); commitRender(); }
-        else if ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'D')) { e.preventDefault(); var bd = bounds(); for (var c2 = bd.c0; c2 <= bd.c1; c2++) { var v = xlGet(cfg.activities[bd.r0], cols[c2].k); for (var r2 = bd.r0 + 1; r2 <= bd.r1; r2++) xlSetCell(r2, c2, v); } commitRender(); }
-        else if ((e.ctrlKey || e.metaKey) && (k === 'a' || k === 'A')) { e.preventDefault(); if (nR()) { xa = { r: 0, c: 0 }; xf = { r: nR() - 1, c: cols.length - 1 }; paint(); } }
-        else if (k === 'Escape' && xCopied) { e.preventDefault(); xCopied = null; paint(); }   // Excel: Esc cancels the copy marquee
-        else if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length === 1) { beginEdit(k); }
-      });
-      // native copy/paste (container is focusable, so these fire on Ctrl+C / Ctrl+V)
-      wrap.addEventListener('copy', function (e) {
-        if (xEditing || !nR()) return; e.preventDefault(); var b = bounds(), out = [];
-        for (var r = b.r0; r <= b.r1; r++) { var row = []; for (var c = b.c0; c <= b.c1; c++) row.push(xlGet(cfg.activities[r], cols[c].k)); out.push(row.join('\t')); }
-        e.clipboardData.setData('text/plain', out.join('\n'));
-        markCopied(xCopied = { r0: b.r0, r1: b.r1, c0: b.c0, c1: b.c1 }, false);
-        paint();
-      });
-      wrap.addEventListener('paste', function (e) {
-        if (xEditing) return; e.preventDefault();
-        var text = (e.clipboardData || window.clipboardData).getData('text'); if (text == null) return;
-        var lines = text.replace(/\r/g, '').split('\n'); if (lines.length && lines[lines.length - 1] === '') lines.pop();
-        var grid = lines.map(function (l) { return l.split('\t'); });
-        var b = bounds();
-        if (grid.length === 1 && grid[0].length === 1) { var v = grid[0][0]; for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) xlSetCell(r, c, v); }
-        else { var sr = b.r0, sc = b.c0; grid.forEach(function (row, i) { row.forEach(function (val, j) { if (sc + j < cols.length) xlSetCell(sr + i, sc + j, val); }); }); xf = { r: sr + grid.length - 1, c: Math.min(cols.length - 1, sc + grid[0].length - 1) }; xa = { r: sr, c: sc }; }
-        xCopied = null;                       // the copy has been used — stop marching
-        UI.toast('Pasted ' + (grid.length * grid[0].length) + ' value' + (grid.length * grid[0].length === 1 ? '' : 's') + '.', 'success');
-        commitRender();
-      });
-      // row delete buttons
-      wrap.querySelectorAll('[data-del]').forEach(function (btn) { btn.onclick = function (e) { e.stopPropagation(); cfg.activities.splice(+btn.dataset.del, 1); commitRender(); }; });
-      // delete selected rows
-      var dr = host.querySelector('#b-delrows'); if (dr) dr.onclick = function () { if (!nR()) return; var b = bounds(); cfg.activities.splice(b.r0, b.r1 - b.r0 + 1); xf = { r: clampR(b.r0), c: xf.c }; xa = { r: xf.r, c: xf.c }; commitRender(); };
     }
 
-    // Step-4 class-code grid: Excel-style cell block, drag/Shift range, copy/paste (block from Excel,
-    // one cell → fill selection), Ctrl+D fill-down, type-to-edit. Operates on the TRADE's activities
-    // (references into cfg.activities), so edits show everywhere. A per-row ▸ button selects the code
-    // for the 2-phase linking (source → destination). No paste-beyond-rows: adding codes is step 1's job.
+    /* Step-4 WRITE: the per-KIND duration setter the trade-sequence grid saves through.
+       ⚠ Separate from xlSetById on purpose — it forks a category’s own duration off the
+       default rather than editing the default, which is what makes “All levels” and one
+       named level mean different things. */
     function t4Set(a, k, text) {
       if (!a) return;
       if (k === 'durInt' || k === 'durExt') {
@@ -37347,89 +37343,11 @@
             var own = (c.k === 'durInt' || c.k === 'durExt') && kindHasOwnDur(a, uiSeqKind);
             return '<td class="xl-cell' + (own ? ' sbld-ownd' : '') + '" data-r="' + r + '" data-c="' + ci + '"' +
               (own ? ' title="Own duration for ' + e2(KIND_LABEL[uiSeqKind] || uiSeqKind) + ' levels (the default is ' + e2(String(Math.max(0, +a[c.k] || 0) || '—')) + 'd)"' : '') +
-              '>' + e2(t4Get(a, c.k)) + '</td>';
+              '>' + xlCellCtl(a, c, t4Get(a, c.k)) + '</td>';
           }).join('') + '</tr>';
       }).join('');
-      return '<div class="sbld-xlwrap" tabindex="0" id="b-t4"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+      return '<div class="sbld-xlwrap" tabindex="0" id="b-t4"><table class="sbld-xl pdg-grid" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
     }
-    function wireT4Grid(host, acts) {
-      var cols = T4_COLS, wrap = host.querySelector('#b-t4'); if (!wrap) return;
-      var nR = function () { return acts.length; };
-      function clampR(r) { return Math.max(0, Math.min(r, Math.max(0, nR() - 1))); }
-      function clampC(c) { return Math.max(0, Math.min(c, cols.length - 1)); }
-      function cellEl(r, c) { return wrap.querySelector('td.xl-cell[data-r="' + r + '"][data-c="' + c + '"]'); }
-      function bounds() { return { r0: Math.min(t4a.r, t4f.r), r1: Math.max(t4a.r, t4f.r), c0: Math.min(t4a.c, t4f.c), c1: Math.max(t4a.c, t4f.c) }; }
-      function paint() {
-        wrap.querySelectorAll('td.xl-cell.xl-sel,td.xl-cell.xl-active').forEach(function (td) { td.classList.remove('xl-sel', 'xl-active'); });
-        paintCopied(wrap, t4Copied);
-        if (!nR()) return; var b = bounds();
-        for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) { var td = cellEl(r, c); if (td) td.classList.add('xl-sel'); }
-        var af = cellEl(t4f.r, t4f.c); if (af) { af.classList.add('xl-active'); af.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
-      }
-      function setFocus(r, c, extend) { t4f = { r: clampR(r), c: clampC(c) }; if (!extend) t4a = { r: t4f.r, c: t4f.c }; paint(); }
-      t4a = { r: clampR(t4a.r), c: clampC(t4a.c) }; t4f = { r: clampR(t4f.r), c: clampC(t4f.c) };
-      paint(); if (t4want) { wrap.focus(); t4want = false; }
-      function commitRender() { markDirty(); t4want = true; render(); }
-      function beginEdit(seed) {
-        if (!nR()) return; var r = t4f.r, c = t4f.c, a = acts[r], col = cols[c], td = cellEl(r, c); if (!td) return;
-        t4edit = true; var ctl = document.createElement('input'); ctl.type = col.num ? 'number' : 'text'; if (col.num) ctl.min = '0';
-        ctl.value = seed != null ? seed : t4Get(a, col.k);
-        td.textContent = ''; td.appendChild(ctl); ctl.focus(); if (ctl.select) ctl.select();
-        function commit(move) { if (!t4edit) return; t4edit = false; t4Set(a, col.k, ctl.value); if (move === 'down') t4f = { r: clampR(r + 1), c: c }; else if (move === 'right') t4f = { r: r, c: clampC(c + 1) }; if (move) t4a = { r: t4f.r, c: t4f.c }; commitRender(); }
-        ctl.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') { e.preventDefault(); commit('down'); }
-          else if (e.key === 'Tab') { e.preventDefault(); commit('right'); }
-          else if (e.key === 'Escape') { e.preventDefault(); t4edit = false; t4want = true; render(); }
-          e.stopPropagation();
-        });
-        ctl.addEventListener('blur', function () { commit(null); });
-      }
-      var dragging = false;
-      wrap.addEventListener('mousedown', function (e) { var td = e.target.closest && e.target.closest('td.xl-cell'); if (!td || t4edit) return; e.preventDefault(); wrap.focus(); setFocus(+td.dataset.r, +td.dataset.c, e.shiftKey); dragging = true; });
-      wrap.addEventListener('mouseover', function (e) { if (!dragging) return; var td = e.target.closest && e.target.closest('td.xl-cell'); if (td) setFocus(+td.dataset.r, +td.dataset.c, true); });
-      document.addEventListener('mouseup', function () { dragging = false; });
-      wrap.addEventListener('dblclick', function (e) { var td = e.target.closest && e.target.closest('td.xl-cell'); if (!td) return; setFocus(+td.dataset.r, +td.dataset.c, false); beginEdit(); });
-      wrap.addEventListener('keydown', function (e) {
-        if (t4edit) return; var k = e.key;
-        if (k === 'ArrowDown') { e.preventDefault(); setFocus(t4f.r + 1, t4f.c, e.shiftKey); }
-        else if (k === 'ArrowUp') { e.preventDefault(); setFocus(t4f.r - 1, t4f.c, e.shiftKey); }
-        else if (k === 'ArrowRight') { e.preventDefault(); setFocus(t4f.r, t4f.c + 1, e.shiftKey); }
-        else if (k === 'ArrowLeft') { e.preventDefault(); setFocus(t4f.r, t4f.c - 1, e.shiftKey); }
-        else if (k === 'Tab') { e.preventDefault(); setFocus(t4f.r, t4f.c + (e.shiftKey ? -1 : 1), false); }
-        else if (k === 'Enter' || k === 'F2') { e.preventDefault(); beginEdit(); }
-        else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); var b = bounds(); for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) t4Set(acts[r], cols[c].k, ''); commitRender(); }
-        else if ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'D')) { e.preventDefault(); var bd = bounds(); for (var c2 = bd.c0; c2 <= bd.c1; c2++) { var v = t4Get(acts[bd.r0], cols[c2].k); for (var r2 = bd.r0 + 1; r2 <= bd.r1; r2++) t4Set(acts[r2], cols[c2].k, v); } commitRender(); }
-        else if ((e.ctrlKey || e.metaKey) && (k === 'a' || k === 'A')) { e.preventDefault(); if (nR()) { t4a = { r: 0, c: 0 }; t4f = { r: nR() - 1, c: cols.length - 1 }; paint(); } }
-        else if (k === 'Escape' && t4Copied) { e.preventDefault(); t4Copied = null; paint(); }   // Excel: Esc cancels the copy marquee
-        else if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length === 1) { beginEdit(k); }
-      });
-      wrap.addEventListener('copy', function (e) {
-        if (t4edit || !nR()) return; e.preventDefault(); var b = bounds(), out = [];
-        // ⚠️ t4Get, NOT xlGet — see the note above this handler's fix. Copy must read exactly what
-        // the cell shows and what paste would write, i.e. the selected level type's value.
-        for (var r = b.r0; r <= b.r1; r++) { var row = []; for (var c = b.c0; c <= b.c1; c++) row.push(t4Get(acts[r], cols[c].k)); out.push(row.join('\t')); }
-        e.clipboardData.setData('text/plain', out.join('\n'));
-        markCopied(t4Copied = { r0: b.r0, r1: b.r1, c0: b.c0, c1: b.c1 }, e.type === 'cut');
-        paint();
-      });
-      wrap.addEventListener('paste', function (e) {
-        if (t4edit) return; e.preventDefault();
-        var text = (e.clipboardData || window.clipboardData).getData('text'); if (text == null) return;
-        var lines = text.replace(/\r/g, '').split('\n'); if (lines.length && lines[lines.length - 1] === '') lines.pop();
-        var grid = lines.map(function (l) { return l.split('\t'); }), b = bounds();
-        if (grid.length === 1 && grid[0].length === 1) { var v = grid[0][0]; for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) t4Set(acts[r], cols[c].k, v); }
-        else { var sr = b.r0, sc = b.c0; grid.forEach(function (row, i) { row.forEach(function (val, j) { if (sr + i < nR() && sc + j < cols.length) t4Set(acts[sr + i], cols[sc + j].k, val); }); }); t4f = { r: clampR(sr + grid.length - 1), c: Math.min(cols.length - 1, sc + grid[0].length - 1) }; t4a = { r: clampR(sr), c: sc }; }
-        t4Copied = null;                      // the copy has been used — stop marching
-        UI.toast('Pasted ' + (grid.length * grid[0].length) + ' value' + (grid.length * grid[0].length === 1 ? '' : 's') +
-          (uiSeqKind && uiSeqKind !== 'all' ? ' into ' + (KIND_LABEL[uiSeqKind] || uiSeqKind) + ' levels.' : '.'), 'success');
-        commitRender();
-      });
-      // (class-code linking moved to the schedule bars on the right — view/edit toggle, like step 3)
-    }
-
-    // Step 4 — connect the class codes WITHIN a trade (mirrors the Zone-sequence layout): a class-code
-    // list on the left, a uniform-block flow chart on the right. Links (FS/SS/FF/SF + lag) between codes
-    // drive how they run inside every zone of that trade when the schedule is generated.
     function stTradeSeq(host) {
       var used = usedGroups();
       if (!used.length) {
@@ -37544,7 +37462,20 @@
       host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; render(); }; });
       // Excel-style class-code grid (edit Code/Name/Interior/Exterior; multi-cell copy/paste).
       // Linking is on the schedule bars (View/Edit toggle), not a per-row column.
-      wireT4Grid(host, acts);
+      /* ⚠ `t4Set` already takes (activity, field, text), so this grid needed no new setter —
+         only the id→activity lookup PDGrid’s contract implies. It writes per-KIND durations
+         (`uiSeqKind`), which is exactly why it cannot share the Activities step’s setter. */
+      if (_t4G) { try { _t4G.detach(); } catch (e) {} }
+      _t4G = PDGrid.attach({
+        root: host.querySelector('#b-t4'), cell: '.sbld-cell',
+        onSet: function (id, f, v) { t4Set(xlActById(id), f, v); markDirty(); render(); },
+        onBatch: function (ch) {
+          _xlBatch = true;
+          try { ch.forEach(function (c) { t4Set(xlActById(c.id), c.field, c.value); }); }
+          finally { _xlBatch = false; }
+          markDirty(); render();
+        }
+      });
       if (tradeView === 'gantt') {
         host.querySelector('#b-azout').onclick = function () { tgZoom = Math.max(0.3, tgZoom / 1.25); render(); };
         host.querySelector('#b-azin').onclick = function () { tgZoom = Math.min(40, tgZoom * 1.25); render(); };
