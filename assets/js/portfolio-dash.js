@@ -454,6 +454,46 @@
     document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) menu.classList.remove('open'); });
   }
 
+  /* ---- provenance in a consolidated view --------------------------------------------------
+     Owner, 2026-09-15: *"for consolidated data in portfolio, if in list group by project"* and
+     *"for consolidated data not in list, add a marker project code to identify."*
+
+     ⚠️⚠️ EVERY TABLE HERE WAS A FLAT LIST WITH A `Project` COLUMN, and that is the thing being
+     replaced rather than decorated. A name repeated down a column costs a sideways scan on every
+     single row to answer "whose is this", and — worse — the sort scattered one project's rows the
+     whole length of the table, so there was no way to read a project's records together. The
+     column goes and a group band takes its place: the question is answered once per project
+     instead of once per row, and the rows of a project are finally adjacent.
+
+     ⚠️ Ordered by project CODE, through the SHARED `UI.groupByProject` / `UI.projectGroupRowHTML`
+     — the same two functions the modules' own registers use — so a project sits in the same place
+     on every consolidated screen in the app rather than in whatever order each table sorted by.
+     ⚠️ Grouping runs after each view's own sort and never re-sorts within a group, so "most aging
+     first" still means that inside each project.
+     ⚠️ THE NAME IS FILLED IN FROM `PROJ`, this file's own project read, rather than by warming
+     UI's separate cache: `PDb.getProjects()` does no caching, so asking for it a second time
+     would be a real extra round trip for a string already in hand. The CODE — which is what
+     orders the groups and what a planner recognises — needs no lookup either way. */
+  function projGroups(list, getId) {
+    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    return UI.groupByProject(list, getId).map(function (g) {
+      if (!g.name && nameById[g.id]) { g.name = nameById[g.id]; g.label = g.code + ' — ' + g.name; }
+      return g;
+    });
+  }
+  function groupedBody(list, colspan, rowHTML, emptyText, getId) {
+    if (!list.length) return '<tr><td colspan="' + colspan + '" class="po-empty">' + esc(emptyText) + '</td></tr>';
+    return projGroups(list, getId).map(function (g) {
+      return UI.projectGroupRowHTML(g, colspan) + g.rows.map(rowHTML).join('');
+    }).join('');
+  }
+  /* The non-list half of the same ask: a photo tile has no group band to sit under, so it carries
+     the CODE. ⚠️ The full "CODE — Name" goes in the title from `PROJ`, for the reason above. */
+  function projTag(id) {
+    var row = PROJ.filter(function (p) { return p.id === id; })[0];
+    return UI.projectTagHTML(id, { title: row ? (id + ' — ' + (row.name || id)) : id });
+  }
+
   /* One fetch per page, shared by whichever dashboard is mounted. ⚠️ The same offline read-cache
      the Portfolio Dashboard uses, under its own key: a module opened on a dead connection still
      draws its portfolio view rather than an empty table. */
@@ -945,20 +985,24 @@
       ctRenderRank(cash, eots, nameById, today);
       ctRenderAging(ag, cash, today);
 
+      // ⚠️ The project half of this sort is GONE, not merely reordered: the band now groups by
+      // project, so sorting rows by project name as well would be a second, competing ordering —
+      // and one keyed on the NAME where the bands are keyed on the CODE, which is how a table
+      // ends up with its groups in one order and its rows in another.
       var sorted = list.slice().sort(function (a, b) {
-        return (nameById[a.project_id] || '').localeCompare(nameById[b.project_id] || '') || (a.record_type || '').localeCompare(b.record_type || '');
+        return (a.record_type || '').localeCompare(b.record_type || '');
       });
-      var head = '<thead><tr><th>Project</th><th>Type</th><th>Reference</th><th>Counterparty</th><th class="num">Amount</th><th>Status</th></tr></thead>';
-      var body = sorted.length ? sorted.map(function (r) {
+      var head = '<thead><tr><th>Type</th><th>Reference</th><th>Counterparty</th><th class="num">Amount</th><th>Status</th></tr></thead>';
+      var body = groupedBody(sorted, 5, function (r) {
         var amt = r.record_type === 'Contract' ? r.amount : (r.approved_amount != null ? r.approved_amount : (r.eval_amount != null ? r.eval_amount : r.sub_amount));
         var st = r.record_type === 'Contract' ? null : (r.status || 'Pending');
-        return '<tr><td>' + esc(nameById[r.project_id] || r.project_id) + '</td>' +
+        return '<tr>' +
           '<td>' + esc(r.record_type || '—') + '</td>' +
           '<td>' + esc(ctDesc(r)) + '</td>' +
           '<td>' + esc(r.counterparty || '—') + '</td>' +
           '<td class="num">' + (amt != null ? Fmt.moneyShort(amt) : '—') + '</td>' +
           '<td>' + (st ? statePill(st, st === 'Approved' ? 'ok' : st === 'Pending' ? 'warn' : st === 'Disapproved' ? 'bad' : 'muted') : '—') + '</td></tr>';
-      }).join('') : '<tr><td colspan="6" class="po-empty">No contract or claim records match the current filter.</td></tr>';
+      }, 'No contract or claim records match the current filter.');
       document.getElementById('po-ct-table').innerHTML = head + '<tbody>' + body + '</tbody>';
       /* ⚠️ The disclosure states its own count. A `<summary>` reading only "All records" gives no
          reason to open it and no sense of what is behind it. */
@@ -1183,8 +1227,13 @@
           var path = r.thumb_url || r.photo_url, url = path ? urlByPath[path] : '';
           return '<div class="po-photo-item">' +
             (url ? '<img src="' + esc(url) + '" alt="" loading="lazy">' : '<div style="width:150px;height:104px;border-radius:8px;background:var(--pd-bg);border:1px solid var(--pd-line);"></div>') +
+            // ⚠️ The CODE, not the name it used to print. A tile is ~150px wide and a project
+            // name routinely runs past that, so the caption was being ellipsised into something
+            // that identified nothing; the code is short enough to read at a glance and is what
+            // every other consolidated screen now marks a row with. The full name is still one
+            // hover away, in the title this tile already carried.
             '<div class="po-photo-cap" title="' + esc((nameById[r.project_id] || r.project_id) + ' — ' + (r.description || '')) + '">' +
-            esc(nameById[r.project_id] || r.project_id) + '</div></div>';
+            projTag(r.project_id) + '</div></div>';
         }).join('');
       }
 
