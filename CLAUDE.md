@@ -103,6 +103,44 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (b) — Autosave left the Save button reading "Saving…" forever, and every save toasted as a warning
+
+Owner: *"Saving button is not working, probably due to the autosave feature."* That diagnosis was
+exactly right.
+
+#### The mechanism
+`Autosave.wire` does not have a save routine of its own — it **borrows the module's Save button
+handler**, which already knows how to build the payload and write it. To keep the modal open while
+the planner is still typing, it stubs out `modal.close` around the call.
+
+The borrowed handler starts with `btn.disabled = true; btn.textContent = 'Saving…'` and, on success,
+never puts it back — on a real click it does not have to, because the modal closes and takes the
+button with it. Under autosave the close is a no-op, so the handler returns having disabled the
+button and relabelled it, and **nothing ever restores it**. From that moment the Save button reads
+*Saving…* and is dead for the rest of the session.
+
+⚠️⚠️ **The work was being saved the whole time.** Autosave wrote it. But the only thing on screen
+said otherwise, so the rational response is to hit Cancel and assume the edit was lost — which is
+also why "submitted amount is not recording" was reported separately. It was recording.
+
+#### The fix
+`assets/js/autosave.js` captures `disabled` and `textContent` before calling the borrowed handler
+and restores both in the `finally` it already had for `modal.close`. It belongs there rather than in
+each module: autosave is what suppressed the close that would have disposed of the button, and there
+are four consumers — `contracts-claims`, `progress-photos`, `risk-register`, `stakeholder-map` —
+three of which spell their handler differently. `stakeholder-map` already had its own `finally` for
+this and is simply restored to the same values twice.
+
+#### And a second bug in the same handler
+`affMsg.indexOf('') >= 0 ? 'warn' : 'success'` — `indexOf` of the empty string is **0** in every
+engine, so the condition was always true and **every successful save toasted as a warning**,
+including ordinary ones with no affected-work message at all. The needle had been lost from the
+source; both failure branches say `NOT saved`, which is what it now tests.
+
+`autosave.js` bumped to `?v=20260917`. `wiring-check` 139/0.
+
+---
+
 ### 2026-09-17 (a) — One toolbar divider instead of thirteen, the portfolio Gantt on the app's own bar colours, and the S-Curve stops doing work nobody asked for
 
 Six things the owner raised in one message, all in the portfolio layer.

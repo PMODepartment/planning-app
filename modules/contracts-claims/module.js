@@ -1748,7 +1748,13 @@ window.ContractsClaims = (function () {
         }
       }
       m.close(); UI.toast((r ? 'Record updated.' : 'Record added.') + affMsg,
-        affMsg.indexOf('') >= 0 ? 'warn' : 'success');
+        /* ⚠️ `affMsg.indexOf('') >= 0` — what this said until 2026-09-17 — is ALWAYS TRUE:
+           `indexOf` of the empty string is 0 in every JavaScript engine, so every successful save
+           toasted as a warning, including the ordinary ones with no affected-work message at all.
+           The needle had been lost from the source at some point; what it has to test is whether
+           the affected-work write is the half that failed, and both of its failure branches above
+           say `NOT saved`. */
+        affMsg.indexOf('NOT saved') >= 0 ? 'warn' : 'success');
       warnDropped(res.dropped);
       gotoTypeTab(t);
     };
