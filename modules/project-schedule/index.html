@@ -28466,8 +28466,16 @@
     var det = document.getElementById('ps-scn-detail'), acts = s.activities || {};
     var live = _liveSummary();
     var finDelta = (s.project_finish && live.finish) ? dayDiff(pd(s.project_finish), live.finish) : null;
-    var critDelta = live.critical - (s.critical_count || 0);
-    var costDelta = live.cost - (s.total_cost || 0);
+    /* ⚠⚠ `== null`, NOT `|| 0`. `critical_count` and `total_cost` are nullable and the Schedule
+       Setup's push does not set them — its insert carries only `activity_count` and
+       `project_finish`, because neither a critical count nor a cost exists for a plan that has
+       not been through CPM. `|| 0` read that absence as the number zero, so every push-captured
+       scenario reported a delta equal to the ENTIRE live value: measured, “Critical Δ +2 (0 → 2)”
+       and “Planned cost Δ +520,000” against a schedule whose real deltas were 0 and 0. A
+       fabricated number in a comparison tile is worse than a dash, because nothing about it looks
+       wrong. `deltaCell` already renders null as —; it just never received one. */
+    var critDelta = (s.critical_count == null) ? null : live.critical - s.critical_count;
+    var costDelta = (s.total_cost == null) ? null : live.cost - s.total_cost;
     function deltaCell(v, unit, goodIsNeg) { if (v == null) return '—'; var cls = (v === 0) ? '' : ((goodIsNeg ? v > 0 : v < 0) ? 'ps-bulk-late' : ''); return '<span class="' + cls + '">' + (v > 0 ? '+' : '') + v + (unit || '') + '</span>'; }
     // per-activity finish drift live-vs-scenario
     var recs = rows.filter(function (r) { return !isWbs(r) && r.activity_id && acts[String(r.activity_id)]; }).map(function (r) {
@@ -28483,8 +28491,10 @@
       '<div class="ps-risk-kpis">' +
         '<div class="ps-risk-kpi"><div class="v">' + deltaCell(finDelta, 'd', true) + '</div><div class="l">Finish vs scenario</div></div>' +
         '<div class="ps-risk-kpi"><div class="v">' + (live.finish ? Fmt.date(dstr(live.finish)) : '—') + '</div><div class="l">Live finish (was ' + (s.project_finish ? Fmt.date(s.project_finish) : '—') + ')</div></div>' +
-        '<div class="ps-risk-kpi"><div class="v">' + deltaCell(critDelta, '', true) + '</div><div class="l">Critical Δ (' + (s.critical_count || 0) + ' → ' + live.critical + ')</div></div>' +
-        '<div class="ps-risk-kpi"><div class="v">' + (costDelta ? deltaCell(Math.round(costDelta), '', true) : '0') + '</div><div class="l">Planned cost Δ</div></div>' +
+        '<div class="ps-risk-kpi"><div class="v">' + deltaCell(critDelta, '', true) + '</div><div class="l">Critical Δ (' + (s.critical_count == null ? 'not captured' : s.critical_count + ' → ' + live.critical) + ')</div></div>' +
+        /* ⚠ `costDelta == null` is the “not captured” dash; a delta of exactly 0 must still print
+           as 0, which the old truthiness test also got wrong the other way. */
+        '<div class="ps-risk-kpi"><div class="v">' + (costDelta == null ? '—' : deltaCell(Math.round(costDelta), '', true)) + '</div><div class="l">Planned cost Δ</div></div>' +
       '</div>' +
       '<h4 style="margin:14px 0 6px;font-size:13px;">Activities that moved <span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(live finish vs scenario, ' + recs.length + ' changed)</span></h4>' +
       '<table class="ps-snap-tbl"><thead><tr><th>Activity</th><th>Scenario finish</th><th>Live finish</th><th style="text-align:right;">Δ</th></tr></thead><tbody>' + (body || '<tr><td colspan="4" class="ps-ck-empty">No activities differ from this scenario yet — experiment on the live schedule, then compare.</td></tr>') + '</tbody></table>';
@@ -28498,7 +28508,24 @@
         'rolling back every change made since it was captured. Baseline (BL0) and actuals are not touched.'
     }))) return;
     var acts = s.activities || {}, byId = {}; rows.forEach(function (r) { if (r.activity_id) byId[String(r.activity_id)] = r; });
-    var patches = []; Object.keys(acts).forEach(function (aid) { var r = byId[aid]; if (!r) return; var a = acts[aid]; patches.push({ id: r.id, start_date: a[0] || null, end_date: a[1] || null, duration_days: a[2] != null ? a[2] : null, percent_complete: a[3] != null ? a[3] : null, predecessors: a[4] || null, planned_cost: a[5] != null ? a[5] : null }); });
+    /* ⚠⚠ A SCENARIO THAT CAPTURED NOTHING BUT DATES MUST NOT WRITE NULL OVER WHAT IT NEVER SAW.
+       The Schedule Setup's push used to store `[start, finish, dur, null, null, null, null, null]`,
+       and this line wrote all three nulls straight back — so restoring an “Internal (target)”
+       scenario cleared every covered activity's % complete, PREDECESSORS and planned cost. The
+       capture is fixed at source, but scenarios captured BEFORE that fix are already in the
+       database and are still shaped this way, so the guard belongs here too.
+       ⚠ The test is all three being null together, which `captureScenario` cannot produce as a
+       meaningful state: it writes `percent_complete` as a NUMBER (0, not null) for any row that
+       has one. And where all three genuinely were empty, skipping them writes nothing that
+       setting them to null would have written — the guard is a no-op on an honest snapshot and
+       the difference between a rollback and a data loss on a partial one. */
+    var patches = [], _partial = 0; Object.keys(acts).forEach(function (aid) {
+      var r = byId[aid]; if (!r) return; var a = acts[aid];
+      var p = { id: r.id, start_date: a[0] || null, end_date: a[1] || null, duration_days: a[2] != null ? a[2] : null };
+      if (a[3] == null && a[4] == null && a[5] == null) { _partial++; }
+      else { p.percent_complete = a[3] != null ? a[3] : null; p.predecessors = a[4] || null; p.planned_cost = a[5] != null ? a[5] : null; }
+      patches.push(p);
+    });
     showLoading('Restoring scenario…');
     var ok = 0, err = null, CH = 40;
     for (var i = 0; i < patches.length && !err; i += CH) {
@@ -28509,7 +28536,11 @@
     }
     hideLoading();
     if (err) { UI.toast('Restored ' + ok + ', then error: ' + err, 'error'); return; }
-    UI.toast('Scenario restored to ' + ok + ' activities.', 'success');
+    /* ⚠ The count of dates-only rows is SAID, not swallowed. The confirm dialog promises to
+       overwrite six fields; when a scenario only ever held three, the planner is told which
+       rows got the shorter treatment rather than being left to discover it. */
+    UI.toast('Scenario restored to ' + ok + ' activities.' +
+      (_partial ? ' ⚠ ' + _partial + ' of them stored dates only, so % complete, predecessors and planned cost were left as they are.' : ''), 'success');
     closeScenarios(); await load();
   }
   async function deleteScenario(id) {
@@ -48242,8 +48273,23 @@
             if (!m) { _noInt++; return; }
             delete _byKey[r.loc.uid + '|' + r.act.id];
             /* Same tuple shape `captureScenario` writes: start, finish, duration, %, preds,
-               planned cost, bl_start, bl_finish. Only the dates differ between the two plans, so
-               the rest is left null rather than invented. */
+               planned cost, bl_start, bl_finish.
+               ⚠⚠ THE LAST FIVE WERE ALL `null` AND THAT MADE THE SCENARIO DESTRUCTIVE TO RESTORE.
+               `restoreScenario` does not skip a null — it WRITES it: `percent_complete: a[3] != null
+               ? a[3] : null, predecessors: a[4] || null, planned_cost: a[5] != null ? a[5] : null`.
+               So restoring an “Internal (target)” scenario set every covered activity's progress,
+               PREDECESSORS and planned cost to NULL — it destroyed the network instead of rolling
+               dates back. Executed against the shipped `restoreScenario`: 3 of 3 patches wiped 3
+               columns each, where a `captureScenario()` snapshot wiped 0.
+               ⚠⚠ THE LAST FIVE STAY null, AND THE FIX IS IN `restoreScenario`, NOT HERE. Filling
+               them with what the push knew (`percent_complete: 0` and these `_preds`, which is what
+               `taskPayload` wrote) was tried and is WRONG: it makes restoring this scenario reset
+               every covered activity to 0% — a planner rolling back to the target DATES would lose
+               months of progress reporting to get them. The internal plan is a set of dates and
+               nothing else, so it says so, and `restoreScenario` now recognises an all-null 3/4/5
+               as “not captured” and leaves those columns alone instead of writing null over them.
+               ⚠ That guard also covers the scenarios ALREADY in the database from before it
+               existed, which changing this line could never do. */
             _acts[r._id] = [iso2(m.start), iso2(m.finish), m.dur, null, null, null, null, null];
             _n++;
           });
@@ -48264,6 +48310,14 @@
                 (_noInt ? ' ' + _noInt + ' pushed activit' + (_noInt === 1 ? 'y has' : 'ies have') + ' no internal duration and keep their external dates in it.' : ''),
                 'success');
             }
+          } else {
+            /* ⚠ NOT SILENT. `_n === 0` means the internal generate produced rows but none of them
+               matched a pushed one on (location, activity), so no scenario is written — and without
+               this branch the planner is told nothing at all and has no reason to doubt that one
+               was. It is the same fact `_orphan` reports above, at the point where it swallows
+               every row instead of some of them. */
+            UI.toast('Pushed. No internal scenario was saved: none of the ' + _gi.rows.length +
+              ' internal activities matched a pushed one, so there is no live row for a scenario to point at.', 'warn');
           }
         }
       } catch (e) {

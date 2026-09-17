@@ -104,6 +104,92 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ap) — Pushing the internal plan as a scenario captured correctly and **restored destructively**
+
+Owner: *"Check the push to project schedule: Does the internal schedule function properly by
+pushing as a scenario?"*
+
+**Answer: the capture is sound, the two things that read it were not.** Verified by slicing
+`restoreScenario` and `showScnCompare` out of `index.html` and **executing them** against a
+scenario built by the shipped capture line — with a `captureScenario()` snapshot, built by *its*
+shipped line, as the control.
+
+### What was already right
+
+The join. The capture keys on the **external** rows’ `activity_id` (`r._id`, which is what
+`taskPayload` writes), matched to the internal plan by `(loc.uid, act.id)`. `captureScenario`,
+`showScnCompare` and `restoreScenario` all key on `activity_id` too, so the tuples line up and
+the per-activity drift table joins. The existing comment explaining *why* it cannot key on the
+internal ids is correct and was worth reading before touching anything.
+
+### ⚠⚠ 1. RESTORING AN “INTERNAL (TARGET)” SCENARIO WIPED THE PREDECESSOR NETWORK
+
+The push stores `[start, finish, dur, null, null, null, null, null]` — dates only, deliberately.
+`restoreScenario` does not **skip** a null, it **writes** it:
+
+```js
+percent_complete: a[3] != null ? a[3] : null, predecessors: a[4] || null, planned_cost: a[5] != null ? a[5] : null
+```
+
+So restoring one set every covered activity’s **% complete, predecessors and planned cost to NULL**.
+Measured: **3 of 3 patches wiped 3 columns each**, against **0** for a `captureScenario()` snapshot.
+The confirm dialog promises to overwrite those six fields *“with the scenario’s values”* — and the
+scenario’s values were nothing. It read as a rollback and behaved as a delete.
+
+⚠⚠ **The fix is in the reader, not the writer, and that was the second attempt.** Filling the
+tuple with what the push knows (`percent_complete: 0` and the pushed `_preds`) was tried first, and
+it is wrong: a planner rolling back to the target **dates** would lose months of progress reporting
+to get them. `restoreScenario` now treats an all-null 3/4/5 as **“not captured”** and leaves those
+three columns alone. ⚠ That also covers the scenarios **already in the database** from before today,
+which changing the capture line could never have done — and it is a no-op on an honest snapshot,
+because `captureScenario` writes `percent_complete` as a **number**, not a null.
+
+The restore toast now names how many rows got the shorter treatment, rather than leaving the
+planner to discover that six promised fields were three.
+
+### ⚠⚠ 2. TWO COMPARISON TILES REPORTED THE ENTIRE LIVE VALUE AS THE DELTA
+
+`critical_count` and `total_cost` are nullable, and the push’s insert does not set them — correctly,
+since a plan that has not been through CPM has neither. `showScnCompare` read that absence as the
+**number zero**:
+
+```js
+var critDelta = live.critical - (s.critical_count || 0);   // NULL became 0
+var costDelta = live.cost    - (s.total_cost    || 0);
+```
+
+| tile | before | after | truth |
+|---|---|---|---|
+| Critical Δ | **+2**, labelled *“(0 → 2)”* | —, labelled *“(not captured)”* | live critical = 2 |
+| Planned cost Δ | **+520,000** | — | live cost = 520,000 |
+
+Both numbers were exactly the whole live figure. ⚠ `deltaCell` **already renders null as a dash** —
+it simply never received one, because `|| 0` ran first. A fabricated number in a comparison tile
+is worse than a dash: nothing about it looks wrong.
+
+(The old cost tile also printed `'0'` for a genuine zero delta via a truthiness test, so it was
+wrong in both directions. It now prints `0` for zero and — for absent.)
+
+### 3. A zero-match capture said nothing at all
+
+`if (_n) { … }` had no `else`. If not one pushed row matched an internal row, no scenario was
+written **and no message appeared** — the planner had no reason to doubt that one had been. It now
+says so, which is the standard the `_orphan` count beside it already set.
+
+### ⚠ One harness reading was wrong and alarming before it was checked
+
+The control run first reported `captureScenario` writing `planned_cost` into the `percent_complete`
+slot — which would have been a far worse bug than either real one. It was the harness: the slice
+anchored on `acts[String(r.activity_id)] = [`, and **the baseline capture 180 lines earlier begins
+with the identical text** and has a four-element tuple. `indexOf` found that one. Re-anchored on
+the `percent_complete` term, the control is clean. ⚠ Harness artefacts do not only flatter — this
+one would have had me report a defect that does not exist.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · all three restore paths (fixed push, pre-fix rows already
+in the database, `captureScenario` control) wipe **0** columns, and the control still restores all
+six fields. `modules-grid.js` `?v=` → `20260917zzn`.
+
 ### 2026-09-17 (ao) — The holding list gets a search box and folds by trade
 
 Owner: *"I need a search filter in the holding list (172) as well so its easier to select.
