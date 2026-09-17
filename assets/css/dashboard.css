@@ -1336,6 +1336,42 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-proj-name { font-weight: 500; }
 .pd-proj-ic { margin-right: 8px; }
 
+/* ---- The personal sandbox card (projects.html) ----------------------------
+   ⚠️ Deliberately NOT a .pd-proj-card. It is pinned above the list, is never
+   grouped or sorted with real projects, and carries its own two actions — so
+   dressing it as one of the project tiles would invite the reader to treat it
+   as one of the company's projects, which is the single thing this feature
+   exists to keep it from being.
+   ⚠️ It is marked with the WARN surface tokens, never --pd-warn as a colour:
+   #C77700 measures 3.46:1 on white and cannot carry text. The -bg/-line/-text
+   triple is the pairing this file already defines for exactly that reason. */
+.pd-sbx-card { display: flex; align-items: center; gap: 14px; margin-bottom: 14px;
+  padding: 14px 18px; border-radius: var(--pd-radius-xl);
+  background: var(--pd-warn-bg); border: 1px solid var(--pd-warn-line); }
+.pd-sbx-ic { flex: none; display: flex; align-items: center; color: var(--pd-warn-text); }
+.pd-sbx-body { flex: 1 1 auto; min-width: 0; }
+.pd-sbx-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-weight: 700; color: var(--pd-ink); }
+.pd-sbx-tag { flex: none; }
+.pd-sbx-sub { margin-top: 3px; color: var(--pd-muted); font-size: var(--pd-fs-sm); line-height: 1.4; }
+/* ⚠️ nowrap so "Reset" and "Open" cannot be split across two lines by the
+   subtitle beside them; flex:none so the text takes the squeeze instead. */
+.pd-sbx-act { flex: none; white-space: nowrap; }
+@media (max-width: 700px) {
+  /* On a phone the two actions get their own row rather than crushing the
+     sentence that explains what the sandbox is. */
+  .pd-sbx-card { flex-wrap: wrap; }
+  .pd-sbx-body { flex: 1 1 100%; }
+  .pd-sbx-act { flex: 1 1 100%; text-align: right; }
+}
+
+/* The sandbox banner on a project home (dashboard.html). Same warn surface as
+   the card above, laid out as one line of prose beside its pill. */
+.pd-sbx-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 10px 14px; border-radius: var(--pd-radius-lg);
+  background: var(--pd-warn-bg); border: 1px solid var(--pd-warn-line);
+  color: var(--pd-ink); font-size: var(--pd-fs-sm); line-height: 1.4; }
+
 /* project cards */
 .pd-proj-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .pd-proj-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-xl);

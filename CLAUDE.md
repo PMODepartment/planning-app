@@ -103,6 +103,185 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (p) — The personal sandbox: one function change isolates all 16 modules, and a checker that had never read its own subject
+
+**Run `migrations/2026-09-17-sandbox-project.sql`.** Owner: *"I need a sandbox project. This will be
+the training ground for tomorrow's cascade of the app. This sandbox project will be personal to the
+user and any edits they made will not be shared for other users. In this way planners will no longer
+have to add new projects that will add +50 test projects. This will also help them in familiarizing
+the app."*
+
+### ⚠️⚠️ THE WHOLE FEATURE IS ONE ORDINARY PROJECT ROW THAT ONLY ITS OWNER CAN SEE
+
+This database already partitions every module's data by `project_id`, and every one of those
+partitions is gated by ONE function. Measured against `supabase-build.sql` before a line was written:
+
+| | |
+|---|---|
+| `can_access_project(...)` | **244 occurrences** |
+| `create policy` | 279 |
+| `is_writer()` | 137 |
+
+So `can_access_project()` **is** the isolation boundary for the entire app. Teaching that one
+function that a sandbox belongs to exactly one person means all 16 modules inherit it —
+project_schedule, boq, cash_flow, s_curve, risk_register, the lot — with **no module table altered,
+no module code changed**, and no future module able to forget to apply a per-user filter.
+
+⚠️⚠️ **NOTE WHAT THE SANDBOX BRANCH DOES NOT SAY: there is no `role in ('admin','super_admin')` in
+it.** That omission is the feature. An admin sees every real project in the company and CANNOT see
+anyone else's sandbox, because a training ground you share with your boss is not a training ground.
+This is the only place in this schema where admin is not a superset, and `projects_read` had to be
+restructured for it — its existing shape is `is_admin() or can_access_project(id)`, and that leading
+`is_admin()` **short-circuits**, so an admin would have seen every sandbox however carefully the
+function underneath was written.
+
+**Two designs rejected, on their merits rather than on effort:**
+- ⚠️ **A `user_id` column on every module table** — 89 tables altered, 244 policies rewritten, and
+  the part that kills it: every future module silently defaulting to NOT isolated until somebody
+  remembers the column. A second partition that means almost the same thing as the existing one is a
+  bug factory.
+- ⚠️ **One shared `SANDBOX` project for everybody** — the cheapest possible change, and it fails in
+  the first hour of the cascade: two planners on the same fake schedule overwriting each other, which
+  is **worse** training than the +50 test projects it replaces.
+
+### The guards, each closing a door that would otherwise be open
+
+- ⚠️ **`is_sandbox` is NOT NULL DEFAULT false.** A nullable flag would make every policy read
+  `coalesce(is_sandbox,false)` forever, and the one that forgot would fail **open** — a sandbox
+  visible to the whole company. NOT NULL makes the safe reading the only reading.
+- ⚠️⚠️ **`owner_id` is ON DELETE SET NULL, and both alternatives are worse.** NO ACTION makes
+  `admin_delete_user()` fail on a foreign key — a user you cannot delete. CASCADE removes the
+  projects row and strands the sandbox's module rows as orphans, because **25 tables carrying
+  `project_id` have no FK to projects at all** (wbs_nodes among them). SET NULL leaves a visible,
+  purgeable husk, which `projects_read` deliberately shows to admins and to nobody else.
+- ⚠️⚠️ **A partial unique index is what actually makes "one per person" true.** `sandbox_ensure()`
+  checks before inserting, and a check-then-insert is a race: two tabs opening the app at the same
+  moment both find nothing and both insert.
+- ⚠️⚠️ **Both sides of `projects_upd`'s `with check` pin the flag.** Without it the owner could set
+  `is_sandbox = false` and promote their training data into a real project visible to every admin —
+  the exact mess this feature exists to end, arriving through the back door. The other branch pins it
+  the other way, so a planner cannot take a real project private.
+- ⚠️ **`projects_ins` carries `not is_sandbox`**, so the RPC is the only door and "owner_id is always
+  the caller" is an invariant rather than a convention.
+- ⚠️⚠️ **`sandbox_reset()` TAKES NO ARGUMENT.** A `sandbox_reset(target text)` signature would be a
+  SECURITY DEFINER function that purges any project id the caller names — one missing ownership check
+  away from company-wide data loss. Taking no argument means there is no check to forget.
+- ⚠️ `can_access_project()` is rewritten as **one `exists` over a join, not two nested subqueries** —
+  it runs per row for 244 policies, including project_schedule reads in the six figures against an 8s
+  statement_timeout. The `left join` is load-bearing: `project_id` on the FK-less tables can name a
+  project that no longer exists, and an inner join would silently change those rows' behaviour.
+- ⚠️ `sandbox_reset()` reuses `admin_delete_project()`'s catalog sweep, minus the final delete, and is
+  **deliberately not refactored into a shared helper** — folding them together would put the
+  company's hard-delete and a self-service button on one code path.
+
+### What it does NOT solve, stated rather than discovered tomorrow
+
+⚠️⚠️ **A `viewer` gets a sandbox they can READ but not WRITE.** Every module write policy is
+`is_writer() and ... can_access_project(project_id)`, and `is_writer()` takes no project argument, so
+there is no way to grant a viewer write access to their own sandbox alone without rewriting all 137
+`is_writer()` call sites — flattening months of per-module hand-tuning for one edge case. A viewer
+who needs to practise WRITING should be moved to `user` for the cascade; that is a one-field change
+in admin.html and it is the right lever. Measured before deciding, not assumed.
+
+### The client: the sandbox is offered everywhere and counted nowhere
+
+⚠️⚠️ **`PDb.getProjects()` deliberately still RETURNS it** — RLS means the only sandbox in that result
+is your own, so it is one extra row, not fifty, and including it is what lets every module's project
+picker offer it with **zero per-module change**. What must not include it is a portfolio
+**aggregate**: `UI.allProjectIds()` and portfolio-dash's `scopedProjectIds()` both filter it out,
+because those are what every "Portfolio (all projects)" read fans out over, and a sandbox left in
+them would put practice data into your own S-curves, cash-flow totals and KPI roll-ups as figures
+that look entirely real.
+
+⚠️ **`PDb.isSandbox()` reads the COLUMN, never the `SBX-` id prefix.** A prefix test would be one
+renamed project away from treating a real project as a sandbox and — the direction that leaks —
+would report every project as real on a database where the migration has not run. As written, an
+unmigrated database answers false for everything and the whole app behaves exactly as before, so
+**the client is safe to ship before the migration is run.**
+
+⚠️⚠️ **A defect caught by reading the second caller: `reloadData()` re-reads the project list.** The
+first cut split the sandbox out at boot only, so it was filed correctly until the first create or
+delete and then quietly rejoined the list **and the "N projects" count**. One `applyProjects()` now
+serves both readers, because two readers of one shape is how they drift.
+
+`projects.html` gets a pinned sandbox card above the list — rendered whether or not the row exists
+yet, because the answer to *"how do I practise without adding a test project?"* has to be on screen
+**before** the thing exists. ⚠️ It sits outside the group/sort/search machinery entirely: a search for
+"tower" must not make the training ground disappear, and it must never be filed under a group head.
+⚠️ Reset reuses the type-the-code gate rather than a bare confirm, and passes **no preview** —
+`admin_project_delete_preview` is `is_admin()`-only, so arming on a preview an ordinary user can
+never obtain would make Reset permanently unusable for most of the people this is for.
+`dashboard.html` gets a banner, because once you are inside a project every module looks identical
+whichever project it is.
+
+### ⚠️⚠️ AND THE SQL CHECKER REPORTED "0 FUNCTION BODIES" ON A FILE WITH THREE
+
+`tools/sql-struct.js` matched `/\$\$([\s\S]*?)\$\$/` — **the bare `$$` only**. This migration uses
+`$fn$`, so all three bodies were invisible and the run **exited 0 having checked nothing**. That is a
+false pass of the worst kind: it spends the credibility of a green run on a file it never opened.
+The blind spot was not new — `supabase-schema.sql`, `supabase-setup.sql` and
+`2026-09-07-class-code-dedupe.sql` (`$q$`) had **never once been read** by it.
+
+Now tag-aware, and bodies are located in the **masked** source (comments and string bodies blanked by
+`scanSql`, offsets preserved) so a `$$` inside a comment cannot open a phantom body — which the raw
+regex could. ⚠️ It self-tests on all three shapes before reading a file, and the green run is proved
+to bite: deleting one `end if;` from this migration reports **body 2 UNBALANCED, bare `end` closes an
+open `if`**. Full sweep: **140 bodies, 0 unbalanced.**
+
+### Verified
+
+- **140 plpgsql bodies balanced, 0 unbalanced**, with the negative build biting.
+- The card **rendered in a browser** against the shipped stylesheet, sliced out of `projects.html`
+  and executed rather than retyped: both states correct (*Create my sandbox* with no Reset, then
+  *Open* + Reset with the name rendered), background resolving to a **colour**
+  (`rgba(199,119,0,.12)` light, `rgba(224,160,8,.16)` dark, pill ink `#8A5300` → `#E0A008`), so the
+  stylesheet is provably in the cascade; at desktop the actions sit to the RIGHT of the text on the
+  same row, at phone width they take their own row with both buttons on one line and no label
+  wrapped; **no sideways page scroll at either width**.
+  ⚠️ The phone case measured at **185px**, not the 375 requested — the pane scaled it — so it is a
+  stricter test than a real phone, not a laxer one.
+- ⚠️ **Two harness faults, both of which reported the opposite of the truth.** The first run measured
+  a **hidden tab**: `visibilityState:"hidden"`, `clientWidth:0`, every geometry void — caught only
+  because the harness gates on it. The second: `getComputedStyle` returns a **live** declaration, so
+  comparing the light value after flipping to dark compares the dark value **with itself** and
+  reported *"the tokens do not remap"* over a stylesheet that remaps perfectly. Read the strings out
+  before flipping.
+- `wiring-check` **138 passed, 1 failed**, and ⚠️ **the 1 is not mine**: `portfolio-dash.css` at two
+  versions, from another session's uncommitted working tree. A **staged-tree** audit — what actually
+  deploys — reports **0 version splits across 54 distinct assets**.
+- 4 JS files + both inline blocks parse; `dashboard.css` braces 589/589; 0 NUL bytes across every
+  changed file; `dark-remap` **0 findings** (the card reuses the existing warn triple, which already
+  remaps; ⚠️ never `--pd-warn` as a text colour — it measures 3.46:1 on white).
+
+### ⚠️⚠️ THREE FILES WERE STAGED AS "HEAD + MY EDIT", NOT FROM THE WORKING TREE
+
+This clone carries a concurrent session's uncommitted work, and committing the working-tree copies
+would have **deleted shipped code**:
+
+| file | working tree | why |
+|---|---|---|
+| `assets/js/portfolio-dash.js` | **430 lines BEHIND HEAD** | a stale base — committing it removes the periodic bars, the month breakdown panel and the `padR = 48` axis fix |
+| `assets/js/modules-grid.js` | `MODULE_V` fallback moved **BACKWARDS**, `20260916p` → `m` | a token that sorts EARLIER than one already served can never invalidate it |
+| `modules/portfolio-overview/index.html` | `portfolio-dash.css` **backwards**, `p` → `n` | the split `wiring-check` reports |
+
+Each was rebuilt from `git show HEAD:` plus my one edit and staged through `git hash-object` /
+`git update-index`, so **the working tree is untouched** and their in-flight work is still theirs to
+commit. Verified afterwards on the staged blobs: portfolio-dash.js is HEAD's 2,473 lines + my 8, still
+contains `po-sc-bd` and `padR = 48`, and parses. ⚠️ The patch script **aborts on a missed anchor**
+rather than staging a no-op; all three matched.
+⚠️ `assets/css/portfolio-dash.css`, `tools/test-portfolio-dash.js` and two module `CLAUDE.md` are
+theirs alone and are **not staged at all**.
+
+⚠️ **NOT VERIFIED SIGNED IN, AND THE MIGRATION HAS NOT BEEN RUN.** No sandbox has been created, opened
+or reset against the live database, so the admin-isolation claim — the one thing in this change that
+contradicts every other policy in the schema — rests on the policy text rather than on an observed
+refusal. The migration's verify block §(b) is the test that matters, and ⚠️ **it must be run from a
+signed-in session in the app, never the SQL editor**, which connects as `postgres` and bypasses RLS
+entirely: it will happily show you every sandbox and prove nothing.
+
+Shared `dashboard.css` / `db.js` / `ui.js` → `?v=20260917zg` (31 / 25 / 23 pages); `MODULE_V` →
+`20260917zg`, fallback literal included, sort-checked past the remote's `20260917zf`.
+
 ### 2026-09-17 (n) — Bulk edit on the Users table, paid for by the column grouping had just made redundant
 
 Owner: *"add bulk edit so that its convenient to approve/edit/update multiple users."*

@@ -242,12 +242,24 @@
      ⚠️ `GH` is loaded beside `PROJ` by `loadProjects()`, so this costs no read.
      ⚠️ The unassigned bucket sorts LAST and is named, never hidden: a project with no group
      head is still a project a planner has to be able to tick. */
+  /* ⚠️⚠️ THE SANDBOX IS NOT A PORTFOLIO PROJECT, and this is the one place that says so for
+     this whole file. A personal training project must not be tickable in the filter, must not be
+     swept up by "Select all", and must never reach an aggregate — so all three ask this, rather
+     than three copies of the same test that can disagree. `PROJ` itself keeps it, because PROJ is
+     also the id->name lookup every view builds its labels from.
+     ⚠️ Reads the COLUMN via PDb.isSandbox, never the `SBX-` id prefix: on a database where the
+     migration has not run the column is absent, this is the identity function, and every view
+     behaves exactly as it does today. */
+  function pfProjects() {
+    return PROJ.filter(function (p) { return !(window.PDb && PDb.isSandbox(p)); });
+  }
+
   function pfGroups() {
     var byId = {};
     (GH || []).forEach(function (g) { byId[g.id] = g; });
     var NONE = '\u0000none';
     var by = {};
-    PROJ.forEach(function (p) {
+    pfProjects().forEach(function (p) {
       var k = p.group_head_id || NONE;
       if (!by[k]) {
         by[k] = { key: k, label: k === NONE ? 'No group head'
@@ -279,11 +291,11 @@
     return n + ' projects';
   }
   function scopedProjectIds() {
-    if (!pfCount()) return pfEmptyMeansAll ? PROJ.map(function (p) { return p.id; }) : [];
+    if (!pfCount()) return pfEmptyMeansAll ? pfProjects().map(function (p) { return p.id; }) : [];
     /* ⚠ Ordered by PROJ, never by the order boxes were ticked: the views cache on
        `ids.join(',')` to decide whether anything needs re-reading, and a set that reorders itself
        would look like a different selection every time and re-fetch the same projects. */
-    return PROJ.filter(function (p) { return pfSel[p.id]; }).map(function (p) { return p.id; });
+    return pfProjects().filter(function (p) { return pfSel[p.id]; }).map(function (p) { return p.id; });
   }
 
   /* ==== THE PORTFOLIO MODULE BAR =============================================================
@@ -432,7 +444,7 @@
       if (pfOnChange) pfOnChange();
     };
     menu.querySelector('[data-act="all"]').onclick = function () {
-      PROJ.forEach(function (p) { pfSel[p.id] = true; }); relabel();
+      pfProjects().forEach(function (p) { pfSel[p.id] = true; }); relabel();
     };
     /* ⚠️ "Clear" goes back to the `{}` default, which on ten of the eleven views means ALL
        projects, never none: a cleared filter that shows an empty page is one a planner has to
