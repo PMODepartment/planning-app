@@ -104,6 +104,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (x) — The class-code library adopts template_1164: it is a retirement, not a re-seed
+
+Owner: *"Let's replace the current library of class codes in the app. Let's follow the Excel Temp
+(2)."* — `EPC. FIN. Class Code Mapping Template_1164.xlsx`, sheet **`Excel Temp (2)`**, 466 items.
+
+### ⚠️⚠️ Compared row by row before writing a line of SQL, and the answer changed the shape of the job
+
+The 466 codes on that sheet are a strict **subset** of the 702 already in `class_codes`, and nothing
+about the ones that stay has moved:
+
+| | |
+|---|---|
+| kept | **466** — every one already present |
+| added | **0** |
+| retired | **236** |
+| `desc_l1` / `desc_l2` / `desc_l3` changed | **0** |
+| `code_l1` / `code_l2` changed | **0** |
+| `trade` changed | **0** |
+| relative order | identical |
+
+So there is nothing to insert and nothing to correct. Written as a re-seed it would have rewritten
+466 rows to the values they already hold and called that a replacement.
+
+**What goes:** 208 of the 236 are the six-character **sub-item** codes (`010521` *Rental of Flat Bed
+Truck*, under `01052` *Demobilization*) — after this, every active code is five characters. The other
+28 are five-character items, four of which (`11011`, `11021`, `11031`, `11032`) were already retired
+by `2026-09-07-class-code-dedupe.sql` as de-zeroed twins, so the first run retires **232**. Eight
+Level-2 groups go with them: `12500`, `16450`, `17550`, `25700`, `25750`, `50000`, `51000`, `61000`.
+
+### ⚠️ The module was already speaking this template — which is why no code changes
+
+`CLASS_CODE_DB`, the Level-2 group chart a planner picks activities from, holds **197** groups. The
+new template holds **197** groups. They are the **same 197**: the eight the template drops are exactly
+the eight the module never had. Only the item-level table still carried the retired rows. No
+`index.html` change, no MODULE_V bump — the picker reads `class_codes` at run time and filters on
+`active`.
+
+### ⚠️⚠️ `active = false`, never `delete`, and the count is reported before anything is written
+
+`project_schedule.class_code`, `boq_class_map` and `boq_allocations` carry these strings with **no
+FK**, deliberately (2026-08-21): an imported P6 schedule can hold a code that predates a template
+revision, and an unresolved code is a *visible* data-quality signal where a deleted row is a silent
+one. `loadClassCodes()` filters on `active = true`, so a retired code stops being **offered** at once
+and anything already carrying one keeps it. Section 1 of the migration counts those rows across all
+three tables **before** the update runs, so the size of that is known rather than discovered, and the
+rollback is one line.
+
+`migrations/2026-09-17-class-code-template-1164.sql` — one statement does both directions (retire off
+the template, re-activate on it) as disjoint branches of a single `with`, so it is one transaction,
+one pass, and re-runnable; it also reports any template code **missing** from the chart rather than
+passing over it. `supabase-build.sql` regenerated (181 migrations). ⚠️ Not yet run — the owner runs
+migrations himself.
+
+
 ### 2026-09-17 (w) — `body is not defined`: the calendar editor drew perfectly and could not save
 
 Owner, on the Working calendars step: *"There is an error when I click on the + New calendar."* The
