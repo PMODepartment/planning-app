@@ -3603,6 +3603,10 @@
     .sbld-seqdur { flex:none; font-size:var(--pd-fs-xs); color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     .sbld-tag { display:inline-block; font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
     .sbld-hint { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin:6px 0 0; }
+    /* A section heading inside a step — the Setup had no <h3> treatment, so one <h3> carried
+       `font-size:13px` inline. 13px IS --pd-fs-base; on the scale by luck, and invisible to any
+       stylesheet sweep while it lived in a JS string. */
+    .sbld-sech { font-size:var(--pd-fs-base); font-weight:700; margin:14px 0 6px; }
     .sbld-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:22px; text-align:center; border:1px dashed var(--pd-line); border-radius:var(--pd-radius-md); }
     .sbld-save-state { font-size:var(--pd-fs-sm); color:var(--pd-muted); white-space:nowrap; }
     .sbld-tablewrap { overflow:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); }
@@ -38779,8 +38783,12 @@
           ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
       host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
-        '<p class="sbld-lede">How a trade’s class codes run <b>inside one zone</b> — their order and their durations — defined per <b>level type</b>, because a basement is not built in the same order, or at the same pace, as a typical floor. <b>All levels</b> is the default the others inherit until they fork.</p>' +
-        _sbldHow('<b>Level type</b> — the categories you tagged your floors with in step ' + _stepNo('Floors & Zones') + '. Both the sequence <b>and</b> the durations are per level type: a duration typed while a category is selected applies to that category only (those cells are marked). Any category can <b>copy</b> a sequence already defined elsewhere, or revert to the default in one click.' +
+        '<p class="sbld-lede">How a trade’s class codes run <b>inside one zone</b> — their order and their durations, per <b>level type</b>.</p>' +
+        /* ⚠ The WHY (a basement is not built like a typical floor) and the inheritance rule are
+           mechanics, so they join the mechanics that were already in here. */
+        _sbldHow('<p>Per <b>level type</b> because a basement is not built in the same order, or at the ' +
+          'same pace, as a typical floor. <b>All levels</b> is the default the others inherit until they ' +
+          'fork.</p>' + '<b>Level type</b> — the categories you tagged your floors with in step ' + _stepNo('Floors & Zones') + '. Both the sequence <b>and</b> the durations are per level type: a duration typed while a category is selected applies to that category only (those cells are marked). Any category can <b>copy</b> a sequence already defined elsewhere, or revert to the default in one click.' +
           '<br><br><b>The grid</b> (left) works like Excel — click/drag or Shift-click to select, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b>, <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear.' +
           '<br><br><b>To link codes</b>, switch to <b>Link by hand</b> and click the schedule bars on the right:' +
           '<ol><li>Click one or more <b>source</b> bars.</li><li>Right-click to confirm them.</li><li>Click the <b>destination</b> bars.</li><li>Right-click again.</li><li>Choose FS / SS / FF / SF + lag.</li></ol>' +
@@ -39672,7 +39680,11 @@
       function towerOpts(sel) { return list.map(function (t) { return '<option value="' + e2(t.id) + '"' + (sel === t.id ? ' selected' : '') + '>' + e2(t.name || t.code) + '</option>'; }).join(''); }
       var firstFrom = list[0].id;
       host.innerHTML = head +
-        '<p class="sbld-lede">Say how each tower relates to another in time. A <b>shared podium</b> is modelled as floors belonging to <b>one</b> tower that the other <b>references</b> — so pick the podium level as the anchor and the second tower hands off from it. Leave the anchor as <b>whole tower</b> to wait on everything. Anything with no relationship simply starts on the project start date.</p>' +
+        '<p class="sbld-lede">Say how each tower relates to another in time.</p>' +
+        _sbldHow('<p>A <b>shared podium</b> is modelled as floors belonging to <b>one</b> tower that the ' +
+          'other <b>references</b> — pick the podium level as the anchor, and the second tower hands off ' +
+          'from it. Leave the anchor as <b>whole tower</b> to wait on everything.</p>' +
+          '<p>Anything with no relationship simply starts on the project start date.</p>') +
         '<div class="sbld-tllist">' + rowsHtml + '</div>' +
         /* ⚠️⚠️ NOT `.sbld-mini` ON A <select>. That class is `width:62px`, written for the
            two-character number inputs on the Floors & Zones step, and on these five controls it
@@ -42707,7 +42719,7 @@
         // (owner 2026-09-03: *"There's also an error in the dropdown UI"*), and every option with it,
         // so the one thing the control had to say — which trade you are copying — was unreadable.
         // `width:auto` lets a <select> size to its longest option, which is what it is for.
-        (srcTr.length ? '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">or copy from <select class="pd-select" id="b-copyfrom" style="height:30px;width:auto;max-width:230px;font-size:12px;"><option value="">choose trade…</option>' +
+        (srcTr.length ? '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">or copy from <select class="pd-select" id="b-copyfrom" style="height:30px;width:auto;max-width:230px;"><option value="">choose trade…</option>' +
           srcTr.map(function (g) { return '<option value="' + g + '">' + e2(GLABEL[g]) + ' (' + leafCount(g) + ')</option>'; }).join('') + '</select></label>' : '')) : '';
       var _twFloors = zn.floors.map(function (f, i) { return { f: f, i: i }; })
         .filter(function (o) { return towerIdOf(o.f) === _twAct; });
@@ -42923,7 +42935,15 @@
           '</div></details>';
       })();
       host.innerHTML = '<h2>' + _stepNo('Floors & Zones') + ' · Substructure &amp; Superstructure — per trade</h2>' +
-        '<p class="sbld-lede">Pick a trade, add its <b>' + e2(dimLabelOf('floor').toLowerCase()) + 's</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>' + e2(dimLabelOf('zone').toLowerCase()) + 's</b> and <b>' + e2(dimLabelOf('unit').toLowerCase()) + 's</b>. These are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
+        /* ⚠ The SAME lede and the SAME disclosure this step's empty-state branch already uses
+           — that branch's own note says the step-by-step “is exactly what `_sbldHow` exists for”,
+           and then only the empty branch did it. Two branches of one step introduced it two
+           different ways, and the branch a planner actually spends time on had the long one. */
+        '<p class="sbld-lede">Name the levels this project breaks location down by.</p>' +
+        _sbldHow('<p>Pick a trade, add its <b>' + e2(dimLabelOf('floor').toLowerCase()) + 's</b> (superstructure) and any ' +
+          '<b>basements</b> (substructure), then optionally split each into <b>' + e2(dimLabelOf('zone').toLowerCase()) + 's</b> ' +
+          'and <b>' + e2(dimLabelOf('unit').toLowerCase()) + 's</b>. Those two are optional.</p>' +
+          '<p>The tower on the right shows superstructure above the grade line and basements below.</p>') +
         // ⚠️ THE LOCATION BREAKDOWN COMES FIRST. The builder's three location levels ARE the project's
         // Location Breakdown levels, and until now the only way to get them was to push and let the
         // push invent "Location / Zone / Unit". Owner 2026-08-18: defining the breakdown first is the
@@ -42937,7 +42957,7 @@
            step caught by that class; `width:auto` lets a <select> size to its longest option.
            ⚠️ The worked example moved into the title: it is a sentence about what the four options
            mean, read once, and it sat on this row for the life of the project. */
-        '<select class="pd-select" id="b-loclevel" style="height:30px;width:auto;max-width:240px;font-size:12px;" title="Which location level activities are scheduled at across the whole project. Auto = the deepest level you define per floor. Floor level schedules one activity per floor and ignores zones and units; Zone level schedules per zone; Unit level per unit.">' +
+        '<select class="pd-select" id="b-loclevel" style="height:30px;width:auto;max-width:240px;" title="Which location level activities are scheduled at across the whole project. Auto = the deepest level you define per floor. Floor level schedules one activity per floor and ignores zones and units; Zone level schedules per zone; Unit level per unit.">' +
         [['auto', 'Auto (deepest defined)'], ['floor', 'Floor level'], ['zone', 'Zone level'], ['unit', 'Unit level']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.locLevel || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
         '<span class="sbld-hint">Remaps the whole builder.</span></div>' +
@@ -43927,11 +43947,14 @@
         if (!tlocs.length || !acts.length) return;
         var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th class="sbld-scope-col" data-tr="' + tr + '" data-act="' + a.id + '" title="' + e2(a.name) + ' — click to toggle this activity for every location">' + e2(a.code || a.name) + '</th>'; }).join('') + '</tr>';
         var body = tocs(tlocs, acts);
-        sections += '<h3 style="font-size:13px;margin:14px 0 6px;"><span class="sbld-dot" style="background:' + gc(tr) + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
+        sections += '<h3 class="sbld-sech"><span class="sbld-dot" style="background:' + gc(tr) + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
       });
       function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td class="sbld-scope-row" data-tr="' + l.trade + '" data-uid="' + l.uid + '" title="Click to toggle every activity at ' + e2(locLabel(l)) + '">' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
       host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2>' +
-        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations (all on by default). Untick where a trade doesn\'t occur. Click an <b>activity header</b> to toggle that activity across every location, or a <b>location label</b> to toggle all its activities.</p>' +
+        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations.</p>' +
+        _sbldHow('<p>All on by default — untick where a trade doesn\'t occur.</p>' +
+          '<p>Click an <b>activity header</b> to toggle that activity across every location, or a ' +
+          '<b>location label</b> to toggle all of its activities.</p>') +
         '<div class="sbld-sec-actions"><button class="pd-btn" id="b-all">All on</button><button class="pd-btn" id="b-none">All off</button></div>' +
         (sections || '<div class="sbld-empty">Assign activities to trades (step ' + _stepNo('Activities') + ') and give those trades floors/zones (step ' + _stepNo('Floors & Zones') + ').</div>');
       host.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.onchange = function () { var key = c.dataset.uid + '|' + c.dataset.act; if (c.checked) delete cfg.scopeOff[key]; else cfg.scopeOff[key] = true; markDirty(); }; });
@@ -46514,7 +46537,9 @@
         used.map(function (tr) { return '<button class="sbld-chip' + (stackTrade === tr ? ' on' : '') + '" data-gtr="' + tr + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</button>'; }).join('') + '</div>' : '';
       _stkUnits = {};   // repopulated by stackTowerSVG below
       host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate &amp; preview — Internal vs External</h2>' +
-        '<p class="sbld-lede">Both schedules are built from the same zoning and links, each using its own activity durations: <b>Internal</b> (target) and <b>External</b> (contract). Each column is that basis’s building, one cell per zone, showing when the zone completes.</p>' +
+        '<p class="sbld-lede">Both schedules are built from the same zoning and links, each using its own durations: <b>Internal</b> (target) and <b>External</b> (contract).</p>' +
+        _sbldHow('<p>Each column is that basis’s building, one cell per zone, showing when the zone ' +
+          'completes.</p>') +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Project start&nbsp; <input class="pd-input" type="date" id="b-start" value="' + e2(cfg.startDate) + '" style="height:30px;"></label>' +
         '<button class="pd-btn" id="b-csv-int">CSV · Internal</button><button class="pd-btn" id="b-csv-ext">CSV · External</button></div>' +
         towerChips + tradeChips +

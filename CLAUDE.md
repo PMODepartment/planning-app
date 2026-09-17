@@ -104,6 +104,91 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (aa) — The last five Setup ledes stop being instructions, and the wizard is fully on the type scale
+
+Owner: *"Continue with the remaining"* — Construction Library, Floors & Zones, and Repetition's five
+views plus Generate, closing the 4.1 pass over the Schedule Setup.
+
+### The lede states the purpose; the mechanics go in "How to use this step"
+
+That is `_sbldHow`'s own stated job. Its comment reads: *"a step's lede now states its **purpose** in
+a sentence or two and every keystroke / click sequence it used to spell out inline lives in here
+instead."* Five steps were not doing it. Measured, longest lede per step, before:
+
+| step | words | disclosure |
+|---|---|---|
+| `stTowerLinks` | **62** | none |
+| `stTradeSeq` | 50 | has one — instructions were in *both* places |
+| `stScope` | **42** | none |
+| `stLevels` | 36 | on the **other branch** only |
+| `stGenerate` | 36 | none |
+
+Every other step was already at 14–26 words. After: the longest lede in the entire wizard is 26 words
+(`stPhasesStep`), and **every step now has the disclosure**. ⚠️ Nothing was deleted — it moved one
+click away, which is what the component exists for.
+
+⚠️⚠️ **`stLevels` had already made this decision and applied it to one branch.** Its empty-state
+branch carries a nine-word lede and puts the step-by-step in `_sbldHow`, with a note reading *"the
+step-by-step that followed it is exactly what `_sbldHow` exists for"* — and then the main branch, the
+one a planner actually spends time in, kept the 36-word version. Two branches of one step introducing
+it two different ways is the drift this pass is for.
+
+### The last three off-scale sizes, and what they were
+
+⚠️⚠️ **Two `<select>`s pushed the control DOWN from `--pd-fs-sm` (12.5px) to `12px`.** `.pd-select`
+already sets 12.5px, so these were half-pixel overrides of the app's own control size with no stated
+reason — and half a pixel of type is precisely the difference that aggregates into a *"different
+people wrote this"* feel. The override is **deleted** rather than tokenised: the right value is the
+one the control already has. The third was `<h3 style="font-size:13px">` in Scope per zone — 13px *is*
+`--pd-fs-base`, on the scale by luck, on a bare `<h3>` that would otherwise take the browser's default
+heading size. The Setup had no `<h3>` treatment at all, so `.sbld-sech` is now it.
+
+**The Schedule Setup is now at 0 off-scale font-size declarations in BOTH places** — 0 in the
+stylesheet rules and 0 in the inline `style=` attributes its renderers write. The second number is the
+one entries *(t)*, *(u)* and *(v)* got wrong by only ever scanning rules.
+
+### The 700-vs-800 question, closed
+
+Carried open since *(u)*. It is down to **one** family, `.sbld-twr`, and that one is a deliberate
+pair, not drift: `.sbld-twr-tradehead` is an **uppercase** section label at 800 — the shape the app
+uses 800 for in 31 other places — and `.sbld-twr-lab` is a muted fixed-width row label at 700. Two
+roles, correctly distinguished. Setup totals are now 700×58 / 800×14. **No weight sweep is needed and
+none was done.**
+
+### ⚠️ VERIFIED STRUCTURALLY, NOT GEOMETRICALLY — AND THE DIFFERENCE MATTERS
+
+The overflow check reported 13 elements as cut. **Every one of them had `clientWidth: 0`**, which is
+not truncation — it is the hidden-tab artefact: the Browser pane was not drawing, and a hidden tab
+voids all layout geometry while still answering `getComputedStyle`. Gating on
+`visibilityState === 'visible' && document.body.clientWidth` returned `hidden` / `0` and the whole
+read was discarded. So for this entry:
+
+- **Valid** (DOM structure and computed style, neither of which needs layout): every Setup page
+  renders **one `<h2>`, one lede**, and **0 elements in a non-brand typeface** across all 7 harness
+  cases.
+- **Not measured**: any width. No overflow or truncation claim is made for this pass.
+
+Reporting the 13 as findings would have invented defects; reporting them as a pass would have invented
+coverage. Neither is written here.
+
+### ⚠️ THE CHANGELOG'S LETTERS HAVE COLLIDED AND SOMEBODY SHOULD DECIDE WHAT TO DO
+
+Today's entries no longer form one sequence. A concurrent session prepended its own `(o)`–`(y)` block
+above this one's `(a)`–`(z)` block, so **ten letters appear twice today and `(t)` appears three
+times** — 21 entries sharing 10 letters — and the file no longer descends: `(o)` now sits above `(z)`.
+Single letters for 2026-09-17 are **exhausted**, which is why this entry is `(aa)`. Re-lettering
+another session's eleven live entries mid-flight would conflict with whatever it does next, so this
+one does not attempt it and flags it instead.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline
+scripts parse · no NUL bytes · 0 off-scale font-size rules and 0 off-scale inline sizes · longest lede
+26 words · every step has its disclosure. ⚠️ Three duplicated selectors arrived upstream with the
+per-card phase rework (`.sbld-phcard.is-exec .sbld-phwbs`, `.sbld-phwbs-h`, `.sbld-phwbs-n`, each
+declared twice); checked, and unlike the `.sbld-note` this pass deleted, **all three are
+complementary** — no property is redeclared, nothing is dead. Left alone. `modules-grid.js` `?v=` →
+`20260917zza`: `zz` had been reached, and a longer string is the only way to keep sorting forward
+without misdating the token.
+
 ### 2026-09-17 (y) — The class-code preflight blocked the migration it was advising on
 
 Ran, and the chart came back **698 active / 4 retired / 702 total** — which is the state *before*
