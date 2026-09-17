@@ -104,6 +104,89 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (u) — A planned lifecycle activity can name the sub-WBS it lands in; `＋Act` dropped
+
+Owner, on the Project Phases step: *"What are these activities? From which sub-WBS do they go to? I
+want to be able to allocate it properly to a designated WBS."* — of **Project charter & scope
+sign-off**, **Contract award & notice to proceed**, **Permits & regulatory clearances**.
+
+They were the Initiation phase's planned activities, and the honest answer was: **none**. Push filed
+every one of a phase's activities directly on the phase branch, so a sub-WBS the planner had just
+built underneath it could not receive any of them. The branches came first in the sequence — *"by
+defining the sub-branches the planner would be able to determine what activities should be defined in
+the sub-WBS"* — and then nothing consumed that decision.
+
+Each planned row now carries a **WBS picker**: the phase branch itself (the default) plus every
+branch beneath it, indented by depth and prefixed with its dotted code, because two branches under
+different parents are routinely called the same thing. Unassigned stays valid and lands on the phase
+branch, which was the owner's explicit call: *"some activities does not necessarily need to be in a
+sub-wbs."*
+
+### ⚠️⚠️ The stored id is validated at push time, never trusted
+
+`cfg.phases` is a saved recipe that outlives the tree it points at. Between the day a branch is chosen
+and the day it is pushed it can be deleted, or **re-parented under a different phase** — and filing an
+Initiation activity under an Execution branch would put it in the wrong phase, on the wrong dates,
+with nothing on screen to say so. `_phTaskNode` re-checks that the node still exists, is not a
+mirrored (`source_kind`) branch, and is still inside *that* phase; anything failing falls back to the
+phase branch. ⚠️ The fallbacks are **counted and named in a toast**, not absorbed — silently filing
+activities somewhere other than where the screen said is the failure this feature exists to prevent.
+
+⚠️ Module scope, deliberately. It is read from the push and from the card renderer, which are
+siblings — a `var` inside one of them is exactly the fault that took this step off the screen earlier
+today.
+
+### ⚠️ `＋Act` is gone, at the owner's request
+
+*"In the 'In the Schedule Now' there is already a add activity button. What's the difference for the
++ Add Activity at the bottom?"* — none worth keeping. It did not add anything to the setup: it called
+`switchTab('schedule')` and opened the live new-activity form with the branch preselected, i.e. it
+silently left the step. Two controls a row apart, both saying "add activity", one writing the recipe
+and one navigating away to write the schedule. The planned list is the way in now, and it can name its
+own branch. `wbsAddActivity` and its two CSS rules are retired rather than left orphaned.
+
+### ⚠️ Two layout defects found by MEASURING, not by reading
+
+- **The picker rendered 50px tall against the row's 32px inputs.** A branch name is long and the
+  track is 190px, so the closed `<select>` wrapped its own label onto a second line — 2 × 18.125 +
+  12 + 2 = **50.25**, measured. The row's height would have followed whatever the longest branch name
+  a planner happened to type. Pinned to 32px with an ellipsis, matching every other builder row in
+  this file (`.sbld-row`, `.sbld-relrow`, `.sbld-improw` all pin their control height).
+- **On a phone the new column took the activity NAME down to 33px** — from 160px, measured at 390px.
+  The one field a planner reads down the list, made unreadable to fit a field they set once. The
+  picker now spans the full width on its own line beneath the row; the name is back to **160px,
+  identical to the base build**.
+
+⚠️ Both were invisible at the pane's own ~620px width, which applies the *phone* rules — measured
+inside an iframe set to the real width, per the 2026-09-15 (r) note.
+
+⚠️ Fixed in passing: the **Dates heading was already orphaned on a phone** before this change
+(`.sbld-phwin` hidden, its heading not), wrapping the header onto a third line. Leaving it beside a
+new column doing the same thing was not defensible. Header: 6 cells on 3 lines → **5 on 2**.
+
+### Verified
+
+**31 assertions**, `_phTaskNode` and `_phWbsOptions` sliced out of the shipped file and executed: a
+nested branch accepted, a deleted one resolved to null rather than crashing, **a branch in another
+phase refused**, a mirrored branch refused, and a deliberately cyclic parent chain terminating
+(<500ms) rather than hanging the push. The option list offers nested branches with their codes,
+returns the saved one selected, offers no mirrored branch, and says so for a phase with no branch yet.
+**Contrast pinned to `97eeaec`** — gated on the base having no `_phTaskNode` and still emitting
+`＋Act`, so the suite bites on the real change.
+
+Rendered against the real stylesheets at **1400px and 390px**: seven tracks and a 190px picker on the
+desktop line, the picker on its own line on a phone with days/tick/delete still on row 1, inside the
+row at both widths, no horizontal page scroll, and the background asserted as a **colour** so the
+stylesheet is provably in the cascade.
+
+`wiring-check` 139/139, the inline script parses, no patch-variable leaks.
+
+⚠️ **Not verified signed in.** The picker is asserted against a fixture, not against OPW101's own
+tree. On the next open each planned row should carry a WBS select defaulting to *"Directly on
+<phase>"*.
+
+`MODULE_V` → `20260917zx`.
+
 ### 2026-09-17 (t) — "Whole branches are missing" from the WBS tree: Hide empty groups was deleting the structure
 
 Owner, on the Project Schedule grouped by **WBS tree (default)**: *"the WBS Tree (default) bugged out

@@ -3275,8 +3275,7 @@
     /* Rows are focusable so the keyboard works on a selection; focus always coincides with
        .selected, whose tint + red rail IS the indicator — a second default ring just doubles up. */
     .ps-wbs-row:focus { outline:none; }
-    .ps-wbs-acts button.wbs-act { width:auto; padding:0 8px; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); }
-    .ps-wbs-acts button.wbs-act:hover { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red); }
+    /* ⚠️ `.wbs-act` retired with the button it styled (2026-09-17). */
     .ps-wbs-code { font-weight:700; color:var(--pd-red); min-width:64px; flex:none; font-size:var(--pd-fs-sm); }
     .ps-wbs-name { flex:1; font-size:var(--pd-fs-base); }
     .ps-wbs-name input { width:100%; font:inherit; padding:3px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
@@ -4225,9 +4224,18 @@
     .sbld-phlist { margin-top:9px; display:grid; gap:5px; }
     /* name · days · computed window · delete. The window column is read-only output: the dates come
        from the chain, so they are shown rather than entered. */
-    /* ⚠️ SIX columns now: grip · name · days · concurrent · dates · delete. See stPhases for
-       why the header row and the concurrency tick exist. */
-    .sbld-phrow { display:grid; grid-template-columns:14px minmax(0,1fr) 74px 26px 168px 34px; gap:7px; align-items:center; }
+    /* ⚠️ SEVEN columns now: grip · name · WBS · days · concurrent · dates · delete. See stPhases
+       for why the header row, the WBS picker and the concurrency tick exist. The phone rule below
+       keeps the WBS picker and drops the computed window — the window is output, the picker is the
+       only place the activity's destination can be set. */
+    .sbld-phrow { display:grid; grid-template-columns:14px minmax(0,1fr) 190px 74px 26px 168px 34px; gap:7px; align-items:center; }
+    /* ⚠️ A BRANCH NAME IS LONG AND THIS TRACK IS 190px, so the closed <select> WRAPS its own
+       label onto a second line and renders 50px tall against the row's 32px inputs — measured,
+       not guessed: 2 × 18.125 line + 12 padding + 2 border = 50.25. The row's height then follows
+       the longest branch name a planner happens to have typed. Every other builder row in this
+       file pins its control height for the same reason (`.sbld-row`, `.sbld-relrow`,
+       `.sbld-improw`); this one matches the text inputs beside it and ellipsises instead. */
+    .sbld-phw { min-width:0; height:32px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .sbld-phrow.sbld-phhdr { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); padding-bottom:1px; }
     .sbld-phrow.sbld-phhdr i { font-style:normal; text-transform:none; letter-spacing:0; opacity:.7; }
     .sbld-phpar { display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
@@ -4324,8 +4332,20 @@
       overflow:hidden; text-overflow:ellipsis; }
     .sbld-phtotal { margin:12px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .sbld-phtotal b { color:var(--pd-ink); font-variant-numeric:tabular-nums; }
+    /* ⚠️⚠️ ON A PHONE THE PICKER GETS ITS OWN LINE. Squeezed into the same row it took the
+       activity NAME down to 33px — measured at 390px, against 160px before this column existed:
+       the one field a planner reads down the list, unreadable, to make room for a field they set
+       once. So the five original tracks are kept and the picker spans the full width beneath them,
+       where a long branch name is actually legible.
+       ⚠️ `.sbld-phw` is placed explicitly at row 2; the tick, days and delete cells auto-flow
+       into row 1 around it, which is why their order is unchanged.
+       ⚠️ The two header cells whose data cell is absent here are hidden with it: the Dates
+       label was ALREADY orphaned on a phone before this change (`.sbld-phwin` was hidden and its
+       heading was not), wrapping the heading onto a third line. Fixed in passing rather than left
+       beside a new column doing the same thing. */
     @media (max-width:720px) { .sbld-phrow { grid-template-columns:14px minmax(0,1fr) 64px 26px 34px; }
-      .sbld-phwin { display:none; } }
+      .sbld-phwin, .sbld-phwin-h, .sbld-phw-h { display:none; }
+      .sbld-phw { grid-column:2 / -1; grid-row:2; margin-top:5px; } }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
     .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:var(--pd-radius-lg); background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
@@ -6083,6 +6103,33 @@
     return (WBS_NODES || []).filter(function (n) { return !(n.parent_id || null) && !taken[n.id]; })
       .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); })
       .map(function (n) { return n.id; });
+  }
+  /* ==== WHERE A PLANNED LIFECYCLE ACTIVITY LANDS ============================================
+     Owner 2026-09-17: *"I want to be able to allocate it properly to a designated WBS."* Until now
+     the push filed every one of a phase's activities directly on the phase branch, so a sub-WBS the
+     planner had just built had no way to receive any of them.
+     An activity now carries `w` — the wbs_nodes id it should land under. Unset means the phase
+     branch, which the owner asked for explicitly: *"some activities does not necessarily need to be
+     in a sub-wbs."*
+     ⚠️⚠️ THE STORED ID IS VALIDATED AT PUSH TIME, NEVER TRUSTED. `cfg.phases` is a saved
+     recipe that outlives the tree it points at: the branch can be deleted, or re-parented under a
+     DIFFERENT phase, between the day it was chosen and the day it is pushed. Filing an Initiation
+     activity under an Execution branch would put it in the wrong phase, on the wrong dates, and
+     renumber nothing to warn anybody. So the node must still exist, must not be a mirrored branch,
+     and must still sit inside the phase that owns the activity — otherwise this returns null and
+     the caller falls back to the phase branch.
+     ⚠️ Module scope, deliberately: it is read from the push and from the card renderer, which
+     are siblings. A `var` inside one of them is the fault that took the whole step down today. */
+  function _phTaskNode(phaseCode, w) {
+    if (!w) return null;
+    var n = wbsById(w);
+    if (!n || n.source_kind) return null;
+    var a = n, guard = 0;
+    while (a && guard++ < 64) {
+      if ((a.phase || phaseFromName(a.name)) === phaseCode) return w;
+      a = a.parent_id ? wbsById(a.parent_id) : null;
+    }
+    return null;
   }
   function _nodePhase(nodeId) {
     if (!nodeId) return null;
@@ -29334,8 +29381,13 @@
        the lock exists to prevent. */
     var acts = ro ? '<span class="ps-wbs-badge ps-wbs-rolock" title="Built by the Generate step — edit the setup and push again">built by the setup</span>' : sk
       ? '<span class="ps-wbs-badge ps-wbs-synced" title="' + esc(SOURCE_KIND_LABEL[sk] || '') + '">🔒 synced</span>'
-      : ('<button class="wbs-act" data-wbs-act="' + esc(e.id) + '" title="Add an activity under this WBS">＋Act</button>' +
-         '<button data-wbs-add="' + esc(e.id) + '" title="Add sub-WBS (Shift+Enter in the name)">＋</button>' +
+      /* ⚠️⚠️ `＋Act` IS GONE, at the owner's request after asking what it did differently from
+         the PLANNED list's own "+ Add activity". It did not add anything here: it called
+         `switchTab('schedule')` and opened the new-activity form with this branch preselected —
+         i.e. it silently left the step. Two controls a row apart, both saying "add activity", one
+         writing the setup recipe and one navigating away to write the live schedule. The planned
+         list is the way in from this step now, and it can name its own branch. */
+      : ('<button data-wbs-add="' + esc(e.id) + '" title="Add sub-WBS (Shift+Enter in the name)">＋</button>' +
          '<button data-wbs-phase="' + esc(e.id) + '" title="Set project phase for this branch">◐</button>' +
          (locked ? '' :
            '<button data-wbs-up="' + esc(e.id) + '" title="Move up (Alt+↑)">▲</button>' +
@@ -29488,7 +29540,6 @@
       if (btn) {
         var d = btn.dataset;
         if (d.wbsToggle != null) { if (_wbsCollapsed[id]) delete _wbsCollapsed[id]; else _wbsCollapsed[id] = true; renderWbsManager(); }
-        else if (d.wbsAct != null) wbsAddActivity(id);
         else if (d.wbsAdd != null) wbsQuickAdd(id, null);
         else if (d.wbsDup != null) wbsDuplicate(id);
         else if (d.wbsUp != null) wbsMove(id, 'up');
@@ -30984,12 +31035,10 @@
   // Select a WBS node (highlight); its selection preselects the parent when adding an activity.
   function wbsSelect(id) { _wbsSel = (_wbsSel === id) ? null : id; renderWbsManager(); }
   // Jump to the Schedule and open the Add-activity form with this WBS preselected as the parent.
-  function wbsAddActivity(id) {
-    if (_editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
-    var sk = wbsSourceKind(id);
-    if (sk) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[sk] + ' — activities can\'t be added here.', 'warn'); return; }
-    _wbsSel = id; switchTab('schedule'); openForm(null);
-  }
+  /* ⚠️ `wbsAddActivity` RETIRED 2026-09-17 with the +Act button, its only caller. It never
+     added an activity here: it switched to the Schedule tab and opened the form with the branch
+     preselected, which is why the owner could not tell it apart from the PLANNED list's own
+     "+ Add activity" a row away. The planned list names its own branch now. */
   // In-app "Add WBS" modal (replaces the browser prompt): name + optional custom code.
   function wbsAddChild(parentId) {
     if (!pid) return;
@@ -43902,6 +43951,27 @@
        a parameter, so the scope it actually runs in was never exercised. Slice-and-inject proves
        the arithmetic and is blind to where a name lives. */
     var _phIdx = null;
+    /* The branches a planned activity may be filed under: the phase branch itself (the default,
+       and what every existing setup already does) plus every branch beneath it.
+       ⚠️ A mirrored branch (`source_kind`) is NOT offered — its contents come from another
+       app and the push may not add to it. ⚠️ Indented by depth and prefixed with the dotted code,
+       because two branches under different parents are routinely called the same thing. */
+    function _phWbsOptions(code, sel) {
+      var b = _phaseBranchAt(null, code);
+      if (!b) return '<option value="">(no branch yet)</option>';
+      var codeOf = (_phIdx && _phIdx.codeOf) || {};
+      var out = ['<option value=""' + (sel ? '' : ' selected') + '>Directly on ' + e2(b.name) + '</option>'];
+      (function walk(parent, depth) {
+        wbsChildren(parent).forEach(function (n) {
+          if (n.source_kind) return;
+          out.push('<option value="' + e2(n.id) + '"' + (sel === n.id ? ' selected' : '') + '>' +
+            new Array(depth).join('  ') +
+            (codeOf[n.id] ? e2(codeOf[n.id]) + '  ' : '') + e2(n.name || 'WBS') + '</option>');
+          walk(n.id, depth + 1);
+        });
+      })(b.id, 1);
+      return out.join('');
+    }
     function phWbsBlock(code, label) {
       var b = (code === 'other') ? null
             : (code === 'milestones') ? (function () { var id = _wbsMilestonesRootId(); return id ? wbsById(id) : null; })()
@@ -43986,13 +44056,21 @@
         var phHead = '<div class="sbld-phrow sbld-phhdr">' +
           '<span class="sbld-phgrip" aria-hidden="true"></span>' +
           '<span>Activity</span>' +
+          '<span class="sbld-phw-h" title="Which branch under this phase the activity is created in when you push. Leave it on the phase itself when it does not belong to a sub-WBS.">WBS</span>' +
           '<span title="Calendar days, not working days — these lifecycle activities are not scheduled against a working calendar.">Days</span>' +
           '<span title="Tick to run this activity alongside the one above it instead of after it.">‖</span>' +
-          '<span>Dates <i>(computed)</i></span><span></span></div>';
+          '<span class="sbld-phwin-h">Dates <i>(computed)</i></span><span></span></div>';
         var body = phHead + ph.acts.map(function (a, i) {
           return '<div class="sbld-phrow' + (a.par ? ' is-par' : '') + '" data-i="' + i + '">' +
             '<span class="sbld-phgrip" draggable="true" title="Drag to reorder. The order IS the sequence: each activity (or parallel group) follows the one above it, so moving a row moves the dates of everything below it.">\u22ee\u22ee</span>' +
             '<input class="pd-input sbld-phn" data-ph="' + d.v + '" data-i="' + i + '" value="' + e2(a.n) + '" placeholder="Activity name">' +
+            /* ⚠️ The SAVED value is shown even when it no longer resolves, rather than silently
+               snapping back to the phase: `_phWbsOptions` simply will not contain it, so the select
+               falls to its first option and the planner can see it has moved. The push validates
+               separately and says so. */
+            '<select class="pd-select sbld-phw" data-phw="' + d.v + '" data-i="' + i + '" ' +
+              'title="The branch this activity is created under when you push">' +
+              _phWbsOptions(d.v, a.w || '') + '</select>' +
             '<input class="pd-input sbld-phd" type="number" min="1" max="999" data-ph="' + d.v + '" data-i="' + i + '" value="' + (+a.d || 1) + '" title="Duration in CALENDAR days">' +
             /* ⚠️ Disabled on the FIRST row: "alongside the one above" has no meaning there, and a
                tickable box that silently does nothing is worse than no box. */
@@ -44108,6 +44186,16 @@
             return;
           }
           wbsQuickAdd(pb.id, null);
+        };
+      });
+      host.querySelectorAll('[data-phw]').forEach(function (sel) {
+        sel.onchange = function () {
+          var a = sbPhActs(sel.dataset.phw)[+sel.dataset.i];
+          if (!a) return;
+          /* ⚠️ Stored as undefined rather than '' when it is the phase itself, so a setup saved
+             before today and one saved after read identically. */
+          if (sel.value) a.w = sel.value; else delete a.w;
+          markDirty(); render();
         };
       });
       host.querySelectorAll('[data-phreset]').forEach(function (b) {
@@ -47514,12 +47602,31 @@
           }
           nodeDescs.forEach(function (nd) { var _nid = keyToNodeId[nd.key]; if (reused[nd.key] && _hasSummaryRow(_nid)) return; var nidn = _nid; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
+          /* ⚠️⚠️ THE ACTIVITY'S OWN BRANCH WINS, WHEN IT IS STILL A VALID ONE. `t.r.act.w`
+             is what the planner picked in the PLANNED list; `_phTaskNode` re-checks at push time
+             that the node still exists, is not a mirrored branch, and is still inside THIS phase —
+             a saved recipe outlives the tree it points at. Anything that fails those checks falls
+             back to the phase branch, which is also the default for an activity that was never
+             assigned one: the owner's call, *"some activities does not necessarily need to be in a
+             sub-wbs."*
+             ⚠️ The fallbacks are COUNTED and reported rather than absorbed. Silently filing
+             eleven activities somewhere other than where the screen said they would go is the
+             failure this whole feature exists to prevent. */
+          var _phMisfiled = 0;
           phaseTasks.forEach(function (t) {
-            var nidt = keyToNodeId[t.k] || null;
+            var want2 = (t.r && t.r.act && t.r.act.w) || null;
+            var chosen = want2 ? _phTaskNode(t.v, want2) : null;
+            if (want2 && !chosen) _phMisfiled++;
+            var nidt = chosen || keyToNodeId[t.k] || null;
             var p2 = phaseTaskPayload(t);
             p2.wbs_node_id = nidt; p2.wbs = nidt ? (codeOf[nidt] || null) : null;
             payloads.push(p2);
           });
+          if (_phMisfiled) {
+            UI.toast(_phMisfiled + ' lifecycle activit' + (_phMisfiled === 1 ? 'y was' : 'ies were') +
+              ' filed on the phase branch: the sub-WBS chosen for ' + (_phMisfiled === 1 ? 'it' : 'them') +
+              ' no longer exists under that phase.', 'warn');
+          }
         } else {
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
           var codeByKey = {}, so2 = {};
