@@ -219,7 +219,38 @@
 
     window.__profile = profile;
     window.__role = profile.role;
+    noteLogin(session.user.id);
     if (cb) cb(session.user, profile);
+  }
+
+  /* ==== RECORDING THE SIGN-IN =================================================================
+     Owner 2026-09-17: *"a feature tracking the activity and registered date in the users … to
+     track activity and performance."*
+     ⚠⚠ IT WAS RECORDED IN ONE PLACE AND THAT PLACE MISSED HALF THE SIGN-INS. `last_login`
+     has existed on `users` since 2026-08-11 and was written from exactly one call site —
+     index.html's EMAIL/PASSWORD handler. `loginWithMicrosoft` redirects to the provider and comes
+     back on home.html, which never touched it, so anyone signing in with Microsoft read as
+     "never logged in" forever. An activity column built on that would not have been wrong about
+     a date, it would have been wrong about a PERSON, which is worse.
+     Moved here, into the one function every authenticated page already calls.
+     ⚠ ONCE PER BROWSER SESSION, not once per page load. requireLogin runs on every one of the
+     29 pages; writing there would turn a navigation into an UPDATE and make "last login" mean
+     "last page view", which is a different measurement wearing the same label.
+     ⚠ Fire-and-forget and never awaited: a failed write must not block the page. The column is
+     reporting, not a gate.
+     ⚠ Storage can throw (private mode, blocked site data). Then the guard simply does not
+     persist and the write happens again — idempotent, so the failure mode is a redundant UPDATE
+     rather than a broken sign-in. */
+  var LOGIN_KEY = 'pd_login_noted';
+  function noteLogin(uid) {
+    try {
+      if (sessionStorage.getItem(LOGIN_KEY) === uid) return;
+      sessionStorage.setItem(LOGIN_KEY, uid);
+    } catch (e) { /* no storage — fall through and write */ }
+    try {
+      getSB().from('users').update({ last_login: new Date().toISOString() }).eq('id', uid)
+        .then(function () {}, function () {});
+    } catch (e) {}
   }
 
   // requireRole(roles, cb): like requireLogin but also gates on role membership.

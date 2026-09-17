@@ -103,6 +103,100 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (l) — Activity and Registered on the Users table, a last_login that Microsoft sign-ins actually reach, and two columns removed to pay for them
+
+Owner: *"a feature tracking the activity and registered date in the users which is already available
+in the procurement dashboard … This information should only be available to admins and
+super_admins"*, then *"squeeze the table … in a way that the table does not necessarily need to be
+scrollable."*
+
+### ⚠️ No migration, and no new access rule — both already existed
+
+`users.last_login` and `users.created_at` have been on the table since **2026-08-11**, and
+`PDb.listUsers` already does `select('*')`. The figures were being fetched and thrown away. What was
+missing was a column in the UI, not a schema.
+
+⚠️⚠️ **And the access requirement is already met in the database, which is the only place it
+counts.** `users_self_read` is `auth.uid() = id or is_admin()`, and `is_admin()` is
+`role in ('admin','super_admin') and status = 'approved'` — so a **planner cannot read another
+user's row at all**, `last_login` included. Read out of `supabase-schema.sql` and asserted, not
+assumed. This page adds no second gate: `requireAdmin` already fronts it, and a UI check layered
+over an RLS rule teaches the next reader that the UI is what protects it.
+
+### ⚠️⚠️ The column was written from one place, and that place missed half the sign-ins
+
+`last_login` was updated only by **index.html's email/password handler**. `loginWithMicrosoft`
+redirects to the provider and returns on `home.html`, which never touched it — so **anyone signing
+in with Microsoft read as "never logged in", permanently.** An activity column built on that would
+not have been wrong about a date, it would have been wrong about a *person*.
+
+Moved into `AppAuth.requireLogin`, the one function every authenticated page already calls.
+- ⚠️ **Once per browser session**, not per page load — `requireLogin` runs on all 29 pages, and
+  writing there would make *"last login"* mean *"last page view"*: a different measurement wearing
+  the same label.
+- ⚠️ `PDb.updateLastLogin` is **retired, not left as a spare**. An exported writer with no callers is
+  the thing the next editor calls, and then there are two writers for one column again.
+
+### The two cells
+
+**Activity** — an `Active` / `Inactive` pill on the shared `.pd-pill` component (no fourth green),
+split at **7 working days**, with *"Sep 16, 2026 · 1 working day ago"* beneath.
+⚠️ **Working days, not calendar days**, matching the procurement dashboard: someone who signed in on
+Friday is not "3 days idle" on Monday. Computed in closed form — whole weeks contribute five each and
+only the remainder is walked — and asserted equal to a naive day-by-day walk over 120 days.
+⚠️⚠️ **Three absences, three messages.** `undefined` = the column is not on this database (names the
+migration); `null` = the column is there and this person has never signed in; a bad value = a dash.
+One dash for all three would send an admin looking for a person when the answer is a migration.
+⚠️ The cell passes `Fmt.date` a **Date object, not the ISO string**: the string branch reads the
+`yyyy-mm-dd` prefix, which is **UTC**, while `workingDaysSince` parses to local — so a 02:00 Manila
+sign-in printed *yesterday's* date beside a correctly-counted pill.
+
+**Registered** — `created_at`, same treatment.
+
+### ⚠️ Paying for them: Name and Email were the same string
+
+Two new columns took the table to 1,644px in a 1,545px container — scrolling. The fat was obvious
+once measured: **Name and Email were two full columns holding the identical value** for every
+account created from an email address with no display name, which is half this table. Stacked into
+one **User** cell (name bold, email beneath) — the shape the procurement dashboard already uses —
+and when the name is absent or *is* the email, the email is the only line.
+
+Plus `min-width` on the Role and Department selects (130→112, 140→118) and 10px→7px cell gutters
+**scoped to `#users-table`**: nine columns pay the gutter nine times. Scoped rather than shared,
+because every other table in the app is fine at 10px and a global change to make one screen fit is
+how a design system starts drifting.
+
+Measured, table width against container:
+
+| viewport | container | table | scrolls |
+|---|---|---|---|
+| 1593 (sidebar open at 1920) | 1,545 | **1,543** | **no** |
+| 1400 | 1,352 | **1,350** | **no** |
+| 1280 | 1,232 | 1,337 | yes, inside the wrapper |
+| 390 | 342 | 1,377 | yes, inside the wrapper |
+
+**The page never scrolls sideways at any width** — only the wrapper does, which is what
+`.pd-tablewrap` is for.
+
+### Verified
+
+**41 assertions**, the three helpers **sliced out of admin.html and executed**: the working-day
+boundary tested at exactly 7 and exactly 8 rather than near them, singular/plural, the three
+absences distinguished, the header/body column counts agreeing at nine, **exactly one writer for
+`last_login`** across five files with comments stripped first, and a **gate** asserting the RLS
+policy text itself. Contrast pinned to `origin/main`: the base has no `activityCell` and eight
+columns, so the suite bites.
+
+Rendered in an iframe: all four activity states with their tones resolving from the shared tokens
+(`rgb(18,105,58)` on `rgba(31,143,78,.12)` for Active, `rgb(138,83,0)` for Inactive), dates correct,
+nine headers, no page-level horizontal scroll at 1593 / 1400 / 1280 / 390.
+
+⚠️ **Not verified signed in** — no real `last_login` has been read, and the Microsoft path has not
+been exercised end to end. The figure to watch on the first real open is how many rows read *"Never
+signed in"*: if it is everyone who uses Microsoft, the move has not taken effect yet.
+
+`auth.js` (28 pages) and `db.js` (25) → `?v=20260917zf`; `MODULE_V` → `20260917zf`.
+
 ### 2026-09-17 (k) — Six short blocks that balance instead of three long ones that cannot, and the Users table stops crushing its own columns
 
 Owner: *"Still not the best wrapping. Can we also reduce the length of the how to read this chart?"*
