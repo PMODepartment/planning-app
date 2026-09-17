@@ -3631,6 +3631,19 @@
     /* ⚠️ The icon must not be squeezed by the label's flex share, and it should not inherit
        the label's colour transition on hover as a separate step. */
     .sbld-mintog svg { flex:none; display:block; }
+    /* ⚠️⚠️ THE STEP STRIP'S OWN ARROWS, AND THEY EXIST ONLY AT NARROW WIDTH. Owner 2026-09-17:
+       *"if not minimized in narrow width, use left right arrows instead of the horizontal scroll
+       bar."* `display:none` here is the whole desktop story — the sticky column never sees them, so
+       nothing about the wide layout changes. The 820px block turns them on, and only when the strip
+       genuinely overflows: an arrow that can scroll nothing is a control that does nothing, so the
+       overflow is MEASURED per render rather than inferred from the step count. */
+    .sbld-railarw { display:none; flex:none; width:28px; min-height:30px; align-items:center;
+      justify-content:center; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      background:var(--pd-card); color:var(--pd-muted); cursor:pointer; padding:0; }
+    .sbld-railarw:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); border-color:var(--pd-muted); }
+    .sbld-railarw:disabled { opacity:.4; cursor:default; }
+    .sbld-railarw:focus-visible { outline:2px solid var(--pd-focus); outline-offset:1px; }
+    .sbld-railarw svg { display:block; }
     .sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr; gap:12px; }
     /* Collapsed: a square icon button, the shape this app uses for every icon-only control,
        rather than a shrunken pill. 34px is the same target as the module-bar buttons. */
@@ -5198,7 +5211,49 @@
     .sbld-ld-t.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .sbld-ld-row input[type=number] { font:inherit; padding:4px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
     @media (max-width:900px){ .sbld-seq2 { grid-template-columns:1fr; } }
-    @media (max-width:820px){ .sbld-wrap { grid-template-columns:1fr; } .sbld-rail { position:static; flex-direction:row; overflow-x:auto; } .sbld-step-s { display:none; } }
+    /* ==== NARROW WIDTH: THE STEPS ARE A STRIP ON TOP ================================
+       Owner 2026-09-17: *"if window is narrow, the steps go to the top, the minimize button should
+       just remove the labels but stay on top, not move to the left. the arrow of the minimize button
+       should also point up. if not minimized in narrow width, use left right arrows instead of the
+       horizontal scroll bar."*
+       ⚠️⚠️ MINIMISING PUT THE RAIL BACK IN A COLUMN, and that was a specificity loss rather than an
+       oversight: `.sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr }` is (0,2,0) and beat the
+       (0,1,0) `.sbld-wrap` that used to sit here, so collapsing the steps at phone width threw them
+       back to a 46px left column — the reported defect. Restated at EQUAL specificity and later in
+       source, so it wins on order; raising specificity instead would have had to be re-raised the
+       next time that rule gains a class. */
+    @media (max-width:820px){
+      .sbld-wrap, .sbld-wrap.sbld-railmin { grid-template-columns:1fr; }
+      .sbld-step-s { display:none; }
+      /* Grid AREAS rather than reordering flex children: the markup order (toggle, rail, arrows) is
+         the reading order for a screen reader and for the keyboard, and an `order` list is a second
+         thing to keep in step with it. The toggle keeps a full line above the strip. */
+      .sbld-railcol { display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+        grid-template-areas:"tog tog tog" "lt rail rt"; align-items:center; gap:6px; }
+      .sbld-railcol > .sbld-mintog { grid-area:tog; }
+      .sbld-railcol > .sbld-rail { grid-area:rail; position:static; flex-direction:row; overflow-x:auto; }
+      .sbld-railcol > .sbld-railarw[data-railarw="-1"] { grid-area:lt; }
+      .sbld-railcol > .sbld-railarw[data-railarw="1"] { grid-area:rt; }
+      /* ⚠️ The toggle stops stretching AND stops centring. `align-self:center` is right for a 46px
+         column and wrong for a full-width row, where it parks a 34px button in the middle of the
+         page with nothing either side of it. */
+      .sbld-wrap.sbld-railmin .sbld-mintog { align-self:start; justify-self:start; }
+      /* ⚠️⚠️ THE ARROW POINTS UP, DERIVED RATHER THAN CHOSEN. The JS already emits `chevronLeft`
+         expanded and `chevronRight` collapsed, and +90° turns ◄ into ▲ and ► into ▼ — so both states
+         stay correct with no second place deciding a direction, and the JS needs no notion of the
+         viewport at all. ⚠️ `chevronUp` is not in the shared set and `icons.js` is not a module's to
+         edit; rotating the one that is there costs nothing and adds no shared asset to bump. */
+      .sbld-mintog svg { transform:rotate(90deg); }
+      /* ⚠️⚠️ THE SCROLLBAR GOES ONLY WHERE THE ARROWS REPLACE IT, AND `:not(.sbld-railmin)` IS WHAT
+         MAKES THAT TRUE. The arrows are hidden when minimised (the owner asked for them in the
+         not-minimised case), so suppressing the scrollbar on `.sbld-hasarw` alone would have left a
+         minimised strip that overflows with NEITHER — no scrollbar and no arrows, i.e. steps that
+         cannot be reached at all. Measured: 12 minimised steps fit at 390px today, so this is the
+         case that would have shipped working and broken on the first 16-step mode. */
+      .sbld-wrap:not(.sbld-railmin) .sbld-railcol.sbld-hasarw > .sbld-rail { scrollbar-width:none; }
+      .sbld-wrap:not(.sbld-railmin) .sbld-railcol.sbld-hasarw > .sbld-rail::-webkit-scrollbar { display:none; }
+      .sbld-wrap:not(.sbld-railmin) .sbld-railcol.sbld-hasarw > .sbld-railarw { display:inline-flex; }
+    }
     /* ==== DRAWING A LINK BY HAND, AS A PANEL =========================================
        Owner 2026-09-17: *"there are way too many buttons and allow the manual intervention of
        linking to be more seen."* Both sequencing steps put their linking flow here instead of
@@ -5772,6 +5827,11 @@
           <div class="sbld-railcol">
             <button class="sbld-mintog" data-sbldmin="1" type="button" title="Minimise the step list"></button>
             <div class="sbld-rail" id="ps-bld-rail"></div>
+            <!-- ⚠️ Siblings of the rail, never children: the rail is rebuilt by innerHTML on
+                 every render and would throw them away — the same reason the minimise toggle sits
+                 out here. Hidden outright above 820px. -->
+            <button class="sbld-railarw" data-railarw="-1" type="button" aria-label="Show earlier steps" title="Show earlier steps"></button>
+            <button class="sbld-railarw" data-railarw="1" type="button" aria-label="Show later steps" title="Show later steps"></button>
           </div>
           <div class="sbld-panel" id="ps-bld-panel"></div>
         </div>
@@ -5802,6 +5862,11 @@
           <div class="sbld-railcol">
             <button class="sbld-mintog" data-sbldmin="1" type="button" title="Minimise the step list"></button>
             <div class="sbld-rail" id="ps-cl-rail"></div>
+            <!-- ⚠️ Siblings of the rail, never children: the rail is rebuilt by innerHTML on
+                 every render and would throw them away — the same reason the minimise toggle sits
+                 out here. Hidden outright above 820px. -->
+            <button class="sbld-railarw" data-railarw="-1" type="button" aria-label="Show earlier steps" title="Show earlier steps"></button>
+            <button class="sbld-railarw" data-railarw="1" type="button" aria-label="Show later steps" title="Show later steps"></button>
           </div>
           <div class="sbld-panel" id="ps-cl-panel"></div>
         </div>
@@ -16840,7 +16905,59 @@
         };
       }
     });
+    sbldRailArrows();
   }
+  /* ⚠️⚠️ CALLED FROM sbldMinSync, WHICH BOTH RAILS ALREADY RUN AFTER EVERY REBUILD — so the
+     arrows are re-measured at exactly the moments the step list can have changed length, rather
+     than from a second set of call sites that would have to be kept in step with the first. (The
+     Schedule Setup rail and the Cost Loading rail have different renderers; that is precisely the
+     drift this avoids.)
+     ⚠️ Whether to show them is MEASURED (`scrollWidth > clientWidth`), never inferred from the step
+     count: six steps fit on a phone and twelve do not, the count changes per mode, and an arrow that
+     can scroll nothing is a control that does nothing. It is also what decides whether the native
+     scrollbar is suppressed, so a strip can never end up with neither.
+     ⚠️ Above 820px the arrows are `display:none` and this still runs — it costs two layout reads and
+     keeps the state honest the instant the window crosses the breakpoint. */
+  function sbldRailArrows() {
+    document.querySelectorAll('.sbld-railcol').forEach(function (col) {
+      var rail = col.querySelector('.sbld-rail');
+      var arws = col.querySelectorAll('.sbld-railarw');
+      if (!rail || !arws.length) return;
+      var over = rail.scrollWidth > rail.clientWidth + 1;
+      col.classList.toggle('sbld-hasarw', over);
+      var x = rail.scrollLeft, max = rail.scrollWidth - rail.clientWidth;
+      arws.forEach(function (b) {
+        var dir = +b.dataset.railarw;
+        // Disabled at the end it points at, so the pair says where you are in the strip.
+        b.disabled = !over || (dir < 0 ? x <= 1 : x >= max - 1);
+        if (b.dataset.wired !== '1') {
+          b.dataset.wired = '1';
+          b.innerHTML = (window.Icons && Icons.svg)
+            ? Icons.svg(dir < 0 ? 'chevronLeft' : 'chevronRight', 14)
+            : (dir < 0 ? '\u2039' : '\u203A');
+          b.onclick = function () {
+            /* 80% of a screenful, not a whole one: the step you were reading stays on screen as an
+               anchor, which is what makes a second press land somewhere you can place. */
+            rail.scrollBy({ left: dir * Math.max(60, rail.clientWidth * 0.8), behavior: 'smooth' });
+          };
+        }
+      });
+      if (rail.dataset.arwwired !== '1') {
+        rail.dataset.arwwired = '1';
+        // ⚠️ The rail ELEMENT survives its own innerHTML rewrites, so one listener is enough and a
+        // repaint cannot stack a second copy of it.
+        rail.addEventListener('scroll', function () { sbldRailArrows(); }, { passive: true });
+      }
+    });
+  }
+  /* ⚠️ Its own listener rather than a line in the grid's resize handler above: crossing 820px
+     changes whether the strip overflows at all, and that is a different question from crossing the
+     phone breakpoint — folding it in would tie the arrows to a renderAll nobody needs here. */
+  var _sbldArwT = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(_sbldArwT);
+    _sbldArwT = setTimeout(sbldRailArrows, 150);
+  });
   function renderAll() {
     // At phone width the entire desktop UI is hidden by CSS and only the
     // read-only #ps-mobile list shows, so building the grid/Gantt/cost/details
@@ -36477,8 +36594,8 @@
       });
       html += '<h4 style="margin:18px 0 4px;font-size:13px;">Push history</h4>';
       if (!pushes.length) {
-        html += '<p class="sbld-hint" style="margin:0;">Nothing pushed yet. Every push records the setup exactly as ' +
-          'it was at that moment, so you can come back to it after a bad edit.</p>';
+        html += '<p class="sbld-hint" style="margin:0;">Nothing pushed yet. Every push records the setup as it was, ' +
+          'so you can come back to it.</p>';
       } else {
         html += '<table class="cc-table" style="width:100%;font-size:12.5px;"><thead><tr>' +
           '<th>When</th><th>Setup</th><th>Package</th><th style="text-align:right;">Activities</th><th></th>' +
@@ -37834,7 +37951,7 @@
       if (!sections) sections = '<p class="sbld-hint">Nothing to configure — add more floors/zones/units (step 2) or a second trade to shape the takt flow. Auto-trace will just chain the floors vertically.</p>';
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
       ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace — how does the work flow?</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
-        '<div style="padding:16px;max-height:72vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">Each trade is asked only what applies to how <b>it</b> flows through the building. The <b>So:</b> line under each trade is the flow your answers describe \u2014 read that, not the boxes. <b>This replaces the current links.</b></p>' +
+        '<div style="padding:16px;max-height:72vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">The <b>So:</b> line under each trade is the flow your answers describe \u2014 read that, not the boxes. <b>This replaces the current links.</b></p>' +
         sections + '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbld-at-go">Generate logic</button></div></div>';
       document.body.appendChild(ov);
@@ -39862,9 +39979,8 @@
           var n = offChartCount(); if (!n) return '';
           return '<p class="sbld-hint" style="color:var(--pd-warn-text,var(--pd-warn));">' + n +
             ' of ' + cfg.activities.length + ' row(s) carry a code the Finance chart does not hold ' +
-            '<b>at either level</b> — hand-typed, from an older template, or missing a leading zero. ' +
-            'A pushed activity will show it as unrecognised and the BOQ cannot match on it. ' +
-            'Re-pick from <b>+ Library</b> (group level) or <b>+ From BOQ</b> (item level).</p>';
+            '<b>at either level</b>, so the BOQ cannot match on it. ' +
+            'Re-pick from <b>+ Library</b> or <b>+ From BOQ</b>.</p>';
         })();
       // toolbar
       /* ⚠ The NAME cell, not the first cell. This was `+ Add row` and focused `[data-i=<id>]` —
@@ -41255,7 +41371,7 @@
           '<label>lag <input class="pd-input" id="b-tllag" type="number" step="1" value="0" title="Days (negative = lead)"> d</label>' +
           '<button class="pd-btn pd-btn-primary" id="b-tladd">Add relationship</button>' +
         '</div>' +
-        '<p class="sbld-hint">Relationships are applied when the schedule is traced, so re-zoning a tower keeps them pointing at the right place. A relationship that would create a loop is refused.</p>';
+        '<p class="sbld-hint">Relationships are applied when the schedule is traced, so re-zoning a tower keeps them pointing at the right place. A loop is refused.</p>';
 
       function fillAnchors() {
         var fromId = host.querySelector('#b-tlfrom').value;
@@ -43721,7 +43837,7 @@
                   (hasOwn ? '<em title="This floor already has a plan of its own. Ticking it replaces that.">has its own</em>' : '') +
                   '</label>';
               }).join('') + '</div>' +
-              (others.length ? '' : '<p class="sbld-hint" style="margin:6px 0 0;">' + (multiTower() ? ('<b>' + e2(towerLabel(SUBJ.towerId)) + '</b> has no other floor of this trade to share with. The list is scoped to this tower on purpose — another tower’s floors are another building.') : 'This trade has no other floor to share with.') + '</p>') +
+              (others.length ? '' : '<p class="sbld-hint" style="margin:6px 0 0;">' + (multiTower() ? ('<b>' + e2(towerLabel(SUBJ.towerId)) + '</b> has no other floor of this trade to share with.') : 'This trade has no other floor to share with.') + '</p>') +
               '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-draw it once and everything ticked follows.</p>' +
             '</details>') +
           '</div>';
@@ -44792,8 +44908,8 @@
         '</table></div>' +
         '<p class="sbld-hint">' +
           (list.length === 1
-            ? 'One tower. Everything in step ' + _stepNo('Floors & Zones') + ' applies to it, and no site plan is needed — the site is the tower.'
-            : list.length + ' towers. Each keeps its own floors, zones and zone sequencing; pick one above and lay it out in step ' + _stepNo('Floors & Zones') + '.') +
+            ? 'One tower — step ' + _stepNo('Floors & Zones') + ' applies to it, and the site is the tower.'
+            : list.length + ' towers, each with its own floors, zones and sequencing — pick one above, then step ' + _stepNo('Floors & Zones') + '.') +
         '</p>' +
         /* ⚠️ The site-plan panel is drawn only where a site plan MEANS something. On a single-tower
            project it would be a drawing of one building, which the floor plans already are — the
@@ -44802,9 +44918,8 @@
           ? '<h3 class="sbld-sech">Site development plan</h3>' +
             '<p class="sbld-hint">' +
               (_sp
-                ? 'Traced' + (_sp.img ? ' over an attached drawing' : ', with no drawing attached') +
-                  '. Re-open it with <b>Site plan</b> on the bar above.'
-                : 'Not traced yet. <b>Site plan…</b> on the bar above opens the editor: attach the site drawing, then trace one area per tower and name it after that tower.') +
+                ? 'Traced' + (_sp.img ? ' over a drawing' : ', with no drawing') + '. <b>Site plan</b> above re-opens it.'
+                : 'Not traced yet — <b>Site plan…</b> above. Name each area after its tower, or the two will not join.') +
             '</p>'
           : '');
       /* ⚠️ Selecting a tower from the table as well as from the chips: the table is the thing a
@@ -45145,10 +45260,8 @@
             /* ⚠️ It now says where to PRESS, because this panel no longer has a button of its own
                and a read-out that does not hand the planner on is a dead end. The sentence it
                replaced described the button inside the plan window and nothing else. */
-            '<p class="sbld-hint" style="margin:2px 0 0;">Open the storey named above from its own ' +
-            '<b>Plan…</b> button in the list below. Draw <b>one plan per category</b> and share it: ' +
-            'inside that window, <b>All floors of one category</b> points every storey of that type ' +
-            'at the same drawing, so re-tracing it once moves all of them. A storey that is ' +
+            '<p class="sbld-hint" style="margin:2px 0 0;">Draw <b>one plan per category</b> and share it with ' +
+            '<b>All floors of one category</b> — re-tracing then moves all of them. A storey that is ' +
             'genuinely different gets its own.</p>' +
           '</div></details>';
       })();
@@ -45219,7 +45332,7 @@
         '</div>' +
         fillCtrl +
         _planPanel +
-        floorsHtml + '<p class="sbld-hint">Drag the grip at the left of a row to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
+        floorsHtml + '<p class="sbld-hint">Drag a row’s grip to reorder. Floors F1, F2…; basements B1, B2… (<b>B1 = topmost</b>); zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
           (multiTower() ? ' <span style="font-weight:700;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
         '</div>' +
@@ -47666,7 +47779,7 @@
       host.innerHTML = '<h2>' + _stepNo('Activities & phases') + ' · What came in, and which phase it belongs to</h2>' +
         '<p class="sbld-lede">From <b>' + e2(imp.fname) + '</b> — <b>' + leaves.toLocaleString() + '</b> activities under <b>' +
           impBranches().length.toLocaleString() + '</b> WBS branches' + (dropped.length ? ', with the file’s own project-root wrapper dropped' : '') + '. ' +
-          'File each branch under one of this project’s standard phases — that <b>is</b> the phase, because an imported activity takes its phase from the branch it sits under. Anything you do not want in the schedule at all, tick <b>exclude</b>.</p>' +
+          '.</p>' +
         /* ⚠️ The first half described behaviour the planner discovers by using the control (a
            nested branch inherits until you override it). The second half is a CONSEQUENCE they
            cannot discover — getting it wrong makes the next step find no locations — so it stays,
@@ -47747,7 +47860,7 @@
         'this file.</p>' +
         _locBreakdownBar() +
         (sources.length
-          ? '<p class="sbld-hint">Map each level onto a source from the file. Leave a level on <b>— skip —</b> to import without it; the preview underneath lists the actual values each mapping would produce, which is how you catch a <b>Tower</b> rule that also swept up “Tower Handover”.</p>' +
+          ? '<p class="sbld-hint">The preview below is how you catch a <b>Tower</b> rule that also swept up “Tower Handover”.</p>' +
             '<div class="pd-card ps-ck-card" style="padding:12px 14px;">' +
             (LOC_LEVELS.length ? '' : '<p class="sbld-hint" style="margin-top:0;">This project has no levels yet — <b>+ Add a location level</b> below creates them as part of the import.</p>') +
             '<div id="imp-locmap">' + '</div>' +
@@ -48152,11 +48265,13 @@
              orientation for somebody who has used the OTHER path. A planner importing a file has
              not, and the gestures are spelled out immediately after it anyway. */
           '. ' +
-          /* ⚠️ CAPITALISED BECAUSE THE CLAUSE BEFORE IT WAS CUT. This used to follow "…work on the
-             build path:" — a colon, so lowercase was right. Removing that clause left ". drag one
-             bar", a sentence starting mid-word, which is only visible on the rendered page and was
-             caught by walking a real file through the wizard. */
-          '<b>Drag one bar onto another to connect them</b>, click a line to change its type or lag, and switch to <b>View</b> to see what drives what.</p>' +
+          /* ⚠️⚠️ THE GESTURE SENTENCE IS GONE BECAUSE IT WAS ON SCREEN TWICE. `.sbld-focuslegend`,
+             a few dozen pixels below this, already reads "Drag a bar onto another to connect. Click
+             a line to edit or unlink it." — and it is the BETTER of the two, because it follows the
+             mode (it says something different in View). "switch to View to see what drives what" was
+             a third copy: `#b-impmode`'s own label is "◉ View mode — click to Edit".
+             ⚠️ What is left is the counts, which nothing else on the step states. */
+          '.</p>' +
         '<div class="sbld-relmodes">' + modes + '</div>' +
         '<div class="sbld-sec-actions">' +
           '<button class="pd-btn' + (impEditing ? ' pd-btn-primary' : '') + '" id="b-impmode" title="' +
@@ -48188,7 +48303,7 @@
             '<div class="sbld-canvaswrap" id="b-impcanvas">' + svg + '</div>' +
           '</div>' +
         '</div>' +
-        '<p class="sbld-hint">Relationships are stored as the predecessor text on each activity — the same field the Project Schedule’s own link editor writes — so anything kept here stays editable there afterwards.</p>';
+        '<p class="sbld-hint">Relationships land as predecessor text, so anything kept here stays editable in the schedule afterwards.</p>';
 
       // ---- wiring ------------------------------------------------------------------------------
       host.querySelectorAll('input[name="imp-relmode"]').forEach(function (r) {
@@ -48883,7 +48998,7 @@
            external plan is the contract, so it is what the live schedule holds; the internal plan
            is the target, which is exactly what a what-if scenario is for. Asking made the planner
            pick one and lose the other. */
-        '<p class="sbld-hint" style="margin:0 0 12px;"><b>External (contract)</b> goes into the live schedule. <b>Internal (target)</b> is captured beside it as a <b>what-if scenario</b>, so you can switch the dates to the target plan from <b>Open ▾ · What-if scenarios</b> without pushing twice.</p>' +
+        '<p class="sbld-hint" style="margin:0 0 12px;"><b>External (contract)</b> goes into the live schedule; <b>Internal (target)</b> beside it as a <b>what-if scenario</b> (<b>Open ▾ · What-if scenarios</b>).</p>' +
         pkgBlock +
         startBlock +
         // ⚠️ The "Assign under WBS" picker is gone (owner 2026-08-18: it was always set to Execution
