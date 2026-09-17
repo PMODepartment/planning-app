@@ -180,24 +180,39 @@ Deno.serve(async (req) => {
 
   // ---- Authorize the caller -------------------------------------------------
   // The two REAL callers — the INSERT trigger and the cron safety net, both
-  // via pano360_invoke — always send the project's own service-role key as
-  // the Bearer token (see the migration). That key's own JWT payload carries
-  // `role: "service_role"`, not a `sub` naming a real user, so it can never be
-  // looked up in `users` — trust it outright, the same way this repo already
-  // trusts a service-role caller everywhere else. A request bearing an
-  // ordinary user's JWT instead (nothing in this app sends one today, but
-  // nothing forbids it either) is held to this app's own baseline bar: an
-  // approved account, matching the `is_writer()` gate this table's own INSERT
-  // policy already requires to create a job in the first place.
+  // via pano360_invoke — always send the project's own service-role-equivalent
+  // secret as the Bearer token (see the migration). ⚠️⚠️ 2026-09-17: this used
+  // to be checked by DECODING the token as a JWT and reading `role ===
+  // "service_role"` off its payload — which is exactly why every 360° job sat
+  // at "queued" once this project's own service-role key rotated from the
+  // legacy `eyJ...` JWT format to the newer opaque `sb_secret_...` format:
+  // `auth.split(".")[1]` on a non-JWT string is `undefined`, and decoding it
+  // threw, so `payload` was always null and every legitimate call from
+  // `pano360_invoke` was rejected as "Could not read the bearer token" — not
+  // a config mistake, a real bug in this file, found live by an owner working
+  // through the platform gateway's own migration to the new key format one
+  // token at a time (see `migrations/2026-09-16-pano360-jobs.sql` and this
+  // module's own CLAUDE.md for the full chase).
+  // ⚠️ Checked by DIRECT EQUALITY against `PL_SERVICE` above instead — the
+  // same env-injected secret this function already uses to build its own
+  // admin client — which is correct for BOTH key formats (it's just a string
+  // comparison, agnostic to whether that string happens to be JWT-shaped)
+  // and is arguably the tighter check anyway: it trusts only the literal
+  // secret this deployment was actually given, never anything merely shaped
+  // like a service-role JWT. The JWT-decode path is kept, but ONLY as the
+  // fallback for an ordinary user's own JWT (nothing in this app sends one
+  // today, but nothing forbids it either) — held to this app's own baseline
+  // bar: an approved account, matching the `is_writer()` gate this table's
+  // own INSERT policy already requires to create a job in the first place.
   const auth = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   if (!auth) return json({ error: "Missing Authorization" }, 401);
-  let payload: any = null;
-  try {
-    const seg = auth.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    payload = JSON.parse(atob(seg));
-  } catch { payload = null; }
-  if (!payload) return json({ error: "Could not read the bearer token" }, 401);
-  if (payload.role !== "service_role") {
+  if (auth !== PL_SERVICE) {
+    let payload: any = null;
+    try {
+      const seg = auth.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      payload = JSON.parse(atob(seg));
+    } catch { payload = null; }
+    if (!payload) return json({ error: "Could not read the bearer token" }, 401);
     const uid = payload.sub;
     if (!uid) return json({ error: "Token names no user and is not a service-role key" }, 401);
     const { data: prof } = await admin.from("users").select("status").eq("id", uid).maybeSingle();
