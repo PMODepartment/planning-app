@@ -532,10 +532,19 @@ M.setLsm(true);
    and that is the fix for the owner's report that "ticking LSM widens the rows": with a WBS
    grouping the rows stay normal even with the mode on, because no lane is drawn on them. */
 M.setGroup(['loc:a', 'loc:b']);
-const expH = C.PAD + 8 * (C.H + C.GAP);
-eq(M.rowH(), expH, 'the LSM row height is derived from the lane count');
-eq(M.rowHFor(1), expH, 'LSM on: the lane budget is the FLOOR under the zoom');
-eq(M.rowHFor(0.5), expH, 'LSM on: zooming out cannot crush the lanes');
+/* ⚠⚠ ONE LANE, NOT EIGHT. The row used to be `laneCount` lanes tall because it drew a bar
+   per trade; it now draws ONE merged bar, so there is nothing for the other seven to hold.
+   This is also the direct fix for “ticking LSM widens the rows”: the height went from
+   PAD + 8*(H+GAP) to PAD + (H+GAP).
+   ⚠ And the FLOOR no longer bites, which is correct rather than a regression: a one-lane LSM
+   row is SHORTER than an ordinary row, so the normal height wins and `rowHFor` returns it.
+   The floor existed to stop eight lanes being crushed into a compact row; with one bar there is
+   nothing to crush. Asserted explicitly so a future change back to lanes fails here loudly. */
+const expH = C.PAD + (C.H + C.GAP);
+eq(M.rowH(), expH, 'the LSM row is ONE lane tall, because it draws one merged bar');
+ok(expH < C.PAD + 8 * (C.H + C.GAP), 'which is shorter than the old per-trade lane budget');
+ok(M.rowHFor(1) >= expH, 'LSM on: the one-lane height is a floor the ordinary row clears');
+ok(M.rowHFor(0.5) >= expH, 'and zooming out cannot take the row below it');
 ok(M.rowHFor(4) > expH, 'LSM on: zooming IN still grows the row', M.rowHFor(4));
 /* ⚠️⚠️ THE GUARD ITSELF - the owner's report. */
 eq(M.shaped(), true, 'a location-only grouping IS LSM-shaped');
@@ -546,7 +555,7 @@ M.setGroup(['act', 'loc:a']);
 eq(M.shaped(), false, 'and neither is Activity > Location, the Group menu preset named "LSM"');
 eq(M.rowHFor(1), 34, 'which is the transpose of this layout, not this layout');
 M.setGroup(['loc:a', 'loc:b']);
-eq(M.rowHFor(1), expH, 'back to location-only and the lane budget returns');
+ok(M.rowHFor(1) >= expH, 'back to location-only and the one-lane floor applies again');
 M.setLsm(false);
 eq(M.shaped(), false, 'mode off is never shaped');
 M.setLsm(true);
@@ -663,8 +672,18 @@ const row = { _dkind: 'group', activity_name: '2nd Floor', _graw: '2nd Floor',
 const min = M.pd('2026-01-01');
 const html = M.bars(row, min, 4.2, 340);
 ok(/class="ps-lsmbar"/.test(html), 'the renderer emits lane bars');
-eq((html.match(/class="ps-lsmbar"/g) || []).length, 4, 'one bar element per trade');
-eq((html.match(/class="ps-lsmbar-gap"/g) || []).length, 1, 'the break is drawn as ONE notch');
+/* ⚠⚠ ONE BAR, NOT FOUR. `_lsmAgg` still returns four per-trade buckets — the Rate strip and
+   the clash engine read them — and `_lsmMergeAgg` folds them at RENDER time. */
+eq((html.match(/class="ps-lsmbar"/g) || []).length, 1, 'ONE merged bar for the storey');
+eq(agg.length, 4, 'while the per-trade buckets behind it are untouched');
+/* ⚠⚠ TWO NOTCHES, NOT ONE, AND THAT IS A STRONGER STATEMENT. A notch used to mean “this
+   TRADE left the floor and came back”, so only Plastering's fortnight showed. It now means
+   “NOTHING was happening on this storey”, and on this fixture that is true twice: after
+   Plastering's first visit (Feb 9-19) and before Windows arrives (Mar 2-5). The weekend gaps
+   between Structural, Exterior Masonry and Plastering are NOT notches, because the same
+   `_lsmIdleGap` rule is reused and it needs a real idle WORKING day. */
+eq((html.match(/class="ps-lsmbar-gap"/g) || []).length, 2,
+   'the notches are the STOREY going quiet, not one trade leaving');
 ok(/class="ps-lsmbl"/.test(html), 'the per-lane baseline rail is emitted when a baseline exists');
 
 /* LANE CONSTANCY - the property that makes a trade read as a diagonal. Same trade, three floors,
@@ -1276,10 +1295,14 @@ function grpRow(name, anc, acts, idx, field) {
   M.setDL([row]);
   M.clash();
   const html = M.bars(row, M.pd('2026-01-01'), 4.2, 0);
-  eq((html.match(/class="ps-lsmclash"/g) || []).length, 2,
-     'the overlap is drawn on BOTH bars');
-  eq((html.match(/ps-lsmbar ps-lsmbar-clash/g) || []).length, 2,
-     'and both bars are flagged as carrying one');
+  /* ⚠⚠ ONE BAR, ONE MARK. The storey draws a single merged bar now, and the SAME overlap is
+     recorded against both trades in it - so the marks are gathered from every trade and then
+     deduped by span, because two identical absolutely-positioned divs are one mark and twice the
+     DOM. Two DIFFERENT stretches would still both draw. */
+  eq((html.match(/class="ps-lsmclash"/g) || []).length, 1,
+     'the overlap is drawn once on the merged bar, not once per trade');
+  eq((html.match(/ps-lsmbar ps-lsmbar-clash/g) || []).length, 1,
+     'and the one bar is flagged as carrying it');
 })();
 
 /* ================================ SLICE 4: THE DATA-DATE LINE ================================== */

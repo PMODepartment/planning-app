@@ -104,6 +104,78 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ah) — One bar per storey: the LSM row folds every trade into a single merged bar
+
+⚠️ Re-lettered from `(ag)` on rebase: a concurrent session landed its own 2026-09-17 `(ag)` (below)
+first. Both entries kept in full; this one bumped past it rather than either side guessing, per the
+rule in this file’s header.
+
+Owner: *"The gantt bar still doesn't fold into one gantt bar to show the LSM. Let's fix."* Asked which
+of three shapes he meant, he chose **one bar per storey, all trades merged** over keeping a lane per
+trade.
+
+### ⚠️⚠️ THE PER-TRADE BUCKETS STAY — ONLY THE DRAWING MERGES
+
+`_lsmAgg` still returns one bucket per keyed trade, because the Rate strip (`_lsmRate`) and the entire
+clash engine (`_lsmClash`) are **derived from them**: a clash *is* one trade overlapping another on a
+storey. Merging the data would have deleted the feature whose toggle was fixed in the commit
+immediately before this one. `_lsmMergeAgg` folds the buckets at **render** time and hands the
+renderer an array of one.
+
+What the merged bar carries, executed against a four-trade storey:
+
+| | |
+|---|---|
+| bars drawn | **1** (was 4) |
+| span | earliest start → latest finish across every trade |
+| activities | every one counted |
+| % complete | duration-weighted across trades — the same weights `_gpct` uses |
+| colour | the trade's colour when a storey holds exactly **one**; neutral when mixed, the rule `_gcat` already applies |
+| per-trade buckets | **untouched**, 3 of 3 still there for Rate and Clash |
+
+⚠️ **A notch now means more than it did.** It used to mean *"this trade left the floor and came
+back"*; it means *"nothing was happening on this storey"*. On the suite's fixture that is true twice
+where only one notch showed before — after Plastering's first visit and before Windows arrives. The
+weekend gaps between Structural, Exterior Masonry and Plastering are **not** notches, because the
+merge re-folds through the **same `_lsmIdleGap`** the aggregator uses, and that rule needs a real idle
+*working* day. The gap rule is reused, never re-derived.
+
+⚠️ **The clash marks survive the merge.** They are keyed per trade, so a merged bar gathers them from
+every trade on the storey — otherwise folding the bars would quietly drop the very overlaps the clash
+engine exists to show. They are then **deduped by span**: the same overlap is recorded against *both*
+trades in it, so on one bar the two marks land at identical coordinates — two absolutely-positioned
+divs with the same 45° gradient at the same offset, visually one mark and twice the DOM. Two
+*different* stretches still both draw.
+
+### The row is one lane tall, which is the "widens the rows" report
+
+`_lsmRowH` was `LSM_PAD + _lsmLaneCount() * (LSM_LANE_H + LSM_LANE_GAP)` — eight lanes' worth of height
+on every row because the row drew a bar per trade. With one merged bar there is nothing for the other
+seven to hold, so it is `LSM_PAD + (LSM_LANE_H + LSM_LANE_GAP)`: **96px → 19px**.
+
+⚠️ A consequence worth stating rather than hiding: the lane-budget **floor no longer bites**. A
+one-lane LSM row is *shorter* than an ordinary row, so `rowHFor` returns the ordinary height. That is
+correct, not a regression — the floor existed to stop eight lanes being crushed into a compact row,
+and there is nothing left to crush. The tests assert it explicitly so a change back to lanes fails
+there loudly.
+
+### Seven assertions retargeted, and why that is not rubber-stamping
+
+Seven checks asserted the per-trade lane rendering: four on row height, one on bar count, one on notch
+count, one on clash marks. **None of them was wrong** — they described behaviour that was correct
+until the owner chose a different chart. Each now asserts what ships and says what it used to say, and
+the two that changed *meaning* rather than just *number* (the notches, the clash marks) carry the
+reasoning above. ⚠️ My own first expectation in the merge proof was also wrong — I predicted 2 runs
+where the code produces 3, because I forgot the merge **keeps** each trade's internal notch as well as
+adding the cross-trade ones. The code was stricter than I assumed; the check was corrected, not the
+code.
+
+**Verified:** `test-lsm` **683/683** · a standalone proof executes the shipped `_lsmAgg` and
+`_lsmMergeAgg` on a four-trade storey and checks all ten properties above · the pinned-base contrast
+against `4d82fd4` still runs and is still loud (`20/53 fns, 7/21 vars`) · `test-syntax` 4/4 ·
+`wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline scripts parse ·
+CSS brace balance identical to pinned `d0da7cd`. `modules-grid.js` `?v=` → `20260917zze`.
+
 ### 2026-09-17 (ag) — Repetition drops a tab that drew the Generate step's picture, and Scope per zone names the work
 
 ⚠⚠ **Re-lettered `(aa)` → `(ab)` → `(ad)` → `(ae)` across three merges, AND re-versioned `20260917zx` →
