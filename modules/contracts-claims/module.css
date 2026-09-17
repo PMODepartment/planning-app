@@ -149,60 +149,40 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-att-add .pd-select { height:32px; }
 .cc-att-st { font-size:12px; color:var(--pd-muted); }
 
-/* ---- The register's own dashboard, at the top of the Contract tab (2026-09-15) ----------------
-   ⚠ Built from the module's OWN idioms (`.cc-kpis` / `.cc-kpi`), not the project dashboard's
-     `.pd-mini-*`. The two screens report the same figures in the same order, but each should look
-     like the page it is on rather than importing the other's furniture. */
+/* ---- The register's own dashboard — one table, nothing else (2026-09-16). See the long comment
+   above ccDashHTML() in module.js for the history: a Contract-tab band, unreachable for 11 days,
+   reconnected as its own tab, tiles replaced by this table, Contract/CO/Claims/EOT all merged into
+   it. The package %-breakdown (`.cc-dash-bar`/`.cc-dash-pks`/`.cc-dash-pk`), the "With the client"
+   KPIs and the aging-bar rules (`.cc-ages`/`.cc-age-l`/`.cc-age-bar`/`.cc-age-v`/`.cc-age-warn`/
+   `.cc-age-bad`/`.cc-age-unsent`) that used to live here are DELETED, not left orphaned — their
+   only caller (`ccTimeHTML`) is deleted too. ⚠ The BARE `.cc-age`/`.cc-age.warn`/`.cc-age.bad`
+   rule near the top of this file is untouched — that one styles the per-row aging figure in the
+   ordinary record tables (module.js, pmi.js) and has nothing to do with this dashboard. */
 .cc-dash { margin-bottom: 14px; }
 .cc-dash-h { display:flex; align-items:baseline; gap:8px; margin:14px 0 6px;
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
   color:var(--pd-muted); }
 .cc-dash > .cc-dash-h:first-child { margin-top:0; }
-/* How much of the contract value the packages account for. */
-.cc-dash-bar { height:6px; border-radius:99px; background:var(--pd-line); overflow:hidden; margin-bottom:8px; }
-.cc-dash-bar > i { display:block; height:100%; background:var(--pd-red); }
-.cc-dash-pks { list-style:none; margin:0 0 4px; padding:0; }
-.cc-dash-pk { display:flex; align-items:baseline; justify-content:space-between; gap:12px;
-  padding:7px 0; border-bottom:1px solid var(--pd-line); font-size:13px; }
-.cc-dash-pk:last-child { border-bottom:0; }
-
-/* ---- Aging bars (ccTimeHTML) -------------------------------------------------
-   ⚠ Same idiom as .cc-dash-pk above rather than a new one: a label, a measure and
-     a figure on one row. The bar is scaled to the LARGEST bucket, not the total —
-     scaled to the total, a healthy register draws three invisible slivers.
-   ⚠ Tones are tokens, never literals: --pd-warn-* / --pd-bad-* are the paired
-     light/dark surfaces, so this reads correctly in both themes without an
-     html.pd-dark override. And the TEXT tone is *-text, never --pd-warn itself,
-     which measures 3.46:1 and is a surface colour. */
-.cc-ages { list-style:none; margin:0 0 4px; padding:0; }
-.cc-age { display:flex; align-items:center; gap:10px; padding:5px 0;
-  border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-xs); }
-.cc-age:last-child { border-bottom:0; }
-.cc-age-l { flex:0 0 108px; color:var(--pd-muted); }
-.cc-age-bar { flex:1 1 auto; height:8px; min-width:40px; border-radius:99px;
-  background:var(--pd-line); overflow:hidden; }
-.cc-age-bar > i { display:block; height:100%; background:var(--pd-red); }
-.cc-age-v { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--pd-ink); }
-.cc-age-warn .cc-age-bar > i { background:var(--pd-warn); }
-.cc-age-warn .cc-age-v { color:var(--pd-warn-text); }
-.cc-age-bad  .cc-age-bar > i { background:var(--pd-bad); }
-.cc-age-bad  .cc-age-v { color:var(--pd-bad-text); }
-/* Nothing is drawn for "not submitted" — it has no age, so a bar would imply one. */
-.cc-age-unsent .cc-age-bar { background:transparent; }
-.cc-age-unsent .cc-age-l, .cc-age-unsent .cc-age-v { color:var(--pd-muted); font-style:italic; }
-
-@media (max-width:700px) {
-  /* A 108px label beside a bar beside a figure does not fit a phone; the figure
-     takes its own line rather than squeezing the bar to nothing. */
-  .cc-age { flex-wrap:wrap; }
-  .cc-age-l { flex:1 1 auto; }
-  .cc-age-bar { flex:1 1 100%; order:3; }
-}
-.cc-dash-pk > span { min-width:0; }
-.cc-dash-pk > span > i { display:block; font-style:normal; font-size:11px; color:var(--pd-muted); }
-.cc-dash-pk > b { flex:none; font-variant-numeric:tabular-nums; }
-/* The unallocated remainder is a real figure, not an error — warn, not bad. */
-.cc-dash-rest > b { color:var(--pd-warn-text); }
+/* ---- The one table (ccTypeRows/ccDashHTML, module.js) — a `.pd-table` with a group row per
+   type (`.cc-dashgrp`, reusing the shared `.pd-grp` bold-row treatment) and its records under it,
+   open by default and collapsible via `.pd-collapsed` (the same shared class every other
+   collapsible table in this app uses). ---- */
+.cc-dashtbl { margin: 0 0 14px; }
+.cc-dashgrp { cursor: pointer; }
+.cc-dashcaret { display:inline-block; width:10px; font-size:10px; color:var(--pd-muted); }
+.cc-dashrow > td { font-size: var(--pd-fs-sm); }
+.cc-dashrow .cc-desc-txt { font-weight: 500; -webkit-line-clamp: 1; }
+/* ⚠️⚠️ `.cc-r` ALONE NEVER WON HERE — a specificity bug, not a design choice. `.cc-dashtbl`
+   carries the shared `.pd-table` component (dashboard.css), whose own
+   `.pd-table th, .pd-table td { text-align: left }` is (0,1,1) against `.cc-r`'s bare (0,1,0),
+   so every Submitted/Evaluated/Approved/Disputed figure rendered LEFT-aligned regardless of the
+   class, in every build up to and including the merge that landed this comment. Measured, not
+   assumed: `getComputedStyle` on a `.cc-dashtbl td.cc-r` reported `text-align: left` with
+   `.pd-table th, .pd-table td` as the only matching rule for that property. Scoped here to two
+   classes + the element (0,2,1), which beats it, rather than bumping the shared `.cc-r` used
+   by every OTHER table in this module (boq.js's `.cc-table` sets no `text-align` on `td`, so it
+   never had this collision — only a table also carrying `.pd-table` does). */
+.cc-dashtbl td.cc-r, .cc-dashtbl th.cc-r { text-align: right; }
 
 /* ---- KPI strip ---------------------------------------------------------- */
 .cc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
@@ -215,66 +195,6 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-kpi.good .cc-kpi-v { color:var(--pd-ok-text); }
 .cc-kpi.bad  .cc-kpi-v { color:var(--pd-bad-text); }
 .cc-kpi.warn .cc-kpi-v { color:var(--pd-warn-text); }
-
-
-/* ---- The pipeline summary table (2026-09-16) --------------------------------------------
-   ⚠️ A LAYER OVER `.cc-table`, never a second table class — the rule this module set on
-     2026-09-07 when it ported the Procurement idiom rather than copying its literals. It
-     inherits the head, the hover and `.cc-r`'s right alignment. The one thing it MUST
-     override is the 1020px `min-width`, which is sized for the 9-column register and would
-     put a 6-column summary into a horizontal scroll on an ordinary laptop. */
-.cc-sumwrap { overflow-x:auto; margin-bottom:14px; border:1px solid var(--pd-line);
-  border-radius:var(--pd-radius); background:var(--pd-card); }
-.cc-sum { min-width:640px; }
-.cc-sum thead th { padding:8px 12px; font-size:var(--pd-fs-xs); text-transform:uppercase;
-  letter-spacing:.04em; font-weight:700; color:var(--pd-muted); vertical-align:bottom; }
-/* ⚠️ The sub-label is a BLOCK inside its own header cell, so a column's basis sits under the
-   column's name rather than beside it — which is what lets "decided only" read as part of the
-   Shortfall heading instead of as a sixth word in a row of five headings. */
-.cc-sum thead th i { display:block; font-style:normal; font-weight:500; text-transform:none;
-  letter-spacing:0; font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-top:2px; }
-.cc-sum tbody th { text-align:left; padding:10px 12px; font-size:var(--pd-fs-base);
-  font-weight:700; color:var(--pd-ink); white-space:nowrap;
-  border-bottom:1px solid var(--pd-line); }
-.cc-sum tbody th i { display:block; font-style:normal; font-weight:500;
-  font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:2px; }
-/* ⚠️ tabular-nums so a column of figures scans AS a column — which is the whole reason the
-   three record types became rows of one table instead of three separate card grids. */
-.cc-sum td { font-variant-numeric:tabular-nums; font-weight:700; }
-.cc-sum td i { display:block; font-style:normal; font-weight:500;
-  font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-top:2px; }
-.cc-sum tbody tr:last-child th, .cc-sum tbody tr:last-child td { border-bottom:0; }
-
-/* ⚠️ The same three tones the KPI cards carry, on a table cell. `--pd-*-text`, NEVER
-   `--pd-ok` / `--pd-warn` / `--pd-bad` themselves: those are SURFACE colours, and
-   `--pd-warn` measures 3.46:1 as text. */
-.cc-v-good { color:var(--pd-ok-text); }
-.cc-v-bad  { color:var(--pd-bad-text); }
-.cc-v-warn { color:var(--pd-warn-text); }
-.cc-oldest { font-weight:700; }
-
-/* ---- Folded detail: the smaller packages, and the hand-off averages ----------------------
-   ⚠️ The summary carries the headline figure, so the fold never has to be opened to get the
-   answer — it is opened to get the breakdown. A disclosure whose summary says only "more" is
-   one nobody opens and nobody trusts. */
-.cc-more { margin:-4px 0 14px; }
-.cc-more > summary { cursor:pointer; list-style:none; display:flex; align-items:baseline;
-  gap:8px; padding:7px 10px; border:1px solid var(--pd-line); border-radius:var(--pd-radius);
-  background:var(--pd-card); font-size:var(--pd-fs-xs); font-weight:700;
-  text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-.cc-more > summary::-webkit-details-marker { display:none; }
-.cc-more > summary::before { content:"\25B8"; color:var(--pd-red); font-size:var(--pd-fs-sm); }
-.cc-more[open] > summary::before { content:"\25BE"; }
-.cc-more > summary:hover { color:var(--pd-ink); }
-.cc-more > summary span { font-weight:500; text-transform:none; letter-spacing:0;
-  color:var(--pd-muted); }
-.cc-more[open] > summary { border-bottom-left-radius:0; border-bottom-right-radius:0; }
-.cc-more > *:not(summary) { margin-top:10px; }
-
-/* ⚠️ Visually hidden, not `display:none` — the summary table's empty corner cell still has to
-   name its column for a screen reader walking the header row. */
-.cc-sr { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
-  clip:rect(0 0 0 0); white-space:nowrap; border:0; }
 
 /* ---- Modal / form ------------------------------------------------------- */
 /* ==== TWO COLUMNS, COUNTED — NOT `auto-fit` ==================================================
@@ -826,33 +746,6 @@ tr.cc-collapsed { display:none; }
 
 /* A section rule between the two stacked tables on the Contract tab, so "records" and
    "lots" read as two things rather than one long scroll. */
-/* ==== THE SCOPE OF WORKS ====================================================================
-   Owner 2026-09-17: *"the contract description UI needs to be improved as well."*
-   ⚠️⚠️ IT WAS SET IN THE "ASIDE" STYLE. `.cc-hint` is muted, small, and used everywhere on
-   this tab for hints and footnotes — so the one genuinely substantive sentence on the page, the
-   scope of works, was in the colour a reader is trained to skip, and ran the full width of the
-   dashboard: ~220 characters a line on a 1,900px monitor, about three times a readable measure.
-   ⚠️ `max-width` in `ch`, not `px`: the constraint is a number of CHARACTERS (55-80 is the
-   long-standing typographic range), and in `px` it would drift every time the type scale moved. */
-.cc-scope { margin:10px 0 4px; }
-.cc-scope-lbl { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase;
-  letter-spacing:.05em; color:var(--pd-muted); margin-bottom:4px; }
-.cc-scope p, .cc-scope summary > span { margin:0; max-width:78ch; font-size:var(--pd-fs-sm);
-  line-height:1.55; color:var(--pd-ink); }
-/* ⚠️ `<details>` already hides every non-summary child when shut, so the full paragraph needs
-   no rule — but the truncated preview lives INSIDE the summary and would otherwise stay on screen
-   above the full text once opened, printing the first 320 characters twice. */
-.cc-scope-more > summary { list-style:none; cursor:pointer; display:block; }
-.cc-scope-more > summary::-webkit-details-marker { display:none; }
-.cc-scope-more > summary::after { content:'Show full scope'; display:inline-block; margin-top:4px;
-  font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); }
-.cc-scope-more[open] > summary > span { display:none; }
-.cc-scope-more[open] > summary::after { content:'Hide'; }
-
-/* One muted line where four sentences of definitions used to be — see `ccMoneyTable`. The
-   definitions moved onto the column headers; this is the only part that was not one. */
-.cc-dash-scope { margin:6px 0 0; }
-
 .cc-sechead { display:flex; align-items:baseline; gap:10px; margin:18px 0 8px; }
 .cc-sechead h2 { margin:0; font-size:var(--pd-fs-sm); font-weight:800; text-transform:uppercase;
   letter-spacing:.06em; color:var(--pd-muted); white-space:nowrap; }
@@ -1515,75 +1408,3 @@ html.pd-dark .pmi-chtab tr.pmi-ch-cleared td { background:rgba(78,209,139,.08); 
 .pmi-holder { color:var(--pd-muted); font-weight:700; }
 /* "Cleared" as a positive statement. Same green the cost build-up uses for a closing figure. */
 .cc-ok { color:var(--pd-ok-text); font-weight:700; }
-
-/* ---- Dashboard: the commercial position (2026-09-16) ------------------------------------
-   Owner, on a ₱3.67B contract with no claims raised: *"Dashboard needs complete rework"* —
-   the tab rendered two sentences, because every block on it derived from the claims pipeline.
-   The subject is the CONTRACT now, with the pipeline as one section of it.
-
-   ⚠️ FOUR RULES, because the four cards use the SHARED `.pd-kpi` / `.pd-kpis` component rather
-   than a module-local copy — the 2026-09-10 (w2) convergence. Six classes I would otherwise
-   have invented do not exist.
-   ⚠️ Tokens only; nothing here carries a literal colour, so dark mode follows for free. */
-.cc-dash-verdict {
-  font-size: var(--pd-fs-md); line-height: 1.5; margin: 0 0 12px; padding: 12px 14px;
-  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); background: var(--pd-card);
-}
-/* ⚠️ `<i>` is italic by default and this is a statement of fact, not an aside. */
-.cc-dash-comm {
-  display: block; font-style: normal; color: var(--pd-muted);
-  font-size: var(--pd-fs-sm); margin-top: 2px;
-}
-/* ⚠️⚠️ display:contents SO THE CARD INSIDE IS THE GRID ITEM of `.pd-kpis`, not this wrapper.
-   The wrapper exists only to give the async fill something stable to replace; left as an
-   ordinary div it would become the grid item and the card inside it would stop sharing the
-   strip's own sizing, so the Certified card would be the one card that did not line up. */
-#cc-dash-certcard { display: contents; }
-/* ==== WHO IS CHASING WHAT ==================================================================
-   ⚠️ The unassigned row is marked, not hidden — see `ccWhoHTML`. It sorts first and reads as
-   a prompt rather than as a person, because "six records nobody owns" is the finding this band
-   exists to surface and a muted grey row would bury it under the names that DO have an owner. */
-.cc-who-none > td:first-child { font-style: italic; color: var(--pd-red); font-weight: 700; }
-.cc-who td, .cc-who th { white-space: nowrap; }
-.cc-who td:first-child, .cc-who th:first-child { white-space: normal; }
-
-/* ==== EXPOSURE OVER THE LAST 12 MONTHS =====================================================
-   Owner 2026-09-17: every figure on this page was a snapshot. See `ccTrendHTML` for where the
-   history comes from (the record dates, not a snapshot table).
-   ⚠️ A COLUMN CHART IN LIST MARKUP, no SVG. Twelve values with no axis to scale, no
-   interpolation and no curve — an `<li>` per month with a percentage height is the whole thing,
-   it inherits every theme token for free, and a screen reader gets an actual list with the figures
-   on each `title`. The one thing SVG would add here is a second way to draw a rectangle. */
-.cc-trend { display: flex; align-items: flex-end; gap: 4px; list-style: none;
-  margin: 10px 0 6px; padding: 0; height: 96px; }
-.cc-tr-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
-  justify-content: flex-end; align-items: stretch; height: 100%; gap: 4px; }
-/* ⚠️ The bar is a flex COLUMN justified to the end, so the shortfall `<i>` grows from the
-   BOTTOM of the bar. Stacked the other way the darker part would float, and "how much of this
-   month's exposure is money already cut" is the one thing the split is there to say. */
-.cc-tr-bar { display: flex; flex-direction: column; justify-content: flex-end;
-  background: var(--pd-warn); border-radius: 3px 3px 0 0; min-height: 0; }
-.cc-tr-bar > i { display: block; background: var(--pd-red); border-radius: 0 0 3px 3px; }
-.cc-tr-l { font-size: var(--pd-fs-micro); color: var(--pd-muted); text-align: center;
-  overflow: hidden; white-space: nowrap; }
-.cc-tr-note { margin: 0 0 4px; }
-
-.cc-dash-facts {
-  list-style: none; margin: 0 0 10px; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 18px;
-}
-/* ⚠️ min-width:0 on the grid child: a flex row inside a grid item defaults to min-width:auto,
-   so a long counterparty name would widen its column past the track. The same guard the
-   Schedule Summary's own columns carry, and the trap this repo has shipped twice. */
-.cc-dash-facts li {
-  display: flex; justify-content: space-between; gap: 10px; min-width: 0;
-  padding: 5px 0; border-bottom: 1px solid var(--pd-line);
-}
-.cc-dash-facts span { color: var(--pd-muted); font-size: var(--pd-fs-sm); }
-.cc-dash-facts b { font-weight: 700; font-size: var(--pd-fs-sm); text-align: right; overflow-wrap: anywhere; }
-/* ⚠⚠ `.cc-hint` is `margin-top:-4px; margin-bottom:0` — it is built to sit TIGHT UNDER the
-   table it annotates, so two of them in a row OVERLAP by 4px. Measured on the rebuilt dashboard:
-   the contract's description and the "no package breakdown yet" hint touched, reading as one
-   run-on paragraph. Only the adjacent pair is separated; a hint following a table keeps its
-   deliberate negative margin. */
-.cc-dash .cc-hint + .cc-hint { margin-top: 10px; }
