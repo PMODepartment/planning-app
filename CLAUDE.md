@@ -104,6 +104,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (f) — A guard placed where the damage showed rather than where it compounded, and three refuted hypotheses on the way
+
+Owner, against the pass below, **with the first real capture**: *"there are still a few streaks."*
+Module work — the full entry, all three refuted hypotheses and every measurement are in
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md) under *"the third pass"*.
+Logged here because entry **(e)** below claimed the streaks were fixed, and a correction belongs where
+the claim was made. No shared asset changed and **no `MODULE_V` bump** — see the end.
+
+⚠️⚠️ **A BOUND ON A COMPOUNDING QUANTITY BELONGS WHERE IT COMPOUNDS, NOT WHERE IT SHOWS.** The
+exposure chain multiplies one measured ratio per frame pair, and its own note gives the right reason
+for a bound — *"a chained gain is a **product**, so a small consistent bias compounds"* — and then
+puts that bound on the **accumulated** gain. But the accumulated gain is also **the scene's own
+dynamic range**. Measured on a dim wall beside a bright window, which is the owner's actual room: the
+capture's auto-exposure swings **3.35×**, the chain needs gains spanning **0.669–2.238**, and
+`[0.72, 1.38]` could express only up to 1.38 — so **125 of 144 frames were pinned at a bound**, their
+correction **truncated rather than applied**, and each truncation landed as a hard brightness step at
+that frame's seams. Worst **5.92 levels**, 30 seams past 2 levels, on a flat wall where any step is an
+artefact. Bounding the **per-pair step** instead — where a bias actually compounds, and where a large
+value is physically impossible because consecutive frames overlap 96% — takes the same capture to
+**0.76 levels and zero seams past 1**.
+
+⚠️⚠️ **AND THE FIRST-ORDER READING OF THE REPORT IS WHAT MADE IT SOLVABLE: "A FEW" IS A MEASUREMENT.**
+Bands are ~29 composite pixels wide, so dozens of seams are on screen at once; a handful of streaks
+therefore **cannot** be a per-seam cause. It has to be something that does nothing at all most of the
+time and then fails hard in a few places — which is the signature of a clamp, and is the opposite of
+where every obvious hypothesis pointed. Counting the symptom before explaining it is what ruled out
+three plausible causes without writing any of them.
+
+⚠️ **Three hypotheses were measured and REFUTED, and each would have shipped as a plausible fix:** a
+luminance-only gain leaving a colour step on a saturated wall (**1 level**, and a per-channel gain
+measured *worse*); the feather's linear ramp leaving a slope discontinuity for Mach banding
+(**0.716 against 0.716** for smoothstep, and widening it 3× did not help); and generational JPEG on
+the intermediate canvas (there is none — it is stored as raw bytes). Recorded because each is a
+sensible thing for the next reader to reach for, and all three are already excluded.
+
+⚠️⚠️ **A HARNESS THAT MEASURES A SINGLE ROW MEASURES NOISE, NOT STREAKS.** The first cut of this
+investigation reported **sensor noise** as the dominant cause, because a per-pixel column step on a
+noisy image is dominated by the noise. A streak is *coherent down the column*; averaging each column
+over the full height suppresses noise by the square root of the height and leaves exactly the
+structure a person sees. With the corrected metric every maximum landed **at a seam** and a perfect
+camera gave exactly **0** — which is also what proved the pipeline itself is faithful and that every
+artefact is a real camera imperfection arriving at a band boundary.
+
+⚠️ **The widened bound is proved to cost the runaway guard nothing, rather than assumed to.** A
+consistent per-pair bias is exactly a **linear drift in log space**, and loop closure removes a linear
+drift outright: fed a steady +0.5% bias with the loop closed, the old chain and the new one both
+return gains of **exactly 1.0000**. On every real 360° capture the accumulated clamp was never the
+working guard; it remains the backstop for a **partial** capture, which has no loop to close. The
+deadband is untouched — a constant-exposure capture still gets gains of exactly 1, so the regression
+that rule exists for stays fixed.
+
+**Verified:** the server suite **129 passed, 0 failed** (was 118), with a new section **[13]** whose
+fixture builds the exposure swing from the camera's own auto-exposure model rather than from a tuned
+list of ratios. ⚠️⚠️ **The contrast bites and names the defect in its own failure text** — against
+`origin/main` it fails 4, reporting *"worst 5.92 levels and 34 seams past 1 level"* and
+*"max gain 1.380, where the old bound stopped at 1.38"*. ⚠️ It simulates the old algorithm **inside
+the suite**, so it cannot quietly become self-comparison once this merges. Progress Photos' own suite
+**976/5**, the same five and necessarily unchanged — **no client file was touched**. All **24** names
+`index.ts` imports resolve against the module's real exports; `wiring-check` **139/0**; 0 NUL bytes.
+
+⚠️⚠️ **Not verified against a real recording** — no Deno runtime and no phone video here, so every
+figure is the shipped chain executed against a synthetic capture. **The next capture of that same room
+is the test.**
+
+⚠️ **NO `MODULE_V` BUMP, DELIBERATELY.** Only `stitch-core.mjs` and `test.mjs` changed. The Edge
+Function is deployed by the `deploy-edge-functions` workflow on merge — not by a cache-bust token —
+so bumping would invalidate three pages' caches for bytes no browser ever fetches. ⚠️ This is the
+first entry in this log to change the stitcher and *not* move the token; that is a fact about which
+files changed, not an oversight.
+
 ### 2026-09-18 (e) — The 360° stitcher's last three defects, and a sub-pixel fit that was solving the wrong problem
 
 Owner, against the pass that shipped a few hours earlier: *"there is a deadspace connecting the start
