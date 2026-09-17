@@ -998,6 +998,14 @@
     .ps-cal-hols { display:flex; flex-wrap:wrap; gap:6px; }
     /* A yearly entry reads differently from a one-off date, so it looks different. */
     .ps-cal-hol.is-recur { border-color:var(--pd-red-mid); }
+    /* ⚠ The name button is the chip BODY, not an extra control beside the ✕ — a second
+       button on a chip this size would crowd out the remove target it sits next to. It inherits
+       the chip’s own type so a named and an unnamed chip read as one component. */
+    .ps-cal-holname { font:inherit; color:inherit; background:none; border:0; padding:0;
+      cursor:text; max-width:22ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-cal-holname:hover { text-decoration:underline; }
+    /* A named day is the one a planner scans for, so it carries the weight. */
+    .ps-cal-hol.is-named .ps-cal-holname { font-weight:700; }
     .ps-cal-hol { display:inline-flex; align-items:center; gap:4px; background:var(--pd-bg); border:1px solid var(--pd-line);
       border-radius:var(--pd-radius-pill); padding:1px 4px 1px 9px; font-size:var(--pd-fs-xs); }
     .ps-cal-hol button { border:0; background:transparent; cursor:pointer; color:var(--pd-muted); font-size:var(--pd-fs-xs); padding:0 3px; }
@@ -3633,7 +3641,6 @@
     .sbld-strtab:hover:not(.on) { background:var(--pd-bg); }
     /* ⚠️ The current view is marked by a FILLED left edge and the app's red, not by colour alone. */
     .sbld-strtab.on { background:var(--pd-bg); border-color:var(--pd-red); box-shadow:inset 3px 0 0 var(--pd-red); cursor:default; }
-    .sbld-strjump { margin-left:8px; font-size:var(--pd-fs-xs); padding:1px 8px; min-height:0; }
     /* The selection bar. It EXISTS only while something is selected — see libSelBar. */
     .sbld-libselbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
       padding:6px 11px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:var(--pd-fs-sm); }
@@ -3698,6 +3705,15 @@
     .sbld-libbody { max-height:520px; overflow:auto; padding:4px 0 8px; }
     /* L1 - the tower, or the trade. The only level that gets a fill, because it is the only one
        that is a heading rather than a member of something. */
+    /* ⚠ Quiet until the row is hovered: one of these sits on EVERY grouping row, and a
+       permanently-lit button per row would out-shout the names the pane exists to show. */
+    .sbld-libadd { margin-left:8px; font:inherit; font-size:var(--pd-fs-micro); font-weight:700;
+      color:var(--pd-muted); background:none; border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
+      padding:1px 6px; cursor:pointer; opacity:0; transition:opacity .12s; }
+    .sbld-libL1:hover .sbld-libadd, .sbld-libgrp:hover .sbld-libadd,
+    .sbld-libadd:focus-visible { opacity:1; }
+    .sbld-libadd:hover { color:var(--pd-ink); border-color:var(--pd-red); }
+    .sbld-libseed { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; justify-content:center; }
     .sbld-libL1 { position:sticky; top:0; z-index:1; padding:6px 11px; margin-top:2px;
       background:var(--pd-bg); border-top:1px solid var(--pd-line); border-bottom:1px solid var(--pd-line);
       font-size:var(--pd-fs-sm); font-weight:700; letter-spacing:.01em; }
@@ -5391,7 +5407,7 @@
 <script src="../../assets/js/ui.js?v=20260917zg"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
-<script src="../../assets/js/calendar.js?v=20260911uc"></script>
+<script src="../../assets/js/calendar.js?v=20260917a"></script>
 <script src="../../assets/js/xlgrid.js?v=20260917zj"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -6337,7 +6353,7 @@
       // PDCal.defaultCalendar() assumes and what every existing project was seeded with.
       return { name: '', hours_per_day: 8, work_mon: true, work_tue: true, work_wed: true,
                work_thu: true, work_fri: true, work_sat: true, work_sun: false,
-               extra_holidays: [], is_default: false,
+               extra_holidays: [], extra_holiday_labels: {}, is_default: false,
                seasons: [], observe_special_days: false, climate_type: null };
     }
 
@@ -6492,8 +6508,16 @@
           function chips(list, kind) {
             if (!list.length) return '<span style="color:var(--pd-muted);font-size:12px;">None.</span>';
             return list.map(function (h) {
-              return '<span class="ps-cal-hol' + (kind === 'r' ? ' is-recur' : '') + '">' +
-                esc(PDCal.holidayLabel(h)) + '<button data-rmhol="' + esc(h) + '" title="Remove">✕</button></span>';
+              /* ⚠ The NAME is the chip when there is one; the date is the tooltip. Clicking the
+               chip body renames it — a second “edit” button on a chip this small would crowd out
+               the remove ✕ it sits beside. */
+            var _lbl = (draft.extra_holiday_labels || {})[h] || '';
+            return '<span class="ps-cal-hol' + (kind === 'r' ? ' is-recur' : '') +
+                (_lbl ? ' is-named' : '') + '">' +
+                '<button class="ps-cal-holname" data-lblhol="' + esc(h) + '" title="' +
+                esc(PDCal.holidayWhen(h) + (_lbl ? ' — click to rename' : ' — click to name this day')) + '">' +
+                esc(PDCal.holidayLabel(h, draft.extra_holiday_labels)) + '</button>' +
+                '<button data-rmhol="' + esc(h) + '" title="Remove">✕</button></span>';
             }).join('');
           }
           // How many exact dates could still be folded, so the button can say what it would do
@@ -6510,6 +6534,7 @@
               ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(function (m, i) {
                 return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('') + '</select>' +
               '<input class="pd-input pd-input-sm" type="number" min="1" max="31" value="1" id="ps-cal-recdy" style="width:70px;">' +
+              '<input class="pd-input pd-input-sm" id="ps-cal-recname" placeholder="Name (optional)" style="flex:1;min-width:130px;">' +
               '<button class="pd-btn pd-btn-sm" id="ps-cal-recadd">Add yearly day</button>' +
             '</div></div>' +
             '<div class="pd-field"><label>One-off non-working dates</label>' +
@@ -6518,6 +6543,7 @@
             'Days that belong to one date only — a proclamation, a lunar holiday (Eid’l Fitr, Eid’l ' +
             'Adha, Chinese New Year), a shutdown after a typhoon.</small>' +
             '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;"><input class="pd-input pd-input-sm" type="date" id="ps-cal-holnew" style="flex:1;min-width:150px;">' +
+            '<input class="pd-input pd-input-sm" id="ps-cal-holname" placeholder="Name (optional)" style="flex:1;min-width:150px;">' +
             '<button class="pd-btn pd-btn-sm" id="ps-cal-holadd">Add date</button>' +
             (_cw.collapsed
               ? '<button class="pd-btn pd-btn-sm" id="ps-cal-holfold" title="Turn dates that recur in three or more years into one yearly entry each. One-off dates are kept.">' +
@@ -6659,6 +6685,7 @@
         if (!v) return;
         readDraft();
         draft.extra_holidays = (draft.extra_holidays || []).concat(v).filter(function (x, i, a) { return a.indexOf(x) === i; });
+        _calSetHolName(v, (body.querySelector('#ps-cal-holname') || {}).value);
         render();
       };
       // Add a day that repeats every year. Stored as PDCal's `--MM-DD`, so it needs no column of
@@ -6674,15 +6701,52 @@
         var key = '--' + String(mo).padStart(2, '0') + '-' + String(dy).padStart(2, '0');
         readDraft();
         draft.extra_holidays = (draft.extra_holidays || []).concat(key).filter(function (x, i, a) { return a.indexOf(x) === i; });
+        _calSetHolName(key, (body.querySelector('#ps-cal-recname') || {}).value);
         render();
       };
       // Fold repeating exact dates into yearly ones. ⚠️ An explicit button, never automatic on a
       // saved calendar: rewriting somebody's stored schedule input without being asked is not a
       // tidy-up, and the count on the button's face says exactly what it will do.
       var holFold = root.querySelector('#ps-cal-holfold');
+      /* One writer for the name map, so “add”, “rename” and “remove” cannot disagree about
+         what an empty name means. ⚠ An empty name DELETES the key rather than storing “” — a
+         map full of blanks would make `extra_holiday_labels` grow without ever naming anything. */
+      function _calSetHolName(key, name) {
+        if (!key) return;
+        draft.extra_holiday_labels = draft.extra_holiday_labels || {};
+        var v = String(name == null ? '' : name).trim();
+        if (v) draft.extra_holiday_labels[key] = v; else delete draft.extra_holiday_labels[key];
+      }
+      body.querySelectorAll('[data-lblhol]').forEach(function (b) {
+        b.onclick = function () {
+          readDraft();
+          var k = b.dataset.lblhol, cur = (draft.extra_holiday_labels || {})[k] || '';
+          var v = prompt('Name for ' + PDCal.holidayWhen(k) + ' (leave blank to remove the name):', cur);
+          if (v === null) return;
+          _calSetHolName(k, v); render();
+        };
+      });
       if (holFold) holFold.onclick = function () {
         readDraft();
         var col = PDCal.collapseHolidays(draft.extra_holidays || [], 3);
+        /* ⚠⚠ THE NAME HAS TO FOLLOW THE FOLD. Ten dated “Company Anniversary” entries
+           collapsing into one `--MM-DD` would otherwise leave the yearly entry unnamed and strand
+           ten names on keys that are no longer in the list — i.e. the fold would silently DELETE
+           the naming this feature exists to add. The first non-empty name among the dates that
+           folded wins; they are the same day every year, so a disagreement between them is a typo
+           rather than two different holidays. */
+        (function () {
+          var L = draft.extra_holiday_labels || {}, out = {};
+          (col.list || []).forEach(function (k) { if (L[k]) out[k] = L[k]; });
+          (col.added || []).forEach(function (rk) {
+            if (out[rk]) return;
+            var md = String(rk).slice(2);   // '--12-25' -> '12-25'
+            Object.keys(L).forEach(function (k) {
+              if (!out[rk] && k.length === 10 && k.slice(5) === md && L[k]) out[rk] = L[k];
+            });
+          });
+          draft.extra_holiday_labels = out;
+        })();
         draft.extra_holidays = col.list;
         render();
         UI.toast('Folded ' + col.collapsed + ' date' + (col.collapsed === 1 ? '' : 's') + ' into ' +
@@ -6693,6 +6757,10 @@
       root.querySelectorAll('[data-rmhol]').forEach(function (b) {
         b.onclick = function () {
           readDraft();
+          /* ⚠ The name goes with the date. Left behind it is an orphan in a map nothing can
+             reach, and re-adding the same date months later would silently resurrect a name
+             somebody had deleted. */
+          _calSetHolName(b.dataset.rmhol, '');
           draft.extra_holidays = (draft.extra_holidays || []).filter(function (x) { return x !== b.dataset.rmhol; });
           render();
         };
@@ -6722,7 +6790,8 @@
           return o;
         });
         var payload = { project_id: pid, name: draft.name, hours_per_day: draft.hours_per_day,
-          extra_holidays: draft.extra_holidays || [], is_default: !!draft.is_default,
+          extra_holidays: draft.extra_holidays || [], extra_holiday_labels: draft.extra_holiday_labels || {},
+          is_default: !!draft.is_default,
           seasons: seasons, observe_special_days: !!draft.observe_special_days,
           climate_type: draft.climate_type || null };
         _CAL_DAYS.forEach(function (d) { payload[d[0]] = !!draft[d[0]]; });
@@ -6734,16 +6803,39 @@
             await sb().from('calendars').update({ is_default: false }).eq('project_id', pid);
             CALS.forEach(function (c) { c.is_default = false; });
           }
+          /* A column this database does not have yet, dropped once and reported. */
+          var _dropped = [];
+          function _missingCol(err) {
+            var msg = String((err && err.message) || '');
+            if (!/PGRST204|schema cache|column/i.test(msg)) return null;
+            var q = msg.match(/'([a-z0-9_]+)' column/i) || msg.match(/column "?([a-z0-9_]+)"?/i);
+            return q ? q[1] : null;
+          }
+          async function _write() {
+            for (var attempt = 0; attempt < 4; attempt++) {
+              var res = draft.id
+                ? await sb().from('calendars').update(payload).eq('id', draft.id)
+                : await sb().from('calendars').insert(payload).select().single();
+              if (!res.error) return res;
+              var col = _missingCol(res.error);
+              if (!col || !(col in payload)) throw res.error;
+              delete payload[col]; _dropped.push(col);
+            }
+            throw new Error('Could not save the calendar after dropping: ' + _dropped.join(', '));
+          }
+          if (!draft.id) payload.created_by = UID;
+          var _res = await _write();
           if (draft.id) {
-            var u = await sb().from('calendars').update(payload).eq('id', draft.id);
-            if (u.error) throw u.error;
             var idx = CALS.findIndex(function (c) { return c.id === draft.id; });
             if (idx >= 0) CALS[idx] = Object.assign({}, CALS[idx], payload);
           } else {
-            payload.created_by = UID;
-            var i2 = await sb().from('calendars').insert(payload).select().single();
-            if (i2.error) throw i2.error;
-            CALS.push(i2.data); draft.id = i2.data.id;
+            CALS.push(_res.data); draft.id = _res.data.id;
+          }
+          /* ⚠ Named by its own migration, never a generic “run the migrations” — a hint that
+             points at the wrong file sends whoever reads it hunting in it. */
+          if (_dropped.length) {
+            UI.toast('Saved, but this database has no ' + _dropped.join(', ') +
+              ' column — the day names were NOT stored. Run migrations/2026-09-17-calendar-holiday-labels.sql, then save again.', 'warn');
           }
           CALS.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
           _wdCache = {};   // capacity maths caches working days per calendar+month
@@ -33688,6 +33780,17 @@
     function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, floorGate: {}, zoneZigzag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'agroup', 'agroup2', 'agroup3', 'agroup4', 'floor', 'zone', 'unit'], phases: {},
       // ⚠️ Two bags, both empty: a plate is created only when a cell is actually painted, so a
       // brand-new setup truthfully reports "no layout defined" rather than an empty 2 x 2 grid.
+      /* ⚠⚠ GROUPINGS THAT EXIST BEFORE ANY ACTIVITY DOES. Owner 2026-09-17: *“add option
+         to add sub-groupings before adding activities”*. `libGroupTree()` derives the whole right
+         pane from `cfg.activities` — a trade with no items renders nothing, and a grouping exists
+         only because some activity’s path names it. So on a new project there is nowhere to put
+         the structure before the work: you had to invent an activity to hang a grouping off.
+         This is that place, and it is the same shape `cfg.zoning` already is — declared
+         structure, independent of what is filed under it.
+         ⚠ Paths, not a tree: [{ g: <trade>, path: [seg, …] }]. A path is what an activity
+         already carries (`absPathOf`), so the declared and the derived sides key identically and
+         cannot build two branches that look the same on screen. */
+      groupings: [],
       zonePlan: { kind: {}, floor: {} } }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
@@ -33752,6 +33855,19 @@
       d.scopeOff = (c.scopeOff && typeof c.scopeOff === 'object') ? c.scopeOff : {};
       // ⚠️ Sanitised on the way in, never trusted: a stored cell outside its own grid is dropped
       // (see zpNorm) so shrinking a plate and growing it again cannot resurrect old assignments.
+      /* ⚠⚠ THIS LINE IS NOT OPTIONAL. `normalize` starts from `blank()` and copies only what
+         it names, so a key it does not mention is DROPPED on the next save — the declared
+         groupings would survive until reload and then vanish, which reads as the app forgetting.
+         ⚠ Normalised here too: a blank segment, a path deeper than the four rungs the push
+         builds, or an unknown trade is discarded rather than stored as structure nothing can
+         render. */
+      d.groupings = (Array.isArray(c.groupings) ? c.groupings : []).map(function (x) {
+        if (!x || GROUPS.indexOf(x.g) < 0) return null;
+        var p = (Array.isArray(x.path) ? x.path : [])
+          .map(function (sg) { return String(sg == null ? '' : sg).trim(); })
+          .filter(Boolean).slice(0, 4);
+        return p.length ? { g: x.g, path: p } : null;
+      }).filter(Boolean);
       d.zonePlan = zpNormAll(c.zonePlan);
       d.tradeLeads = (c.tradeLeads && typeof c.tradeLeads === 'object') ? c.tradeLeads : {};  // per cross-trade transition: floors of the leading trade done before the following one starts
       // WBS structure: ordered list of location dimensions used when pushing into the schedule
@@ -35608,7 +35724,7 @@
          which has moved to the Activities step. What is left — the lifecycle phases and the tree
          they produce — is a structural decision a planner can make before a single activity
          exists, so it can lead. Owner 2026-09-17: *“move this step after working calendars”*. */
-      { t: 'Project phases', s: 'Lifecycle + the 5PMLC tree', fn: stPhasesStep },
+      { t: 'Project phases', s: 'Lifecycle + the WBS tree', fn: stPhasesStep },
       { t: 'Activities', s: 'Class-code list + Construction Library', fn: stActivitiesStep },
       { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stLevels },
       /* ⚠️ AFTER both, not before. The Construction Library view is a READ of the places and the
@@ -35644,7 +35760,7 @@
       // this path at all, so an import could not see the project's live tree from inside the wizard
       // — on the one path where comparing the file's structure against the project's own is the
       // entire job.
-      { t: 'Project phases', s: 'Lifecycle + the 5PMLC tree', fn: stPhasesStep },
+      { t: 'Project phases', s: 'Lifecycle + the WBS tree', fn: stPhasesStep },
       { t: 'Relationships', s: 'Keep the file\u2019s logic, or not', fn: stImpRels },
       { t: 'Review & import', s: 'Write it into the schedule', fn: stImpCommit },
     ];
@@ -35773,13 +35889,19 @@
      ⚠ Keyed by STEP TITLE, not by index: the rail is renumbered by `sbSyncSteps` and a
      remembered index would point at a different step on the other path. */
     var STEP_TABS = {
-      'Project phases': [
-        { k: 'phases', t: 'Project phases', sub: 'Initiation → Close-out', fn: function (h) { stPhases(h); } },
-        { k: 'pmlc',   t: '5PMLC',          sub: 'the whole lifecycle tree', fn: function (h) { stWbs(h); } }
-      ],
       'Activities': [
         { k: 'acts', t: 'Activities',            sub: 'class-code list + duration', fn: function (h) { stActivities(h); } },
         { k: 'lib',  t: 'Construction Library', sub: 'places, groupings and items', fn: function (h) { stLibrary(h); } }
+      ],
+      /* ⚠ Repetition draws its own tab strip (see `stRepetition`) — only the SELECTION lives
+         here, so the footer's Next/Back walk these five before moving on to Generate. No `sub`
+         on these: the pill strip has nowhere to put one, and an unread field reads as a bug. */
+      'Repetition': [
+        { k: 'towers', t: 'Tower links',    fn: function (h) { return stTowerLinks(h); } },
+        { k: 'zones',  t: 'Zone sequence',  fn: function (h) { return stSequence(h); } },
+        { k: 'trades', t: 'Trade sequence', fn: function (h) { return stTradeSeq(h); } },
+        { k: 'scope',  t: 'Scope per zone', fn: function (h) { return stScope(h); } },
+        { k: 'stack',  t: 'Stacking',       fn: function (h) { return stStacking(h); } }
       ]
     };
     var _stepTabSel = {};
@@ -35817,9 +35939,12 @@
           return '<button class="sbld-strtab' + (x.k === k ? ' on' : '') + '" data-steptab="' + x.k + '"' +
             (x.k === k ? ' aria-current="page"' : '') + '><b>' + e2(x.t) + '</b><span>' + e2(x.sub || '') + '</span></button>';
         }).join('') + '</div>' +
-        /* ⚠ Only the two views it was written for. A bridge line under the phases tab would
-           be explaining a relationship that tab is not about. */
-        ((k === 'lib' || k === 'pmlc') ? strBridge(k) : '') +
+        /* ⚠⚠ THE BRIDGE PARAGRAPH IS GONE, AT THE OWNER’S REQUEST — the one that read
+           “Construction Library → Execution Phase. This setup describes 6 trades, 0 groupings …
+           Those become branches inside Execution Phase when you 7 · Push”. It was three sentences
+           of counts and mechanism above a pane that shows the same counts in its own header, and
+           on a project with nothing in it yet it led with “0 groupings”. `strBridge` and its stat
+           helpers go with it rather than being left as a renderer nothing calls. */
         '<div id="sbld-stepbody"></div>';
       host.querySelectorAll('[data-steptab]').forEach(function (b) {
         b.onclick = function () { if (b.dataset.steptab !== k) setStepTab(title, b.dataset.steptab); };
@@ -35830,9 +35955,15 @@
       cur.fn(host.querySelector('#sbld-stepbody'));
     }
     function stPhasesStep(host) {
-      stTabbed(host, 'Project phases',
-        'Two views of one structure. <b>Project phases</b> is what sits either side of ' +
-        'construction; <b>5PMLC</b> is the whole lifecycle tree those phases produce.');
+      /* ⚠ ONE heading, emitted here. Both sub-renderers are called with `noHead`, because each
+         used to own a step and still writes its own <h2> — which is what produced the doubled
+         title in the owner’s screenshot. */
+      host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · Project Phases</h2>' +
+        '<p class="sbld-lede">The lifecycle around <b>Execution</b>: what sits either side of ' +
+        'construction, and the tree those phases produce. No locations here, and nothing repeats per zone.</p>' +
+        '<div id="sbld-ph-a"></div><div id="sbld-ph-b"></div>';
+      stPhases(host.querySelector('#sbld-ph-a'), true);
+      stWbs(host.querySelector('#sbld-ph-b'), true);
     }
     function stActivitiesStep(host) {
       stTabbed(host, 'Activities',
@@ -35842,62 +35973,6 @@
     /* Everything both views count, read ONCE per render from the setup itself.
        ⚠️ One reader, so the bridge line and the Library's own header tags cannot disagree — two
        counts of the same thing drifting apart is how a screen starts contradicting itself. */
-    function strLibStats() {
-      var locs = libLocTree(), tree = libGroupTree();
-      var nF = 0, nZ = 0, nU = 0;
-      locs.forEach(function (T) {
-        nF += T.floors.length;
-        T.floors.forEach(function (F2) { nZ += F2.zones.length; F2.zones.forEach(function (Z2) { nU += Z2.units.length; }); });
-      });
-      return { locs: locs, tree: tree, nF: nF, nZ: nZ, nU: nU,
-        nI: (cfg.activities || []).length,
-        nG: tree.reduce(function (s, t) { return s + libGrpCount(t); }, 0),
-        nT: tree.length, deep: absMaxDepth() };
-    }
-    /* How many branches the LIVE tree already holds inside its top-level Execution Phase.
-       ⚠️ Returns null, not 0, when there is no such branch at all: "no Execution Phase yet" and
-       "an Execution Phase holding nothing" are different situations and the bridge says which. */
-    function strExecCount() {
-      try {
-        var all = (typeof WBS_NODES !== 'undefined' && WBS_NODES) ? WBS_NODES : [];
-        var root = null;
-        for (var i = 0; i < all.length; i++) {
-          if (!all[i].parent_id && _libNorm(all[i].name) === 'execution phase') { root = all[i]; break; }
-        }
-        if (!root) return null;
-        var kids = {};
-        all.forEach(function (x) { if (x.parent_id) (kids[x.parent_id] = kids[x.parent_id] || []).push(x); });
-        var n = 0;
-        (function walk(id) { (kids[id] || []).forEach(function (c) { n++; walk(c.id); }); })(root.id);
-        return n;
-      } catch (e) { return null; }
-    }
-    function strLibPhrase(s) {
-      return '<b>' + s.nT + '</b> trade' + (s.nT === 1 ? '' : 's') + ', <b>' + s.nG + '</b> grouping' +
-        (s.nG === 1 ? '' : 's') + (s.deep > 1 ? ' over <b>' + s.deep + '</b> levels' : '') +
-        ', <b>' + s.nI + '</b> item' + (s.nI === 1 ? '' : 's') + ' and <b>' + s.nF + '</b> floor' +
-        (s.nF === 1 ? '' : 's') + ' × <b>' + s.nZ + '</b> area' + (s.nZ === 1 ? '' : 's') +
-        (s.nU ? ' × <b>' + s.nU + '</b> unit' + (s.nU === 1 ? '' : 's') : '');
-    }
-    // ⚠️ Explains what the Library becomes on push. See the note at the top of this block for why it
-    // is a LINE and not a branch, and why it names the push.
-    function strBridge(v) {
-      var s = strLibStats(), ex = strExecCount();
-      if (v === 'pmlc') {
-        return '<p class="sbld-note"><b>Construction Library → Execution Phase.</b> This setup describes ' +
-          strLibPhrase(s) + '. Those become branches <b>inside Execution Phase</b> when you <b>' +
-          _stepNo('Generate') + ' · Push</b> — they are <b>not</b> in the tree below until then, which is ' +
-          'why editing here and editing there are two different acts. ' +
-          '<button class="pd-btn sbld-strjump" data-strview="lib">Edit them in Construction Library →</button></p>';
-      }
-      return '<p class="sbld-note">' +
-        (ex == null
-          ? 'This project has <b>no Execution Phase branch</b> in its live WBS yet — <b>' + _stepNo('Generate') +
-            ' · Push</b> creates it. '
-          : 'Its live WBS holds <b>' + ex + '</b> branch' + (ex === 1 ? '' : 'es') + ' inside <b>Execution Phase</b> right now. ') +
-        'What you edit on this view is <b>this setup</b>; the push is what turns it into branches there. ' +
-        '<button class="pd-btn sbld-strjump" data-strview="pmlc">See the whole tree in 5PMLC →</button></p>';
-    }
     /* How many branches the live tree actually has — so the "near-empty" note can be shown only
        when it is true. Counts WBS_NODES rather than DOM rows: the tree is virtualised, so the rows
        on screen are a window, not the total. */
@@ -35907,25 +35982,26 @@
        ⚠️ Each sub-view renders its OWN heading (they all open with `_stepNo(<their title>)`), which
        the alias resolves to this step's number — so the heading reads "6 · Zone sequence" and the
        planner is never told a number that does not exist. Nothing below this line was rewritten. */
-    var REP_TABS = [
-      { k: 'towers', t: 'Tower links', fn: function (h) { return stTowerLinks(h); } },
-      { k: 'zones', t: 'Zone sequence', fn: function (h) { return stSequence(h); } },
-      { k: 'trades', t: 'Trade sequence', fn: function (h) { return stTradeSeq(h); } },
-      { k: 'scope', t: 'Scope per zone', fn: function (h) { return stScope(h); } },
-      { k: 'stack', t: 'Stacking', fn: function (h) { return stStacking(h); } }
-    ];
-    var _repView = 'towers';
+    /* ⚠⚠ THE LIST AND THE SELECTED KEY BOTH LIVE IN `STEP_TABS` NOW. They used to be a
+       private `REP_TABS` + `_repView` pair, which is exactly why the footer's Next skipped the
+       four views after Tower links: the walker reads `stepTabs(<step title>)` and this step was
+       not in it. Keeping a private copy in step with a shared one is the bug that writes itself,
+       so there is no copy — this renders whatever the walker is pointing at.
+       ⚠ The view is remembered across reloads now (`stepTabKey` persists it), which the pills
+       never did. That matches Activities, and coming back to the step you left is the behaviour
+       a five-view step wants. */
     function stRepetition(host) {
-      var cur = REP_TABS.filter(function (x) { return x.k === _repView; })[0] || REP_TABS[0];
+      var T = stepTabs('Repetition'), k = stepTabKey('Repetition');
+      var cur = T.filter(function (x) { return x.k === k; })[0] || T[0];
       host.innerHTML =
         '<div class="sbld-reptabs">' +
-          REP_TABS.map(function (x) {
+          T.map(function (x) {
             return '<button type="button" class="pd-btn sbld-reptab' + (x.k === cur.k ? ' on' : '') +
               '" data-rep="' + x.k + '">' + e2(x.t) + '</button>';
           }).join('') +
         '</div><div id="sbld-repbody"></div>';
       host.querySelectorAll('[data-rep]').forEach(function (b) {
-        b.onclick = function () { _repView = b.dataset.rep; render(); };
+        b.onclick = function () { setStepTab('Repetition', b.dataset.rep); };
       });
       cur.fn(host.querySelector('#sbld-repbody'));
     }
@@ -36007,10 +36083,28 @@
        "(ungrouped)" heading, which would look like a real grouping somebody chose. */
     function libGroupTree() {
       var out = [];
+      /* Declared paths per trade, so a trade that has structure but no items still renders. */
+      var decl = {};
+      (cfg.groupings || []).forEach(function (x) { (decl[x.g] = decl[x.g] || []).push(x.path); });
       GROUPS.forEach(function (g) {
         var items = (cfg.activities || []).filter(function (a) { return (a.group || 'ST') === g; });
-        if (!items.length) return;
+        /* ⚠ A trade now renders when it has items OR declared structure. Returning early on
+           `!items.length` is exactly what made a grouping impossible to create first. */
+        if (!items.length && !(decl[g] || []).length) return;
         var node = { g: g, label: GWORK[g] || GLABEL[g] || g, path: [], kids: [], seenK: {}, items: [], acts: [] };
+        /* Declared rungs FIRST, so an empty grouping keeps its place in the order rather than
+           appearing after everything an activity happened to create. */
+        (decl[g] || []).forEach(function (p) {
+          var at = node;
+          p.forEach(function (seg) {
+            var k = _libNorm(seg), K = at.seenK[k];
+            if (!K) {
+              K = at.seenK[k] = { g: g, name: seg, path: at.path.concat(seg), kids: [], seenK: {}, items: [], acts: [], declared: true };
+              at.kids.push(K);
+            }
+            at = K;
+          });
+        });
         items.forEach(function (a) {
           var at = node;
           node.acts.push(a);
@@ -36522,8 +36616,15 @@
           'Its ' + node.acts.length + ' item' + (node.acts.length === 1 ? '' : 's') +
           ' move up into "' + parent + '". No activity is deleted.')) return;
       var hit = absDelSeg(node);
-      if (!hit) { UI.toast('That grouping is no longer there — nothing changed.', 'warn'); return; }
-      UI.toast('Deleted "' + node.name + '" — ' + hit + ' item' + (hit === 1 ? '' : 's') + ' moved up.', 'success');
+      /* ⚠⚠ THE DECLARATION GOES TOO, AND WITHOUT THIS THE ROW WOULD NOT DISAPPEAR.
+         `absDelSeg` rewrites the paths ITEMS carry; a grouping declared with nothing in it has no
+         item paths to rewrite, so it would survive its own delete and read as a broken button. */
+      var _wasDecl = (cfg.groupings || []).length;
+      libUndeclare(node.g, node.path);
+      var _declGone = _wasDecl - (cfg.groupings || []).length;
+      if (!hit && !_declGone) { UI.toast('That grouping is no longer there — nothing changed.', 'warn'); return; }
+      UI.toast('Deleted "' + node.name + '"' +
+        (hit ? ' — ' + hit + ' item' + (hit === 1 ? '' : 's') + ' moved up.' : ' — it held no items.'), 'success');
       markDirty(); render();
     }
     function libRenamePrompt(node) {
@@ -36604,6 +36705,45 @@
     }
     // A grouping node and everything under it. Items first, then sub-groupings: a heading's own
     // members read before its sub-headings, the same way an outline does.
+    /* ==========================================================================================
+       DECLARING A GROUPING BEFORE THERE IS ANYTHING IN IT.
+       ⚠ `_libNorm` is the SAME key the tree builds with, so a path declared here and a path an
+       activity later carries land on ONE node rather than two that look identical. */
+    function libPathKey(g, path) {
+      return g + '\u0001' + (path || []).map(_libNorm).join('\u0001');
+    }
+    function libDeclare(g, path) {
+      cfg.groupings = cfg.groupings || [];
+      var k = libPathKey(g, path);
+      if (cfg.groupings.some(function (x) { return libPathKey(x.g, x.path) === k; })) return false;
+      cfg.groupings.push({ g: g, path: path.slice() });
+      return true;
+    }
+    /* ⚠ Removing a declaration drops its DESCENDANTS too — a declared child of a rung that no
+       longer exists would keep the parent alive through the tree builder, so the rung would refuse
+       to disappear and read as a failed delete. */
+    function libUndeclare(g, path) {
+      var pre = libPathKey(g, path);
+      cfg.groupings = (cfg.groupings || []).filter(function (x) {
+        var k = libPathKey(x.g, x.path);
+        return !(k === pre || k.indexOf(pre + '\u0001') === 0);
+      });
+    }
+    /* The prompt both “+ Sub-grouping” buttons share. ⚠ One function, so a grouping added under
+       a trade and one added under another grouping cannot end up validated differently. */
+    function libAddGrouping(g, parentPath) {
+      if ((parentPath || []).length >= 4) {
+        UI.toast('Groupings go four deep — that is what the push builds. Add the work as items instead.', 'warn'); return;
+      }
+      var nm = prompt('Name for the new grouping' + ((parentPath || []).length ? ' under “' + parentPath[parentPath.length - 1] + '”' : '') + ':', '');
+      if (nm === null) return;
+      nm = String(nm).trim();
+      if (!nm) { UI.toast('A grouping needs a name.', 'warn'); return; }
+      if (!libDeclare(g, (parentPath || []).concat(nm))) {
+        UI.toast('“' + nm + '” is already a grouping here.', 'warn'); return;
+      }
+      markDirty(); render();
+    }
     function libNodeHTML(n) {
       var h = '';
       if (n.path.length) {
@@ -36615,6 +36755,7 @@
           libGrip('node', _ni) +
           libLv(lv, 'grp', n.path.length === 1 ? 'Grouping' : ('Grouping ' + n.path.length)) +
           '<span class="sbld-libnm">' + e2(n.name) + '</span>' + libNodeTools(n) +
+          '<button class="sbld-libadd" data-libadd="' + e2(n.g) + '" data-libaddp="' + e2(JSON.stringify(n.path)) + '" title="Add a grouping inside this one">+ Sub</button>' +
           '<span class="sbld-libwho" title="' + e2(n.acts.length + ' item(s) under this grouping') + '">' + n.acts.length + '</span></div>';
       }
       h += n.items.map(function (a) { return libItemRow(a); }).join('');
@@ -36672,9 +36813,14 @@
         libSelBar() +
         '<div class="sbld-libbody" id="sbld-libgrpbody">' +
         (nI ? tree.map(function (T) {
-          return '<div class="sbld-libL1" style="--zc:' + gc(T.g) + '">' + libLv(1, 'grp', 'Trade') + e2(T.label) + '</div>' +
+          return '<div class="sbld-libL1" style="--zc:' + gc(T.g) + '">' + libLv(1, 'grp', 'Trade') + e2(T.label) +
+            '<button class="sbld-libadd" data-libadd="' + e2(T.g) + '" data-libaddp="[]" title="Add a grouping under this trade">+ Grouping</button></div>' +
             libNodeHTML(T);
-        }).join('') : '<div class="sbld-empty">No items yet. Add them in <b>Activities</b>, or <b>Read from the WBS</b>.</div>') +
+        }).join('') : '<div class="sbld-empty">No items and no groupings yet. Add items in <b>Activities</b>, <b>Read from the WBS</b>, ' +
+          'or lay the structure out first — pick a trade below and its groupings can exist before any work is filed under them.' +
+          '<div class="sbld-libseed">' + GROUPS.map(function (g) {
+            return '<button class="pd-btn pd-btn-sm" data-libadd="' + e2(g) + '" data-libaddp="[]"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g] || g) + '</button>';
+          }).join('') + '</div></div>') +
         '</div></div>';
 
       // ⚠️ No <h2>: this is the Construction Library TAB of the Activities step, and stTabbed
@@ -36763,6 +36909,14 @@
           var nm = String(typed == null ? '' : typed).trim();
           if (!nm) return;
           if (absAddSub(n, nm)) { markDirty(); render(); }
+        };
+      });
+      host.querySelectorAll('[data-libadd]').forEach(function (b) {
+        b.onclick = function (ev) {
+          ev.stopPropagation();   // the row itself is a selection target
+          var p = [];
+          try { p = JSON.parse(b.dataset.libaddp || '[]'); } catch (e) { p = []; }
+          libAddGrouping(b.dataset.libadd, p);
         };
       });
       host.querySelectorAll('[data-libdel]').forEach(function (b) {
@@ -41282,7 +41436,7 @@
     // ⚠️ This step does NOT generate anything. Every other step feeds the generator; this one edits
     // a flat list per phase and prints the window it will occupy, because there is nothing about a
     // charter or a turnover that repeats per floor or per zone.
-    function stPhases(host) {
+    function stPhases(host, noHead) {
       var g = generate('int');
       var plan = sbPhasePlan(g), planBy = {};
       plan.forEach(function (pp) { planBy[pp.v] = pp; });
@@ -41349,7 +41503,11 @@
         return '<p class="sbld-phtotal">Whole programme: <b>' + fmtD(a) + ' → ' + fmtD(b) + '</b> · ' +
           (Math.round((+b - +a) / 86400000) + 1) + ' calendar days</p>';
       })();
-      host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · The phases either side of construction</h2>' +
+      /* ⚠ `noHead` when the Project Phases step is drawing both halves on one page — it emits
+         the one heading, and this used to add a second one directly under the first (the doubled
+         title in the owner’s screenshot). Still emitted when something opens this renderer on
+         its own, so the function stays usable standalone. */
+      host.innerHTML = (noHead ? '' : '<h2>' + _stepNo('Project phases') + ' · The phases either side of construction</h2>') +
         /* ⚠️ 158 WORDS BECAME 34. What went, and where it went instead:
              • "the other steps build the Execution Phase" — the step list says so, in order;
              • the back-scheduling rule — kept, because the dates move on their own and a planner
@@ -43565,7 +43723,7 @@
     // ⚠️ This step OWNS no markup of its own beyond the frame: the editor is the WBS Manager's real
     // tree, relocated in (sbWbsMount). See the note on sbWbsPark for why it is borrowed and not
     // rebuilt — and for why the panel must never be repainted while it is here.
-    function stWbs(host) {
+    function stWbs(host, noHead) {
       var n = (typeof WBS_NODES !== 'undefined' && WBS_NODES) ? WBS_NODES.length : 0;
       var _liveActs = 0, _gen = 0;
       try { _liveActs = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
@@ -43590,7 +43748,9 @@
              • "the five top-level branches are held in a fixed order" — the tree shows that order;
              • the long "almost-empty tree" paragraph — the one sentence a planner needs is kept and
                is shown ONLY when the tree really is almost empty, instead of on every visit. */
-        '<p class="sbld-lede">The project' + '’s <b>live</b> WBS. Saved as you type.</p>' +
+        /* ⚠ The lede (“The project’s live WBS. Saved as you type.”) is GONE at the owner’s
+           request. The tree is plainly a tree, and the step’s own lede above already says what
+           this half is — a second sentence between them was restating the obvious. */
         /* ⚠️ REWRITTEN WHEN THE STEP MERGED. This used to read "this step is early on purpose",
            which was true while the tree was step 2 and is now simply FALSE on screen — the kind of
            stale sentence that teaches a planner to stop trusting the page. What survives is the part
@@ -45160,12 +45320,6 @@
          than throwing the planner's parsed file away. */
       gotoStep: function (title) {
         sbSyncSteps();
-        /* ⚠️ THE OLD TITLES STILL RESOLVE. 'WBS' and 'Library' were two steps until 2026-09-08 and
-           are two VIEWS of 'Structure' now, so a deep link, another module's button, or a habit that
-           asks for either must land on the merged step with the right view showing rather than fail
-           silently. The alias carries the INTENT, not just the destination: asking for 'WBS' selects
-           5PMLC and asking for 'Library' selects Construction Library. Quiet, because this function
-           renders itself. */
         /* ⚠⚠ THE OLD TITLES STILL RESOLVE, AND THEY NOW LAND ON TWO DIFFERENT STEPS.
            'WBS' and 'Library' were steps, then views of 'Structure'; since 2026-09-17 the
            5PMLC view belongs to <b>Project phases</b> and the Library to <b>Activities</b>. A deep
@@ -45173,12 +45327,17 @@
            of the three must still land on the right step with the right TAB showing rather than
            fail silently — which is what it would now do, since no step is called 'Structure'.
            Quiet, because this function renders itself. */
-        var _al = { 'WBS':       { st: 'Project phases', tab: 'pmlc' },
-                    '5PMLC':     { st: 'Project phases', tab: 'pmlc' },
-                    'Structure': { st: 'Project phases', tab: 'pmlc' },
-                    'Library':   { st: 'Activities',     tab: 'lib' },
+        /* ⚠ The three phases aliases carry NO tab: Project Phases is one page again, so there
+           is nothing to select and asking for one would be wiring that does nothing. */
+        var _al = { 'WBS':       { st: 'Project phases' },
+                    '5PMLC':     { st: 'Project phases' },
+                    'Structure': { st: 'Project phases' },
+                    'Library':   { st: 'Activities', tab: 'lib' },
                     'Construction Library': { st: 'Activities', tab: 'lib' } };
-        if (_al[title]) { setStepTabQuiet(_al[title].st, _al[title].tab); title = _al[title].st; }
+        if (_al[title]) {
+          if (_al[title].tab) setStepTabQuiet(_al[title].st, _al[title].tab);
+          title = _al[title].st;
+        }
         var i = STEPS.map(function (x) { return x.t; }).indexOf(title);
         if (i >= 0) { step = i; render(); return true; }
         if (mode === 'import') return false;

@@ -103,6 +103,110 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (t) — Named non-working dates, groupings that can exist before their work, and Project Phases becomes one page
+
+Owner, picking the order off his own Schedule Setup list: *"Let's do 1.1 and 2.3 first before 4.1"* —
+**1.1** *"For Calendar, when adding one-off dates, provide option to add label"* and **2.3** *"add
+option to add sub-groupings before adding activities"*. Then, mid-work and with screenshots:
+*"Step 3 project phases is just the whole step. It should be integrated with the 5PMLC since they both
+serve the same function. I prefer to call it Project Phases"*, plus two blocks of prose to delete. Then:
+*"The next button in repetition needs to follow through the next tab first before the generate step."*
+
+### ⚠️⚠️ 1.1 UNCOVERED A LIVE BUG THAT HAS NOTHING TO DO WITH LABELS
+
+`calendars.extra_holidays` is declared **`date[]`** (`2026-07-06-working-calendars.sql`) and nothing
+has ever altered it — checked across every migration and both schema files. But the yearly-holiday
+pass writes ISO 8601 recurring keys of the form `--MM-DD` into that same array, and says so in its own
+note: *"THE STORAGE IS UNCHANGED, DELIBERATELY … the string `--MM-DD` … no migration"*. That reasoning
+is right about the CLIENT, which reads every element as a string, and wrong about the COLUMN. `'--12-25'`
+is not a date, so on a database matching this repo's schema, pressing **Add yearly day** or **Fold N
+repeating dates** and then Save is refused by Postgres with `22007 invalid input syntax for type date`.
+The whole "Repeats every year" section could not be saved, and the feature has been shipped since
+2026-09-03. `migrations/2026-09-17-calendar-holiday-labels.sql` widens the column to `text[]`.
+
+Widening is the right direction because `text[]` is what every reader already assumes: `holidayIndex`
+does `String(list[i]).trim()`, `isWorkDay` looks the day up by string key, and the only SQL anywhere
+that touches the column is a type-agnostic `array_length`. No reader changes and no date arithmetic is
+lost — there was none. ⚠️ The DO block reads the type from `pg_attribute` rather than assuming, because
+`VERIFICATION.md` documents measured drift between `/migrations` and the live database; it is a no-op
+if the column is already `text[]`, and it **raises** on any other type rather than guessing.
+
+### ⚠️ The label is a sidecar map, and the reason is the hot path
+
+`extra_holiday_labels jsonb`, keyed by the same string that sits in `extra_holidays`. Not an array of
+objects: `isWorkDay` is called once per calendar day by `addWorkingDays`, which walks up to 7,300 days
+to turn one duration into one finish date, across thousands of activities — `holidayIndex` exists
+precisely because a linear scan there cost *"up to 1.6 million string comparisons to date a single
+activity"*. An object per element would put a property dereference inside that loop and force three
+other modules to learn a new shape for a field they only count or compare. A sidecar costs that path
+nothing; it is read only when the editor draws a chip. One map serves both kinds of entry, so a yearly
+holiday is nameable ("Christmas") exactly as a one-off is ("Typhoon Egay shutdown"). A key with no
+entry falls back to the date — so an unlabelled calendar, and every calendar saved before today, reads
+exactly as it did.
+
+### 2.3 — a grouping can now exist before anything is filed under it
+
+The Construction Library built its tree **from the paths items carry**, which meant a grouping could
+only be created by first creating work to put in it. The planner who wants to lay the structure out and
+then fill it in had no way to do that. `cfg.groupings` is now a declared list that the tree builder
+folds in alongside the item-derived paths, so an empty grouping is a real node. ⚠️ Declared paths go
+through **`_libNorm`, the same key the tree already builds with**, so a grouping declared here and a
+path an activity later carries land on ONE node instead of two that look identical on screen.
+
+⚠️⚠️ Deleting a grouping had to learn about this in the same change. `absDelSeg` deletes by rewriting
+the paths ITEMS carry — a declared grouping with nothing in it has no item paths to rewrite, so without
+`libUndeclare` it would survive its own delete and read as a broken button. Undeclaring drops
+DESCENDANTS too, since a declared child of a rung that no longer exists would keep the parent alive
+through the builder. And the toast no longer claims items moved when none did.
+
+⚠️ `cfg.groupings` is named in `normalize()`. That function is a **whitelist** — a key it does not name
+is silently stripped on save and on load, so a new field that skips it appears to work all session and
+is gone on reload.
+
+### ⚠️⚠️ Project Phases is one page, and the screenshot showed why the tabs were wrong
+
+Shipped this morning, the step rendered **"3 · Project phases — Project phases"** — the tab name
+repeating the step name — and then, under the tab strip, a SECOND heading **"3 · The phases either side
+of construction"**, because the sub-renderer emits its own. Two headings and a tab strip for a step
+whose two halves are the same subject: the phases, and the tree those phases produce. Reading one after
+the other is the whole content, so there was nothing to switch between. Both halves now draw on one
+page under one heading; `stPhases` and `stWbs` take a `noHead` flag rather than losing their headings,
+so each stays usable if something opens it on its own. The tab MECHANISM stays — Activities still has
+two genuinely different views.
+
+Removed at the owner's request: the **Construction Library → Execution Phase** bridge paragraph (three
+sentences of counts and mechanism above a pane that shows the same counts in its own header, and which
+on an empty project led with "0 groupings"), and the lede **"The project's live WBS. Saved as you
+type."** `strBridge` and its four stat helpers went with the paragraph rather than being left as a
+renderer nothing calls, and so did the now-unmatched `.sbld-strjump` rule — a rule that cannot match
+reads as working styling to everyone who comes after.
+
+### The Next button walks Repetition's five views
+
+Same request as the Activities one, for the same reason. The footer's Next/Back walk
+`stepTabs(<step title>)`; Repetition kept its five views in a private `REP_TABS` + `_repView` pair the
+walker could not see, so Next jumped from Tower links straight to Generate past four screens. The list
+and the selected key move into `STEP_TABS` — ⚠️ not a copy, because a private copy kept in step with a
+shared one is the bug that writes itself. Next now goes Tower links → Zone sequence → Trade sequence →
+Scope per zone → Stacking → Generate, and Back from Generate lands on Stacking.
+
+⚠️ It is deliberately **not** routed through `stTabbed`: all five sub-renderers emit their own `<h2>`,
+so the shell's heading would land a second one directly above it — the exact doubled title fixed above.
+Unifying the two tab treatments (Repetition's pills, Activities' cards) belongs to the typography pass
+(4.1), not to a Next button. The view is now remembered across reloads, which the pills never did.
+
+Deep-link aliases: the three phases aliases (`WBS`, `5PMLC`, `Structure`) no longer ask for a `pmlc`
+tab that was deleted with the tab set — `setStepTabQuiet` ignored it, so it was inert wiring that read
+as live. They resolve to the step, which shows both halves.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · `sql-struct`
+all bodies balanced · inline scripts parse (`new Function`, 0 failures) · CSS brace balance identical to
+pinned `70e7e38` on all three blocks · no NUL bytes · orphaned-`*/` scan at its 2-hit baseline · the
+Next walk simulated against the real `STEP_TABS` extracted from the file. `calendar.js` `?v=` →
+`20260917a` across all three consumers, `modules-grid.js` `?v=` → `20260917zk` (both sort after what the
+remote serves). ⚠️ **The migration has not been run** — the owner runs those himself, and until he does,
+"Add yearly day" stays broken exactly as it is today.
+
 ### 2026-09-17 (s) — The Schedule Setup grids become PDGrid, and two copies of one engine go
 
 Owner: *"Tables should be more readable. Cleanup and follow consistency especially having the excel
