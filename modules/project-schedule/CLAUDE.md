@@ -114,8 +114,13 @@ HEAD rather than waved past, and left alone rather than folded into this change.
 ⚠️ **Not verified signed in.** No real setup has been opened: the walk, the scope grid and the
 Generate step are the shipped renderers executed against fixtures, not a live project.
 
-`MODULE_V` → `20260917zx`, re-derived from the highest token on **any** remote head (`zw`) and
-sort-checked as a plain string, after the four collisions this log has already recorded.
+⚠⚠ `MODULE_V` → `20260917zzb`, and it took TWO re-derivations. `zw` was the highest token on
+any remote head when this was written; by the time it merged, main had run `zx` → `zy` → `zz` →
+`zza` across six commits — **including `20260917zx`, the exact token this branch had picked**. A
+version collision does not conflict on its own (two different values merge cleanly), so the loser's
+bytes would have shipped under a token a browser already holds. `zzb` is past main's `zza`, and is
+sort-checked as a plain string because `zx` sorts *before* `zza` — “take theirs” would have been
+worse than the collision.
 
 ## 2026-09-17 (zv) — Overlapping zones become an error the module can measure; the plan window opens on a zoneless floor with something to draw with; the building is stated in words
 
