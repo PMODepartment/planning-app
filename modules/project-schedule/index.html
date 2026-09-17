@@ -1025,6 +1025,115 @@
     .ps-cal-yr td.num, .ps-cal-yr th.num { text-align:right; }
     .ps-cal-yr tr.wet td:first-child { box-shadow:inset 3px 0 0 #2563eb; }
     .ps-cal-yr tr.dry td:first-child { box-shadow:inset 3px 0 0 #f59e0b; }
+    /* ---- Calendars step: one tile per group of inputs -------------------------------------
+       Owner 2026-09-17: *"place input groups in tiles for easier segregation of input field
+       groups."* The editor was one column of 11 `.pd-field`s; a tile gives each group a name and
+       an edge, so "where do I set the holidays" is answerable without reading every label. */
+    .ps-cal-tile { border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg); background:var(--pd-card);
+                   margin-bottom:12px; overflow:hidden; }
+    .ps-cal-tile > header { padding:9px 12px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); }
+    .ps-cal-tile > header h3 { margin:0; font-size:var(--pd-fs-sm); font-weight:700; letter-spacing:.02em; }
+    .ps-cal-tile > header p { margin:2px 0 0; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .ps-cal-tilebody { padding:11px 12px; }
+    .ps-cal-tilebody > .pd-field:last-child { margin-bottom:0; }
+    .ps-cal-stat { display:inline-flex; align-items:baseline; gap:5px; }
+    .ps-cal-stat b { font-size:var(--pd-fs-stat); font-weight:800; }
+    .ps-cal-stat span { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+
+    /* ---- The working week, as a week ------------------------------------------------------
+       A checkbox row over a time-of-day track: the header answers "is this day worked" and the
+       track answers "between what times", which a row of seven tickboxes and one hours field
+       could not. ⚠️ Heights are in px rather than % because the track is the only thing that
+       establishes the minute scale - a % bar inside an auto-height column has nothing to be a
+       percentage OF. */
+    .ps-cw { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; background:var(--pd-card); }
+    .ps-cw-head { display:flex; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); }
+    .ps-cw-gut { flex:0 0 46px; border-right:1px solid var(--pd-line); }
+    .ps-cw-dh { flex:1 1 0; min-width:0; text-align:center; padding:5px 2px; border-left:1px solid var(--pd-line); }
+    .ps-cw-dh:first-of-type { border-left:0; }
+    .ps-cw-dh label { display:inline-flex; align-items:center; gap:4px; font-size:var(--pd-fs-xs); font-weight:700; cursor:pointer; }
+    .ps-cw-dh small { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-top:1px; }
+    .ps-cw-dh.off { background:repeating-linear-gradient(-45deg,transparent,transparent 4px,var(--pd-line) 4px,var(--pd-line) 5px); }
+    .ps-cw-dh.off label, .ps-cw-dh.off small { opacity:.55; }
+    .ps-cw-body { display:flex; position:relative; }
+    .ps-cw-ticks { flex:0 0 46px; border-right:1px solid var(--pd-line); position:relative; }
+    .ps-cw-tick { position:absolute; left:0; right:3px; text-align:right; font-size:var(--pd-fs-micro);
+                  color:var(--pd-muted); transform:translateY(-50%); }
+    .ps-cw-col { flex:1 1 0; min-width:0; position:relative; border-left:1px solid var(--pd-line); }
+    .ps-cw-col:first-of-type { border-left:0; }
+    .ps-cw-col.off { background:repeating-linear-gradient(-45deg,transparent,transparent 5px,var(--pd-bg) 5px,var(--pd-bg) 10px); }
+    .ps-cw-grid { position:absolute; left:0; right:0; border-top:1px solid var(--pd-line); opacity:.5; pointer-events:none; }
+    .ps-cw-bar { position:absolute; left:3px; right:3px; background:var(--pd-red-light); border:1px solid var(--pd-red);
+                 border-radius:5px; overflow:hidden; }
+    .ps-cw-bar.ghost { background:transparent; border-style:dashed; border-color:var(--pd-line); }
+    .ps-cw-lab { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+                 justify-content:center; font-size:var(--pd-fs-micro); line-height:1.25; color:var(--pd-ink);
+                 pointer-events:none; text-align:center; padding:0 2px; }
+    .ps-cw-bar.ghost .ps-cw-lab { color:var(--pd-muted); }
+    /* ⚠️ 9px tall and 44px wide is under the 44px touch target this app sets elsewhere - a drag
+       handle on a 7-column week has nowhere to take that height from. The day's times are also
+       settable from the dialog above, which IS a full-size control, so the gesture is a shortcut
+       rather than the only way in. */
+    .ps-cw-h { position:absolute; left:0; right:0; height:9px; border:0; padding:0; background:transparent;
+               cursor:ns-resize; touch-action:none; }
+    .ps-cw-h::after { content:''; position:absolute; left:50%; top:50%; width:16px; height:2px; margin:-1px 0 0 -8px;
+                      border-radius:2px; background:var(--pd-red); opacity:.75; }
+    .ps-cw-h-t { top:-1px; } .ps-cw-h-b { bottom:-1px; }
+    .ps-cw-brk { position:absolute; left:3px; right:3px; background:repeating-linear-gradient(-45deg,
+                 var(--pd-line),var(--pd-line) 3px,transparent 3px,transparent 6px);
+                 border-top:1px dashed var(--pd-line); border-bottom:1px dashed var(--pd-line); pointer-events:none; }
+    .ps-cw.dragging, .ps-cw.dragging * { user-select:none; }
+
+    /* ---- Non-working days & seasons, as tables -------------------------------------------- */
+    .ps-cal-tbl { width:100%; border-collapse:collapse; font-size:var(--pd-fs-xs); }
+    .ps-cal-tbl th { text-align:left; font-size:var(--pd-fs-micro); text-transform:uppercase; letter-spacing:.04em;
+                     color:var(--pd-muted); font-weight:700; padding:4px 7px; border-bottom:1px solid var(--pd-line); }
+    .ps-cal-tbl td { padding:4px 7px; border-bottom:1px solid var(--pd-line); vertical-align:middle; }
+    .ps-cal-tbl tr:last-child td { border-bottom:0; }
+    .ps-cal-tbl td.act { text-align:right; white-space:nowrap; width:1%; }
+    .ps-cal-tbl .mut { color:var(--pd-muted); }
+    .ps-cal-tbl tr.builtin td { background:var(--pd-bg); }
+    .ps-cal-src { font-size:var(--pd-fs-micro); font-weight:700; letter-spacing:.04em; color:var(--pd-muted); }
+    .ps-cal-xbtn { border:0; background:transparent; cursor:pointer; color:var(--pd-muted); padding:0 4px; font-size:var(--pd-fs-xs); }
+    .ps-cal-xbtn:hover { color:var(--pd-red); }
+    .ps-cal-yrchip { display:inline-flex; align-items:center; gap:3px; background:var(--pd-warn-bg); color:var(--pd-warn-text);
+                     border:1px solid var(--pd-warn-line); border-radius:var(--pd-radius-pill); padding:0 4px 0 6px;
+                     font-size:var(--pd-fs-micro); font-weight:700; margin-right:3px; }
+    .ps-cal-yrchip button { border:0; background:transparent; cursor:pointer; color:inherit; padding:0 1px; }
+    .ps-cal-addrow { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:8px;
+                     padding-top:8px; border-top:1px dashed var(--pd-line); }
+    .ps-cal-sub { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+                  color:var(--pd-muted); margin:0 0 4px; }
+    .ps-cal-sub:not(:first-child) { margin-top:14px; }
+    .ps-cal-yr td, .ps-cal-yr th { text-align:center; }
+    .ps-cal-yr td:first-child, .ps-cal-yr th:first-child,
+    .ps-cal-yr td:last-child, .ps-cal-yr th:last-child { text-align:left; }
+    /* ⚠⚠ A TILE SCROLLS ITS OWN CONTENT RATHER THAN CRUSHING IT. Measured at 390px before
+       this rule: the non-working-days table forced the page 466px wide, and the week's seven
+       columns — `flex:1 1 0`, so free to shrink to nothing — came out 2px each, which is a week
+       you cannot read OR drag. Scroll-instead-of-reflow is this app's own standing answer for a
+       dense table on a phone (owner 2026-09-11: *"maintain table view even in mobile view and just
+       allow scroll"*), and a week grid is exactly that. The min-widths are what give the scroller
+       something to scroll; without them `overflow-x` changes nothing and the columns still collapse. */
+    .ps-cal-tilebody { overflow-x:auto; }
+    .ps-cal-tbl { min-width:480px; }
+    .ps-cw { min-width:520px; }
+    .ps-cal-yr table { min-width:520px; }
+    @media (max-width: 700px) {
+      .ps-cw-dh label { font-size:var(--pd-fs-micro); }
+      .ps-cw-gut, .ps-cw-ticks { flex-basis:34px; }
+      .ps-cal-addrow .pd-input-sm, .ps-cal-addrow .pd-select { min-height:var(--pd-tap); }
+      /* ⚠⚠ PRE-EXISTING, AND MEASURED BEFORE IT WAS TOUCHED: `.ps-cal-wrap` is a flex ROW
+         whose list is a fixed 250px, so at 390px the editor beside it came out **74px** wide — on
+         HEAD as well as here (HEAD 74px / 470px of page scroll, this build 74px / 466px). Every
+         control in it was therefore a sliver, which is not a phone layout, it is a phone layout
+         that was never looked at. Stacked below 700px, which is where every other two-pane screen
+         in this app already goes. The list keeps its own scroll and is capped so it cannot push
+         the editor off the bottom of a phone. */
+      .ps-cal-wrap { flex-direction:column; }
+      .ps-cal-list { flex:0 0 auto; width:100%; max-height:38vh; }
+      .ps-cal-edit { width:100%; }
+    }
     .ps-ds-rule { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px 12px; margin-bottom:10px; background:var(--pd-bg); }
     .ps-ds-rulehead { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
     .ps-ds-rulehead input { flex:1; }
@@ -3543,6 +3652,19 @@
     .sbld-step.on { background:var(--pd-card); border-color:var(--pd-line); box-shadow:var(--pd-shadow); }
     .sbld-step-n { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); color:var(--pd-muted); font-size:var(--pd-fs-sm); font-weight:700; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--pd-line); }
     .sbld-step.on .sbld-step-n { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    /* A step whose prerequisites are not met yet. ⚠️ OPACITY AND CURSOR ONLY: `.on` and
+       `.locked` are both one class on the same element, so any property both set would be decided
+       by source order rather than by meaning — and a step can be BOTH (delete every activity
+       while standing on Generate), where the active state must still read as active. */
+    .sbld-step.locked { opacity:.55; cursor:not-allowed; }
+    .sbld-step.locked.on { opacity:1; }
+    /* ⚠️ The reason rides in its own column beside the Next button rather than as a third child
+       of .sbld-foot, which is `justify-content:space-between` — a third child there would land
+       BETWEEN Back and Next. */
+    .sbld-nextwrap { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+    /* ⚠️ --pd-warn-text, never --pd-warn: that one is a SURFACE colour and measures 3.46:1 on
+       white, under AA for text this size. */
+    .sbld-blockwhy { font-size:var(--pd-fs-xs); color:var(--pd-warn-text); text-align:right; max-width:46ch; line-height:1.35; }
     .sbld-step-t { font-size:var(--pd-fs-base); font-weight:700; line-height:1.25; }
     .sbld-step-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     /* ⚠️ min-width:0 is load-bearing — this is the 1fr grid child, and without it wide step content
@@ -6128,7 +6250,7 @@
 <script src="../../assets/js/ui.js?v=20260917zg"></script>
 <script src="../../assets/js/notebook.js?v=20260915d"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
-<script src="../../assets/js/calendar.js?v=20260917a"></script>
+<script src="../../assets/js/calendar.js?v=20260918a"></script>
 <script src="../../assets/js/xlgrid.js?v=20260917zj"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -7214,7 +7336,243 @@
     }
 
     var _MO_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var _MO_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var _WD_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    /* Monday-first, which is what a construction week is read as — but each entry carries the JS
+       weekday index, so nothing downstream has to know this list is rotated. */
+    var _WEEK = [[1,'work_mon','mon','Mon'],[2,'work_tue','tue','Tue'],[3,'work_wed','wed','Wed'],
+                 [4,'work_thu','thu','Thu'],[5,'work_fri','fri','Fri'],[6,'work_sat','sat','Sat'],
+                 [0,'work_sun','sun','Sun']];
+    // The window a day gets when one is created for it and nothing better is known.
+    var _DEF_SPEC = { start: '08:00', end: '17:00', breaks: [{ start: '12:00', end: '13:00' }] };
 
+    function _t2m(v) { var m = String(v || '').match(/^(\d{1,2}):(\d{2})$/); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+    function _m2t(m) {
+      m = Math.max(0, Math.round(m));
+      return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    }
+    function _hrsTxt(h) { return (Math.round(h * 100) / 100) + 'h'; }
+    // The spec stored for a weekday, or null. ⚠️ Read through PDCal so the editor and the engine
+    // cannot disagree about what counts as a usable spec — a half-typed time is neither's problem
+    // to define twice.
+    function _spec(dk) { return PDCal.daySpec(draft, dk); }
+    // 'work_mon' -> 'mon'. The two key spaces exist because the week flags are columns and the
+    // schedule is one jsonb; this is the single place that crosses between them.
+    function _dkOf(workKey) {
+      for (var i = 0; i < _WEEK.length; i++) if (_WEEK[i][1] === workKey) return _WEEK[i][2];
+      return null;
+    }
+    /* The times this week is already using, so a new day and the dialog both open on what the
+       calendar says rather than on a hard-coded 08:00. ⚠️ A WORKING day is preferred: a spec left
+       behind on a day that was unticked is kept (so re-ticking restores it) but it is not what the
+       week currently looks like, and seeding from it would spread a shape nobody is using. */
+    function _lastSpec() {
+      var i;
+      for (i = 0; i < _WEEK.length; i++) if (draft[_WEEK[i][1]] && _spec(_WEEK[i][2])) return _spec(_WEEK[i][2]);
+      for (i = 0; i < _WEEK.length; i++) if (_spec(_WEEK[i][2])) return _spec(_WEEK[i][2]);
+      return null;
+    }
+    function _anySpec() { return _WEEK.some(function (d) { return !!_spec(d[2]); }); }
+    // Is every day this calendar works carrying its own times? Only then is the derived average an
+    // honest scalar, because only then is `hours_per_day` never consulted as a fallback.
+    function _fullySpecified() {
+      var any = false;
+      for (var i = 0; i < _WEEK.length; i++) {
+        if (!draft[_WEEK[i][1]]) continue;
+        if (!_spec(_WEEK[i][2])) return false;
+        any = true;
+      }
+      return any;
+    }
+    function _dayHours(dk) {
+      var sp = _spec(dk), h = sp ? PDCal.specHours(sp) : null;
+      return (h != null && h > 0) ? h : (Number(draft.hours_per_day) || 8);
+    }
+
+    /* ==========================================================================================
+       THE WORKING WEEK, DRAWN AS A WEEK
+       ------------------------------------------------------------------------------------------
+       Owner 2026-09-17: *"provide a calendar view of a week from Monday to Sunday. Monday to Sunday
+       are column headers and above them are checkboxes to define if work can be done on those days
+       ... user can drag calendars to extend or not per day."*
+
+       ⚠️ A DAY WITH NO TIMES IS DRAWN AS A GHOST, NOT AS 08:00–17:00. Every calendar saved before
+       today has a working week and no times at all, and painting them a solid bar would put times on
+       screen that are in nobody's database — the planner would read it as stored and it would change
+       the moment somebody dragged it. The ghost says the hours and says the times are not set.
+       ========================================================================================== */
+    var _CW_PX = 13;           // pixels per 30 minutes
+    function _cwBounds() {
+      var lo = 7 * 60, hi = 18 * 60;                     // the window a normal site day sits in
+      _WEEK.forEach(function (d) {
+        var sp = _spec(d[2]); if (!sp) return;
+        var a = _t2m(sp.start), b = _t2m(sp.end);
+        if (a == null || b == null) return;
+        if (b <= a) b += 24 * 60;                        // a night shift
+        lo = Math.min(lo, a); hi = Math.max(hi, b);
+      });
+      lo = Math.floor(lo / 60) * 60; hi = Math.ceil(hi / 60) * 60;
+      if (hi - lo < 6 * 60) hi = lo + 6 * 60;            // never so short the bars have no room
+      return { lo: lo, hi: hi, h: ((hi - lo) / 30) * _CW_PX };
+    }
+    function _cwY(b, mins) { return ((mins - b.lo) / 30) * _CW_PX; }
+
+    function weekHTML() {
+      var b = _cwBounds(), ticks = '';
+      for (var t = b.lo; t <= b.hi; t += 60) {
+        ticks += '<div class="ps-cw-tick" style="top:' + _cwY(b, t) + 'px;">' + _m2t(t) + '</div>';
+      }
+      var grid = '';
+      for (var g = b.lo; g <= b.hi; g += 60) grid += '<div class="ps-cw-grid" style="top:' + _cwY(b, g) + 'px;"></div>';
+
+      return '<div class="ps-cw" id="ps-cw">' +
+        '<div class="ps-cw-head"><div class="ps-cw-gut"></div>' +
+          _WEEK.map(function (d) {
+            var on = !!draft[d[1]], sp = _spec(d[2]);
+            return '<div class="ps-cw-dh' + (on ? '' : ' off') + '">' +
+              '<label title="' + (on ? 'Worked' : 'Not worked') + ' — untick to make ' + _WD_FULL[d[0]] + ' non-working">' +
+                '<input type="checkbox" data-day="' + d[1] + '"' + (on ? ' checked' : '') + '>' + d[3] + '</label>' +
+              '<small>' + (on ? (sp ? _hrsTxt(PDCal.specHours(sp)) : _hrsTxt(_dayHours(d[2])) + ' · no times')
+                              : 'off') + '</small></div>';
+          }).join('') +
+        '</div>' +
+        '<div class="ps-cw-body" style="height:' + b.h + 'px;">' +
+          '<div class="ps-cw-ticks">' + ticks + '</div>' +
+          _WEEK.map(function (d) {
+            var on = !!draft[d[1]];
+            if (!on) return '<div class="ps-cw-col off" data-dk="' + d[2] + '">' + grid + '</div>';
+            var sp = _spec(d[2]);
+            var a, z, ghost = false;
+            if (sp) { a = _t2m(sp.start); z = _t2m(sp.end); if (z <= a) z += 24 * 60; }
+            else { a = _t2m(_DEF_SPEC.start); z = _t2m(_DEF_SPEC.end); ghost = true; }
+            var top = _cwY(b, a), hgt = Math.max(10, _cwY(b, z) - top);
+            var brks = (!ghost && Array.isArray(sp.breaks) ? sp.breaks : []).map(function (br) {
+              var x = _t2m(br.start), y = _t2m(br.end);
+              if (x == null || y == null) return '';
+              if (y <= x) y += 24 * 60;
+              if (x < a) { x += 24 * 60; y += 24 * 60; }
+              var lo2 = Math.max(x, a), hi2 = Math.min(y, z);
+              if (hi2 <= lo2) return '';
+              return '<div class="ps-cw-brk" style="top:' + _cwY(b, lo2) + 'px;height:' + (_cwY(b, hi2) - _cwY(b, lo2)) + 'px;"></div>';
+            }).join('');
+            return '<div class="ps-cw-col" data-dk="' + d[2] + '">' + grid +
+              '<div class="ps-cw-bar' + (ghost ? ' ghost' : '') + '" data-dk="' + d[2] + '"' +
+                ' style="top:' + top + 'px;height:' + hgt + 'px;">' +
+                (ghost ? '' : '<button class="ps-cw-h ps-cw-h-t" data-dk="' + d[2] + '" data-edge="start" title="Drag to change the start"></button>') +
+                '<span class="ps-cw-lab">' + (ghost
+                  ? _hrsTxt(_dayHours(d[2])) + '<br>no times'
+                  : _m2t(a) + '<br>' + _m2t(z % (24 * 60)) + '<br>' + _hrsTxt(PDCal.specHours(sp))) + '</span>' +
+                (ghost ? '' : '<button class="ps-cw-h ps-cw-h-b" data-dk="' + d[2] + '" data-edge="end" title="Drag to change the finish"></button>') +
+              '</div>' + brks + '</div>';
+          }).join('') +
+        '</div></div>';
+    }
+
+    function tileHTML(title, sub, body) {
+      return '<section class="ps-cal-tile"><header><h3>' + esc(title) + '</h3>' +
+        (sub ? '<p>' + sub + '</p>' : '') + '</header>' +
+        '<div class="ps-cal-tilebody">' + body + '</div></section>';
+    }
+
+    /* ---- TILE 3: non-working days ---------------------------------------------------------- */
+    /* ⚠️⚠️ THE BUILT-IN DAYS ARE ROWS IN THE SAME TABLE, which is the owner's *"the default
+       non-working days should be displayed here as pre-defined"*. They are not removable and say so:
+       the Philippine regular holidays are COMPUTED by PDCal (several are Easter-derived), so there
+       is no stored row to delete and a remove button would have to lie.
+       ⚠️ The special days are ONE row, not five. `observe_special_days` is a single boolean on the
+       calendars table, so per-day control does not exist — five individually tickable rows would be
+       five controls where the database has one, and unticking any of them would silently untick the
+       others. Owner: *"no need to differentiate special non-working"* — so they are one line, named. */
+    function nonWorkHTML() {
+      var y = _preYear();
+      var all = (draft.extra_holidays || []).slice();
+      var rec = all.filter(function (h) { return PDCal.isRecurKey(h) || PDCal.isNthKey(h); });
+      var exa = all.filter(function (h) { return !PDCal.isRecurKey(h) && !PDCal.isNthKey(h); }).sort();
+      var L = draft.extra_holiday_labels || {}, X = draft.extra_holiday_excludes || {};
+
+      function yrChips(k) {
+        var list = (X[k] || []).slice().sort();
+        return list.map(function (yy) {
+          return '<span class="ps-cal-yrchip">' + yy +
+            '<button data-unskip="' + esc(k) + '" data-yr="' + yy + '" title="Observe it in ' + yy + ' after all">✕</button></span>';
+        }).join('');
+      }
+      // When a recurring entry lands in the preview year — the check a planner makes before
+      // trusting it. A key that resolves to nothing that year says so instead of showing a blank.
+      function lands(k) {
+        if (PDCal.isNthKey(k)) { var d = PDCal.nthKeyDate(k, y); return d ? Fmt.date(d) : '—'; }
+        var d2 = new Date(y, parseInt(k.slice(2, 4), 10) - 1, parseInt(k.slice(5, 7), 10));
+        return Fmt.date(d2);
+      }
+
+      var reg = PDCal.phRegularHolidayList(y);
+      var spec = PDCal.phSpecialDayList(y);
+
+      var annual =
+        '<table class="ps-cal-tbl"><thead><tr><th>When</th><th>In ' + y + '</th><th>Name</th>' +
+        '<th>Not observed in</th><th class="act"></th></tr></thead><tbody>' +
+        reg.map(function (h) {
+          return '<tr class="builtin"><td class="mut">' + esc(PDCal.holidayLabel('--' + h.date.slice(5))) + '</td>' +
+            '<td class="mut">' + esc(Fmt.date(h.date)) + '</td><td>' + esc(h.name) +
+            ' <span class="ps-cal-src">BUILT IN</span></td><td class="mut">—</td>' +
+            '<td class="act mut" title="Philippine regular holidays are computed, not stored — there is no row to remove.">—</td></tr>';
+        }).join('') +
+        '<tr class="builtin"><td class="mut">5 days · every year</td><td class="mut">' +
+          esc(spec.map(function (h) { return Fmt.date(h.date); }).join(', ')) + '</td>' +
+          '<td><label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;">' +
+          '<input type="checkbox" id="ps-cal-spec"' + (draft.observe_special_days ? ' checked' : '') + '>' +
+          'Philippine special non-working days <span class="ps-cal-src">BUILT IN</span></label>' +
+          '<div class="mut" style="margin-top:2px;">' + esc(spec.map(function (h) { return h.name; }).join(' · ')) + '</div></td>' +
+          '<td class="mut">—</td><td class="act mut">—</td></tr>' +
+        (rec.length ? rec.slice().sort().map(function (k) {
+          return '<tr><td>' + esc(PDCal.holidayLabel(k)) + '</td><td class="mut">' + esc(lands(k)) + '</td>' +
+            '<td><button class="ps-cal-holname" data-lblhol="' + esc(k) + '" title="Click to name this day">' +
+              esc(L[k] || '— name it —') + '</button></td>' +
+            '<td>' + yrChips(k) + '<button class="pd-btn pd-btn-sm" data-skipyr="' + esc(k) +
+              '" title="Mark a single year in which this day is NOT observed">+ year</button></td>' +
+            '<td class="act"><button class="ps-cal-xbtn" data-rmhol="' + esc(k) + '" title="Remove">✕</button></td></tr>';
+        }).join('') : '') +
+        '</tbody></table>' +
+        '<div class="ps-cal-addrow">' +
+          '<select class="pd-select pd-input-sm" id="ps-cal-recmode" style="width:auto;">' +
+            '<option value="d">On a date</option><option value="n">On the Nth weekday</option></select>' +
+          '<select class="pd-select pd-input-sm" id="ps-cal-recmo" style="width:auto;">' +
+            _MO_FULL.map(function (m, i) { return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('') + '</select>' +
+          '<span id="ps-cal-recd"><input class="pd-input pd-input-sm" type="number" min="1" max="31" value="1" id="ps-cal-recdy" style="width:66px;" title="Day of the month"></span>' +
+          '<span id="ps-cal-recn" hidden>' +
+            '<select class="pd-select pd-input-sm" id="ps-cal-recnth" style="width:auto;display:inline-block;">' +
+              '<option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option>' +
+              '<option value="4">4th</option><option value="L">last</option></select> ' +
+            '<select class="pd-select pd-input-sm" id="ps-cal-recwd" style="width:auto;display:inline-block;">' +
+              [1,2,3,4,5,6,0].map(function (w) { return '<option value="' + w + '">' + _WD_FULL[w] + '</option>'; }).join('') +
+            '</select></span>' +
+          '<input class="pd-input pd-input-sm" id="ps-cal-recname" placeholder="Name (optional)" style="flex:1;min-width:120px;">' +
+          '<button class="pd-btn pd-btn-sm" id="ps-cal-recadd">+ Add annual day</button>' +
+        '</div>';
+
+      var _cw = PDCal.collapseHolidays(all, 3);
+      var oneOff =
+        '<table class="ps-cal-tbl"><thead><tr><th>Date</th><th>Name</th><th class="act"></th></tr></thead><tbody>' +
+        (exa.length ? exa.map(function (k) {
+          return '<tr><td>' + esc(Fmt.date(k)) + '</td>' +
+            '<td><button class="ps-cal-holname" data-lblhol="' + esc(k) + '" title="Click to name this day">' +
+              esc(L[k] || '— name it —') + '</button></td>' +
+            '<td class="act"><button class="ps-cal-xbtn" data-rmhol="' + esc(k) + '" title="Remove">✕</button></td></tr>';
+        }).join('') : '<tr><td colspan="3" class="mut">None. A proclamation, a lunar holiday (Eid’l Fitr, Eid’l Adha, Chinese New Year) or a shutdown after a typhoon belongs here.</td></tr>') +
+        '</tbody></table>' +
+        '<div class="ps-cal-addrow">' +
+          '<input class="pd-input pd-input-sm" type="date" id="ps-cal-holnew" style="width:auto;">' +
+          '<input class="pd-input pd-input-sm" id="ps-cal-holname" placeholder="Name (optional)" style="flex:1;min-width:120px;">' +
+          '<button class="pd-btn pd-btn-sm" id="ps-cal-holadd">+ Add date</button>' +
+          (_cw.collapsed ? '<button class="pd-btn pd-btn-sm" id="ps-cal-holfold" title="Turn dates that recur in three or more years into one annual entry each. One-off dates are kept.">Fold ' +
+            _cw.collapsed + ' repeating date' + (_cw.collapsed === 1 ? '' : 's') + ' → ' + _cw.added.length + ' annual</button>' : '') +
+        '</div>';
+
+      return '<p class="ps-cal-sub">Annual — the same day every year</p>' + annual +
+             '<p class="ps-cal-sub">One-off — one date only</p>' + oneOff;
+    }
+
+    /* ---- TILE 4: low-productivity seasons --------------------------------------------------- */
     // Overlapping season months are refused, not averaged: PDCal resolves a date to the
     // FIRST season that claims its month, so an overlap would settle by list order.
     function seasonDupes() {
@@ -7224,156 +7582,149 @@
       });
       return Object.keys(dup).map(Number);
     }
-
-    function seasonHTML(sn, i) {
-      return '<div class="ps-cal-season" data-si="' + i + '">' +
-        '<div class="ps-cal-season-hd">' +
-          '<input class="pd-input pd-input-sm ps-cal-sf" data-f="label" style="flex:1;" placeholder="Wet season — reduced week" value="' + esc(sn.label || '') + '">' +
-          '<button class="pd-btn pd-btn-sm pd-btn-danger ps-cal-sdel" title="Remove this season">✕</button>' +
-        '</div>' +
-        '<div class="ps-cal-mo">' + _MO_ABBR.map(function (mn, k) {
+    /* ⚠️ A season saved before today carries an ABSOLUTE `hours_per_day`, and this table asks for a
+       REDUCTION. It shows the equivalent reduction against the base rather than silently rewriting
+       the row — the conversion only becomes real when the planner edits that cell, because a base
+       that later changes means the two forms genuinely differ. */
+    /* The hours a working day is actually worth, as a set — so a season can say what it leaves
+       rather than guessing. ⚠️ A RANGE when the days differ: with Mon 9h and Sat 4h there is no
+       single "gives" figure, and printing the average as though there were would be a number that
+       is true of no day in the week. */
+    function _dayHoursRange() {
+      var vals = [];
+      _WEEK.forEach(function (d) { if (draft[d[1]]) vals.push(_dayHours(d[2])); });
+      if (!vals.length) return { lo: Number(draft.hours_per_day) || 8, hi: Number(draft.hours_per_day) || 8 };
+      return { lo: Math.min.apply(null, vals), hi: Math.max.apply(null, vals) };
+    }
+    function seasonRowHTML(sn, i) {
+      var rng = _dayHoursRange(), base = rng.hi;
+      var red = (sn.hours_reduction != null && sn.hours_reduction !== '') ? Number(sn.hours_reduction)
+              : ((sn.hours_per_day != null && sn.hours_per_day !== '') ? Math.round((base - Number(sn.hours_per_day)) * 100) / 100 : '');
+      var legacyAbs = (sn.hours_reduction == null || sn.hours_reduction === '') &&
+                      (sn.hours_per_day != null && sn.hours_per_day !== '');
+      var keepsDays = _WEEK.some(function (d) { return sn[d[1]] === true || sn[d[1]] === false; });
+      return '<tr class="ps-cal-srow2" data-si="' + i + '">' +
+        '<td><input class="pd-input pd-input-sm ps-cal-sf" data-f="label" placeholder="Wet season" style="min-width:120px;" value="' + esc(sn.label || '') + '"></td>' +
+        '<td><div class="ps-cal-mo">' + _MO_ABBR.map(function (mn, k) {
           var on = (sn.months || []).indexOf(k + 1) !== -1;
           return '<label class="' + (on ? 'on' : '') + '"><input type="checkbox" class="ps-cal-smo" data-mo="' + (k + 1) + '"' + (on ? ' checked' : '') + '>' + mn + '</label>';
-        }).join('') + '</div>' +
-        '<div class="ps-cal-srow"><span>Hours/day <input class="pd-input pd-input-sm ps-cal-sf" data-f="hours_per_day" type="number" min="1" max="24" step="0.5" style="width:64px;" placeholder="base" value="' + (sn.hours_per_day != null ? sn.hours_per_day : '') + '"></span>' +
-          _CAL_DAYS.map(function (d) {
-            // Tri-state: a season that only shortens the DAY must not have to restate
-            // the week, so "base" means inherit rather than "off".
-            var val = (sn[d[0]] === undefined || sn[d[0]] === null) ? '' : (sn[d[0]] ? '1' : '0');
-            return '<label>' + d[1] + ' <select class="pd-select pd-input-sm ps-cal-sday" data-day="' + d[0] + '" style="width:62px;">' +
-              '<option value=""' + (val === '' ? ' selected' : '') + '>base</option>' +
-              '<option value="1"' + (val === '1' ? ' selected' : '') + '>work</option>' +
-              '<option value="0"' + (val === '0' ? ' selected' : '') + '>off</option></select></label>';
-          }).join('') +
-        '</div></div>';
+        }).join('') + '</div></td>' +
+        '<td style="white-space:nowrap;"><input class="pd-input pd-input-sm ps-cal-sred" type="number" min="0" max="23" step="0.5" style="width:66px;" placeholder="0" value="' + (red === '' ? '' : red) + '"> h/day' +
+          (legacyAbs ? '<div class="mut" title="This season was saved as an absolute ' + esc(sn.hours_per_day) + 'h day. Editing this cell stores it as a reduction.">from ' + esc(sn.hours_per_day) + 'h absolute</div>' : '') +
+          (keepsDays ? '<div class="mut" title="Kept exactly as saved. This table does not edit a season’s working week.">+ a week override</div>' : '') + '</td>' +
+        '<td class="mut">' + (function () {
+          var r = Number(red) || 0;
+          var lo = Math.max(0.5, Math.round((rng.lo - r) * 100) / 100);
+          var hi = Math.max(0.5, Math.round((rng.hi - r) * 100) / 100);
+          return lo === hi ? lo + 'h' : lo + '–' + hi + 'h';
+        })() + '</td>' +
+        '<td class="act"><button class="ps-cal-xbtn ps-cal-sdel" title="Remove this season">✕</button></td></tr>';
+    }
+    function seasonsTileHTML() {
+      var ct = draft.climate_type ? PDCal.climateType(draft.climate_type) : null;
+      var ss = draft.seasons || [];
+      return '<div class="pd-field"><label>Site climate type (PAGASA)</label>' +
+        '<select class="pd-select" id="ps-cal-clim"><option value="">— not set —</option>' +
+        PDCal.PH_CLIMATE_TYPES.map(function (t) {
+          return '<option value="' + t.key + '"' + (draft.climate_type === t.key ? ' selected' : '') + '>' + esc(t.short) + '</option>';
+        }).join('') + '</select>' +
+        '<small style="display:block;color:var(--pd-muted);font-size:var(--pd-fs-xs);margin-top:4px;">' +
+        (ct ? esc(ct.name) + ' — ' + esc(ct.areas) + '.'
+            : 'It is where the SITE is: a Mindanao project planned against a Luzon wet season is the mistake this prevents. It seeds the months below.') +
+        '</small></div>' +
+        '<table class="ps-cal-tbl"><thead><tr><th>Season</th><th>Months</th><th>Reduction</th><th>Gives</th><th class="act"></th></tr></thead><tbody>' +
+        (ss.length ? ss.map(seasonRowHTML).join('')
+          : '<tr><td colspan="5" class="mut">None. A season is a stretch of months the site cannot give a full day in — a monsoon, a shutdown.</td></tr>') +
+        '</tbody></table>' +
+        '<div class="ps-cal-addrow">' +
+          (ct ? '<button class="pd-btn pd-btn-sm" id="ps-cal-seed">Seed wet/dry from ' + esc(ct.short) + '</button>' : '') +
+          '<button class="pd-btn pd-btn-sm" id="ps-cal-saddbtn">+ Add season</button></div>' +
+        (seasonDupes().length ? '<p class="ps-cal-warn">' + seasonDupes().map(function (mo) { return _MO_ABBR[mo - 1]; }).join(', ') +
+          ' claimed by more than one season — saving is blocked until each month belongs to at most one.</p>' : '');
     }
 
+    /* ---- TILE 5: year preview --------------------------------------------------------------- */
+    function _preYear() {
+      var y = parseInt(draft._preYear, 10);
+      return (y >= 1970 && y <= 2200) ? y : new Date().getFullYear();
+    }
     function yearHTML() {
-      var y = new Date().getFullYear(), st = PDCal.yearStats(draft, y), ck = draft.climate_type;
-      return '<div class="ps-cal-yr"><table><thead><tr><th>' + y + '</th><th class="num">Working days</th>' +
-        '<th class="num">Hours</th><th>Season</th><th>Holidays taken out</th></tr></thead><tbody>' +
+      var y = _preYear(), st = PDCal.yearStats(draft, y), ck = draft.climate_type;
+      var totH = Math.round(st.months.reduce(function (a, mm) { return a + mm.hours; }, 0));
+      return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px;flex-wrap:wrap;">' +
+          '<button class="pd-btn pd-btn-sm" id="ps-cal-yprev" title="Previous year">‹</button>' +
+          '<b style="font-size:var(--pd-fs-base);">' + y + '</b>' +
+          '<button class="pd-btn pd-btn-sm" id="ps-cal-ynext" title="Next year">›</button>' +
+          '<span class="ps-cal-stat" style="margin-left:6px;"><b>' + st.total + '</b><span>working days of ' + st.totalCalendar + ' calendar days</span></span>' +
+        '</div>' +
+        '<div class="ps-cal-yr"><table><thead><tr><th>Month</th><th>Calendar days</th><th>Working days</th>' +
+        '<th>Hours</th><th>Season</th><th>Taken out</th></tr></thead><tbody>' +
         st.months.map(function (mm) {
           var seas = ck ? PDCal.phSeasonOf(ck, mm.month) : '';
           return '<tr class="' + seas + '"><td><strong>' + _MO_ABBR[mm.month - 1] + '</strong>' +
             (mm.season ? ' <span class="ps-cal-def" style="float:none;">' + esc(mm.season) + '</span>' : '') + '</td>' +
-            '<td class="num">' + mm.working + '</td><td class="num">' + Math.round(mm.hours) + '</td>' +
+            '<td>' + mm.calendar + '</td><td><strong>' + mm.working + '</strong></td><td>' + Math.round(mm.hours) + '</td>' +
             '<td>' + (ck ? (seas === 'wet' ? 'Wet' : seas === 'dry' ? 'Dry / sunny' : 'Mixed') : '—') + '</td>' +
             '<td style="color:var(--pd-muted);">' + (mm.holidays.length ? mm.holidays.map(function (h) { return esc(h.name); }).join(', ') : '—') + '</td></tr>';
         }).join('') +
-        '<tr><td><strong>Year</strong></td><td class="num"><strong>' + st.total + '</strong></td>' +
-        '<td class="num"><strong>' + Math.round(st.months.reduce(function (a, mm) { return a + mm.hours; }, 0)) + '</strong></td>' +
+        '<tr><td><strong>Year</strong></td><td><strong>' + st.totalCalendar + '</strong></td>' +
+        '<td><strong>' + st.total + '</strong></td><td><strong>' + totH + '</strong></td>' +
         '<td colspan="2"></td></tr></tbody></table></div>';
     }
 
     function editHTML() {
-      var ct = draft.climate_type ? PDCal.climateType(draft.climate_type) : null;
-      return (draft.id ? '' :
-        // Templates on a NEW calendar only — offering them while editing invites one
-        // click that rewrites a pattern activities are already scheduled against.
-        '<div class="pd-field"><label>Start from a template</label><div style="display:flex;flex-wrap:wrap;gap:5px;">' +
+      var full = _fullySpecified(), avg = PDCal.averageDayHours(draft);
+      var nWork = _WEEK.filter(function (d) { return draft[d[1]]; }).length;
+      var noTimes = _WEEK.filter(function (d) { return draft[d[1]] && !_spec(d[2]); });
+
+      /* ---- 1 · NAME ---------------------------------------------------------------------
+         Owner: *"under name group, just leave the name input and here ask if this will be the
+         default calendar for all project activities."* So the hours field that used to sit beside
+         the default tick has moved into the Work Schedule tile, where the week it describes is. */
+      var tName =
+        (draft.id ? '' :
+          '<div class="pd-field"><label>Start from a template</label><div style="display:flex;flex-wrap:wrap;gap:5px;">' +
           PDCal.CALENDAR_TEMPLATES.map(function (t) {
             return '<button class="pd-btn pd-btn-sm ps-cal-tpl" data-tpl="' + t.key + '" title="' + esc(t.note) + '">' + esc(t.name) + '</button>';
           }).join('') + '</div></div>') +
-        '<div class="pd-field"><label>Name</label><input class="pd-input" id="ps-cal-name" value="' + esc(draft.name || '') + '" placeholder="Philippine Standard (6-day, 8h)"></div>' +
-        '<div class="pd-field"><label>Working days</label><div class="ps-cal-days">' +
-          _CAL_DAYS.map(function (d) {
-            return '<label><input type="checkbox" data-day="' + d[0] + '"' + (draft[d[0]] ? ' checked' : '') + '>' + d[1] + '</label>';
-          }).join('') + '</div></div>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Hours per day</label>' +
-          '<input class="pd-input" id="ps-cal-hpd" type="number" min="1" max="24" step="0.5" value="' + (draft.hours_per_day || 8) + '"></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Project default</label>' +
-          '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;"><input type="checkbox" id="ps-cal-def"' + (draft.is_default ? ' checked' : '') + '> Use for activities with none set</label></div></div>' +
-        /* ⚠️⚠️ TWO LISTS, BECAUSE THERE ARE TWO KINDS OF DAY and conflating them is what
-           produced the 226-chip wall. A company holiday is the SAME day every year and should be
-           entered once; a proclamation or a typhoon shutdown belongs to one date and must not
-           repeat. Owner 2026-09-03: *"let's just simplify this by only selecting the relevant days
-           and it will repeat for years since these are regular holidays. Only those special
-           non-working days that need to be exact by its date."*
-           Both live in the same stored array (see PDCal's `--MM-DD` note) — this is a reading of
-           one column, not a second column. */
-        (function () {
-          var _all = (draft.extra_holidays || []).slice();
-          var _rec = _all.filter(function (h) { return PDCal.isRecurKey(h); }).sort();
-          var _exa = _all.filter(function (h) { return !PDCal.isRecurKey(h); }).sort();
-          function chips(list, kind) {
-            if (!list.length) return '<span style="color:var(--pd-muted);font-size:12px;">None.</span>';
-            return list.map(function (h) {
-              /* ⚠ The NAME is the chip when there is one; the date is the tooltip. Clicking the
-               chip body renames it — a second “edit” button on a chip this small would crowd out
-               the remove ✕ it sits beside. */
-            var _lbl = (draft.extra_holiday_labels || {})[h] || '';
-            return '<span class="ps-cal-hol' + (kind === 'r' ? ' is-recur' : '') +
-                (_lbl ? ' is-named' : '') + '">' +
-                '<button class="ps-cal-holname" data-lblhol="' + esc(h) + '" title="' +
-                esc((_lbl ? _lbl + ' · ' : '') + PDCal.holidayWhen(h) +
-                    (_lbl ? ' — click to rename' : ' — click to name this day')) + '">' +
-                esc(PDCal.holidayLabel(h, draft.extra_holiday_labels)) + '</button>' +
-                '<button data-rmhol="' + esc(h) + '" title="Remove">✕</button></span>';
-            }).join('');
-          }
-          // How many exact dates could still be folded, so the button can say what it would do
-          // rather than being a mystery the planner has to press to find out.
-          var _cw = PDCal.collapseHolidays(_all, 3);
-          return '<div class="pd-field"><label>Repeats every year</label>' +
-            '<div class="ps-cal-hols" id="ps-cal-hols-r">' + chips(_rec, 'r') + '</div>' +
-            '<small style="display:block;color:var(--pd-muted);font-size:11.5px;margin-top:4px;">' +
-            'Company and local days that fall on the same date every year — entered once, applied to ' +
-            'every year the schedule reaches. Philippine <em>regular</em> holidays are already built in ' +
-            'and are not listed here.</small>' +
-            '<div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;">' +
-              '<select class="pd-select pd-input-sm" id="ps-cal-recmo" style="width:auto;">' +
-              ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(function (m, i) {
-                return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('') + '</select>' +
-              '<input class="pd-input pd-input-sm" type="number" min="1" max="31" value="1" id="ps-cal-recdy" style="width:70px;">' +
-              '<input class="pd-input pd-input-sm" id="ps-cal-recname" placeholder="Name (optional)" style="flex:1;min-width:130px;">' +
-              '<button class="pd-btn pd-btn-sm" id="ps-cal-recadd">Add yearly day</button>' +
-            '</div></div>' +
-            '<div class="pd-field"><label>One-off non-working dates</label>' +
-            '<div class="ps-cal-hols" id="ps-cal-hols">' + chips(_exa, 'e') + '</div>' +
-            '<small style="display:block;color:var(--pd-muted);font-size:11.5px;margin-top:4px;">' +
-            'Days that belong to one date only — a proclamation, a lunar holiday (Eid’l Fitr, Eid’l ' +
-            'Adha, Chinese New Year), a shutdown after a typhoon.</small>' +
-            '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;"><input class="pd-input pd-input-sm" type="date" id="ps-cal-holnew" style="flex:1;min-width:150px;">' +
-            '<input class="pd-input pd-input-sm" id="ps-cal-holname" placeholder="Name (optional)" style="flex:1;min-width:150px;">' +
-            '<button class="pd-btn pd-btn-sm" id="ps-cal-holadd">Add date</button>' +
-            (_cw.collapsed
-              ? '<button class="pd-btn pd-btn-sm" id="ps-cal-holfold" title="Turn dates that recur in three or more years into one yearly entry each. One-off dates are kept.">' +
-                'Fold ' + _cw.collapsed + ' repeating date' + (_cw.collapsed === 1 ? '' : 's') + ' → ' +
-                _cw.added.length + ' yearly</button>'
-              : '') +
-            '</div></div>';
-        })() +
-        '<div class="pd-field"><label>Site climate type (PAGASA)</label>' +
-          '<select class="pd-select" id="ps-cal-clim"><option value="">— not set —</option>' +
-          PDCal.PH_CLIMATE_TYPES.map(function (t) {
-            return '<option value="' + t.key + '"' + (draft.climate_type === t.key ? ' selected' : '') + '>' + esc(t.short) + '</option>';
-          }).join('') + '</select>' +
-          '<small style="display:block;color:var(--pd-muted);font-size:11.5px;margin-top:4px;">' +
-          (ct ? esc(ct.name) + ' — ' + esc(ct.areas) + '.'
-              : 'Seeds the wet/dry months below and the rain-day allowance in a duration scenario. It is where the SITE is: a Mindanao project planned against a Luzon wet season is the mistake this prevents.') +
-          '</small></div>' +
-        '<div class="pd-field"><label>Philippine special (non-working) days</label>' +
-          '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;"><input type="checkbox" id="ps-cal-spec"' + (draft.observe_special_days ? ' checked' : '') + '> Treat as non-working</label>' +
-          '<small style="display:block;color:var(--pd-muted);font-size:11.5px;margin-top:4px;">Black Saturday, Ninoy Aquino Day, All Saints’, Immaculate Conception, Dec 31. Off by default — a special day is “no work, no pay” rather than a regular holiday and many sites work them.</small></div>' +
-        '<div class="pd-field"><label>Seasonal work patterns</label>' +
-          '<p style="margin:0 0 6px;font-size:12px;color:var(--pd-muted);">A season changes the <em>week itself</em> for the months it covers — a shorter week or shorter days through the monsoon. That is a decision the project has made, so it applies to the live schedule and to every scenario. Rain days are the other half: weather <em>taken</em> from you, set per duration scenario. The two compose.</p>' +
-          (draft.seasons || []).map(seasonHTML).join('') +
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-            (ct ? '<button class="pd-btn pd-btn-sm" id="ps-cal-seed">Seed wet/dry from ' + esc(ct.short) + '</button>' : '') +
-            '<button class="pd-btn pd-btn-sm" id="ps-cal-saddbtn">+ Add season</button></div>' +
-          (seasonDupes().length ? '<p class="ps-cal-warn">' + seasonDupes().map(function (mo) { return _MO_ABBR[mo - 1]; }).join(', ') +
-            ' claimed by more than one season — saving is blocked until each month belongs to at most one.</p>' : '') +
+        '<div class="pd-field"><label>Name</label><input class="pd-input" id="ps-cal-name" value="' + esc(draft.name || '') +
+          '" placeholder="Philippine Standard (6-day, 8h)"></div>' +
+        '<div class="pd-field" style="margin-bottom:0;"><label style="display:flex;align-items:center;gap:6px;font-size:var(--pd-fs-sm);cursor:pointer;">' +
+          '<input type="checkbox" id="ps-cal-def"' + (draft.is_default ? ' checked' : '') + '>' +
+          'Use this calendar for all project activities</label>' +
+          '<small style="display:block;color:var(--pd-muted);font-size:var(--pd-fs-xs);margin-top:4px;">' +
+          'The default is what an activity with no calendar of its own is scheduled on. ' +
+          (draft.is_default && draft._wasDefault ? 'This calendar is already the project default.'
+            : 'Ticking it asks, on save, whether activities already on another calendar should move too.') +
+          '</small></div>';
+
+      /* ---- 2 · WORK SCHEDULE ------------------------------------------------------------ */
+      var tWork = weekHTML() +
+        '<div class="ps-cal-addrow">' +
+          '<button class="pd-btn pd-btn-sm pd-btn-primary" id="ps-cal-wsadd">+ Set a weekly work schedule…</button>' +
+          (_anySpec() ? '<button class="pd-btn pd-btn-sm" id="ps-cal-wsclear" title="Go back to a plain hours-per-day week. The days worked are not changed.">Clear the times</button>' : '') +
+          '<div style="flex:1;"></div>' +
+          (full
+            ? '<span class="ps-cal-stat"><b>' + avg + '</b><span>average hours/day · every day has times, so this is derived</span></span>'
+            : '<span style="display:inline-flex;align-items:center;gap:6px;font-size:var(--pd-fs-xs);">Hours per day ' +
+              '<input class="pd-input pd-input-sm" id="ps-cal-hpd" type="number" min="1" max="24" step="0.5" style="width:74px;" value="' +
+              (draft.hours_per_day || 8) + '"></span>') +
         '</div>' +
-        '<div class="pd-field"><label>Year preview</label>' +
-          '<p style="margin:0 0 6px;font-size:12px;color:var(--pd-muted);">The working days this calendar actually gives. Check it before trusting a finish date to it — a mis-ticked day or an overlapping season is invisible in the fields above and obvious here.</p>' +
-          yearHTML() + '</div>' +
-        (draft.id ? '<div class="pd-field"><label>Assign this calendar to activities</label>' +
-          '<p style="margin:0 0 6px;font-size:12px;color:var(--pd-muted);">A real project runs several calendars at once — exposed trades on one, interior and off-site work on another. This is how you put a trade on this calendar without editing activities one at a time.</p>' +
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
-          '<select class="pd-select pd-input-sm" id="ps-cal-asg" style="flex:1;min-width:180px;"><option value="__all__">Every activity in this project</option>' +
-          workTypeValues().map(function (t) { return '<option value="' + esc(t) + '">Trade: ' + esc(t) + '</option>'; }).join('') + '</select>' +
-          '<button class="pd-btn pd-btn-sm" id="ps-cal-asgbtn">Assign…</button></div>' +
-          '<small style="color:var(--pd-muted);font-size:11.5px;">Counts are shown before anything is written.</small></div>' : '') +
+        (nWork === 0 ? '<p class="ps-cal-warn">No day is worked — a calendar like this can never finish anything, and saving is blocked.</p>' : '') +
+        (noTimes.length && _anySpec()
+          ? '<p class="ps-cal-warn">' + noTimes.map(function (d) { return d[3]; }).join(', ') +
+            ' ' + (noTimes.length === 1 ? 'has' : 'have') + ' no times, so ' + (noTimes.length === 1 ? 'it counts' : 'they count') +
+            ' as ' + (draft.hours_per_day || 8) + 'h from the field above. Set them and the hours become derived.</p>'
+          : '') +
+        '<small style="display:block;color:var(--pd-muted);font-size:var(--pd-fs-xs);margin-top:6px;">' +
+        'Drag a bar’s top or bottom edge to change when the day starts or finishes. ' +
+        'Hours per day is what the resource histogram and cost capacity multiply by — the schedule counts DAYS, so times change hours, not dates.</small>';
+
+      return tileHTML('Name', 'What this calendar is called, and whether it is the project default.', tName) +
+        tileHTML('Work schedule', 'Which days are worked, and between what times.', tWork) +
+        tileHTML('Non-working days', 'Days taken out of the week above — the annual ones and the one-offs.', nonWorkHTML()) +
+        tileHTML('Low-productivity season', 'Months the site can still work, but not for a full day. Stated as the hours/day lost.', seasonsTileHTML()) +
+        tileHTML('Year preview', 'What this calendar actually gives. Check it before trusting a finish date to it — a mis-ticked day or an overlapping season is invisible in the fields above and obvious here.', yearHTML()) +
         '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;">' +
           (draft.id ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="ps-cal-del">Delete…</button>' : '') +
           '<div style="flex:1;"></div><button class="pd-btn pd-btn-primary pd-btn-sm" id="ps-cal-save">Save calendar</button></div>';
@@ -7381,26 +7732,36 @@
 
     function readDraft() {
       var root = m.el;
-      draft.name = root.querySelector('#ps-cal-name').value.trim();
-      draft.hours_per_day = parseFloat(root.querySelector('#ps-cal-hpd').value) || 8;
-      draft.is_default = root.querySelector('#ps-cal-def').checked;
+      var nm = root.querySelector('#ps-cal-name'); if (nm) draft.name = nm.value.trim();
+      /* ⚠⚠ THE HOURS FIELD IS NOT ALWAYS ON SCREEN. Once every working day carries its own
+         times the tile shows the DERIVED average instead of an input, because a typed fallback that
+         nothing can ever consult is a control that does nothing. An unguarded read here would have
+         thrown on exactly the calendars this feature is for — and `readDraft` runs before every
+         render, so the editor would have gone blank rather than merely mis-saved. */
+      var hp = root.querySelector('#ps-cal-hpd');
+      if (hp) draft.hours_per_day = parseFloat(hp.value) || 8;
+      var df = root.querySelector('#ps-cal-def'); if (df) draft.is_default = df.checked;
       var clim = root.querySelector('#ps-cal-clim'); if (clim) draft.climate_type = clim.value || null;
       var spec = root.querySelector('#ps-cal-spec'); if (spec) draft.observe_special_days = spec.checked;
-      // ⚠️ Scope the base-pattern read to the day CHECKBOXES. The season rows also carry
-      // data-day (on their tri-state selects), and a blanket [data-day] sweep would let
-      // a season's "off" overwrite the base week.
+      // ⚠️ Scope the base-pattern read to the day CHECKBOXES carried by the week header.
       root.querySelectorAll('input[type="checkbox"][data-day]').forEach(function (c) { draft[c.dataset.day] = c.checked; });
-      root.querySelectorAll('.ps-cal-season').forEach(function (el) {
+      root.querySelectorAll('.ps-cal-srow2').forEach(function (el) {
         var sn = (draft.seasons || [])[+el.dataset.si]; if (!sn) return;
-        el.querySelectorAll('.ps-cal-sf').forEach(function (f) {
-          if (f.dataset.f === 'hours_per_day') sn.hours_per_day = f.value === '' ? null : (parseFloat(f.value) || null);
-          else sn[f.dataset.f] = f.value;
-        });
+        el.querySelectorAll('.ps-cal-sf').forEach(function (f) { sn[f.dataset.f] = f.value; });
         sn.months = [].slice.call(el.querySelectorAll('.ps-cal-smo')).filter(function (c) { return c.checked; })
           .map(function (c) { return +c.dataset.mo; }).sort(function (a, b) { return a - b; });
-        el.querySelectorAll('.ps-cal-sday').forEach(function (f) {
-          sn[f.dataset.day] = f.value === '' ? null : f.value === '1';
-        });
+        /* ⚠⚠ WRITING THE REDUCTION CLEARS THE OLD ABSOLUTE, and it has to. PDCal reads
+           `hours_reduction` in preference to `hours_per_day`, so leaving both would strand a stale
+           absolute on the row that every other reader of this jsonb still sees — and the moment
+           somebody cleared the reduction it would spring back as the season's hours.
+           ⚠ A season's own WEEK override (its tri-state day flags) is deliberately untouched:
+           this table does not edit it, and rebuilding the row without it would silently delete a
+           week somebody set in the Resource & Role Master. */
+        var rd = el.querySelector('.ps-cal-sred');
+        if (rd) {
+          if (rd.value === '' || isNaN(parseFloat(rd.value))) { delete sn.hours_reduction; }
+          else { sn.hours_reduction = parseFloat(rd.value); delete sn.hours_per_day; }
+        }
       });
     }
 
@@ -7427,6 +7788,13 @@
       root.querySelectorAll('[data-cal]').forEach(function (b) {
         b.onclick = function () {
           draft = JSON.parse(JSON.stringify(CALS.find(function (c) { return c.id === b.dataset.cal; })));
+          /* ⚠ What the flag was WHEN THIS WAS OPENED. Owner 2026-09-17: *"if this was previously
+             unclicked, then clicked, ask user if he wants to change calendar setting of all
+             activities."* That is a TRANSITION, so it needs the value before the planner touched it
+             — asking on every save of an already-default calendar would be a prompt nobody can
+             get rid of. Underscore-prefixed and never in the save payload, which is built from named
+             fields, so it cannot reach the database. */
+          draft._wasDefault = !!draft.is_default;
           render();
           var ed = m.el.querySelector('.ps-cal-edit');
           if (ed && ed.scrollIntoView) { try { ed.scrollIntoView({ block: 'nearest' }); } catch (e) { ed.scrollIntoView(); } }
@@ -7462,23 +7830,56 @@
         var e = root.querySelector(sel);
         if (e) e.onchange = function () { readDraft(); render(); };
       });
+      /* ⚠⚠ TICKING A DAY GIVES IT TIMES, once any other day has them. A half-specified week
+         is the one state where `hours_per_day` is still consulted as a fallback, and a fallback that
+         is also being re-derived from the average on save would drift a little further every time
+         somebody pressed Save. Handing the new day the same window as its neighbours keeps the week
+         whole, so the derived average stays exact.
+         ⚠ Un-ticking KEEPS the spec. It is ignored while the day is not worked (PDCal only asks
+         for hours on a working day), and keeping it means re-ticking restores the times somebody
+         typed rather than silently replacing them with a default. */
       root.querySelectorAll('input[type="checkbox"][data-day]').forEach(function (c) {
-        c.onchange = function () { readDraft(); render(); };
+        c.onchange = function () {
+          readDraft();
+          var dk = _dkOf(c.dataset.day);
+          if (c.checked && dk && _anySpec() && !_spec(dk)) {
+            draft.day_hours = draft.day_hours || {};
+            draft.day_hours[dk] = JSON.parse(JSON.stringify(_lastSpec() || _DEF_SPEC));
+          }
+          render();
+        };
       });
-      root.querySelectorAll('.ps-cal-smo, .ps-cal-sday').forEach(function (e) {
+      root.querySelectorAll('.ps-cal-smo, .ps-cal-sred').forEach(function (e) {
         e.onchange = function () { readDraft(); render(); };
       });
+      // Year preview paging (item 7): the preview year is draft-local and never saved.
+      var yp = root.querySelector('#ps-cal-yprev'), yn = root.querySelector('#ps-cal-ynext');
+      if (yp) yp.onclick = function () { readDraft(); draft._preYear = _preYear() - 1; render(); };
+      if (yn) yn.onclick = function () { readDraft(); draft._preYear = _preYear() + 1; render(); };
+      /* ⚠ The PAGASA preset seeds the WET months only, as a reduction. Its own output is a
+         wet/dry pair carrying absolute hours and a week override, which is the shape this table no
+         longer edits — seeding it verbatim would fill the table with rows whose two editable
+         cells said nothing. The dry block is not a low-productivity season at all: it is the
+         ordinary week, and a row reducing it by zero is a row that does nothing. */
       var seedb = root.querySelector('#ps-cal-seed');
-      if (seedb) seedb.onclick = function () { readDraft(); draft.seasons = PDCal.phSeasonPreset(draft.climate_type, {}); render(); };
+      if (seedb) seedb.onclick = function () {
+        readDraft();
+        var t = PDCal.climateType(draft.climate_type);
+        if (!t || !t.wet.length) { UI.toast('This climate type has no pronounced wet season to seed.', 'warn'); return; }
+        draft.seasons = [{ id: 's' + Math.random().toString(36).slice(2, 8),
+                           label: 'Wet season', months: t.wet.slice(), hours_reduction: 2 }];
+        render();
+        UI.toast('Seeded ' + t.wet.length + ' wet month(s) at 2h/day lost — change the figure to what this site actually loses.', 'ok');
+      };
       var addb = root.querySelector('#ps-cal-saddbtn');
       if (addb) addb.onclick = function () {
         readDraft();
-        draft.seasons = (draft.seasons || []).concat({ id: 's' + Math.random().toString(36).slice(2, 8), label: '', months: [], hours_per_day: null });
+        draft.seasons = (draft.seasons || []).concat({ id: 's' + Math.random().toString(36).slice(2, 8), label: '', months: [] });
         render();
       };
       root.querySelectorAll('.ps-cal-sdel').forEach(function (b) {
         b.onclick = function () {
-          var i = +b.closest('.ps-cal-season').dataset.si;
+          var i = +b.closest('.ps-cal-srow2').dataset.si;
           readDraft();
           draft.seasons = (draft.seasons || []).filter(function (_, k) { return k !== i; });
           render();
@@ -7493,22 +7894,82 @@
         _calSetHolName(v, (body.querySelector('#ps-cal-holname') || {}).value);
         render();
       };
-      // Add a day that repeats every year. Stored as PDCal's `--MM-DD`, so it needs no column of
-      // its own and every other module reading this calendar keeps working.
+      /* An annual day comes in two shapes and the mode select swaps which fields are asked for.
+         ⚠ Shown/hidden rather than re-rendered: a repaint here would rebuild the row the planner
+         is half-way through filling in and throw away the name they had already typed. */
+      var recMode = root.querySelector('#ps-cal-recmode');
+      if (recMode) recMode.onchange = function () {
+        var d1 = root.querySelector('#ps-cal-recd'), n1 = root.querySelector('#ps-cal-recn');
+        if (d1) d1.hidden = recMode.value !== 'd';
+        if (n1) n1.hidden = recMode.value !== 'n';
+      };
+      // Stored as PDCal's `--MM-DD` or `--MM-#N-W`, so neither needs a column of its own and
+      // every other module reading this calendar keeps working.
       var recAdd = root.querySelector('#ps-cal-recadd');
       if (recAdd) recAdd.onclick = function () {
         var mo = parseInt(root.querySelector('#ps-cal-recmo').value, 10) || 1;
-        var dy = parseInt(root.querySelector('#ps-cal-recdy').value, 10) || 1;
-        // ⚠️ Clamped by MONTH LENGTH, in a leap year so 29 Feb is allowed: a stored --02-30
-        // would simply never match and would sit in the list looking as though it did something.
-        var maxD = new Date(2024, mo, 0).getDate();
-        if (dy < 1 || dy > maxD) { UI.toast(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mo - 1] + ' has ' + maxD + ' days.', 'warn'); return; }
-        var key = '--' + String(mo).padStart(2, '0') + '-' + String(dy).padStart(2, '0');
+        var mode = (root.querySelector('#ps-cal-recmode') || {}).value || 'd';
+        var key;
+        if (mode === 'n') {
+          var nth = (root.querySelector('#ps-cal-recnth') || {}).value || '1';
+          var wd = parseInt((root.querySelector('#ps-cal-recwd') || {}).value, 10);
+          if (isNaN(wd)) wd = 1;
+          key = '--' + String(mo).padStart(2, '0') + '-#' + nth + '-' + wd;
+          /* ⚠ A 4th weekday always exists; a 'last' always exists. Both are offered and neither
+             can resolve to nothing, which is why the form stops at 4 rather than offering a 5th
+             that would silently skip the months that have no such week. */
+        } else {
+          var dy = parseInt(root.querySelector('#ps-cal-recdy').value, 10) || 1;
+          // ⚠️ Clamped by MONTH LENGTH, in a leap year so 29 Feb is allowed: a stored --02-30
+          // would simply never match and would sit in the list looking as though it did something.
+          var maxD = new Date(2024, mo, 0).getDate();
+          if (dy < 1 || dy > maxD) { UI.toast(_MO_FULL[mo - 1] + ' has ' + maxD + ' days.', 'warn'); return; }
+          key = '--' + String(mo).padStart(2, '0') + '-' + String(dy).padStart(2, '0');
+        }
         readDraft();
-        draft.extra_holidays = (draft.extra_holidays || []).concat(key).filter(function (x, i, a) { return a.indexOf(x) === i; });
+        if ((draft.extra_holidays || []).indexOf(key) !== -1) { UI.toast(PDCal.holidayLabel(key) + ' is already on the list.', 'warn'); return; }
+        draft.extra_holidays = (draft.extra_holidays || []).concat(key);
         _calSetHolName(key, (body.querySelector('#ps-cal-recname') || {}).value);
         render();
       };
+      /* ---- Excluding a single year from a recurring day ----------------------------------
+         ⚠ Refused when the day does not land on a WORKING day in that year anyway: storing an
+         exclusion that changes nothing reads on screen as a rule that is doing something. */
+      root.querySelectorAll('[data-skipyr]').forEach(function (b) {
+        b.onclick = function () {
+          var k = b.dataset.skipyr;
+          readDraft();
+          psAsk({
+            title: 'Skip a year',
+            text: PDCal.holidayLabel(k) + ' — name a year in which it is NOT observed.',
+            fields: [{ k: 'y', label: 'Year', type: 'number', value: _preYear(), required: true }],
+            ok: 'Skip that year',
+            validate: function (v) {
+              var y = parseInt(v.y, 10);
+              if (!(y >= 1970 && y <= 2200)) return 'Give a four-digit year between 1970 and 2200.';
+              if (((draft.extra_holiday_excludes || {})[k] || []).indexOf(y) !== -1) return y + ' is already skipped.';
+              return null;
+            }
+          }, function (v) {
+            var y = parseInt(v.y, 10);
+            draft.extra_holiday_excludes = draft.extra_holiday_excludes || {};
+            draft.extra_holiday_excludes[k] = (draft.extra_holiday_excludes[k] || []).concat(y);
+            draft._preYear = y; render();
+          });
+        };
+      });
+      root.querySelectorAll('[data-unskip]').forEach(function (b) {
+        b.onclick = function () {
+          readDraft();
+          var k = b.dataset.unskip, y = parseInt(b.dataset.yr, 10);
+          var X = draft.extra_holiday_excludes || {};
+          X[k] = (X[k] || []).filter(function (v) { return Number(v) !== y; });
+          /* ⚠ An empty list is DELETED rather than stored as []. A map of empty arrays grows
+             for ever and reads, to anything inspecting the row, as a set of rules that exist. */
+          if (!X[k].length) delete X[k];
+          draft.extra_holiday_excludes = X; render();
+        };
+      });
       // Fold repeating exact dates into yearly ones. ⚠️ An explicit button, never automatic on a
       // saved calendar: rewriting somebody's stored schedule input without being asked is not a
       // tidy-up, and the count on the button's face says exactly what it will do.
@@ -7571,6 +8032,164 @@
           render();
         };
       });
+      /* ==========================================================================================
+         "+ SET A WEEKLY WORK SCHEDULE" — the bulk way in
+         ------------------------------------------------------------------------------------------
+         Owner 2026-09-17: *"above the calendar, provide button to add weekly work schedule. when
+         button is clicked, ask user to choose among monday to sunday. ask also working schedule from
+         day from what time to what time as well as the break time."*
+         ⚠ It defaults to the days this calendar ALREADY works, not to none: the overwhelmingly
+         common answer is "all of them, like this", and an empty day list would make the first use of
+         the control produce nothing and read as broken.
+         ⚠ Ticking a day here also makes it a WORKING day. The dialog says so, because otherwise
+         setting times on a Sunday would appear to do nothing — hours are only ever asked for on a
+         day the week works.
+         ========================================================================================== */
+      var wsAdd = root.querySelector('#ps-cal-wsadd');
+      if (wsAdd) wsAdd.onclick = function () {
+        readDraft();
+        var seed = _lastSpec() || _DEF_SPEC;
+        var br = (Array.isArray(seed.breaks) && seed.breaks[0]) ? seed.breaks[0] : { start: '', end: '' };
+        var fields = _WEEK.map(function (d) {
+          return { k: 'd_' + d[2], label: _WD_FULL[d[0]], type: 'checkbox', value: !!draft[d[1]] };
+        }).concat([
+          { k: 'start', label: 'Starts', type: 'time', value: seed.start, required: true },
+          { k: 'end', label: 'Finishes', type: 'time', value: seed.end, required: true },
+          { k: 'bs', label: 'Break starts', type: 'time', value: br.start,
+            hint: 'Leave both break fields empty for a day with no break.' },
+          { k: 'be', label: 'Break finishes', type: 'time', value: br.end }
+        ]);
+        psAsk({
+          title: 'Weekly work schedule', wide: true,
+          text: 'The days you tick become working days and take these times. Days you leave unticked are made non-working.',
+          ok: 'Apply to the week',
+          fields: fields,
+          validate: function (v) {
+            if (!_WEEK.some(function (d) { return v['d_' + d[2]]; })) return 'Tick at least one day — a calendar with none can never finish anything.';
+            if (_t2m(v.start) == null || _t2m(v.end) == null) return 'Give both times as HH:MM.';
+            var one = !!(v.bs && String(v.bs).trim()) !== !!(v.be && String(v.be).trim());
+            if (one) return 'A break needs both a start and a finish, or neither.';
+            var spec = { start: v.start, end: v.end, breaks: (v.bs && v.be) ? [{ start: v.bs, end: v.be }] : [] };
+            var h = PDCal.specHours(spec);
+            /* ⚠ A day worth nothing is refused here rather than floored later: it would divide by
+               zero in the resource histogram and report a calendar that gives days but no hours. */
+            if (h == null) return 'Those times cannot be read.';
+            if (h <= 0) return 'Those times leave no working hours — check the break.';
+            if (h > 24) return 'A day cannot be longer than 24 hours.';
+            return null;
+          }
+        }, function (v) {
+          var spec = { start: v.start, end: v.end, breaks: (v.bs && v.be) ? [{ start: v.bs, end: v.be }] : [] };
+          draft.day_hours = draft.day_hours || {};
+          var n = 0;
+          _WEEK.forEach(function (d) {
+            var on = !!v['d_' + d[2]];
+            draft[d[1]] = on;
+            if (on) { draft.day_hours[d[2]] = JSON.parse(JSON.stringify(spec)); n++; }
+          });
+          render();
+          UI.toast(n + ' day' + (n === 1 ? '' : 's') + ' set to ' + v.start + '–' + v.end +
+                   ' · ' + _hrsTxt(PDCal.specHours(spec)) + ' each. Save the calendar to keep it.', 'ok');
+        });
+      };
+      /* ⚠ Clearing the times leaves the DAYS alone and hands the week back to a plain
+         hours-per-day figure — which is what every calendar in this database looked like before
+         today, so it is a real state rather than an undo. The figure it returns to is the average
+         the week was giving, so the calendar keeps saying the same thing it said a moment ago. */
+      var wsClr = root.querySelector('#ps-cal-wsclear');
+      if (wsClr) wsClr.onclick = async function () {
+        readDraft();
+        var avg = PDCal.averageDayHours(draft);
+        if (!(await psOk('Clear the times on every day?', {
+          title: 'Clear the work schedule?', ok: 'Clear the times',
+          note: 'The days worked are not changed. The calendar goes back to a flat <b>' + avg +
+                'h</b> a day — the average it is giving now — so no date moves.'
+        }))) return;
+        draft.day_hours = {}; draft.hours_per_day = avg; render();
+      };
+
+      /* ==========================================================================================
+         DRAGGING A DAY'S EDGE
+         ------------------------------------------------------------------------------------------
+         Owner: *"user can drag calendars to extend or not per day."*
+         ⚠ Pointer events, not mouse events — one gesture for mouse, touch and pen, which is
+         the rule this repo already arrived at for the Issues drag-to-reorder.
+         ⚠⚠ NOTHING RE-RENDERS MID-DRAG. `render()` replaces the markup wholesale, so a repaint
+         on pointermove would destroy the element under the finger and the drag would die on its
+         first movement. The bar is restyled live and the draft is written once, on release.
+         ⚠ Snapped to 15 minutes and floored at 30 minutes of work, so an edge cannot be dragged
+         through its opposite and invert the day.
+         ========================================================================================== */
+      (function wireDrag() {
+        var b = _cwBounds(), cw = root.querySelector('#ps-cw');
+        if (!cw) return;
+        root.querySelectorAll('.ps-cw-h').forEach(function (h) {
+          h.onpointerdown = function (ev) {
+            ev.preventDefault(); ev.stopPropagation();
+            var dk = h.dataset.dk, edge = h.dataset.edge, sp = _spec(dk);
+            if (!sp) return;
+            var bar = h.closest('.ps-cw-bar'), col = h.closest('.ps-cw-col');
+            if (!bar || !col) return;
+            var a0 = _t2m(sp.start), z0 = _t2m(sp.end); if (z0 <= a0) z0 += 24 * 60;
+            var a = a0, z = z0, y0 = ev.clientY;
+            cw.classList.add('dragging');
+            try { h.setPointerCapture(ev.pointerId); } catch (e) {}
+            /* ⚠⚠ THE EDGE MOVES BY THE DELTA, NOT TO THE CURSOR. Resolving an absolute
+               position under the pointer looks equivalent and is not: the handle is 9px tall and
+               straddles the edge, so the press itself lands a few minutes off it and the edge would
+               JUMP by up to a snap step before the planner had moved at all. Found by driving the
+               real gesture in a browser — a 26px drag (exactly one hour on this scale) was landing
+               45 minutes out, and reading the code would not have shown it. */
+            function at(clientY, from) {
+              var mins = from + ((clientY - y0) / _CW_PX) * 30;
+              return Math.round(mins / 15) * 15;
+            }
+            function move(e2) {
+              var v = at(e2.clientY, edge === 'start' ? a0 : z0);
+              if (edge === 'start') a = Math.max(b.lo, Math.min(v, z - 30));
+              else z = Math.min(b.hi, Math.max(v, a + 30));
+              bar.style.top = _cwY(b, a) + 'px';
+              bar.style.height = Math.max(10, _cwY(b, z) - _cwY(b, a)) + 'px';
+              var lab = bar.querySelector('.ps-cw-lab');
+              if (lab) lab.innerHTML = _m2t(a) + '<br>' + _m2t(z % (24 * 60)) + '<br>' +
+                _hrsTxt(PDCal.specHours({ start: _m2t(a), end: _m2t(z % (24 * 60)), breaks: sp.breaks }) || 0);
+            }
+            function up() {
+              h.onpointermove = null; h.onpointerup = null; h.onpointercancel = null;
+              cw.classList.remove('dragging');
+              try { h.releasePointerCapture(ev.pointerId); } catch (e) {}
+              if (a === a0 && z === z0) { render(); return; }
+              readDraft();
+              draft.day_hours = draft.day_hours || {};
+              var next = { start: _m2t(a), end: _m2t(z % (24 * 60)), breaks: (sp.breaks || []).slice() };
+              /* ⚠ A break left outside the new window would silently stop counting — the
+                 engine clips it to the window, so it would subtract nothing and the day would get
+                 an hour longer than the planner expected. Dropped, and said out loud. */
+              var kept = next.breaks.filter(function (br) {
+                var x = _t2m(br.start), y = _t2m(br.end);
+                if (x == null || y == null) return false;
+                if (y <= x) y += 24 * 60;
+                return Math.min(y, z) > Math.max(x, a);
+              });
+              var lost = next.breaks.length - kept.length;
+              next.breaks = kept;
+              draft.day_hours[dk] = next;
+              render();
+              if (lost) UI.toast(lost + ' break' + (lost === 1 ? '' : 's') + ' fell outside the new hours and ' +
+                                 (lost === 1 ? 'was' : 'were') + ' dropped.', 'warn');
+            }
+            /* ⚠ pointercancel commits nothing and repaints: an interrupted gesture (a call, a
+               scroll taking over) must not write a half-dragged edge the planner never released. */
+            h.onpointermove = move;
+            h.onpointerup = up;
+            h.onpointercancel = function () {
+              h.onpointermove = null; h.onpointerup = null; h.onpointercancel = null;
+              cw.classList.remove('dragging'); render();
+            };
+          };
+        });
+      })();
+
       var saveBtn = root.querySelector('#ps-cal-save');
       if (saveBtn) saveBtn.onclick = async function () {
         readDraft();
@@ -7591,12 +8210,59 @@
         var seasons = (draft.seasons || []).filter(function (x) { return x.months && x.months.length; }).map(function (x) {
           var o = { id: x.id || ('s' + Math.random().toString(36).slice(2, 8)),
                     label: (x.label || '').trim() || 'Season', months: x.months.slice() };
-          if (x.hours_per_day != null && x.hours_per_day !== '') o.hours_per_day = Number(x.hours_per_day);
+          if (x.hours_reduction != null && x.hours_reduction !== '') o.hours_reduction = Number(x.hours_reduction);
+          else if (x.hours_per_day != null && x.hours_per_day !== '') o.hours_per_day = Number(x.hours_per_day);
           _CAL_DAYS.forEach(function (d) { if (x[d[0]] === true || x[d[0]] === false) o[d[0]] = x[d[0]]; });
           return o;
         });
-        var payload = { project_id: pid, name: draft.name, hours_per_day: draft.hours_per_day,
+        /* ⚠⚠ A REDUCTION AT OR PAST THE BASE WOULD GIVE A 0-HOUR WORKING DAY, which divides by
+           zero in the resource histogram and reports a calendar that gives days but no hours. PDCal
+           floors it defensively; this refuses it at the door, where the planner can see which season
+           and what the base is. */
+        /* ⚠ Measured against the SHORTEST working day, not the average or the longest: a
+           reduction that empties Saturday would otherwise pass because Monday survives it, and the
+           calendar would report a Saturday worth nothing. */
+        var _shortest = _dayHoursRange().lo;
+        var badRed = seasons.filter(function (x) {
+          return x.hours_reduction != null && Number(x.hours_reduction) >= _shortest;
+        });
+        if (badRed.length) {
+          UI.toast('“' + badRed[0].label + '” takes away ' + badRed[0].hours_reduction +
+            'h, and the shortest day this calendar works is ' + _shortest +
+            'h — a season reduces a day, it cannot end it.', 'warn');
+          return;
+        }
+        /* ⚠⚠ `hours_per_day` IS DERIVED ONLY WHEN IT IS NEVER CONSULTED. Once every working
+           day carries its own times the scalar is unused as a fallback, so writing the average makes
+           it the honest single number for the three other readers in this app that multiply it by a
+           day count (the FTE histogram, resource capacity, `workingHoursInRange`). With a day still
+           lacking times the field IS the fallback for that day, so re-deriving it would move a
+           number the planner typed — a little further on every save. */
+        var derived = _fullySpecified();
+        var hpd = derived ? PDCal.averageDayHours(draft) : (Number(draft.hours_per_day) || 8);
+        /* ⚠ Only the days this calendar WORKS are stored. A spec left behind on an unticked day
+           is kept in the draft so re-ticking restores it, but persisting it would leave the row
+           carrying times for a day it does not work — which reads, to anything inspecting the
+           table, as a week that is not the week. */
+        var dayHours = {};
+        _WEEK.forEach(function (d) {
+          if (!draft[d[1]]) return;
+          var sp = PDCal.daySpec(draft, d[2]);
+          if (sp) dayHours[d[2]] = { start: sp.start, end: sp.end,
+                                     breaks: (Array.isArray(sp.breaks) ? sp.breaks : []).slice() };
+        });
+        /* ⚠ An exclusion whose day is no longer on the list is dropped rather than stored: a
+           rule about a holiday nobody observes any more is invisible in the UI and would come back
+           to life the day somebody re-added that date. */
+        var excl = {}, _hset = {};
+        (draft.extra_holidays || []).forEach(function (k) { _hset[k] = 1; });
+        Object.keys(draft.extra_holiday_excludes || {}).forEach(function (k) {
+          var v = (draft.extra_holiday_excludes[k] || []).map(Number).filter(function (y) { return y >= 1970 && y <= 2200; });
+          if (_hset[k] && v.length) excl[k] = v.filter(function (y, i, a) { return a.indexOf(y) === i; }).sort();
+        });
+        var payload = { project_id: pid, name: draft.name, hours_per_day: hpd,
           extra_holidays: draft.extra_holidays || [], extra_holiday_labels: draft.extra_holiday_labels || {},
+          day_hours: dayHours, extra_holiday_excludes: excl,
           is_default: !!draft.is_default,
           seasons: seasons, observe_special_days: !!draft.observe_special_days,
           climate_type: draft.climate_type || null };
@@ -7639,42 +8305,72 @@
           }
           /* ⚠ Named by its own migration, never a generic “run the migrations” — a hint that
              points at the wrong file sends whoever reads it hunting in it. */
+          /* ⚠ Named by its own migration, never a generic “run the migrations” — a hint that
+             points at the wrong file sends whoever reads it hunting in it. Two migrations can be
+             involved now, so each dropped column names the one that adds it. */
           if (_dropped.length) {
+            var _mig = { extra_holiday_labels: 'migrations/2026-09-17-calendar-holiday-labels.sql',
+                         day_hours: 'migrations/2026-09-17-calendar-day-hours.sql',
+                         extra_holiday_excludes: 'migrations/2026-09-17-calendar-day-hours.sql' };
+            var _files = _dropped.map(function (c) { return _mig[c]; }).filter(Boolean)
+              .filter(function (f, i, a) { return a.indexOf(f) === i; });
             UI.toast('Saved, but this database has no ' + _dropped.join(', ') +
-              ' column — the day names were NOT stored. Run migrations/2026-09-17-calendar-holiday-labels.sql, then save again.', 'warn');
+              ' column, so that part was NOT stored. Run ' + (_files.join(' and ') || 'the outstanding migration') +
+              ', then save again.', 'warn');
           }
           CALS.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
           _wdCache = {};   // capacity maths caches working days per calendar+month
-          UI.toast('Calendar saved', 'ok'); render();
+          UI.toast('Calendar saved', 'ok');
+          /* ==========================================================================================
+             MADE THE DEFAULT — SHOULD EVERYTHING ELSE MOVE TOO?
+             ------------------------------------------------------------------------------------------
+             Owner 2026-09-17: *"if this was previously unclicked, then clicked, ask user if he wants
+             to change calendar setting of all activities."*
+             ⚠ ONLY ON THE TRANSITION. Asking on every save of a calendar that is already the
+             default is a prompt with no off switch.
+             ⚠⚠ AND ONLY ABOUT THE ACTIVITIES THAT CARRY A DIFFERENT CALENDAR. An activity with
+             NONE already follows the default — it moved the moment this was ticked, with nothing to
+             write. Offering to “move all activities” would count those too and report a number far
+             larger than the change actually is.
+             ========================================================================================== */
+          var _becameDefault = payload.is_default && !draft._wasDefault;
+          draft._wasDefault = !!payload.is_default;
+          render();
+          if (_becameDefault) {
+            var others = rows.filter(function (r) {
+              return !isWbs(r) && r.calendar_id && r.calendar_id !== draft.id;
+            });
+            var none = rows.filter(function (r) { return !isWbs(r) && !r.calendar_id; }).length;
+            if (others.length) {
+              if (await psOk('Move ' + others.length + ' activity/activities onto “' + draft.name + '”?', {
+                title: 'This is now the project default', ok: 'Move them too', cancel: 'Leave them as they are',
+                note: '<b>' + none + '</b> activit' + (none === 1 ? 'y has' : 'ies have') + ' no calendar of their own and already follow the default — nothing is written for those. ' +
+                      'The <b>' + others.length + '</b> counted here are explicitly on another calendar. ' +
+                      'Moving them changes which days their durations are counted in, so forecast dates will move on the next schedule run. Undoable (Ctrl+Z).'
+              })) {
+                var ok2 = 0, bad2 = 0;
+                for (var i2 = 0; i2 < others.length; i2++) {
+                  (await persist(others[i2].id, { calendar_id: draft.id })) ? ok2++ : bad2++;
+                }
+                rebuild(true); renderAll();
+                UI.toast(ok2 + ' activit' + (ok2 === 1 ? 'y' : 'ies') + ' moved onto “' + draft.name + '”' +
+                         (bad2 ? ', ' + bad2 + ' refused' : ''), bad2 ? 'warn' : 'ok');
+              }
+            } else if (none) {
+              UI.toast('“' + draft.name + '” is now the default — ' + none + ' activit' +
+                       (none === 1 ? 'y' : 'ies') + ' with no calendar of their own now follow it.', 'ok');
+            }
+          }
         } catch (e) { UI.toast(e.message, 'error'); }
       };
-      var asg = root.querySelector('#ps-cal-asgbtn');
-      if (asg) asg.onclick = async function () {
-        var pickv = root.querySelector('#ps-cal-asg').value;
-        // ⚠️ Leaf activities only. A WBS summary has no duration of its own — its dates
-        // are rolled up from its children — so putting a calendar on one would suggest a
-        // control that does nothing.
-        var targets = rows.filter(function (r) {
-          if (isWbs(r)) return false;
-          return pickv === '__all__' ? true : (workOf(r) || '') === pickv;
-        });
-        var already = targets.filter(function (r) { return r.calendar_id === draft.id; }).length;
-        if (!targets.length) { UI.toast('No activities match that selection.', 'warn'); return; }
-        if (!(await psOk('Put ' + targets.length + ' activity/activities on \u201c' + draft.name + '\u201d?', {
-            title: 'Assign this calendar?', ok: 'Assign the calendar', danger: false,
-            note: already + ' already use it. This changes which days their durations are counted in, ' +
-              'so forecast dates will move on the next schedule run. Undoable (Ctrl+Z).'
-          }))) return;
-        var ok = 0, bad = 0;
-        for (var i = 0; i < targets.length; i++) {
-          if (targets[i].calendar_id === draft.id) { ok++; continue; }
-          var good = await persist(targets[i].id, { calendar_id: draft.id });
-          good ? ok++ : bad++;
-        }
-        rebuild(true); renderAll();
-        UI.toast(ok + ' activities on "' + draft.name + '"' + (bad ? ', ' + bad + ' failed' : ''), bad ? 'warn' : 'ok');
-        render();
-      };
+      /* ⚠⚠ THE “ASSIGN THIS CALENDAR TO ACTIVITIES” CONTROL IS GONE, and its handler with it.
+         Owner 2026-09-17: *"no need for the assignment. this should be done as default or per
+         activity."* The two routes that remain are the ones the schedule already had: make it the
+         default (which is asked about on save, above), or set `calendar_id` on the activity itself.
+         A third, trade-shaped bulk write was a way to reach the same column that nothing else in the
+         module knew about. The handler is deleted rather than left bound to an id no markup carries
+         — which is the shape this module has shipped twice and paid for both times.
+         ⚠ `workTypeValues()` still has other callers; nothing else was removed with it. */
       var del = root.querySelector('#ps-cal-del');
       if (del) del.onclick = async function () {
         // ⚠️ Refused while anything points at it. The FK is `on delete set null`, so the
@@ -8186,7 +8882,7 @@
           DSCN.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === draft.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
           '<option value="__new__">— New scenario —</option></select></div>' : '') +
         '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Name</label><input class="pd-input" id="ps-ds-name" value="' + esc(draft.name || '') + '" placeholder="Wet season 2027"></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Working calendar <button class="pd-btn pd-btn-sm" id="ps-ds-editcal" style="float:right;padding:0 8px;" title="Same editor as the Working Calendars view — opened here so you do not lose these rules">Edit calendars…</button></label>' +
+        '<div class="pd-field" style="flex:1;"><label>Working calendar <button class="pd-btn pd-btn-sm" id="ps-ds-editcal" style="float:right;padding:0 8px;" title="Same editor as the Schedule Setup — Calendars step, opened here so you do not lose these rules">Edit calendars…</button></label>' +
         '<select class="pd-select" id="ps-ds-cal">' + calOpts(draft.calendar_id) + '</select></div></div>' +
         '<div class="pd-field"><label>Notes</label><input class="pd-input" id="ps-ds-desc" value="' + esc(draft.description || '') + '"></div>' +
         '<div class="ps-ds-rules">' + dsRules(draft).map(ruleHTML).join('') +
@@ -10383,7 +11079,8 @@
         (f.hint ? '<p class="psask-hint">' + f.hint + '</p>' : '') + '</div>';
     } else {
       ctl = '<input class="pd-input" id="' + id + '" data-k="' + esc(f.k) + '" type="' +
-        (f.type === 'number' ? 'number' : (f.type === 'color' ? 'color' : 'text')) + '"' +
+        (f.type === 'number' ? 'number' : (f.type === 'color' ? 'color'
+          : (f.type === 'time' ? 'time' : 'text'))) + '"' +
         (f.type === 'number' && f.min != null ? ' min="' + esc(f.min) + '"' : '') +
         (f.type === 'number' && f.max != null ? ' max="' + esc(f.max) + '"' : '') +
         ' value="' + esc(f.value == null ? '' : f.value) + '" placeholder="' + esc(f.placeholder || '') + '">';
@@ -12086,7 +12783,7 @@
     });
     // ⚠️ THE MENU NO LONGER OFFERS THE EDITOR, ONLY THE WAY TO IT. Owner 2026-09-02: the location
     // breakdown *setup* belongs to the Schedule Setup's Floors & Zones step and nowhere else — the
-    // levels are what steps 2–7 and the push are built on, so defining them from a grouping menu on
+    // levels are what the later steps and the push are built on, so defining them from a grouping menu on
     // another screen put the same decision in two places. This note is the signpost that replaces it.
     if (!locDims.length) h += '<div class="ps-gm-note">No location levels defined yet — define them in <strong>Schedule Setup › Floors &amp; Zones</strong> to group by location.</div>';
     h += '<div class="ps-gm-sec">View</div>' +
@@ -35961,7 +36658,7 @@
         watch: ['The two paths have <b>different steps</b>. Switching mode later keeps what you typed but changes the rail.'],
         done: 'A mode is chosen and the rail below it has filled in.'
       },
-      'Working calendars': {
+      'Calendars': {
         why: 'Which days count as work. Every duration in this setup is in WORKING days, so this decides what a 5-day activity means on a calendar.',
         how: ['Set the working week and the daily hours.', 'Add the holidays this project observes.',
               'Add <b>seasons</b> (a rainy season, a shutdown) if they change what is workable.'],
@@ -35988,25 +36685,35 @@
                 '⚠️ Do not add a level you will not sequence: every extra level multiplies the activities the push writes.'],
         done: 'Each trade\u2019s floors exist, in the right order, with zone codes that match across floors.'
       },
-      'Structure': {
-        why: 'Two views of one breakdown. <b>5PMLC</b> is the project\u2019s live branch tree; <b>Construction Library</b> is the places and groupings that end up inside its Execution Phase.',
-        how: ['Open <b>5PMLC</b> first to see what the project already has.',
-              'Use <b>Construction Library</b> to shape how the generated activities will be grouped.'],
-        watch: ['⚠️ 5PMLC edits the <b>live</b> tree immediately; the Library edits this setup\u2019s draft. They are different things on one screen.',
-                'The push creates the branches this setup needs and reuses the ones already there — it does not duplicate them.'],
-        done: 'You can see where the generated activities are going to land.'
+      'Towers': {
+        why: 'How many buildings this project has, and — where there is more than one — where each of them stands. A floor is laid out per (trade, tower), so this list is what the next step hangs everything off.',
+        how: ['Press <b>+ Tower</b> once per building, giving each a name and a short code.',
+              'A tower that <b>repeats</b> another: name it here, then fill it in from the original with <b>Tower options › Copy floors from another tower…</b> once that one is laid out.',
+              'With more than one tower, open <b>Site plan…</b> and trace one area per tower on the site drawing.'],
+        watch: ['⚠️ The <b>short code</b> is built into every generated activity id and location label — keep it short and unique.',
+                '⚠️ There is no separate "tower type" field. Copying one tower into another is how a repeated type is expressed.',
+                '⚠️ The site plan joins on the tower <b>names</b>: an area traced under a name no tower carries draws nothing in the Vertical Stacking.',
+                'A schedule that already carries towers this setup has never named is reported on the bar — add them with <b>+ Tower</b> so the names match.'],
+        done: 'Every building on this project is named, and on a multi-tower job each one is traced on the site plan.'
       },
-      'Repetition': {
-        why: 'How the building repeats — the tabs across the top are four questions about one subject: which towers interface, in what order the locations are built, in what order the trades run inside a location, and what applies where. What that produces is drawn on the Generate step.',
+      'Location Sequence': {
+        why: 'Where the work goes next — which tower hands off to which, and in what order the locations inside a tower are built. What that produces is drawn on the Generate step.',
         how: ['<b>Tower Sequence</b> — how the towers meet in time (a shared podium, one tower handing off to another). Skip it on a single-tower job.',
-              '<b>Zone sequence</b> — which location follows which. Use <b>Auto-trace</b> (below) rather than drawing it by hand.',
-              '<b>Trade sequence</b> — how the class codes run inside one location. <b>Auto-chain</b> links a trade\u2019s codes back-to-back with the relationship in the dropdown beside it.',
-              '<b>Scope per zone</b> — tick which activities apply to each location. Everything applies everywhere until you say otherwise.',
-              '<b>Next</b> walks these four in order before it leaves the step — the button names the view it is about to open.'],
-        watch: ['<b>Linking by hand</b> (Zone and Trade sequence): click one or more <b>sources</b> (red outline) \u2192 <b>right-click</b> to confirm \u2192 click one or more <b>destinations</b> (blue dashed) \u2192 <b>right-click</b> again \u2192 pick the relationship (FS / SS / FF / SF) and lag. Every source links to every destination.',
+              '<b>Zone sequence</b> — which location follows which. Use <b>Auto-trace</b> rather than drawing it by hand.',
+              '<b>Next</b> walks both views before it leaves the step — the button names the view it is about to open.'],
+        watch: ['<b>Linking by hand</b>: click one or more <b>sources</b> (red outline) → <b>right-click</b> to confirm → click one or more <b>destinations</b> (blue dashed) → <b>right-click</b> again → pick the relationship (FS / SS / FF / SF) and lag. Every source links to every destination.',
                 '<b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> and <b style="color:#e08a1e">successors</b>. Click an arrow to edit or unlink it. <b>Reset selection</b> cancels.',
                 '⚠️⚠️ <b>Auto-trace replaces every link</b> in Zone sequence. Run it FIRST, then adjust by hand — not the other way round.'],
         done: 'The vertical stacking on the Generate step climbs the building the way you would describe it out loud.'
+      },
+      'Activity Sequence': {
+        why: 'What order the work happens in once it is inside a place — how the class codes run through one location, and which of them apply where.',
+        how: ['<b>Trade sequence</b> — how the class codes run inside one location. <b>Auto-chain</b> links a trade’s codes back-to-back with the relationship in the dropdown beside it.',
+              '<b>Scope per zone</b> — tick which activities apply to each location. Everything applies everywhere until you say otherwise.',
+              '<b>Next</b> walks both views before it leaves the step.'],
+        watch: ['The sequence <b>and</b> the durations are per <b>level type</b> (basement / podium / typical / roof deck) — a duration typed while a category is selected applies to that category only.',
+                '<b>Linking by hand</b> works exactly as it does in Location Sequence: sources → right-click → destinations → right-click → relationship and lag.'],
+        done: 'Each trade’s codes run in the order they are actually built, and nothing is scheduled somewhere it does not happen.'
       },
       'Project phases': {
         why: 'The lifecycle either side of construction — Initiation, Planning, Close-out — as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.',
@@ -37537,11 +38244,16 @@
        empty string for a name it cannot find, and a blank where a step number belongs reads as a
        broken reference — so 'Tower links' is kept beside its new name, and 'Stacking' now points
        at Generate, which is where the vertical stacking actually is. */
-    var STEP_ALIAS = { 'Tower Sequence': 'Repetition', 'Tower links': 'Repetition',
-                       'Zone sequence': 'Repetition',
+    /* ⚠ Every retired or renamed title on the left resolves to the step that CONTAINS it now.
+       'Repetition' split in two on 2026-09-17, so its four view titles go to whichever of the
+       two took them; 'Working calendars' was renamed; 'Stacking' moved to Generate. */
+    var STEP_ALIAS = { 'Working calendars': 'Calendars',
+                       'Repetition': 'Location Sequence',
+                       'Tower Sequence': 'Location Sequence', 'Tower links': 'Location Sequence',
+                       'Zone sequence': 'Location Sequence',
+                       'Trade sequence': 'Activity Sequence', 'Scope per zone': 'Activity Sequence',
                        'Structure': 'Project phases', '5PMLC': 'Project phases',
                        'Construction Library': 'Activities',
-                       'Trade sequence': 'Repetition', 'Scope per zone': 'Repetition',
                        'Stacking': 'Generate' };
     function _stepNo(t) {
       var names = STEPS.map(function (x) { return x.t; });
@@ -37565,74 +38277,45 @@
        of thing that reads fine and breaks one caller. */
     var STEPS = [];
     var STEP_START = { t: 'Start', s: 'Import, or build new', fn: stStart };
-    // The generation path. ⚠ It was ten steps and is SIX — Structure merged into Project Phases
-    // and the Library became a tab of Activities. Count it here, never in prose.
+    /* ⚠️⚠️ NINE STEPS, AND THE SHAPE IS THE OWNER'S OWN (2026-09-17). Two changes, each
+       undoing a merge that had put two different questions on one screen:
+         • TOWERS came OUT of Floors & Zones. "How many buildings are there, and where do they
+           stand" is a statement about the project; "what is inside this one" is a statement about
+           one building. See stTowers.
+         • REPETITION SPLIT IN TWO. Its four views were Tower Sequence, Zone sequence, Trade
+           sequence and Scope per zone — the first two are about WHERE the work goes next, the
+           last two about WHAT ORDER the work happens in inside a place. Location Sequence and
+           Activity Sequence.
+       ⚠️ Nothing indexes these by number: `_stepNo(title)` looks them up by TITLE and every
+       cross-reference in the module goes through it, so all the "see step 7" text renumbers
+       itself. `STEP_ALIAS` keeps every retired or renamed title resolving to a real number. */
     var STEPS_NEW = [
-      /* ⚠️⚠️ THE WBS STEP IS GONE FROM HERE — IT IS A VIEW OF `Structure` NOW.
-         Owner 2026-09-08: *"can you merge the WBS in step 2 into step 6— Call the view for the
-         step 2 as 5PMLC, and step 6 as Construction Library."* See stTabbed for the whole
-         rationale, for what the merge COSTS, and for what "updated live" can honestly mean when
-         one view edits the live tree and the other edits this setup's draft.
-         ⚠️ The reasoning that put it first is kept below rather than deleted, because it is still
-         true about the TREE and it is why 5PMLC is the merged step's DEFAULT view: arriving at the
-         step still shows what already exists before anything new is described. What changed is
-         that it no longer costs a rail entry of its own to say so.
-         ⚠️ Old deep links keep working: gotoStep('WBS') and gotoStep('Library') resolve to this
-         step and select the matching view (see the public gotoStep).
-
-         --- the original note, on why the tree came first ---
-         Owner 2026-09-03: *"Is WBS really at the end of
-         the Schedule Setup? or this should be at the beginning? Let's think about this."*
-
-         Thinking about it, the answer turns on something specific to THIS step: unlike every other
-         step, it is not data entry. Steps 3-11 fill in `cfg` and the Generate step reads `cfg`; the
-         WBS step edits the LIVE `wbs_nodes` tree directly, and the push reads that tree AT PUSH
-         TIME, not at step time. So its position cannot break anything either way, which means the
-         position is purely a question of WHEN A PLANNER WANTS TO LOOK — and the answer to that is
-         plainly "before I start typing", for three reasons:
-           • it is the project's EXISTING structure. Everything else in the wizard describes work to
-             be added; this is the only step that shows what is already there.
-           • the IMPORT path already checks branches first (STEPS_IMP step 1 is "Activities & phases",
-             which is filing each of the file's branches under a phase). Two paths through the same
-             module answering the same question in opposite orders is not a design, it is an
-             accident of when each was written.
-           • it is where the five lifecycle phases live, and "Project phases" (step 11) edits what
-             goes inside three of them. Reading the tree first is what makes that step legible.
-         ⚠️ WHAT THIS IS NOT: a claim that the tree is an INPUT to generation. The push still
-         creates the trade › tower › floor › zone branches it needs and reuses any that match, so a
-         nearly-empty tree here is the normal state on a new project — stWbs says so in as many
-         words, because a planner arriving at an empty step 2 would otherwise think it was broken.
-         ⚠️ Nothing indexes these steps by number: `_stepNo(title)` looks them up by TITLE and every
-         cross-reference in the module goes through it, so all the "see step 7" text renumbered
-         itself. Verified by grep for `_stepNo(` — there is no numeric step literal anywhere. */
       /* ⚠️ BEFORE THE ACTIVITIES, and that ordering is the point (see stCalendars): every
          duration typed in the next step is a count of WORKING days, so the calendar is the unit
          those numbers are expressed in. Set afterwards, everything already typed silently meant
-         something else while it was being typed. */
-      { t: 'Working calendars', s: 'Which days are workable', fn: stCalendars },
+         something else while it was being typed.
+         ⚠️ Renamed from "Working calendars" at the owner's request — the rail is read at a glance
+         and the first word is the one that has to carry it. `STEP_ALIAS` keeps the old title
+         resolving, because a blank where a step number belongs reads as a broken reference. */
+      { t: 'Calendars', s: 'Which days are workable', fn: stCalendars },
       /* ⚠⚠ SECOND, AND THIS REVERSES WHAT THIS FILE USED TO ARGUE. The note that used to sit
          above the Structure step said the merged step could not lead, because one of its two
          views would be empty on a new project. That was true of the **Construction Library**,
          which has moved to the Activities step. What is left — the lifecycle phases and the tree
          they produce — is a structural decision a planner can make before a single activity
-         exists, so it can lead. Owner 2026-09-17: *“move this step after working calendars”*. */
+         exists, so it can lead. */
       { t: 'Project phases', s: 'Lifecycle + the WBS tree', fn: stPhasesStep },
       { t: 'Activities', s: 'Class-code list + Construction Library', fn: stActivitiesStep },
-      { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stLevels },
-      /* ⚠️ AFTER both, not before. The Construction Library view is a READ of the places and the
-         items plus the two ways to fill them from the WBS — put in front of them it would be an
-         empty screen on a new project, which is the opposite of orienting anybody. That is also
-         why the merged step sits HERE and not at position 2: of its two views, only 5PMLC could
-      /* ⚠️⚠️ FIVE STEPS BECAME ONE. Tower links, Zone sequence, Trade sequence, Scope per zone and
-         Stacking all answer the same question — how does the building REPEAT — and four of the five
-         are inert on a project with one tower and no zones. They were five rail entries of nothing,
-         and the rail's LENGTH is what makes this wizard look big before a word of it is read: 12
-         steps down to 8.
-         ⚠️ They are TABS, not a merge: each keeps its own renderer, its own heading and its own
-         empty state, untouched. The only thing that changed is where the planner clicks to reach
-         them. `_stepNo` aliases their titles onto this step, so the 27 cross-references elsewhere
-         ("set in step 7 · Zone sequence") keep resolving to a real number — they are inside it. */
-      { t: 'Repetition', s: 'Towers, zones, trades, scope', fn: stRepetition },
+      /* ⚠️ THE TOWERS BEFORE WHAT IS IN THEM. A floor is laid out per (trade, tower), so the tower
+         list is the prerequisite for the next step rather than a control on top of it — which is
+         exactly what `_stepReady` enforces. */
+      { t: 'Towers', s: 'How many, and the site plan', fn: stTowers },
+      { t: 'Floors & Zones', s: 'Floors, zones and units', fn: stLevels },
+      /* ⚠️ Both sequence steps need somewhere for the work to be, which is why they sit after the
+         places rather than beside the activities: a zone sequence with no zones is an empty screen
+         and a scope-per-zone grid with no zones has no columns. */
+      { t: 'Location Sequence', s: 'Tower and zone sequence', fn: stLocSeq },
+      { t: 'Activity Sequence', s: 'Trade sequence and scope', fn: stActSeq },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
     /* The import path. ⚠️ THE ORDER IS THE DATA-CHECKING ORDER, and it is not arbitrary:
@@ -37659,6 +38342,43 @@
     /* ⚠️ Called at the top of every render(), before the rail is drawn. `step` is clamped rather
        than reset: switching mode with a high step index would otherwise index past the end of the
        new list and STEPS[step].fn would throw. */
+    /* ⚠️⚠️ PREREQUISITE GATING. Returns the reason a step cannot be entered yet, or ''.
+
+       ⚠️⚠️ IT BLOCKS ONLY WHAT IS UNREACHABLE IN PRINCIPLE, never what is merely unanswered.
+       A project whose only trade is project-wide (General Requirements carries no tower, floor or
+       zone — see LOCLESS) has no floors and never will, so gating Location Sequence on "has
+       floors" would strand it short of Generate for ever. That is why the floors test runs only
+       when the project HAS location-bearing trades.
+
+       ⚠️ 'new' path only. An import writes the schedule from a file and its steps do not depend
+       on each other this way; and with no cfg there is nothing to measure. */
+    function _stepReady(title) {
+      if (mode !== 'new' || !cfg) return '';
+      var nAct = (cfg.activities || []).length;
+      /* ⚠️ Location Sequence is in this group too — with no activities there is nothing to
+         sequence — and it cannot strand the project-wide-only case, which HAS activities and is
+         let through by the floors test below. */
+      if (title === 'Floors & Zones' || title === 'Location Sequence' ||
+          title === 'Activity Sequence' || title === 'Generate') {
+        if (!nAct) return 'Add at least one activity in step ' + _stepNo('Activities') + ' · Activities first.';
+      }
+      if (title === 'Location Sequence') {
+        var loc = [];
+        try { loc = locGroups(); } catch (e) {}
+        if (loc.length) {
+          var nFloor = 0;
+          loc.forEach(function (g) { try { nFloor += (floorsOf(g) || []).length; } catch (e) {} });
+          if (!nFloor) return 'Add floors for at least one trade in step ' + _stepNo('Floors & Zones') + ' · Floors & Zones first.';
+        }
+      }
+      return '';
+    }
+    /* The first step at or before i that cannot be entered, or -1.
+       ⚠️ k starts at 1: Start is the path chooser and must always be reachable. */
+    function _firstBlockedUpTo(i) {
+      for (var k = 1; k <= i && k < STEPS.length; k++) if (_stepReady(STEPS[k].t)) return k;
+      return -1;
+    }
     function sbSyncSteps() {
       var list = [STEP_START].concat(mode === 'import' ? STEPS_IMP : (mode === 'new' ? STEPS_NEW : []));
       STEPS.length = 0;
@@ -37768,13 +38488,14 @@
          above `stStacking` itself; the suite asserts it stays out of this list.
          ⚠ A browser that remembers `stack` in `ps_steptab_Repetition` is safe: `stepTabKey`
          validates the stored key against this list and falls back to the first tab. */
-      'Repetition': [
-        /* ⚠ “Tower links” was the name of a MECHANISM (a link between two towers); the other
-           three tabs are named for the QUESTION they answer. Owner 2026-09-17: *“rename tower
-           links to Tower Sequence”*. `STEP_ALIAS` keeps the old title resolving to a step number,
-           so nothing that still says “Tower links” prints a blank where a number belongs. */
+      /* ⚠ “Tower links” was the name of a MECHANISM (a link between two towers); every other
+         tab is named for the QUESTION it answers. `STEP_ALIAS` keeps the old title resolving to a
+         step number, so nothing that still says “Tower links” prints a blank where one belongs. */
+      'Location Sequence': [
         { k: 'towers', t: 'Tower Sequence', fn: function (h) { return stTowerLinks(h); } },
-        { k: 'zones',  t: 'Zone sequence',  fn: function (h) { return stSequence(h); } },
+        { k: 'zones',  t: 'Zone sequence',  fn: function (h) { return stSequence(h); } }
+      ],
+      'Activity Sequence': [
         { k: 'trades', t: 'Trade sequence', fn: function (h) { return stTradeSeq(h); } },
         { k: 'scope',  t: 'Scope per zone', fn: function (h) { return stScope(h); } }
       ]
@@ -37892,21 +38613,32 @@
        ⚠ The view is remembered across reloads now (`stepTabKey` persists it), which the pills
        never did. That matches Activities, and coming back to the step you left is the behaviour
        a multi-view step wants. */
-    function stRepetition(host) {
-      var T = stepTabs('Repetition'), k = stepTabKey('Repetition');
+    /* ⚠⚠ ONE PILL STRIP, TWO STEPS. `Repetition` held four views — Tower Sequence, Zone
+       sequence, Trade sequence, Scope per zone — and the owner split them on 2026-09-17 into
+       **Location Sequence** (where the work goes next) and **Activity Sequence** (what order the
+       work happens in inside a place). They are two different questions and were answered on one
+       screen; what they share is the shape of the control, so this takes the step TITLE rather
+       than being copied twice.
+       ⚠ Each sub-view still renders its OWN heading, opening with `_stepNo(<its own title>)`,
+       which `STEP_ALIAS` resolves to whichever step now contains it — so a heading never prints
+       a blank where a number belongs. Nothing inside the four views was rewritten. */
+    function stPillStep(host, title) {
+      var T = stepTabs(title), k = stepTabKey(title);
       var cur = T.filter(function (x) { return x.k === k; })[0] || T[0];
       host.innerHTML =
         '<div class="sbld-reptabs">' +
           T.map(function (x) {
             return '<button type="button" class="pd-btn sbld-reptab' + (x.k === cur.k ? ' on' : '') +
-              '" data-rep="' + x.k + '">' + e2(x.t) + '</button>';
+              '" data-rep="' + e2(x.k) + '">' + e2(x.t) + '</button>';
           }).join('') +
         '</div><div id="sbld-repbody"></div>';
       host.querySelectorAll('[data-rep]').forEach(function (b) {
-        b.onclick = function () { setStepTab('Repetition', b.dataset.rep); };
+        b.onclick = function () { setStepTab(title, b.dataset.rep); };
       });
       cur.fn(host.querySelector('#sbld-repbody'));
     }
+    function stLocSeq(host) { stPillStep(host, 'Location Sequence'); }
+    function stActSeq(host) { stPillStep(host, 'Activity Sequence'); }
     /* ==========================================================================================
        THE LIBRARY — the project's places on the left, its activity groupings on the right.
 
@@ -39812,7 +40544,7 @@
       var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS : [];
       var names = lv.map(function (l) { return String(l.name || '').trim(); }).filter(Boolean);
       var body = names.length
-        ? '<span class="sbld-hint">This project breaks location down as <b>' + e2(names.join(' › ')) + '</b>. Steps 2–7 and the pushed schedule all use these names.</span>'
+        ? '<span class="sbld-hint">This project breaks location down as <b>' + e2(names.join(' › ')) + '</b>. Every later step and the pushed schedule use these names.</span>'
         : '<span class="sbld-hint">This project has <b>no location breakdown yet</b>. Define it first and the builder will use your names — otherwise the first push creates <b>' +
           e2([DIM_LABEL.floor, DIM_LABEL.zone, DIM_LABEL.unit].join(' › ')) + '</b> for you.</span>';
       /* ⚠️ THE WHOLE BREAKDOWN LIVES HERE NOW (owner 2026-09-02: "let's also have the location
@@ -40259,7 +40991,14 @@
     }
     // The tower strip for step 2. One tower reads as a single quiet chip (nothing new to learn);
     // two or more turn it into a real selector. Floors below are filtered to the active tower.
-    function _towerBar() {
+    /* ⚠⚠ TWO STEPS DRAW THIS BAR, AND ONLY ONE OF THEM OWNS IT. `opts.manage` is the Towers
+       step (step 5): the chips plus + Tower, the site plan, the ⋯ menu and the detection notes.
+       Floors & Zones passes nothing and gets the CHIPS ALONE — there it is a selector, saying
+       which tower's floors are on screen, and offering + Tower / Delete beside a floor list would
+       be two steps each claiming to own the tower list. The note under the chips names the step
+       that does, rather than leaving the missing buttons to be discovered. */
+    function _towerBar(opts) {
+      var manage = !!(opts && opts.manage);
       var list = towerList(), act = activeTower();
       /* ⚠️⚠️ THE STEP DETECTS, IT DOES NOT ASSUME. Owner 2026-09-12: *"the schedule setup should
          detect, if the project has multiple towers or not."* `towerList()` alone cannot answer
@@ -40273,7 +41012,7 @@
           return '<button class="sbld-chip' + (t.id === act ? ' on' : '') + '" data-twsel="' + e2(t.id) + '" title="' +
             e2((t.code ? t.code + ' — ' : '') + (t.name || '')) + '">' + e2(t.name || t.code || 'Tower') + '</button>';
         }).join('') +
-        '<button class="pd-btn sbld-twbtn" id="b-twadd" title="Add another tower">+ Tower</button>' +
+        (manage ? '<button class="pd-btn sbld-twbtn" id="b-twadd" title="Add another tower">+ Tower</button>' : '') +
         /* ==== WHERE THE SITE PLAN IS DEFINED ==============================================
            ⚠️⚠️ ON THE TOWER BAR, and that is the answer to the owner's *"propose how and where
            you would define the plan"*. This bar is the only place in the app that enumerates the
@@ -40291,7 +41030,7 @@
            line beside it says what was detected.
            ⚠️ The button counts what is traced against the towers that exist, so a project that
            has grown a fourth tower reads "3/4" without anyone opening it. */
-        (TR.multi ? (function () {
+        (manage && TR.multi ? (function () {
           var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
           /* ⚠️ Counted against EVERY tower the project has — the ones named here and the ones only
              the schedule knows about. Counting against `towerList()` alone would report "1/1 traced"
@@ -40320,13 +41059,13 @@
            The ids are unchanged, so every handler is wired exactly as it was.
            ⚠️ Delete names the tower in the label, because it is the destructive one and a menu row
            reading just "Delete" is a row that does not say what it will take with it. */
-        '<details class="sbld-twmore"><summary title="' + e2('Rename, copy into or delete ' + towerLabel(act)) + '">Tower options</summary>' +
+        (manage ? '<details class="sbld-twmore"><summary title="' + e2('Rename, copy into or delete ' + towerLabel(act)) + '">Tower options</summary>' +
           '<div class="sbld-twmenu">' +
             '<button class="pd-btn" id="b-twren" title="Rename the active tower">Rename…</button>' +
             (list.length > 1 ? '<button class="pd-btn" id="b-twcopy" title="Copy another tower\'s floors, zones, units and sequencing into this one">Copy floors from another tower…</button>' : '') +
             (list.length > 1 ? '<button class="pd-btn sbld-del" id="b-twdel" title="Delete the active tower and its floors">' + e2('Delete ' + towerLabel(act)) + '</button>' : '') +
           '</div>' +
-        '</details>' +
+        '</details>' : '') +
         /* ==== WHAT WAS DETECTED, SAID OUT LOUD ============================================
            ⚠️⚠️ THE DRIFT CASE IS THE ONE WORTH INTERRUPTING FOR. A schedule carrying towers this
            setup has never named is the exact state in which the site plan's name join fails — the
@@ -40336,7 +41075,9 @@
            ⚠️ The single-tower line is a STATEMENT, not a warning: one tower is a perfectly ordinary
            project, and it exists only so the missing Site plan button is explained rather than
            merely absent. */
-        (TR.drift
+        (!manage
+          ? '<span class="sbld-towerbar-note">Which tower’s floors are on screen. Towers are added, renamed and laid out on the site plan in step <b>' + _stepNo('Towers') + ' · Towers</b>.</span>'
+          : TR.drift
           ? '<span class="sbld-towerbar-note warn" title="These are the values the schedule’s activities carry on the tower level of the Location Breakdown.">' +
             '⚠️ The schedule carries <b>' + TR.inSchedule.length + ' tower' + (TR.inSchedule.length === 1 ? '' : 's') +
             '</b>, and <b>' + TR.unnamed.length + '</b> ' + (TR.unnamed.length === 1 ? 'is' : 'are') + ' not named here: <b>' +
@@ -40351,6 +41092,155 @@
                 ' towers</b> in the schedule.</span>'
               : ''))) +
         '</div>';
+    }
+    /* ==== THE TOWER BAR'S HANDLERS — SHARED BY TWO STEPS ==============================
+       ⚠⚠ EXTRACTED, NOT COPIED. Owner 2026-09-17 split the location work into a Towers step
+       (how many towers there are, and the site plan) and a Floors & Zones step (what is inside
+       one). Both draw `_towerBar`, so both need its wiring — and two copies of it is exactly how
+       one of them ends up with a dead + Tower button. The Towers step passes `manage:true` and
+       gets every control; Floors & Zones passes nothing and gets the selector chips alone, so the
+       handlers below simply find no element for what was not drawn (every one is guarded).
+       ⚠ `ctx.tr` is the ACTIVE TRADE and is null on the Towers step, which has none — so the
+       copy dialog offers “Every trade” only there rather than naming a trade nobody chose. */
+    function _twBarWire(host, ctx) {
+      ctx = ctx || {};
+      var _twAct = ctx.act || activeTower();
+      var tr = ctx.tr || null;
+      host.querySelectorAll('[data-twsel]').forEach(function (b) { b.onclick = function () { uiTower = b.dataset.twsel; render(); }; });
+      /* ⚠️ A <details> stays open until something shuts it. Every action inside this one re-renders
+         the step — except walking away from it, so a menu opened by mistake would hang over the
+         floor list for the rest of the session. The next press outside closes it.
+         ⚠️ The listener removes ITSELF once the step has re-rendered and its element is detached,
+         rather than being left to accumulate one dead handler per render. */
+      var _twMore = host.querySelector('.sbld-twmore');
+      if (_twMore) {
+        var _twOut = function (ev) {
+          if (!document.body.contains(_twMore)) { document.removeEventListener('pointerdown', _twOut); return; }
+          if (!_twMore.open || _twMore.contains(ev.target)) return;
+          _twMore.open = false;
+        };
+        document.addEventListener('pointerdown', _twOut);
+      }
+      /* ==== THE TOWER, ASKED FOR IN ONE FORM ===========================================
+         ⚠️⚠️ TWO `prompt()`s BECAME ONE DIALOG. Owner 2026-09-17: *"when adding towers, floors,
+         UI usually gives browser pop-up. instead of browser pop-up create an app pop-up window
+         where user can input the fields."* Adding a tower asked for the name, closed, then asked
+         for the code in a second box whose only clue about what a code is for was the sentence
+         it was titled with. The two fields belong to one object and are now asked as one.
+         ⚠️ The code is REQUIRED here, where it was silently defaulted before: it is what every
+         generated activity id and every location label is built from, so a blank one produced
+         codes with a hole in them and nobody found out until the push. */
+      function _twFields(t, n) {
+        return [
+          { k: 'name', label: 'Tower name', value: (t && t.name) || ('Tower ' + n), required: true,
+            placeholder: 'Tower ' + n, hint: 'What the planners call it — shown on the tower bar, in the stacking and on the site plan.' },
+          { k: 'code', label: 'Short code', value: (t && t.code) || ('T' + n), required: true,
+            placeholder: 'T' + n, hint: 'Two or three characters. It is built into generated activity codes and location labels, so keep it short and unique.' }
+        ];
+      }
+      var _twAdd = host.querySelector('#b-twadd');
+      if (_twAdd) _twAdd.onclick = function () {
+        var n = towerList().length + 1;
+        psAsk({ title: 'Add a tower', ok: 'Add tower',
+          note: 'Each tower keeps its own floors, zones and zone sequencing. Nothing is copied into it — use <b>Copy from…</b> afterwards if this tower repeats another.',
+          fields: _twFields(null, n),
+          validate: function (v) {
+            var k = String(v.code).trim().toLowerCase();
+            return towerList().some(function (t) { return String(t.code || '').trim().toLowerCase() === k; })
+              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
+          }
+        }, function (v) {
+          var t = { id: uidv(), code: String(v.code).trim(), name: String(v.name).trim() };
+          cfg.towers = towerList().concat([t]); uiTower = t.id; markDirty(); render();
+        });
+      };
+      var _twRen = host.querySelector('#b-twren');
+      if (_twRen) _twRen.onclick = function () {
+        var t = towerById(_twAct); if (!t) return;
+        psAsk({ title: 'Rename ' + towerLabel(_twAct), ok: 'Rename',
+          fields: _twFields(t, towerList().length),
+          validate: function (v) {
+            var k = String(v.code).trim().toLowerCase();
+            return towerList().some(function (o) { return o.id !== t.id && String(o.code || '').trim().toLowerCase() === k; })
+              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
+          }
+        }, function (v) {
+          t.name = String(v.name).trim() || t.name; t.code = String(v.code).trim() || t.code;
+          markDirty(); render();
+        });
+      };
+      function _twCopyDlg() {
+        var others = towerList().filter(function (t) { return t.id !== _twAct; });
+        if (!others.length) return;
+        /* ⚠️⚠️ A LIST TO PICK FROM, NOT A NUMBER TO TYPE. This was a `prompt()` holding a
+           hand-numbered menu — "1) Tower A / 2) Tower B … Type a number:" — which is a <select>
+           rendered in text, with a typo for every way of getting it wrong and no way to tell the
+           planner what each tower actually holds. The counts are on the options now.
+           ⚠️ AND THE WARNING IS IN THE SAME DIALOG. It used to be a SECOND browser box after the
+           number was typed; the thing it warns about (this replaces everything here) is the whole
+           reason the planner is being asked, so it belongs beside the question. */
+        var _trHas = GROUPS.filter(function (g) { return !locless(g) && floorsOfTower(g, others[0].id).length; });
+        psAsk({ title: 'Copy another tower into ' + towerLabel(_twAct),
+          wide: true,
+          ok: 'Copy and replace', danger: true,
+          text: 'The floors, zones and units of the tower you pick are copied in with fresh ids, so the two towers are independent afterwards.',
+          note: '⚠️ This <b>REPLACES</b> what is currently under <b>' + e2(towerLabel(_twAct)) +
+            '</b> for the trades you copy. It cannot be undone. A trade you do <b>not</b> copy is left exactly as it is.',
+          fields: [
+            { k: 'src', label: 'Copy from', type: 'select', value: others[0].id,
+              options: others.map(function (t) {
+                var n = 0, ntr = 0;
+                GROUPS.forEach(function (g) {
+                  if (locless(g)) return;
+                  var c = floorsOfTower(g, t.id).length; if (c) { ntr++; n += c; }
+                });
+                return [t.id, (t.name || t.code) + ' — ' + n + ' floor' + (n === 1 ? '' : 's') +
+                  ' across ' + ntr + ' trade' + (ntr === 1 ? '' : 's')];
+              }),
+              hint: 'The floor count is every trade\u2019s floors added together — most towers are laid out the same for all of them, so it is usually the storey count times the number of trades.' },
+            { k: 'what', label: 'Which trades', type: 'select', value: 'all',
+              options: [['all', 'Every trade — the whole tower']].concat(tr ? [[tr, 'Only ' + GLABEL[tr]]] : []),
+              hint: 'Every trade is the usual answer: a tower that repeats another repeats it for all of them. One trade is for filling in the trade you are working on without touching the rest.' },
+            { k: 'seq', label: 'Bring the zone sequence with it', type: 'checkbox', value: true,
+              hint: 'The links between the copied zones are rebuilt against the copies, so the new tower flows the way the old one does. Turn it off to copy the places and sequence them yourself.' }
+          ]
+        }, function (v) {
+          var s2 = others.filter(function (t) { return t.id === v.src; })[0];
+          if (!s2) { UI.toast('No tower picked.', 'warn'); return; }
+          var r = copyTower(s2.id, _twAct, { groups: (v.what === 'all' ? null : [v.what]), links: !!v.seq });
+          /* ⚠️ pruneLinks, which this handler never called: the destination tower's own floors are
+             REPLACED, so every link that pointed at one of them now points at a leaf that no longer
+             exists. They were left in cfg.links to be discovered at Generate. */
+          pruneLinks(); markDirty(); render();
+          UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') +
+            (v.what === 'all' ? '' : ' of ' + GLABEL[v.what]) +
+            (v.seq ? ' and ' + r.links + ' zone link' + (r.links === 1 ? '' : 's') : '') +
+            ' from ' + (s2.name || s2.code) + '.', 'success');
+        });
+      }
+      var _twCopy = host.querySelector('#b-twcopy');
+      if (_twCopy) _twCopy.onclick = _twCopyDlg;
+      var _twCopy2 = host.querySelector('#b-twcopy2');
+      if (_twCopy2) _twCopy2.onclick = _twCopyDlg;
+      var _twDel = host.querySelector('#b-twdel');
+      if (_twDel) _twDel.onclick = function () {
+        if (towerList().length < 2) return;
+        var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, _twAct).length; });
+        psConfirm('Delete ' + towerLabel(_twAct) +
+          (n ? ' and its ' + n + ' floor' + (n === 1 ? '' : 's') : '') + '?', function () {
+          GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return towerIdOf(f) !== _twAct; }); });
+          cfg.towers = towerList().filter(function (t) { return t.id !== _twAct; });
+          cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return k.from !== _twAct && k.to !== _twAct; });
+          uiTower = towerList()[0].id;
+          pruneLinks(); markDirty(); render();
+        }, { title: 'Delete this tower?', ok: 'Delete the tower',
+             note: 'This cannot be undone. Every trade’s floors under this tower go with it.' });
+      };
+
+      /* ⚠ The site plan opens from this bar too, so its handler belongs with the bar rather
+         than with whichever step happened to draw it first. */
+      var _sb = host.querySelector('#b-siteplan');
+      if (_sb) _sb.onclick = function () { openSitePlan(); };
     }
     // Copy one tower's LOCATIONS and its SEQUENCING into another (owner request). Floors/zones/units
     // are deep-copied with fresh ids via cloneFloors, so the two towers are independent afterwards.
@@ -40550,7 +41440,7 @@
         host.innerHTML = head +
           /* The empty state already says which tower exists and that towers run in parallel; this
              line only has to say what would make the step do something. */
-          '<p class="sbld-lede">Nothing to link with one tower. Add a second in step ' + _stepNo('Floors & Zones') + '.</p>' +
+          '<p class="sbld-lede">Nothing to link with one tower. Add a second in step ' + _stepNo('Towers') + ' · Towers.</p>' +
           '<div class="sbld-empty">Only <b>' + e2(towerLabel(list[0].id)) + '</b> is defined. Towers run in parallel until a relationship is stated here.</div>';
         return;
       }
@@ -44075,6 +44965,88 @@
       paint();
       loadImg();
     }
+    /* ==========================================================================================
+       TOWERS — how many buildings, and where each one stands.
+       Owner 2026-09-17: *"Step 5: Towers — Definition of towers (Identification of how many type of
+       towers there are and how many towers per type), include here also definition of site
+       development if applicable"*.
+       ⚠️⚠️ IT WAS A BAR ON TOP OF THE FLOORS STEP, and that is why it needed its own. Adding a
+       tower, renaming one, copying one into another and drawing the site plan are all statements
+       about the PROJECT; laying out floors and zones is a statement about ONE tower. They were on
+       one screen, so the tower controls read as chrome above the thing the planner was actually
+       doing — and the site plan, which is the whole site, sat in the corner of a step titled after
+       a single building.
+       ⚠️ THERE IS NO "TOWER TYPE" FIELD, and inventing one would be a schema change with a
+       migration behind it. What the model has is a flat list plus "Copy floors from another
+       tower…", which is how a repeated tower is expressed today: name it, then take the layout
+       from the one it repeats. The How panel says so rather than leaving it to be discovered.
+       ⚠️ The bar is drawn with manage:true — see _towerBar. Floors & Zones draws the same bar
+       without it and gets the selector chips alone, so there is one tower list and one step that
+       owns it. */
+    function stTowers(host) {
+      var TR = towerReality(), list = towerList(), act = activeTower();
+      var loc = locGroups();
+      /* Floors already laid out under a tower, across every trade that HAS a location — locless
+         trades (General Requirements) are project-wide and carry no tower, so counting them here
+         would report floors that can never exist. */
+      function nFloors(id) {
+        var n = 0; loc.forEach(function (g) { n += floorsOfTower(g, id).length; }); return n;
+      }
+      var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
+      var body = list.map(function (t) {
+        var n = nFloors(t.id);
+        return '<tr' + (t.id === act ? ' class="on"' : '') + '>' +
+          '<td><b>' + e2(t.name || t.code || 'Tower') + '</b>' +
+            (t.id === act ? ' <span class="sbld-hint">· selected</span>' : '') + '</td>' +
+          '<td>' + e2(t.code || '—') + '</td>' +
+          '<td>' + (n ? n + ' floor' + (n === 1 ? '' : 's') + ' laid out'
+                      : '<span class="sbld-hint">nothing laid out yet</span>') + '</td>' +
+        '</tr>';
+      }).join('');
+      host.innerHTML = '<h2>' + _stepNo('Towers') + ' · Towers</h2>' +
+        '<p class="sbld-lede">How many buildings this project has — and, where there is more than one, ' +
+        'where each of them stands.</p>' +
+        _sbldHow('<p>Press <b>+ Tower</b> once per building. A tower that <b>repeats</b> another is ' +
+          'named here and then filled in from it with <b>Tower options › Copy floors from another ' +
+          'tower…</b> — that is how a tower &quot;type&quot; is expressed; there is no separate type field.</p>' +
+          '<p>The <b>short code</b> is built into every generated activity id and location label, so ' +
+          'keep it short and unique.</p>' +
+          '<p>With more than one tower, <b>Site plan…</b> is where you trace one area per tower on the ' +
+          'site drawing. The Vertical Stacking’s Site view is built from it, and it joins on the ' +
+          'tower NAMES — so an area traced under a name no tower carries draws nothing.</p>') +
+        _towerBar({ manage: true }) +
+        '<div class="sbld-tablewrap"><table class="sbld-tbl">' +
+          '<thead><tr><th>Tower</th><th>Short code</th><th>Floors</th></tr></thead>' +
+          '<tbody>' + body + '</tbody>' +
+        '</table></div>' +
+        '<p class="sbld-hint">' +
+          (list.length === 1
+            ? 'One tower. Everything in step ' + _stepNo('Floors & Zones') + ' applies to it, and no site plan is needed — the site is the tower.'
+            : list.length + ' towers. Each keeps its own floors, zones and zone sequencing; pick one above and lay it out in step ' + _stepNo('Floors & Zones') + '.') +
+        '</p>' +
+        /* ⚠️ The site-plan panel is drawn only where a site plan MEANS something. On a single-tower
+           project it would be a drawing of one building, which the floor plans already are — the
+           same reason the button itself is withheld and the Vertical Stacking hides its Site view. */
+        (TR.multi
+          ? '<h3 class="sbld-sech">Site development plan</h3>' +
+            '<p class="sbld-hint">' +
+              (_sp
+                ? 'Traced' + (_sp.img ? ' over an attached drawing' : ', with no drawing attached') +
+                  '. Re-open it with <b>Site plan</b> on the bar above.'
+                : 'Not traced yet. <b>Site plan…</b> on the bar above opens the editor: attach the site drawing, then trace one area per tower and name it after that tower.') +
+            '</p>'
+          : '');
+      /* ⚠️ Selecting a tower from the table as well as from the chips: the table is the thing a
+         planner is reading on this step, and a row that names a tower and cannot select it reads
+         as broken. Bound by POSITION against the same list the rows were built from. */
+      host.querySelectorAll('.sbld-tbl tbody tr').forEach(function (tr2, i) {
+        var t = list[i]; if (!t) return;
+        tr2.style.cursor = 'pointer';
+        tr2.title = 'Select ' + (t.name || t.code || 'this tower');
+        tr2.onclick = function () { uiTower = t.id; render(); };
+      });
+      _twBarWire(host, { act: act, tr: null });
+    }
     function stLevels(host) {
       /* ⚠️⚠️ THE TRADES THAT HAVE A LOCATION, not every trade in use — see LOCLESS. Owner
          2026-09-17: *"general requirements should have no tower, floor, or zones."* A chip for
@@ -44526,8 +45498,6 @@
          ⚠️ The attribute selector it used to query is deliberately NOT spelled out here:
          `test-zoneoverlap` asserts that form appears nowhere in this file, and a suite that
          failed on its own explanation is a suite somebody deletes rather than fixes. */
-      var _sb = host.querySelector("#b-siteplan");
-      if (_sb) _sb.onclick = function () { openSitePlan(); };
       _locBarWire(host);
       var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () {
         // Changing the activity level changes every leaf uid, so links can't survive it — confirm first.
@@ -44543,136 +45513,7 @@
       };
       // ⚠️ Counts and codes are per TOWER, so adding F1 to Tower B does not become F21 because Tower
       // A already has twenty floors.
-      host.querySelectorAll('[data-twsel]').forEach(function (b) { b.onclick = function () { uiTower = b.dataset.twsel; render(); }; });
-      /* ⚠️ A <details> stays open until something shuts it. Every action inside this one re-renders
-         the step — except walking away from it, so a menu opened by mistake would hang over the
-         floor list for the rest of the session. The next press outside closes it.
-         ⚠️ The listener removes ITSELF once the step has re-rendered and its element is detached,
-         rather than being left to accumulate one dead handler per render. */
-      var _twMore = host.querySelector('.sbld-twmore');
-      if (_twMore) {
-        var _twOut = function (ev) {
-          if (!document.body.contains(_twMore)) { document.removeEventListener('pointerdown', _twOut); return; }
-          if (!_twMore.open || _twMore.contains(ev.target)) return;
-          _twMore.open = false;
-        };
-        document.addEventListener('pointerdown', _twOut);
-      }
-      /* ==== THE TOWER, ASKED FOR IN ONE FORM ===========================================
-         ⚠️⚠️ TWO `prompt()`s BECAME ONE DIALOG. Owner 2026-09-17: *"when adding towers, floors,
-         UI usually gives browser pop-up. instead of browser pop-up create an app pop-up window
-         where user can input the fields."* Adding a tower asked for the name, closed, then asked
-         for the code in a second box whose only clue about what a code is for was the sentence
-         it was titled with. The two fields belong to one object and are now asked as one.
-         ⚠️ The code is REQUIRED here, where it was silently defaulted before: it is what every
-         generated activity id and every location label is built from, so a blank one produced
-         codes with a hole in them and nobody found out until the push. */
-      function _twFields(t, n) {
-        return [
-          { k: 'name', label: 'Tower name', value: (t && t.name) || ('Tower ' + n), required: true,
-            placeholder: 'Tower ' + n, hint: 'What the planners call it — shown on the tower bar, in the stacking and on the site plan.' },
-          { k: 'code', label: 'Short code', value: (t && t.code) || ('T' + n), required: true,
-            placeholder: 'T' + n, hint: 'Two or three characters. It is built into generated activity codes and location labels, so keep it short and unique.' }
-        ];
-      }
-      var _twAdd = host.querySelector('#b-twadd');
-      if (_twAdd) _twAdd.onclick = function () {
-        var n = towerList().length + 1;
-        psAsk({ title: 'Add a tower', ok: 'Add tower',
-          note: 'Each tower keeps its own floors, zones and zone sequencing. Nothing is copied into it — use <b>Copy from…</b> afterwards if this tower repeats another.',
-          fields: _twFields(null, n),
-          validate: function (v) {
-            var k = String(v.code).trim().toLowerCase();
-            return towerList().some(function (t) { return String(t.code || '').trim().toLowerCase() === k; })
-              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
-          }
-        }, function (v) {
-          var t = { id: uidv(), code: String(v.code).trim(), name: String(v.name).trim() };
-          cfg.towers = towerList().concat([t]); uiTower = t.id; markDirty(); render();
-        });
-      };
-      var _twRen = host.querySelector('#b-twren');
-      if (_twRen) _twRen.onclick = function () {
-        var t = towerById(_twAct); if (!t) return;
-        psAsk({ title: 'Rename ' + towerLabel(_twAct), ok: 'Rename',
-          fields: _twFields(t, towerList().length),
-          validate: function (v) {
-            var k = String(v.code).trim().toLowerCase();
-            return towerList().some(function (o) { return o.id !== t.id && String(o.code || '').trim().toLowerCase() === k; })
-              ? 'Another tower already uses the code “' + String(v.code).trim() + '”.' : '';
-          }
-        }, function (v) {
-          t.name = String(v.name).trim() || t.name; t.code = String(v.code).trim() || t.code;
-          markDirty(); render();
-        });
-      };
-      function _twCopyDlg() {
-        var others = towerList().filter(function (t) { return t.id !== _twAct; });
-        if (!others.length) return;
-        /* ⚠️⚠️ A LIST TO PICK FROM, NOT A NUMBER TO TYPE. This was a `prompt()` holding a
-           hand-numbered menu — "1) Tower A / 2) Tower B … Type a number:" — which is a <select>
-           rendered in text, with a typo for every way of getting it wrong and no way to tell the
-           planner what each tower actually holds. The counts are on the options now.
-           ⚠️ AND THE WARNING IS IN THE SAME DIALOG. It used to be a SECOND browser box after the
-           number was typed; the thing it warns about (this replaces everything here) is the whole
-           reason the planner is being asked, so it belongs beside the question. */
-        var _trHas = GROUPS.filter(function (g) { return !locless(g) && floorsOfTower(g, others[0].id).length; });
-        psAsk({ title: 'Copy another tower into ' + towerLabel(_twAct),
-          wide: true,
-          ok: 'Copy and replace', danger: true,
-          text: 'The floors, zones and units of the tower you pick are copied in with fresh ids, so the two towers are independent afterwards.',
-          note: '⚠️ This <b>REPLACES</b> what is currently under <b>' + e2(towerLabel(_twAct)) +
-            '</b> for the trades you copy. It cannot be undone. A trade you do <b>not</b> copy is left exactly as it is.',
-          fields: [
-            { k: 'src', label: 'Copy from', type: 'select', value: others[0].id,
-              options: others.map(function (t) {
-                var n = 0, ntr = 0;
-                GROUPS.forEach(function (g) {
-                  if (locless(g)) return;
-                  var c = floorsOfTower(g, t.id).length; if (c) { ntr++; n += c; }
-                });
-                return [t.id, (t.name || t.code) + ' — ' + n + ' floor' + (n === 1 ? '' : 's') +
-                  ' across ' + ntr + ' trade' + (ntr === 1 ? '' : 's')];
-              }),
-              hint: 'The floor count is every trade\u2019s floors added together — most towers are laid out the same for all of them, so it is usually the storey count times the number of trades.' },
-            { k: 'what', label: 'Which trades', type: 'select', value: 'all',
-              options: [['all', 'Every trade — the whole tower'], [tr, 'Only ' + GLABEL[tr]]],
-              hint: 'Every trade is the usual answer: a tower that repeats another repeats it for all of them. One trade is for filling in the trade you are working on without touching the rest.' },
-            { k: 'seq', label: 'Bring the zone sequence with it', type: 'checkbox', value: true,
-              hint: 'The links between the copied zones are rebuilt against the copies, so the new tower flows the way the old one does. Turn it off to copy the places and sequence them yourself.' }
-          ]
-        }, function (v) {
-          var s2 = others.filter(function (t) { return t.id === v.src; })[0];
-          if (!s2) { UI.toast('No tower picked.', 'warn'); return; }
-          var r = copyTower(s2.id, _twAct, { groups: (v.what === 'all' ? null : [v.what]), links: !!v.seq });
-          /* ⚠️ pruneLinks, which this handler never called: the destination tower's own floors are
-             REPLACED, so every link that pointed at one of them now points at a leaf that no longer
-             exists. They were left in cfg.links to be discovered at Generate. */
-          pruneLinks(); markDirty(); render();
-          UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') +
-            (v.what === 'all' ? '' : ' of ' + GLABEL[tr]) +
-            (v.seq ? ' and ' + r.links + ' zone link' + (r.links === 1 ? '' : 's') : '') +
-            ' from ' + (s2.name || s2.code) + '.', 'success');
-        });
-      }
-      var _twCopy = host.querySelector('#b-twcopy');
-      if (_twCopy) _twCopy.onclick = _twCopyDlg;
-      var _twCopy2 = host.querySelector('#b-twcopy2');
-      if (_twCopy2) _twCopy2.onclick = _twCopyDlg;
-      var _twDel = host.querySelector('#b-twdel');
-      if (_twDel) _twDel.onclick = function () {
-        if (towerList().length < 2) return;
-        var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, _twAct).length; });
-        psConfirm('Delete ' + towerLabel(_twAct) +
-          (n ? ' and its ' + n + ' floor' + (n === 1 ? '' : 's') : '') + '?', function () {
-          GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return towerIdOf(f) !== _twAct; }); });
-          cfg.towers = towerList().filter(function (t) { return t.id !== _twAct; });
-          cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return k.from !== _twAct && k.to !== _twAct; });
-          uiTower = towerList()[0].id;
-          pruneLinks(); markDirty(); render();
-        }, { title: 'Delete this tower?', ok: 'Delete the tower',
-             note: 'This cannot be undone. Every trade’s floors under this tower go with it.' });
-      };
+      _twBarWire(host, { act: _twAct, tr: tr });
       /* ==== ADDING A STOREY, AS A FORM =================================================
          ⚠️⚠️ Owner 2026-09-17: *"when adding towers, floors … create an app pop-up window where
          user can input the fields"*, and the same prompt's *"improve the process flow of defining
@@ -47189,11 +48030,13 @@
       var n = (typeof CALS !== 'undefined' && CALS) ? CALS.length : 0;
       var def = null;
       try { def = (CALS || []).filter(function (c) { return c.is_default; })[0] || null; } catch (e) {}
-      host.innerHTML = '<h2>' + _stepNo('Working calendars') + ' · Which days the work can happen on</h2>' +
-        /* ⚠️ The second half argued for the step's POSITION in the rail. The rail already shows
-           the position, and a planner who has not questioned it does not need the defence. */
-        '<p class="sbld-lede">Durations are counted in <b>working days</b>. This is the calendar ' +
-        'that turns them into dates.</p>' +
+      /* ⚠ The heading is the step's NAME and nothing else. Owner 2026-09-17: *"for the Step
+         title, instead of which days the work can happen on > Calendar. add the previous title to
+         the description instead."* A heading that restates the step's purpose puts the same sentence
+         on screen twice — the lede directly beneath it is where a purpose belongs. */
+      host.innerHTML = '<h2>' + _stepNo('Calendars') + ' · Calendars</h2>' +
+        '<p class="sbld-lede">Which days the work can happen on. Durations are counted in ' +
+        '<b>working days</b>, so this is the calendar that turns them into dates.</p>' +
         '<div class="sbld-locbar"><span class="sbld-locbar-l">Project default</span>' +
           (def ? '<span class="sbld-hint">Unassigned activities use <b>' + e2(def.name) + '</b> — ' +
                  (def.hours_per_day || 8) + 'h/day' +
@@ -48843,7 +49686,7 @@
     }
     async function ensureLocLevels() {
       // ⚠️ Named after the builder's own level labels, so a project that gets its Location Breakdown
-      // FROM a push ends up with the same words the planner saw in steps 2 and 7 — not a fixed
+      // FROM a push ends up with the same words the planner saw in Floors & Zones — not a fixed
       // "Location / Zone / Unit" trio that then reads differently everywhere else.
       var wanted = [DIM_LABEL.floor, DIM_LABEL.zone];
       if (locList().some(function (l) { return l.unit; })) wanted.push(DIM_LABEL.unit);
@@ -49953,10 +50796,22 @@
       // capture scroll positions of any scrollable panes before the panel is rebuilt
       var _scroll = null;
       if (_prevStep === step) { _scroll = {}; SCROLL_SEL.forEach(function (sel) { _scroll[sel] = Array.prototype.map.call(panel.querySelectorAll(sel), function (el) { return [el.scrollTop, el.scrollLeft]; }); }); }
-      rail.innerHTML = STEPS.map(function (s, i) { return '<button class="sbld-step ' + (i === step ? 'on' : '') + '" data-step="' + i + '" title="' + e2((i + 1) + '. ' + s.t + ' — ' + s.s) + '"><span class="sbld-step-n">' + (i + 1) + '</span><span><span class="sbld-step-t">' + e2(s.t) + '</span><br><span class="sbld-step-s">' + e2(s.s) + '</span></span></button>'; }).join('');
+      rail.innerHTML = STEPS.map(function (s, i) { var _why = _stepReady(s.t); return '<button class="sbld-step ' + (i === step ? 'on' : '') + (_why ? ' locked' : '') + '" data-step="' + i + '" title="' + e2((i + 1) + '. ' + s.t + ' — ' + s.s + (_why ? ' — ' + _why : '')) + '"><span class="sbld-step-n">' + (i + 1) + '</span><span><span class="sbld-step-t">' + e2(s.t) + '</span><br><span class="sbld-step-s">' + e2(s.s) + '</span></span></button>'; }).join('');
       // The rail was just replaced; re-apply the minimise state so a repaint cannot expand it.
       sbldMinSync();
-      rail.querySelectorAll('[data-step]').forEach(function (b) { b.onclick = function () { step = +b.dataset.step; render(); }; });
+      /* ⚠️⚠️ THIS IS THE SCHEDULE SETUP RAIL (it calls render()). Cost Loading has its own
+         rail with an identical selector that calls paint() — do not patch both from one match. */
+      rail.querySelectorAll('[data-step]').forEach(function (b) { b.onclick = function () {
+        var _i = +b.dataset.step;
+        /* ⚠️ Going BACKWARDS is never blocked — a planner must always be able to return and
+           answer what is missing. A forward jump into (or past) a blocked step lands on the step
+           BEFORE the block, so the thing to do next is on screen rather than refused. */
+        if (_i > step) {
+          var _blk = _firstBlockedUpTo(_i);
+          if (_blk >= 0) { if (window.UI) UI.toast(_stepReady(STEPS[_blk].t), 'warn'); _i = Math.max(0, _blk - 1); }
+        }
+        step = _i; render();
+      }; });
       STEPS[step].fn(panel);
       var foot = document.createElement('div'); foot.className = 'sbld-foot';
       // ⚠️ NO "Save setup" AT THE END OF AN IMPORT. There is nothing in cfg to save on that path,
@@ -49968,13 +50823,18 @@
       if (_tabs) { var _tk = stepTabKey(STEPS[step].t);
         for (var _z = 0; _z < _tabs.length; _z++) if (_tabs[_z].k === _tk) _ti = _z; }
       var _nextTab = (_tabs && _ti >= 0 && _ti < _tabs.length - 1) ? _tabs[_ti + 1] : null;
+      /* ⚠️ Computed ONCE and read by the label, the disabled state and the handler, so the
+         button cannot say one thing and do another. A tab walk within this step is never blocked:
+         the prerequisite belongs to the next STEP, not to the next view of this one. */
+      var _nextBlock = (!_nextTab && step < STEPS.length - 1) ? _stepReady(STEPS[step + 1].t) : '';
       var _prevTab = (_tabs && _ti > 0) ? _tabs[_ti - 1] : null;
       var _canBack = step > 0 || !!_prevTab;
       foot.innerHTML = '<button class="pd-btn" id="b-prev"' + (_canBack ? '' : ' disabled') + '>← ' +
           (_prevTab ? e2(_prevTab.t) : 'Back') + '</button>' +
         ((_nextTab || step < STEPS.length - 1)
-          ? '<button class="pd-btn pd-btn-primary" id="b-next">' +
-            (_nextTab ? e2(_nextTab.t) : 'Next') + ' →</button>'
+          ? '<div class="sbld-nextwrap"><button class="pd-btn pd-btn-primary" id="b-next"' + (_nextBlock ? ' disabled title="' + e2(_nextBlock) + '"' : '') + '>' +
+            (_nextTab ? e2(_nextTab.t) : 'Next') + ' →</button>' +
+            (_nextBlock ? '<span class="sbld-blockwhy">' + e2(_nextBlock) + '</span>' : '') + '</div>'
           : (mode === 'import' ? '' : '<button class="pd-btn pd-btn-primary" id="b-savefoot">Save setup</button>'));
       panel.appendChild(foot);
       /* ⚠ Moving INTO a step from the other direction lands on the right end of its tabs:
@@ -49992,6 +50852,9 @@
       };
       var nx = foot.querySelector('#b-next'); if (nx) nx.onclick = function () {
         if (_nextTab) { setStepTab(STEPS[step].t, _nextTab.k); return; }
+        /* ⚠️ Guarded as well as disabled: the button is rebuilt on every render and a
+           disabled attribute is one repaint away from being the only thing standing here. */
+        if (_nextBlock) { if (window.UI) UI.toast(_nextBlock, 'warn'); return; }
         if (step < STEPS.length - 1) _enterStep(step + 1, false);
       };
       var sf = foot.querySelector('#b-savefoot'); if (sf) sf.onclick = save;
@@ -50071,11 +50934,21 @@
            Quiet, because this function renders itself. */
         /* ⚠ The three phases aliases carry NO tab: Project Phases is one page again, so there
            is nothing to select and asking for one would be wiring that does nothing. */
+        /* ⚠ The sequence titles land on the right STEP **and** select the right TAB — a deep
+           link asking for 'Zone sequence' that opened Location Sequence on Tower Sequence would
+           be a link that half works, which is harder to notice than one that does not. */
         var _al = { 'WBS':       { st: 'Project phases' },
                     '5PMLC':     { st: 'Project phases' },
                     'Structure': { st: 'Project phases' },
                     'Library':   { st: 'Activities', tab: 'lib' },
-                    'Construction Library': { st: 'Activities', tab: 'lib' } };
+                    'Construction Library': { st: 'Activities', tab: 'lib' },
+                    'Working calendars': { st: 'Calendars' },
+                    'Repetition':     { st: 'Location Sequence' },
+                    'Tower links':    { st: 'Location Sequence', tab: 'towers' },
+                    'Tower Sequence': { st: 'Location Sequence', tab: 'towers' },
+                    'Zone sequence':  { st: 'Location Sequence', tab: 'zones' },
+                    'Trade sequence': { st: 'Activity Sequence', tab: 'trades' },
+                    'Scope per zone': { st: 'Activity Sequence', tab: 'scope' } };
         if (_al[title]) {
           if (_al[title].tab) setStepTabQuiet(_al[title].st, _al[title].tab);
           title = _al[title].st;
@@ -51701,7 +52574,7 @@
     else if (tab === 'summary') renderSummary();
     // ⚠️ A stale deep link or a remembered tab can still say 'calendars'. Send it to the step that
     // owns the calendars now rather than showing a blank view.
-    else if (tab === 'calendars') { switchTab('builder'); try { ScheduleBuilder.gotoStep('Working calendars'); } catch (e) {} }
+    else if (tab === 'calendars') { switchTab('builder'); try { ScheduleBuilder.gotoStep('Calendars'); } catch (e) {} }
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
@@ -53740,7 +54613,7 @@
         // it moves live dates across the whole project the moment it is enabled —
         // including for other planners looking at the same schedule. That is a
         // decision to take deliberately, not a default to inherit from a deploy.
-        '<label><input type="checkbox" id="ps-calcpm"' + (calCpmOn ? ' checked' : '') + '><span>Schedule on working calendars<small>Durations count WORKING days and finishes skip non-working ones, per each activity’s calendar (Working Calendars view). Float is then in working days too. Moves dates across the project — review before you Reschedule.</small></span></label></div>' +
+        '<label><input type="checkbox" id="ps-calcpm"' + (calCpmOn ? ' checked' : '') + '><span>Schedule on working calendars<small>Durations count WORKING days and finishes skip non-working ones, per each activity’s calendar (Schedule Setup — Calendars). Float is then in working days too. Moves dates across the project — review before you Reschedule.</small></span></label></div>' +
         '<div class="fld"><span>Progress intelligence</span>' +
         '<label><input type="checkbox" id="ps-progdriven"' + (progressDriven ? ' checked' : '') + '><span>Progress-driven dates<small>Editing Duration POC recomputes remaining duration &amp; finish from the data date.</small></span></label>' +
         '<label><input type="checkbox" id="ps-ddretain"' + (ddRetainOn ? ' checked' : '') + '><span>Retain un-started work at the data date<small>On Schedule, move activities with 0% POC to the data date, keeping their duration. No predecessor → placed on the data date; with predecessors → only pulled forward out of the past.</small></span></label></div>';

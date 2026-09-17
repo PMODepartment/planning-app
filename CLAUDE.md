@@ -104,6 +104,190 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (a) — Schedule Setup gates its own steps, and the gate had to be written so it cannot strand a project
+
+Owner, closing the 9-step Schedule Setup restructure: *"\*\*\* Users are unable to proceed the next
+step without defining the pre-requisites or preceding steps."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(a)`. Logged here
+for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **A PREREQUISITE GATE MUST BLOCK WHAT IS UNREACHABLE IN PRINCIPLE, NOT WHAT IS MERELY
+UNANSWERED — and the obvious reading of this ask breaks the app.** *"Location Sequence needs floors"*
+is plainly true and, as a gate, wrong: General Requirements is project-wide and carries no tower,
+floor or zone, so a project whose only trade is project-wide has no floors, **never will**, and would
+have been held one step short of the finish for ever by a message telling it to type something it
+cannot type. The floors test therefore runs **only when the project has location-bearing trades at
+all**. That single condition is the feature, and it is the one a negative build was written to prove:
+removing it fails with *got 6, want -1* — the stranding, reproduced.
+
+⚠️⚠️ **A BLOCKED CONTROL SHOULD SEND YOU SOMEWHERE, NOT REFUSE.** Clicking a gated step does not
+bounce; it lands on the step **before the first thing that is missing**, with the reason in a toast.
+Going **backwards** is never gated — a planner must always be able to return and answer what is
+missing, and a gate that traps you is worse than no gate. The same shape applies to the primary
+button: it is **disabled and its handler is guarded**, because a button is rebuilt on every render and
+a `disabled` attribute is one repaint away from being the only thing standing there.
+
+⚠️⚠️ **AND THE SPECIFICITY TIE BIT A THIRD TIME IN THIS REPO.** A "locked" state and an "active" state
+that are both one class on the same element cannot both set the same property — source order decides,
+not meaning — and an element can legitimately be **both** (delete every activity while standing on the
+last step). The locked rule sets **opacity and cursor only**, with the both-classes case restoring the
+active look explicitly. ⚠️ Its explanatory text uses `--pd-warn-text`, never `--pd-warn`: that one is a
+**surface** colour at 3.46:1 on white, which this file's own token block already warns about.
+
+**Verified:** 41 new assertions executing the shipped predicates with **nothing stubbed** — the whole
+`locGroups`/`usedGroups`/`locless`/`floorsOf` chain is sliced out of the shipped file and run, because
+stubbing the first of them would have made the project-wide case a test of the stub rather than of the
+rule. Four negative builds bite, each naming its own assertion; the contrast is pinned to a **SHA**
+rather than `HEAD`, which becomes self-comparison the moment this commits, and is asserted to have run
+rather than been skipped. Fifteen module suites green — **1,304 assertions, 0 failing** —
+`wiring-check` **139/0** over 3,972 references, the 3.4MB inline block parses, CSS braces balanced at
++4/+4, 0 NUL bytes.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so no real setup has been opened; the
+predicates are proved by execution against fixtures.
+
+⚠️ **Merged `origin/main` (10 commits) before shipping**, including PR #140, which had been open when
+this branch was cut. `modules/project-schedule/index.html` **auto-merged with no conflicts** — but a
+clean auto-merge is not evidence, so both sides were checked present afterwards and the whole battery
+re-run on the merged tree.
+
+`MODULE_V` → `20260918a`, re-derived from the merged tree **after** integrating (main had reached
+`20260917zzt`) rather than guessed beforehand, and sort-checked as a plain string across every token
+in the tree. No shared asset changed.
+
+### 2026-09-17 (ax) — Schedule Setup: the Working Calendars step is called Calendars
+
+Owner: *"rename step Working Calendars to Calendars."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzt)`. Logged
+here for the `MODULE_V` bump and the one thing that is not a fact about this module:
+
+⚠️⚠️ **A DISPLAY NAME THAT IS ALSO A LOOKUP KEY CANNOT BE RENAMED IN ONE PLACE.** This module
+addresses its wizard steps **by title, never by index** — deliberately, and the comment above
+`STEPS` says why: the rail has been renumbered twice, and an index would have pointed at the wrong
+page both times. So one word on screen is six edits: the rail entry, the How-to manual's key, the
+step's own `_stepNo(...)` heading lookup, the deep link that lands on it, and **two separate alias
+tables** so the old title keeps resolving. The two tables are the trap — `_stepNo` reads
+`STEP_ALIAS` and `gotoStep` reads a private map of its own and does **not** consult it, so aliasing
+one leaves the other returning false for an external deep link, silently. Both were updated; the
+drift between them is named rather than fixed, because converging them would change what three
+unrelated aliases do today.
+
+⚠️ **Two on-screen strings that named this step were already wrong before the rename** — both said
+*"Working Calendars view"*, and there has been no such view since 2026-09-02, when it became a Setup
+step. They now read *Schedule Setup — Calendars*. The calendar **editor's** own heading is
+deliberately untouched: it is the shared component the standalone modal also draws, and it names the
+list of calendars, not the step.
+
+**Verified:** 17 assertions executing the shipped `sbSyncSteps` / `_stepNo` / both alias tables
+sliced out of the file — the rail reads `Start → Calendars → …`, the **old** title still resolves to
+step 2, every other step keeps its number, and the import rail is unchanged. ⚠️ The contrast against
+`HEAD` fails **11 of 17**. ⚠️ A mutation leaving the manual keyed by the old title takes
+`test-builder` from **99/1 to 97/3**, so that coverage is real. Twelve module suites green;
+`wiring-check` **139/0**. ⚠️ `test-builder` **99/1** is pre-existing, byte-identical on `HEAD`.
+⚠️ **Not verified signed in.**
+
+⚠️⚠️ **Re-lettered `(av)` → `(ax)` on merging `origin/main`, and the `MODULE_V` token re-derived
+with it.** Main had independently published its own `2026-09-17 (av)` — and an `(aw)` above it —
+while this was in flight, so both sides prepended a different entry under one letter. Both are kept
+whole and this one moves past both, per this file's own rule: take only the NEW entries from each
+side, never both copies of the log. ⚠️⚠️ **The version half did NOT conflict, and that is the
+dangerous half:** this branch had derived `20260917zzs` from what the remote carried at the time,
+main has since reached `20260918a`, and `zzs` sorts **earlier** as a plain string — so a browser
+already holding main’s token would never have fetched these bytes. Eighth time this log has
+recorded that shape.
+
+`MODULE_V` → `20260918b`, re-derived from what the remote actually carries **after** integrating
+rather than guessed beforehand, and sort-checked as a plain string against every token in the merged
+tree. The module changelog entry is re-lettered `(zzs)` → `(zzt)` for the same collision.
+
+### 2026-09-17 (aw) — The 360° stitcher produced a cylinder and the viewer rendered it as a sphere
+
+Owner, five items off two screenshots of the Progress Photos review modal — a bowed mosaic inside
+curved black bands, with the dialog scrolling — plus a sixth mid-flight: fit the viewer to the modal;
+handle a capture that turns past 360°; the stitch is blurry; no black space and use landscape (with
+a real 360-camera equirectangular as the reference); 72 frames → 108; and *"the Use this view as
+thumbnail also does not work but it does not need to be shown already. by default, the last view will
+be the thumbnail."* Module work — the full entry, every ⚠️ decision and the measurements are in
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md). Logged here for the
+`MODULE_V` bump and the five things that are not facts about one module:
+
+⚠️⚠️ **A DEFERRED AUDIT NOTE SET A PRECONDITION, AND IT WAS WORTH HONOURING RATHER THAN ROUTING
+AROUND.** `supabase/functions/pano360-process/stitch-core.mjs` has carried a note since 2026-09-16
+naming this exact gap — the server aligns and composites raw perspective frames by pure translation,
+which is wrong for a camera rotating on the spot — and refusing to fix it without *"a SYNTHETIC
+rotating-camera test scene … do not ship it on inspection alone."* That harness now exists and
+executes the shipped pipeline against a known scene. **It caught three real bugs, none of which was
+visible by reading**, two of them in the fix itself: a ~18% horizontal scale error (the strip is
+`rotation + HFOV` wide, not `rotation`), a crop rule that left 1.34% of the panorama black on a
+capture that wobbles, and the one below. A note that names its own precondition is worth more than a
+note that names a gap.
+
+⚠️⚠️ **AN INTEGER PIXEL MEASUREMENT THAT IS *SUMMED ALONG A CHAIN* IS A SCALE ERROR, NOT A ROUNDING
+ERROR.** The per-pair alignment returns whole pixels. A true 360° turn whose real per-pair shift is
+12.56px rounds to 13 **every single time** — the bias never averages out — and 48 pairs later the
+pipeline reports the capture turned 372°. Everything downstream then normalises as if those pixels
+were a full turn, displacing every feature by up to 12°. Parabolic sub-pixel refinement took the
+measurement to 362° and the recovered-scene error from **8.53 to 0.95 out of 255**. Anywhere a
+per-step estimate is accumulated rather than used on its own, the sub-pixel fraction is the whole
+answer.
+
+⚠️⚠️ **RENAMING AN ELEMENT'S ID SILENTLY ORPHANS EVERY CSS RULE THAT TARGETED IT, AND NOTHING
+REPORTS IT.** The review modal's viewer had a rule shrinking it to a modal-appropriate size, written
+for `#pp360-panowrap`. A 2026-09-13 rewrite renamed that modal's ids to a `pp360rv-*` prefix and the
+selector was not carried across, so it has matched **nothing** since — and the stage silently
+inherited the full-viewport lightbox sizing (`88vw × 78vh`) inside a 640px dialog. `88vw` was at
+least clamped by the modal's width; **nothing clamped `78vh`**. That is the whole of "fit the viewer
+to the pop-up frame": a one-word selector mismatch, not a sizing judgement. A rule that matches
+nothing is indistinguishable from a rule that works, in every tool this repo has.
+
+⚠️⚠️ **YOU CANNOT `drawImage` A WebGL CANVAS FROM A CLICK HANDLER.** A WebGL drawing buffer is
+cleared after each composite unless the context was created with `preserveDrawingBuffer: true` —
+which Pannellum does not set and does not expose — so reading it in a task other than the one that
+drew it reliably returns an empty buffer. That is why "Use this view as thumbnail" never worked, and
+why no amount of pressing it again would have helped. The replacement reprojects the same view out
+of the panorama **image** in a 2D canvas, with no readback anywhere; it now runs at Confirm & Save,
+so the last view *is* the thumbnail with nothing to press. The reason is kept on record even though
+the button is gone, because the same call shape reads as correct anywhere else in this app.
+
+⚠️ **AND A CHECKER MATCHED ITS OWN EXPLANATION AGAIN — the third time this log has recorded it.**
+The assertion that the removed button is gone searched the renderer for its label, and the comment
+explaining the removal quotes the owner's words about it. It strips comment lines before testing
+now. Any assertion written as "this string no longer appears" has to reckon with the fact that the
+commit removing something is exactly the commit that describes it.
+
+**Verified:** the server stitcher's own suite **80 passed, 0 failed** (was 66/3 — the 3 pinned the
+signed-feather mechanism band compositing replaces, retargeted rather than deleted), including a
+before/after contrast executed against ground truth: recovered-scene error **24.24 → 0.95 / 255**,
+uncovered black pixels **2.49% → 0.00%**, over-rotation trimmed, output an 8.5:1 landscape instead of
+a bowed arc. Progress Photos' own suite **976 passed, 5 failed** — ⚠️ the same 5 pre-existing
+failures, confirmed by stashing this work and re-running (973/5 on the base). `wiring-check`
+**139/0**; CSS braces balanced; 0 NUL bytes across every changed file.
+
+⚠️⚠️ **Not verified against a real recording, and the Edge Function itself was not executed** — there
+is no Deno runtime, no deployment and no real phone video here. What is proven is that
+`stitch-core.mjs` (zero imports, runs identically under Node) recovers a known scene from synthetic
+rotating-camera frames; the function's wiring around it is checked structurally. **The first real
+capture after `supabase functions deploy pano360-process` is the test**, and the job's own done
+message now names the measured coverage and how many over-rotated frames were trimmed.
+
+⚠️ **Re-lettered `(av)` → `(aw)` on merging `origin/main`.** Main had independently published its own
+`2026-09-17 (av)` while this was in flight, so both sides prepended a different entry under one letter.
+Both are kept whole and this one moves past it, per this file's own rule: take only the NEW entries from
+each side, never both copies of the log. Verified after resolving — **310 dated headings, 310 distinct**
+(base 308, one new entry from each side), and the line count lands on base + both sides exactly
+(18,989 + 134 + 73 = **19,196**, plus the 12 lines of this note).
+
+⚠️⚠️ **`MODULE_V` → `20260917zzt`, AND THE COLLISION IT AVOIDS DID NOT CONFLICT.** Both sides
+independently re-derived `20260917zzs` from the same base — so git saw the identical string on both
+sides of every one of the three token lines and **merged them silently**, leaving one cache-bust token
+covering two different builds. A browser holding main's `zzs` would never have fetched this branch's
+bytes. Found by listing every `20260917zz*` token on **both** refs before resolving rather than after;
+the seventh time this log has recorded that shape, and the first time it was caught pre-push in a merge
+that reported no conflict on the file at all. Re-derived past both and sort-checked as a plain string
+(`zzs` < `zzt`); `module.css` / `module.js` / `pano360.js` bumped with it.
+
 ### 2026-09-17 (av) — Schedule Setup ▸ Activities: two delete controls go, one of them wired days after this branch called it dead
 
 ⚠️ **Re-lettered `(at)` → `(av)` on merging `origin/main`.** Main had independently published its own

@@ -521,6 +521,8 @@ with expected(migration, kind, obj, col) as (values
     ('2026-09-16-pano360-jobs.sql','table','pano360_jobs',''),
     ('2026-09-16-scurve-trade-agg.sql','function','schedule_scurve_trade_agg',''),
     ('2026-09-16-users-protect-super-admin.sql','function','is_super_admin',''),
+    ('2026-09-17-calendar-day-hours.sql','column','calendars','day_hours'),
+    ('2026-09-17-calendar-day-hours.sql','column','calendars','extra_holiday_excludes'),
     ('2026-09-17-calendar-holiday-labels.sql','column','calendars','extra_holiday_labels'),
     ('2026-09-17-contracts-claims-owner.sql','column','contracts_claims','owner'),
     ('2026-09-17-contracts-claims-owner.sql','column','contracts_claims','owner_ids'),
