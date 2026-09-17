@@ -486,10 +486,16 @@ with expected(migration, kind, obj, col) as (values
     ('2026-09-11-mom-list-reorder.sql','column','mom_schedules','sort_order'),
     ('2026-09-15-cc-attachments.sql','table','cc_attachments',''),
     ('2026-09-15-schedule-attachments.sql','table','activity_attachments',''),
+    ('2026-09-15-scurve-status-per-project.sql','function','schedule_scurve_status',''),
     ('2026-09-15-user-module-access.sql','column','users','module_access'),
     ('2026-09-15-user-notes.sql','table','user_notes',''),
     ('2026-09-16-delete-project-purge.sql','function','admin_delete_project',''),
     ('2026-09-16-delete-project-purge.sql','function','admin_project_delete_preview',''),
+    ('2026-09-16-pano360-jobs.sql','function','pano360_invoke',''),
+    ('2026-09-16-pano360-jobs.sql','function','pano360_jobs_after_insert',''),
+    ('2026-09-16-pano360-jobs.sql','function','pano360_sweep_stuck_jobs',''),
+    ('2026-09-16-pano360-jobs.sql','table','pano360_jobs',''),
+    ('2026-09-16-scurve-trade-agg.sql','function','schedule_scurve_trade_agg',''),
     ('2026-09-16-users-protect-super-admin.sql','function','is_super_admin','')
 ),
 missing as (

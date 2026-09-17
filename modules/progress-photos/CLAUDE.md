@@ -1,5 +1,162 @@
 # Module: progress-photos
 
+## 2026-09-16 (c) — 72 frames, a signed-feathering bug fixed server-side, the cylindrical-warp gap documented (not fixed), and the panorama viewer gets a real fullscreen control
+
+Owner: *"also, use 72 frames instead of 48. audit to improve correctness. improve also panorama
+viewer."* Three asks, all against the server-side 360° pipeline
+(`supabase/functions/pano360-process/`) that the entry directly below this one moved stitching
+into — the client side now only extracts frames and uploads them; the worker does the actual
+alignment/compositing.
+
+### 1 · 72 frames, not 48
+
+`FIXED_FRAME_COUNT` in `pano360.js` → **72**. ⚠️⚠️ **This constant no longer governs the pipeline's
+real cost.** Since the same-day server-side move, the client's job path
+(`uploadJobFrames`/`extractFrames`) only extracts and uploads JPEGs — cheap, no per-pair
+ORB/BFMatcher/RANSAC on the device. Raising the count buys back overlap/join density on the
+server at a small, fixed client-side cost (72 JPEG extractions instead of 48), not the
+"several hundred frames of sequential OpenCV work" the pre-server-move architecture would have
+made this. `Pano360.stitchFromVideo` (the full local stitch) still exists and is still governed
+by this constant, but nothing on the shipped job path calls it today.
+
+### 2 · Correctness audit of the server pipeline
+
+**Found and fixed: a signed feathering-direction bug in `pasteFrame()`.** The compositor blends
+a new frame's edge into the growing mosaic over a `featherPx`-wide band — but the code always
+feathered the frame's **left** edge, regardless of which way the frame actually moved relative
+to the frame before it. That's correct for the ordinary case (a rightward pan, where the new
+frame's left edge is the one overlapping existing content) and silently wrong whenever a pair's
+alignment offset (`offsets[cursor-1].dx`) came out negative — a leftward pan, a momentary
+backward wobble mid-recording, or a mirrored/front-facing capture — where the overlap is on the
+frame's **right** edge instead. Feathering the wrong edge there means blending a strip of the
+frame that has no shared content with what it's supposedly blending into: a visible seam or a
+soft double-exposure ghost right where the two frames actually meet.
+
+Fixed by making `pasteFrame`'s `featherPx` **signed**: positive still means "feather the left
+`featherPx` columns" (the original, still-correct default); negative means "feather the right
+`|featherPx|` columns instead." The caller in `index.ts`'s compositing step now derives the sign
+from the real alignment offset of the pair being pasted — `pairDx < 0 ? -featherMag : featherMag`
+— rather than assuming every frame overlaps on its left.
+
+⚠️⚠️ **Verified against the pre-fix formula, not just asserted correct.** `test.mjs`'s new `[8d]`
+section builds a canvas with known "existing" and "new frame" pixel values, feeds
+`pasteFrame` a negative `featherPx`, and confirms: the far column reads pure new-frame value, the
+near column blends fully back to the existing content, and an in-between column is a genuine
+partial blend strictly between the two — proving the right-edge feather geometry is correct, not
+just that *some* value came out. It then replays the **exact pre-fix formula** inline
+(`if (featherPx > 0 && x < featherPx) a = x / featherPx;` — no right-edge branch at all) against
+the identical negative-`featherPx` input and confirms it produces a **different, wrong** result
+(a hard cut with no feathering) — so the fix is shown to change real behavior on the exact input
+class it targets, not merely to leave old behavior alone. A second `[8d]` case confirms the
+unchanged positive-`featherPx` (left-edge) path still feathers correctly. `[8e]` is a structural
+check (via `readFileSync`, since `index.ts` is Deno-only and can't run in this Node suite)
+confirming the compositor genuinely reads `offsets[cursor-1]`, derives the sign from `pairDx`, and
+calls `pasteFrame` with the derived value — never the bare, unsigned magnitude.
+
+**Documented, not fixed: the server pipeline has no cylindrical reprojection step.** The client
+pipeline (`pano360.js`) hit and fixed this exact bug class on 2026-09-12 — a camera rotating
+about a fixed point (this app's own "stand and turn" capture guidance) is a rotation, not a
+lateral translation, and reprojecting rotated frames onto one flat plane via a plain pixel shift
+produces a badly malformed, largely-black mosaic past a few degrees of rotation. The server
+pipeline (`stitch-core.mjs`/`index.ts`) does the same kind of pure-translation alignment/
+compositing on raw, un-warped perspective frames, with no reprojection step at all — the
+identical architectural gap, one module over.
+
+⚠️⚠️ **Deliberately NOT implemented from scratch this round.** A correct cylindrical remap needs
+real per-pixel trigonometry (a destination column's contribution is `atan(tan(HFOV/2) * ...)`-
+shaped, not a linear scale across the frame — an error this session's own reasoning caught and
+corrected while drafting the audit comment, which is itself the argument for not shipping an
+unverified version). This environment has: no Deno runtime to execute `index.ts` directly, no
+real recorded 360° video/image fixtures for this specific pipeline, and no way to render a
+mosaic and visually confirm a remap is geometrically correct rather than subtly wrong in a way
+that only shows up on a real capture. Shipping unverified reprojection math into a pipeline whose
+whole job is producing a visually-coherent panorama is exactly the class of mistake this
+codebase's own engineering culture treats as worse than not shipping a fix at all. The gap is
+documented at length in a new header comment in `stitch-core.mjs` (cross-referenced from
+`index.ts`'s own compositing step) naming the 2026-09-12 client-side precedent and instructing
+whoever picks this up next to build an isolated, Deno/Node-free harness with a synthetic
+rotating-camera test scene — the same methodology the 2026-09-12 client fix used — before trusting
+any cylindrical-warp arithmetic. `[8f]` in `test.mjs` asserts the header states there is no
+reprojection step, names the 2026-09-12 precedent, and states why a from-scratch remap wasn't
+shipped — so the gap can't quietly disappear from the record on the next edit to this file either.
+
+### 3 · Panorama viewer: fullscreen enabled
+
+`mountPannellumViewer` (module.js) now sets `showFullscreenCtrl: true` (was `false`). The
+review/preview boxes this viewer mounts into are cramped by design — `#pp360-panowrap`'s fixed
+240px review strip, and the lightbox's own modal chrome — so a real fullscreen escape hatch
+matters more here than in a viewer with more room to breathe. The browser's Fullscreen API is
+independent of the surrounding DOM's z-index/overflow, so this doesn't interact with any of the
+containment work those two contexts already do.
+
+⚠️ Verified in an earlier segment of this same session via genuine Playwright/Chromium execution
+against the real, npm-installed Pannellum library (not a stub): the fullscreen toggle button
+(`.pnlm-fullscreen-toggle-button`) renders, is visible alongside the zoom controls, and does not
+interfere with panorama loading or rendering.
+
+### Merge with `origin/main` (first pass)
+
+`origin/main` had advanced substantially since this branch started (portfolio site-view work,
+admin/users changes, and — most relevant here — its own same-day cache-bust round reaching
+`20260916r`/`za` on the shared `MODULE_V` fallback). Merged forward; five conflicts, all of the
+shape this repo's own CLAUDE.md documents as standard:
+- `modules/progress-photos/CLAUDE.md` — union of both sides' new entries, neither summarized.
+- `modules/progress-photos/index.html` — `pano360.js`/`module.js?v=` re-derived to `20260916zb`
+  (past both this branch's `20260916a` and `origin/main`'s `20260914i`/`20260916z1`, since both
+  files carry real content changes from this pass); `ppr.js?v=` kept at origin/main's
+  `20260916z1` (untouched by this pass).
+- `assets/js/modules-grid.js`, `dashboard.html`, `modules.html` — the shared `MODULE_V` fallback
+  re-derived to `20260916zc`, past every `20260916z*` token found anywhere in the repo at merge
+  time (`z1`, `za`, `zb`), per this repo's own "bump MODULE_V on any index.html change" rule —
+  this pass's merge-conflict resolution changed `progress-photos/index.html`'s bytes, which
+  triggers that rule on its own even setting aside the module's other content changes.
+
+### ⚠️⚠️ Merge with `origin/main` (second pass) — a concurrent session touched this same module
+
+`origin/main` advanced again before this branch could push — 29 commits, including a **concurrent
+session's own rewrite of this module's offline upload queue** (the "(b)" entry directly below this
+one: a real XHR-based upload-progress panel, replacing the silent `flushQueue()` call). Two real
+conflicts, both resolved as this repo's convention requires:
+
+- **This file** — union, both entries kept whole (this entry re-lettered `(c)`, since the sibling
+  entry below is already lettered `(b)` and an unlettered heading here would collide with the
+  pre-existing, older "2026-09-16 — The portfolio view…" entry further down).
+- **`index.html`** — `git diff` against the merge-base confirmed `pano360.js` was untouched by
+  `origin/main` on this pass (kept at this branch's own `20260916zb`), while **both** sides made
+  real, non-overlapping changes to `module.js` (this branch: `signStoragePath` +
+  fullscreen-viewer wiring; `origin/main`: the entire XHR upload-task system) — the two auto-merged
+  cleanly inside `module.js` itself with no conflict marker, so a version token past both was
+  required: `module.js?v=20260917a`. `assets/js/modules-grid.js`'s `MODULE_V` fallback needed no
+  further change — both sides had independently landed on the identical `20260916zc`, confirmed by
+  diffing each side's own change to that one line rather than assumed from the lack of a conflict.
+
+⚠️ The closing token line below (`module.js`/`pano360.js?v=` …) reflects this second merge's
+resolution, not the first pass's — `module.js` moved to `20260917a`; `pano360.js` and `MODULE_V`
+are unchanged from the first pass.
+
+### Verified
+
+**Isolated the merge-only baseline before trusting the numbers**: stashed this pass's own 6
+changed files (leaving only the merge in place), ran the full suite, then restored the stash and
+re-ran. Merge-only baseline: **973 passed, 4 failed**. With this pass's changes: **975 passed, 4
+failed** — the same 4 failure names in both runs (a PDF page-break assertion, a filter-panel
+density assertion, and 2 `capture.js` audio/mic-toggle assertions — all pre-existing, all
+unrelated to this pass), confirming this pass adds exactly 2 new passing checks and introduces
+zero regressions, rather than trusting a bare pass/fail count.
+
+`node --check` clean on `module.js`/`pano360.js`/`test.js`. `test.mjs` (the server pipeline's own
+Node-runnable suite, sharing `stitch-core.mjs` byte-for-byte with the Deno `index.ts`) passes with
+the three new sections (`[8d]`/`[8e]`/`[8f]`) included.
+
+⚠️ **Not verified against a real capture.** The feathering fix is proven correct by genuine
+execution against a controlled pixel fixture and by contrast against the exact pre-fix formula on
+the same input — it has not been observed against a real recorded 360° walkthrough run through the
+real Edge Function worker, since this environment has no Deno runtime to invoke `index.ts` and no
+real video fixtures for this pipeline. The cylindrical-warp gap remains open and is now documented
+rather than guessed at or silently shipped as fixed.
+
+`module.js?v=` → `20260917a`; `pano360.js?v=` → `20260916zb`; `MODULE_V` → `20260916zc`.
+
 ## 2026-09-16 (b) — "2 pending — Sync now" did nothing because it was calling flushQueue()
 ## directly into a queue with no visible state at all; real per-file upload progress via XHR
 
@@ -169,6 +326,126 @@ Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that
   denied`, not `42P01`), so on this database it is the `favorite` column that is outstanding.
 
 Developer change log for the **progress-photos** module. Update every PR.
+
+## 360° stitching moves off the browser entirely: extract-and-upload on the client, a self-chaining Edge Function job does the actual alignment/compositing server-side (2026-09-16)
+
+Every entry below this one, going back to 2026-09-11, is the same fight fought from the client
+side: OpenCV.js/WASM stitching a real recording is genuinely several minutes of sequential,
+CPU-heavy work, and a phone browser tab — especially iOS Safari, which evicts a backgrounded
+tab's memory far more aggressively than desktop and does not reliably fire `beforeunload` on an
+app-switcher kill — cannot be trusted to keep that work alive for that long. Every fix so far
+(fixed-48 frame sampling, `navigator.storage.persist()`, IndexedDB draft persistence, a
+completion `Notification`) made losing that work *less likely* or *easier to recover from*. None
+of them could make the underlying problem — a multi-minute compute job living entirely inside one
+browser tab — actually go away. This entry does: the stitch itself now runs **server-side**, in a
+self-chaining Supabase Edge Function job, and the browser's part of a 360° capture shrinks to
+"extract frames, upload them, insert one row" — seconds of work, safely on Storage before anything
+can be lost.
+
+### The server side (already built and documented in their own files)
+
+**`migrations/2026-09-16-pano360-jobs.sql`** (run this) adds `pano360_jobs` — one row per capture,
+tracking `status` (`queued → aligning → compositing → done|failed|cancelled`), the uploaded
+`frame_paths`, a `step_cursor`/`offsets`/`composite_state` the worker uses to resume where it left
+off, `progress_pct`/`progress_msg` for the client to poll, and `result_path`/`thumb_path` once
+done. RLS: any project writer may INSERT, but `with check` forces `status='queued'` and
+`step_cursor=0` — a client can never hand the worker a job that claims to already be in progress.
+UPDATE is column-level restricted (`grant update (status) …`) so the only thing a client can ever
+change post-insert is cancelling it (`status='cancelled'`) — every alignment/compositing field is
+write-only from the worker's own service-role connection. DELETE is owner/admin, terminal statuses
+only. A `pano360_invoke(job_id)` SECURITY DEFINER function (reading a Vault-stored function URL +
+service key) drives the job forward — a `pg_net.http_post` trigger fires it on insert/status
+change, with a `pg_cron` sweep as the safety net for a job that stalls between invocations. **It
+is a deliberate no-op until the owner runs the two Vault `create_secret` calls the migration's own
+header documents** — until then a job sits `queued` forever, which is a config gap, not a code bug.
+
+**`supabase/functions/pano360-process/index.ts`** is the worker. Per the migration's own reasoning:
+Edge Functions cap **active CPU time** at ~2s per invocation regardless of plan (wall-clock and
+network I/O don't count against it, but WASM/pixel-math does) — so it deliberately does **one
+bounded step** per invocation (align one frame pair, or paste one small batch into the growing
+composite) and re-invokes itself for the next, rather than gambling that a real ~47-pair capture
+fits inside a single cold-isolate call. The alignment/compositing math itself is pure TypeScript,
+Node-testable with no Supabase/Deno runtime needed — built and verified in an earlier turn of this
+same work (tasks #2–#4 above), not touched in this pass.
+
+### The client side — this pass
+
+**`runStitchForDraft(draft)` no longer calls `Pano360.stitchFromVideo` at all.** It now:
+extracts frames locally (still via `Pano360.getDuration`/`frameCountFor`/`extractFrames` — video
+decoding has to happen in a browser, there's no way around that part), downsizes each to a
+`JOB_FRAME_MAXW=640` JPEG at `JOB_FRAME_JPEG_Q=0.82` (matching the server's own
+`COMPOSITE_FRAME_MAX_WIDTH`, so the two sides agree on what a "frame" is), uploads them through a
+capped-concurrency pool (`JOB_UPLOAD_CONCURRENCY=4`, the same pattern this file already uses
+elsewhere for batch uploads) to `<project>/pano360-jobs/<jobId>/frame-XXXX.jpg`, inserts one
+`pano360_jobs` row, and polls it (`PANO360_POLL_MS=4000`, plain `setTimeout` — not Realtime,
+deliberately: this needs one row's state on a slow cadence, not a subscription) until it reaches
+`done`/`failed`/`cancelled`.
+
+- **`pano360.js` gained two real, documented exports** — `extractFrames`/`frameCountFor` — for the
+  client to call directly, rather than only through the now-unused `stitchFromVideo` local-stitch
+  path. Everything else in that file (the actual OpenCV.js pipeline, the frame-density history
+  documented at length below) is untouched; the client simply stopped calling into it for the
+  stitch itself.
+- **The video's own bytes are dropped the moment every frame is safely uploaded** — resuming a
+  draft after that point means polling the job, never re-extracting/re-uploading the source. This
+  is a real reduction in what has to survive a tab eviction: only the small `jobId` needs to
+  persist locally, not a multi-hundred-MB raw recording.
+- **`pollPano360Job`'s "row not found" handling distinguishes two different facts.** A brand-new
+  job may not have replicated to the read replica yet (retry silently); a job that **existed and
+  then vanished** (Discard cancels-then-deletes the row) rejects with a real message instead of
+  polling forever. `trackJobToCompletion` checks `findPano360Draft(draft.id)` before every DOM
+  mutation, at every tick and at completion/failure, so a background poll for a draft the planner
+  already discarded or confirmed-and-saved can never resurrect or mutate it.
+- **`rehydratePano360Drafts()` is now three-way, not two-way.** A persisted draft recovers as: a
+  **job-backed** resume (`rec.jobId` present — `trackJobToCompletion` picks the poll back up,
+  genuinely continuing on the server, not restarting anything); a **legacy local restart**
+  (`rec.sourceBlob` present, no `jobId` — a draft persisted by an older build of this code, before
+  this change, still gets its honest "restarting from your saved recording" treatment); or an
+  honest error (`processing` with neither — cannot be resumed, says so). The recovery toast now
+  distinguishes all three in its wording (*"resuming (continuing on the server)"* vs. *"resuming
+  (restarting from your saved recording)"* vs. *"waiting for review"*), so a planner isn't told
+  their capture is "resuming" when what's actually happening is a fresh local re-stitch.
+- **A job-backed `'ready'` draft rehydrates its `stitchResult` from the job row's own columns**
+  (`width`/`height`/`quality`/`pairs_fallback`/`pairs_total`), never from a blob that may not
+  exist locally — `signStoragePath(rec.jobResultPath)` re-signs the URL fresh on every rehydrate,
+  since a signed URL has a real expiry and a draft can sit unconfirmed across more than one
+  browser session.
+- **Confirm & Save reuses the server's own output paths directly wherever possible**, rather than
+  re-uploading bytes the job already produced: `draft.jobResultPath` becomes the saved row's
+  `photo_url` outright (no second upload of the finished panorama), and `draft.jobThumbPath`
+  becomes `thumb_url` **unless** the planner explicitly picked a different frame via "Use this
+  view as thumbnail" (tracked by the new `_thumbOverridden` flag, set the moment that button is
+  used) — in which case the planner's own chosen frame is uploaded instead, exactly as before.
+  Only the legacy (no-job, pre-processed-photo) path still uploads from a local blob at all.
+
+### Verified
+
+`node --check` clean on `module.js`, `pano360.js` and `test.js`. The one existing assertion this
+architecture change genuinely broke — `test.js`'s check on the OLD `runStitch`'s 4-stage local
+progress-message strings, which no longer exist now that stitching doesn't happen locally at all —
+was rewritten in place to assert the current shape (`runStitchForDraft` extracting+uploading via
+`uploadJobFrames`, no local 4-stage message, no `function runStitch(` at all), per this file's own
+"healthy churn from an intentional change" convention rather than left failing or silently deleted.
+Full suite: **973 passed, 4 failed** — the same 4 pre-existing, unrelated failures this file's own
+history already carries (a PDF page-break assertion, a filter-panel density assertion, and two
+`capture.js` audio-track assertions), confirmed unchanged by diffing the exact failure set against
+`HEAD` before this change (via `git stash`) — this pass introduces zero new failures and fixes zero
+pre-existing ones; it is scoped entirely to the 360° job-upload rewrite.
+
+⚠️ **Not verified signed in, and the two things most worth watching on the first real capture**:
+(1) the Vault secrets (`pano360_function_url`/`pano360_service_key`) have not been set by the
+owner, so `pano360_invoke` is currently a documented no-op — a real capture will upload its frames,
+insert its job row, and then sit at `queued` forever until that config step is done; (2) no real
+frame has ever been uploaded through `uploadJobFrames` or polled through `pollPano360Job` against a
+live Supabase project — the upload/poll logic is new this pass and has only been checked by
+`node --check` and manual review, not by driving a real capture end to end. The Edge Function
+worker itself (`pano360-process`) and its own alignment/compositing math were built and are
+documented in an earlier turn of this same work, not re-verified here.
+
+`module.js`/`pano360.js?v=` → `20260916a`; `MODULE_V` → `20260916s` (the `modules-grid.js?v=` tag
+on `dashboard.html`/`modules.html`, and its own fallback literal) — re-derived *after* merging
+`origin/main`, which had independently reached `20260916r` the same day for an unrelated portfolio
+change; `s` sorts past it, per this repo's own standing rule for exactly this collision shape.
 
 ## Follow-up: the pagination fix was real, but the footer still read as a
 ## separate, detached strip — a visual card-grouping defect, not a page-break
