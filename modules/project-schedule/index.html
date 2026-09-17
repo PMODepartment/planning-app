@@ -3561,17 +3561,20 @@
        ⚠️ `<details>` and not a JS panel on purpose: the open/closed state is the browser's, it
        needs no handler in the step's own bind pass (a step that forgot one would have an unopenable
        summary), and it re-renders closed like the rest of the panel. */
-    /* ⚠⚠ 78ch WAS LEAVING A QUARTER OF THE PANE EMPTY. Owner 2026-09-17: *“the how to use
-       collapsed panes are unnecessarily wrapped — let's maximize the space of the page/pane”*.
-       Measured at `--pd-fs-sm`: one ch is 8px, so 78ch is 645px inside a 913px panel — 268px,
-       about 29% of the width, unused, and a two-sentence paragraph wrapping to two lines where it
-       had room for one and a half.
-       ⚠ A cap is KEPT rather than removed. 78ch came from the prose measure (45–90 characters is
-       the readable range) and that reasoning is sound for prose — but this pane is a disclosure of
-       MECHANICS, a list of keystrokes and click sequences that is scanned rather than read, and
-       with no cap at all an ultrawide monitor would give it 200-character lines. 110ch is 880px:
-       it uses 96% of the panel here and still has a ceiling there. */
-    .sbld-how { margin:0 0 16px; max-width:110ch; font-size:var(--pd-fs-sm); }
+    /* ⚠⚠ NO CAP. This was 78ch, then 110ch, and the owner reported it STILL wrapping
+       unnecessarily both times: *“let's maximize the space of the page/pane”*, then *“how to's
+       still need UI rework unnecessary wrapping”*.
+       ⚠⚠ THE SECOND ATTEMPT WAS TUNED ON THE WRONG WIDTH — my error, recorded so the next
+       person does not repeat it. 110ch (880px) was measured against a 913px panel in the test
+       harness and filled it. The owner's panel is **1398px**, where the same rule fills **65%**
+       and leaves **488px** empty beside a bordered grey box — which reads as broken rather than
+       as a readable measure. A cap chosen on one viewport is not a cap.
+       ⚠ The readability argument for a cap (45–90 characters is the comfortable range for PROSE)
+       was made here twice and is not being forgotten — it is being overruled, deliberately, by the
+       person whose screen this is. This pane is a disclosure of MECHANICS: numbered click
+       sequences and short bullets, scanned rather than read end to end. The panel is the
+       constraint now. */
+    .sbld-how { margin:0 0 16px; font-size:var(--pd-fs-sm); }
     .sbld-how > summary { cursor:pointer; color:var(--pd-red); font-weight:700; font-size:var(--pd-fs-sm);
       list-style:none; display:inline-flex; align-items:center; gap:5px; padding:2px 0;
       -webkit-tap-highlight-color:transparent; }

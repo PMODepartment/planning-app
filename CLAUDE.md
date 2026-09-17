@@ -104,6 +104,70 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (al) — The "How to use this step" cap was tuned on the wrong viewport, twice
+
+Owner, after *(aj)* raised it from 78ch to 110ch: *"how to's still need UI rework unnecessary
+wrapping"*, with two screenshots from the live site.
+
+### ⚠️⚠️ THE LIVE PAGE ALREADY HAD THE FIX — SO THE FIX WAS THE PROBLEM
+
+First thing checked, before changing anything: `curl` the deployed module and grep the rule.
+`max-width: 110ch` was there. So this was not a stale cache or an undeployed commit; the owner was
+looking at the corrected version and it was still wrong.
+
+**The cap was tuned against the wrong panel.** 110ch (880px) was measured in the test harness, whose
+`.sbld-panel` is 913px — where it filled 100% and looked right. The owner's panel is **1398px**.
+Measured there:
+
+| | width | fills | unused |
+|---|---|---|---|
+| `.sbld-how` at 110ch | 910px | **65%** | 488px |
+| `.sbld-panel .sbld-lede` at 70ch | 602px | **43%** | 796px |
+
+488px of empty space beside a bordered grey box does not read as a readable measure; it reads as
+broken. ⚠️ **A cap chosen on one viewport is not a cap** — that is the mistake here, and it is mine.
+The harness measured honestly and I asked it the wrong question.
+
+### The cap is gone, not re-tuned
+
+`.sbld-how` now has no `max-width`: the step panel is the constraint. Measured at four panel widths —
+1440 / 1100 / 913 / 772 — it fills **100%** of the content box at every one, and the sample paragraph
+drops from two lines to one at the two larger sizes.
+
+⚠️ **The readability argument is not forgotten, it is overruled — deliberately, and by the person
+whose screen this is.** 45–90 characters is the comfortable range for *prose*, and at 1398px this pane
+runs to about 175. It is a disclosure of **mechanics** — numbered click sequences and short bullets,
+scanned rather than read end to end — and the owner has now asked twice. Re-tuning a third guess
+would have been worse than taking the instruction.
+
+### ⚠️ Left alone and reported instead: the lede
+
+`.sbld-panel .sbld-lede` is `max-width: 70ch` and fills **43%** of the owner's panel — visibly
+narrower than everything around it, and the more likely half of what "unnecessary wrapping" describes
+on those screenshots. It is **not** changed here, because a one-sentence purpose line is genuinely
+prose where the How pane is not, and widening it to 175 characters is a different decision from
+widening a bordered box. Measured, reported, and left for the owner to call.
+
+### The class-code migration returned 0 / 0 / 0
+
+Owner ran section 2 and got `retired_now 0, re_activated 0, missing_from_chart 0`.
+
+That reads as **"the chart already matches the template"** — no active row is off it, no inactive row
+is on it, and every template code exists. ⚠️ But it does **not**, on its own, prove the statement ran:
+this log already records the shape where *"a count equal to the PRE state means it never ran"*. Both
+branches are data-modifying CTEs referenced by the final select, so Postgres does execute them — but
+the honest way to settle it is the absolute count, which is section 3 of the migration:
+
+```sql
+select count(*) from class_codes;               -- 702 expected (nothing is ever deleted)
+select count(*) from class_codes where active;  -- 466 = applied · 698 = it never ran
+```
+
+Reported to the owner with that reading rather than a confident "it worked".
+
+**Verified:** `test-lsm` 683/683 · `wiring-check` 139/0 · inline scripts parse · the deployed rule
+confirmed by fetching the live page, not assumed. `modules-grid.js` `?v=` → `20260917zzj`.
+
 ### 2026-09-17 (ak) — Two dead controls in the Setup, dead in two different ways; and the migration referenced a column that has never existed
 
 Owner: *"Close button not working. Let's check for dead buttons across the schedule setup"*, then, on
