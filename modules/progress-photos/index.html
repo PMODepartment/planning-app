@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zi" />
-  <link rel="stylesheet" href="module.css?v=20260917a" />
+  <link rel="stylesheet" href="module.css?v=20260917zzf" />
   <!-- Item 5 (2026-09-11, third round): "use open source Pannellum for 360
        viewer" — a real, MIT-licensed panorama viewer, pinned exact version,
        loaded the same way every other feature library on this page is
@@ -149,9 +149,12 @@
                only. -->
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="bim-new" title="Add a floor plan for the selected Tower/Floor" style="display:none;">+ Add Floor Plan</button>
         </div>
-        <!-- Offline capture queue — visible on every screen (Rounds captures queue too) -->
+        <!-- Offline capture queue — visible on every screen (Rounds captures queue too).
+             The label is its own span (.pp-tb-label) so a narrow window can hide just the
+             text and keep the icon -- see module.css's @media (max-width:700px) rule. -->
         <button class="pd-btn pd-tb-labeled pp-syncbtn" id="pp-sync" title="Sync photos captured while offline" hidden>
-          <span data-ico="refresh" data-ico-size="14"></span> <span id="pp-sync-n">0</span> pending — Sync now</button>
+          <span data-ico="refresh" data-ico-size="14"></span>
+          <span class="pp-tb-label"><span id="pp-sync-n">0</span> pending — Sync now</span></button>
         <!-- 360° drafts, session-only: stitching in the background, nothing
              pushed to the database until confirmed. Visibility is driven by
              TWO independent things and both must agree: renderPano360DraftsBadge()
@@ -162,7 +165,7 @@
              module. On Gallery, show() clears the inline style and the
              `hidden` attribute (draft count) alone decides. -->
         <button class="pd-btn pd-tb-labeled pp-syncbtn" id="pp360-drafts" title="360° drafts" hidden>
-          <span data-ico="compass" data-ico-size="14"></span> Drafts</button>
+          <span data-ico="compass" data-ico-size="14"></span> <span class="pp-tb-label">Drafts</span></button>
         <div id="pp-presence" title="People viewing this project"></div>
         <div id="user-bar"></div>
       </div>
@@ -411,7 +414,7 @@
   <script src="../../assets/js/portfolio-dash.js?v=20260917zg"></script>
   <script src="capture.js?v=20260912c"></script>
   <script src="pano360.js?v=20260916zb"></script>
-  <script src="module.js?v=20260917a"></script>
+  <script src="module.js?v=20260917zq"></script>
   <script src="ppr.js?v=20260916z1"></script>
   <script src="bim.js?v=20260912o"></script>
   <script>

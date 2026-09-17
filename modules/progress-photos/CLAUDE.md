@@ -1,5 +1,70 @@
 # Module: progress-photos
 
+## "Starting…" forever on a real 360° upload, and the Drafts button overflowing a narrow window (2026-09-17)
+
+Owner, two live reports off the deployed site: uploading a 360° video left the Review modal
+reading **"Starting…"** with no further movement, and the topbar's **Drafts** button label ran off
+the edge of the window next to "+ Add media".
+
+### "Starting…" was the documented, honest fallback for a job nobody is driving forward
+
+⚠️⚠️ **This traces straight to the 2026-09-16 server-side rewrite's own stated gap, not a new
+bug.** `trackJobToCompletion`'s poll callback showed `j.progress_msg || 'Starting…'` for any status
+other than `aligning`/`compositing` — and a job sits at `queued` forever, with `progress_msg`
+staying null, for exactly as long as `pano360_invoke()` is the documented no-op it stays until the
+migration's own one-time Vault secrets (`pano360_function_url`/`pano360_service_key`) are created
+in the SQL editor — a step no migration or CI deploy can perform, since it needs the project's own
+function URL and service-role key. That entry already flagged this as the thing "most worth
+watching on the first real capture"; the first real capture found exactly it.
+- **The Edge Function's own first branch proves the healthy case is near-instant**: a `queued` job
+  flips to `aligning` (with `progress_msg: "Aligning frames…"`) the moment ONE invocation reaches
+  it — there is no legitimate reason for `queued` to persist for more than a beat. So a run of
+  consecutive poll ticks (`PANO360_STUCK_TICKS = 5`, ~20s at the existing 4s poll interval) still
+  reading no progress is a reliable, cheap signal that the self-chain never reached the worker at
+  all, without needing a new persisted timestamp field that would also have to survive a resume.
+- **`trackJobToCompletion`'s onTick now counts consecutive stuck ticks and replaces the silent,
+  indefinite fallback once the threshold is crossed**: *"Still queued, waiting for server-side
+  processing to start. This usually means the 360° background worker has not finished being set up
+  yet — you can keep waiting, or Discard and try again once it is ready."* ⚠️ The counter resets to
+  0 the instant status genuinely moves to `aligning`/`compositing`, so this self-heals the moment
+  the real fix (the Vault secrets) lands — nothing here papers over the underlying gap, it just
+  stops the UI silently lying about "starting" when nothing is.
+- **Not a code fix for the underlying gap** — that is still the one-time SQL step
+  `migrations/2026-09-16-pano360-jobs.sql`'s own header documents in full, and this session has no
+  live Supabase credentials to run it. The Discard button already existed in the Review modal's
+  footer regardless of status, so a planner was never actually trapped — only left with no
+  indication that "queued" was not simply "about to start any second."
+
+### The Drafts button's label had nowhere to go at a narrow width
+
+`#pp360-drafts` (and `#pp-sync`, the identical offline-queue button carrying the same
+`.pd-tb-labeled.pp-syncbtn` shape) render their text as a bare inline text node beside the icon —
+`dashboard.css`'s own shared rule only ever collapses an *unlabelled* `.pd-btn` to a 34px icon
+square; a labelled one always keeps `width:auto`, with no narrow-width fallback of its own. Neither
+button had ever needed one until "+ Add media" sat beside it in the same row.
+- Wrapped each button's text in its own `<span class="pp-tb-label">` (module-local, not a shared
+  rule change — `dashboard.css` is intentionally untouched here) so it can be targeted without
+  touching the icon.
+- **`@media (max-width: 700px)`** (this module's own existing breakpoint, reused rather than
+  inventing a new one) hides `.pp-tb-label` inside `.pp-syncbtn` and collapses the button back to
+  the same 34px icon-only square every other unlabelled topbar tool already is — the icon plus its
+  `title` tooltip is enough to reopen either panel.
+
+### Verified
+
+Full suite: **974 passed, 4 failed** — the same 4 pre-existing, unrelated failures this file's own
+history already carries (a PDF page-break assertion, a filter-panel density assertion, and two
+`capture.js` audio-track assertions), confirmed unchanged. `node --check` clean; `tools/
+wiring-check.js` — **139 passed, 0 failed**; CSS braces balanced (568/568); 0 duplicate DOM ids.
+
+⚠️ **Not verified against a real stuck job** — the stuck-tick counter is proven correct by reading
+the poll logic against the Edge Function's own documented status-transition order, not by driving
+an actual `queued` job through 20 real seconds against live Supabase (no credentials in this
+session). The label-overflow fix is a plain CSS/markup change, no behaviour to drive.
+
+`module.css`/`module.js?v=` → `20260917zq`; `MODULE_V` (`modules-grid.js?v=` on
+`dashboard.html`/`modules.html`, and its own fallback literal) → `20260917zq` to match.
+
 ## 2026-09-16 (c) — 72 frames, a signed-feathering bug fixed server-side, the cylindrical-warp gap documented (not fixed), and the panorama viewer gets a real fullscreen control
 
 Owner: *"also, use 72 frames instead of 48. audit to improve correctness. improve also panorama
