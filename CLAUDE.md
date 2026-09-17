@@ -104,6 +104,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (r) — HOTFIX: the Project Phases step rendered no cards at all
+
+Owner: *"Project Phases bugged out completely. I cannot see the default WBS."* Correct — the heading,
+the lede and the toolbar drew, and **not one card below them**. Live for about twenty minutes.
+
+⚠️⚠️ **`_phIdx` was declared inside `stPhases` and read by `phWbsBlock`, its SIBLING.** (p) added the
+shared WBS index so a card could state its own activity count, put the `var` inside the function that
+builds the cards, and left the reader one scope out. That parses cleanly and throws
+`_phIdx is not defined` on the first card, which aborts `stPhases` and leaves the step empty.
+
+⚠️ **The fifth cross-closure fault this repo has paid for** — after `below`, `cfMonthLabel`, `locKey`
+and stakeholder-map's `canWrite` — and the first one written here rather than inherited. Fixed the
+way it is fixed every time: the name moves to the scope both readers share.
+
+### ⚠️⚠️ Why 59 passing assertions missed it
+
+Section 8 of the suite exercises `phWbsBlock` by **slicing it out and injecting `_phIdx` as a
+parameter**. The harness supplied exactly the binding the page was missing, so the function was
+proved correct in a scope it never actually runs in. **Slice-and-inject proves the arithmetic and is
+blind to where a name lives** — and this module's own history should have warned me, because four
+earlier faults of this shape all survived their tests the same way.
+
+Section 9 asserts **nesting depth** instead: the declaration must sit at or outside the reader's own
+scope, and must not be re-declared inside `stPhases`. Run against the broken build it reports
+*"decl depth 4, reader depth 3"* and fails, so it bites on exactly the shape that shipped.
+
+⚠️ And a process note worth keeping: this entry did not ship with its own fix. The heredoc wrote the
+changelog to `/tmp/e.md`, which Git Bash resolves and Python does not, so the commit carried the code
+and no log line. Caught by reading `git show --stat` rather than the script's output — the same habit
+that caught the truncating write in 2026-08-26. Logged here in the follow-up.
+
+62/62 on the fix, `wiring-check` 139/139, the inline script parses.
+
+`MODULE_V` → `20260917zt`.
+
 ### 2026-09-17 (q) — The step-list minimise toggle was two guillemets and a 60px pill
 
 Owner: *"Find the minimize button let's improve its UI."*
