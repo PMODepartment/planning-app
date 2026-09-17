@@ -107,9 +107,12 @@ than by tidy geometry on unstyled markup.
 48/0, `test-syntax` 4/0, `test-critwbs` 26/0, `test-health` 30/0, `test-zoneoverlap` 56/0; the
 3.58MB inline block parses; CSS braces balanced (+3/+3, all three from the `{}` quoted inside the
 new comment); 0 NUL bytes; no duplicate ids among the ids touched.
-⚠️ **`test-builder` 99/1 and `test-lsm` fail IDENTICALLY on HEAD** — the first on a manual page for
-`Structure`, a step the 2026-09-17 merge retired; the second wants a path argument. Checked against
-HEAD rather than waved past, and left alone rather than folded into this change.
+⚠️ **`test-builder` is 99/1 on `origin/main`'s OWN copy of the file** — a manual page for
+`Structure`, a step the 2026-09-17 merge retired. Pre-existing; left alone rather than folded in.
+⚠⚠ **And a correction: `test-lsm` was never failing — I was calling it wrong.** It takes the file
+to check as `process.argv[2]`; run bare it throws `ERR_INVALID_ARG_TYPE` on `readFileSync(undefined)`,
+which reads exactly like a broken suite. Invoked properly: **676 assertions, 0 failed** on the merged
+tree and identically on `origin/main`.
 
 ⚠️ **Not verified signed in.** No real setup has been opened: the walk, the scope grid and the
 Generate step are the shipped renderers executed against fixtures, not a live project.
