@@ -104,6 +104,44 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (q) — The step-list minimise toggle was two guillemets and a 60px pill
+
+Owner: *"Find the minimize button let's improve its UI."*
+
+What it was: a small bordered pill reading `« Minimise`, collapsing to a 6px-padded pill holding a
+single `»`. Those are **guillemets** — typographic quotation marks pressed into service as arrows, at
+whatever weight the body font gives them — while every other collapse control in this app draws
+`chevronLeft` / `chevronRight` from the shared icon set. Collapsed, it read as a stray character
+rather than a control.
+
+- A real chevron SVG, with a text fallback if `Icons` has not loaded.
+- **Expanded: full rail width** (240px measured), so it lines up with the step cards beneath it
+  instead of floating above their left edge — and the hit target is the whole strip rather than a
+  60px pill. 30px tall keeps it subordinate to the steps: it is chrome, not a step.
+- **Collapsed: a 34×34 square icon button**, the shape this app uses for every icon-only control and
+  the same target as the module-bar buttons, instead of a shrunken pill.
+- `border-radius` onto the shared `--pd-radius-md` token, a hover border, and a focus ring.
+
+⚠️ **What was already right and is untouched:** the label says what pressing it DOES, not what the
+state is — *"Minimise the step list"* / *"Show the step titles"* — with `aria-label` and
+`aria-expanded` kept in step. The existing comment records why, and a toggle labelled with its own
+current state is the one everybody reads backwards. The label is dropped from the button when
+collapsed only because the rail is 46px wide; the title and aria-label carry it there.
+
+⚠️ `innerHTML` rather than `textContent`, or the icon would be wiped on every sync.
+
+### Verified
+
+Rendered in an iframe, both states, against the real stylesheet: expanded **240×30** with one SVG and
+the text *"Minimise"*; collapsed **34×34**, one SVG, no text; `aria-expanded` flipping true→false;
+titles correct; and **zero guillemets in either state**. `Icons` confirmed loaded, so the fallback
+path was not the one measured.
+
+`wiring-check` 139/139, the WBS view suite 59/59, CSS delta unchanged from base at 1, the inline
+script parses.
+
+`MODULE_V` → `20260917zs`.
+
 ### 2026-09-17 (p) — Three ReferenceErrors that parsed cleanly, the Execution lock, Milestones to the top, and the four sync buttons become one
 
 Owner, over four messages on the merged Project Phases step: *"Most of the phases are just blank."*

@@ -3499,12 +3499,23 @@
     .sbld-railcol { position:sticky; top:12px; display:flex; flex-direction:column; gap:6px; min-width:0;
       max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
     .sbld-railcol > .sbld-rail { position:static; top:auto; }
-    .sbld-mintog { align-self:flex-start; display:inline-flex; align-items:center; gap:6px;
-      border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); color:var(--pd-muted);
-      font:inherit; font-size:var(--pd-fs-xs); padding:3px 8px; cursor:pointer; }
-    .sbld-mintog:hover { color:var(--pd-ink); background:var(--pd-bg); }
+    /* ⚠️ FULL RAIL WIDTH when expanded, so it lines up with the step cards under it instead
+       of floating above their left edge, and so the hit target is the whole strip rather than a
+       60px pill. 30px tall keeps it subordinate to the steps — it is chrome, not a step. */
+    .sbld-mintog { align-self:stretch; display:inline-flex; align-items:center; gap:6px;
+      border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card);
+      color:var(--pd-muted); font:inherit; font-size:var(--pd-fs-xs); min-height:30px;
+      padding:0 10px; cursor:pointer; }
+    .sbld-mintog:hover { color:var(--pd-ink); background:var(--pd-bg); border-color:var(--pd-muted); }
+    .sbld-mintog:focus-visible { outline:2px solid var(--pd-focus); outline-offset:1px; }
+    /* ⚠️ The icon must not be squeezed by the label's flex share, and it should not inherit
+       the label's colour transition on hover as a separate step. */
+    .sbld-mintog svg { flex:none; display:block; }
     .sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr; gap:12px; }
-    .sbld-wrap.sbld-railmin .sbld-mintog { align-self:center; padding:3px 6px; }
+    /* Collapsed: a square icon button, the shape this app uses for every icon-only control,
+       rather than a shrunken pill. 34px is the same target as the module-bar buttons. */
+    .sbld-wrap.sbld-railmin .sbld-mintog { align-self:center; width:34px; min-height:34px;
+      padding:0; justify-content:center; }
     /* The label collapses, the number does not. */
     .sbld-wrap.sbld-railmin .sbld-step { padding:6px 0; justify-content:center; }
     .sbld-wrap.sbld-railmin .sbld-step > span:not(.sbld-step-n) { display:none; }
@@ -15529,7 +15540,17 @@
     document.querySelectorAll('.sbld-mintog').forEach(function (b) {
       // ⚠️ The button says what pressing it DOES, not what the state is: a toggle labelled with its
       // own current state is the one everybody reads backwards.
-      b.textContent = on ? '»' : '« Minimise';
+      /* ⚠️⚠️ A REAL CHEVRON FROM THE SHARED SET, not a guillemet. This read `« Minimise`
+         and `»`: typographic quotation marks pressed into service as arrows, at whatever
+         weight the body font happens to give them, while every other collapse control in this app
+         draws `chevronLeft` / `chevronRight`. Collapsed it was a 6px-padded pill holding one
+         punctuation mark — a control that reads as a stray character.
+         ⚠️ `innerHTML`, so the icon survives; the label is dropped when collapsed because the
+         rail is 46px wide and there is nowhere to put it. The TITLE and aria-label carry it there,
+         and both already say what pressing it DOES rather than what the state is. */
+      var _ico = (window.Icons && Icons.svg) ? Icons.svg(on ? 'chevronRight' : 'chevronLeft', 14)
+                                             : (on ? '»' : '«');
+      b.innerHTML = _ico + (on ? '' : '<span>Minimise</span>');
       b.title = on ? 'Show the step titles' : 'Minimise the step list';
       b.setAttribute('aria-label', b.title);
       b.setAttribute('aria-expanded', on ? 'false' : 'true');
