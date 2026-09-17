@@ -103,6 +103,75 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (i) — The chart notes wrapped to 41% of the card, and the obvious grid fix was worse than the bug
+
+Owner: *"Verify live"*, then *"Wrap text needs improvement as well."*
+
+**Live verification first, and it passed:** every page on the deployed site is serving
+`?v=20260917zb`, and the owner's own screenshot of DEMO01 — signed in, which nothing here can do —
+shows the (h) facts row and the disclosure rendering correctly. It also showed the defect below,
+which is the argument for looking at the real screen rather than the harness.
+
+### ⚠️ The measure was right; the layout was not
+
+`.sc-whybody` capped the reading measure at `80ch`. Measured on the owner's card width, **1,568px:
+the text occupied 648px — 41% of the row** — three paragraphs stacked down the left edge with two
+thirds of the card empty.
+
+⚠️ **Widening the cap is the wrong fix.** A 1,568px line of 12.5px type is precisely what the cap
+exists to prevent. The answer is columns: the three paragraphs are independent (the lines, the bars,
+the weighting), so nothing has to read across a gap.
+
+### ⚠️⚠️ AND THE FIRST ATTEMPT WAS WORSE THAN THE BUG, IN A BAND A SPOT CHECK MISSES
+
+```css
+grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 46ch));   /* looks right */
+```
+
+It is not. **`auto-fit` counts tracks from the MAX sizing function when that is a definite length**,
+so the row was stepped in 380px units and the 320px floor never participated at all. Measured:
+
+| container | tracks | fill |
+|---|---|---|
+| 758px | **1** | **48%** |
+| 938px | 2 | 100% |
+| 1,218px | 3 | 100% |
+
+So between roughly 760 and 940 it collapsed to a single column and used **less** of the row than the
+bug being fixed — and it looked correct at 1280 and at 390, which are exactly the two widths a spot
+check uses. Found only by sweeping the range.
+
+**The fix is `1fr` as the max**, so the count comes off the floor and the tracks then share the row
+exactly, plus `max-width:calc(46ch * 3 + 48px)` to cap the block at three measures — without it a
+2,560px monitor collapses the empty tracks and hands each paragraph ~840px, about 130 characters to
+a line.
+
+⚠️ The left rule moves from the container onto each paragraph, or one border would run the height of
+the tallest column beside two that had already ended.
+
+### Verified
+
+Swept, not sampled — container fill and characters per line at each width:
+
+| width | columns | column | fill | chars/line |
+|---|---|---|---|---|
+| 390 | 1 | 313px | 100% | ~50 |
+| 820 | 2 | 367px | 100% | ~59 |
+| 1000 | 2 | 457px | 100% | ~73 |
+| 1600 | 3 | 381px | 100% of the capped block | ~61 |
+
+Every width inside the 45–75 character band, **no horizontal scroll at any of them**, and on the
+1,568px card the open block goes **379px → 283px** while the text goes **41% → 76%** of the row.
+
+⚠️ **The "before" was measured against the DEPLOYED stylesheet**, not a remembered one: the same
+fixtures and the same `notesHTML` rendered under the CSS from `HEAD`, so the only variable between
+the two pages is the rule that changed.
+
+`wiring-check` 139/139, `test-scurve-forecast` 28/28, CSS braces 226/226, the inline script parses.
+
+`MODULE_V` → `20260917zc` (the `modules-grid.js?v=` in `dashboard.html` and `modules.html`, plus the
+fallback literal). No shared asset changed, so no app-wide bump.
+
 ### 2026-09-17 (h) — A question about the forecast turned out to be arithmetic; the bar beside it was a bug. Planners get every module
 
 Three asks in one prompt. The first was a question, and answering it properly is what found the second.

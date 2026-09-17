@@ -115,9 +115,30 @@
     .sc-why[open] > summary::before { transform:rotate(90deg); }
     .sc-why > summary:hover { color:var(--pd-ink); }
     .sc-why > summary:focus-visible { outline:2px solid var(--pd-red); outline-offset:2px; border-radius:3px; }
-    .sc-whybody { margin-top:8px; padding-left:12px; border-left:2px solid var(--pd-line);
-      display:grid; gap:8px; max-width:80ch; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.6; }
-    .sc-whybody p { margin:0; }
+    /* ⚠⚠ COLUMNS, BECAUSE THE CARD IS WIDE AND A LINE OF TEXT MUST NOT BE. This was one
+       column capped at 80ch — 662px measured — inside a card that is about 1,630px on the
+       owner's screen, so two thirds of the row was empty and the cap read as a layout fault
+       rather than as the reading measure it is. Widening the cap is the wrong fix: a 1,600px
+       line of 12.5px type is the thing the cap exists to prevent.
+       ⚠ The three paragraphs are INDEPENDENT (the lines, the bars, the weighting), so they
+       column cleanly — nothing reads across a gap.
+       ⚠⚠ THE MAX IS `1fr`, NOT `46ch`, AND THAT IS THE WHOLE TRICK. `auto-fit` counts tracks
+       from the max sizing function when it is a definite length, so `minmax(320px, 46ch)` sized
+       the row in 380px steps and ignored the 320px floor entirely: measured at a 758px container
+       it dropped to ONE column and used 48% of the row — worse than the bug being fixed, and
+       invisible unless you measure between the two widths you happen to look at. With `1fr` the
+       count comes off the floor and the tracks then share the row exactly.
+       ⚠ `min(100%, 320px)` stops the floor exceeding the container on a phone, which is how an
+       auto-fit grid earns a horizontal scrollbar.
+       ⚠ The `max-width` caps the block at three measures. Without it a 2,560px monitor collapses
+       the empty tracks and hands the three paragraphs ~840px each — 130 characters to a line.
+       ⚠ The rule moves from the CONTAINER to each paragraph, or a single left border would
+       run down the height of the tallest column beside two that had already ended. */
+    .sc-whybody { margin-top:8px; display:grid; align-items:start; gap:12px 24px;
+      grid-template-columns:repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+      max-width:calc(46ch * 3 + 48px);
+      font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.6; }
+    .sc-whybody p { margin:0; padding-left:12px; border-left:2px solid var(--pd-line); }
     .sc-whybody b { color:var(--pd-ink); }
     /* The compact preview above the manual sheet keeps every fact and takes less room than the
        single paragraph it replaces — the reasoning is collapsed rather than cut. */
