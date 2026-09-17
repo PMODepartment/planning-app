@@ -32925,9 +32925,10 @@
       }
     }
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
+    var catGrpCollapsed = {}; // step-1 holding-area: which trade groups are folded shut, keyed by group code
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
-    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
+    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Internal (d)', w: 90, num: true }, { k: 'durExt', label: 'External (d)', w: 90, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
     // activity the push creates. Everything the builder produces lands in the EXECUTION phase, so
