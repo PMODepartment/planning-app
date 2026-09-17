@@ -1839,7 +1839,7 @@
     .pscl-trow .sub { text-align:right; font-size:var(--pd-fs-xs); color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     .pscl-trades .pscl-note { padding:8px 12px 0; }
     .pscl-trades .pscl-note:last-child { padding-bottom:10px; }
-    @media (max-width:720px){ .pscl-trow { grid-template-columns:1fr 96px; } .pscl-trow .track, .pscl-trow .sub { display:none; } }
+    @media (max-width:720px) { .pscl-trow { grid-template-columns:1fr 96px; } .pscl-trow .track, .pscl-trow .sub { display:none; } }
     /* Step 4 — the spread curve. Four picker buttons per activity, each drawing its OWN density
        from curveCdf so the picture can never drift from the arithmetic that spreads the money. */
     .pscl-curves { display:flex; gap:6px; flex-wrap:wrap; }
@@ -3195,7 +3195,7 @@
     .ps-ck-kpi.warn .v { color:var(--pd-red); }
     .ps-ck-kpi.good .v { color:#2D9B6F; }
     .ps-ck-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-    @media (max-width:900px){ .ps-ck-grid { grid-template-columns:1fr; } }
+    @media (max-width:900px) { .ps-ck-grid { grid-template-columns:1fr; } }
     .ps-ck-card { padding:0; overflow:hidden; }
     .ps-ck-h { display:flex; align-items:center; gap:8px; padding:11px 14px; font-weight:700; font-size:var(--pd-fs-base);
       border-bottom:1px solid var(--pd-line); background:var(--pd-bg); }
@@ -3646,7 +3646,7 @@
     .sbld-gen2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
     .sbld-genpanel { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-card); min-width:0; }
     .sbld-genh { font-size:var(--pd-fs-base); font-weight:800; text-transform:uppercase; letter-spacing:.04em; border-left:4px solid; padding-left:8px; margin-bottom:10px; }
-    @media (max-width:900px){ .sbld-gen2 { grid-template-columns:1fr; } }
+    @media (max-width:900px) { .sbld-gen2 { grid-template-columns:1fr; } }
     .sbld-del { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; color:var(--pd-bad-text); }
     /* ⚠️⚠️ A DRAWN GRIP, NOT A CHARACTER. Owner 2026-09-17: *"the symbol of 13 still remains."*
        This was the literal text `⠇` — U+2807, BRAILLE PATTERN DOTS-**123** — borrowed for its
@@ -3728,164 +3728,24 @@
        each body scrolls on its own: a 400-floor tower must not push the trades off the screen.
        Indentation carries the level (L1/L2/L3) exactly as the sheet does; a left rule per level
        does the work a tree of disclosure arrows would do more noisily. */
-    /* THE TWO VIEWS of the Structure step. Tabs rather than a segmented toggle, because each one
-       carries a second line saying how big it is — which is the information that tells a planner
-       which view they want before they open it. */
-    .sbld-strtabs { display:flex; gap:8px; margin:0 0 10px; flex-wrap:wrap; }
-    .sbld-strtab { flex:0 1 auto; text-align:left; display:flex; flex-direction:column; gap:1px;
-      padding:7px 14px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-card);
-      color:var(--pd-muted); font:inherit; font-size:var(--pd-fs-base); cursor:pointer; min-width:0; }
-    .sbld-strtab b { color:var(--pd-ink); font-size:var(--pd-fs-base); font-weight:700; }
-    .sbld-strtab span { font-size:var(--pd-fs-xs); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .sbld-strtab:hover:not(.on) { background:var(--pd-bg); }
-    /* ⚠️ The current view is marked by a FILLED left edge and the app's red, not by colour alone. */
-    .sbld-strtab.on { background:var(--pd-bg); border-color:var(--pd-red); box-shadow:inset 3px 0 0 var(--pd-red); cursor:default; }
-    /* The selection bar. It EXISTS only while something is selected — see libSelBar. */
-    .sbld-libselbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-      padding:6px 11px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:var(--pd-fs-sm); }
-    .sbld-libselbtn { font-size:var(--pd-fs-xs); padding:2px 9px; min-height:0; }
-    /* THE GRIP. A real <button> (see libWireDrag) so ArrowUp/ArrowDown reach it, styled down to a
-       handle. ⚠️ `flex:none` and a fixed width: it is the first thing in every re-arrangeable row,
-       and a grip that changed width with the row would stop the names lining up. */
-    .sbld-libgrip { flex:none; width:15px; border:0; background:none; padding:0; margin-right:3px;
-      color:var(--pd-line); font:inherit; font-size:var(--pd-fs-base); line-height:1; text-align:center;
-      cursor:grab; border-radius:3px; }
-    .sbld-libgrip:hover, .sbld-libgrip:focus { color:var(--pd-ink); background:var(--pd-bg); }
-    .sbld-libgrip:active { cursor:grabbing; }
-
-    .sbld-libselwarn { font-size:var(--pd-fs-xs); color:var(--pd-muted); border:1px dashed var(--pd-line);
-      border-radius:var(--pd-radius-pill); padding:0 6px; cursor:help; }
-    .sbld-libselhint { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-left:auto; }
-    /* An item name is a button now (it is the selection hit target), so every inherited button
-       style has to be undone — it must still read as the row's text. */
-    .sbld-libpick { border:0; background:none; padding:0; margin:0; font:inherit; color:inherit;
-      text-align:left; cursor:pointer; }
-    .sbld-libpick:hover { text-decoration:underline; text-decoration-style:dotted; }
-    /* ⚠️ A selected row is marked by a left bar AND a tint, never by tint alone: the pane already
-       spends its tints on trade colour and on depth.
-       ⚠⚠ TWO CLASSES, NOT ONE. Read off a rendered pane, not predicted: as a single-class rule this
-       lost the box-shadow to .sbld-libL3/L4/L5 (`inset 1px 0 0 var(--pd-line)`), which are declared
-       LATER in this sheet and are equally specific — so a picked row showed the tint and no bar,
-       i.e. exactly the tint-alone marking the line above forbids. `.sbld-libitem.sbld-libpicked`
-       outranks them wherever they sit, and only item rows are ever picked so it is also truer. */
-    .sbld-libitem.sbld-libpicked { background:color-mix(in srgb, var(--pd-red) 7%, transparent);
-      box-shadow:inset 3px 0 0 var(--pd-red); }
-    /* Fallback for a browser without color-mix(): the bar carries the state on its own, so losing
-       the tint costs nothing legible. Order does not matter here - the @supports query itself is
-       what gates it, and it is false in every browser that understands the rule above. */
-    @supports not (background: color-mix(in srgb, red 7%, transparent)) {
-      .sbld-libitem.sbld-libpicked { background:var(--pd-bg); }
-    }
-    .sbld-libpicked .sbld-libpick { font-weight:700; }
-    /* THE DROP EDGE. ⚠️⚠️ DECLARED HERE, AFTER THE PICKED RULE, AND THAT POSITION IS THE POINT.
-       Two classes beat the single-class depth rules, but they only TIE with
-       `.sbld-libitem.sbld-libpicked` — so placed before it (where it was first written) the marker
-       vanished on any selected row, i.e. on exactly the rows being dragged. Second time today the
-       same tie has bitten this pane; the rule is: anything that must win goes last. */
-    .sbld-libbody .sbld-libdropbefore { box-shadow:inset 0 3px 0 var(--pd-red); }
-    .sbld-libbody .sbld-libdropafter { box-shadow:inset 0 -3px 0 var(--pd-red); }
-    .sbld-libtooldel:hover:not(:disabled) { color:var(--pd-red); border-color:var(--pd-red); }
-    /* The right-click menu. Lives on document.body (see libMenu), so it needs its own stacking
-       context and a z-index above the sticky L1 headings inside the pane. */
-    .sbld-libmenu { position:fixed; z-index:var(--pd-z-escape); min-width:210px; padding:4px;
-      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
-      box-shadow:var(--pd-shadow-lg); font-size:var(--pd-fs-sm); }
-    .sbld-libmenui { display:block; width:100%; text-align:left; border:0; background:none;
-      font:inherit; color:var(--pd-ink); padding:6px 9px; border-radius:6px; cursor:pointer; }
-    .sbld-libmenui:hover:not(:disabled) { background:var(--pd-bg); }
-    .sbld-libmenui:disabled { color:var(--pd-muted); opacity:.5; cursor:not-allowed; }
-    .sbld-libmenusep { height:1px; margin:4px 6px; background:var(--pd-line); }
-    .sbld-libbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 10px; }
-    .sbld-libspacer { flex:1 1 auto; }
-    .sbld-lib { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
-    .sbld-libpane { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); overflow:hidden; min-width:0; }
-    .sbld-libhead { display:flex; align-items:center; gap:8px; justify-content:space-between; flex-wrap:wrap;
-      padding:8px 11px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:var(--pd-fs-base); }
-    .sbld-libbody { max-height:520px; overflow:auto; padding:4px 0 8px; }
     /* L1 - the tower, or the trade. The only level that gets a fill, because it is the only one
        that is a heading rather than a member of something. */
     /* ⚠ Quiet until the row is hovered: one of these sits on EVERY grouping row, and a
        permanently-lit button per row would out-shout the names the pane exists to show. */
-    .sbld-libadd { margin-left:8px; font:inherit; font-size:var(--pd-fs-micro); font-weight:700;
-      color:var(--pd-muted); background:none; border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
-      padding:1px 6px; cursor:pointer; opacity:0; transition:opacity .12s; }
-    .sbld-libL1:hover .sbld-libadd, .sbld-libgrp:hover .sbld-libadd,
-    .sbld-libadd:focus-visible { opacity:1; }
-    .sbld-libadd:hover { color:var(--pd-ink); border-color:var(--pd-red); }
-    .sbld-libseed { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; justify-content:center; }
-    .sbld-libL1 { position:sticky; top:0; z-index:1; padding:6px 11px; margin-top:2px;
-      background:var(--pd-bg); border-top:1px solid var(--pd-line); border-bottom:1px solid var(--pd-line);
-      font-size:var(--pd-fs-sm); font-weight:700; letter-spacing:.01em; }
-    /* The trade colour rides on the left edge, the same colour the rest of the builder uses for it. */
-    .sbld-libL1[style*="--zc"] { box-shadow:inset 3px 0 0 var(--zc, var(--pd-line)); }
-    .sbld-libL2 { display:flex; align-items:baseline; gap:8px; padding:4px 11px 4px 24px; font-size:var(--pd-fs-sm); font-weight:700;
-      box-shadow:inset 1px 0 0 var(--pd-line); }
-    .sbld-libL3 { display:flex; align-items:center; gap:8px; padding:3px 11px 3px 40px; font-size:var(--pd-fs-sm);
-      color:var(--pd-ink); box-shadow:inset 1px 0 0 var(--pd-line); }
-    /* L4-L6 — the deeper rungs: the location UNIT on the left, sub-groupings and the items inside
+    /* The trade colour rides on the left edge, the same colour the rest of the builder uses for it. *//* L4-L6 — the deeper rungs: the location UNIT on the left, sub-groupings and the items inside
        them on the right. Same shape as L3, one indent step further in, because the only thing that
        distinguishes them IS depth. ⚠️ The font size stops shrinking at L3: three more steps of half
        a pixel would land a real activity name at 10.5px, and the deepest rows are the ones a
-       planner most needs to read. */
-    .sbld-libL4, .sbld-libL5, .sbld-libL6 { display:flex; align-items:center; gap:8px; padding:3px 11px; font-size:var(--pd-fs-sm);
-      color:var(--pd-ink); box-shadow:inset 1px 0 0 var(--pd-line); }
-    .sbld-libL4 { padding-left:56px; }
-    .sbld-libL5 { padding-left:72px; }
-    .sbld-libL6 { padding-left:88px; }
-    /* The rung, as a fixed-width chip so the names still line up down the pane. Tinted by depth
+       planner most needs to read. *//* The rung, as a fixed-width chip so the names still line up down the pane. Tinted by depth
        rather than coloured: three saturated badges per row would compete with the trade colour and
-       with the change-order and critical marks the rest of this module already spends colour on. */
-    .sbld-liblv { flex:none; display:inline-block; min-width:20px; margin-right:7px; text-align:center;
-      font-size:var(--pd-fs-micro); font-weight:700; letter-spacing:.02em; line-height:15px; border-radius:3px;
-      border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg); cursor:help;
-      vertical-align:2px; }
-    .sbld-liblv.lv1 { color:var(--pd-ink); background:var(--pd-card); }
-    .sbld-liblv.lv3, .sbld-liblv.lv4, .sbld-liblv.lv5, .sbld-liblv.lv6 { opacity:.72; }
-    /* The legend repeats the vocabulary once per pane, because L2 means a floor on one side and a
-       grouping on the other and nothing else on screen says so. */
-    .sbld-liblegend { display:flex; gap:8px; margin-left:10px; font-size:var(--pd-fs-xs); color:var(--pd-muted); flex-wrap:wrap; }
-    .sbld-liblegend b { font-weight:700; color:var(--pd-ink); }
-    .sbld-libkind, .sbld-libwho, .sbld-libcode { font-size:var(--pd-fs-xs); color:var(--pd-muted); font-weight:400; }
-    /* Shrinks and ellipses rather than pushing the row wide: six trades on one floor is normal,
-       and the FLOOR NAME is the thing that must stay readable. */
-    .sbld-libwho { margin-left:auto; text-align:right; white-space:nowrap; min-width:0; overflow:hidden;
-      text-overflow:ellipsis; flex:0 1 auto; }
-    /* ⚠️ An ITEM promoted to L2 borrows .sbld-libL2, which is a HEADING style. Reset the weight
-       or an ungrouped item reads as a grouping with no children. */
-    .sbld-libitem { justify-content:space-between; font-weight:400; }
-    /* A grouping heading row. align-items:center because it now carries BUTTONS — L2's baseline
-       alignment (right for the floor rows it was written for) hangs them below the text.
-       ⚠️ font-weight HERE, not on .sbld-libL2. Read off the rendered pane: only an L2 grouping was
-       bold, because the weight came from the L2 row style — so a SUB-grouping (L3, L4) rendered at
-       the same weight as the items inside it, and the pane stopped showing which rows are headings
-       at exactly the depths this change adds. A grouping is a heading at every rung. */
-    .sbld-libgrp { align-items:center; font-weight:700; }
-    /* Rename / + level. ⚠️ Dimmed but NEVER hidden: a control revealed only on hover is a control
-       nobody finds, and restructuring the breakdown is the whole point of this pane. */
-    .sbld-libtools { flex:none; display:inline-flex; gap:4px; opacity:.55; transition:opacity .12s; }
-    .sbld-libgrp:hover .sbld-libtools, .sbld-libtools:focus-within { opacity:1; }
-    .sbld-libtool { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
-      font:inherit; font-size:var(--pd-fs-micro); font-weight:400; line-height:15px; padding:0 5px; border-radius:3px; cursor:pointer; }
-    .sbld-libtool:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); }
-    .sbld-libtool:disabled { opacity:.45; cursor:not-allowed; }
-    .sbld-libnm { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .sbld-libcode { flex:none; font-family:var(--pd-mono); }
-    /* The one editable field on the screen, kept visually quiet until it is used or hovered so the
+       with the change-order and critical marks the rest of this module already spends colour on. *//* The legend repeats the vocabulary once per pane, because L2 means a floor on one side and a
+       grouping on the other and nothing else on screen says so. *//* Shrinks and ellipses rather than pushing the row wide: six trades on one floor is normal,
+       and the FLOOR NAME is the thing that must stay readable. *//* Rename / + level. ⚠️ Dimmed but NEVER hidden: a control revealed only on hover is a control
+       nobody finds, and restructuring the breakdown is the whole point of this pane. *//* The one editable field on the screen, kept visually quiet until it is used or hovered so the
        pane reads as a structure rather than as a form. */
     /* The rung picker: two small buttons, the current rung inert. Sized to sit inside a 3px-tall
        row without changing its height, so turning the pane into a form does not make it taller. */
-    .sbld-liblvpick { flex:none; display:inline-flex; gap:2px; margin-right:6px; }
-    .sbld-liblvbtn { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
-      font:inherit; font-size:var(--pd-fs-sm); font-weight:700; line-height:14px; padding:0 5px; border-radius:3px; cursor:pointer; }
-    .sbld-liblvbtn:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); }
     /* ⚠️ An end of the range is disabled AND visibly so, with the reason in its title. */
-    .sbld-liblvbtn:disabled { opacity:.35; cursor:not-allowed; }
-    .sbld-libedit { font-size:var(--pd-fs-micro); color:var(--pd-muted); border:1px dashed var(--pd-line); border-radius:var(--pd-radius-pill); padding:0 6px; }
-    .sbld-libgin { flex:none; width:230px; font-size:var(--pd-fs-xs); padding:2px 6px; min-height:0;
-      background:transparent; border-color:transparent; }
-    .sbld-libgin:hover, .sbld-libgin:focus { background:var(--pd-card); border-color:var(--pd-line); }
-    .sbld-libgin:not([value=""]) { border-color:var(--pd-line); }
-    @media (max-width:900px) { .sbld-lib { grid-template-columns:1fr; } .sbld-libbody { max-height:340px; } }
     .sbld-znplus, .sbld-znminus, .sbld-unplus, .sbld-unminus { width:30px; height:30px; padding:0; flex:none; font-size:var(--pd-fs-lg); font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
     .sbld-zncount { min-width:22px; text-align:center; font-variant-numeric:tabular-nums; font-weight:700; font-size:var(--pd-fs-body); }
     /* step 2 — nested floor → zone → unit editor */
@@ -4746,15 +4606,26 @@
     .sbld-focuslegend .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:5px; }
     /* step 1 — activities grid ⇄ holding-area shuttle */
     .sbld-actsplit { display:flex; gap:0; align-items:stretch; }
-    .sbld-actsplit .sbld-xlwrap { flex:1 1 auto; min-width:0; }
+    /* ⚠⚠ THE GRID TILE FITS ITS OWN TABLE — `flex:0 1 auto`, never `1 1 auto`. Owner
+       2026-09-17: *"fit width of tile to selected activity table and increase width of holding
+       list"*. The table is `table-layout:fixed` at a computed `totalW`, so a growing wrapper drew
+       a bordered box wider than anything in it and parked the empty remainder between the grid and
+       the pane. It still SHRINKS (factor 1) and scrolls itself, which is what keeps a wide column
+       set usable on a laptop. */
+    /* ⚠ `width:max-content` as well as `flex:0 1 auto`: the wrapper carries a 1px border under
+       `box-sizing:border-box`, so a basis of `auto` alone left it ~3px narrower than the table it
+       holds and the last column showed a hairline scrollbar it did not need. Measured, twice. */
+    .sbld-actsplit .sbld-xlwrap { flex:0 1 auto; min-width:0; width:max-content; max-width:100%; }
     .sbld-shuttle { flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:8px; padding:0 8px; }
     .sbld-shuttle button { width:38px; height:34px; font-size:var(--pd-fs-lg); font-weight:700; }
-    .sbld-hold { flex:0 0 260px; display:flex; flex-direction:column; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); max-height:58vh; overflow:hidden; }
+    /* ⚠ The pane takes the slack the grid no longer claims — `flex:1 1`, so "wider" needs no
+       number on a wide window and the drag grip still sets the basis it grows from. */
+    .sbld-hold { flex:1 1 260px; display:flex; flex-direction:column; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); max-height:58vh; overflow:hidden; }
     .sbld-hold-h { padding:7px 10px; font-size:var(--pd-fs-sm); font-weight:700; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
     .sbld-hold-list { overflow:auto; padding:0; display:block; }
     /* ⚠ GROUPED BY TRADE (the <details> groups below), and the ROW lost every decoration the
        heading now carries. It was a two-line card — bold name over "CODE · Trade" — with a 4px
-       trade-coloured rail and a 1px border on EVERY row, so 197 codes read as 197 boxes. Under a
+       trade-coloured rail and a 1px border on EVERY row, so 190 codes read as 190 boxes. Under a
        trade heading the per-row trade label and the per-row colour rail both restate the heading,
        so the colour stays on the heading and the row becomes one plain line: name, then muted code.
        ⚠⚠ THE BUTTON-AND-FOLD GROUP MARKUP THIS PASS WAS FIRST WRITTEN AGAINST IS NOT WHAT SHIPS:
@@ -4805,7 +4676,7 @@
        group are flush by design — a 4px margin per row puts back most of the height this pass
        took out (43px → 25px). */
     .sbld-hold-grp > .sbld-hold-item { width:100%; margin:0; }
-    @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
+    @media (max-width:900px) { .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     /* push modal — WBS structure editor */
@@ -4843,6 +4714,50 @@
     .sbld-holdgrip { flex:0 0 8px; align-self:stretch; cursor:col-resize; border-radius:3px; margin:0 2px; }
     .sbld-holdgrip:hover, .sbld-holdgrip.drag { background:var(--pd-red); opacity:.5; }
     table.sbld-xl td.xl-rn { background:var(--pd-bg); color:var(--pd-muted); text-align:center; width:32px; user-select:none; font-variant-numeric:tabular-nums; }
+    /* ⚠ The gutter holds a caret AND a checkbox on a merged row, so it stops being a fixed 32px
+       and lays them out as a row. `white-space:nowrap` keeps the pair on one line at the narrow
+       width the column still wants. */
+    table.sbld-xl td.xl-rn { white-space:nowrap; padding-left:2px; padding-right:2px; }
+    .sbld-xlck { margin:0; vertical-align:middle; cursor:pointer; }
+    .sbld-xlcaret { border:0; background:none; padding:0 2px 0 0; color:var(--pd-muted); cursor:pointer;
+      font:inherit; font-size:var(--pd-fs-xs); line-height:1; }
+    .sbld-xlcaret:hover { color:var(--pd-ink); }
+    /* THE TRADE HEADING inside the build grid. ⚠ Same treatment as the SAP Activities pane's own
+       trade heading — uppercase, muted, the trade colour on the left edge — so the two panes read
+       as the same grouping of the same thing rather than two conventions side by side. */
+    table.sbld-xl tr.sbld-xlgrp > td { position:sticky; top:26px; z-index:1; background:var(--pd-bg);
+      border-top:1px solid var(--pd-line); border-bottom:1px solid var(--pd-line);
+      box-shadow:inset 3px 0 0 var(--zc,var(--pd-line)); padding:4px 10px; }
+    .sbld-xlgrp-n { font-size:var(--pd-fs-micro); font-weight:800; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); }
+    .sbld-xlgrp-c { margin-left:8px; font-size:var(--pd-fs-micro); color:var(--pd-muted);
+      font-variant-numeric:tabular-nums; }
+    /* ⚠⚠ INK ON A RED TINT, NEVER BRAND RED AS THE TEXT. Measured over the ground each of these
+       actually paints on: `color:var(--pd-red)` at 10px gives 3.74 light / 4.14 dark for this badge
+       and 4.12 / 3.40 for the `+N` one below — both under AA's 4.5 for small text, in one theme or
+       the other. `--pd-red` is a FILL colour (white sits on it), which is the same trap this file
+       already records for `--pd-warn`. The tint keeps the brand cue and the ink carries the reading
+       — the settled treatment `.ps-vs-chip.on` in this very module arrived at. The tint is a fixed
+       brand rgba on purpose: it composites over whatever ground it lands on, so one value is right
+       in both themes. */
+    .sbld-xlgrp-s { margin-left:8px; font-size:var(--pd-fs-micro); font-weight:700; color:var(--pd-ink);
+      background:rgba(238,49,36,.14); border-radius:999px; padding:1px 6px; }
+    /* ⚠ A MERGED ROW is marked on the gutter edge, never by tinting the whole row: the row already
+       spends its backgrounds on PDGrid's selection, the bad-code warn tint and the copy marquee,
+       which this file has already had to un-paint once. */
+    table.sbld-xl tr.sbld-xlmerged > td.xl-rn { box-shadow:inset 2px 0 0 var(--pd-red); }
+    /* ⚠ `min-width:0` on the input is load-bearing — an <input> defaults to `min-width:auto`,
+       which resolves to its intrinsic size and refuses to shrink, so without it the badge is pushed
+       out of the cell again by the very control it is meant to sit beside. Same trap the SAP
+       Activities search box documents further up this sheet. */
+    table.sbld-xl td.sbld-xlcodecell { display:flex; align-items:center; gap:4px; }
+    table.sbld-xl td.sbld-xlcodecell > input { flex:1 1 auto; min-width:0; }
+    .sbld-xlmore { flex:none; font-size:var(--pd-fs-micro); font-weight:700; cursor:help; color:var(--pd-ink);
+      background:rgba(238,49,36,.14); border-radius:999px; padding:0 5px; }
+    /* A CHILD ROW of a merged activity — a record, not an activity, so it is plainly not editable:
+       no controls, muted, indented under its parent. */
+    table.sbld-xl tr.sbld-xlkid > td { background:var(--pd-bg); color:var(--pd-muted);
+      font-size:var(--pd-fs-xs); padding:2px 8px 2px 22px; border-bottom:1px dotted var(--pd-line); }
     /* ⚠⚠ `user-select:none` AND `cursor:cell` BELONG TO A <td> YOU SELECT, NOT ONE THAT
        HOLDS AN INPUT. `user-select` inherits, so leaving it here would have fought the caret in
        every cell of a grid whose whole point is that the cell IS the editor — a planner
@@ -4867,7 +4782,26 @@
        every mark this grid paints on the CELL — the selection, the bad-code tint and the copy
        marquee are all drawn on the <td>, behind its children. The first painted ancestor is the
        panel's own surface, so an unmarked cell is unchanged. */
-    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:transparent; color:var(--pd-ink); font:inherit; padding:2px 4px; outline:none; }
+    /* ⚠⚠ `:not([type="checkbox"])` — the gutter's tick is an <input> too, and this rule is written
+       for a TEXT cell. Without the exclusion `width:100%` stretched the checkbox across the whole
+       gutter and pushed it out of its own cell (measured: 98px right edge in a cell ending at 93).
+       This app has now been bitten by the same shape three times — `.pd-input` in a Floors & Zones
+       flex row, `.ccw-main input` over the wizard's class-code ladder, and here. A width rule meant
+       for a stacked text field is never right for a checkbox. */
+    table.sbld-xl input:not([type="checkbox"]), table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:transparent; color:var(--pd-ink); font:inherit; padding:2px 4px; outline:none; }
+    table.sbld-xl input[type="checkbox"] { box-sizing:border-box; }
+    /* ⚠ A locked cell reads as locked without shouting: muted ink on the row's own ground, and
+       `cursor:default` so it does not invite a click that will not take. Deliberately NOT greyed to
+       the point of unreadability — the Code is the single most-read value in this grid.
+       ⚠⚠ AND IT HAS TO BE DECLARED *AFTER* THE GENERIC CONTROL RULE ABOVE, NOT BESIDE THE OTHER
+       `.sbld-*` RULES WHERE IT STARTED. `table.sbld-xl input:not([type="checkbox"])` is (0,2,2)
+       and `.sbld-xl input.sbld-lock` is only (0,2,1), so the generic `color:var(--pd-ink)` won
+       and every locked cell rendered in full ink — indistinguishable from an editable one, which
+       is the whole thing this class exists to signal. Measured, not read: the rule was in the
+       cascade and losing. Prefixed with `table` to tie at (0,2,2) and placed below to win on
+       source order. */
+    table.sbld-xl input.sbld-lock { color:var(--pd-muted); cursor:default; background:transparent; }
+    table.sbld-xl input.sbld-lock::placeholder { color:var(--pd-muted); opacity:.75; font-style:italic; }
     /* ⚠ And `font:inherit` is what carries the type rung into every editable cell — the
        shared phone rule still pins a focused input at --pd-fs-tap, so iOS cannot zoom. */
     /* ⚠️ The shared focus ring is `outline-offset:2px`, which OVERLAPS the neighbouring cell in a
@@ -5088,8 +5022,8 @@
     .sbld-ld-t { flex:1 1 0; border:1px solid var(--pd-line); background:var(--pd-card); border-radius:5px; padding:5px 0; font:inherit; font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; color:var(--pd-ink); }
     .sbld-ld-t.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .sbld-ld-row input[type=number] { font:inherit; padding:4px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
-    @media (max-width:900px){ .sbld-seq2 { grid-template-columns:1fr; } }
-    @media (max-width:820px){ .sbld-wrap { grid-template-columns:1fr; } .sbld-rail { position:static; flex-direction:row; overflow-x:auto; } .sbld-step-s { display:none; } }
+    @media (max-width:900px) { .sbld-seq2 { grid-template-columns:1fr; } }
+    @media (max-width:820px) { .sbld-wrap { grid-template-columns:1fr; } .sbld-rail { position:static; flex-direction:row; overflow-x:auto; } .sbld-step-s { display:none; } }
     /* ==== DRAWING A LINK BY HAND, AS A PANEL =========================================
        Owner 2026-09-17: *"there are way too many buttons and allow the manual intervention of
        linking to be more seen."* Both sequencing steps put their linking flow here instead of
@@ -5151,7 +5085,7 @@
       font-variant-numeric:tabular-nums; margin-right:2px; }
     .sbld-lvlsum-key { padding-left:14px; border-left:1px solid var(--pd-line); color:var(--pd-ink); font-weight:700; }
     .sbld-lvlsum-tw { margin-left:auto; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
-    @media (max-width:760px){ .sbld-lvlsum-tw { margin-left:0; } .sbld-flow { gap:8px; } }
+    @media (max-width:760px) { .sbld-lvlsum-tw { margin-left:0; } .sbld-flow { gap:8px; } }
     /* ==== psAsk — the app's own prompt()/confirm() =====================================
        ⚠️ It reuses `.pd-modal-header/-body/-footer` rather than inventing a shell, so a dialog
        from this module and one from anywhere else in the app are the same object. Only the
@@ -5697,7 +5631,6 @@
           <div class="sbld-panel" id="ps-cl-panel"></div>
         </div>
       </div>
-
 
       <!-- COST / EVM -->
       <!-- PLANNER COCKPIT -->
@@ -6799,7 +6732,6 @@
     return r.package_id || _nodePackage(r.wbs_node_id) || null;
   }
 
-
   // ==========================================================================
   // C3 — DURATION SCENARIOS ("what does this schedule look like in a wet season?")
   // --------------------------------------------------------------------------
@@ -7076,10 +7008,6 @@
     out.items.sort(function (x, y) { return y.slip - x.slip; });
     return out;
   }
-
-
-
-
 
   // ---- Working calendars, editable from the schedule -------------------------
   // ⚠️ This module could READ calendars and ASSIGN one per activity, but it could
@@ -8694,7 +8622,6 @@
     await _ensureNodeSummary(res.data);
     return res.data;
   }
-
 
   // ==========================================================================
   // PROCUREMENT branch — mirrored from the Procurement (WPM) app
@@ -14756,7 +14683,6 @@
      The Review & import step renders it inline (and only on the Excel path, because the .xer
      import neither scopes Replace to a package nor stamps package_id — offering it there
      promised scoping that does not happen). */
-
 
   // ⚠️ WRAPPED IN A MUTATION REGION (see _beginMutation): an import clears and then re-inserts
   // thousands of rows, and the previous load's self-heal chain — plus the Design Development and
@@ -32229,7 +32155,6 @@
     };
   }
 
-
   async function ensurePackageRoot(pkgId) {
     if (!pkgId) return null;
     var hit = (WBS_NODES || []).filter(function (n) {
@@ -34552,10 +34477,126 @@
       });
       return arr;
     }
+    /* ⚠⚠ THE BUILD GRID IS SORTED INTO TRADE ORDER, AND IT SORTS THE ARRAY — NOT THE VIEW.
+       Owner 2026-09-17: *"The selected activity table should also be grouped by trade."* The
+       argument is `sortCatalog`'s own, one screen across: this step's hint says *"Row order is the
+       fallback sequence"* and `generate()` reads `cfg.activities` in order, so a renderer that
+       grouped only what it DREW would show trades in one order and build them in another.
+       ⚠ STABLE, so the sequence a planner set INSIDE a trade survives the grouping. Array#sort is
+       required to be stable since ES2019, which is why nothing here carries an index tiebreak.
+       ⚠ An unknown trade sorts LAST rather than first (`indexOf` answers -1), so a row with a
+       group this build does not know cannot silently lead the programme. */
+    function sortActivities(list) {
+      var arr = list || (cfg && cfg.activities);
+      if (!arr) return arr;
+      arr.sort(function (a, b) {
+        var ga = GROUPS.indexOf(a.group), gb = GROUPS.indexOf(b.group);
+        if (ga < 0) ga = GROUPS.length; if (gb < 0) gb = GROUPS.length;
+        return ga - gb;
+      });
+      return arr;
+    }
+    /* ---- MERGED ACTIVITIES ---------------------------------------------------------------------
+       Owner 2026-09-17: *"provide button to merge activities. this merged activity carries the
+       class codes of all its child activities. activity merging is only allowed within the same
+       trade."*
+       ⚠⚠ A MERGED ROW IS ONE ACTIVITY, NOT A CONTAINER OF ACTIVITIES. `generate()` walks
+       `cfg.activities` and `taskPayload` writes ONE `class_code` per pushed row, so a merge that
+       kept its children as real activities would push them all and merge nothing. The children are
+       carried as plain records on `kids` — code, name and trade — which is what makes the merged
+       row able to state every code it covers while still pushing as a single activity. */
+    function actIsMerged(a) { return !!(a && a.kids && a.kids.length); }
+    /* Every class code an activity carries: its own, then its children's, deduped, blanks dropped.
+       ⚠ This is what `+ Library` and `+ From BOQ` must dedupe against — a code swallowed by a merge
+       is still in the build, and offering it again would let the same scope be loaded twice. */
+    function actCodes(a) {
+      var out = [], seen = {};
+      function add(c) { c = String(c == null ? '' : c).trim(); if (c && !seen[c]) { seen[c] = 1; out.push(c); } }
+      if (a) { add(a.code); (a.kids || []).forEach(function (k) { add(k.code); }); }
+      return out;
+    }
+    /* ⚠ `null` when there is nothing to carry, never `[]` — `normActivity` hands the result
+       straight onto the row, and an empty array would make every ordinary activity answer true to a
+       future `a.kids &&` test somewhere else in the file. */
+    function normKids(list) {
+      if (!Array.isArray(list)) return null;
+      var out = list.map(function (k) {
+        return { code: String(k && k.code != null ? k.code : '').trim(),
+                 name: String(k && k.name != null ? k.name : '').trim(),
+                 group: (k && GROUPS.indexOf(k.group) >= 0) ? k.group : null };
+      }).filter(function (k) { return k.code || k.name; });
+      return out.length ? out : null;
+    }
+    /* The ticked rows, resolved to activities and filtered to ones that still exist — a row can
+       leave the build with → while its id is still in `actSel`, and a stale id must not make the
+       Merge button claim a count it cannot deliver. */
+    /* How many distinct class codes a merge of `sel` would carry — stated in the dialog BEFORE
+       the merge, because that number is the whole point of merging and it is not the row count
+       (a merged row already carries several, and a custom row carries none). */
+    function actMergeCodeCount(sel) {
+      var seen = {};
+      (sel || []).forEach(function (a) { actCodes(a).forEach(function (c) { seen[c] = 1; }); });
+      return Object.keys(seen).length;
+    }
+    function actSelActs() {
+      var take = {}; actSel.forEach(function (id) { take[String(id)] = 1; });
+      return (cfg.activities || []).filter(function (a) { return take[String(a.id)]; });
+    }
+    /* The ONE trade the current selection is in, or null when it spans more than one (or is empty).
+       ⚠ This is the merge rule itself, in one place, read by the button's own disabled state, its
+       tooltip and `mergeActs` — so the control and the refusal cannot disagree about what is legal. */
+    function actSelTrade() {
+      var sel = actSelActs(); if (!sel.length) return null;
+      var g = sel[0].group || 'ST';
+      for (var i = 1; i < sel.length; i++) if ((sel[i].group || 'ST') !== g) return null;
+      return g;
+    }
+    /* ⚠⚠ MERGE IS A REPLACEMENT, AND IT KEEPS THE CHILDREN'S OWN CHILDREN. Merging a merged row
+       must not nest — `kids` is one flat list of class codes, because that is what the row has to
+       be able to state and what `actCodes` reads. Re-merging otherwise builds a tree nothing draws.
+       ⚠ It lands at the FIRST selected row's position, so the fallback sequence a planner set is
+       not disturbed by the merge — the merged activity takes the slot the run already occupied. */
+    function mergeActs(name) {
+      var sel = actSelActs(), tr = actSelTrade();
+      if (sel.length < 2 || !tr) {
+        UI.toast(sel.length < 2 ? 'Tick two or more activities to merge.'
+          : 'Those activities are in different trades. Merging is only allowed inside one trade.', 'warn');
+        return false;
+      }
+      var kids = [];
+      sel.forEach(function (a) {
+        if (actIsMerged(a)) { a.kids.forEach(function (k) { kids.push({ code: k.code, name: k.name, group: k.group }); }); }
+        else kids.push({ code: String(a.code || '').trim(), name: String(a.name || '').trim(), group: a.group || tr });
+      });
+      kids = normKids(kids) || [];
+      var ids = {}; sel.forEach(function (a) { ids[String(a.id)] = 1; });
+      var at = cfg.activities.findIndex(function (a) { return ids[String(a.id)]; });
+      /* ⚠ The durations are SUMMED, not maxed, and this is a judgement worth stating: the codes
+         being merged are distinct work packages inside one trade and one zone (Rebar, Formworks,
+         Concreting), which run one after another there — a max would understate the zone by the
+         whole of everything but the longest. It is a DEFAULT: both cells stay editable, and the
+         toast says what was assumed so a planner who merges concurrent work can correct it. */
+      var di = 0, de = 0;
+      sel.forEach(function (a) { di += Math.max(0, +a.durInt || 0); de += Math.max(0, +a.durExt || 0); });
+      var first = sel[0];
+      var merged = { id: uidv(), code: (kids[0] && kids[0].code) || '', name: String(name || '').trim() || first.name || 'Merged activity',
+        group: tr, durInt: di, durExt: de, durKind: null, scope: first.scope || 'zone',
+        contract: first.contract || 'main', coRef: first.coRef || '', kids: kids };
+      cfg.activities = cfg.activities.filter(function (a) { return !ids[String(a.id)]; });
+      cfg.activities.splice(Math.max(0, at), 0, merged);
+      sortActivities();
+      actSel = []; actExp[merged.id] = true;
+      markDirty(); render();
+      UI.toast('Merged ' + sel.length + ' activities into "' + merged.name + '", carrying ' + kids.length +
+        ' class code(s). Durations were added together (' + di + 'd internal / ' + de + 'd external) — change them if the work runs concurrently.', 'success');
+      return true;
+    }
+    var actSel = [];    // build grid: ids of rows ticked in the checkbox gutter
+    var actExp = {};    // build grid: merged activity id -> true while its children are shown
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
-    var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
-    var holdQ = '';     // step-1 holding list: the search box's text (code / name / trade)
-    var holdCol = {};   // step-1 holding list: trade code -> true when that group is folded shut
+    var holdW = 420;    // step-1: the SAP Activities pane's BASIS (it grows past this; drag its left edge to resize)
+    var holdQ = '';     // step-1 SAP Activities pane: the search box's text (code / name / trade)
+    var holdCol = {};   // step-1 SAP Activities pane: trade code -> true when that group is folded shut
     var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Internal (d)', w: 98, num: true }, { k: 'durExt', label: 'External (d)', w: 98, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
@@ -34577,7 +34618,9 @@
     /* ==========================================================================
        CLASS_CODE_DB — Finance's LEVEL-2 GROUP chart, and why the codes are PADDED
        ==========================================================================
-       197 entries, measured 197/197 against `class_codes.code_l2`. This is the GROUP level, not
+       190 entries. It was 197, all 197 measured against `class_codes.code_l2`; the owner then
+       retired seven LD sub-works (39100..39400) and moved four more to Others on 2026-09-17, so
+       the chart join is now 190/190 over what remains. This is the GROUP level, not
        the item level, and that is deliberate: a group ("Chilled Water AC Works") is the size of a
        schedule activity, while the L3 items under it are bill lines ("Chilled Water Condenser
        Riser (B.I Pipes)"). The BOQ works at L3; the programme works here.
@@ -34780,7 +34823,7 @@
       ['29150','Transformer','ALLIED'],
       ['29200','Escalator','ALLIED'],
       ['29250','Other Allied Miscellaneous Works','ALLIED'],
-      ['30050','Site Development Works - Outside the Building','SW'],
+      ['30050','Site Development Works - Outside the Building','OT'],
       ['31050','Defect Liability Period','OT'],
       ['32050','Structural Rectification','OT'],
       ['32100','Architectural Rectification','OT'],
@@ -34789,22 +34832,20 @@
       ['34050','Contingency','OT'],
       ['35050','Buyback','OT'],
       ['36050','Advances','OT'],
-      ['37050','Solar Energy Infrastructure','SW'],
-      ['38050','Horizontal Housing','SW'],
-      ['39050','LD Roadworks','SW'],
-      ['39100','LD Drainage Works','SW'],
-      ['39150','LD Potable Waterline Works','SW'],
-      ['39200','LD Sewerline Works','SW'],
-      ['39250','LD Underground Distribution System','SW'],
-      ['39300','LD Telecom Works','SW'],
-      ['39350','LD Exterior Lighting Works','SW'],
-      ['39400','LD Sewer Pumps Works','SW']
+      ['37050','Solar Energy Infrastructure','OT'],
+      ['38050','Horizontal Housing','OT'],
+      ['39050','LD Roadworks','OT']
     ];
-    // Seed cfg.catalog (the step-1 holding list on the right) from the master library.
+    // Seed cfg.catalog (the step-1 SAP Activities pane on the right) from the master library.
     // Skips codes already present in the build or the list so re-loading never duplicates.
     function loadClassCodeLibrary() {
       var have = {};
-      (cfg.activities || []).concat(cfg.catalog || []).forEach(function (a) { if (a.code) have[String(a.code).trim()] = 1; });
+      /* ⚠⚠ `actCodes`, NOT `a.code`. Owner 2026-09-17: *"when adding Library, if activity is
+         already in the activity list, no need to include in SAP Activities list."* A merged row
+         carries its children's codes on `kids` and only its FIRST one in `.code`, so reading the
+         bare field would re-offer every code a merge had swallowed — the same scope loaded twice,
+         under a second row, with nothing on screen saying so. */
+      (cfg.activities || []).concat(cfg.catalog || []).forEach(function (a) { actCodes(a).forEach(function (c) { have[c] = 1; }); });
       var added = 0;
       CLASS_CODE_DB.forEach(function (r) {
         var code = r[0], name = r[1].trim();
@@ -34833,7 +34874,7 @@
 
        ⚠️⚠️ AND IT IS THE ONLY LOADER WHOSE CODES ARE VALID `project_schedule.class_code` VALUES.
        ⚠️ THE TWO BUTTONS LOAD DIFFERENT LEVELS, AND BOTH ARE VALID.
-       `+ Library` loads Finance's LEVEL-2 GROUP chart (`CLASS_CODE_DB`, 197 entries) — the size of
+       `+ Library` loads Finance's LEVEL-2 GROUP chart (`CLASS_CODE_DB`, 190 entries) — the size of
        a schedule activity. This one loads the LEVEL-3 ITEM codes the project's BOQ is actually
        priced on. The push writes either into `project_schedule.class_code`, and since 2026-09-10
        the resolver knows both levels, so neither reads as an unrecognised code.
@@ -34905,7 +34946,12 @@
         });
 
         var have = {};
-        (cfg.activities || []).concat(cfg.catalog || []).forEach(function (a) { if (a.code) have[String(a.code).trim()] = 1; });
+        /* ⚠⚠ `actCodes`, NOT `a.code`. Owner 2026-09-17: *"when adding Library, if activity is
+         already in the activity list, no need to include in SAP Activities list."* A merged row
+         carries its children's codes on `kids` and only its FIRST one in `.code`, so reading the
+         bare field would re-offer every code a merge had swallowed — the same scope loaded twice,
+         under a second row, with nothing on screen saying so. */
+      (cfg.activities || []).concat(cfg.catalog || []).forEach(function (a) { actCodes(a).forEach(function (c) { have[c] = 1; }); });
 
         var added = 0, dup = 0, offChart = 0, toOthers = 0;
         order.forEach(function (e) {
@@ -35048,8 +35094,33 @@
         if (String(cfg.activities[i].id) === String(id)) return cfg.activities[i];
       return null;
     }
+    /* ⚠⚠ WHERE AN ACTIVITY CAME FROM IS DERIVED, NEVER STORED. A row carrying a class code came
+       out of SAP — `+ Library`, `+ From BOQ` or `Load typical set` all supply one — and a row with
+       a blank code is a custom activity, which is the definition the owner set on this very step
+       (*"activities without class code are identified as custom activities"*). A stored `origin`
+       flag would be a second source of the same fact, free to disagree with the code beside it the
+       first time a row is shuttled out and back.
+       ⚠ A MERGED row is SAP too: it is built out of SAP children and keeps the first one's code. */
+    function actIsSap(a) { return !!(a && String(a.code == null ? '' : a.code).trim()); }
+    /* ⚠⚠ THE LOCK IS ENFORCED HERE, IN THE ONE WRITER, not only by the control's `readonly`.
+       Owner 2026-09-17: *"when adding custom activity, code should not be editable and should
+       always be blank. if activity comes from SAP, trade should also be not editable/locked."*
+       A readonly input stops TYPING and nothing else — PDGrid's paste, Ctrl+D fill-down, Delete
+       and undo all arrive through `onBatch`, which calls straight into this function. Guarding the
+       render alone would have let a pasted column silently rewrite every locked cell it covered,
+       which is the shape this file has already paid for with `type="number"` cells reading back "".
+       ⚠ `code` is locked on EVERY row, not only custom ones: on a SAP row it is the chart's own
+       key, and the route to a different one is `→` and re-pick, which the off-chart warning
+       already names. The cost is real and stated — a code can no longer be corrected in place, nor
+       pasted in from Excel. */
+    function xlFieldLocked(a, k) {
+      if (k === 'code') return true;
+      if (k === 'group') return actIsSap(a);
+      return false;
+    }
     function xlSetById(id, k, text) {
       var a = xlActById(id); if (!a) return;
+      if (xlFieldLocked(a, k)) return;
       if (k === 'group') { var g = parseTrade(text); if (g) a.group = g; }
       else if (k === 'scope') { var sc = parseScope(text); if (sc) a.scope = sc; }
       else if (k === 'contract') {
@@ -35088,7 +35159,18 @@
       /* ⚠ The option VALUE is the label, not the internal key, because every setter above
          parses a label (`parseTrade` / `parseScope` / `parseContract`) — which is also what makes
          a paste of “Architectural” out of Excel land correctly. */
-      if (col.trade) return '<select' + at + '>' + opts(GROUPS.map(function (g) { return [g, GLABEL[g] || g]; }), a.group) + '</select>';
+      /* ⚠⚠ A LOCKED CELL STAYS A `.sbld-cell` WITH ITS `data-f`, as a readonly input rather than
+         a plain span. PDGrid builds its column order from the cells it finds, BY FIRST APPEARANCE
+         (`if (!(f in ci)) cols.push(f)`) — so dropping the control on a custom row would make
+         `name` column 0 for that grid and put `code` after `durExt` for arrow-key navigation, on
+         whichever row happened to render first. Same box, same tab order, no write. */
+      var _lk = xlFieldLocked(a, col.k);
+      if (col.trade) {
+        if (_lk) return '<input type="text" readonly' + at.replace('class="sbld-cell"', 'class="sbld-cell sbld-lock"') +
+          ' title="' + e2('This activity came from SAP, so its trade is the one the class-code chart gives it.'
+            + ' Press \u2192 to send it back and pick a different code.') + '" value="' + e2(GLABEL[a.group] || a.group || '') + '">';
+        return '<select' + at + '>' + opts(GROUPS.map(function (g) { return [g, GLABEL[g] || g]; }), a.group) + '</select>';
+      }
       if (col.scope) return '<select' + at + '>' + opts(SCOPE_OPTS, a.scope || 'zone') + '</select>';
       if (col.contract) return '<select' + at + '>' + opts(CONTRACT_OPTS, a.contract || 'main') + '</select>';
       /* ⚠️ A BLANK CODE IS A STATEMENT, NOT A GAP. Owner 2026-09-17: *"activities without class
@@ -35096,8 +35178,13 @@
          disappears the instant a code is typed, so nothing has to be stored, nothing can go stale,
          and neither the off-chart warning nor `_seedCodeUnknown` is touched — both already ignore a
          blank code, which is why a custom activity raises no complaint. */
-      return '<input type="text"' + (col.num ? ' inputmode="numeric"' : '') + at +
+      if (_lk) return '<input type="text" readonly' + at.replace('class="sbld-cell"', 'class="sbld-cell sbld-lock"') +
         (col.k === 'code' ? ' placeholder="custom"' : '') +
+        ' title="' + e2(col.k === 'code'
+          ? (actIsSap(a) ? 'The class code comes from SAP and is not edited here. Press \u2192 to send the row back and re-pick from + Library or + From BOQ.'
+                         : 'A custom activity has no class code, and that is what identifies it as custom.')
+          : 'Not editable here.') + '" value="' + e2(valText) + '">';
+      return '<input type="text"' + (col.num ? ' inputmode="numeric"' : '') + at +
         ' value="' + e2(valText) + '">';
     }
     var autoChainType = 'FS';  // step-4 Auto-chain relationship type (FS / SS / FF / SF)
@@ -35397,12 +35484,17 @@
         var ki = Math.max(0, +o.durInt || 0), ke = Math.max(0, +o.durExt || 0);
         if (ki > 0 || ke > 0) { dk = dk || {}; dk[k] = { durInt: ki, durExt: ke }; }
       });
-      return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', durInt: di, durExt: de, durKind: dk, scope: sc, contract: ct, coRef: a.coRef || '' };
+      /* ⚠⚠ `kids` MUST BE NAMED HERE. `normalize()` starts from `blank()` and copies only what it
+         names, so a key it does not mention is DROPPED on the next save — a merge would survive
+         until reload and then come apart, which reads as the app forgetting. */
+      return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', durInt: di, durExt: de, durKind: dk, scope: sc, contract: ct, coRef: a.coRef || '', kids: normKids(a.kids) };
     }
     function normalize(c) {
       c = c && typeof c === 'object' ? c : {}; var d = blank();
       d.startDate = c.startDate || d.startDate;
-      d.activities = Array.isArray(c.activities) ? c.activities.map(normActivity) : [];
+      /* ⚠ Sorted on load for `sortCatalog`'s own reason: a setup SAVED BEFORE this change renders
+         grouped on its first paint, rather than only once the planner happens to add a row. */
+      d.activities = sortActivities(Array.isArray(c.activities) ? c.activities.map(normActivity) : []);
       // Towers. An older config has none, so it gets exactly one — see blankTowers().
       // Tower-to-tower relationships (step 3). Kept only where both endpoints still exist, so
       // deleting a tower cannot leave a link pointing at nothing.
@@ -37392,7 +37484,7 @@
          they produce — is a structural decision a planner can make before a single activity
          exists, so it can lead. */
       { t: 'Project phases', s: 'Lifecycle + the WBS tree', fn: stPhasesStep },
-      { t: 'Activities', s: 'Class-code list + Construction Library', fn: stActivitiesStep },
+      { t: 'Activities', s: 'Class codes, durations and the SAP activity list', fn: stActivitiesStep },
       /* ⚠️ THE TOWERS BEFORE WHAT IS IN THEM. A floor is laid out per (trade, tower), so the tower
          list is the prerequisite for the next step rather than a control on top of it — which is
          exactly what `_stepReady` enforces. */
@@ -37552,14 +37644,14 @@
      items answers that objection instead of overriding it.
      ⚠ Keyed by STEP TITLE, not by index: the rail is renumbered by `sbSyncSteps` and a
      remembered index would point at a different step on the other path. */
+    /* ⚠⚠ `Activities` IS NOT A TABBED STEP ANY MORE. Owner 2026-09-17: *"remove construction
+       library. this is not needed"* — and with the Library gone the step has ONE view, so a tab
+       strip of one button is a control that cannot do anything. It renders `stActivities` directly
+       and is simply absent from this map, which the footer's Next/Back walker already handles: it
+       reads `stepTabs(<title>)` and moves straight to the next STEP when there is no entry.
+       ⚠ The step KEEPS its own heading and lede — `stActivitiesStep` passes `noHead` false, which
+       the tabbed shell used to own. Without that the step would render with no title at all. */
     var STEP_TABS = {
-      'Activities': [
-        /* ⚠ `true` is `noHead`: the tabbed shell emits the one heading and the one lede, exactly
-           as the Project Phases step does for its two halves. Without it each view adds a second
-           of each under the tab strip. */
-        { k: 'acts', t: 'Activities',            sub: 'class-code list + duration', fn: function (h) { stActivities(h, true); } },
-        { k: 'lib',  t: 'Construction Library', sub: 'places, groupings and items', fn: function (h) { stLibrary(h, true); } }
-      ],
       /* ⚠ Repetition draws its own tab strip (see `stRepetition`) — only the SELECTION lives
          here, so the footer's Next/Back walk these four before moving on to Generate. No `sub`
          on these: the pill strip has nowhere to put one, and an unread field reads as a bug. */
@@ -37609,38 +37701,7 @@
       try { localStorage.setItem('ps_steptab_' + title, _stepTabSel[title]); } catch (e) {}
     }
     function setStepTab(title, k) { setStepTabQuiet(title, k); render(); }
-    /* The tabbed shell every multi-view step renders through. ⚠ It reuses `.sbld-strtabs`
-       rather than a second tab idiom — the Structure step’s treatment was already the one in
-       this wizard, and a second one would make two steps look like two apps. */
-    function stTabbed(host, title, lede) {
-      var T = stepTabs(title), k = stepTabKey(title);
-      var cur = T.filter(function (x) { return x.k === k; })[0] || T[0];
-      /* ⚠ “Activities — Activities” is what this produced on the first tab. A view named after
-         its own step adds nothing to the heading; the strip below already shows which is on. */
-      host.innerHTML = '<h2>' + _stepNo(title) + ' · ' + e2(title) +
-          (cur.t === title ? '' : ' — ' + e2(cur.t)) + '</h2>' +
-        (lede ? '<p class="sbld-lede">' + lede + '</p>' : '') +
-        '<div class="sbld-strtabs" role="tablist">' +
-        T.map(function (x) {
-          return '<button class="sbld-strtab' + (x.k === k ? ' on' : '') + '" data-steptab="' + x.k + '"' +
-            (x.k === k ? ' aria-current="page"' : '') + '><b>' + e2(x.t) + '</b><span>' + e2(x.sub || '') + '</span></button>';
-        }).join('') + '</div>' +
-        /* ⚠⚠ THE BRIDGE PARAGRAPH IS GONE, AT THE OWNER’S REQUEST — the one that read
-           “Construction Library → Execution Phase. This setup describes 6 trades, 0 groupings …
-           Those become branches inside Execution Phase when you 7 · Push”. It was three sentences
-           of counts and mechanism above a pane that shows the same counts in its own header, and
-           on a project with nothing in it yet it led with “0 groupings”. `strBridge` and its stat
-           helpers go with it rather than being left as a renderer nothing calls. */
-        '<div id="sbld-stepbody"></div>';
-      host.querySelectorAll('[data-steptab]').forEach(function (b) {
-        b.onclick = function () { if (b.dataset.steptab !== k) setStepTab(title, b.dataset.steptab); };
-      });
-      /* ⚠ The 5PMLC view BORROWS the live WBS editor into this panel (sbWbsMount). Switching
-         views is only safe because render() parks those nodes first, unconditionally — repainting
-         this panel with them still inside it would destroy the tree for the rest of the session. */
-      cur.fn(host.querySelector('#sbld-stepbody'));
-    }
-    function stPhasesStep(host) {
+        function stPhasesStep(host) {
       /* ⚠ ONE heading, emitted here. Both sub-renderers are called with `noHead`, because each
          used to own a step and still writes its own <h2> — which is what produced the doubled
          title in the owner’s screenshot. */
@@ -37675,11 +37736,7 @@
       sbPhaseWbsViews(host.querySelector('#sbld-ph-a'));
       renderWbsManager();
     }
-    function stActivitiesStep(host) {
-      stTabbed(host, 'Activities',
-        'Two views of one list. <b>Activities</b> is what is being built and how long each ' +
-        'takes; <b>Construction Library</b> is those same items arranged by place and grouping.');
-    }
+    function stActivitiesStep(host) { stActivities(host, false); }
     /* Everything both views count, read ONCE per render from the setup itself.
        ⚠️ One reader, so the bridge line and the Library's own header tags cannot disagree — two
        counts of the same thing drifting apart is how a screen starts contradicting itself. */
@@ -37754,98 +37811,14 @@
        carries it; a second place to state a unit is the duplication this comment keeps warning
        about. Cost and quantity come from Contracts & Claims — see the Cost Loading step 2 note.
        ========================================================================================== */
-    function libLocTree() {
-      // The union across trades, which IS the project's location library: a floor that only one
-      // trade works is still a floor of the building. Which trades have it is shown, because that
-      // difference is real and hiding it would make the pane look like a contradiction.
-      // ⚠️ FOUR RUNGS, NOT THREE. Owner 2026-09-08: *"allow users to add more levels."* The UNIT
-      // rung has existed in `cfg.zoning` (and in the push, and in Floors & Zones' +/- buttons)
-      // since before this pane did — the pane simply stopped at the zone and never showed it, so a
-      // project with units read as if it had none. It is collected here and drawn at L4.
-      var byTower = [], seenT = {};
-      function tw(name) {
-        if (seenT[name] != null) return byTower[seenT[name]];
-        seenT[name] = byTower.length;
-        var o = { name: name, floors: [], seenF: {} };
-        byTower.push(o); return o;
-      }
-      (cfg.towers || []).forEach(function (t) { tw(t.name || t.code || 'Tower'); });
-      if (!byTower.length) tw('Tower 1');
-      Object.keys(cfg.zoning || {}).forEach(function (g) {
-        var z = cfg.zoning[g]; if (!z || !z.floors) return;
-        z.floors.forEach(function (f) {
-          var tname = f.tower || (byTower[0] && byTower[0].name) || 'Tower 1';
-          var T = tw(tname);
-          var key = String(f.name || f.code || '').trim(); if (!key) return;
-          var F2 = T.seenF[key];
-          if (!F2) { F2 = T.seenF[key] = { name: key, kind: f.kind || '', trades: [], zones: [], seenZ: {} }; T.floors.push(F2); }
-          if (F2.trades.indexOf(g) < 0) F2.trades.push(g);
-          (f.zones || []).forEach(function (zz) {
-            var zn = String(zz.name || zz.code || '').trim(); if (!zn) return;
-            var Z2 = F2.seenZ[zn];
-            if (!Z2) { Z2 = F2.seenZ[zn] = { name: zn, units: [], seenU: {} }; F2.zones.push(Z2); }
-            // ⚠️ `code || name` for a unit, matching the PUSH's dimName — Floors & Zones creates
-            // units with a code and no name, so `name || code` would have printed nothing here
-            // while the WBS printed U1.
-            (zz.units || []).forEach(function (uu) {
-              var un = String(uu.code || uu.name || '').trim(); if (!un) return;
-              if (!Z2.seenU[un]) { Z2.seenU[un] = 1; Z2.units.push(un); }
-            });
-          });
-        });
-      });
-      return byTower;
-    }
+
     /* ⚠️⚠️ THE GROUPING IS A PATH, NOT A NAME. Owner 2026-09-08: *"for the library, allow users to
        add more levels and as well as in the right pane for the groupings and items."*
        So a trade no longer holds one rung of groupings — it holds a TREE of them,
        `Substructure › Rebar › Splices`, and the item sits on whichever rung its own path ends on.
        ⚠️ An item with no path still sits DIRECTLY under its trade rather than under an invented
        "(ungrouped)" heading, which would look like a real grouping somebody chose. */
-    function libGroupTree() {
-      var out = [];
-      /* Declared paths per trade, so a trade that has structure but no items still renders. */
-      var decl = {};
-      (cfg.groupings || []).forEach(function (x) { (decl[x.g] = decl[x.g] || []).push(x.path); });
-      GROUPS.forEach(function (g) {
-        var items = (cfg.activities || []).filter(function (a) { return (a.group || 'ST') === g; });
-        /* ⚠ A trade now renders when it has items OR declared structure. Returning early on
-           `!items.length` is exactly what made a grouping impossible to create first. */
-        if (!items.length && !(decl[g] || []).length) return;
-        var node = { g: g, label: GWORK[g] || GLABEL[g] || g, path: [], kids: [], seenK: {}, items: [], acts: [] };
-        /* Declared rungs FIRST, so an empty grouping keeps its place in the order rather than
-           appearing after everything an activity happened to create. */
-        (decl[g] || []).forEach(function (p) {
-          var at = node;
-          p.forEach(function (seg) {
-            var k = _libNorm(seg), K = at.seenK[k];
-            if (!K) {
-              K = at.seenK[k] = { g: g, name: seg, path: at.path.concat(seg), kids: [], seenK: {}, items: [], acts: [], declared: true };
-              at.kids.push(K);
-            }
-            at = K;
-          });
-        });
-        items.forEach(function (a) {
-          var at = node;
-          node.acts.push(a);
-          absPathOf(a).forEach(function (seg) {
-            // ⚠️ Keyed NORMALISED: "Rebar" and "rebar " are one grouping, and keying raw would
-            // build two branches that look identical on screen and in the pushed WBS.
-            var k = _libNorm(seg), K = at.seenK[k];
-            if (!K) {
-              K = at.seenK[k] = { g: g, name: seg, path: at.path.concat(seg), kids: [], seenK: {}, items: [], acts: [] };
-              at.kids.push(K);
-            }
-            at = K; at.acts.push(a);
-          });
-          // The item lands on the node its path ENDS on — the trade itself when the path is empty.
-          at.items.push(a);
-        });
-        out.push(node);
-      });
-      return out;
-    }
+
     /* ==========================================================================================
        AUTHORING THE GROUPING TREE — delete a rung, group a selection, reorder.
        Owner 2026-09-08: *"provide users capabilities to delete some groupings that have been made
@@ -37860,40 +37833,16 @@
        from the schedule by tidying a heading, and "Delete" on a heading is exactly the control that
        would do it if it deleted what was underneath.
        ========================================================================================== */
-    var SEP1 = String.fromCharCode(1);
     /* Delete one rung: everything under it moves UP into its parent.
        ⚠️ The exact inverse of absAddSub, which inserts one. That symmetry is the reason the
        operation is safe to offer at all: whatever a planner can insert they can take back out, and
        neither direction touches an activity's existence. The segment is matched before it is
        spliced, so a stale node (rendered, then the data changed underneath) rewrites nothing. */
-    function absDelSeg(node) {
-      var d = (node && node.path) ? node.path.length - 1 : -1;
-      if (!(d >= 0)) return 0;
-      var hit = 0;
-      (node.acts || []).forEach(function (a) {
-        var p = absPathOf(a);
-        if (p.length <= d || _libNorm(p[d]) !== _libNorm(node.name)) return;
-        p.splice(d, 1); absSetPath(a, p); hit++;
-      });
-      return hit;
-    }
+
     /* The deepest rung a set of paths all agree on. Used to decide WHERE a new grouping goes when
        several items are grouped together: at the point their existing structure stops matching.
        ⚠️ Normalised, and it stops at the shortest path, so ['A','B'] + ['A'] agree to depth 1. */
-    function absCommonDepth(paths) {
-      if (!paths || !paths.length) return 0;
-      var d = 0;
-      for (;;) {
-        var seg = null;
-        for (var i = 0; i < paths.length; i++) {
-          if (d >= paths[i].length) return d;
-          var k = _libNorm(paths[i][d]);
-          if (seg === null) seg = k;
-          else if (seg !== k) return d;
-        }
-        d++;
-      }
-    }
+
     /* Group a selection under one new grouping.
        ⚠️ IT INSERTS, IT DOES NOT FLATTEN. Grouping `Substructure > Rebar > x` with
        `Substructure > Formworks > y` under "Phase 1" gives `Substructure > Phase 1 > Rebar > x` and
@@ -37906,23 +37855,7 @@
        like and the planner should not have to discover it.
        ⚠️ A trade whose items would pass the cap is REFUSED as a whole and counted, never truncated
        to fit — see absAddWhy for why truncating is silent data loss. */
-    function absGroupSel(ids, name) {
-      var nm = String(name == null ? '' : name).trim();
-      var out = { moved: 0, refused: 0, trades: 0 };
-      if (!nm || !ids || !ids.length) return out;
-      var mine = (cfg.activities || []).filter(function (a) { return ids.indexOf(a.id) >= 0; });
-      if (!mine.length) return out;
-      var byTrade = {};
-      mine.forEach(function (a) { var g = a.group || 'ST'; (byTrade[g] = byTrade[g] || []).push(a); });
-      Object.keys(byTrade).forEach(function (g) {
-        var set = byTrade[g], paths = set.map(function (a) { return absPathOf(a); });
-        if (paths.some(function (p) { return p.length + 1 > ABS_MAX_GRP; })) { out.refused += set.length; return; }
-        var d = absCommonDepth(paths);
-        set.forEach(function (a, i) { var p = paths[i].slice(); p.splice(d, 0, nm); absSetPath(a, p); });
-        out.moved += set.length; out.trades++;
-      });
-      return out;
-    }
+
     /* ==========================================================================================
        REORDERING. ⚠️ THE ORDER IS `cfg.activities`, AND IT IS NOT COSMETIC: absSegList reads
        first-seen order out of that array, so it decides the order of the GROUPINGS in this pane
@@ -37933,77 +37866,23 @@
        may be holding the array.
        ========================================================================================== */
     // Two items are siblings when they render next to each other: same trade, same grouping path.
-    function absRowKey(a) {
-      return (a && (a.group || 'ST')) + SEP1 +
-        absPathOf(a).map(function (s) { return _libNorm(s); }).join(SEP1);
-    }
+
     /* Move one item one slot among its SIBLINGS. ⚠️ Siblings, not "the next entry in
        cfg.activities": swapping with whatever happens to sit next in the array would trade places
        with an item in another grouping, which changes the pushed order of two branches while this
        pane does not appear to move at all. At either end it refuses rather than wrapping. */
-    function absMoveItem(a, dir, hold) {
-      var list = cfg.activities || [], key = absRowKey(a), sibs = [];
-      list.forEach(function (x, i) { if (absRowKey(x) === key) sibs.push(i); });
-      var here = list.indexOf(a), at = sibs.indexOf(here);
-      if (at < 0) return false;
-      var to = at + (dir < 0 ? -1 : 1);
-      if (to < 0 || to >= sibs.length) return false;
-      var i1 = sibs[at], i2 = sibs[to];
-      /* ⚠️ NEVER SWAP WITH ANOTHER ROW IN THE SAME MOVING SET. That is an internal shuffle of the
-         block rather than a move of it, and when the selection IS the whole sibling set — nothing
-         to move past — it is the only thing that could possibly happen. Measured, not predicted:
-         selecting both rows of a two-row grouping and pressing Move down swapped the two with each
-         other, so the planner saw their selection reorder itself instead of refusing.
-         Ordering the walk against the direction of travel (see absMoveSel) is NOT enough on its
-         own: it fixes the block that has room to move, not the block that has none. */
-      if (hold && hold.indexOf(list[i2]) >= 0) return false;
-      var t = list[i1];
-      list[i1] = list[i2]; list[i2] = t;
-      return true;
-    }
+
     /* Move a whole selection. ⚠️ BOTTOM-UP WHEN MOVING DOWN, TOP-DOWN WHEN MOVING UP. Moving the
        topmost row of a selected block downward first would swap it with the second row OF THE SAME
        BLOCK — a no-op the planner reads as a random shuffle. Ordering the walk against the
        direction of travel is what makes a multi-row move look like one move. */
-    function absMoveSel(acts, dir) {
-      var list = cfg.activities || [];
-      var ord = (acts || []).slice().sort(function (x, y) { return list.indexOf(x) - list.indexOf(y); });
-      if (dir > 0) ord.reverse();
-      var n = 0;
-      ord.forEach(function (a) { if (absMoveItem(a, dir, ord)) n++; });
-      return n;
-    }
+
     /* Move a whole GROUPING among its sibling groupings.
        ⚠️ NOT absMoveSel over its items. A grouping's position is where its first item sits relative
        to the OTHER groupings' items, and its items are in a different sibling set from theirs — so
        item-by-item swapping cannot express this move at all. Its whole block is lifted out and
        re-inserted at the target block's start (moving up) or just past its end (moving down). */
-    function absMoveNode(node, dir) {
-      if (!node || !node.path || !node.path.length) return false;
-      var trade = node.g, d = node.path.length - 1;
-      var pre = node.path.slice(0, d).map(function (s) { return _libNorm(s); }).join(SEP1);
-      var sibs = absSegList(trade, d).filter(function (s) {
-        return d === 0 || String(s.key).indexOf(pre + SEP1) === 0;
-      });
-      var myKey = node.path.map(function (s) { return _libNorm(s); }).join(SEP1);
-      var at = -1;
-      for (var i = 0; i < sibs.length; i++) if (sibs[i].key === myKey) { at = i; break; }
-      var to = at + (dir < 0 ? -1 : 1);
-      if (at < 0 || to < 0 || to >= sibs.length) return false;
-      var list = cfg.activities || [];
-      function block(key) {
-        return list.filter(function (a) { return (a.group || 'ST') === trade && absPathKey(a, d) === key; });
-      }
-      var mine = block(myKey), other = block(sibs[to].key);
-      if (!mine.length || !other.length) return false;
-      var rest = list.filter(function (a) { return mine.indexOf(a) < 0; });
-      var anchor = (dir < 0) ? rest.indexOf(other[0]) : rest.indexOf(other[other.length - 1]) + 1;
-      if (anchor < 0) return false;
-      var next = rest.slice(0, anchor).concat(mine, rest.slice(anchor));
-      list.length = 0;
-      next.forEach(function (a) { list.push(a); });
-      return true;
-    }
+
     /* ==========================================================================================
        DRAG TO RE-ARRANGE. Owner 2026-09-08: *"instead of having buttons to move up and move down,
        there should be a menu icon on the left, to allow smooth rearrangement."*
@@ -38021,199 +37900,30 @@
        right-click menu, which is the keyboard and precision path — and the grip itself takes
        ArrowUp / ArrowDown, so re-arranging never requires a mouse.
        ========================================================================================== */
-    var _libDrag = null, _libDrop = null;
     // The grip. ⚠️ Only the GRIP is draggable, never the row: a draggable ancestor kills text
     // selection in its descendants, and this row carries the grouping-path text field.
-    function libGrip(kind, ref) {
-      return '<button type="button" class="sbld-libgrip" draggable="true" data-libdrag="' + e2(ref) + '"' +
-        ' data-libdragkind="' + kind + '" aria-label="Re-arrange" title="' +
-        e2('Drag to re-arrange · ↑ / ↓ moves one row · ' +
-          (kind === 'node' ? 'a grouping moves among its own siblings'
-                           : 'drop inside another grouping to move it there')) + '">≡</button>';
-    }
-    function _libDropClear() {
-      try {
-        var q = document.querySelectorAll('.sbld-libdropbefore, .sbld-libdropafter');
-        Array.prototype.forEach.call(q, function (el) {
-          el.classList.remove('sbld-libdropbefore'); el.classList.remove('sbld-libdropafter');
-        });
-      } catch (e) {}
-      _libDrop = null;
-    }
-    function _libDragEnd() { _libDropClear(); _libDrag = null; }
+
     // ⚠️ The marker is on the ROW, not a floating line: a separately positioned line has to be kept
     // in step with a scrolling, virtual-free but re-rendering pane, and an inset edge cannot drift.
-    function _libDropMark(row, after) {
-      if (_libDrop && _libDrop.row === row && _libDrop.after === after) return;
-      _libDropClear();
-      row.classList.add(after ? 'sbld-libdropafter' : 'sbld-libdropbefore');
-      _libDrop = { row: row, after: after };
-    }
+
     /* Apply a drop of ITEMS. Returns false for a no-op or a refusal, so the caller repaints only
        when something moved. */
-    function libDropItems(ids, t) {
-      var list = cfg.activities || [];
-      var moving = list.filter(function (a) { return ids.indexOf(a.id) >= 0; });
-      if (!moving.length) return false;
-      var tgtItem = t.row.dataset.libitem
-        ? list.filter(function (a) { return a.id === t.row.dataset.libitem; })[0] : null;
-      var tgtNode = (!tgtItem && t.row.dataset.libnode != null && t.row.dataset.libnode !== '')
-        ? _libNodes[+t.row.dataset.libnode] : null;
-      if (!tgtItem && !tgtNode) return false;
-      // ⚠️ Dropping onto a row that is itself being dragged is a no-op, and must be REFUSED rather
-      // than computed: the target's index is looked up in the list with the movers removed, so it
-      // would come back -1 and the block would land at the very end of the trade.
-      if (tgtItem && moving.indexOf(tgtItem) >= 0) return false;
-      var trade = tgtItem ? (tgtItem.group || 'ST') : tgtNode.g;
-      if (moving.some(function (a) { return (a.group || 'ST') !== trade; })) {
-        UI.toast('A row can only be dragged inside its own trade — change an activity’s trade in ' +
-          _stepNo('Activities') + ' · Activities, or with the Trade column in the schedule.', 'warn');
-        return false;
-      }
-      var path = tgtItem ? absPathOf(tgtItem) : tgtNode.path.slice();
-      var pk = path.map(function (s) { return _libNorm(s); }).join(SEP1);
-      // ⚠️ Written only when it DIFFERS, so a pure reorder never rewrites a path.
-      moving.forEach(function (a) {
-        if (absPathOf(a).map(function (s) { return _libNorm(s); }).join(SEP1) !== pk) absSetPath(a, path);
-      });
-      var rest = list.filter(function (a) { return moving.indexOf(a) < 0; });
-      var at;
-      if (tgtItem) at = rest.indexOf(tgtItem) + (t.after ? 1 : 0);
-      else {
-        // Dropped on a grouping HEADING: the top of it, or the bottom of everything under it.
-        var blk = rest.filter(function (a) {
-          return (a.group || 'ST') === trade && absPathKey(a, path.length - 1) === pk;
-        });
-        at = blk.length ? (t.after ? rest.indexOf(blk[blk.length - 1]) + 1 : rest.indexOf(blk[0])) : rest.length;
-      }
-      if (at < 0) at = rest.length;
-      var next = rest.slice(0, at).concat(moving, rest.slice(at));
-      list.length = 0;
-      next.forEach(function (a) { list.push(a); });
-      return true;
-    }
+
     /* Apply a drop of a whole GROUPING. ⚠️ Among its OWN SIBLINGS only: re-parenting a whole branch
        by dragging is a restructure with no visible confirmation, and the grouping-path field and
        ‹ › already do it deliberately. A drop anywhere else is refused with that reason rather than
        silently ignored, because a drag that lands and does nothing reads as a broken control. */
-    function libDropNode(idx, t) {
-      var nd = _libNodes[idx], list = cfg.activities || [];
-      if (!nd || !nd.path || !nd.path.length) return false;
-      var d2 = nd.path.length - 1;
-      var tgtItem = t.row.dataset.libitem
-        ? list.filter(function (a) { return a.id === t.row.dataset.libitem; })[0] : null;
-      var tgtNode = (!tgtItem && t.row.dataset.libnode != null && t.row.dataset.libnode !== '')
-        ? _libNodes[+t.row.dataset.libnode] : null;
-      var tGroup = tgtNode ? tgtNode.g : (tgtItem ? (tgtItem.group || 'ST') : null);
-      var myKey = nd.path.map(function (s) { return _libNorm(s); }).join(SEP1);
-      // The target's branch AT MY DEPTH — so dropping on any row inside a sibling grouping works.
-      var tKey = tgtNode ? tgtNode.path.slice(0, d2 + 1).map(function (s) { return _libNorm(s); }).join(SEP1)
-                         : (tgtItem ? absPathKey(tgtItem, d2) : '');
-      // ⚠️ Itself is the ONLY silent no-op: dropping a grouping back where it was is not a mistake
-      // to explain. Everything else gets the reason — including a target with no branch at this
-      // depth at all (dropping a sub-grouping onto a bare item in another trade), which returned
-      // false with no message and read as the drag simply not working.
-      if (tKey === myKey) return false;
-      var myPre = myKey.split(SEP1).slice(0, d2).join(SEP1);
-      var tPre = tKey ? tKey.split(SEP1).slice(0, d2).join(SEP1) : null;
-      if (!tKey || tGroup !== nd.g || myPre !== tPre) {
-        UI.toast('A grouping can only be re-arranged among its own siblings. To move it somewhere ' +
-          'else, edit the grouping path on its items.', 'warn');
-        return false;
-      }
-      var mine = list.filter(function (a) { return (a.group || 'ST') === nd.g && absPathKey(a, d2) === myKey; });
-      var rest = list.filter(function (a) { return mine.indexOf(a) < 0; });
-      var other = rest.filter(function (a) { return (a.group || 'ST') === nd.g && absPathKey(a, d2) === tKey; });
-      if (!mine.length || !other.length) return false;
-      var at = t.after ? rest.indexOf(other[other.length - 1]) + 1 : rest.indexOf(other[0]);
-      if (at < 0) return false;
-      var next = rest.slice(0, at).concat(mine, rest.slice(at));
-      list.length = 0;
-      next.forEach(function (a) { list.push(a); });
-      return true;
-    }
+
     // ⚠️ ONE set of listeners on the pane, not one per row: this pane repaints on every keystroke,
     // and five drag events per activity is a handler count that grows with the project.
-    function libWireDrag(pane) {
-      if (!pane) return;
-      pane.addEventListener('dragstart', function (ev) {
-        var g = ev.target.closest ? ev.target.closest('[data-libdrag]') : null;
-        if (!g) return;
-        if (g.dataset.libdragkind === 'node') _libDrag = { kind: 'node', idx: +g.dataset.libdrag };
-        else {
-          /* ⚠️ Dragging a row that is IN the selection drags the WHOLE selection — the Excel model
-             the rest of this pane now follows. Dragging one outside it drags only that row and makes
-             it the selection, so a drag can never move rows the planner cannot see they picked. */
-          var id = g.dataset.libdrag;
-          if (!libSelHas(id)) { libSelClear(); _libSel[id] = 1; _libSelLast = id; }
-          _libDrag = { kind: 'item', ids: libSelIds() };
-        }
-        try {
-          ev.dataTransfer.effectAllowed = 'move';
-          ev.dataTransfer.setData('text/plain', String(g.dataset.libdrag));
-        } catch (e) {}
-      });
-      pane.addEventListener('dragover', function (ev) {
-        if (!_libDrag) return;
-        var row = ev.target.closest ? ev.target.closest('[data-libitem],[data-libnode]') : null;
-        if (!row) return;
-        ev.preventDefault();
-        try { ev.dataTransfer.dropEffect = 'move'; } catch (e) {}
-        var r = row.getBoundingClientRect();
-        _libDropMark(row, (ev.clientY - r.top) > r.height / 2);
-      });
-      pane.addEventListener('drop', function (ev) {
-        if (!_libDrag) return;
-        ev.preventDefault();
-        var d = _libDrag, t = _libDrop;
-        _libDragEnd();
-        if (!t) return;
-        var moved = (d.kind === 'node') ? libDropNode(d.idx, t) : libDropItems(d.ids, t);
-        if (moved) { markDirty(); render(); }
-      });
-      // ⚠️ Cleared on dragend AND on leaving the pane: a marker left painted on a row after an
-      // abandoned drag is a lie about where the next drop would land.
-      pane.addEventListener('dragend', function () { _libDragEnd(); });
-      pane.addEventListener('dragleave', function (ev) {
-        if (ev.target === pane) _libDropClear();
-      });
-      /* The keyboard equivalent, on the grip itself. ⚠️ This is why the grip is a <button> and not a
-         styled span: dragging is a mouse gesture, and removing the Move buttons from the bar would
-         otherwise have left no way to re-arrange without one. */
-      pane.addEventListener('keydown', function (ev) {
-        var g = ev.target.closest ? ev.target.closest('[data-libdrag]') : null;
-        if (!g) return;
-        var dir = ev.key === 'ArrowUp' ? -1 : (ev.key === 'ArrowDown' ? 1 : 0);
-        if (!dir) return;
-        ev.preventDefault();
-        var moved;
-        if (g.dataset.libdragkind === 'node') moved = absMoveNode(_libNodes[+g.dataset.libdrag], dir);
-        else {
-          var id = g.dataset.libdrag;
-          if (!libSelHas(id)) { libSelClear(); _libSel[id] = 1; _libSelLast = id; }
-          moved = absMoveSel(libSelActs(), dir) > 0;
-        }
-        if (moved) { markDirty(); render(); }
-      });
-    }
+
     /* ==========================================================================================
        SELECTION. Kept in module state and keyed by activity id, so it SURVIVES the full re-render
        that every edit triggers — a selection lost on each keystroke is worse than no selection.
        ⚠️ Pruned against cfg.activities on read, so an id whose activity was deleted in another step
        can never make a stale row count towards "3 selected".
        ========================================================================================== */
-    var _libSel = {}, _libSelLast = null, _libOrder = [];
-    function libSelIds() {
-      var live = {};
-      (cfg.activities || []).forEach(function (a) { live[a.id] = 1; });
-      return Object.keys(_libSel).filter(function (id) { return live[id]; });
-    }
-    function libSelActs() {
-      var ids = libSelIds();
-      return (cfg.activities || []).filter(function (a) { return ids.indexOf(a.id) >= 0; });
-    }
-    function libSelHas(id) { return !!_libSel[id]; }
-    function libSelClear() { _libSel = {}; _libSelLast = null; }
+
     /* ⚠️⚠️ EXCEL'S SELECTION MODEL, not a toggle-per-click. Owner 2026-09-08: *"adapt similar to
        excel wherein if multiple selection, you must hold ctrl and then click to select another
        row."* So:
@@ -38226,478 +37936,44 @@
            from the same start. That is what makes a range adjustable instead of ratcheting.
        ⚠️ Shift walks the RENDERED order (_libOrder), never cfg.activities: the planner is selecting
        what they can see, and the two orders differ the moment anything is grouped. */
-    function libSelClick(id, mods) {
-      var ctrl = !!(mods && (mods.ctrl || mods.meta)), shift = !!(mods && mods.shift);
-      if (shift && _libSelLast && _libOrder.length) {
-        var a = _libOrder.indexOf(_libSelLast), b = _libOrder.indexOf(id);
-        if (a >= 0 && b >= 0) {
-          if (!ctrl) _libSel = {};
-          var lo = Math.min(a, b), hi = Math.max(a, b);
-          for (var i = lo; i <= hi; i++) _libSel[_libOrder[i]] = 1;
-          return;
-        }
-      }
-      if (ctrl) {
-        if (_libSel[id]) delete _libSel[id]; else _libSel[id] = 1;
-      } else {
-        _libSel = {};
-        _libSel[id] = 1;
-      }
-      _libSelLast = id;
-    }
+
     // The bar only exists when something is selected: an always-present toolbar of controls that
     // do nothing yet is the kind of dead furniture this pane has been cleared of twice.
-    function libSelBar() {
-      var ids = libSelIds();
-      if (!ids.length) return '';
-      var acts = libSelActs(), trades = {};
-      acts.forEach(function (a) { trades[a.group || 'ST'] = 1; });
-      var nT = Object.keys(trades).length;
-      return '<div class="sbld-libselbar">' +
-        '<b>' + ids.length + ' selected</b>' +
-        (nT > 1 ? '<span class="sbld-libselwarn" title="A grouping belongs to one trade, so grouping this selection creates one grouping of that name inside each of the ' + nT + ' trades">across ' + nT + ' trades</span>' : '') +
-        '<button class="pd-btn pd-btn-primary sbld-libselbtn" data-libgroup="1">Group into a new grouping…</button>' +
-        // ⚠️ NO Move up / Move down here any more, as asked: the ≡ grip on each row does it by
-        // dragging. They are kept in the right-click menu, which is the precision path, and the
-        // grip takes ArrowUp / ArrowDown — so removing the buttons costs no keyboard access.
-        '<button class="pd-btn sbld-libselbtn" data-libselclear="1">Clear</button>' +
-        '<span class="sbld-libselhint">Ctrl-click to add a row · Shift-click for a range · drag ≡ to re-arrange</span>' +
-        '</div>';
-    }
+
     /* ==========================================================================================
        THE CONTEXT MENU. ⚠️ Appended to document.body, not into the panel: the panel is rebuilt with
        innerHTML on every edit, and a menu living inside it would be destroyed by the very action it
        just triggered. It is closed explicitly before any action runs, and at the top of every
        stLibrary render, so a stale menu can never sit over a repainted pane.
        ========================================================================================== */
-    var _libMenuEl = null;
-    function _libMenuAway(e) { if (_libMenuEl && !_libMenuEl.contains(e.target)) libMenuClose(); }
-    function _libMenuKey(e) { if (e.key === 'Escape' || e.key === 'Esc') libMenuClose(); }
-    function libMenuClose() {
-      if (!_libMenuEl) return;
-      document.removeEventListener('mousedown', _libMenuAway, true);
-      document.removeEventListener('keydown', _libMenuKey, true);
-      if (_libMenuEl.parentNode) _libMenuEl.parentNode.removeChild(_libMenuEl);
-      _libMenuEl = null;
-    }
-    function libMenu(x, y, items) {
-      libMenuClose();
-      var d = document.createElement('div');
-      d.className = 'sbld-libmenu';
-      d.innerHTML = items.map(function (it, i) {
-        if (it.sep) return '<div class="sbld-libmenusep"></div>';
-        return '<button class="sbld-libmenui" data-mi="' + i + '"' + (it.off ? ' disabled' : '') +
-          ' title="' + e2(it.off || it.tip || it.label) + '">' + e2(it.label) + '</button>';
-      }).join('');
-      document.body.appendChild(d);
-      _libMenuEl = d;
-      // ⚠️ Positioned AFTER insertion, off the measured box: a menu placed blindly at the cursor
-      // opens off-screen near the window edge, which is where a right-click on the last row is.
-      var r = d.getBoundingClientRect();
-      d.style.left = Math.max(4, Math.min(x, (window.innerWidth || 1200) - r.width - 6)) + 'px';
-      d.style.top = Math.max(4, Math.min(y, (window.innerHeight || 800) - r.height - 6)) + 'px';
-      d.querySelectorAll('[data-mi]').forEach(function (b) {
-        b.onclick = function () {
-          var it = items[+b.dataset.mi];
-          libMenuClose();
-          if (it && it.go) it.go();
-        };
-      });
-      document.addEventListener('mousedown', _libMenuAway, true);
-      document.addEventListener('keydown', _libMenuKey, true);
-    }
+
     // Ask for a grouping name and apply it to the selection, reporting what actually happened.
-    function libGroupPrompt(acts) {
-      if (!acts.length) return;
-      psPrompt('Name the new grouping.', '', function (typed) { _libGroupGo(acts, typed); },
-        { title: 'Group ' + acts.length + ' item' + (acts.length === 1 ? '' : 's'), fieldLabel: 'Grouping name',
-          required: true, ok: 'Group them',
-          hint: 'The items keep the rung they already have \u2014 this <b>inserts</b> a grouping above them rather than flattening what is there. A selection spanning several trades makes one grouping of this name inside each.' });
-    }
-    function _libGroupGo(acts, typed) {
-      var nm = String(typed == null ? '' : typed).trim();
-      if (!nm) return;
-      var r = absGroupSel(acts.map(function (a) { return a.id; }), nm);
-      if (!r.moved) {
-        UI.toast(r.refused
-          ? ('Nothing grouped: ' + r.refused + ' of those are already as deep as the grouping tree goes (L' + (ABS_MAX_GRP + 1) + ').')
-          : 'Nothing grouped.', 'warn');
-        return;
-      }
-      // ⚠️ Says when it made more than one grouping. "Group them together" does not sound like
-      // "one grouping per trade", and finding that out by reading the pane afterwards is worse.
-      UI.toast('Grouped ' + r.moved + ' item' + (r.moved === 1 ? '' : 's') + ' under "' + nm + '"' +
-        (r.trades > 1 ? ' — one grouping of that name in each of ' + r.trades + ' trades, because a grouping belongs to a trade' : '') +
-        (r.refused ? '. ' + r.refused + ' left alone: already at L' + (ABS_MAX_GRP + 1) + '.' : '.'),
-        r.refused ? 'warn' : 'success');
-      libSelClear();
-      markDirty(); render();
-    }
-    function libDelPrompt(node) {
-      var parent = node.path.length > 1 ? node.path[node.path.length - 2] : (GWORK[node.g] || GLABEL[node.g] || node.g);
-      // ⚠️ Names the destination and says no activity is deleted. A "Delete" on a heading reads as
-      // "delete what is under it", and it would be a rotten surprise to be wrong about.
-      psConfirm('Delete the grouping “' + node.name + '”?', function () {
-        var hit = absDelSeg(node);
-        /* ⚠⚠ THE DECLARATION GOES TOO, AND WITHOUT THIS THE ROW WOULD NOT DISAPPEAR.
-           `absDelSeg` rewrites the paths ITEMS carry; a grouping declared with nothing in it has
-           no item paths to rewrite, so it would survive its own delete and read as a broken
-           button. ⚠️ This half came from origin/main and is kept whole — only the question
-           in front of it moved into an app dialog. */
-        var _wasDecl = (cfg.groupings || []).length;
-        libUndeclare(node.g, node.path);
-        var _declGone = _wasDecl - (cfg.groupings || []).length;
-        if (!hit && !_declGone) { UI.toast('That grouping is no longer there \u2014 nothing changed.', 'warn'); return; }
-        UI.toast('Deleted “' + node.name + '”' +
-          (hit ? ' \u2014 ' + hit + ' item' + (hit === 1 ? '' : 's') + ' moved up.' : ' \u2014 it held no items.'), 'success');
-        markDirty(); render();
-      }, { title: 'Delete this grouping?', ok: 'Delete the grouping',
-           note: node.acts.length
-             ? ('Its <b>' + node.acts.length + '</b> item' + (node.acts.length === 1 ? '' : 's') +
-                ' move up into <b>' + e2(parent) + '</b>. <b>No activity is deleted</b> \u2014 only the rung goes.')
-             : ('It holds no items \u2014 only the declared grouping itself goes.') });
-    }
-    function libRenamePrompt(node) {
-      psPrompt('Rename this grouping.', node.name, function (typed) {
-        var nm = String(typed == null ? '' : typed).trim();
-        // \u26a0\ufe0f Cancelled, emptied, or the same name: not a change. Renaming to the same
-        // spelling would still repaint and still flag the setup dirty.
-        if (!nm || _libNorm(nm) === _libNorm(node.name)) return;
-        if (absRenameSeg(node, nm)) { markDirty(); render(); }
-      }, { title: 'Rename this L' + (node.path.length + 1) + ' grouping', fieldLabel: 'Grouping name',
-           required: true, ok: 'Rename it',
-           hint: 'All <b>' + node.acts.length + '</b> item(s) under it follow. A grouping of the same name under a different parent is a different grouping and is not touched.' });
-    }
-    function libSubPrompt(node) {
-      psPrompt('Name the new grouping.', '', function (typed) {
-        var nm = String(typed == null ? '' : typed).trim();
-        if (!nm) return;
-        if (absAddSub(node, nm)) { markDirty(); render(); }
-        else UI.toast(absAddWhy(node) || 'Could not insert a level there.', 'warn');
-      }, { title: 'Insert a level under “' + node.name + '”', fieldLabel: 'L' + (node.path.length + 2) + ' grouping name',
-           required: true, ok: 'Insert the level',
-           hint: 'Its <b>' + node.acts.length + '</b> item(s) move one rung deeper, inside the new grouping.' });
-    }
+
     // The menu for an ITEM row. `a` is the row that was right-clicked; the selection is what acts,
     // and right-clicking outside it selects that row first so the menu never acts on rows the
     // planner cannot see they picked.
-    function libItemMenu(e, a) {
-      if (!libSelHas(a.id)) { libSelClear(); _libSel[a.id] = 1; _libSelLast = a.id; render(); }
-      var acts = libSelActs(), one = acts.length === 1;
-      var lv = absLevelOf(a);
-      libMenu(e.clientX, e.clientY, [
-        { label: 'Group ' + acts.length + ' item' + (one ? '' : 's') + ' into a new grouping…',
-          go: function () { libGroupPrompt(acts); } },
-        { sep: 1 },
-        { label: 'Move up', tip: 'Move among its siblings — the order the push builds', go: function () { if (absMoveSel(acts, -1)) { markDirty(); render(); } } },
-        { label: 'Move down', go: function () { if (absMoveSel(acts, 1)) { markDirty(); render(); } } },
-        { sep: 1 },
-        { label: 'Move out a rung (L' + (lv - 1) + ')', off: lv <= 2 ? 'Already directly under its trade' : '',
-          go: async function () { var m = 0; for (var i = 0; i < acts.length; i++) { if (await absSetLevel(acts[i], absLevelOf(acts[i]) - 1)) m++; } if (m) { markDirty(); render(); } } },
-        { label: 'Move in a rung (L' + (lv + 1) + ')', off: lv >= 2 + ABS_MAX_GRP ? ('L' + (2 + ABS_MAX_GRP) + ' is as deep as it goes') : '',
-          go: async function () { var m = 0; for (var i = 0; i < acts.length; i++) { if (await absSetLevel(acts[i], absLevelOf(acts[i]) + 1)) m++; } if (m) { markDirty(); render(); } } },
-        { sep: 1 },
-        { label: 'Clear selection', go: function () { libSelClear(); render(); } }
-      ]);
-    }
-    function libNodeMenu(e, node) {
-      var why = absAddWhy(node);
-      libMenu(e.clientX, e.clientY, [
-        { label: 'Rename grouping…', go: function () { libRenamePrompt(node); } },
-        { label: 'Insert a level under it…', off: why, go: function () { libSubPrompt(node); } },
-        { label: 'Delete grouping…', tip: 'Its items move up a rung; no activity is deleted',
-          go: function () { libDelPrompt(node); } },
-        { sep: 1 },
-        { label: 'Move grouping up', go: function () { if (absMoveNode(node, -1)) { markDirty(); render(); } } },
-        { label: 'Move grouping down', go: function () { if (absMoveNode(node, 1)) { markDirty(); render(); } } },
-        { sep: 1 },
-        { label: 'Select its ' + node.acts.length + ' item' + (node.acts.length === 1 ? '' : 's'),
-          go: function () { libSelClear(); node.acts.forEach(function (a) { _libSel[a.id] = 1; }); _libSelLast = node.acts.length ? node.acts[node.acts.length - 1].id : null; render(); } }
-      ]);
-    }
-    function libGrpCount(n) {
-      return (n.kids || []).reduce(function (s, k) { return s + 1 + libGrpCount(k); }, 0);
-    }
+
     /* The grouping nodes the rendered pane is showing, so a Rename / + level button can name one
        without encoding a whole path into an attribute. ⚠️ Reset at the top of every stLibrary
        render and read by handlers wired in that same call, so an index can never outlive its node. */
-    var _libNodes = [];
-    function libNodeTools(n) {
-      var i = _libNodes.push(n) - 1;
-      var why = absAddWhy(n);          // ⚠️ the same predicate absAddSub refuses on, not a copy
-      return '<span class="sbld-libtools">' +
-        '<button class="sbld-libtool" data-libren="' + i + '" title="Rename this grouping — every item under it follows">Rename</button>' +
-        '<button class="sbld-libtool" data-libsub="' + i + '"' + (why ? ' disabled' : '') + ' title="' + e2(why ||
-          ('Insert a level under this grouping — its ' + n.acts.length + (n.acts.length === 1 ? ' item moves' : ' items move') + ' one rung deeper, inside the new one')) +
-          '">+ level</button>' +
-        // ⚠️ DELETE IS A ROW BUTTON, not only a context-menu entry. The owner asked for the
-        // capability plainly, and a destructive-sounding action that exists only behind a
-        // right-click is one a planner never finds and never trusts. It deletes the RUNG:
-        // libDelPrompt names where the items go and says no activity is deleted.
-        '<button class="sbld-libtool sbld-libtooldel" data-libdel="' + i + '" title="' +
-          e2('Delete this grouping — its ' + n.acts.length + ' item' + (n.acts.length === 1 ? '' : 's') +
-            ' move up a rung. No activity is deleted.') + '">Delete</button>' +
-        '</span>';
-    }
+
     // A grouping node and everything under it. Items first, then sub-groupings: a heading's own
     // members read before its sub-headings, the same way an outline does.
     /* ==========================================================================================
        DECLARING A GROUPING BEFORE THERE IS ANYTHING IN IT.
        ⚠ `_libNorm` is the SAME key the tree builds with, so a path declared here and a path an
        activity later carries land on ONE node rather than two that look identical. */
-    function libPathKey(g, path) {
-      return g + '\u0001' + (path || []).map(_libNorm).join('\u0001');
-    }
-    function libDeclare(g, path) {
-      cfg.groupings = cfg.groupings || [];
-      var k = libPathKey(g, path);
-      if (cfg.groupings.some(function (x) { return libPathKey(x.g, x.path) === k; })) return false;
-      cfg.groupings.push({ g: g, path: path.slice() });
-      return true;
-    }
+
     /* ⚠ Removing a declaration drops its DESCENDANTS too — a declared child of a rung that no
        longer exists would keep the parent alive through the tree builder, so the rung would refuse
        to disappear and read as a failed delete. */
-    function libUndeclare(g, path) {
-      var pre = libPathKey(g, path);
-      cfg.groupings = (cfg.groupings || []).filter(function (x) {
-        var k = libPathKey(x.g, x.path);
-        return !(k === pre || k.indexOf(pre + '\u0001') === 0);
-      });
-    }
+
     /* The prompt both “+ Sub-grouping” buttons share. ⚠ One function, so a grouping added under
        a trade and one added under another grouping cannot end up validated differently. */
-    function libAddGrouping(g, parentPath) {
-      if ((parentPath || []).length >= 4) {
-        UI.toast('Groupings go four deep — that is what the push builds. Add the work as items instead.', 'warn'); return;
-      }
-      psPrompt('Name the new grouping.', '', function (nm) {
-        nm = String(nm == null ? '' : nm).trim();
-        if (!nm) { UI.toast('A grouping needs a name.', 'warn'); return; }
-        if (!libDeclare(g, (parentPath || []).concat(nm))) {
-          UI.toast('“' + nm + '” is already a grouping here.', 'warn'); return;
-        }
-        markDirty(); render();
-      }, { title: (parentPath || []).length
-             ? ('New grouping under “' + parentPath[parentPath.length - 1] + '”')
-             : 'New grouping',
-           fieldLabel: 'Grouping name', required: true, ok: 'Add the grouping',
-           hint: 'It is created empty \u2014 drag items into it, or set an item\u2019s rung from its own row.' });
-    }
-    function libNodeHTML(n) {
-      var h = '';
-      if (n.path.length) {
-        var lv = n.path.length + 1;
-        // ⚠️ The node index is read BEFORE libNodeTools pushes it, so the row and its tools carry
-        // the same index. Reading it after would point the grip at the NEXT grouping.
-        var _ni = _libNodes.length;
-        h += '<div class="sbld-libL' + lv + ' sbld-libgrp" data-libnode="' + _ni + '">' +
-          libGrip('node', _ni) +
-          libLv(lv, 'grp', n.path.length === 1 ? 'Grouping' : ('Grouping ' + n.path.length)) +
-          '<span class="sbld-libnm" title="' + e2(n.name) + '">' + e2(n.name) + '</span>' + libNodeTools(n) +
-          '<button class="sbld-libadd" data-libadd="' + e2(n.g) + '" data-libaddp="' + e2(JSON.stringify(n.path)) + '" title="Add a grouping inside this one">+ Sub</button>' +
-          '<span class="sbld-libwho" title="' + e2(n.acts.length + ' item(s) under this grouping') + '">' + n.acts.length + '</span></div>';
-      }
-      h += n.items.map(function (a) { return libItemRow(a); }).join('');
-      h += n.kids.map(function (k) { return libNodeHTML(k); }).join('');
-      return h;
-    }
-    function stLibrary(host, noHead) {
-      // ⚠️ All three are per-render: the node registry the menus index into, the render order a
-      // shift-click range walks, and any menu left open over the pane this call is replacing.
-      _libNodes = [];
-      _libOrder = [];
-      libMenuClose();
-      var locs = libLocTree(), tree = libGroupTree();
-      var nF = 0, nZ = 0, nU = 0;
-      locs.forEach(function (T) {
-        nF += T.floors.length;
-        T.floors.forEach(function (F2) { nZ += F2.zones.length; F2.zones.forEach(function (Z2) { nU += Z2.units.length; }); });
-      });
-      var nI = (cfg.activities || []).length;
-      var nG = tree.reduce(function (s, t) { return s + libGrpCount(t); }, 0);
-      var deep = absMaxDepth();
-      var imported = (typeof rows !== 'undefined' && rows) ? rows.filter(function (r) { return isWbs(r); }).length : 0;
 
-      var left = '<div class="sbld-libpane">' +
-        '<div class="sbld-libhead"><b>Location — where the work happens</b>' + libLegend('loc', nU ? 4 : 3) +
-          '<span class="sbld-tag">' + nF + ' floor' + (nF === 1 ? '' : 's') + ' · ' + nZ + ' area' + (nZ === 1 ? '' : 's') +
-          (nU ? ' · ' + nU + ' unit' + (nU === 1 ? '' : 's') : '') + '</span></div>' +
-        '<div class="sbld-libbody">' +
-        (nF ? locs.map(function (T) {
-          if (!T.floors.length) return '';
-          return '<div class="sbld-libL1">' + libLv(1, 'loc') + e2(T.name) + '</div>' +
-            T.floors.map(function (F2) {
-              return '<div class="sbld-libL2">' + libLv(2, 'loc') + e2(F2.name) +
-                // ⚠️ Suppressed when it repeats the name. Measured on a rendered pane: a floor
-                // actually called "Roof Deck" printed "Roof Deck  Roof Deck", which reads as a
-                // duplication bug rather than as a category.
-                (F2.kind && _libNorm(KIND_LABEL[F2.kind] || F2.kind) !== _libNorm(F2.name)
-                  ? '<span class="sbld-libkind">' + e2(KIND_LABEL[F2.kind] || F2.kind) + '</span>' : '') +
-                '<span class="sbld-libwho" title="Trades that define this floor">' +
-                  e2(F2.trades.map(function (g) { return GLABEL[g] || g; }).join(', ')) + '</span></div>' +
-                F2.zones.map(function (Z2) {
-                  return '<div class="sbld-libL3">' + libLv(3, 'loc') + e2(Z2.name) +
-                    (Z2.units.length ? '<span class="sbld-libwho">' + Z2.units.length + ' unit' + (Z2.units.length === 1 ? '' : 's') + '</span>' : '') + '</div>' +
-                    Z2.units.map(function (u) { return '<div class="sbld-libL4">' + libLv(4, 'loc') + e2(u) + '</div>'; }).join('');
-                }).join('');
-            }).join('');
-        }).join('') : '<div class="sbld-empty">No floors yet. <b>Read from the WBS</b> if this schedule was imported, or define them in <b>Floors &amp; Zones</b>.</div>') +
-        '</div></div>';
-
-      var right = '<div class="sbld-libpane">' +
-        '<div class="sbld-libhead"><b>Trade — what the work is</b>' + libLegend('grp') +
-          '<span class="sbld-libedit" title="‹ and › move an item between rungs; Rename and + level restructure a grouping">levels are editable</span>' +
-          '<span class="sbld-tag">' + tree.length + ' trade' + (tree.length === 1 ? '' : 's') + ' · ' + nG + ' grouping' + (nG === 1 ? '' : 's') +
-          ' · ' + nI + ' item' + (nI === 1 ? '' : 's') + (deep > 1 ? ' · ' + deep + ' grouping levels' : '') + '</span></div>' +
-        libSelBar() +
-        '<div class="sbld-libbody" id="sbld-libgrpbody">' +
-        (nI ? tree.map(function (T) {
-          return '<div class="sbld-libL1" style="--zc:' + gc(T.g) + '">' + libLv(1, 'grp', 'Trade') + e2(T.label) +
-            '<button class="sbld-libadd" data-libadd="' + e2(T.g) + '" data-libaddp="[]" title="Add a grouping under this trade">+ Grouping</button></div>' +
-            libNodeHTML(T);
-        }).join('') : '<div class="sbld-empty">No items and no groupings yet. Add items in <b>Activities</b>, <b>Read from the WBS</b>, ' +
-          'or lay the structure out first — pick a trade below and its groupings can exist before any work is filed under them.' +
-          '<div class="sbld-libseed">' + GROUPS.map(function (g) {
-            return '<button class="pd-btn pd-btn-sm" data-libadd="' + e2(g) + '" data-libaddp="[]"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g] || g) + '</button>';
-          }).join('') + '</div></div>') +
-        '</div></div>';
-
-      // ⚠️ No <h2> ever, and no lede under `noHead`: this is the Construction Library TAB of
-      // the Activities step, and the tabbed shell emits the one heading and the one lede. Its
-      // lede described “where the work happens on the left, what the work is on the right” — which
-      // is the two panes directly below it, each with its own header.
-      host.innerHTML = (noHead ? '' :
-        '<p class="sbld-lede"><b>Where</b> the work happens on the left, <b>what</b> the work is on the right.</p>') +
-        '<div class="sbld-libbar">' +
-          '<button class="pd-btn pd-btn-primary" id="b-libloc"' +
-            (imported ? ' title="An imported schedule already names its floors and zones in the WBS — read them in rather than typing them, then correct what the reader got wrong."' : ' disabled title="This project has no imported WBS branches to read"') + '>Read locations from the WBS…</button>' +
-          '<button class="pd-btn" id="b-libtrade"' + (imported ? '' : ' disabled title="This project has no imported WBS branches to read"') + '>Match WBS to trades…</button>' +
-          '<span class="sbld-libspacer"></span>' +
-          '<button class="pd-btn" id="b-libgoloc">Edit floors &amp; zones →</button>' +
-          '<button class="pd-btn" id="b-libgoact">Edit items →</button>' +
-        '</div>' +
-        (imported ? '' : '<p class="sbld-note">Nothing has been imported into this project, so there is no WBS to read — ' +
-          'build the two sides by hand in <b>Floors &amp; Zones</b> and <b>Activities</b>.</p>') +
-        '<div class="sbld-lib">' + left + right + '</div>' +
-        _sbldHow('<b>Left — places.</b> The union across trades: a floor only one trade works is still a floor of the ' +
-          'building, and the trades that define it are listed beside it. Floors are defined <i>per trade</i> because a trade ' +
-          'zones its floors its own way, which is why combining trades in Vertical Stacking draws at level 1.<br>' +
-          '<b>The places go four deep</b> — ' + e2(libLvNames('loc').join(' › ')) + ' — because those are the four rungs ' +
-          'the setup stores and the push builds. Add or remove them in <b>Floors &amp; Zones</b>; this pane reads them.<br>' +
-          '<b>Right — work.</b> Trade (L1) › grouping (L2) › <i>as many sub-groupings as you need</i> › item. The ' +
-          '<b>grouping path</b> is the only field that lives here; everything else is the same data <b>Floors &amp; Zones</b> ' +
-          'and <b>Activities</b> edit, so there is one copy of it.<br>' +
-          '<b>The rung is the position, not a number you type.</b> An item sits on the rung its own grouping path ends on — ' +
-          'no path is L2, one grouping is L3, two is L4, and the chip at the head of each row says which. So <b>‹</b> and ' +
-          '<b>›</b> <i>are</i> the move: › puts the item one rung deeper (inside a grouping, borrowing the name of a ' +
-          'grouping beside it or asking you for a new one), ‹ takes it one rung out. Type the whole path in the field if ' +
-          'you prefer — <code>Substructure / Rebar</code>.<br>' +
-          '<b>Restructuring, on a grouping row.</b> <b>+ level</b> inserts a rung under it and moves everything beneath one ' +
-          'step deeper; <b>Rename</b> retitles the rung for every item under it; <b>Delete</b> removes the rung and moves its ' +
-          'items up into its parent — <i>no activity is ever deleted here</i>, that is the <b>Activities</b> step.<br>' +
-          '<b>Several at once, as in Excel.</b> Click an item\u2019s name to select just that row, <b>Ctrl-click</b> to add or ' +
-          'remove one, <b>Shift-click</b> for a range, then <b>right-click</b> — ' +
-          '<i>Group N items into a new grouping</i> puts them under one new rung <i>without</i> discarding the rungs they already ' +
-          'have. A selection spanning trades makes one grouping of that name inside each trade, because a grouping belongs to a ' +
-          'trade; the toast says when that happened.<br>' +
-          '<b>Re-arranging: drag the ≡ grip.</b> Drop a row where you want it — above or below the row you are over. ' +
-          'Dropping it <i>inside another grouping</i> moves it there as well as re-ordering it, so one gesture does both; ' +
-          'a grouping\u2019s grip moves the whole grouping among its own siblings. A drag carries the <b>whole selection</b> when ' +
-          'you start it on a selected row. No mouse? The grip takes <b>↑</b> / <b>↓</b>, and the right-click menu still has ' +
-          '<i>Move up</i> / <i>Move down</i>. — this is not cosmetic: the order here is the order the push builds the ' +
-          'branches in.<br>' +
-          '<b>And it reaches the schedule.</b> Every grouping rung is a real <b>WBS level</b> (<i>Grouping</i>, ' +
-          '<i>Grouping 2</i>…): the push nests them between the trade and the places, and you can reorder or drop each ' +
-          'one with the other levels in <b>Generate → WBS structure</b>. A rung nothing uses is skipped entirely, so nothing ' +
-          'appears that you did not author.<br>' +
-          '<b>No unit column.</b> A unit of measure belongs to a BOQ line, and Contracts &amp; Claims already carries it.');
-
-      var b1 = host.querySelector('#b-libloc');
-      // ⚠️ FINALLY WIRED. openLocAdopt() has been complete and reachable from nothing since it was
-      // written (flagged twice in this log); the Library is the screen it always belonged on.
-      if (b1) b1.onclick = function () { try { openLocAdopt(); } catch (e) { UI.toast('Could not read the WBS: ' + (e && e.message ? e.message : e), 'error'); } };
-      var b2 = host.querySelector('#b-libtrade');
-      if (b2) b2.onclick = function () { try { openDiscWizard(); } catch (e) { UI.toast('Could not open the trade matcher: ' + (e && e.message ? e.message : e), 'error'); } };
-      var b3 = host.querySelector('#b-libgoloc'); if (b3) b3.onclick = function () { libGoto('Floors & Zones'); };
-      var b4 = host.querySelector('#b-libgoact'); if (b4) b4.onclick = function () { libGoto('Activities'); };
-      host.querySelectorAll('[data-liblv]').forEach(function (b) {
-        b.onclick = function () {
-          var a = (cfg.activities || []).filter(function (x) { return x.id === b.dataset.liblv; })[0];
-          if (!a) return;
-          // ⚠️ Only repaint when something MOVED. absSetLevel refuses a no-op (and a deepening the
-          // planner cancelled out of), and marking the setup dirty for a refused change would
-          // report unsaved work that does not exist.
-          absSetLevel(a, +b.dataset.lv).then(function (moved) { if (moved) { markDirty(); render(); } });
-        };
-      });
-      /* \u26a0 BOTH ROW BUTTONS GO THROUGH THE MENU'S OWN HANDLERS. They asked the same two
-         questions with the same two prompts, written out a second time \u2014 so the row and the
-         right-click menu could drift into wording the same edit differently. One implementation. */
-      host.querySelectorAll('[data-libren]').forEach(function (b) {
-        b.onclick = function () { var n = _libNodes[+b.dataset.libren]; if (n) libRenamePrompt(n); };
-      });
-      host.querySelectorAll('[data-libsub]').forEach(function (b) {
-        b.onclick = function () { var n = _libNodes[+b.dataset.libsub]; if (n) libSubPrompt(n); };
-      });
-      host.querySelectorAll('[data-libadd]').forEach(function (b) {
-        b.onclick = function (ev) {
-          ev.stopPropagation();   // the row itself is a selection target
-          var p = [];
-          try { p = JSON.parse(b.dataset.libaddp || '[]'); } catch (e) { p = []; }
-          libAddGrouping(b.dataset.libadd, p);
-        };
-      });
-      host.querySelectorAll('[data-libdel]').forEach(function (b) {
-        b.onclick = function () { var nd = _libNodes[+b.dataset.libdel]; if (nd) libDelPrompt(nd); };
-      });
-      host.querySelectorAll('[data-libsel]').forEach(function (b) {
-        b.onclick = function (ev) {
-          libSelClick(b.dataset.libsel, { ctrl: !!(ev && ev.ctrlKey), meta: !!(ev && ev.metaKey), shift: !!(ev && ev.shiftKey) });
-          render();
-        };
-      });
-      host.querySelectorAll('[data-libgroup]').forEach(function (b) {
-        b.onclick = function () { libGroupPrompt(libSelActs()); };
-      });
-      host.querySelectorAll('[data-libselclear]').forEach(function (b) {
-        b.onclick = function () { libSelClear(); render(); };
-      });
-      /* Right-click anywhere in the work pane. ⚠️ ONE listener on the pane, resolved by closest():
-         binding contextmenu per row would mean a handler per activity on a pane that repaints on
-         every keystroke. A right-click on neither a row nor a heading is left to the browser —
-         suppressing the native menu over empty space buys nothing and takes away Inspect. */
-      var _gb = host.querySelector('#sbld-libgrpbody');
-      libWireDrag(_gb);
-      if (_gb) _gb.addEventListener('contextmenu', function (ev) {
-        var it = ev.target.closest ? ev.target.closest('[data-libitem]') : null;
-        if (it) {
-          var a = (cfg.activities || []).filter(function (x) { return x.id === it.dataset.libitem; })[0];
-          if (a) { ev.preventDefault(); libItemMenu(ev, a); return; }
-        }
-        var nd = ev.target.closest ? ev.target.closest('[data-libnode]') : null;
-        if (nd) {
-          var node = _libNodes[+nd.dataset.libnode];
-          if (node) { ev.preventDefault(); libNodeMenu(ev, node); }
-        }
-      });
-      host.querySelectorAll('[data-libgrp]').forEach(function (inp) {
-        inp.onchange = function () {
-          var a = (cfg.activities || []).filter(function (x) { return x.id === inp.dataset.libgrp; })[0];
-          if (!a) return;
-          // The whole path in one field. absSetPath deletes rather than storing '', so an item with
-          // no grouping is one state and not two.
-          absSetPath(a, absParsePath(inp.value));
-          markDirty(); render();
-        };
-      });
-    }
     // The rail owns navigation; this is the same two lines gotoStep runs, without going out
     // through the public object and back in.
-    function libGoto(t) {
-      var i = STEPS.map(function (x) { return x.t; }).indexOf(t);
-      if (i >= 0) { step = i; render(); }
-    }
+
     /* ⚠️ THE LEVEL IS LABELLED, NOT ONLY INDENTED. Owner 2026-09-08: *"there should be levels like
        L1, L2, L3 like in the pic i sent, so it is easier for everyone to see also."* The sheet
        carries L1/L2/L3 as its own column, and it is right to: indentation alone tells you a row is
@@ -38759,19 +38035,14 @@
        means two rungs, and those are the marks they reach for. The price of one field instead of a
        modal per rung is that a grouping NAME cannot contain a slash; Rename takes any text, so a
        name that needs one is still reachable. */
-    function absParsePath(s) {
-      return String(s == null ? '' : s).split(/[\/>›»|]+/).map(function (x) { return String(x).trim(); })
-        .filter(Boolean).slice(0, ABS_MAX_GRP);
-    }
-    function absGrpOf(a) { return absPathOf(a)[0] || ''; }
-    function absGrpKey(a) { return _libNorm(absGrpOf(a)); }
+
     // ⚠️ THE LEVEL IS THE POSITION, not a stored number. An item sits on the rung its own path ends
     // on: no grouping is L2, one is L3, two is L4 — and that is the answer to the owner's
     // 2026-09-08 question *"how come on the right pane, the trades are L1 and then L3 is
     // followed?"*: an ungrouped item WAS printed L3 while sitting at depth 2, so the pane claimed a
     // rung that was not there. Storing a level alongside the path would let the two disagree, and
     // then the number on screen would stop describing the tree the push builds.
-    function absLevelOf(a) { return 2 + absPathOf(a).length; }
+
     /* The branch key at one depth. ⚠️ THE WHOLE PREFIX, NOT JUST THE SEGMENT: two different
        groupings can each hold a "Rebar", and keying on the segment alone would collapse them into
        one WBS branch holding both parents' work. Normalised, so two spellings are one branch. */
@@ -38801,8 +38072,7 @@
       return 99999;
     }
     // Kept as the depth-0 case, because that is the rung `agroup` and the Library's callers ask for.
-    function absGrpList(trade) { return absSegList(trade, 0); }
-    function absGrpIndex(trade, key) { return absSegIndex(trade, 0, key); }
+
     // How deep the grouping tree actually goes — in one trade, or (trade null) across the project.
     // Drives which rungs the level picker offers and which WBS dims the push admits it will skip.
     function absDepthMax(trade) {
@@ -38874,31 +38144,12 @@
        nesting: a "Rebar" under Substructure and a "Rebar" under Superstructure are two groupings,
        and renaming one must not touch the other. The segment is matched before it is replaced, so
        a stale node (rendered, then the data changed underneath) rewrites nothing. */
-    function absRenameSeg(node, name) {
-      var nm = String(name == null ? '' : name).trim(), d = (node && node.path.length - 1), hit = 0;
-      if (!node || !nm || !(d >= 0)) return false;
-      (node.acts || []).forEach(function (a) {
-        var p = absPathOf(a);
-        if (p.length <= d || _libNorm(p[d]) !== _libNorm(node.name)) return;
-        p[d] = nm; absSetPath(a, p); hit++;
-      });
-      return hit > 0;
-    }
+
     /* Why a rung cannot be inserted under this grouping, in the planner's words — or '' when it can.
        ⚠️ ONE SOURCE OF TRUTH for the button's disabled state, its tooltip AND absAddSub's refusal.
        A predicate copied into a renderer is how a control ends up enabled for something the
        function then refuses, which is the failure this module keeps recording. */
-    function absAddWhy(node) {
-      if (!node || !node.path || !node.path.length) return 'A trade is L1 — the rung under it is a grouping, which an item gets by being given one';
-      if (node.path.length >= ABS_MAX_GRP) return 'L' + (ABS_MAX_GRP + 1) + ' is as deep as the grouping tree goes';
-      var deepest = 0;
-      (node.acts || []).forEach(function (a) { deepest = Math.max(deepest, absPathOf(a).length); });
-      if (!deepest) return 'Nothing under this grouping to move down';
-      // ⚠️ Refused rather than TRUNCATED. Pushing a sub-tree that already reaches the cap would
-      // have to drop somebody's deepest rung to fit, which is silent data loss dressed as a tidy-up.
-      if (deepest >= ABS_MAX_GRP) return 'Something under this grouping is already at L' + (ABS_MAX_GRP + 1) + ', so nothing below it can move deeper';
-      return '';
-    }
+
     /* INSERT a rung under a grouping: a new named child takes its place, and EVERYTHING beneath it
        — its own items and its sub-groupings' whole sub-trees — moves one rung deeper inside it.
        ⚠️ Everything, not only the direct items. The first version moved the direct items alone,
@@ -38909,71 +38160,20 @@
        ⚠️ Nothing stores a grouping: it exists because items name it. So this writes paths, and an
        'empty' rung is not representable — which is why there is no way to create one and no way to
        leave one behind. */
-    function absAddSub(node, name) {
-      var nm = String(name == null ? '' : name).trim();
-      if (!nm || absAddWhy(node)) return false;
-      var d = node.path.length;
-      (node.acts || []).forEach(function (a) {
-        var p = absPathOf(a); p.splice(d, 0, nm); absSetPath(a, p);
-      });
-      return true;
-    }
+
     /* ⚠️ THE RUNG NAMES ARE NOT A CONSTANT ANY MORE. The left pane's rungs are the project's OWN
        location levels wherever it has defined them (a project whose breakdown reads Tower › Level ›
        Zone › Cluster now says so here, exactly as the push dialog does), and the right pane's depth
        is whatever the planner has built. The old three-names-per-side constant is what made "more
        levels" impossible to even say on screen. */
-    function libLvNames(side) {
-      if (side === 'loc') return ['tower', 'floor', 'zone', 'unit'].map(function (d) { return dimLabelOf(d); });
-      var out = ['Trade'], n = absMaxDepth();
-      // ⚠️ 'Grouping 2' matches DIM_LABEL.agroup2, so the legend, the WBS-order editor and the
-      // pushed branch all call the same rung by the same name.
-      for (var i = 1; i <= n; i++) out.push(i === 1 ? 'Grouping' : ('Grouping ' + i));
-      out.push('Item');
-      return out;
-    }
+
     // ⚠️ `what` overrides the rung NAME, because the same rung can hold different things: an item
     // that sits at L2 is at the grouping DEPTH but is not a grouping, and labelling it one would
     // make the tooltip contradict the row it is on.
-    function libLv(nth, side, what) {
-      var nm = what || libLvNames(side)[nth - 1] || ('Level ' + nth);
-      return '<span class="sbld-liblv lv' + Math.min(nth, 6) + '" title="' + e2('L' + nth + ' · ' + nm) + '">L' + nth + '</span>';
-    }
+
     // `upto` trims the legend to the rungs this project actually has — promising an L4 Unit on a
     // project with no units is the same overclaim the WBS editor's "skipped" marker exists to stop.
-    function libLegend(side, upto) {
-      var a = libLvNames(side);
-      if (upto && upto < a.length) a = a.slice(0, upto);
-      return '<span class="sbld-liblegend">' + a.map(function (t, i) {
-        return '<span title="' + e2(t) + '"><b>L' + (i + 1) + '</b> ' + e2(t) + '</span>';
-      }).join('') + '</span>';
-    }
-    function libItemRow(a) {
-      // ⚠️ absLevelOf, never a literal. An item sits on the rung its own path ends on, and printing
-      // a fixed 3 there was the owner's reported "L1 and then L3" jump.
-      var lv = absLevelOf(a), p = absPathOf(a);
-      // ⚠️ Recorded in RENDER order, which is what a shift-click range means to the planner
-      // (see libSelClick) — cfg.activities is a different order the moment anything is grouped.
-      _libOrder.push(a.id);
-      var sel = libSelHas(a.id);
-      return '<div class="sbld-libL' + lv + ' sbld-libitem' + (sel ? ' sbld-libpicked' : '') + '" data-libitem="' + e2(a.id) + '">' +
-        // ⚠️ FIRST in the row, as asked ("a menu icon on the left"). Before the level chip, so the
-        // grips line up down the pane while the chips stay stepped by depth.
-        libGrip('item', a.id) +
-        libLv(lv, 'grp', lv === 2 ? 'Item, directly under its trade' : 'Item') +
-        // ⚠️ A real <button>, so the row is reachable and selectable by keyboard too. The name
-        // is the hit target rather than the whole row: the row also carries a text field and
-        // three buttons, and a row-wide click would fight every one of them.
-        '<button type="button" class="sbld-libnm sbld-libpick" data-libsel="' + e2(a.id) + '"' +
-          ' aria-pressed="' + (sel ? 'true' : 'false') + '" title="' + e2((sel ? 'Selected. ' : '') +
-            'Click selects this row on its own · Ctrl-click adds or removes one · Shift-click takes a range. ' +
-            'Then right-click to group them.') + '">' + e2(a.name || a.code || '(unnamed)') + '</button>' +
-        (a.code ? '<span class="sbld-libcode">' + e2(a.code) + '</span>' : '') +
-        libLvPick(a, lv) +
-        '<input class="pd-input sbld-libgin" data-libgrp="' + e2(a.id) + '" value="' + e2(p.join(' › ')) + '" placeholder="grouping › sub-grouping…" title="' +
-          e2('The grouping path this item sits under, deepest last. Separate the rungs with / or › — "Substructure / Rebar" puts it at L4. Clearing it moves the item to L2.') + '">' +
-        '</div>';
-    }
+
     /* The rung picker: OUT one rung, IN one rung. ⚠️ ONE BUTTON PER RUNG DOES NOT SURVIVE MORE
        RUNGS — measured on a rendered pane, not guessed: a trade three groupings deep printed
        L2 L3 L4 L5 L6 on every single item and squeezed the activity NAME, which is the one thing on
@@ -38984,20 +38184,7 @@
        TRADE, and the trades are the project's fixed disciplines), and in stops at the cap. An item
        can always go ONE deeper than it is, borrowing a sibling's name or asking for one, which is
        how a new rung gets created at all. */
-    function libLvPick(a, lv) {
-      var lo = 2, hi = 2 + ABS_MAX_GRP;
-      function b(k, glyph, what) {
-        var dead = (k < lo || k > hi);
-        var why = dead
-          ? (k < lo ? 'Already directly under its trade — L1 is the trade itself'
-                    : ('L' + hi + ' is as deep as the grouping tree goes'))
-          : ('Move ' + what + ' to L' + k + ' — ' + (k === 2 ? 'directly under its trade, clearing its grouping'
-              : ((k - 2) + ' grouping level' + (k - 2 === 1 ? '' : 's') + ' above it')));
-        return '<button class="sbld-liblvbtn" data-liblv="' + e2(a.id) + '" data-lv="' + k + '"' +
-          (dead ? ' disabled' : '') + ' title="' + e2(why) + '">' + glyph + '</button>';
-      }
-      return '<span class="sbld-liblvpick">' + b(lv - 1, '‹', 'out') + b(lv + 1, '›', 'in') + '</span>';
-    }
+
     function stActivities(host, noHead) {
       var cols = XL_COLS;
       var CW = function (c) { return xColW[c.k] || (c.w || (c.k === 'name' ? 260 : 110)); };
@@ -39007,8 +38194,13 @@
          `[data-del]` handler in the file scoped to a different list, so clicking it did nothing on
          any project. Removed rather than left as a broken icon on every row, after the owner named
          `→` as the way a row leaves the build. */
-      var totalW = 40 + cols.reduce(function (t, c) { return t + CW(c); }, 0);
-      var colgroup = '<colgroup><col style="width:40px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '</colgroup>';
+      /* ⚠ 46, not 40: the gutter now holds a caret AND a checkbox on a merged row, and at 40 the
+         pair overflowed its own cell — measured, not guessed (`scrollWidth > clientWidth` on the
+         merged row's gutter). One constant so the <colgroup> width and the table's own total can
+         never disagree, which is what makes `table-layout:fixed` lay the columns out correctly. */
+      var RNW = 46;
+      var totalW = RNW + cols.reduce(function (t, c) { return t + CW(c); }, 0);
+      var colgroup = '<colgroup><col style="width:' + RNW + 'px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '</colgroup>';
       var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c, ci) { return '<th data-ci="' + ci + '"' + (c.num ? ' class="xl-num"' : '') + '>' + e2(c.label) + '<span class="xl-colgrip" data-ci="' + ci + '" title="Drag to resize this column"></span></th>'; }).join('') + '</tr>';
       /* ⚠️⚠️ THE GUARD IS THE IMPORTANT HALF. With the chart not yet loaded, `ccByCode`
          answers null for EVERY code, and an unguarded test would mark a correct programme as
@@ -39022,8 +38214,27 @@
         return !ccByCode(k);
       }
       var _badCodeN = cfg.activities.filter(function (a) { return _seedCodeUnknown(a.code); }).length;
-      var body = cfg.activities.map(function (a, r) {
-        return '<tr>' + '<td class="xl-rn" data-r="' + r + '">' + (r + 1) + '</td>' +
+      /* ⚠⚠ ONE ROW BUILDER, called from inside the trade grouping below. `r` stays the row's
+         index in `cfg.activities` so the existing `data-r` / `data-c` contract — which the column
+         grips and the row gutter both read — is unchanged by the grouping. */
+      function _actRow(a, r) {
+        var merged = actIsMerged(a), open = !!actExp[a.id];
+        return '<tr class="sbld-xlrow' + (merged ? ' sbld-xlmerged' : '') + '">' +
+          /* ⚠⚠ THE GUTTER IS A CHECKBOX, NOT A ROW NUMBER. Owner 2026-09-17: *"on the left,
+             instead of numbers, use checkboxes."* The number was never addressable — it restated
+             a position the eye already has — while every row operation on this step (→, and now
+             Merge) needed a row selection and had to borrow PDGrid's CELL selection to get one.
+             ⚠ It carries NO `.sbld-cell`, so PDGrid does not index it and the grid's own column
+             navigation is untouched. */
+          '<td class="xl-rn"' + (merged ? '' : ' data-r="' + r + '"') + '>' +
+            (merged ? '<button type="button" class="sbld-xlcaret" data-actexp="' + e2(a.id) + '"' +
+              ' aria-expanded="' + (open ? 'true' : 'false') + '" title="' +
+              e2((open ? 'Hide' : 'Show') + ' the ' + a.kids.length + ' class codes merged into this activity') +
+              '">' + (open ? '▾' : '▸') + '</button>' : '') +
+            '<input type="checkbox" class="sbld-xlck" data-asel="' + e2(a.id) + '"' +
+              (actSel.indexOf(a.id) >= 0 ? ' checked' : '') + ' title="' +
+              e2('Select this activity — then → to send it back, or Merge to roll it into one.') + '">' +
+          '</td>' +
           cols.map(function (c, ci) {
             /* ⚠️⚠️ A CODE THE CHART DOES NOT KNOW IS MARKED, because it is the difference
                between a programme that can be linked to a BOQ and one that cannot, and nothing
@@ -39031,13 +38242,67 @@
                reporting "not scheduled". Covers `+ Library` and hand-typed codes too, not just
                the seed. */
             var _bad = (c.k === 'code') && _seedCodeUnknown(a.code);
-            return '<td class="xl-cell' + (c.num ? ' xl-num' : '') + (_bad ? ' sbld-badcode' : '') + '" data-r="' + r +
+            /* ⚠ A merged row states EVERY code it carries in the Code cell, because that is what
+               the merge promises — the cell still holds `a.code` (the one that pushes), with the
+               rest named beside it and in full in the title. */
+            var _txt = xlGet(a, c.k);
+            var _extra = (c.k === 'code' && merged) ? ' +' + (actCodes(a).length - 1) : '';
+            /* ⚠⚠ THE BADGE NEEDS ITS OWN FLEX CELL, and only rendering showed it: `xlCellCtl`
+               returns an input that is `width:100%` of a FIXED-width column, so appending anything
+               after it pushed the badge past the cell's right edge and straight over the Activity
+               name beside it — the merged row read "M+2sonry & plaster". The cell becomes a flex
+               row only when it carries a badge, so every other cell in the grid is untouched. */
+            return '<td class="xl-cell' + (c.num ? ' xl-num' : '') + (_bad ? ' sbld-badcode' : '') +
+              (_extra ? ' sbld-xlcodecell' : '') + '" data-r="' + r +
               '" data-c="' + ci + '"' +
               (_bad ? ' title="' + e2('This code is not in the class-code chart, so a BOQ line can never'
                 + ' match it. Pick one from the library, or read the codes off the project BOQ.') + '"' : '') +
-              '>' + xlCellCtl(a, c, xlGet(a, c.k)) + '</td>';
+              '>' + xlCellCtl(a, c, _txt) +
+              (_extra ? '<span class="sbld-xlmore" title="' + e2('This activity carries ' + actCodes(a).length +
+                ' class codes: ' + actCodes(a).join(', ') + '. Only the first is pushed as the activity’s'
+                + ' class_code — the schedule stores one per activity.') + '">' + e2(_extra) + '</span>' : '') +
+              '</td>';
           }).join('') +
-          '</tr>';
+          '</tr>' +
+          /* ⚠⚠ A CHILD ROW IS NOT A `.sbld-cell` ANYWHERE. It is a record on `kids`, not an
+             activity, so giving it editable cells would put a row in PDGrid's index that no
+             writer can reach — and `xlSetById` would answer null for its id. Read-only by
+             construction rather than by a flag somebody has to remember. */
+          (merged && open ? a.kids.map(function (k) {
+            return '<tr class="sbld-xlkid"><td class="xl-rn"></td>' +
+              '<td class="xl-cell">' + e2(k.code || '—') + '</td>' +
+              '<td class="xl-cell" colspan="' + (cols.length - 1) + '">' + e2(k.name || '(unnamed)') + '</td></tr>';
+          }).join('') : '');
+      }
+      /* ⚠⚠ GROUPED BY TRADE, over the ALREADY-SORTED array. `sortActivities` put `cfg.activities`
+         into GROUPS order, so walking GROUPS here and filtering cannot disagree with the order the
+         push will read — the heading is a label on a run that is genuinely contiguous, not a
+         regrouping of a differently-ordered list.
+         ⚠ The trailing '' is the bucket for a row whose group is missing or is not a GROUPS code.
+         It is never dropped silently, exactly as the SAP Activities pane's own bucket is not. */
+      /* ⚠⚠ SORTED HERE, EVERY RENDER, AND THAT IS DELIBERATE. `sortActivities` also runs on load
+         and on every adder, but none of those covers the one path that can break the invariant
+         after the fact: CHANGING A ROW'S TRADE. That arrives through `xlSetById` — by typing, by a
+         paste, by Ctrl+D — and without a re-sort the row would keep its old slot in the array while
+         the grouping drew it under its new heading, so what a planner saw and what `generate()`
+         would build would quietly differ. One call here covers every writer that exists and every
+         writer anyone adds later.
+         ⚠ It is NOT an edit: idempotent, stable, and it never calls `markDirty()` — a project
+         opened and closed without a keystroke must not come back asking to be saved. */
+      sortActivities();
+      var _rowIx = {};
+      cfg.activities.forEach(function (a, i) { _rowIx[a.id] = i; });
+      var body = GROUPS.concat(['']).map(function (g) {
+        var items = cfg.activities.filter(function (a) { return (GLABEL[a.group] ? a.group : '') === g; });
+        if (!items.length) return '';
+        var nSel = items.filter(function (a) { return actSel.indexOf(a.id) >= 0; }).length;
+        return '<tr class="sbld-xlgrp" style="--zc:' + gc(g) + '">' +
+            '<td colspan="' + (cols.length + 1) + '">' +
+              '<span class="sbld-xlgrp-n">' + e2(g ? GLABEL[g] : 'Unclassified') + '</span>' +
+              '<span class="sbld-xlgrp-c">' + items.length + '</span>' +
+              (nSel ? '<span class="sbld-xlgrp-s">' + nSel + ' selected</span>' : '') +
+            '</td></tr>' +
+          items.map(function (a) { return _actRow(a, _rowIx[a.id]); }).join('');
       }).join('');
       /* ⚠⚠ SEARCHED AND GROUPED BY TRADE. Owner, at 172 parked codes: *"I need a search filter
          in the holding list (172) as well so its easier to select. Additionally can we have a
@@ -39097,48 +38362,40 @@
           (_hq ? '<span class="sbld-hold-n">' + _holdShown.length + ' of ' + cfg.catalog.length + ' shown</span>' : '') + '</div>'
         : '';
       var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
-        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span title="Class codes parked for this project — loaded with + Library or + From BOQ, plus anything sent out of the build. This is not the whole chart.">Holding list (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
+        '<div class="sbld-hold" style="flex:1 1 ' + holdW + 'px"><div class="sbld-hold-h"><span title="The SAP class codes available to this project — loaded with + Library or + From BOQ, plus anything sent out of the build. This is not the whole chart.">SAP Activities (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
         /* ⚠️ The BOQ button is FIRST and primary. It loads the codes this project is actually
-           priced on — a few dozen — where + Library loads the whole 197-entry chart; and its codes
+           priced on — a few dozen — where + Library loads the whole 190-entry chart; and its codes
            are the ones that resolve as a `class_code` (see loadBoqCodes). Offering the general
            list first invites a planner to scroll a chart for scope their own BOQ already states. */
         /* ⚠️ "+ From BOQ", not "+ From the BOQ": measured, the longer label does not fit beside
            "+ Library" and the ticked count at the pane's 320px default. The sentence that explains
            it lives in the title, which is where the long form belongs. */
         '<button class="pd-btn pd-btn-primary sbld-libbtn" id="b-boq" title="Load only the class codes this project&rsquo;s current BOQ carries, from Contracts &amp; Claims">+ From BOQ</button>' +
-        '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button>' +
-        /* ⚠️⚠️ THE ADD CONTROL LIVES HERE, not in the grid's own toolbar. Owner 2026-09-17:
-           *"no need for the add row. instead, user can add activity from the all class code list
-           but class code will be left blank. activities without class code are identified as
-           custom activities."* ⚠️ It adds the row to the BUILD, not to this list, and that is a
-           judgement worth stating: a catalog entry is a plain button with no editable field, so a
-           blank one would render as "(unnamed)" with no way to name it — the planner would have to
-           tick it and shuttle it in before they could type. Landing straight in the grid with the
-           name cell focused is the same gesture in one step. */
-        '<button class="pd-btn sbld-libbtn" id="b-custom" title="Add an activity with no class code — a custom activity. It lands in the build with the name cell ready to type.">+ Custom</button></div>' +
+        '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into SAP Activities. A code the build already carries is skipped.">+ Library</button>' +
+        '</div>' +
         holdTools +
         /* ⚠ THREE states, not two. "Empty" and "nothing matches your search" are different facts
            and the second one names the query, because a pane that just says "empty" after a typo
            sends the planner back to + Library to reload codes that are already there. */
         '<div class="sbld-hold-list">' + (!cfg.catalog.length
-          ? '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>'
+          ? '<div class="sbld-empty sbld-hold-empty">No SAP activities loaded. Press <b>+ From BOQ</b> or <b>+ Library</b> — and anything you send out of the build with <b>&rarr;</b> lands here too.</div>'
           : (_holdShown.length ? holdItems
             : '<div class="sbld-empty sbld-hold-empty">No code matches <b>' + e2(holdQ.trim()) + '</b>. Clear the box to see all ' + cfg.catalog.length + '.</div>')) + '</div></div>';
-      var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build &mdash; or drag a code from the list straight onto the grid">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
+      var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked SAP activities into the build &mdash; or drag one straight onto the grid">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send them back to SAP Activities)">&rarr;</button></div>';
       /* ⚠ Both suppressed under `noHead`. The lede enumerated “code, name, trade, scope and its
          internal/external duration” — which is the grid's own column headers, read out in prose
          directly above the grid. Kept when this view is opened on its own. */
       host.innerHTML = (noHead ? '' :
         '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
-        '<p class="sbld-lede">The class codes this programme is built from, as a spreadsheet, beside a holding list of every code available.</p>') +
+        '<p class="sbld-lede">The class codes this programme is built from, as a spreadsheet, beside the SAP activities available to it.</p>') +
         /* ⚠️ Counted, not implied. A per-cell mark alone is easy to scroll past; the number
            is what tells the planner whether this is one typo or the whole programme. */
         (_badCodeN ? '<p class="pd-caution" style="margin:0 0 8px;"><b>' + _badCodeN +
           '</b> of these codes ' + (_badCodeN === 1 ? 'is' : 'are') + ' not in the class-code chart, so a BOQ line'
           + ' can never match ' + (_badCodeN === 1 ? 'it' : 'them') + '. Marked in the Code column.</p>' : '') +
         _sbldHow('The grid works like Excel: <b>click</b> a cell, <b>drag</b> or <b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste one cell into a selection to fill it), <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear — or paste a block straight from Excel.' +
-          '<ul><li><b>&larr;</b> loads ticked codes from the holding list into the build; <b>&rarr;</b> sends selected grid rows back out.</li>' +
-          '<li><b>+ Library</b> loads the standard class-code library into the holding list.</li>' +
+          '<ul><li><b>&larr;</b> loads ticked codes from <b>SAP Activities</b> into the build; <b>&rarr;</b> sends selected grid rows back out.</li>' +
+          '<li><b>+ Library</b> loads the standard class-code library into <b>SAP Activities</b>, skipping any code the build already carries.</li>' +
           '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project. Anything coarser than a zone is auto-split down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
           '<li><b>Trade</b> accepts the name or the code: General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT.</li></ul>') +
         /* ⚠️⚠️ FOUR CONTROLS REMOVED HERE, and two of them had never worked.
@@ -39159,8 +38416,36 @@
            entry points were those two buttons. Pasting a block straight out of Excel into the grid
            is untouched; PDGrid handles it, and it is the shorter route the buttons were competing
            with. */
-        '<div class="sbld-sec-actions"><button class="pd-btn" id="b-seed">Load typical set</button></div>' +
-        (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — tick codes in the list and press <b>&larr;</b>, press <b>+ Custom</b> for one with no class code, <b>Load typical set</b>, or paste rows from Excel into the grid.</div>') +
+        /* ⚠⚠ `+ Custom` SITS BESIDE `Load typical set`, not in the SAP Activities header.
+           Owner 2026-09-17: *"the add custom activities button should be beside load typical
+           set"*, and the grouping is the right one on the merits: both buttons WRITE TO THE BUILD,
+           while every control in that pane's header (`+ From BOQ`, `+ Library`) fills the pane. It
+           had been filed with the loaders because the owner's earlier ask reached it through the
+           class-code list — but the row it creates never went there.
+           ⚠ It still adds the row to the BUILD rather than to SAP Activities: a pane entry is a
+           plain button with no editable field, so a blank one would render as "(unnamed)" with no
+           way to name it. Landing in the grid with the name cell focused is one gesture. */
+        '<div class="sbld-sec-actions"><button class="pd-btn" id="b-seed">Load typical set</button>' +
+        '<button class="pd-btn" id="b-custom" title="Add an activity with no class code — a custom activity. It lands in the build with the name cell ready to type, and its Code stays blank.">+ Custom</button>' +
+        /* ⚠⚠ THE MERGE CONTROL IS ALWAYS PRESENT, DISABLED, NEVER HIDDEN — and it says WHY it is
+           disabled. Owner 2026-09-17: *"provide button to merge activities … activity merging is
+           only allowed within the same trade."* A control that appears only once a selection
+           happens to be legal is one nobody discovers, and "nothing happened" is the worst way to
+           learn a rule. The title carries the refusal before the click, and `mergeActs` repeats it
+           as a toast for anyone who reaches it another way. */
+        (function () {
+          var sel = actSelActs(), tr = actSelTrade();
+          var okMerge = sel.length > 1 && !!tr;
+          var why = !sel.length ? 'Tick two or more activities in the same trade to merge them into one.'
+            : sel.length === 1 ? 'Tick at least one more activity — a merge needs two.'
+            : 'Those ' + sel.length + ' activities are in different trades. Merging is only allowed inside one trade, because the merged activity has to sit in one.';
+          return '<button class="pd-btn" id="b-merge"' + (okMerge ? '' : ' disabled') +
+            ' title="' + e2(okMerge
+              ? 'Merge the ' + sel.length + ' selected ' + (GLABEL[tr] || tr) + ' activities into one that carries all of their class codes.'
+              : why) + '">Merge' + (sel.length > 1 ? ' ' + sel.length : '') + '</button>' +
+            (actSel.length ? '<button class="pd-btn" id="b-aclear" title="Clear the row selection">Clear</button>' : '');
+        })() + '</div>' +
+        (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — tick codes in <b>SAP Activities</b> and press <b>&larr;</b>, press <b>+ Custom</b> for one with no class code, <b>Load typical set</b>, or paste rows from Excel into the grid.</div>') +
         '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl pdg-grid" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
         /* ⚠️ The accepted-code list moved into this step's existing "How to use this step"
            collapsible, beside the other per-column notes — NOT onto the column header, which is
@@ -39189,6 +38474,7 @@
       host.querySelector('#b-custom').onclick = function () {
         var nid = uidv();
         cfg.activities.push({ id: nid, code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' });
+        sortActivities();
         markDirty(); render();
         /* ⚠ AFTER the render, because render() rebuilds the table and the node focused before
            it would be one PDGrid has already replaced. Focusing the new row’s name cell is what
@@ -39210,6 +38496,7 @@
            ⚠️ The NAMES are unchanged: they are what the planner reads, and renaming them
            would change every existing habit for no gain. Only the codes moved. */
         [['01051','Mobilization','GR',3,3],['02051','Excavation','SW',4,4],['02055','Backfilling','SW',3,3],['03051','Rebar','ST',3,4],['04051','Formworks','ST',3,4],['05051','Concreting','ST',2,3],['08601','Masonry','AR',5,6],['08401','Plastering','AR',5,6],['10101','Tiling','AR',4,5],['11101','Ceiling','AR',3,4],['16401','Painting','AR',4,5]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], durInt: r[3], durExt: r[4] }); });
+        sortActivities();
         markDirty(); render();
       };
       var libBtn = host.querySelector('#b-lib'); if (libBtn) libBtn.onclick = loadClassCodeLibrary;
@@ -39224,7 +38511,7 @@
           g.classList.add('drag');
           function mm(e) {
             var w = Math.max(60, startW + (e.clientX - startX)); xColW[key] = w;
-            var tot = 40; cols.forEach(function (c, i) { var cw = CW(c); if (colEls[i + 1]) colEls[i + 1].style.width = cw + 'px'; tot += cw; });
+            var tot = RNW; cols.forEach(function (c, i) { var cw = CW(c); if (colEls[i + 1]) colEls[i + 1].style.width = cw + 'px'; tot += cw; });  // ⚠ RNW, not a second 40 — the drag would otherwise shrink the table by the gutter's growth on its first use
             if (tbl) tbl.style.width = tot + 'px';
           }
           function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); g.classList.remove('drag'); }
@@ -39236,10 +38523,51 @@
       if (hg) hg.addEventListener('mousedown', function (ev) {
         ev.preventDefault(); hg.classList.add('drag');
         var startX = ev.clientX, startW = holdW, pane = host.querySelector('.sbld-hold');
-        function mm(e) { var w = Math.max(180, Math.min(720, startW - (e.clientX - startX))); holdW = Math.round(w); if (pane) pane.style.flex = '0 0 ' + holdW + 'px'; }
+        function mm(e) { var w = Math.max(180, Math.min(720, startW - (e.clientX - startX))); holdW = Math.round(w); if (pane) pane.style.flex = '1 1 ' + holdW + 'px'; }
         function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); hg.classList.remove('drag'); }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
       });
+      /* ---- the build grid's own row selection ------------------------------------------------
+         ⚠ Every one of these re-renders, which rebuilds the grid — that is what keeps the trade
+         headings' "N selected" counts, the Merge button's enabled state and its tooltip in step
+         with the ticks. The one thing that must NOT re-render is the caret (see below). */
+      host.querySelectorAll('[data-asel]').forEach(function (b) {
+        b.onclick = function () {
+          var id = b.dataset.asel, i = actSel.indexOf(id);
+          if (i >= 0) actSel.splice(i, 1); else actSel.push(id);
+          render();
+        };
+      });
+      /* ⚠⚠ THE CARET DOES NOT re-render(), for the reason the SAP pane's own `<details>` records:
+         a repaint here would rebuild the grid to achieve something this handler has already done,
+         and would drop PDGrid's cell selection on the way. It toggles the state and repaints only
+         the rows, through the same `render()` the rest of the step uses — but only because the
+         child rows are markup, not state anything else reads. */
+      host.querySelectorAll('[data-actexp]').forEach(function (b) {
+        b.onclick = function () {
+          var id = b.dataset.actexp;
+          if (actExp[id]) delete actExp[id]; else actExp[id] = true;
+          render();
+        };
+      });
+      var mgBtn = host.querySelector('#b-merge');
+      if (mgBtn) mgBtn.onclick = function () {
+        var sel = actSelActs(), tr = actSelTrade();
+        if (sel.length < 2 || !tr) { mergeActs(); return; }   // mergeActs states the refusal
+        /* ⚠ Asked for, never guessed: the merged row is the one a planner reads down the grid, and
+           defaulting silently to the first child's name would bury the other codes behind a name
+           that describes one of them. The first name is offered as the starting value. */
+        psPrompt('Name the merged activity', sel[0].name || '', function (nm) { mergeActs(nm); }, {
+          title: 'Merge ' + sel.length + ' activities',
+          fieldLabel: 'Activity name',
+          text: 'They all sit in ' + (GLABEL[tr] || tr) + '. The merged activity carries all ' +
+                actMergeCodeCount(sel) + ' of their class codes.',
+          ok: 'Merge them',
+          hint: 'Durations are added together — change them afterwards if this work runs concurrently.'
+        });
+      };
+      var acBtn = host.querySelector('#b-aclear');
+      if (acBtn) acBtn.onclick = function () { actSel = []; render(); };
       // holding-area shuttle
       host.querySelectorAll('[data-cat]').forEach(function (b) { b.onclick = function () { var id = b.dataset.cat, i = catSel.indexOf(id); if (i >= 0) catSel.splice(i, 1); else catSel.push(id); render(); }; });
       /* ⚠⚠ RE-FOUND THROUGH THE DOCUMENT AFTER render(), not through the captured `host`. Ticking
@@ -39274,7 +38602,40 @@
         cfg.catalog = cfg.catalog.filter(function (a) { return !take[String(a.id)]; });
         cfg.activities = cfg.activities.concat(moved);
         catSel = catSel.filter(function (id) { return !take[String(id)]; });
+        sortActivities();          // the build is grouped by trade, so an arrival lands in its run
         markDirty(); render();
+        /* ⚠⚠ THE OFFER COMES AFTER THE MOVE, NOT INSTEAD OF IT. Owner 2026-09-17: *"when multiple
+           activities are selected from the holding list and moved to the selection table, ask if
+           user wants to merge these activities into one."* Moving first means Cancel leaves the
+           planner with exactly what they asked for — the rows in the build — rather than with
+           nothing and a dialog they dismissed. The merge is then an ordinary `mergeActs` over a
+           selection this sets, which is the same path the Merge button takes.
+           ⚠ Only offered when the arrivals are ALL ONE TRADE: a cross-trade merge is refused
+           everywhere else, and asking a question whose only honest answer is "no" is noise. */
+        if (moved.length > 1) {
+          var g0 = moved[0].group || 'ST';
+          var same = moved.every(function (a) { return (a.group || 'ST') === g0; });
+          if (same) {
+            actSel = moved.map(function (a) { return a.id; });
+            render();
+            psConfirm('Merge these ' + moved.length + ' ' + (GLABEL[g0] || g0) +
+              ' activities into one that carries all of their class codes?',
+              function () {
+                psPrompt('Name the merged activity', moved[0].name || '', function (nm) { mergeActs(nm); }, {
+                  title: 'Merge ' + moved.length + ' activities', fieldLabel: 'Activity name',
+                  ok: 'Merge them',
+                  hint: 'Durations are added together — change them afterwards if this work runs concurrently.'
+                });
+              },
+              { title: 'Merge on the way in?', danger: false, ok: 'Merge them',
+                cancel: 'Keep them separate',
+                note: 'They are in the build either way. Keeping them separate is the ordinary case.',
+                /* ⚠ Cancel CLEARS the ticks it set. Leaving them selected would hand the planner a
+                   primed Merge button they never asked for, one stray click from doing the thing
+                   they had just declined. */
+                onCancel: function () { actSel = []; render(); } });
+          }
+        }
         return true;
       }
       host.querySelector('#b-load').onclick = function () {
@@ -39320,18 +38681,36 @@
       }
       host.querySelector('#b-unload').onclick = function () {
         if (!cfg.activities.length) return;
-        /* ⚠⚠ READ FROM THE GRID, NOT FROM `xa`/`xf`. Those were the old hand-rolled grid’s
+        /* ⚠⚠ READ FROM THE GRID, NOT FROM `xa`/`xf`. Those were the old hand-rolled grid's
            own focus pair; they are still DECLARED at module scope, so this kept parsing and
            running after the engine was replaced — it would simply have unloaded row 0 every time,
-           whatever was selected. A silent wrong answer, not an error. */
-        var ids = _xlG ? _xlG.selectedIds() : [];
-        if (!ids.length) { UI.toast('Select the rows to unload first — click a cell, then Shift+↓ to extend.', 'warn'); return; }
+           whatever was selected. A silent wrong answer, not an error.
+           ⚠⚠ THE CHECKBOXES WIN WHEN ANY ARE TICKED, and PDGrid's CELL selection is the fallback.
+           Both are kept deliberately: the gutter is the new, explicit row selection the owner asked
+           for, and `Shift+↓` over cells is the gesture planners already have. Preferring the ticks
+           only when there are ticks means neither gesture was taken away. */
+        var ids = actSel.length ? actSel.slice() : (_xlG ? _xlG.selectedIds() : []);
+        if (!ids.length) { UI.toast('Tick the rows to send back — or click a cell and Shift+↓ to extend a cell selection.', 'warn'); return; }
         var take = {}; ids.forEach(function (id) { take[String(id)] = 1; });
         var moved = cfg.activities.filter(function (a) { return take[String(a.id)]; });
         if (!moved.length) return;
         cfg.activities = cfg.activities.filter(function (a) { return !take[String(a.id)]; });
-        cfg.catalog = cfg.catalog.concat(moved);
+        /* ⚠⚠ A MERGED ROW COMES APART ON THE WAY OUT. The SAP Activities pane holds class codes,
+           one per entry — parking a merged row there whole would put a single button in the list
+           carrying five codes, which neither the search, the trade grouping nor `←` can reason
+           about, and `+ Library` would then re-offer four of the five as missing. Its children go
+           back as the separate codes they were. */
+        var back = [];
+        moved.forEach(function (a) {
+          if (!actIsMerged(a)) { back.push(a); return; }
+          a.kids.forEach(function (k) {
+            back.push({ id: uidv(), code: k.code, name: k.name || k.code, group: k.group || a.group,
+                        durInt: null, durExt: null, scope: 'zone' });
+          });
+        });
+        cfg.catalog = cfg.catalog.concat(back);
         sortCatalog();                                  // an unloaded row lands in its sorted place, not at the end
+        actSel = actSel.filter(function (id) { return !take[String(id)]; });
         markDirty(); render();
       };
       /* ⚠ Re-attached on every render because the table is rebuilt wholesale; PDGrid holds no
@@ -39356,6 +38735,10 @@
        named level mean different things. */
     function t4Set(a, k, text) {
       if (!a) return;
+      /* ⚠ The same lock, because this grid renders through the same `xlCellCtl` and so shows the
+         same readonly Code cell — but it does NOT write through `xlSetById`, so the guard there
+         does not cover it. Two grids, one rule. */
+      if (xlFieldLocked(a, k)) return;
       if (k === 'durInt' || k === 'durExt') {
         var n = Math.max(0, parseInt(text, 10) || 0);
         a.scope = 'zone';                                   // an explicit per-zone value (matches the old inline editor)
@@ -47865,7 +47248,6 @@
        and then the step has two trees again. Its two notes that still earn their place (the
        'every branch reads 0' warning and the near-empty hint) moved into stPhasesStep. */
 
-
     /* ==========================================================================================
        GENERATE — read the building back, then push.
        Owner 2026-09-17: *“instead of the current gantt and table preview, move the vertical
@@ -49541,8 +48923,12 @@
         var _al = { 'WBS':       { st: 'Project phases' },
                     '5PMLC':     { st: 'Project phases' },
                     'Structure': { st: 'Project phases' },
-                    'Library':   { st: 'Activities', tab: 'lib' },
-                    'Construction Library': { st: 'Activities', tab: 'lib' },
+                    /* ⚠ Both still RESOLVE, they just no longer name a tab: the Library view was
+                       removed on 2026-09-17 and a link that 404s into a blank step is worse than one
+                       that lands on the step that absorbed it. `_stepNo` answers '' for a title it
+                       cannot find, and a blank where a step number belongs reads as a broken app. */
+                    'Library':   { st: 'Activities' },
+                    'Construction Library': { st: 'Activities' },
                     'Working calendars': { st: 'Calendars' },
                     'Repetition':     { st: 'Location Sequence' },
                     'Tower links':    { st: 'Location Sequence', tab: 'towers' },
@@ -49785,7 +49171,6 @@
         setTrade: function (t) { uiTrade = t; }
       } };
   })();
-
 
   // ==========================================================================================
   // COST LOADING — assigning the project's cost to its activities, in four steps.
