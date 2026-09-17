@@ -104,6 +104,79 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (f) — The Schedule Setup rail at narrow width, and 179 words off its pages
+
+Owner items 9 and 10 of ten; items 1–8 (the Calendars editor) shipped in `011a2f1`. Module work —
+the full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(e)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **A MEDIA QUERY ADDS NO SPECIFICITY, SO A TWO-CLASS RULE OUTSIDE IT BEATS A ONE-CLASS RULE
+INSIDE IT.** `.sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr }` is **(0,2,0)** and the
+narrow-width `.sbld-wrap { grid-template-columns:1fr }` is **(0,1,0)** — so minimising the step rail
+at phone width threw it back into a 46px left column, measured on the base at **`railW=46`** at both
+390px and 760px. The fix restates it at **equal** specificity, later in source, so it wins on
+**order**: raising specificity instead has to be raised again the next time that rule gains a class,
+which is how the pair got out of step to begin with. This app has now recorded the equal-specificity
+tie (`[hidden]` losing to an author `display`) five times and the *unequal* one twice.
+
+⚠️⚠️ **A DIRECTION IS BETTER DERIVED THAN CHOSEN.** The minimise toggle already emitted
+`chevronLeft` expanded and `chevronRight` collapsed; `transform:rotate(90deg)` turns ◄ into ▲ and ►
+into ▼, so **one CSS rule gives both states the right arrow** and the JS never learns what the
+viewport is doing. A second place deciding a direction is a second place to get it wrong — and it
+also means no `chevronUp` in `icons.js`, i.e. **no shared asset bumped across 21 pages for a
+two-state problem**.
+
+⚠️⚠️ **AND THE GAP MEASURING FOUND IS THE ONE WORTH GENERALISING: REPLACING A SCROLLBAR MUST BE
+GATED ON THE REPLACEMENT ACTUALLY BEING THERE.** The new left/right arrows are hidden when the rail
+is minimised, so suppressing the native scrollbar on "the strip overflows" alone would leave a
+minimised, overflowing strip with **neither** — content that cannot be reached at all. Twelve
+minimised steps fit at 390px *today*, so it would have shipped working and broken on the first
+longer step list. Whether to show the arrows is **measured per render**, never inferred from a
+count.
+
+⚠️ **The prose rule this repo already arrived at, applied once more and measured with the repo's own
+scanner:** a sentence stating a **consequence the planner acts on** stays; one explaining **why the
+design is that way**, or restating a control that is on screen and labelled, goes. **1,347 → 1,168
+words across 79 blocks**, block count unchanged — and every **destructive-path** warning kept whole,
+which is the half the `(a6)` pass protected and the reason it refused to cut by word count. The
+sharpest cut was a duplicate: the import step's lede spelled out a gesture that the legend a few
+dozen pixels below already spells out **better** (it follows the mode), and a third copy sat on the
+button's own label.
+
+**Verified:** the rail **driven in a real browser** at 1440 / 760 / 390 in both states against the
+shipped CSS, with the shipped function sliced out and executed — **48 assertions, 0 failing** — and
+⚠️ the contrast **pinned to a SHA, never `HEAD`**, biting **6/6** with the reported defect
+reproduced. Eleven module suites green on the merged tree; `wiring-check` **139/0**; `dead-hooks` 9
+(baseline); `dark-remap` 0; `toolbar-order` 15/0; inline script parses; CSS braces **+15/+15**; 0
+NUL bytes.
+
+⚠️⚠️ **TWO FAILURES OF MINE THIS FILE HAD ALREADY RECORDED, AND I REPEATED BOTH.** I wrote an
+unescaped `'` inside a single-quoted JS string — the 2026-09-10 `(v6)` outage exactly, where one
+apostrophe kills a 3.4MB inline block and with it the whole module; and **a `git stash` in a
+verification command swallowed the entire change**, after which the suites in that same command
+reported the *base's* numbers as mine. Both were caught the same way, which is the durable part:
+**read `git diff --stat` and the parse check, never the command's own output.** The stash rule in
+this log is not "check the diff", it is *"do not stash in a shared clone at all"*, and it is still
+right.
+
+⚠️ **Merged `origin/main` (17 commits) before shipping**, including the tower-**types** restructure.
+Two conflicts, both resolved on the merits: main's tower-type sentence **wins on content** (it
+carries facts this branch predates) with this round's trim applied to it rather than reverted.
+⚠️⚠️ **And the first resolution silently destroyed most of this branch's own CSS** — the splice
+searched for the `=======` separator, and the block opens with a `/* ==== … ================` comment
+banner ending in 32 equals signs before a newline, which matched first. Caught by counting the
+change's own markers afterwards (`sbld-hasarw` read **1** where it must read **5**), restored from
+the branch's own commit, and the brace delta re-measured against `origin/main`. **A conflict
+resolver that searches for a marker has to reckon with the file's own decorative use of it.**
+
+`MODULE_V` → `20260918g`, re-derived from what the remote actually carries **after** integrating
+(main had reached `20260918f`) rather than guessed beforehand, and sort-checked as a plain string
+against every `20260918*` token on **both** refs. No shared asset changed.
+
+⚠️ **Not verified signed in** — the rail is proved against the shipped CSS with a 12-step fixture,
+not a live setup.
+
 ### 2026-09-18 (e) — The 360° stitcher's last three defects, and a sub-pixel fit that was solving the wrong problem
 
 Owner, against the pass that shipped a few hours earlier: *"there is a deadspace connecting the start

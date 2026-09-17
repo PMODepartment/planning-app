@@ -1,3 +1,118 @@
+## 2026-09-18 (e) — The step rail at narrow width, and 179 words off the Setup's pages
+
+Owner items 9 and 10 of ten. Items 1–8 (the Calendars editor) shipped in `011a2f1`.
+
+> *"for the overall schedule setup, if window is narrow, the steps go to the top, the minimize button
+> should just remove the labels but stay on top, not move to the left. the arrow of the minimize
+> button should also point up. if not minimized in narrow width, use left right arrows instead of the
+> horizontal scroll bar."* · *"for the overall schedule setup, reduce the
+> words/description/instructions throughout the pages"*
+
+### ⚠️⚠️ MINIMISING PUT THE STRIP BACK IN A LEFT COLUMN, AND THAT WAS A SPECIFICITY LOSS
+
+`.sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr }` is **(0,2,0)**; the `@media
+(max-width:820px)` block's `.sbld-wrap { grid-template-columns:1fr }` is **(0,1,0)**. A media query
+adds no specificity, so the minimised rule won everywhere and collapsing the steps at phone width
+threw them back into a 46px column. **Measured on the base at both narrow widths: `railW=46`.**
+
+⚠️ Restated at **equal** specificity, later in source, so it wins on **order**. Raising specificity
+instead would have to be raised again the next time that rule gains a class — which is how this pair
+got out of step in the first place.
+
+### ⚠️⚠️ THE ARROW POINTS UP, DERIVED RATHER THAN CHOSEN
+
+`sbldMinSync` already emits `chevronLeft` expanded and `chevronRight` collapsed. `+90°` turns ◄ into
+▲ and ► into ▼, so **one rule gives both states the right direction** and the JS needs no notion of
+the viewport at all. A second place deciding a direction is a second place to get it wrong.
+
+⚠️ `chevronUp` is **not** in the shared set, and `icons.js` is not a module's to edit — rotating the
+glyph that is already there also means no shared asset to bump across 21 pages for a two-state
+problem.
+
+### Left/right arrows instead of the scrollbar
+
+- ⚠️ **Siblings of the rail, never children** — the rail is rebuilt by `innerHTML` on every render and
+  would throw them away, the same reason the minimise toggle already sits outside it.
+- ⚠️ **Grid AREAS rather than `order`** on the flex children: the markup order (toggle, rail, arrows)
+  is the reading order for the keyboard and for a screen reader, and an `order` list is a second
+  thing to keep in step with it.
+- ⚠️⚠️ **Whether to show them is MEASURED, never inferred from the step count.** Six steps fit on a
+  phone and twelve do not, the count changes per mode, and an arrow that can scroll nothing is a
+  control that does nothing. `sbldRailArrows` is called from `sbldMinSync` — which **both** rails
+  already run after every rebuild — so it re-measures at exactly the moments the list can change
+  length, rather than from a second set of call sites that would drift from the first. The two rails
+  have different renderers; that is precisely the drift this avoids.
+- ⚠️ The toggle stops **centring** as well as stretching: `align-self:center` is right for a 46px
+  column and parks a 34px button in the middle of the page in a full-width row.
+
+### ⚠️⚠️ A GAP MEASURING FOUND: A MINIMISED STRIP COULD HAVE HAD NEITHER
+
+The arrows are hidden when minimised (the owner asked for them in the *not*-minimised case). Gating
+the scrollbar suppression on `.sbld-hasarw` alone would therefore leave a minimised strip that
+overflows with **no scrollbar and no arrows** — steps that cannot be reached at all. **12 minimised
+steps fit at 390px today**, so it would have shipped working and broken on the first 16-step mode.
+Both suppression rules carry `:not(.sbld-railmin)`, and the harness forces the case at 200px.
+
+### Item 10 — the prose
+
+**1,347 → 1,168 words across the always-visible `.sbld-lede` / `.sbld-hint` / `.sbld-note` blocks**,
+measured against `origin/main` with `tools/scan.js` (which self-tests on ten shapes) rather than a
+regex of my own. **79 blocks before and after** — every block was tightened, none deleted.
+
+The rule is this file's own, from the `(aa)` / `(a4)` / `(a5)` passes: a sentence stating a
+**consequence the planner acts on** stays; a sentence explaining **why the design is that way**, or
+restating a control that is on screen and labelled, goes.
+
+⚠️⚠️ **The import-relationships lede lost its gesture sentence because it was on screen TWICE.**
+`.sbld-focuslegend`, a few dozen pixels below it, already reads *"Drag a bar onto another to connect.
+Click a line to edit or unlink it."* — and it is the **better** of the two, because it says something
+different in View mode. *"switch to **View** to see what drives what"* was a **third** copy:
+`#b-impmode`'s own label is *"◉ View mode — click to Edit"*. The counts, which nothing else on the
+step states, stay.
+
+⚠️⚠️ **KEPT WHOLE, DELIBERATELY: every destructive-path warning.** *"Replace on this path clears the
+whole project, not one package"*, *"Replace then clears only that package"*, *"This replaces the
+current links"*, *"pressing Import is the first and only thing that changes the schedule"*. Those are
+the sentences the `(a6)` pass protected, and the reason it refused to cut this step by word count.
+The longest block left is 27 words and it is one of them.
+
+### Verified
+
+- The rail **driven in a real browser** at 1440 / 760 / 390, expanded and minimised, against the
+  shipped CSS and the shipped markup with `sbldRailArrows` **sliced out of the file and executed** —
+  **48 assertions, 0 failed**. The arrow really scrolls (0 → 238) and the far arrow goes live when it
+  does.
+- ⚠️ **Contrast pinned to the SHA `437e765`, never `HEAD`: it BITES 6/6**, reporting `railW=46` at
+  both narrow widths — the reported defect reproduced — plus no rotation and no arrows.
+- Eleven module suites green on the merged tree: `lsm` 683/0, `calendar-editor` 23/0, `builder`
+  149/0, `syntax` 4/0, `actsetup` 133/0, `towertypes` 79/0, `phasenet` 135/0, `autotrace` 32/0,
+  `towerseq` 48/0, `shapeedit` 36/0, `actdnd` 48/0. `wiring-check` **139/0**; `dead-hooks` 9 (the
+  documented baseline); `dark-remap` 0; `toolbar-order` 15 bars / 0 out of order. Inline script
+  parses; CSS braces **+15/+15** against `origin/main`'s own recorded off-by-one; 0 NUL bytes.
+
+### ⚠️⚠️ Two faults of my own, recorded rather than smoothed over
+
+1. **I wrote `'Drag a row's grip'` into a SINGLE-QUOTED JS string.** That is the 2026-09-10 `(v6)`
+   outage exactly — the apostrophe terminates the literal, and a syntax error anywhere in this
+   ~3.4MB inline block kills the whole module. The parse check caught it; every added line was then
+   swept for the same shape. **Anything with an apostrophe goes in as `’`, which needs no escape.**
+2. **A `git stash` inside a verification command SWALLOWED THE ENTIRE CHANGE**, and the suites that
+   ran after it in the same command reported the **base's** numbers as mine. This log records that
+   failure twice, in bold, and says *"do not stash in a shared clone at all"*. Recovered from
+   `stash@{0}` and every check re-run against the real tree. ⚠️ The tell was `git diff --stat` coming
+   back **empty**, not the commands' own output — which is the same reading that caught it the last
+   two times.
+
+⚠️ **Three harness faults, each of which reported a defect that does not exist:** a non-greedy
+`</div>` regex truncated the railcol at the rail and **dropped the arrows**, so the first run measured
+a page that had none; a **stale `mod.css`** survived a source edit and reported a fixed rule as still
+broken (this repo's stale-`?v=` trap in miniature — it is re-sliced from the final file every run
+now); and **`inline-flex` on a GRID ITEM blockifies to `flex`**, so asserting the literal reported
+shown arrows as hidden.
+
+⚠️ **Not verified signed in** — no real project has been loaded, so the rail is proved against the
+shipped CSS with a 12-step fixture rather than a live setup.
+
 ## 2026-09-18 (d) — The Activities step: SAP Activities, one heading per trade, and an activity that can be several
 
 Owner's nine numbered items on Schedule Setup ▸ Activities: *"instead of Holding List, name this
