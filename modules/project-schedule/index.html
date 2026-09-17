@@ -4444,17 +4444,53 @@
     .sbld-shuttle { flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:8px; padding:0 8px; }
     .sbld-shuttle button { width:38px; height:34px; font-size:var(--pd-fs-lg); font-weight:700; }
     .sbld-hold { flex:0 0 260px; display:flex; flex-direction:column; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); max-height:58vh; overflow:hidden; }
-    .sbld-hold-h { padding:7px 10px; font-size:var(--pd-fs-sm); font-weight:700; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
-    .sbld-hold-list { overflow:auto; padding:6px; display:flex; flex-direction:column; gap:4px; }
-    .sbld-hold-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:1px solid var(--pd-line); border-left:4px solid var(--zc,var(--pd-line)); border-radius:6px; background:var(--pd-card); color:var(--pd-ink); font:inherit; cursor:pointer; padding:5px 8px; }
+    .sbld-hold-h { padding:7px 10px; font-size:var(--pd-fs-sm); font-weight:500; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+    /* ⚠ The title takes its OWN row so the three buttons get a whole one to share. They cannot
+       all fit beside it: measured at the pane's 320px default, the three are 97 + 79 + 82 = 266px
+       of the 298px available, and the title wants ~130px more than that leaves. Something has to
+       wrap, and wrapping ONE button off the end is the worst of the three outcomes.
+       Measured after: header 60px, all three buttons on one row.
+       ⚠⚠ THOSE NUMBERS ONLY MEAN ANYTHING WITH `dashboard.css` IN THE CASCADE. Measured without
+       it, every `--pd-fs-*` is unresolved, `.sbld-libbtn` renders at 16px instead of 11px and the
+       same three buttons come out 119/92/97 and wrap — a harness that reports a layout fault the
+       product does not have. (The fault there was the harness stripping the Google-Fonts @import
+       with `@import[^;]+;`, which cuts inside that URL's own `wght@0,400;0,500;...` semicolons and
+       leaves garbage that kills the `:root` token block underneath it.) */
+    .sbld-hold-t { flex:1 1 100%; min-width:0; }
+    .sbld-hold-btns { display:flex; align-items:center; gap:4px; flex-wrap:wrap; flex:1 1 100%; }
+    .sbld-hold-list { overflow:auto; padding:2px 0 6px; display:flex; flex-direction:column; gap:0; }
+    /* ⚠⚠ THE TRADE HEADING IS NOT BOLD, AND NEITHER IS THE ITEM (owner 2026-09-17: *"no need to
+       make these labels bold"*). Both sit at 500; the heading is told apart by being micro,
+       uppercase, tracked and muted — by SIZE and COLOUR rather than by weight.
+       ⚠ 500, never 600: the brandbook names no Gotham Semibold and this app carries 0
+       declarations at 600 (2026-09-10 (v4)); a 600 here would address a cut that does not exist. */
+    .sbld-hold-grp { border-top:1px solid var(--pd-line); }
+    .sbld-hold-grp:first-child { border-top:0; }
+    .sbld-hold-gh { display:flex; align-items:center; gap:6px; width:100%; text-align:left; background:none; border:0; font:inherit; color:var(--pd-muted); cursor:pointer; padding:7px 8px; font-size:var(--pd-fs-micro); font-weight:500; text-transform:uppercase; letter-spacing:.05em; }
+    .sbld-hold-gh:hover { background:var(--pd-bg); color:var(--pd-ink); }
+    /* The caret is the trade's own colour — the one place the trade tint survives now that the
+       4px rail is off every row, so a folded list still reads as colour-coded. */
+    .sbld-hold-car { flex:none; display:inline-block; width:10px; color:var(--zc,var(--pd-muted)); transform:rotate(90deg); transition:transform .15s ease; }
+    .sbld-hold-grp.shut .sbld-hold-car { transform:rotate(0deg); }
+    @media (prefers-reduced-motion:reduce) { .sbld-hold-car { transition:none; } }
+    .sbld-hold-gn { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sbld-hold-gc { flex:none; font-variant-numeric:tabular-nums; }
+    .sbld-hold-gc b { font-weight:700; color:var(--pd-ink); }
+    .sbld-hold-gl { display:flex; flex-direction:column; gap:0; padding:0 0 4px; }
+    .sbld-hold-grp.shut .sbld-hold-gl { display:none; }
+    /* ⚠ The row loses its card chrome: under a heading that already names the trade, a bordered
+       tile per code is the "chunky" the rest of this app spent a pass removing. Name left, code
+       right, one line, indented under its heading. */
+    .sbld-hold-item { display:flex; align-items:baseline; justify-content:space-between; gap:8px; text-align:left; border:0; border-radius:0; background:none; color:var(--pd-ink); font:inherit; cursor:pointer; padding:4px 8px 4px 24px; width:100%; }
     .sbld-hold-item:hover { background:var(--pd-bg); }
-    .sbld-hold-item.sel { outline:2px solid var(--pd-red); outline-offset:1px; background:var(--pd-red-light,rgba(238,49,36,.08)); }
-    .sbld-hold-desc { font-size:var(--pd-fs-sm); font-weight:700; line-height:1.2; }
+    .sbld-hold-item.sel { background:var(--pd-red-light,rgba(238,49,36,.08)); box-shadow:inset 3px 0 0 var(--pd-red); }
+    .sbld-hold-desc { font-size:var(--pd-fs-sm); font-weight:500; line-height:1.25; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* ⚠ Both of these were inline `font-size` literals (10.5px / 11.5px) — off the scale by a
        pixel each, and in a JS string where no stylesheet sweep would ever see them. */
     .sbld-hold-n { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     .sbld-hold-empty { padding:10px; font-size:var(--pd-fs-xs); }
-    .sbld-hold-code { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-hold-code { font-size:var(--pd-fs-micro); color:var(--pd-muted); flex:none; }
+    .sbld-hold-code i { font-style:italic; opacity:.85; }
     @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
@@ -4488,8 +4524,10 @@
        rules could never match again, and a rule that cannot match reads as working styling to
        everyone who comes after. */
     table.sbld-xl td.xl-cell { min-width:70px; max-width:340px; padding:0; }
-    table.sbld-xl td.xl-rowact { width:38px; text-align:center; }
-    table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
+    /* ⚠ `.xl-rowact` is gone with the per-row bin it held. That button was never wired in any
+       revision of this step, and a row leaves the build through the shuttle's `→`, which returns
+       it to the list rather than destroying it. A rule that can no longer match reads as working
+       styling to everyone who finds it. */
     table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
     /* ⚠️ The shared focus ring is `outline-offset:2px`, which OVERLAPS the neighbouring cell in a
        table this dense. Pulled inside for grid cells only - the ring is still 2px and still the
@@ -33982,6 +34020,12 @@
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
+    /* step-1: which TRADE headings are folded shut in the "All class codes" list.
+       ⚠ Module scope, NOT per render: render() rebuilds that pane wholesale on every tick of
+       this step, and a fold that sprang open on each keystroke would be worse than no fold at all.
+       ⚠ Keyed by group CODE, which cannot collide — a catalog entry sits under exactly one
+       trade — and shut is the non-default, so an unseen trade is open rather than hidden. */
+    var holdShut = {};
     var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
@@ -34515,7 +34559,12 @@
       if (col.trade) return '<select' + at + '>' + opts(GROUPS.map(function (g) { return [g, GLABEL[g] || g]; }), a.group) + '</select>';
       if (col.scope) return '<select' + at + '>' + opts(SCOPE_OPTS, a.scope || 'zone') + '</select>';
       if (col.contract) return '<select' + at + '>' + opts(CONTRACT_OPTS, a.contract || 'main') + '</select>';
-      return '<input type="text"' + (col.num ? ' inputmode="numeric"' : '') + at +
+      /* ⚠ A BLANK CODE IS A STATE WITH A NAME (owner 2026-09-17: "activities without class code
+         are identified as custom activities"). The cell is an input, so the word cannot be its
+         value — a placeholder says it while the cell is empty and vanishes the moment one is
+         typed, which is exactly the distinction wanted. */
+      return '<input type="text"' + (col.num ? ' inputmode="numeric"' : '') +
+        (col.k === 'code' ? ' placeholder="custom"' : '') + at +
         ' value="' + e2(valText) + '">';
     }
     var autoChainType = 'FS';  // step-4 Auto-chain relationship type (FS / SS / FF / SF)
@@ -36868,67 +36917,17 @@
     }
     function setMode(m) { mode = m; step = m ? 1 : 0; render(); }
 
-    // ---- Activity template: download a CSV users fill in, then upload (CSV or Excel) to load ----
-    function actTemplateCsv() {
-      var lines = ['Code,Activity Name,Trade,Scope,Interior Duration (days),Exterior Duration (days)',
-        'MOB,Mobilization,General Requirements,Per zone,3,3', 'EXC,Excavation,Site Works,Per zone,4,4', 'REBAR,Rebar,Structural,Per zone,3,4', 'MAS,Masonry,Architectural,Per zone,5,6', 'ELEC,Electrical Rough-in,MEPF,Whole project,60,60', 'LSCP,Landscaping,Allied Services,Per floor,2,3'];
-      var blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
-      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'activities-template.csv'; a.click();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-    }
-    function parseCsv(text) {
-      return text.split(/\r?\n/).filter(function (l) { return l.trim() !== ''; }).map(function (l) {
-        var out = [], cur = '', q = false;
-        for (var i = 0; i < l.length; i++) { var c = l[i]; if (q) { if (c === '"') { if (l[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; } else { if (c === '"') q = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; } }
-        out.push(cur); return out;
-      });
-    }
-    function importActivities(rows2d) {
-      if (!rows2d || rows2d.length < 2) { UI.toast('No rows found — use the template and keep the header row.', 'error'); return; }
-      var hdr = rows2d[0].map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
-      function idx(names) { for (var i = 0; i < hdr.length; i++) for (var j = 0; j < names.length; j++) if (hdr[i].indexOf(names[j]) >= 0) return i; return -1; }
-      var ci = idx(['code']), ni = idx(['activity name', 'name', 'activity']), gi = idx(['trade', 'discipline', 'group']), si = idx(['scope']), ii = idx(['interior', 'internal', 'int']), ei = idx(['exterior', 'external', 'ext']);
-      var tmap = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'genreq': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'site development': 'SD', 'sitedevelopment': 'SD', 'site dev': 'SD', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
-      var out = [];
-      for (var r = 1; r < rows2d.length; r++) {
-        var row = rows2d[r]; if (!row) continue;
-        var code = ci >= 0 ? String(row[ci] == null ? '' : row[ci]).trim() : '', name = ni >= 0 ? String(row[ni] == null ? '' : row[ni]).trim() : '';
-        if (!code && !name) continue;
-        var gl = gi >= 0 ? String(row[gi] == null ? '' : row[gi]).trim().toLowerCase() : '';
-        var g = tmap[gl] || (GROUPS.indexOf(gl.toUpperCase()) >= 0 ? gl.toUpperCase() : 'ST');
-        var di = ii >= 0 ? Math.max(0, parseInt(row[ii], 10) || 0) : 0, de = ei >= 0 ? Math.max(0, parseInt(row[ei], 10) || 0) : di;
-        var sc = (si >= 0 ? parseScope(row[si]) : null) || 'zone';
-        out.push({ id: uidv(), code: code, name: name, group: g, durInt: di, durExt: de, scope: sc });
-      }
-      if (!out.length) { UI.toast('No activity rows read — check the columns (Code / Activity Name / Trade / Interior / Exterior).', 'error'); return; }
-      function _land(mode) {
-        cfg.activities = (mode === 'replace') ? out : cfg.activities.concat(out);
-        markDirty(); render(); UI.toast('Loaded ' + out.length + ' activities (' + mode + ').', 'success');
-      }
-      if (!cfg.activities.length) { _land('replace'); return; }
-      /* \u26a0\u26a0 THREE ANSWERS, NOT TWO, and that is why this one had to become a form. The box it
-         replaced was a confirm() whose message had to spell out \u201cOK = replace \u00b7 Cancel = append\u201d
-         \u2014 so the planner had to decode two buttons into three outcomes, and the way to back out of
-         the import entirely was the window\u2019s own close button. A select says replace or append,
-         and Cancel means cancel. */
-      psAsk({
-        title: 'Replace, or add to what is there?',
-        text: 'This project already has ' + cfg.activities.length + ' activit' + (cfg.activities.length === 1 ? 'y' : 'ies') +
-          ', and the file holds ' + out.length + '.',
-        ok: 'Load them',
-        fields: [{ k: 'mode', label: 'What to do with the uploaded rows', type: 'select', value: 'append',
-          options: [['append', 'Add them \u2014 keep the ' + cfg.activities.length + ' already here'],
-                    ['replace', 'Replace \u2014 drop the ' + cfg.activities.length + ' already here']],
-          hint: 'Replacing discards the durations, trades and scopes typed against the existing rows.' }]
-      }, function (v) { _land(v.mode === 'replace' ? 'replace' : 'append'); });
-    }
-    function uploadActivities(file) {
-      if (!file) return; var name = (file.name || '').toLowerCase(), rd = new FileReader();
-      if (/\.(xlsx|xls)$/.test(name) && typeof XLSX !== 'undefined') {
-        rd.onload = function (e) { try { var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' }); var ws = wb.Sheets[wb.SheetNames[0]]; importActivities(XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })); } catch (err) { UI.toast('Could not read the Excel file: ' + (err.message || err), 'error'); } };
-        rd.readAsArrayBuffer(file);
-      } else { rd.onload = function (e) { importActivities(parseCsv(String(e.target.result))); }; rd.readAsText(file); }
-    }
+    /* ⚠⚠ THE CSV TEMPLATE AND THE CSV/EXCEL UPLOAD ARE GONE, AND THEIR LOADERS WENT WITH THEM.
+       Owner 2026-09-17: *"remove download template and upload excel buttons. no need for this."*
+       `actTemplateCsv`, `parseCsv`, `importActivities` and `uploadActivities` were DELETED rather
+       than left unreferenced — between them they had exactly two call sites, both of them the two
+       removed buttons, and a loader nothing calls is the one the next editor wires back up beside
+       the real thing. Do not restore them without restoring a door to them.
+       ⚠ BULK ENTRY DID NOT GO WITH THEM, which is what makes the removal safe: PDGrid pastes a
+       block straight out of Excel into the grid, and this step's own "How to use this step" already
+       names that route. What was lost is a second, weaker importer, not the ability to import.
+       ⚠ `parseScope` is NOT part of this block. It lives with the other label parsers and is still
+       read by the grid's own cell setter — cutting it here would have taken the Scope column with it. */
     /* ==========================================================================================
        THE STRUCTURE STEP — ONE step, TWO views of the same breakdown.
        Owner 2026-09-08: *"can you merge the WBS in step 2 into step 6. There should be 2 different
@@ -38408,9 +38407,9 @@
     function stActivities(host, noHead) {
       var cols = XL_COLS;
       var CW = function (c) { return xColW[c.k] || (c.w || (c.k === 'name' ? 260 : 110)); };
-      var totalW = 40 + cols.reduce(function (t, c) { return t + CW(c); }, 0) + 40;
-      var colgroup = '<colgroup><col style="width:40px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '<col style="width:40px" /></colgroup>';
-      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c, ci) { return '<th data-ci="' + ci + '">' + e2(c.label) + '<span class="xl-colgrip" data-ci="' + ci + '" title="Drag to resize this column"></span></th>'; }).join('') + '<th class="xl-rowact"></th></tr>';
+      var totalW = 40 + cols.reduce(function (t, c) { return t + CW(c); }, 0);
+      var colgroup = '<colgroup><col style="width:40px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '</colgroup>';
+      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c, ci) { return '<th data-ci="' + ci + '">' + e2(c.label) + '<span class="xl-colgrip" data-ci="' + ci + '" title="Drag to resize this column"></span></th>'; }).join('') + '</tr>';
       /* ⚠️⚠️ THE GUARD IS THE IMPORTANT HALF. With the chart not yet loaded, `ccByCode`
          answers null for EVERY code, and an unguarded test would mark a correct programme as
          entirely unmatchable — a false accusation is worse than no warning. Says nothing until
@@ -38438,25 +38437,72 @@
                 + ' match it. Pick one from the library, or read the codes off the project BOQ.') + '"' : '') +
               '>' + xlCellCtl(a, c, xlGet(a, c.k)) + '</td>';
           }).join('') +
-          '<td class="xl-rowact"><button class="sbld-del" data-del="' + r + '" title="Delete row"><span data-ico="trash" data-ico-size="14"></span></button></td></tr>';
+          '</tr>';
       }).join('');
-      var holdItems = cfg.catalog.map(function (a) {
-        return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + gc(a.group) + '">' +
-          '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
-          '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
+      /* ⚠⚠ GROUPED BY TRADE, AND THE TRADE LEAVES THE ROW (owner 2026-09-17: *"group by trade
+         with collapse and expand option ... no need to make these labels bold"*). Printing
+         "· Structural" on every row beneath a heading that already says Structural is the same
+         duplication the phase cards were merged to end. What is left on the row is the one thing
+         that varies WITHIN a trade: the code — or, where there is none, the word `custom`.
+         ⚠ Ordered by GROUPS, the project's own trade order, never by first-seen: a list whose
+         headings reorder as codes are loaded is one nobody can scan twice.
+         ⚠ A trade with nothing under it emits NO heading. An empty heading is a claim that the
+         library holds that trade, and it does not.
+         ⚠ An unrecognised group falls into Others rather than vanishing — a catalog entry that
+         matched no heading would be loaded, invisible, and impossible to tick. */
+      function holdGroups() {
+        var by = {};
+        cfg.catalog.forEach(function (a) {
+          var g = GLABEL[a.group] ? a.group : 'OT';
+          (by[g] = by[g] || []).push(a);
+        });
+        return GROUPS.filter(function (g) { return by[g] && by[g].length; })
+                     .map(function (g) { return { g: g, items: by[g] }; });
+      }
+      var holdItems = holdGroups().map(function (grp) {
+        var shut = !!holdShut[grp.g], lab = GLABEL[grp.g] || grp.g;
+        var tickN = grp.items.filter(function (a) { return catSel.indexOf(a.id) >= 0; }).length;
+        return '<div class="sbld-hold-grp' + (shut ? ' shut' : '') + '" style="--zc:' + gc(grp.g) + '">' +
+          '<button class="sbld-hold-gh" data-hg="' + e2(grp.g) + '" aria-expanded="' + (shut ? 'false' : 'true') +
+            '" title="' + (shut ? 'Show the ' : 'Hide the ') + e2(lab) + ' codes">' +
+            '<span class="sbld-hold-car" aria-hidden="true">&#9656;</span>' +
+            '<span class="sbld-hold-gn">' + e2(lab) + '</span>' +
+            /* ⚠ The ticked count rides on the HEADING, so a fold never hides the fact that
+               something inside it is selected and about to move on the next press of the arrow. */
+            '<span class="sbld-hold-gc">' + (tickN ? '<b>' + tickN + '</b>/' : '') + grp.items.length + '</span>' +
+          '</button>' +
+          '<div class="sbld-hold-gl">' + grp.items.map(function (a) {
+            var nm = a.name || '(unnamed)', cd = a.code || '';
+            return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') +
+              '" data-cat="' + e2(a.id) + '" title="' + e2(nm + (cd ? '  ·  ' + cd : '  ·  custom activity (no class code)')) + '">' +
+              '<span class="sbld-hold-desc">' + e2(nm) + '</span>' +
+              '<span class="sbld-hold-code">' + (cd ? e2(cd) : '<i>custom</i>') + '</span></button>';
+          }).join('') + '</div></div>';
       }).join('');
       var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
-        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span class="sbld-hold-n">' + catSel.length + ' ticked</span>' : '') +
-        /* ⚠️ The BOQ button is FIRST and primary. It loads the codes this project is actually
-           priced on — a few dozen — where + Library loads the whole 197-entry chart; and its codes
-           are the ones that resolve as a `class_code` (see loadBoqCodes). Offering the general
-           list first invites a planner to scroll a chart for scope their own BOQ already states. */
-        /* ⚠️ "+ From BOQ", not "+ From the BOQ": measured, the longer label does not fit beside
-           "+ Library" and the ticked count at the pane's 320px default. The sentence that explains
-           it lives in the title, which is where the long form belongs. */
+        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h">' +
+        '<span class="sbld-hold-t">All class codes <span class="sbld-hold-n">' + cfg.catalog.length +
+        (catSel.length ? ' · ' + catSel.length + ' ticked' : '') + '</span></span>' +
+        '<span class="sbld-hold-btns">' +
+        /* ⚠ The BOQ button is FIRST and primary. It loads the codes this project is actually
+           priced on — a few dozen — where + Library loads the whole chart; and its codes are the
+           ones that resolve as a `class_code` (see loadBoqCodes). Offering the general list first
+           invites a planner to scroll a chart for scope their own BOQ already states. */
+        /* ⚠ "+ From BOQ", not "+ From the BOQ": measured, the longer label does not fit beside
+           its siblings at the pane's 320px default. The sentence that explains it lives in the
+           title, which is where the long form belongs. */
         '<button class="pd-btn pd-btn-primary sbld-libbtn" id="b-boq" title="Load only the class codes this project&rsquo;s current BOQ carries, from Contracts &amp; Claims">+ From BOQ</button>' +
-        '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
-        '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
+        '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button>' +
+        /* ⚠⚠ THIS REPLACES `+ Add row`, AND IT DELIBERATELY LANDS IN THE LIST RATHER THAN THE
+           GRID (owner 2026-09-17: *"user can add activity from the all class code list but class
+           code will be left blank"*). An activity is added FROM this list; every other way into
+           the build already goes through the same arrow, and a button in this pane that wrote
+           straight into the grid beside it would be the one control here that acts somewhere else. */
+        '<button class="pd-btn sbld-libbtn" id="b-custom" title="Add an activity with no class code &mdash; a custom activity. It schedules like any other, and no BOQ line can ever match it.">+ Custom</button>' +
+        '</span></div>' +
+        '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems :
+          '<div class="sbld-empty sbld-hold-empty"><b>+ From BOQ</b> or <b>+ Library</b> fills this list; <b>+ Custom</b> adds one with no code. Codes you send out of the build with <b>&rarr;</b> land here too &mdash; tick them and press <b>&larr;</b> to load them back.</div>') +
+        '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       /* ⚠ Both suppressed under `noHead`. The lede enumerated “code, name, trade, scope and its
          interior/exterior duration” — which is the grid's own column headers, read out in prose
@@ -38470,16 +38516,22 @@
           '</b> of these codes ' + (_badCodeN === 1 ? 'is' : 'are') + ' not in the class-code chart, so a BOQ line'
           + ' can never match ' + (_badCodeN === 1 ? 'it' : 'them') + '. Marked in the Code column.</p>' : '') +
         _sbldHow('The grid works like Excel: <b>click</b> a cell, <b>drag</b> or <b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste one cell into a selection to fill it), <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear — or paste a block straight from Excel.' +
-          '<ul><li><b>&larr;</b> loads ticked codes from the holding list into the build; <b>&rarr;</b> sends selected grid rows back out.</li>' +
-          '<li><b>+ Library</b> loads the standard class-code library into the holding list.</li>' +
+          '<ul><li><b>&larr;</b> loads ticked codes from the list into the build; <b>&rarr;</b> sends selected grid rows back out to it &mdash; that is how a row leaves the build, and it is kept rather than destroyed.</li>' +
+          '<li><b>+ Library</b> loads the standard class-code library into the list; <b>+ From BOQ</b> loads only the codes this project is priced on.</li>' +
+          '<li><b>+ Custom</b> adds an entry with <b>no class code</b>. An activity with no code is a <b>custom activity</b> &mdash; it schedules like any other, and no BOQ line can ever match it.</li>' +
+          '<li>A trade heading folds away with a click, so a long library can be read one trade at a time.</li>' +
           '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project. Anything coarser than a zone is auto-split down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
           '<li><b>Trade</b> accepts the name or the code: General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT.</li></ul>') +
-        '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add row</button><button class="pd-btn" id="b-seed">Load typical set</button>' +
-        '<button class="pd-btn" id="b-delrows">Delete selected rows</button>' +
-        '<span class="sbld-tb-sep2"></span><button class="pd-btn" id="b-tmpl"><span data-ico="download" data-ico-size="14"></span> Download template</button>' +
-        '<button class="pd-btn" id="b-upl"><span data-ico="box" data-ico-size="14"></span> Upload CSV / Excel</button>' +
-        '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>' +
-        (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
+        /* ⚠⚠ ONE BUTTON, WHERE THERE WERE FIVE (owner 2026-09-17).
+           • `+ Add row` → `+ Custom`, in the library pane: an activity is added FROM the list.
+           • `Delete selected rows` is gone because a row leaves the build through `→`, which
+             RETURNS it to the list rather than destroying it — and ⚠⚠ it had never been wired in
+             any revision: one occurrence in the whole file, the markup, and no handler anywhere.
+             Pressing it did nothing, silently, for as long as it has existed.
+           • `Download template` / `Upload CSV / Excel` went with their loaders; pasting a block
+             straight out of Excel into the grid is the route that survives, and it is better. */
+        '<div class="sbld-sec-actions"><button class="pd-btn" id="b-seed">Load typical set</button></div>' +
+        (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet &mdash; tick codes in <b>All class codes</b> and press <b>&larr;</b>, press <b>Load typical set</b>, or paste rows straight from Excel into the grid.</div>') +
         '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl pdg-grid" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
         /* ⚠️ The accepted-code list moved into this step's existing "How to use this step"
            collapsible, beside the other per-column notes — NOT onto the column header, which is
@@ -38502,22 +38554,9 @@
             'Re-pick from <b>+ Library</b> (group level) or <b>+ From BOQ</b> (item level).</p>';
         })();
       // toolbar
-      host.querySelector('#b-add').onclick = function () {
-        var nid = uidv();
-        cfg.activities.push({ id: nid, code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' });
-        markDirty(); render();
-        /* ⚠ AFTER the render, because render() rebuilds the table and the node focused before
-           it would be one PDGrid has already replaced. Focusing the new row’s first cell is what
-           the retired `xWantFocus` flag existed to do; asking the DOM for it needs no state. */
-        try {
-          var c0 = document.querySelector('#b-xl .sbld-cell[data-i="' + nid + '"]');
-          if (c0) { c0.focus(); if (c0.select) c0.select(); }
-        } catch (e) {}
-      };
-      host.querySelector('#b-tmpl').onclick = actTemplateCsv;
-      var uf = host.querySelector('#b-uplfile');
-      host.querySelector('#b-upl').onclick = function () { uf.click(); };
-      uf.onchange = function () { if (uf.files && uf.files[0]) uploadActivities(uf.files[0]); uf.value = ''; };
+      /* ⚠ `+ Add row`, `Download template` and `Upload CSV / Excel` were wired here and are gone
+         with their buttons. `#b-custom` (the library pane) is what replaces the first; the other
+         two had exactly one call site each, which is why their loaders could be deleted outright. */
       host.querySelector('#b-seed').onclick = function () {
         /* ⚠️⚠️ REAL LEVEL-3 CHART CODES, NOT MNEMONICS. This seeded `MOB`/`EXC`/`REBAR`/
            `FORM`/`POUR`/... and **not one of the eleven resolved** against Finance's 702-row
@@ -38535,6 +38574,37 @@
       var libBtn = host.querySelector('#b-lib'); if (libBtn) libBtn.onclick = loadClassCodeLibrary;
       var boqBtn = host.querySelector('#b-boq');
       if (boqBtn) boqBtn.onclick = function () { loadBoqCodes(boqBtn); };
+      /* ⚠⚠ + CUSTOM ASKS, RATHER THAN DROPPING AN UNNAMED ROW IN. `+ Add row` could get away
+         with a blank row because the grid cell it landed in was editable; a LIST entry is a button
+         that toggles selection, so an unnamed one could not be named without first being moved
+         across — an item reading "(unnamed)" with no way to fix it from where it sits.
+         ⚠ `psAsk`, not `prompt()`: this module carries zero native dialogs since 2026-09-17, and
+         `required` is enforced by psAsk itself, so an empty name re-opens rather than creating a
+         nameless entry. */
+      var cusBtn = host.querySelector('#b-custom');
+      if (cusBtn) cusBtn.onclick = function () {
+        psAsk({
+          title: 'Add a custom activity',
+          text: 'A custom activity carries no class code. It is scheduled, sequenced and pushed exactly like any other activity \u2014 what it cannot do is match a BOQ line, because matching is on the code.',
+          ok: 'Add to the list',
+          fields: [
+            { k: 'name', label: 'Activity name', value: '', required: true, placeholder: 'e.g. Temporary access road' },
+            { k: 'group', label: 'Trade', type: 'select', value: 'ST',
+              options: GROUPS.map(function (g) { return [g, GLABEL[g] || g]; }),
+              hint: 'Decides the heading it lands under here, and the trade it is sequenced with later.' }
+          ]
+        }, function (v) {
+          var g = GROUPS.indexOf(v.group) >= 0 ? v.group : 'ST', nid = uidv();
+          cfg.catalog.push({ id: nid, code: '', name: String(v.name || '').trim(), group: g,
+                             durInt: null, durExt: null, contract: 'main', coRef: '' });
+          /* ⚠ It has to be REACHABLE the instant it exists: open the heading it landed under
+             (which may have been folded shut) and tick it, so the arrow is the only step left. */
+          holdShut[g] = false;
+          if (catSel.indexOf(nid) < 0) catSel.push(nid);
+          markDirty(); render();
+          UI.toast('Added under ' + (GLABEL[g] || g) + ' and ticked \u2014 press \u2190 to load it into the build.', 'success');
+        });
+      };
       // resizable grid columns — drag a header's right edge; widths persist in xColW across re-renders
       host.querySelectorAll('.xl-colgrip').forEach(function (g) {
         g.addEventListener('mousedown', function (ev) {
@@ -38545,7 +38615,7 @@
           function mm(e) {
             var w = Math.max(60, startW + (e.clientX - startX)); xColW[key] = w;
             var tot = 40; cols.forEach(function (c, i) { var cw = CW(c); if (colEls[i + 1]) colEls[i + 1].style.width = cw + 'px'; tot += cw; });
-            if (tbl) tbl.style.width = (tot + 40) + 'px';
+            if (tbl) tbl.style.width = tot + 'px';
           }
           function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); g.classList.remove('drag'); }
           document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
@@ -38562,6 +38632,12 @@
       });
       // holding-area shuttle
       host.querySelectorAll('[data-cat]').forEach(function (b) { b.onclick = function () { var id = b.dataset.cat, i = catSel.indexOf(id); if (i >= 0) catSel.splice(i, 1); else catSel.push(id); render(); }; });
+      /* ⚠ Folding a trade NEVER touches `catSel`. A heading is how the list is READ; a tick is
+         what the arrow acts on, and hiding a row must not quietly un-choose it — which is also
+         why the ticked count sits on the heading, where a fold cannot hide it. */
+      host.querySelectorAll('[data-hg]').forEach(function (b) {
+        b.onclick = function () { var g = b.dataset.hg; holdShut[g] = !holdShut[g]; render(); };
+      });
       host.querySelector('#b-load').onclick = function () {
         if (!catSel.length) { UI.toast('Tick one or more class codes in the list first.', 'warn'); return; }
         var take = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) >= 0; });

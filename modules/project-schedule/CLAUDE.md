@@ -1,3 +1,169 @@
+## 2026-09-17 (zx) — The Activities step sheds four controls, two of which had never worked, and the library becomes a list you can read
+
+Owner, on Schedule Setup → **Activities**: *"no need for the delete selected rows button. user will
+just use the right button arrow to move the selected class code back to the class code list. no need
+also for the add row. instead, user can add activity from the all class code list but class code will
+be left blank. activities without class code are identified as custom activities"*, *"in all class
+codes list, improve look and make more minimalist. group by trade with collapse and expand option. no
+need to make these labels bold"*, and *"remove download template and upload excel buttons. no need for
+this."*
+
+### ⚠️⚠️ TWO OF THE FOUR REMOVED BUTTONS HAD NEVER BEEN WIRED, IN ANY REVISION
+
+`Delete selected rows` (`#b-delrows`) occurs **once in the whole file** — the markup — and
+`git log -S "b-delrows').onclick"` returns **nothing**. It has been on screen, clickable, doing
+absolutely nothing, since the day it was added. The per-row **bin** in the grid's trailing column is
+the same shape: `data-del` is emitted on every row and no handler in this step binds it (the other
+`[data-del]` wirings in this file belong to the levels editor, snapshots, baselines and scenarios,
+each on its own host).
+
+So the owner asked for the removal of a control that was already inert, and the reason they gave —
+*"user will just use the right button arrow"* — is the one that was actually working. Both are gone,
+and with them the whole `.xl-rowact` column plus the two CSS rules that styled it: a rule that can no
+longer match reads as working styling to everyone who finds it.
+
+⚠️ **The grid's cell counts were re-proved after pulling a column out**, because this file has
+already paid for header/body drift once (2026-09-11 sc, where a summary row one cell short shifted
+every column left and printed a trade roll-up under CHANGE ORDER REF). Executed against the shipped
+builders: **8 `<col>` = 8 `<th>` = 8 `<td>` on every row**, `totalW` down by exactly the 40px the
+trailing gutter used to claim, `xl-rowact` occurrences **0**.
+
+### `+ Add row` becomes `+ Custom`, in the pane the owner pointed at
+
+⚠️⚠️ **IT LANDS IN THE LIST, NOT THE GRID, AND THAT IS THE OWNER'S OWN PREPOSITION.** *"user can add
+activity **from** the all class code list"* — the list is the source, so the button belongs to it and
+acts on it, like its two siblings `+ From BOQ` and `+ Library`. A button sitting in this pane that
+wrote straight into the grid beside it would be the one control here that acts somewhere else.
+
+⚠️⚠️ **It ASKS rather than dropping an unnamed row in.** `+ Add row` could get away with a blank row
+because the grid cell it landed in was editable; a **list entry is a button that toggles selection**,
+so an unnamed one could not be named without first being moved across — an item reading
+*"(unnamed)"* with no way to fix it from where it sits. `psAsk` collects the name and the trade, and
+⚠️ `required` is enforced by psAsk itself, so an empty name re-opens the dialog rather than creating
+a nameless entry. ⚠️ `psAsk`, never `prompt()`: this module has carried **zero** native dialogs since
+2026-09-17 (y), and `test-syntax` fails the build if one comes back.
+
+⚠️ The new entry is made **reachable the instant it exists** — the heading it landed under is opened
+(it may have been folded shut) and the entry is ticked, so the arrow is the only step left. A create
+that drops something into a collapsed section is a create that looks like it did nothing.
+
+⚠️ **A blank code now has a name on screen.** `activities without class code are identified as custom
+activities` is a definition, and it needed to be visible in both places the thing appears: the list
+row prints *custom* in italic where a code would go, and the grid's Code cell carries
+`placeholder="custom"` — the cell is an input, so the word cannot be its *value*; a placeholder says
+it while the cell is empty and vanishes the moment a code is typed, which is exactly the distinction
+wanted. ⚠️ `_seedCodeUnknown` still says nothing about a blank code: *not chosen yet* and *wrong* are
+different states and only the second is a defect.
+
+### The library list, grouped by trade
+
+⚠️⚠️ **THE TRADE LEAVES THE ROW WHEN IT BECOMES THE HEADING.** Every row used to end
+`code · Structural`; under a heading that already says Structural that is the same duplication the
+phase cards were merged to end (2026-09-17 o). What is left on the row is the one thing that varies
+*within* a trade: the code — or, with none, `custom`. The row also loses its card chrome and its 4px
+trade rail: under a heading, a bordered tile per code is the "chunky" the rest of this app spent a
+pass removing. ⚠️ The trade tint is **not** lost with the rail — it moves to the caret, so a folded
+list still reads as colour-coded.
+
+⚠️ **Ordered by `GROUPS`, the project's own trade order, never by first-seen.** A list whose headings
+reorder as codes are loaded is one nobody can scan twice.
+⚠️ **A trade with nothing under it emits no heading** — an empty heading is a claim that the library
+holds that trade, and it does not.
+⚠️ **An unrecognised group falls into Others** rather than vanishing: a catalog entry that matched no
+heading would be loaded, invisible, and impossible to tick.
+
+⚠️⚠️ **FOLDING NEVER TOUCHES THE SELECTION, AND THE TICKED COUNT RIDES ON THE HEADING SO A FOLD
+CANNOT HIDE IT.** A heading is how the list is *read*; a tick is what the arrow *acts on*, and hiding
+a row must not quietly un-choose it. Measured with Architectural folded shut and one of its items
+ticked: the heading still reports **1/2**, the tick survives the fold, and all three selections stay.
+Without the count on the heading, pressing ← would move work the planner could not see.
+
+⚠️ **`holdShut` is module scope, not per render.** `render()` rebuilds this pane wholesale on every
+tick of this step, and a fold that sprang open on each keystroke would be worse than no fold at all.
+Keyed by group **code**, which cannot collide, and *shut* is the non-default so an unseen trade is
+open rather than hidden.
+
+### Nothing bold, and the weight was not the lever
+
+Owner: *"no need to make these labels bold."* Both the trade heading and the item name sit at **500**;
+the heading is told apart by being micro, uppercase, tracked and muted — by **size and colour rather
+than weight**. ⚠️ 500, never 600: the brandbook names no Gotham Semibold and this app carries **0**
+declarations at 600 (2026-09-10 v4), so a 600 here would address a cut that does not exist.
+
+### Download template / Upload CSV-Excel, and the loaders that went with them
+
+`actTemplateCsv`, `parseCsv`, `importActivities` and `uploadActivities` were **deleted**, not left
+unreferenced: between them they had exactly two call sites, both of them the two removed buttons, and
+a loader nothing calls is the one the next editor wires back up beside the real thing.
+
+⚠️⚠️ **BULK ENTRY DID NOT GO WITH THEM, WHICH IS WHAT MAKES THE REMOVAL SAFE.** PDGrid pastes a block
+straight out of Excel into the grid, and this step's own *How to use this step* already names that
+route. What was lost is a second, weaker importer — not the ability to import.
+⚠️ **`parseScope` is NOT part of that block** and stays where it is: it lives with the other label
+parsers and is still read by the grid's own cell setter, so cutting it would have taken the Scope
+column with it. Checked before cutting, not after.
+
+### Verified
+
+- The 3.59MB inline script **parses**; `modules-grid.js` parses.
+- **8 `<col>` = 8 `<th>` = 8 `<td>` per row**, 0 `xl-rowact` cells, unknown-code marking still fires
+  (1 marked, count 1) — all executed against the shipped builders sliced out by content marker.
+- The pane **rendered and measured in Chromium** against the real `dashboard.css` + the module's own
+  `<style>`: 4 headings in GROUPS order, heading and item weights both **500**, headings uppercase,
+  item borders **0px**, one *custom* marker, three buttons on **one** row (97 + 79 + 82 = 266 of
+  298px), header **60px**, no horizontal overflow. Collapse: Architectural shut → 2 of 8 items
+  hidden, tick preserved, count still shown.
+- CSS braces balanced: delta **1 on both the working tree and HEAD** — this file's own documented
+  off-by-one, identical on both sides, so the 14 rules added are balanced.
+- `wiring-check` **139/0**; `dead-hooks` at its documented **9**-finding baseline, none of them mine;
+  **0 NUL bytes** (byte-counted — ⚠️ `grep -c $'\0'` degenerates to an empty pattern and reports every
+  line in the file, which is the trap this log already records).
+- Every other suite green: zoneplan 27, zoneoverlap 56, wbsfile 33, towerseq 48, shapeedit 36,
+  sitefit 31, syntax 4, critwbs 26, health 30, cpm 28, autotrace 32.
+
+### ⚠️⚠️ MY OWN HARNESS REPORTED A LAYOUT FAULT THE PRODUCT DOES NOT HAVE
+
+The first measurement said the header was **98px** with the three buttons wrapped onto two rows, and
+I had already written that number into a CSS comment as justification. It was the harness: it
+stripped the Google-Fonts `@import` with `@import[^;]+;`, and **that URL contains semicolons inside
+its own query string** (`wght@0,400;0,500;0,700;...`), so the regex cut mid-URL and left garbage that
+killed the `:root` token block underneath it. Every `--pd-fs-*` then resolved to nothing,
+`.sbld-libbtn` rendered at **16px instead of 11px**, and the same three buttons measured 119/92/97
+and wrapped. With the stylesheet intact they are 97/79/82 and fit on one row.
+
+⚠️ The tell was not the layout, it was `btnFont` reading **16px/700** for a rule that says
+`var(--pd-fs-xs)`. **A harness missing the shared stylesheet measures a page that does not exist** —
+this file has recorded that twice already, and the comment in the source now carries the wrong
+numbers as well as the right ones so the next person recognises the shape.
+
+### ⚠️ Pre-existing and NOT fixed here, with the failure sets diffed rather than assumed
+
+`test-lsm` fails **28 assertions, byte-identical on HEAD and on this tree** (diffed, not eyeballed),
+and `test-builder` fails the same single *"page Structure belongs to a step the rail can show"* on
+both. The LSM set is stale rather than broken: the **Flowline was removed at the owner's explicit
+request** (2026-09-17 q — *"Flowline - let's remove"*), the module carries **zero** flowline
+references, and the suite still slices for `setFlowlineMode` / `renderFlowline` / `flowlineMode` /
+`FL_ROWH` / `FL_PADT` / `FL_PADR`. A suite that can never go green is one whose next *real* failure
+nobody will see; retiring those assertions — and asserting the removal instead, the way
+`test-syntax` asserts no native dialog comes back — is its own change and is named here rather than
+folded into this one.
+
+⚠️ **Not verified signed in.** The pane is proved by executing the shipped builders and measuring the
+result against the real stylesheets; no class code has been ticked, no custom activity created and no
+row shuttled on a live project.
+
+### ⚠⚠ AND THIS FILE HELD A RAW NUL BYTE AGAIN — THE FOURTH TIME
+
+Line 449, in the `(zg)` entry: the `\0` "no value at this level" sentinel was written as the
+**actual control byte** instead of the escape, so `file` called this changelog *data* and `grep`
+had silently switched to binary mode across the whole of it. Pre-existing — 1 in `HEAD`, 0 in the
+entry above — and fixed here because it degrades every future search of this file and it is one
+character. `exactKey`, the 2026-09-10 (u1) draft and the (u1) entry itself have each hit this;
+the rule that keeps not sticking is **write the escape, never the byte**, and the tell is `file`
+reporting *data* rather than *UTF-8 text*.
+
+`MODULE_V` → `20260917zx`.
+
 ## 2026-09-17 (zv) — Overlapping zones become an error the module can measure; the plan window opens on a zoneless floor with something to draw with; the building is stated in words
 
 Owner, on the Schedule Setup's Floors & Zones step: *"improve the overall UI, starting from defining
@@ -290,7 +456,7 @@ that tower's WBS branch, and it makes the stacking draw preliminaries as if they
 - ⚠️ The Floors & Zones chip row shows it as a **dead, dashed chip reading "project-wide"** rather than
   dropping it. A planner who used it in step 1 and cannot find it here has to be told why, once, where
   they are looking — the emptiest possible bug report is *"I set up the floors and nothing happened"*.
-- ⚠️ `dimKey` already returns the ` ` "no value at this level" sentinel for a null tower, so the
+- ⚠️ `dimKey` already returns the `\0` "no value at this level" sentinel for a null tower, so the
   pushed row attaches to its parent and builds no tower branch. That path is unchanged.
 
 ### Verified

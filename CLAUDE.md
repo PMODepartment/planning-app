@@ -104,6 +104,57 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (zx) — The Activities step loses four controls, two of which had never been wired, and the class-code list is grouped by trade
+
+Owner, three asks on Schedule Setup → **Activities**. Module work — the full entry, every ⚠️ decision
+and the measurements are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zx)`. Logged here
+for the `MODULE_V` bump and the two findings that are worth carrying past this module:
+
+⚠️⚠️ **TWO OF THE FOUR REMOVED BUTTONS HAD NEVER DONE ANYTHING, IN ANY REVISION.**
+`Delete selected rows` occurs **once in the whole file** — the markup — and
+`git log -S "b-delrows').onclick"` returns nothing; the per-row bin in the grid's trailing column is
+the same shape, `data-del` emitted on every row with no handler in this step. So the owner asked for
+the removal of a control that was already inert, and the reason they gave — *"user will just use the
+right button arrow"* — names the mechanism that was actually working. This is the `#pk-boq` family
+(2026-09-07 b) with the arrow reversed: there, a correct handler bound to markup nobody rendered;
+here, markup nobody bound. **Neither is visible to any checker this repo owns** — `dead-hooks` finds
+a class queried and never emitted, and has no opinion about a button emitted and never queried.
+
+⚠️⚠️ **MY OWN HARNESS INVENTED A LAYOUT FAULT, AND THE CAUSE GENERALISES.** It stripped the
+Google-Fonts `@import` with `@import[^;]+;` — and **that URL carries semicolons inside its own query
+string** (`wght@0,400;0,500;0,700;...`), so the regex cut mid-URL and left garbage that killed the
+`:root` token block beneath it. Every `--pd-fs-*` then resolved to nothing, buttons rendered at 16px
+instead of 11px, and the header measured 98px with a wrapped row that does not exist in the product;
+with the stylesheet intact the same three buttons are 97/79/82 and fit on one row, header 60px.
+⚠️ The tell was not the layout but `font-size` reading **16px** for a rule that says
+`var(--pd-fs-xs)`. **Never regex a stylesheet's at-rules by delimiter**, and a harness missing the
+shared stylesheet measures a page that does not exist — recorded twice before in the module log and
+walked into again here, which is why it is being raised to app level.
+
+**What changed:** `Delete selected rows` and the dead per-row bin are gone (rows leave the build
+through the shuttle's `→`, which *returns* them to the list rather than destroying them);
+`+ Add row` becomes **`+ Custom`** in the library pane, which asks for a name and trade through
+`psAsk` and creates an entry with **no class code** — a *custom activity*, marked as such in the list
+and by a `placeholder="custom"` in the grid's Code cell; the **All class codes** list is grouped by
+trade with collapsible headings carrying a ticked count, nothing bold (heading and item both at 500,
+told apart by size/case/colour — ⚠️ never 600, which addresses a Gotham cut that does not exist);
+and `Download template` / `Upload CSV / Excel` are removed **with their four loaders**, since pasting
+a block straight out of Excel into PDGrid is the import route that survives and is better.
+
+**Verified:** the 3.59MB inline script parses; **8 `<col>` = 8 `<th>` = 8 `<td>` per row** after
+pulling a column out (the 2026-09-11 sc header/body-drift shape, re-proved rather than assumed); the
+pane rendered and measured in Chromium against the real `dashboard.css`; `wiring-check` **139/0**;
+`dead-hooks` at its documented 9-finding baseline; 0 NUL bytes, byte-counted.
+⚠️ `test-lsm` (28) and `test-builder` (1) fail **byte-identically on HEAD and on this tree** —
+failure sets diffed, not eyeballed. The LSM set is **stale, not broken**: the Flowline was deleted at
+the owner's explicit request on 2026-09-17 (q) and the suite still slices for it. A suite that can
+never go green is one whose next real failure nobody will see; retiring those assertions is named as
+its own change rather than folded into this one.
+⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260917zx`. No shared asset changed.
+
 ### 2026-09-17 (t) — "Whole branches are missing" from the WBS tree: Hide empty groups was deleting the structure
 
 Owner, on the Project Schedule grouped by **WBS tree (default)**: *"the WBS Tree (default) bugged out
