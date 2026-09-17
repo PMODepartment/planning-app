@@ -104,6 +104,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (av) — Schedule Setup: the Working Calendars step is called Calendars
+
+Owner: *"rename step Working Calendars to Calendars."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzs)`. Logged
+here for the `MODULE_V` bump and the one thing that is not a fact about this module:
+
+⚠️⚠️ **A DISPLAY NAME THAT IS ALSO A LOOKUP KEY CANNOT BE RENAMED IN ONE PLACE.** This module
+addresses its wizard steps **by title, never by index** — deliberately, and the comment above
+`STEPS` says why: the rail has been renumbered twice, and an index would have pointed at the wrong
+page both times. So one word on screen is six edits: the rail entry, the How-to manual's key, the
+step's own `_stepNo(...)` heading lookup, the deep link that lands on it, and **two separate alias
+tables** so the old title keeps resolving. The two tables are the trap — `_stepNo` reads
+`STEP_ALIAS` and `gotoStep` reads a private map of its own and does **not** consult it, so aliasing
+one leaves the other returning false for an external deep link, silently. Both were updated; the
+drift between them is named rather than fixed, because converging them would change what three
+unrelated aliases do today.
+
+⚠️ **Two on-screen strings that named this step were already wrong before the rename** — both said
+*"Working Calendars view"*, and there has been no such view since 2026-09-02, when it became a Setup
+step. They now read *Schedule Setup — Calendars*. The calendar **editor's** own heading is
+deliberately untouched: it is the shared component the standalone modal also draws, and it names the
+list of calendars, not the step.
+
+**Verified:** 17 assertions executing the shipped `sbSyncSteps` / `_stepNo` / both alias tables
+sliced out of the file — the rail reads `Start → Calendars → …`, the **old** title still resolves to
+step 2, every other step keeps its number, and the import rail is unchanged. ⚠️ The contrast against
+`HEAD` fails **11 of 17**. ⚠️ A mutation leaving the manual keyed by the old title takes
+`test-builder` from **99/1 to 97/3**, so that coverage is real. Twelve module suites green;
+`wiring-check` **139/0**. ⚠️ `test-builder` **99/1** is pre-existing, byte-identical on `HEAD`.
+⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260917zzs`, re-derived from what the remote actually carries (`zzr`) and
+sort-checked as a plain string.
+
 ### 2026-09-17 (au) — The "symbol" was thirty bare arrow glyphs; the floor-plan editor goes full screen behind a ribbon; an area can be drawn before it is tagged
 
 Owner, three items on Schedule Setup: *"firstly, the symbol of 13 still remains. fix that."*, *"when

@@ -8126,7 +8126,7 @@
           DSCN.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === draft.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
           '<option value="__new__">— New scenario —</option></select></div>' : '') +
         '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Name</label><input class="pd-input" id="ps-ds-name" value="' + esc(draft.name || '') + '" placeholder="Wet season 2027"></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Working calendar <button class="pd-btn pd-btn-sm" id="ps-ds-editcal" style="float:right;padding:0 8px;" title="Same editor as the Working Calendars view — opened here so you do not lose these rules">Edit calendars…</button></label>' +
+        '<div class="pd-field" style="flex:1;"><label>Working calendar <button class="pd-btn pd-btn-sm" id="ps-ds-editcal" style="float:right;padding:0 8px;" title="Same editor as the Schedule Setup — Calendars step, opened here so you do not lose these rules">Edit calendars…</button></label>' +
         '<select class="pd-select" id="ps-ds-cal">' + calOpts(draft.calendar_id) + '</select></div></div>' +
         '<div class="pd-field"><label>Notes</label><input class="pd-input" id="ps-ds-desc" value="' + esc(draft.description || '') + '"></div>' +
         '<div class="ps-ds-rules">' + dsRules(draft).map(ruleHTML).join('') +
@@ -35821,7 +35821,7 @@
         watch: ['The two paths have <b>different steps</b>. Switching mode later keeps what you typed but changes the rail.'],
         done: 'A mode is chosen and the rail below it has filled in.'
       },
-      'Working calendars': {
+      'Calendars': {
         why: 'Which days count as work. Every duration in this setup is in WORKING days, so this decides what a 5-day activity means on a calendar.',
         how: ['Set the working week and the daily hours.', 'Add the holidays this project observes.',
               'Add <b>seasons</b> (a rainy season, a shutdown) if they change what is workable.'],
@@ -37255,7 +37255,8 @@
        empty string for a name it cannot find, and a blank where a step number belongs reads as a
        broken reference — so 'Tower links' is kept beside its new name, and 'Stacking' now points
        at Generate, which is where the vertical stacking actually is. */
-    var STEP_ALIAS = { 'Tower Sequence': 'Repetition', 'Tower links': 'Repetition',
+    var STEP_ALIAS = { 'Working calendars': 'Calendars',
+                       'Tower Sequence': 'Repetition', 'Tower links': 'Repetition',
                        'Zone sequence': 'Repetition',
                        'Structure': 'Project phases', '5PMLC': 'Project phases',
                        'Construction Library': 'Activities',
@@ -37327,7 +37328,7 @@
          duration typed in the next step is a count of WORKING days, so the calendar is the unit
          those numbers are expressed in. Set afterwards, everything already typed silently meant
          something else while it was being typed. */
-      { t: 'Working calendars', s: 'Which days are workable', fn: stCalendars },
+      { t: 'Calendars', s: 'Which days are workable', fn: stCalendars },
       /* ⚠⚠ SECOND, AND THIS REVERSES WHAT THIS FILE USED TO ARGUE. The note that used to sit
          above the Structure step said the merged step could not lead, because one of its two
          views would be empty on a new project. That was true of the **Construction Library**,
@@ -46507,7 +46508,7 @@
       var n = (typeof CALS !== 'undefined' && CALS) ? CALS.length : 0;
       var def = null;
       try { def = (CALS || []).filter(function (c) { return c.is_default; })[0] || null; } catch (e) {}
-      host.innerHTML = '<h2>' + _stepNo('Working calendars') + ' · Which days the work can happen on</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Calendars') + ' · Which days the work can happen on</h2>' +
         /* ⚠️ The second half argued for the step's POSITION in the rail. The rail already shows
            the position, and a planner who has not questioned it does not need the defence. */
         '<p class="sbld-lede">Durations are counted in <b>working days</b>. This is the calendar ' +
@@ -49339,7 +49340,8 @@
            Quiet, because this function renders itself. */
         /* ⚠ The three phases aliases carry NO tab: Project Phases is one page again, so there
            is nothing to select and asking for one would be wiring that does nothing. */
-        var _al = { 'WBS':       { st: 'Project phases' },
+        var _al = { 'Working calendars': { st: 'Calendars' },
+                    'WBS':       { st: 'Project phases' },
                     '5PMLC':     { st: 'Project phases' },
                     'Structure': { st: 'Project phases' },
                     'Library':   { st: 'Activities', tab: 'lib' },
@@ -50969,7 +50971,7 @@
     else if (tab === 'summary') renderSummary();
     // ⚠️ A stale deep link or a remembered tab can still say 'calendars'. Send it to the step that
     // owns the calendars now rather than showing a blank view.
-    else if (tab === 'calendars') { switchTab('builder'); try { ScheduleBuilder.gotoStep('Working calendars'); } catch (e) {} }
+    else if (tab === 'calendars') { switchTab('builder'); try { ScheduleBuilder.gotoStep('Calendars'); } catch (e) {} }
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
@@ -53008,7 +53010,7 @@
         // it moves live dates across the whole project the moment it is enabled —
         // including for other planners looking at the same schedule. That is a
         // decision to take deliberately, not a default to inherit from a deploy.
-        '<label><input type="checkbox" id="ps-calcpm"' + (calCpmOn ? ' checked' : '') + '><span>Schedule on working calendars<small>Durations count WORKING days and finishes skip non-working ones, per each activity’s calendar (Working Calendars view). Float is then in working days too. Moves dates across the project — review before you Reschedule.</small></span></label></div>' +
+        '<label><input type="checkbox" id="ps-calcpm"' + (calCpmOn ? ' checked' : '') + '><span>Schedule on working calendars<small>Durations count WORKING days and finishes skip non-working ones, per each activity’s calendar (Schedule Setup — Calendars). Float is then in working days too. Moves dates across the project — review before you Reschedule.</small></span></label></div>' +
         '<div class="fld"><span>Progress intelligence</span>' +
         '<label><input type="checkbox" id="ps-progdriven"' + (progressDriven ? ' checked' : '') + '><span>Progress-driven dates<small>Editing Duration POC recomputes remaining duration &amp; finish from the data date.</small></span></label>' +
         '<label><input type="checkbox" id="ps-ddretain"' + (ddRetainOn ? ' checked' : '') + '><span>Retain un-started work at the data date<small>On Schedule, move activities with 0% POC to the data date, keeping their duration. No predecessor → placed on the data date; with predecessors → only pulled forward out of the past.</small></span></label></div>';

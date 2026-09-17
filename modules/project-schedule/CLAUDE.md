@@ -1,3 +1,80 @@
+## 2026-09-17 (zzs) — Schedule Setup: the Working Calendars step is called Calendars
+
+Owner: *"rename step Working Calendars to Calendars."* One word on screen; six places in the file,
+because this module deliberately addresses its steps **by title** rather than by index.
+
+⚠️⚠️ **A STEP TITLE IS A KEY HERE, NOT A LABEL — AND IT IS THE KEY IN TWO SEPARATE TABLES.**
+`_stepNo(title)` is what renumbers every *"see step 4"* in the module when the rail changes (the
+comment above `STEPS` says so in as many words), `SB_MANUAL` is keyed by title so the How-to pane
+finds the right page, and `gotoStep(title)` is the public entry point other screens and deep links
+call. Changing only the rail entry would have left the step's own heading printing a **blank** where
+its number belongs — `_stepNo` answers the empty string for a name it cannot find, which is exactly
+the failure `STEP_ALIAS` exists to prevent — and the How pane with no page at all. So the rename is:
+
+| | |
+|---|---|
+| `STEPS_NEW` | `{ t: 'Calendars', … }` — the rail entry and the step's own heading |
+| `SB_MANUAL` | re-keyed `'Calendars'` |
+| `stCalendars` | `_stepNo('Calendars')` |
+| the `tab === 'calendars'` deep link | `gotoStep('Calendars')` |
+
+⚠️⚠️ **THE OLD TITLE STILL RESOLVES, AND IT HAD TO BE ADDED TO BOTH TABLES, NOT ONE.**
+`STEP_ALIAS` (which `_stepNo` reads) and `gotoStep`'s own private `_al` are two maps doing
+overlapping jobs — pre-existing drift, not introduced here — and `gotoStep` does **not** consult
+`STEP_ALIAS`. Adding the alias to one of them would have left the other silently returning `false`
+for `gotoStep('Working calendars')`, which is how another module's button or a saved deep link stops
+working with nothing on screen to say so. ⚠️ The `_al` entry carries **no tab**: this step is one
+page, and asking for a tab would be wiring that does nothing.
+
+⚠️ **Not widened past the ask.** `STEP_ALIAS` and `_al` are still two maps; making `gotoStep` fall
+through to `STEP_ALIAS` would converge them, and would also change what `gotoStep('Tower links')`
+does today (it returns false; it would start resolving to Repetition). That is a behaviour change
+with nothing asking for it, so the one entry was added instead and the drift is named here.
+
+### Two on-screen strings that named this step, and were already stale
+
+*"Same editor as the **Working Calendars view**"* (the duration-scenario dialog's Edit calendars
+button) and *"per each activity's calendar (**Working Calendars view**)"* (the Schedule dialog's
+calendar-CPM note). ⚠️ There has been no Working Calendars **view** since 2026-09-02, when it became
+a Setup step — so both were wrong before this rename and would now have named a step that does not
+exist either. Both read **Schedule Setup — Calendars**.
+
+⚠️ **The calendar EDITOR's own heading is deliberately untouched.** `buildHTML()` still opens with
+`<h2>Working calendars</h2>`; that is the shared editor (the same one the standalone modal draws),
+it names the list of calendar records rather than the step, and rewriting a shared component's
+heading is not a rename of a rail entry. ⚠️ It does mean the step page shows its own `<h2>` and then
+the editor's — pre-existing, and worth a decision on its own rather than inside this.
+
+### Verified
+
+**17 assertions, 0 failing**, executing the shipped `sbSyncSteps` / `_stepNo` / `STEP_ALIAS` /
+`STEPS_NEW` / `STEPS_IMP` / `gotoStep`'s `_al` **sliced out of the file** rather than retyped: the
+build rail reads `Start → Calendars → Project phases → Activities → Floors & Zones → Repetition →
+Generate`, `_stepNo('Calendars')` is **2**, `_stepNo('Working calendars')` is **also 2** through the
+alias, an unknown title still yields the empty string, **every other step keeps its number**, the
+pre-existing aliases (`Tower links` → 6, `Stacking` → 7) are untouched, every `gotoStep` alias
+resolves to a step that really exists, and the import rail is unchanged (it never had this step).
+⚠️ **The contrast bites**: the same suite against `HEAD` fails **11 of 17**.
+
+⚠️ **My first harness was wrong and reported a defect that does not exist** — it built `STEPS` by
+hand from `STEPS_NEW` and so lost `STEP_START`, which `sbSyncSteps` prepends, reporting Calendars at
+position 1 and every step number off by one. Fixed by slicing and executing `sbSyncSteps` itself
+instead of imitating it.
+
+⚠️⚠️ **And the shipped suite's manual check was proved to bite, rather than assumed:** mutating the
+file to rename the step but leave `SB_MANUAL` keyed by the old title takes `test-builder` from
+**99/1 to 97/3**, naming both halves (*step "Calendars" has a page* / *page "Working calendars"
+belongs to a step the rail can show*). So the manual re-key is real coverage.
+
+Twelve module suites green — `lsm` **683/0**, `cpm` 28/0, `autotrace` 32/0, `towerseq` 48/0,
+`zoneoverlap` 57/0, `shapeedit` 36/0, `zoneplan` 50/0, `actdnd` 45/0, `health` 30/0, `critwbs` 26/0,
+`syntax` 4/0 — plus `wiring-check` **139/0** and 0 NUL bytes (counted as bytes; `grep -c` with a NUL
+pattern degenerates to an empty pattern and reports every line, which this log already records).
+⚠️ `test-builder` **99/1** is **pre-existing**: byte-identical on `HEAD`, and it is the documented
+*page "Structure" belongs to a step the rail can show*.
+
+⚠️ **Not verified signed in** — the rail has not been walked on a real project.
+
 ## 2026-09-17 (zzr) — The tofu boxes were 30 bare arrow glyphs; the plan editor goes full screen behind an Excel-style ribbon; and an area can be drawn before it is tagged
 
 Owner, three items: *"firstly, the symbol of 13 still remains. fix that."*, *"when defining the plan
