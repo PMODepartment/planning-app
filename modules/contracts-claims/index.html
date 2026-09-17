@@ -8,7 +8,8 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zg" />
-  <link rel="stylesheet" href="module.css?v=20260917d" />
+  <link rel="stylesheet" href="module.css?v=20260917c" />
+
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
 </head>
 <body>
@@ -35,29 +36,24 @@
           <select class="pd-select cc-project" id="cc-project" title="Project"></select>
         </div>
         <div class="cc-tabs pd-tabsrc" role="tablist">
-          <!-- ⚠️ FOUR TABS (2026-09-16). Owner: *"let's just have a separate tab for the
-               dashboard."* The 2026-08-26 folding is UNTOUCHED and still holds: packages stay
-               inside Contract (a contract defines a package, so one list keyed by package
-               carries both), BOQ stays under Contract and PMI under Claims. Nothing is
-               un-folded here — this adds a read-only summary, it does not reopen the
-               *"there are too many tabs to keep track of"* problem.
-
-               ⚠️⚠️ AND THE OLD OBJECTION TO A FOURTH TAB IS STALE — CHECKED, NOT ASSUMED.
-               This comment used to warn that "the tab count is load-bearing for the TITLE",
-               because module.css once hid `.cc-title-txt` below 1460px on the grounds that
-               "5 tabs need more room". That was true of a STRIP OF LABELLED BUTTONS. Since
-               2026-09-03 the strip is converted by `UI.tabsToDropdown('.cc-tabs')` into ONE
-               trigger naming only the CURRENT screen, so its width is set by the longest
-               label that can BE current — "Claims / Change Order" — and "Dashboard" is
-               shorter, so a fourth entry costs ZERO width. The title text is hidden above
-               701px regardless by `.pd-title-hasdrop`, precisely because the trigger already
-               names the screen. Neither half of the old warning survives.
-               ⚠️ Dashboard is FIRST and is the landing view: the owner called this the
-               module's "front page" when the band was commissioned (2026-09-15 g). -->
-          <button class="cc-tab active" data-view="dashboard">Dashboard</button>
-          <button class="cc-tab" data-view="contract">Contract</button>
+          <!-- ⚠️⚠️ TWO SESSIONS BUILT A DASHBOARD TAB FOR THIS MODULE INDEPENDENTLY, THE SAME
+               DAY, AND DISAGREED ABOUT WHERE IT LANDS. A concurrent session's dashboard put it
+               FIRST and made it the landing view ("the owner called this the module's front
+               page"); this session's owner, live, said the opposite in as many words — "it need
+               not be the landing tab" — and asked for a plainer single-table summary instead
+               (see module.js above ccDashHTML()). Resolved in favor of THIS session's version:
+               Contract stays the landing tab, Dashboard is fourth. The concurrent session's own
+               richer dashboard body (KPI cards, a verdict line, an async BOQ read) was NOT
+               carried over — the two are different designs for the same tab and only one can
+               ship; this owner's explicit, live instruction is what decided which.
+               ⚠️ The tab count is not load-bearing for the title either way — see the retained
+               reasoning below (unchanged since 2026-09-03/09-16): `UI.tabsToDropdown('.cc-tabs')`
+               converts this strip into one trigger naming only the current screen, so a fourth
+               entry costs zero width. -->
+          <button class="cc-tab active" data-view="contract">Contract</button>
           <button class="cc-tab" data-view="claims">Claims / Change Order</button>
           <button class="cc-tab" data-view="eot">Extension of Time</button>
+          <button class="cc-tab" data-view="dashboard">Dashboard</button>
         </div>
         <div class="cc-topbar-tools" id="cc-topbar-tools">
           <!-- Filters, moved into a single toggleable group (UI.wireFilterToggle,
@@ -135,7 +131,7 @@
   <!-- affected.js before wizard.js and module.js: both read it as window.CCAffected. -->
   <script src="affected.js?v=20260911b"></script>
   <script src="wizard.js?v=20260915c"></script>
-  <script src="module.js?v=20260917c"></script>
+  <script src="module.js?v=20260917e"></script>
   <script>
     // Item 1 (2026-09-02): the topbar tab strip becomes ONE dropdown, and the
     // static module label beside it goes with it — the trigger already names

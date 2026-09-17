@@ -80,11 +80,12 @@ window.ContractsClaims = (function () {
   };
 
   // ---- state ---------------------------------------------------------------
-  /* ⚠️ `view` LANDS ON THE DASHBOARD (2026-09-16). The owner called this the module's front
-     page when the band was commissioned, and a summary nobody lands on is a summary nobody
-     reads — which is most of how the band went unnoticed for a day. Reversible in one word;
-     `UI.bindHistoryState` still restores whatever tab a link names. */
-  var UID = null, pid = null, rows = [], view = 'dashboard';
+  /* ⚠️ `view` lands on Contract, not Dashboard — a concurrent session's own thread made the
+     Dashboard the landing view; THIS session's owner said the opposite, live: "it need not be
+     the landing tab" (see the collision note in CLAUDE.md and the matching comment in
+     index.html's `.cc-tabs`). Reversible in one word; `UI.bindHistoryState` still restores
+     whatever tab a link names. */
+  var UID = null, pid = null, rows = [], view = 'contract';
   var histView = null;   // UI.bindHistoryState() handle for the top-level cc-tabs — see init()
   var canWrite = false, isAdmin = false, sel = {};
   var filters = { q: '', type: '', status: '', dateField: '', from: '', to: '', pkg: '' };
@@ -357,47 +358,26 @@ window.ContractsClaims = (function () {
        the same shape as the filter toggle above, which is reset here for the same reason. */
     if (document.getElementById('cc-export')) document.getElementById('cc-export').style.display = '';
 
-    /* ==========================================================================================
-       THE DASHBOARD TAB (2026-09-16). Owner: *"let's just have a separate tab for the
-       dashboard."* It was a band at the top of the Contract tab; measured there, it stood 856px
-       and pushed the Contract records table to y=961 — so the tab's own content started at the
-       very bottom of a laptop screen, and that was AFTER a trim from 1028px. A summary big
-       enough to be useful and a register big enough to read do not fit on one screen, and the
-       honest answer is two screens rather than a smaller summary.
-       ⚠️ It renders `ccDashHTML()` and nothing else — same function, same figures, same call
-       site count. Moving it did not fork it.
-       ⚠️ Export is hidden: `cfg().types` is empty here, so it would write an empty workbook,
-       which is worse than no button. PRINT IS KEPT — `window.print()` needs no table and this
-       is the one screen in the module somebody actually wants on paper for a meeting.
-       ⚠️ `+ Add` is kept and falls through to 'Contract' (see openNew's ternary), which is the
-       right default from a screen headlined by the contract value. */
-    if (view === 'dashboard') {
-      document.getElementById('cc-filters').style.display = 'none';
-      if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
-      if (document.getElementById('cc-export')) document.getElementById('cc-export').style.display = 'none';
-      document.getElementById('cc-count').textContent = '';
-      host.innerHTML = ccDashHTML();
-      /* ⚠️ NOT awaited: the tab is already readable from `rows` and `PKGS`, and the BOQ read
-         must not delay the landing view. It guards itself on `_loadGen`. */
-      ccDashFill();
-      return;
-    }
     /* The Contract tab is now keyed by PACKAGE — a contract defines a package, so one
        list carries both, and a package with no contract (or a contract with no package)
        is shown rather than dropped. packages.js owns that view. */
     if (view === 'contract' && window.CCPackages) {
       document.getElementById('cc-filters').style.display = 'none';
       if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
-      /* ⚠️⚠️ THE SUMMARY BAND IS NO LONGER PASSED IN, AND THAT IS NOT A REVERT OF THE FIX ABOVE
-         IT — IT IS THE SAME FIX, RELOCATED. The band was unreachable because it hung off
-         `kpiHTML()` at the bottom of this function, below this `return`; passing it into this
-         view made it reachable, and on 2026-09-16 the owner asked for it on a tab of its own
-         instead. It now has ONE call site, in the `view === 'dashboard'` branch above. The
-         `dashHTML` parameter went from packages.js with it rather than being left accepting an
-         argument nobody passes. */
       CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew,
         function (id) { openForm(rows.find(function (r) { return String(r.id) === String(id); })); },
         mountBoqInline);
+      return;
+    }
+    /* THE DASHBOARD TAB — see the long comment above ccDashHTML() for why this reconnects
+       rather than rewrites it. No filter bar: the dashboard reads `rows` whole, same as the
+       Contract tab's own record list does. */
+    if (view === 'dashboard') {
+      document.getElementById('cc-filters').style.display = 'none';
+      if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
+      host.innerHTML = ccDashHTML();
+      wireDashGroups(host);
+      if (window.Icons && Icons.hydrate) Icons.hydrate(host);
       return;
     }
     // The Claim/CO type filter only applies to the claims tab.
@@ -485,746 +465,124 @@ window.ContractsClaims = (function () {
   }
 
   /* ==========================================================================================
-     THE REGISTER'S OWN DASHBOARD.
-     Owner 2026-09-15: *"Let's rework the front page of the contracts & claims module to have an own
-     dashboard within it."* Asked where it should live — a new tab, or inside Contract — the owner
-     chose INSIDE THE CONTRACT TAB, which is already what the module opens on. That keeps the
-     standing three-tab decision (2026-08-26: *"There are too many tabs to keep track of"*) and the
-     1460px title breakpoint that the tab count drives.
-
-     ⚠⚠ IT SUMMARISES THE WHOLE REGISTER, NOT THE CONTRACT TAB. `rows` holds every record type,
-       so the band reports contract, change orders, claims and EOT together — which is the point of
-       a front page. The list under it is still the Contract list; the band is the module's summary,
-       the table is the tab's content.
-     ⚠⚠ THE SAME FIGURES, IN THE SAME ORDER, AS THE PROJECT DASHBOARD'S PANEL (2026-09-15). Two
-       screens reporting the same register must not describe it differently — so the blocks, the
-       cell order and the two-figure treatment of "disputed" are deliberately identical. What
-       differs is only the source: this one computes from the rows already in memory, so it costs
-       no query; the dashboard reads declared metrics through the shell.
-     ⚠ UNFILTERED, and on purpose. It reads `rows`, never `visibleRows()`: a summary that moved
-       when someone typed in the search box would be reporting the filter, not the register. The
-       count line under the toolbar already says what the filter is showing.
+     THE REGISTER'S OWN DASHBOARD — one table, nothing else (2026-09-16).
+     Built as a Contract-tab band (2026-09-15), reconnected as its own fourth tab after being
+     unreachable for 11 days (a), given Submission/Submitted/Evaluated/Approved/Disputed/Status
+     columns and a per-type expand (b), merged Contract+CO+Claims into one table (c). This round:
+     *"option 2 is nicer [the expanded table]. but leave only the main table in the dashboard.
+     include already EOT in the table. no need for the view buttons."* Three changes:
+       1. the package %-breakdown, the "With the client" pending/aging KPIs (`ccTimeHTML`, now
+          DELETED — its only caller is gone) and the closing hint paragraph are all removed, so
+          the tab is exactly the table and nothing around it;
+       2. Extension of Time is now a FOURTH group in the same `<table>` rather than a table of
+          its own — see the note on `ccTypeRows` for why sharing a table is still safe even
+          though EOT's unit is days, not money;
+       3. the inline "View →" jumps (`dashGotoBtn`/`wireDashGoto`) are deleted outright, not
+          hidden — nothing in the module calls them any more.
+     Groups now open by default (the "option 2" the owner preferred) — `wireDashGroups` still
+     toggles them shut, it just starts from the other end.
+     ⚠️⚠️ IT SUMMARISES THE WHOLE REGISTER, NOT ONE TAB. `rows` holds every record type, so the
+       table reports contract, change orders, claims and EOT together — which is the point of a
+       dashboard. Contract's own tab still lists its records and lots; nothing here duplicates it.
+     ⚠️ UNFILTERED, and on purpose. It reads `rows`, never `visibleRows()`: a dashboard that moved
+       when someone typed a search on another tab would be reporting a filter it cannot show.
      ========================================================================================== */
-  /* ==========================================================================================
-     THE MONEY HALF — ONE TABLE, THREE ROWS (2026-09-16).
-     Owner, on the 22-card band: trim it. MEASURED AT 1400x1000 BEFORE CHANGING ANYTHING — the
-     band stood 1028px tall and the Contract records table, which is the tab's own content, began
-     at y=1130, BELOW A 1000px VIEWPORT. So the summary had pushed the thing it summarises off the
-     screen: the 2026-09-07 finding in this module ("the page led with its rarest case") wearing a
-     new costume.
+  var CC_DASH_COLS = '<th>Submission</th><th class="cc-r">Submitted</th><th class="cc-r">Evaluated</th>' +
+    '<th class="cc-r">Approved</th><th class="cc-r">Disputed</th><th>Status</th>';
+  /* One type's group row + its detail rows, open by default. No `<table>` of its own — every
+     type shares the one table `ccMainTableHTML` builds.
+     ⚠️⚠️ EOT SHARES THE TABLE WITHOUT SHARING A SUM. Each group's Submitted/Evaluated/Approved/
+       Disputed total is computed from ONLY that group's own `list` — a peso group's total is
+       never added to a day group's, because nothing here ever sums ACROSS groups. Sharing the
+       table is a display choice; `assets/js/claims.js`'s "money and days are never mixed" rule
+       is about arithmetic, and no arithmetic here crosses that line. Each row's own `fmt`
+       (₱ or "Nd") is what a reader sees, per group, same as before the tables were merged.
+     ⚠️⚠️ `evK`/`apK` OMITTED MEANS "NO PIPELINE", NOT "ZERO" — a Contract record has one amount
+       and no Evaluated/Approved/Disputed/Status at all (2026-08-26: *"Contract has no pipeline —
+       it's a flat description + amount list"*). Forcing it through the same three-column
+       pipeline as a claim would either invent numbers it does not have or silently read them as
+       zero, which is a false claim in either direction. Both are dashes instead — `simple`
+       short-circuits every one of them, group row and detail rows alike.
+     ⚠️⚠️ "DISPUTED" IS THE OLD "SHORTFALL", MOVED TO WHERE IT EARNS ITS PLACE — a still-Pending
+       record reads "—", not 0, via `PDClaims.isDecided`, or an unresolved claim would look
+       already fought over. */
+  function ccTypeRows(label, list, subK, evK, apK, fmt) {
+    var sum = PDClaims.sum, simple = !evK;
+    var short = simple ? 0 : PDClaims.shortfallOf(list, subK, apK);
+    var f = list.length ? fmt : function () { return '—'; };
+    var dash = '<span class="cc-mut">—</span>';
+    var gid = 'ccg-' + label.replace(/[^a-z0-9]+/gi, '').toLowerCase();
 
-     ⚠️⚠️ THE 15 CARDS WERE ONE TABLE WEARING THREE HEADERS. Change orders, Cost claims and EOT
-       carry the SAME five figures in the same order, and as three separate `.cc-kpis` grids they
-       sat 105px apart with a heading between each — so the one reading that matters, comparing a
-       column DOWN the three record types, was the one reading you could not do at all. Three rows
-       of a table give it away for nothing, and cost ~250px less.
-     ⚠️⚠️ THE PROJECT-DASHBOARD INVARIANT IS HONOURED, AND IT IS WORTH SAYING WHICH HALF. The rule
-       (2026-09-15) is that the two screens must not DESCRIBE THE REGISTER DIFFERENTLY — the same
-       figures, in the same order, with the same two-figure treatment of "disputed". All three hold
-       here. What changes is presentation, and the two screens are different objects:
-       `dashboard.html`'s panel is one small panel among many, where cards suit; this is the page
-       you open TO READ THIS REGISTER, where a table does. Do not "re-sync" them by turning this
-       back into cards.
-     ⚠️ A LAYER OVER `.cc-table`, never a second table class — the rule this module set on
-       2026-09-07, when the Procurement idiom was ported rather than copied. It inherits the head,
-       the hover and the right-aligned numeric cells. The ONE override is `min-width`: that class
-       carries a 1020px floor sized for the 9-column register, which would put a 6-column summary
-       into a horizontal scroll on an ordinary laptop.
-     ========================================================================================== */
-  /* ⚠️ ONE PREDICATE, read by the table and by the legend that explains the table, so the two
-     can never disagree about whether there is a pipeline to describe. `PDClaims.claimsOnly` is
-     the same rule `ccTimeHTML` already gates itself on — which is why "With the client" was
-     correctly absent on OPW101 while the table above it drew fifteen dashes. */
-  function ccHasClaims() { return PDClaims.claimsOnly(rows).length > 0; }
+    var counts = {};
+    if (!simple) list.forEach(function (r) { var s = statusOf(r) || 'Pending'; counts[s] = (counts[s] || 0) + 1; });
+    var statusSummary = simple ? '—' :
+      (Object.keys(counts).map(function (s) { return counts[s] + ' ' + s.toLowerCase(); }).join(' · ') || '—');
 
-  function ccMoneyTable() {
-    /* ⚠️⚠️ ALL THREE EMPTY IS THE ORDINARY EARLY STATE OF A PROJECT, AND IT RENDERED AS FIFTEEN
-       EM DASHES. Measured on the live OPW101: one contract, zero change orders, zero cost claims,
-       zero extensions of time — so a 3x5 grid of nothing, under a heading, above a paragraph
-       defining five columns that had no figures in them. That is most of the tab, saying nothing.
-       ⚠️ ONLY when all three are empty. A project with three change orders and no EOT must still
-       draw the full table with EOT as a row of dashes: "none raised" is a real fact about that
-       record type and collapsing the table would hide it. The test is the register, not one row. */
-    if (!ccHasClaims()) {
-      return '<div class="cc-dash-h">The pipeline</div>' +
-        '<p class="cc-hint">No change orders, cost claims or extensions of time have been raised on ' +
-        'this project yet. When they are, this is where what was claimed and what came back is ' +
-        'summarised — submitted, evaluated, approved, and the shortfall across decided records.</p>';
-    }
-    var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
+    var rowsHtml = list.map(function (r) {
+      var st = statusOf(r);
+      /* Per-record disputed: only a DECIDED record has actually been argued over. */
+      var disp = (!simple && PDClaims.isDecided(r)) ? PDClaims.shortfall(r[subK], r[apK]) : null;
+      return '<tr class="cc-dashrow" data-grp="' + gid + '">' +
+        '<td class="cc-desc"><div class="cc-desc-txt" title="' + esc(descOf(r)) + '">' + esc(descOf(r)) + '</div>' +
+          (r.date_submitted ? '<div class="cc-mini">Submitted ' + fmtDate(r.date_submitted) + '</div>' : '') + '</td>' +
+        '<td class="cc-r">' + fmt(Number(r[subK]) || 0) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : fmt(Number(r[evK]) || 0)) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : fmt(Number(r[apK]) || 0)) + '</td>' +
+        '<td class="cc-r">' + (disp == null ? dash : fmt(disp)) + '</td>' +
+        '<td>' + (simple ? dash : '<span class="cc-st ' + (STATUS_CLS[st] || '') + '">' + esc(st || '—') + '</span>') + '</td>' +
+        '</tr>';
+    }).join('');
+
+    return '<tr class="pd-grp cc-dashgrp open"' + (list.length ? ' data-grptoggle="' + gid + '"' : '') + '>' +
+        '<td>' + (list.length ? '<span class="cc-dashcaret">&#9662;</span> ' : '') + esc(label) +
+          (list.length ? ' <span class="cc-mini">' + list.length + ' record' + (list.length === 1 ? '' : 's') + '</span>' : '') +
+          '</td>' +
+        '<td class="cc-r">' + f(sum(list, subK)) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : f(sum(list, evK))) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : f(sum(list, apK))) + '</td>' +
+        '<td class="cc-r">' + (simple ? dash : f(short)) + '</td>' +
+        '<td class="cc-mini">' + esc(statusSummary) + '</td>' +
+      '</tr>' + rowsHtml;
+  }
+  function wireDashGroups(host) {
+    host.querySelectorAll('[data-grptoggle]').forEach(function (tr) {
+      tr.onclick = function () {
+        var gid = tr.dataset.grptoggle, opening = tr.classList.toggle('open');
+        host.querySelectorAll('tr[data-grp="' + gid + '"]').forEach(function (row) {
+          row.classList.toggle('pd-collapsed', !opening);
+        });
+        var caret = tr.querySelector('.cc-dashcaret');
+        if (caret) caret.innerHTML = opening ? '&#9662;' : '&#9656;';
+      };
+    });
+  }
+  /* Contract, Change Orders, Cost Claims AND Extension of Time — every type, one table.
+     Owner: *"combine contracts, change orders, and coat claims in 1 table"*, then
+     *"include already EOT in the table."* */
+  function ccDashHTML() {
+    /* ⚠️ Owner: "for amounts round off to nearest .00 M" — every peso figure on this table is
+       expressed in millions, two decimals, regardless of magnitude (so ₱1,155,577,055.60 reads
+       as ₱1,155.58M, and a ₱20,000 record reads as ₱0.02M rather than switching to a smaller
+       unit). Deliberately its own formatter, not `Fmt.moneyShort` (db.js) — that one switches to
+       a "B" suffix above ₱1B, which is a different, coarser figure than "nearest million" asked
+       for here. */
+    var money = function (v) {
+      if (v == null || isNaN(v)) return '—';
+      return '₱' + (Number(v) / 1e6).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'M';
+    };
     var days = function (v) { return (v == null || isNaN(v)) ? '—' : num(Number(v) || 0) + 'd'; };
     var of = function (t) { return rows.filter(function (r) { return r.record_type === t; }); };
-    /* ⚠️ Money for claims and change orders, DAYS for EOT, never one total — the key pair travels
-       with the row rather than being guessed downstream, which is what makes summing pesos into
-       calendar days impossible rather than merely unlikely. */
-    var DEFS = [
-      { label: 'Change orders', list: of('Change Order'), sub: 'sub_amount', ev: 'eval_amount', ap: 'approved_amount', fmt: money },
-      { label: 'Cost claims', list: of('Claim'), sub: 'sub_amount', ev: 'eval_amount', ap: 'approved_amount', fmt: money },
-      { label: 'Extension of time', list: of('EOT'), sub: 'sub_days', ev: 'eval_days', ap: 'approved_days', fmt: days }
-    ];
-    var body = DEFS.map(function (d) {
-      /* ⚠️⚠️ THE RULES STAY IN PDClaims (assets/js/claims.js), UNCHANGED — decided = Approved +
-         Disapproved (Cancelled was never adjudicated), shortfall clamped at 0. They live there
-         because this band, the project dashboard's panel and the portfolio view apply the same
-         rules to the same register, and three copies is how three screens come to describe it
-         differently. Restructuring the presentation must not quietly fork the arithmetic. */
-      var sum = PDClaims.sum;
-      var decided = PDClaims.decided(d.list);
-      var disapRows = d.list.filter(PDClaims.isDisapproved);
-      var short = PDClaims.shortfallOf(d.list, d.sub, d.ap);
-      /* ⚠️ A COMPUTED ZERO IS A ZERO; ONLY AN EMPTY ROW IS A DASH — ccBlock's rule, kept verbatim.
-         `sum` over an empty list returns 0, and printing that as an em dash made this screen say
-         "—" where the project dashboard says "0d", for the same register. */
-      var f = d.list.length ? d.fmt : function () { return '—'; };
-      var ap = sum(d.list, d.ap);
-      var disap = sum(disapRows, d.sub);
-      return '<tr>' +
-        '<th scope="row">' + esc(d.label) +
-          '<i>' + d.list.length + ' record' + (d.list.length === 1 ? '' : 's') + '</i></th>' +
-        '<td class="cc-r">' + f(sum(d.list, d.sub)) + '</td>' +
-        '<td class="cc-r">' + f(sum(d.list, d.ev)) + '</td>' +
-        '<td class="cc-r' + (ap ? ' cc-v-good' : '') + '">' + f(ap) + '</td>' +
-        '<td class="cc-r' + (disap ? ' cc-v-bad' : '') + '">' + f(disap) + '</td>' +
-        '<td class="cc-r' + (short ? ' cc-v-warn' : '') + '">' + f(short) +
-          (d.list.length && !decided.length ? '<i>nothing decided yet</i>' : '') + '</td>' +
-        '</tr>';
-    }).join('');
-    return '<div class="cc-dash-h">The pipeline ' +
-        '<span class="cc-mini">what was claimed, and what came back</span></div>' +
-      '<div class="cc-sumwrap"><table class="cc-table cc-sum">' +
-      '<thead><tr>' +
-        '<th scope="col"><span class="cc-sr">Record type</span></th>' +
-        '<th scope="col" class="cc-r" title="What was claimed, as submitted to the client — before any review.">Submitted<i>as claimed</i></th>' +
-        '<th scope="col" class="cc-r" title="The figure after review, before the client has decided.">Evaluated<i>after review</i></th>' +
-        '<th scope="col" class="cc-r" title="What the client approved. Claimed, not certified — certification is the bill of quantities.">Approved<i>client approved</i></th>' +
-        '<th scope="col" class="cc-r" title="What the client rejected outright. Records still pending a decision count in neither this nor Approved.">Disapproved<i>rejected outright</i></th>' +
-        /* ⚠️⚠️ THE BASIS IS IN THE HEADER BECAUSE THE THREE FIGURES DO NOT RECONCILE ON SCREEN.
-           Measured on the fixture: Submitted ₱145,400,000 minus Approved ₱68,500,000 is
-           ₱76,900,000, while Shortfall reads ₱35,900,000 — because Submitted and Approved sum
-           EVERY record while Shortfall sums DECIDED ones only. Three numbers in a row where two
-           look like they make the third is the same trap this module already paid for once, when
-           the aging bars were measured on a different key from the headline beside them. Saying
-           "decided only" at the point of confusion is the fix; the hint paragraph 400px further
-           down was not, and had been there the whole time. */
-        '<th scope="col" class="cc-r" title="Submitted minus approved, across DECIDED records only — approved plus disapproved. Anything still pending is excluded, which is why these three columns do not reconcile across a row.">Shortfall<i>decided only</i></th>' +
-      '</tr></thead><tbody>' + body + '</tbody></table></div>';
-  }
-  /* ==========================================================================================
-     THE DASHBOARD, REBUILT AROUND THE COMMERCIAL POSITION — 2026-09-16.
-
-     Owner, on the live Dashboard of OPW101 — a ₱3.67B contract with no claims raised:
-     *"Dashboard needs complete rework"*.
-
-     ⚠️⚠️ THE PAGE HAD NO SUBJECT WHEN ITS ONLY SUBJECT WAS EMPTY. Every block derived from the
-     CLAIMS pipeline: `ccTimeHTML()` returns '' outright with no claims, `ccMoneyTable()` collapses
-     to one sentence, the legend suppresses itself — and the one non-claims block (packages) was
-     empty too. So the whole tab rendered TWO SENTENCES AND ONE NUMBER, then ~700px of nothing,
-     on the state a project is in for most of its life. A register is not only its disputes.
-
-     ⚠️ Owner chose the larger of the two answers on offer — commercial first, claims folded in —
-     so the subject is now the CONTRACT and where its money has got to, with the pipeline as one
-     section of it rather than the whole page.
-
-       1 · a VERDICT line: the contract, who it is with, and what has been certified
-       2 · FOUR cards, each triggering a different action
-       3 · the CONTRACT RECORD's own facts — reference, counterparty, signed date, ALL of which
-           the old dashboard computed nothing from and never showed
-       4 · the packages, unchanged — the contract value broken up
-       5 · the claims pipeline, and a POSITIVE answer when there is none
-
-     ⚠️⚠️ THE COMMERCIAL FIGURES ARE FILLED IN ASYNCHRONOUSLY and the page is useful before they
-     land. `BOQ.commercialSummary()` is a read; the Dashboard is the LANDING view, so blocking the
-     first paint on it would make every open of this module wait on the BOQ — which is what the
-     Contract tab's lazy mount exists to avoid. Everything here that comes from `rows` and `PKGS`
-     is already in memory and renders immediately.
-
-     ⚠️ NOTHING ON THIS TAB MOVES WITH THE FILTERS. It reads `rows`, never `visibleRows()` — a
-     summary that changed when someone typed in the search box would be reporting the filter.
-     ========================================================================================== */
-  function ccDashHTML() {
-    var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
-    var short = function (v) {
-      return (v == null || isNaN(v)) ? '—' : (window.Fmt && Fmt.moneyShort ? Fmt.moneyShort(v) : money(v));
-    };
-    var of = function (t) { return rows.filter(function (r) { return r.record_type === t; }); };
-    var contracts = of('Contract');
-    var ctVal = contracts.reduce(function (a, r) { var v = Number(r.amount); return a + (isFinite(v) ? v : 0); }, 0);
-    var pk = (PKGS || []).slice();
-    var pkAmt = pk.reduce(function (a, r) { var v = Number(r.contract_amount); return a + (isFinite(v) ? v : 0); }, 0);
-    var base = ctVal > 0 ? ctVal : pkAmt;
-
-    /* ---- the contract's own facts, which this tab has never shown -------------------------
-       ⚠️ The LARGEST contract record leads. A project routinely carries one; where it carries
-       several the biggest is the one a reader means by "the contract", and the rest are counted
-       beside it rather than silently dropped. */
-    var lead = contracts.slice().sort(function (a, b) {
-      return (Number(b.amount) || 0) - (Number(a.amount) || 0);
-    })[0] || null;
-
-    /* ---- claims exposure, from rows already in memory -------------------------------------
-       ⚠️ Through PDClaims, never a local rule: the module band, the project dashboard panel and
-       the portfolio view must not describe this register differently. */
-    var claimish = PDClaims.claimsOnly(rows);
-    var cash = claimish.filter(function (r) { return PDClaims.typeOf(r) !== 'EOT'; });
-    var eots = PDClaims.ofType(claimish, 'EOT');
-    var pendVal = cash.length ? PDClaims.pendingValue(cash, 'eval_amount', 'sub_amount') : null;
-    var shortfall = cash.length ? PDClaims.shortfallOf(cash, 'sub_amount', 'approved_amount') : null;
-    var eotGranted = eots.length ? PDClaims.sum(PDClaims.decided(eots), 'approved_days') : null;
-    var eotPending = eots.length ? PDClaims.pendingValue(eots, 'eval_days', 'sub_days') : null;
-
-    /* ⚠️⚠️ EXPOSURE IS PENDING + SHORTFALL, the same pair the portfolio view ranks projects by
-       (2026-09-15 q). Pending is what the client has not answered; shortfall is what they
-       answered DOWN. Reporting only one of them understates the position in whichever direction
-       that project happens to sit. */
-    var exposure = (pendVal == null && shortfall == null) ? null : (Number(pendVal || 0) + Number(shortfall || 0));
-
-    /* ⚠️ APPROVED CHANGE ORDERS ONLY — not claims, and not anything still pending. A change
-       order the client has approved has altered the contract sum; a cost claim is a recovery against
-       the existing one, and a pending anything has altered nothing yet. Through `PDClaims.sum` over
-       `PDClaims.decided`, like every other figure on this page, so the definition of "decided"
-       cannot drift from the pipeline table's. */
-    var varn = PDClaims.sum(
-      PDClaims.decided(PDClaims.ofType(claimish, 'Change Order')), 'approved_amount') || 0;
-
-    /* ⚠️⚠️ THE SHARED COMPONENT, NOT A MODULE-LOCAL CARD. `UI.kpi` reserves the two lines a
-       wrapping label needs so that a one-word and a three-word label still line their VALUES up
-       across the row, and `UI.kpis` is the shared auto-fit strip. This is the 2026-09-10 (w2)
-       convergence, where five modules each hardcoding their own column count and breakpoints was
-       the defect — and where `.pd-kpi` being used NOWHERE on a page was itself the finding.
-       ⚠️ `--pd-ok` / `--pd-warn` are SURFACE tokens and would fail AA as small text (3.46:1 for
-       warn). `.pd-kpi-value` is 20px/800 — LARGE text, a 3:1 threshold — which both clear.
-       Checked against the token note rather than assumed. */
-    function card(label, val, sub, tone, title) {
-      return UI.kpi(label, val, { sub: sub || '', cls: tone ? 'pd-kpi-' + tone : '', title: title || '' });
-    }
-
-    /* ⚠️⚠️ "NONE RAISED" IS AN ANSWER, NOT AN ABSENCE, and this is the half the old page got
-       wrong. On a clean register the honest reading is *no exposure* — good news, stated as
-       such — rather than three empty states apologising for having nothing to show. */
-    /* ⚠⚠ SUB-LINES ARE ONE SHORT LINE, NOT A SENTENCE. `.pd-kpi-sub` is
-       `white-space:nowrap; text-overflow:ellipsis` by design, so anything past ~34 characters is
-       not shortened — it is CUT, mid-figure. Measured in the harness at a 235px card: the full
-       peso amounts ran off as "₱632,924,530 of ₱3,670,000,00…", which reads as a DIFFERENT
-       NUMBER rather than as a truncation. Every sub here is short-form money and is asserted
-       against `scrollWidth > clientWidth`. */
-    var expCard = claimish.length
-      ? card('Claims exposure', money(exposure),
-             short(pendVal) + ' pending · ' + short(shortfall) + ' cut',
-             exposure > 0 ? 'warn' : 'ok',
-             /* ⚠ The full sentence lives on the TITLE, where it cannot be cut. The sub-line is
-                one ellipsised line and "cut" is the register's own word for a shortfall. */
-             money(pendVal) + ' awaiting a decision from the client, ' + money(shortfall) +
-             ' claimed but not certified across decided records')
-      : card('Claims exposure', 'None', 'none raised on this contract', 'ok');
-
-    var timeCard = eots.length
-      ? card('Time granted', (eotGranted == null ? '—' : num(eotGranted) + 'd'),
-             (eotPending ? num(eotPending) + 'd still with the client' : 'nothing outstanding'),
-             null)
-      : card('Time granted', 'None', 'no extension of time sought', 'ok');
-
-    /* ---- the verdict ---------------------------------------------------------------------- */
-    var who = lead && lead.counterparty ? ' with <b>' + esc(lead.counterparty) + '</b>' : '';
-    var when = lead && lead.date_filed ? ' · signed ' + esc(Fmt.date(lead.date_filed)) : '';
-    var verdict = ctVal
-      ? '<b>' + short(ctVal) + '</b> contract' + who + when
-      : (pk.length ? '<b>' + short(pkAmt) + '</b> across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's')
-                   : 'No contract recorded on this project yet');
-
+    var n = rows.length;
     return '<div class="cc-dash">' +
-      '<div class="cc-dash-verdict">' + verdict +
-        /* filled by ccDashFill(); the page is readable before it lands */
-        '<i id="cc-dash-comm" class="cc-dash-comm">reading the bill of quantities…</i></div>' +
-
-      UI.kpis(
-        /* ==== THE REVISED CONTRACT SUM =====================================================
-           ⚠️⚠️ AN APPROVED VARIATION CHANGES THE CONTRACT, and this card did not say so.
-           Original + approved variations = the **revised contract sum**, which is the figure every
-           commercial report is measured against — valuation, retention, final account. The page
-           held both halves and printed only the first, so a project with ₱400M of approved change
-           orders showed the same "Contract value" as one with none.
-           ⚠️ The VALUE stays the original and the revision is named beneath it, rather than
-           quietly restating the headline. A planner comparing this screen to a signed contract must
-           find the signed number where they left it; the revision is the news, and news belongs in
-           the line that explains. */
-        card('Contract value', money(ctVal),
-             varn ? '+' + short(varn) + ' approved · now ' + short(ctVal + varn)
-                  : (pk.length ? 'across ' + pk.length + ' package' + (pk.length === 1 ? '' : 's')
-                       : (contracts.length > 1 ? contracts.length + ' contract records' : 'no package breakdown')),
-             varn ? 'warn' : null,
-             varn ? money(ctVal) + ' signed, plus ' + money(varn) +
-                    ' of approved change orders = a revised contract sum of ' + money(ctVal + varn)
-                  : '') +
-        '<div id="cc-dash-certcard">' +
-          card('Certified to date', '—', 'reading the bill of quantities…') + '</div>' +
-        expCard + timeCard) +
-
-      /* ---- the contract record, which the old dashboard never showed --------------------- */
-      (lead
-        ? '<div class="cc-dash-h">The contract</div>' +
-          '<ul class="cc-dash-facts">' +
-            (lead.reference_no ? '<li><span>Reference</span><b>' + esc(lead.reference_no) + '</b></li>' : '') +
-            (lead.counterparty ? '<li><span>Counterparty</span><b>' + esc(lead.counterparty) + '</b></li>' : '') +
-            (lead.date_filed ? '<li><span>Signed</span><b>' + esc(Fmt.date(lead.date_filed)) + '</b></li>' : '') +
-            '<li><span>Value</span><b>' + money(Number(lead.amount) || 0) + '</b></li>' +
-            (contracts.length > 1
-              ? '<li><span>Other records</span><b>' + (contracts.length - 1) + ' more, ' +
-                money(ctVal - (Number(lead.amount) || 0)) + '</b></li>' : '') +
-          '</ul>' +
-          /* ==== THE SCOPE OF WORKS, AS A NAMED FIELD =======================================
-             Owner 2026-09-17: *"the contract description UI needs to be improved as well."*
-             It was `<p class="cc-hint">` — the same muted style the page uses for asides and
-             hints — holding the single most substantive sentence on the tab: the scope of works.
-             On OPW101 that is 40 words of comma-separated trades set in the colour the eye is
-             trained to skip, running the full width of a 1,900px monitor at roughly 220 characters
-             a line, which is about three times a readable measure.
-             ⚠️ It is now a labelled block, in body ink, capped at ~78ch. Long scopes clamp to
-             four lines behind a plain "Show full scope" toggle — `<details>`, the same disclosure
-             the hand-off band uses, so it survives the `innerHTML` rebuild every render does. */
-          (lead.description
-            ? (function (d) {
-                var txt = clean(d);
-                var LONG = 320;
-                return '<div class="cc-scope">' +
-                  '<div class="cc-scope-lbl">Scope of works</div>' +
-                  (txt.length > LONG
-                    ? '<details class="cc-scope-more"><summary><span>' +
-                        esc(txt.slice(0, LONG).replace(/\s+\S*$/, '')) + '…</span></summary>' +
-                        '<p>' + esc(txt) + '</p></details>'
-                    : '<p>' + esc(txt) + '</p>') +
-                  '</div>';
-              })(lead.description)
-            : '')
-        : '<p class="cc-hint">No contract record yet. <b>+ Add</b> records the contract, and its ' +
-          'value becomes the basis every claim and change order is measured against.</p>') +
-
-      ccProgrammeHTML(pk, eots) +
-
-      ccDashPkgHTML(pk, pkAmt, ctVal, base, money) +
-
-      /* ⚠ NO HEADING HERE. `ccMoneyTable` opens with its own `cc-dash-h` "The pipeline" in
-         BOTH of its branches, so adding one printed the heading TWICE — measured in the
-         harness, on every case. */
-      ccMoneyTable() +
-      ccTrendHTML(PDClaims.claimsOnly(rows).filter(function (r) { return PDClaims.typeOf(r) !== 'EOT'; })) +
-      ccTimeHTML() +
-      ccWhoHTML(PDClaims.claimsOnly(rows)) +
-      /* ⚠️⚠️ THIS GLOSSARY USED TO BE A PARAGRAPH UNDER THE TABLE. Owner 2026-09-17:
-         *"the highlighted UI needs fixing — these are tooltips and not necessarily to be shown in
-         the main page."* Four sentences of definitions, printed on every visit, below the figures
-         they define, for a reader who by then has already interpreted them. The definitions now sit
-         on the COLUMN HEADERS as `title` text — see `ccMoneyTable` — where the word being defined
-         actually is, and each header already carries a short `<i>` sub-label so the page still says
-         what the column means without being asked.
-         ⚠️ The one fact that is NOT a definition is kept, because nothing else on screen
-         implies it: this band summarises the whole register and does not follow the filters. It is
-         one muted line rather than a paragraph. */
-      (ccHasClaims()
-        ? '<p class="cc-mini cc-dash-scope">Whole register — this summary does not move with the filters.</p>'
-        : '') +
+      '<div class="cc-dash-h">Contract, change orders, cost claims &amp; extension of time' +
+        (n ? ' <span class="cc-mini">' + n + ' record' + (n === 1 ? '' : 's') + '</span>' : '') + '</div>' +
+      '<table class="pd-table cc-dashtbl"><thead><tr>' + CC_DASH_COLS + '</tr></thead><tbody>' +
+        ccTypeRows('Contract', of('Contract'), 'amount', null, null, money) +
+        ccTypeRows('Change orders', of('Change Order'), 'sub_amount', 'eval_amount', 'approved_amount', money) +
+        ccTypeRows('Cost claims', of('Claim'), 'sub_amount', 'eval_amount', 'approved_amount', money) +
+        ccTypeRows('Extension of time', of('EOT'), 'sub_days', 'eval_days', 'approved_days', days) +
+      '</tbody></table>' +
       '</div>';
-  }
-
-  /* ==== WHO IS CHASING WHAT ==================================================================
-     Owner 2026-09-17. The ageing band says a record has been with the client for 45 days; the
-     register says what it is worth. Neither says whose it is, so the one question a weekly
-     commercial meeting actually asks — *who is picking this up* — had no answer on the page.
-     ⚠️⚠️ UNASSIGNED IS A ROW, NOT AN OMISSION, and it sorts FIRST. A worklist that lists
-     the four people who have work and quietly leaves out the six records nobody owns is describing
-     a tidier project than the one that exists; the whole value of this band is spotting the pile
-     with no name on it.
-     ⚠️ PENDING ONLY. A decided record needs nobody to chase it, and including settled work
-     would make the busiest-looking person the one who has finished the most. */
-  function ccWhoHTML(claimish) {
-    var pend = claimish.filter(PDClaims.isPending);
-    if (!pend.length) return '';
-    var AMT = ['eval_amount', 'sub_amount'];
-    var by = {}, order = [];
-    pend.forEach(function (r) {
-      var k = ownerOf(r) || ' none';
-      if (!by[k]) { by[k] = { key: k, name: k === ' none' ? 'Nobody assigned' : k, n: 0, val: 0, oldest: 0 }; order.push(k); }
-      var g = by[k];
-      g.n++;
-      var age = PDClaims.agingOf(r, PDClaims.todayISO());
-      if (age != null && age > g.oldest) g.oldest = age;
-    });
-    /* Value per owner, through the same key list the headline and the bars use.
-       ⚠️ EOT records are counted in `n` but excluded from `val`: they carry DAYS, and adding a
-          day count into a peso total is the one mistake this module's key-pair convention exists
-          to make impossible. */
-    order.forEach(function (k) {
-      var mine = pend.filter(function (r) {
-        return (ownerOf(r) || ' none') === k && PDClaims.typeOf(r) !== 'EOT';
-      });
-      by[k].val = PDClaims.pendingValue(mine, 'eval_amount', 'sub_amount') || 0;
-    });
-    var list = order.map(function (k) { return by[k]; }).sort(function (a, b) {
-      if ((a.key === ' none') !== (b.key === ' none')) return a.key === ' none' ? -1 : 1;
-      return b.val - a.val || b.oldest - a.oldest;
-    });
-    return '<div class="cc-dash-h">Who is chasing what ' +
-        '<span class="cc-mini">' + pend.length + ' record' + (pend.length === 1 ? '' : 's') +
-        ' still open</span></div>' +
-      '<div style="overflow-x:auto;"><table class="pd-table pd-proj-table cc-who">' +
-      '<thead><tr><th>Responsible</th><th class="cc-r">Records</th><th class="cc-r">Value pending</th>' +
-      '<th class="cc-r">Oldest</th></tr></thead><tbody>' +
-      list.map(function (g) {
-        var tone = g.oldest > 90 ? ' cc-v-bad' : (g.oldest > 60 ? ' cc-v-warn' : '');
-        return '<tr' + (g.key === ' none' ? ' class="cc-who-none"' : '') + '>' +
-          '<td>' + esc(g.name) + '</td>' +
-          '<td class="cc-r">' + g.n + '</td>' +
-          '<td class="cc-r">' + (g.val ? money(g.val) : '—') + '</td>' +
-          '<td class="cc-r' + tone + '">' + (g.oldest ? g.oldest + 'd' : '—') + '</td>' +
-        '</tr>';
-      }).join('') + '</tbody></table></div>';
-  }
-
-  /* ==== THE TIME POSITION, WHICH THIS PAGE ONLY EVER HALF-STATED ==============================
-     Owner 2026-09-17: *"time, properly — claimed vs granted vs outstanding, against contract
-     duration."* The KPI strip said *Time granted: None* and the pipeline table carried the EOT
-     day counts, but nothing said what any of it MEANS: 30 days is either trivial or a crisis
-     depending on whether the contract runs for 1,090 days or 60, and the page never said which.
-     ⚠️⚠️ THIS IS THE TIME ANALOGUE OF THE REVISED CONTRACT SUM, and it is built the same
-     way: the signed completion date stays where a reader expects it, and the REVISED one —
-     original + granted days — is stated beside it. Approved extensions have moved the contractual
-     completion date; a page that shows only the original is describing a contract that no longer
-     exists.
-     ⚠️ THE DATES COME FROM THE PACKAGES, which is where a contract's own start and finish
-     live (see the hint on the record form: *"the contract's own start and finish live on the
-     package it defines"*). Latest package finish is the contract completion. With no package dates
-     the day counts still print and the ratio and revised date do NOT — an extension expressed as a
-     percentage of an unknown duration is a number with no meaning. */
-  function ccProgrammeHTML(pk, eots) {
-    if (!eots.length) return '';
-    var dec = PDClaims.decided(eots);
-    var granted = PDClaims.sum(dec, 'approved_days');
-    var refused = PDClaims.sum(dec, 'sub_days') - granted;
-    var pendD = PDClaims.pendingValue(eots, 'eval_days', 'sub_days') || 0;
-    /* ⚠️ `sub_days` across every EOT, decided or not — what has been ASKED for in total. The
-       pipeline table above splits it by stage; this is the one-line total that stage table cannot
-       give without adding its columns up in your head. */
-    var claimed = PDClaims.sum(eots, 'sub_days');
-
-    var starts = pk.map(function (k) { return k.start_date; }).filter(Boolean).sort();
-    var ends = pk.map(function (k) { return k.end_date; }).filter(Boolean).sort();
-    var s0 = starts[0], e0 = ends[ends.length - 1];
-    var durn = (s0 && e0) ? PDClaims.daysBetween(s0, e0) : null;
-    var revised = null;
-    if (e0 && granted) {
-      var d = new Date(e0 + 'T00:00:00Z');
-      d.setUTCDate(d.getUTCDate() + granted);
-      revised = d.toISOString().slice(0, 10);
-    }
-    function li(label, val, cls) {
-      return '<li><span>' + label + '</span><b' + (cls ? ' class="' + cls + '"' : '') + '>' + val + '</b></li>';
-    }
-    var dayTxt = function (v) { return v ? num(v) + 'd' : '—'; };
-    return '<div class="cc-dash-h">The programme ' +
-        '<span class="cc-mini">what has been claimed in time, and what has been granted</span></div>' +
-      '<ul class="cc-dash-facts">' +
-        (e0 ? li('Contract completion', esc(Fmt.date(e0))) : '') +
-        li('Claimed', dayTxt(claimed)) +
-        li('Granted', dayTxt(granted), granted ? 'cc-v-good' : '') +
-        (refused > 0 ? li('Refused', dayTxt(refused), 'cc-v-bad') : '') +
-        li('Still with the client', dayTxt(pendD), pendD ? 'cc-v-warn' : '') +
-        (revised ? li('Revised completion', esc(Fmt.date(revised)), 'cc-v-good') : '') +
-        (durn && granted
-          ? li('Extension so far', (Math.round(granted / durn * 1000) / 10) + '% of ' + num(durn) + 'd')
-          : '') +
-      '</ul>' +
-      (e0 ? '' : '<p class="cc-mini">No package carries a finish date, so the extension cannot be ' +
-        'stated against the contract duration. Package dates are set on the Contract tab.</p>');
-  }
-
-  /* ==== IS IT GETTING BETTER OR WORSE? =======================================================
-     Owner 2026-09-17: everything on this page was a SNAPSHOT. *"Claims exposure ₱20.70M"* does not
-     say whether that is up or down, which is the first thing anyone asks about a commercial
-     position — and the second is *since when*.
-     ⚠️⚠️ DERIVED FROM THE DATES ALREADY STORED, not from a snapshot table. `date_submitted`
-     says when a record went to the client and `date_approved` / `date_evaluated` say when it came
-     back, so the position on any past date is computable from rows already in memory. No migration,
-     no nightly job, and no risk of a history that disagrees with the register it came from.
-     ⚠️ The RULE lives in `PDClaims.exposureSeries`, not here — the portfolio view ranks
-     projects on this same pair, and a trend computed locally is how this screen and that one come
-     to tell different stories about the same register. */
-  function ccTrendHTML(cash) {
-    if (!cash.length) return '';
-    var AMT = ['eval_amount', 'sub_amount'];
-    var series = PDClaims.exposureSeries(cash, 12, AMT, 'sub_amount', 'approved_amount');
-    var now = series[series.length - 1], first = series[0];
-    /* ⚠️ NOTHING TO SAY IF NOTHING EVER HAPPENED. A flat line of twelve zeros is not a trend;
-       it is a register with no dated history, and drawing it would imply we had looked and found
-       stability. */
-    if (!series.some(function (x) { return x.total > 0; })) return '';
-    var peak = Math.max.apply(null, series.map(function (x) { return x.total; }).concat([1]));
-    var delta = now.total - first.total;
-    var dTxt = Math.abs(delta) < 1 ? 'level over the year'
-      : (delta > 0 ? 'up ' : 'down ') + Fmt.moneyShort(Math.abs(delta)) + ' since ' + first.label;
-    var dCls = Math.abs(delta) < 1 ? '' : (delta > 0 ? ' cc-v-bad' : ' cc-v-good');
-    var bars = series.map(function (x) {
-      /* ⚠️ A MONTH WITH NOTHING OUTSTANDING DRAWS NOTHING, not a 1px stub. A minimum height
-         would make "we were clear that month" look like "a little was outstanding". */
-      var h = x.total > 0 ? Math.max(3, Math.round(x.total / peak * 100)) : 0;
-      var sh = x.total > 0 ? Math.round(x.shortfall / x.total * 100) : 0;
-      return '<li class="cc-tr-col" title="' + esc(x.label + ' — ' + money(x.total) +
-          ' exposed (' + money(x.pending) + ' pending, ' + money(x.shortfall) + ' cut)') + '">' +
-        '<span class="cc-tr-bar" style="height:' + h + '%">' +
-          (sh ? '<i style="height:' + sh + '%"></i>' : '') + '</span>' +
-        '<span class="cc-tr-l">' + esc(x.label.slice(0, 3)) + '</span></li>';
-    }).join('');
-    /* ⚠️ A record decided with NO decision date cannot be placed in time, so it is left out
-       and said so — the same discipline the ageing band applies to a pending record that was never
-       submitted. A chart that silently drops rows is worse than one that admits it. */
-    var undated = now.undated
-      ? ' · <b>' + now.undated + '</b> decided record' + (now.undated === 1 ? '' : 's') +
-        ' carry no decision date and are not in this chart'
-      : '';
-    return '<div class="cc-dash-h">Exposure over the last 12 months ' +
-        '<span class="cc-mini"><b class="' + dCls.trim() + '">' + esc(dTxt) + '</b></span></div>' +
-      '<ul class="cc-trend">' + bars + '</ul>' +
-      '<p class="cc-mini cc-tr-note">Pending plus shortfall at each month end, derived from the ' +
-        /* ⚠️ "The RED part", not "the darker part" — measured on screen, the shortfall is
-           `--pd-red` on `--pd-warn` amber, which is brighter, not darker. A legend that describes
-           the wrong half sends the reader looking for something that is not there. */
-        'submitted and decided dates on each record. The red part of a column is the shortfall' +
-        undated + '.</p>';
-  }
-
-  /* The packages block, lifted out of ccDashHTML unchanged so the rebuilt dashboard reads as one
-     sequence rather than a wall. ⚠️ Every rule it carries is the owner's own from 2026-09-15 (f):
-     the packages are the contract value BROKEN UP, not a count beside it; the remainder is a ROW
-     because "not allocated to a package" is the useful fact; and the largest three are shown with
-     the remainder kept OUT of the fold. */
-  function ccDashPkgHTML(pk, pkAmt, ctVal, base, money) {
-    /* ⚠️ NOTHING IS PRINTED WHEN THERE ARE NO PACKAGES. Owner 2026-09-17: *"'No package
-       breakdown yet…' should be removed — it doesn't provide any valuable information, it just
-       states the current."* Right on both counts, and the state it stated is already on screen:
-       the Contract value card's own subtext reads **no package breakdown**. A paragraph repeating a
-       card three inches above it, in the body of a management dashboard, is noise that every reader
-       pays for on every visit so that a first-time reader learns where packages are set up. */
-    if (!pk.length) return '';
-    var pkRows = pk.sort(function (a, b) { return (Number(b.contract_amount) || 0) - (Number(a.contract_amount) || 0); })
-      .map(function (r) {
-        var v = Number(r.contract_amount);
-        var share = (base && isFinite(v)) ? Math.round(v / base * 100) : null;
-        return '<li class="cc-dash-pk"><span>' + esc([r.code, r.name].filter(Boolean).join(' · ') || 'Untitled package') +
-          '<i>' + (share == null ? 'no amount set' : share + '% of the contract value') +
-          (String(r.status) === 'archived' ? ' · archived' : '') + '</i></span>' +
-          '<b>' + money(isFinite(v) ? v : 0) + '</b></li>';
-      });
-    var rest = ctVal - pkAmt;
-    var PK_SHOW = 3;
-    var pkHead = pkRows.slice(0, PK_SHOW), pkMore = pkRows.slice(PK_SHOW);
-    if (ctVal && rest > 1) {
-      pkHead.push('<li class="cc-dash-pk cc-dash-rest"><span>Not allocated to a package' +
-        '<i>' + Math.round(rest / base * 100) + '% of the contract value</i></span><b>' + money(rest) + '</b></li>');
-    }
-    return '<div class="cc-dash-h">Packages <span class="cc-mini">' + money(pkAmt) + ' of ' + money(ctVal) + '</span></div>' +
-      '<div class="cc-dash-bar"><i style="width:' +
-        Math.max(0, Math.min(100, base ? Math.round(pkAmt / base * 100) : 0)) + '%"></i></div>' +
-      '<ul class="cc-dash-pks">' + pkHead.join('') + '</ul>' +
-      (pkMore.length
-        ? '<details class="cc-more"><summary>' + pkMore.length + ' smaller package' +
-          (pkMore.length === 1 ? '' : 's') + '<span>already counted in the bar above</span></summary>' +
-          '<ul class="cc-dash-pks">' + pkMore.join('') + '</ul></details>'
-        : '') +
-      (ctVal && rest < -1
-        ? '<p class="cc-hint">The packages total ' + money(pkAmt) + ', more than the contract records add up to. ' +
-          'One of the two is wrong — the package amounts or the contract record.</p>' : '');
-  }
-
-  /* ==========================================================================================
-     THE ASYNC HALF — the commercial position, read once the page is already on screen.
-
-     ⚠️⚠️ GUARDED BY `_loadGen`, THE MODULE'S OWN RACE TOKEN. A project switch bumps it, and a
-     summary that resolves after the switch must not paint the previous project's certified
-     figure over the new one. That is the exact defect 2026-09-15 (o) was written to fix, and an
-     async fill on the LANDING view is the easiest place to reintroduce it.
-
-     ⚠️ Every absent figure says WHICH state it is in rather than printing a zero — no BOQ, a
-     draft BOQ (which bills nothing, by the trigger), issued but unbilled, or a failed read.
-     ========================================================================================== */
-  async function ccDashFill() {
-    var gen = _loadGen;
-    var slot = document.getElementById('cc-dash-comm');
-    var cardSlot = document.getElementById('cc-dash-certcard');
-    if (!slot && !cardSlot) return;
-    if (!pid || !window.BOQ || !BOQ.commercialSummary) {
-      if (slot) slot.textContent = '';
-      if (cardSlot) cardSlot.innerHTML = certCard('—', 'no bill of quantities on this project');
-      return;
-    }
-    var s;
-    try { s = await BOQ.commercialSummary(pid); }
-    catch (e) { s = { state: 'none', err: (e && e.message) || String(e) }; }
-    /* the page may have moved on while that was out */
-    if (gen !== _loadGen) return;
-    slot = document.getElementById('cc-dash-comm');
-    cardSlot = document.getElementById('cc-dash-certcard');
-    if (!slot && !cardSlot) return;
-
-    var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
-    /* ⚠ SHORT-FORM in the sub-line, full figures in the verdict sentence above it. `.pd-kpi-sub`
-       ellipsises at one line, and a cut peso figure reads as a smaller number. */
-    var short = function (v) {
-      return (v == null || isNaN(v)) ? '—' : (window.Fmt && Fmt.moneyShort ? Fmt.moneyShort(v) : money(v));
-    };
-    var pctTxt = function (p) { return p == null ? '—' : (p * 100).toFixed(1) + '%'; };
-
-    var line = '', cv = '—', cs = '', tone = null;
-    if (s.err) {
-      line = ' · the bill of quantities could not be read';
-      cs = 'could not be read';
-    } else if (s.state === 'none') {
-      line = ' · no bill of quantities recorded';
-      cs = 'no BOQ on this project';
-    } else if (s.state === 'draft') {
-      /* ⚠️ Measured 2026-09-14 (q): `is_current` is false on every draft, so a project whose
-         BOQ is still a draft genuinely has no contract total to report. Say that, do not print 0. */
-      line = ' · the bill of quantities is still a draft, so nothing bills from it yet';
-      /* ⚠ PLAIN TEXT, NOT esc()'d. `UI.kpi` escapes `opts.sub` itself, so an ampersand in a
-         revision number or a billing reference would arrive here as `&amp;amp;` on screen. */
-      cs = 'BOQ rev ' + (s.revNo || '—') + ' is a draft';
-    } else if (s.state === 'issued') {
-      line = ' · BOQ ' + money(s.contract) + ' issued, nothing billed yet';
-      cs = short(s.contract) + ' issued, nothing billed';
-    } else {
-      line = ' · <b>' + pctTxt(s.poc) + '</b> certified, ' + money(s.revenue) + ' billed to date';
-      cv = pctTxt(s.poc);
-      cs = short(s.revenue) + ' of ' + short(s.contract) +
-           (s.lastBilling ? ' · billing ' + s.lastBilling : '');
-      tone = 'ok';
-    }
-    if (slot) slot.innerHTML = line;
-    if (cardSlot) cardSlot.innerHTML = certCard(cv, cs, tone);
-
-    function certCard(v, sub, t) {
-      return UI.kpi('Certified to date', v, { sub: sub, cls: t ? 'pd-kpi-' + t : '' });
-    }
-  }
-
-  /* ==========================================================================================
-     THE TIME HALF OF THE DASHBOARD — added 2026-09-15.
-     Owner: *"let's develop a dashboard in the contracts & claims register."* The money half
-     already existed (`ccDashHTML` above, shipped that morning); what it could not answer is the
-     question a commercial meeting actually opens with — **how long has the client been sitting on
-     this, and how long do they normally take?**
-
-     ⚠️⚠️ EVERY FIGURE HERE COMES FROM COLUMNS THAT ALREADY EXIST. `date_submitted`,
-       `date_evaluated` and `date_approved` have been on this table since 2026-07-20 and nothing
-       read them except the register's own per-row aging. No migration, no new field to maintain.
-     ⚠️ Money for claims and change orders, DAYS for EOT, never one total — `PDClaims` takes the
-       key pair from here rather than guessing, which is what makes that impossible to get wrong.
-     ⚠️ Unfiltered, like the band above it: a summary that moved when someone typed in the search
-       box would be reporting the filter rather than the register.
-     ========================================================================================== */
-  function ccTimeHTML() {
-    var money = function (v) { return (v == null || isNaN(v)) ? '—' : '₱' + num(Number(v) || 0); };
-    var claimish = PDClaims.claimsOnly(rows);
-    if (!claimish.length) return '';
-
-    var cash = claimish.filter(function (r) { return PDClaims.typeOf(r) !== 'EOT'; });
-    var eots = PDClaims.ofType(claimish, 'EOT');
-    var today = PDClaims.todayISO();
-
-    /* ---- what is with the client, and for how long ---- */
-    /* ⚠️⚠️ THE SAME KEY LIST `pendingValue` GETS, and the first cut did not do this: the bars
-       measured `sub_amount` while the “Pending value” KPI two lines above preferred `eval_amount`,
-       so the bars did not add up to the headline beside them. Caught by a test on the portfolio
-       view, which shares this rule — the bug was here too and its own test had asserted the wrong
-       figure as correct. */
-    var AMT = ['eval_amount', 'sub_amount'], DAYS = ['eval_days', 'sub_days'];
-    var ag = PDClaims.agingBuckets(cash, AMT, today);
-    var eotAg = PDClaims.agingBuckets(eots, DAYS, today);
-    var pendVal = PDClaims.pendingValue(cash, 'eval_amount', 'sub_amount');
-    var pendDays = PDClaims.pendingValue(eots, 'eval_days', 'sub_days');
-    var rec = PDClaims.recoveryOf(cash, 'sub_amount', 'approved_amount');
-
-    var bars = '';
-    var worst = Math.max.apply(null, ag.buckets.map(function (b) { return b.value; }).concat([1]));
-    ag.buckets.forEach(function (b) {
-      /* ⚠️ The bar is scaled to the LARGEST BUCKET, not to the total. Scaled to the total, a
-         healthy register (almost everything in 0–30) draws three invisible slivers and the one
-         bucket that matters cannot be compared against them. */
-      var w = Math.max(b.value ? 2 : 0, Math.round(b.value / worst * 100));
-      var tone = b.key === '90+' ? ' cc-age-bad' : (b.key === '61-90' ? ' cc-age-warn' : '');
-      bars += '<li class="cc-age' + tone + '"><span class="cc-age-l">' + esc(b.label) + '</span>' +
-        '<span class="cc-age-bar"><i style="width:' + w + '%"></i></span>' +
-        '<span class="cc-age-v">' + (b.n ? money(b.value) + ' · ' + b.n : '—') + '</span></li>';
-    });
-
-    /* ---- how long each hand-off takes ---- */
-    var st = PDClaims.stageDays(claimish);
-    var legs = ['toEvaluate', 'toApprove', 'endToEnd'].map(function (k) {
-      var l = st[k];
-      /* ⚠️ A leg with no completed records reads "no data", never 0 days. Zero says the client
-         turns these round the same day, which is the opposite of "we cannot tell yet". */
-      return kpi(l.label, l.days == null ? '—' : l.days + 'd',
-                 l.days == null ? 'no decided records yet' : 'average over ' + l.n);
-    }).join('');
-
-    /* ⚠️⚠️ THE HEADER COUNTS THE UNSENT ONES TOO, AND THE FIRST CUT DID NOT. `agingBuckets().n`
-       is the count of records with an AGE, so a record that is Pending but never submitted was
-       missing from this total while appearing on its own row two lines below — a header that
-       disagrees with the list under it. Caught by a test asserting the count, not by reading. */
-    var pendN = ag.n + ag.unsent + eotAg.n + eotAg.unsent;
-    var oldTone = ag.oldest == null ? '' : (ag.oldest > 90 ? ' cc-v-bad' : (ag.oldest > 60 ? ' cc-v-warn' : ''));
-    /* ==== NAME THE RECORD, NOT ONLY THE NUMBER OF DAYS ======================================
-       ⚠️ *"oldest 45 days"* says there is a problem. It does not say which record to chase,
-       which is the only action the figure supports, and a planner then had to scroll the register
-       and sort it by hand to find out. `agingBuckets` now returns the row alongside the count.
-       ⚠️ Reference first, description second, clipped: a reference is what the record is
-       called in an email to the client, and it is short. The description is the reminder of what it
-       was about and is routinely 40 words. */
-    var oldRow = ag.oldestRow || (eotAg && eotAg.oldestRow) || null;
-    var oldName = oldRow
-      ? ((oldRow.reference_no || '').trim() || clean(descOf(oldRow)).slice(0, 44) || 'one record')
-      : null;
-    return '<div class="cc-dash-h" title="Aging counts from DATE SUBMITTED, and only while a record is Pending. A record with no submitted date is listed separately — it is waiting on us, not on the client. Hand-off times average the records that carry both dates.">With the client ' +
-        '<span class="cc-mini">' + pendN + ' pending' +
-        (ag.oldest != null
-          ? ' · <b class="cc-oldest' + oldTone + '">oldest ' + ag.oldest + ' days</b>' +
-            (oldName ? ' · ' + esc(oldName) : '')
-          : '') + '</span></div>' +
-      '<div class="cc-kpis">' +
-        kpi('Pending value', money(pendVal), 'claims & change orders', pendVal ? 'warn' : '') +
-        kpi('Pending time', pendDays ? num(pendDays) + 'd' : '—', 'extension of time claimed') +
-        /* ⚠️⚠️ THE "OLDEST PENDING" CARD IS GONE BECAUSE IT DUPLICATED ITS OWN SECTION HEADER.
-           Measured on screen: the header renders "With the client — 3 pending · oldest 137 days"
-           and the card two lines below it read "Oldest pending 137d". One figure, twice, 40px apart.
-           ⚠️ What the card DID carry and the header did not is the TONE — amber past 60 days, red
-           past 90 — so that moved up into the header rather than going with the card. A
-           de-duplication that quietly deletes a signal is not a de-duplication. */
-        /* ⚠️ Recovery is null, not 0, until something has been decided — see PDClaims rule 2. */
-        kpi('Recovery rate', rec == null ? '—' : Math.round(rec) + '%',
-            rec == null ? 'nothing decided yet' : 'approved ÷ submitted, decided only',
-            rec == null ? '' : (rec >= 80 ? 'good' : (rec < 50 ? 'bad' : 'warn'))) +
-      '</div>' +
-      '<ul class="cc-ages">' + bars +
-        /* ⚠️ Never-submitted is its own line, never folded into 0–30. "We have not sent it" and
-           "they have not answered" are different problems with different owners. */
-        (ag.unsent ? '<li class="cc-age cc-age-unsent"><span class="cc-age-l">Not submitted</span>' +
-          '<span class="cc-age-bar"></span><span class="cc-age-v">' + money(ag.unsentValue) +
-          ' · ' + ag.unsent + '</span></li>' : '') +
-      '</ul>' +
-      /* ⚠️⚠️ FOLDED, NOT DELETED — and the summary carries the headline so it need not be opened
-         to get the answer. These are averages over decided records: a quarterly read, not a
-         per-visit one, and three cards of them sat between the aging bars and the register's own
-         table. ⚠️ This is the ONLY screen in the app that calls `PDClaims.stageDays` — checked, not
-         assumed — so deleting the row outright would have made that rule dead code with nothing on
-         screen left to justify keeping it.
-         ⚠️ A `<details>` rather than a hand-built popover: it opens and closes itself, is
-         keyboard-reachable for free, and has no state to lose — and this band is rebuilt by
-         `innerHTML` on every render, which is exactly what strands a hand-rolled toggle. */
-      '<details class="cc-more"><summary>How long hand-offs take' +
-        '<span>' + (st.endToEnd.days == null
-          ? 'nothing decided yet'
-          : 'submitted → decided averages ' + st.endToEnd.days + 'd') + '</span></summary>' +
-        '<div class="cc-kpis">' + legs + '</div></details>' +
-      '';   /* ⚠️ The aging note that used to print here is now the `title` on the "With the
-                 client" heading above — owner 2026-09-17: *"these are tooltips and not necessarily
-                 to be shown in the main page."* It defined a word (aging) rather than reporting a
-                 fact, and it sat three blocks BELOW the bars it defined. */
   }
 
   function kpiHTML(list, t) {
@@ -2592,6 +1950,13 @@ window.ContractsClaims = (function () {
     init: init,
     _internals: { agingOf: agingOf, daysBetween: daysBetween, totals: totals, num: num, clean: clean,
       descOf: descOf, visibleRows: visibleRows, VIEWS: VIEWS,
-      _set: function (o) { if (o.rows) rows = o.rows; if (o.view) view = o.view; if (o.filters) filters = o.filters; if (o.pid) pid = o.pid; } }
+      /* render / switchTab / ccDashHTML: exposed so the Dashboard tab can be driven and its
+         markup inspected from a harness without a live Supabase session — the same shape as
+         `_set` below, extended rather than duplicated. */
+      render: render, switchTab: switchTab, ccDashHTML: ccDashHTML,
+      _set: function (o) {
+        if (o.rows) rows = o.rows; if (o.view) view = o.view; if (o.filters) filters = o.filters;
+        if (o.pid) pid = o.pid; if (o.pkgs) PKGS = o.pkgs; if (o.canWrite != null) canWrite = o.canWrite;
+      } }
   };
 })();

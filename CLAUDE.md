@@ -103,13 +103,15 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-17 (q) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
+### 2026-09-17 (r) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
 
-⚠️ **Re-lettered `(h)` → `(q)` on merge** — a concurrent session independently used `(h)` on
-2026-09-17 for its own, unrelated entry (*"Planners get every module"*, which widened
-`AppAuth.moduleVisible`'s default with `MODULE_ALL_ROLES`/`seesRestrictedModules`). Both kept
-whole; this one moved to the next free letter past the day's highest (`p`), since `(o)` reads
-as skipped deliberately elsewhere in this file's own convention and is not reused here either.
+⚠️ **Re-lettered `(h)` → `(q)` → `(r)`, TWICE on merge.** First a concurrent session independently
+used `(h)` on 2026-09-17 for its own, unrelated entry (*"Planners get every module"*, which widened
+`AppAuth.moduleVisible`'s default with `MODULE_ALL_ROLES`/`seesRestrictedModules`) — moved to `(q)`,
+the next free letter past that day's highest (`p`) at the time. A second concurrent session then
+independently ALSO picked `(q)`, for an unrelated Schedule Setup entry — kept whole, below, and this
+one moved again to `(r)`, the next free letter now that both `(p)` and `(q)` are spent. `(o)` is
+still skipped, as it reads deliberately absent elsewhere in this file's own convention.
 ⚠️ **The two changes compose, not collide** — `moduleVisible` now checks `USER_ADMIN_ALLOWED`
 for role `user`/`admin` FIRST (returning false outright for anything outside the eight-module
 list), and only a role that survives that check reaches `!m.superAdminOnly || seesRestrictedModules(profile)`,
@@ -153,6 +155,175 @@ real `user`/`admin` account's sidebar.
 `assets/js/auth.js?v=` → `20260917zh` (28 pages, shared) — sort-checked past every other
 `auth.js?v=` token this day's cascade of entries reached. No `MODULE_V` bump — no module
 `index.html` changed structurally; `admin.html` is fetched at its own URL and is not a module page.
+
+### 2026-09-17 (q) — Schedule Setup: the Structure step splits in two, Next walks the tabs, Generate ends with the push, and the Flowline goes
+
+Owner, a twelve-item list across Schedule Setup, the schedule UI and the LSM, then three clarifications
+in flight. This entry covers the seven that are done; the rest are named at the bottom rather than
+half-built.
+
+### ⚠️⚠️ THE STRUCTURE STEP DID NOT MOVE — IT SPLIT, AND THAT IS WHAT MADE THE MOVE POSSIBLE
+
+Owner: *"Remove this step let's integrate with the project phases step. Let's brainstorm."*, then
+*"move this step after working calendars"*, and — after the brainstorm — *"Construction Library is ok
+to be a second view of the Activities Step."*
+
+Structure carried **two views that are not one subject**. **5PMLC is literally the project
+lifecycle**, so it and the Project phases step were the same thing seen twice: phases DECIDES which
+branch is which, 5PMLC SHOWS the tree that produces. Merging those deduplicates a screen. The
+**Construction Library** is different — the work inside Execution — and it is a READ of the places
+and the items, which is exactly why this file used to argue the merged step **could not lead**:
+
+> *"That is also why the merged step sits HERE and not at position 2: of its two views, only 5PMLC
+> could have led."*
+
+That objection was right about the Library and wrong about nothing else. Sending the Library to the
+step that OWNS its items **answers** it rather than overriding it, and what is left — the lifecycle
+phases and the tree they make — is a structural decision a planner can take before a single activity
+exists. So it can lead.
+
+| | before | after |
+|---|---|---|
+| build rail | Calendars · Activities · Floors & Zones · **Structure** · Repetition · **Project phases** · Generate | Calendars · **Project phases** · Activities · Floors & Zones · Repetition · Generate |
+| steps | 7 | **6** |
+
+⚠️ **One tab mechanism, two steps, keyed by step TITLE and never by index** — the rail is renumbered
+by `sbSyncSteps` per path, so a remembered index would point at a different step on the import path.
+⚠️ **`stStructure` is DELETED, not left dead** (zero call sites), along with `strTabs` and the
+`strView` trio; a renderer nothing calls reads as working code to every tool. ⚠️ **`strBridge`
+SURVIVES** and is rendered by the new shell — it is the line explaining that Library items become
+branches inside Execution Phase *only on push*, which is the one thing that stops "editing here" and
+"editing there" being confused. Deleting it with its host would have thrown away real guidance.
+⚠️⚠️ **Every retired title still resolves.** `_stepNo` answers an EMPTY STRING for a name it cannot
+find, and a blank where a step number belongs reads as a broken reference — so `Structure`, `5PMLC`
+and `Construction Library` alias onto the steps that absorbed them, and `gotoStep` (which other
+modules call) now routes **to two different steps with the right tab showing**, where it previously
+pointed at a step that no longer exists and would have failed silently.
+
+### Next and Back walk the tabs before they leave the step
+
+Owner, mid-flight: *"Next/Finish for schedule setup specifically for activities: it should move
+through each tab not directly to the next step."*
+
+⚠️⚠️ **A STEP WITH TABS IS NOT FINISHED WHEN ITS FIRST TAB IS.** Next jumping straight past the second
+view means the Construction Library and the 5PMLC tree are only ever reached by noticing the tabs —
+which is how a view ends up never opened. ⚠️ **Back is symmetric**, or the pair disagrees: Next walks
+you forward through two tabs and Back takes you out of the step from the first of them, skipping the
+one you just saw. ⚠️ **The button says which it will do** — *"Construction Library →"* rather than a
+bare *"Next →"* — and moving into a step from either direction lands on the matching end of its tabs,
+so Back-then-Next cannot show two different screens.
+
+### Generate: the building, then the push, in that order
+
+Owner: *"instead of the current gantt and table preview, move the vertical stacking here for internal
+and external. retain the project start date"*, and then *"Push down to the bottom is the final step in
+terms of sequence and reading the page it should be seen when the whole page is scrolled down."*
+
+The old preview was a duration-per-zone bar list plus every generated row in a scrolling table — an
+inventory. The question at the push is *where does this building get to, and when*, which is the shape
+the stacking answers and a 2,000-row table does not. Both bases sit side by side because **the
+difference between them is the decision being made**.
+
+⚠️ **Nothing is re-derived**: the cards come from `stackTowerSVG`, the same renderer the Repetition
+step's Stacking tab uses, fed this basis's own finish dates. Two renderers of one model is how this
+module once shipped a 3D view that disagreed with the 2D view of the same data. ⚠️ The trade and tower
+chips are the stacking's own state, so narrowing applies to **both columns at once** — comparing
+internal against external through two independent filters would be comparing two different buildings.
+⚠️⚠️ **The zero-duration warning survives the rewrite.** It is what turns *"only one trade was pushed"*
+from a surprise afterwards into a sentence before — the reported Allied-Services-only case — and
+dropping it with the table would have removed the one thing in the old preview that prevented a bad
+push. ⚠️ The push bar is **the last thing the step renders**, so the Back / Save setup footer lands
+directly beneath it: it is the only irreversible action in the wizard and it used to sit **above** the
+preview it is meant to be judged on.
+
+### ⚠️⚠️ THE PUSH STOPS ASKING — AND THE SCENARIO COULD NOT BE KEYED THE OBVIOUS WAY
+
+Owner: *"default push is for external. simultaneous push for internal but will proceed to scenario."*
+External is the contract, so it is what the live schedule holds; internal is the target, which is what
+a what-if scenario is for. The chooser made a planner pick one and lose the other.
+
+⚠️⚠️ **THE IDS DO NOT MATCH BETWEEN THE TWO BASES, AND KEYING ON THE INTERNAL ONES WOULD HAVE FAILED
+SILENTLY.** `pushToSchedule` allocates `SB<rank><nnnnn>` **by sequence position within one basis's
+row set**, and the two sets are not the same rows: `generate()` drops any activity whose duration is
+0 on that basis. So the same piece of work gets a **different id** under internal than under external.
+A scenario built from the internal generate would key on ids the live schedule does not have — and
+`restoreScenario` skips an unknown id with `if (!r) return;`, **silently**. It would look captured
+and restore nothing. The stable identity across the two is `(loc.uid, act.id)`, so that is the join:
+the scenario is keyed on the **external** rows' real ids, carrying the internal dates.
+
+⚠️ **What cannot be represented is counted and said.** Work that exists only on the internal basis has
+no live row for a scenario to point at; the toast names how many rather than dropping them quietly.
+⚠️ **A failed capture never fails the push** — the activities are in, and rolling them back over a
+convenience would be far worse; an un-migrated database says so and names the migration.
+
+### The LSM folds, and the clashes can be put away
+
+Owner: *"The Gantt should be that the WBS should fold all into one row not see the ladder"*, then
+*"LSM Gantt bars intentionally will fold into the same bar for multiple activities. Let's also add the
+option not to show the clashes."*
+
+Grouping by every location level and then collapsing produced **Tower rows with Level rows nested under
+them** — a ladder to read past before reaching the storeys, which is not what a time-location chart is.
+Grouping by the **floor level alone** makes every storey a top-level row: no ancestors, no zone or unit
+rows beneath, and several activities deliberately sharing one bar. ⚠️ It falls back to the full ladder
+when no floor level can be identified — one row per storey is meaningless when nothing names a storey —
+and the collapse that followed now runs **only on that fallback**, since a single grouping dimension has
+no descendants left to close and calling it would be a no-op dressed as an action.
+
+⚠️⚠️ **THE CLASH TOGGLE HIDES THE DISPLAY, NOT THE FINDING.** The deck calls an overlap a *"possible
+pitfall"* and the strip has always said some overlap is deliberate; on a programme where most are
+intended, a permanently-lit row of red chips trains a planner to ignore the one that matters.
+`_lsmClash()` still computes, **the count is still printed**, and one click brings it back — so this
+can never become a schedule that looks clean because somebody switched the evidence off and forgot. One
+flag gates both the strip and the on-bar marks, read in each place rather than copied.
+
+### The Flowline is removed
+
+Owner: *"Flowline - let's remove"*, confirmed mid-flight: *"Flowline button is in the toolbar let's just
+remove this."* The button, the ~190-line renderer, its CSS block, `flowlineMode`, `setFlowlineMode`,
+the view-key entry, the toolbar shed list and every call site. `_lsmAggOn()` collapses to `_lsmRows`.
+
+⚠️⚠️ **THE COMMENTS WERE MOST OF THE WORK, AND TWO OF THE STRINGS WERE USER-FACING.** Fifteen comments
+claimed things that stopped being true — and the LSM button's own tooltip and the Group menu preset's
+both told the planner to use *"the Flowline button"*, a control that no longer exists. A third hint sent
+them to *"the flowline's footnote"* for an unrankable storey; with the chart gone that storey keeps its
+own row and is simply left out of the rate, which is what it now says. A tooltip naming a control nobody
+can find reads as a broken app.
+
+⚠️ **Twice I deleted the OPENING line of a multi-line comment and left its body as bare code** — the
+parse caught both. A scanner for orphaned `*/` now reports 2, and ⚠️ **both are pre-existing regex
+literals**, measured identical on `origin/main` rather than assumed.
+
+### Verified
+
+Inline block **parses, 0 failures**; every identifier the new code names is checked for a declaration in
+the same scope (`node --check` cannot see a ReferenceError, which is the z6 lesson). `wiring-check`
+**139 passed, 0 failed**; `dead-hooks` **9**, the documented baseline; `dark-remap` 0 findings; 0 NUL
+bytes. CSS braces **2279/2278** against `origin/main`'s **2299/2298** — the delta of 1 is this file's
+own recorded off-by-one, **identical on both sides**, so the flowline block came out and the two new
+blocks went in balanced.
+
+⚠️⚠️ **A `git stash -q` INSIDE A THROWAWAY GUARD SWALLOWED THE WHOLE CHANGE, AND THREE OF MY OWN
+MEASUREMENTS WERE TAKEN AFTER IT.** The checks that followed reported `origin/main`'s numbers as if
+they were mine — including a CSS comparison that read "identical" because both sides were the same file.
+Caught because `git diff --stat` came back **empty**. Recovered from `stash@{0}` (the other session's
+`stash@{1}` untouched) and every gate re-run against the real tree. The lesson is not "check the diff",
+it is **do not stash in a shared clone at all** — which is a rule this repo already has.
+
+⚠️ **NOT VERIFIED SIGNED IN**, and that gap is wider than usual here: the wizard's steps, the tab walk,
+the stacking preview and the push all need a loaded project, and nothing in this change has been driven
+against one. The first things to try are opening Schedule Setup (the rail should read **Calendars →
+Project phases → Activities → …**), pressing **Next** on Activities (it should go to Construction Library,
+not to Floors & Zones), and one push (external into the schedule, internal named in the scenario list).
+
+⚠️ **NOT DONE, and deliberately not half-built:** the **label on a one-off calendar date** (item 1.1 —
+`extra_holidays` is a Postgres `date[]` with nowhere to put a label, so it needs a widening migration
+or a sidecar `jsonb`, not a UI change); **sub-groupings before activities exist** (item 2.3 — the Library
+derives its groupings from activities, so authoring one first is a real feature rather than a control);
+and the **typography and table sweep** (items 4.1 / 4.2 — that wants measurement first, and "follow the
+excel feature" needs a decision on whether the setup tables adopt `PDGrid`).
+
+`MODULE_V` → `20260917zh`, sort-checked past `20260917zg`.
 
 ### 2026-09-17 (p) — The personal sandbox: one function change isolates all 16 modules, and a checker that had never read its own subject
 
