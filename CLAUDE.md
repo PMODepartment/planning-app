@@ -103,6 +103,61 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (f) — The dropdown LIST finally matches the app, in CSS, with no JavaScript
+
+Owner: *"meeting description dropdown in Meetings module needs to be improved. We've already done a
+UI sweep for this — let's fix across all of the modules."*
+
+#### The sweep did land. It could not reach the part that was wrong.
+The **closed** control has matched the app for a while — `.pd-input, .pd-select` and the `min-height`
+note beside it are that work. What never matched is **the list that opens**: a `<select>`'s popup is
+drawn by the operating system, at the OS's size, in the OS's colours, and no stylesheet in this repo
+could reach it. That grey slab in the screenshot was Windows, not us.
+
+#### `appearance: base-select`
+It moves the picker into the page, where `::picker(select)`, `option`, `::checkmark` and
+`::picker-icon` become real, styleable parts. The list now uses the same `--pd-card` / `--pd-line` /
+`--pd-shadow-xl` tokens as every other floating surface in the app — `.pd-iconmenu`, the project
+switcher, the filter popovers — so it belongs to the same family rather than merely not being the
+OS one.
+
+⚠️⚠️ **Behind `@supports`, so this adds a capability and removes none.** A browser without
+`base-select` renders exactly as it does today. Confirmed available in this app's own engine:
+`CSS.supports('appearance','base-select')` → **true** on Chromium 152.
+
+⚠️ **`:not([multiple]):not([size])`.** base-select is for drop-down selects only. Project Schedule
+ships `<select multiple size="4">`, which is a list box — a different control, and naming it here
+would ask for a picker that has no meaning.
+
+⚠️ **Zero JavaScript, and that was the deciding factor.** The alternative — a custom dropdown
+component replacing every `<select>` — would touch every form in the app and put keyboard support,
+mobile behaviour and `el.value` reads at risk, for a styling complaint. This changes no markup, no
+handler and no test.
+
+#### Verified in the browser, both themes
+| | light | dark |
+|---|---|---|
+| picker background | `#FFFFFF` (`--pd-card`) | `#2B2C2B` (`--pd-card`) |
+| picker border | `#DCDBDB` (`--pd-line`) | `rgba(255,255,255,.12)` |
+| option text on picker | — | **12.22:1** |
+
+The closed control and the open list resolve to the same background in both themes. Option padding
+7/10, radius 6px, 12.5px type; the checkmark is given a **fixed 14px** whether or not it shows, so
+labels do not shift when the selection moves down the list.
+
+#### One thing I could not reproduce
+Owner: *"dropdown clips."* Measured all four representative selects in a harness with the real
+Gotham loaded — `.pd-select`, the record dialog's, the wizard's and the meeting type — and every one
+had **2–3px of headroom**, none clipping. The heights do differ (32 / 34 / 39px), but that is a
+toolbar control against two dialog controls and the `min-height` note above already treats that as
+deliberate. Reporting it as not-found rather than "fixed": the picker styling changes how these
+render anyway, so it is worth a second look on the live page.
+
+`wiring-check` 139/0, `dark-remap` 0 findings. `dashboard.css` → `?v=20260917z` (another session had
+moved it to `y`; sort-checked forward).
+
+---
+
 ### 2026-09-17 (e) — The critical path reaches WBS level, and the Gantt answers right-click like the grid
 
 #### Critical path at WBS level
