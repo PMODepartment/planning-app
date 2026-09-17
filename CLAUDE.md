@@ -104,6 +104,80 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (w) — Project Phases printed its own lede twice, and that one was mine
+
+⚠️ Re-lettered from `(v)` on rebase: a concurrent session landed its own 2026-09-17 `(v)` (below)
+first — itself already re-lettered from `(u)` for the same reason. Both entries kept in full; this one
+bumped past it rather than either side guessing, per the rule in this file's header.
+
+Owner: *"continue with project phases"* — page two of the 4.1 pass, checked the same way as page one:
+the shipped renderers executed against a fake DOM, mounted into the real `.sbld-panel` host with the
+real stylesheet, and read.
+
+### ⚠️⚠️ THE STEP OPENED WITH THE SAME SENTENCE TWICE
+
+Rendered at 1100px, the page began:
+
+> The lifecycle around **Execution**: what sits either side of construction, and the tree those
+> phases produce. No locations here, and nothing repeats per zone.
+>
+> The lifecycle around **Execution**. No locations here, and nothing repeats per zone.
+
+The second is a near-subset of the first, and it is a **regression from this morning's merge**. When
+Project Phases and 5PMLC became one page, `stPhases` and `stWbs` gained a `noHead` flag so the
+sub-renderer would stop emitting a second `<h2>` under the step's own — which is exactly what it did,
+and only that. The sub-renderer's own **lede** went on being emitted underneath the step's, and two
+`<p class="sbld-lede">` in a row is not a thing a reader attributes to a bug; it reads as the page
+repeating itself at them. The flag always meant *"the step above owns the introduction"*, not *"owns
+the heading tag"*, and it now does what it means.
+
+⚠️ The `.sbld-hint` under it stays: *"Dates are computed: each row follows the one above, so dragging
+a row moves everything below it"* is about this half's grid specifically and is not said above.
+
+⚠️ **Why the first pass did not catch it.** Page one's harness rendered `stStart`, which delegates to
+nothing. `stPhasesStep`'s entire body is two delegated calls, and the fake DOM handed those children
+to objects nobody read — the harness reported **265 characters** of chrome as the whole page, and a
+page that rendered nothing looks exactly like a page with nothing wrong. Two fixes, both of which are
+the same mistake seen twice: `querySelector` now memoises by selector and splices the child's HTML
+back into the parent's, and the scope proxy no longer answers `'host'` — `with` shadows parameters, so
+a delegating renderer was passing a child element as its callee's `host` and the callee was writing
+into the parent instead. Delegated renderers are now compiled from their own shipped source rather
+than resolving to a no-op, so the page under test is the real composition.
+
+### A comment describing machinery that no longer exists
+
+`stWbs` still explained that it emits no `<h2>` because *"this is the 5PMLC TAB of the Project phases
+step, and stTabbed owns the heading, the tabs and the bridge line above it."* There are no tabs on this
+step and no bridge line anywhere — both were deleted this morning. A comment describing deleted
+machinery is worse than no comment: it sends the next reader looking for a tab strip that cannot be
+found. It now describes the page it is actually on.
+
+### Checked and found sound
+
+Two things this page was suspected of and is not guilty of, recorded so they are not re-investigated:
+
+- **`_stepNo('Stacking')` resolves.** The Execution card reads *"built by steps 3–5"*, and `Stacking`
+  has not been a step title since Repetition's views became tabs. `STEP_ALIAS` maps it (and the other
+  four views) to `Repetition`, so the range is correct.
+- **`.sbld-phname` at 800 stays.** It is a phase card's title, which is the shape the app already uses
+  800 for (measured app-wide: 144 declarations, dominated by KPI values, panel titles and total rows).
+  The Setup still mixes 700 and 800 in seven families and they are still being judged one page at a
+  time rather than swept — the last blanket weight sweep in this repo got ten cases wrong.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline
+scripts parse · CSS brace balance identical to pinned `afd0838`, files genuinely differ · the Setup
+stays at **0 off-scale font-size declarations**. Rendered: **one** `.sbld-lede` (was two), `<h2>`
+16px/700, **100 elements Gotham, 0 Arial**, **0 elements overflowing** at 1100px and at 1024px.
+⚠️ Not verified at phone width — viewport emulation did not take in this pane (`innerWidth` stayed
+981 after a reload), so the narrow-layout media rules are unchecked and not claimed.
+`modules-grid.js` `?v=` → `20260917zm`.
+
+⚠️ **Also bumped `dashboard.css` `?v=` → `20260917zi`, which is not this entry’s change.** The
+portfolio-provenance merge (PR #127) added 44 lines to `dashboard.css` **after** `20260917zh` had been
+published under the previous commit, leaving changed content behind an already-served token — a browser
+holding `zh` would never fetch the new rules. Caught on the rebase by diffing the token against the
+file’s content rather than against the previous token.
+
 ### 2026-09-17 (v) — supabase-build.sql / VERIFY-schema.sql regenerated, and a real bug found in the checker doing it
 
 ⚠️ Re-lettered from `(u)` on merge: a concurrent session independently landed its own 2026-09-17 `(u)`

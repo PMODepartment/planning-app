@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zh" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zi" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
@@ -41520,6 +41520,8 @@
          title in the owner’s screenshot). Still emitted when something opens this renderer on
          its own, so the function stays usable standalone. */
       host.innerHTML = (noHead ? '' : '<h2>' + _stepNo('Project phases') + ' · The phases either side of construction</h2>') +
+        /* ⚠⚠ THE LEDE IS PART OF THE HEADING, not a separate thing — see the note above. */
+        (noHead ? '' :
         /* ⚠️ 158 WORDS BECAME 34. What went, and where it went instead:
              • "the other steps build the Execution Phase" — the step list says so, in order;
              • the back-scheduling rule — kept, because the dates move on their own and a planner
@@ -41530,7 +41532,7 @@
              • "only these phases exist" — a database constraint, not a lifecycle fact. It belongs
                to the moment someone tries to add a fifth, not to every visit. */
         '<p class="sbld-lede">The lifecycle around <b>Execution</b>. No locations here, and nothing ' +
-        'repeats per zone.</p>' +
+        'repeats per zone.</p>') +
         '<p class="sbld-hint">Dates are <em>computed</em>: each row follows the one above, so ' +
         'dragging a row moves everything below it. Tick <b>‖</b> to run alongside instead.</p>' +
         '<div class="sbld-phgrid">' + cards + '</div>' + span;
@@ -43745,8 +43747,11 @@
       var _liveActs = 0, _gen = 0;
       try { _liveActs = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
       try { _gen = generate('int').rows.length; } catch (e) {}
-      // ⚠️ No <h2> of its own: this is the 5PMLC TAB of the Project phases step, and stTabbed
-      // owns the heading, the tabs and the bridge line above it.
+      // ⚠️ No <h2> of its own when `noHead` is set: this is the lower half of the Project
+      // Phases step, which emits the one heading and the one lede. (It said “the 5PMLC TAB …
+      // stTabbed owns the heading, the tabs and the bridge line” — there are no tabs and no
+      // bridge line here any more, and a comment describing deleted machinery is worse than
+      // none: it sends the next reader looking for a tab strip that cannot be found.)
       host.innerHTML =
         // ⚠️ Stated before the tree, not after it: the count on every row is what the LIVE schedule
         // holds, which is 0 on a project that has never been pushed to — and that is not a report
