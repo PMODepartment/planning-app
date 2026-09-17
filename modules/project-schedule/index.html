@@ -38815,6 +38815,26 @@
         cfg.catalog = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) < 0; });
         cfg.activities = cfg.activities.concat(take); catSel = []; markDirty(); render();
       };
+      /* ⚠⚠ WAS EMITTED AND NEVER LOOKED UP — nothing did `querySelector('#b-delrows')`, so the
+         button had never done anything. Mirrors `#b-unload` below because it is the same question
+         asked of the same selection; the difference is that unload MOVES the rows to the holding
+         list and this discards them, so it asks first. `psConfirm` is the app's own confirm — see
+         the note above it; the browser's would be the wrong dialog in the wrong place. */
+      host.querySelector('#b-delrows').onclick = function () {
+        if (!cfg.activities.length) return;
+        var ids = _xlG ? _xlG.selectedIds() : [];
+        if (!ids.length) { UI.toast('Select the rows to delete first — click a cell, then Shift+↓ to extend.', 'warn'); return; }
+        var take = {}; ids.forEach(function (id) { take[String(id)] = 1; });
+        var gone = cfg.activities.filter(function (a) { return take[String(a.id)]; });
+        if (!gone.length) return;
+        psConfirm('Delete ' + gone.length + ' row' + (gone.length === 1 ? '' : 's') +
+          ' from the build? They are not sent to the holding list — the → button does that.',
+          function () {
+            cfg.activities = cfg.activities.filter(function (a) { return !take[String(a.id)]; });
+            markDirty(); render();
+            UI.toast('Deleted ' + gone.length + ' row' + (gone.length === 1 ? '' : 's') + '.', 'success');
+          }, { ok: 'Delete' });   // psConfirm is danger-by-default
+      };
       host.querySelector('#b-unload').onclick = function () {
         if (!cfg.activities.length) return;
         /* ⚠⚠ READ FROM THE GRID, NOT FROM `xa`/`xf`. Those were the old hand-rolled grid’s
@@ -45507,7 +45527,11 @@
       if (wb) wb.onclick = function () { openCalendarWizard(function () { render(); }); };
       var ch = host.querySelector('#sbld-cal-host');
       if (typeof renderCalendarsInto === 'function') {
-        try { renderCalendarsInto(ch); }
+        /* ⚠ `showClose:false` — the editor is INLINE in this step, so there is nothing to close.
+           Without it the editor draws a Close button and binds it to `opts.close || function(){}`,
+           which on this call site is the empty function. The other inline caller already passes
+           this; the precedent was there and this one missed it. */
+        try { renderCalendarsInto(ch, { showClose: false }); }
         catch (e) { ch.innerHTML = '<div class="sbld-empty">The calendar editor could not be drawn: ' + e2(e && e.message) + '</div>'; }
       } else ch.innerHTML = '<div class="sbld-empty">The calendar editor is unavailable on this page — reload and reopen this step.</div>';
     }

@@ -104,6 +104,74 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ak) — Two dead controls in the Setup, dead in two different ways; and the migration referenced a column that has never existed
+
+Owner: *"Close button not working. Let's check for dead buttons across the schedule setup"*, then, on
+running the class-code migration: *"`ERROR: 42703: column a.class_code does not exist`"*.
+
+### ⚠️⚠️ `#ps-cal-close` WAS WIRED, AND WIRED TO A NO-OP
+
+`renderCalendarsInto` draws a Close button unless `opts.showClose === false`, and binds it to
+`m.close()` where `m = { close: opts.close || function () {} }`. The Setup calls
+`renderCalendarsInto(ch)` with **no options at all**, so `showClose` is undefined (the button is
+drawn) and `opts.close` is undefined (the handler **is** the empty function). It has never done
+anything on this page.
+
+⚠️ The fix is not to give it a close: the Setup embeds the editor **inline in the step**, so there is
+nothing to close. `{ showClose: false }` is what the module's other inline caller already passes —
+the precedent existed and this call site missed it.
+
+### `#b-delrows` was emitted and never looked up
+
+"Delete selected rows" in the Activities grid: nothing anywhere did `querySelector('#b-delrows')`.
+Wired now, mirroring `#b-unload` beside it — the same question asked of the same selection, both
+reading `_xlG.selectedIds()`. The difference is that unload **moves** the rows to the holding list and
+this **discards** them, so it asks first through `psConfirm`, the app's own confirm.
+
+### The scan, and what it cannot see
+
+Two mechanical checks across the Setup's renderers and the editors and dialogs they open — an `id=`
+on a control nothing looks up, and a `data-*` hook nothing selects. Both now return **0**.
+
+⚠️ **Neither would have found `#ps-cal-close`**, because it is looked up and bound; the deadness is in
+the function it is bound to. Rather than claim coverage it does not have, the one shape it misses was
+hunted separately: `|| function () {}` as a handler default appears **once** in the whole module, and
+that once is this. Recorded so the next reader knows both what the scan covers and what it does not.
+
+⚠️ And the scan's first run reported `data-sl` and `data-sh` as dead. They are not: they are selected
+**with a value** — `[data-sl="0"]` — which a bare `[data-sl]` pattern misses. Fixed before reporting,
+because a scanner that cries wolf twice is one nobody runs a third time.
+
+### ⚠️⚠️ THE MIGRATION COUNTED A COLUMN THAT HAS NEVER EXISTED
+
+`migrations/2026-09-17-class-code-template-1164.sql` section 1 joined
+`boq_allocations a ... on c.code = a.class_code`. **`boq_allocations` has no `class_code`.** It links
+a BOQ item to an activity — `boq_item_id, activity_id, qty, method` — and never carried the string.
+The three tables that do are `project_schedule`, `boq_class_map` and **`boq_class_suggestions`**, and
+the last is the one meant. The count is the same question asked of the right table.
+
+⚠️ **The whole file was checked the same way rather than fixing the line that threw.** Every
+`table.column` the migration references was extracted and resolved against `supabase-build.sql`,
+following the aliases it binds: **one** bad reference, the one above; five others check out, now zero.
+Sending the owner back into a second `42703` would have been worse than the first.
+
+⚠️ This also corrects entry *(x)*, which stated that *"`project_schedule.class_code`, `boq_class_map`
+and `boq_allocations` carry these strings with no FK"*. Two of the three were right.
+
+### Also: the file the owner could not find
+
+*"@migrations/2026-09-17-class-code-template-1164.sql is not findable in the files i cannot migrate."*
+It is on `origin/main` (added in `a1ada63`). His working copy is **137 commits behind** at `eaf11ae`,
+which is why it is not there. ⚠️ Not pulled on his behalf: that clone holds **7 uncommitted files and
+2 unpushed commits** belonging to concurrent sessions, and a pull across that is his call, not mine.
+The corrected file was extracted with `git show origin/main:…` — which touches neither the tree nor
+the index — and handed to him directly.
+
+**Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · inline scripts parse · CSS brace balance identical to pinned
+`c000a2a` · `sql-struct` balanced · the migration now resolves **0** unknown columns against the
+schema. `modules-grid.js` `?v=` → `20260917zzi`.
+
 ### 2026-09-17 (aj) — Repetition's two long selects were in a 62px box, and the "How to use" pane left a quarter of the page empty
 
 Owner: *"Repetition step needs the UI sweep too"*, then *"the how to use collapsed panes are
