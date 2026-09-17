@@ -1,5 +1,44 @@
 # Module: contracts-claims
 
+## 2026-09-17 (a) — The record dialog stops clipping, amounts carry commas, and four sentences of glossary become tooltips
+
+Seven things the owner raised on the live project.
+
+**The Affected-work picker clipped.** *"Affected work is the one that clips in the window."* The
+record dialog is the shared `.pd-modal` at 520px, and the picker puts a tree and a programme preview
+side by side — ~220px and ~253px — so the preview's headline wrapped one word per line. Two changes:
+the dialog gets its own width class (`.pd-modal.cc-rec`, 760px, the same idiom as `.boq-wide`), and
+the picker now adapts with a **container query** rather than a media query. ⚠️⚠️ A media query cannot
+fix this and would look like it had: the box is narrow while the viewport is 1,920px, so every
+`max-width` rule would be false exactly when the bug is on screen. `@container` asks how much room
+*this component* has, and the answer holds in all three hosts it is mounted in.
+
+**Date filed / Date submitted did not line up.** `.cc-form` used `auto-fit`, so which fields shared
+a row was an accident of width — and **Status**, in a single cell, shunted the four dates down by
+one and split the pairs. Counted columns plus a full-width Status makes the pairing a property of
+the markup order, which is what expresses the pipeline: filed → submitted, evaluated → approved.
+
+**Amounts carry commas.** `58995925` and `5899592` are one keystroke apart and look identical.
+Grouped on blur, raw on focus — not while typing, which moves the caret to the end and turns editing
+the middle of a number into a fight. Safe because `n()` already **validates** commas rather than
+stripping them.
+
+**Four sentences of glossary left the page.** *"These are tooltips and not necessarily to be shown
+in the main page."* The pipeline definitions now sit on the column headers as `title` text — where
+the word being defined actually is — and each header already carried a short sub-label. The aging
+note became the `title` on the heading it explains. The one line kept is the only part that was not
+a definition: this band covers the whole register and does not follow the filters.
+
+**"No package breakdown yet…" is gone.** *"It doesn't provide any valuable information, it just
+states the current."* And the state it stated is already on screen — the Contract value card's own
+subtext reads *no package breakdown*.
+
+**The scope of works stopped being an aside.** It was `.cc-hint`: muted, small, the style this tab
+uses for footnotes — holding the most substantive sentence on the page, at ~220 characters a line.
+Now a labelled block in body ink, capped at 78ch, clamping behind a disclosure past 320 characters.
+
+`test-boq` 66/0, `wiring-check` 139/0, `dark-remap` 0 findings. Bumped to `?v=20260917a`.
+
 ## 2026-09-16 (i) — The dashboard rebuilt around the contract, and a roll-up that had been truncating at 1000 items
 
 Owner: *"Contracts & Claims Dashboard needs complete rework"*, and when asked whether that meant the

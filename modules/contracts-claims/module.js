@@ -552,10 +552,10 @@ window.ContractsClaims = (function () {
       '<div class="cc-sumwrap"><table class="cc-table cc-sum">' +
       '<thead><tr>' +
         '<th scope="col"><span class="cc-sr">Record type</span></th>' +
-        '<th scope="col" class="cc-r">Submitted<i>as claimed</i></th>' +
-        '<th scope="col" class="cc-r">Evaluated<i>after review</i></th>' +
-        '<th scope="col" class="cc-r">Approved<i>client approved</i></th>' +
-        '<th scope="col" class="cc-r">Disapproved<i>rejected outright</i></th>' +
+        '<th scope="col" class="cc-r" title="What was claimed, as submitted to the client — before any review.">Submitted<i>as claimed</i></th>' +
+        '<th scope="col" class="cc-r" title="The figure after review, before the client has decided.">Evaluated<i>after review</i></th>' +
+        '<th scope="col" class="cc-r" title="What the client approved. Claimed, not certified — certification is the bill of quantities.">Approved<i>client approved</i></th>' +
+        '<th scope="col" class="cc-r" title="What the client rejected outright. Records still pending a decision count in neither this nor Approved.">Disapproved<i>rejected outright</i></th>' +
         /* ⚠️⚠️ THE BASIS IS IN THE HEADER BECAUSE THE THREE FIGURES DO NOT RECONCILE ON SCREEN.
            Measured on the fixture: Submitted ₱145,400,000 minus Approved ₱68,500,000 is
            ₱76,900,000, while Shortfall reads ₱35,900,000 — because Submitted and Approved sum
@@ -564,7 +564,7 @@ window.ContractsClaims = (function () {
            the aging bars were measured on a different key from the headline beside them. Saying
            "decided only" at the point of confusion is the fix; the hint paragraph 400px further
            down was not, and had been there the whole time. */
-        '<th scope="col" class="cc-r">Shortfall<i>decided only</i></th>' +
+        '<th scope="col" class="cc-r" title="Submitted minus approved, across DECIDED records only — approved plus disapproved. Anything still pending is excluded, which is why these three columns do not reconcile across a row.">Shortfall<i>decided only</i></th>' +
       '</tr></thead><tbody>' + body + '</tbody></table></div>';
   }
   /* ==========================================================================================
@@ -706,7 +706,30 @@ window.ContractsClaims = (function () {
               ? '<li><span>Other records</span><b>' + (contracts.length - 1) + ' more, ' +
                 money(ctVal - (Number(lead.amount) || 0)) + '</b></li>' : '') +
           '</ul>' +
-          (lead.description ? '<p class="cc-hint">' + esc(clean(lead.description)) + '</p>' : '')
+          /* ==== THE SCOPE OF WORKS, AS A NAMED FIELD =======================================
+             Owner 2026-09-17: *"the contract description UI needs to be improved as well."*
+             It was `<p class="cc-hint">` — the same muted style the page uses for asides and
+             hints — holding the single most substantive sentence on the tab: the scope of works.
+             On OPW101 that is 40 words of comma-separated trades set in the colour the eye is
+             trained to skip, running the full width of a 1,900px monitor at roughly 220 characters
+             a line, which is about three times a readable measure.
+             ⚠️ It is now a labelled block, in body ink, capped at ~78ch. Long scopes clamp to
+             four lines behind a plain "Show full scope" toggle — `<details>`, the same disclosure
+             the hand-off band uses, so it survives the `innerHTML` rebuild every render does. */
+          (lead.description
+            ? (function (d) {
+                var txt = clean(d);
+                var LONG = 320;
+                return '<div class="cc-scope">' +
+                  '<div class="cc-scope-lbl">Scope of works</div>' +
+                  (txt.length > LONG
+                    ? '<details class="cc-scope-more"><summary><span>' +
+                        esc(txt.slice(0, LONG).replace(/\s+\S*$/, '')) + '…</span></summary>' +
+                        '<p>' + esc(txt) + '</p></details>'
+                    : '<p>' + esc(txt) + '</p>') +
+                  '</div>';
+              })(lead.description)
+            : '')
         : '<p class="cc-hint">No contract record yet. <b>+ Add</b> records the contract, and its ' +
           'value becomes the basis every claim and change order is measured against.</p>') +
 
@@ -717,11 +740,18 @@ window.ContractsClaims = (function () {
          harness, on every case. */
       ccMoneyTable() +
       ccTimeHTML() +
+      /* ⚠️⚠️ THIS GLOSSARY USED TO BE A PARAGRAPH UNDER THE TABLE. Owner 2026-09-17:
+         *"the highlighted UI needs fixing — these are tooltips and not necessarily to be shown in
+         the main page."* Four sentences of definitions, printed on every visit, below the figures
+         they define, for a reader who by then has already interpreted them. The definitions now sit
+         on the COLUMN HEADERS as `title` text — see `ccMoneyTable` — where the word being defined
+         actually is, and each header already carries a short `<i>` sub-label so the page still says
+         what the column means without being asked.
+         ⚠️ The one fact that is NOT a definition is kept, because nothing else on screen
+         implies it: this band summarises the whole register and does not follow the filters. It is
+         one muted line rather than a paragraph. */
       (ccHasClaims()
-        ? '<p class="cc-hint">Submitted, evaluated and approved are the pipeline columns on each record. ' +
-          '<b>Disapproved</b> is what the client rejected outright; <b>shortfall</b> is submitted minus approved ' +
-          'across decided records — claimed, not certified. Records still pending a decision count in neither. ' +
-          'This summary covers the whole register and does not move with the filters.</p>'
+        ? '<p class="cc-mini cc-dash-scope">Whole register — this summary does not move with the filters.</p>'
         : '') +
       '</div>';
   }
@@ -732,10 +762,13 @@ window.ContractsClaims = (function () {
      because "not allocated to a package" is the useful fact; and the largest three are shown with
      the remainder kept OUT of the fold. */
   function ccDashPkgHTML(pk, pkAmt, ctVal, base, money) {
-    if (!pk.length) {
-      return '<p class="cc-hint">No package breakdown yet. Packages are set up from the Contract tab, ' +
-             'and every change order, claim and extension of time can then be raised against one.</p>';
-    }
+    /* ⚠️ NOTHING IS PRINTED WHEN THERE ARE NO PACKAGES. Owner 2026-09-17: *"'No package
+       breakdown yet…' should be removed — it doesn't provide any valuable information, it just
+       states the current."* Right on both counts, and the state it stated is already on screen:
+       the Contract value card's own subtext reads **no package breakdown**. A paragraph repeating a
+       card three inches above it, in the body of a management dashboard, is noise that every reader
+       pays for on every visit so that a first-time reader learns where packages are set up. */
+    if (!pk.length) return '';
     var pkRows = pk.sort(function (a, b) { return (Number(b.contract_amount) || 0) - (Number(a.contract_amount) || 0); })
       .map(function (r) {
         var v = Number(r.contract_amount);
@@ -902,7 +935,7 @@ window.ContractsClaims = (function () {
        disagrees with the list under it. Caught by a test asserting the count, not by reading. */
     var pendN = ag.n + ag.unsent + eotAg.n + eotAg.unsent;
     var oldTone = ag.oldest == null ? '' : (ag.oldest > 90 ? ' cc-v-bad' : (ag.oldest > 60 ? ' cc-v-warn' : ''));
-    return '<div class="cc-dash-h">With the client ' +
+    return '<div class="cc-dash-h" title="Aging counts from DATE SUBMITTED, and only while a record is Pending. A record with no submitted date is listed separately — it is waiting on us, not on the client. Hand-off times average the records that carry both dates.">With the client ' +
         '<span class="cc-mini">' + pendN + ' pending' +
         (ag.oldest != null
           ? ' · <b class="cc-oldest' + oldTone + '">oldest ' + ag.oldest + ' days</b>'
@@ -942,9 +975,10 @@ window.ContractsClaims = (function () {
           ? 'nothing decided yet'
           : 'submitted → decided averages ' + st.endToEnd.days + 'd') + '</span></summary>' +
         '<div class="cc-kpis">' + legs + '</div></details>' +
-      '<p class="cc-hint">Aging counts from <b>date submitted</b> and only while a record is ' +
-        'Pending. A record with no submitted date is listed separately — it is waiting on us, not ' +
-        'on the client. Hand-off times average the records that carry both dates.</p>';
+      '';   /* ⚠️ The aging note that used to print here is now the `title` on the "With the
+                 client" heading above — owner 2026-09-17: *"these are tooltips and not necessarily
+                 to be shown in the main page."* It defined a word (aging) rather than reporting a
+                 fact, and it sat three blocks BELOW the bars it defined. */
   }
 
   function kpiHTML(list, t) {
@@ -1463,7 +1497,10 @@ window.ContractsClaims = (function () {
       '<label data-days>Client approved days<input id="cc-f-appr-d" type="text" inputmode="numeric" value="' + esc(e.approved_days == null ? '' : e.approved_days) + '" /></label>' +
 
       '<div class="cc-sec" data-not="Contract">Status &amp; dates</div>' +
-      '<label data-not="Contract">Status<select id="cc-f-stat"><option value="">—</option>' +
+      /* ⚠️ `data-statusrow` makes this span both columns — see the note on `.cc-form`. Without it
+         Status occupies one cell and shunts the four dates below it by one, which is what split
+         "Date filed / Date submitted" across two rows. */
+      '<label data-not="Contract" data-statusrow>Status<select id="cc-f-stat"><option value="">—</option>' +
         STATUSES.map(function (s) { return '<option' + (statusOf(e) === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') +
       '</select></label>' +
       /* ⚠️ THESE FOUR HAD NO TYPE GUARD while the section header above them and the
@@ -1513,13 +1550,54 @@ window.ContractsClaims = (function () {
       '<div class="cc-form">' + body + '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="cc-m-cancel">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="cc-m-save">Save</button></div>');
+    /* ⚠️ `UI.modal()` takes no class, so the width class goes on afterwards — see `.pd-modal.cc-rec`.
+       This form carries a money pipeline, four dates, an activity tree with a programme preview
+       beside it, remarks and attachments; the shared 520px is a four-field dialog's width. */
+    var _recBox = m.el.querySelector('.pd-modal');
+    if (_recBox) _recBox.classList.add('cc-rec');
 
     var el = function (id) { return m.el.querySelector('#' + id); };
+
+    /* ==== AMOUNTS CARRY THEIR COMMAS =========================================================
+       Owner 2026-09-17: *"amounts should have a numerical comma."* `58995925` and `5899592` are
+       one keystroke apart and look identical at a glance; grouping is what makes the difference
+       visible, and every figure this module PRINTS is already grouped. Only the inputs were not.
+       ⚠️⚠️ GROUPED ON BLUR, RAW ON FOCUS — not while typing. Rewriting the value on every
+       keystroke moves the caret to the end, so "13023058" edited in the middle becomes a fight
+       with the field. On focus it goes back to plain digits, which is what a planner wants to edit
+       and what a paste lands as.
+       ⚠️ SAFE BECAUSE THE PARSER ALREADY SPEAKS COMMAS. `n()` below validates them against
+       `\d{1,3}(,\d{3})+` rather than stripping them — see the note there on why "1.000,50" must be
+       REFUSED rather than silently read as 1.0005. So a grouped value round-trips, and a value this
+       formatter refuses to touch is left exactly as the planner typed it, for `n()` to judge.
+       ⚠️ Days are left alone: `data-days` counts run to four digits at most and a claim for
+       "1,095 days" reads no better than "1095". `data-money` is the marker the form already uses. */
+    function groupAmountInputs() {
+      m.el.querySelectorAll('label[data-money] input, #cc-f-amount').forEach(function (inp) {
+        if (inp.__ccGrouped) return;
+        inp.__ccGrouped = true;
+        var raw = function () { return String(inp.value || '').replace(/,/g, ''); };
+        var fmt = function () {
+          var t = raw().trim();
+          if (!t || !/^-?\d*\.?\d+$/.test(t)) return;      // not a plain number: leave it be
+          var neg = t.charAt(0) === '-'; if (neg) t = t.slice(1);
+          var parts = t.split('.');
+          inp.value = (neg ? '-' : '') +
+            parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',') +
+            (parts.length > 1 ? '.' + parts[1] : '');
+        };
+        inp.addEventListener('focus', function () { inp.value = raw(); });
+        inp.addEventListener('blur', fmt);
+        fmt();                                             // and the value it opened with
+      });
+    }
 
     /* ⚠ STAGED WHEN THERE IS NO ROW YET. `openForm(null)` is the quick Add path, and a record has
        no id until persistRecord returns — so files chosen here are held and flushed after the save,
        exactly as the wizard does. On an EDIT the id exists and the panel uploads immediately, which
        is why the same panel reads both ways from one call. */
+    groupAmountInputs();
+
     var attStaged = [];
     function paintAtts() {
       var box = el('cc-f-atts'); if (!box) return;
