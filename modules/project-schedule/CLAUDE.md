@@ -1,3 +1,304 @@
+## 2026-09-18 (e) — The step rail at narrow width, and 179 words off the Setup's pages
+
+Owner items 9 and 10 of ten. Items 1–8 (the Calendars editor) shipped in `011a2f1`.
+
+> *"for the overall schedule setup, if window is narrow, the steps go to the top, the minimize button
+> should just remove the labels but stay on top, not move to the left. the arrow of the minimize
+> button should also point up. if not minimized in narrow width, use left right arrows instead of the
+> horizontal scroll bar."* · *"for the overall schedule setup, reduce the
+> words/description/instructions throughout the pages"*
+
+### ⚠️⚠️ MINIMISING PUT THE STRIP BACK IN A LEFT COLUMN, AND THAT WAS A SPECIFICITY LOSS
+
+`.sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr }` is **(0,2,0)**; the `@media
+(max-width:820px)` block's `.sbld-wrap { grid-template-columns:1fr }` is **(0,1,0)**. A media query
+adds no specificity, so the minimised rule won everywhere and collapsing the steps at phone width
+threw them back into a 46px column. **Measured on the base at both narrow widths: `railW=46`.**
+
+⚠️ Restated at **equal** specificity, later in source, so it wins on **order**. Raising specificity
+instead would have to be raised again the next time that rule gains a class — which is how this pair
+got out of step in the first place.
+
+### ⚠️⚠️ THE ARROW POINTS UP, DERIVED RATHER THAN CHOSEN
+
+`sbldMinSync` already emits `chevronLeft` expanded and `chevronRight` collapsed. `+90°` turns ◄ into
+▲ and ► into ▼, so **one rule gives both states the right direction** and the JS needs no notion of
+the viewport at all. A second place deciding a direction is a second place to get it wrong.
+
+⚠️ `chevronUp` is **not** in the shared set, and `icons.js` is not a module's to edit — rotating the
+glyph that is already there also means no shared asset to bump across 21 pages for a two-state
+problem.
+
+### Left/right arrows instead of the scrollbar
+
+- ⚠️ **Siblings of the rail, never children** — the rail is rebuilt by `innerHTML` on every render and
+  would throw them away, the same reason the minimise toggle already sits outside it.
+- ⚠️ **Grid AREAS rather than `order`** on the flex children: the markup order (toggle, rail, arrows)
+  is the reading order for the keyboard and for a screen reader, and an `order` list is a second
+  thing to keep in step with it.
+- ⚠️⚠️ **Whether to show them is MEASURED, never inferred from the step count.** Six steps fit on a
+  phone and twelve do not, the count changes per mode, and an arrow that can scroll nothing is a
+  control that does nothing. `sbldRailArrows` is called from `sbldMinSync` — which **both** rails
+  already run after every rebuild — so it re-measures at exactly the moments the list can change
+  length, rather than from a second set of call sites that would drift from the first. The two rails
+  have different renderers; that is precisely the drift this avoids.
+- ⚠️ The toggle stops **centring** as well as stretching: `align-self:center` is right for a 46px
+  column and parks a 34px button in the middle of the page in a full-width row.
+
+### ⚠️⚠️ A GAP MEASURING FOUND: A MINIMISED STRIP COULD HAVE HAD NEITHER
+
+The arrows are hidden when minimised (the owner asked for them in the *not*-minimised case). Gating
+the scrollbar suppression on `.sbld-hasarw` alone would therefore leave a minimised strip that
+overflows with **no scrollbar and no arrows** — steps that cannot be reached at all. **12 minimised
+steps fit at 390px today**, so it would have shipped working and broken on the first 16-step mode.
+Both suppression rules carry `:not(.sbld-railmin)`, and the harness forces the case at 200px.
+
+### Item 10 — the prose
+
+**1,347 → 1,168 words across the always-visible `.sbld-lede` / `.sbld-hint` / `.sbld-note` blocks**,
+measured against `origin/main` with `tools/scan.js` (which self-tests on ten shapes) rather than a
+regex of my own. **79 blocks before and after** — every block was tightened, none deleted.
+
+The rule is this file's own, from the `(aa)` / `(a4)` / `(a5)` passes: a sentence stating a
+**consequence the planner acts on** stays; a sentence explaining **why the design is that way**, or
+restating a control that is on screen and labelled, goes.
+
+⚠️⚠️ **The import-relationships lede lost its gesture sentence because it was on screen TWICE.**
+`.sbld-focuslegend`, a few dozen pixels below it, already reads *"Drag a bar onto another to connect.
+Click a line to edit or unlink it."* — and it is the **better** of the two, because it says something
+different in View mode. *"switch to **View** to see what drives what"* was a **third** copy:
+`#b-impmode`'s own label is *"◉ View mode — click to Edit"*. The counts, which nothing else on the
+step states, stay.
+
+⚠️⚠️ **KEPT WHOLE, DELIBERATELY: every destructive-path warning.** *"Replace on this path clears the
+whole project, not one package"*, *"Replace then clears only that package"*, *"This replaces the
+current links"*, *"pressing Import is the first and only thing that changes the schedule"*. Those are
+the sentences the `(a6)` pass protected, and the reason it refused to cut this step by word count.
+The longest block left is 27 words and it is one of them.
+
+### Verified
+
+- The rail **driven in a real browser** at 1440 / 760 / 390, expanded and minimised, against the
+  shipped CSS and the shipped markup with `sbldRailArrows` **sliced out of the file and executed** —
+  **48 assertions, 0 failed**. The arrow really scrolls (0 → 238) and the far arrow goes live when it
+  does.
+- ⚠️ **Contrast pinned to the SHA `437e765`, never `HEAD`: it BITES 6/6**, reporting `railW=46` at
+  both narrow widths — the reported defect reproduced — plus no rotation and no arrows.
+- Eleven module suites green on the merged tree: `lsm` 683/0, `calendar-editor` 23/0, `builder`
+  149/0, `syntax` 4/0, `actsetup` 133/0, `towertypes` 79/0, `phasenet` 135/0, `autotrace` 32/0,
+  `towerseq` 48/0, `shapeedit` 36/0, `actdnd` 48/0. `wiring-check` **139/0**; `dead-hooks` 9 (the
+  documented baseline); `dark-remap` 0; `toolbar-order` 15 bars / 0 out of order. Inline script
+  parses; CSS braces **+15/+15** against `origin/main`'s own recorded off-by-one; 0 NUL bytes.
+
+### ⚠️⚠️ Two faults of my own, recorded rather than smoothed over
+
+1. **I wrote `'Drag a row's grip'` into a SINGLE-QUOTED JS string.** That is the 2026-09-10 `(v6)`
+   outage exactly — the apostrophe terminates the literal, and a syntax error anywhere in this
+   ~3.4MB inline block kills the whole module. The parse check caught it; every added line was then
+   swept for the same shape. **Anything with an apostrophe goes in as `’`, which needs no escape.**
+2. **A `git stash` inside a verification command SWALLOWED THE ENTIRE CHANGE**, and the suites that
+   ran after it in the same command reported the **base's** numbers as mine. This log records that
+   failure twice, in bold, and says *"do not stash in a shared clone at all"*. Recovered from
+   `stash@{0}` and every check re-run against the real tree. ⚠️ The tell was `git diff --stat` coming
+   back **empty**, not the commands' own output — which is the same reading that caught it the last
+   two times.
+
+⚠️ **Three harness faults, each of which reported a defect that does not exist:** a non-greedy
+`</div>` regex truncated the railcol at the rail and **dropped the arrows**, so the first run measured
+a page that had none; a **stale `mod.css`** survived a source edit and reported a fixed rule as still
+broken (this repo's stale-`?v=` trap in miniature — it is re-sliced from the final file every run
+now); and **`inline-flex` on a GRID ITEM blockifies to `flex`**, so asserting the literal reported
+shown arrows as hidden.
+
+⚠️ **Not verified signed in** — no real project has been loaded, so the rail is proved against the
+shipped CSS with a 12-step fixture rather than a live setup.
+
+## 2026-09-18 (d) — The Activities step: SAP Activities, one heading per trade, and an activity that can be several
+
+Owner's nine numbered items on Schedule Setup ▸ Activities: *"instead of Holding List, name this
+table as SAP Activities"*, *"if activity is already in the activity list, no need to include in SAP
+Activities list"*, *"fit width of tile to selected activity table and increase width of holding
+list"*, *"The selected activity table should also be grouped by trade"*, the class-code corrections,
+*"the add custom activities button should be beside load typical set"*, *"when adding custom
+activity, code should not be editable and should always be blank. if activity comes from SAP, trade
+should also be not editable/locked"*, the checkbox/merge item, and *"remove construction library.
+this is not needed"*.
+
+### ⚠️⚠️ ITEM 8 IS THE WHOLE CHANGE, AND THE MODEL IS A LIST ON THE ROW, NOT A SECOND TABLE
+
+*"this merged activity carries the class codes of all its child activities."* An activity already
+carries one code; a merged one carries several. That could have been a join table, a second store, or
+a delimited string in the existing column. It is `a.kids` — an array of the activities that went in —
+for one reason: **every reader that asks "what code is this?" keeps asking `a.code`**, and only the
+things that genuinely need the full set (the dedup, the `+N` badge, its tooltip) call `actCodes(a)`.
+A delimited string would have put parsing into every one of those readers; a second table would have
+put a fetch into a step that holds its whole state in one `schedule_builder` row.
+
+- ⚠️⚠️ **`normActivity` IS A WHITELIST, so `kids` had to be named in it or the merge would have
+  survived the session and vanished on reload** — silently, because a whitelist drops what it does
+  not know without erroring. Same for `normalize`, which is what runs on load.
+- ⚠️ **`normKids` returns `null` when the list is empty, never `[]`.** An empty array is truthy, so
+  `actIsMerged` would have answered true for every ordinary activity that had ever been unmerged —
+  the `[]`-is-truthy family this repo has shipped twice (`ensureCodes`, `ensureSugg`).
+- ⚠️⚠️ **THE PUSH STILL WRITES ONE `class_code`, AND THAT IS STATED RATHER THAN HIDDEN.**
+  `taskPayload` has one column for it, so a merged row pushes its first child's code; the rest live on
+  `kids` and are surfaced by the `+N` badge, whose `title` names every one. Widening the push is a
+  schema decision about `project_schedule`, not something a merge dialog gets to take.
+- ⚠️ **Merging is refused across trades**, per the owner, and the button says which refusal applies
+  rather than being dimmed with no reason: nothing ticked, one ticked, or a selection spanning trades.
+- ⚠️ **The merged duration defaults to the SUM of its children, not the max** — these are sequential
+  packages inside one zone, which is the case the owner described (masonry, then plastering, then
+  tiling). It is a judgement call, so the toast says so and the cell stays editable.
+- ⚠️ **`→` explodes a merged row back into separate catalog entries**, or a merge would be one-way and
+  the only undo would be retyping the children.
+
+### ⚠️⚠️ A LOCKED CELL STAYS AN INPUT, BECAUSE PDGrid BUILDS ITS COLUMN ORDER FROM THE CELLS
+
+Item 7 asks for a Code that cannot be edited and a Trade that is locked on a SAP activity. The obvious
+rendering is a `<span>`. `PDGrid.index()` builds the column order from **the first appearance of each
+`data-f`**, so a row that drops a cell reorders the grid's idea of its own columns — Tab and Ctrl+D
+then move along a different axis from the one on screen. A locked cell is therefore a `readonly`
+`.sbld-cell` input carrying its `data-f`, marked `.sbld-lock`.
+
+- ⚠️ **The refusal is in the WRITER, not only the renderer.** `xlSetById` and `t4Set` both open with
+  `if (xlFieldLocked(a, k)) return;` — a paste spills across cells and would otherwise write straight
+  past a readonly control.
+- ⚠️⚠️ **AND THE LOCKED LOOK WAS LOSING A SPECIFICITY TIE, WHICH ONLY MEASURING FOUND.**
+  `.sbld-xl input.sbld-lock` is (0,2,1); `table.sbld-xl input:not([type="checkbox"])` is (0,2,2) and
+  sets `color:var(--pd-ink)`. So the muted ink never applied and **every locked cell rendered
+  identical to an editable one** — the one thing the class exists to prevent. The rule was in the
+  cascade and losing, which reads exactly like a rule that is working. Moved below the generic rule
+  and prefixed with `table` to tie at (0,2,2) and win on source order; measured after, 7.07 light /
+  7.02 dark against the row's own ground.
+
+### ⚠️⚠️ TWO REDS AT 10px WERE UNDER AA, AND THE FIX IS THIS MODULE'S OWN SETTLED TREATMENT
+
+The `+N` badge and the *"N selected"* count both started as `color:var(--pd-red)` at 10px/700.
+Measured, composited over the ground each actually paints on:
+
+| | light | dark |
+|---|---|---|
+| `.sbld-xlmore` (`+N`) | **4.12** | **3.40** |
+| `.sbld-xlgrp-s` (N selected) | **3.74** | **4.14** |
+
+Both under AA's 4.5 for small text, in one theme or the other. `--pd-red` is a **fill** colour — white
+sits on it — which is the same trap this file already records for `--pd-warn` (*"a SURFACE colour at
+3.46:1 on white"*). The fix is not a new colour: `.ps-vs-chip.on`, in this very module, settled it on
+2026-09-12 — *"INK on the red tint, not brand red as text … the red stays as the border and the tint,
+which carry the state without being the text."* Both badges are now ink on a 14% brand tint:
+**13.30 / 10.98** and **12.18 / 13.17**. ⚠️ The tint is a fixed brand `rgba` on purpose — it composites
+over whatever ground it lands on, so one value is correct in both themes and `dark-remap` is right to
+exempt it.
+
+### Items 1–6 and 9
+
+- **1 · SAP Activities.** The pane's heading, its empty states and its two hints.
+- **2 · The dedup reads `actCodes`, not `a.code`.** Both loaders (`+ Library` and `+ From BOQ`) now
+  index every code an activity carries, so a code that arrived as a merge CHILD is not offered again —
+  which is the case the owner's wording does not cover and the one a merge creates.
+- **3 · The grid tile fits its table.** `flex:0 1 auto; width:max-content; max-width:100%` on
+  `.sbld-xlwrap`, and the pane takes the rest (`flex:1 1 260px`).
+  ⚠️ `width:max-content` is what closes the ~3px gap that was leaving a hairline scrollbar on a grid
+  that fits. Measured: at 1920 the pane is **733px**, at 1100 **274px**, the grid scrolls internally
+  and **the page never scrolls sideways**.
+- **4 · One heading row per trade**, in `GROUPS` order, unknown trade last.
+  ⚠️⚠️ **`sortActivities` sorts the ARRAY, not the view** — the same rule `sortCatalog` already
+  follows, because `←`/`→` and the push read `cfg.activities` in its own order, so a renderer that
+  sorted only what it drew would show one order and build another. ⚠️ It is called in `normalize`
+  **and** in the renderer: assertion 9.4 caught the gap — nothing re-sorted the array when a planner
+  changed a row's trade, so the display drifted from push order after one edit. The renderer's call is
+  idempotent, stable, and never calls `markDirty()` — re-sorting is not an unsaved change.
+- **5 · The chart is corrected.** `30050`, `37050`, `38050` and `39050` move `SW` → `OT`; `39100`,
+  `39150`, `39200`, `39250`, `39300` and `39350`, `39400` are removed. `CLASS_CODE_DB` **197 → 190**,
+  and four stale *"197"* claims in comments are corrected with it.
+- **6 · `+ Custom` sits beside `Load typical set`**, with `Merge N` and `Clear` in the same row —
+  `Merge` disabled with its reason in `title`, `Clear` present only when something is ticked.
+- **9 · The Construction Library view is deleted, not hidden** — 56 functions (`stLibrary`, every
+  `lib*`, the view-only `abs*`), `stTabbed`, 40+ CSS rules that could no longer match, and the
+  `STEP_TABS` entry. Found with a fixpoint unreachable-function pass rather than a line range, which
+  is what kept the **10 data-model functions the push's `dimKey` needs for the `agroup` WBS dims**.
+  ⚠️ Deep links still resolve: `'Library'` and `'Construction Library'` alias onto the Activities step.
+  ⚠️ **Reported rather than acted on:** the grouping data model now survives with no authoring
+  surface. It degrades gracefully — the push dialog already hides a grouping rung on a project that
+  has none — but nothing can create one any more, and that is the owner's call.
+
+### ⚠️ Four defects found by RENDERING, none of which is visible by reading
+
+1. **The `+N` badge overflowed its own cell onto the activity name** — it rendered as
+   *"M+2sonry & plaster"*. The Code cell is a plain `<td>` holding an input at `width:100%`, so the
+   badge had nowhere to go. `display:flex` on the cell plus `flex:1 1 auto; min-width:0` on the input.
+   ⚠️ The `min-width:0` is load-bearing: an `<input>` defaults to `min-width:auto`, which resolves to
+   its intrinsic size and refuses to shrink.
+2. **The checkbox gutter overflowed at 40px** → `RNW = 46`, and the column-resize handler's own
+   hardcoded `var tot = 40` had to follow it or the drag arithmetic would have disagreed with the
+   layout.
+3. **`table.sbld-xl input { width:100% }` stretched the gutter checkbox across its whole cell.**
+   ⚠️⚠️ **THE THIRD TIME A TEXT-FIELD WIDTH RULE HAS CAUGHT A CHECKBOX IN THIS APP** — after
+   `.pd-field` and the wizard's `.ccw-main input` over the class-code ladder. `:not([type="checkbox"])`.
+4. **The grid wrapper measured ~3px narrower than the table inside it**, which is a scrollbar on a
+   grid that fits. `width:max-content; max-width:100%`.
+
+### Verified
+
+**`test-actsetup` 133 assertions, 0 failing** — the renderer, `xlFieldLocked`, `actIsSap` and the
+whole merge model sliced out of the shipped file **by name** and executed. New sections cover the
+locked cells, the writers refusing, the trade grouping (**9.4 asserts the ARRAY is sorted**, not the
+markup), the checkbox gutter, the merge rule/payload/refusals, the collapsible children, `actCodes`
+dedup, and the base-side contrast. ⚠️⚠️ **The contrast is pinned to the SHA `d0da7cd` and it BITES:
+30 failures there** — the base has row numbers, no checkboxes, no trade headings and no Merge control.
+
+**`test-actdnd` 48/0** (`--base` 5/5). ⚠️ One assertion **retargeted, not weakened**: it pinned the
+literal selector `table.sbld-xl input, table.sbld-xl select {`, which the checkbox fix above changed.
+The property under test (`font:inherit` carrying the type rung into every editable cell) is unchanged;
+only the selector moved, and the test says so. ⚠️ Its survivor guard drops `LD Exterior Lighting
+Works` with a note — that is code `39350`, removed by item 5.
+
+**Every project-schedule suite green on the merged tree:** actdnd 48, actsetup 133, autotrace 32,
+builder 149, calendar-editor 23, cpm 28, critwbs 26, health 30, lsm 683, shapeedit 36, sitefit 31,
+syntax 4, towerseq 48, towertypes 79, wbsfile 28, zoneoverlap 57, zoneplan 50.
+`wiring-check` **139/0** · `dark-remap` **0 findings** · `dead-hooks` **9**, the documented baseline ·
+`loc-key-agree` clean · `selectall-key` 99 safe / 0 broken · `test-calendar` 71/0. CSS braces
+**2422/2422**, 0 NUL bytes, the inline block parses.
+
+**Measured in a browser** against the **extracted** stylesheet at 1920 / 1600 / 1280 / 1100: the tile
+fits its table, the pane widens to 733px and shrinks with it, the grid scrolls internally, **the page
+never scrolls sideways**, 0 page errors — and a dark-mode pass in which **every new colour resolves
+through a `--pd-*` token**: the trade heading, its name, the caret, the locked cell and the child row
+all change between themes, and the only thing that does not is the brand tint, which is exempt by
+design.
+
+### ⚠️⚠️ TWO HARNESS FAULTS, BOTH OF WHICH REPORTED THE OPPOSITE OF THE TRUTH
+
+1. **The harness served a STALE snapshot.** `page.html` is generated once from the shipped file, and
+   every measurement in this pass was taken against a build several fixes old. The locked-cell fix
+   above *"did not take"* twice, and the geometry numbers were describing a file that no longer
+   existed. **Regenerate the page before every measurement, or the harness is testing history.**
+2. **The contrast harness read a 14% tint as an opaque colour**, so the ink-on-tint fix measured
+   **3.96 / 3.59** — worse than the thing it replaced — for a change that actually measures
+   **13.30 / 10.98**. `groundOf` now walks up **compositing** translucent layers rather than stopping
+   at the first non-zero alpha. This repo already records the same correction for the sandbox card.
+
+⚠️ **NOT VERIFIED SIGNED IN.** No merge has been saved to a real `schedule_builder` row and no merged
+activity has been pushed, so the one thing worth watching on the first real use is what the schedule
+receives for a merged row: one `class_code`, the first child's, with the rest on `kids`.
+
+⚠️ **Merged `origin/main` (7 commits) before shipping** — the tower-types restructure and the
+Calendars rework, **1,729 lines of this same file**. It auto-merged with no conflicts, and a clean
+auto-merge is not evidence: both sides were checked present afterwards (`towerType` ×9, `ps-cal-`
+×184, `calwiz` ×52 against this change's own markers) and **main's two new suites, `test-towertypes`
+79/0 and `test-calendar-editor` 23/0, were re-run on the merged file**.
+
+⚠️⚠️ **RE-LETTERED `(c)` → `(d)`, AND `MODULE_V` RE-DERIVED TO `20260918e`, BECAUSE MAIN TOOK BOTH
+OF MINE WHILE THIS SAT OPEN.** Main's own Project Phases work independently published a
+`2026-09-18 (c)` in both changelogs **and** independently chose `MODULE_V = 20260918d` — the identical
+string this branch had already picked. ⚠️ The letter conflicts loudly and the token does **not**: both
+sides wrote the same characters, so git merged `modules-grid.js`, `dashboard.html` and `modules.html`
+**silently, with no conflict at all**, leaving one cache-bust token covering two different builds. A
+browser holding main's `d` would never have fetched this branch's bytes. Found by listing every
+`20260918*` token on **both refs before resolving** rather than after — the eighth time this log has
+recorded that shape, and the second time in two days that it merged clean. Both entries are kept
+whole; the one merging in is the one that moves, per this file's own rule. `MODULE_V` → `20260918e`,
+sort-checked past both sides' `d`.
 ## 2026-09-18 (c) — Project Phases: one tree per phase, drawn as a Gantt you can draw relationships on
 
 Owner, five items on Schedule Setup ▸ Project Phases: *"remove the duplicate branch and paste outline

@@ -191,10 +191,46 @@
 // chunked compositor reads and rewrites the whole intermediate canvas once per
 // frame. Measured against the previous count it is ~50% more of both. That is
 // the deliberate trade for the density; it is not free.
+//
+// ⚠️⚠️ 2026-09-17 (second pass) — 108 -> 144, AND THIS TIME THE NUMBER WAS
+// MEASURED RATHER THAN ARGUED. It is also the first of these steps that could
+// honestly be taken at all, and the reason is worth keeping:
+//
+// UNTIL TODAY, MORE FRAMES MADE THE PANORAMA WORSE. The server's sub-pixel
+// alignment fitted a PARABOLA to a mean-absolute-difference surface, which is
+// the wrong interpolant for an L1 surface (near its minimum that surface is a
+// V, not a bowl). The mis-fit biases every pair by an amount that depends on
+// where the true shift lands between two pixels — and more frames means a
+// SMALLER shift per pair, so the relative bias grows while the number of pairs
+// it accumulates over grows too. Measured against exact ground truth on the
+// synthetic rotating-camera scene, accumulated rotation error ran 0.22% at 108
+// frames and 0.98% at 144: raising the count cost real accuracy. That is why
+// each of the last three steps of this constant was defended on "more is
+// safer" rather than on a measurement.
+//
+// The server now uses the equiangular (two-line) fit that an L1 surface
+// actually wants (see estimateOffset in stitch-core.mjs), and the error is
+// 0.01–0.06% at EVERY count from 72 to 144 — flat. With accuracy no longer
+// paying for density, density is worth buying:
+//
+//   5 different simulated hand-held captures, everything else identical:
+//     recovered-scene error   108 frames 6.33  ->  144 frames 5.39  (−15%, and
+//                             better at all 5 of 5)
+//     seam banding            108 frames 2.91  ->  144 frames 2.86  (unchanged)
+//
+// The gain is geometric, and it is the mechanism this constant has always been
+// about: each frame contributes only the band around its own optical centre
+// (`pasteFrameBand`), so 144 frames narrows that band from 3.36° to 2.52° of
+// yaw — less off-axis, less distorted, better aligned.
+// ⚠️ The cost is unchanged in kind and +33% in size: 144 uploads from the phone
+// and 144 compositor invocations, each still reading and rewriting the whole
+// intermediate canvas. Stated, not hidden. Beyond this the returns are visibly
+// flat while the I/O keeps growing linearly, so this is not a step to repeat
+// without re-measuring it.
 window.Pano360 = (function () {
   var WORK_MAXW = 640;           // per-frame width used for feature matching/warping — kept small for mobile CPU cost
   var MIN_GOOD_MATCHES = 12;     // below this, a join is not "confident" — see the lookahead search below
-  var FIXED_FRAME_COUNT = 108;   // every recording is sampled into exactly this many frames, regardless of duration
+  var FIXED_FRAME_COUNT = 144;   // every recording is sampled into exactly this many frames, regardless of duration
   var JOIN_LOOKAHEAD = 5;        // how many frames ahead of the last-placed one to search for a confident join
 
   // Pure, and exported (Pano360._frameCountFor) so the fixed count itself can
