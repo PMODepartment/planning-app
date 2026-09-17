@@ -3879,11 +3879,17 @@
     .zpw-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     /* The folded setup rows — see paint(). ⚠️ The summary carries the STATE as well as the name,
        so shut is not the same as hidden. */
-    .zpw-more { border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
-    .zpw-more > summary { display:flex; align-items:center; gap:9px; flex-wrap:wrap; cursor:pointer;
+    /* The Controls fold. ⚠️ Renamed from `.zpw-more` when it stopped being "the sheet's own
+       settings" and became everything that is not the drawing — same shell, so the window did
+       not gain a second kind of panel. */
+    .zpw-panel { border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
+    .zpw-panel > summary { display:flex; align-items:center; gap:9px; flex-wrap:wrap; cursor:pointer;
       padding:7px 11px; font-size:var(--pd-fs-sm); font-weight:700; }
-    .zpw-more[open] > summary { border-bottom:1px solid var(--pd-line); margin-bottom:9px; }
-    .zpw-more > .zpw-bar { padding:0 11px 9px; }
+    .zpw-panel[open] > summary { border-bottom:1px solid var(--pd-line); margin-bottom:9px; }
+    .zpw-panel > .zpw-bar { padding:0 11px 9px; }
+    /* ⚠️ The rows inside are SECTIONS now, not one run — four of them stacked with no separation
+       read as one very long toolbar, which is what this change exists to stop being. */
+    .zpw-panel > .zpw-bar + .zpw-bar { padding-top:9px; border-top:1px solid var(--pd-line); }
     .zpw-moresum { font-weight:400; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .zpw-pal { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
     .zpw-sw { min-width:42px; padding:3px 9px; border:1px solid var(--pd-line); border-radius:6px;
@@ -4057,6 +4063,71 @@
       opacity:.55; cursor:copy; }
     .zpw-mid:hover { opacity:1; }
     .zpw-lv { fill:var(--pd-red); stroke:#fff; stroke-width:2; vector-effect:non-scaling-stroke; }
+    /* ==== THE RESIZE HANDLES ==========================================================
+       ⚠️⚠️ SQUARES, where the corner handles are CIRCLES — and that is the only thing on screen
+       that says which of the two edits a drag is about to perform. The two sets are never drawn
+       at once, so the shape difference is not needed to tell them apart in the moment; it is
+       needed so that a planner who has used the window twice knows, without dragging, which mode
+       they left it in.
+       ⚠️ The dashed box is what makes eight dots read as ONE control. On a concave area it is
+       also the only honest picture of what is being resized — the bounding box of an L is not
+       the L, and a planner dragging its corner is entitled to see the box they are stretching.
+       ⚠️ `pointer-events:none` on the box: it spans the whole shape, so it would swallow every
+       click meant for the polygon underneath, and selecting an area behind it would stop working.
+       ⚠️ Every per-handle cursor is the one the platform already uses for that direction. Getting
+       these wrong is worse than omitting them: a `nwse-resize` on the north-EAST handle tells the
+       planner the shape will move the opposite way from the way it does. */
+    .zpw-bbox { fill:none; stroke:var(--pd-red); stroke-width:1.5; stroke-dasharray:6 5;
+      vector-effect:non-scaling-stroke; opacity:.75; pointer-events:none; }
+    .zpw-rz { fill:#fff; stroke:var(--pd-red); stroke-width:2.5; vector-effect:non-scaling-stroke; }
+    .zpw-rz:hover { fill:var(--pd-red); }
+    .zpw-rz-nw, .zpw-rz-se { cursor:nwse-resize; }
+    .zpw-rz-ne, .zpw-rz-sw { cursor:nesw-resize; }
+    .zpw-rz-n,  .zpw-rz-s  { cursor:ns-resize; }
+    .zpw-rz-e,  .zpw-rz-w  { cursor:ew-resize; }
+    /* ==== THE POPOVERS ================================================================
+       ⚠️⚠️ ABSOLUTE INSIDE `.zpw`, never fixed. This modal scrolls and this window repaints on
+       every gesture — a fixed menu would be left behind by the first scroll, and one measured
+       against the viewport would be measured against a different one after the repaint.
+       ⚠️ The z-index clears the stage's zoom control, which is the only other thing in this
+       window that floats. */
+    .zpw { position:relative; }
+    .zpw-menu { position:absolute; z-index:12; min-width:196px; max-width:280px; padding:5px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:9px;
+      box-shadow:var(--pd-shadow-lg); font-size:var(--pd-fs-sm); }
+    /* ⚠️ The Add menu hangs off its own button rather than off a pointer, so it is placed in the
+       flow instead of by the clamping code — there is exactly one place it can sensibly go. */
+    .zpw-menu-add { left:auto; right:14px; top:96px; }
+    .zpw-menu-h { display:flex; align-items:center; gap:6px; padding:5px 8px 7px;
+      font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-muted); }
+    .zpw-menu-h i { width:10px; height:10px; border-radius:3px; background:var(--zc, #888); flex:none; }
+    .zpw-menu-h span { margin-left:auto; font-weight:400; font-variant-numeric:tabular-nums; }
+    .zpw-menu-h2 { padding:5px 8px 3px; font-size:var(--pd-fs-micro); font-weight:800;
+      letter-spacing:.05em; text-transform:uppercase; color:var(--pd-muted); }
+    .zpw-menu-i { display:flex; align-items:center; gap:8px; width:100%; padding:6px 8px;
+      border:0; border-radius:6px; background:none; color:var(--pd-ink); font:inherit;
+      font-size:var(--pd-fs-sm); text-align:left; cursor:pointer; }
+    .zpw-menu-i:hover:not(:disabled) { background:var(--pd-bg); }
+    .zpw-menu-i:disabled { opacity:.42; cursor:not-allowed; }
+    /* ⚠️ The item the owner asked for by name leads the menu and is the only bold one. */
+    .zpw-menu-lead { font-weight:700; }
+    .zpw-menu-bad { color:var(--pd-danger-text); }
+    .zpw-menu-th { display:inline-flex; width:22px; height:18px; align-items:center; justify-content:center; flex:none; }
+    .zpw-menu-th svg { width:100%; height:100%; }
+    .zpw-menu-sep { height:1px; margin:4px 6px; background:var(--pd-line); }
+    .zpw-menu-row { display:flex; align-items:center; gap:8px; padding:3px 8px;
+      font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .zpw-menu-row > span:first-child { min-width:44px; }
+    .zpw-menu-row .ps-vs-seg { margin-left:auto; }
+    .zpw-menu-row .ps-vs-seg > button { padding:3px 7px; font-size:var(--pd-fs-sm); min-width:26px; }
+    .zpw-menu-pal { display:flex; flex-wrap:wrap; gap:4px; padding:3px 8px 6px; }
+    .zpw-menu-f { padding:5px 8px 3px; font-size:var(--pd-fs-micro); line-height:1.45; color:var(--pd-muted); }
+    /* ==== THE ONE BAR THAT STAYS ======================================================
+       ⚠️ It gets the card surface and a little more room than the rows inside the fold, because
+       it is now the only thing between the title and the drawing and it has to read as the
+       primary control rather than as the first of four. */
+    .zpw-mainbar { padding:8px 11px; margin:0 0 9px; border:1px solid var(--pd-line);
+      border-radius:9px; background:var(--pd-card); row-gap:7px; }
     .zpw-shape.drag polygon { fill-opacity:.6; cursor:grabbing; }
     /* A migrated tower footprint. ⚠️ Selected, it draws a DASHED outline and no corner dots, and
        that difference is the point: an area traced in this window shows its corners when selected,
@@ -4800,10 +4871,17 @@
        the site plan. ⚠️ A <details>, so the ids inside are in the DOM at all times and every
        handler stays wired exactly as it was. */
     .sbld-twmore { position:relative; flex:0 0 auto; }
+    /* ⚠️⚠️ A WORD, NOT A GLYPH. Owner 2026-09-17, with a screenshot of this 30×30 box: *"why is
+       there a symbol in the dropdown here."* It held `⋯` and nothing else — three dots, turning
+       red on hover because that is what this rule below does, which reads as a warning badge
+       rather than a menu. Nothing on the bar said what it opened, so the one route to Rename,
+       Copy-from and Delete was a symbol the planner had to press to find out about.
+       ⚠️ Sized like `.sbld-twbtn` beside it (height 30, padding 2/10) rather than a square, because
+       it is now the same kind of thing: a labelled button on the tower bar. */
     .sbld-twmore > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center;
-      justify-content:center; width:30px; height:30px; border:1px solid var(--pd-line);
+      justify-content:center; height:30px; padding:2px 10px; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-muted);
-      font-weight:800; line-height:1; }
+      font-size:var(--pd-fs-sm); font-weight:700; white-space:nowrap; line-height:1; }
     .sbld-twmore > summary::-webkit-details-marker { display:none; }
     .sbld-twmore[open] > summary, .sbld-twmore > summary:hover { border-color:var(--pd-red); color:var(--pd-red); }
     .sbld-twmenu { position:absolute; z-index:40; top:calc(100% + 5px); left:0; display:flex;
@@ -4827,7 +4905,10 @@
     .sbld-fpbody { padding:9px 11px; display:flex; flex-direction:column; gap:6px; }
     .sbld-fpk { display:flex; align-items:center; gap:10px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .sbld-fpk > b { min-width:118px; color:var(--pd-ink); font-size:var(--pd-fs-sm); }
-    .sbld-fpk > button { margin-left:auto; padding:3px 10px; font-size:var(--pd-fs-xs); }
+    /* ⚠️ `margin-left:auto` moved from the button to this cell when the button went — the row
+       still needs its last item pushed right, and the last item is now the pointer. */
+    .sbld-fpk-next { margin-left:auto; font-variant-numeric:tabular-nums; }
+    .sbld-fpk-next b { color:var(--pd-ink); }
     .sbld-fpk-gap { color:var(--pd-red); font-weight:700; }
     .sbld-fpk-ok { color:var(--pd-ok-text); font-weight:700; }
     /* ⚠️ Emitted only on a category that HAS one — the cells in this row are already ragged
@@ -4835,7 +4916,6 @@
        `margin-left:auto`), so a fixed-width empty cell would buy no alignment and only add a
        blank the eye has to skip on every clean row. */
     .sbld-fpk-ov { font-weight:700; color:var(--pd-warn-text); }
-    .sbld-fpk-fix { border-color:var(--pd-warn-text); color:var(--pd-warn-text); }
     /* ⚠️ The fold's own summary carries the count, so a shut panel still reports the fault. */
     .sbld-fpanel.has-ov { border-color:var(--pd-warn-line); }
     .sbld-fpanel.has-ov > summary { background:var(--pd-warn-bg); }
@@ -19797,7 +19877,8 @@
         '. Floors are kept <b>per tower</b> in <b>Schedule Setup › Floors &amp; Zones</b>, so a plan drawn on ' +
         'another tower’s floors is not this tower’s plan — and it is no longer borrowed, because a ' +
         'building drawn from a neighbour’s outline is a picture that says something false. Pick this ' +
-        'tower on the tower bar and trace its floors, or use <b>Copy … floors/zones</b> and re-trace. ' +
+        'tower on the tower bar and trace its floors, or take that tower’s layout with ' +
+        '<b>Quick setup → take one you have already laid out</b> and re-trace. ' +
         'Until then the positions are a guess ' + _guess + '. ';
     } else if (_fit.other.length && _fit.state !== 'all') {
       /* ⚠️ This case is named BEFORE the name-mismatch one, because when both are true this is
@@ -19806,8 +19887,9 @@
       lay = '<b>A floor plan is traced for ' + _fit.other.length + ' of these storeys, but under another trade</b>' +
         (_fit.trade ? ' — this card is <b>' + esc(_fit.trade) + '</b>' : '') +
         '. Floors and zones are kept <b>per trade</b> in <b>Schedule Setup › Floors &amp; Zones</b>, so a plan drawn on ' +
-        'one trade’s floors is not this trade’s plan. Open this trade and draw it there, or use ' +
-        '<b>Copy … floors/zones → all trades</b> and re-trace. Until then the positions are a guess ' + _guess + '. ';
+        'one trade’s floors is not this trade’s plan. Open this trade and draw it there, or take ' +
+        'that trade’s layout with <b>Quick setup → take one you have already laid out</b> and re-trace. ' +
+        'Until then the positions are a guess ' + _guess + '. ';
     } else if (_fit.state === 'nomatch') {
       /* ⚠️ NAME BOTH SIDES OF THE JOIN. A plan filed under `GF, F2` cannot meet storeys called
          `Ground Floor, 2nd Floor`, and telling the planner to go and draw a plan they have
@@ -39771,7 +39853,7 @@
            The ids are unchanged, so every handler is wired exactly as it was.
            ⚠️ Delete names the tower in the label, because it is the destructive one and a menu row
            reading just "Delete" is a row that does not say what it will take with it. */
-        '<details class="sbld-twmore"><summary title="' + e2('More for ' + towerLabel(act)) + '">⋯</summary>' +
+        '<details class="sbld-twmore"><summary title="' + e2('Rename, copy into or delete ' + towerLabel(act)) + '">Tower options</summary>' +
           '<div class="sbld-twmenu">' +
             '<button class="pd-btn" id="b-twren" title="Rename the active tower">Rename…</button>' +
             (list.length > 1 ? '<button class="pd-btn" id="b-twcopy" title="Copy another tower\'s floors, zones, units and sequencing into this one">Copy floors from another tower…</button>' : '') +
@@ -40983,6 +41065,65 @@
       });
       return zpRingOk(out) ? out : null;
     }
+    /* ==== RESIZING BY A HANDLE ===========================================================
+       Owner 2026-09-17: *"find a way wherein users are able to resize the shape with a resize
+       icon, and then if you want to manual change the configuration or placement of corners,
+       right click and then edit corners."*
+
+       ⚠️⚠️ THIS SPLITS ONE GESTURE THAT WAS DOING TWO JOBS. Until now the only handles on a
+       selected area were its CORNERS, and dragging one moved that corner — so "make this zone
+       wider" and "pull this corner out to follow the wall" were the same drag on the same dot,
+       and the first was impossible on any shape with more than four of them. An L-shaped zone
+       could not be made wider at all: there is no single corner that means width.
+       ⚠️ So a selected area now carries EIGHT BOX HANDLES that resize the whole outline, and the
+       corners appear only in `corners` mode, which the right-click menu turns on. Two gestures,
+       one at a time, each with its own handles — instead of one gesture the planner had to aim.
+
+       ⚠️ IT RETURNS A BOX, NOT POINTS. The caller hands the box to `zpSetBoxPts`, which is the
+       one function in this file that maps an outline onto a new bounding box — so a handle drag,
+       a typed W and a typed H all resize a shape by exactly the same code, and none of them can
+       start deforming a shape the others do not.
+       ⚠️ `p` IS CLAMPED TO THE SHEET FIRST. `zpSetBoxPts` clamps the box's ORIGIN, which is the
+       right rule for a typed number and the wrong one here: dragging the west handle out past the
+       paper would keep the width it had just been given and slide the EAST edge instead, so the
+       shape would move while the planner was resizing it.
+       ⚠️ A minimum, because a box of zero width cannot be scaled back up — `zpSetBoxPts` divides
+       by the old extent, so a shape crushed flat would have no way back except undo. */
+    var ZP_MINBOX = 8;
+    function zpBoxFromHandle(bb, k, p, h, uniform) {
+      var px = zpClamp(p[0], 0, ZP_W), py = zpClamp(p[1], 0, h);
+      var x0 = bb.x, y0 = bb.y, x1 = bb.x + bb.w, y1 = bb.y + bb.h;
+      var W2 = k.indexOf('w') >= 0, E2 = k.indexOf('e') >= 0;
+      var N2 = k.indexOf('n') >= 0, S2 = k.indexOf('s') >= 0;
+      if (W2) x0 = Math.min(px, x1 - ZP_MINBOX);
+      if (E2) x1 = Math.max(px, x0 + ZP_MINBOX);
+      if (N2) y0 = Math.min(py, y1 - ZP_MINBOX);
+      if (S2) y1 = Math.max(py, y0 + ZP_MINBOX);
+      var box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      if (!uniform) return box;
+      /* ⚠️⚠️ UNIFORM IS FOR A LOCKED FOOTPRINT, and it is the same rule `zpScalePts` follows
+         for the same reason: a tower footprint brought in from its own floor plan carries no
+         dimensions, so only its PROPORTIONS are true and a non-uniform handle would be the site
+         plan contradicting the building. The dominant axis wins, so the drag still tracks the
+         pointer on whichever way it is being pulled hardest. */
+      if (!(bb.w > 1e-9 && bb.h > 1e-9)) return box;
+      var kk = Math.max(box.w / bb.w, box.h / bb.h);
+      box.w = bb.w * kk; box.h = bb.h * kk;
+      box.x = W2 ? (x1 - box.w) : (E2 ? x0 : bb.x + (bb.w - box.w) / 2);
+      box.y = N2 ? (y1 - box.h) : (S2 ? y0 : bb.y + (bb.h - box.h) / 2);
+      return box;
+    }
+    /* The eight handles, as {k, x, y} in plan units. ⚠️ ONE SOURCE for the drawing and the hit
+       test: paint() emits these and the pointer handler reads the same `k` back off the element,
+       so a handle can never be drawn in a place it does not act from. */
+    var ZP_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+    function zpHandlePts(bb, corners) {
+      var mx = bb.x + bb.w / 2, my = bb.y + bb.h / 2;
+      var at = { nw: [bb.x, bb.y], n: [mx, bb.y], ne: [bb.x + bb.w, bb.y], e: [bb.x + bb.w, my],
+                 se: [bb.x + bb.w, bb.y + bb.h], s: [mx, bb.y + bb.h], sw: [bb.x, bb.y + bb.h], w: [bb.x, my] };
+      return ZP_HANDLES.filter(function (k) { return corners ? k.length === 2 : true; })
+        .map(function (k) { return { k: k, x: at[k][0], y: at[k][1] }; });
+    }
     function zpPreset(kind, w, h) {
       w = w || 220; h = h || 160;
       var pts = [];
@@ -41025,9 +41166,18 @@
      ⚠️ DEDUPED BY PLATE, not by floor: a plan shared across forty storeys is ONE drawing, and
      offering it forty times would bury the two references that are genuinely different.
      ⚠️ The floor being edited and its own plate are excluded - tracing over yourself is a
-     mirror, not a reference. */
+     mirror, not a reference.
+     ⚠️⚠️ AND EVERY LABEL NAMES ITS TOWER ON A MULTI-TOWER PROJECT. Owner 2026-09-17: *"when
+     referencing from other towers, pls put a label of which tower is being referenced."* This
+     list has always offered other towers' floors — it walks the trade's whole floor list, which
+     holds every tower — and every tower has an `F5`, so the picker read as a run of identical
+     rows with no way to tell which building any of them belonged to. That is the same collision
+     the apply list was scoped for on 2026-09-12; here the answer is a label rather than a scope,
+     because tracing over another tower's plan IS the point when two towers repeat. */
     function zpRefsFor(tr, floor, mineId) {
       var out = [], seen = {};
+      var _mt = multiTower();
+      function _twSuffix(f) { return _mt ? ' · ' + towerLabel(towerIdOf(f)) : ''; }
       var floors = (cfg.zoning[tr] ? cfg.zoning[tr].floors : []) || [];
       floors.forEach(function (f) {
         if (!f || f.id === floor.id) return;
@@ -41036,7 +41186,7 @@
         var p = zpBag().plate[id];
         if (!p || !p.polys.length) return;
         seen[id] = 1;
-        out.push({ plateId: id, label: f.code || f.name || 'Floor', plate: p });
+        out.push({ plateId: id, label: (f.code || f.name || 'Floor') + _twSuffix(f), plate: p });
       });
       /* ⚠️⚠️ AND THEN EVERY OTHER PLATE IN THE PROJECT. Plates are shared across the whole
          setup (one `of` map, keyed by floor id), but the loop above can only see the floors of
@@ -41054,7 +41204,7 @@
           if (lab) return;
           ((cfg.zoning[g] && cfg.zoning[g].floors) || []).forEach(function (f) {
             if (lab || !f || f.id === floor.id || zpIdFor(f) !== id) return;
-            lab = (f.code || f.name || 'Floor') + ' · ' + (GLABEL[g] || g);
+            lab = (f.code || f.name || 'Floor') + ' · ' + (GLABEL[g] || g) + _twSuffix(f);
           });
         });
         seen[id] = 1;
@@ -41382,7 +41532,28 @@
                  more: !(plate && ((plate.polys && plate.polys.length) || plate.img)),
                  // ⚠️ And the sharing panel's, for the same reason: a repaint would shut it on
                  // every tick. Starts closed — it is a question about OTHER floors.
-                 apply: false };
+                 apply: false,
+                 /* ==== THE TWO WAYS TO CHANGE A SHAPE, WHICH ARE NOW TWO MODES ============
+                    Owner 2026-09-17: *"find a way wherein users are able to resize the shape
+                    with a resize icon, and then if you want to manual change the configuration
+                    or placement of corners, right click and then edit corners."*
+                    ⚠️⚠️ IT IS A SHAPE ID, NOT A MODE FLAG, and that is the whole of the
+                    bookkeeping. Corner editing is something a planner does to ONE area for a
+                    moment, so the state that has to be true is "THIS area is being reshaped" —
+                    written that way, selecting another area leaves the mode for free, and there
+                    is no reset to forget at any of the eleven places in this window that move
+                    the selection. A boolean here would need every one of them to clear it, and
+                    the first one missed would hand somebody corner handles on an area they had
+                    never asked to reshape.
+                    ⚠️ null draws the eight BOX handles (resize); a match draws the vertex and
+                    midpoint dots (reshape). Never both: a six-corner zone would wear fourteen
+                    dots, the two sets would land within a few pixels of each other at the
+                    extremities, and the planner would be aiming at which edit to perform. */
+                 corners: null,
+                 // The popovers. ⚠️ `menu` carries the SHAPE ID it was opened on, not the shape:
+                 // a repaint rebuilds every poly object, and a menu holding a stale reference
+                 // would act on an object nothing else in the window points at any more.
+                 menu: null, addmenu: false };
 
       function H() { return zpH(_zpWin.draft); }
       function selShape() {
@@ -41559,24 +41730,53 @@
         var shapes = d.polys.map(function (q) {
           var on = (W.sel === q.id);
           var c = q.pts.reduce(function (s, p) { return [s[0] + p[0] / q.pts.length, s[1] + p[1] / q.pts.length]; }, [0, 0]);
-          // ⚠️ The corner handles exist only on the SELECTED shape. Every shape wearing them at
-          // once turns a floor of six zones into a field of eighty dots.
-          /* ⚠️⚠️ A LOCKED AREA DRAWS NO HANDLES AT ALL. Owner 2026-09-12: *"the users should not be
-             able to edit the corner points of the footprint. It was already defined."* This is the
-             whole of the enforcement and it is the right place for it: every corner gesture in this
-             window — drag one, alt-click to remove one, click a midpoint to add one — reaches its
-             corner through one of these two circles. No circles, no gesture. The body still drags,
-             so moving it is untouched, and Orient still turns it.
-             ⚠️ The pointer handler checks `lock` as well. Not because it can fire without a handle,
-             but so that anything drawing a handle in future cannot quietly re-open the corners. */
-          var handles = (on && !q.lock) ? q.pts.map(function (p, i) {
-            var nx = q.pts[(i + 1) % q.pts.length];
-            return '<circle class="zpw-vx" data-vi="' + i + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) +
-              '" r="' + (9 * zs).toFixed(2) + '"></circle>' +
-              // A faded midpoint handle ADDS a corner there — the equipment plan's gesture.
-              '<circle class="zpw-mid" data-mid="' + i + '" cx="' + ((p[0] + nx[0]) / 2).toFixed(1) +
-                '" cy="' + ((p[1] + nx[1]) / 2).toFixed(1) + '" r="' + (7 * zs).toFixed(2) + '"></circle>';
-          }).join('') : '';
+          /* ==== HANDLES: RESIZE BY DEFAULT, CORNERS ON REQUEST ==========================
+             ⚠️⚠️ Owner 2026-09-17: *"find a way wherein users are able to resize the shape with a
+             resize icon, and then if you want to manual change the configuration or placement of
+             corners, right click and then edit corners."* Until now the only handles a selected
+             area had were its CORNERS, so “make this zone wider” and “pull this corner out to the
+             wall” were the same drag on the same dot — and the first was impossible on any shape
+             with more than four corners, because on an L there is no single corner that means
+             width. Resizing an L was a numeric W box or nothing.
+             ⚠️⚠️ NEVER BOTH SETS AT ONCE. A six-corner zone would wear fourteen dots, the box
+             handles would land within a few pixels of the corner handles at the extremities, and
+             the planner would be aiming at which of two different edits to perform. One mode at a
+             time, and the right-click menu is how you change mode.
+             ⚠️⚠️ A LOCKED AREA STILL DRAWS NO CORNER HANDLES. Owner 2026-09-12: *"the users should
+             not be able to edit the corner points of the footprint. It was already defined."* That
+             is unchanged and this is still the whole of the enforcement — every corner gesture in
+             this window reaches its corner through one of those two circles, so no circles means no
+             gesture. What a locked area DOES now get is the four CORNER box handles, which resize it
+             uniformly (see zpBoxFromHandle): its proportions are the building's and stay exact,
+             while its size on this sheet was always the planner's to set — it just used to take the
+             − / + buttons to do it.
+             ⚠️ The handles are drawn LAST in the group, over the polygon, and sized by `--zs` like
+             every other annotation here: a handle that grew with the zoom would cover the corner it
+             is for. */
+          var handles = '';
+          if (on && W.corners === q.id && !q.lock) {
+            handles = q.pts.map(function (p, i) {
+              var nx = q.pts[(i + 1) % q.pts.length];
+              return '<circle class="zpw-vx" data-vi="' + i + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) +
+                '" r="' + (9 * zs).toFixed(2) + '"></circle>' +
+                // A faded midpoint handle ADDS a corner there — the equipment plan's gesture.
+                '<circle class="zpw-mid" data-mid="' + i + '" cx="' + ((p[0] + nx[0]) / 2).toFixed(1) +
+                  '" cy="' + ((p[1] + nx[1]) / 2).toFixed(1) + '" r="' + (7 * zs).toFixed(2) + '"></circle>';
+            }).join('');
+          } else if (on) {
+            /* ⚠️ The dashed box is what makes the eight dots read as ONE control rather than eight
+               loose points — and on a concave shape it is also the only thing that says what is
+               actually being resized, because the bounding box of an L is not the L. */
+            var _hb = zpBBoxOf(q.pts);
+            handles = '<rect class="zpw-bbox" x="' + _hb.x.toFixed(1) + '" y="' + _hb.y.toFixed(1) +
+                '" width="' + Math.max(0.1, _hb.w).toFixed(1) + '" height="' + Math.max(0.1, _hb.h).toFixed(1) + '"></rect>' +
+              zpHandlePts(_hb, !!q.lock).map(function (h2) {
+                var _sz = 8 * zs;
+                return '<rect class="zpw-rz zpw-rz-' + h2.k + '" data-zprz="' + h2.k + '" x="' + (h2.x - _sz).toFixed(1) +
+                  '" y="' + (h2.y - _sz).toFixed(1) + '" width="' + (_sz * 2).toFixed(1) + '" height="' + (_sz * 2).toFixed(1) +
+                  '" rx="' + (2 * zs).toFixed(1) + '"></rect>';
+              }).join('');
+          }
           /* ⚠️ MARKED ON THE DRAWING, not only in the strip below. The strip can name the pair
              and say how much of it is double-counted; only the drawing can say WHERE, and on a
              plan of a dozen areas that is the whole of the answer. */
@@ -41657,79 +41857,12 @@
             '<button class="pd-btn" id="zpw-x">Close</button>' +
           '</div>' +
 
-          /* ==== THE SHEET'S OWN SETTINGS, FOLDED ========================================
-             ⚠️⚠️ Owner 2026-09-12: *"simplify the UI"*, and it buys the stage its height back.
-             These two rows are SETUP — which image lies underneath, how the sheet is shaped,
-             which way the building faces. They are answered once and then carried for the life of
-             the drawing, while everything below them is used on every gesture; open, they cost
-             ~90px of a window whose whole point is the stage.
-             ⚠️ THE SUMMARY CARRIES THE STATE, so shutting them hides the controls and not the
-             facts — the sheet's shape, whether an image is attached and where the front is all
-             read without opening anything.
-             ⚠️ `<details>` keeps its contents in the DOM when shut, which is what lets every
-             control inside stay wired exactly as it was. */
-          '<details class="zpw-more" id="zpw-more"' + (W.more ? ' open' : '') + '>' +
-            '<summary>Sheet, image &amp; front' +
-              '<span class="zpw-moresum">' + e2(_moreSum()) + '</span></summary>' +
-          // ---- row 1: the drawing underneath -------------------------------------------
-          '<div class="zpw-bar">' +
-            '<span class="zpw-lbl">Plan</span>' +
-            '<button class="pd-btn" id="zpw-up"' + (W.busy ? ' disabled' : '') + '>' +
-              (d.img ? 'Replace…' : 'Attach image…') + '</button>' +
-            (d.img ? '<button class="pd-btn" id="zpw-rm"' + (W.busy ? ' disabled' : '') + '>Remove</button>' : '') +
-            (d.img ? '<label class="zpw-op" title="Fade the drawing so the zones over it stay readable">Fade' +
-              '<input type="range" id="zpw-o" min="20" max="100" value="' + Math.round((d.o == null ? 1 : d.o) * 100) + '"></label>' : '') +
-            (!d.img ? '<span class="sbld-hint" style="margin:0;">optional — you can draw the zones without one</span>' : '') +
-            /* ⚠️ ONE select, in the row that already owns the drawing. The floor's proportions
-               are a fact about the sheet, and this is the sheet's row. */
-            '<label class="zpw-grid-ctl" title="The shape of the floor plate. The 3D view builds its footprint from this, so a tall site should not be traced on a wide sheet.">Sheet' +
-              '<select id="zpw-sheet">' + ZP_SHEETS.map(function (s2) {
-                return '<option value="' + s2[0] + '"' + (String(hh) === s2[0] ? ' selected' : '') + '>' + s2[1] + '</option>';
-              }).join('') +
-              (ZP_SHEETS.some(function (s2) { return String(hh) === s2[0]; })
-                ? '' : '<option value="' + hh + '" selected>' + (Math.round(1000 / hh * 100) / 100) + ':1</option>') +
-              (d.img ? '<option value="fit">Fit to the image</option>' : '') +
-            '</select></label>' +
-            /* ⚠️ The owner's *"uniformity of the sizes"*: another floor's outlines, shown but
-               not editable, to trace against. Absent entirely when no other floor has one -
-               an empty picker is a question with no answers. */
-            (refs.length ? '<span class="ps-tb-sep"></span>' +
-              '<label class="zpw-grid-ctl" title="Show another floor\u2019s zones underneath as a grey outline, to trace against. It cannot be selected or edited.">Trace over' +
-                '<select id="zpw-ref"><option value="">nothing</option>' + refs.map(function (r) {
-                  return '<option value="' + e2(r.plateId) + '"' + (W.ref === r.plateId ? ' selected' : '') + '>' +
-                    e2(r.label) + ' (' + r.plate.polys.length + ')</option>';
-                }).join('') + '</select></label>' +
-              (W.ref ? '<button class="pd-btn" id="zpw-refcopy" title="Copy every outline from the reference onto this floor, keeping its zone names. The fastest way to make two floors identical.">Copy these here</button>' : '') : '') +
-          '</div>' +
-
-          /* ---- orientation: the object that says which way the building faces -----------
-             ⚠️⚠️ Owner 2026-09-10: *"remove the front faces etc. I just want you to add a
-             feature wherein users are just able to place an object and then you would be able
-             to identify which is the front face of the project."* The four compass buttons are
-             gone. The planner drops a marker on the frontage - the road, the entrance, the side
-             the building presents - and the nearest edge of the sheet IS the front, derived
-             (see zpEdgeOfMark) and shown back on the drawing so the answer is never a guess. */
-          '<div class="zpw-bar">' +
-            '<span class="zpw-lbl">Front</span>' +
-            '<button class="pd-btn' + (W.placing ? ' pd-btn-primary' : '') + '" id="zpw-mk" title="Drop a marker on the side the building faces \u2014 a road, the main entrance, the site frontage. The nearest edge of the drawing becomes the front.">' +
-              (W.placing ? 'Click the drawing\u2026' : (zpMark() ? 'Move the marker' : 'Place the front marker')) + '</button>' +
-            (zpFront()
-              ? '<span class="sbld-hint" style="margin:0;">front is the <b>' + ZP_EDGE_SIDE[zpFront()] + '</b> edge' +
-                  ' \u00b7 rear is the <b>' + ZP_EDGE_SIDE[{ N: 'S', E: 'W', S: 'N', W: 'E' }[zpFront()]] + '</b>' +
-                  ' \u00b7 the 3D view names its elevations from this' +
-                  (zpMark() ? '' : ' \u00b7 <b>set on an older screen</b> \u2014 place a marker to see it on the drawing') + '</span>' +
-                '<button class="pd-btn" id="zpw-mkx" title="Remove the marker and leave the front undefined">Remove</button>'
-              : '<span class="sbld-hint" style="margin:0;">not set \u2014 the 3D view falls back to its own <b>Front faces</b> setting</span>') +
-            (W.placing ? '<span class="sbld-hint" style="margin:0;">click anywhere on the drawing, nearest edge wins</span>' : '') +
-          '</div>' +
-          '</details>' +
-
           // ---- row 2: which zone ---------------------------------------------------------
           /* ⚠️ THE PALETTE DOES DOUBLE DUTY, and the label says which: with a shape selected it
              RE-ASSIGNS that shape, otherwise it loads the brush for the next one. That is the
              owner's *"defining which is zone 1 2 etc."* — before this, a shape's zone was fixed at
              the moment it was drawn and the only fix was to delete it and draw it again. */
-          '<div class="zpw-bar">' +
+          '<div class="zpw-bar zpw-mainbar">' +
             '<span class="zpw-lbl">' + (sel ? 'This area is' : 'Draw as') + '</span>' +
             '<span class="zpw-pal">' + (all.length ? all.map(function (c) {
               var on = sel ? (zpNormCode(c) === zpNormCode(sel.code)) : (zpNormCode(c) === zpNormCode(W.brush));
@@ -41795,8 +41928,107 @@
                       : '<span class="sbld-hint" style="margin:0;">nothing traced yet — draw the outline, or trace the zones and the floor takes their shape</span>')) +
               '';
             })() +
+            /* ==== HOW A SHAPE IS MADE, AND THE ONLY TWO WAYS THERE ARE ==================
+               ⚠️⚠️ Owner 2026-09-17: *"can you make the commands and controls simpler?"* These two
+               came OUT of the row below, where they sat eleventh and twelfth among twenty-odd
+               controls. They are the only two things in this window that CREATE anything, so they
+               belong beside the palette that says what will be created, and nothing else does.
+               ⚠️⚠️ THE EIGHT PRESET THUMBNAILS BECOME ONE BUTTON AND A MENU. Eight silent icons
+               cost eight slots on every render to answer a question asked once per shape, and their
+               tooltips were the only place those shapes were NAMED. In the menu each carries its
+               thumbnail AND its name, so a T-shape is findable by reading instead of by hovering.
+               ⚠️ It is the same `zpw-menu` popover the right-click menu uses — one widget, one
+               dismissal rule. Two menu implementations in one window is how they come to close on
+               different gestures.
+               ⚠️ UNDO STAYS OUT TOO, and it is the one control here that is neither context nor a
+               creation: it is the answer to every gesture that went wrong, so putting it behind a
+               fold would mean opening a panel to take back a drag. */
+            '<span class="ps-tb-sep"></span>' +
+            '<button class="pd-btn' + (W.addmenu ? ' pd-btn-primary' : '') + '" id="zpw-addmenu" title="' +
+              e2('Put a ready-made shape on the sheet as ' + zpLabelOf(sel ? sel.code : W.brush) +
+                 ' — a rectangle, an L, a T and five more. Drag it where it goes, then pull its' +
+                 ' handles to size it.') + '">+ Add shape ▾</button>' +
+            '<button class="pd-btn' + (W.drawing ? ' pd-btn-primary' : '') + '" id="zpw-draw" title="Click corner by corner; click the first corner again, or double-click, to close">' +
+              (W.drawing ? (W.pts.length >= 3 ? 'Finish' : 'Cancel') : 'Trace…') + '</button>' +
+            '<span class="zpw-sp"></span>' +
+            '<button class="pd-btn" id="zpw-undo"' + (W.hist.length ? '' : ' disabled') + ' title="' +
+              (W.hist.length ? e2('Undo (' + W.hist.length + ' step' + (W.hist.length === 1 ? '' : 's') + ') · Ctrl+Z') : 'Nothing to undo') + '">Undo</button>' +
           '</div>' +
 
+
+          /* ==== EVERYTHING THAT IS NOT THE DRAWING, BEHIND ONE BUTTON ==================
+             ⚠️⚠️ Owner 2026-09-17: *"can you make the commands and controls simpler? ... the
+             commands and controls are shown in a controls button and not just plotted in the
+             screen immediately."* Counted before this change, the window put **thirty-four**
+             controls on screen the moment it opened, in four stacked rows, and the stage — the
+             one thing the window exists for — got what was left. Every one of them was reachable
+             and none of them was findable.
+             ⚠️ WHAT STAYS OUTSIDE IS THE ANSWER TO “WHAT AM I DRAWING, AND HOW DO I START”: the
+             zone palette (it is CONTEXT, not a command — a planner must be able to read which zone
+             the next shape will be without opening anything), Add, Trace and Undo. Everything
+             else is either a SETTING answered once for the life of the drawing, or an action on
+             the SELECTED area — and those now have a nearer home: right-click the area itself.
+             ⚠️⚠️ THE PANEL IS A DUPLICATE ROUTE, NEVER THE ONLY ONE. Every per-area action in it
+             is also on the right-click menu. A control that exists in exactly one fold is a
+             control nobody finds; a control that exists in two places one of which is where the
+             planner's hand already is, is discoverable AND fast.
+             ⚠️ `<details>` keeps its contents in the DOM when shut, which is what lets every
+             control inside stay wired exactly as it was, and its open state lives on the window
+             object or a repaint — which happens on every gesture — would shut it under the hand. */
+          '<details class="zpw-panel" id="zpw-more"' + (W.more ? ' open' : '') + '>' +
+            '<summary><span data-ico="sliders" data-ico-size="14"></span>Controls' +
+              '<span class="zpw-moresum">' + e2(_moreSum()) + '</span></summary>' +
+          // ---- row 1: the drawing underneath -------------------------------------------
+          '<div class="zpw-bar">' +
+            '<span class="zpw-lbl">Plan</span>' +
+            '<button class="pd-btn" id="zpw-up"' + (W.busy ? ' disabled' : '') + '>' +
+              (d.img ? 'Replace…' : 'Attach image…') + '</button>' +
+            (d.img ? '<button class="pd-btn" id="zpw-rm"' + (W.busy ? ' disabled' : '') + '>Remove</button>' : '') +
+            (d.img ? '<label class="zpw-op" title="Fade the drawing so the zones over it stay readable">Fade' +
+              '<input type="range" id="zpw-o" min="20" max="100" value="' + Math.round((d.o == null ? 1 : d.o) * 100) + '"></label>' : '') +
+            (!d.img ? '<span class="sbld-hint" style="margin:0;">optional — you can draw the zones without one</span>' : '') +
+            /* ⚠️ ONE select, in the row that already owns the drawing. The floor's proportions
+               are a fact about the sheet, and this is the sheet's row. */
+            '<label class="zpw-grid-ctl" title="The shape of the floor plate. The 3D view builds its footprint from this, so a tall site should not be traced on a wide sheet.">Sheet' +
+              '<select id="zpw-sheet">' + ZP_SHEETS.map(function (s2) {
+                return '<option value="' + s2[0] + '"' + (String(hh) === s2[0] ? ' selected' : '') + '>' + s2[1] + '</option>';
+              }).join('') +
+              (ZP_SHEETS.some(function (s2) { return String(hh) === s2[0]; })
+                ? '' : '<option value="' + hh + '" selected>' + (Math.round(1000 / hh * 100) / 100) + ':1</option>') +
+              (d.img ? '<option value="fit">Fit to the image</option>' : '') +
+            '</select></label>' +
+            /* ⚠️ The owner's *"uniformity of the sizes"*: another floor's outlines, shown but
+               not editable, to trace against. Absent entirely when no other floor has one -
+               an empty picker is a question with no answers. */
+            (refs.length ? '<span class="ps-tb-sep"></span>' +
+              '<label class="zpw-grid-ctl" title="Show another floor\u2019s zones underneath as a grey outline, to trace against. It cannot be selected or edited.">Trace over' +
+                '<select id="zpw-ref"><option value="">nothing</option>' + refs.map(function (r) {
+                  return '<option value="' + e2(r.plateId) + '"' + (W.ref === r.plateId ? ' selected' : '') + '>' +
+                    e2(r.label) + ' (' + r.plate.polys.length + ')</option>';
+                }).join('') + '</select></label>' +
+              (W.ref ? '<button class="pd-btn" id="zpw-refcopy" title="Copy every outline from the reference onto this floor, keeping its zone names. The fastest way to make two floors identical.">Copy these here</button>' : '') : '') +
+          '</div>' +
+
+          /* ---- orientation: the object that says which way the building faces -----------
+             ⚠️⚠️ Owner 2026-09-10: *"remove the front faces etc. I just want you to add a
+             feature wherein users are just able to place an object and then you would be able
+             to identify which is the front face of the project."* The four compass buttons are
+             gone. The planner drops a marker on the frontage - the road, the entrance, the side
+             the building presents - and the nearest edge of the sheet IS the front, derived
+             (see zpEdgeOfMark) and shown back on the drawing so the answer is never a guess. */
+          '<div class="zpw-bar">' +
+            '<span class="zpw-lbl">Front</span>' +
+            '<button class="pd-btn' + (W.placing ? ' pd-btn-primary' : '') + '" id="zpw-mk" title="Drop a marker on the side the building faces \u2014 a road, the main entrance, the site frontage. The nearest edge of the drawing becomes the front.">' +
+              (W.placing ? 'Click the drawing\u2026' : (zpMark() ? 'Move the marker' : 'Place the front marker')) + '</button>' +
+            (zpFront()
+              ? '<span class="sbld-hint" style="margin:0;">front is the <b>' + ZP_EDGE_SIDE[zpFront()] + '</b> edge' +
+                  ' \u00b7 rear is the <b>' + ZP_EDGE_SIDE[{ N: 'S', E: 'W', S: 'N', W: 'E' }[zpFront()]] + '</b>' +
+                  ' \u00b7 the 3D view names its elevations from this' +
+                  (zpMark() ? '' : ' \u00b7 <b>set on an older screen</b> \u2014 place a marker to see it on the drawing') + '</span>' +
+                '<button class="pd-btn" id="zpw-mkx" title="Remove the marker and leave the front undefined">Remove</button>'
+              : '<span class="sbld-hint" style="margin:0;">not set \u2014 the 3D view falls back to its own <b>Front faces</b> setting</span>') +
+            (W.placing ? '<span class="sbld-hint" style="margin:0;">click anywhere on the drawing, nearest edge wins</span>' : '') +
+          '</div>' +
           /* ---- row 3: making and editing areas -------------------------------------------
              ⚠️⚠️ THIS ROW USED TO BE GATED ON `all.length` — i.e. on the floor having at least one
              ZONE. Owner 2026-09-17: *"in the defining the plan layout of floors with no specified
@@ -41829,13 +42061,6 @@
                 (_fpn ? 'Bring in ' + _fpn + ' tower footprint' + (_fpn === 1 ? '' : 's') : 'No tower plans yet') + '</button>' +
                 '<span class="ps-tb-sep"></span>';
             })() : '') +
-            '<span class="zpw-lbl">Add</span>' +
-            '<span class="zpw-shapes">' + ZP_SHAPES.map(function (s) {
-              return '<button class="zpw-shbtn" data-zpadd="' + s.k + '" title="' + e2('Add a ' + s.label.toLowerCase()) + '">' +
-                zpThumb(s.k) + '</button>';
-            }).join('') + '</span>' +
-            '<button class="pd-btn' + (W.drawing ? ' pd-btn-primary' : '') + '" id="zpw-draw" title="Click corner by corner; click the first corner again, or double-click, to close">' +
-              (W.drawing ? (W.pts.length >= 3 ? 'Finish' : 'Cancel') : 'Trace…') + '</button>' +
             '<span class="ps-tb-sep"></span>' +
             /* ⚠️ NOT on a migrated footprint. A copy is written back as an ordinary area with the
                same tower name on it — a SECOND outline of one building, which is the thing this
@@ -41883,11 +42108,7 @@
               '<select class="pd-select" id="zpw-grid">' + ZP_GRIDS.map(function (g) {
                 return '<option value="' + g + '"' + (g === W.grid ? ' selected' : '') + '>' + (g ? g : 'Off') + '</option>';
               }).join('') + '</select></label>' +
-            '<span class="ps-tb-sep"></span>' +
-            '<button class="pd-btn" id="zpw-undo"' + (W.hist.length ? '' : ' disabled') + ' title="' +
-              (W.hist.length ? e2('Undo (' + W.hist.length + ' step' + (W.hist.length === 1 ? '' : 's') + ') · Ctrl+Z') : 'Nothing to undo') + '">Undo</button>' +
           '</div>' +
-
           /* ==== ROW 4: THE SELECTED AREA, BY THE NUMBERS =================================
              ⚠️⚠️ Owner 2026-09-17: *"for adding floor plan, improve UI to edit shapes."* Every
              edit in this window was a drag, and a drag cannot state a number. Two zones that are
@@ -41935,7 +42156,90 @@
               '</span>' +
             '</div>';
           })() : '') +
+          '</details>' +
 
+          /* ==== THE TWO POPOVERS =========================================================
+             ⚠️⚠️ Owner 2026-09-17: *"if you want to manual change the configuration or placement
+             of corners, right click and then edit corners"* and *"the commands and controls are
+             shown in a controls button and not just plotted in the screen immediately."*
+             ⚠️⚠️ THE RIGHT-CLICK MENU IS WHERE THE PER-AREA COMMANDS NOW LIVE, and that is the
+             substance of the simplification rather than the fold above it. Copy, Duplicate,
+             Delete, Turn, Mirror and “this area is…” all act on ONE shape, and they were sitting
+             in a toolbar at the top of the window — so using one meant leaving the shape, crossing
+             the window, aiming at a 24px button among twenty, and coming back. On the shape itself
+             they are one gesture from where the hand already is, and the menu can be SHORT because
+             it only has to carry what applies to the thing that was clicked.
+             ⚠️ ONE WIDGET FOR BOTH MENUS. Two popover implementations in one window is how they
+             come to dismiss on different gestures and stack on top of each other.
+             ⚠️⚠️ POSITIONED IN THE WINDOW'S OWN COORDINATES, not the page's. This modal scrolls
+             and this window repaints on every gesture; a fixed-position menu would be left behind
+             by the first scroll, and one measured against the viewport would be measured against a
+             different viewport after the repaint. `wrap` is the offset parent (CSS position:relative
+             on .zpw), so the numbers stored on W.menu stay true for as long as the menu is open.
+             ⚠️ The menu is emitted only while it is OPEN, so a closed menu is not in the DOM at
+             all — nothing to keep in step, and no chance of a stale one catching a click. */
+          (W.addmenu ? (function () {
+            return '<div class="zpw-menu zpw-menu-add" id="zpw-addpop">' +
+              '<div class="zpw-menu-h">Add as <b>' + e2(zpLabelOf(sel ? sel.code : W.brush)) + '</b></div>' +
+              ZP_SHAPES.map(function (s2) {
+                return '<button class="zpw-menu-i" data-zpadd="' + s2.k + '">' +
+                  '<span class="zpw-menu-th">' + zpThumb(s2.k) + '</span>' + e2(s2.label) + '</button>';
+              }).join('') +
+              '<div class="zpw-menu-f">It lands in the middle of the sheet. Drag it into place, then pull a corner to size it.</div>' +
+            '</div>';
+          })() : '') +
+          
+          (W.menu ? (function () {
+            var _m = W.menu, _s = d.polys.filter(function (p) { return p.id === _m.id; })[0];
+            if (!_s) return '';
+            var _lk = !!_s.lock, _cor = (W.corners === _s.id);
+            function it(act, lab, ttl, dis, cls) {
+              return '<button class="zpw-menu-i' + (cls ? ' ' + cls : '') + '" data-zpact="' + act + '"' +
+                (dis ? ' disabled' : '') + ' title="' + e2(ttl) + '">' + lab + '</button>';
+            }
+            return '<div class="zpw-menu" id="zpw-pop" style="left:' + _m.x.toFixed(0) + 'px;top:' + _m.y.toFixed(0) + 'px;">' +
+              '<div class="zpw-menu-h"><i style="--zc:' + zpColor(_s.code) + '"></i>' + e2(zpLabelOf(_s.code)) +
+                '<span>' + _s.pts.length + ' corners</span></div>' +
+              /* ⚠️⚠️ THE FIRST ITEM, because it is the one the owner asked for by name and the one
+                 thing that cannot be reached any other way. It is a TOGGLE and it says which state it
+                 will put you in, not which state you are in — a menu item that reads “Resize” while
+                 you are resizing tells you nothing about what pressing it does. */
+              it('corners', (_cor ? 'Done editing corners' : 'Edit corners\u2026'),
+                 _lk ? ('A tower footprint\u2019s corners belong to its own floor plan \u2014 re-trace that plan to change its shape. Its size and position here are still yours.')
+                     : (_cor ? 'Back to the resize handles.'
+                             : 'Show a handle on every corner: drag one to move it, click the faint dot between two to add one, Alt-click to remove one.'),
+                 _lk, 'zpw-menu-lead') +
+              it('nums', 'Size &amp; position\u2026', 'Type an exact X, Y, width and height \u2014 it opens the Controls panel on this area.', false) +
+              '<div class="zpw-menu-sep"></div>' +
+              '<div class="zpw-menu-row"><span>Turn</span>' +
+                '<span class="ps-vs-seg">' +
+                  '<button data-zprot="-90" title="A quarter turn anticlockwise">&#8630;90</button>' +
+                  '<button data-zprot="-15" title="15\u00b0 anticlockwise">&#8630;</button>' +
+                  '<button data-zprot="15" title="15\u00b0 clockwise">&#8631;</button>' +
+                  '<button data-zprot="90" title="A quarter turn clockwise">&#8631;90</button>' +
+                '</span></div>' +
+              '<div class="zpw-menu-row"><span>Mirror</span>' +
+                '<span class="ps-vs-seg">' +
+                  '<button data-zpflip="x"' + (_lk ? ' disabled' : '') + ' title="Mirror left\u2013right. A handed plan cannot be reached by turning it.">&#8646;</button>' +
+                  '<button data-zpflip="y"' + (_lk ? ' disabled' : '') + ' title="Mirror top\u2013bottom">&#8645;</button>' +
+                '</span></div>' +
+              '<div class="zpw-menu-sep"></div>' +
+              /* ⚠️ The same refusals the toolbar carried, with the same reasons: a copy of a migrated
+                 footprint is written back as an ordinary area with the same tower name on it — a
+                 SECOND outline of one building, which is the thing the migration exists to prevent. */
+              it('copy', 'Copy', _lk ? 'A tower footprint cannot be copied \u2014 it is one building, brought in from its own floor plan' : 'Copy this area', _lk) +
+              it('dup', 'Duplicate', _lk ? 'A tower footprint cannot be duplicated \u2014 there is one of it' : 'Copy and paste in one go', _lk) +
+              it('del', 'Delete', 'Remove this area from the drawing', false, 'zpw-menu-bad') +
+              (all.length > 1 ? '<div class="zpw-menu-sep"></div>' +
+                '<div class="zpw-menu-h2">This area is</div>' +
+                '<div class="zpw-menu-pal">' + all.map(function (c2) {
+                  return '<button class="zpw-sw' + (zpIsAll(c2) ? ' all' : '') +
+                    (zpNormCode(c2) === zpNormCode(_s.code) ? ' on' : '') + '" data-zpb="' + e2(c2) + '"' +
+                    ' style="--zc:' + zpColor(c2) + '">' + e2(zpLabelOf(c2)) + '</button>';
+                }).join('') + '</div>' : '') +
+            '</div>';
+          })() : '') +
+          
           (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
 
           /* ==== THE OVERLAP STRIP ========================================================
@@ -42072,9 +42376,22 @@
               '<b>drag</b> it to move it, <b>Orient</b> to turn it. Its corners are fixed here; ' +
               're-trace that tower\u2019s floor plan to change its shape.</p>'
             : '') +
-          '<p class="zpw-tip">Drag an area to move it · drag a corner to reshape · the faint dot between two corners adds one · ' +
-            '<b>Alt</b>-click a corner removes it' +
-            (W.grid > 0 ? ' · corners snap to a <b>' + W.grid + '</b>-unit grid' : '') +
+          /* ⚠️⚠️ THE TIP LINE FOLLOWS THE MODE, because it used to describe a gesture that is now
+             only available in one of two states. It read “drag a corner to reshape” unconditionally,
+             and after this change that is true for the selected area only while corner editing is on
+             — a permanent instruction for an occasional mode is worse than none, because a planner
+             who follows it and gets a resize concludes the window is broken.
+             ⚠️ It also has to SAY where the corner gesture went, or it is only discoverable by
+             right-clicking on the off-chance. That sentence is the whole of the discoverability for
+             the feature the owner asked for. */
+          '<p class="zpw-tip">' +
+            (W.corners
+              ? '<b>Editing corners.</b> Drag a corner to move it · the faint dot between two adds one · ' +
+                '<b>Alt</b>-click a corner removes it · <b>Esc</b> or right-click → <b>Done</b> to go back' +
+                (W.grid > 0 ? ' · corners snap to a <b>' + W.grid + '</b>-unit grid' : '')
+              : 'Drag an area to move it · drag a <b>square handle</b> to resize it · ' +
+                '<b>right-click</b> an area for its commands — turn, mirror, copy, delete, and <b>Edit corners</b>' +
+                (W.grid > 0 ? ' · it snaps to a <b>' + W.grid + '</b>-unit grid' : '')) +
             ' · <b>scroll</b> to zoom' + (V.k > 1 ? ' · <b>drag the background</b> to pan' : '') + '</p>' +
 
           '<div class="zpw-foot">' +
@@ -42319,11 +42636,16 @@
               W.brush = s.code;
               commit();
             } else { W.brush = b.dataset.zpb; }
+            // ⚠️ A palette press from the right-click menu has ANSWERED that menu's question,
+            // so the menu goes. From the bar there is no menu and this is a no-op.
+            W.menu = null;
             paint();
           };
         });
         wrap.querySelectorAll('[data-zpadd]').forEach(function (b) {
-          b.onclick = function () { addPreset(b.dataset.zpadd); };
+          /* ⚠️ The menu SHUTS on use: it covers the sheet the new shape lands on, and the next
+             thing a planner does after adding one is drag it. */
+          b.onclick = function () { W.addmenu = false; W.menu = null; addPreset(b.dataset.zpadd); };
         });
         /* ⚠️⚠️ IT ADDS, IT NEVER REPLACES. A planner who has already arranged three towers and
            traces the fourth's floor plan must be able to bring that one in without losing the
@@ -42859,6 +43181,155 @@
             svg.onpointercancel = done;
           };
         });
+        /* ==== THE POPOVERS, AND THE GESTURE THAT OPENS THEM ===============================
+           ⚠️⚠️ Owner 2026-09-17: *"right click and then edit corners"*. `contextmenu` on the
+           shape, and `preventDefault` so the browser's own menu does not open over ours — which
+           is the one thing that would make the gesture feel broken rather than new.
+           ⚠️ IT SELECTS FIRST. Right-clicking an area the planner had not selected has to act on
+           THAT area, or the menu would be about something else on screen; and the header of the
+           menu names the zone so there is no doubt which.
+           ⚠️ The position is measured against `wrap`, which is the offset parent — see the note
+           on the markup. Clamped so a menu opened near the right or bottom edge is not half off
+           the window, using the menu's OWN measured size after it is in the DOM (below). */
+        wrap.querySelectorAll('[data-zpoly]').forEach(function (g3) {
+          g3.oncontextmenu = function (ev) {
+            if (W.drawing || W.placing) return;      // a mode of its own; a menu mid-trace is a trap
+            ev.preventDefault(); ev.stopPropagation();
+            var id = g3.dataset.zpoly;
+            var r = wrap.getBoundingClientRect();
+            /* ⚠️⚠️ THE MODE RESETS WHEN THE MENU MOVES TO ANOTHER SHAPE. Leaving `corners` on
+               while selecting a different area would hand the planner corner handles on a shape
+               they never asked to reshape — and the menu would read “Done editing corners” about
+               an area that had never been in that mode. */
+                    W.sel = id;
+            W.addmenu = false;
+            W.menu = { id: id, x: ev.clientX - r.left, y: ev.clientY - r.top };
+            paint();
+          };
+        });
+        /* ⚠️ Right-clicking the PAPER closes whatever is open and does nothing else. It is not a
+           second menu: the only commands that would go in one are Add and Paste, and both are on
+           the bar that never leaves the screen. What it must not do is let the browser's menu
+           through over a half-drawn plan. */
+        stage.oncontextmenu = function (ev) {
+          if (ev.target && ev.target.closest && ev.target.closest('[data-zpoly]')) return;
+          ev.preventDefault();
+          if (W.menu || W.addmenu) { W.menu = null; W.addmenu = false; paint(); }
+        };
+        var _am = q('zpw-addmenu');
+        if (_am) _am.onclick = function (ev) {
+          ev.stopPropagation();
+          W.addmenu = !W.addmenu; W.menu = null; paint();
+        };
+        /* ⚠️⚠️ DISMISSAL IS ON THE WINDOW, NOT ON A BACKDROP. A transparent backdrop element
+           would swallow the click that dismissed it, so closing the menu and pressing the button
+           underneath would take two clicks — the thing that makes a menu feel sticky. This lets
+           the click through and repaints after it.
+           ⚠️ Registered on `wrap` and cleaned up by the repaint that replaces `wrap.innerHTML`,
+           so there is nothing to remove: the listener dies with the node it was on. */
+        if (W.menu || W.addmenu) {
+          wrap.addEventListener('pointerdown', function (ev) {
+            if (ev.target && ev.target.closest && ev.target.closest('.zpw-menu,#zpw-addmenu')) return;
+            W.menu = null; W.addmenu = false;
+            // ⚠️ A frame later, so the click lands on whatever is under it BEFORE the repaint
+            // pulls that element out of the DOM.
+            setTimeout(paint, 0);
+          }, { once: true });
+          /* ⚠️⚠️ CLAMPED AFTER MEASURING, never from a guess at the menu's height. The right-click
+             menu grows and shrinks with the zone list, so a fixed offset would be right for a
+             two-zone floor and wrong for a ten-zone one — and the item that would fall off the
+             bottom is Delete. */
+          var _pop = wrap.querySelector('#zpw-pop');
+          if (_pop) {
+            var wr = wrap.getBoundingClientRect(), pr = _pop.getBoundingClientRect();
+            if (pr.width && wr.width) {
+              var nx2 = Math.max(4, Math.min(W.menu.x, wr.width - pr.width - 6));
+              var ny2 = Math.max(4, Math.min(W.menu.y, wr.height - pr.height - 6));
+              _pop.style.left = nx2.toFixed(0) + 'px'; _pop.style.top = ny2.toFixed(0) + 'px';
+            }
+          }
+        }
+        /* ---- what the right-click menu's own items do --------------------------------------
+           ⚠️ Copy, Duplicate and Delete DELEGATE to the same handlers the Controls panel's
+           buttons use, rather than repeating their bodies: a second copy of “delete an area” is
+           how the panel and the menu come to leave the plate in two different states (one of them
+           forgetting `zpDropIfEmpty`, which is exactly the kind of omission that shows up weeks
+           later as a floor that still reads as having a plan). */
+        wrap.querySelectorAll('[data-zpact]').forEach(function (b) {
+          b.onclick = function (ev) {
+            ev.stopPropagation();
+            var s = selShape(); if (!s) { W.menu = null; paint(); return; }
+            var a = b.dataset.zpact;
+            if (a === 'corners') {
+              if (s.lock) return;
+              W.corners = (W.corners === s.id) ? null : s.id;
+              W.menu = null; paint();
+              if (W.corners) UI.toast('Corner editing on \u2014 drag a corner to move it, the faint dot between two to add one, Alt-click to remove one.');
+              return;
+            }
+            if (a === 'nums') {
+              /* ⚠️ It OPENS the Controls panel rather than putting a second set of boxes in the
+                 menu. Two places to type a width is two places for them to disagree about
+                 rounding, and the panel's row is already wired to zpSetBoxPts. */
+              W.more = true; W.menu = null; paint();
+              var _bx = q('zpw-bx'); if (_bx) { try { _bx.focus(); _bx.select(); } catch (e) {} }
+              return;
+            }
+            W.menu = null;
+            var byId = { copy: 'zpw-copy', dup: 'zpw-dup', del: 'zpw-del' }[a];
+            var el = byId && q(byId);
+            if (el && el.onclick) el.onclick();
+            else paint();
+          };
+        });
+        /* ==== RESIZING BY A HANDLE =========================================================
+           ⚠️⚠️ Owner 2026-09-17: *"users are able to resize the shape with a resize icon."*
+           ⚠️ IT GOES THROUGH `zpSetBoxPts`, the same function the typed W and H boxes use — so a
+           handle drag and a typed number resize a shape by identical code and cannot start
+           deforming it differently. `zpBoxFromHandle` only works out WHICH box is being asked for.
+           ⚠️ ONE snapshot per gesture, taken on the first move that actually moves — the same
+           contract the body drag has, so Ctrl+Z steps back a resize the way it steps back a move,
+           and a handle nudged by a pixel and released writes nothing.
+           ⚠️ The polygon is rewritten LIVE and the window repainted once on release. A full
+           paint() per pointermove rebuilds every control in the window under the cursor — and,
+           since 2026-09-17, re-measures every overlapping pair on the plate as well.
+           ⚠️ SNAPPED ON THE BOX EDGE THAT IS MOVING, not on every corner: snapping each point
+           independently is what turns an L into a different L. */
+        wrap.querySelectorAll('[data-zprz]').forEach(function (h3) {
+          h3.onpointerdown = function (ev) {
+            if (W.drawing || ev.button) return;
+            var s = selShape(); if (!s) return;
+            ev.preventDefault(); ev.stopPropagation();
+            var kk = h3.dataset.zprz, hh5 = H();
+            var pts0 = s.pts.map(function (p) { return [p[0], p[1]]; });
+            var bb0 = zpBBoxOf(pts0), moved = false;
+            var poly = wrap.querySelector('[data-zpoly="' + s.id + '"] polygon');
+            try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+            function move(e2) {
+              var p = ptOf(e2, stage); if (!p) return;
+              if (!moved) {
+                if (Math.abs(p[0] - (bb0.x + (kk.indexOf('e') >= 0 ? bb0.w : 0))) +
+                    Math.abs(p[1] - (bb0.y + (kk.indexOf('s') >= 0 ? bb0.h : 0))) < 3) return;
+                snap(); moved = true;
+              }
+              var sp = W.grid > 0 ? [zpSnapV(p[0], W.grid), zpSnapV(p[1], W.grid)] : p;
+              var box = zpBoxFromHandle(bb0, kk, sp, hh5, !!s.lock);
+              var np = zpSetBoxPts(pts0, box, hh5);
+              if (!np) return;                        // crushed flat — keep the last good outline
+              s.pts = np;
+              if (poly) poly.setAttribute('points', zpPts(np));
+            }
+            function done() {
+              svg.onpointermove = svg.onpointerup = svg.onpointercancel = null;
+              try { svg.releasePointerCapture(ev.pointerId); } catch (e) {}
+              if (moved) commit();
+              paint();
+            }
+            svg.onpointermove = move;
+            svg.onpointerup = done;
+            svg.onpointercancel = done;
+          };
+        });
       }
 
       function pick() {
@@ -42927,6 +43398,18 @@
       function onKey(ev) {
         if (!_zpWin) return;
         if ((ev.ctrlKey || ev.metaKey) && String(ev.key).toLowerCase() === 'z') { ev.preventDefault(); undo(); return; }
+        /* ⚠️⚠️ ESCAPE UNWINDS ONE THING AT A TIME, INNERMOST FIRST, and the order is the point:
+           a popover, then corner editing, then a half-finished trace. This modal is opened with
+           `noBackdropClose`, so Escape reaching UI.modal would shut the whole window — losing a
+           trace in progress to a keystroke meant for the menu on top of it. Each branch returns. */
+        if (ev.key === 'Escape' && (_zpWin.menu || _zpWin.addmenu)) {
+          ev.preventDefault(); ev.stopPropagation();
+          _zpWin.menu = null; _zpWin.addmenu = false; paint(); return;
+        }
+        if (ev.key === 'Escape' && _zpWin.corners && !_zpWin.drawing) {
+          ev.preventDefault(); ev.stopPropagation();
+          _zpWin.corners = null; paint(); return;
+        }
         if (ev.key === 'Escape' && _zpWin.drawing) { ev.preventDefault(); _zpWin.drawing = false; _zpWin.pts = []; paint(); return; }
         if (_typing(ev) || ev.ctrlKey || ev.metaKey || ev.altKey) return;
         var W = _zpWin;
@@ -43044,21 +43527,58 @@
             }).join('')
           : '') +
         '</div>';
-      // Most towers share the same floors/zones across trades — copy this trade's zoning to the others
-      // (or pull another trade's zoning in) instead of re-entering the whole building per trade.
-      var otherTr = used.filter(function (g) { return g !== tr; }), srcTr = otherTr.filter(function (g) { return cfg.zoning[g].floors.length; });
+      /* ==== TAKING A LAYOUT THAT ALREADY EXISTS ==========================================
+         ⚠️⚠️ NO "Copy → ALL TRADES" BUTTON. Owner 2026-09-17: *"in the third pic, also remove
+         that. just allow users to copy from other trades and also from other towers IF
+         APPLICABLE."* It was a PUSH — one press replaced every other trade's zoning at once, with
+         a confirm as the only thing between a planner and losing however many trades had already
+         been laid out differently. What replaces it is a PULL: this trade, this tower, takes a
+         copy of one layout the planner picks. Same work in the usual case (state one trade, then
+         take it from each of the others), one trade at a time, and nothing is ever replaced except
+         the thing the planner is looking at.
+         ⚠️⚠️ SOURCES ARE (TRADE, TOWER) PAIRS, and the tower half is the other half of the ask:
+         a tower that repeats another is far more common than a trade that repeats another, and
+         until now the only route was the whole-tower copy, which takes EVERY trade. The label
+         names the tower on a multi-tower project — *"which tower is being referenced"* — and on a
+         single-tower one it is left off, because there is only one answer.
+         ⚠️ Grouped by tower with THIS tower first, so the nearest answer is the first one read. */
+      var _srcs = [];
+      towerList().forEach(function (t) {
+        used.forEach(function (g) {
+          if (g === tr && t.id === _twAct) return;
+          var fl = floorsOfTower(g, t.id);
+          if (!fl.length) return;
+          _srcs.push({ g: g, tw: t.id, n: fl.length,
+            nz: fl.reduce(function (a, f) { return a + ((f.zones || []).length); }, 0) });
+        });
+      });
       /* ⚠️ The PIECES, not a row: they are assembled into the folded "Quick setup" panel below,
          beside the quick generator, because both of them answer the same question — this trade
          has no floors yet, how do I fill it? */
-      var copyInner = otherTr.length ?
-        ((zn.floors.length ? '<button class="pd-btn" id="b-applyall">Copy ' + e2(GLABEL[tr]) + ' floors/zones → all trades</button>' : '') +
+      var copyInner = '';
+      if (_srcs.length) {
+        var _mt = multiTower(), _byTw = {};
+        _srcs.forEach(function (s) { (_byTw[s.tw] = _byTw[s.tw] || []).push(s); });
+        var _twOrder = towerList().filter(function (t) { return _byTw[t.id]; })
+          .sort(function (a, b) { return (b.id === _twAct ? 1 : 0) - (a.id === _twAct ? 1 : 0); });
+        var _opts = _twOrder.map(function (t) {
+          var inner = _byTw[t.id].map(function (s) {
+            return '<option value="' + e2(s.tw + '|' + s.g) + '">' + e2(GLABEL[s.g]) + ' — ' + s.n +
+              ' floor' + (s.n === 1 ? '' : 's') +
+              (s.nz ? ', ' + s.nz + ' zone' + (s.nz === 1 ? '' : 's') : '') + '</option>';
+          }).join('');
+          return _mt ? '<optgroup label="' + e2(towerLabel(t.id) + (t.id === _twAct ? ' (this tower)' : '')) +
+            '">' + inner + '</optgroup>' : inner;
+        }).join('');
         // ⚠️ NOT `.sbld-mini`, which is `width:62px` — sized for the two-character number inputs
         // it was written for. On a <select> it clipped this control's own placeholder to "choc"
         // (owner 2026-09-03: *"There's also an error in the dropdown UI"*), and every option with it,
         // so the one thing the control had to say — which trade you are copying — was unreadable.
         // `width:auto` lets a <select> size to its longest option, which is what it is for.
-        (srcTr.length ? '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">or copy from <select class="pd-select" id="b-copyfrom" style="height:30px;width:auto;max-width:230px;"><option value="">choose trade…</option>' +
-          srcTr.map(function (g) { return '<option value="' + g + '">' + e2(GLABEL[g]) + ' (' + leafCount(g) + ')</option>'; }).join('') + '</select></label>' : '')) : '';
+        copyInner = '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">' +
+          'or take a layout from <select class="pd-select" id="b-copyfrom" style="height:30px;width:auto;max-width:300px;">' +
+          '<option value="">choose one…</option>' + _opts + '</select></label>';
+      }
       var _twFloors = zn.floors.map(function (f, i) { return { f: f, i: i }; })
         .filter(function (o) { return towerIdOf(o.f) === _twAct; });
       var floorsHtml = _twFloors.length ? _twFloors.map(function (_o) {
@@ -43146,8 +43666,8 @@
          them are used once per trade and then never again.
          ⚠️ OPEN EXACTLY WHEN THIS TOWER AND TRADE ARE EMPTY, which is the only moment they are the
          next thing to do; shut the instant there is a floor to look at instead.
-         ⚠️ `<details>` keeps its contents in the DOM when shut, so #q-base, #b-quick, #b-applyall
-         and #b-copyfrom stay wired below exactly as they were. */
+         ⚠️ `<details>` keeps its contents in the DOM when shut, so #q-base, #b-quick and
+         #b-copyfrom stay wired below exactly as they were. */
       /* ==== STATING THE BUILDING, IN WORDS ==============================================
          ⚠️⚠️ Owner 2026-09-17: *"improve the overall UI, starting from defining the number of
          floors, zones, units etc."* This was the entry point and it read
@@ -43169,7 +43689,7 @@
           '<em>' + hint + '</em></label>';
       };
       var fillCtrl = '<details class="sbld-fill"' + (_twFloors.length ? '' : ' open') + '>' +
-        '<summary>Quick setup — state the whole building at once' + (copyInner ? ', or take another trade’s' : '') + '…</summary>' +
+        '<summary>Quick setup — state the whole building at once' + (copyInner ? ', or take one you have already laid out' : '') + '…</summary>' +
         '<div class="sbld-fillbody">' +
           '<div class="sbld-qs">' +
             _qsf('q-base', 'Basements', qd.B, 0, 20, 'B1 down') +
@@ -43212,12 +43732,24 @@
           });
           var np = Object.keys(plates).length;
           nAll += fl.length; nHave += (fl.length - bare.length); nOv += ovFl.length;
-          /* ⚠⚠ AN UNDRAWN FLOOR IS STILL THE FIRST JOB. A category can be both incompletely
-             traced and overlapping where it IS traced, and the button can only go one place — it
-             goes to the missing drawing, because a floor with no plan at all is the larger hole
-             and the overlap is still marked on its own row below. Only once every storey is drawn
-             does the button become the route to the fault. */
-          var target = (bare[0] || ovFl[0] || fl[0]);
+          /* ⚠️⚠️ THIS ROW HAS NO BUTTON, AND THAT IS THE POINT. Owner 2026-09-17: *"what is the
+             use of having a draw button for a floor category and a plan button for each floor. pls
+             simplify that."* None, and the question is the answer: both opened THE SAME WINDOW on
+             THE SAME FLOOR. The category button was a shortcut to “the first storey of this type
+             with no drawing” — which is a floor, which already has its own button eight rows below,
+             so the screen offered two controls, differently labelled and differently placed, for one
+             action. Labelling them Draw… / Open… / Fix… made that worse rather than better: three
+             names for one thing reads as three things.
+             ⚠️⚠️ WHAT THE PANEL IS FOR IS THE THING THE FLOOR ROWS CANNOT DO: say, in four numbers
+             per category, what a forty-storey list would otherwise take forty rows of scrolling and
+             counting to say. That is a READ-OUT, and a read-out does not need a button — it needs
+             to name the floor it is talking about, which it now does. `Open F7’s plan` was never
+             information the button had and the text did not.
+             ⚠️ So the row NAMES the storey that is next — the first undrawn one, or failing that the
+             first overlapping one — and the planner presses that floor's own button. One control,
+             one place, and the panel stops being a second way to do what the list does. */
+          var nextF = (bare[0] || ovFl[0] || null);
+          function _fn(f) { return f ? (f.code || f.name || 'a floor') : ''; }
           rows.push('<div class="sbld-fpk' + (bare.length ? '' : ' done') + '">' +
             '<b>' + e2(KIND_LABEL[k]) + '</b>' +
             '<span>' + fl.length + ' storey' + (fl.length === 1 ? '' : 's') + '</span>' +
@@ -43230,18 +43762,12 @@
                cell would make the panel unable to report the pair. Both are emitted, side by
                side, and either can be absent. */
             (ovFl.length ? '<span class="sbld-fpk-ov">' + ovFl.length + ' overlapping</span>' : '') +
-            '<button class="pd-btn' + (!bare.length && ovFl.length ? ' sbld-fpk-fix' : '') +
-              '" data-fpk="' + e2(target.id) + '" title="' +
-              e2(bare.length
-                ? ('Open the plan for ' + (target.code || target.name || 'this floor') + ' — the first ' +
-                   KIND_LABEL[k].toLowerCase() + ' floor with no drawing. Trace it once, then use the ' +
-                   'category button inside to give it to all ' + fl.length + '.')
-                : (ovFl.length
-                    ? ('Open ' + (target.code || target.name || 'this floor') + '’s plan — the first ' +
-                       KIND_LABEL[k].toLowerCase() + ' floor whose zones overlap. The window names the ' +
-                       'pair and says how much of the smaller one is counted twice.')
-                    : ('Open ' + (target.code || target.name || 'this floor') + '’s plan.'))) + '">' +
-              (bare.length ? 'Draw…' : (ovFl.length ? 'Fix…' : 'Open…')) + '</button>' +
+            /* ⚠️ THE POINTER, not a control: it names the storey to press and says why that one.
+               `margin-left:auto` is on this cell now that the button is gone, so the pointer sits
+               where the eye was already going. */
+            '<span class="sbld-fpk-next">' + (nextF
+              ? (bare.length ? 'next: <b>' + e2(_fn(nextF)) + '</b>' : 'check: <b>' + e2(_fn(nextF)) + '</b>')
+              : '—') + '</span>' +
             '</div>');
         });
         if (!rows.length) return '';
@@ -43266,10 +43792,14 @@
               'and reported twice — in the activity count, in the scope and in every curve built from ' +
               'it. Open the plan and the window names the pair and says how much.</p>' : '') +
             rows.join('') +
-            '<p class="sbld-hint" style="margin:2px 0 0;">Draw <b>one plan per category</b> and share it — ' +
-            'inside the plan window, <b>All floors of one category</b> points every storey of that ' +
-            'type at the same drawing. Re-trace it once and all of them follow. A storey that is ' +
-            'genuinely different gets its own from its row below.</p>' +
+            /* ⚠️ It now says where to PRESS, because this panel no longer has a button of its own
+               and a read-out that does not hand the planner on is a dead end. The sentence it
+               replaced described the button inside the plan window and nothing else. */
+            '<p class="sbld-hint" style="margin:2px 0 0;">Open the storey named above from its own ' +
+            '<b>Plan…</b> button in the list below. Draw <b>one plan per category</b> and share it: ' +
+            'inside that window, <b>All floors of one category</b> points every storey of that type ' +
+            'at the same drawing, so re-tracing it once moves all of them. A storey that is ' +
+            'genuinely different gets its own.</p>' +
           '</div></details>';
       })();
       host.innerHTML = '<h2>' + _stepNo('Floors & Zones') + ' · Substructure &amp; Superstructure — per trade</h2>' +
@@ -43303,8 +43833,8 @@
         '<div class="sbld-lvlgrid">' +
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add ' + e2(dimLabelOf('floor').toLowerCase()) + '</button>' +
           '<button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
-          (_twFloors.length ? '<button class="pd-btn" id="b-bulk" title="Set the category, or the number of zones, on every floor of this tower at once">Change every floor…</button>' : '') +
-          /* ⚠️⚠️ THE TOWER COPY COMES OUT OF THE ⋯ MENU AND ONTO THE ROW. Owner 2026-09-17:
+          /* ⚠️⚠️ NO "Change every floor…" BUTTON — see the note where `_bulkDlg` used to be.
+             ⚠️⚠️ THE TOWER COPY COMES OUT OF THE Tower options MENU AND ONTO THE ROW. Owner 2026-09-17:
              *"when users select another tower, there is an option wherein users are able to copy
              the trades from another tower and the number of floors etc."* The capability existed
              — but it was the third row of a ⋯ menu on the tower bar, which is the last place a
@@ -43350,34 +43880,48 @@
         // above it: put first, it would be an empty grid on a project with no floors yet.
         '';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
-      var applyAll = host.querySelector('#b-applyall'); if (applyAll) applyAll.onclick = function () {
-        psConfirm('Copy ' + GLABEL[tr] + '\u2019s floors, zones and units to all ' + otherTr.length + ' other trade(s)?', function () {
-          otherTr.forEach(function (g) { cfg.zoning[g].floors = cloneFloors(zn.floors); });
-          pruneLinks(); markDirty(); render();
-        }, { title: 'Copy this layout to every trade?', ok: 'Copy to ' + otherTr.length + ' trade' + (otherTr.length === 1 ? '' : 's'),
-             note: 'This <b>replaces</b> their current zoning. Most towers really are laid out the same for every trade \u2014 but any trade that zones its floors differently loses that here.' });
-      };
+      /* \u26a0\ufe0f\u26a0\ufe0f THE COPY IS SCOPED TO THE TOWER ON SCREEN, which the old trade-to-trade copy was not:
+         it replaced the source trade's floors across EVERY tower, because `cfg.zoning[g].floors`
+         is one flat list for the whole project. This editor shows one tower at a time, so taking
+         a layout replaces this tower's floors and leaves the planner's other towers alone. */
       var copyFrom = host.querySelector('#b-copyfrom'); if (copyFrom) copyFrom.onchange = function () {
-        var g = copyFrom.value; if (!g) return;
-        var _take = function () { zn.floors = cloneFloors(cfg.zoning[g].floors); pruneLinks(); markDirty(); render(); };
-        if (!zn.floors.length) { _take(); return; }
+        var v = copyFrom.value; if (!v) return;
+        var _p = v.split('|'), sTw = _p[0], sG = _p[1];
+        var src = floorsOfTower(sG, sTw);
+        if (!src.length) { copyFrom.value = ''; return; }
+        var _mt = multiTower();
+        var _srcName = (_mt ? towerLabel(sTw) + ' \u00b7 ' : '') + GLABEL[sG];
+        var _dstName = (_mt ? towerLabel(_twAct) + ' \u00b7 ' : '') + GLABEL[tr];
+        var _take = function () {
+          var copies = cloneFloors(src);
+          copies.forEach(function (f) { f.towerId = _twAct; });
+          cfg.zoning[tr].floors = floorsOf(tr).filter(function (f) { return towerIdOf(f) !== _twAct; }).concat(copies);
+          pruneLinks(); markDirty(); render();
+          UI.toast('Copied ' + copies.length + ' floor' + (copies.length === 1 ? '' : 's') +
+            ' from ' + _srcName + '.', 'success');
+        };
+        if (!_twFloors.length) { _take(); return; }
         /* \u26a0 A <select> has already moved by the time this fires, so cancel has to put it back \u2014
            the same rule the Activity level control follows. */
-        psConfirm('Replace ' + GLABEL[tr] + '\u2019s current zoning with a copy of ' + GLABEL[g] + '\u2019s?', _take,
-          { title: 'Take another trade\u2019s layout?', ok: 'Replace it',
-            note: 'Everything typed against ' + e2(GLABEL[tr]) + '\u2019s floors \u2014 names, zones, units \u2014 goes with them.',
+        psConfirm('Replace the ' + _twFloors.length + ' floor' + (_twFloors.length === 1 ? '' : 's') +
+          ' under ' + e2(_dstName) + ' with a copy of ' + e2(_srcName) + '\u2019s ' + src.length + '?', _take,
+          { title: 'Take this layout?', ok: 'Replace it',
+            note: 'Everything typed against ' + e2(_dstName) + '\u2019s floors \u2014 names, zones, units \u2014 goes with them. ' +
+                  'Other towers are not touched.',
             onCancel: function () { copyFrom.value = ''; } });
       };
       // The floor-plan window, opened from the button on each floor row.
       host.querySelectorAll('[data-zpopen]').forEach(function (b) {
         b.onclick = function () { openZonePlan(tr, b.dataset.zpopen); };
       });
-      // ⚠️ Wired next to the floor-plan buttons, because it is the same window — see openPlate.
-      // ⚠️ Straight into the SAME window the floor row's own button opens — see the note on
-      // _planPanel. The category panel is a route, never a second editor.
-      host.querySelectorAll('[data-fpk]').forEach(function (b) {
-        b.onclick = function () { openZonePlan(tr, b.dataset.fpk); };
-      });
+      /* ⚠️ THE CATEGORY-ROW WIRING IS GONE WITH THE BUTTON IT SERVED. Owner 2026-09-17: *"what is
+         the use of having a draw button for a floor category and a plan button for each floor.
+         pls simplify that."* — see the note in `_planPanel`. Removed rather than left wired to
+         nothing: a handler with no emitter is the kind of thing a later reader restores a button
+         for, on the reasoning that the wiring must have been there for something.
+         ⚠️ The attribute selector it used to query is deliberately NOT spelled out here:
+         `test-zoneoverlap` asserts that form appears nowhere in this file, and a suite that
+         failed on its own explanation is a suite somebody deletes rather than fixes. */
       var _sb = host.querySelector("#b-siteplan");
       if (_sb) _sb.onclick = function () { openSitePlan(); };
       _locBarWire(host);
@@ -43653,63 +44197,17 @@
         var el = host.querySelector(s); if (el) el.addEventListener('input', _qsPrev);
       });
       _qsPrev();
-      /* ==== EVERY FLOOR AT ONCE ==========================================================
-         ⚠️⚠️ The two things a planner changes on forty rows are the CATEGORY and the number of
-         ZONES, and both were one row at a time — forty selects, or forty presses of +. Quick
-         setup could do it in one go but only by throwing the floors away and generating new ones,
-         which loses every name that has been typed. This edits what is there.
-         ⚠️ “Leave unchanged” is the default on both, so the dialog cannot do something that was
-         not asked for, and it refuses to run when neither has been set rather than quietly
-         applying nothing.
-         ⚠️ Setting a zone count REPLACES the zones on those floors, and says so — there is no
-         honest way to merge “three zones” into a floor that has two named ones without deciding
-         which of them survives. */
-      function _bulkDlg() {
-        var kinds = {}; _twFloors.forEach(function (o) { kinds[floorKind(o.f)] = (kinds[floorKind(o.f)] || 0) + 1; });
-        var scope = [['all', 'Every floor in this tower (' + _twFloors.length + ')']]
-          .concat(KIND_ORDER.filter(function (k) { return kinds[k]; })
-            .map(function (k) { return ['k:' + k, 'Only the ' + KIND_LABEL[k] + ' floors (' + kinds[k] + ')']; }));
-        psAsk({
-          title: 'Change every floor',
-          wide: true,
-          text: (multiTower() ? towerLabel(_twAct) + ' · ' : '') + GLABEL[tr] + ' — ' + _twFloors.length +
-            ' floor' + (_twFloors.length === 1 ? '' : 's') + '. Names and codes are never touched.',
-          ok: 'Apply',
-          fields: [
-            { k: 'only', label: 'Which floors', type: 'select', value: 'all', options: scope },
-            { k: 'kind', label: 'Category', type: 'select', value: '',
-              options: [['', '— leave unchanged —']].concat(KIND_ORDER.map(function (k) { return [k, KIND_LABEL[k]]; })),
-              hint: 'What the zone sequence branches on, and what the floor plan can be shared across. Setting it to Basement also moves those floors below the grade line on the tower drawing.' },
-            (showZones ? { k: 'z', label: 'Zones on each floor', type: 'select', value: '',
-              options: [['', '— leave unchanged —']].concat([0, 1, 2, 3, 4, 5, 6, 8, 10, 12].map(function (n) {
-                return [String(n), n === 0 ? 'No zones — one location per floor' : (n + ' zone' + (n === 1 ? '' : 's') + ' (Z1…Z' + n + ')')];
-              })),
-              hint: '⚠️ This REPLACES the zones on those floors. Anything you renamed, every unit under them, and the links drawn to them go with them.' } : null)
-          ],
-          validate: function (v) {
-            return (!v.kind && (v.z == null || v.z === ''))
-              ? 'Nothing to change — pick a category, a zone count, or both.' : '';
-          }
-        }, function (v) {
-          var want = String(v.only || 'all');
-          var kOnly = want.indexOf('k:') === 0 ? want.slice(2) : null;
-          var n = 0;
-          _twFloors.forEach(function (o) {
-            var f = o.f;
-            if (kOnly && floorKind(f) !== kOnly) return;
-            n++;
-            if (v.kind) { f.kind = v.kind; f.sub = (v.kind === 'basement'); }
-            if (v.z != null && v.z !== '') {
-              var z = Math.max(0, Math.min(20, +v.z || 0)), zs = [];
-              for (var j = 1; j <= z; j++) zs.push({ id: uidv(), code: 'Z' + j, units: [] });
-              f.zones = zs;
-            }
-          });
-          pruneLinks(); markDirty(); render();
-          UI.toast('Changed ' + n + ' floor' + (n === 1 ? '' : 's') + '.', 'success');
-        });
-      }
-      var _bulkB = host.querySelector('#b-bulk'); if (_bulkB) _bulkB.onclick = _bulkDlg;
+      /* ==== "CHANGE EVERY FLOOR" IS GONE, AND SO IS `_bulkDlg` ==========================
+         ⚠️⚠️ Owner 2026-09-17: *"remove the button of change every floor. what is the point of
+         that."* None that this step does not already answer twice over. It set the CATEGORY or
+         the ZONE COUNT on every floor of the tower at once — but the category is asked for at
+         birth in the Add floors dialog and changed on each row's own select, and the zone count
+         is a − N + stepper on every row plus a field in Quick setup, which states the whole
+         building in one press. A third way to do two things, behind a modal — and its zone half
+         REPLACED the zones it touched, throwing away names and units that neither of the two
+         controls it duplicated ever touches.
+         ⚠️ The handler goes with the button rather than being left wired to nothing: a live
+         `_bulkDlg` with no emitter is exactly what a later reader restores a button for. */
       host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); markDirty(); render(); }; });
       // ⚠️ pruneLinks, like the unit stepper beside it: dropping a zone drops its leaf, and a link
       // pointing at a leaf that no longer exists survives to Generate otherwise.

@@ -239,9 +239,17 @@ console.log('\n6 · the three places it is reported');
   ok(src.indexOf('nOv += ovFl.length;') > 0, 'the floor-plan panel counts the offending storeys');
   ok(src.indexOf("(nHave && !nOv ? '' : ' open')") > 0,
      '⚠️⚠️ an overlap forces the fold OPEN — a fault reported inside a fold nobody opens is not reported');
-  ok(src.indexOf("(bare.length ? 'Draw\\u2026' : (ovFl.length ? 'Fix\\u2026' : 'Open\\u2026'))") > 0 ||
-     src.indexOf("(ovFl.length ? 'Fix") > 0,
-     'and the category button becomes the route to the worst floor once everything is drawn');
+  /* ⚠️⚠️ THE CATEGORY ROW HAS NO BUTTON, AND THIS ASSERTS THE ABSENCE. Owner 2026-09-17: *"what
+     is the use of having a draw button for a floor category and a plan button for each floor. pls
+     simplify that."* Both opened the same window on the same floor. The row NAMES the storey to
+     press instead, so the panel still hands the planner somewhere to go — asserted, because a
+     read-out that names nothing is a dead end and is the way this simplification could go wrong. */
+  // ⚠️ The ATTRIBUTE and the SELECTOR, not the bare name — the note explaining why the button
+  // went still says `data-fpk`, and a suite that failed on its own explanation would be removed.
+  ok(src.indexOf('data-fpk="') < 0 && src.indexOf('[data-fpk]') < 0,
+     '⚠️⚠️ the category row no longer carries a second button onto the same window');
+  ok(src.indexOf('sbld-fpk-next') > 0 && src.indexOf("'next: <b>'") > 0,
+     '⚠️ it names the storey that is next instead, so the read-out still points somewhere');
 
   /* ⚠️⚠️ IT WARNS, IT DOES NOT BLOCK, and that is asserted rather than left to be noticed. Half a
      trace IS an overlap — a planner drawing the second zone over the first and pulling its corners
