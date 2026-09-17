@@ -3142,6 +3142,75 @@ window.ProgressPhotos = (function () {
   // equirectangular projection already makes, and the same "read a real
   // property instead of a guessed constant" discipline this app's other
   // pin/cone geometry already follows.
+  // ⚠️⚠️ 2026-09-17 — THIS IS WHY THE REVIEW MODAL SHOWED BIG BLACK ARCS, and
+  // the half of that report the stitcher alone could never fix.
+  //
+  // A phone walk-around genuinely captures a horizontal BAND of the sphere —
+  // roughly 40°–75° tall against the 180° a full sphere has — so an honest
+  // equirectangular panorama of one covers `vaov` degrees vertically and
+  // nothing above or below it. Pannellum renders that band onto a sphere and
+  // whatever the band does not reach is empty, drawn as the background colour.
+  // The viewer opened at `hfov: 100`, whose VERTICAL field in a wide, short
+  // preview box is far more than `vaov`, so the empty sphere above and below
+  // the band was on screen from the first frame — as two curved black regions,
+  // because a band edge on a sphere seen through a rectilinear viewport IS an
+  // arc. That is exactly the shape in the owner's screenshots.
+  //
+  // Nothing is faked to cover it: the fix is to make the empty region
+  // UNREACHABLE. The viewport is capped so its own vertical field can never
+  // exceed the band, and pitch is bounded to whatever room is left over. A
+  // planner can still zoom (a narrower hfov means a narrower vertical field,
+  // which is what BUYS pitch room — so zooming in genuinely unlocks looking
+  // up and down) and still pan the full 360°. They simply cannot point the
+  // camera at a part of the sphere the capture never recorded.
+  //
+  // Recomputed on resize and on entering/leaving fullscreen, because both
+  // change the container's aspect ratio and therefore the vertical field a
+  // given hfov subtends.
+  function clampViewerToCoverage(viewer, container, vaovDeg) {
+    var D2R = Math.PI / 180, R2D = 180 / Math.PI;
+    function apply() {
+      try {
+        var w = container.clientWidth || 1, h = container.clientHeight || 1;
+        // The widest horizontal field whose vertical field still fits inside
+        // the captured band. Derived from the standard rectilinear relation
+        // tan(vfov/2) = tan(hfov/2) * h/w, solved for hfov.
+        var maxH = 2 * Math.atan(Math.tan((vaovDeg / 2) * D2R) * (w / h)) * R2D;
+        maxH = Math.max(15, Math.min(120, maxH));
+        var minH = Math.min(25, maxH);
+        viewer.setHfovBounds([minH, maxH]);
+        var cur = viewer.getHfov();
+        // Open a little inside the cap so there is some pitch room to start
+        // with, rather than pinned flat at the very limit.
+        if (!(cur >= minH && cur <= maxH)) viewer.setHfov(Math.max(minH, maxH * 0.9), false);
+        // Whatever vertical field the CURRENT hfov subtends, the rest of the
+        // band is how far the pitch may travel in each direction.
+        var vfov = 2 * Math.atan(Math.tan((viewer.getHfov() / 2) * D2R) * (h / w)) * R2D;
+        var room = Math.max(0, (vaovDeg - vfov) / 2);
+        viewer.setPitchBounds([-room, room]);
+        if (Math.abs(viewer.getPitch()) > room) viewer.setPitch(0, false);
+      } catch (e) { /* an older Pannellum without these setters — no clamp, same as before */ }
+    }
+    apply();
+    // Re-clamp after a zoom: a narrower hfov frees up pitch room, a wider one
+    // takes it away, and a stale pitch bound would either lock the view or let
+    // it drift off the band.
+    try { viewer.on('zoomchange', apply); } catch (e) {}
+    try { viewer.on('load', apply); } catch (e) {}
+    var onResize = function () { apply(); };
+    window.addEventListener('resize', onResize);
+    document.addEventListener('fullscreenchange', onResize);
+    try {
+      var origDestroy = viewer.destroy && viewer.destroy.bind(viewer);
+      if (origDestroy) viewer.destroy = function () {
+        window.removeEventListener('resize', onResize);
+        document.removeEventListener('fullscreenchange', onResize);
+        return origDestroy();
+      };
+    } catch (e) {}
+    return viewer;
+  }
+
   function mountPannellumViewer(container, imageUrl, heightOverWidth) {
     if (!container) return null;
     // ⚠️⚠️ 2026-09-12 (second pass): this used to degrade to `null`
@@ -3165,9 +3234,11 @@ window.ProgressPhotos = (function () {
       // ⚠️ 2026-09-16 (viewer improvement): fullscreen turned ON. Both
       // callers of this function mount into a genuinely cramped box for
       // actually looking around a panorama -- the "Add 360°" review flow's
-      // own preview is a fixed 240px-tall strip (`#pp360-panowrap`
+      // own preview is a fixed 240px-tall strip (`#pp360rv-panowrap`
       // overrides the lightbox's larger sizing on purpose, see that CSS
-      // rule's own comment), and even the lightbox's own viewport-relative
+      // rule's own comment — ⚠️ that selector said `#pp360-panowrap` until
+      // 2026-09-17 and had matched nothing since the modal's ids were
+      // renamed), and even the lightbox's own viewport-relative
       // box is still constrained by this app's modal chrome around it.
       // Pannellum's fullscreen control drives the standard browser
       // Fullscreen API on this element specifically, which is a
@@ -3177,11 +3248,17 @@ window.ProgressPhotos = (function () {
       // and gives a planner a real way to inspect a capture at its actual
       // size instead of being capped by whichever container happened to
       // mount it.
-      return pannellum.viewer(container.id, {
+      var v = pannellum.viewer(container.id, {
         type: 'equirectangular', panorama: imageUrl, haov: 360, vaov: vaov,
         autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: true, compass: false,
-        minHfov: 30, maxHfov: 120, hfov: 100
+        // ⚠️ A neutral card-coloured backdrop rather than the default black,
+        // so anything this DOES fail to cover reads as empty page rather than
+        // as a hole burned in the photograph.
+        backgroundColor: [0.13, 0.13, 0.13],
+        minHfov: 25, maxHfov: 120, hfov: 100
       });
+      if (v) clampViewerToCoverage(v, container, vaov);
+      return v;
     } catch (e) {
       console.warn('[progress-photos] Pannellum viewer() threw while mounting (no WebGL support, or the ' +
         'browser\'s WebGL context limit is already exhausted) -- falling back to a flat image preview.', e);
@@ -3233,6 +3310,78 @@ window.ProgressPhotos = (function () {
       out.width = 640; out.height = Math.round(640 / THUMB_ASPECT);
       var ctx = out.getContext('2d');
       ctx.drawImage(src, sx, sy, cropW, cropH, 0, 0, out.width, out.height);
+      out.toBlob(function (blob) { cb(blob); }, 'image/jpeg', 0.85);
+    } catch (e) { cb(null); }
+  }
+  // ⚠️⚠️ 2026-09-17 — "the Use this view as thumbnail also does not work but it
+  // does not need to be shown already. by default, the last view will be the
+  // thumbnail."
+  //
+  // WHY IT DID NOT WORK, since the button is gone and the reason must not go
+  // with it: `captureViewerThumbnail` below reads Pannellum's own <canvas>
+  // with drawImage. That is a WEBGL canvas, and a WebGL drawing buffer is
+  // cleared after each composite unless the context was created with
+  // `preserveDrawingBuffer: true` — which Pannellum does not set, and which is
+  // not configurable from its public options. So reading it from a click
+  // handler (a different task from the frame that drew it) reliably returns an
+  // empty buffer. No amount of retrying the button fixes that.
+  //
+  // This renders the same view from the PANORAMA IMAGE instead — a plain 2D
+  // reprojection at whatever yaw/pitch/hfov the viewer is currently on, with
+  // no WebGL readback anywhere in it. It is the honest "last view": the same
+  // rectilinear projection Pannellum itself displays, so what a planner was
+  // looking at when they pressed Confirm & Save is what the thumbnail shows.
+  //
+  // ⚠️ `vaovDeg` is required and is NOT 180: this app's panoramas are a
+  // horizontal BAND of the sphere (see clampViewerToCoverage), so the image's
+  // full height spans vaov degrees of latitude, not a whole hemisphere.
+  // Treating it as 180 would squash the thumbnail by roughly 4×.
+  function viewThumbFromPano(imgEl, yawDeg, pitchDeg, hfovDeg, vaovDeg, cb) {
+    try {
+      if (!imgEl || !imgEl.naturalWidth || !imgEl.naturalHeight) { cb(null); return; }
+      var iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
+      var src = document.createElement('canvas');
+      src.width = iw; src.height = ih;
+      src.getContext('2d').drawImage(imgEl, 0, 0);
+      // Throws a SecurityError if the panorama tainted the canvas (a signed
+      // URL served without CORS headers). The caller falls back to the
+      // server's own thumbnail rather than saving nothing.
+      var sd = src.getContext('2d').getImageData(0, 0, iw, ih).data;
+
+      var outW = 640, outH = Math.round(640 / THUMB_ASPECT);
+      var out = document.createElement('canvas');
+      out.width = outW; out.height = outH;
+      var octx = out.getContext('2d');
+      var img = octx.createImageData(outW, outH);
+      var od = img.data;
+
+      var D2R = Math.PI / 180;
+      var f = (outW / 2) / Math.tan((hfovDeg * D2R) / 2);
+      var cx = (outW - 1) / 2, cy = (outH - 1) / 2;
+      var yaw = yawDeg * D2R, pitch = pitchDeg * D2R;
+      var cp = Math.cos(pitch), sp = Math.sin(pitch);
+      var cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
+      var vaov = Math.max(1, vaovDeg) * D2R;
+      var TAU = Math.PI * 2;
+      for (var y = 0; y < outH; y++) {
+        var Y0 = y - cy;
+        for (var x = 0; x < outW; x++) {
+          var X = x - cx, Z0 = f;
+          // pitch about the horizontal axis, then yaw about the vertical
+          var Y = Y0 * cp - Z0 * sp, Z = Y0 * sp + Z0 * cp;
+          var Xw = X * cyaw + Z * syaw, Zw = -X * syaw + Z * cyaw;
+          var lon = Math.atan2(Xw, Zw);
+          var lat = Math.atan2(-Y, Math.sqrt(Xw * Xw + Zw * Zw));
+          var u = (lon / TAU + 0.5) * iw;
+          u = ((u % iw) + iw) % iw;                       // the panorama wraps
+          var v = ih / 2 - (lat / vaov) * ih;
+          if (v < 0) v = 0; else if (v > ih - 1) v = ih - 1;
+          var si = ((v | 0) * iw + (u | 0)) * 4;
+          var di = (y * outW + x) * 4;
+          od[di] = sd[si]; od[di + 1] = sd[si + 1]; od[di + 2] = sd[si + 2]; od[di + 3] = 255;
+        }
+      }
+      octx.putImageData(img, 0, 0);
       out.toBlob(function (blob) { cb(blob); }, 'image/jpeg', 0.85);
     } catch (e) { cb(null); }
   }
@@ -6946,11 +7095,25 @@ window.ProgressPhotos = (function () {
       if (pp360Viewer && pp360Viewer.on) {
         if (standinEl) standinEl.hidden = true;
         if (!draft.repUrl) {
+          // ⚠️ 2026-09-17: was captureViewerThumbnail(viewerEl, …) — a WebGL
+          // readback that returns an empty buffer (see viewThumbFromPano).
+          // The standin <img> is an ordinary 2D-drawable image and genuinely
+          // works. This is only a PLACEHOLDER thumbnail anyway: Confirm & Save
+          // re-frames it from whatever view the planner leaves the viewer on.
           pp360Viewer.on('load', function () {
-            captureViewerThumbnail(viewerEl, function (blob) {
-              if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); }
-              paintThumb();
-            });
+            // ⚠️ The standin is display:none (it is only a fallback surface),
+            // which does not stop it decoding — but it may not have finished
+            // yet when the viewer reports loaded. Without waiting for it,
+            // captureImageThumbnail returns null, `repBlob` stays unset and
+            // Confirm & Save sits on "Still processing" forever.
+            var grab = function () {
+              captureImageThumbnail(standinEl, function (blob) {
+                if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); }
+                paintThumb();
+              });
+            };
+            if (standinEl && standinEl.complete && standinEl.naturalWidth) grab();
+            else if (standinEl) standinEl.onload = grab;
           });
         }
       } else {
@@ -7016,10 +7179,9 @@ window.ProgressPhotos = (function () {
             '<img id="pp360rv-pano-standin" alt="Stitched panorama preview" hidden />' +
             '<div id="pp360rv-pano-viewer" class="pp-lb-panoviewer"></div>' +
           '</div>' +
-          '<p class="pp-hint">Drag to look around the stitched panorama, then frame the view you want as the thumbnail below.</p>' +
+          '<p class="pp-hint">Drag to look around the stitched panorama. Whatever you leave it on becomes the thumbnail.</p>' +
           '<div style="margin:6px 0;display:flex;gap:8px;flex-wrap:wrap;">' +
             '<button type="button" class="pd-btn" id="pp360rv-adjust">Adjust</button>' +
-            '<button type="button" class="pd-btn" id="pp360rv-usethumb">Use this view as thumbnail</button>' +
           '</div>' +
           '<div class="pd-field" id="pp360rv-thumbfield" hidden><label>Thumbnail</label>' +
             '<img id="pp360rv-thumbpreview" alt="Selected thumbnail" style="max-width:200px;display:block;border-radius:var(--pd-radius);" />' +
@@ -7053,32 +7215,30 @@ window.ProgressPhotos = (function () {
       if (!draft.stitchUrl) return;
       openAdjustEditor(draft.stitchUrl, draft.pendingAdjust[0] || {}, function (adj) { draft.pendingAdjust[0] = adj; persistPano360Draft(draft); });
     };
-    if ($('pp360rv-usethumb')) $('pp360rv-usethumb').onclick = function () {
-      if (pp360Viewer) {
-        var viewerEl = $('pp360rv-pano-viewer');
-        if (!viewerEl) return;
-        captureViewerThumbnail(viewerEl, function (blob) {
-          if (!blob) { UI.toast('Could not capture the current view — try again', 'warn'); return; }
-          draft.repBlob = blob;
-          if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
-          draft.repUrl = URL.createObjectURL(blob);
-          draft._thumbOverridden = true; // Confirm & Save must upload THIS, never the server's own default thumbnail (jobThumbPath)
-          persistPano360Draft(draft);
-          paintThumb();
-        });
-      } else {
+    // ⚠️⚠️ "Use this view as thumbnail" IS DELETED, NOT HIDDEN — the owner's own
+    // call ("it does not need to be shown already. by default, the last view
+    // will be the thumbnail"), and it never worked anyway: it read a WebGL
+    // drawing buffer that is empty by the time a click handler runs (see
+    // viewThumbFromPano for the full reason). Its job is done at Confirm &
+    // Save instead, from wherever the viewer was left pointing. Nothing to
+    // press, nothing to forget to press.
+    function captureLastView() {
+      return new Promise(function (resolve) {
         var standinEl = $('pp360rv-pano-standin');
-        captureImageThumbnail(standinEl, function (blob) {
-          if (!blob) { UI.toast('Could not capture the panorama — try again', 'warn'); return; }
-          draft.repBlob = blob;
-          if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
-          draft.repUrl = URL.createObjectURL(blob);
-          draft._thumbOverridden = true; // same rule as above, for the no-viewer standin path
-          persistPano360Draft(draft);
-          paintThumb();
-        });
-      }
-    };
+        if (!pp360Viewer || !standinEl || !standinEl.naturalWidth) { resolve(null); return; }
+        var res = draft.stitchResult;
+        var hOverW = (res && res.width && res.height)
+          ? (res.height / res.width)
+          : (standinEl.naturalHeight / standinEl.naturalWidth);
+        // The SAME vaov the viewer was mounted with, read the same way — a
+        // thumbnail computed against a different vertical field from the one
+        // on screen would be framed differently from what the planner saw.
+        var vaov = Math.min(140, Math.max(20, 360 * (hOverW || 0.35)));
+        var yaw = 0, pitch = 0, hfov = 100;
+        try { yaw = pp360Viewer.getYaw(); pitch = pp360Viewer.getPitch(); hfov = pp360Viewer.getHfov(); } catch (e) { resolve(null); return; }
+        viewThumbFromPano(standinEl, yaw, pitch, hfov, vaov, resolve);
+      });
+    }
     if ($('pp360rv-discard')) $('pp360rv-discard').onclick = function () {
       removePano360Draft(draft);
       m.close();
@@ -7097,6 +7257,19 @@ window.ProgressPhotos = (function () {
       var reqErr = requiredFieldsMissing('pp360rv');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
+      // ⚠️ The thumbnail is taken HERE, from wherever the viewer was left —
+      // "by default, the last view will be the thumbnail". Best-effort by
+      // design: if the reprojection cannot run (no viewer mounted, or the
+      // signed URL tainted the canvas) this simply leaves `_thumbOverridden`
+      // false and the server's own centre-crop thumbnail is reused, exactly as
+      // before. A thumbnail that could not be re-framed must never block a save.
+      var lastView = await captureLastView();
+      if (lastView) {
+        draft.repBlob = lastView;
+        if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
+        draft.repUrl = URL.createObjectURL(lastView);
+        draft._thumbOverridden = true;
+      }
       var locVals = draft.meta.locVals || {};
       var worksList = draft.meta.works || [];
       var tradeList = deriveTradesForWorksList(worksList);
