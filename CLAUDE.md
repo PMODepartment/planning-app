@@ -104,6 +104,95 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (p) — Three ReferenceErrors that parsed cleanly, the Execution lock, Milestones to the top, and the four sync buttons become one
+
+Owner, over four messages on the merged Project Phases step: *"Most of the phases are just blank."*
+· *"For execution Phase haven't we locked editing this phase? Let's lock this phase only."* ·
+*"For other branches, Milestones how can this be moved at the very top?"* · *"The four tool buttons
+... the sync buttons at the very bottom ... consolidate into one button."*
+
+### ⚠️⚠️ First, three bugs the suite found that `node --check` could not
+
+This file is edited by python patch scripts, and a name defined only in the **script** — `MID`, `D` —
+sails through a parse as a perfectly legal identifier reference and throws `ReferenceError` the first
+time that line runs.
+
+- `' + D + '` in the read-only row badge: **every locked Execution row would have thrown.**
+- `' + MID + '` in the branch-block header: **every card, on every render.**
+- `' + MID + '` on the *no-branch* path — **shipped in (o) and latent for a whole commit**, because it
+  only fires when a phase has no branch yet and every real project has all four.
+
+Section 8 of the suite now executes `phWbsBlock` on **both** paths and asserts no patch-script
+variable survives in the emitted code. The latent one is exactly the kind a spot check cannot reach:
+the branch never runs on real data until the day it does.
+
+⚠️ And the fix script itself crashed *printing* a ⚠️ to a cp1252 console **before** it wrote the file,
+so the first run reported four successful substitutions and changed nothing. Caught by re-grepping
+the file rather than trusting the log — `PYTHONIOENCODING=utf-8` on the rerun.
+
+### The four asks
+
+**Blank phases.** `.sbld-phwbs` was `height:240px`, so an empty phase reserved a quarter-screen void —
+and on a project that has not been pushed to, most phases are empty. It is `max-height` now: the cap
+still exists (the tree is virtualised off this box's own `clientHeight`, so a box that grows without
+limit has no viewport to window against), but under the cap it shrinks to fit, and an empty branch
+gets no box at all — a bordered panel holding one grey sentence reads as something that failed to load.
+
+**The Execution lock, and the answer to the question in it.** *"Haven't we locked editing this
+phase?"* — the branch **node** is `is_locked`, which only ever protected its own name and position;
+its children were always freely editable. Now the Execution view is read-only: no name inputs, not
+one mutating control, and the keyboard respects it too — a lock that only holds for the mouse is not
+a lock. The caret survives, because collapsing is reading. Each row says *"built by the setup"*.
+⚠️ **This phase only**, as asked. The trade: a generated branch can no longer be hand-fixed here, and
+the way to change it is the setup plus another push — which is what the card already claimed.
+
+**Milestones to the top.** It could not be moved: a skeleton root is locked and a locked row renders
+**no move buttons**, so no control has ever existed. Its position is fixed by `WBS_SKELETON`, which
+already puts it at code 1 — what was wrong was this step, showing it last inside *Other branches*,
+contradicting the order the schedule itself uses. It has its own card now, first.
+⚠️ Matched by **name**: `phaseFromName('Milestones')` is null by design, which is exactly why it fell
+into Other.
+
+**The four sync buttons.** Reset / Sync Engineering / Sync Procurement / Push need-by sat on their own
+row under the tree, taking the same visual weight as Add WBS while being used a handful of times a
+project. One **Tools** button in the main toolbar now, with the row as its popover.
+⚠️ **The buttons themselves are unmoved** — same ids, same handlers, same titles. Only the container
+moved and became a popover. Rewiring five live handlers to re-house them would have been the risky
+way to do a layout change. Closes on outside click, on Escape, and after any of its own actions.
+
+### ⚠️⚠️ And the duplicate question, asked a third time — which found a real hole
+
+*"Is the branches the sub-WBS? If yes then some activities are under some branches. Therefore we
+shall be able to merge."*
+
+**Yes, branches are the sub-WBS.** But the two lists are a **plan and a record**: the activity list is
+`cfg.phases` — what the next Push will create, not in the database yet — and the branch block is
+`wbs_nodes`, what the project has. They cannot merge into one list without merging an intention with
+a fact. The card now says so: *Planned — created under this phase when you 7 · Push* above one, *In
+the schedule now* above the other.
+
+⚠️⚠️ **But asking it exposed a real defect in (o).** A pushed lifecycle phase files its activities
+**directly on the phase branch**, not under a sub-branch — and the card counted only *children*. So a
+phase that had just had three activities pushed into it still read *"No branches here yet · 0"*. The
+card said the phase was empty when it was not. The header states both numbers now (*"0 branches · 3
+activities"*), and the empty line reads *"No sub-branches — anything pushed to this phase sits
+directly on it."*
+
+### Verified
+
+**59 assertions** (was 30), the renderer and the row builder sliced out and executed. New: the lock
+tested on the **real** `_wbsRowHTML` — ten mutating controls asserted absent by name, the caret
+asserted present; only `construction` gets the flag; and the patch-variable guard above.
+The equivalence contrast against pinned `d3caf64` still holds.
+`wiring-check` 139/139, `toolbar-order` 15 bars 0 out of order, CSS delta unchanged from base at 1,
+the 3.5MB inline script parses.
+
+⚠️ **Not verified signed in.** The Tools popover has never been opened against a real project, and the
+Execution lock has never been tried on a real generated branch. Worth watching on the first open: the
+branch/activity tally in each card header — those, with Other, must account for the whole tree.
+
+`MODULE_V` → `20260917zr`.
+
 ### 2026-09-17 (o) — The phase cards and the WBS tree merge: one tree became five, each inside the card it belongs to
 
 Owner, on the Project Phases step: *"The Work breakdown structure below just shows the same

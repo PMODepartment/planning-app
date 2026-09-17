@@ -4073,15 +4073,44 @@
        host's own clientHeight, so a host that grows to fit its content has no viewport to window
        against and would paint every row — which on Execution's several hundred branches is the
        thing virtualisation exists to prevent. The cap IS the viewport. */
-    .sbld-phwbs { height:240px; overflow:auto; border:1px solid var(--pd-line);
+    /* ⚠️⚠️ `max-height`, NOT `height`. Owner 2026-09-17: *"Most of the phases are just
+       blank."* A fixed 240px box reserved a quarter-screen void under every empty phase — and
+       on a project that has not been pushed to, three of the five are empty. The cap still has to
+       exist, because the tree is virtualised off this box's own clientHeight and a box that grows
+       without limit has no viewport to window against; but under the cap it now shrinks to fit.
+       The spacer inside is always the FULL row height, so the cap engages the moment the content
+       exceeds it and virtualisation resumes exactly as before. */
+    .sbld-phwbs { max-height:240px; overflow:auto; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius-md); background:var(--pd-card); }
-    .sbld-phcard.is-exec .sbld-phwbs { height:360px; }   /* it holds most of the tree */
+    .sbld-phcard.is-exec .sbld-phwbs { max-height:360px; }   /* it holds most of the tree */
+    /* ⚠️ An empty branch gets no box at all: a bordered panel containing one grey sentence
+       reads as a thing that failed to load. The sentence alone reads as an empty branch. */
+    .sbld-phwbs.is-empty { border:0; background:none; max-height:none; }
+    .sbld-phwbs.is-empty .ps-wbs-empty { padding:4px 2px; text-align:left; }
     .sbld-phwbs-h { display:flex; align-items:baseline; gap:8px; margin:12px 0 6px;
       font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em;
       font-weight:700; color:var(--pd-muted); }
     .sbld-phwbs-w { flex:1; text-transform:none; letter-spacing:0; font-weight:500; }
     .sbld-phwbs-n { font-variant-numeric:tabular-nums; color:var(--pd-ink); }
     .sbld-phcard-other .sbld-phname { color:var(--pd-muted); }
+    .ps-wbs-rolock { color:var(--pd-muted); font-style:italic; }
+    .sbld-phplanh { margin-top:10px; }
+    /* The Tools popover. ⚠️ Anchored to its own wrapper rather than to the toolbar, so it
+       opens under the button wherever the toolbar has been borrowed to. */
+    .ps-wbs-toolswrap { position:relative; display:inline-flex; }
+    .ps-wbs-toolspop { position:absolute; top:calc(100% + 6px); right:0; z-index:40;
+      display:flex; flex-direction:column; align-items:stretch; gap:6px; min-width:270px;
+      padding:10px; background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg, 0 8px 24px rgba(0,0,0,.14)); }
+    .ps-wbs-toolspop[hidden] { display:none; }
+    .ps-wbs-toolspop .pd-btn { justify-content:flex-start; width:100%; }
+    /* ⚠️ The two "synced at" timestamps are their own line under the button they belong to,
+       not trailing it — in a column layout a trailing span reads as a separate item. */
+    .ps-wbs-toolspop > span[id$="-at"] { font-size:11px; color:var(--pd-muted); margin:-2px 0 2px 2px; }
+    .ps-wbs-toolspop .ps-tb-sep { height:1px; width:auto; margin:2px 0; background:var(--pd-line); }
+    /* ⚠️ The read-only card is toned down rather than greyed out: its rows are still the
+       real tree and still worth reading, they simply cannot be typed into here. */
+    .sbld-phcard.is-exec .sbld-phwbs { background:var(--pd-bg); }
     /* ⚠️⚠️ NO PHASE BADGE INSIDE A PHASE CARD. Every row carries a badge naming its phase,
        which is useful in a tree of everything and is pure repetition in a card already titled
        with that phase — on Planning it printed "Planning Phase" four more times, which is the
@@ -4999,6 +5028,18 @@
         <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
         <input class="pd-input" id="ps-wbs-search" placeholder="Search code / name…" style="height:32px;width:200px;">
         <span id="ps-wbs-hint" style="font-size:12px;color:var(--pd-muted);">Build the WBS first, then add activities under any node.</span>
+        <!-- ⚠️⚠️ THE REPAIR + MIRROR GROUP IS ONE BUTTON NOW. Owner 2026-09-17: *"The four
+             tool buttons ... the sync buttons at the very bottom of the page ... consolidate into one
+             button and place it in a proper location where all tools are at the same level."* They sat
+             on their own row under the tree, so four controls that are used a handful of times a
+             project took the same visual weight as Add WBS, and sat furthest from it.
+             ⚠️ The BUTTONS THEMSELVES ARE UNMOVED — same ids, same handlers, same titles. Only
+             their container moved inside this toolbar and became a popover. Rewiring five live
+             handlers to re-house them would have been the risky way to do a layout change. -->
+        <span class="ps-wbs-toolswrap">
+          <button class="pd-btn" id="ps-wbs-tools" aria-haspopup="true" aria-expanded="false"
+                  title="Repair the tree, and refresh the Engineering / Procurement mirrors"><span data-ico="settings" data-ico-size="15"></span> Tools</button>
+        </span>
         </span>
         <!-- The repair + mirror group. Kept SEPARATE from the edit tools because it is a different
              kind of work, and the WBS step lays the two out on their own rows:
@@ -5008,7 +5049,7 @@
                  branches this app mirrors but does not own. Sync is read-only; Push need-by is the
                  ONE place this app writes into another team's database, which is why it stays a
                  separate button and never a side effect of a refresh. -->
-        <span id="ps-wbs-integrations" class="ps-wbs-edittools">
+        <span id="ps-wbs-integrations" class="ps-wbs-edittools ps-wbs-toolspop" hidden>
         <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
         <button class="pd-btn" id="ps-wbs-reset" title="Drop every custom / imported branch and rebuild the tree from the schedule's own WBS codes — the standard skeleton is kept"><span data-ico="refresh" data-ico-size="15"></span> Reset WBS…</button>
         <span class="ps-tb-sep"></span>
@@ -5868,9 +5909,24 @@
     });
     return out;
   }
+  /* ⚠️⚠️ MILESTONES IS SKELETON ENTRY #1, SO ITS CARD GOES FIRST. Owner 2026-09-17:
+     *"For other branches, Milestones how can this be moved at the very top?"* It could not be: a
+     skeleton root is `is_locked`, and a locked row deliberately renders NO move buttons, so there
+     was no control that would move it and never has been. Its position is fixed by WBS_SKELETON,
+     which already puts it at code 1 — what was wrong was this step, which showed it last,
+     inside "Other branches", contradicting the order the schedule itself uses.
+     ⚠️ Matched by NAME, not by phase: `phaseFromName('Milestones')` is null by design (it is
+     not a lifecycle phase), which is exactly why it fell into Other in the first place. */
+  function _wbsMilestonesRootId() {
+    var hit = (WBS_NODES || []).filter(function (n) {
+      return !(n.parent_id || null) && String(n.name || '').trim().toLowerCase() === 'milestones';
+    })[0];
+    return hit ? hit.id : null;
+  }
   function _wbsOtherRootIds() {
     var used = _sbPhaseScopeIds(), taken = {};
     Object.keys(used).forEach(function (k) { taken[used[k]] = 1; });
+    var ms = _wbsMilestonesRootId(); if (ms) taken[ms] = 1;
     return (WBS_NODES || []).filter(function (n) { return !(n.parent_id || null) && !taken[n.id]; })
       .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); })
       .map(function (n) { return n.id; });
@@ -7702,9 +7758,9 @@
      the branch name is not repeated inside the card that is already named after it. */
   var WBS_VIEWS = [];
   function wbsResetViews() { WBS_VIEWS.length = 0; }
-  function wbsAddView(host, tops) {
+  function wbsAddView(host, tops, ro) {
     if (!host) return null;
-    var v = { host: host, tops: tops || null, flat: [], wired: false, raf: false, winKey: '' };
+    var v = { host: host, tops: tops || null, ro: !!ro, flat: [], wired: false, raf: false, winKey: '' };
     WBS_VIEWS.push(v); _wbsWire(v); return v;
   }
   /* ⚠️ Prune detached hosts on every read. The builder repaints its panel with innerHTML on
@@ -29086,14 +29142,21 @@
     return { byId: byId, childrenOf: childrenOf, actCount: actCount, codeOf: codeOf };
   }
   // Build one row's HTML from a flat descriptor. Shared by the full render + the virtual window.
-  function _wbsRowHTML(e) {
+  /* `ro` = this VIEW is read-only (the Execution card). ⚠️⚠️ IT REUSES THE `locked`
+     RENDERING that skeleton headings already use rather than inventing a second read-only mode:
+     the name becomes fixed text and every mutating control is dropped. A disabled-looking button
+     that still fires, or an input that silently refuses the edit, is worse than no control. */
+  function _wbsRowHTML(e, ro) {
     var caret = e.nKids
       ? '<button class="ps-wbs-caret' + (e.open ? '' : ' collapsed') + '" data-wbs-toggle="' + esc(e.id) + '" title="' + (e.open ? 'Collapse' : 'Expand') + '">' + (e.open ? '▾' : '▸') + '</button>'
       : '<span class="ps-wbs-caret leaf">▾</span>';
     var n = wbsById(e.id);
-    var locked = n && n.is_locked;
+    var locked = (n && n.is_locked) || ro;
     var sk = n && n.source_kind;
-    var acts = sk
+    /* ⚠️ In a read-only view even the ADDITIVE controls go. "＋Act" and "＋" do not mutate an
+       existing branch, but they put work into a tree the next push rebuilds, which is the confusion
+       the lock exists to prevent. */
+    var acts = ro ? '<span class="ps-wbs-badge ps-wbs-rolock" title="Built by the Generate step — edit the setup and push again">built by the setup</span>' : sk
       ? '<span class="ps-wbs-badge ps-wbs-synced" title="' + esc(SOURCE_KIND_LABEL[sk] || '') + '">🔒 synced</span>'
       : ('<button class="wbs-act" data-wbs-act="' + esc(e.id) + '" title="Add an activity under this WBS">＋Act</button>' +
          '<button data-wbs-add="' + esc(e.id) + '" title="Add sub-WBS (Shift+Enter in the name)">＋</button>' +
@@ -29147,7 +29210,7 @@
     if (key === v.winKey && win.childElementCount) return;
     v.winKey = key;
     var h = '';
-    for (var i = first; i < last; i++) h += _wbsRowHTML(v.flat[i]);
+    for (var i = first; i < last; i++) h += _wbsRowHTML(v.flat[i], !!v.ro);
     win.style.transform = 'translateY(' + (first * WBS_ROWH) + 'px)';
     win.innerHTML = h;
   }
@@ -29344,6 +29407,10 @@
   // of the builder's render() and when switching away from the builder tab, never "when convenient".
   function sbWbsPark() {
     var park = document.getElementById('ps-wbs-park'); if (!park) return;
+    /* ⚠️ `ps-wbs-integrations` stays in this list even though it now lives inside the
+       toolbar: on first open it is re-parented into the popover wrapper, and if it were ever left
+       outside the toolbar when the panel repaints it would be destroyed with it. Parking both is
+       cheap and cannot be wrong. */
     ['ps-wbs-edittools', 'ps-wbs-integrations', 'ps-wbs-card'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && el.parentNode !== park) park.appendChild(el);
@@ -29357,13 +29424,46 @@
   /* The toolbar and the repair/mirror row are still ONE node each, borrowed — they act on the
      global selection, so there is exactly one of them however many cards are on screen. Only the
      TREE is instanced. Returns false when the nodes are missing (a half-loaded page). */
-  function sbWbsMountTools(toolsHost, intHost) {
+  /* ⚠️ ONE node to move now: the repair/mirror row lives INSIDE the toolbar as a popover, so
+     it travels with it. `intHost` is still accepted and ignored, because a caller passing one is
+     not wrong — it just no longer has anywhere separate to put it. */
+  function sbWbsMountTools(toolsHost) {
     var tools = document.getElementById('ps-wbs-edittools');
-    var integ = document.getElementById('ps-wbs-integrations');
     if (!tools || !toolsHost) return false;
     toolsHost.appendChild(tools);
-    if (integ && intHost) intHost.appendChild(integ);
+    _wbsWireTools();
     return true;
+  }
+  var _wbsToolsWired = false;
+  function _wbsWireTools() {
+    if (_wbsToolsWired) return;
+    var btn = document.getElementById('ps-wbs-tools');
+    var pop = document.getElementById('ps-wbs-integrations');
+    if (!btn || !pop) return;
+    _wbsToolsWired = true;
+    function shut() { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = pop.hidden;
+      pop.hidden = !open;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      /* ⚠️ The panel is moved INTO the wrapper on first open rather than in the markup: the
+         markup order keeps it next to the toolbar so an older caller that never opens it still
+         finds it, and the wrapper is what anchors the popover. */
+      var wrap = btn.parentNode;
+      if (open && pop.parentNode !== wrap) wrap.appendChild(pop);
+    });
+    /* ⚠️ Closes on an outside click and on Escape, like every other popover in this app. A
+       panel that can only be closed by the button that opened it is the one people leave open. */
+    document.addEventListener('click', function (e) {
+      if (pop.hidden) return;
+      if (e.target.closest && e.target.closest('.ps-wbs-toolswrap')) return;
+      shut();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') shut(); });
+    /* ⚠️ And after any of its own actions: they all reload or repaint, and a popover left
+       hanging over the result is how a planner clicks the same button twice. */
+    pop.addEventListener('click', function (e) { if (e.target.closest('button')) shut(); });
   }
   /* Register one view per phase card. ⚠️ Called after EVERY repaint of the cards, because
      `stPhases` rebuilds them with innerHTML and the old hosts are then detached — a view
@@ -29375,10 +29475,26 @@
     scope.querySelectorAll('[data-phwbs]').forEach(function (h) {
       var code = h.getAttribute('data-phwbs');
       if (code === 'other') { wbsAddView(h, function () { return _wbsOtherRootIds(); }); return; }
+      if (code === 'milestones') {
+        wbsAddView(h, function () {
+          var id = _wbsMilestonesRootId();
+          return id ? wbsChildren(id).map(function (n) { return n.id; }) : [];
+        });
+        return;
+      }
+      /* ⚠️⚠️ THE EXECUTION BRANCH IS READ-ONLY, and the owner asked for this phase ONLY.
+         Its contents are built by the Generate step from trades, towers, floors and zones, and a
+         hand edit here survives only until the next push rebuilds the branch — so the edit is
+         not refused, it is silently temporary, which is worse. The way to change it is the setup
+         plus another push. The other three phases stay fully editable: their branches are not
+         generated from anything.
+         ⚠️ NOT the same as the skeleton's `is_locked`, which only ever protected the branch
+         NODE's own name and position; its children were always freely editable, which is what the
+         owner was asking about. */
       wbsAddView(h, function () {
         var b = _phaseBranchAt(null, code);
         return b ? wbsChildren(b.id).map(function (n) { return n.id; }) : [];
-      });
+      }, code === 'construction');
     });
   }
   /* ⚠️ `sbWbsMount` RETIRED 2026-09-17 with its only caller, stWbs. It borrowed the whole
@@ -29490,16 +29606,21 @@
       v.flat = flat;
       if (!flat.length) {
         v.winKey = '';
+        if (v.host.classList) v.host.classList.add('is-empty');
         /* ⚠️ A card with nothing in it is NOT the same as a search that matched nothing, and
            saying "no match" on an empty branch would send a planner looking for a filter they had
            not set. */
+        /* ⚠️ "No branches" is about SUB-BRANCHES only. The phase's own activities are counted
+           in the header above; saying "nothing here yet" under a header reading "3 activities"
+           would be the card contradicting itself on one screen. */
         v.host.innerHTML = '<div class="ps-wbs-empty">' + (_wbsSearch
           ? 'No WBS matches “' + esc(_wbsSearch) + '”.'
-          : (v.tops ? 'No branches here yet.' : 'No WBS yet.')) + '</div>';
+          : (v.tops ? 'No sub-branches — anything pushed to this phase sits directly on it.' : 'No WBS yet.')) + '</div>';
         return;
       }
       // Skeleton: spacer reserves the full scroll height; the window holds only the visible slice.
       v.winKey = '';
+      if (v.host.classList) v.host.classList.remove('is-empty');
       v.host.innerHTML = '<div class="ps-wbs-spacer" style="height:' + (flat.length * WBS_ROWH) + 'px;"><div class="ps-wbs-win"></div></div>';
       v.host.scrollTop = _wbsSearch ? 0 : savedTop;   // searches jump to top; edits keep position
       _wbsRenderWindow(v);
@@ -36762,8 +36883,7 @@
               : '');
         })() +
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
-        '<div id="sbld-ph-a"></div>' +
-        '<div class="sbld-wbsmount-tools" id="sbld-wbs-integ" style="margin-top:2px;"></div>';
+        '<div id="sbld-ph-a"></div>';
       /* ⚠️⚠️ THE TOOLBAR IS BORROWED AND THE TREE IS NOT. `#ps-wbs-edittools` and
          `#ps-wbs-integrations` are still ONE node each — they act on the single global
          selection, so there is exactly one of them however many cards are on screen. The TREE is
@@ -36772,7 +36892,7 @@
          them), draw the cards, THEN register a view per card and paint. Registering before the
          cards exist would bind views to hosts that are not in the document yet, and
          `_wbsLiveViews` would drop every one of them on the first paint. */
-      sbWbsMountTools(host.querySelector('#sbld-wbs-tools'), host.querySelector('#sbld-wbs-integ'));
+      sbWbsMountTools(host.querySelector('#sbld-wbs-tools'));
       stPhases(host.querySelector('#sbld-ph-a'), true);
       sbPhaseWbsViews(host.querySelector('#sbld-ph-a'));
       renderWbsManager();
@@ -42787,8 +42907,17 @@
        The branch's own dotted code is stated in the block header instead, because that code is what
        the Schedule grid keys off and it is the one thing the card title does not say. */
     function phWbsBlock(code, label) {
-      var b = (code === 'other') ? null : _phaseBranchAt(null, code);
+      var b = (code === 'other') ? null
+            : (code === 'milestones') ? (function () { var id = _wbsMilestonesRootId(); return id ? wbsById(id) : null; })()
+            : _phaseBranchAt(null, code);
       var n = (code === 'other') ? _wbsOtherRootIds().length : (b ? wbsChildren(b.id).length : 0);
+      /* ⚠️⚠️ THE BRANCH'S OWN ACTIVITIES, AND THIS WAS A REAL HOLE. Owner 2026-09-17:
+         *"When I tick the checkbox it adds activities under the ticked phase ... but at the bottom
+         card there is a function for branches."* A pushed lifecycle phase files its activities
+         DIRECTLY on the phase branch, not under a sub-branch — so a card that counts only
+         children read "No branches here yet · 0" on a phase that had just had three activities
+         pushed into it. The card said the phase was empty when it was not. */
+      var na = (b && _phIdx && _phIdx.actCount) ? (_phIdx.actCount.get(b.id) || 0) : 0;
       var where = (code === 'other')
         ? 'Top-level branches outside the four phases'
         /* ⚠ NAME ONLY. A node's `code` column is set only when it is custom-coded;
@@ -42796,13 +42925,21 @@
            one node's derived code outside the index build. The rows inside the card already
            print their codes, so stating the branch by name here costs nothing and invents no API. */
         : (b ? 'Under <b>' + e2(b.name) + '</b>'
-             : 'This phase has no branch yet ' + MID + ' <b>' + _stepNo('Generate') + ' ' + MID + ' Push</b> creates it');
-      return '<div class="sbld-phwbs-h"><span>' + (label || 'Branches') + '</span>' +
+             : 'This phase has no branch yet · <b>' + _stepNo('Generate') + ' · Push</b> creates it');
+      /* ⚠️ Both numbers, each labelled. "0 · 3" would be two numbers and a guess. */
+      var tally = n + ' branch' + (n === 1 ? '' : 'es') +
+        (code === 'other' ? '' : ' · ' + na + ' activit' + (na === 1 ? 'y' : 'ies'));
+      return '<div class="sbld-phwbs-h"><span>' + (label || 'In the schedule now') + '</span>' +
         '<span class="sbld-phwbs-w">' + where + '</span>' +
-        '<span class="sbld-phwbs-n">' + n + '</span></div>' +
+        '<span class="sbld-phwbs-n">' + tally + '</span></div>' +
         '<div class="sbld-phwbs" data-phwbs="' + e2(code) + '"></div>';
     }
     function stPhases(host, noHead) {
+      /* ⚠️ Built ONCE per render and shared by the six cards. `phWbsBlock` needs the per-node
+         activity count and `_wbsBuildIndex` walks the whole tree; six calls would walk it six
+         times for one number each. */
+      var _phIdx = null;
+      try { _phIdx = (WBS_NODES && WBS_NODES.length) ? _wbsBuildIndex() : null; } catch (e) { _phIdx = null; }
       var g = generate('int');
       var plan = sbPhasePlan(g), planBy = {};
       plan.forEach(function (pp) { planBy[pp.v] = pp; });
@@ -42813,6 +42950,14 @@
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
           ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
         phWbsBlock('construction') + '</div>';
+      /* ⚠️ Only when the root exists. A project whose skeleton predates Milestones has
+         nothing to show, and an empty card for a branch that is not there would be a claim. */
+      var msCard = _wbsMilestonesRootId()
+        ? '<div class="sbld-phcard sbld-phcard-ms">' +
+            '<div class="sbld-phhead"><span class="sbld-phname">Milestones</span>' +
+            '<span class="sbld-phlock">the first branch in the schedule</span></div>' +
+            phWbsBlock('milestones') + '</div>'
+        : '';
       var cards = SB_PHASE_DEFS.map(function (d) {
         if (d.when === 'exec') return execRow;
         var ph = sbPhases()[d.v], pl = planBy[d.v], on = !!ph.on;
@@ -42825,7 +42970,15 @@
            and DOES decide the dates) and none of it was on screen.
            ⚠️ A header ROW, not tooltips. A tooltip answers the question only for the reader who
            already suspected there was one. */
-        var phHead = '<div class="sbld-phrow sbld-phhdr">' +
+        /* ⚠️⚠️ THE TWO LISTS ARE A PLAN AND A RECORD, AND THE CARD NOW SAYS SO. Asked twice
+           whether this is a duplicate, which means the screen was not answering it. The list below
+           is `cfg.phases` — what the next Push will CREATE, not in the database yet. The branch
+           block underneath is `wbs_nodes` — what the project HAS. They are not two views of one
+           thing and cannot be merged into one list without merging an intention with a fact. */
+        var phHead = '<div class="sbld-phwbs-h sbld-phplanh"><span>Planned</span>' +
+          '<span class="sbld-phwbs-w">Created under this phase when you <b>' + _stepNo('Generate') +
+          ' · Push</b></span></div>' +
+          '<div class="sbld-phrow sbld-phhdr">' +
           '<span class="sbld-phgrip" aria-hidden="true"></span>' +
           '<span>Activity</span>' +
           '<span title="Calendar days, not working days — these lifecycle activities are not scheduled against a working calendar.">Days</span>' +
@@ -42878,6 +43031,7 @@
          be on no card at all: invisible, un-editable, and still renumbering their siblings' dotted
          codes. It is rendered even when empty, so "there is nothing outside the phases" is a
          statement the screen makes rather than something the reader has to infer from absence. */
+      cards = msCard + cards;
       cards += '<div class="sbld-phcard sbld-phcard-other">' +
         '<div class="sbld-phhead"><span class="sbld-phname">Other branches</span>' +
         '<span class="sbld-phlock">outside the lifecycle phases</span></div>' +
@@ -53500,7 +53654,10 @@
         return;
       }
       var id = _wbsSel, n = wbsById(id); if (!n) return;
-      var ro = _editLocked();
+      /* ⚠️ The VIEW's read-only flag counts as well as the page's. Without this the mutating
+         keys (Enter, Tab, Alt+arrows, Del) would still reach a row whose buttons were deliberately
+         not drawn — a lock that only holds for the mouse is not a lock. */
+      var ro = _editLocked() || !!(_av && _av.ro);
       var nKids = wbsChildren(id).length, open = !_wbsCollapsed[id];
       if (k === 'ArrowDown' || k === 'ArrowUp') {
         e.preventDefault();
