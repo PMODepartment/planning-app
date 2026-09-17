@@ -104,6 +104,92 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (aw) — The 360° stitcher produced a cylinder and the viewer rendered it as a sphere
+
+Owner, five items off two screenshots of the Progress Photos review modal — a bowed mosaic inside
+curved black bands, with the dialog scrolling — plus a sixth mid-flight: fit the viewer to the modal;
+handle a capture that turns past 360°; the stitch is blurry; no black space and use landscape (with
+a real 360-camera equirectangular as the reference); 72 frames → 108; and *"the Use this view as
+thumbnail also does not work but it does not need to be shown already. by default, the last view will
+be the thumbnail."* Module work — the full entry, every ⚠️ decision and the measurements are in
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md). Logged here for the
+`MODULE_V` bump and the five things that are not facts about one module:
+
+⚠️⚠️ **A DEFERRED AUDIT NOTE SET A PRECONDITION, AND IT WAS WORTH HONOURING RATHER THAN ROUTING
+AROUND.** `supabase/functions/pano360-process/stitch-core.mjs` has carried a note since 2026-09-16
+naming this exact gap — the server aligns and composites raw perspective frames by pure translation,
+which is wrong for a camera rotating on the spot — and refusing to fix it without *"a SYNTHETIC
+rotating-camera test scene … do not ship it on inspection alone."* That harness now exists and
+executes the shipped pipeline against a known scene. **It caught three real bugs, none of which was
+visible by reading**, two of them in the fix itself: a ~18% horizontal scale error (the strip is
+`rotation + HFOV` wide, not `rotation`), a crop rule that left 1.34% of the panorama black on a
+capture that wobbles, and the one below. A note that names its own precondition is worth more than a
+note that names a gap.
+
+⚠️⚠️ **AN INTEGER PIXEL MEASUREMENT THAT IS *SUMMED ALONG A CHAIN* IS A SCALE ERROR, NOT A ROUNDING
+ERROR.** The per-pair alignment returns whole pixels. A true 360° turn whose real per-pair shift is
+12.56px rounds to 13 **every single time** — the bias never averages out — and 48 pairs later the
+pipeline reports the capture turned 372°. Everything downstream then normalises as if those pixels
+were a full turn, displacing every feature by up to 12°. Parabolic sub-pixel refinement took the
+measurement to 362° and the recovered-scene error from **8.53 to 0.95 out of 255**. Anywhere a
+per-step estimate is accumulated rather than used on its own, the sub-pixel fraction is the whole
+answer.
+
+⚠️⚠️ **RENAMING AN ELEMENT'S ID SILENTLY ORPHANS EVERY CSS RULE THAT TARGETED IT, AND NOTHING
+REPORTS IT.** The review modal's viewer had a rule shrinking it to a modal-appropriate size, written
+for `#pp360-panowrap`. A 2026-09-13 rewrite renamed that modal's ids to a `pp360rv-*` prefix and the
+selector was not carried across, so it has matched **nothing** since — and the stage silently
+inherited the full-viewport lightbox sizing (`88vw × 78vh`) inside a 640px dialog. `88vw` was at
+least clamped by the modal's width; **nothing clamped `78vh`**. That is the whole of "fit the viewer
+to the pop-up frame": a one-word selector mismatch, not a sizing judgement. A rule that matches
+nothing is indistinguishable from a rule that works, in every tool this repo has.
+
+⚠️⚠️ **YOU CANNOT `drawImage` A WebGL CANVAS FROM A CLICK HANDLER.** A WebGL drawing buffer is
+cleared after each composite unless the context was created with `preserveDrawingBuffer: true` —
+which Pannellum does not set and does not expose — so reading it in a task other than the one that
+drew it reliably returns an empty buffer. That is why "Use this view as thumbnail" never worked, and
+why no amount of pressing it again would have helped. The replacement reprojects the same view out
+of the panorama **image** in a 2D canvas, with no readback anywhere; it now runs at Confirm & Save,
+so the last view *is* the thumbnail with nothing to press. The reason is kept on record even though
+the button is gone, because the same call shape reads as correct anywhere else in this app.
+
+⚠️ **AND A CHECKER MATCHED ITS OWN EXPLANATION AGAIN — the third time this log has recorded it.**
+The assertion that the removed button is gone searched the renderer for its label, and the comment
+explaining the removal quotes the owner's words about it. It strips comment lines before testing
+now. Any assertion written as "this string no longer appears" has to reckon with the fact that the
+commit removing something is exactly the commit that describes it.
+
+**Verified:** the server stitcher's own suite **80 passed, 0 failed** (was 66/3 — the 3 pinned the
+signed-feather mechanism band compositing replaces, retargeted rather than deleted), including a
+before/after contrast executed against ground truth: recovered-scene error **24.24 → 0.95 / 255**,
+uncovered black pixels **2.49% → 0.00%**, over-rotation trimmed, output an 8.5:1 landscape instead of
+a bowed arc. Progress Photos' own suite **976 passed, 5 failed** — ⚠️ the same 5 pre-existing
+failures, confirmed by stashing this work and re-running (973/5 on the base). `wiring-check`
+**139/0**; CSS braces balanced; 0 NUL bytes across every changed file.
+
+⚠️⚠️ **Not verified against a real recording, and the Edge Function itself was not executed** — there
+is no Deno runtime, no deployment and no real phone video here. What is proven is that
+`stitch-core.mjs` (zero imports, runs identically under Node) recovers a known scene from synthetic
+rotating-camera frames; the function's wiring around it is checked structurally. **The first real
+capture after `supabase functions deploy pano360-process` is the test**, and the job's own done
+message now names the measured coverage and how many over-rotated frames were trimmed.
+
+⚠️ **Re-lettered `(av)` → `(aw)` on merging `origin/main`.** Main had independently published its own
+`2026-09-17 (av)` while this was in flight, so both sides prepended a different entry under one letter.
+Both are kept whole and this one moves past it, per this file's own rule: take only the NEW entries from
+each side, never both copies of the log. Verified after resolving — **310 dated headings, 310 distinct**
+(base 308, one new entry from each side), and the line count lands on base + both sides exactly
+(18,989 + 134 + 73 = **19,196**, plus the 12 lines of this note).
+
+⚠️⚠️ **`MODULE_V` → `20260917zzt`, AND THE COLLISION IT AVOIDS DID NOT CONFLICT.** Both sides
+independently re-derived `20260917zzs` from the same base — so git saw the identical string on both
+sides of every one of the three token lines and **merged them silently**, leaving one cache-bust token
+covering two different builds. A browser holding main's `zzs` would never have fetched this branch's
+bytes. Found by listing every `20260917zz*` token on **both** refs before resolving rather than after;
+the seventh time this log has recorded that shape, and the first time it was caught pre-push in a merge
+that reported no conflict on the file at all. Re-derived past both and sort-checked as a plain string
+(`zzs` < `zzt`); `module.css` / `module.js` / `pano360.js` bumped with it.
+
 ### 2026-09-17 (av) — Schedule Setup ▸ Activities: two delete controls go, one of them wired days after this branch called it dead
 
 ⚠️ **Re-lettered `(at)` → `(av)` on merging `origin/main`.** Main had independently published its own
