@@ -103,6 +103,432 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-18 (i) — Schedule Setup ▸ Activities reads SAP levels 1–3, and a merged activity carries every class code it covers
+
+Owner's six items on that step, with `Book2.xlsx` attached — fewer words and smaller type, the SAP
+list showing level 2 with level 3 behind a caret, dragging a level 2 or a level 1 into the build as a
+**merged** activity, an error notification when a merge spans trades, a merged activity pushing
+**every** class code it covers, and the Setup's step rail overlapping the panel at narrow width.
+Module work — the full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(g)`. Logged here
+for the migration, the `MODULE_V` bump and the four things that are not facts about one module:
+
+**Run `migrations/2026-09-18-schedule-class-codes.sql`** — `project_schedule.class_codes text[]`,
+additive, with a GIN index and no backfill.
+
+⚠️⚠️ **A NEW COLUMN RATHER THAN A DELIMITED `class_code`, BECAUSE EVERY CONSUMER MATCHES ON EXACT
+EQUALITY.** `scheduleSeedPlan` buckets activities on it, `boq_allocations` gates on it, the schedule's
+`ccByCode`/`ccLevelOf` resolve it against the Finance chart, the grid's Class Code cell is an enum
+editor over it, and three grouping dims use it as a bucket key. Putting `"01050, 01100"` in there
+resolves to **nothing** in every one of those, and renders on screen as an off-chart code — so a
+merged activity would go from matching one code to matching none, **silently**. ⚠️ And not
+`activity_codes`, which is a jsonb map of `code_type_id → code_value_id`: **one** value per type, read
+as `r.activity_codes[typeId]` by about ten callers, all of which an array under a type key breaks.
+⚠️ `class_code` is untouched and stays canonical, so every existing reader keeps working and only the
+readers that want the whole set opt in — which is also why there is **no backfill**: null means *"this
+row has one code"*, not *"unknown"*, and every reader already falls back to `class_code`.
+
+⚠️⚠️ **A LOOSE ERROR REGEX WOULD HAVE SWALLOWED AN UNRELATED REFUSAL, AND THE BASE GATE IS WHAT
+CAUGHT IT.** Both the schedule's push degrade and `modules/contracts-claims/boq.js`'s read fallback
+recognise *"this database has not run the migration"* by matching the error text. Matching the bare
+word `class_codes` also matches the **Finance chart table of that name**, so a refusal that had
+nothing to do with the column would have been quietly absorbed as *"not migrated"* — the same shape
+this log records for `boq_allocations_method_check`. Both now require a `column|schema cache` test
+alongside the column name. Found because a suite's own base gate failed for the wrong reason.
+
+⚠️⚠️ **`origin/main` ANSWERED THE OWNER'S ITEM 6 ON THE SAME DAY AND DID NOT FIX IT — MEASURING IS
+THE ONLY REASON I KNOW THAT.** Main's rail pass (2026-09-18 `(f)`) rebuilt the narrow-width step strip
+properly, with grid areas, left/right arrows and a rotated chevron, and never clears the base rule's
+`position:sticky; top:12px; max-height; overflow-y:auto`. Measured on the **merged** tree at
+`scrollY 900`: the rail pinned at `top:12` over a panel at `-765`, overlapping **736 × 105** at 760px
+and **396 × 105** at 420px, with `elementFromPoint` at the rail's own centre returning a step. Four
+declarations go **into** main's block rather than replacing it — 0px of overlap at 1400 / 760 / 420,
+with main's grid areas, arrows and no-horizontal-scroll re-measured intact.
+⚠️⚠️ **I had written the opposite into the merge-resolution comment before running the harness**,
+reasoning that a sticky grid *item* cannot travel outside its own grid area. The harness disagreed and
+the harness is right; the comment now carries the measurement instead of the reasoning. A clean
+auto-merge is not evidence, and neither is a plausible argument about the cascade.
+
+⚠️⚠️ **A HARNESS REPORTED A CORRECT PAGE AS UNSTYLED, FOR THE THIRD TIME IN THIS REPO.** The type
+measurement first came back with every element at **16px** and `--pd-ink` empty — because the harness
+served the page over `http` while linking `dashboard.css` over `file://`, which the browser refuses.
+The same run also matched a `<style>` opener **inside an HTML comment**, so CSS error recovery ate the
+first real rule. Assert a token before believing a single number; both faults are fixed in the
+generator rather than worked around in the numbers.
+
+**Verified:** `test-sap` **114/0** (new), `test-actsetup` **142/0**, `test-actdnd` **62/0**,
+`test-lsm` **684/0** — and every other project-schedule suite green on the merged tree, **1,843
+assertions across twenty suites, 0 failing**, including main's own new `test-phasecard` **85/0**,
+which this session had never run. ⚠️ `test-lsm` was **retargeted, not weakened**: reverting the
+off-chart lookup in a throwaway copy takes it to 683/1, naming the assertion. `wiring-check` 139/0 ·
+`dead-hooks` 9, the documented baseline · `dark-remap` 0 · `toolbar-order` 15/0 · `loc-key-agree`
+clean · `selectall-key` 100 safe / 0 broken · the inline block parses (3.83MB) · CSS braces 2535/2535
+· 0 NUL bytes in every file this change touches.
+
+⚠️ **Fixed in passing, found by measuring rather than reported:** the Activities grid's off-chart
+mark resolved through the **item-only** `ccByCode` while the banner beside it used `ccLevelOf`, so on
+a healthy build **every `+ Library` row — a level-2 group code — rendered red and was counted as
+off-chart.** `offChartCount` had been corrected for exactly this on 2026-09-10 and the per-cell mark
+was left behind; the two duplicate warnings are now one banner, and both now-callerless counters are
+deleted rather than left to be wired back up.
+
+⚠️ **Reported, NOT fixed — two pre-existing NUL bytes in files this change does not touch**, both a
+unicode-zero sentinel written as the raw byte rather than its six-character escape:
+`tools/dark-remap.js` (offset 5602) and `modules/project-schedule/test-wbsfile.js` (offset 8138), both
+present on `HEAD` before this branch, and both making `grep` treat the whole file as binary. Fifth
+recurrence of a trap this log already records. A two-character repair that does not belong in a commit
+about the Activities step.
+
+⚠️ **Not verified signed in, and the migration has not been run** — no merged activity has been pushed
+and read back, and `class_codes` has never reached a real BOQ match.
+
+⚠️ **Merged `origin/main` (15 commits) before shipping** — the Project Phases twelve-item pass, the
+Schedule Setup rail pass and three 360°-stitcher commits, **758 lines of the same file**. Two
+conflicts, both resolved on the merits rather than by taking a side: main's rail block ships and this
+branch's single declaration composes into it (above), and the off-chart hunk resolves to **this
+branch's empty string**, because main's side calls `offChartCount()` — a function this branch deleted
+in the same pass that folded the duplicate warnings, so taking main's side would have been a
+ReferenceError on every render of the step. `modules/progress-photos/` and `supabase/` are
+byte-identical to main; its suite's 5 failures are main's own pre-existing ones, unchanged.
+
+`MODULE_V` → `20260918i`, re-derived from what the merged tree actually carries **after** integrating
+(main had reached `20260918h`) and sort-checked as a plain string past every `20260918*` token in the
+tree. No shared asset changed.
+
+### 2026-09-18 (h) — Twelve items on Project Phases, and the two that were geometry rather than taste
+
+Owner, twelve items on Schedule Setup → Project Phases — the per-phase Gantt shipped in `(c)`: shrink
+the chart, clean up the arrows, drop the seeded activities, smaller type, column headers, better
+dragging, add-at-the-selected-level, remove the whole-programme line, fewer words, give Milestones the
+same workflow *"but this should always be required"*, stop the phase tiles overflowing at narrow
+widths, and an Autotrace button per phase. Module work — the full entry, every ⚠️ decision and the
+verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(f)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **THE OVERFLOW WAS `min-width: auto`, AND THAT IS THE FOURTH TIME THIS REPO HAS PAID FOR IT.**
+*"when window width is narrow, the tiles of phases overflow"* reads as a breakpoint problem and is
+not one. `.sbld-phcard` is a **grid item**, and a grid item's default `min-width` is `auto` — which
+resolves to its content's **min-content** size, never to zero — so a card holding a chart could not
+shrink below that chart however narrow the window got. Measured at 1100px: **card 1018px inside an
+828px panel**, with the page scrolling sideways; after, **0px past the panel and no page scroll** at
+1440 / 1100 / 900 / 760 / 420. One declaration. The same mechanism is on file for the 360° form's key
+plan (2026-09-12), for `.ps-search`, and for the holding list's input — and the tell is always an
+explicit `width:100%` or `max-width` **inside** an item that cannot itself shrink.
+
+⚠️⚠️ **A DENSITY PASS RAN STRAIGHT INTO THE ≤700px TAP FLOOR, WHICH IS NOT THIS MODULE'S TO
+NEGOTIATE.** `dashboard.css` forces `font-size: var(--pd-fs-tap)` (16px, `!important`) and
+`min-height: var(--pd-tap)` (44px) onto **every bare `<input>`** below 700px, and its own comment
+calls that *"the one place a module does not get a vote"* — under 16px iOS Safari zooms the page on
+focus. So the 20px row this pass asked for would have been a 44px input overlapping its neighbours.
+The row pitch now reads **the same 700px query the stylesheet uses** rather than a number of its own,
+and a `matchMedia('change')` listener re-renders on the one crossing that can make it stale.
+⚠️ The bar's height moved from CSS into the inline style in the same edit: the first cut left the
+height in the stylesheet while the JS computed it, the two disagreed, and the bar stayed 11px inside a
+48px row. **Two sources for one number is how a chart draws itself wrong.**
+
+⚠️⚠️ **"MILESTONES BEHAVES LIKE A PHASE" IS A FIVE-LINE CHANGE UNTIL YOU REACH THE CHECK
+CONSTRAINT.** `project_schedule.phase` carries a **4-value CHECK**, and a rejected value does not fail
+one row — `_dropScope()` strips `phase` from **every payload in the push**, so a fifth code would
+silently un-phase the whole programme. It is resolved by splitting *card code* from *database phase*:
+`MS_CODE` is known to exactly three **read** helpers and to nothing that writes, the push sends
+`phase: null`, and `phaseFromName()` — which is kept in step with a migration — is deliberately
+untouched. ⚠️ The Milestones branch is found through the skeleton's own root id, never by
+name-matching a phase.
+
+⚠️ **AND THE OBVIOUS IMPLEMENTATION OF "DRAG IT OUTSIDE" WOULD HAVE BROKEN THE FOUR-PHASE RULE.**
+`wbsMove(id, 'outdent')` on a direct child of a phase branch sets `parent_id = null` — a **fifth
+top-level branch**, which is exactly what `(c)` spent a whole pass making impossible by construction.
+The new promote walks the node's own ancestors and **floors at its phase branch**; a branch already
+there is refused with the reason, and a branch in another phase is not that card's to move.
+
+**Verified:** new `modules/project-schedule/test-phasecard.js` **95/0** across ten blocks, every
+assertion executing functions sliced out of the shipped file by name, with the contrast pinned to a
+**SHA** rather than `HEAD` — and it bites: run against the pinned copy as the subject it aborts at
+the first slice it cannot find. `test-phasenet` **262/0** against its own pre-Gantt base, and sixteen
+other project-schedule suites green on the changed tree (`lsm` 683/0, `builder` 149/0, `towertypes`
+79/0, …) plus `tools/test-calendar` 71/0. `wiring-check` **139/0**, `dark-remap` 0 findings,
+`dead-hooks` 9 (the documented baseline), the inline block parses, 0 NUL bytes, and the CSS brace
+delta is **+5/+5** against a whole-file count whose off-by-one is identical on `HEAD`.
+
+⚠️⚠️ **Three defects in my own suite, each of which accused correct code**, and one generalises:
+**`marker-end="` ENDS IN `d="`** — so matching an SVG `<path>` greedily and then running
+`exec(/d="([^"]+)"/)` over the match returns the marker reference rather than the route, and eleven
+assertions failed against arrows that were drawing perfectly. Anchor on whitespace and capture in one
+pass. The other two: a flat export map that threw before the contrast block could assert anything,
+and an assertion that counted an SVG path's runs without counting its `M`.
+
+⚠️ **Not verified signed in** — the card was rendered and read in Chromium, but no real project's
+phases have been pushed through this and the `phase: null` milestones payload has never reached the
+database.
+
+⚠️⚠️ **Re-lettered `(d)` → `(h)` on merging `origin/main` (16 commits), and the module entry `(d)` →
+`(f)` with it.** Main published four more 2026-09-18 entries while this was in flight — including its
+own `(d)`, the **Activities step** restructure, and `(f)`, the **Schedule Setup rail** pass — so both
+sides prepended different entries under one letter. Both are kept whole and this one moves past main's,
+per this file's own rule. ⚠️ The `MODULE_V` half **did conflict this time**, which is the good case:
+main had moved to `20260918g` while this branch still held `d`, so a token derived before integrating
+would have sorted **earlier** than one browsers already hold. Re-derived after.
+
+⚠️ **A clean auto-merge of `modules/project-schedule/index.html` is not evidence of a correct one.**
+Main rewrote the Activities step and the step rail; this branch rewrote Project Phases. Both sides'
+functions were asserted present on the merged tree **by name** and the whole battery re-run on it,
+**including main's own rewritten `test-actsetup.js` (133/0, was 50) and `test-actdnd.js` (48/0)**.
+⚠️ `modules/progress-photos/test.js` is **976/5** on the merged tree — the same five pre-existing
+failures main's own entries record, and this branch touches no file in that module.
+
+`MODULE_V` → `20260918h`, re-derived from what the remote carries **after** integrating rather than
+guessed beforehand, and sort-checked as a plain string past main's own `20260918g`.
+
+### 2026-09-18 (g) — A guard placed where the damage showed rather than where it compounded, and three refuted hypotheses on the way
+
+Owner, against the pass below, **with the first real capture**: *"there are still a few streaks."*
+Module work — the full entry, all three refuted hypotheses and every measurement are in
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md) under *"the third pass"*.
+Logged here because entry **(e)** below claimed the streaks were fixed, and a correction belongs where
+the claim was made. No shared asset changed and **no `MODULE_V` bump** — see the end.
+
+⚠️⚠️ **A BOUND ON A COMPOUNDING QUANTITY BELONGS WHERE IT COMPOUNDS, NOT WHERE IT SHOWS.** The
+exposure chain multiplies one measured ratio per frame pair, and its own note gives the right reason
+for a bound — *"a chained gain is a **product**, so a small consistent bias compounds"* — and then
+puts that bound on the **accumulated** gain. But the accumulated gain is also **the scene's own
+dynamic range**. Measured on a dim wall beside a bright window, which is the owner's actual room: the
+capture's auto-exposure swings **3.35×**, the chain needs gains spanning **0.669–2.238**, and
+`[0.72, 1.38]` could express only up to 1.38 — so **125 of 144 frames were pinned at a bound**, their
+correction **truncated rather than applied**, and each truncation landed as a hard brightness step at
+that frame's seams. Worst **5.92 levels**, 30 seams past 2 levels, on a flat wall where any step is an
+artefact. Bounding the **per-pair step** instead — where a bias actually compounds, and where a large
+value is physically impossible because consecutive frames overlap 96% — takes the same capture to
+**0.76 levels and zero seams past 1**.
+
+⚠️⚠️ **AND THE FIRST-ORDER READING OF THE REPORT IS WHAT MADE IT SOLVABLE: "A FEW" IS A MEASUREMENT.**
+Bands are ~29 composite pixels wide, so dozens of seams are on screen at once; a handful of streaks
+therefore **cannot** be a per-seam cause. It has to be something that does nothing at all most of the
+time and then fails hard in a few places — which is the signature of a clamp, and is the opposite of
+where every obvious hypothesis pointed. Counting the symptom before explaining it is what ruled out
+three plausible causes without writing any of them.
+
+⚠️ **Three hypotheses were measured and REFUTED, and each would have shipped as a plausible fix:** a
+luminance-only gain leaving a colour step on a saturated wall (**1 level**, and a per-channel gain
+measured *worse*); the feather's linear ramp leaving a slope discontinuity for Mach banding
+(**0.716 against 0.716** for smoothstep, and widening it 3× did not help); and generational JPEG on
+the intermediate canvas (there is none — it is stored as raw bytes). Recorded because each is a
+sensible thing for the next reader to reach for, and all three are already excluded.
+
+⚠️⚠️ **A HARNESS THAT MEASURES A SINGLE ROW MEASURES NOISE, NOT STREAKS.** The first cut of this
+investigation reported **sensor noise** as the dominant cause, because a per-pixel column step on a
+noisy image is dominated by the noise. A streak is *coherent down the column*; averaging each column
+over the full height suppresses noise by the square root of the height and leaves exactly the
+structure a person sees. With the corrected metric every maximum landed **at a seam** and a perfect
+camera gave exactly **0** — which is also what proved the pipeline itself is faithful and that every
+artefact is a real camera imperfection arriving at a band boundary.
+
+⚠️ **The widened bound is proved to cost the runaway guard nothing, rather than assumed to.** A
+consistent per-pair bias is exactly a **linear drift in log space**, and loop closure removes a linear
+drift outright: fed a steady +0.5% bias with the loop closed, the old chain and the new one both
+return gains of **exactly 1.0000**. On every real 360° capture the accumulated clamp was never the
+working guard; it remains the backstop for a **partial** capture, which has no loop to close. The
+deadband is untouched — a constant-exposure capture still gets gains of exactly 1, so the regression
+that rule exists for stays fixed.
+
+**Verified:** the server suite **129 passed, 0 failed** (was 118), with a new section **[13]** whose
+fixture builds the exposure swing from the camera's own auto-exposure model rather than from a tuned
+list of ratios. ⚠️⚠️ **The contrast bites and names the defect in its own failure text** — against
+`origin/main` it fails 4, reporting *"worst 5.92 levels and 34 seams past 1 level"* and
+*"max gain 1.380, where the old bound stopped at 1.38"*. ⚠️ It simulates the old algorithm **inside
+the suite**, so it cannot quietly become self-comparison once this merges. Progress Photos' own suite
+**976/5**, the same five and necessarily unchanged — **no client file was touched**. All **24** names
+`index.ts` imports resolve against the module's real exports; `wiring-check` **139/0**; 0 NUL bytes.
+
+⚠️⚠️ **Not verified against a real recording** — no Deno runtime and no phone video here, so every
+figure is the shipped chain executed against a synthetic capture. **The next capture of that same room
+is the test.**
+
+⚠️ **NO `MODULE_V` BUMP, DELIBERATELY.** Only `stitch-core.mjs` and `test.mjs` changed. The Edge
+Function is deployed by the `deploy-edge-functions` workflow on merge — not by a cache-bust token —
+so bumping would invalidate three pages' caches for bytes no browser ever fetches. ⚠️ This is the
+first entry in this log to change the stitcher and *not* move the token; that is a fact about which
+files changed, not an oversight.
+
+⚠️⚠️ **Re-lettered `(f)` → `(g)` on merging `origin/main`, and the version half did NOT collide — for
+once.** Main independently published its own `2026-09-18 (f)` (the Schedule Setup rail pass, below)
+while this was in flight, so both sides prepended a different entry under one letter. Both are kept
+whole and this one moves past it, per this file's own header rule: take only the NEW entries from each
+side, never both copies of the log. ⚠️ **The `MODULE_V` half is clean precisely BECAUSE this change
+bumps nothing** — main moved the token to `20260918g` on its own, this side touched none of the three
+carriers, so git had one writer per line and merged them without a conflict. The collision this log
+has recorded nine times needs two sides both reaching for the token; a change that correctly declines
+to bump cannot participate in it. Verified after resolving: **318 dated headings, 318 distinct** (base
+316, one new entry from each side), and the line count lands on base + both sides exactly
+(19,629 + 70 + 73 = **19,772**, plus the lines of this note).
+
+### 2026-09-18 (f) — The Schedule Setup rail at narrow width, and 179 words off its pages
+
+Owner items 9 and 10 of ten; items 1–8 (the Calendars editor) shipped in `011a2f1`. Module work —
+the full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(e)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **A MEDIA QUERY ADDS NO SPECIFICITY, SO A TWO-CLASS RULE OUTSIDE IT BEATS A ONE-CLASS RULE
+INSIDE IT.** `.sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr }` is **(0,2,0)** and the
+narrow-width `.sbld-wrap { grid-template-columns:1fr }` is **(0,1,0)** — so minimising the step rail
+at phone width threw it back into a 46px left column, measured on the base at **`railW=46`** at both
+390px and 760px. The fix restates it at **equal** specificity, later in source, so it wins on
+**order**: raising specificity instead has to be raised again the next time that rule gains a class,
+which is how the pair got out of step to begin with. This app has now recorded the equal-specificity
+tie (`[hidden]` losing to an author `display`) five times and the *unequal* one twice.
+
+⚠️⚠️ **A DIRECTION IS BETTER DERIVED THAN CHOSEN.** The minimise toggle already emitted
+`chevronLeft` expanded and `chevronRight` collapsed; `transform:rotate(90deg)` turns ◄ into ▲ and ►
+into ▼, so **one CSS rule gives both states the right arrow** and the JS never learns what the
+viewport is doing. A second place deciding a direction is a second place to get it wrong — and it
+also means no `chevronUp` in `icons.js`, i.e. **no shared asset bumped across 21 pages for a
+two-state problem**.
+
+⚠️⚠️ **AND THE GAP MEASURING FOUND IS THE ONE WORTH GENERALISING: REPLACING A SCROLLBAR MUST BE
+GATED ON THE REPLACEMENT ACTUALLY BEING THERE.** The new left/right arrows are hidden when the rail
+is minimised, so suppressing the native scrollbar on "the strip overflows" alone would leave a
+minimised, overflowing strip with **neither** — content that cannot be reached at all. Twelve
+minimised steps fit at 390px *today*, so it would have shipped working and broken on the first
+longer step list. Whether to show the arrows is **measured per render**, never inferred from a
+count.
+
+⚠️ **The prose rule this repo already arrived at, applied once more and measured with the repo's own
+scanner:** a sentence stating a **consequence the planner acts on** stays; one explaining **why the
+design is that way**, or restating a control that is on screen and labelled, goes. **1,347 → 1,168
+words across 79 blocks**, block count unchanged — and every **destructive-path** warning kept whole,
+which is the half the `(a6)` pass protected and the reason it refused to cut by word count. The
+sharpest cut was a duplicate: the import step's lede spelled out a gesture that the legend a few
+dozen pixels below already spells out **better** (it follows the mode), and a third copy sat on the
+button's own label.
+
+**Verified:** the rail **driven in a real browser** at 1440 / 760 / 390 in both states against the
+shipped CSS, with the shipped function sliced out and executed — **48 assertions, 0 failing** — and
+⚠️ the contrast **pinned to a SHA, never `HEAD`**, biting **6/6** with the reported defect
+reproduced. Eleven module suites green on the merged tree; `wiring-check` **139/0**; `dead-hooks` 9
+(baseline); `dark-remap` 0; `toolbar-order` 15/0; inline script parses; CSS braces **+15/+15**; 0
+NUL bytes.
+
+⚠️⚠️ **TWO FAILURES OF MINE THIS FILE HAD ALREADY RECORDED, AND I REPEATED BOTH.** I wrote an
+unescaped `'` inside a single-quoted JS string — the 2026-09-10 `(v6)` outage exactly, where one
+apostrophe kills a 3.4MB inline block and with it the whole module; and **a `git stash` in a
+verification command swallowed the entire change**, after which the suites in that same command
+reported the *base's* numbers as mine. Both were caught the same way, which is the durable part:
+**read `git diff --stat` and the parse check, never the command's own output.** The stash rule in
+this log is not "check the diff", it is *"do not stash in a shared clone at all"*, and it is still
+right.
+
+⚠️ **Merged `origin/main` (17 commits) before shipping**, including the tower-**types** restructure.
+Two conflicts, both resolved on the merits: main's tower-type sentence **wins on content** (it
+carries facts this branch predates) with this round's trim applied to it rather than reverted.
+⚠️⚠️ **And the first resolution silently destroyed most of this branch's own CSS** — the splice
+searched for the `=======` separator, and the block opens with a `/* ==== … ================` comment
+banner ending in 32 equals signs before a newline, which matched first. Caught by counting the
+change's own markers afterwards (`sbld-hasarw` read **1** where it must read **5**), restored from
+the branch's own commit, and the brace delta re-measured against `origin/main`. **A conflict
+resolver that searches for a marker has to reckon with the file's own decorative use of it.**
+
+`MODULE_V` → `20260918g`, re-derived from what the remote actually carries **after** integrating
+(main had reached `20260918f`) rather than guessed beforehand, and sort-checked as a plain string
+against every `20260918*` token on **both** refs. No shared asset changed.
+
+⚠️ **Not verified signed in** — the rail is proved against the shipped CSS with a 12-step fixture,
+not a live setup.
+
+### 2026-09-18 (e) — The 360° stitcher's last three defects, and a sub-pixel fit that was solving the wrong problem
+
+Owner, against the pass that shipped a few hours earlier: *"there is a deadspace connecting the start
+and finish of the video recording"*, *"line streaks vertically across"*, *"still blurry and misaligned
+areas"*, *"add more frames"*, and *"remove also the thumbnail preview when adding 360"*. Module work —
+the full entry, all seven causes, every ⚠️ decision and the measurements are in
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md) under *"the second pass"*.
+Logged here for the `MODULE_V` bump and the five things that are not facts about one module.
+
+⚠️⚠️ **Re-lettered `(c)` → `(e)` on merging, AND THE VERSION HALF COLLIDED TWICE OVER.** Two concurrent
+sessions and this one all reached for `2026-09-18 (c)`, and main's own merge commit records that **both of
+its sides independently took `MODULE_V 20260918d`** — the very token this branch had derived. Main has
+since moved to `20260918e`, which sorts **after** `d`, so shipping `d` would have put these bytes behind a
+token a browser already holds and they would simply never have arrived. Re-derived past main's `e` to
+`20260918f` **after** integrating, and sort-checked as a plain string. Both `(c)` entries are kept whole;
+this one moves past main's `(d)`, per this file's own rule that the entry merging in is the one that moves.
+⚠️ Dated 2026-09-18 to keep the log descending — the code's own comments call it the *2026-09-17 second
+pass*, which is when the work was done.
+
+**The headline, on a capture shaped like the one reported** (a 3-frame backward settle, hand jitter,
+and a 30% auto-exposure dip through a window): unpainted background **1.501% → 0.000%**, edge holes at
+the wrap **21 columns → 0**, seam banding **12.444 → 1.957**, recovered-scene error **14.221 → 4.122**.
+
+⚠️⚠️ **A SUB-PIXEL INTERPOLANT HAS TO MATCH THE COST SURFACE IT IS FITTING, AND GETTING THAT WRONG
+COSTS MORE THAN ACCURACY — IT MAKES THE RESULT DEPEND ON AN ARBITRARY SAMPLING CHOICE.** A parabola is
+right for a **squared**-difference surface. This one is mean-absolute-difference — **L1**, which near
+its minimum is a **V, not a bowl** — so the fitted vertex was systematically wrong by an amount that
+depends on where the true shift sits between two pixels. Chained over a hundred pairs that does not
+average out, it **biases**. Measured against exact ground truth, accumulated rotation error over a full
+turn ran **0.16–0.98% with the parabola and swung by a factor of six across frame counts**; the
+equiangular fit is **0.01–0.06% at every count from 72 to 144 — flat**. The flatness is the more
+useful half: it is what makes a frame count a question about cost rather than about correctness, and
+it is why *"more frames is safer"* — the argument every previous increase of that constant rested on —
+was **false until this was fixed**. 108 → 144 is the first of those steps taken on a measurement.
+
+⚠️⚠️ **A FEATHER BLENDS INTO WHAT IS ALREADY THERE, SO IT HAS A DIRECTION.** Ramping alpha at both
+edges of a composited band fades one of them into the **bare background**, which is a dark vertical
+streak — one per seam. On a monotonic pan the trailing edge happens to be overwritten a moment later,
+which is why it hid; the instant the pan reverses, the darkened columns are the last thing written and
+they stay. Reproduced: on a flat source of 160 the old rule dragged a painted column to **34**.
+
+⚠️⚠️ **NEAREST-NEIGHBOUR DOWNSCALING IS NOT "SLIGHTLY SOFT" — IT IS ALIASING WHOSE PHASE VARIES PER
+SOURCE, AND THAT BECOMES A PATTERN WHEREVER EACH SOURCE OWNS ITS OWN REGION OF THE OUTPUT.** A 3×
+reduction keeps one column in three and throws two away; which detail survives depends on each frame's
+own sub-pixel phase, so consecutive frames keep **different** detail. It degrades the alignment search
+(the two frames genuinely disagree about fine structure) *and* beats against the band boundaries as
+visible streaks. A box prefilter collapses a fine grating's **176-level** beat to **58**.
+
+⚠️⚠️ **A CORRECTION BUILT ON A NOISY PER-STEP MEASUREMENT, CHAINED, IS A RANDOM WALK — AND WITHOUT A
+DEADBAND IT INVENTS THE ARTEFACT IT EXISTS TO REMOVE.** The new exposure compensation chained ~107
+per-pair brightness ratios and produced a **±2% ramp across a panorama whose frames were all
+identically exposed** (seam banding 1.85 → **2.72** on a clean capture — worse than doing nothing). The
+deadband is not a tuning knob: measured, pure noise reaches **0.0037** and a real 30% exposure swing
+reaches **0.033**, an order of magnitude apart, so **0.004** sits in the gap. ⚠️ Hard, not soft — a soft
+threshold shaves every genuine step too and under-corrects a long ramp.
+
+⚠️⚠️ **AND A METRIC THAT CANNOT SEE A DEGREE OF FREEDOM WILL REPORT A BETTER RESULT AS A WORSE ONE.**
+The synthetic harness's headline figure **went the wrong way** — full-turn recovered-scene error 0.95
+on the base against 1.63 here. Rather than write that off, every change was **reverted one at a time**
+against the same harness until exactly one moved it (the estimator), and then the **metric** was
+examined: it searches only for a translation phase and is blind to a uniform horizontal **scale**.
+Allowed to search scale, the new panorama is **0.94 against the old 0.99** — it is not misaligned, it
+is magnified **0.45%** in yaw — and the old fit's `k` was exactly 1.0000 only because its per-pair
+over-estimate cancelled that residual at this one frame count. Two independent readings agree
+alignment improved: measured coverage of a true 360° turn goes **362° → 360°, exact**. ⚠️ The 0.45%
+residual is **named rather than chased** — 1.6° over a whole turn, and the viewer stays self-consistent
+through it because it derives its vertical field from the image's own aspect ratio.
+
+⚠️ **The 2026-09-16 audit note in `stitch-core.mjs` is DELETED rather than left standing.** It said this
+pipeline does no cylindrical reprojection and refused to fix that without a synthetic harness. The
+harness was built, the warp shipped, and the note stopped being true the same day. A comment that
+confidently describes the opposite of the code sends the next reader looking for a gap that is closed.
+
+**Verified:** the server suite **118 passed, 0 failed** (was 80), with seven new blocks that each
+reproduce the defect before the fix; Progress Photos' own suite **976 passed, 5 failed**, ⚠️
+**byte-identical to the base** (976/5, same five, confirmed against a clean `git archive HEAD` tree
+rather than by stashing in a shared clone). ⚠️⚠️ **Both contrasts bite:** the server suite against the
+base fails the prefilter and hole assertions and then **throws** on `featherSignFor` not existing; the
+module suite against the base fails **6 more**, every one a 144-frame assertion naming `got 108 want
+144`. Every changed file parses, 0 NUL bytes across all six, and — the check `node --check` cannot do —
+all **24** names `index.ts` imports from `stitch-core.mjs` resolve against the module's real exports,
+which is the z6-shape failure this repo has already paid for. `wiring-check` **139/0**, every asset on
+one version.
+
+⚠️⚠️ **Not verified against a real recording, and the Edge Function was not executed** — no Deno
+runtime, no deployment, no phone video here. **The first real capture after
+`supabase functions deploy pano360-process` is the test.**
+
+`MODULE_V` → `20260918f`, re-derived from what the tree carries **after** fast-forwarding onto
+`origin/main` (which had by then reached `20260918e`) rather than guessed beforehand, and sort-checked as a
+plain string. `pano360.js` and `module.js` bumped with it; ⚠️ `module.css` deliberately **not** — it
+did not change this round, and bumping an unchanged asset invalidates a cache for nothing.
+
 ### 2026-09-18 (d) — Schedule Setup ▸ Activities: SAP Activities, one heading per trade, and an activity that can be several
 
 Owner's nine numbered items on that step — the pane renamed to **SAP Activities**, a library code
