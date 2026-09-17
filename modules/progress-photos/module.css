@@ -744,6 +744,13 @@
 .pp-pending-item.pp-pending-completed { opacity: .6; }
 .pp-pending-item.pp-pending-failed { border-color: var(--pd-bad); }
 .pp-pending-item.pp-pending-cancelled { border-color: var(--pd-warn); }
+/* Terminal, never-retryable — a file over MAX_UPLOAD_BYTES. Same treatment
+   as failed (it IS a kind of failure), kept as its own state throughout
+   module.js so it can never be swept into a retry loop. */
+.pp-pending-item.pp-pending-rejected { border-color: var(--pd-bad); opacity: .85; }
+.pp-pending-rejectedline {
+  font-size: var(--pd-fs-sm); color: var(--pd-bad-text); margin-top: 6px;
+}
 @media (max-width: 700px) {
   .pp-pending-item { flex-wrap: wrap; }
   .pp-pending-rowactions { flex-direction: row; flex: 1 1 100%; }
