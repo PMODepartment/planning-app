@@ -1,4 +1,10 @@
-## 2026-09-17 (zz) — The Activities step: a class-code list you can scan, and two delete buttons that had never worked
+## 2026-09-17 (zzs) — The Activities step: two delete controls go, one of which main had wired while this branch called it dead
+
+⚠️ **Re-lettered `(zz)` → `(zzs)` on merging `origin/main`, and it matters here rather than being
+cosmetic: `zz` sorts BEFORE the `(zzb)` and `(zzr)` main had published while this was in flight, so
+left alone it would read as older than two entries it is newer than. `zzs` also matches the
+`MODULE_V` this merge ships under, which is how the letter and the token stay legible together.
+
 
 Owner, four items on Schedule Setup → Activities: *"no need for the delete selected rows button.
 user will just use the right button arrow to move the selected class code back to the class code
@@ -9,14 +15,27 @@ expand option. no need to make these labels bold"*, *"remove download template a
 buttons. no need for this"*, and *"For class code list, when clicking + Library, sort by class
 code."*
 
-### ⚠️⚠️ TWO OF THE THINGS REMOVED HAD NO HANDLER AT ALL
+### ⚠️⚠️ ONE OF THE TWO REALLY WAS DEAD. THE OTHER WAS FIXED ON `main` WHILE THIS BRANCH SAT OPEN
 
-`#b-delrows` — **Delete selected rows** — occurred **exactly once in this 55k-line file: in the
-markup**. No `onclick`, no delegated listener, nothing. So the button the owner asked to remove has
-never removed a row, on any project, since it was written. The `→` shuttle they named as the
-replacement is not a workaround; it is and always was the only working route.
+This section first read *"`#b-delrows` — **Delete selected rows** — occurred exactly once in this
+55k-line file: in the markup. No `onclick`, no delegated listener, nothing"*. **That was true of the
+file this branch was cut from and is false of the file it merges into.** Entry `(ak)` — the owner's
+*"Close button not working. Let's check for dead buttons across the schedule setup"* pass — found the
+same thing independently and answered it the other way: it **wired** the button, mirroring `#b-unload`
+with a `psConfirm` in front of it. That landed on `main` before this branch caught up.
 
-⚠️ **And the per-row trash column was dead the same way.** Every row emitted
+So the two passes reached opposite conclusions about one control, and this one wins **only because the
+owner named it directly** — *"no need for the delete selected rows button. user will just use the
+right button arrow"* — not because the button did nothing. The `→` shuttle they named is the
+replacement.
+
+⚠⚠ **The handler is deleted with the markup, and that is not optional.** `(ak)`'s wiring is an
+unguarded `host.querySelector('#b-delrows').onclick = …`, so leaving it behind over markup that no
+longer emits the id throws `Cannot set properties of null` on the **first render of this step** — and
+this module's own history says what that costs: a throw partway through a render leaves every control
+below it unwired, which is the `#pk-boq` / `boq.js` shape this repo has already shipped twice.
+
+⚠️ **The per-row trash column, though, was dead exactly as first described.** Every row emitted
 `<button class="sbld-del" data-del="<r>">`, and `data-del` also occurred once in that function — in
 the markup — with every `[data-del]` handler in the file scoped to a *different* list
 (`listEl.querySelectorAll`, `list.querySelectorAll`, …). The owner did not ask for that one, and it
@@ -168,6 +187,89 @@ The first things to try are **+ Library** (the list should come back grouped and
 **+ Custom** (the caret should land in Activity name, with `custom` showing in Code), and **→** with a
 range selected — that last one is the route that now has no competitor.
 
+### ⚠⚠ MERGING `origin/main` (8 COMMITS) REWROTE HALF OF THIS, AND THE HALF IT REWROTE IS THE GROUPING
+
+This branch sat open long enough for `main` to answer two of its four items independently, in its own
+words. Resolved hunk by hunk on the merits rather than by taking a side, and every decision below is a
+place the two sides genuinely disagreed:
+
+| | this branch | `main` | resolved |
+|---|---|---|---|
+| grouped holding list | `<div class="sbld-hold-grp fold">` + a `<button class="sbld-hold-gh">` header | native `<details>`/`<summary>`, **plus a search box** (`(ao)`, PR #138) | **main's** — it ships, it is keyboard- and screen-reader-native for free, and it carries a search this branch never had |
+| `#b-delrows` | deleted as dead | **wired** (`(ak)`) | deleted — but on the owner's word, not as dead work; see the correction above |
+| drag a code onto the grid | — | added (`(zzb)`) | **kept**, re-hung on the compact row |
+| Interior → Internal | — | renamed (`(zzb)`) | kept |
+| the row's own look | one flush line, name at 400, no per-row trade | two-line bordered card, name at 700 | **this branch's** — it is the owner's *"improve look and make more minimalist … no need to make these labels bold"* |
+
+⚠⚠ **THE GROUPING CSS THIS BRANCH BROUGHT WAS LEFT MATCHING NOTHING, AND `git` COULD NOT SEE IT.**
+The renderer conflicted and main's won; the *stylesheet* did not conflict, so `.sbld-hold-gh`,
+`-gcar`, `-items` and `.sbld-hold-grp.fold` auto-merged in beside a renderer that emits none of them
+— five rules that every tool still reads as working styling. They are deleted, along with the
+duplicate `.sbld-hold-gname` / `-gn` they arrived with, which main's own copies further down the sheet
+were already winning over on source order. **A clean auto-merge is not a correct one**; this is the
+duplicated-rule trap the `(uic)` sweep records, arriving through a merge rather than an edit.
+
+⚠ **Two consequences of putting this branch's compact row under main's markup**, both of which would
+otherwise have been half-applied designs:
+- the **per-row trade label** goes. Main's row printed `CODE · Trade` because it had no trade heading
+  above it when it was written; under one it is the heading restated 197 times. ⚠ The search still
+  matches on trade — it reads the data, not this span, which the suite asserts.
+- the row's `style="--zc:…"` goes with the rail it fed. Nothing reads it on a row any more, and a
+  custom property set on 197 elements that nothing paints is what the next reader spends an afternoon
+  tracing. The heading still carries it.
+
+⚠ **A blank code reads `custom` in the holding list, not an em dash** — the owner defined that word
+on this very step, and the grid's Code placeholder already uses it, so a code-less row sent back with
+`→` keeps its name instead of becoming a mark that reads as missing data.
+
+### ⚠⚠ TWO SUITES HAD TO BE RETARGETED, AND NEITHER WAS WEAKENED
+
+- **`test-actsetup.js` (this branch's own) would not even run**: its harness supplied `catFold`, the
+  fold-state name this branch invented, where the shipped renderer reads main's `holdCol` and a
+  `holdQ` search string it had never heard of — `ReferenceError: holdQ is not defined`, before a
+  single assertion. Harness fixed; §4 now names `data-grp` and the `open` attribute instead of
+  `data-catgrp` / `aria-expanded`. **The property each assertion protects is unchanged**, and two are
+  *added* for the behaviour this branch could not have tested because it had no search: a live query
+  **overrides** a fold, and a trade with no hit is not rendered at all.
+  ⚠⚠ One assertion was **sharpened rather than fixed**: `1.10` asserted *no* `querySelector` miss,
+  which fails on `#b-holdq` — conditionally rendered above 8 codes and correctly wired behind
+  `if (hq)`. The stub cannot see a guard, so a bare `=== 0` punishes correct code. It now asserts that
+  nothing **removed** is looked up, that every other miss is a named conditional control, and — on the
+  source — that no removed id is queried anywhere. Three narrower checks that bite where the blunt one
+  did and not where it did not.
+- **`test-actdnd.js` (main's) asserted against functions this branch deletes.** Three checks pinned
+  the CSV template's header row and the upload matcher's tolerance of the old `interior`/`exterior`
+  spelling. Both were correct, and the owner then removed the surface. An assertion against a deleted
+  function is a suite that can never go green, so they are replaced by the **stronger** statement: the
+  chain is gone **whole** and nothing still calls it. ⚠ Counted through `tools/scan.js` rather than
+  raw, because the deletion note at the old call site *names all four functions* — a raw scan reports
+  the comment explaining the removal as proof it did not happen, which is the third time this repo has
+  been caught measuring its own explanation.
+
+**Re-verified on the merged tree**, not carried over from before it:
+`test-actsetup` **50/0** (was 47) · `test-actdnd` **47/0** · `test-lsm` 683/0 · `test-zoneplan` 50/0 ·
+`test-zoneoverlap` 57/0 · `test-towerseq` 48/0 · `test-shapeedit` 36/0 · `test-sitefit` 31/0 ·
+`test-wbsfile` 28/0 · `test-health` 30/0 · `test-critwbs` 26/0 · `test-cpm` 28/0 · `test-autotrace`
+32/0 · `test-syntax` 4/0. ⚠ `test-builder` **99/1**, and that one failure is **measured on
+`origin/main` too** rather than assumed pre-existing.
+⚠⚠ **Both contrasts bite**: `test-actsetup` against the original pin `d0da7cd` fails **29**, and
+against **`origin/main` as it stands today** fails **18** — the second is the one that matters, since
+the first stopped being the base the day main answered two of these items.
+`wiring-check` **139/0** · `dead-hooks` **9, the documented baseline** · `dark-remap` 0 ·
+`toolbar-order` 15 bars / 0 out of order · `loc-key-agree` clean · inline `<script>` parses (1 block)
+· CSS braces **2474/2474** comments-stripped · **0 NUL bytes** · **19 duplicate static ids, byte-identical
+to the set on `origin/main`** — pre-existing, not introduced here.
+
+⚠ **`MODULE_V` → `20260917zzs`, re-derived from the remote AFTER integrating rather than guessed
+before.** This branch carried `zzp` and `main` had reached `zzr`; both sort before `zzs`. The entry
+letter moved with it for the same reason — `(zz)` sorts *before* the `(zzb)` and `(zzr)` main
+published while this was open, so left alone it would have read as older than two entries it is newer
+than.
+
+⚠ **STILL NOT VERIFIED SIGNED IN, and the merge widens what that leaves untested** — the drag
+gesture and the search box are main's, exercised here only against fixtures, and neither has been
+driven through the compact row this merge puts them on.
+
 ⚠️ **Fixed in passing: this file held a literal NUL byte** — `\0` written as the raw control character
 in prose describing the "no value at this level" sentinel — so `grep` had switched to binary mode and
 answered *"Binary file matches"* for every search of this changelog. **Third time this repo has been
@@ -181,6 +283,408 @@ opaque control hides every mark this grid paints on the `<td>`) kept whole, besi
 deletion of the now-unmatchable `.xl-rowact` rules. Every removal in the merged file was then audited
 line by line against `origin/main` and is one of this change's own.
 
+
+## 2026-09-17 (zzr) — The tofu boxes were 30 bare arrow glyphs; the plan editor goes full screen behind an Excel-style ribbon; and an area can be drawn before it is tagged
+
+Owner, three items: *"firstly, the symbol of 13 still remains. fix that."*, *"when defining the plan
+per floor, make it full screen, and hopefully the controls are similar to an excel format wherein
+there is like a ribbon taskbar on top"*, and *"allow users to define the shapes / trace zones first,
+before tagging which zones are those or if that zone is the whole floor etc."*
+
+### 1 · ⚠️⚠️ THE "SYMBOL" WAS NEVER ONE SYMBOL — IT WAS THIRTY, AND TWICE I FIXED THE WRONG ONE
+
+The `(zy)` pass read the screenshot as the tower bar's `⋯` and labelled it **Tower options**. That
+was a real defect and it was **not the one in the picture**, which is why the owner had to report it
+again. Rather than guess a third time, every **bare non-ASCII glyph used as a control's whole label**
+was enumerated with `tools/scan.js` blanking the comments first — this file carries 2,000+ ⚠️ and
+arrows in prose, and a naive grep reports hundreds of them.
+
+⚠️⚠️ **AND THE FIRST ENUMERATION MISSED MOST OF THEM, WHICH IS THE PART WORTH KEEPING.** A scan for
+literal bytes found four. The plan editor writes its arrows as **HTML entities** — `&#8630;`,
+`&#8646;`, `&#8676;` — so they are pure ASCII in the source and invisible to any byte scan, while the
+browser renders them as the same rare codepoints. The real count was **30**:
+
+| where | codepoints | drawn as |
+|---|---|---|
+| Arrange ▸ Turn | U+21B6 / U+21B7 ×2 copies | `↶90 ↶ ↷ ↷90` |
+| Arrange ▸ Mirror | U+21C6 / U+21C5 ×2 copies | `⇆ ⇅` |
+| Arrange ▸ Align | U+21E4 U+2194 U+21E5 U+21E1 U+2195 U+21E3 | `⇤ ↔ ⇥ ⇡ ↕ ⇣` |
+| Arrange ▸ Size | U+2212 | `−` |
+| Floors & Zones steppers, tower zoom | U+2212 ×3 | `−` |
+| decorative, beside a word | U+25BE, U+25C9 ×2, U+270E ×2 | `▾ ◉ ✎` |
+
+⚠️⚠️ **EVERY ONE OF THOSE ARROWS IS IN A SMALL SQUARE BUTTON WITH NO TEXT BESIDE IT.** Supplemental
+arrows are absent from a great many Windows font stacks, and a missing glyph renders as a **tofu box
+carrying its own hex digits in a 2×2 grid** — a dark square with four tiny characters in it, which is
+exactly what the owner photographed. It is also why the report reads as *one* symbol: when the whole
+row tofus you point at one of them.
+
+**All 30 are now text that no font can fail to draw** — `-90°` `-15°` `+15°` `+90°`, `Flip H` /
+`Flip V`, `Left` `Centre` `Right` `Top` `Middle` `Bottom`, `-` — and the three decorative glyphs are
+gone, because their buttons already carry the word. ⚠️ `°` is U+00B0, Latin-1, present in every font
+this app can reach; it is not a fourth kind of gamble.
+
+- ⚠️ **The rewrite is count-asserted, rule by rule, and ABORTS before writing on a miscount.** A
+  silent partial rewrite of a 50,000-line file is far worse than a script that refuses to run — and
+  the guard **bit twice**: `◉ Inspect` and `✎ Link by hand` each occur **two** times (a toolbar copy
+  and a right-click-menu copy), where I had asserted one.
+- ⚠️ **Three prose strings were changed with them.** The tooltips and the scale note say *"use − / +
+  to size it"*; leaving them would have described buttons that now read `-` / `+`.
+- ⚠️ **The two remaining ⚠️ in dialog notes are deliberately left.** They sit inside a sentence rather
+  than being a control's whole label, so a fallback costs a pictograph and not the button's meaning.
+- ⚠️ **The braille grip goes too.** `.sbld-grab` was the literal `⠇` (U+2807, BRAILLE PATTERN
+  DOTS-123) at the head of every floor row — a symbol with no label, no title, and a codepoint most
+  machines lack. It is **painted with a background gradient** now, so there is no glyph to be
+  missing, and it carries a `title` saying what it is for.
+
+⚠️ **A caveat stated rather than buried:** I cannot read a codepoint off a 33×28 thumbnail, so I have
+not proved *which* of the 30 the owner photographed. What is proved is that the class is gone from
+both screens they named. **If a box survives, it is somewhere else and the screenshot's page is the
+thing to name.** ⚠️ A module page is cached at `index.html?v=MODULE_V`, so a hard refresh is worth
+trying first — this log has recorded that mistaken re-report twice.
+
+### 2 · The plan window is the screen, and the controls are a ribbon
+
+⚠️⚠️ **THE CAP WAS `min(1560px, 97vw)` INSIDE `.pd-modal`'S OWN 90vh**, so on a 1440px laptop the
+drawing — the one thing the window exists for — got about half the screen, and tracing a corner
+meant zooming and panning rather than looking at the floor.
+
+- `.pd-modal.zpw-modal` is `100vw × 100vh`, no radius, no padding. ⚠️ **The class goes on the
+  OVERLAY as well**: `.pd-modal-overlay` carries 20px of its own padding, and a "full screen" window
+  inset by 20px on every side is not one. ⚠️ Both selectors are **two classes deep**, because
+  `.pd-modal` is (0,1,0) and so is `.zpw-modal` — a tie would resolve on source order, correctly
+  today and silently wrongly the day this block moves.
+- ⚠️⚠️ **`min-height:0` on the column AND on the stage wrapper.** A flex item's default
+  `min-height:auto` refuses to shrink below its content, so without it the stage pushes the column
+  past 100vh and the footer leaves the screen — the exact failure this window had as a centred box.
+
+**The ribbon replaces the `Controls` fold**, and the fold's own reasoning is why: it put
+everything-that-is-not-the-drawing behind one button, so a planner had to open it, find the row, act,
+and shut it again. A tab is one press. Three tabs — **Home** (what to draw and how to start),
+**Arrange** (act on the area you picked), **Sheet** (the drawing underneath, the sheet's shape, the
+front) — which are the fold's own four rows regrouped, not new controls.
+
+- ⚠️⚠️ **EVERY PANE STAYS IN THE DOM and the inactive ones are hidden with CSS** — exactly what
+  `<details>` was doing for the fold, and for the reason its note gives: every control inside stays
+  wired precisely as it was, so switching tabs cannot unbind anything.
+- ⚠️ The tab state lives on `W.tab`, not in the DOM: this window repaints on **every gesture**, so a
+  tab read back out of the markup would reset itself under the planner's hand.
+- ⚠️ The band carries a **minimum height**, so switching between two one-row tabs does not nudge the
+  drawing underneath. It still grows for a tab that genuinely needs two rows.
+- ⚠️ **The selected-area strip sits under the ribbon and is always on screen while something is
+  selected** — where a spreadsheet puts the formula bar, and for the same reason. Inside a tab it
+  would be one press away from every gesture that moves the selection.
+
+⚠️⚠️ **AND THE LETTERBOX CLAIM IN AN EARLIER CUT OF THE STAGE RULE WAS FALSE.** It said
+`width:100%` + `aspect-ratio` + `max-height:100%` would bound the box on whichever axis ran out
+first. Measured in a browser, it does not: `max-height` clamps the **height** while the width stays
+at 100%, so on a wide window the stage came out **1412 × 551 against a sheet of 1000 × 620** —
+aspect 2.56 where the sheet is 1.61. The svg is stretched over that box with
+`preserveAspectRatio="none"`, so **every traced zone would have been drawn distorted and `ptOf()`
+would have stopped agreeing with what is on screen** — silently, and worst on the widest windows.
+
+The width has to be bounded by the height that is actually available, which is what container-query
+units buy: `100cqh` **is** the wrapper's own remaining height, whatever the ribbon above it costs
+today, so `min(100%, calc(100cqh * (W / H)))` is a real letterbox and the old hand-measured
+`calc(90vh - 360px)` chrome budget — which went stale the moment a row was added — is gone.
+⚠️ `width:100%` is declared **first** as the fallback: a browser without `cq` drops the `min()` line
+and keeps today's behaviour rather than losing the width entirely.
+
+⚠️ The foot is capped at `32vh` and scrolls on its own — it carries the "also use this plan on other
+floors" list, which on a forty-storey tower is forty rows, and uncapped it would push the drawing off
+a full-screen window.
+
+### 3 · ⚠️⚠️ AN AREA MAY NOW CARRY NO CODE — AND ONE DELETED LINE IS THE WHOLE FEATURE
+
+`zpNormPoly` opened `if (!code) return null;`, so a shape **could not exist without already
+answering** what it was: an area drawn before it was tagged vanished on the next load. That forced
+the order of work — decide, then draw — and on a floor plan the honest order is the other way round,
+because the drawing is what tells you where the boundaries fall.
+
+- ⚠️⚠️ **THE EMPTY STRING IS THE SENTINEL, NOT A RESERVED WORD**, and that is deliberate: a zone code
+  is free text a planner types, so any readable marker could collide with one. Nothing can type the
+  empty string, and every consumer already asks `if (!code)` or matches on a normalised code an
+  untagged area can never equal — so it is invisible to `zpBox`, `zpCodesOf` and the 3D lookup **by
+  construction** rather than by each of them being taught about it.
+- ⚠️ It gets a **colour of its own** rather than falling through to `zpAutoHue('')`, which hashes to
+  the **first zone hue** — an untagged area painted exactly like Zone 1 is the one thing this state
+  must never look like. Checked **before** the override map, because `bag.color['']` is a key nothing
+  can write and everything would read.
+- ⚠️ Drawn with a **dashed outline in neutral grey**: a zone drawn faintly reads as a zone somebody
+  has styled, and the planner would have no reason to go back to it.
+- ⚠️ **The brush OPENS on Untagged**, which is the owner's own order of work. It used to open on the
+  floor's first zone, so the first shape drawn was silently claimed by whichever zone sorted first —
+  and a planner who drew four areas before tagging any of them ended with four copies of Zone 1.
+- ⚠️ **Untagged leads the palette and is the way BACK**: picking it with an area selected untags it,
+  so a shape tagged by mistake is one press from being a question again rather than needing to be
+  deleted and redrawn.
+- ⚠️ A count strip reports the areas still waiting, and **Show the first** selects one — which puts
+  the palette into *"This area is"* and makes the next press the answer. It is a **count and a way
+  in, not a warning**: drawing first is the order that was asked for, so an untagged area is work in
+  progress. What it must not be is forgotten, because it is in no zone and so is scheduled against
+  nothing.
+
+#### ⚠️⚠️ TWO GUARDS WOULD HAVE MADE THE WHOLE FEATURE REFUSE TO WORK ON OPEN
+
+`addPreset` and the Trace button both began `if (!W.brush) { toast('Pick the zone… first'); return; }`.
+An empty brush **used to** mean *"nobody has said what this is"*; it now means `ZP_UNTAG`, which is
+the state the window **opens in**. Left standing, the planner's very first press of **Add** or
+**Trace** would have been met with *"Pick the zone this shape is… first"*, in the app's warning
+colour, refusing to do the one thing the owner asked for. Both removed.
+
+⚠️ Two smaller ones found with them: `Copy` toasted *"Copied the  area."* with a hole where the name
+goes (it printed the raw code, not `zpLabelOf`), and deleting the floor outline re-armed the brush
+with `ZP_ALL` — so the next shape would recreate the very thing just deleted. It falls back to
+Untagged now.
+
+### Verified
+
+**New `modules/project-schedule/test-zoneplan.js` §6 — 23 assertions**, the shipped `zpNormPoly` /
+`zpNorm` / `zpNormAll` / `zpCodesOf` / `zpBox` / `zpColorOfBag` / `zpShapeOfBag` / `zpLabelOf` sliced
+out by **name** and executed: an untagged area survives the whole-bag round trip and keeps its code
+**empty** rather than being handed an invented one; a code of nothing but spaces is untagged; but a
+two-point ring is **still dropped**, because this relaxes the CODE rule and not the geometry one.
+Its colour is its own, is **not** `zpAutoHue('')` and is not Zone 1's, and an override on the empty
+key cannot repaint it. `zpCodesOf` lists the tagged zone only, `zpBox` has no box for it — and, the
+assertion that matters, **an untagged area sitting beside Zone 1 does not widen Zone 1's box**.
+
+⚠️⚠️ **The contrast is executed against the pinned base and it BITES**: there `zpNormPoly` **drops**
+the untagged area, so draw-then-tag was impossible, and the untagged constants do not exist. A suite
+that passed on both files would prove nothing.
+⚠️ `zpShapeOfBag` **does** carry an untagged area to the stacking view, in the untagged grey — that
+is deliberate (it is part of the floor that was traced) and is asserted so it cannot be "fixed" by
+accident. It is invisible to everything keyed on a **code**, not invisible on the drawing.
+⚠️ The suite **refused to stub** and caught a genuine link failure — `zpNormHex`, reached through
+`zpNormColors` — rather than going green against a half-linked build.
+
+**The stage geometry was measured in a browser**, against the `.zpw-stagewrap` / `.zpw-stage` rules
+**sliced out of the shipped file** rather than retyped, at three viewports and three sheet aspects
+(1000×620, 1000×1400, 1000×300): every case letterboxes to the sheet's exact aspect, stays inside its
+wrapper, and is height-bound on a wide window — **1096.8 × 680 at 1600×900**, where the rejected rule
+gave 1412 × 551.
+
+**The emitted markup is tag-balanced** by a scanner that blanks comments and pulls string literals
+with a hand-rolled walker: the plan window's 733 literals balance across `div span p g svg button
+label select`, and so does the Floors & Zones step.
+
+Suites: `syntax` 4/0 · `zoneplan` **50/0** · `zoneoverlap` 57/0 · `shapeedit` 36/0 · `autotrace`
+32/0 · `sitefit` 31/0 · `towerseq` 48/0 · `cpm` 28/0 · `critwbs` 26/0 · `health` 30/0 · `wbsfile`
+33/0 · `lsm` **683/0**. `wiring-check` **139/0**. 0 NUL bytes, pure LF.
+
+⚠️ **`test-builder` is 99/1 and it is PRE-EXISTING** — *"manual: page 'Structure' belongs to a step
+the rail can show"*. Confirmed by stashing this work and running it against the unmodified file,
+where it fails identically. Not this change's, and not fixed here.
+
+⚠️ **NOT VERIFIED SIGNED IN.** The anon key has no grants, so no plan has been opened on a real
+project: the geometry is a browser measurement of the shipped CSS, the untagged state is the shipped
+functions executed against fixtures, and the ribbon's tab switching is asserted structurally. **The
+first things to try:** open a floor plan and check it fills the screen; press **Add shape** before
+touching the palette (it must draw, not refuse); and check the Arrange tab's buttons read `-90°` /
+`Flip H` / `Left` rather than boxes.
+
+### Also in this commit — the row the previous turn did not ship
+
+*"remove the one in the second image. It is of no use."* The **Activity level (whole project)** band
+— an uppercase label, a 240px select and the sentence *"Remaps the whole builder."* — stood between
+the tower bar and the trade chips for one answer given once per project.
+
+⚠️⚠️ **THE SELECT IS FILED, NOT DELETED, and that distinction is load-bearing:** it is the **only
+writer of `cfg.locLevel` anywhere in the app**, so a project already saved on *Floor level* would
+have had no route back to Auto — the zone controls stay hidden on every floor row while it is set, so
+the step would look broken with nothing on screen explaining why. It moves onto the **Location
+breakdown** bar, which already states which location levels the project HAS; this says which of them
+the schedule is generated at. ⚠️ Only the Floors & Zones step passes `level:true` — the import path's
+own step and the WBS screen show that bar for reference and do not own the builder's leaf level.
+⚠️ Its long explanation moved into the `title`, and `width:auto` is explicit, because this control
+has been clipped to *"Aut"* once already by a 62px rule it was never written for.
+
+## 2026-09-17 (zzb) — Drag a class code onto the grid; Interior/Exterior become Internal/External; the grid drops a rung
+
+Owner, three items on **Schedule Setup ▸ Activities**: *"for activities, add option to drag and drop
+from all class codes to selected list"*, *"in activities, label for the duration interior and
+exterior. this should be internal and external. apply for whole schedule module"*, and *"improve look
+of the activities selected table, font sizes can be reduced"*.
+
+⚠️⚠️ **THIS BRANCH DELIBERATELY DOES NOT TOUCH THE FOUR ITEMS PR #140 ALREADY COVERS.** That PR
+(`claude/clever-feynman-syw95y`, open, unmerged at the time of writing) removes the delete/add-row
+buttons, groups the class-code list by trade, drops Download template / Upload Excel and sorts
+`+ Library` by code. An earlier cut of this branch had implemented all four independently — two
+rewrites of the same hold pane, which is a merge nobody wants and a duplicate nobody asked for. That
+work was **discarded and the branch rebuilt on `origin/main`** carrying only the three items above.
+Verified before rebuilding: PR #140 contains **no** drag wiring in that pane (its 12 `drag*` hits are
+the phase cards, the progress-table headers, the column grips and the WBS rows), still reads
+`label: 'Interior (d)'` twice, and still has the grid a rung higher at `--pd-fs-sm`.
+
+### 1 · Drag a code onto the grid
+
+`←` loads the ticked codes; a code can now also be dragged straight onto the grid.
+
+- ⚠️⚠️ **ONE MOVER, `_catLoad(ids)`, SHARED BY BOTH GESTURES** — and that is the point rather than
+  tidiness. `←` and a drop have to land the same rows in the same order and drop the same ticks; two
+  copies is exactly how the button and the drag come to disagree about what a selection is. The
+  button passes the ticked ids, the drop passes what was dragged, and nothing else differs.
+- ⚠️ It filters `cfg.catalog` rather than mapping from `ids`, so rows keep the **list's** own order
+  however the drag was assembled — which is the order `←` already gives. Measured: dragging `c3`
+  then `c1` lands them `c1, c3`.
+- ⚠️ **The moved codes lose their ticks**, or `←` would go on offering to move rows that are no
+  longer in the list.
+- ⚠️⚠️ **`ev.preventDefault()` ON `dragover` IS WHAT MAKES THE DROP LEGAL.** Without it the browser
+  refuses the drop and the whole gesture silently does nothing — no error, no toast, nothing to
+  diagnose. Both suites carry an assertion for it, and a negative build that removes just that one
+  line fails exactly that assertion in both (source and browser).
+- ⚠️⚠️ **`dragleave` fires crossing EVERY child boundary.** An unguarded handler flickers the drop
+  ring off while the cursor is still inside the grid, over a cell. It clears only when
+  `ev.target === _xlDrop` — the wrapper itself. Measured: a `dragleave` dispatched at a `.xl-cell`
+  leaves the ring on; one at the wrapper clears it.
+- ⚠️ **Dragging a TICKED row carries the whole ticked set; an un-ticked row carries only itself.**
+  Anything else surprises: a planner who ticked six and dragged one of them means the six, and one
+  who dragged a row they never ticked means that row.
+- ⚠️ A drop with nothing in flight moves nothing (`if (!_dragIds) return`), and `dragend` releases
+  the drag whether or not it landed.
+- ⚠️ **`←` stays.** Drag ADDS a gesture and replaces none: the button is the discoverable one and the
+  only one reachable from the keyboard. Its `title` now names the second route, which is the only
+  place a drag affordance can be written down.
+- The drop target is the **wrapper** `#b-xl`, not the table, so a drop in the empty space below the
+  last row still lands. The ring is `inset`, or the wrapper's own `overflow:auto` would clip it.
+
+### 2 · Interior/Exterior → Internal/External
+
+⚠️⚠️ **THE REST OF THE MODULE ALREADY SAID Internal/External, so this is closing an internal
+disagreement rather than renaming a concept.** The Generate step heads itself *"Generate & preview —
+Internal vs External"*, the stacking basis reads *Internal (target)* / *External (contract)*, the
+push dialog and the trade-sequence totals line both say Internal/External. Only the Activities grid,
+the Trade-sequence grid and their captions still said Interior/Exterior — so the same two durations
+were called two different things three clicks apart.
+
+Changed: both grids' column headers (`XL_COLS`, `T4_COLS`), the `_sbldHow` bullet, the
+trade-sequence caption and its **Dur** toggle, the downloadable CSV template's header row, and the
+toast that names the columns an upload could not find. Nine comments that name those columns moved
+with them, or they would describe a screen that no longer exists.
+
+- ⚠️⚠️ **THE STORED SHAPE IS UNTOUCHED.** `durInt` / `durExt` are the field names every reader, the
+  push and every saved setup use, and `'int'` / `'ext'` are the basis values. Renaming either would
+  be a data migration wearing a typography change's clothes.
+- ⚠️⚠️ **THE UPLOAD MATCHER KEEPS BOTH SPELLINGS** — `idx(['internal', 'interior', 'int'])`. A
+  planner may upload a template downloaded before today, and dropping `'interior'` would read their
+  durations as **0** rather than failing: a silent wrong answer, which is worse than a refusal. The
+  new spelling is first so it wins on a fresh template.
+- ⚠️⚠️ **SIX SURVIVORS ARE LEFT ALONE, AND THE SUITE ASSERTS THEY SURVIVE** so a future sweep does
+  not "fix" them. Each is a **different subject** from the duration basis: `PC Exterior Walls`,
+  `PC Interior Walls` and `LD Exterior Lighting Works` are **Finance's own class-code chart names**;
+  *"exterior concrete"* and *"interior fit-out"* are **weather exposure** (an exposed pour loses half
+  a wet month, fit-out in a topped-out building loses nothing — nothing to do with which duration
+  column you push); `Exterior Wall Complete` is verbatim from the LSM training deck's own chart. The
+  `'interior'` term in the Architectural trade vocabulary stays too — it matches real WBS branch
+  names — as do two polygon-geometry comments about a ring's interior.
+
+### 3 · The grid drops a rung
+
+⚠️ **One rung of the shared scale, never a fresh literal** — `--pd-fs-sm` (12.5px) → `--pd-fs-xs`
+(11px), with the cell padding tightened to match, because smaller type in the same box reads as a
+gap rather than as a denser table. Measured against the shipped stylesheets at 1440px:
+
+| | origin/main | this branch |
+|---|---|---|
+| header + cell type | 12.5px | **11px** |
+| cell padding | 5px 8px | **4px 7px** |
+| header ink | `rgb(35,31,32)` (full) | **`rgb(90,88,88)` (muted)** |
+| row-number gutter | 36px | **32px** |
+| **row height** | 29px | **25px** |
+
+⚠️ The header is **muted, matching `.pd-table th`** — the app's own header treatment. At full ink it
+competed with the data under it for the eye, which is most of what read as heavy.
+⚠️ **`font:inherit` on the cell controls is what carries the rung into every editable cell**, so the
+inputs follow rather than restating a size — and the shared phone rule still pins a focused input at
+`--pd-fs-tap`, so **iOS cannot zoom the page**. Measured at 390px: header 11px, **input 16px**.
+⚠️⚠️ **THIS RULE IS SHARED with the Trade-sequence grid (`#b-t4`), deliberately.** They are the same
+lattice over the same columns, and two copies is how one ends up a pixel off the other. Both move.
+
+### Verified
+
+New **`modules/project-schedule/test-actdnd.js` — 45 assertions, 0 failing**, the mover sliced out of
+the shipped file by name and **executed** (an empty list, an unknown id, a single move, a multi-code
+move keeping list order, the tick drop, the dirty flag, the repaint count). Run it with the file as
+`argv[2]`; `--base` asserts the **opposite** and passes **5/5 against `origin/main`**, and the normal
+run **ABORTS with exit 1** there rather than quietly comparing nothing.
+
+⚠️⚠️ **AND THE GESTURE WAS ACTUALLY DRIVEN, because a source assertion cannot see a refused drop.**
+A Chromium harness slices the same `holdItems` builder and the same wiring out of the shipped file
+and dispatches **real `DragEvent`s** at them — **26 assertions, 0 failing**: one un-ticked code
+moves alone, a ticked one carries both ticks, the ring goes on, survives a child `dragleave`, clears
+on the wrapper's own and on drop, a drop with nothing in flight is a no-op, and `←` still works
+through the same mover. Both suites bite on the same mutation (remove the `dragover`
+`preventDefault` → 44/1 and 25/1).
+
+`wiring-check` **139/0** · `test-syntax` 4/0 · `test-cpm` 28/0 · `test-autotrace` 32/0 ·
+`test-towerseq` 48/0 · `test-zoneoverlap` 56/0 · `test-shapeedit` 36/0 · inline script parses ·
+CSS brace delta **1**, this file's documented off-by-one, unchanged from base · 0 NUL bytes in the
+module page · dark mode measured (header ink remaps `rgb(90,88,88)` → `rgb(185,183,183)`, so it
+resolves through `--pd-muted` rather than sticking at a literal) · no horizontal page scroll at 390px.
+
+⚠️ **A CORRECTION TO THIS ENTRY, from the merge: `test-lsm` is 683/0, not 675/28.** It was 675/28
+when this branch was cut — pre-existing, byte-identical on the base, and the figure entry `(zu)`
+records — and `main` has since **fixed it** (`8920785`: the flowline was removed from the product and
+left the suite asserting against it). Measured on the merged tree and on `origin/main`: **683/0 on
+both**. The earlier figure is left in the sentence above rather than deleted, because a caveat that
+silently disappears reads as one that was never true.
+
+⚠️⚠️ **FOUR HARNESS FAULTS, EVERY ONE OF WHICH REPORTED A CORRECT FILE AS BROKEN**, recorded because
+three of them are reusable traps:
+1. **`dashboard.css` was linked `file://`** into a `setContent` document, whose base URL is
+   `about:blank` — so it never loaded, every `--pd-*` token resolved to nothing, and a correct 11px
+   rule measured as the browser's default **16px**.
+2. **Inlining it into a template literal was worse:** `dashboard.css` contains **315 backticks** in
+   its own comments, and a backtick terminates the literal. It is injected with `addStyleTag` now.
+3. ⚠️⚠️ **And the `@import` strip was `/@import[^;]*;/` — but the Google Fonts URL CONTAINS
+   SEMICOLONS** (`wght@0,400;0,500;…`), so the match cut mid-URL and the leftover text swallowed the
+   very `:root` block that defines every token. 488 rules parsed and the first one was `*`, not
+   `:root`. Stripped by line instead. **The harness now GATES on `--pd-fs-xs === '11px'` and aborts
+   otherwise**, because a measurement taken with the stylesheet out of the cascade means nothing.
+4. `catSel` was a `new Function` **parameter**, so `_catLoad`'s own `catSel = …` landed on the
+   parameter and the harness kept a stale array. It is a closure `var` of one compiled scope now —
+   the shape `stActivities` itself has.
+⚠️ Plus one of mine in the harness markup: **`return` alone on a line**, which ASI turns into
+`return undefined` — the exact trap entry `(z)` records, reproduced while testing.
+
+⚠️ **NOT VERIFIED SIGNED IN.** No `schedule_builder` row has been loaded, so the drag has never
+moved a code on a real project. First things to try: drag one code onto the grid, tick three and
+drag one of them (all three should go), and check the grid header reads **Internal (d)** /
+**External (d)**.
+
+⚠️ **This module's changelog held a literal NUL byte** at line 293 — prose about the `\u0000`
+sentinel written as a raw byte — so `grep` called the whole file binary and **silently hid every
+match in it**, which is how the next free entry letter was nearly picked wrong. I fixed it here and
+⚠️ **a concurrent session fixed it on `main` first** (`9d6465b`), with the escape spelled `\u0000`
+rather than `\0`; **theirs is what survives the merge** — there is nothing to win in a spelling.
+Recorded because it was the **third** recurrence of the trap entry `2026-09-14 (u)` already names,
+and because two sessions hitting it on the same file on the same day is the argument for a checker
+rather than for a third person finding it by accident.
+
+⚠⚠ **MERGED `origin/main` (44 commits) AFTER OPENING THE PR, AND THE GROUND MOVED UNDER TWO OF
+THE THREE ITEMS.** Six conflicts, every one resolved as a **union** hunk by hunk rather than by
+taking a side:
+- **PR #138 landed the grouped, searchable holding list on `main`** (`860bd59`) — so the owner's
+  item 2 from the original seven is now in `main` rather than only in #140, and this branch's drag
+  wiring had to be re-hung on **that** markup: `draggable="true"` now goes on the row inside main's
+  per-trade `<details>`, and the harness's slice needles moved with it.
+- ⚠⚠ **`main` changed the cell control to `background:transparent`, and that change is
+  LOAD-BEARING** — the grid paints its selection, bad-code tint and copy marquee on the `<td>`,
+  *behind* its children, so an opaque control hides every one of them. Main's rule wins; only this
+  branch's tightened `padding` rides along with it.
+- `main`'s new `#b-delrows` handler and this branch's `_catLoad` + drag wiring are purely additive
+  on both sides, so both are kept.
+- `main` widened the two duration columns to `w: 98`; that width is kept and only the **labels**
+  are this branch's.
+
+⚠ The item-3 table above was **re-measured after the merge**, against `main`'s own changed grid
+CSS, and is unchanged. Both suites re-run green on the merged tree (45/0 and 26/0).
+⚠ The browser harness needed `#b-delrows` added to its fake markup once main's handler fell inside
+the sliced range — a fake host returning `null` for an id the real page **does** carry is the suite
+being wrong, not the page. A handler wired to a genuinely removed button still throws there.
+
+`MODULE_V` → `20260917zzq`. ⚠️ Chosen to sort after **both** `origin/main`'s `20260917zzo` **and PR #140's
+`20260917zzg`** — an unmerged branch's token still matters, because if it lands first a
+browser holding `zzg` would never fetch a page published under anything that sorts earlier.
 ## 2026-09-17 (zy) — The tower menu gets a word, "Change every floor" goes, and one copy-from picker names its tower
 
 Owner, three reports off the Floors & Zones step: *"For the UI in schedule setup, why is there a

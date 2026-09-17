@@ -322,6 +322,11 @@ insert into storage.buckets (id, name, public) values
   ('progress-photos','progress-photos',false),
   ('material-submittal','material-submittal',false)
 on conflict (id) do nothing;
+-- Explicit, known max object size for progress-photos (was left NULL, i.e. an
+-- invisible platform default -- see migrations/2026-09-17-progress-photos-
+-- max-upload-size.sql). Keep in step with MAX_UPLOAD_BYTES in
+-- modules/progress-photos/module.js.
+update storage.buckets set file_size_limit = 5368709120 where id = 'progress-photos';
 do $$
 declare b text;
 begin

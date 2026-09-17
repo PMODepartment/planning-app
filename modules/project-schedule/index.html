@@ -3601,7 +3601,13 @@
     .sbld-how b { color:var(--pd-ink); }
     .sbld-how ol, .sbld-how ul { margin:6px 0 0; padding-left:18px; }
     .sbld-how li { margin:2px 0; }
-    .sbld-sec-actions { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .sbld-sec-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    /* ⚠️ THE COUNTS SHARE THE ACTIONS ROW rather than standing on a band of their own — owner
+       2026-09-17: *"please simplify the UI."* Two full-width rows, one of three buttons and one
+       of five numbers, is two rows of the same thing: what this tower and trade are, and what
+       you can do about it. `margin-left:auto` puts the numbers on the right of the buttons, and
+       they wrap to their own line under them when the step is narrow. */
+    .sbld-sec-actions > .sbld-lvlsum { margin:0 0 0 auto; }
     .sbld-foot { display:flex; justify-content:space-between; gap:10px; margin-top:22px; padding-top:16px; border-top:1px solid var(--pd-line); }
     /* The push bar closes the Generate step. ⚠ Tinted and ruled so it reads as a
        destination at the end of a long scroll rather than one more control in the flow. */
@@ -3629,7 +3635,20 @@
     .sbld-genh { font-size:var(--pd-fs-base); font-weight:800; text-transform:uppercase; letter-spacing:.04em; border-left:4px solid; padding-left:8px; margin-bottom:10px; }
     @media (max-width:900px){ .sbld-gen2 { grid-template-columns:1fr; } }
     .sbld-del { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; color:var(--pd-bad-text); }
-    .sbld-grab { cursor:grab; color:var(--pd-muted); flex:none; user-select:none; }
+    /* ⚠️⚠️ A DRAWN GRIP, NOT A CHARACTER. Owner 2026-09-17: *"the symbol of 13 still remains."*
+       This was the literal text `⠇` — U+2807, BRAILLE PATTERN DOTS-**123** — borrowed for its
+       shape. Two things were wrong with it. It is a symbol with no label and no title, which is
+       the same complaint that took the `⋯` off the tower bar the day before; and it is a BRAILLE
+       codepoint, so on any machine whose fonts do not carry that block the browser draws the
+       tofu box instead — a rectangle with the codepoint in it, at the head of every floor row.
+       ⚠️ Painted with a background gradient, so there is no glyph to be missing: two columns of
+       three dots, which is what a drag handle looks like everywhere else. It carries a `title`
+       now, because the one thing the character never said was what it was for. */
+    .sbld-grab { cursor:grab; color:var(--pd-muted); flex:none; user-select:none;
+      width:11px; height:17px; align-self:center; opacity:.8;
+      background-image:radial-gradient(currentColor 1.05px, transparent 1.15px);
+      background-size:5px 5px; background-position:1px 2px; background-repeat:repeat; }
+    .sbld-grab:hover { opacity:1; color:var(--pd-ink); }
     /* step 2 — trade sequence rows */
     .sbld-seqrow { align-items:center; padding:8px 10px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); cursor:grab; }
     .sbld-seqrow:hover { border-color:var(--pd-red); }
@@ -3664,6 +3683,13 @@
       border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
     .sbld-locbar-l { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .sbld-locbar .sbld-hint { margin:0; flex:1 1 260px; min-width:0; }
+    /* The activity level, off its own band and onto this bar — see `_locBreakdownBar`'s
+       `opts.level`. ⚠️ `width:auto`, NOT a fixed width: the longest option is
+       "Auto (deepest defined)" and this control has been clipped to "Aut" once already by a
+       62px rule it was never written for. */
+    .sbld-loclvl { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto;
+      font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-muted); white-space:nowrap; }
+    .sbld-loclvl select { height:30px; width:auto; max-width:230px; }
     .sbld-seqkind { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
       border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
     .sbld-seqkind-l { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
@@ -3870,27 +3896,69 @@
     /* ⚠️ Owner 2026-09-12: *"make the space allotted for the site plan bigger."* Nearly the whole
        window, because the drawing IS the window — everything else in it is a control for the
        drawing. */
-    .zpw-modal { width:min(1560px, 97vw); max-width:97vw; }
-    .zpw { display:flex; flex-direction:column; gap:9px; }
-    .zpw-head { display:flex; align-items:center; gap:10px; }
+    /* ==== THE WINDOW IS THE SCREEN ====================================================
+       ⚠️⚠️ Owner 2026-09-17: *"when defining the plan per floor, make it full screen."* The
+       previous cap was `min(1560px, 97vw)` inside `.pd-modal`'s own 90vh — so on a 1440px laptop
+       the drawing got about half the height of the screen, and tracing a corner meant zooming in
+       and panning rather than looking at the floor. A floor plan is the one thing in this app
+       that genuinely wants every pixel.
+       ⚠️ `.pd-modal-overlay` carries a 20px padding of its own, so the class goes on the OVERLAY
+       as well — without it a "full screen" window is inset by 20px on every side.
+       ⚠️ Both selectors are two classes deep. `.pd-modal` is (0,1,0) and so is `.zpw-modal`; the
+       module's inline <style> happens to load after dashboard.css, so a tie would resolve the
+       right way today and silently the wrong way the day this block is moved. */
+    .pd-modal-overlay.zpw-overlay { padding:0; }
+    .pd-modal.zpw-modal { width:100vw; max-width:100vw; height:100vh; max-height:100vh;
+      border-radius:0; padding:0; overflow:hidden; }
+    /* ⚠️ `min-height:0` on the column AND on the stage wrapper: a flex item's default
+       `min-height:auto` refuses to shrink below its content, so without it the stage pushes the
+       column past 100vh and the footer leaves the screen — the exact failure this window had
+       when it was a centred box that scrolled. */
+    .zpw { display:flex; flex-direction:column; gap:0; height:100%; min-height:0; }
+    .zpw-head { display:flex; align-items:center; gap:10px; flex:none;
+      padding:9px 14px; border-bottom:1px solid var(--pd-line); }
     .zpw-title { font-size:var(--pd-fs-md); font-weight:700; display:flex; flex-direction:column; gap:1px; }
     .zpw-sub { font-size:var(--pd-fs-xs); font-weight:400; color:var(--pd-muted); }
     .zpw-sp { flex:1 1 auto; }
     .zpw-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    /* The folded setup rows — see paint(). ⚠️ The summary carries the STATE as well as the name,
-       so shut is not the same as hidden. */
-    /* The Controls fold. ⚠️ Renamed from `.zpw-more` when it stopped being "the sheet's own
-       settings" and became everything that is not the drawing — same shell, so the window did
-       not gain a second kind of panel. */
-    .zpw-panel { border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
-    .zpw-panel > summary { display:flex; align-items:center; gap:9px; flex-wrap:wrap; cursor:pointer;
-      padding:7px 11px; font-size:var(--pd-fs-sm); font-weight:700; }
-    .zpw-panel[open] > summary { border-bottom:1px solid var(--pd-line); margin-bottom:9px; }
-    .zpw-panel > .zpw-bar { padding:0 11px 9px; }
-    /* ⚠️ The rows inside are SECTIONS now, not one run — four of them stacked with no separation
-       read as one very long toolbar, which is what this change exists to stop being. */
-    .zpw-panel > .zpw-bar + .zpw-bar { padding-top:9px; border-top:1px solid var(--pd-line); }
-    .zpw-moresum { font-weight:400; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    /* ==== THE RIBBON =================================================================
+       ⚠️⚠️ Owner 2026-09-17: *"hopefully the controls are similar to an excel format wherein
+       there is like a ribbon taskbar on top."* It REPLACES the `Controls` fold, and the fold's
+       own reasoning is why the replacement works: that fold put everything-that-is-not-the-drawing
+       behind one button, and a planner then had to open it, find the row, act, and shut it again.
+       A ribbon keeps the same grouping and makes the group a TAB, so one press is the whole
+       journey.
+       ⚠️⚠️ EVERY PANE IS IN THE DOM AT ALL TIMES and the inactive ones are hidden with CSS —
+       exactly what `<details>` was doing for the fold, and the reason its note gives: every
+       control inside stays wired precisely as it was, so switching tabs cannot unbind anything.
+       ⚠️ The band carries a MINIMUM height, so switching between two one-row tabs does not nudge
+       the drawing underneath — a ribbon whose rows jump as you change tab is one you stop
+       trusting to stay still. It still grows for a tab that genuinely needs two rows, and for a
+       window narrow enough to wrap one; pinning it outright would clip those instead. */
+    .zpw-ribbon { flex:none; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); }
+    .zpw-rtabs { display:flex; align-items:flex-end; gap:2px; padding:0 10px;
+      border-bottom:1px solid var(--pd-line); }
+    .zpw-rtab { border:0; background:transparent; font:inherit; font-size:var(--pd-fs-sm);
+      font-weight:700; color:var(--pd-muted); cursor:pointer; padding:7px 12px 6px;
+      border-bottom:2px solid transparent; border-radius:var(--pd-radius) var(--pd-radius) 0 0; }
+    .zpw-rtab:hover { color:var(--pd-ink); background:var(--pd-card); }
+    /* ⚠️ Ink on a tint with a red underline, NOT a solid red fill — the same active-state this
+       app settled on for `.pd-seg-multi` and for the Vertical Stacking's own segments, and for
+       the same measured reason: white on `--pd-red` is 4.12:1, under AA for small text. */
+    .zpw-rtab.on { color:var(--pd-ink); background:var(--pd-card);
+      border-bottom-color:var(--pd-red); }
+    .zpw-rband { display:flex; align-items:stretch; gap:0; padding:0;
+      background:var(--pd-card); min-height:58px; }
+    .zpw-rpane { display:none; align-items:center; gap:8px; flex-wrap:wrap;
+      padding:8px 12px; width:100%; }
+    .zpw-rpane.on { display:flex; }
+    /* ⚠️ A row inside a pane takes the whole line. Without this two rows sit side by side as
+       soon as they happen to fit, and the groups stop reading as groups. */
+    .zpw-rpane > .zpw-bar { flex:1 1 100%; }
+    /* The ribbon's own group label — the row labels the fold already carried ("Plan", "Front",
+       "Draw as"), restyled so a cluster reads as a named group rather than as loose controls. */
+    .zpw-rpane .zpw-lbl { font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em;
+      text-transform:uppercase; color:var(--pd-muted); min-width:0; }
     .zpw-pal { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
     .zpw-sw { min-width:42px; padding:3px 9px; border:1px solid var(--pd-line); border-radius:6px;
       font:inherit; font-size:var(--pd-fs-xs); font-weight:700; color:#fff; cursor:pointer; background:var(--zc, #888); }
@@ -3917,10 +3985,33 @@
        on the SITE plan — the row of controls, the fold, the tip, the chip list and the scale note —
        because that is the taller of the two subjects, and a stage that fits the floor plan but not
        the site plan would scroll on exactly the drawing this was asked for. */
-    .zpw-stage { --zpvh:max(300px, calc(90vh - 360px)); position:relative;
+    /* ⚠️⚠️ THE STAGE IS LETTERBOXED BY ITS OWN WRAPPER, and that is what replaces the old
+       `calc(90vh - 360px)` budget. That constant was this window's chrome MEASURED ONCE, on the
+       site plan, and it went stale the moment a row was added or removed — which is exactly what
+       the ribbon does. A `flex:1` wrapper measures the real remainder instead, whatever is above
+       and below it, so the sheet fills the screen and nothing has to be kept in step by hand.
+       ⚠️⚠️ AND `width:100%` + `aspect-ratio` + `max-height:100%` IS NOT A LETTERBOX. An earlier
+       cut of this rule said it was — that whichever axis ran out first would bound the box — and
+       measuring it in a browser says otherwise: `max-height` clamps the HEIGHT and the width
+       stays at 100%, so on a wide window the stage came out 1412 x 551 against a sheet of
+       1000 x 620. Aspect 2.56 where the sheet is 1.61. The svg is stretched over that box with
+       `preserveAspectRatio="none"`, so every traced zone would have been drawn distorted and
+       `ptOf()` would have stopped agreeing with what is on screen — silently, and worse on the
+       widest windows. The width has to be bounded by the HEIGHT that is actually available.
+       ⚠️ Container-query units are what make that possible without a hand-measured budget:
+       `100cqh` IS the wrapper's own remaining height, whatever the ribbon above it costs today.
+       `--zpar` holds `W / H`, so `calc(100cqh * (W / H))` is the width that height allows, and
+       `min()` takes whichever of the two axes runs out first — which is the letterbox the old
+       comment claimed. ⚠️ `width:100%` is declared FIRST as the fallback: a browser without `cq`
+       drops the `min()` line and keeps today's behaviour rather than losing the width entirely. */
+    .zpw-stagewrap { flex:1 1 auto; min-height:0; display:flex; align-items:center;
+      justify-content:center; padding:8px 14px; container-type:size; }
+    .zpw-stage { position:relative;
       aspect-ratio:var(--zpar, 1000 / 620);
-      width:min(100%, calc(var(--zpvh) * var(--zpar, 1000 / 620)));
-      margin-inline:auto; background:var(--pd-bg);
+      width:100%;
+      width:min(100%, calc(100cqh * (var(--zpar, 1000 / 620))));
+      max-width:100%; max-height:100%;
+      background:var(--pd-bg);
       border:1px solid var(--pd-line); border-radius:10px; overflow:hidden; }
     .zpw-stage.zoomed { cursor:grab; }
     /* ==== THE SHEET AS A PAGE ==========================================================
@@ -4024,6 +4115,23 @@
     .zpw-live { fill:rgba(238,49,36,.18); stroke:var(--pd-red); stroke-width:3; stroke-dasharray:9 6;
       vector-effect:non-scaling-stroke; }
     .zpw-lbl { font-size:var(--pd-fs-xs); color:var(--pd-muted); min-width:38px; }
+    /* ==== AN AREA NOBODY HAS TAGGED YET ==============================================
+       ⚠️⚠️ Owner 2026-09-17: *"allow users to define the shapes / trace zones first, before
+       tagging which zones are those or if that zone is the whole floor etc."* So an area may
+       carry NO code, and it has to be unmistakable on the drawing — it is the one thing on the
+       sheet that is not finished. A dashed outline in a neutral grey says "provisional" without
+       spending one of the zone hues, which mean something.
+       ⚠️ It is not merely a lighter zone: a zone drawn faintly reads as a zone somebody has
+       styled, and the planner would have no reason to go back to it. */
+    .zpw-shape.untag polygon { stroke-dasharray:10 6; fill-opacity:.16; }
+    .zpw-shape.untag:hover polygon { fill-opacity:.3; }
+    .zpw-shape.untag.sel polygon { fill-opacity:.34; }
+    .zpw-sw.untag { color:var(--pd-ink); border-style:dashed; }
+    .zpw-untag { display:flex; align-items:center; gap:8px; flex:none; margin:0;
+      padding:6px 14px; border-bottom:1px solid var(--pd-warn-line);
+      background:var(--pd-warn-bg); color:var(--pd-warn-text);
+      font-size:var(--pd-fs-xs); }
+    .zpw-untag b { font-weight:800; }
     .zpw-shapes { display:inline-flex; gap:3px; flex-wrap:wrap; }
     /* Orient + size, on the selected area. ⚠️ Its own group with a label: four turn buttons beside
        two size buttons is unreadable as a bare run of six, and they are two different actions. */
@@ -4037,8 +4145,12 @@
        appears and disappears in a fixed stack of toolbars reads as the window jumping unless
        it is visibly a different KIND of row — one about the thing you have picked, not about
        the drawing. */
-    .zpw-selbar { border-top:1px solid var(--pd-line); background:var(--pd-bg);
-      border-radius:0 0 8px 8px; }
+    /* ⚠️⚠️ IT SITS UNDER THE RIBBON AND IS ALWAYS ON SCREEN while something is selected — the
+       place a spreadsheet puts the formula bar, and for the same reason: it describes the thing
+       you have picked, which you are in the middle of editing. Inside a ribbon tab it would be
+       one press away from every gesture that moves the selection. */
+    .zpw-selbar { flex:none; border-bottom:1px solid var(--pd-line); background:var(--pd-bg);
+      padding:6px 14px; }
     .zpw-num { display:inline-flex; align-items:center; gap:4px; font-size:var(--pd-fs-micro);
       font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--pd-muted); }
     .zpw-num input { width:62px; height:26px; padding:2px 5px; font-size:var(--pd-fs-sm); }
@@ -4176,10 +4288,15 @@
        larger than one zone. */
     .zpw-grid-ctl input[type="color"] { width:30px; height:22px; padding:0; cursor:pointer;
       border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); }
-    .zpw-tip { margin:0; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .zpw-tip { margin:0; flex:none; padding:0 14px 6px;
+      font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .zpw-empty { position:absolute; inset:auto 0 0 0; top:50%; transform:translateY(-50%);
       text-align:center; font-size:var(--pd-fs-sm); color:var(--pd-muted); padding:0 20px; }
-    .zpw-foot { display:flex; flex-direction:column; gap:8px; }
+    /* ⚠️ The foot is capped and scrolls on its own. It carries the "also use this plan on other
+       floors" list, which on a forty-storey tower is forty rows — uncapped it would push the
+       drawing off a full-screen window, which is the one thing this layout may not do. */
+    .zpw-foot { display:flex; flex-direction:column; gap:8px; flex:none;
+      max-height:32vh; overflow:auto; padding:0 14px 10px; }
     .zpw-list { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:var(--pd-fs-xs); }
     .zpw-chip { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:var(--pd-radius-pill);
       border:1px solid var(--pd-line); cursor:pointer; }
@@ -4622,23 +4739,27 @@
     .sbld-hold { flex:0 0 260px; display:flex; flex-direction:column; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); max-height:58vh; overflow:hidden; }
     .sbld-hold-h { padding:7px 10px; font-size:var(--pd-fs-sm); font-weight:700; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
     .sbld-hold-list { overflow:auto; padding:0; display:block; }
-    /* ⚠ GROUPED BY TRADE, and the item lost every decoration the heading now carries.
-       It was a two-line card — bold name over "CODE · Trade" — with a 4px trade-coloured rail
-       and a 1px border on EVERY row, so 197 codes read as 197 boxes. Under a trade heading the
-       per-row trade label and the per-row colour rail are both restating the heading, so the
-       colour moves to the heading and the row becomes one plain line: muted code, then name. */
-    .sbld-hold-grp { border-bottom:1px solid var(--pd-line); }
-    .sbld-hold-grp:last-child { border-bottom:0; }
-    .sbld-hold-gh { width:100%; display:flex; align-items:center; gap:6px; text-align:left; border:0; border-left:3px solid var(--zc,var(--pd-line)); background:var(--pd-bg); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-xs); cursor:pointer; padding:5px 8px; position:sticky; top:0; z-index:1; }
-    .sbld-hold-gh:hover { background:var(--pd-line); }
-    .sbld-hold-gcar { flex:none; width:10px; color:var(--pd-muted); transition:transform .12s ease; }
-    .sbld-hold-grp.fold .sbld-hold-gcar { transform:rotate(-90deg); }
-    .sbld-hold-gname { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .sbld-hold-gn { flex:none; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
-    .sbld-hold-grp.fold .sbld-hold-items { display:none; }
-    .sbld-hold-item { width:100%; display:flex; align-items:baseline; gap:8px; text-align:left; border:0; background:none; color:var(--pd-ink); font:inherit; cursor:pointer; padding:4px 8px 4px 20px; }
+    /* ⚠ GROUPED BY TRADE (the <details> groups below), and the ROW lost every decoration the
+       heading now carries. It was a two-line card — bold name over "CODE · Trade" — with a 4px
+       trade-coloured rail and a 1px border on EVERY row, so 197 codes read as 197 boxes. Under a
+       trade heading the per-row trade label and the per-row colour rail both restate the heading,
+       so the colour stays on the heading and the row becomes one plain line: name, then muted code.
+       ⚠⚠ THE BUTTON-AND-FOLD GROUP MARKUP THIS PASS WAS FIRST WRITTEN AGAINST IS NOT WHAT SHIPS:
+       a native disclosure landed on main first (PR #138) and is what the renderer emits, so the
+       button-header rules this pass brought with it are deleted rather than left matching nothing —
+       and the duplicate group-name / group-count rules they came with went too, since the copies
+       further down the sheet are the ones that were winning on source order anyway. */
+    .sbld-hold-item { width:100%; display:flex; align-items:baseline; gap:8px; text-align:left; border:0; background:none; color:var(--pd-ink); font:inherit; cursor:pointer; padding:4px 8px 4px 18px; }
     .sbld-hold-item:hover { background:var(--pd-bg); }
+    /* ⚠ An INSET ring, not `outline` + `outline-offset`: the rows are flush now, so an offset
+       outline bleeds over the row above and below it. */
     .sbld-hold-item.sel { background:var(--pd-red-light,rgba(238,49,36,.08)); box-shadow:inset 2px 0 0 var(--pd-red); }
+    /* Drag a class code onto the grid as an ALTERNATIVE to ←, never a replacement: the button
+       stays the discoverable gesture and the only one reachable from the keyboard. */
+    .sbld-hold-item[draggable="true"] { cursor:grab; }
+    .sbld-hold-item.dragging { opacity:.45; cursor:grabbing; }
+    /* Inset, so the ring cannot be clipped by the wrapper's own `overflow:auto`. */
+    .sbld-xlwrap.sbld-dropok { box-shadow:inset 0 0 0 2px var(--pd-red); }
     /* ⚠ 400, not 700. Every row bold is no emphasis at all — and the owner asked for it plainly. */
     .sbld-hold-desc { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--pd-fs-sm); font-weight:400; line-height:1.3; }
     /* ⚠ Both of these were inline `font-size` literals (10.5px / 11.5px) — off the scale by a
@@ -4667,8 +4788,10 @@
     .sbld-hold-gsel { flex:0 0 auto; font-size:var(--pd-fs-micro); color:var(--pd-red); }
     /* ⚠ `.sbld-hold-list` is a flex column with `gap:4px`, which spaces the GROUPS. The codes
        inside a group are block children of <details> and that gap never reaches them. */
-    .sbld-hold-grp > .sbld-hold-item { width:100%; margin:0 0 4px; }
-    .sbld-hold-grp > .sbld-hold-item:last-child { margin-bottom:0; }
+    /* ⚠ No per-row margin: `.sbld-hold-list`'s own gap spaces the GROUPS, and the rows inside a
+       group are flush by design — a 4px margin per row puts back most of the height this pass
+       took out (43px → 25px). */
+    .sbld-hold-grp > .sbld-hold-item { width:100%; margin:0; }
     @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
@@ -4690,15 +4813,23 @@
        --pd-focus measures 4.12 / 3.40. Kept INSET so it is not clipped by the wrapper's own
        `overflow:auto`. */
     .sbld-xlwrap:focus-visible { box-shadow:inset 0 0 0 2px var(--pd-focus); }
-    table.sbld-xl { border-collapse:collapse; font-size:var(--pd-fs-sm); width:100%; }
-    table.sbld-xl th, table.sbld-xl td { border:1px solid var(--pd-line); padding:5px 8px; text-align:left; white-space:nowrap; }
-    table.sbld-xl thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-weight:700; }
+    /* ⚠⚠ THIS RULE IS SHARED by the Activities grid (#b-xl) and the Trade-sequence grid
+       (#b-t4), deliberately — they are the same lattice over the same columns, and two copies
+       is how one of them ends up a pixel off the other. Owner 2026-09-17: *"improve look of the
+       activities selected table, font sizes can be reduced"* — so it drops ONE rung of the
+       shared scale (sm 12.5 → xs 11), never a fresh literal, with the cell padding tightened to
+       match: smaller type in the same box reads as a gap rather than as a denser table. */
+    table.sbld-xl { border-collapse:collapse; font-size:var(--pd-fs-xs); width:100%; }
+    table.sbld-xl th, table.sbld-xl td { border:1px solid var(--pd-line); padding:4px 7px; text-align:left; white-space:nowrap; }
+    /* Muted, matching `.pd-table th` — the app's own header treatment. At the old weight and
+       full ink the header row competed with the data under it for the eye. */
+    table.sbld-xl thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-weight:700; color:var(--pd-muted); }
     table.sbld-xl thead th[data-ci] { position:sticky; overflow:visible; }
     .xl-colgrip { position:absolute; top:0; right:-4px; width:9px; height:100%; cursor:col-resize; z-index:4; }
     .xl-colgrip:hover, .xl-colgrip.drag { background:var(--pd-red); opacity:.55; }
     .sbld-holdgrip { flex:0 0 8px; align-self:stretch; cursor:col-resize; border-radius:3px; margin:0 2px; }
     .sbld-holdgrip:hover, .sbld-holdgrip.drag { background:var(--pd-red); opacity:.5; }
-    table.sbld-xl td.xl-rn { background:var(--pd-bg); color:var(--pd-muted); text-align:center; width:36px; user-select:none; font-variant-numeric:tabular-nums; }
+    table.sbld-xl td.xl-rn { background:var(--pd-bg); color:var(--pd-muted); text-align:center; width:32px; user-select:none; font-variant-numeric:tabular-nums; }
     /* ⚠⚠ `user-select:none` AND `cursor:cell` BELONG TO A <td> YOU SELECT, NOT ONE THAT
        HOLDS AN INPUT. `user-select` inherits, so leaving it here would have fought the caret in
        every cell of a grid whose whole point is that the cell IS the editor — a planner
@@ -4723,7 +4854,9 @@
        every mark this grid paints on the CELL — the selection, the bad-code tint and the copy
        marquee are all drawn on the <td>, behind its children. The first painted ancestor is the
        panel's own surface, so an unmarked cell is unchanged. */
-    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:transparent; color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
+    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:transparent; color:var(--pd-ink); font:inherit; padding:2px 4px; outline:none; }
+    /* ⚠ And `font:inherit` is what carries the type rung into every editable cell — the
+       shared phone rule still pins a focused input at --pd-fs-tap, so iOS cannot zoom. */
     /* ⚠️ The shared focus ring is `outline-offset:2px`, which OVERLAPS the neighbouring cell in a
        table this dense. Pulled inside for grid cells only - the ring is still 2px and still the
        same colour, it just draws within the cell it belongs to. */
@@ -34410,7 +34543,7 @@
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
     var holdQ = '';     // step-1 holding list: the search box's text (code / name / trade)
     var holdCol = {};   // step-1 holding list: trade code -> true when that group is folded shut
-    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 98, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 98, num: true }];
+    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Internal (d)', w: 98, num: true }, { k: 'durExt', label: 'External (d)', w: 98, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
     // activity the push creates. Everything the builder produces lands in the EXECUTION phase, so
@@ -34957,7 +35090,7 @@
     var autoChainType = 'FS';  // step-4 Auto-chain relationship type (FS / SS / FF / SF)
     var tradeView = 'flow';    // step-4 right pane: 'flow' (equal blocks) | 'gantt' (time-scaled)
     var tradeScale = 'month';  // step-4 Gantt time axis: 'day' | 'week' | 'month' | 'year'
-    var tradeBasis = 'int';    // step-4 Gantt duration basis: 'int' (interior) | 'ext' (exterior)
+    var tradeBasis = 'int';    // step-4 Gantt duration basis: 'int' (internal) | 'ext' (external)
     var tgZoom = 2.2;          // step-4 Gantt px-per-day (set by scale presets, fine-tuned by +/-)
     var TG_PPD = { day: 18, week: 8, month: 2.2, year: 0.6 };
     var seqZoom = 3;      // Zone-sequence flow diagram: block size / column spacing (zoom +/- and Ctrl+scroll)
@@ -35008,7 +35141,7 @@
     function isActFocus(id) { return actFocus && actFocus === id; }
     /* ⚠ The trade-sequence grid’s own cursor is gone with its engine too — PDGrid keeps its
        own focus per attached table, so the two grids no longer need a cursor each. */
-    var T4_COLS = [{ k: 'code', label: 'Code', w: 100 }, { k: 'name', label: 'Activity name', w: 190 }, { k: 'durInt', label: 'Interior (d)', w: 84, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 84, num: true }];
+    var T4_COLS = [{ k: 'code', label: 'Code', w: 100 }, { k: 'name', label: 'Activity name', w: 190 }, { k: 'durInt', label: 'Internal (d)', w: 84, num: true }, { k: 'durExt', label: 'External (d)', w: 84, num: true }];
     // Tower display nodes for one floor at the current collapse level. Each node carries ALL its
     // descendant leaf uids (so a collapsed node links/highlights its whole group). L1 is handled at
     // the trade level (whole-trade node), so this covers L2–L4.
@@ -35752,7 +35885,7 @@
         why: 'The list of work that repeats through the building — one row per class code, with how long it takes in one place.',
         how: ['Press <b>+ Library</b> to load the standard class codes, tick the ones this project uses, then <b>←</b> to bring them in.',
               'Or download the <b>template</b>, fill it in Excel and upload it.',
-              'Set each row\u2019s <b>trade</b>, <b>scope</b> and its <b>Interior / Exterior</b> duration.',
+              'Set each row\u2019s <b>trade</b>, <b>scope</b> and its <b>Internal / External</b> duration.',
               '<b>Scope</b> is what the duration is FOR: <i>per zone</i>, <i>per floor</i>, or <i>whole project</i>. A whole-project duration is split down automatically.'],
         watch: ['⚠️ <b>Codes must be distinct.</b> Two rows with the same code cannot be told apart in the sequencing steps, which makes them unusable.',
                 'The grid is a spreadsheet: drag to select, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd>, <kbd>Ctrl+D</kbd> to fill down, <kbd>Delete</kbd> to clear. Paste blocks straight from Excel.'],
@@ -35991,9 +36124,9 @@
     function usedGroups() { var seen = {}; cfg.activities.forEach(function (a) { if (a.group) seen[a.group] = 1; }); return GROUPS.filter(function (g) { return seen[g]; }); }
     function included(uid, aid) { return !cfg.scopeOff[uid + '|' + aid]; }
     // ⚠⚠ CROSS-BASIS FALLBACK — this is the "only Allied Services was migrated" bug.
-    // Step 1 has two duration columns (Interior / Exterior) and the push runs on ONE of them. A row is
+    // Step 1 has two duration columns (Internal / External) and the push runs on ONE of them. A row is
     // dropped from generate() when its duration for the CHOSEN basis is 0, so a planner who filled only
-    // the Interior column and then pushed lost every activity — except the trades whose rows happened
+    // the Internal column and then pushed lost every activity — except the trades whose rows happened
     // to carry both numbers, which is why the survivor looked arbitrary (Allied Services).
     // normActivity() already MEANT to mirror one column onto the other, but its guard was
     // `a.durExt != null`, and all three paths that CREATE a row (catalog import, the paste handler,
@@ -36025,7 +36158,7 @@
       if (!a) return 0;
       var fk = durKindOf(a, kind);
       // Per COLUMN: this level type's own number if it typed one, otherwise the default's. A category
-      // that specialises only its Interior duration still inherits the default Exterior one.
+      // that specialises only its Internal duration still inherits the default External one.
       function pick(col) { var v = fk ? Math.max(0, +fk[col] || 0) : 0; return v > 0 ? v : Math.max(0, +a[col] || 0); }
       var want = pick(basis === 'ext' ? 'durExt' : 'durInt');
       if (want > 0) return want;
@@ -36226,7 +36359,7 @@
       var out = {}; acts.forEach(function (a) { out[a.id] = st(a.id); }); return out;
     }
     // Longest-path total duration (days) of a trade's linked class codes for the given basis
-    // (int = interior, ext = exterior) — the finish day of the latest-finishing code.
+    // (int = internal, ext = external) — the finish day of the latest-finishing code.
     function tradeTotalDays(tr, basis) {
       var acts = tradeActs(tr); if (!acts.length) return 0;
       var starts = actDayStarts(tr, basis), max = 0;
@@ -37124,7 +37257,7 @@
       var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
       // ⚠️ DIAGNOSTIC — why a trade might be silently absent from the push. A row is dropped above when
       // effDur() is 0, i.e. the activity has NO duration for the CHOSEN BASIS (Internal vs External).
-      // So a planner who filled only the Interior column, then pushed "External", gets an empty push —
+      // So a planner who filled only the Internal column, then pushed "External", gets an empty push —
       // and someone who filled only one trade's durations gets "only <that trade> was pushed" (the
       // reported Allied-Services-only surprise). Report which USED trades produced 0 rows and which
       // activities were dropped for a zero duration on this basis, so the push can say so out loud.
@@ -38820,10 +38953,11 @@
     function stActivities(host, noHead) {
       var cols = XL_COLS;
       var CW = function (c) { return xColW[c.k] || (c.w || (c.k === 'name' ? 260 : 110)); };
-      /* ⚠️⚠️ THE TRAILING ROW-ACTION COLUMN IS GONE, AND IT WAS DEAD TOO. It held a trash button
-         whose `data-del` appeared exactly once in this function — in the markup — with no handler,
-         so clicking it did nothing; it was the same non-working delete as `#b-delrows`, once per
-         row. Removed with it rather than left as a broken icon on every row after the owner named
+      /* ⚠️⚠️ THE TRAILING ROW-ACTION COLUMN IS GONE, AND THIS ONE REALLY WAS DEAD — unlike
+         `#b-delrows`, which main had since wired (see the note further down). It held a trash button
+         whose `data-del` appeared exactly once in this function — in the markup — with every
+         `[data-del]` handler in the file scoped to a different list, so clicking it did nothing on
+         any project. Removed rather than left as a broken icon on every row, after the owner named
          `→` as the way a row leaves the build. */
       var totalW = 40 + cols.reduce(function (t, c) { return t + CW(c); }, 0);
       var colgroup = '<colgroup><col style="width:40px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '</colgroup>';
@@ -38888,9 +39022,23 @@
           (nSel ? '<span class="sbld-hold-gsel">' + nSel + ' ticked</span>' : '') +
           '<span class="sbld-hold-gn">' + items.length + '</span></summary>' +
           items.map(function (a) {
-            return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + gc(a.group) + '">' +
+            /* ⚠ draggable, so a code can be dragged onto the grid as an ALTERNATIVE to ← —
+               never a replacement: the button stays the discoverable, keyboard-reachable one. */
+            /* ⚠ No `--zc` on the ROW any more. It fed a 4px trade-coloured rail that this pass
+               moved onto the trade heading — with the rail gone no rule reads it here, and a
+               custom property set on 197 rows that nothing paints is the kind of leftover the
+               next reader spends an afternoon tracing. The heading still carries it. */
+            return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" draggable="true">' +
               '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
-              '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
+              /* ⚠ The per-row TRADE label is gone: the row now sits under a trade heading that
+                 already names it, so printing it again on all 197 rows is the heading restated
+                 197 times. The search still matches on trade — it reads the data, not this span. */
+              /* ⚠ A blank code reads `custom`, not an em dash. The owner defined the word on this
+                 very step — *"activities without class code are identified as custom activities"* —
+                 and the grid's own Code cell already shows it as a placeholder, so a code-less row
+                 sent back here with → keeps the name it was given instead of becoming a dash that
+                 reads as missing data. */
+              '<span class="sbld-hold-code">' + e2(a.code || 'custom') + '</span></button>';
           }).join('') + '</details>';
       }).join('');
       /* ⚠ The box appears at 9 codes, and STAYS while a query is live however few survive it —
@@ -38928,9 +39076,9 @@
           ? '<div class="sbld-empty sbld-hold-empty">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>'
           : (_holdShown.length ? holdItems
             : '<div class="sbld-empty sbld-hold-empty">No code matches <b>' + e2(holdQ.trim()) + '</b>. Clear the box to see all ' + cfg.catalog.length + '.</div>')) + '</div></div>';
-      var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
+      var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build &mdash; or drag a code from the list straight onto the grid">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       /* ⚠ Both suppressed under `noHead`. The lede enumerated “code, name, trade, scope and its
-         interior/exterior duration” — which is the grid's own column headers, read out in prose
+         internal/external duration” — which is the grid's own column headers, read out in prose
          directly above the grid. Kept when this view is opened on its own. */
       host.innerHTML = (noHead ? '' :
         '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
@@ -38949,9 +39097,15 @@
            Owner 2026-09-17: *"no need for the delete selected rows button. user will just use the
            right button arrow"*, *"no need for the add row"*, *"remove download template and upload
            excel buttons."*
-           ⚠️⚠️ `#b-delrows` WAS DEAD: it appeared exactly once in this file — in this markup — with
-           no handler anywhere, so "Delete selected rows" has never removed a row. `→` is and was the
-           working route, which is exactly what the owner named.
+           ⚠️⚠️ A CORRECTION TO THIS NOTE'S OWN FIRST VERSION, WHICH WENT STALE BEFORE IT MERGED.
+           It read *"`#b-delrows` WAS DEAD — no handler anywhere, so it has never removed a row"*, and
+           that was true of the file this pass was written against. It stopped being true days later:
+           the *"let's check for dead buttons across the schedule setup"* pass WIRED it, and that fix
+           was already on `main` when this branch merged. So the button being removed here was a
+           working one, and it goes on the owner's word alone — *"no need for the delete selected
+           rows button. user will just use the right button arrow"* — not because it did nothing.
+           Its handler is deleted with it rather than left querying an id nothing emits, which would
+           throw on the first render of this step. `→` is the route the owner named.
            ⚠️ The template/upload pair went with `actTemplateCsv` / `parseCsv` / `importActivities` /
            `uploadActivities`, deleted rather than left unreferenced — a closed chain whose only two
            entry points were those two buttons. Pasting a block straight out of Excel into the grid
@@ -39058,12 +39212,64 @@
       host.querySelectorAll('details.sbld-hold-grp').forEach(function (d) {
         d.ontoggle = function () { var g = d.dataset.grp; if (d.open) delete holdCol[g]; else holdCol[g] = true; };
       });
+      /* ⚠⚠ ONE MOVER FOR BOTH GESTURES. ← and a drop have to land the same rows in the same
+         order and drop the same ticks; two copies of this is how the button and the drag come to
+         disagree about what a selection is. `ids` is the set to move — the button passes the
+         ticked ones, the drop passes what was dragged. */
+      function _catLoad(ids) {
+        if (!ids || !ids.length) return false;
+        var take = {}; ids.forEach(function (id) { take[String(id)] = 1; });
+        /* Filtered out of `cfg.catalog` rather than mapped from `ids`, so the rows keep the
+           LIST's own order however the drag was assembled — which is the order ← already gives. */
+        var moved = (cfg.catalog || []).filter(function (a) { return take[String(a.id)]; });
+        if (!moved.length) return false;
+        cfg.catalog = cfg.catalog.filter(function (a) { return !take[String(a.id)]; });
+        cfg.activities = cfg.activities.concat(moved);
+        catSel = catSel.filter(function (id) { return !take[String(id)]; });
+        markDirty(); render();
+        return true;
+      }
       host.querySelector('#b-load').onclick = function () {
         if (!catSel.length) { UI.toast('Tick one or more class codes in the list first.', 'warn'); return; }
-        var take = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) >= 0; });
-        cfg.catalog = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) < 0; });
-        cfg.activities = cfg.activities.concat(take); catSel = []; markDirty(); render();
+        _catLoad(catSel.slice());
       };
+      /* ---- drag a class code onto the grid -------------------------------------------------
+         ⚠ Dragging a TICKED row carries the whole ticked set; dragging an un-ticked one carries
+         only itself. Anything else surprises: a planner who ticked six and dragged one of them
+         means the six, and one who dragged a row they never ticked means that row. */
+      var _dragIds = null;
+      host.querySelectorAll('[data-cat]').forEach(function (b) {
+        b.addEventListener('dragstart', function (ev) {
+          var id = b.dataset.cat;
+          _dragIds = (catSel.indexOf(id) >= 0) ? catSel.slice() : [id];
+          b.classList.add('dragging');
+          try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', id); } catch (e) {}
+        });
+        b.addEventListener('dragend', function () { b.classList.remove('dragging'); _dragIds = null; });
+      });
+      var _xlDrop = host.querySelector('#b-xl');
+      if (_xlDrop) {
+        /* ⚠⚠ `preventDefault()` on dragover is what MAKES a drop legal — without it the browser
+           refuses the drop and the gesture silently does nothing. */
+        _xlDrop.addEventListener('dragover', function (ev) {
+          if (!_dragIds) return;
+          ev.preventDefault();
+          try { ev.dataTransfer.dropEffect = 'move'; } catch (e) {}
+          _xlDrop.classList.add('sbld-dropok');
+        });
+        /* ⚠ dragleave fires crossing EVERY child boundary, so clearing on any of them makes the
+           ring flicker off while the cursor is still inside the grid. Only the wrapper counts. */
+        _xlDrop.addEventListener('dragleave', function (ev) {
+          if (ev.target === _xlDrop) _xlDrop.classList.remove('sbld-dropok');
+        });
+        _xlDrop.addEventListener('drop', function (ev) {
+          if (!_dragIds) return;
+          ev.preventDefault();
+          _xlDrop.classList.remove('sbld-dropok');
+          var ids = _dragIds.slice(); _dragIds = null;
+          _catLoad(ids);
+        });
+      }
       host.querySelector('#b-unload').onclick = function () {
         if (!cfg.activities.length) return;
         /* ⚠⚠ READ FROM THE GRID, NOT FROM `xa`/`xf`. Those were the old hand-rolled grid’s
@@ -39192,7 +39398,7 @@
             : '<span class="sbld-hint">Showing the default &mdash; the first edit gives <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> its own sequence, and any duration typed here applies to <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels only.</span>');
         return '<div class="sbld-seqkind"><span class="sbld-seqkind-l">Level type</span>' + btns + copy + state + '</div>';
       })();
-      // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Interior / Exterior) with
+      // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Internal / External) with
       // multi-cell copy/paste, so a column of durations can be pasted straight from Excel. LINKING is
       // done on the schedule BARS on the right via the View/Edit toggle (mirrors step 3) — the old
       // per-row ▸ column is gone.
@@ -39233,13 +39439,13 @@
         ['FS', 'SS', 'FF', 'SF'].map(function (o) { return '<option value="' + o + '"' + (autoChainType === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' +
         '<button class="pd-btn" id="b-alinkmgr">Links (' + countTradeLinks(tr) + ')</button>' +
         '<details class="sbld-viewopts"' + (actOptsOpen ? ' open' : '') + '><summary>View options — ' +
-          (tradeView === 'gantt' ? 'Gantt, ' + tradeScale + ', ' + (tradeBasis === 'ext' ? 'exterior' : 'interior') : 'flow') +
+          (tradeView === 'gantt' ? 'Gantt, ' + tradeScale + ', ' + (tradeBasis === 'ext' ? 'external' : 'internal') : 'flow') +
           ', ' + (seqLayout === 'stack' ? 'stacked' : 'split') + '</summary><div class="sbld-viewoptsb">' +
           '<span class="sbld-quick">View ' +
           [['flow', 'Flow'], ['gantt', 'Gantt']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (tradeView === v[0] ? ' on' : '') + '" data-tview="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
           (tradeView === 'gantt' ?
             '<span class="sbld-quick">Scale ' + ['day', 'week', 'month', 'year'].map(function (sc) { return '<button class="pd-btn sbld-scbtn' + (tradeScale === sc ? ' on' : '') + '" data-tscale="' + sc + '">' + sc.charAt(0).toUpperCase() + sc.slice(1) + '</button>'; }).join('') + '</span>' +
-            '<span class="sbld-quick">Dur ' + [['int', 'Interior'], ['ext', 'Exterior']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
+            '<span class="sbld-quick">Dur ' + [['int', 'Internal'], ['ext', 'External']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
           '<span class="sbld-quick">Layout ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
           '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-azout">−</button><button class="pd-btn sbld-zbtn" id="b-azin">+</button></span>' +
         '</div></details>' +
@@ -39248,8 +39454,8 @@
           var s1 = actLinkPhase === 'src';
           return '<div class="sbld-flow' + (aEditing ? ' on' : '') + '">' +
             '<span class="ps-vs-seg sbld-modeseg" role="group">' +
-              '<button data-actmode="view"' + (aEditing ? '' : ' class="on"') + ' title="Click a bar to read its links. Nothing is changed.">◉ Inspect</button>' +
-              '<button data-actmode="edit"' + (aEditing ? ' class="on"' : '') + ' title="Click bars to pick sources, then destinations, then choose the relationship.">✎ Link by hand</button>' +
+              '<button data-actmode="view"' + (aEditing ? '' : ' class="on"') + ' title="Click a bar to read its links. Nothing is changed.">Inspect</button>' +
+              '<button data-actmode="edit"' + (aEditing ? ' class="on"' : '') + ' title="Click bars to pick sources, then destinations, then choose the relationship.">Link by hand</button>' +
             '</span>' +
             (aEditing
               ? '<span class="sbld-flow-s' + (s1 ? ' now' : ' done') + '"><i>1</i>Click the <b>source</b> bars' +
@@ -39306,7 +39512,7 @@
       host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; actOptsOpen = true; render(); }; });
       var _avo = host.querySelector('.sbld-viewopts');
       if (_avo) _avo.addEventListener('toggle', function () { actOptsOpen = _avo.open; });
-      // Excel-style class-code grid (edit Code/Name/Interior/Exterior; multi-cell copy/paste).
+      // Excel-style class-code grid (edit Code/Name/Internal/External; multi-cell copy/paste).
       // Linking is on the schedule bars (View/Edit toggle), not a per-row column.
       /* ⚠ `t4Set` already takes (activity, field, text), so this grid needed no new setter —
          only the id→activity lookup PDGrid’s contract implies. It writes per-KIND durations
@@ -39359,7 +39565,21 @@
 
     // The project's Location Breakdown, shown at the top of step 2. `LOC_LEVELS` is the schedule
     // module's own list, so this reflects (and edits) exactly what the schedule groups and columns use.
-    function _locBreakdownBar() {
+    /* ⚠️⚠️ `opts.level` — THE ACTIVITY LEVEL MOVED IN HERE, AND ITS OWN ROW IS GONE. Owner
+       2026-09-17, with a screenshot of that row: *"remove the one in the first pic. It is of no
+       use."* It was a band of its own — an uppercase label, a 240px select and the sentence
+       "Remaps the whole builder." — stretched across the step above the trade chips, for a
+       setting that is answered once per project and left alone.
+       ⚠️ IT IS NOT DELETED, IT IS FILED. This select is the ONLY writer of `cfg.locLevel`
+       anywhere in the app, and a project already saved on "Floor level" would have had no route
+       back to Auto — the zone controls stay hidden on every floor row while it is set, so the
+       step would look broken with nothing on screen explaining why. It belongs on this bar
+       anyway: the bar already states which location levels the project HAS, and this says which
+       of them the schedule is generated at.
+       ⚠️ Only the Floors & Zones step passes `level:true`. The other two callers of this bar
+       (the import path's own step, and the WBS screen) show the breakdown for reference and do
+       not own the builder's leaf level. */
+    function _locBreakdownBar(opts) {
       var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS : [];
       var names = lv.map(function (l) { return String(l.name || '').trim(); }).filter(Boolean);
       var body = names.length
@@ -39382,7 +39602,19 @@
         ? '<button class="pd-btn" id="b-locwiz" title="Read the live schedule’s WBS branch names and file each one under one of these levels">Match WBS to locations…</button>' +
           '<button class="pd-btn" id="b-locfill" title="Fill each activity’s location from the branch it already sits under in the WBS tree">Fill from the WBS tree…</button>'
         : '';
+      /* ⚠️ A SHORT LABEL AND THE LONG SENTENCE IN THE TITLE. On its own row this control could
+         afford "Activity level (whole project)" plus a trailing hint; on a bar that already
+         carries a sentence and up to three buttons it gets two words, and everything the hint
+         said is in the title where the rest of this bar's explanations already live. */
+      var lvlSel = (opts && opts.level)
+        ? '<label class="sbld-loclvl" title="Which location level activities are scheduled at across the whole project, and what this step lets you edit. Auto = the deepest level you define per floor. Floor level schedules one activity per floor and ignores zones and units; Zone level schedules per zone; Unit level per unit. Changing it remaps the whole builder.">Schedule at' +
+          '<select class="pd-select" id="b-loclevel">' +
+          [['auto', 'Auto (deepest defined)'], ['floor', 'Floor level'], ['zone', 'Zone level'], ['unit', 'Unit level']]
+            .map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.locLevel || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+          '</select></label>'
+        : '';
       return '<div class="sbld-locbar"><span class="sbld-locbar-l">Location breakdown</span>' + body +
+        lvlSel +
         '<button class="pd-btn" id="b-locedit">' + (names.length ? 'Edit levels…' : 'Define levels…') + '</button>' + wiz + '</div>';
     }
     /* The bar's handlers. Shared, because the bar itself is shared: the generation path's
@@ -39849,7 +40081,10 @@
                       ' traced' + (_sp.img ? ' · drawing attached' : ' · no drawing attached') +
                       ' — the Vertical Stacking’s Site view is built from it')
                     : 'Draw the master site development plan — one area per tower, on the site drawing. The Vertical Stacking then shows every tower where it actually stands.') + '">' +
-            '<span data-ico="compass" data-ico-size="14"></span> ' +
+            /* ⚠️ NO GLYPH. `compass` is a circle with a needle in it, and at 14px the needle is
+               three pixels — what lands on the bar is a circle with a mark through it, which is
+               the universal "not allowed" sign sitting in front of a button that is allowed.
+               The button says "Site plan"; the icon was adding a second, wrong, reading. */
             (_sp ? 'Site plan ' + _hit + '/' + _tw : 'Site plan…') + '</button>';
         })() : '') +
         /* ⚠️ ONE control for the three things you can do TO the active tower — see .sbld-twmore.
@@ -40214,8 +40449,40 @@
        four identical slabs stacked in the same place. */
     var ZP_ALL = '*floor*';
     var ZP_ALL_LABEL = 'Whole floor';
+    /* ==== AN AREA WITH NO CODE IS A REAL STATE ========================================
+       ⚠️⚠️ Owner 2026-09-17: *"allow users to define the shapes / trace zones first, before
+       tagging which zones are those or if that zone is the whole floor etc."* Until now a shape
+       could not exist without already answering that question — `zpNormPoly` dropped a poly with
+       an empty code — so the order of work was forced: decide, then draw. On a floor plan the
+       honest order is the other way round, because the drawing is what tells you where the zone
+       boundaries actually fall.
+       ⚠️⚠️ THE EMPTY STRING IS THE SENTINEL, NOT A RESERVED WORD, and that is deliberate: a zone
+       code is free text a planner types, so any readable marker could collide with one. Nothing
+       can type the empty string into the zone list, and every consumer already asks `if (!code)`
+       or matches on a normalised code that an untagged area can never equal — so an untagged
+       area is invisible to `zpBox`, `zpCodesOf` and the 3D lookup by construction rather than
+       by each of them being taught about it.
+       ⚠️ It gets a colour of its own rather than falling through to `zpAutoHue('')`, which
+       hashes to the FIRST zone hue — an untagged area painted the same as Zone 1 is the one
+       thing this state must never look like. */
+    var ZP_UNTAG = '';
+    var ZP_UNTAG_LABEL = 'Untagged';
+    var ZP_UNTAG_COLOR = '#9AA0A6';
+    /* The ribbon's tabs — see the `.zpw-ribbon` rules. ⚠️ Declared once so the strip, the tab
+       wiring and the keyboard route read the same list: a strip built from a literal here and a
+       handler that tests names somewhere else is how a fourth tab arrives with no handler. */
+    var ZP_TABS = [
+      ['home', 'Home', 'What to draw, and how to start drawing it'],
+      ['arrange', 'Arrange', 'Move, turn, mirror, size and copy the area you have picked'],
+      ['sheet', 'Sheet', 'The drawing underneath, the sheet’s shape, and which way the building faces']
+    ];
     function zpIsAll(code) { return zpNormCode(code) === ZP_ALL; }
-    function zpLabelOf(code) { return zpIsAll(code) ? ZP_ALL_LABEL : String(code == null ? '' : code); }
+    function zpIsUntagged(code) { return zpNormCode(code) === ZP_UNTAG; }
+    function zpLabelOf(code) {
+      if (zpIsAll(code)) return ZP_ALL_LABEL;
+      if (zpIsUntagged(code)) return ZP_UNTAG_LABEL;
+      return String(code == null ? '' : code);
+    }
     /* The un-levelled band — the row the Vertical Stacking draws for work whose activities carry
        no floor at all. It is a floor on the screen, so it can have a shape; it is not a floor in
        the setup, so it has no row to hang one off. It gets a reserved POINTER instead.
@@ -40321,7 +40588,10 @@
     function zpNormPoly(q, h) {
       if (!q || typeof q !== 'object') return null;
       var code = String(q.code == null ? '' : q.code).trim();
-      if (!code) return null;
+      /* ⚠️⚠️ AN EMPTY CODE IS KEPT — see ZP_UNTAG. This line used to DROP such a poly, so an area
+         drawn before it was tagged would vanish on the next load, which is why the window could
+         never offer draw-then-tag. Every reader below is keyed on a matching code, so an untagged
+         area simply matches nothing rather than needing a case of its own. */
       var pts = [];
       (Array.isArray(q.pts) ? q.pts : []).forEach(function (p) {
         if (!p || p.length < 2) return;
@@ -40781,6 +41051,9 @@
        handed a config that is NOT the one being edited) resolves colours from the same code. */
     function zpColorOfBag(bag, code) {
       var n = zpNormCode(code);
+      /* ⚠️ Checked BEFORE the override map: an untagged area is not a zone, so it has no colour
+         to override — and `bag.color['']` is a key nothing can write and everything would read. */
+      if (n === ZP_UNTAG) return ZP_UNTAG_COLOR;
       return (bag && bag.color && bag.color[n]) || zpAutoHue(code);
     }
     function zpColor(code) { return zpColorOfBag(zpBag(), code); }
@@ -41515,11 +41788,18 @@
       var wrap = m.el.querySelector('#zpw');
       var box = m.el.querySelector('.pd-modal');
       if (box) box.classList.add('zpw-modal');
+      /* ⚠️ The OVERLAY as well as the box: `.pd-modal-overlay` carries a 20px padding of its own,
+         and a full-screen window inset by 20px on every side is not one. */
+      if (m.el && m.el.classList) m.el.classList.add('zpw-overlay');
 
       _zpWin = { tr: tr, floor: floor, subj: SUBJ, draft: draft, owned: !!plate, plateId: plateId,
-                 // ⚠️ On a floor with no zones the brush is the WHOLE-FLOOR outline, so the
-                 // window opens ready to draw rather than opening with nothing selectable.
-                 brush: codes[0] || ZP_ALL, drawing: false, pts: [], sel: null, url: null,
+                 /* ⚠️⚠️ THE BRUSH OPENS ON **UNTAGGED**, which is the owner's own order of work:
+                    draw the shapes, then say what they are. It used to open on the floor's first
+                    zone, so the first shape drawn was silently claimed by whichever zone happened
+                    to sort first — and a planner who drew four areas before tagging any of them
+                    ended with four copies of Zone 1. The palette is still one press away for
+                    anyone who would rather answer first. */
+                 brush: ZP_UNTAG, drawing: false, pts: [], sel: null, url: null,
                  busy: false, err: '', hist: [], clip: null, grid: zpGridLoad(), ref: '',
                  placing: false,
                  /* ==== THE VIEW ==============================================================
@@ -41530,9 +41810,10 @@
                     ⚠️ The view is a VIEW: nothing here is committed, undone or saved, and a plate
                     opened again opens showing the whole sheet. */
                  zk: 1, zx: 0, zy: 0,
-                 // ⚠️ The setup rows open on a BLANK sheet, where attaching the plan really is the
-                 // first move, and shut once anything is drawn — when the stage is what matters.
-                 more: !(plate && ((plate.polys && plate.polys.length) || plate.img)),
+                 /* ⚠️ The ribbon tab. It opens on SHEET while the sheet is blank — attaching the
+                    plan really is the first move there — and on Home once anything is drawn,
+                    which is the same rule the `Controls` fold used for opening itself. */
+                 tab: (plate && ((plate.polys && plate.polys.length) || plate.img)) ? 'home' : 'sheet',
                  // ⚠️ And the sharing panel's, for the same reason: a repaint would shut it on
                  // every tick. Starts closed — it is a question about OTHER floors.
                  apply: false,
@@ -41658,7 +41939,12 @@
       // Drop a preset in the middle of the plate, as the zone — or the outline — the brush carries.
       function addPreset(kind) {
         var W = _zpWin;
-        if (!W.brush) { UI.toast('Pick the ' + SUBJ.codeWord + ' this shape is, or draw the ' + SUBJ.outlineWord + ', first.', 'warn'); return; }
+        /* ⚠️⚠️ THE `if (!W.brush) return` GUARD IS GONE, and removing it is what makes draw-first
+           work at all. An empty brush USED to mean "nobody has said what this shape is", which was
+           an error because a shape could not exist without a code; it now means ZP_UNTAG, which is
+           the state the window OPENS in. Left in place, this line would have met the planner with
+           *"Pick the zone this shape is… first"* on the very first press of Add — refusing, in the
+           app's warning colour, to do the one thing the owner asked for. */
         snap();
         var w = ZP_W * 0.34, h = H() * 0.34;
         var pts = zpPreset(kind, w, h);
@@ -41729,6 +42015,8 @@
            twelve areas would leave the planner hunting for them. */
         var _ovs = zpOverlapsOf(d), _ovIds = {};
         _ovs.forEach(function (o) { _ovIds[o.a.id] = 1; _ovIds[o.b.id] = 1; });
+        /* The areas still waiting to be told what they are — see ZP_UNTAG. */
+        var _untag = d.polys.filter(function (q) { return zpIsUntagged(q.code); });
 
         var shapes = d.polys.map(function (q) {
           var on = (W.sel === q.id);
@@ -41784,6 +42072,7 @@
              and say how much of it is double-counted; only the drawing can say WHERE, and on a
              plan of a dozen areas that is the whole of the answer. */
           return '<g class="zpw-shape' + (on ? ' sel' : '') + (q.lock ? ' lk' : '') +
+              (zpIsUntagged(q.code) ? ' untag' : '') +
               (_ovIds[q.id] ? ' ov' : '') +
               '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpColor(q.code) + '">' +
             /* ⚠️ Said on the shape itself, not only in the toolbar: a planner who reaches for a
@@ -41860,14 +42149,47 @@
             '<button class="pd-btn" id="zpw-x">Close</button>' +
           '</div>' +
 
-          // ---- row 2: which zone ---------------------------------------------------------
+          /* ==== THE RIBBON ==============================================================
+             ⚠️⚠️ Owner 2026-09-17: *"hopefully the controls are similar to an excel format
+             wherein there is like a ribbon taskbar on top."* The three panes below are the
+             `Controls` fold's own four rows, regrouped: what you DRAW with, what you do to the
+             SHAPE you have picked, and what the SHEET is. Every pane stays in the DOM — the
+             fold's reasoning, unchanged: a control that is only in the document while its tab is
+             open is a control whose wiring has to be re-established on every tab press. */
+          '<div class="zpw-ribbon">' +
+            '<div class="zpw-rtabs" role="tablist">' +
+            ZP_TABS.map(function (t) {
+              var on = (W.tab === t[0]);
+              return '<button class="zpw-rtab' + (on ? ' on' : '') + '" data-zptab="' + t[0] +
+                '" role="tab" aria-selected="' + (on ? 'true' : 'false') +
+                '" title="' + e2(t[2]) + '">' + e2(t[1]) + '</button>';
+            }).join('') +
+            '</div>' +
+            '<div class="zpw-rband">' +
+
+          '<div class="zpw-rpane' + (W.tab === 'home' ? ' on' : '') + '" data-zppane="home">' +
+          // ---- HOME: which zone ---------------------------------------------------------
           /* ⚠️ THE PALETTE DOES DOUBLE DUTY, and the label says which: with a shape selected it
              RE-ASSIGNS that shape, otherwise it loads the brush for the next one. That is the
              owner's *"defining which is zone 1 2 etc."* — before this, a shape's zone was fixed at
              the moment it was drawn and the only fix was to delete it and draw it again. */
           '<div class="zpw-bar zpw-mainbar">' +
             '<span class="zpw-lbl">' + (sel ? 'This area is' : 'Draw as') + '</span>' +
-            '<span class="zpw-pal">' + (all.length ? all.map(function (c) {
+            /* ==== UNTAGGED LEADS THE PALETTE =========================================
+               ⚠️⚠️ Owner 2026-09-17: *"allow users to define the shapes / trace zones first,
+               before tagging which zones are those."* So it is the first swatch and the opening
+               brush — the palette reads left to right as the order of work rather than as a list
+               of zones with an odd one on the end.
+               ⚠️ It is also the way BACK: picking it on a selected area untags it, so a shape
+               tagged by mistake is one press from being a question again rather than needing to
+               be deleted and redrawn. */
+            '<span class="zpw-pal">' +
+            '<button class="zpw-sw untag' + (zpIsUntagged(sel ? sel.code : W.brush) ? ' on' : '') +
+              '" data-zpb="" style="--zc:' + ZP_UNTAG_COLOR + '" title="' + e2(sel
+                ? 'Take the tag off this area — it goes back to being a shape you have not said anything about yet'
+                : 'Draw a shape without saying what it is yet, and tag it afterwards') + '">' +
+              e2(ZP_UNTAG_LABEL) + '</button>' +
+            (all.length ? all.map(function (c) {
               var on = sel ? (zpNormCode(c) === zpNormCode(sel.code)) : (zpNormCode(c) === zpNormCode(W.brush));
               return '<button class="zpw-sw' + (zpIsAll(c) ? ' all' : '') + (on ? ' on' : '') + '" data-zpb="' + e2(c) + '"' +
                 ' style="--zc:' + zpColor(c) + '" title="' + e2(zpIsAll(c)
@@ -41950,38 +42272,36 @@
             '<button class="pd-btn' + (W.addmenu ? ' pd-btn-primary' : '') + '" id="zpw-addmenu" title="' +
               e2('Put a ready-made shape on the sheet as ' + zpLabelOf(sel ? sel.code : W.brush) +
                  ' — a rectangle, an L, a T and five more. Drag it where it goes, then pull its' +
-                 ' handles to size it.') + '">+ Add shape ▾</button>' +
+                 ' handles to size it.') + '">+ Add shape</button>' +
             '<button class="pd-btn' + (W.drawing ? ' pd-btn-primary' : '') + '" id="zpw-draw" title="Click corner by corner; click the first corner again, or double-click, to close">' +
               (W.drawing ? (W.pts.length >= 3 ? 'Finish' : 'Cancel') : 'Trace…') + '</button>' +
             '<span class="zpw-sp"></span>' +
             '<button class="pd-btn" id="zpw-undo"' + (W.hist.length ? '' : ' disabled') + ' title="' +
               (W.hist.length ? e2('Undo (' + W.hist.length + ' step' + (W.hist.length === 1 ? '' : 's') + ') · Ctrl+Z') : 'Nothing to undo') + '">Undo</button>' +
           '</div>' +
+          '</div>' +
 
-
-          /* ==== EVERYTHING THAT IS NOT THE DRAWING, BEHIND ONE BUTTON ==================
+          /* ==== WHAT THE SHEET IS ======================================================
              ⚠️⚠️ Owner 2026-09-17: *"can you make the commands and controls simpler? ... the
              commands and controls are shown in a controls button and not just plotted in the
              screen immediately."* Counted before this change, the window put **thirty-four**
              controls on screen the moment it opened, in four stacked rows, and the stage — the
              one thing the window exists for — got what was left. Every one of them was reachable
              and none of them was findable.
-             ⚠️ WHAT STAYS OUTSIDE IS THE ANSWER TO “WHAT AM I DRAWING, AND HOW DO I START”: the
-             zone palette (it is CONTEXT, not a command — a planner must be able to read which zone
-             the next shape will be without opening anything), Add, Trace and Undo. Everything
-             else is either a SETTING answered once for the life of the drawing, or an action on
-             the SELECTED area — and those now have a nearer home: right-click the area itself.
-             ⚠️⚠️ THE PANEL IS A DUPLICATE ROUTE, NEVER THE ONLY ONE. Every per-area action in it
-             is also on the right-click menu. A control that exists in exactly one fold is a
-             control nobody finds; a control that exists in two places one of which is where the
-             planner's hand already is, is discoverable AND fast.
-             ⚠️ `<details>` keeps its contents in the DOM when shut, which is what lets every
-             control inside stay wired exactly as it was, and its open state lives on the window
-             object or a repaint — which happens on every gesture — would shut it under the hand. */
-          '<details class="zpw-panel" id="zpw-more"' + (W.more ? ' open' : '') + '>' +
-            '<summary><span data-ico="sliders" data-ico-size="14"></span>Controls' +
-              '<span class="zpw-moresum">' + e2(_moreSum()) + '</span></summary>' +
-          // ---- row 1: the drawing underneath -------------------------------------------
+             ⚠️ THAT FOLD IS WHAT THE RIBBON REPLACES, and its grouping survives intact: the
+             palette, Add, Trace and Undo are **Home**, because they answer "what am I drawing
+             and how do I start"; the per-area commands are **Arrange**; and the settings
+             answered once for the life of the drawing are this pane. What changes is that a tab
+             is one press and a fold was three — open, act, shut.
+             ⚠️⚠️ EVERY PANE IS A DUPLICATE ROUTE, NEVER THE ONLY ONE. Every per-area action is
+             also on the right-click menu. A control that exists in exactly one place is a control
+             nobody finds; one that exists in two, of which one is where the planner's hand
+             already is, is discoverable AND fast.
+             ⚠️ The panes are hidden with CSS rather than emitted conditionally, which is what the
+             fold's `<details>` bought for free: every control inside stays wired exactly as it
+             was, so switching tabs can never leave a handler bound to an element that is gone. */
+          '<div class="zpw-rpane' + (W.tab === 'sheet' ? ' on' : '') + '" data-zppane="sheet">' +
+          // ---- the drawing underneath --------------------------------------------------
           '<div class="zpw-bar">' +
             '<span class="zpw-lbl">Plan</span>' +
             '<button class="pd-btn" id="zpw-up"' + (W.busy ? ' disabled' : '') + '>' +
@@ -42032,7 +42352,14 @@
               : '<span class="sbld-hint" style="margin:0;">not set \u2014 the 3D view falls back to its own <b>Front faces</b> setting</span>') +
             (W.placing ? '<span class="sbld-hint" style="margin:0;">click anywhere on the drawing, nearest edge wins</span>' : '') +
           '</div>' +
-          /* ---- row 3: making and editing areas -------------------------------------------
+          /* ⚠️ The fold's own summary line, kept: it states the sheet's shape, whether a drawing
+             is attached and where the front is — three facts a planner would otherwise have to
+             read off three separate controls. `_moreSum` is unchanged; only where it is printed. */
+          '<span class="sbld-hint" style="margin:0;flex:1 1 100%;">' + e2(_moreSum()) + '</span>' +
+          '</div>' +
+
+          '<div class="zpw-rpane' + (W.tab === 'arrange' ? ' on' : '') + '" data-zppane="arrange">' +
+          /* ---- ARRANGE: making and editing areas ------------------------------------------
              ⚠️⚠️ THIS ROW USED TO BE GATED ON `all.length` — i.e. on the floor having at least one
              ZONE. Owner 2026-09-17: *"in the defining the plan layout of floors with no specified
              zones, users are allowed to add shapes still or trace."* Exactly so, and the gate is
@@ -42088,13 +42415,13 @@
             '<span class="zpw-xform" title="Turn and resize the selected area">' +
               '<span class="ps-tb-lbl">Orient</span>' +
               '<span class="ps-vs-seg">' +
-                '<button data-zprot="-90"' + (sel ? '' : ' disabled') + ' title="Turn a quarter turn anticlockwise">&#8630;90</button>' +
-                '<button data-zprot="-15"' + (sel ? '' : ' disabled') + ' title="Turn 15° anticlockwise">&#8630;</button>' +
-                '<button data-zprot="15"' + (sel ? '' : ' disabled') + ' title="Turn 15° clockwise">&#8631;</button>' +
-                '<button data-zprot="90"' + (sel ? '' : ' disabled') + ' title="Turn a quarter turn clockwise">&#8631;90</button>' +
+                '<button data-zprot="-90"' + (sel ? '' : ' disabled') + ' title="Turn a quarter turn anticlockwise">-90°</button>' +
+                '<button data-zprot="-15"' + (sel ? '' : ' disabled') + ' title="Turn 15° anticlockwise">-15°</button>' +
+                '<button data-zprot="15"' + (sel ? '' : ' disabled') + ' title="Turn 15° clockwise">+15°</button>' +
+                '<button data-zprot="90"' + (sel ? '' : ' disabled') + ' title="Turn a quarter turn clockwise">+90°</button>' +
               '</span>' +
               '<span class="ps-vs-seg">' +
-                '<button data-zpscale="0.9"' + (sel ? '' : ' disabled') + ' title="Make it smaller — the shape is kept, only the size changes">&#8722;</button>' +
+                '<button data-zpscale="0.9"' + (sel ? '' : ' disabled') + ' title="Make it smaller — the shape is kept, only the size changes">-</button>' +
                 '<button data-zpscale="1.1111111"' + (sel ? '' : ' disabled') + ' title="Make it bigger — the shape is kept, only the size changes">+</button>' +
               '</span>' +
               /* ⚠️ MIRROR, not another rotation. Owner 2026-09-17: *"improve UI to edit shapes."*
@@ -42102,8 +42429,8 @@
                  by ANY rotation, so until now the only way to draw the second one was to trace it
                  again by hand from the first. Two buttons, beside the turns they are not. */
               '<span class="ps-vs-seg">' +
-                '<button data-zpflip="x"' + (sel && !sel.lock ? '' : ' disabled') + ' title="Mirror left–right. A handed plan cannot be reached by turning it.">&#8646;</button>' +
-                '<button data-zpflip="y"' + (sel && !sel.lock ? '' : ' disabled') + ' title="Mirror top–bottom">&#8645;</button>' +
+                '<button data-zpflip="x"' + (sel && !sel.lock ? '' : ' disabled') + ' title="Mirror left–right. A handed plan cannot be reached by turning it.">Flip H</button>' +
+                '<button data-zpflip="y"' + (sel && !sel.lock ? '' : ' disabled') + ' title="Mirror top–bottom">Flip V</button>' +
               '</span>' +
             '</span>' +
             '<span class="ps-tb-sep"></span>' +
@@ -42111,6 +42438,9 @@
               '<select class="pd-select" id="zpw-grid">' + ZP_GRIDS.map(function (g) {
                 return '<option value="' + g + '"' + (g === W.grid ? ' selected' : '') + '>' + (g ? g : 'Off') + '</option>';
               }).join('') + '</select></label>' +
+          '</div>' +
+          '</div>' +
+            '</div>' +
           '</div>' +
           /* ==== ROW 4: THE SELECTED AREA, BY THE NUMBERS =================================
              ⚠️⚠️ Owner 2026-09-17: *"for adding floor plan, improve UI to edit shapes."* Every
@@ -42138,19 +42468,19 @@
               '<span class="zpw-lbl">' + e2(zpLabelOf(sel.code)) + '</span>' +
               _n('zpw-bx', 'X', _b.x, 'Left edge, in plan units across a sheet ' + ZP_W + ' wide.') +
               _n('zpw-by', 'Y', _b.y, 'Top edge, in plan units down a sheet ' + Math.round(hh) + ' tall.') +
-              _n('zpw-bw', 'W', _b.w, _lk ? 'A tower footprint keeps the width of the floor plan it came from — use − / + to size it against its neighbours.' : 'Width in plan units. Type the same number on two zones and they are the same width.', _lk) +
+              _n('zpw-bw', 'W', _b.w, _lk ? 'A tower footprint keeps the width of the floor plan it came from — use - / + to size it against its neighbours.' : 'Width in plan units. Type the same number on two zones and they are the same width.', _lk) +
               _n('zpw-bh', 'H', _b.h, _lk ? 'A tower footprint keeps the proportions of the floor plan it came from.' : 'Height in plan units.', _lk) +
               '<span class="ps-tb-sep"></span>' +
               /* ⚠️ Position PRESETS, because "against the top-left corner of the sheet" and
                  "in the middle" are the two placements a planner asks for by name, and both are
                  a drag-and-squint today. They move the box; they never resize it. */
               '<span class="ps-vs-seg" title="Put this area against an edge of the sheet, or in the middle of it">' +
-                '<button data-zpsnapto="l">&#8676;</button>' +
-                '<button data-zpsnapto="c">&#8596;</button>' +
-                '<button data-zpsnapto="r">&#8677;</button>' +
-                '<button data-zpsnapto="t">&#8673;</button>' +
-                '<button data-zpsnapto="m">&#8597;</button>' +
-                '<button data-zpsnapto="b">&#8675;</button>' +
+                '<button data-zpsnapto="l">Left</button>' +
+                '<button data-zpsnapto="c">Centre</button>' +
+                '<button data-zpsnapto="r">Right</button>' +
+                '<button data-zpsnapto="t">Top</button>' +
+                '<button data-zpsnapto="m">Middle</button>' +
+                '<button data-zpsnapto="b">Bottom</button>' +
               '</span>' +
               '<span class="sbld-hint" style="margin:0;">' +
                 (_lk ? 'Locked shape — move, turn and resize it; its corners are the floor plan’s.'
@@ -42159,7 +42489,6 @@
               '</span>' +
             '</div>';
           })() : '') +
-          '</details>' +
 
           /* ==== THE TWO POPOVERS =========================================================
              ⚠️⚠️ Owner 2026-09-17: *"if you want to manual change the configuration or placement
@@ -42216,15 +42545,15 @@
               '<div class="zpw-menu-sep"></div>' +
               '<div class="zpw-menu-row"><span>Turn</span>' +
                 '<span class="ps-vs-seg">' +
-                  '<button data-zprot="-90" title="A quarter turn anticlockwise">&#8630;90</button>' +
-                  '<button data-zprot="-15" title="15\u00b0 anticlockwise">&#8630;</button>' +
-                  '<button data-zprot="15" title="15\u00b0 clockwise">&#8631;</button>' +
-                  '<button data-zprot="90" title="A quarter turn clockwise">&#8631;90</button>' +
+                  '<button data-zprot="-90" title="A quarter turn anticlockwise">-90°</button>' +
+                  '<button data-zprot="-15" title="15\u00b0 anticlockwise">-15°</button>' +
+                  '<button data-zprot="15" title="15\u00b0 clockwise">+15°</button>' +
+                  '<button data-zprot="90" title="A quarter turn clockwise">+90°</button>' +
                 '</span></div>' +
               '<div class="zpw-menu-row"><span>Mirror</span>' +
                 '<span class="ps-vs-seg">' +
-                  '<button data-zpflip="x"' + (_lk ? ' disabled' : '') + ' title="Mirror left\u2013right. A handed plan cannot be reached by turning it.">&#8646;</button>' +
-                  '<button data-zpflip="y"' + (_lk ? ' disabled' : '') + ' title="Mirror top\u2013bottom">&#8645;</button>' +
+                  '<button data-zpflip="x"' + (_lk ? ' disabled' : '') + ' title="Mirror left\u2013right. A handed plan cannot be reached by turning it.">Flip H</button>' +
+                  '<button data-zpflip="y"' + (_lk ? ' disabled' : '') + ' title="Mirror top\u2013bottom">Flip V</button>' +
                 '</span></div>' +
               '<div class="zpw-menu-sep"></div>' +
               /* ⚠️ The same refusals the toolbar carried, with the same reasons: a copy of a migrated
@@ -42265,6 +42594,19 @@
              ⚠️ The count is capped at four rows: a plan that has just been pasted onto itself has
              every pair overlapping, and a strip taller than the stage would push the drawing that
              fixes it off the screen. */
+          /* ==== AREAS NOBODY HAS TAGGED YET ==========================================
+             ⚠️⚠️ It is a COUNT AND A WAY IN, not a warning: drawing first and tagging afterwards
+             is the order the owner asked for, so an untagged area is work in progress rather than
+             a fault. What it must not be is FORGOTTEN — an untagged area is in no zone, so it is
+             scheduled against nothing and is invisible to every figure this floor produces.
+             ⚠️ Pressing it SELECTS the first one, which puts the palette into "This area is" and
+             makes the next press the answer. Anything less is a number with nowhere to go. */
+          (_untag.length ? '<p class="zpw-untag"><span data-ico="risk" data-ico-size="14"></span>' +
+            '<b>' + _untag.length + ' area' + (_untag.length === 1 ? ' is' : 's are') + ' not tagged yet.</b> ' +
+            'Pick one and say which ' + e2(SUBJ.codeWord) + ' it is — an untagged area is in no ' +
+            e2(SUBJ.codeWord) + ', so nothing is scheduled or measured against it.' +
+            '<button class="pd-btn" id="zpw-untagsel" style="margin-left:auto;">Show the first</button>' +
+            '</p>' : '') +
           (_ovs.length ? '<div class="zpw-ov">' +
             /* ⚠️ `risk` is this app's warning triangle — there is no `alert-triangle` in the icon
                set, and a data-ico naming an icon that does not exist renders as nothing at all. */
@@ -42307,12 +42649,13 @@
             'project has a place of its own</b> — the more towers, the smaller each one arrives. ' +
             'Every one comes in at the same width, because ' +
             'no dimension is stored anywhere in this app — each tower keeps its own <b>shape</b>, ' +
-            'not its size relative to the others. Use <b>Orient</b> to turn one and the − / + ' +
+            'not its size relative to the others. Use <b>Orient</b> to turn one and the - / + ' +
             'buttons to size it against its neighbours. This is an arrangement, never a survey.</p>' : '') +
           // ⚠️ The stage's aspect is the SHEET's, or a re-shaped sheet would be squashed back
           // into the 1000 x 620 box the CSS used to hard-code and every corner would move.
           // ⚠️ No class for "zoomed out": the margin is marked by the dim path inside the svg, and
           // a second mechanism saying the same thing is one more thing to keep in step.
+          '<div class="zpw-stagewrap">' +
           '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + (V.k > 1 ? ' zoomed' : '') +
               '" id="zpw-stage" style="--zpar:' + ZP_W + ' / ' + hh + ';">' +
             /* ⚠️ The backdrop is moved by the SAME numbers as the viewBox below it, written in the
@@ -42370,6 +42713,7 @@
               // range rather than one end of it — so it is live whenever the view is not there.
               '<button id="zpw-zfit"' + (Math.abs(V.k - 1) > 0.005 ? '' : ' disabled') + ' title="Back to the whole sheet, filling the window">Fit</button>' +
             '</div>' +
+          '</div>' +
           '</div>' +
           /* ⚠️ A migrated footprint gets its OWN line, above the general one, because the general
              one is mostly about corners and this area has none. Said where the planner is when
@@ -42628,6 +42972,27 @@
           };
           op.onchange = function () { commit(); };
         }
+        /* ⚠️ The ribbon's tabs. Switching a tab changes nothing about the drawing, so it repaints
+           rather than committing — the setup is not dirtied by looking at a different group of
+           controls, and a window that reported unsaved work for that would teach a planner to
+           ignore the indicator. */
+        wrap.querySelectorAll('[data-zptab]').forEach(function (b) {
+          b.onclick = function () {
+            if (W.tab === b.dataset.zptab) return;
+            W.tab = b.dataset.zptab;
+            W.menu = null; W.addmenu = false;
+            paint();
+          };
+        });
+        /* ⚠️ It SELECTS rather than tagging: only the planner knows which zone it is, and
+           selecting is what turns the palette from "Draw as" into "This area is". */
+        var _us = q('zpw-untagsel');
+        if (_us) _us.onclick = function () {
+          var first = W.draft.polys.filter(function (x) { return zpIsUntagged(x.code); })[0];
+          if (!first) return;
+          W.sel = first.id; W.corners = null; W.tab = 'home';
+          paint();
+        };
         /* The palette: re-assign the selected shape, or set the brush. */
         wrap.querySelectorAll('[data-zpb]').forEach(function (b) {
           b.onclick = function () {
@@ -42698,7 +43063,10 @@
           if (W.drawing) {
             if (W.pts.length >= 3) finish(); else { W.drawing = false; W.pts = []; paint(); }
           } else {
-            if (!W.brush) { UI.toast('Pick the zone you are drawing first.', 'warn'); return; }
+            /* ⚠️ The same dead guard `addPreset` carried, and the same reason it goes: an empty
+               brush is ZP_UNTAG, which is the brush this window now OPENS on. Tracing is the other
+               half of *"define the shapes / trace zones first"*, so of the two entry points this
+               was the worse one to leave refusing. */
             W.drawing = true; W.pts = []; W.sel = null; paint();
           }
         };
@@ -42708,7 +43076,9 @@
           // ⚠️ A DEEP copy taken at the moment of copying, so editing the original afterwards does
           // not change what is on the clipboard.
           W.clip = JSON.parse(JSON.stringify({ code: s.code, pts: s.pts }));
-          UI.toast('Copied the ' + s.code + ' area.', 'success');
+          // ⚠️ `zpLabelOf`, not the raw code: an untagged area's code is the empty string, and the
+          // raw form read "Copied the  area." with a hole where the name goes.
+          UI.toast('Copied the ' + zpLabelOf(s.code) + ' area.', 'success');
           paint();
         };
         var ps = q('zpw-paste'); if (ps) ps.onclick = function () { pasteAt(W.clip); };
@@ -42724,7 +43094,7 @@
                angle fits (see zpSitePlaceFootprints) — this is reachable by scaling one up until
                its diagonal no longer clears the sheet, which is the planner's own doing and is
                undone by pressing − once. */
-            if (!np) { UI.toast('That area is too big to turn on this sheet — press − to make it smaller first, or give the sheet a different shape.', 'warn'); return; }
+            if (!np) { UI.toast('That area is too big to turn on this sheet — press - to make it smaller first, or give the sheet a different shape.', 'warn'); return; }
             /* ⚠️⚠️ paint(), NOT render(). Owner 2026-09-12, with a screenshot: *"the re-orientation
                is not working. like it is not live, every time i close that is when it rotates."*
                And that is exactly what it was: `render()` is the SETUP STEP's render — it rebuilds
@@ -42900,7 +43270,11 @@
             snap();
             W.draft.polys = zonePolys();
             W.sel = null;
-            if (zpIsAll(W.brush)) W.brush = (allCodes()[0] || ZP_ALL);
+            /* ⚠️ Falls back to UNTAGGED, not to `ZP_ALL`. The brush was the outline and the
+               outline has just been deleted, so re-loading the brush with `ZP_ALL` armed the next
+               shape to recreate the very thing the planner asked to remove. On a floor with no
+               zones there was nothing else to fall back TO until untagged existed. */
+            if (zpIsAll(W.brush)) W.brush = (allCodes()[0] || ZP_UNTAG);
             commit();
             if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
             paint();
@@ -43038,10 +43412,9 @@
           stage.addEventListener('pointerup', up);
           stage.addEventListener('pointercancel', up);
         });
-        /* ⚠️ The fold keeps its state on the window object, or every repaint — and this window
-           repaints on every gesture — would spring it open again under the planner's hands. */
-        var _mo = q('zpw-more');
-        if (_mo) _mo.ontoggle = function () { W.more = _mo.open; };
+        /* ⚠️ `zpw-more` and its ontoggle are gone with the Controls fold — the ribbon's own tab
+           state lives on `W.tab` and is wired above, for the same reason: this window repaints on
+           every gesture, so a tab read out of the DOM would reset itself under the hand. */
         var _ap = q('zpw-apply');
         if (_ap) _ap.ontoggle = function () { W.apply = _ap.open; };
         /* Dragging the marker. ⚠️ NO snap() AND NO UNDO ENTRY: the marker is not part of the
@@ -43271,10 +43644,12 @@
               return;
             }
             if (a === 'nums') {
-              /* ⚠️ It OPENS the Controls panel rather than putting a second set of boxes in the
-                 menu. Two places to type a width is two places for them to disagree about
-                 rounding, and the panel's row is already wired to zpSetBoxPts. */
-              W.more = true; W.menu = null; paint();
+              /* ⚠️ It puts the caret in the strip under the ribbon rather than a second set of
+                 boxes in the menu. Two places to type a width is two places for them to disagree
+                 about rounding, and that strip is already wired to zpSetBoxPts.
+                 ⚠️ It no longer has to OPEN anything: the strip is on screen whenever an area is
+                 selected, which is the only state this action can be reached from. */
+              W.menu = null; paint();
               var _bx = q('zpw-bx'); if (_bx) { try { _bx.focus(); _bx.select(); } catch (e) {} }
               return;
             }
@@ -43590,13 +43965,13 @@
           return '<div class="sbld-znrow"><span class="sbld-zntag" style="border-color:' + gc(tr) + ';color:' + gc(tr) + '">ZONE</span>' +
             '<input class="pd-input" data-zk="code" data-f="' + i + '" data-z="' + zi + '" value="' + e2(z.code) + '" placeholder="Zone" style="width:96px;" />' +
             (showUnits ? '<span class="sbld-step2ct">Units</span>' +
-              '<button class="pd-btn sbld-unminus" data-f="' + i + '" data-z="' + zi + '" title="Remove unit">−</button>' +
+              '<button class="pd-btn sbld-unminus" data-f="' + i + '" data-z="' + zi + '" title="Remove unit">-</button>' +
               '<span class="sbld-zncount">' + z.units.length + '</span>' +
               '<button class="pd-btn sbld-unplus" data-f="' + i + '" data-z="' + zi + '" title="Add unit">+</button>' : '') +
             '<button class="pd-btn sbld-del sbld-delzone" data-f="' + i + '" data-z="' + zi + '" title="Remove zone"><span data-ico="trash" data-ico-size="13"></span></button></div>';
         }).join('') : '<div class="sbld-znhint">Floor-level — no zones (one location). Add zones if this floor is split.</div>';
         return '<div class="sbld-flr' + (f.sub ? ' sbld-flr-sub' : '') + '" data-i="' + i + '" draggable="true">' +
-          '<div class="sbld-flr-h"><span class="sbld-grab">⠇</span>' +
+          '<div class="sbld-flr-h"><span class="sbld-grab" title="Drag to reorder this floor" aria-hidden="true"></span>' +
           (f.sub ? '<span class="sbld-subtag" title="Basement / substructure">BSMT</span>' : '') +
           '<input class="pd-input" data-fk="code" data-f="' + i + '" value="' + e2(f.code) + '" placeholder="' + (f.sub ? 'B1' : 'Floor') + '" style="width:88px;" />' +
           '<input class="pd-input grow" data-fk="name" data-f="' + i + '" value="' + e2(f.name) + '" placeholder="Floor name" />' +
@@ -43609,7 +43984,7 @@
              ⚠️ The − removes the LAST zone, which is what the unit stepper beside it does; a
              particular zone is still removed by its own row. */
           (showZones ? '<span class="sbld-step2ct">Zones</span>' +
-            '<button class="pd-btn sbld-znminus" data-f="' + i + '" title="Remove the last zone from this floor">−</button>' +
+            '<button class="pd-btn sbld-znminus" data-f="' + i + '" title="Remove the last zone from this floor">-</button>' +
             '<span class="sbld-zncount">' + f.zones.length + '</span>' +
             '<button class="pd-btn sbld-znplus sbld-addzone" data-f="' + i + '" title="Add a zone to this floor">+</button>' : '') +
           /* ⚠️⚠️ THE PLAN LIVES ON THE FLOOR ROW, because that is what it belongs to. Owner
@@ -43820,18 +44195,15 @@
         // push invent "Location / Zone / Unit". Owner 2026-08-18: defining the breakdown first is the
         // intuitive order — so step 2 states which levels this project has (or that it has none yet)
         // and opens the breakdown editor right here, before any floors are typed in.
-        _locBreakdownBar() +
+        _locBreakdownBar({ level: true }) +
         _towerBar() +
-        '<div class="sbld-sec-actions" style="margin-bottom:8px;"><label class="sbld-tag" style="padding:6px 10px;">Activity level (whole project)&nbsp; ' +
-        /* ⚠️ NOT `.sbld-mini` — at `width:62px` this <select> showed "Aut" where it had to show
-           "Auto (deepest defined)" (owner 2026-09-12, with a screenshot). Third control in this
-           step caught by that class; `width:auto` lets a <select> size to its longest option.
-           ⚠️ The worked example moved into the title: it is a sentence about what the four options
-           mean, read once, and it sat on this row for the life of the project. */
-        '<select class="pd-select" id="b-loclevel" style="height:30px;width:auto;max-width:240px;" title="Which location level activities are scheduled at across the whole project. Auto = the deepest level you define per floor. Floor level schedules one activity per floor and ignores zones and units; Zone level schedules per zone; Unit level per unit.">' +
-        [['auto', 'Auto (deepest defined)'], ['floor', 'Floor level'], ['zone', 'Zone level'], ['unit', 'Unit level']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.locLevel || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
-        '</select></label>' +
-        '<span class="sbld-hint">Remaps the whole builder.</span></div>' +
+        /* ==== "ACTIVITY LEVEL (WHOLE PROJECT)" IS NOT A ROW ANY MORE =====================
+           ⚠️⚠️ Owner 2026-09-17, screenshot of the row: *"remove the one in the first pic. It is
+           of no use."* A band across the step — uppercase label, 240px select, and the sentence
+           "Remaps the whole builder." — standing between the tower bar and the trade chips, for
+           one answer given once per project. The select itself is on the Location breakdown bar
+           above (see `_locBreakdownBar`'s `opts.level`), which is where it belongs; the wiring
+           below is UNCHANGED, because `#b-loclevel` is still emitted into this same host. */
         chips +
         '<div class="sbld-lvlgrid">' +
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add ' + e2(dimLabelOf('floor').toLowerCase()) + '</button>' +
@@ -43846,7 +44218,6 @@
              more than one tower to copy from. The ⋯ entry stays: it is where you go to act on the
              tower itself, and both open the same dialog. */
           (towerList().length > 1 ? '<button class="pd-btn" id="b-twcopy2" title="Take another tower\u2019s trades, floors, zones and units">Copy from another tower…</button>' : '') +
-        '</div>' +
         /* ==== WHAT THIS TOWER AND TRADE ACTUALLY HOLD =====================================
            ⚠️ Four numbers the planner would otherwise get by counting rows, and one they could
            not get at all: LOCATIONS is what the schedule is generated against — leavesOfFloor's
@@ -43873,9 +44244,10 @@
             (multiTower() ? '<span class="sbld-lvlsum-tw">' + e2(towerLabel(_twAct)) + ' · ' + e2(GLABEL[tr]) + '</span>' : '') +
             '</div>';
         })() : '') +
+        '</div>' +
         fillCtrl +
         _planPanel +
-        floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
+        floorsHtml + '<p class="sbld-hint">Drag the grip at the left of a row to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
           (multiTower() ? ' <span style="font-weight:700;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
         '</div>' +
@@ -44439,8 +44811,8 @@
           ? '<button class="pd-btn pd-btn-primary" id="b-confirm">Create ' + pendDst.length + ' link' + (pendDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
       var _mode2 = '<span class="ps-vs-seg sbld-modeseg" role="group">' +
-        '<button data-seqmode="view"' + (editing ? '' : ' class="on"') + ' title="Click a bar or zone to read its relationships. Nothing is changed.">◉ Inspect</button>' +
-        '<button data-seqmode="edit"' + (editing ? ' class="on"' : '') + ' title="Click zones to pick sources, then destinations, then choose the relationship.">✎ Link by hand</button>' +
+        '<button data-seqmode="view"' + (editing ? '' : ' class="on"') + ' title="Click a bar or zone to read its relationships. Nothing is changed.">Inspect</button>' +
+        '<button data-seqmode="edit"' + (editing ? ' class="on"' : '') + ' title="Click zones to pick sources, then destinations, then choose the relationship.">Link by hand</button>' +
         '</span>';
       var _flow = '<div class="sbld-flow' + (editing ? ' on' : '') + '">' + _mode2 +
         (editing
@@ -44471,7 +44843,7 @@
         '<div class="sbld-viewoptsb">' +
           '<span class="sbld-quick">Detail ' + LEVELS.map(function (l) { return '<button class="pd-btn sbld-scbtn' + (seqLevel === l[0] ? ' on' : '') + '" data-seqlvl="' + l[0] + '" title="Collapse both the building view AND the resulting schedule to ' + l[1] + ' level (links stay, aggregated between the collapsed bars)">' + l[1] + '</button>'; }).join('') + '</span>' +
           '<span class="sbld-quick">Layout ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
-          '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-zout">−</button><button class="pd-btn sbld-zbtn" id="b-zin">+</button></span>' +
+          '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-zout">-</button><button class="pd-btn sbld-zbtn" id="b-zin">+</button></span>' +
         '</div></details>';
       var lede = '<p class="sbld-lede">Which location follows which. Topology only — every block below is the same size, and the real durations are applied in step ' + _stepNo('Generate') + '.' +
         (_twMulti ? ' <b>Each tower has its own sequence</b>; pick one below to work on it alone.' : '') + '</p>' +

@@ -119,9 +119,9 @@ function makeHost() {
 }
 
 /* ---- run the shipped renderer ---------------------------------------------------------------- */
-function render(cfg, catFold, catSel) {
+function render(cfg, holdCol, catSel, holdQ) {
   const sandbox = {
-    cfg, catFold, catSel, holdW: 320, xColW: {},
+    cfg, holdCol, catSel, holdQ: holdQ || '', holdW: 320, xColW: {},
     XL_COLS: [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 },
       { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true },
       { k: 'contract', label: 'Contract', w: 138, contract: true },
@@ -177,7 +177,25 @@ function render(cfg, catFold, catSel) {
   // the per-row trash column, which was dead in the same way
   ok(!/xl-rowact/.test(h), '1.8 the dead per-row trash column is gone');
   ok(!/data-del=/.test(h), '1.9 …and with it the last unhandled data-del in this step');
-  eq(host._missing.length, 0, '1.10 EXECUTED: no handler is wired to an id the markup does not carry');
+  /* ⚠⚠ THIS IS THE ASSERTION THE WHOLE SUITE EXISTS FOR, and it had to be sharpened rather than
+     relaxed. A handler left behind over deleted markup is `#pk-boq` again: `querySelector` returns
+     null, `.onclick =` throws, and every control wired BELOW it in the same function is silently
+     never bound. The stub returns null for a missing id exactly as the DOM does, so an unguarded
+     one throws here just as it would on the page — that is what `render()` completing at all
+     proves. What `_missing` cannot see is whether the caller GUARDED the lookup, so a bare
+     `length === 0` fails on a control that is conditionally rendered and correctly guarded
+     (`#b-holdq`, which appears only above 8 codes or while a query is live — this fixture has 6).
+     So: nothing REMOVED may be looked up, and anything else that misses must be on this list with
+     its guard named. */
+  const OPTIONAL = { 'b-holdq': 'rendered only above 8 codes or while a query is live — wired behind `if (hq)`' };
+  const REMOVED = ['b-delrows', 'b-add', 'b-tmpl', 'b-upl', 'b-uplfile'];
+  eq(host._missing.filter(id => REMOVED.indexOf(id) >= 0).join(','), '',
+     '1.10 EXECUTED: no handler is left wired to a control this pass removed');
+  eq(host._missing.filter(id => !OPTIONAL[id]).join(','), '',
+     '1.11 EXECUTED: and every other lookup that misses is a conditionally-rendered control, guarded');
+  // and the source agrees: the removed ids are not referenced anywhere in the file, handler or not
+  eq(REMOVED.filter(id => new RegExp("querySelector\\(['\"]#" + id + "['\"]").test(src)).join(','), '',
+     '1.12 …nothing anywhere in the module still queries a removed id');
 }
 
 /* =============================================================================================
@@ -237,26 +255,40 @@ function render(cfg, catFold, catSel) {
   const counts = [...h.matchAll(/class="sbld-hold-gn">(\d+)</g)].map(m => +m[1]);
   eq(counts.join(','), '2,1,3', '4.3 each heading carries its own count');
   eq(counts.reduce((a, b) => a + b, 0), 6, '4.4 …and they sum to the catalogue — no code is dropped by the grouping');
-  ok(/data-catgrp="GR"/.test(h) && /data-catgrp="AR"/.test(h), '4.5 every heading is a toggle');
-  ok(/aria-expanded="true"/.test(h) && !/aria-expanded="false"/.test(h), '4.6 open by default (what the flat list already showed)');
+  /* ⚠⚠ RETARGETED ONTO THE MARKUP THAT SHIPS, NOT WEAKENED. This section was written against
+     this pass's own `<div class="sbld-hold-grp fold"><button class="sbld-hold-gh" data-catgrp>`
+     group header. A native `<details>`/`<summary>` group landed on `main` first (PR #138) and is
+     what the renderer emits, so every assertion below now names `data-grp` and the `open`
+     attribute. The PROPERTY each one protects is unchanged — grouped, counted, foldable, open by
+     default, colour on the heading and not on the row. */
+  ok(/data-grp="GR"/.test(h) && /data-grp="AR"/.test(h), '4.5 every group is addressable, so it can be folded');
+  eq((h.match(/<details class="sbld-hold-grp" open /g) || []).length, 3,
+     '4.6 open by default — what the flat list already showed');
   // the per-item trade label is gone — it restated the heading
   ok(!/Architectural<\/span><\/button>/.test(h.replace(/sbld-hold-gname">Architectural<\/span>/g, '')),
      '4.7 an item no longer repeats its own trade under a trade heading');
   // the colour moved from the item to the heading
-  ok(/class="sbld-hold-grp[^"]*" style="--zc:/.test(h), '4.8 the trade colour is on the heading');
-  ok(!/class="sbld-hold-item[^"]*" data-cat="[^"]*" style="--zc:/.test(h), '4.9 …and no longer on every row');
+  ok(/<details class="sbld-hold-grp"[^>]*style="--zc:/.test(h), '4.8 the trade colour is on the heading');
+  ok(!/class="sbld-hold-item[^"]*" data-cat="[^"]*"[^>]*style="--zc:/.test(h),
+     '4.9 …and no longer on every row — the rail it fed is gone, so the variable would be unread');
 }
 
-/* 4b · folding actually hides that group's rows, and nothing else */
+/* 4b · folding actually shuts that group, and nothing else */
 {
   const { host } = render(mkCfg(), { AR: 1 }, []);
   const h = host.innerHTML;
-  const grp = /<div class="sbld-hold-grp fold" style="--zc:[^"]*"><button class="sbld-hold-gh" data-catgrp="AR"/.test(h);
-  ok(grp, '4.10 a folded group carries .fold');
-  ok(/data-catgrp="AR"[^>]*aria-expanded="false"/.test(h), '4.11 …and says so to assistive tech');
-  ok(/data-catgrp="GR"[^>]*aria-expanded="true"/.test(h), '4.12 …while its siblings stay open');
-  // the rows are still in the DOM (CSS hides them) but the heading and count survive
-  eq((h.match(/class="sbld-hold-gn">/g) || []).length, 3, '4.13 folding hides rows, never the headings');
+  ok(/<details class="sbld-hold-grp" data-grp="AR"/.test(h),
+     '4.10 a folded group is a <details> with no `open`');
+  ok(/<details class="sbld-hold-grp" open data-grp="GR"/.test(h), '4.11 …while its siblings stay open');
+  eq((h.match(/class="sbld-hold-gn">/g) || []).length, 3, '4.12 folding shuts a group, it never removes the heading');
+  /* ⚠⚠ A LIVE SEARCH OVERRIDES THE FOLD — the one property of this pair most easily lost, and the
+     reason the shipped code keeps the fold state rather than clearing it: a trade folded shut while
+     the query matches inside it reads as "nothing found". Same fold state, a query on top. */
+  const hq = render(mkCfg(), { AR: 1 }, [], '0860').host.innerHTML;
+  ok(/<details class="sbld-hold-grp" open data-grp="AR"/.test(hq),
+     '4.13 …unless a query is live, in which case the folded trade opens to show its hits');
+  ok(!/<details class="sbld-hold-grp"[^>]*data-grp="GR"/.test(hq),
+     '4.14 …and a trade with no hit is not rendered at all, rather than shown empty');
 }
 
 /* =============================================================================================

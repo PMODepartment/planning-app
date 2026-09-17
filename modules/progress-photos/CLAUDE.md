@@ -1,5 +1,72 @@
 # Module: progress-photos
 
+## The real reason "queued" never advanced: the service-role auth check couldn't survive a key-format rotation (2026-09-17, later same day)
+
+Owner set up the Vault secrets, deployed `pano360-process`, and the job still sat at `queued`
+forever — the exact fallback the entry directly below this one made honest rather than silent, but
+now proven to be masking a second, real bug rather than just the documented "secrets not yet
+created" gap.
+
+### Traced live, one 401 at a time, down to the Edge Function's own source
+
+⚠️⚠️ **`pano360_invoke()`'s Bearer token and this function's own authorization check had silently
+stopped agreeing, and no amount of re-pasting the secret into Vault could ever fix it.** Confirmed
+live via `net._http_response` (the `pg_net` response log `pano360_invoke` writes to) that the
+deployed function was answering every call from the trigger/cron with **401**, cycling through the
+platform gateway's own distinct rejection codes as the owner iterated on the Vault secret's value —
+`UNAUTHORIZED_LEGACY_JWT` (stale JWT-format key), `UNAUTHORIZED_INVALID_JWT_FORMAT` (traced to a
+literal copy of this migration's own `<paste the sb_secret_... key here>` placeholder text having
+been pasted in verbatim), `"Invalid API key"` (a stale/wrong value even once correctly shaped) —
+before landing, with a freshly regenerated and independently-verified `sb_secret_...` key correctly
+stored in Vault, back on **`"Could not read the bearer token"`** — the one response this function's
+own code can produce, meaning the *platform gateway* was now satisfied and the request was reaching
+`index.ts` itself.
+- **A direct `curl` against the function URL, bypassing Postgres/`pg_net` entirely, was what broke
+  the loop.** The response headers (`x-served-by: supabase-edge-runtime`, `x-deno-execution-id`)
+  confirmed the code path had genuinely been reached; the body was still `"Could not read the
+  bearer token"` — proving this was never a Vault/secret-value mistake at all, it was a bug in the
+  shipped function.
+
+### The bug: authorization decoded the token as a JWT and could never recognise the newer key format
+
+`index.ts`'s own authorization block trusted a caller as service-role by **decoding the Bearer
+token as a JWT** and reading `payload.role === "service_role"` off it — correct for this project's
+*original* service-role key (`eyJ...`, a real JWT whose payload does carry that claim), and silently
+broken the moment Supabase's dashboard issues the newer opaque `sb_secret_...` format for the same
+purpose instead. `auth.split(".")[1]` on a string with no dots is `undefined`; `atob(undefined)`
+throws; the catch sets `payload = null`; and the function returns exactly the 401 body the curl
+test showed — **for every single legitimate call**, forever, regardless of how many times the
+Vault secret is corrected, because the value being rejected was never wrong.
+- **Fixed by checking the token the way this function already trusts itself**: `PL_SERVICE` (this
+  same function's own `Deno.env.get("PL_SERVICE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")`,
+  used one line above to build its own admin Supabase client) is compared to the Bearer token by
+  **direct string equality** first. ⚠️ This is correct for either key format — it never inspects the
+  token's shape at all, only whether it is literally the secret this deployment was actually given —
+  and is arguably the tighter check to begin with: a JWT merely *claiming* `role: "service_role"` is
+  a weaker guarantee than "is the exact secret this Edge Function was configured with."
+- **The JWT-decode path is kept, but demoted to a fallback** for an ordinary user's own JWT (nothing
+  in this app sends one to this function today, but nothing forbids it either) — held to the same
+  bar the rest of this app already uses: an approved account, matching the `is_writer()` gate this
+  table's own INSERT policy requires to create a job in the first place. `payload` is now scoped
+  entirely inside that fallback branch — grepped to confirm it has no other reader in the file, so
+  narrowing its scope changes nothing else.
+
+### Verified
+
+`node --check` clean (stripped of TS-only annotations first — no Deno/tsc runtime available in this
+environment to check the file natively). The diff was reviewed line by line against the platform's
+two key formats: an `eyJ...` JWT service-role key still matches by direct equality exactly as before
+(nothing regresses for a project that hasn't rotated keys yet); an `sb_secret_...` key now matches
+too; an ordinary user JWT correctly falls through to, and is evaluated by, the unchanged fallback
+path.
+
+⚠️ **Not verified against a real invocation** — this environment has no Deno runtime and no
+Supabase credentials to invoke the deployed function directly, and `test.mjs` for this function
+(`supabase/functions/pano360-process/test.mjs`) explicitly only covers `stitch-core.mjs`'s pure
+frame-alignment math, never this authorization block. The owner's own live loop — trigger a
+capture, watch `pano360_jobs.status` move off `queued` — is what actually proves this, once the
+function is **redeployed** (editing `index.ts` here changes nothing already running on Supabase).
+
 ## "Starting…" forever on a real 360° upload, and the Drafts button overflowing a narrow window (2026-09-17)
 
 Owner, two live reports off the deployed site: uploading a 360° video left the Review modal

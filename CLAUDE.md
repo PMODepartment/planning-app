@@ -104,22 +104,56 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-17 (at) — Schedule Setup ▸ Activities: two delete buttons that had never worked, and a class-code list you can scan
+### 2026-09-17 (av) — Schedule Setup ▸ Activities: two delete controls go, one of them wired days after this branch called it dead
+
+⚠️ **Re-lettered `(at)` → `(av)` on merging `origin/main`.** Main had independently published its own
+`2026-09-17 (at)` — *"drag a class code onto the grid"*, on this very step — and an `(au)` above it, so
+both sides prepended a different entry under one letter. Both are kept whole and this one moves past
+both, per this file's own rule: take only the NEW entries from each side, never both copies of the log.
+
 
 Owner's four items on that step. Detail, every ⚠️ decision and the measurements:
-[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zz)`. Module only —
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzs)`. Module only —
 no migration, no shared asset changed.
 
-### ⚠️⚠️ THE TWO CONTROLS ASKED ABOUT WERE DEAD, AND SO WAS A THIRD NOBODY MENTIONED
+⚠⚠ **AND THE MERGE THAT LANDED IT IS HALF THE STORY.** `main` moved 8 commits while this sat open
+and answered two of the same four items in its own words — a **native `<details>` grouped holding
+list with a search box** (`(ao)`, PR #138) where this branch had built a button-and-`.fold` one, and a
+**wired `#b-delrows`** (`(ak)`) where this branch had deleted it as dead. Resolved hunk by hunk on the
+merits: main's grouping ships (it is keyboard- and screen-reader-native for free and carries a search
+this never had), main's drag gesture and Internal/External rename are kept, and this branch's compact
+one-line row and code-sorted `+ Library` ride on top of them.
 
-*"no need for the delete selected rows button. user will just use the right button arrow."*
-`#b-delrows` occurred **exactly once in the file — in the markup — with no handler anywhere**, so
-*Delete selected rows* has never removed a row on any project. The `→` shuttle the owner named as the
-replacement is not a workaround; it was always the only working route. ⚠️ **And the per-row trash
-column was dead in the same way** — `data-del` emitted per row, every `[data-del]` handler in the file
+⚠⚠ **THE PART A CLEAN AUTO-MERGE HID: five CSS rules left matching nothing.** The renderer
+conflicted and main's won; the *stylesheet* did not conflict, so this branch's `.sbld-hold-gh` group
+header rules merged in silently beside a renderer that emits none of them — plus two duplicate
+declarations main's own copies were already winning over on source order. **A clean merge is not a
+correct one.** Deleted, with the two consequences of putting a compact row under main's markup carried
+through rather than left half-applied: the per-row trade label goes (the heading above it says the same
+thing 197 times) and so does the row's now-unread `--zc`.
+
+⚠ **Two test suites retargeted, neither weakened** — this branch's own would not even start
+(`ReferenceError: holdQ is not defined`, its harness still supplying the fold-state name it invented),
+and main's asserted against the upload chain the owner asked to remove. Both now assert the shipped
+behaviour, and both contrasts still bite: **29 failures against the original pin, 18 against
+`origin/main` as it stands today** — the second being the one that means anything now.
+
+### ⚠️⚠️ A CLAIM THIS ENTRY MADE WENT STALE BEFORE IT MERGED, AND IT IS CORRECTED RATHER THAN QUIETLY DROPPED
+
+*"no need for the delete selected rows button. user will just use the right button arrow."* This entry
+first read *"`#b-delrows` occurred exactly once in the file — in the markup — with no handler
+anywhere, so it has never removed a row"*. That was true of the file this branch was cut from, and
+**it stopped being true days later**: the `(ak)` *"let's check for dead buttons across the schedule
+setup"* pass **wired it**, and that fix was already on `main` by the time this branch merged. So the
+control removed here was a working one, and it goes **on the owner's word alone**, not because it did
+nothing. Its handler is deleted with the button rather than left querying an id nothing emits — that
+would throw on the first render of the step, which is the `#pk-boq` shape this repo has shipped once.
+⚠️⚠️ **The half of the original claim that still holds is the per-row trash column** — `data-del` emitted per row, every `[data-del]` handler in the file
 scoped to a different list. Not asked for, removed anyway: a trash icon on every row that does nothing
 is worse to leave behind than to take out, one click after being told `→` is how a row leaves.
-**Reported rather than done quietly**, so it can be pushed back on. The grid goes **9 header cells / 9
+**Reported rather than done quietly**, so it can be pushed back on. ⚠️ That distinction is the whole
+point of the correction above: one of the two really was dead and one had just been fixed, and an
+entry claiming both were dead would have taught the next reader the wrong thing about a live control. The grid goes **9 header cells / 9
 body cells → 8 / 8**, measured on both sides — a header and a body disagreeing by one is the
 column-misalignment defect this repo has a checker for.
 
@@ -203,6 +237,134 @@ a browser already holds is worse than a collision. One conflict, in the grid CSS
 **union** — main's `background: transparent` on the cell controls kept whole beside this change's
 deletion of the now-unmatchable `.xl-rowact` rules — and every removal in the merged file was then
 audited line by line against `origin/main`.
+
+### 2026-09-17 (au) — The "symbol" was thirty bare arrow glyphs; the floor-plan editor goes full screen behind a ribbon; an area can be drawn before it is tagged
+
+Owner, three items on Schedule Setup: *"firstly, the symbol of 13 still remains. fix that."*, *"when
+defining the plan per floor, make it full screen, and hopefully the controls are similar to an excel
+format wherein there is like a ribbon taskbar on top"*, and *"allow users to define the shapes /
+trace zones first, before tagging which zones are those."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzr)`. Logged
+here for the `MODULE_V` bump and the three things that are not facts about one module:
+
+⚠️⚠️ **A GREP FOR LITERAL BYTES CANNOT FIND A GLYPH DEFECT, AND MINE MISSED 26 OF 30.** The `(as)`
+pass read the owner's screenshot as the tower bar's `⋯` and was wrong — which is why it came back.
+Enumerating properly this time found the plan editor writes its arrows as **HTML entities**
+(`&#8630;`, `&#8646;`, `&#8676;`), so they are **pure ASCII in the source** and invisible to any byte
+scan, while the browser renders U+21B6 / U+21C6 / U+21E4 and friends. All 30 sat in **small square
+buttons with no text beside them**, and supplemental arrows are absent from a great many Windows font
+stacks — so the whole row draws as tofu boxes carrying their own hex digits, which is the thing that
+was photographed. **Scan the rendered codepoints, not the file's bytes**, and treat a bare symbol in
+an unlabelled button as a defect class rather than an instance.
+
+⚠️⚠️ **`width:100%` + `aspect-ratio` + `max-height:100%` IS NOT A LETTERBOX, and an earlier cut of
+this work claimed it was.** Measured in a browser: `max-height` clamps the **height** while the width
+stays at 100%, so a stage meant to hold a 1000×620 sheet came out **1412 × 551** on a wide window.
+The svg is stretched over that box with `preserveAspectRatio="none"`, so every traced zone would have
+been drawn **distorted** and the pointer-to-plan-unit conversion would have stopped agreeing with the
+screen — silently, and worst on the widest windows. Bounding the width by the height that is actually
+available needs container-query units (`100cqh`), with `width:100%` declared **first** so a browser
+without `cq` keeps today's behaviour rather than losing the width entirely.
+
+⚠️⚠️ **A SENTINEL THAT MEANS "NOT ANSWERED YET" SHOULD BE THE EMPTY STRING, NOT A READABLE MARKER.**
+A zone code is free text a planner types, so any word could collide with one. The empty string cannot
+be typed, and every consumer already asks `if (!code)` — so an untagged area is invisible to every
+lookup **by construction** rather than by each of them being taught about it. ⚠️ The cost to watch
+for is the opposite direction: two guards elsewhere read a falsy value as *"nothing chosen"* and
+would have refused the first press of **Add** and **Trace** on every open, in the app's warning
+colour, refusing to do the one thing the feature exists for.
+
+**Verified:** 23 new assertions executing the shipped normaliser and readers, gated against a pinned
+base that must **drop** an untagged area (a suite passing on both files proves nothing); the stage
+geometry measured in a browser against CSS **sliced out of the shipped file** at three viewports ×
+three sheet aspects; the emitted markup tag-balanced by a comment-blanking scanner. Twelve module
+suites green — `zoneplan` **50/0**, `lsm` **683/0**, `syntax` 4/0, plus nine others — and
+`wiring-check` **139/0**. ⚠️ `test-builder` **99/1** is **pre-existing**, confirmed by stashing this
+work and re-running against the unmodified file.
+
+⚠️ **The glyph rewrite is count-asserted rule by rule and ABORTS before writing on a miscount** — a
+silent partial rewrite of a 50,000-line file is far worse than a script that refuses to run, and the
+guard bit twice (two controls each had a toolbar copy *and* a right-click-menu copy where I had
+asserted one).
+
+⚠️ **Not verified signed in**, and ⚠️ **I cannot prove which of the 30 was photographed** — a 33×28
+thumbnail does not carry a codepoint. What is proved is that the class is gone from both screens the
+owner named; if a box survives it is elsewhere, and a hard refresh is worth trying first, since a
+module page is cached at `index.html?v=MODULE_V`.
+
+`MODULE_V` → `20260917zzr`, re-derived from the remote **after** rebasing onto it (which had already
+moved to `zzq`) and sort-checked as a plain string.
+
+### 2026-09-17 (at) — Schedule Setup ▸ Activities: drag a class code onto the grid, and Interior/Exterior become Internal/External
+
+Owner's three remaining items on that step: *"add option to drag and drop from all class codes to
+selected list"*, *"label for the duration interior and exterior — this should be internal and
+external, apply for whole schedule module"*, and *"improve look of the activities selected table,
+font sizes can be reduced"*. Module work — the full entry, every ⚠️ decision and the verification are
+in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(zzb)`. Logged
+here for the `MODULE_V` bump and the three things that are not facts about the module:
+
+⚠️⚠️ **THIS BRANCH DELIBERATELY DOES NOT DUPLICATE PR #140.** That PR — open and unmerged — already
+covers the owner's other four items on the same step (the delete/add-row buttons, grouping the
+class-code list by trade, dropping Download template / Upload Excel, and sorting `+ Library` by
+code). An earlier cut of this branch had implemented all four independently, which is two rewrites
+of the same hold pane: a merge nobody wants and a duplicate nobody asked for. **That work was
+discarded and the branch rebuilt on `origin/main`** carrying only the three items above, so the two
+branches now touch almost nothing in common. Established before rebuilding, by reading PR #140's own
+copy of the file rather than trusting its description: it has no drag wiring in that pane, still
+reads `label: 'Interior (d)'`, and still has the grid a rung higher.
+
+⚠️⚠️ **`MODULE_V` → `20260917zzq`, chosen to sort after BOTH `origin/main`'s `20260917zv` AND PR
+#140's `20260917zzg`.** An unmerged branch's token still matters: if #140 lands first, a browser
+holding `zzg` would never fetch a page published under anything that sorts earlier — which is worse
+than a collision, because the new bytes simply never arrive. This log has recorded that failure
+often enough; the rule that keeps working is to re-derive the token from **every** token the remote
+carries, not only from the default branch's.
+
+⚠️ **The rename is a module-internal reconciliation, not a new vocabulary.** The Generate step, the
+stacking basis, the push dialog and the trade-sequence totals line **already** said Internal /
+External; only the two duration grids and their captions still said Interior / Exterior, so the same
+two numbers were called two different things three clicks apart. `durInt` / `durExt` and the
+`'int'` / `'ext'` basis values are untouched — renaming either would be a data migration wearing a
+typography change's clothes.
+
+⚠⚠ **MERGED `origin/main` (44 commits) AFTER OPENING THE PR.** Six conflicts, all resolved as
+unions hunk by hunk — including one where **main's side had to win on the merits**: it changed the
+grid's cell control to `background:transparent`, because the grid paints its selection, bad-code
+tint and copy marquee on the `<td>` *behind* its children, so an opaque control hides all three.
+Only this branch's tightened padding rides along. **PR #138 also landed the grouped, searchable
+holding list on `main`**, so the drag wiring is re-hung on that markup rather than on the flat list
+it was written against, and the item-3 figures were re-measured against main's own changed CSS
+(unchanged). ⚠️ `MODULE_V` re-derived a second time, past main's new `20260917zzo`.
+
+⚠️⚠️ **And `modules/project-schedule/CLAUDE.md` held a literal NUL byte** at line 293 — prose
+about the `\u0000` sentinel, written as a raw byte instead of the escape — so `grep` classified the
+whole 9,000-line changelog as **binary and silently reported no matches in it**, which is how the
+next free entry letter was nearly picked wrong. I fixed it on this branch and ⚠️ **a concurrent
+session fixed it on `main` first** (`9d6465b`); **theirs survives the merge**, since a spelling of an
+escape is not worth a conflict. It is logged here anyway because it is the **third** recurrence of
+the trap the 2026-09-14 (u) entry records, and because **two sessions independently tripped over it
+on the same file on the same day** — which is the argument for a checker rather than for a fourth
+person finding it by accident. The failure mode is the one every tool in this repo that reads a
+changelog shares: a doubled log is visible in a diff, and a log that answers *"no matches"* is not.
+
+**Verified:** new `modules/project-schedule/test-actdnd.js` **45/0** (the mover sliced out of the
+shipped file and executed; `--base` asserts the opposite and passes 5/5 on `origin/main`, where the
+normal run aborts with exit 1), plus a Chromium harness driving **real `DragEvent`s** through the
+same slices, **26/0** — both biting on the same one-line mutation. `wiring-check` **139/0**;
+`test-syntax` 4/0; `test-cpm` 28/0; `test-autotrace` 32/0; `test-towerseq` 48/0; `test-zoneoverlap`
+57/0; `test-shapeedit` 36/0; `test-lsm` **683/0**; the 3.6MB inline script parses; CSS brace delta
+unchanged from base at 1.
+
+⚠️ **A correction this entry carries rather than hides:** `test-lsm` was **675/28** when this branch
+was cut — pre-existing, byte-identical on the base, and the figure entry `(t)` records — and `main`
+has since **fixed it** (`8920785`: the flowline was removed from the product and left the suite
+asserting against it). Measured on the merged tree and on `origin/main`: **683/0 on both**. The old
+figure is stated rather than quietly dropped, because a caveat that disappears reads as one that was
+never true.
+
+⚠️ **Not verified signed in.**
 ### 2026-09-17 (as) — Schedule Setup: a symbol that read as a warning, a bulk edit that duplicated two controls, and a copy that was a push
 
 Owner, three items off the Floors & Zones step, plus *"Apply this also to the floor plan layouts."*
@@ -299,7 +461,7 @@ that merged with no conflict since only one side had moved. Same recurring colli
 documents its own chain of (`zg` → `zp`/`zq` → … → `zzg`) — this is further along the same chain,
 not a separate incident.** ⚠️ Note: by the time of this merge `main`'s own `assets/js/modules-grid.js`
 internal `MODULE_V` fallback literal reads `20260917zzk` while its `dashboard.html`/`modules.html`
-references already say `20260917zzm` — a pre-existing mismatch on `main` itself (not introduced by
+references already say `20260917zzq` — a pre-existing mismatch on `main` itself (not introduced by
 this merge, and invisible to `wiring-check`'s per-file version check since it only compares HTML
 references to each other). Left as-is rather than fixed here, since it belongs to whichever `main`
 commit moved the HTML refs without the fallback literal.
@@ -461,7 +623,7 @@ visibility flag.
 
 **Verified:** `test-lsm` 683/683 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
 (baseline, with one more queried class reference — 464 → 465) · `dark-remap` 0 findings.
-`modules-grid.js` `?v=` → `20260917zzm`.
+`modules-grid.js` `?v=` → `20260917zzq`.
 
 ### 2026-09-17 (an) — The builder’s top-bar lede is gone, and only the one he quoted
 
