@@ -104,6 +104,80 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-17 (ae) — The LSM fold was asking the wrong resolver which level is the storey
+
+Owner's item 5.1: *"The Gantt should be that the WBS should fold all into one row not see the ladder."*
+
+The fold itself was already right — `_lsmArrange` groups by the floor level **alone**, so every storey
+is a top-level row with no ancestors above it and no zone or unit rows beneath. What was wrong is
+**which level it folded on**.
+
+### ⚠️⚠️ TWO RESOLVERS FOR ONE QUESTION, AND THE FOLD WAS USING THE WEAKER ONE
+
+`_dimLevelMap()` is this module's considered answer to *"which LOC_LEVEL is the floor?"*: synonym
+lists per dimension (`DIM_SYN`), **claim-once** so one level cannot be two dimensions, and an ordered
+sweep whose `minIdx` only ever moves deeper so a dim can never be handed a level above its parent. Its
+comments cite the two real projects it was built from — Avesta (`Tower › Level › Zone › Orientation`)
+and SLN101 (`Tower › Level › Orientation › Zone › Cluster`).
+
+`_locFloorLevelId()` was a second answer, one line long: a regex over the level names, first hit wins,
+deepest level as the fallback. **Both resolvers executed against seven breakdowns. Three diverge, and
+the map is right in all three:**
+
+| breakdown | regex said | map says |
+|---|---|---|
+| `Building Level › Floor › Zone` | **Building Level** | `Floor` |
+| `Block › Section › Pour › Bay` | **Bay** | `Section` |
+| `Tower › Deck › Zone` | **Zone** | `Deck` |
+
+- The first reads *"level"* inside the **building's** name and folds one row per building — a
+  time-location chart of a tower block with three rows.
+- The second finds nothing storey-ish and takes the **deepest** level: one row per bay. That is the
+  *"ticking LSM widens the rows"* explosion this whole item exists to prevent, re-created by the
+  resolver meant to prevent it.
+- The third is the purest form of the drift: the two resolvers kept **different synonym lists**.
+  `DIM_SYN.floor` has carried `"deck"` all along; the regex never did, so it missed the storey
+  entirely and fell through to the deepest level.
+
+`ScheduleBuilder` exposes `floorLevelId()` now, and `_locFloorLevelId` asks it first. ⚠️ It goes
+through an export rather than calling `locLevelFor` directly because `_dimLevelMap` lives inside the
+`ScheduleBuilder` IIFE while `_locFloorLevelId` is in the module one — the *variable* is a sibling,
+the helpers inside it are not. The regex stays as the pre-init fallback and **gains `"deck"`**, so the
+two lists cannot disagree for as long as both exist.
+
+**Executed, after the fix** — `Building Level › Floor › Zone` → `Floor`, `Block › Section › Pour › Bay`
+→ `Section`, `Tower › Deck › Zone` → `Deck` on **both** paths, and the ordinary
+`Tower › Floor › Zone › Unit` → `Floor`, unchanged.
+
+### A comment describing a branch that cannot be reached
+
+`_lsmArrange` claimed it *"falls back to the full ladder when no floor level can be identified"*. The
+code has never done that: `_locFloorLevelId` always answers when there is any breakdown at all, so
+`_want` is `locDims` **only** when `LOC_LEVELS` is empty — and that case is caught by the
+`!locDims.length` toast above it, not here. The comment now says what the code does.
+
+### ⚠️ The new assertions were checked against the pre-fix source, because a test that cannot fail is not evidence
+
+Run against `8920785`, three of them fail, including an executed one:
+
+```
+x the storey level is resolved through the builder's dim map, not a second name regex
+x the fallback regex carries "deck" too, so the two lists cannot disagree while both exist
+x and a DECK is a storey to the fallback now, not a miss (expected "B")  [got: "C"]
+```
+
+⚠️ The wiring assertion is on the **source**, not executed: `ScheduleBuilder` is a different IIFE that
+this harness does not slice, so executing it here would prove the harness rather than the shipped
+wiring. The fallback assertions *are* executed, and they deliberately run the pre-init path — which is
+the path that must not throw.
+
+**Verified:** `test-lsm` **680/680** (was 676) · the same suite against the pre-fix source fails 3, so
+the new checks discriminate · the pinned-base contrast against `4d82fd4` still runs and is still loud
+(`20/53 fns, 7/21 vars`, full MISSING list) · `test-syntax` 4/4 · `wiring-check` 139/0 ·
+`dead-hooks` 9 (baseline) · `dark-remap` 0 findings · inline scripts parse · CSS brace balance
+identical to pinned `8920785`. `modules-grid.js` `?v=` → `20260917zzc` — the shipped module changed
+this time, unlike *(ad)*.
+
 ### 2026-09-17 (ad) — Flowline was removed from the product and left a suite failing 28 assertions
 
 Owner's item 4.3: *"Flowline - let's remove"*.
