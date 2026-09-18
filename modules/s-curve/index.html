@@ -458,9 +458,15 @@
        planner who does not know the curve follows their typing has no reason to look up at it. */
     .sc-mancap { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:7px;
       padding-bottom:7px; border-bottom:1px solid var(--pd-line); }
-    .sc-mancap .t { font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.06em;
-      text-transform:uppercase; color:var(--pd-muted); }
-    .sc-mancap .s { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sc-mancap .t, .sc-manprev > summary .t { font-size:var(--pd-fs-micro); font-weight:800;
+      letter-spacing:.06em; text-transform:uppercase; color:var(--pd-muted); }
+    .sc-mancap .s, .sc-manprev > summary .s { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    /* ⚠️ The preview's own disclosure. `.sc-why` supplies the caret, the focus ring and the
+       hover; this only adds the gap between the two caption spans and puts the chart's border
+       back on the BODY, which is where the frame belonged once the caption became a summary. */
+    .sc-manprev { margin-top:0; margin-bottom:12px; }
+    .sc-manprev > summary { gap:9px; }
+    .sc-manprev .sc-manchartwrap { margin-top:8px; }
     /* ---- The compact chart's own furniture ---------------------------------------------------
        ⚠️ Scoped to `.sc-svg-sm` / the `-sm` classes, never applied to `.sc-svg` itself: the Curve
        tab is the same markup from the same function, and a rule written on the bare class would
@@ -674,7 +680,50 @@
      progress — the one number this split exists to isolate. Keyword, case-insensitive, the same
      way Progress Photos matches its own trade vocabulary onto this column. */
   function isGR(t) { return /general\s*requirement/i.test(String(t || '')); }
-  function tradeOf(r) { var t = String((r && r.work_type) || '').trim(); return t || UNTRADED; }
+  /* ⚠️⚠️ THE WBS BRANCH IS THE SECOND HALF OF THE ANSWER, AND THIS MODULE USED TO IGNORE IT.
+     Owner, 2026-09-18: *"Can we trace the no trade set? There shouldn't be a no trade set in the
+     s-curve."* Traced, and he is right. Project Schedule's canonical answer is:
+
+         function workOf(r) { return r.work_type || _nodeTrade(r.wbs_node_id) || ''; }
+
+     - the activity's own Trade field wins, and FAILING THAT THE WBS SAYS. This module read only
+     `work_type`, so an activity filed under a trade branch with an empty Trade column showed its
+     trade correctly in the schedule and landed in `No trade set` here. Two screens, one project,
+     different answers to "what trade is this?".
+     ⚠️⚠️ AND THIS MODULE'S OWN FILTER NOTE ALREADY PROMISED THE WBS ROUTE - *"Set it on the
+     activity in Project Schedule (the Trade column), OR FILE IT UNDER A TRADE BRANCH OF THE
+     WBS"*. It was telling planners to do something it then refused to read. That is the tell
+     worth keeping: the instruction and the behaviour had disagreed in writing the whole time.
+     ⚠️ The derivation is `_nodeTrade`'s, ported rather than invented: walk parents to the root
+     and take the node one BELOW the root, since the branch under the root is the trade; an
+     activity filed directly on a root is named by the root. Same 60-step guard against a
+     malformed tree, same memo.
+     ⚠️ Duplicated rather than shared, knowingly: the original lives inside
+     `modules/project-schedule/index.html` alongside 58k lines this module cannot load. If a third
+     reader appears it belongs in `assets/js/scurve.js` beside the curve engine. */
+  var WBS_NODES = [], _nodeById = {}, _tradeMemo = {};
+  function nodeTrade(nodeId) {
+    if (!nodeId) return '';
+    if (_tradeMemo[nodeId] !== undefined) return _tradeMemo[nodeId];
+    _tradeMemo[nodeId] = '';                     // cycle guard: a malformed tree must not hang
+    /* ⚠️ INDEXED, not scanned. The original walks the array with .find() per parent step;
+       on a 7,297-node WBS (4PH Strevi) against tens of thousands of activities that is a linear
+       scan per step of every chain. One map, built with the tree. */
+    var chain = [], n = _nodeById[nodeId], guard = 0;
+    while (n && guard++ < 60) {
+      chain.push(n);
+      n = n.parent_id ? _nodeById[n.parent_id] : null;
+    }
+    var out = '';
+    if (chain.length >= 2) out = String(chain[chain.length - 2].name || '').trim();
+    else if (chain.length === 1) out = String(chain[0].name || '').trim();
+    _tradeMemo[nodeId] = out;
+    return out;
+  }
+  function tradeOf(r) {
+    var t = String((r && r.work_type) || '').trim();
+    return t || nodeTrade(r && r.wbs_node_id) || UNTRADED;
+  }
   /* The Period control's own adjective. ⚠️ ONE derivation, read by both the chart heading and
      the filter tooltips: they had a copy each, and only one of them was kept in step - the
      heading said "monthly" over quarterly and yearly bars (found in the 2026-09-18 UI sweep,
@@ -846,12 +895,28 @@
      once, then held. The alternative considered and rejected: always fetch rows, which would cost
      every planner a 16k–40k-row download to serve a filter most of them never touch.
      ========================================================================================== */
+  /* ⚠️ Fetched once per project, beside the activities, and ONLY the three columns the
+     derivation reads. `PDb.selectAll` is the shared keyset loop - a plain select is capped at
+     1000 rows server-side, and a schedule's WBS runs to thousands of nodes (4PH Strevi: 7,297),
+     so a truncated tree would resolve the deep branches and silently drop the rest back into
+     `No trade set`. ⚠️ Failure is tolerated, not fatal: no tree means the module behaves exactly
+     as it did before this change rather than refusing to draw. */
+  async function fetchWbsNodes() {
+    _tradeMemo = {}; _nodeById = {};
+    try {
+      WBS_NODES = await PDb.selectAll('wbs_nodes', function (q) {
+        return q.eq('project_id', pid);
+      }, 'id,parent_id,name');
+    } catch (e) { WBS_NODES = []; }
+    _nodeById = {};
+    WBS_NODES.forEach(function (n) { _nodeById[n.id] = n; });
+  }
   var rowsLoaded = false;
   async function fetchRows() {
     var out = [], last = null;
     while (true) {
       var q = sb().from(TABLE)
-        .select('id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish,planned_cost,cost_curve,work_type')
+        .select('id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish,planned_cost,cost_curve,work_type,wbs_node_id')
         .eq('project_id', pid).order('id', { ascending: true }).limit(1000);
       if (last) q = q.gt('id', last);
       var r1 = await q; if (r1.error) throw r1.error;
@@ -901,7 +966,11 @@
     MAN = null; manMissing = false; manDirty = {};
     try { var _mk = localStorage.getItem('sc_mankind_' + pid); manKind = (_mk === 'actual' || _mk === 'forecast') ? _mk : 'planned'; } catch (e) { manKind = 'planned'; }
     trSel = []; trScope = 'all'; rowsLoaded = false;
+    WBS_NODES = []; _nodeById = {}; _tradeMemo = {};
     showLoading();
+    /* ⚠️ BEFORE the activities, because `tradeOf()` is read the moment they arrive - the
+       aggregate path skips per-activity trades entirely, but the row path groups by them. */
+    await fetchWbsNodes();
     rows = []; agg = null;
     // FAST PATH: the shared server-side monthly aggregate — the browser gets ~1 row per
     // month instead of every leaf activity (16k–40k on large schedules). Falls back to a
@@ -2057,6 +2126,9 @@
        separate, a planner can fill this in for an hour while the Curve tab still draws the
        schedule — a legitimate thing to do and a terrible thing to discover afterwards. */
     var nDirty = manDirtyCount();
+    // Closed unless this planner opened it on this project before.
+    var prevOpen = false;
+    try { prevOpen = localStorage.getItem('sc_manprev_' + pid) === '1'; } catch (e) {}
     var srcLine = (mode === 'manual')
       ? '<span class="sc-srcon">The <b>Curve</b> tab is drawing from this sheet.</span>'
       : '<span class="sc-srcoff">The <b>Curve</b> tab is drawing from the <b>schedule</b>, not from this sheet. ' +
@@ -2081,10 +2153,28 @@
          in the database yet must say so — a screenshot of it would otherwise assert data nobody
          has kept.
          ========================================================================================== */
-      '<div class="sc-manchartwrap">' +
-        '<div class="sc-mancap"><span class="t">Live preview</span>' +
-        '<span class="s">redraws as you type, unsaved edits included</span></div>' +
-        '<div id="sc-manchart"></div><div class="sc-note" id="sc-mannote"></div></div>' +
+      /* ⚠️⚠️ FOLDED AWAY BY DEFAULT, BECAUSE IT WAS PUSHING THE SHEET OFF THE SCREEN. Owner,
+         2026-09-18, on the Curve tab drawing the same picture: *"The curve tab in the s-curve
+         module seem to be a duplicate if we the planner opts for manual data"* - measured, and
+         half true: `manChart()` calls the SAME renderChart on the SAME computeManual, so in
+         Manual mode the two charts are one picture. The Curve tab is not a duplicate (the KPIs,
+         the filters, the data table and the click-through breakdown live only there), but this
+         PREVIEW is, and it was ~400px of it above the grid on every single visit.
+         ⚠️ Collapsed it costs one summary line, so the sheet - the thing this tab exists for -
+         starts at the top of the card instead of below the fold.
+         ⚠️ REMEMBERED PER PROJECT, and that is not a nicety: `renderManual()` rebuilds this
+         card's innerHTML whenever the Planned/Actual/Forecast selector moves, so without a
+         remembered state the preview would slam shut every time the planner changed kind. Keyed
+         per project like the basis, mode, period and view before it.
+         ⚠️ Rendering a chart into a CLOSED disclosure is safe here, checked rather than assumed:
+         the SVG is viewBox + width:100%, and the only layout reads in renderChart are inside
+         showTip(), which cannot run on a chart nobody can hover. */
+      '<details class="sc-why sc-manprev"' + (prevOpen ? ' open' : '') + '>' +
+        '<summary><span class="t">Live preview</span>' +
+        '<span class="s">redraws as you type, unsaved edits included</span></summary>' +
+        '<div class="sc-manchartwrap">' +
+          '<div id="sc-manchart"></div><div class="sc-note" id="sc-mannote"></div></div>' +
+      '</details>' +
       '<div class="sc-srcbar">' + srcLine + '</div>' +
       lockBar + untradedBar +
       '<div class="sc-filterbar sc-kindbar">' + kindSeg + '</div>' +
@@ -2121,6 +2211,10 @@
     manChart();
 
     // ---- wiring ------------------------------------------------------------------------------
+    var pv = card.querySelector('.sc-manprev');
+    if (pv) pv.addEventListener('toggle', function () {
+      try { localStorage.setItem('sc_manprev_' + pid, pv.open ? '1' : '0'); } catch (e) {}
+    });
     var kb = document.getElementById('sc-mankind');
     if (kb) kb.querySelectorAll('[data-k]').forEach(function (bt) {
       bt.onclick = function () {
