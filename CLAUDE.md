@@ -104,6 +104,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (aj) — A door hidden behind one word, a red stripe nobody had looked at, and a suite that had been dark for a day
+
+Owner, two items on Schedule Setup: *"in step 1, hide first the option to allow importing of external
+schedules first. Don't delete the codes for that but just hide it visually"*, and, with a screenshot
+of the Towers step, *"please improve the UI and the logic is for the black rows, these pertain to
+types while for the white rows, these pertain to the locations or actual towers as locations to be
+then defined also in the later steps."* Module work — the full entry, every ⚠️ decision and the
+verification are in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under
+`(ab)`. Logged here for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **HIDING IS THE EASY HALF; THE HALF THAT ROTS IS THE PROMISE THAT IT COMES BACK.** *"Don't delete
+the codes"* is a request for a flag, but a card left in the source and rendered by nothing is read by
+nothing, so the next edit near it breaks it and no screen says so. The card is therefore still
+**built** on every render and the flag decides only whether it is put into the grid — and the suite
+proves the promise by running the **same sliced function twice, once under each value of the flag**,
+rather than asserting that a string is still present in the file. ⚠️ The clause in the step's lede
+that named the door went with the door: a sentence naming a button that is not on the screen sends a
+planner hunting for it.
+
+⚠️⚠️ **A TIDY-UP FLAG IS A PLAUSIBLE WAY TO DESTROY DATA, AND THIS ONE WAS ONE LINE AWAY FROM IT.**
+The same screen carries a *staged import* — unsaved, session-only work parked by the module's own
+toolbar, which is a different door and still open. Putting that card behind the same flag would have
+read as consistency and would have made a parked file unreachable and lost on the next reload. It is
+deliberately outside the flag, with an assertion on the toolbar door explaining why.
+
+⚠️⚠️ **A DEFECT THAT WAS ON SCREEN THE WHOLE TIME AND IS VISIBLE IN THE OWNER'S OWN SCREENSHOT.** The
+selected row's red rail was declared on `td` rather than `td:first-child`, so it drew down the left
+edge of every cell and a selected row read as four red stripes. Nobody had *looked*; the step had
+been asserted about and never rendered. This pass rendered the shipped builders against the shipped
+stylesheet in both themes on a throwaway page, which is also what caught an elbow drawn in
+`--pd-line` — a hairline colour meant to sit between two filled cells, and a smudge at 15px on dark.
+
+⚠️⚠️ **AND A SUITE HAD BEEN DARK FOR A DAY WITH NOTHING TO SHOW FOR IT.** `test-cpm.js` stopped
+running a single assertion at `b311c7b4`: `axisFor` gained a `window.PDCal` test, `calCpmOn` is
+sliced from the shipped file where it returns **true** when `localStorage` throws — which is what
+node does — and `window` does not exist in a slice harness. **A ReferenceError kills the file before
+one assertion prints, so there is no failing count to notice, only an absent one.** 28 assertions
+restored, test-only. ⚠️ The fix stands in a bare `window`, never a `PDCal`: a stub there would measure
+the stub. **The working-calendar axis is covered by nothing, and that gap is real.** Worth a standing
+note for the whole repo: a green run tells you what passed, not what *ran* — a battery summary that
+counts suites as well as assertions would have caught this the same afternoon.
+
+⚠️ Both new test blocks were **negative-controlled**: six mutations, each undoing one thing this
+commit did, each landing on exactly the assertions it should and on no others, with the file restored
+byte-for-byte afterwards. A suite that passes on its first run has not been shown to be capable of
+failing.
+
+**Verified:** 29 suites on the merged tree — **2,758 assertions, 0 failing** — `wiring-check`
+**139/0**, the inline block parses, 0 NUL bytes. ⚠️ **Not verified signed in** — the anon key has no
+grants. ⚠️ **Merged `origin/main` (12 commits, PR #155 and the Location Sequence rebuild) first**;
+`index.html` auto-merged with no conflicts, but a clean auto-merge is not evidence, so both sides
+were checked present and the whole battery re-run, including main's new `test-locseq`.
+
+`MODULE_V` → `20260918zh`, re-derived from the merged tree **after** integrating (main went
+`zd` → `ze` → `zg` while this work was in flight) rather than guessed beforehand, and sort-checked as
+a plain string. No shared asset changed.
+
 ### 2026-09-18 (ai) — Location Sequence becomes one page, and a merge resolution that would have thrown on every render
 
 Owner, six items on the Location Sequence step of Schedule Setup — rename it throughout; merge tower

@@ -1,3 +1,135 @@
+## 2026-09-18 (ab) — The import door hidden behind one word, and step 5's two rungs made to read as two
+
+Owner, two items: *"in step 1, hide first the option to allow importing of external schedules first.
+Don't delete the codes for that but just hide it visually"*, and, with a screenshot of the Towers
+step, *"please improve the UI and the logic is for the black rows, these pertain to types while for
+the white rows, these pertain to the locations or actual towers as locations to be then defined also
+in the later steps."*
+
+### ⚠️⚠️ HIDING IS THE EASY HALF; THE HALF THAT ROTS IS THE PROMISE THAT IT COMES BACK
+
+`IMPORT_UI` is one flag on the same pattern as `SITE_PLAN_UI` next door. The card is still **built**
+on every render, its `#b-impfile` handler is still wired, `STEPS_IMP` and every checking step behind
+it are untouched; the only thing the flag decides is whether the card goes into the grid. Building it
+unconditionally is what keeps it from rotting while it is off — it is still parsed, still read by
+`wiring-check`, and the handler is already null-safe, which is why hiding it needs no second flag.
+
+⚠️ **The lede's import clause went with the card.** *"An import can replace them or land alongside
+them"* named a door that is not on the screen, which is worse than a short lede: it sends a planner
+hunting for a button. ⚠️ And the grid is `1fr 1fr`, so a **lone** card — a fresh project with the
+import door off and nothing to read back — sat at half width beside a hole. `.one` collapses it.
+
+### ⚠️⚠️ THE STAGED-IMPORT CARD DELIBERATELY IGNORES THE FLAG
+
+The module's own toolbar Import (`#ps-import`) still parses a file, calls
+`ScheduleBuilder.stageImport` and lands the planner on these same checking steps — so this was never
+the only way in. A staged import is **unsaved, session-only work**: hiding the card that continues it
+would make it unreachable and lose it on the next reload, a tidy-up flag quietly destroying data.
+§3 of the new suite holds that line, and §3.4 asserts the toolbar door is still wired, which is *why*
+it has to hold.
+
+### The Towers table: the level is now said three ways that agree
+
+⚠️⚠️ **A DEFECT THAT WAS ON SCREEN THE WHOLE TIME, AND IS VISIBLE IN THE OWNER'S OWN SCREENSHOT.**
+`tr.sbld-twr-own.on td { box-shadow:inset 3px 0 0 var(--pd-red); }` put that bar down the left edge
+of **every** cell — Name, Code, Remarks *and* the actions cell — so a selected type read as four red
+stripes across the row rather than one marker beside it. First cell only now.
+
+⚠️⚠️ **AND THE RAIL RUNS THE WHOLE GROUP, BECAUSE WHAT IS SELECTED IS A LAYOUT, NOT A ROW.** The
+floors live on the type's first development, so a rail on the type row alone left a planner clicking
+one row and watching a different one light up.
+
+⚠️⚠️ **THE DEVELOPMENT ROWS CARRIED NO BADGE AT ALL.** The type row said `TYPE` and a standalone said
+`DEV`; the rows that *are* the buildings — the rung the owner is describing — said nothing. They say
+`DEV` now, in a quieter variant: four of them stack under one type, and four badges at full strength
+out-shout the grouping row they belong to, which is the opposite of what labelling the rungs is for.
+
+⚠️ **The name cell is a flex row.** `.sbld-twin` is `width:100%`, so a badge in front of it wrapped
+the input onto its own line — which is why the `TYPE` chip sat stranded *above* the name box in the
+screenshot. Nothing about that was designed. ⚠️ The elbow is drawn in `--pd-muted` at half strength,
+**not** `--pd-line`: a border colour is a hairline meant to sit between two filled cells
+(`rgba(255,255,255,.12)` on dark) and a 15px elbow drawn in it reads as a smudge. That was found by
+**looking at it**, not by reading it.
+
+⚠️ `· shared by 4 developments` is gone from the hint. The rows under it *are* those four, and a
+`×4` chip beside the type name counts them once instead of the table saying it twice.
+
+### What a row becomes downstream — the owner's own framing of the white rows
+
+⚠️⚠️ **`_twLocCount` COUNTS THROUGH `leavesOfFloor`, THE FUNCTION `locList` ITSELF PUSHES THROUGH.**
+A second rule for *"what counts as a location"* is exactly how the figure on this step and the figure
+the later steps work from end up disagreeing in public — and `cfg.locLevel` can remap the leaf level
+for the whole project, so the rule is not a constant. ⚠️ It is **per development**, which is what one
+white row is worth; the type's own total is that times the number of them, and *"each"* appears only
+when there is more than one. ⚠️ The footer total is `locList().length` itself. ⚠️ Both are **silent at
+zero**: *"0 locations"* on a project nobody has laid out yet reads as a fault rather than as a step
+not taken.
+
+⚠️ Two stale labels went with all this: the Start step's rail said *"Import, or build new"*, and the
+Towers step's said *"and the site plan"* — a control behind `SITE_PLAN_UI`, which is off. The Towers
+subtitle is deliberately **not** gated on that flag: it is assigned ~6,000 lines below the `STEPS_NEW`
+literal and would read `undefined` there. True by accident is not the same as true.
+
+### Verified
+
+**New `modules/project-schedule/test-startdoor.js` — 25 assertions.** `stStart` sliced by name and
+executed **twice, once under each value of the flag**, so *"hidden, not deleted"* is proved rather
+than asserted: the same shipped function produces the whole card, text and button intact, when the
+flag is true.
+
+**`test-towertypes.js` gains §11 — 25 more, 127 in all.** ⚠️⚠️ `ownerRow`, `devRow` and `cell` live
+**inside** `stTowers` and are sliced **by name anyway** — `sliceFn` walks braces, so a nested builder
+is as reachable as a top-level one. That matters: the alternative is a regex over the render
+function, which is how a suite ends up agreeing with the source's spelling rather than with what the
+source produces. Every assertion there is measured on HTML the shipped builders emitted.
+`_twLocCount` is executed against the fixture: **5 locations per development, and that times the
+instances IS `locList().length`.**
+
+⚠️⚠️ **BOTH NEW BLOCKS WERE NEGATIVE-CONTROLLED.** A suite that passes on its first run has not been
+shown to be capable of failing. Six mutations, each undoing one thing this commit did — the rail back
+on every cell, the dev badge removed, `_twLocCount` recomputing its own arithmetic, the flag shipped
+on, the card deleted rather than hidden, the staged card put behind the flag — each landed on exactly
+the assertions it should and on no others, and the file was restored byte-for-byte afterwards
+(asserted).
+
+⚠️ **Looked at, not only asserted.** The shipped builders were rendered against the shipped
+stylesheet in both themes on a throwaway page. That is what caught the elbow. In light mode the
+owner's own description is literal: the type rows are grey and the development rows are **white**.
+
+### ⚠️⚠️ AND A SUITE THAT HAD BEEN DARK SINCE b311c7b4, FIXED HERE — TEST-ONLY, AND NOT THIS BRANCH'S
+
+`test-cpm.js` had not run a single assertion since *"CPM: schedule on working calendars (opt-in)"*.
+`axisFor` gained `if (!calCpmOn || !window.PDCal) return ALLAX;`, and `calCpmOn` is **sliced from the
+shipped file**, where it reads `localStorage` inside a try/catch that returns **true** on a throw —
+which is what node does. So the flag came up on, the second operand was evaluated, and `window` does
+not exist in the harness. ⚠️ **A ReferenceError kills the file before one assertion prints, so there
+was no failing count to notice — only an absent one.** Restored with `var window = {}`, deliberately
+**without** `PDCal`: that is a state the browser is really in (flag on, library not loaded) and the
+fallback it produces is the day axis those 28 assertions were written against. Standing in a `PDCal`
+would measure the stub instead of the library. ⚠️ **The working-calendar axis is therefore covered by
+nothing, and that gap is real.** The unreferenced `PDCalStub` was removed rather than left as an
+invitation to close it the wrong way.
+
+### The battery, and what is not proved
+
+Whole battery on the merged tree — **29 suites, 2,758 assertions, 0 failing** — `wiring-check`
+**139/0**, the inline `<script>` parses (1 block), 0 NUL bytes.
+
+⚠️ **NOT VERIFIED SIGNED IN.** The anon key has no grants, so no real setup was opened: the markup,
+the counts and the flag are proved by execution against fixtures and by rendering against the real
+stylesheet. **The first things to try:** open step 5 and check the red rail marks the type *and* its
+towers when you click either; then lay a type out and check the *"N locations each"* on its row times
+the number of towers under it equals the total in the sentence below the table.
+
+⚠️ **Merged `origin/main` (12 commits, PR #155 and the Location Sequence rebuild) before shipping.**
+`index.html` auto-merged with no conflicts — but a clean auto-merge is not evidence, so both sides
+were checked present afterwards (this side's `IMPORT_UI`, `sbld-twrow`, `_twLocCount`,
+`sbld-twlegend`, the first-cell rail; theirs via their own suites, including the new `test-locseq`,
+which this session had never run) and the whole battery re-run on the merged tree.
+
+`MODULE_V` → `20260918zh`, re-derived from the merged tree **after** integrating (main went
+`zd` → `ze` → `zg` while this work was in flight) and sort-checked as a plain string.
+
 ## 2026-09-18 (aa) — Location Sequence becomes one page, a real Gantt, and a drag that links
 
 Owner, six items on the Location Sequence step. Every one is implemented; what follows is the four
