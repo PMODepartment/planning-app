@@ -1,5 +1,22 @@
 # Module: s-curve
 
+## 2026-09-18 — Design Development is excluded too — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (an)).
+
+- **`MIRROR_KINDS = ['procurement', 'design_development']`** — both are Planning-Phase branches
+  mirroring another app's records (WPM, and the Engineering app via `eng_design_progress`), so
+  neither is physical scope. ⚠️ A list rather than a second hard-coded check, so the next mirror
+  is one string; the procurement-specific names became `nodeIsMirror` / `isMirrorRow` /
+  `hasMirror`, with the patch asserting no stale identifier survived (it caught one, in a
+  comment).
+- ⚠️ Verified per-marker, not all-or-nothing: with both mirrors present the activity count holds
+  at 56 and neither branch appears as a trade; with only the design-development marker left the
+  RPC is still skipped (0 calls) and the count reads 61 — procurement's rows return while design
+  development's stay excluded.
+- ⚠️ Depends on `source_kind` being stamped. A branch built by hand rather than seeded by the
+  skeleton or written by a sync carries no marker and will still count.
+
 ## 2026-09-18 — Procurement is excluded from the curve, and the preview opens again — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (am)).

@@ -104,6 +104,72 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (an) — Design Development joins Procurement: the curve stops counting other apps' records
+
+Owner: *"Let's not consider the design development as part of the s-curve."* — the adjacent case
+*(am)* measured and deliberately left alone, now answered.
+
+⚠️ Lettered **(an)**, `MODULE_V` **`20260918zl`**. No shared asset changed.
+
+### Both are mirrors, and that is the whole argument
+
+`WBS_SKELETON` files them as siblings under **Planning Phase**, and neither holds work anybody
+puts in place:
+
+| branch | `source_kind` | mirrored from |
+|---|---|---|
+| Procurement | `procurement`, `procurement_trade` | the Procurement (WPM) app |
+| Design Development | `design_development`, `design_development_child` | the Engineering app, via `eng_design_progress` / `sync-eng` |
+
+Drawings issued and purchase orders raised are real progress **on something**. They are not
+physical progress on the building, which is what this curve measures — and the module already
+draws the design mirror separately, so counting it here was counting it twice in two different
+units.
+
+### ⚠️ Generalised, not copied
+
+`MIRROR_KINDS` is a **list**. The previous pass hard-coded `indexOf('procurement') === 0` in two
+places; a second hard-coded kind beside it is exactly the shape this file keeps recording as the
+cause of two screens disagreeing — one gets updated, the other does not. The next mirror branch is
+now one string.
+
+⚠️ `nodeIsProcurement` / `isProcurementRow` / `hasProcurement` became `nodeIsMirror` /
+`isMirrorRow` / `hasMirror`, and the patch **asserted that no stale identifier survived**. It
+caught one — in a comment, where nothing would ever have failed and the prose would simply have
+described a variable that no longer existed.
+
+⚠️ Prefix match, checked against the four values `project-schedule` actually writes rather than
+the two the skeleton declares: the syncs stamp `_trade` and `_child` variants onto everything they
+generate underneath.
+
+### Verified — and the second half is the one that matters
+
+With **both** mirrors present (5 procurement + 3 design-development activities, all dated and
+weighted at ₱5M / ₱800k):
+
+- activity count stays **56**, i.e. all 8 excluded;
+- neither branch appears as a trade in the sheet or as a chip on the Curve tab;
+- no per-trade count moves.
+
+Then with **only the design-development marker left** (procurement's hidden):
+
+- the RPC is called **0** times — so the aggregate skip generalised too, which is precisely the
+  regression a rename could have caused silently, leaving a project with only a design mirror
+  quietly back on the server aggregate that cannot exclude anything;
+- the count reads **61** — the 5 procurement rows return, the 3 design-development rows stay out.
+  ⚠️ That asymmetry is the useful assertion: it proves the exclusion is **per-marker**, not an
+  all-or-nothing flag that happens to look right when everything is excluded at once.
+
+`wiring-check` **139/0** · `dark-remap` **0** · `test-portfolio-dash` **398/0** · `test-boq`
+**66/0** · inline script `node --check` clean · `<style>` braces **238/238** · 0 NUL bytes.
+
+⚠️ **Not verified signed in**, and the same live dependency as *(am)* applies and is now worth
+stating twice: the exclusion only fires where `wbs_nodes.source_kind` is actually stamped. A
+Design Development or Procurement branch created **by hand** — rather than seeded by the skeleton
+or written by a sync — carries no marker, and its activities will still count. One query over
+`wbs_nodes` settles it per project, and it is the first thing to check if a curve still looks too
+high.
+
 ### 2026-09-18 (am) — Procurement was never scope: a mirror of purchase orders had been in the curve all along
 
 Owner: *"Procurement shouldn't count in the s-curve"*, and *"I want to have a preview of the
