@@ -3138,6 +3138,11 @@
       width:24px; min-width:24px; height:24px; padding:0; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius); font-size:var(--pd-fs-xs); font-variant-numeric:tabular-nums; }
     .ps-lm-lyt { display:flex; align-items:center; }
+    /* ⚠ SIZE STATED, not inherited. These two set no font-size, so they kept the UA's own
+       13.333px — off the scale, and visibly out of step with the 13px items above them. Letting
+       them inherit the menu instead would have made them 14px: LARGER than the items they sit
+       under, which is worse than the bug. A saved layout is a menu row like any other. */
+    .ps-menu .ps-lm-lyt button { font-size:var(--pd-fs-base); }
     .ps-menu .ps-lm-lyt button:first-child { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-menu .ps-lm-lyt button:last-child { flex:0 0 30px; width:30px; padding:8px 0; text-align:center; color:var(--pd-muted); }
     .ps-lm-none { padding:8px 14px; color:var(--pd-muted); font-size:var(--pd-fs-sm); }
@@ -3177,11 +3182,46 @@
     .ps-layout-menu { max-height:78vh; overflow-y:auto; overflow-x:hidden; }
     /* ⚠️ --pd-danger-text, not --pd-red. Brand red on card is 3.74:1 — under AA for 13px text.
        Sixth instance of that defect in this repo; the old Layouts menu shipped it. */
-    .ps-menu button.ps-lm-save { color:var(--pd-danger-text); font-weight:700; border-top:1px solid var(--pd-line); }
-    .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
+    .ps-menu > button.ps-lm-save { color:var(--pd-danger-text); font-weight:700; border-top:1px solid var(--pd-line); }
+    /* ==========================================================================================
+       ⚠⚠ `>` — DIRECT CHILDREN ONLY. This is the menu-ROW style: full width, left aligned,
+       borderless. As a descendant selector it also hit every button NESTED in a menu, which is a
+       different animal entirely — an inline control in a row. It had been worked around SIX times
+       (`ps-cols-foot`, `ps-lm-lvls`, `ps-lm-lyt`, `ps-lm-chips`, the `ps-gm-x` note below, and the
+       colours pane) and still caused two defects this week: a ✕ rendering 208px wide where its
+       max-content is 38, and a 34px icon button rendering at 336.
+       ⚠ A MENU ITEM IS ALWAYS A DIRECT CHILD; AN INLINE CONTROL NEVER IS. Checked all six menus
+       before changing this: File's four items, Group's presets, Filter's `#ps-f-adv`, Layout's
+       `.ps-lm-save` are direct children and keep this style. Everything nested — `.ps-gm-row`,
+       `.ps-lm-chips`, `.ps-rz-row`, `.ps-filter-foot`, `.ps-cols-foot`, `.ps-lm-lyt` — already
+       carries its own rule, so nothing is left unstyled.
+       ⚠ IT ALSO FIXES TWO LIVE ONES NOBODY HAD REPORTED: the Row-height stepper (− / value / +
+       / reset) and the Filter menu's Clear / Apply were both being stretched to 100%, which is
+       why `.ps-filter-foot`'s `justify-content:space-between` had nothing to distribute. */
+    /* ⚠⚠ `font-family: inherit` — WITHOUT IT EVERY MENU ITEM IN THIS MODULE IS ARIAL. A bare
+       <button> carries the UA stylesheet's own `font: 400 13.333px Arial`, and this rule sets a
+       font-SIZE without a font-FAMILY, so the size came from the token and the typeface came from
+       the browser. `.pd-btn` was fixed for exactly this app-wide on 2026-09-17 — these are not
+       `.pd-btn`s, so they never got it, and File / Group / Layout / Filter have been rendering
+       their items in Arial ever since. Found by a harness CONTROL assertion, not by looking:
+       the check that was meant to prove the stylesheet had loaded reported the font as Arial. */
+    /* ⚠⚠ A DESCENDANT SELECTOR HERE, DELIBERATELY, AND IT IS THE ONE PROPERTY THAT WANTS ONE.
+       The geometry above is a menu-ROW style and had to stop at direct children; the TYPEFACE is
+       the opposite — every button in a menu should be Gotham, nested or not. Measured before
+       fixing: the four File items, Group's presets and Layout's Save were Arial, and so were the
+       ten nested ones (`.ps-gm-x` arrows, layout chips, saved-layout rows, the Columns foot).
+       A bare <button> carries the UA `font: 400 13.333px Arial`; these rules set a font-SIZE but
+       no font-FAMILY, so the size came from the token and the typeface from the browser.
+       `.pd-btn` was fixed for exactly this app-wide on 2026-09-17 — these are not `.pd-btn`s, so
+       they never got it. (The zoom stepper and Filter's Clear/Apply ARE `.pd-btn` and were always
+       fine, which is why the defect stayed invisible: some buttons in the same menu looked right.)
+       ⚠ Found by a harness CONTROL assertion rather than by looking — the check that was there to
+       prove the stylesheet had loaded came back “Arial”. */
+    .ps-menu button { font-family:inherit; }
+    .ps-menu > button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:var(--pd-fs-base); }
-    .ps-menu button:hover { background:var(--pd-red-light); }
-    .ps-menu button.ps-menu-danger { color:var(--pd-bad-text); }
+    .ps-menu > button:hover { background:var(--pd-red-light); }
+    .ps-menu > button.ps-menu-danger { color:var(--pd-bad-text); }
 
     /* ---- Schedule Health panel (DCMA-14-style quality checklist, OPC-inspired) ---- */
     .ps-health-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }

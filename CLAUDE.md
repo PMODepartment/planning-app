@@ -104,6 +104,65 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (v) — `.ps-menu button` becomes `.ps-menu > button`, and every menu item stops being Arial
+
+Owner: *"Let's do the .ps-menu button inversion."* The rule had been worked around **six** times
+and caused two defects this week; *(u)* reported it and left the call to him.
+
+### ⚠⚠ `>` RATHER THAN A CLASS, AND THAT IS THE WHOLE POINT
+
+The obvious inversion — style menu ITEMS by a new class — means adding that class at every
+menu-building call site across six menus, and **silently unstyling any one missed**. It turns out
+not to be needed: **a menu item is always a direct child; an inline control never is.** All six
+menus were read before the change, not after:
+
+| menu | direct-child items (keep the row style) | nested controls (own rules) |
+|---|---|---|
+| File | 4 items, static markup | — |
+| Group | the presets | `.ps-gm-row` ▲ ▼ ✕ |
+| Layout | `.ps-lm-save` | `.ps-lm-chips`, `.ps-rz-row`, `.ps-lm-lyt` |
+| Filter | `#ps-f-adv` (carries its own inline width) | `.ps-filter-foot` |
+| Columns | items are `<label>`, not buttons | `.ps-cols-foot` |
+| Colours | — | the rows from *(q)* / *(r)* |
+
+**Measured on a harness — File sliced verbatim, the others modelled on the shape read off each
+renderer:** 23 buttons, **8/8 direct items keep the row style**, 11 nested controls back to their
+natural width, 4 still filling because `flex:1` asks them to (`.ps-cols-foot`, `.ps-lm-lyt`).
+
+⚠ **It fixed two live defects nobody had reported.** The Row-height stepper (− / value / + / Reset)
+and the Filter menu’s Clear / Apply were both stretched to 100% — which is why `.ps-filter-foot`’s
+`justify-content:space-between` had nothing left to distribute. Now 27 / 27 / 56px and 54 / 59px.
+
+### ⚠⚠ AND EVERY MENU ITEM IN THIS MODULE WAS ARIAL
+
+Found by a harness **control assertion**, not by looking: the check that existed to prove the
+stylesheet had loaded came back `Arial`.
+
+`.ps-menu button` set a font-**size** and no font-**family**, so the size came from the token and the
+typeface from the browser’s `font: 400 13.333px Arial`. `.pd-btn` was fixed for exactly this
+app-wide on 2026-09-17 — **these are not `.pd-btn`s**, so they never got it. File, Group, Layout
+and Filter have been rendering their items in Arial ever since.
+
+⚠ It stayed invisible because the zoom stepper and Clear/Apply **are** `.pd-btn` and were always
+right: some buttons in the same menu looked correct.
+
+⚠ `font-family` gets a **descendant** selector, deliberately — the opposite of the geometry above.
+Row styling must stop at direct children; the typeface should reach every button in a menu.
+
+⚠ Two `.ps-lm-lyt` buttons were left at the UA’s **13.333px**. Letting them inherit the menu would
+have made them **14px — larger than the 13px items above them**, which is worse than the bug, so
+the size is stated instead.
+
+| after | |
+|---|---|
+| buttons in menus | 23 |
+| non-Gotham | **0** |
+| off the `--pd-fs-*` scale | **0** (11 / 12.5 / 13 only) |
+| direct items keeping the row style | **8/8** |
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings. `modules-grid.js` `?v=` → `20260918v`.
+
 ### 2026-09-18 (u) — The `Colours…` button opened the pane and shut it in the same tick
 
 Owner selected it on the page: *"Check this is out of place and not functioning properly"*. Both
