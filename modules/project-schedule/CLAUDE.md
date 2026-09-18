@@ -1,3 +1,71 @@
+## 2026-09-18 (z) — A mirrored work package is the planned award DAY, not a bar from award to target completion
+
+Owner: *"For sync procurement in the schedule. Obtain only the planned award as the start and finish
+of the work packages. Currently it obtains the planned award as the start and the finish as the
+target completion. Let's fix that both start and finish as the planned award"*.
+
+### What it did
+
+`syncProcurement()` (`index.html`, the `want.forEach` patch builder, ~line 10596) built each mirrored
+row's dates as:
+
+```js
+var ends = [w.target_completion, w.target_installation, w.target_delivery].filter(Boolean).sort();
+var fin  = ends.length ? ends[ends.length - 1] : null;      // LATEST target date
+var start = w.awarding_date || w.actual_awarding_date || fin || null;
+// ...
+start_date: start, end_date: fin || start || null,
+```
+
+So every package was drawn as a bar from its **planned award** to its **latest target date** — often
+months long. That length was never scheduled by anyone: it is the procurement app's *target*
+envelope, and the construction activities that consume the package already occupy those same months,
+so the procurement branch double-counted them on the Gantt.
+
+### What it does now
+
+```js
+var start = w.awarding_date || w.actual_awarding_date || null;
+var fin = start;
+// ...
+start_date: start, end_date: fin,
+```
+
+Start **and** finish are the planned award, so a mirrored row is a one-day mark on the day the award
+is planned for — which is the only date in the WPM mirror that the schedule can honestly claim as a
+scheduled event.
+
+- **The actual award stays as the fallback only.** `w.actual_awarding_date` is used when
+  `awarding_date` is null, so a package awarded without a planned date still lands on a day instead
+  of becoming a dateless row. It is not a second source of truth — planned wins whenever it exists.
+- **The three target dates are no longer read here at all.** They are still SELECTed by the sync's
+  fetch (~line 10456) because the same rows feed `WPM_WPS`, which the Work Package panel
+  (`Awarding (plan / actual)`, `Target delivery`, `Target installation`) and the **Procurement
+  Alignment** report read — so nothing was removed from the projection.
+- ⚠️ **Existing rows self-migrate.** `end_date` is in `patchFields`, so the diff loop sees the stored
+  target date `!==` the award date and issues the UPDATE on the next **Sync Procurement**. No
+  migration and no backfill.
+
+### Found and NOT changed
+
+- **`wpNeedByIndex()`** (~line 10289) is untouched. It still derives need-by as the earliest start
+  among the activities *linked* to a package and still compares/pushes to
+  `work_packages.target_installation` — that is the other direction of the relationship (what the
+  schedule tells procurement), and it never read the mirrored row's `end_date`.
+- **Status** still comes only from `actual_awarding_date` / `award_status` → `In Progress` /
+  `Not Started`. A zero-length row does not mean "done"; the mirror still carries no progress.
+- **The trade / LOT branches** stay `WBS Summary` and keep rolling up from their children, so a
+  branch now spans the first to the last award day underneath it rather than out to the last target.
+
+### Verified
+
+- The enclosing inline script block (`index.html` lines 6617–60310) passes `node --check`.
+- `grep` over the whole of `syncProcurement()` confirms `target_completion` / `target_installation` /
+  `target_delivery` no longer appear anywhere in its body except the SELECT projection, and that
+  `ends` is gone entirely (it had no other reader).
+- Not browser-verified: running it needs a WPM-linked project and write access, and the sync mutates
+  the live procurement branch.
+
 ## 2026-09-18 (y) — A baseline is captured, not typed: five edit surfaces closed, and one that closed itself
 
 Owner: *"The baseline dates are editable which shouldn't be"*. No scope qualifier, so the deliverable

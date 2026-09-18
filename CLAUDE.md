@@ -104,6 +104,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ag) — A mirrored record can only be as precise as its source: procurement packages become a day, not a bar
+
+⚠️ Lettered **(ag)** — `origin/main` reached `(af)` while this was in flight.
+
+Owner: *"Obtain only the planned award as the start and finish of the work packages"*. Project
+Schedule only; the detail is in `modules/project-schedule/CLAUDE.md` (z).
+
+`syncProcurement()` drew each mirrored work package from its **planned award** to the **latest of its
+target delivery / installation / completion** dates. Both ends are now the planned award, so the row
+is a one-day mark.
+
+⚠️ **The rule to carry: a synced row may only assert dates its source actually scheduled.** The
+target dates are procurement's *envelope*, not a planned duration — turning them into a bar invented
+months of work nobody had scheduled, and it double-counted against the construction activities that
+consume the package and already sit in those months. When a mirror has exactly one real date, the
+honest shape is a point.
+
+⚠️ **Self-migration over backfill, again.** `end_date` was already in the sync's `patchFields`, so
+the diff loop sees the stored target date differ from the award date and rewrites every existing row
+on the next **Sync Procurement**. Same pattern as the `activity_type` change before it: put the new
+value in the patch builder, make sure the field is in the projection the diff compares against, and
+no migration is needed.
+
 ### 2026-09-18 (af) — The manual sheet drags to select, drops the trade %, loses its prose, and folds its shortcuts under the grid
 
 Four owner asks in one pass, all on the S-Curve's Manual data tab, all measured.
