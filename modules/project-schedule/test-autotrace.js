@@ -54,11 +54,25 @@ function build(src) {
   // ⚠️ The table `locless` reads, sliced by the same rule and from the same file — never a
   // fixture. Which trades are loc-less is the fact under test whenever this gate matters.
   if (src.indexOf('var LOCLESS = ') >= 0) body += S.sliceVarLine('LOCLESS') + '\n';
-  /* ⚠️ `cellKey` is declared TWICE in this file — a 3-argument gantt helper and the 1-argument
-     location one. `sliceFn` would take the first; the location-shaped one is what autoTrace calls. */
-  const i = src.indexOf('function cellKey(loc)');
-  if (i < 0) throw new Error('SLICE FAILED: function cellKey(loc)');
-  body += src.slice(i, src.indexOf('\n', i)) + '\n';
+  /* ⚠⚠ ONE RULE, TWO NAMES ACROSS THE CONTRAST. It was `cellKey` until 2026-09-18 — and this file
+     declared TWO functions of that name (a 3-argument gantt helper and this 1-argument location
+     one), so the slice had to be anchored on the SIGNATURE to avoid taking the wrong one. The rename
+     to `locCellKey` is what makes an ordinary by-name slice honest again; the PINNED BASE still
+     carries the old name, so it is sliced by signature there and aliased. Never stubbed on either
+     side — a fake of this key is a second opinion about the rule under test. */
+  if (src.indexOf('function locCellKey(') >= 0) {
+    body += S.sliceFn('locCellKey') + '\n';
+  } else {
+    const ci = src.indexOf('function cellKey(loc)');
+    if (ci < 0) throw new Error('SLICE FAILED: neither locCellKey nor cellKey(loc)');
+    body += src.slice(ci, src.indexOf('\n', ci)) + '\n' +
+      'function locCellKey(l) { return cellKey(l); }\n';
+  }
+  /* ⚠️ The auto-trace WINDOWS (2026-09-18) join `locless` under the same rule: autoTrace calls both,
+     so the current file needs them and the pinned base has never heard of them. */
+  ['towerSimulOf', 'floorSimulOf'].forEach(function (n) {
+    if (src.indexOf('function ' + n + '(') >= 0) body += S.sliceFn(n) + '\n';
+  });
   body += S.sliceVarLine('KIND_LABEL') + '\n' + S.sliceVarLine('KIND_ORDER') + '\n';
 
   return new Function(

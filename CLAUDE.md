@@ -104,6 +104,109 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ai) — Location Sequence becomes one page, and a merge resolution that would have thrown on every render
+
+Owner, six items on the Location Sequence step of Schedule Setup — rename it throughout; merge tower
+sequence and zone sequence into one screen with no view options and no zoom; always draw floors,
+zones and units; make the resulting schedule a real Gantt grouped tower → floor → zone → unit; let
+auto-trace ask four numbers and resolve the rest; and replace the inspect/link-by-hand split with a
+drag from one bar's start or finish point onto another's. Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(aa)`. Logged here
+for the `MODULE_V` bump and the five things that are not facts about one module:
+
+⚠️⚠️ **A CONFLICT THAT AUTO-MERGES CLEANLY ON ONE SIDE CAN STILL BE A ReferenceError, AND TAKING A
+SIDE IS NOT A RESOLUTION.** Main's side of the `STEP_TABS` hunk restores
+`'Location Sequence': [ … stTowerLinks, … stSequence ]` — **two functions this branch deleted** when
+the two tabs became one page — so `--theirs` there throws on every render of the step, which is the
+*"below is not defined"* shape this log has now recorded five times and which `node --check` cannot
+see. But *"take mine"* is equally wrong: main **also** removed `'Activity Sequence'` from that map,
+because Scope per zone was promoted to its own step 9. Each side removed a **different** key, so the
+honest merged answer is **neither** — the object is empty and both removal notes are kept, since each
+records a different decision. Five conflicts, all resolved on the merits; one more would have taken
+the module down.
+
+⚠️⚠️ **A PARSE FAILURE IN THIS MODULE IS THE WHOLE PAGE, AND A BISECT IS THE WRONG TOOL FOR IT.**
+`stTradeSeq` held a **48-line block duplicated byte for byte**, plus a 4-line fragment of an
+empty-state assignment whose `if` opener had gone. The module is one inline `<script>` of ~3.8MB, so
+that is a `SyntaxError` that blanks the entire page. This log already records that a bisect there is
+O(n²) and times out; what found it in seconds was a **bracket-depth tracker** — compute the per-line
+brace depth on this tree and on `HEAD`, key both by enclosing function name, and print the first
+function where the two disagree. One function, one range.
+
+⚠️⚠️ **A TEST THAT STUBS THE RULE IT IS TESTING IS MEASURING THE STUB, AND THIS ONE WAS WRONG
+BESIDES.** `test-builder.js` stubbed `cellKey` as `l.zone ? l.zone.code : '_'` — **ignoring the
+unit** — so every assertion about the location merge key agreed with a hand-written second opinion
+rather than with the app. It slices the real `locCellKey` now. Fifth instance of that shape this repo
+has recorded, and the reason `test-slice.js` **throws** rather than returning null when a slice
+fails.
+
+⚠️⚠️ **WHEN THIS CHANGE BROKE FOUR OF MAIN'S OWN ASSERTIONS, THE DECISIVE TEST WAS RUNNING THEM
+AGAINST MAIN'S OWN TREE.** `test-zonescope.js` is **57/0** on `origin/main` in a throwaway worktree
+and **53/4** here, so those four are mine. They pinned *"exactly one step still has tabs, and it is
+Location Sequence, with two views"*. Retargeted to the **stricter** claim — no step carries a strip at
+all, and no entry in the footer's Next walk carries a tab suffix — which fails the moment somebody
+re-adds a one-view strip. 57 → **58**. ⚠️ `test-cpm.js` throws `window is not defined` on the merged
+tree and **throws identically on `origin/main`**, so it is main's own and is named rather than quietly
+passed over. ⚠️ And a worktree, never `git stash` — this repo's own rule is *"do not stash in a shared
+clone at all"*.
+
+⚠️ **THE LAYOUT IS THE FLEX ROW'S ANSWER TO THE WINDOW, NOT A CONTROL.** The owner asked that layout
+*"depend on window width"*, and the honest way to do that is to stop asking — the view options, the
+layout segment and both zoom pairs are gone, and the row wraps. Measured in Chromium at 1440 / 1100 /
+820 against the shipped stylesheets: **side-by-side, side-by-side, stacked**, with no horizontal page
+scroll at any width and 0 zoom/layout/view/tab controls left. ⚠️ Each pane states a real `min-width`,
+because a flex item's default `min-width:auto` resolves to its content and forces a scrollbar instead
+of a second row. ⚠️ Scoped to this row: the Activity Sequence's own `.sbld-seq2` keeps the grip and
+remembered width a wrap on the base class would have silently overridden.
+
+**Verified:** **22 suites, 2,059 assertions, 0 failing** on the merged tree, including main's own
+suites this branch had never run; **six negative builds, all biting and all FAILING rather than
+crashing**, with the file restoring byte-identically each time. `wiring-check` **139/0** ·
+`dead-hooks` **9, findings byte-identical to main's** (only the census moves) · `dark-remap` 0 ·
+`loc-key-agree` clean · `selectall-key` 102 sites, 100 safe / 0 broken · `toolbar-order` 15/0. The
+inline block parses at 3.86MB, CSS braces 2575/2575, **0 NUL bytes** — ⚠️ counted as bytes, because
+`grep -c $'\x00'` degenerates to an empty pattern and reports every line as a hit.
+
+⚠️ **Not verified signed in** — no setup saved and re-read, no link dragged against a real project's
+activities, and auto-trace has never resolved against real data.
+
+⚠️⚠️ **`MODULE_V` → `20260918zg`, re-derived from what the remote actually carries AFTER integrating —
+and it had to be done TWICE.** The first pass took `20260918za` past main's then-current `20260918z`.
+⚠️⚠️ **Main's own `(aa)` entry had independently chosen the identical `20260918za`** — the silent
+collision this log keeps recording, where two sides write the same string, git reports no conflict on
+that line at all, and one cache token ends up covering two different builds. Main has since reached
+`20260918ze`, and `za` sorts **earlier** as a plain string, so shipping it would have put these bytes
+behind a token browsers already hold — worse than a collision, because the new bytes simply never
+arrive. Re-derived past both and sort-checked against every `20260918*` token on both refs.
+⚠️ The **fallback literal in `modules-grid.js` had drifted to `20260918k`** while the two pages
+carried `z` — eleven tokens behind, and read only by a page that omits the query string, which is
+exactly why the drift was invisible. Brought current with them.
+
+⚠️ **Re-lettered `(za)` → `(ag)` on merging `origin/main` (15 commits).** Main continued past `(z)`
+with `(aa)`…`(af)` while this branch took `(za)`; both schemes have precedent in this file, so the
+entry merging in is the one that moves rather than either side being rewritten. The module entry moves
+with it — `(y)` → `(z)`, where main had independently used `(y)` for its own baseline-lock entry.
+⚠️ **`modules/project-schedule/index.html` auto-merged with no conflict, and that is not evidence** —
+main rewrote the LSM bar's trade painting while this branch rewrote the Location Sequence step, so
+both sides were checked present afterwards and the whole battery re-run on the merged tree.
+⚠️⚠️ **And the resolver script aborted on its own marker check, for the reason 2026-09-09 (f) records:**
+this file quotes `=======` and `<<<<<<<` in PROSE, in the very entries that warn about them, so a
+substring test reports markers in a clean resolution. The test has to be line-anchored.
+
+⚠️⚠️ **AND IT HAPPENED A SECOND AND A THIRD TIME IN ONE SITTING — main moved again mid-merge and took
+`20260918zf`, the identical token this branch had just derived, from the identical base `ze`.** Its
+commit is titled *"Log (ah), and MODULE_V forward of main's 20260918ze"*: two sides, the same
+arithmetic, the same answer. ⚠️ **Git reported NO conflict on any of the three token lines** — both
+sides wrote the same characters, so there was nothing to flag, and the silent merge would have shipped
+these bytes under a token main had already published. Found only by re-reading the remote's token
+**after** integrating rather than trusting the merge to complain. Re-derived again to `20260918zg`.
+⚠️ The letters collided in the same pass: main took `(ag)` **and** `(ah)` in this log and `(z)` in the
+module's, so this entry moves `(ag)` → `(ai)` and the module entry `(z)` → `(aa)`. **The rule that
+keeps working is not "pick an unusual letter" — it is to re-derive BOTH the letter and the token from
+what the remote actually carries after every integration, and to look for a token collision by reading
+it rather than by waiting for git to report one.**
+
 ### 2026-09-18 (ah) — The trades come out in construction order, and "No trade set" finally says what it is
 
 Owner: *"Let's rearrange the trades in the ff order: 1. General Requirements 2. Site Works

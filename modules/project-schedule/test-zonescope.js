@@ -101,13 +101,27 @@ const TABS = new Function(tabsSrc + '; return STEP_TABS;')();
    cannot do anything". With Scope per zone gone, Activity sequence must be ABSENT from STEP_TABS
    rather than present with a single entry — which is also what removes the doubled heading the
    owner asked about ("7 · Activity Sequence — Trade sequence"). */
-eq(Object.keys(TABS).length, 1, 'exactly one step still has tabs');
-ok(TABS['Location Sequence'] && TABS['Location Sequence'].length === 2, 'and it is Location Sequence, with two views');
+/* ⚠⚠ RETARGETED 2026-09-18, NOT WEAKENED — and the property it protects is STRICTER now.
+   These four used to read *"exactly one step still has tabs, and it is Location Sequence, with two
+   views"*. That was true until the owner asked for one screen: *"no need to separate tower sequence
+   and zone sequence."* So `STEP_TABS` is now EMPTY, and the rule this file already states — a strip
+   of one button "is a control that cannot do anything" — generalises to: NO step may carry a strip,
+   because none of them has two views left. Asserting the count is 0 is a tighter claim than
+   asserting it is 1, and it is the one that fails the moment somebody re-adds a one-view strip. */
+eq(Object.keys(TABS).length, 0, 'NO step carries a tab strip any more');
+ok(!TABS['Location Sequence'], 'Location Sequence lost its two views when they became one page');
 ok(!TABS['Activity sequence'] && !TABS['Activity Sequence'], 'Activity sequence carries no tab strip');
 ok(!TABS['Zone scoping'], 'nor does Zone scoping');
 ok(/function stActSeq\(host\) \{ stTradeSeq\(host\); \}/.test(src),
    'stActSeq renders its one view directly rather than through the pill shell');
-eq((src.match(/stPillStep\(host, '/g) || []).length, 1, 'stPillStep has exactly one caller left');
+/* ⚠⚠ ZERO, AND THE MECHANISM IS PARKED RATHER THAN DELETED. `stPillStep` is the tab SHELL, and
+   it is driven entirely by `STEP_TABS` — with that object empty it is unreachable, so this is not
+   the `#pk-boq` shape (a handler bound to an id nothing emits, which THROWS). It is generic and
+   comes back the instant a step gains a second view, so deleting a mechanism inside a merge would
+   be a product decision smuggled into a resolution. Asserted at 0 so the parked state is a FACT a
+   reader can see rather than a surprise, and so re-wiring it is a deliberate act. */
+eq((src.match(/stPillStep\(host, '/g) || []).length, 0,
+   'stPillStep has no caller left — parked with STEP_TABS, not deleted');
 
 /* The walk itself, driven — the expressions are lifted out of render() verbatim. `_stepReady` and
    `_stepNo` are SLICED, never stubbed: `_stepReady` is one of the functions this change edits, and
@@ -143,11 +157,15 @@ const walk = new Function('localStorage', `
 `)({ getItem: () => null, setItem: () => {} });
 
 console.log('walk: ' + walk.trail.join('  →  '));
+/* ⚠ Retargeted with the four above: with no step carrying tabs, Next is ONE screen per step and
+   no trail entry may carry a ' · tab' suffix. That the suffix is absent everywhere is the half
+   that would catch a strip creeping back in. */
 const wantWalk = ['Start', 'Calendars', 'Project phases', 'Activities', 'Towers', 'Floors & Zones',
-  'Location Sequence · Tower Sequence', 'Location Sequence · Zone sequence',
-  'Activity sequence', 'Zone scoping', 'Generate'];
+  'Location Sequence', 'Activity sequence', 'Zone scoping', 'Generate'];
 eq(JSON.stringify(walk.trail), JSON.stringify(wantWalk),
-   'Next walks Location Sequence’s two views, then one screen each for Activity sequence and Zone scoping');
+   'Next walks one screen per step — Location Sequence is one page now, not two tabs');
+ok(walk.trail.every(function (t) { return t.indexOf(' \u00b7 ') < 0; }),
+   'and not one step in the walk carries a tab suffix');
 
 const gatedT = walk.gated.map(p => p[0]);
 console.log('gated with no activities: ' + JSON.stringify(gatedT));
