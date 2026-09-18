@@ -10630,15 +10630,21 @@
       var inserts = [], updates = [];
       want.forEach(function (x) {
         var w = x.w;
-        // ⚠️ The finish is the LATEST of the target dates, not the first non-null.
-        // Delivery precedes installation precedes completion, so taking whichever
-        // happened to be filled first drew the package as finishing at its earliest
-        // milestone — the same zero-length/short-bar mistake the Design Development
-        // roll-up made before its finish was changed to the max.
-        var ends = [w.target_completion, w.target_installation, w.target_delivery]
-          .filter(Boolean).sort();
-        var fin = ends.length ? ends[ends.length - 1] : null;
-        var start = w.awarding_date || w.actual_awarding_date || fin || null;
+        // ⚠️ START AND FINISH ARE BOTH THE PLANNED AWARD. Per the owner: a mirrored
+        // row marks the day the award is planned for, not a stretch of work. The target
+        // delivery / installation / completion dates deliberately do NOT set the finish
+        // any more — drawing the bar from award to target completion made the procurement
+        // branch read as months of scheduled work that nobody had actually scheduled, and
+        // it double-counted against the construction activities that consume the package.
+        // Those targets are still carried on the package itself (Work Package panel,
+        // Procurement Alignment) and remain what `wpNeedByIndex` compares and pushes to.
+        // ⚠️ Existing rows self-migrate: `end_date` is in `patchFields`, so the diff loop
+        // below sees the old target date != the award date and issues the UPDATE on the
+        // next sync. Nothing to backfill.
+        // The actual award is the fallback only so a package awarded without a planned
+        // date still lands somewhere instead of becoming a dateless row.
+        var start = w.awarding_date || w.actual_awarding_date || null;
+        var fin = start;
         // ⚠️ Status only says whether it is AWARDED. The mirror carries no measure of
         // how far a package has progressed after award, so anything past "In Progress"
         // would be invented — and a schedule that invents completion is worse than one
@@ -10661,7 +10667,7 @@
           // headless-branch failure fixed earlier today.
           activity_type: 'Work Package', seq_order: x.seq,
           status: awarded ? 'In Progress' : 'Not Started',
-          start_date: start, end_date: fin || start || null,
+          start_date: start, end_date: fin,
           // ⚠️ Link the mirrored row to its OWN package. Its activity_id already IS the wp_no,
           // so this is redundant as identity — but `work_package` is what the Work Package
           // grouping, filter and Procurement Alignment report read, and leaving it null made

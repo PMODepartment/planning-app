@@ -104,7 +104,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-18 (ag) — Location Sequence becomes one page, and a merge resolution that would have thrown on every render
+### 2026-09-18 (ai) — Location Sequence becomes one page, and a merge resolution that would have thrown on every render
 
 Owner, six items on the Location Sequence step of Schedule Setup — rename it throughout; merge tower
 sequence and zone sequence into one screen with no view options and no zoom; always draw floors,
@@ -112,7 +112,7 @@ zones and units; make the resulting schedule a real Gantt grouped tower → floo
 auto-trace ask four numbers and resolve the rest; and replace the inspect/link-by-hand split with a
 drag from one bar's start or finish point onto another's. Module work — the full entry, every ⚠️
 decision and the verification are in
-[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(z)`. Logged here
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(aa)`. Logged here
 for the `MODULE_V` bump and the five things that are not facts about one module:
 
 ⚠️⚠️ **A CONFLICT THAT AUTO-MERGES CLEANLY ON ONE SIDE CAN STILL BE A ReferenceError, AND TAKING A
@@ -171,7 +171,7 @@ inline block parses at 3.86MB, CSS braces 2575/2575, **0 NUL bytes** — ⚠️ 
 ⚠️ **Not verified signed in** — no setup saved and re-read, no link dragged against a real project's
 activities, and auto-trace has never resolved against real data.
 
-⚠️⚠️ **`MODULE_V` → `20260918zf`, re-derived from what the remote actually carries AFTER integrating —
+⚠️⚠️ **`MODULE_V` → `20260918zg`, re-derived from what the remote actually carries AFTER integrating —
 and it had to be done TWICE.** The first pass took `20260918za` past main's then-current `20260918z`.
 ⚠️⚠️ **Main's own `(aa)` entry had independently chosen the identical `20260918za`** — the silent
 collision this log keeps recording, where two sides write the same string, git reports no conflict on
@@ -193,6 +193,123 @@ both sides were checked present afterwards and the whole battery re-run on the m
 ⚠️⚠️ **And the resolver script aborted on its own marker check, for the reason 2026-09-09 (f) records:**
 this file quotes `=======` and `<<<<<<<` in PROSE, in the very entries that warn about them, so a
 substring test reports markers in a clean resolution. The test has to be line-anchored.
+
+⚠️⚠️ **AND IT HAPPENED A SECOND AND A THIRD TIME IN ONE SITTING — main moved again mid-merge and took
+`20260918zf`, the identical token this branch had just derived, from the identical base `ze`.** Its
+commit is titled *"Log (ah), and MODULE_V forward of main's 20260918ze"*: two sides, the same
+arithmetic, the same answer. ⚠️ **Git reported NO conflict on any of the three token lines** — both
+sides wrote the same characters, so there was nothing to flag, and the silent merge would have shipped
+these bytes under a token main had already published. Found only by re-reading the remote's token
+**after** integrating rather than trusting the merge to complain. Re-derived again to `20260918zg`.
+⚠️ The letters collided in the same pass: main took `(ag)` **and** `(ah)` in this log and `(z)` in the
+module's, so this entry moves `(ag)` → `(ai)` and the module entry `(z)` → `(aa)`. **The rule that
+keeps working is not "pick an unusual letter" — it is to re-derive BOTH the letter and the token from
+what the remote actually carries after every integration, and to look for a token collision by reading
+it rather than by waiting for git to report one.**
+
+### 2026-09-18 (ah) — The trades come out in construction order, and "No trade set" finally says what it is
+
+Owner: *"Let's rearrange the trades in the ff order: 1. General Requirements 2. Site Works
+3. Structural Works 4. Architectural Works 5. MEPF Works 6. Allied Services"*, and, seeing a row
+he did not put there, *"Why is there a no trade set? Let's fix"*.
+
+⚠️ Lettered **(ah)**, `MODULE_V` **`20260918zf`** — `origin/main` reached `(ag)` mid-flight. Fifth
+token re-derivation today. No shared asset changed, so nothing else is bumped.
+
+### 1. A construction sequence, not the import order
+
+`tradesIn()` returned trades in the order the import happened to push them, defended in a comment
+as *"the builder's order… a sequence of works"*. It is not — it is whatever the file contained, so
+the same six trades came out differently on every project. They now sort into the owner's
+sequence, and the Curve tab's filter chips follow automatically because they read the same
+function.
+
+⚠️⚠️ **Matched by KEYWORD, not by exact string**, for the reason `isGR()` two lines above already
+gives: a trade arrives spelled a dozen ways across projects, and an exact list would quietly drop
+`MEP Works` to the bottom on the project that does not spell it `MEPF Works`.
+
+⚠️ **A trade the list does not name keeps its first-seen position, after the six.** The sort is
+stable, which is what preserves the schedule's own order *within* a rank — so a project with a
+trade of its own never loses it and never has it shuffled against its peers. `No trade set` sorts
+**last of all**: it is not a trade, it is the absence of one.
+
+### ⚠️⚠️ 2. "No trade set" is a data fact, and the row must NOT be deleted
+
+It is the bucket `tradeOf()` puts an activity in when the schedule's **Trade column is empty**.
+The Curve tab has explained this since it was built, in its filter note — *"N activities carry no
+Trade, so they are in neither General Requirements nor Measured Works"*. The **sheet did not**, so
+the same fact was legible on one tab and a mystery on the other, and the planner meets it as a row
+asking for a monthly POC against a trade that does not exist.
+
+⚠️⚠️ **Deleting the row would be the wrong fix, and quietly so.** Those activities carry real
+duration, so they hold real weight in `tradeWeights()`. Dropping the row takes their scope out of
+the sheet while leaving it in the denominator — every other trade's share then stops summing to
+100%, and the error is invisible because nothing on screen would name what went missing. The row
+is kept; a bar above the sheet names the count and points at the actual fix, which is upstream:
+set the Trade in **Project Schedule**. The row then disappears on its own.
+
+⚠️ **Amber, not brand red.** `.sc-lockbar`'s red left edge means "this is the state of the planned
+curve", a fact about the plan. This is a data problem in the schedule the planner can go and fix,
+and it should not read as the same kind of thing.
+
+### ⚠️⚠️ The icon was `alert`, which does not exist — caught by checking, not by looking
+
+The first cut of that bar asked for `data-ico="alert"`. **There is no `alert` key in
+`assets/js/icons.js`**, and `Icons.hydrate` leaves an unknown key as an **empty span** — a 15px
+hole where an icon should be, invisible in a diff and invisible in a brace check. That is the
+exact failure the `lockBar` comment three lines below warns about (*"THERE ARE NO LOCK ICONS…"*),
+and I wrote the bug directly underneath the note describing it. `risk` is the caution triangle and
+it does exist; verified by hydrating it and measuring **127 characters of SVG path**, not by
+looking at a screenshot.
+
+### Verified
+
+On a fixture whose import order is deliberately scrambled — Structural, MEPF, Allied,
+Architectural, GR, Site — plus four activities with `work_type` null:
+
+- the sheet's rows **and** the Curve tab's chips both come out
+  **General Requirements · Site Works · Structural Works · Architectural Works · MEPF Works ·
+  Allied Services · No trade set**;
+- the bar reads *"4 activities have no Trade set"*, its icon hydrates to 127 chars of SVG, and its
+  left border measures **rgb(201, 162, 39)** against the lockbar's brand red.
+
+`wiring-check` **139/0** · `dark-remap` **0** · `type-scale` **18** (unchanged) ·
+`test-portfolio-dash` **398/0** · `test-boq` **66/0** · inline script `node --check` clean ·
+`<style>` braces **235/235** · 0 NUL bytes. ⚠️ Harness deleted before committing.
+
+### ⚠️ Reported, not changed: the Curve tab and the Manual tab draw the same chart
+
+Owner: *"The curve tab in the s-curve module seem to be a duplicate if we the planner opts for
+manual data."* Measured, and half right — `manChart()` calls the **same `renderChart()`** on the
+**same `computeManual()`**, so in Manual mode the two charts are the same picture. What only the
+Curve tab has: **4 KPI cards**, **3 filter groups** plus the trade chips, the **data table**, the
+click-through **period breakdown**, and the untagged-trade note. The Manual tab's copy is a
+compact preview that redraws as you type. So the chart duplicates; the tab does not. Left alone
+pending the owner's call — the cheap options are to fold the preview into a `<details>` (it pushes
+the sheet below the fold on every visit) or to drop it and let the Curve tab own the picture.
+
+### 2026-09-18 (ag) — A mirrored record can only be as precise as its source: procurement packages become a day, not a bar
+
+⚠️ Lettered **(ag)** — `origin/main` reached `(af)` while this was in flight.
+
+Owner: *"Obtain only the planned award as the start and finish of the work packages"*. Project
+Schedule only; the detail is in `modules/project-schedule/CLAUDE.md` (z).
+
+`syncProcurement()` drew each mirrored work package from its **planned award** to the **latest of its
+target delivery / installation / completion** dates. Both ends are now the planned award, so the row
+is a one-day mark.
+
+⚠️ **The rule to carry: a synced row may only assert dates its source actually scheduled.** The
+target dates are procurement's *envelope*, not a planned duration — turning them into a bar invented
+months of work nobody had scheduled, and it double-counted against the construction activities that
+consume the package and already sit in those months. When a mirror has exactly one real date, the
+honest shape is a point.
+
+⚠️ **Self-migration over backfill, again.** `end_date` was already in the sync's `patchFields`, so
+the diff loop sees the stored target date differ from the award date and rewrites every existing row
+on the next **Sync Procurement**. Same pattern as the `activity_type` change before it: put the new
+value in the patch builder, make sure the field is in the projection the diff compares against, and
+no migration is needed.
 
 ### 2026-09-18 (af) — The manual sheet drags to select, drops the trade %, loses its prose, and folds its shortcuts under the grid
 

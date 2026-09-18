@@ -265,6 +265,10 @@
       border:1px solid var(--pd-line); border-left:3px solid var(--pd-red); border-radius:var(--pd-radius-md);
       background:var(--pd-bg); font-size:var(--pd-fs-sm); line-height:1.5; }
     .sc-lockbar b { color:var(--pd-ink); }
+    /* ⚠️ Amber, not brand red: `.sc-lockbar` red means "this is the state of the planned curve",
+       which is a fact about the plan. This one is a data problem in the SCHEDULE that the planner
+       can go and fix, and it should not read as the same kind of thing. */
+    .sc-manwarn { border-left-color:#C9A227; }
     .sc-lockbar .sc-lockact { margin-left:auto; flex:none; }
     .sc-man-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-top:10px; line-height:1.55; }
     @media (max-width:700px) { .sc-sheet { min-width:560px; } .sc-in, .sc-ro { width:56px; min-width:56px; } }
@@ -679,10 +683,37 @@
   // Every trade present, in the schedule's own first-seen order — which is the builder's order,
   // since a push walks the trades in sequence. ⚠️ Not alphabetical: "Architectural" before
   // "Site Works" reads as a sort, not as a sequence of works.
+  /* ⚠️⚠️ THE CONSTRUCTION SEQUENCE, NOT THE SCHEDULE'S IMPORT ORDER. Owner, 2026-09-18:
+     *"Let's rearrange the trades in the ff order: 1. General Requirements 2. Site Works
+     3. Structural Works 4. Architectural Works 5. MEPF Works 6. Allied Services."* The sheet used
+     to list them first-seen, i.e. in whatever order the import happened to push them, so the same
+     six trades came out in a different order on every project.
+     ⚠️ MATCHED BY KEYWORD, NOT BY EXACT STRING - the same reason `isGR()` exists a few lines up.
+     A trade arrives spelled a dozen ways across projects, and an exact list would quietly drop
+     "MEP Works" to the bottom on the project that does not call it "MEPF Works".
+     ⚠️ A trade this list does not name keeps its first-seen position and sits AFTER the six, so a
+     project with a trade of its own never loses it and never has it silently reordered.
+     ⚠️ `No trade set` sorts LAST of all. It is not a trade, it is the absence of one. */
+  var TRADE_SEQ = [
+    function (t) { return isGR(t); },
+    function (t) { return /site\s*work/i.test(t); },
+    function (t) { return /structural/i.test(t); },
+    function (t) { return /architectural/i.test(t); },
+    function (t) { return /\bmepf?\b|mechanical|electrical|plumbing/i.test(t); },
+    function (t) { return /allied/i.test(t); }
+  ];
+  function tradeRank(t) {
+    if (t === UNTRADED) return 999;
+    for (var i = 0; i < TRADE_SEQ.length; i++) { if (TRADE_SEQ[i](String(t))) return i; }
+    return 500;
+  }
   function tradesIn(list) {
     var out = [], seen = {};
     list.forEach(function (r) { if (PDScurve.isWbs(r)) return; var t = tradeOf(r); if (!seen[t]) { seen[t] = 1; out.push(t); } });
-    return out;
+    /* ⚠️ A STABLE sort, which is what preserves first-seen order WITHIN a rank - that is how an
+       unnamed trade keeps the schedule's own sequence instead of being shuffled against its
+       peers. Array#sort has been required to be stable since ES2019. */
+    return out.sort(function (a, b) { return tradeRank(a) - tradeRank(b); });
   }
   /* Does this row pass the two filters? ⚠️ `UNTRADED` passes NEITHER 'gr' nor 'mw', and that is
      deliberate: an activity whose trade nobody has set is UNKNOWN, not measured. Counting it as
@@ -1884,6 +1915,33 @@
     }
 
     // ---- the lock banner, saying which rule is in force and offering the one action ----------
+    /* ⚠️⚠️ "No trade set" IS A ROW IN THIS SHEET, AND IT NEEDS SAYING WHY. Owner, seeing it
+       appear: *"Why is there a no trade set? Let's fix"*. It is not a trade - it is the bucket
+       `tradeOf()` puts an activity in when the schedule's Trade column is EMPTY, and the Curve
+       tab has always explained it in its filter note. The sheet did not, so the same fact was
+       legible on one tab and a mystery on the other.
+       ⚠️⚠️ THE ROW IS KEPT, DELIBERATELY. Those activities carry real duration, so they hold
+       real weight: dropping the row would take their scope out of the sheet while leaving it in
+       the denominator, and every other trade's share would stop adding up to 100%. The honest
+       fix is upstream - set the Trade in Project Schedule - so this says that, and the row
+       disappears on its own once it is done. */
+    var nUntraded = (rows || []).filter(function (r) {
+      return !PDScurve.isWbs(r) && tradeOf(r) === UNTRADED;
+    }).length;
+    var untradedBar = nUntraded
+      ? '<div class="sc-lockbar sc-manwarn">' +
+          /* ⚠️ 'risk' IS THE CAUTION TRIANGLE AND IT EXISTS - the first cut of this bar asked for
+             'alert', which is not a key in icons.js, and Icons.hydrate leaves an unknown key as an
+             EMPTY SPAN. That is the same looks-live-does-nothing failure the lockBar note below
+             records; checked against the key list rather than assumed. */
+          '<span data-ico="risk" data-ico-size="15" style="flex:none;margin-top:2px;"></span>' +
+          '<span><b>' + nUntraded + ' activit' + (nUntraded === 1 ? 'y has' : 'ies have') +
+          ' no Trade set</b>, so they are gathered into the <b>No trade set</b> row below. That is ' +
+          'not a trade, and nobody can plan a monthly POC against it \u2014 but the work is real and ' +
+          'carries weight, so the row is kept rather than dropped. Set the Trade on ' +
+          (nUntraded === 1 ? 'that activity' : 'those activities') + ' in <b>Project Schedule</b> ' +
+          '(the Trade column) and the row goes away.</span></div>'
+      : '';
     var lockBar =
       '<div class="sc-lockbar">' +
         /* ⚠️ 'signature' and 'pencil', NOT 'lock'/'unlock' — THERE ARE NO LOCK ICONS in
@@ -2028,7 +2086,7 @@
         '<span class="s">redraws as you type, unsaved edits included</span></div>' +
         '<div id="sc-manchart"></div><div class="sc-note" id="sc-mannote"></div></div>' +
       '<div class="sc-srcbar">' + srcLine + '</div>' +
-      lockBar +
+      lockBar + untradedBar +
       '<div class="sc-filterbar sc-kindbar">' + kindSeg + '</div>' +
       sheet +
       /* ⚠️⚠️ THE KEYBOARD HINT IS BELOW THE SHEET AND FOLDED AWAY. Owner, 2026-09-18:
