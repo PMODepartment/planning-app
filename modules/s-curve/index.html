@@ -702,6 +702,7 @@
      `modules/project-schedule/index.html` alongside 58k lines this module cannot load. If a third
      reader appears it belongs in `assets/js/scurve.js` beside the curve engine. */
   var WBS_NODES = [], _nodeById = {}, _tradeMemo = {};
+  var hasProcurement = false, nProcDropped = 0;
   function nodeTrade(nodeId) {
     if (!nodeId) return '';
     if (_tradeMemo[nodeId] !== undefined) return _tradeMemo[nodeId];
@@ -720,6 +721,33 @@
     _tradeMemo[nodeId] = out;
     return out;
   }
+  /* ⚠️⚠️ PROCUREMENT IS NOT CONSTRUCTION SCOPE, AND IT IS NOT A TRADE EITHER. Owner,
+     2026-09-18: *"Procurement shouldn't count in the s-curve."* The canonical WBS skeleton files
+     it under **Planning Phase**, beside Project Execution Plan and Design Development:
+
+         Planning Phase > Procurement   (source_kind: 'procurement')
+
+     and its contents are MIRRORED from the Procurement (WPM) app - purchase packages, not work
+     anybody puts in place. It has always been summed into this curve; what changed is that it
+     became visible, because *(al)*'s WBS fallback started naming it. `nodeTrade` takes the branch
+     under the root, and for a package under `Planning Phase > Procurement > ...` that branch is
+     "Procurement" - so a mirror of purchase orders arrived in the sheet dressed as a trade.
+     ⚠️ Ancestry, not the node itself: the sync stamps the marker on the branch AND on what it
+     generates, but an activity may sit deeper than either. */
+  var _procMemo = {};
+  function nodeIsProcurement(nodeId) {
+    if (!nodeId) return false;
+    if (_procMemo[nodeId] !== undefined) return _procMemo[nodeId];
+    _procMemo[nodeId] = false;                   // cycle guard, as in nodeTrade
+    var n = _nodeById[nodeId], guard = 0, hit = false;
+    while (n && guard++ < 60) {
+      if (String(n.source_kind || '').indexOf('procurement') === 0) { hit = true; break; }
+      n = n.parent_id ? _nodeById[n.parent_id] : null;
+    }
+    _procMemo[nodeId] = hit;
+    return hit;
+  }
+  function isProcurementRow(r) { return !!(r && nodeIsProcurement(r.wbs_node_id)); }
   function tradeOf(r) {
     var t = String((r && r.work_type) || '').trim();
     return t || nodeTrade(r && r.wbs_node_id) || UNTRADED;
@@ -906,10 +934,18 @@
     try {
       WBS_NODES = await PDb.selectAll('wbs_nodes', function (q) {
         return q.eq('project_id', pid);
-      }, 'id,parent_id,name');
+      }, 'id,parent_id,name,source_kind');
     } catch (e) { WBS_NODES = []; }
     _nodeById = {};
     WBS_NODES.forEach(function (n) { _nodeById[n.id] = n; });
+    /* ⚠️⚠️ `source_kind`, NOT the branch's NAME. The skeleton seeds Procurement with
+       `source_kind: 'procurement'` and the syncs stamp `'procurement_trade'` /
+       `'procurement_child'` onto everything they generate underneath it, so the marker is
+       machine-readable and survives a planner renaming the branch. Matching the word
+       "procurement" in a name would also catch a legitimately-named construction activity. */
+    hasProcurement = WBS_NODES.some(function (n) {
+      return String(n.source_kind || '').indexOf('procurement') === 0;
+    });
   }
   var rowsLoaded = false;
   async function fetchRows() {
@@ -923,7 +959,12 @@
       var b = r1.data || []; out = out.concat(b);
       if (b.length < 1000) break; last = b[b.length - 1].id;
     }
-    return out;
+    /* ⚠️ Dropped HERE, at the one place both read paths get their rows, so no consumer has to
+       remember to exclude them - the weights, the trade list, the activity count and every
+       filter see a schedule without the mirror. Counted rather than dropped in silence. */
+    var kept = out.filter(function (r) { return !isProcurementRow(r); });
+    nProcDropped = out.length - kept.length;
+    return kept;
   }
   // Called by every control that needs per-activity data. Renders once the rows are in.
   async function ensureRows(then) {
@@ -966,7 +1007,8 @@
     MAN = null; manMissing = false; manDirty = {};
     try { var _mk = localStorage.getItem('sc_mankind_' + pid); manKind = (_mk === 'actual' || _mk === 'forecast') ? _mk : 'planned'; } catch (e) { manKind = 'planned'; }
     trSel = []; trScope = 'all'; rowsLoaded = false;
-    WBS_NODES = []; _nodeById = {}; _tradeMemo = {};
+    WBS_NODES = []; _nodeById = {}; _tradeMemo = {}; _procMemo = {};
+    hasProcurement = false; nProcDropped = 0;
     showLoading();
     /* ⚠️ BEFORE the activities, because `tradeOf()` is read the moment they arrive - the
        aggregate path skips per-activity trades entirely, but the row path groups by them. */
@@ -980,7 +1022,21 @@
     // fetch. Trying to serve a cost curve from a duration aggregate is how a chart ends up labelled
     // in pesos while plotting days.
     try {
-      if (basis !== 'cost') {
+      /* ⚠️⚠️ THE SERVER AGGREGATE CANNOT EXCLUDE PROCUREMENT, SO A PROJECT THAT HAS ANY MUST
+         NOT USE IT. `schedule_scurve_agg` sums every non-WBS row with a start_date and knows
+         nothing about `wbs_node_id`, `source_kind` or phases - it is a pure month bucket. Filter
+         procurement on the client only, and the curve would change shape when the planner toggled
+         Duration to Cost: the cost basis already pays for the per-row fetch and would drop the
+         mirror, while the duration basis kept summing it server-side. A number that moves when
+         you change the weighting is worse than one that is consistently wrong, because nobody
+         can tell which reading to believe.
+         ⚠️ So the fast path is skipped exactly when it would be wrong - `hasProcurement` is read
+         off the WBS tree, which is already loaded by this point, and costs no extra query. A
+         project with no procurement mirror keeps the aggregate and pays nothing for this.
+         ⚠️ The alternative was a migration teaching the RPC to walk the WBS. Rejected for now:
+         it puts a recursive CTE in the hot path of every S-curve and Cash Flow read to serve the
+         projects that could simply take the row path instead. */
+      if (basis !== 'cost' && !hasProcurement) {
         var r = await sb().rpc('schedule_scurve_agg', { p_id: pid });
         if (!r.error && r.data && r.data.months) agg = r.data;
       }
@@ -2126,9 +2182,13 @@
        separate, a planner can fill this in for an hour while the Curve tab still draws the
        schedule — a legitimate thing to do and a terrible thing to discover afterwards. */
     var nDirty = manDirtyCount();
-    // Closed unless this planner opened it on this project before.
-    var prevOpen = false;
-    try { prevOpen = localStorage.getItem('sc_manprev_' + pid) === '1'; } catch (e) {}
+    /* {0} OPEN unless this planner closed it on this project. Owner asked for the fold
+       (*"Do 1"*), then for the chart back (*"I want to have a preview of the s-curve in the
+       manual data"*) - so the disclosure stays, and only its default flips. Collapsing it is
+       still one click and still remembered per project, which is the setting he actually
+       wanted: the preview there, and foldable when the sheet needs the room. */
+    var prevOpen = true;
+    try { prevOpen = localStorage.getItem('sc_manprev_' + pid) !== '0'; } catch (e) {}
     var srcLine = (mode === 'manual')
       ? '<span class="sc-srcon">The <b>Curve</b> tab is drawing from this sheet.</span>'
       : '<span class="sc-srcoff">The <b>Curve</b> tab is drawing from the <b>schedule</b>, not from this sheet. ' +
