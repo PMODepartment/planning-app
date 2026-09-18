@@ -59378,10 +59378,41 @@
 
     // scroll sync (vertical grid<->gantt, horizontal head<->body)
     var gs = document.getElementById('ps-grid-scroll'), gz = document.getElementById('ps-gantt-scroll'), gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');
-    var lock = false, winRaf = false;
+    var winRaf = false;
     function onVScroll() { if (winRaf) return; winRaf = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { winRaf = false; renderWindow(); }); }
-    gs.addEventListener('scroll', function () { if (gHead) gHead.scrollLeft = gs.scrollLeft; if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; } onVScroll(); });
-    gz.addEventListener('scroll', function () { if (!lock) { lock = true; gs.scrollTop = gz.scrollTop; lock = false; } gh.scrollLeft = gz.scrollLeft; onVScroll(); });
+    /* ==== THE TWO PANES FOUGHT EACH OTHER WHILE SCROLLING ===================================
+       Owner: *“Scrolling through the grid of the schedule module bugs. It scrolls difficult and
+       shows up and down repeatedly until the downscroll wins over time.”*
+       ⚠⚠ THE OLD `lock` GUARD NEVER GUARDED ANYTHING. It read
+         `if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; }`
+       and **writing `scrollTop` does not dispatch its scroll event synchronously** — measured in
+       the browser: set `scrollTop`, then read a flag a `once` scroll listener sets, and the flag
+       is still false. The event arrives at the next rendering tick, by which time `lock` is back
+       to `false`. So every sync was echoed straight back by the other pane.
+       ⚠⚠ THE ECHO IS ONLY VISIBLE BECAUSE THE TWO PANES HAVE DIFFERENT MAXIMA. Measured with
+       the shipped stylesheet: the gantt scrolls sideways over the timeline and so carries a
+       HORIZONTAL SCROLLBAR, which costs it 15px of `clientHeight` — `gz` max scrollTop 32053,
+       `gs` max 32038. Drag the gantt to the bottom and it wrote 32053 into the grid, the grid
+       clamped to 32038, and the grid's echo wrote 32038 back into the gantt, **dragging it 15px
+       back up**. One snap-back per wheel tick, all the way down: exactly what the owner sees, and
+       why it inches downward instead of getting stuck.
+       ⚠ THE GUARD IS THE ECHO'S VALUE, NOT A TIMER. A 120ms “who is leading” window was written
+       first and thrown away: it desynced the panes for 120ms if you grabbed the other scrollbar
+       mid-gesture, and the number was a guess. This records what the follower ACTUALLY became
+       after the (possibly clamped) write, and ignores exactly one event carrying that value —
+       no timer, no magic number, and a real scroll by the user is never swallowed.
+       ⚠ `_vEcho` is cleared rather than set when the write changed nothing, because no scroll
+       event is coming to consume it and a stale one would swallow the user's next gesture. */
+    var _vEcho = null;
+    function _vSync(from, to) {
+      if (_vEcho && _vEcho.el === from && _vEcho.top === from.scrollTop) { _vEcho = null; return; }
+      if (to.scrollTop === from.scrollTop) return;
+      var before = to.scrollTop;
+      to.scrollTop = from.scrollTop;
+      _vEcho = (to.scrollTop !== before) ? { el: to, top: to.scrollTop } : null;
+    }
+    gs.addEventListener('scroll', function () { if (gHead) gHead.scrollLeft = gs.scrollLeft; _vSync(gs, gz); onVScroll(); });
+    gz.addEventListener('scroll', function () { _vSync(gz, gs); gh.scrollLeft = gz.scrollLeft; onVScroll(); });
 
     /* ==== RIGHT-CLICK ON A BAR, NOT JUST ON ITS ROW =========================================
        Owner 2026-09-17: *"should we allow to right click in the schedule?"* It already was — on the

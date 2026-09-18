@@ -27,7 +27,7 @@ window.PDNotes = (function () {
 
   var TABLE = 'user_notes';
   var MIGRATION = 'migrations/2026-09-15-user-notes.sql';
-  var K_OPEN = 'pd_notes_open', K_SEL = 'pd_notes_sel', K_SIDE = 'pd_notes_side';
+  var K_OPEN = 'pd_notes_open', K_SEL = 'pd_notes_sel', K_SIDE = 'pd_notes_side', K_POS = 'pd_notes_pos';
   var SAVE_MS = 700;
 
   var notes = [], selId = null, loaded = false, err = null, busy = false;
@@ -183,6 +183,133 @@ window.PDNotes = (function () {
      ⚠️⚠️ AND THE HEAD HAS TO NAME THE CURRENT NOTE ONCE THE LIST IS GONE. The list was the only
      thing on screen saying WHICH note is being typed into; folding it without replacing that is
      how somebody writes a paragraph into yesterday's note. `.pd-nb-cur` carries it. */
+  /* ======================================================================================
+     DRAGGING THE NOTES BUTTON — owner: *"I want the notes/notebook button to be movable by
+     drag. Movable anywhere in the page as the user desires."*
+
+     The FAB drags the WHOLE `.pd-nb` root, panel included: the panel is anchored to the button
+     and detaching them would leave an open note floating with no handle.
+
+     ⚠⚠ THE HARD PART IS NOT THE DRAG, IT IS WHERE THE PANEL OPENS AFTERWARDS. The default
+     corner is bottom-right and the stylesheet opens the panel UPWARDS, RIGHT-ALIGNED to suit
+     it. Drag the button to the top of the window and the panel opens off the top of the screen;
+     drag it to the left edge and 380px of panel hangs off the left. So placement decides two
+     flips, and the drag re-decides them as it moves:
+       · `pd-nb-below`  — button in the top half → the panel opens DOWNWARDS
+       · `pd-nb-atleft` — button in the left half → the panel extends RIGHT
+
+     ⚠⚠ EVERYTHING IS EXPRESSED AS THE BUTTON'S POSITION, AND THE ROOT IS PLACED TO SUIT IT.
+     The root's top-left is NOT the button's: with the panel open above it, the root starts ~520px
+     higher. Positioning the root directly meant the button jumped out from under the cursor the
+     moment the notebook was open, and clamping on the root's box refused to let the button near
+     the bottom of the screen — the corner it lives in by default.
+
+     ⚠ STORED AS A FRACTION OF THE VIEWPORT, not pixels: a position saved on a 2560px monitor
+     and restored on a laptop would put the button off screen, and the only control that opens
+     the notebook would be unreachable with no way back. Re-clamped on restore and on resize. */
+  function nbFabBox() {
+    var fab = root && root.querySelector('.pd-nb-fab');
+    return fab ? fab.getBoundingClientRect() : null;
+  }
+  /* Place the BUTTON's top-left at (x, y), clamped to the viewport. Two passes on purpose: the
+     flip classes change the root's layout, which moves the button INSIDE the root, so the
+     button's offset has to be re-read after they are applied or the first drag into the top
+     half lands ~520px off. */
+  /* ⚠ Below 700px the stylesheet lays the notebook out full-width (`left:12px; right:12px;
+     align-items:stretch`) and the button is not a floating target any more. Writing left/top
+     into that would break a layout the owner never asked to change, so a phone keeps its
+     corner — the stored position is remembered and reapplied when the window grows again. */
+  function nbFloating() { return window.innerWidth > 700; }
+  function nbPlace(x, y, save) {
+    if (!root || !nbFloating()) return;
+    var fr = nbFabBox(); if (!fr) return;
+    var fw = fr.width, fh = fr.height;
+    x = Math.max(4, Math.min(window.innerWidth - fw - 4, x));
+    y = Math.max(4, Math.min(window.innerHeight - fh - 4, y));
+    root.classList.add('pd-nb-moved');
+    /* ⚠⚠ THE FLIP IS DECIDED BY WHICH SIDE HAS MORE ROOM, NOT BY WHICH HALF OF THE SCREEN THE
+       BUTTON IS IN. “Top half → open downwards” was the first cut and it is wrong in the middle:
+       measured at the centre of a 1006×910 window, the button sat at y=455, the half-test said
+       “not the top half”, the panel opened upwards and its top landed at **-73px** — off screen.
+       ⚠ At the centre NEITHER side fits a 520px panel (447 above, 417 below), so choosing a side
+       is not enough: the panel is also CAPPED to the room on the side chosen, via `--pd-nb-room`.
+       It shrinks rather than clipping, which is the honest failure and the reversible one — drag
+       the button back to a corner and it is 520px again.
+       ⚠ The 8 is the flex `gap` between the panel and the button, and 160 is a floor so the
+       editor never collapses to a sliver no one can type in. */
+    var GAP = 8;
+    var roomAbove = y - GAP, roomBelow = window.innerHeight - (y + fh) - GAP;
+    var below = roomBelow > roomAbove;
+    root.style.setProperty('--pd-nb-room', Math.max(160, below ? roomBelow : roomAbove) + 'px');
+    root.classList.toggle('pd-nb-below', below);
+    root.classList.toggle('pd-nb-atleft', (x + fw / 2) < window.innerWidth / 2);
+    // pass two: with the flips applied, work out where the root must sit for the button to land
+    var rr = root.getBoundingClientRect(), fr2 = nbFabBox();
+    root.style.left = (x - (fr2.left - rr.left)) + 'px';
+    root.style.top = (y - (fr2.top - rr.top)) + 'px';
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+    if (save) lsSet(K_POS, (x / Math.max(1, window.innerWidth)) + ',' + (y / Math.max(1, window.innerHeight)));
+  }
+  function nbRestore() {
+    var v = lsGet(K_POS); if (!v) return;          // never moved: the stylesheet's corner stands
+    var a = String(v).split(','), fx = parseFloat(a[0]), fy = parseFloat(a[1]);
+    if (!isFinite(fx) || !isFinite(fy)) return;
+    nbPlace(fx * window.innerWidth, fy * window.innerHeight, false);
+  }
+  function nbReclamp() {
+    if (!root || !root.classList.contains('pd-nb-moved')) return;
+    /* ⚠ Crossing DOWN through the breakpoint must strip the inline left/top, or the phone
+       layout inherits a desktop position and the notebook ends up half off the screen with no
+       way to drag it back. The class and the stored fraction survive, so growing the window
+       restores the position rather than forgetting it. */
+    if (!nbFloating()) {
+      root.style.left = ''; root.style.top = ''; root.style.right = ''; root.style.bottom = '';
+      root.style.removeProperty('--pd-nb-room');
+      root.classList.remove('pd-nb-below', 'pd-nb-atleft');
+      return;
+    }
+    /* Grown back above the breakpoint with the inline position stripped: re-read the stored
+       fraction rather than the button's current (corner) box, or the move is silently lost. */
+    if (!root.style.left) { nbRestore(); return; }
+    var fr = nbFabBox(); if (!fr) return;
+    nbPlace(fr.left, fr.top, false);               // same spot, re-clamped to the new viewport
+  }
+  function nbDrag(fab) {
+    var gx = 0, gy = 0, moved = false, on = false, sx = 0, sy = 0;
+    fab.addEventListener('pointerdown', function (e) {
+      if (e.button != null && e.button !== 0) return;   // right-click keeps the browser's menu
+      var fr = fab.getBoundingClientRect();
+      gx = e.clientX - fr.left; gy = e.clientY - fr.top;
+      sx = e.clientX; sy = e.clientY; moved = false; on = true;
+      try { fab.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    fab.addEventListener('pointermove', function (e) {
+      if (!on) return;
+      /* ⚠⚠ THE 4px THRESHOLD IS WHAT KEEPS THE BUTTON CLICKABLE. Without it every click is a
+         one-pixel drag, the click is then suppressed below, and the notebook can never be opened
+         again — the feature would have eaten the only control it was attached to. */
+      if (!moved && Math.abs(e.clientX - sx) < 4 && Math.abs(e.clientY - sy) < 4) return;
+      if (!moved) { moved = true; root.classList.add('pd-nb-dragging'); }
+      e.preventDefault();
+      nbPlace(e.clientX - gx, e.clientY - gy, false);
+    });
+    function end(e) {
+      if (!on) return;
+      on = false;
+      root.classList.remove('pd-nb-dragging');
+      try { fab.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (moved) { var fr = fab.getBoundingClientRect(); nbPlace(fr.left, fr.top, true); }
+    }
+    fab.addEventListener('pointerup', end);
+    fab.addEventListener('pointercancel', end);
+    /* ⚠ The click is swallowed only when the pointer actually travelled. `moved` is reset on the
+       next pointerdown, so this never suppresses a later, genuine click. */
+    fab.addEventListener('click', function (e) {
+      if (!moved) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+    }, true);
+  }
   function sideHidden() { return lsGet(K_SIDE) === '1'; }
   function setSideHidden(v) { lsSet(K_SIDE, v ? '1' : '0'); paint(); }
 
@@ -331,12 +458,20 @@ window.PDNotes = (function () {
         '</div>' +
         '<p class="pd-nb-foot">Private to you. Saves as you type.</p>' +
       '</div>' +
-      '<button type="button" class="pd-nb-fab" aria-expanded="false" aria-controls="pd-notes" title="Notebook">' +
+      '<button type="button" class="pd-nb-fab" aria-expanded="false" aria-controls="pd-notes" title="Notebook — click to open, drag to move it">' +
         '<span class="pd-nb-fab-ico" aria-hidden="true">✎</span><span class="pd-nb-fab-txt">Notes</span>' +
       '</button>';
     document.body.appendChild(root);
 
-    root.querySelector('.pd-nb-fab').onclick = function () { isOpen() ? close() : open(); };
+    var _fab = root.querySelector('.pd-nb-fab');
+    _fab.onclick = function () { isOpen() ? close() : open(); };
+    /* ⚠ `nbDrag` binds in the CAPTURE phase for click, so it must be installed before anything
+       downstream can act on a click that was really the end of a drag. */
+    nbDrag(_fab);
+    nbRestore();
+    /* ⚠ A window the user shrinks must not strand the button off screen — the same reason the
+       stored position is a fraction rather than a pixel count. */
+    window.addEventListener('resize', nbReclamp);
     root.querySelector('.pd-nb-sidet').onclick = function () { setSideHidden(!sideHidden()); };
     root.querySelector('.pd-nb-new').onclick = async function () {
       await flush();

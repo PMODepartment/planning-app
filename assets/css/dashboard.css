@@ -2582,6 +2582,29 @@ html.pd-portfolio [data-project-only] { display: none !important; }
 .pd-nb { position: fixed; right: 18px; bottom: 18px; z-index: 55;
   display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 
+/* ⚠️⚠️ THE NOTES BUTTON IS DRAGGABLE (owner: *"movable anywhere in the page as the user
+   desires"*), and moving it re-decides which way the panel opens. The button sits at the END of
+   the flex column and the panel above it, right-aligned — correct for the bottom-right corner it
+   starts in, and wrong for every other one. `.pd-nb-moved` only marks that JS has taken over
+   `left`/`top`; the two flips below are what keep the panel on screen.
+   ⚠️ `right/bottom: auto` is set inline by nbPlace rather than here, so a notebook that has
+   never been dragged keeps the corner this rule gives it — including on a page where the script
+   fails to run at all. */
+.pd-nb-below { flex-direction: column-reverse; }
+.pd-nb-atleft { align-items: flex-start; }
+/* ⚠️ `touch-action: none` is required, not cosmetic: without it a touch drag scrolls the page and
+   the pointermove events stop arriving mid-gesture.
+   ⚠️ NO `cursor: grab` HERE, and not because it did not work (it did not — this block sits
+   BEFORE `.pd-nb-fab`'s own `cursor: pointer` at equal specificity, so the later rule won, and
+   the measured value was `pointer`). It is left out on purpose: this button's primary action is
+   a CLICK that opens the notebook, and a grab cursor advertises the secondary one. `grabbing`
+   below is (0,2,0) and appears only once a drag is actually under way. */
+.pd-nb-fab { touch-action: none; }
+.pd-nb-dragging .pd-nb-fab { cursor: grabbing; }
+/* ⚠️ The panel is inert while the button is being dragged — a pointer crossing the textarea
+   mid-drag must not start selecting text in it. */
+.pd-nb-dragging .pd-nb-panel { pointer-events: none; user-select: none; }
+
 .pd-nb-fab { display: inline-flex; align-items: center; gap: 7px;
   padding: 9px 14px; border-radius: var(--pd-radius-pill);
   background: var(--pd-card); color: var(--pd-ink);
@@ -2606,7 +2629,10 @@ html.pd-portfolio [data-project-only] { display: none !important; }
 .pd-nb-panel { width: 380px; max-width: calc(100vw - 36px);
   /* ⚠️ min() against vh so a short window cannot push the FAB off screen — the
      control that closes the panel must always be reachable. */
-  height: min(60vh, 520px);
+  /* ⚠️ `--pd-nb-room` is set by nbPlace when the button has been dragged somewhere the full
+     panel will not fit — it is the space on whichever side the panel opens. Undefined (never
+     dragged) falls back to 100vh, which leaves `min()` deciding exactly what it did before. */
+  height: min(60vh, 520px, var(--pd-nb-room, 100vh));
   /* ⚠️⚠️ NO `display` HERE. It used to say `display:flex`, and because this block sits
      AFTER the two rules above at the SAME specificity (0,1,0) it won on source order and the
      panel could never close — the open/closed rules above were correct and simply outranked.
