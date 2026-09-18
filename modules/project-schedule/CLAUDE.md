@@ -1,3 +1,49 @@
+## 2026-09-18 (zl+) — The overlap case on B1 / B2 / B3, checked against the shipped renderer
+
+Owner: *"let's check the overlap case on B1 B2 B3"*. **No shipped file changed** — this entry records
+the verification, one correction to what was reported to the owner, and one harness trap.
+
+### What was checked
+The three same-storey findings OPW101's clash strip reports, at the stretches its own tooltips
+print: **B3 Jan 1 → Jan 6**, **B2 Mar 26 → Mar 31**, **B1 Jun 18 → Jun 23**. With the corrected
+clash arithmetic (`p` this morning) that stretch is `max(start) → min(finish)`, so on each basement
+**MEPF starts on the first date and Architectural finishes on the second** — a partial overlap, the
+successor starting inside the predecessor and running past it. Architectural's start and MEPF's
+finish are not on screen and are fixture values; the SHAPE is what is real, and the shape is what
+decides what is drawn.
+
+`_lsmBarsHTML` was run over all three through the suite's harness. Each storey draws **one bar and
+four segments**: the predecessor alone at full height, then **two 50% bands** over the contested
+stretch — Architectural on top, which is lane order, which is the declared construction sequence —
+then the successor alone at full height. Exactly the dates the strip names, to the day.
+
+⚠️⚠️ **THE TWO PASSES AGREE, AND THAT IS THE POINT OF THE CHECK.** The stacked bands and the
+`.ps-lsmclash` hatch are computed by different passes over the same row, so they could drift and the
+bar would then contradict the strip above it. Asserted: **one hatch per storey, at exactly the band's
+own x and width** — B3 Jan 1–6, B2 Mar 26–31, B1 Jun 18–23.
+⚠️ The bar is drawn in CALENDAR days and the strip counts WORKING days, so a 6-day band under a
+*"4 wd"* chip is the two units agreeing, not disagreeing.
+
+### ⚠️⚠️ A CORRECTION THAT REACHED THE OWNER: A COMMIT MESSAGE ONE COMMIT OUT OF DATE
+The owner was told a trade wholly inside another's run **draws nothing**, and that contested days go
+to whoever arrives first. That was `783d0b7`'s behaviour and was superseded **sixteen minutes later**
+by `02a24e4` ("A shared stretch splits instead of being awarded"), on the owner's own follow-up
+*"I want to see the overlap of different activities"*. Nothing is clipped. The lesson is not about
+either commit: **a feature's newest commit message is not its behaviour** — the answer was in
+`_lsmSliceRuns`, which was read a minute later and says the opposite in its own comments.
+
+### ⚠️⚠️ AND ONE THAT DID NOT: A PROBE THAT INVENTED 19 FAILURES
+The first run reported **19 failing assertions in the suite's own segment section** against a file
+the full suite passes 732/0. None were real. The probe declared a top-level `function segsOf`, and
+`test-lsm.js` has had one since line 703 — **the later declaration wins for the whole script**, so
+the suite's own tests silently called the probe's parser, which returns objects where they expected
+strings. Renamed, the run is **274/0**. This is the checker-invents-a-defect class this file keeps
+recording; what caught it was that the same file passes the full suite, so the failures had to be
+the harness rather than the module. ⚠️ A probe appended to a suite shares its top-level scope:
+**prefix every helper**.
+
+`MODULE_V` untouched — nothing shipped.
+
 ## 2026-09-18 (ab) — The import door hidden behind one word, and step 5's two rungs made to read as two
 
 Owner, two items: *"in step 1, hide first the option to allow importing of external schedules first.
