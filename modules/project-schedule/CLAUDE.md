@@ -127,8 +127,12 @@ were checked present afterwards (this side's `IMPORT_UI`, `sbld-twrow`, `_twLocC
 `sbld-twlegend`, the first-cell rail; theirs via their own suites, including the new `test-locseq`,
 which this session had never run) and the whole battery re-run on the merged tree.
 
-`MODULE_V` → `20260918zh`, re-derived from the merged tree **after** integrating (main went
+`MODULE_V` → `20260918zi`, re-derived from the merged tree **after** integrating (main went
 `zd` → `ze` → `zg` while this work was in flight) and sort-checked as a plain string.
+⚠️⚠️ **AND THEN MAIN TOOK `zh` INDEPENDENTLY WHILE THIS ENTRY WAS BEING WRITTEN, AND THE MERGE
+TOOK IT IN SILENCE** — two sides writing the identical string is not a conflict, so nothing
+stopped to say so. Found by re-reading the remote before pushing rather than by anything
+failing, which is the whole reason the token is re-derived after integrating and not before.
 
 ## 2026-09-18 (aa) — Location Sequence becomes one page, a real Gantt, and a drag that links
 

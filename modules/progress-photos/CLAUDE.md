@@ -1,5 +1,66 @@
 # Module: progress-photos
 
+## The Presentations tab still counted in "PPR" (2026-09-18)
+
+Owner: *"in progress photos, presentations tab, it says 5 of 5 PPR. this should be 5 of 5
+Presentations. please make minor revision."*
+
+Correct, and it is a leftover of a rename this module has already made twice. The tab is
+**Presentations**, the primary action is **+ New Presentation**, the modal header is **New
+Presentation**, the list column is **Presentation Date** — the 2026-08-29 pass renamed all of them
+and this file's own test block `[3]` asserts each one. The **count line under the toolbar** was
+missed, so the one place on that screen that states how many records there are read
+`Showing 5 of 5 PPRs`.
+
+### Three occurrences, not one — and four more deliberately left
+
+Grepping the shipped file with `//` comments stripped finds **seven** live `PPR` strings. Three are
+the generic noun and all three are on this tab:
+
+| where | was | now |
+|---|---|---|
+| `renderList()` count line | `… of 5 PPR` / `PPRs` | `… of 5 Presentation` / `Presentations` |
+| `load()` transient line | `Loading PPRs…` | `Loading presentations…` |
+| offline-export dialog hint | `Large PPRs take a moment.` | `Large presentations take a moment.` |
+
+⚠️ The export dialog is the sharpest of the three, because it **contradicted itself**: its own header
+reads *"Preparing offline copy"* and the guard directly above it toasts *"This presentation has no
+slides to export"*, so one dialog used both words for one thing.
+
+⚠️⚠️ **THE OTHER FOUR STAY, AND THAT IS THE WHOLE JUDGEMENT IN THIS CHANGE.** Two are **proper
+nouns**, not the generic noun:
+
+- `reportTypeLabel()` returns `'PPR Meeting'` as the counterpart of `'Client Coordination Meeting'`.
+  That is a **report TYPE** — the actual name of the monthly Project Performance Review — and the
+  whole point of the `report_type` column is to tell those two meetings apart. Renaming it to
+  "Presentation Meeting" would delete the distinction the field exists for.
+- The description placeholder reads `e.g. PPR ftm of June 2026 / Client Presentation`, which is the
+  same distinction shown as an example. It is naming a meeting, not counting records.
+
+The remaining two are `console.warn` strings a planner never sees. Changing developer console copy
+to satisfy a user-facing rename is churn.
+
+### Verified
+
+`node --check`; the module suite **978 passed, 5 failed** — ⚠️ the same **5** pre-existing failures,
+established by running the suite against a clean `git archive HEAD` tree rather than by assumption
+(**976/5** there, so this adds 2 passing assertions and no regression). The four listed above are
+confirmed still present, so the judgement is asserted rather than stated.
+
+⚠️⚠️ **Both new assertions BITE.** The same `test.js` copied into that HEAD tree and run against the
+**pre-change `ppr.js`** reports **976 passed, 7 failed**, naming exactly the two:
+*"the list count line says Presentation(s), not PPR(s)"* and *"no generic PPR/PPRs noun left in
+user-facing copy"*. An assertion that passes on both files proves nothing.
+
+⚠️ The count assertions read `pjsCode` — the source with `//` comments stripped — which the block
+already computes for this exact reason: a comment recording the old label is not a user-visible
+string, and this file has been bitten by a checker measuring its own explanation before.
+
+⚠️ **Not verified signed in.** No live project's presentation list has been rendered; the count line
+is asserted against the shipped source, not read off a screen.
+
+`ppr.js` → `?v=20260918zh`; `MODULE_V` → `20260918zh` — re-derived past main's `20260918ze` on a second merge, and this entry re-lettered `(ad)` → `(ag)` because main independently published its own `(ad)`.
+
 ## "Still a few streaks": the gain clamp was bounding the SCENE, not the bias (2026-09-17, third pass)
 
 Owner, against the second pass, **with the first real capture** — a phone video of the Megawide office:
