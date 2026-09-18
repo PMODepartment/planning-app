@@ -141,7 +141,7 @@ const REAL_FNS = ['pd', 'dstr', 'dayDiff', 'addDays', 'isWbs', 'isMile', 'catVal
                      them. Sliced BY NAME rather than left to the on-demand link pass, which only
                      reaches a name the PROBE executes - a one-trade probe row draws no segments,
                      so the pass would link nothing and the failure would land inside an assertion. */
-                  '_lsmSegsHTML', '_lsmOwnRuns',
+                  '_lsmSegsHTML', '_lsmSliceRuns',
                   /* slice 2 */
                   '_lsmDecl', '_lsmRankOf', '_lsmRankBasis', '_lsmFit', '_lsmRate',
                   '_lsmRateHTML', '_clearLsmRateMemo', '_clearLsmDeclMemo',
@@ -753,54 +753,75 @@ function segSpan(d) { const g = d && /title="[^"]*: ([\d-]+) → ([\d-]+),/.exec
      'the idle notches are emitted after every segment, so they paint over them');
 })();
 
-/* ⚠️⚠️ WHO OWNS A STRETCH BOTH TRADES ARE ON. This is the real cost of painting inside one bar
-   and the reason it is asserted from three sides rather than described in a comment: the pixels
-   can only be one colour, so FIRST ON THE FLOOR KEEPS IT and the later trade is clipped to what
-   is left. The overlap itself is not lost - it is exactly what `_lsmClash` hatches on top. */
+/* ⚠️⚠️ A STRETCH TWO TRADES SHARE IS SPLIT, NOT AWARDED. The first cut gave the contested days to
+   whoever arrived first and clipped the other away; the owner's answer was "I want to see the
+   overlap of different activities", so nothing is clipped. The bar is cut at every boundary and a
+   slice held by N trades draws N bands stacked at 100/N% — the overlap reads as the bar striping
+   rather than as one colour winning. Asserted from four sides because it is the whole point. */
 (function () {
   const mk = function (a, b2) {
     const r3 = { _dkind: 'group', activity_name: '5th Floor', _graw: '5th Floor',
                  _glsm: M.agg([a, b2], 'name', IDX4) };
     return segsOf(M.bars(r3, M.pd('2026-01-01'), 4.2, 340));
   };
+  const lane = function (d) { const g = /top:([\d.]+)%;height:([\d.]+)%/.exec(d); return g ? g[1] + '/' + g[2] : '?'; };
 
-  /* The ordinary handoff: Structural 5-16, Masonry 12-20. They share 12-16. */
+  /* The ordinary handoff with a shared week: Structural 5-16, Masonry 12-20, together 12-16. */
   let s3 = mk(act('Structural', '2026-01-05', '2026-01-16', 0),
               act('Exterior Masonry', '2026-01-12', '2026-01-20', 0));
-  eq(s3.length, 2, 'two trades that overlap still draw two segments');
-  eq(segSpan(s3.filter(function (d) { return segWho(d) === 'Structural'; })[0]),
-     '2026-01-05..2026-01-16', 'the trade that arrived first keeps the whole of its own run');
-  eq(segSpan(s3.filter(function (d) { return segWho(d) === 'Exterior Masonry'; })[0]),
-     '2026-01-17..2026-01-20', 'and the second one starts the day after, never on top of it');
-  /* Which is the property that matters: no two segments claim the same pixel. */
-  const boxes = s3.map(segBox).sort(function (p, q) { return p.x - q.x; });
-  ok(boxes.length === 2 && boxes[0].x + boxes[0].w <= boxes[1].x + 2,
-     'the two segments do not overlap', JSON.stringify(boxes));
+  /* Three stretches - Structural alone, both, Masonry alone - and the middle one draws twice. */
+  eq(s3.length, 4, 'an overlapping pair draws FOUR bands over three stretches');
+  eq(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); }).length, 2,
+     'and exactly two of them are marked as sharing');
+  const shared = s3.filter(function (d) { return /ps-lsmseg-share/.test(d); });
+  eq(segSpan(shared[0]), '2026-01-12..2026-01-16', 'the shared stretch is the days they are BOTH on it');
+  eq(segSpan(shared[1]), '2026-01-12..2026-01-16', 'for both of them, at the same span');
+  /* ⚠️ Stacked, not overlaid: half the bar each, in LANE order so identical data cannot stack two
+     different ways between renders. */
+  eq(shared.map(lane).join(' '), '0.000/50.000 50.000/50.000',
+     'the two share the bar’s height, top half and bottom half');
+  eq(segWho(shared[0]), 'Structural', 'the lower LANE takes the top half');
+  eq(segWho(shared[1]), 'Exterior Masonry', 'and the higher lane the bottom');
+  /* ⚠️ The unshared stretches are still FULL height - a bar that striped end to end would say the
+     two trades were together all along. */
+  const solo = s3.filter(function (d) { return !/ps-lsmseg-share/.test(d); });
+  eq(solo.map(lane).join(' '), '0.000/100.000 0.000/100.000',
+     'the stretches only one trade is on stay full height');
+  eq(solo.map(segSpan).sort().join(' | '), '2026-01-05..2026-01-11 | 2026-01-17..2026-01-20',
+     'and they are the days before and after the overlap');
+  /* ⚠️ The title is where a planner reads it, because at 3px a band is a colour and not a label. */
+  ok(/sharing this stretch with Exterior Masonry/.test(shared[0]),
+     'the shared band says who it is sharing with');
 
-  /* ⚠️ OUT OF SEQUENCE IS DECIDED THE SAME WAY, by the CALENDAR and not by the roster: Masonry
-     arrives before Structural here, so Masonry keeps the shared days although Structural sits on
-     the earlier lane. A rule that read the lane instead would have drawn the storey in an order
-     that never happened. */
-  s3 = mk(act('Structural', '2026-01-12', '2026-01-23', 0),
-          act('Exterior Masonry', '2026-01-05', '2026-01-16', 0));
-  eq(segSpan(s3.filter(function (d) { return segWho(d) === 'Exterior Masonry'; })[0]),
-     '2026-01-05..2026-01-16', 'the earlier START wins the shared stretch, not the earlier lane');
-  eq(segSpan(s3.filter(function (d) { return segWho(d) === 'Structural'; })[0]),
-     '2026-01-17..2026-01-23', 'and the later arrival takes what is left');
-
-  /* ⚠️⚠️ AND THE CASE THAT COSTS SOMETHING, STATED RATHER THAN HIDDEN: a trade whose whole run
-     sits inside another's gets NO segment. It is on the floor and the bar cannot say so in
-     colour. What says so is the clash hatch over that stretch and the bar's own tooltip, which
-     lists every trade on the storey - so the row still reports it, in the mark built for it. */
+  /* ⚠️⚠️ AND THE CASE THE OLD RULE SILENTLY DROPPED: a trade whose whole run sits INSIDE
+     another's. Under "first on the floor keeps it" it drew nothing at all; it now draws, which is
+     exactly what the owner asked to see. */
   s3 = mk(act('Structural', '2026-01-05', '2026-01-23', 0),
           act('Exterior Masonry', '2026-01-12', '2026-01-16', 0));
-  eq(s3.length, 1, 'an enveloped trade draws no segment of its own');
-  eq(segWho(s3[0]), 'Structural', 'the enveloping trade holds the whole bar');
-  const envHtml = M.bars({ _dkind: 'group', activity_name: '5th Floor', _graw: '5th Floor',
-                           _glsm: M.agg([act('Structural', '2026-01-05', '2026-01-23', 0),
-                                         act('Exterior Masonry', '2026-01-12', '2026-01-16', 0)],
-                                        'name', IDX4) }, M.pd('2026-01-01'), 4.2, 340);
-  ok(/Exterior Masonry/.test(envHtml), 'but the row still names it — in the bar’s own tooltip');
+  eq(s3.length, 4, 'an ENVELOPED trade is drawn, not swallowed');
+  ok(s3.some(function (d) { return segWho(d) === 'Exterior Masonry'; }),
+     'and it is there by name');
+  eq(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); }).length, 2,
+     'as one half of the stretch they share');
+  eq(s3.filter(function (d) { return !/ps-lsmseg-share/.test(d); }).map(segSpan).sort().join(' | '),
+     '2026-01-05..2026-01-11 | 2026-01-17..2026-01-23',
+     'with the enveloping trade full height on either side of it');
+
+  /* Out of sequence is the same picture from the other side - the rule reads the CALENDAR, and
+     there is no winner to pick any more. */
+  s3 = mk(act('Structural', '2026-01-12', '2026-01-23', 0),
+          act('Exterior Masonry', '2026-01-05', '2026-01-16', 0));
+  eq(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); }).length, 2,
+     'a successor that started first still shares its overlap');
+  eq(segSpan(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); })[0]),
+     '2026-01-12..2026-01-16', 'over the days they are actually both there');
+
+  /* ⚠️⚠️ AND NOTHING IS CHOPPED FOR NOTHING. Two trades that never meet must draw ONE band each,
+     not one per boundary of the other - slices with an identical trade set are merged back. */
+  s3 = mk(act('Structural', '2026-01-05', '2026-01-16', 0),
+          act('Exterior Masonry', '2026-01-19', '2026-01-30', 0));
+  eq(s3.length, 2, 'two trades that never overlap are two bands, not four');
+  eq(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); }).length, 0, 'and neither shares');
 })();
 
 /* One trade on the storey: the bar IS that trade, and it keeps the plain fill it always had. */

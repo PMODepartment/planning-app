@@ -1356,8 +1356,12 @@
        its own progress solid over it: the same treatment the per-trade bars carried before they
        merged, laid end to end instead of stacked. `left`/`width` arrive inline in BAR-LOCAL
        pixels, which is why there is no side offset here — see `_lsmSegsHTML`. */
-    .ps-lsmseg { position:absolute; top:0; bottom:0; display:block; overflow:hidden; }
+    .ps-lsmseg { position:absolute; top:0; height:100%; display:block; overflow:hidden; }
     .ps-lsmseg > span { position:absolute; left:0; top:0; bottom:0; display:block; }
+    /* ⚠️ A stretch two trades SHARE stacks them at half the bar’s height each. At 3px a band
+       needs its own edge or the pair reads as one thicker band of a muddled colour — the same
+       inset hairline every `.ps-sum-seg` carries, for the same reason. */
+    .ps-lsmseg-share { box-shadow:0 0 0 .5px rgba(0,0,0,.25) inset; }
     /* The folded trades keep the treatment their own bar has: no trade colour and a dense
        neutral cross-hatch, so a stretch nobody named can never be mistaken for a trade. */
     .ps-lsmseg-more { background:var(--ps-track);
@@ -6464,8 +6468,13 @@
         <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
         <div class="ps-form-chk" style="display:flex;align-items:center;gap:8px;margin-top:22px;"><input type="checkbox" id="ps-f-progms" /><label class="pd-label" for="ps-f-progms" style="margin:0;">Program Milestone</label></div>
         <div class="ps-form-full ps-form-sec">Dates &amp; Duration</div>
-        <div><label class="pd-label">Baseline Start</label><input class="pd-input" id="ps-f-bls" type="date" /></div>
-        <div><label class="pd-label">Baseline Finish</label><input class="pd-input" id="ps-f-blf" type="date" /></div>
+        <!-- Shown, never typed. bl_start/bl_finish mirror whichever saved baseline was last
+             "Set primary", so a date entered here lasts until the next Capture / Import / Set
+             primary overwrites it — and until then it is the number every variance, Planned %
+             and slip on the screen is measured against. Actions › Baselines owns them; save()
+             deliberately omits both keys from the payload. -->
+        <div><label class="pd-label">Baseline Start <small>(Actions › Baselines)</small></label><input class="pd-input" id="ps-f-bls" type="date" readonly title="Set by Actions › Baselines (Capture / Import / Set primary). Not editable here." style="background:var(--pd-bg);color:var(--pd-muted);" /></div>
+        <div><label class="pd-label">Baseline Finish <small>(Actions › Baselines)</small></label><input class="pd-input" id="ps-f-blf" type="date" readonly title="Set by Actions › Baselines (Capture / Import / Set primary). Not editable here." style="background:var(--pd-bg);color:var(--pd-muted);" /></div>
         <div><label class="pd-label">Planned Start *</label><input class="pd-input" id="ps-f-start" type="date" required /></div>
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">Actual Start</label><input class="pd-input" id="ps-f-astart" type="date" /></div>
@@ -12396,8 +12405,26 @@
   // The last error persist() saw, so a caller that passed quiet:true can still report the truth
   // instead of guessing at it. Cleared on every attempt so a stale message can never be shown.
   var _lastPersistErr = null;
+  /* ⚠️ THE BASELINE LOCK'S CHOKE POINT. Every inline grid edit, detail-panel field, paste,
+     fill-down, right-click action and form save funnels through persist(), so the one guard
+     below is what makes "a baseline is captured, not typed" structurally true rather than merely
+     un-offered: an edit surface added later inherits it without having to know it exists.
+     ⚠️ The baseline's OWN lifecycle does NOT come through here and is untouched — capture,
+     "Set primary", Import baseline (Excel) and "Clear baseline from activities" each write
+     bl_start/bl_finish with their own `sb().from(TABLE).update()`, and the schedule importers
+     carry them in the inserted row. Those four remain the only writers.
+     ⚠️ Stripped and REPORTED, never stripped silently. A save that quietly drops part of what
+     the caller asked for is the exact failure this file keeps warning about elsewhere. */
+  var _BL_LOCKED = { bl_start: 1, bl_finish: 1 };
   async function persist(id, patch, skipUndo, quiet) {
     _lastPersistErr = null;
+    var _blk = Object.keys(patch || {}).filter(function (k) { return _BL_LOCKED[k]; });
+    if (_blk.length) {
+      patch = Object.assign({}, patch);   // never mutate the caller's object (undo replays it)
+      _blk.forEach(function (k) { delete patch[k]; });
+      if (!quiet) UI.toast('Baseline dates are set in Actions › Baselines (Capture / Import / Set primary), not edited directly.', 'warn');
+      if (!Object.keys(patch).length) return true;
+    }
     var r = rows.find(function (x) { return x.id === id; });
     var before = null;
     if (r && !skipUndo) { before = {}; Object.keys(patch).forEach(function (k) { before[k] = (r[k] === undefined ? null : r[k]); }); }
@@ -24667,8 +24694,12 @@
         _gf('Earned Value POC (%)', 'ev_poc', 'number', r) +
         _gf('Expected Finish', 'expected_finish', 'date', r)) +
       _gGroup('Dates',
-        _gf('Baseline Start', 'bl_start', 'date', r) +
-        _gf('Baseline Finish', 'bl_finish', 'date', r) +
+        // Read-only for the same reason the grid's BL columns are: bl_start/bl_finish mirror
+        // whichever saved baseline was last Set primary, so a value typed here survives only
+        // until the next Capture / Import / Set primary — and until then every variance on the
+        // screen is measured against a baseline nobody agreed to. Actions › Baselines owns them.
+        _gro('Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—', false, 'Set by Actions › Baselines (Capture / Import / Set primary). Not editable here.') +
+        _gro('Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—', false, 'Set by Actions › Baselines (Capture / Import / Set primary). Not editable here.') +
         _gfDate('Start', r.actual_start ? 'actual_start' : 'start_date', dispStart(r)) +
         _gfDate('Finish', isComplete(r) ? 'actual_finish' : 'end_date', dispFin(r)) +
         (forecastFin(r) && !r.actual_finish ? _gro('Forecast Finish', Fmt.date(forecastFin(r))) : '') +
@@ -26940,8 +26971,16 @@
         ? '<div class="ps-cell c-name" title="' + esc(r.activity_name || '') + '" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r._dlabel) + _dsuffixHtml(r) + '</div>'
         : '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + _dsuffixHtml(r) + '</div>') +
       statusCellHtml(r) +
-      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_start" data-type="date">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
-      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
+      // ⚠️ NOT `ps-editable`. BL Start / BL Finish are the BASELINE, and a baseline is a record of
+      // what was committed to, not a field. Typed here it was silently divergent from the saved
+      // baseline the columns are supposed to mirror — bl_* holds whichever saved baseline was last
+      // "Set primary" (see BL_PRIMARY), so the next Set primary / Capture / Import overwrites the
+      // typed value without warning, and in the meantime every variance, Planned %, slip and
+      // S-curve on the screen is measured against a number nobody captured. `data-field` stays so
+      // copy, the live-collab cell address and _AUDIT_LBL still resolve the column; only the edit
+      // affordance is gone. The lifecycle lives in Actions › Baselines.
+      '<div class="ps-cell c-date" data-id="' + r.id + '" data-field="bl_start" data-type="date" title="Baseline Start — set by Actions › Baselines (Capture / Import / Set primary). Not editable here.">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
+      '<div class="ps-cell c-date" data-id="' + r.id + '" data-field="bl_finish" data-type="date" title="Baseline Finish — set by Actions › Baselines (Capture / Import / Set primary). Not editable here.">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="' + (r.actual_start ? 'actual_start' : 'start_date') + '" data-type="date">' + (dispStart(r) ? Fmt.date(dispStart(r)) : '—') + _dateBadge(r.actual_start ? 'A' : (r.primary_constraint ? 'C' : '')) + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="' + (isComplete(r) ? 'actual_finish' : 'end_date') + '" data-type="date">' + (dispFin(r) ? Fmt.date(dispFin(r)) : '—') + _dateBadge(r.actual_finish ? 'A' : '') + '</div>' +
       (durDone
@@ -28671,59 +28710,68 @@
      span, so colour changing along it reads as the branch changing category; an LSM row IS a
      storey, and colour changing along it reads as the floor being handed from trade to trade,
      which is the line-of-balance chart's entire subject.
-     ⚠️⚠️ WHEN TWO TRADES HOLD THE SAME DAYS, ONE OF THEM OWNS THE PIXELS, and that is the real
-     cost of this shape — stated here rather than discovered later. The rule is FIRST ON THE FLOOR
-     KEEPS IT: runs are claimed in start order, ties broken by lane (the declared construction
-     sequence), and a later trade is clipped to what is left. Nothing is lost from the row,
-     because the overlap is exactly what the clash engine already marks: the hatched
-     `.ps-lsmclash` overlay is drawn over that same stretch, on top of these segments. So a
-     contested stretch shows as one trade's colour under a clash hatch, which is a truer picture
-     than half-height lanes nobody can resolve at 6px.
-     ⚠️ ONE SEGMENT PER RUN, NOT PER TRADE. A trade that works a floor, leaves and comes back is
-     two stretches; painting `s -> f` as one would claim it held the floor across the gap the
-     notch is there to show. */
-  function _lsmOwnRuns(agg) {
+     ⚠️⚠️ A STRETCH TWO TRADES SHARE IS SPLIT, NOT AWARDED. The first cut gave the contested days
+     to whoever arrived first and clipped the other away; the owner's answer was *"I want to see
+     the overlap of different activities"*, so nothing is clipped any more. `_lsmSliceRuns` cuts
+     the bar at every boundary and reports WHO is present in each slice; a slice held by N trades
+     draws N bands stacked at `100/N`% height. Two trades on one stretch is therefore two 3px
+     bands in a 6px bar — the same `PS_LANE_MIN` floor the branch strip uses — and the overlap is
+     visible as the bar getting thinner-striped rather than as one colour winning.
+     ⚠️ Three or more on the same days go below that floor (2px each at N=3). They are still all
+     drawn, because dropping one would be the very thing the owner rejected, and the clash strip
+     above the chart names the pair-wise overlaps in words.
+     ⚠️ ONE BAND PER STRETCH, NOT PER TRADE. A trade that works a floor, leaves and comes back is
+     still two stretches, and the gap between them is the notch — an idle slice holds nobody and
+     is skipped rather than drawn. */
+  function _lsmSliceRuns(agg) {
     var runs = [], i, j;
     for (i = 0; i < agg.length; i++) {
       var b = agg[i];
       for (j = 0; j < b.runs.length; j++) runs.push({ b: b, s: b.runs[j][0], f: b.runs[j][1] });
     }
-    /* Earliest start first; ties to the lower LANE, which is the roster's construction order, so
-       the picture cannot change between two renders of identical data. */
-    runs.sort(function (p, q) { return p.s - q.s || p.b.lane - q.b.lane || p.f - q.f; });
-    var claimed = [], out = [];
+    if (!runs.length) return [];
+    /* Every start, and every finish+1 — the boundaries where the set of trades on the floor can
+       change. Cutting anywhere else would split a slice that nothing distinguishes. */
+    var pts = {};
     for (i = 0; i < runs.length; i++) {
-      var pieces = [[runs[i].s, runs[i].f]];
-      for (j = 0; j < claimed.length; j++) {
-        var next = [], c = claimed[j];
-        for (var k = 0; k < pieces.length; k++) {
-          var a = pieces[k][0], z = pieces[k][1];
-          if (c[1] < a || c[0] > z) { next.push([a, z]); continue; }
-          /* The claimed stretch is inclusive of both ends, so what survives stops the DAY before
-             it starts and resumes the DAY after it ends. */
-          if (c[0] > a) { var e1 = +addDays(new Date(c[0]), -1); if (e1 >= a) next.push([a, e1]); }
-          if (c[1] < z) { var s1 = +addDays(new Date(c[1]), 1); if (s1 <= z) next.push([s1, z]); }
-        }
-        pieces = next;
-      }
-      for (j = 0; j < pieces.length; j++) out.push({ b: runs[i].b, s: pieces[j][0], f: pieces[j][1] });
-      claimed.push([runs[i].s, runs[i].f]);
+      pts[runs[i].s] = 1;
+      pts[+addDays(new Date(runs[i].f), 1)] = 1;
+    }
+    var keys = Object.keys(pts).map(Number).sort(function (p, q) { return p - q; });
+    var out = [];
+    for (i = 0; i < keys.length - 1; i++) {
+      var a = keys[i], z = +addDays(new Date(keys[i + 1]), -1);
+      if (z < a) continue;
+      var here = [];
+      for (j = 0; j < runs.length; j++) if (runs[j].s <= a && runs[j].f >= z) here.push(runs[j].b);
+      if (!here.length) continue;                    /* the floor stood idle — that is the notch */
+      /* LANE ORDER inside the slice, which is the roster's construction order, so the same data
+         cannot stack two different ways between renders. */
+      here.sort(function (p, q) { return p.lane - q.lane; });
+      /* ⚠️⚠️ NO MERGING OF ADJACENT SLICES, AND THAT IS NOT AN OVERSIGHT. The first cut folded
+         neighbouring slices that held the same set of trades, so a trade nobody overlapped would
+         not be chopped at every neighbour's boundary. A mutation run deleting that branch failed
+         nothing, which is how it was found to be unreachable: every boundary here is some run's
+         start or some run's finish+1, so crossing one always adds or removes a trade and two
+         adjacent slices cannot hold the same set. Same-trade adjacency cannot arise either —
+         `_lsmAgg` has already folded one trade's contiguous runs into one. */
+      out.push({ s: a, f: z, who: here });
     }
     return out;
   }
-  /* The segments themselves, in BAR-LOCAL pixels like the gap notches and the clash marks — the
+  /* The bands themselves, in BAR-LOCAL pixels like the gap notches and the clash marks — the
      bar's own `x`/`w` are passed in rather than re-derived from the dates, which is the `zh` rule:
      a mark positioned by a second expression over the same inputs is a mark that will drift.
-     ⚠️ Each segment carries its trade's OWN progress, in the same pale-track-plus-solid-fill
+     ⚠️ Each band carries its trade's OWN progress, in the same pale-track-plus-solid-fill
      treatment the per-trade bars had before the merge. That is strictly more than the one
-     duration-weighted fill it replaces, which averaged four trades into a number describing none
+     duration-weighted fill it replaces, which averaged every trade into a number describing none
      of them; the storey's roll-up % is still in the grid's own cell for the row. */
   function _lsmSegsHTML(r, min, dayw, barS, barX, barW) {
     var agg = r._glsm;
     if (!agg || agg.length < 2) return '';          /* one trade: the bar already IS that trade */
-    var own = _lsmOwnRuns(agg), out = '', loc = r._graw || r.activity_name || '';
-    for (var i = 0; i < own.length; i++) {
-      var p = own[i], b = p.b, ps = new Date(p.s), pf = new Date(p.f);
+    var slices = _lsmSliceRuns(agg), out = '', loc = r._graw || r.activity_name || '';
+    for (var i = 0; i < slices.length; i++) {
+      var p = slices[i], ps = new Date(p.s), pf = new Date(p.f);
       var sx = Math.round(dayDiff(barS, ps) * dayw);
       /* MIN 2px: a two-day trade on a year-long storey is otherwise sub-pixel and does not paint
          at all — the same floor `_sumSegsHTML` states for the branch strip. */
@@ -28732,14 +28780,27 @@
       if (sx < 0) { sw += sx; sx = 0; }
       if (sx + sw > barW) sw = barW - sx;
       if (sw <= 0) continue;
-      var who = b.over ? ('+' + (b.overCount || 0) + ' more key trades') : b.value;
-      out += '<span class="ps-lsmseg' + (b.over ? ' ps-lsmseg-more' : '') + '" title="' +
-        esc(who + ' — ' + loc + ': ' + Fmt.date(dstr(ps)) + ' → ' + Fmt.date(dstr(pf)) +
-            ', ' + b.pct + '%') +
-        '" style="left:' + sx + 'px;width:' + sw + 'px;' +
-        (b.over ? '' : catTint(b.color)) + '">' +
-        ((!b.over && b.pct > 0) ? '<span style="width:' + b.pct + '%;' + catStyle(b.color, b.tex) + '"></span>' : '') +
-        '</span>';
+      var n = p.who.length, hp = (100 / n).toFixed(3);
+      for (var k = 0; k < n; k++) {
+        var b = p.who[k];
+        var who = b.over ? ('+' + (b.overCount || 0) + ' more key trades') : b.value;
+        /* ⚠️ The SHARED slice says so in its own title, because at 3px a band is a colour and not
+           a label — this is where a planner reads that two trades are on the floor at once. */
+        var alsoTxt = '';
+        if (n > 1) {
+          var others = [];
+          for (var m = 0; m < n; m++) if (m !== k) others.push(p.who[m].over ? 'folded trades' : p.who[m].value);
+          alsoTxt = ' — sharing this stretch with ' + others.join(', ');
+        }
+        out += '<span class="ps-lsmseg' + (b.over ? ' ps-lsmseg-more' : '') +
+          (n > 1 ? ' ps-lsmseg-share' : '') + '" title="' +
+          esc(who + ' — ' + loc + ': ' + Fmt.date(dstr(ps)) + ' → ' + Fmt.date(dstr(pf)) +
+              ', ' + b.pct + '%' + alsoTxt) +
+          '" style="left:' + sx + 'px;width:' + sw + 'px;top:' + (k * (100 / n)).toFixed(3) +
+          '%;height:' + hp + '%;' + (b.over ? '' : catTint(b.color)) + '">' +
+          ((!b.over && b.pct > 0) ? '<span style="width:' + b.pct + '%;' + catStyle(b.color, b.tex) + '"></span>' : '') +
+          '</span>';
+      }
     }
     return out;
   }
@@ -30471,8 +30532,13 @@
     { k: 'risk_pessimistic_pct', label: 'Risk Pessimistic %', type: 'num' },
     { k: 'start_date', label: 'Start', type: 'date' },
     { k: 'end_date', label: 'Finish', type: 'date' },
-    { k: 'bl_start', label: 'Baseline Start', type: 'date' },
-    { k: 'bl_finish', label: 'Baseline Finish', type: 'date' },
+    /* ⚠️ Baseline Start / Baseline Finish are deliberately ABSENT, unlike Baseline Cost above.
+       Global Change writes straight through with `sb().update()` and then `resetUndo()`, so a
+       "Shift by (days)" down bl_start would move the whole committed baseline on thousands of
+       rows with nothing to undo it — and bl_start/bl_finish are only a mirror of whichever saved
+       baseline was last Set primary, so the shifted dates disagree with the baseline they claim
+       to come from until the next Set primary silently reverts them. Re-baselining is Actions ›
+       Baselines: Capture current, Import (Excel), Set primary, Clear. */
     { k: 'contract_date', label: 'Contract Date', type: 'date' }
   ];
   function gcField(k) { return GC_FIELDS.find(function (f) { return f.k === k; }); }
@@ -35386,7 +35452,10 @@
     var payload = {
       project_id: pid, wbs: wbs, activity_id: v('ps-f-actid') || null, activity_name: name,
       activity_type: type, status: document.getElementById('ps-f-status-sel').value,
-      bl_start: v('ps-f-bls') || null, bl_finish: v('ps-f-blf') || null,
+      // ⚠️ NO bl_start / bl_finish. The two inputs are readonly display of the primary baseline
+      // (see the form markup); writing them back would let this form re-assert a stale value it
+      // only ever read, and a NEW activity created after a baseline was captured correctly has
+      // none. Actions › Baselines is the only writer.
       start_date: start, end_date: finish, duration_days: dur,
       percent_complete: num('ps-f-pct') != null ? num('ps-f-pct') : 0,
       responsible_party: v('ps-f-resp') || null,
@@ -58236,8 +58305,11 @@
     'Activity ID':           { f: 'activity_id', edit: 1, t: 'text' },
     'Activity Name':         { f: 'activity_name', edit: 1, t: 'text' },
     'Status':                { f: 'status', edit: 0, t: 'text' },
-    'BL Start':              { f: 'bl_start', edit: 1, t: 'date' },
-    'BL Finish':             { f: 'bl_finish', edit: 1, t: 'date' },
+    // Copy-only, for the same reason the grid cells are no longer `ps-editable`: the baseline is
+    // captured, not typed. A paste or a Ctrl+D down this column would write a "baseline" the
+    // saved baselines know nothing about, and the next Set primary would silently revert it.
+    'BL Start':              { f: 'bl_start', edit: 0, t: 'date' },
+    'BL Finish':             { f: 'bl_finish', edit: 0, t: 'date' },
     'Start':                 { f: 'start_date', edit: 1, t: 'date', disp: 'start' },
     'Finish':                { f: 'end_date', edit: 1, t: 'date', disp: 'fin' },
     'Dur':                   { f: 'duration_days', edit: 0, t: 'text' },   // computed from the dates

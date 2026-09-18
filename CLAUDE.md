@@ -104,6 +104,83 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ac) — A shared stretch splits instead of being awarded, and the merge branch I wrote was unreachable
+
+Owner, on the version that shipped an hour earlier: *"I want to see the overlap of different
+activities."* The first cut gave the contested days to whoever arrived first and clipped the other
+trade away — so a trade whose whole run sat inside another's drew **nothing at all**, which the
+entry above admitted and this one removes.
+
+### `_lsmOwnRuns` (claim and clip) becomes `_lsmSliceRuns` (cut and report)
+
+The bar is cut at every boundary — each run's start and each run's **finish + 1**, the only points
+where the set of trades on the floor can change — and each slice reports **who** is on it. A slice
+held by *N* trades draws *N* bands stacked at `100/N`% height, in **lane order**, so identical data
+cannot stack two different ways between renders.
+
+| trades on the stretch | what the bar does |
+|---|---|
+| 1 | one band, the full 6px |
+| 2 | two 3px bands — `PS_LANE_MIN`, the same floor the branch strip uses |
+| 3+ | still **all** drawn (2px each at three) |
+| 0 | the slice is skipped — that is the notch, and it still means the floor stood empty |
+
+⚠️ Three or more on the same days go **below** the legibility floor, and they are drawn anyway:
+dropping one is precisely what the owner rejected. The clash strip above the chart names the
+pair-wise overlaps in words, so the count is readable even where the bands are not.
+
+⚠️ A shared band **says so in its title** — *"sharing this stretch with Exterior Masonry"* — because
+at 3px a band is a colour and not a label. It also carries `.ps-lsmseg-share`, which gives it the
+inset hairline every `.ps-sum-seg` has: two 3px bands with no edge between them read as one thicker
+band of a muddled colour.
+
+### ⚠️⚠️ THE SLICE-MERGING BRANCH I WROTE WAS UNREACHABLE, AND THE MUTATION RUN IS WHAT SAID SO
+
+The first cut folded neighbouring slices holding the same set of trades, so a trade nobody
+overlapped would not be chopped at every neighbour's boundary. Deleting that branch as a mutant
+**failed nothing**. It cannot fire: every boundary is some run's start or some run's finish+1, so
+crossing one always adds or removes a trade and two adjacent slices can never hold the same set —
+and same-trade adjacency cannot arise either, because `_lsmAgg` has already folded one trade's
+contiguous runs into one. The shorter function ships, with the reasoning kept where the branch was.
+
+### Verified
+
+`test-lsm` **732/0**. **Six mutants, each caught by a named assertion:**
+
+| mutant | the assertion that caught it |
+|---|---|
+| the slice awarded to one trade again | *an overlapping pair draws FOUR bands over three stretches* |
+| bands overlaid instead of stacked | *the two share the bar's height, top half and bottom half* |
+| stacked in bucket order, not lane order | *the lower LANE takes the top half* |
+| the boundary off by a day | *the shared stretch is the days they are BOTH on it* |
+| the share class never emitted | *and exactly two of them are marked as sharing* |
+| the band stops naming who it shares with | *the shared band says who it is sharing with* |
+
+⚠️ **Two further candidates were dropped rather than counted**, because they are semantic no-ops
+and counting them would have inflated the evidence: an *intersection* test in place of the
+*containment* test is the same test once the slices are cut at every boundary, and the merge branch
+above is dead.
+
+⚠️ **The contrast against the previous commit cannot be run**, and that is stated rather than
+quietly skipped: the internal function was **renamed**, so the old file's `_lsmSegsHTML` calls a
+name the suite no longer slices and the harness dies on it. The mutation run is the evidence for
+this change; the pinned base `4d82fd4` is still **27/0** and still loud.
+
+A **real browser render of the shipped output**, all three cases in one bar: solo stretches 6px full
+height, a two-trade stretch as two 3px bands at top 0 and 3, a three-trade stretch as three 2px
+bands at 0 / 1.98 / 4 — every trade present, none clipped.
+
+`test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings.
+`modules-grid.js` `?v=` → `20260918zc`, sorted forward of main's `20260918zb`.
+
+⚠️ **Still unexplained: the owner's own project draws no bands at all.** On OPW101 with LSM rows on,
+every floor row shows one plain bar. Either each floor group row carries a single keyed trade —
+in which case `_lsmSegsHTML` correctly returns `''` and the expectation, not the code, is what needs
+answering — or the buckets are there and something upstream is dropping them. Chrome is not
+connected to this session, so it is a console reading from him rather than a measurement from here,
+and **no claim is made about which** until that comes back.
+
+
 ### 2026-09-18 (ab) — S-Curve UI sweep: a menu in Arial, a button that named the wrong control, a private copy of a shared control, and a heading that always said "monthly"
 
 Owner: *"Let's do a UI sweep for the S-curve module this time."* Four defects, every one measured
