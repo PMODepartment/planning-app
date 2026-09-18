@@ -701,9 +701,22 @@
      would silently switch what the chart is claiming the moment somebody opened the sheet. */
   var view = 'curve';             // 'curve' | 'manual'
   function viewKey() { return 'sc_view_' + pid; }
-  function switchView(v) {
-    view = (v === 'manual') ? 'manual' : 'curve';
-    try { localStorage.setItem(viewKey(), view); } catch (e) {}
+  /* ⚠️⚠️ THE ONE PLACE `view` BECOMES DOM, AND IT HAS TO BE CALLED FROM RENDER TOO.
+     This body used to live inside switchView() alone — and switchView() is only ever called from
+     the tab's own click handler. So the two ways of reaching this tab WITHOUT clicking it both
+     landed on the Curve:
+       1. the remembered view (`sc_view_<pid>`). render() marked the Manual tab `.active`, the
+          dropdown trigger mirrored it through its MutationObserver, and the PANES were never
+          touched — so a planner who was last on Manual data came back to a page reading
+          "Manual data" with the S-curve underneath it. Owner, 2026-09-18, with a screenshot:
+          *"manual data tab but shows s-curve page"*.
+       2. `?scView=manual`, the deep link the portfolio Manual-data register uses to open one
+          project's sheet (2026-09-16). It set `view`, wrote it back to storage — and opened the
+          Curve, which is the one thing that link exists not to do.
+     ⚠️ render() used to sync only the `.active` CLASS here, which is exactly how the label and
+     the pane came to disagree: two half-syncs of one piece of state. One function now, so they
+     cannot drift, and it carries the `aria-selected` that render()'s copy was also missing. */
+  function applyView() {
     var pc = document.getElementById('sc-pane-curve'), pm = document.getElementById('sc-pane-manual');
     if (pc) pc.hidden = (view !== 'curve');
     if (pm) pm.hidden = (view !== 'manual');
@@ -711,6 +724,14 @@
       b.classList.toggle('active', b.dataset.view === view);
       b.setAttribute('aria-selected', b.dataset.view === view ? 'true' : 'false');
     });
+  }
+  function switchView(v) {
+    view = (v === 'manual') ? 'manual' : 'curve';
+    try { localStorage.setItem(viewKey(), view); } catch (e) {}
+    /* ⚠️ Painted BEFORE the lazy fetch below, not after: this is the click response, and the
+       branch below can `return` into a network round trip. Leaving the pane switch until the
+       render on the far side of that would show the old tab's content under a spinner. */
+    applyView();
     /* ⚠️ NOTHING re-syncs the dropdown trigger here, and that is not an omission:
        tabsToDropdown() watches the real buttons' class attribute with a MutationObserver, so
        toggling .active above IS the re-sync. Calling into it would be a second mechanism for
@@ -2091,7 +2112,7 @@
     renderKpis(d); renderChart(d); renderTable(d); renderFilters();
     renderManual();
     document.querySelectorAll('#sc-mode [data-m]').forEach(function (b) { b.classList.toggle('on', b.dataset.m === mode); });
-    document.querySelectorAll('.sc-tabs [data-view]').forEach(function (b) { b.classList.toggle('active', b.dataset.view === view); });
+    applyView();   // ⚠️ panes AND the tab state - see applyView(); a class-only sync here is the bug it documents
     var h = document.getElementById('sc-cardh');
     /* ⚠️⚠️ THE HEADING NAMES THE FILTER. A curve of one trade under a heading reading "Project
        S-Curve" is the mistake this module's notes keep recording in other forms: a screen that
