@@ -104,6 +104,59 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (t) — A Pages deploy that failed and recovered, and a live audit for harness artefacts
+
+Owner, with a screenshot of run **#1379** on `0067234`: *"Can we check this first?"*, then *"Check
+live if there are any harness artifacts"*.
+
+### The deploy failure did not stick
+
+`build` and `report-build-status` passed; `deploy` failed with *“Ensure GITHUB_TOKEN has
+permission id-token: write”*. That is GitHub’s own generated `pages-build-deployment` workflow (this
+repo has only `deploy-edge-functions.yml` of its own), so there is no workflow file here to change.
+
+⚠ **It was two commits old and later runs succeeded**, which is the part worth recording: a
+persistent permissions problem fails every run, so this was transient. Verified by content rather
+than by trusting a green tick — the live module page hashes **identically** to `origin/main`:
+
+| check | result |
+|---|---|
+| live `modules/project-schedule/index.html` vs `origin/main` | same blob, `9b10a9a` |
+| `dashboard.css` / `modules-grid.js` tokens | `20260918b` / `20260918r`, both current |
+| Pormac sweep markers | `body class="pmc-page"` and module `?v=20260918a` live |
+| colour-pane markers | `#ps-alg-open`, the moved section, both width fixes live |
+
+If it recurs on consecutive runs it is a settings problem, not a flake — Settings → Actions →
+Workflow permissions is where the token’s scope is set.
+
+### The artefact audit found nothing live, and the guard is working
+
+⚠⚠ **Scanned by BEHAVIOUR, not by filename.** The 2026-09-01 incident was a publicly reachable page
+rendering fixtures with the auth layer stubbed out — it would have passed any name check, which is
+exactly why `.gitignore` says *“match the WORD, not one filename”*. Every tracked `.html` was
+read for whether it gates on `AppAuth` and whether it ships fixtures:
+
+| finding | verdict |
+|---|---|
+| 31 tracked pages, 24 gate on `AppAuth` | — |
+| `admin.html` “ungated” | **false positive** — it uses `requireAdmin`, which my pattern missed |
+| drawing-register / material-submittal ungated | **not findings** — redirect stubs to the Engineering App; they render nothing |
+| 12 `fixture` hits in two modules | **false positives** — comments, plus the class code `'Plumbing Fixtures'` |
+| tracked files with scratch-ish names | **0** |
+| 13 harness URLs probed live | **404**, every one |
+
+⚠ Three harness files **do** sit in the owner’s clone — `cca-tap-harness.html`, `nm-harness.html`,
+`uic-harness.html`, ~226KB each, another session’s. All three are **untracked**, caught by
+`**/*harness*`, absent from `origin/main` and **404 live**. The rule added after the 2026-09-01
+escape is doing precisely the job it was added for.
+
+⚠ The scan’s first run reported **0 files, 0 findings** — `git ls-files -- '*.html'` passed its
+quotes through literally on this shell and matched nothing. A checker that says “all clear” because
+it looked at nothing is the third flattering zero this week; it now aborts when the file list is
+empty rather than reporting success.
+
+**Verified:** read-only — no code changed, no cache-bust.
+
 ### 2026-09-18 (s) — Pormac: a 34px button rendering at 336, a toast on the disclaimer, and 606px of nothing
 
 Owner: *"Let's do a UI sweep in pormac module as well."* Three defects, each measured against the
