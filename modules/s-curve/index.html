@@ -702,7 +702,7 @@
      `modules/project-schedule/index.html` alongside 58k lines this module cannot load. If a third
      reader appears it belongs in `assets/js/scurve.js` beside the curve engine. */
   var WBS_NODES = [], _nodeById = {}, _tradeMemo = {};
-  var hasProcurement = false, nProcDropped = 0;
+  var hasMirror = false, nMirrorDropped = 0;
   function nodeTrade(nodeId) {
     if (!nodeId) return '';
     if (_tradeMemo[nodeId] !== undefined) return _tradeMemo[nodeId];
@@ -734,20 +734,39 @@
      "Procurement" - so a mirror of purchase orders arrived in the sheet dressed as a trade.
      ⚠️ Ancestry, not the node itself: the sync stamps the marker on the branch AND on what it
      generates, but an activity may sit deeper than either. */
-  var _procMemo = {};
-  function nodeIsProcurement(nodeId) {
+  /* ⚠️⚠️ DESIGN DEVELOPMENT IS THE SAME KIND OF THING AS PROCUREMENT, AND THE OWNER SAYS SO:
+     *"Let's not consider the design development as part of the s-curve."* Both are children of
+     Planning Phase in `WBS_SKELETON`, both are MIRRORS of another app's records rather than work
+     put in place - Procurement from WPM, Design Development from the Engineering app through
+     `eng_design_progress` / `sync-eng`. Drawings issued and purchase orders raised are real
+     progress on something; they are not physical progress on the building, which is what this
+     curve measures.
+     ⚠️ A LIST, not a second copy of the procurement check. The next mirror branch is then one
+     string, not another parallel mechanism to keep in step - which is the shape this file keeps
+     recording as the source of two screens disagreeing.
+     ⚠️ PREFIX match: the syncs stamp `<kind>`, `<kind>_trade` and `<kind>_child` onto what they
+     generate (all four values verified present in project-schedule), and a prefix covers every
+     variant without listing them. */
+  var MIRROR_KINDS = ['procurement', 'design_development'];
+  function isMirrorKind(v) {
+    var k = String(v || '');
+    for (var i = 0; i < MIRROR_KINDS.length; i++) { if (k.indexOf(MIRROR_KINDS[i]) === 0) return true; }
+    return false;
+  }
+  var _mirrorMemo = {};
+  function nodeIsMirror(nodeId) {
     if (!nodeId) return false;
-    if (_procMemo[nodeId] !== undefined) return _procMemo[nodeId];
-    _procMemo[nodeId] = false;                   // cycle guard, as in nodeTrade
+    if (_mirrorMemo[nodeId] !== undefined) return _mirrorMemo[nodeId];
+    _mirrorMemo[nodeId] = false;                 // cycle guard, as in nodeTrade
     var n = _nodeById[nodeId], guard = 0, hit = false;
     while (n && guard++ < 60) {
-      if (String(n.source_kind || '').indexOf('procurement') === 0) { hit = true; break; }
+      if (isMirrorKind(n.source_kind)) { hit = true; break; }
       n = n.parent_id ? _nodeById[n.parent_id] : null;
     }
-    _procMemo[nodeId] = hit;
+    _mirrorMemo[nodeId] = hit;
     return hit;
   }
-  function isProcurementRow(r) { return !!(r && nodeIsProcurement(r.wbs_node_id)); }
+  function isMirrorRow(r) { return !!(r && nodeIsMirror(r.wbs_node_id)); }
   function tradeOf(r) {
     var t = String((r && r.work_type) || '').trim();
     return t || nodeTrade(r && r.wbs_node_id) || UNTRADED;
@@ -943,9 +962,7 @@
        `'procurement_child'` onto everything they generate underneath it, so the marker is
        machine-readable and survives a planner renaming the branch. Matching the word
        "procurement" in a name would also catch a legitimately-named construction activity. */
-    hasProcurement = WBS_NODES.some(function (n) {
-      return String(n.source_kind || '').indexOf('procurement') === 0;
-    });
+    hasMirror = WBS_NODES.some(function (n) { return isMirrorKind(n.source_kind); });
   }
   var rowsLoaded = false;
   async function fetchRows() {
@@ -962,8 +979,8 @@
     /* ⚠️ Dropped HERE, at the one place both read paths get their rows, so no consumer has to
        remember to exclude them - the weights, the trade list, the activity count and every
        filter see a schedule without the mirror. Counted rather than dropped in silence. */
-    var kept = out.filter(function (r) { return !isProcurementRow(r); });
-    nProcDropped = out.length - kept.length;
+    var kept = out.filter(function (r) { return !isMirrorRow(r); });
+    nMirrorDropped = out.length - kept.length;
     return kept;
   }
   // Called by every control that needs per-activity data. Renders once the rows are in.
@@ -1007,8 +1024,8 @@
     MAN = null; manMissing = false; manDirty = {};
     try { var _mk = localStorage.getItem('sc_mankind_' + pid); manKind = (_mk === 'actual' || _mk === 'forecast') ? _mk : 'planned'; } catch (e) { manKind = 'planned'; }
     trSel = []; trScope = 'all'; rowsLoaded = false;
-    WBS_NODES = []; _nodeById = {}; _tradeMemo = {}; _procMemo = {};
-    hasProcurement = false; nProcDropped = 0;
+    WBS_NODES = []; _nodeById = {}; _tradeMemo = {}; _mirrorMemo = {};
+    hasMirror = false; nMirrorDropped = 0;
     showLoading();
     /* ⚠️ BEFORE the activities, because `tradeOf()` is read the moment they arrive - the
        aggregate path skips per-activity trades entirely, but the row path groups by them. */
@@ -1022,7 +1039,7 @@
     // fetch. Trying to serve a cost curve from a duration aggregate is how a chart ends up labelled
     // in pesos while plotting days.
     try {
-      /* ⚠️⚠️ THE SERVER AGGREGATE CANNOT EXCLUDE PROCUREMENT, SO A PROJECT THAT HAS ANY MUST
+      /* ⚠️⚠️ THE SERVER AGGREGATE CANNOT EXCLUDE A MIRROR BRANCH, SO A PROJECT THAT HAS ONE MUST
          NOT USE IT. `schedule_scurve_agg` sums every non-WBS row with a start_date and knows
          nothing about `wbs_node_id`, `source_kind` or phases - it is a pure month bucket. Filter
          procurement on the client only, and the curve would change shape when the planner toggled
@@ -1030,13 +1047,14 @@
          mirror, while the duration basis kept summing it server-side. A number that moves when
          you change the weighting is worse than one that is consistently wrong, because nobody
          can tell which reading to believe.
-         ⚠️ So the fast path is skipped exactly when it would be wrong - `hasProcurement` is read
+         ⚠️ So the fast path is skipped exactly when it would be wrong - `hasMirror` is read
          off the WBS tree, which is already loaded by this point, and costs no extra query. A
-         project with no procurement mirror keeps the aggregate and pays nothing for this.
+         project with no mirror branch keeps the aggregate and pays nothing for this.
          ⚠️ The alternative was a migration teaching the RPC to walk the WBS. Rejected for now:
          it puts a recursive CTE in the hot path of every S-curve and Cash Flow read to serve the
-         projects that could simply take the row path instead. */
-      if (basis !== 'cost' && !hasProcurement) {
+         the projects that could simply take the row path instead.
+         ⚠️ Design Development is excluded on the same footing as of (an) - see MIRROR_KINDS. */
+      if (basis !== 'cost' && !hasMirror) {
         var r = await sb().rpc('schedule_scurve_agg', { p_id: pid });
         if (!r.error && r.data && r.data.months) agg = r.data;
       }
