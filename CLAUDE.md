@@ -104,6 +104,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (m) — The Close button, fixed at the wrong altitude the first time; and Floors & Zones measured rather than swept
+
+Owner, reporting it a **second** time: *"The close button is still not working let's fix queue this"*,
+and separately *"The Floors & Zones need another UI sweep. Let's queue"*.
+
+### ⚠⚠ THE FIRST CLOSE FIX WAS CORRECT AND WAS THE WRONG SHAPE
+
+Entry *(ak)* fixed this per **call site**: the Schedule Setup began passing `{ showClose: false }`,
+because its calendar editor is inline in the step and there is nothing to close. ⚠ That fix **is
+deployed** — confirmed by fetching the live page and grepping the call, not by assuming:
+
+```
+renderCalendarsInto(ch, { showClose: false }        <- present on pmodepartment.github.io
+```
+
+So the report is either a cached copy of the module page in his browser, or a call site that
+forgets the flag. **Both are symptoms of the same design mistake**, which is what got fixed here:
+the button's existence was a caller's responsibility, and the default when a caller forgot was
+`close: opts.close || function () {}` — a no-op **indistinguishable from a working handler**.
+
+The invariant is structural now: **no `opts.close` → no button.**
+
+| call site | before | now |
+|---|---|---|
+| modal, `{ close: fn, onDone }` | Close, works | Close, works |
+| inline, `{ showClose: false }` | none | none |
+| setup, `{ showClose: false }` | none | none |
+| **a caller that forgets the flag** | **Close that does nothing** | **none** |
+
+Verified by evaluating the shipped guard text — `(opts.showClose === false || !_canClose)` —
+against each call site's actual options object. The dead state is now unreachable rather than
+merely unused.
+
+⚠ `MODULE_V` does not help here. It cache-busts `modules-grid.js`; the page the owner opens **is**
+`modules/project-schedule/index.html`, navigated to directly, so a stale copy of it is served by
+the browser's own HTML cache and no `?v=` reaches it. If the button is still there after this
+deploys, a hard reload is the test — not a further code change.
+
+### Floors & Zones: measured, and the wrap is real at his width
+
+⚠⚠ **Nothing was swept, because at full width there is nothing wrong.** A harness built from the
+shipped row markup and the shipped stylesheet shows one clean line at 1398px, and the live rules
+are byte-identical to local (checked with `curl`, both `.sbld-flr-h` and its four child rules).
+
+⚠ **The screenshot is a HiDPI capture.** The row measures ~771 image px, which at 1.5× is **~514
+CSS px** — not 771. Measuring the shipped row there reproduces it exactly:
+
+| panel | basement row | floor row |
+|---|---|---|
+| 1398px | 51px, one line | 51px, one line |
+| 770px | 51px, one line | 51px, one line |
+| 620px | **91px, two lines** | 51px, one line |
+| **514px** | **91px, two lines** | **91px, two lines** |
+
+**Every row doubles from 51px to 91px**, which on his 17-storey list is **~680px of extra
+scrolling**. The row demands ~530px before the name field gets a single pixel (code 88 + select 99
++ “Zones” 33 + two steppers 56 + count 22 + shape 61 + delete 30 + grab 11 + BSMT 44, plus ten 8px
+gaps), so one line is **geometrically impossible** at 514px — it cannot be fixed by tuning a
+`flex-basis`, only by giving the row less to carry. That is a design decision, so it is queued
+rather than guessed at the end of a long turn.
+
+⚠⚠ **My clipping test was wrong in the flattering direction, and is recorded so it is not
+repeated.** It asked `scrollWidth > clientWidth`, which never fires for a truncated **placeholder**
+— placeholders do not contribute to `scrollWidth`. It reported “no clipping” on rows whose
+placeholder was visibly cut off. The replacement measures the shown string in the element's own
+computed font on a canvas and compares against its content box.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline). `modules-grid.js` `?v=` → `20260918m`.
+
 ### 2026-09-18 (l) — The two schedule panes fought each other while scrolling, and the notes button learned to move
 
 ### ⚠⚠ THE SCROLL LOCK NEVER LOCKED ANYTHING

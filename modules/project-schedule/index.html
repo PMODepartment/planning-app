@@ -7478,7 +7478,19 @@
   // different containers — a second copy would drift the moment either was touched.
   function renderCalendarsInto(host, opts) {
     opts = opts || {};
-    var m = { el: host, close: opts.close || function () {} };
+    /* ⚠⚠ THE CLOSE BUTTON NOW EXISTS ONLY IF IT CAN ACTUALLY CLOSE SOMETHING. Owner, reporting
+       it for the SECOND time: *"The close button is still not working."*
+       Entry *(ak)* fixed this per CALL SITE — the Schedule Setup started passing
+       `{ showClose: false }` because its editor is inline and there is nothing to close. That was
+       correct and it is deployed (confirmed by fetching the live page and grepping the call), but
+       it is the wrong SHAPE of fix: it asks every caller to remember a flag, and the default when
+       they forget is a button that renders and does nothing, because `close` fell back to
+       `function () {}` — a no-op that is indistinguishable from a working handler.
+       ⚠ The invariant is now structural: no `opts.close` → no button. A caller that forgets the
+       flag gets no Close instead of a dead one, and `showClose: false` still suppresses it for a
+       caller that DOES have a close but wants the editor bare. The dead state is unreachable. */
+    var _canClose = typeof opts.close === 'function';
+    var m = { el: host, close: _canClose ? opts.close : function () {} };
     var draft = null, calFilter = '', _calShown = CALS;
     function applyCalFilter() {
       var q = calFilter.trim().toLowerCase();
@@ -7557,7 +7569,7 @@
           }).join('') : '<div class="pd-empty" style="padding:16px;">' + (CALS.length ? 'No calendar matches that filter.' : 'No calendars on this project yet.') + '</div>') +
           '</div>' +
         '</div><div class="ps-cal-edit">' + (draft ? editHTML() : '<div class="pd-empty" style="padding:24px;">Pick a calendar to edit, or create one.</div>') + '</div></div>' +
-        (opts.showClose === false ? '' : '<div style="margin-top:12px;text-align:right;"><button class="pd-btn" id="ps-cal-close">Close</button></div>');
+        ((opts.showClose === false || !_canClose) ? '' : '<div style="margin-top:12px;text-align:right;"><button class="pd-btn" id="ps-cal-close">Close</button></div>');
     }
 
     var _MO_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
