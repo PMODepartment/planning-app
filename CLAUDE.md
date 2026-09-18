@@ -165,11 +165,30 @@ server-side. A live RPC probe (anon, with both controls through the same path: a
 function answered `200 false`, a known-missing one `404 PGRST202`) returned `400 P0001 "Your account
 is not approved yet."` for `sandbox_ensure` — so the 2026-09-17 migration **is** applied and the
 collision is live, not a missing-migration story.
-⚠️ **NOT VERIFIED: the fix itself.** There is no Postgres and no SQL runner in this environment, and
-the anon key cannot hold an approved non-admin session, so the new trigger body has never been
-executed. Section 3 of the migration is the test, and ⚠️ **it cannot be run from the SQL editor** —
-that runs as `postgres` with no JWT, returns at the trigger's first line, and shows neither the bug
-nor the fix. It needs a signed-in, **non-admin** browser session.
+**VERIFIED AGAINST THE LIVE DATABASE** once the owner had run the migration — in a signed-in
+`planner` session (`pmodepartment2@…`, `role: planner`, `status: approved`, `projects: []`), because
+⚠️ **the SQL editor cannot test any of this**: it runs as `postgres` with no JWT, so `auth.uid()` is
+null and the trigger returns at its first line, showing neither the bug nor the fix. The sanity gate
+was reading the signed-in role back **first** — an admin session passes identically either way and
+would have proved nothing.
+- `PDb.ensureSandbox()` → `SBX-7818A7`, `is_sandbox: true`, `owner_id` = that planner. Called twice,
+  same id. `users.projects` came back `['SBX-7818A7']` — the append that used to raise 42501.
+- Clicking the real button end to end: the card renders above the empty state with **0 projects**
+  counted (the sandbox is out of the total), and Open lands on the dashboard scoped to
+  `SBX-7818A7` with the Sandbox banner up. Console clean on a fresh load.
+- ⚠️ **The carve-out is not a door** — as that same planner, all of these are still refused `42501`:
+  `role → super_admin`; `projects → ['AVR101']` (removal); `projects → []` (removal only);
+  **`projects → ['SBX-7818A7','AVR101']`** — add-only, a real project id, the one case a naive
+  "is every added id a sandbox?" test would wave through; and `['SBX-7818A7','SBX-7818A7']`
+  (duplicate). A legitimate `name` write still succeeds, and the row was byte-identical afterwards.
+- ⚠️ **`status` was deliberately NOT tested.** The only meaningful value is a *different* one, and a
+  guard that failed would have left the owner's planner account `pending` and locked out, recoverable
+  only from the SQL editor. `role` and `status` are consecutive `if`s in the same chain before the
+  projects block, so the `role` refusal already proves the trigger fires.
+- ⚠️ **STILL NOT VERIFIED: isolation from an admin** — that a second account with `role: admin`
+  cannot see `SBX-7818A7` or its module rows. That is section 7(b)/(c) of the 2026-09-17 migration
+  and it needs a second signed-in session; it is the one claim in this feature that contradicts
+  every other policy in the schema, so it should not be left on trust.
 
 ⚠️ No `MODULE_V` bump and no cache token: no module `index.html`, no shared asset and no page
 changed. ⚠️ Regenerating `VERIFY-schema.sql` also picked up `project_schedule.class_codes` from
