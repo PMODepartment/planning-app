@@ -1,5 +1,25 @@
 # Module: s-curve
 
+## 2026-09-18 — Procurement is excluded from the curve, and the preview opens again — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (am)).
+
+- ⚠️⚠️ **Procurement rows never reach the curve.** The WBS skeleton files Procurement under
+  **Planning Phase** with `source_kind:'procurement'`, mirrored from the WPM app — purchase
+  packages, not work in place. They had always been summed in; *(al)*'s WBS fallback only made
+  them visible, by naming the branch as a trade. Excluded on `source_kind` ancestry (not on the
+  branch name, which would catch a real activity), dropped in `fetchRows()` so every consumer
+  sees the same schedule.
+- ⚠️⚠️ **The server aggregate is skipped when a project has a mirror.** `schedule_scurve_agg`
+  cannot exclude procurement, so filtering client-side alone would have made the curve change
+  shape between Duration and Cost. `hasProcurement` comes off the WBS tree already in memory, so
+  projects without a mirror keep the fast path and pay nothing.
+- **The live preview opens by default again** — the `<details>` stays, only the default flipped,
+  so it is still foldable and still remembered per project.
+- ⚠️ The exclusion depends on `source_kind` being stamped. A procurement branch built by hand,
+  rather than seeded by the skeleton or written by the sync, carries no marker and will still
+  count.
+
 ## 2026-09-18 — A trade can come from the WBS, and the live preview folds away — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (al)).

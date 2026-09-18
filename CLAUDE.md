@@ -104,6 +104,108 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (am) — Procurement was never scope: a mirror of purchase orders had been in the curve all along
+
+Owner: *"Procurement shouldn't count in the s-curve"*, and *"I want to have a preview of the
+s-curve in the manual data"*.
+
+⚠️ Lettered **(am)**, `MODULE_V` **`20260918zk`**. No shared asset changed.
+
+### ⚠️⚠️ IT WAS ALWAYS BEING COUNTED — (al) ONLY MADE IT VISIBLE
+
+`WBS_SKELETON` files Procurement under **Planning Phase**, beside Project Execution Plan and
+Design Development:
+
+```
+Planning Phase
+  ├─ Project Execution Plan
+  ├─ Design Development   (source_kind: 'design_development')
+  └─ Procurement          (source_kind: 'procurement')      ← mirrored from the WPM app
+```
+
+Its contents are **purchase packages**, not work anybody puts in place. They have been summed
+into this curve since the module was built. What changed yesterday is that *(al)*'s WBS fallback
+started **naming** them: `nodeTrade()` takes the branch under the root, and for
+`Planning Phase › Procurement › PO-0042` that branch is "Procurement" — so a mirror of purchase
+orders turned up in the manual sheet dressed as a trade, and the owner spotted in one look what
+the "No trade set" bucket had been hiding.
+
+⚠️ Worth keeping: the previous fix did not cause this bug, it **surfaced** one. A row that reads
+`No trade set` invites "fix your data"; a row that reads `Procurement` invites "why is that in my
+S-curve?". The second question is the right one, and only the named version prompts it.
+
+### Excluded by `source_kind`, not by the branch's name
+
+The skeleton stamps `source_kind: 'procurement'`, and the syncs stamp `'procurement_trade'` /
+`'procurement_child'` onto everything they generate underneath. So the marker is machine-readable,
+survives a planner renaming the branch, and **cannot catch a construction activity that merely has
+the word in its name** — which a keyword match on the name certainly would.
+
+⚠️ Tested on ANCESTRY, not on the node itself: an activity can sit deeper than whichever node the
+sync stamped. ⚠️ Dropped in `fetchRows()`, the one place both read paths take their rows, so the
+weights, the trade list, the activity count and every filter see a schedule without the mirror
+rather than each needing to remember to exclude it.
+
+### ⚠️⚠️ AND THE SERVER AGGREGATE CANNOT EXCLUDE IT, WHICH IS THE HALF A CLIENT FILTER CANNOT REACH
+
+`schedule_scurve_agg` sums **every** non-WBS row with a `start_date` and knows nothing about
+`wbs_node_id`, `source_kind` or phases — it is a pure month bucket. Filtering procurement on the
+client only would have produced this:
+
+| basis | path | procurement |
+|---|---|---|
+| Duration (default) | server aggregate | **still counted** |
+| Cost ₱ | per-row fetch | dropped |
+
+— i.e. **the curve would change shape when the planner toggled Duration to Cost.** A number that
+moves when you change the weighting is worse than one that is consistently wrong, because nobody
+can tell which reading to believe.
+
+⚠️ So the fast path is skipped **exactly when it would be wrong**. `hasProcurement` is read off
+the WBS tree, which is already loaded by that point, so it costs no extra query, and a project
+with no procurement mirror keeps the aggregate and pays nothing.
+
+⚠️ **The alternative was a migration** teaching the RPC to walk the WBS with a recursive CTE.
+Rejected: it puts that CTE in the hot path of every S-curve *and* Cash Flow read (they share the
+function) to serve the projects that can simply take the row path instead. Worth revisiting only
+if a project appears that is too large for the row path AND carries a mirror.
+
+### Verified — both branches, because only testing one proves nothing
+
+| | RPC calls | activities | Procurement visible |
+|---|---|---|---|
+| project WITH a procurement mirror | **0** | 56 | no row, no chip |
+| project WITHOUT one | **1** | 61 | — |
+
+The zero is the load-bearing number: the RPC was **stubbed to return valid data** and the module
+still ignored it, which is what proves the skip is deliberate rather than the harness's own RPC
+failure. Five dated procurement packages at ₱5M each were present throughout and moved neither the
+activity count nor any per-trade count. With the mirror's `source_kind` hidden the same five rows
+reappear (56 → 61), which confirms the exclusion is driven by the marker and not by something else.
+
+### The preview opens again
+
+Owner asked for the fold in *(ah)*, then for the chart back. The `<details>` stays and only its
+default flips — so it is visible on arrival, still one click to fold, and the choice is still
+remembered per project. That is the setting he was actually after: the preview there, and
+foldable when the sheet needs the room.
+
+`wiring-check` **139/0** · `dark-remap` **0** · `test-portfolio-dash` **398/0** · `test-boq`
+**66/0** · inline script `node --check` clean · `<style>` braces **238/238** · 0 NUL bytes.
+
+⚠️ **Not verified signed in**, and this one has a real dependency on live data: the exclusion only
+fires where `wbs_nodes.source_kind` is actually stamped. A project whose procurement branch was
+made by hand rather than seeded by the skeleton or written by the sync carries no marker, and its
+packages will still count. That is checkable in one query and worth doing before trusting a
+number.
+
+### ⚠️ Adjacent and NOT touched: Design Development
+
+It sits in the same Planning Phase branch, with the same kind of `source_kind` marker, and by the
+same argument is not construction scope either. It was not asked about, and unlike Procurement it
+has a live mirror this module already knows about (`eng_design_progress` via `sync-eng`), so
+whether it belongs in a physical-progress curve is a real question rather than an obvious no.
+
 ### 2026-09-18 (al) — "There shouldn't be a no trade set": the S-Curve was reading half of what a trade is
 
 Owner: *"Can we trace the no trade set? There shouldn't be a no trade set in the s-curve"*, and
