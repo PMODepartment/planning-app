@@ -231,7 +231,6 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-10-progress-photos-schedule-integration.sql','column','progress_photos','activity_name'),
     ('2026-08-10-progress-photos-schedule-integration.sql','column','progress_photos','wbs_node_id'),
     ('2026-08-11-drawing-register-scope.sql','column','drawing_register','scope'),
-    ('2026-08-11-fix-privilege-escalation.sql','function','users_guard_self_escalation',''),
     ('2026-08-11-fix-privilege-escalation.sql','function','users_guard_self_insert',''),
     ('2026-08-12-delete-project-residue.sql','function','project_residue_tables',''),
     ('2026-08-12-group-heads-replace-workspaces.sql','column','projects','group_head_id'),
@@ -529,8 +528,10 @@ with expected(migration, kind, obj, col) as (values
     ('2026-09-17-sandbox-project.sql','column','projects','is_sandbox'),
     ('2026-09-17-sandbox-project.sql','column','projects','owner_id'),
     ('2026-09-17-sandbox-project.sql','function','can_access_project',''),
-    ('2026-09-17-sandbox-project.sql','function','sandbox_ensure',''),
-    ('2026-09-17-sandbox-project.sql','function','sandbox_reset','')
+    ('2026-09-17-sandbox-project.sql','function','sandbox_reset',''),
+    ('2026-09-18-sandbox-users-projects-guard.sql','function','sandbox_ensure',''),
+    ('2026-09-18-sandbox-users-projects-guard.sql','function','users_guard_self_escalation',''),
+    ('2026-09-18-schedule-class-codes.sql','column','project_schedule','class_codes')
 ),
 missing as (
   select e.* from expected e

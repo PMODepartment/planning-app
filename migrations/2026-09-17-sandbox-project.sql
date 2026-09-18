@@ -193,6 +193,17 @@ create policy projects_del on projects for delete
   using (not is_sandbox and is_planner() and (is_admin() or can_access_project(id)));
 
 -- ---- 4) sandbox_ensure() ---------------------------------------------------
+-- ⚠️⚠️ SUPERSEDED 2026-09-18 — DO NOT EDIT THIS COPY. The definition below is
+-- `create or replace`d by migrations/2026-09-18-sandbox-users-projects-guard.sql,
+-- which sorts after this file everywhere, so an edit made here is silently
+-- clobbered. Edit the 2026-09-18 copy instead.
+-- ⚠️ What that file changes, and why: the `update users` at the end of this
+-- function is refused by the 2026-08-11 `users_guard_self_escalation` trigger
+-- for every NON-ADMIN caller (SECURITY DEFINER does not move `auth.uid()`), and
+-- with no handler that exception rolled back the insert too -- so no planner,
+-- user or viewer could ever create a sandbox, while it worked perfectly for the
+-- admin who tested it.
+--
 -- Get-or-create, called by the client every time someone opens the sandbox.
 -- ⚠️ SECURITY DEFINER because the caller may be a `user` or `viewer`, whom
 -- projects_ins deliberately does not let insert projects at all. The function

@@ -104,6 +104,77 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ap) — The sandbox could not be created by anyone it was written for: a security trigger and a cosmetic write, in one transaction
+
+Owner: *"Look into the sandbox of the users. Planners have difficulty in creating the sandbox."*
+They could not create it at all. **`migrations/2026-09-18-sandbox-users-projects-guard.sql`** is
+the fix; `supabase-build.sql` and `VERIFY-schema.sql` are regenerated. ⚠️ **It has to be run in the
+Supabase SQL editor** — nothing in this commit changes the app's behaviour until it is.
+
+⚠️⚠️ **`SECURITY DEFINER` DOES NOT MOVE `auth.uid()`, AND THAT IS THE WHOLE BUG.** `sandbox_ensure()`
+ends by appending the new code to the caller's own `users.projects`, and
+`users_guard_self_escalation` — the 2026-08-11 privilege-escalation trigger — exists precisely to
+forbid a user changing that column. `SECURITY DEFINER` changes `current_user` to the function's
+owner; `auth.uid()` reads the request's JWT claim out of a GUC and stays the signed-in caller. So
+the trigger's `auth.uid() is null` exemption (the SQL editor, `service_role`, psql) never fires for
+an RPC, `is_admin()` is false for a planner, and the update raises `42501`. **There is no handler,
+so the whole transaction rolls back — including the `insert into projects`.** The planner gets
+`Could not open your sandbox: You may not change your own project assignments.` and nothing is
+created, every time: the get-or-create read at the top finds nothing on the next attempt either,
+because the previous attempt left no row behind.
+
+⚠️⚠️ **IT WORKS PERFECTLY FOR AN ADMIN, WHICH IS WHY IT SHIPPED.** The trigger returns early for
+`is_admin()`. Whoever tested this feature was almost certainly the only kind of account that can
+use it. `planner`, `user` and `viewer` — everyone the training ground was written for — were all
+blocked, across all 16 modules, from the hour it shipped.
+
+⚠️⚠️ **THE REAL DEFECT IS NOT THE TRIGGER; IT IS THAT A COSMETIC WRITE COULD ROLL BACK THE ESSENTIAL
+ONE.** `can_access_project()` reaches a sandbox through `owner_id` alone — the `users.projects`
+append grants nothing, and exists only for the surfaces that read the array directly (admin.html's
+Projects column, `AppAuth.canAccessProject`, which five modules filter their project pickers
+through). Yet it sat in the same transaction as the insert with no handler, so **any** future
+guard, policy or trigger on `users` silently becomes a guard on creating a sandbox. It is now in
+its own `begin … exception when insufficient_privilege` block: the sandbox survives, and a refusal
+is logged with the project id rather than swallowed. ⚠️ `insufficient_privilege` only, never
+`when others` — a deadlock or a unique violation on `users` must still fail loudly.
+
+⚠️ **THE CARVE-OUT IS SELF-VERIFYING, NOT A FLAG THE FUNCTION SETS.** Rejected: having
+`sandbox_ensure()` set a GUC the trigger trusts — that is a security guard with an off switch, and
+`set_config(…, false)` (session scope, one character from the transaction-scoped call) would leave
+it on for the rest of a **pooled** PostgREST connection. Instead the trigger permits a
+`users.projects` change only when it is **add-only** and every added id is a project that `is_sandbox`
+**and** is owned by that very row — proven from the `projects` table at the moment of the write.
+A user cannot manufacture a qualifying id: `projects_ins` carries `not is_sandbox`, `projects_upd`
+pins the flag on both sides, and `projects_one_sandbox_per_owner` allows one per person.
+⚠️ Set difference, not `length(new) = length(old) + 1`: a length test is satisfied by swapping a
+real project for another and adding a duplicate. ⚠️ An empty `added` is still a refusal — a reorder
+is not a legitimate write here. ⚠️ Removals stay refused, so `{projects:['SBX-…']}` — a valid add
+that silently drops every real assignment — is the case the naive version would have waved through.
+
+⚠️ **Rejected: just deleting the `users.projects` line.** Smallest diff, and the sandbox would then
+be created and be missing from five modules' project pickers — a worse bug, and much harder to see.
+
+⚠️ **`sandbox_ensure()` IS NOW OWNED BY THE 2026-09-18 FILE**, which `create or replace`s it after
+the 2026-09-17 one in both filename order and the build. A forward-pointing ⚠️ banner was added to
+the 2026-09-17 copy so its reader learns that before editing it, not after — this is exactly the
+"a fix clobbered by the file it fixes" hazard `gen-build.js` was written for, pointing the other way.
+
+**Verified, executably.** The deployed `projects.html` and the live `dashboard.css` do carry the
+sandbox card and its `pd-sbx` styling, so the button is on screen — the failure is entirely
+server-side. A live RPC probe (anon, with both controls through the same path: a known-present
+function answered `200 false`, a known-missing one `404 PGRST202`) returned `400 P0001 "Your account
+is not approved yet."` for `sandbox_ensure` — so the 2026-09-17 migration **is** applied and the
+collision is live, not a missing-migration story.
+⚠️ **NOT VERIFIED: the fix itself.** There is no Postgres and no SQL runner in this environment, and
+the anon key cannot hold an approved non-admin session, so the new trigger body has never been
+executed. Section 3 of the migration is the test, and ⚠️ **it cannot be run from the SQL editor** —
+that runs as `postgres` with no JWT, returns at the trigger's first line, and shows neither the bug
+nor the fix. It needs a signed-in, **non-admin** browser session.
+
+⚠️ No `MODULE_V` bump and no cache token: no module `index.html`, no shared asset and no page
+changed. ⚠️ Regenerating `VERIFY-schema.sql` also picked up `project_schedule.class_codes` from
+(i), which had been added without the verifier being regenerated.
+
 ### 2026-09-18 (ao) — Users: a checkbox on every group heading, shift-click ranges, and the selection stops evaporating between the two controls that need it
 
 Owner, with twenty-one people ticked one at a time: *"the users I need to click on the checkboxes
