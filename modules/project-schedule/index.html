@@ -56767,7 +56767,6 @@
            rather than setting anything, so every value still has exactly one editor. The legend
            keeps saying WHAT the colours mean; the pane is where they are CHANGED.
            ⚠ The LSM toggles below stay put — they change the chart's LAYOUT, not its colours. */
-        '<button class="pd-btn" id="ps-alg-open" style="min-height:32px;font-size:12px;" title="Bar colors — every bar colour on this chart, the category colouring, and per-WBS overrides, in one pane.">Colours…</button>' +
         /* ⚠️ The LSM toggle lives HERE, beside "Key trades...", because that button is
            already the lane roster editor — the two controls are one subject. A direct control
            rather than another nested menu, which is the owner's stated preference. */
@@ -56779,6 +56778,13 @@
         // it sat next to. Both behaviours it described are already discoverable (a bar and a month
         // header both carry a cursor + title), so the words bought nothing but clutter.
         '' +
+        /* ⚠ AT THE TRAILING EDGE, beside the fold chevron, NOT where the on/off checkbox used to
+           be. Second-in-the-row is the slot a primary control occupies, and a lone button standing
+           there read as an orphan once the four controls around it moved out (owner: *“out of
+           place”*). Chrome for the strip belongs with the strip's other chrome.
+           ⚠ `--pd-fs-sm`, not `12px`. The inline 12px was inherited from the controls this
+           replaced and is off the `--pd-fs-*` scale entirely — the scale has no 12. */
+        '<button class="pd-btn" id="ps-alg-open" style="min-height:32px;font-size:var(--pd-fs-sm);" title="Bar colors — every bar colour on this chart, the category colouring, and per-WBS overrides, in one pane.">Colours…</button>' +
         '<button type="button" class="ps-alg-fold" title="Collapse the legend"><span data-ico="chevronDown" data-ico-size="16"></span></button>' +
       '</div>' +
       // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
@@ -56816,8 +56822,20 @@
        throws on every legend render and takes the whole strip down with it. */
     var _algOn = host.querySelector('#ps-alg-on');
     if (_algOn) _algOn.onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    /* ⚠⚠ `e.stopPropagation()` IS THE WHOLE FIX, AND WITHOUT IT THIS BUTTON OPENED THE PANE AND
+       SHUT IT IN THE SAME TICK. `document.addEventListener('click', closeMenus)` closes every menu
+       on any click that reaches the document, which is why EVERY toolbar trigger in this file
+       stops its own event. Forwarding with `b.click()` does not inherit that: the synthetic click
+       runs the palette handler (which stops the SYNTHETIC event, not this one), the pane opens —
+       and then this real click carries on bubbling to the document and `closeMenus` shuts it.
+       The owner reported it as “not functioning properly”, which is exactly right: it worked and
+       then undid itself too fast to see. */
     var _algOpen = host.querySelector('#ps-alg-open');
-    if (_algOpen) _algOpen.onclick = function () { var b = document.getElementById('ps-colorsbtn'); if (b) b.click(); };
+    if (_algOpen) _algOpen.onclick = function (e) {
+      e.stopPropagation();
+      var b = document.getElementById('ps-colorsbtn');
+      if (b) b.click();
+    };
     var _lsmChk = host.querySelector('#ps-alg-lsmrows');
     if (_lsmChk) _lsmChk.onchange = function () { setLsmRows(this.checked); };
     var _lsmTopB = host.querySelector('#ps-alg-lsmtop'), _lsmBotB = host.querySelector('#ps-alg-lsmbot');

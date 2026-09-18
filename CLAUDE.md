@@ -104,6 +104,74 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (u) — The `Colours…` button opened the pane and shut it in the same tick
+
+Owner selected it on the page: *"Check this is out of place and not functioning properly"*. Both
+halves were right, and the second was a defect I shipped in *(q)*.
+
+### ⚠⚠ IT WORKED, THEN UNDID ITSELF TOO FAST TO SEE
+
+`document.addEventListener('click', closeMenus)` (line 59239) closes every menu on any click that
+reaches the document — which is why **every** toolbar trigger in this file stops its own event.
+Forwarding with `b.click()` does **not** inherit that:
+
+1. the handler fires and calls `b.click()`;
+2. the palette handler stops the **synthetic** event, not this one;
+3. the pane opens;
+4. the handler returns and the **real** click carries on bubbling to `document`;
+5. `closeMenus()` shuts it.
+
+**Proven by execution**, not by reading: a harness with the document listener, a palette trigger
+shaped like the file’s others, and the shipped handler **sliced from source** so the test cannot
+drift from the code.
+
+| handler | pane still open after a real click? |
+|---|---|
+| palette button itself *(control)* | **yes** — the rig works |
+| as shipped in *(q)* | **no** |
+| with `e.stopPropagation()` | **yes** |
+
+### “Out of place” was also right, twice over
+
+It sat **second in the row**, the slot the on/off checkbox used to hold — a primary position for
+what is now chrome, and a lone button standing there read as an orphan once the four controls
+around it moved out. It is at the trailing edge now, beside the fold chevron.
+
+⚠ And its `font-size:12px` was **off the scale entirely** — `--pd-fs-*` has no 12. Inherited
+verbatim from the controls it replaced, so the mistake was older than the button; now `--pd-fs-sm`.
+⚠ My *(r)* font audit would not have caught it: that one read **computed styles in a rendered
+pane**, and this is an **inline style on markup** the audit never rendered.
+
+### The stylesheet sweep: one systemic finding, reported not changed
+
+5,590 lines, 2,570 balanced braces, 2,526 rules — extracted with the guards this file has earned
+(three `<style>` matches, two inside JS strings; an older scanner hardcoded a bound and missed
+319 lines; and the brace count reads **unbalanced** until comments are stripped, because the prose
+quotes `function () {`).
+
+| check | result |
+|---|---|
+| `font-weight: 600` (Gotham has no Semibold) | **0** |
+| `flex:1` + `min-width:0` that could starve to 0 | 3, all with ellipsis guards or no text |
+| `font-size` off the `--pd-fs-*` scale | **5** |
+| bare-type selectors forcing geometry | 35 |
+
+⚠ The 5 off-scale sizes are 8–9.5px and **four of them are SVG** (`fill:`, not `color:`) — Gantt
+link type/lag labels, a summary axis, a stacking label. Chart annotation is a different typographic
+context from UI chrome and 10px may not fit where they sit, so they are **reported, not bumped**:
+changing them blind risks clipping on a surface I cannot render without data. `.sbld-gmirror` at
+9px is the one that is ordinary HTML.
+
+⚠⚠ **`.ps-menu button { width:100% }` has now been worked around SIX times** — `ps-cols-foot`,
+`ps-lm-lvls`, `ps-lm-lyt`, `ps-lm-chips`, the `ps-gm-x` note at line 3456, and mine in *(r)*.
+Two of this week’s defects came from it. The systemic fix is to invert it — style menu ITEMS by a
+class and let a bare `<button>` keep its natural size — but the items carry no shared class, so
+that means touching every menu-building call site across six menus. **Not attempted here**: it is a
+wide blast radius on surfaces I cannot render, and it is the owner’s call whether it is worth it.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0.
+`modules-grid.js` `?v=` → `20260918u`.
+
 ### 2026-09-18 (t) — A Pages deploy that failed and recovered, and a live audit for harness artefacts
 
 Owner, with a screenshot of run **#1379** on `0067234`: *"Can we check this first?"*, then *"Check
