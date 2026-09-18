@@ -1,3 +1,160 @@
+## 2026-09-18 (h) — A development is a row, the ± count goes, and the quick setup asks per category
+
+Owner, on the Towers step: *"replace the buttons on top with Add Type, Add Development … for this
+table, strict only to two levels … columns should include Name, Code, Remarks"*, *"when add type is
+clicked, a grouping is added. when development is clicked, a row is added inside"*, and *"Hide first
+option to add site plans"*. Then, on Floors & Zones: *"in quick set-up simplify the inputs: Basement -
+____ floors x ____ zones, Podium - ____ floors x ____ zones, Typical - ____ floors x ____ zones x
+(checkbox * ____ units if checked), RD - checkbox (*____ zones if checked)"*, and *"for zones and
+units, minimum is always 1."*
+
+### ⚠️⚠️ THE ± COUNT CONTROL GOES, AND THE PROPERTY IT PROTECTED DOES NOT GO WITH IT
+
+A development is a ROW now, so `_twSetCount` is gone — three developments are three rows, and a
+number beside the type would state the same fact twice. But that control existed to protect
+something real, and the easy mistake here is to delete both. **A type's floors hang off its FIRST
+instance** (`repTowerOf` → `floorsOfTower`), so the old control only ever removed from the END and
+the representative was untouched by construction.
+
+`_twRemoveTower` lets you remove **any** row, and **moves the floors to the next instance** rather
+than refusing — which is the case the old control could not express at all. ⚠️ Section 5 of the
+suite is **retargeted, not weakened**: it used to assert the arithmetic of a control nobody presses
+any more, and now asserts the stricter property, including that the active development is
+re-pointed when the one being deleted is the one on screen.
+
+⚠️ **The last development of a type takes the type with it**, and its floors with that — a type with
+no instance has no representative, so nothing is left to own them. ⚠️ And the **only** development in
+the project cannot be removed: the step would have nothing to hang a layout off.
+
+### ⚠️⚠️ A DEVELOPMENT "BESIDE" THE TYPES IS INVISIBLE TO `typeList()`
+
+Which is the whole reason `layoutOwners()` exists. The selector bar and the Towers table both used
+to iterate **types**, so a standalone development would have vanished from the chips the moment it
+was created — leaving no way to reach its floors at all. An owner is either a type (with its
+representative and its instances) or a **solo** development that is its own owner, and
+`ownerOfTower` resolves any development to the owner whose floors it reads.
+
+⚠️ **And the migration could silently have undone it.** A development beside the types is a tower
+with **no `typeId`** — the very shape the pre-types migration was written to convert. Run
+unconditionally it would invent a type for it on **every load**, so *"beside"* would quietly become
+*"a one-instance type"* and its row would move under a grouping the planner never created. The guard
+is the presence of the `towerTypes` **key** (`_hadTypes`), and assertion 7.9 fails without it.
+⚠️ The suite's migration slice now starts **at that guard** rather than below it, because the guard
+*is* the migration — a slice beginning under it would test the loop without the question.
+
+⚠️ A `typeId` naming a type that is no longer there is **cleared, not left dangling**: it would
+otherwise BEHAVE as standalone (`repTowerOfTower` falls back to the tower) while still reading as
+typed on every screen.
+
+⚠️ `remarks` had to go on **both halves** of `normalize()`'s whitelist — the type's and the
+development's. A key that function does not name is silently stripped on save and on load, so a
+column that looks fine all session empties on reload; 7.13/7.14 assert both.
+
+### The quick setup: zones per category, units typical-only
+
+⚠️⚠️ **ZONES ARE PER CATEGORY, and that is a model change rather than a layout one.** One figure for
+the whole building is wrong on most of them — a podium is split three or four ways and the typical
+floors above it two — so stating one number meant generating the building and then editing every row
+of one of the two.
+
+⚠️ **Units hang off the TYPICAL floors only, behind a tick.** They are the rung almost nobody uses,
+and asking for them on a basement is asking for a number that is always 0. `q.u` is therefore one
+number rather than a map: a per-category unit count would be three boxes that can only ever hold 0.
+
+⚠️ **A roof deck is a tick**, stored as a **count of 0 or 1**, so nothing downstream had to learn a
+third shape.
+
+⚠️⚠️ **The minimum for a zone and a unit is 1, and the consequence is not obvious:** a floor with NO
+zones is a floor-level leaf (`leavesOfFloor`), so this dialog can no longer generate one. The floor
+list's own − stepper still can, one row at a time, and on a project whose Activity level is Floor the
+zone questions are not asked at all — so nothing is unreachable. ⚠️ The minimum applies to a number
+being **asked for**: with the unit tick off, units are 0, not 1.
+
+⚠️ **A number that is not being asked is DISABLED, not merely ignored** (`_qsGate`). A live-looking
+box whose value changes nothing is the looks-wired-does-nothing failure this module keeps recording;
+`_qsNorm` zeroes them either way, so the two cannot disagree.
+
+⚠️⚠️ **ONE above-grade numbering sequence, not three.** A four-storey podium under twelve typical
+floors under a roof deck is F1…F17 — the categories say what each floor IS, they do not restart the
+count. Numbering them P1…P4, F1…F12, R1 would put two different floors called *"F1"* in the same
+tower the moment anyone renamed a category, and every location label and generated activity id is
+built from that code.
+
+### Verified
+
+**New `modules/project-schedule/test-quicksetup.js` — 46 assertions, 0 failing**, and the one it
+exists for is block 4: ⚠️⚠️ **the sentence and the generator AGREE.** The dialog's
+*"… N locations to schedule"* is computed by `_qsCalc`, and the floors are built by a **different
+block a hundred lines below it** — those two can disagree, and if they do the planner reads a number
+that is not what they get. Both are sliced out of the shipped file and **run**, and the count is
+compared against the shipped `leavesOfFloor` over the rows the generator actually produced, across
+five shapes (115 locations on the big one, 0 on the empty one). ⚠️ The generator slice starts at
+`var q = _qsNorm(v);` rather than at `mkZones`, so the **clamp is inside the executed block** — which
+is what proves it builds from the normalised numbers and not from the raw boxes.
+
+⚠️ Block 6 pins the fix this module already paid for once: **another tower's floors survive** a
+regenerate. This was `zn.floors = []`, so generating Tower 2 destroyed Tower 1.
+
+**`test-towertypes` 67 → 102**, section 5 retargeted as above. ⚠️⚠️ **Both suites ABORT against the
+pinned base rather than comparing nothing** — `test-towertypes` reports *"SLICE FAILED:
+_twRemoveTower"* and `test-quicksetup` *"SLICE FAILED: _qsNorm"*, each naming the function, because a
+suite that silently compares nothing is the failure worth naming.
+
+**Every project-schedule suite green on the merged tree — 21 suites, 1,912 assertions, 0 failing**,
+including **main's own two new suites, which this branch had never run** (`test-sap` 114/0,
+`test-phasecard` 85/0). `wiring-check` **139/0**, `dead-hooks` **9** with its findings
+**byte-identical to the base** (only the census moves, 474 → 472, which is the removed control's
+classes), `dark-remap` 0, `loc-key-agree` clean, `selectall-key` 100 safe / 0 broken,
+`toolbar-order` 15/0. The 3.76MB inline block parses, CSS braces 2548/2548, 0 NUL bytes.
+
+**Rendered and measured in Chromium at 1440 and 820** against the shipped stylesheets: the Towers
+table is **2 type rows and 5 development rows in ONE table at depth 1** — strictly two levels, and
+no row carries both rungs — headed **Name / Code / Remarks**, **0** count controls, **0** site-plan
+buttons, and the standalone development rendering as its own owner rather than a grouping. Floors &
+Zones is a two-column grid with a **sticky** tower at 1440 and **one static column** at 820, its
+selector reading *"Residential Tower ×3 / Office Tower / Central Podium"* — the ×3 being what makes
+*"edit once, applies to three"* legible. **No page or panel horizontal scroll and no clipping at
+either width, 0 page errors.**
+
+⚠️⚠️ **THE FIRST CUT OF THAT HARNESS RENDERED A PAGE THE APP DOES NOT SHIP, AND IT LOOKED
+DELIBERATE.** It typed the trade vocabulary by hand in **lower case** (`'st'`, `'ar'`) where the
+shipped keys are **upper** (`ST`, `AR`), so `locGroups()` matched nothing and Floors & Zones rendered
+an empty step. `GROUPS` / `GLABEL` / `LOCLESS` / `KIND_ORDER` / `KIND_LABEL` / `DIM_LABEL` are
+**sliced** now, and so are the **step titles** and `SITE_PLAN_UI`'s own value — a retyped constant is
+a second opinion about what the shipped one says, and `_stepNo` in particular would have let the
+harness disagree with the rail about which number a step is.
+
+⚠️ **The duplicate-id scan reports one new hit and it is a false positive**, established by
+**executing** the builder rather than by reading it: `id="' + cid + '"` occurs twice because the
+checkbox and the number branches of one `if` each emit it, and `cid = id + 'c' + j` makes every cell
+unique. Run over the quick setup's own four-cell row it emits **4 distinct ids for 4 answerable
+cells**, with the `×` furniture carrying neither an id nor a `data-k`. Same class as the
+pre-existing `' + id + '` hit; 20 duplicates before, 20 after.
+
+⚠️ **Not verified signed in** — no setup has been saved and re-read, so the migration's guard and the
+`remarks` whitelist are proved by execution against fixtures rather than against a real row.
+
+### ⚠️ Merged `origin/main` (14 commits) before shipping — and both conflicts had to go my way on more than taste
+
+`modules/project-schedule/index.html` conflicted in **two** hunks, both prose inside `stTowers`, and
+main's side of the first one reads `list.length` — **`list` is not a name this function has any
+more**, so taking it would have been a `ReferenceError` on every render of the step: the
+*"below is not defined"* shape this file has paid for five times. It is also the **wrong count**
+besides, since `types.length` cannot see a standalone development. The second names a **Site plan**
+button in the tower bar that main moved there and my rewritten `_towerBar` does not emit — so main's
+wording would name a control that is not on the page. Both placements are defensible and the whole
+block sits behind `SITE_PLAN_UI`, which is off; the resolution is **recorded in the file** so
+whoever turns it back on picks one deliberately rather than discovers it.
+
+⚠️ A clean auto-merge is not evidence, so both sides were checked present by name afterwards and the
+**whole battery re-run on the merged tree**, main's two new suites included.
+
+`MODULE_V` → `20260918j`, re-derived from what the tree carries **after** integrating (main had
+reached `20260918i`) rather than guessed beforehand, and sort-checked as a plain string. ⚠️ Every
+`20260918*` token was listed on **both refs before resolving** rather than after — which is the only
+thing that finds the collision this log has now recorded nine times, because two sides writing the
+**same** string merge silently.
+
 ## 2026-09-18 (g) — The Activities step reads SAP levels 1–3, and a merged activity carries every code it covers
 
 Owner, six items on Schedule Setup ▸ Activities, with `Book2.xlsx` attached: *"1. reduce font sizes

@@ -104,6 +104,82 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (j) — Schedule Setup: a development is a row, and the quick setup asks per category
+
+Owner, on the Towers step: *"replace the buttons on top with Add Type, Add Development … for this
+table, strict only to two levels … columns should include Name, Code, Remarks"*, *"when add type is
+clicked, a grouping is added. when development is clicked, a row is added inside"*, and *"Hide first
+option to add site plans"*; then on Floors & Zones, *"in quick set-up simplify the inputs"* per
+category and *"for zones and units, minimum is always 1."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(h)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **REMOVING A CONTROL DOES NOT REMOVE THE PROPERTY IT PROTECTED, AND THE EASY MISTAKE IS TO
+DELETE BOTH.** A development is a row now, so the type's ± count control is gone — three
+developments are three rows, and a number beside the type would state the same fact twice. But that
+control existed for a reason: a type's floors hang off its **first** instance, so it only ever
+removed from the END and the representative was untouched by construction. Its replacement lets you
+remove **any** row and **moves the floors to the next instance**, which is the case the old control
+could not express at all. The suite's section is **retargeted rather than weakened** — it used to
+assert the arithmetic of a control nobody presses, and now asserts the stricter property.
+
+⚠️⚠️ **A MIGRATION THAT RUNS ON EVERY LOAD CAN SILENTLY UNDO THE FEATURE THAT SHIPS BESIDE IT.** A
+development standing beside the types is a row with **no type id** — the very shape the pre-types
+migration was written to convert. Run unconditionally it would invent a type for it on every load,
+so *"beside"* would quietly become *"a one-instance type"* and the row would move under a grouping
+the planner never created. The guard is the presence of the `towerTypes` **key**, and one assertion
+fails without it. ⚠️ The suite's migration slice had to start **at that guard** rather than below
+it, because the guard *is* the migration: a slice beginning under it tests the loop without the
+question.
+
+⚠️⚠️ **A HAND-TYPED FIXTURE RENDERED A PAGE THE APP DOES NOT SHIP, AND IT LOOKED DELIBERATE.** The
+render harness typed the trade vocabulary in **lower case** where the shipped keys are **upper**, so
+the trade lookup matched nothing and Floors & Zones came out as an empty step — not an error, just a
+screen with nothing on it. The vocabulary, the floor categories, the step titles and the feature
+flag's own value are all **sliced out of the shipped file** now. A retyped constant is a second
+opinion about what the shipped one says, and the step titles in particular would have let the
+harness disagree with the rail about which number a step is. Third time this repo has recorded a
+harness reporting a page as correct that the real cascade does not produce.
+
+⚠️⚠️ **AND A TEST THAT SAYS A NUMBER MUST BE COMPARED AGAINST WHAT PRODUCES IT.** The quick setup's
+dialog states *"… N locations to schedule"* before anything is written, and that sentence is
+computed by one function while the floors are built by **a different block a hundred lines below
+it**. Those two can disagree, and if they do the planner reads a figure that is not what they get.
+Both are sliced out of the shipped file and **executed**, and the count is checked against the
+shipped leaf rule over the rows the generator actually produced — 46 assertions, across five shapes.
+
+**Verified:** every project-schedule suite green on the merged tree — **21 suites, 1,912 assertions,
+0 failing** — including **main's own two new suites, which this branch had never run**. Plus
+`wiring-check` **139/0**, `dead-hooks` **9** with its findings **byte-identical to the base** (only
+the census moves, 474 → 472, which is the removed control's own classes), `dark-remap` 0,
+`loc-key-agree` clean, `selectall-key` 100 safe / 0 broken, `toolbar-order` 15/0. The 3.76MB inline
+block parses, CSS braces 2548/2548, 0 NUL bytes. Measured in Chromium at two widths: the table is
+two rungs in **one** table at depth 1 — strictly two levels — headed Name / Code / Remarks, with 0
+count controls and 0 site-plan buttons, and no horizontal scroll, no clipping and 0 page errors.
+
+⚠️ **The duplicate-id scan reports one new hit and it is a false positive**, established by
+**executing** the builder rather than reading it: two occurrences of one templated id are the two
+branches of a single `if`, and the index makes every cell unique — 4 distinct ids for 4 answerable
+cells, with the furniture carrying none. Same class as the pre-existing hit this log already
+records; 20 duplicates before, 20 after.
+
+⚠️ **Not verified signed in** — no setup has been saved and re-read.
+
+⚠️ **Merged `origin/main` (14 commits) before shipping.** Two conflicts, both prose in one function,
+and **both had to go this branch's way on more than taste**: main's side of the first reads a local
+that this function no longer has, so taking it would have been a `ReferenceError` on every render —
+the *"below is not defined"* shape this log has recorded five times — and it is the wrong count
+besides. The second names a button main moved into a bar that this branch's rewrite does not emit.
+The resolution is **recorded in the file** rather than only here, since both placements are
+defensible and the block sits behind a flag that is currently off.
+
+`MODULE_V` → `20260918j`, re-derived from what the tree carries **after** integrating (main had
+reached `20260918i`) rather than guessed beforehand, and sort-checked as a plain string. ⚠️ Every
+`20260918*` token was listed on **both refs before resolving** rather than after — the only thing
+that finds the collision this log has now recorded nine times, because two sides writing the
+**same** string merge silently and leave one cache token over two different builds.
+
 ### 2026-09-18 (i) — Schedule Setup ▸ Activities reads SAP levels 1–3, and a merged activity carries every class code it covers
 
 Owner's six items on that step, with `Book2.xlsx` attached — fewer words and smaller type, the SAP
