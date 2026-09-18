@@ -3320,6 +3320,23 @@
        schedule roll-up" after the planner has moved to Cash Flow would be nonsense, and a view
        that simply forgot to clear it is the likeliest way that happens. */
     pfBadge = (api && api.projBadge) || null;
+    /* ⚠️⚠️ THE FILTER BUTTON'S FIRST LABEL IS A HARDCODED STRING, AND ON ONE VIEW IT IS A LIE.
+       `projFilterHTML()` writes the literal "All projects" into the span; every path that
+       CHANGES the selection then rewrites it through `pfLabel()`. That is harmless on ten of
+       the eleven views, where `pfLabel()` would have said "All projects" anyway - and wrong on
+       `scurve`, the only view with `emptyMeansNone: true`, where it must say "Select projects...".
+       ⚠️ `pfLabel()` CANNOT simply be called inside `projFilterHTML()`: `buildBar()` runs BEFORE
+       `mount()`, and `mount()` is what sets `pfEmptyMeansAll` from the view - so the label would
+       be computed from the PREVIOUS view's flag, which is the very leak mount()'s own comment
+       warns about. Syncing here, after mount has returned, is the point at which the flag is
+       finally this view's. On the ten "empty means all" views it rewrites the same words.
+       ⚠️ This is exactly the state `pfLabel()`'s own note says must not ship: "Reading
+       'All projects' over an empty chart would look like a failed load rather than a prompt."
+       Measured 2026-09-18 on the S-Curve portfolio face - button "All projects", `_pfState()`
+       "Select projects...", and the empty state below telling the planner to press a control
+       that was not on screen under that name. */
+    var pfLab0 = bar && bar.querySelector('#po-projfilter-label');
+    if (pfLab0) pfLab0.textContent = pfLabel();
     if (bar && pfBadge) renderProjFilterList();
     if (bar && api && api.bar) api.bar(bar);
     return api;

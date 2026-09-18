@@ -104,6 +104,169 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ab) — S-Curve UI sweep: a menu in Arial, a button that named the wrong control, a private copy of a shared control, and a heading that always said "monthly"
+
+Owner: *"Let's do a UI sweep for the S-curve module this time."* Four defects, every one measured
+against the shipped markup in a browser rather than read off a screenshot — and two of them are
+**not this module's**: they were found here and they ship everywhere.
+
+⚠️ Lettered **(ab)**, `MODULE_V` **`20260918zb`** — and it took two rounds. `origin/main` was at
+`(z)`/`20260918z` when this started; a second session pushed `(aa)`/`20260918za` while it was being
+written, and had **independently picked the very same `20260918za` I had already chosen**.
+⚠⚠ **That collision merges cleanly and git reports nothing**, because the two edits are
+byte-identical — one side's bump simply disappears into the other's, and every returning browser
+keeps the cached module pages. Nothing but reading the remote's token and sorting it against mine
+would have caught it. Re-derived to `zb`, which sorts after `za` as a plain string; picking "the
+next letter" could not have detected it, since the letter was already correct.
+
+### ⚠️⚠️ 1. THE TAB DROPDOWN'S TRIGGER IS GOTHAM AND THE LIST IT OPENS IS ARIAL — IN TWELVE MODULES
+
+`.pd-tabsdrop-btn` carries `font: inherit`. `.pd-tabsdrop-menu button`, eleven lines below it in the
+same file, sets `font-size` and `color` and **no family** — and a `<button>` does not inherit the
+page font. Measured: trigger **Gotham 15px/700**, every item in the menu it opens **Arial 13px**.
+One control, two typefaces, one click apart.
+
+⚠️ **This is the third of the same shape in eight days** — *(r)* was `.ps-menu button { width:100% }`
+eating the colour pane, *(v)* was `.ps-menu button` rendering every menu item in Arial. Same cause
+every time: a rule that sets a size without a family. And `tools/type-scale.js` says in its own
+header that it cannot see this class of defect — *"the defect is an ABSENT declaration"* — so no
+checker in the repo was ever going to report it. It took a browser reading `fontFamily` off every
+control on the page.
+
+⚠️ Fixed as `font: inherit` placed **first** in the block, ahead of the `font-size` it would
+otherwise reset. After: both items **Gotham 13px**, `.cur` still 700 against the other's 400, both
+colours unchanged. Live in the **twelve** modules that call `UI.tabsToDropdown()`, so this is a
+`dashboard.css` bump, not an S-Curve one.
+
+### ⚠️⚠️ 2. THE PROJECT FILTER SAID "ALL PROJECTS" OVER AN EMPTY CHART TELLING YOU TO PRESS "SELECT PROJECTS"
+
+The S-Curve's portfolio face opens with nothing selected — it is the **only** view that does
+(`def("scurve", { emptyMeansNone: true })`, added 2026-09-17 because a per-project roll-up across 21
+projects is the most expensive possible default). Its empty state says *"Choose the projects to roll
+up — use **Select projects** in the toolbar above."* The toolbar button read **"All projects"**.
+There was no control on screen called "Select projects".
+
+⚠️ `projFilterHTML()` writes the literal string `All projects` into the label span. Every path that
+*changes* the selection then rewrites it through `pfLabel()` — which is why this is invisible on the
+other ten views, where `pfLabel()` would have said "All projects" anyway. Measured on the live page:
+the rendered button said `All projects` while the module's own `_pfState()` said `Select projects…`.
+
+⚠️⚠️ **And `pfLabel()`'s own comment describes precisely the state that was shipping**: *"The button
+is the only thing on screen that says which mode this view is in. Reading 'All projects' over an
+empty chart would look like a failed load rather than a prompt."* The guard was written; the first
+paint went around it.
+
+⚠️ **The obvious fix is wrong, and the file says why.** `pfLabel()` cannot be called inside
+`projFilterHTML()`: `buildBar()` runs **before** `mount()`, and `mount()` is what sets
+`pfEmptyMeansAll` from the view — so the label would be computed from the **previous view's** flag,
+which is the exact leak `mount()`'s own comment exists to prevent. Synced in `takeOver` *after*
+`mount()` returns, where the flag is finally this view's. On the ten "empty means all" views it
+writes back the identical words. After: button `Select projects…`, `_pfState()` agrees, and the
+empty state now names a control that is on screen; ticking a project still relabels to its name.
+
+### ⚠️ 3. A PRIVATE COPY OF THE SEGMENTED CONTROL, IN WHICH NOTHING LOOKED UNSELECTED
+
+`.sc-seg` painted its resting text `var(--pd-ink)`; the shared `.pd-seg` uses `var(--pd-muted)`. So
+everywhere else in the app an unselected option recedes and the chosen one carries the red — here
+**both** options sat at full ink and "Automatic | Manual" read as two live buttons rather than one
+choice of two.
+
+⚠️⚠️ **Deleting the copy is not a new decision — `dashboard.css` names this module in the rule's own
+header.** `.pd-seg` was promoted on 2026-09-08 *because* the control "already existed three times
+over — `.sc-seg` in the S-Curve module, an identical `.pd-seg` in dashboard.html's own inline
+`<style>`, and the `.pd-viewtoggle`/`.pd-vt` pair". dashboard.html's copy was deleted in that
+commit. This one was not. The module named in the consolidation is the one that never joined it,
+and it had already cost a defect: the copy never inherited the 44px phone tap target, which had to
+be re-declared by hand in this module's own mobile block.
+
+⚠️ **Geometry measured before the switch, not after.** In the topbar nothing moves —
+`.pd-modulebar .pd-seg { min-height:34px }` already pins it, and the group measured **34px / 32px
+button either way**, with all three neighbouring controls still 34. In the filter bar the group goes
+**34px → 26px**: that row carried **four** different control heights (16 / 24 / 28 / 34) and has lost
+its tallest outlier, landing beside the 28px chips. At 390px the buttons are **44px** from the
+shared rule, so the hand-rolled workaround went with the copy. Five call sites, `role="radiogroup"`
+added with the class. Verified still wired: Duration→Cost retitles the card to *"Cost S-Curve —
+Planned Value vs Earned Value"* and the note to *"Cost-weighted · ₱97.2M"*; Month→Quarter re-buckets.
+
+### ⚠️⚠️ 4. THE HEADING SAID "MONTHLY" OVER TWELVE BARS LABELLED "Q1 2025"
+
+The Period control re-buckets the chart correctly — 34 monthly bars, **12** quarterly, **3** yearly,
+with the axis relabelled `Q1 2025` and all. The card heading above it was hardcoded:
+
+```js
+var shapeTxt = chartMode === 'per' ? 'monthly %' : … : 'cumulative % + monthly';
+```
+
+⚠️ **The heading is the one element in this module explicitly charged with not overstating** — its
+own comment reads *"THE HEADING NAMES THE FILTER. A curve of one trade under a heading reading
+'Project S-Curve' is the mistake this module's notes keep recording in other forms: a screen that
+states more than it is showing. Screenshots of this card end up in reports."* It was doing exactly
+that about the grain.
+
+⚠️ And the right derivation was **already in the file**, 400 lines away in `renderFilters()`:
+`period === 'year' ? 'year' : period === 'quarter' ? 'quarter' : 'month'`, used for the tooltips.
+Two copies, one kept in step. Now one `periodWord()` read by both. Verified across all **nine**
+period × shape combinations: 12 bars → *"cumulative % + quarterly"*, 3 bars → *"yearly"*,
+`Periodic` → *"quarterly %"* / *"yearly %"*.
+
+### Found and NOT changed, with the measurement
+
+- **`.sc-matrix th.mo small` is 9px, and the scale has no rung below 10.** Rendered both ways: at
+  `--pd-fs-micro` the sticky header row grows **34px → 36px** and the year suffix goes from **0.86**
+  to **0.95** of its parent — a subordinate label the same size as the thing it is subordinate to.
+  It stays 9px, and `tools/type-scale.js` keeps reporting it rather than being taught to look away.
+- **The module's name is not on screen at any width.** `.pd-title-hasdrop` hides `.sc-title-txt`
+  because *"the trigger already names the screen"* — but every one of the eleven callers labels its
+  tabs with SUB-VIEWS ("Curve", "Overview", "Register", "Monitoring"), never the module, so the bar
+  reads `📈 Curve ▾`. Uniform across eleven modules and deliberate; changing it is an app-wide call.
+- **The chart keeps a 560px minimum below 700px and its card scrolls.** Measured 560px inside a
+  321px box at 390px wide — and the stylesheet says in place *"Do not 'fix' this by dropping the
+  min-width — that restores the unreadable version."* Left alone.
+- **The `.sc-table` 132px first-column cap is now measured**, which its own note said it was not
+  (*"NOT measured live: this table sits behind a view I could not reach signed in"*). At ≤700px
+  "Planned this month" needs 156px and "Actual this month" 143px against 132 — both ellipsise, and
+  both stay distinguishable on their first word. The cap does what it was written to do.
+
+### Verified
+
+Measured in a browser at **1400 / 1200 / 1000 / 860 / 700 / 520 / 390px**, inside an iframe so the
+media queries evaluate against a real viewport, against the shipped `dashboard.css` and the module's
+own `<style>` and inline script **sliced from `index.html`, never re-typed** — only `auth.js` and the
+supabase client are stubbed:
+
+- stylesheets asserted present in the cascade by name and rule count, not by a colour alone
+  (`dashboard.css:495`, `portfolio-dash.css:340`, inline `215`), Gotham resolving;
+- the theme flip as the proof of cascade — 9 of 10 sampled properties change across `html.pd-dark`
+  and the one that does not is the brand-red active fill, correctly;
+- **no page horizontal scroll at any of the seven widths**, no overlap and no escape among topbar,
+  module bar or tool-cluster children at any of them;
+- every focusable control covered by a focus rule — resolved **from the cascade**, since `:focus`
+  cannot be measured in an automated pane. ⚠️ The first version of that walker reported **0 focus
+  rules across 1,224**: an empty `CSSRuleList` on a plain style rule is **truthy**, so every rule
+  was treated as a group and skipped. A checker that says "all clear" because it looked at nothing,
+  for the second time this month;
+- the frozen corner under simultaneous vertical and horizontal scroll: `elementFromPoint` over the
+  Trade header returns **`th.k`** and over the footer **`td.k`**, on the ladder *(y)* set
+  (10 / 8 / 7 / 5), so the skin still loses to it;
+- the tooltip at the first, middle and **last** period at three widths: clamped **4px** inside the
+  chart and 21px inside the card, never past the viewport.
+
+`wiring-check` **139/0** · `dark-remap` **0 findings** · `test-portfolio-dash` **398/0** ·
+`type-scale` **18** (unchanged — the one S-Curve finding is the 9px above, reported by decision) ·
+`portfolio-dash.js` and the s-curve inline script both `node --check` clean · `<style>` braces
+**232/232** · 0 NUL bytes.
+
+⚠️ The harness and its probes lived in `modules/s-curve/` under `**/*harness*` and were **deleted
+before committing** — this repo has shipped harness files to production twice.
+
+⚠️ **Not verified signed in.** Measured against the shipped stylesheets with the real shell, grid
+and portfolio layers attached, on fixtures — not against a real project.
+
+`dashboard.css` → **`20260918c`** (31 refs) · `portfolio-dash.js` → **`20260918a`** (11 refs) ·
+`MODULE_V` → **`20260918zb`** in `dashboard.html` + `modules.html` with the fallback literal brought
+back into step (it had drifted to `20260918k`, which is the silent split that note warns about).
+All three sort-checked as plain strings past every token in the tree **and** on `origin/main`.
+
 ### 2026-09-18 (aa) — The trades are painted inside the one LSM bar, and one of them loses the pixels
 
 Owner: *"Let's queue the LSM rows the single bar row is correct but I don't see the activities
@@ -197,7 +360,6 @@ Pinned base `4d82fd4` still **27/0** and still loud (`20/55 fns, 7/21 vars`). `t
 `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · every other
 project-schedule suite green on the merged tree. CSS brace balance identical to the pre-change file.
 `modules-grid.js` `?v=` → `20260918za`, sorted forward of main's `20260918z`.
-
 
 ### 2026-09-18 (z) — The grouping button gets a short FACE, and the toolbar comes back to one row
 
