@@ -104,6 +104,253 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (k) — Zone scoping becomes step 9, and a label written four times becomes one declaration
+
+Owner, three items on Schedule Setup → Activity Sequence: *"in activity sequence, name the title of
+the step as Activity sequence"*, *"throughout the steps in schedule set-up, when providing button
+choices whether for trades, floors, or activities, place them in a holder group with a label"*, and
+*"separate Scope per zone as a separate Step 9 before Generate. title this step Zone scoping. in the
+table shown, group these also per floor, per zone, and per unit for easier readability"*. Module work
+— the full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(i)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **THE DOUBLED HEADING THE OWNER'S ITEM 1 IS REALLY ABOUT IS FIXED BY ITEM 3, NOT BY THE
+RENAME.** The step printed *"7 · Activity Sequence — Trade sequence"* — its own number and title,
+then the tab's. Sentence case does nothing about that. What does is that once **Scope per zone**
+leaves, the step has **one** view — and that file's own rule says a strip of one button *"is a
+control that cannot do anything"*. So the step comes out of the tab table entirely and its renderer
+is called directly. A rename and a split that look like two asks were one change, and doing only the
+visible half would have left the thing being complained about on screen.
+
+⚠️⚠️ **A DISPLAY NAME THAT IS ALSO A LOOKUP KEY CANNOT BE RENAMED IN ONE PLACE — and this log has
+now recorded that four times on this module alone.** Steps are addressed **by title, never by
+index**, and the resolver answers the **empty string** for a title it cannot find, so a missed call
+site prints a blank where a step number belongs. Seven edits for one word: the rail, the How-to
+manual's key, the prerequisite gate, **two separate alias tables** (the deep-link router reads a
+private map of its own and does not consult the shared one), and every cross-reference. ⚠️ Both
+retired titles still resolve — *"Scope per zone"* now to **its own step 9** rather than to the step
+it used to be a view of.
+
+⚠️⚠️ **THE ONE DEFECT WORTH CARRYING PAST THIS MODULE IS A `padding` SHORTHAND WINNING A
+SPECIFICITY TIE IT SHOULD NEVER HAVE BEEN IN.** The grouped table indents its headings with
+`table.sbld-tbl td[data-d="N"]` at **(0,2,2)**, and the heading rule above it —
+`table.sbld-tbl tr.sbld-scope-grp > td` — is **(0,2,3)**. Written with the `padding` **shorthand**,
+that rule therefore set `padding-left` too and won, flattening **every heading to one indent** while
+the rows beneath them stayed stepped: a grouped table whose groups all look like the same rung.
+Found by **rendering it**, not by reading it, and reverting the one line reproduces it — the
+measurement prints **10 / 10 / 10** where it must read 10 / 24 / 38. **A longhand property loses to
+a shorthand at higher specificity, so a rule that is only meant to own one edge must not use the
+shorthand for the others.** Fourth specificity trap this log has recorded in a month.
+
+⚠️⚠️ **AND TWO NUL BYTES WERE FIXED IN PASSING, ONE OF THEM IN A CHECKER THIS REPO RUNS ON EVERY
+PASS.** `tools/dark-remap.js` and `modules/project-schedule/test-wbsfile.js` each wrote the
+`\u0000` separator as a **raw byte**, so `grep` classified both as binary and answered *"Binary file
+matches"* instead of the matching line. Both are pre-existing on `origin/main`; the runtime strings
+are unchanged and both still pass. **Zero NUL bytes across all 404 tracked files now**, measured.
+⚠️⚠️ **And writing the paragraph about it reproduced it, for the sixth time** — the two characters
+went into the module changelog as two raw NUL bytes, so the file `grep` would have called binary was
+the log entry describing the trap. Caught by re-scanning the bytes after prepending. **Never type
+that escape into prose and trust the write; build it from char codes and check the bytes.**
+
+**Verified:** new `modules/project-schedule/test-zonescope.js` **57/0**, every function sliced out of
+the shipped file by name through the repo's own `test-slice.js`, with the footer's Next walk **driven
+end to end** (`… → Activity sequence → Zone scoping → Generate`) and the contrast **pinned to a
+checkout rather than `HEAD`** — where it is **24 passed, 33 failed** and the failures name the change
+rather than merely dying. The grouped table measured in a browser against the shipped stylesheets
+(indents 10/24/38/52, no heading dressed as a control, 0 page errors, no sideways page scroll).
+Twenty-one other project-schedule suites green on the merged tree — `lsm` 684/0, `builder` 156/0
+(⚠️ three assertions **retargeted, not weakened**, and `Zone scoping` added to two lists rather than
+inherited), `actsetup` 142/0, `phasenet` 135/0, `sap` 114/0, `towertypes` 102/0 — plus
+`tools/test-calendar` 71/0, `wiring-check` **139/0**, `dark-remap` 0 findings, `scan` self-test
+10/10. The inline block parses, CSS braces **+2/+2** against `origin/main`, 0 functions lost.
+
+⚠️ **Not verified signed in** — no real setup has been opened and no scope answer written.
+
+⚠️⚠️ **Merged `origin/main` (6 commits) before shipping, and a clean-looking resolution would have
+unstyled a control.** Three conflicts in `modules/project-schedule/index.html`, all the same shape:
+main rewrote the surrounding code substantively while this branch had changed only a step title
+inside it. Main's content wins on the merits in all three, resolved **hunk by hunk** with this
+branch's rename re-applied on top — never with `--ours`/`--theirs`, which take a whole file and drop
+your own non-conflicting edits in it. ⚠️ One of those re-applications is **load-bearing**: main's
+copy emits a label class this branch had **deleted** once every call site moved off it, so taking
+main's hunk verbatim would have left that label with no rule at all. ⚠️ And main's own rewrite
+carried **three cross-reference call sites this branch's rename had never seen**, because they did
+not exist on the base it was cut from — found by re-sweeping the **merged** file rather than trusting
+the resolution.
+
+`MODULE_V` → `20260918k`, re-derived from what `origin/main` actually carries **after** integrating
+(`20260918j`) rather than guessed beforehand, and sort-checked as a plain string. No shared asset
+changed.
+
+### 2026-09-18 (j) — Schedule Setup: a development is a row, and the quick setup asks per category
+
+Owner, on the Towers step: *"replace the buttons on top with Add Type, Add Development … for this
+table, strict only to two levels … columns should include Name, Code, Remarks"*, *"when add type is
+clicked, a grouping is added. when development is clicked, a row is added inside"*, and *"Hide first
+option to add site plans"*; then on Floors & Zones, *"in quick set-up simplify the inputs"* per
+category and *"for zones and units, minimum is always 1."* Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(h)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **REMOVING A CONTROL DOES NOT REMOVE THE PROPERTY IT PROTECTED, AND THE EASY MISTAKE IS TO
+DELETE BOTH.** A development is a row now, so the type's ± count control is gone — three
+developments are three rows, and a number beside the type would state the same fact twice. But that
+control existed for a reason: a type's floors hang off its **first** instance, so it only ever
+removed from the END and the representative was untouched by construction. Its replacement lets you
+remove **any** row and **moves the floors to the next instance**, which is the case the old control
+could not express at all. The suite's section is **retargeted rather than weakened** — it used to
+assert the arithmetic of a control nobody presses, and now asserts the stricter property.
+
+⚠️⚠️ **A MIGRATION THAT RUNS ON EVERY LOAD CAN SILENTLY UNDO THE FEATURE THAT SHIPS BESIDE IT.** A
+development standing beside the types is a row with **no type id** — the very shape the pre-types
+migration was written to convert. Run unconditionally it would invent a type for it on every load,
+so *"beside"* would quietly become *"a one-instance type"* and the row would move under a grouping
+the planner never created. The guard is the presence of the `towerTypes` **key**, and one assertion
+fails without it. ⚠️ The suite's migration slice had to start **at that guard** rather than below
+it, because the guard *is* the migration: a slice beginning under it tests the loop without the
+question.
+
+⚠️⚠️ **A HAND-TYPED FIXTURE RENDERED A PAGE THE APP DOES NOT SHIP, AND IT LOOKED DELIBERATE.** The
+render harness typed the trade vocabulary in **lower case** where the shipped keys are **upper**, so
+the trade lookup matched nothing and Floors & Zones came out as an empty step — not an error, just a
+screen with nothing on it. The vocabulary, the floor categories, the step titles and the feature
+flag's own value are all **sliced out of the shipped file** now. A retyped constant is a second
+opinion about what the shipped one says, and the step titles in particular would have let the
+harness disagree with the rail about which number a step is. Third time this repo has recorded a
+harness reporting a page as correct that the real cascade does not produce.
+
+⚠️⚠️ **AND A TEST THAT SAYS A NUMBER MUST BE COMPARED AGAINST WHAT PRODUCES IT.** The quick setup's
+dialog states *"… N locations to schedule"* before anything is written, and that sentence is
+computed by one function while the floors are built by **a different block a hundred lines below
+it**. Those two can disagree, and if they do the planner reads a figure that is not what they get.
+Both are sliced out of the shipped file and **executed**, and the count is checked against the
+shipped leaf rule over the rows the generator actually produced — 46 assertions, across five shapes.
+
+**Verified:** every project-schedule suite green on the merged tree — **21 suites, 1,912 assertions,
+0 failing** — including **main's own two new suites, which this branch had never run**. Plus
+`wiring-check` **139/0**, `dead-hooks` **9** with its findings **byte-identical to the base** (only
+the census moves, 474 → 472, which is the removed control's own classes), `dark-remap` 0,
+`loc-key-agree` clean, `selectall-key` 100 safe / 0 broken, `toolbar-order` 15/0. The 3.76MB inline
+block parses, CSS braces 2548/2548, 0 NUL bytes. Measured in Chromium at two widths: the table is
+two rungs in **one** table at depth 1 — strictly two levels — headed Name / Code / Remarks, with 0
+count controls and 0 site-plan buttons, and no horizontal scroll, no clipping and 0 page errors.
+
+⚠️ **The duplicate-id scan reports one new hit and it is a false positive**, established by
+**executing** the builder rather than reading it: two occurrences of one templated id are the two
+branches of a single `if`, and the index makes every cell unique — 4 distinct ids for 4 answerable
+cells, with the furniture carrying none. Same class as the pre-existing hit this log already
+records; 20 duplicates before, 20 after.
+
+⚠️ **Not verified signed in** — no setup has been saved and re-read.
+
+⚠️ **Merged `origin/main` (14 commits) before shipping.** Two conflicts, both prose in one function,
+and **both had to go this branch's way on more than taste**: main's side of the first reads a local
+that this function no longer has, so taking it would have been a `ReferenceError` on every render —
+the *"below is not defined"* shape this log has recorded five times — and it is the wrong count
+besides. The second names a button main moved into a bar that this branch's rewrite does not emit.
+The resolution is **recorded in the file** rather than only here, since both placements are
+defensible and the block sits behind a flag that is currently off.
+
+`MODULE_V` → `20260918j`, re-derived from what the tree carries **after** integrating (main had
+reached `20260918i`) rather than guessed beforehand, and sort-checked as a plain string. ⚠️ Every
+`20260918*` token was listed on **both refs before resolving** rather than after — the only thing
+that finds the collision this log has now recorded nine times, because two sides writing the
+**same** string merge silently and leave one cache token over two different builds.
+
+### 2026-09-18 (i) — Schedule Setup ▸ Activities reads SAP levels 1–3, and a merged activity carries every class code it covers
+
+Owner's six items on that step, with `Book2.xlsx` attached — fewer words and smaller type, the SAP
+list showing level 2 with level 3 behind a caret, dragging a level 2 or a level 1 into the build as a
+**merged** activity, an error notification when a merge spans trades, a merged activity pushing
+**every** class code it covers, and the Setup's step rail overlapping the panel at narrow width.
+Module work — the full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(g)`. Logged here
+for the migration, the `MODULE_V` bump and the four things that are not facts about one module:
+
+**Run `migrations/2026-09-18-schedule-class-codes.sql`** — `project_schedule.class_codes text[]`,
+additive, with a GIN index and no backfill.
+
+⚠️⚠️ **A NEW COLUMN RATHER THAN A DELIMITED `class_code`, BECAUSE EVERY CONSUMER MATCHES ON EXACT
+EQUALITY.** `scheduleSeedPlan` buckets activities on it, `boq_allocations` gates on it, the schedule's
+`ccByCode`/`ccLevelOf` resolve it against the Finance chart, the grid's Class Code cell is an enum
+editor over it, and three grouping dims use it as a bucket key. Putting `"01050, 01100"` in there
+resolves to **nothing** in every one of those, and renders on screen as an off-chart code — so a
+merged activity would go from matching one code to matching none, **silently**. ⚠️ And not
+`activity_codes`, which is a jsonb map of `code_type_id → code_value_id`: **one** value per type, read
+as `r.activity_codes[typeId]` by about ten callers, all of which an array under a type key breaks.
+⚠️ `class_code` is untouched and stays canonical, so every existing reader keeps working and only the
+readers that want the whole set opt in — which is also why there is **no backfill**: null means *"this
+row has one code"*, not *"unknown"*, and every reader already falls back to `class_code`.
+
+⚠️⚠️ **A LOOSE ERROR REGEX WOULD HAVE SWALLOWED AN UNRELATED REFUSAL, AND THE BASE GATE IS WHAT
+CAUGHT IT.** Both the schedule's push degrade and `modules/contracts-claims/boq.js`'s read fallback
+recognise *"this database has not run the migration"* by matching the error text. Matching the bare
+word `class_codes` also matches the **Finance chart table of that name**, so a refusal that had
+nothing to do with the column would have been quietly absorbed as *"not migrated"* — the same shape
+this log records for `boq_allocations_method_check`. Both now require a `column|schema cache` test
+alongside the column name. Found because a suite's own base gate failed for the wrong reason.
+
+⚠️⚠️ **`origin/main` ANSWERED THE OWNER'S ITEM 6 ON THE SAME DAY AND DID NOT FIX IT — MEASURING IS
+THE ONLY REASON I KNOW THAT.** Main's rail pass (2026-09-18 `(f)`) rebuilt the narrow-width step strip
+properly, with grid areas, left/right arrows and a rotated chevron, and never clears the base rule's
+`position:sticky; top:12px; max-height; overflow-y:auto`. Measured on the **merged** tree at
+`scrollY 900`: the rail pinned at `top:12` over a panel at `-765`, overlapping **736 × 105** at 760px
+and **396 × 105** at 420px, with `elementFromPoint` at the rail's own centre returning a step. Four
+declarations go **into** main's block rather than replacing it — 0px of overlap at 1400 / 760 / 420,
+with main's grid areas, arrows and no-horizontal-scroll re-measured intact.
+⚠️⚠️ **I had written the opposite into the merge-resolution comment before running the harness**,
+reasoning that a sticky grid *item* cannot travel outside its own grid area. The harness disagreed and
+the harness is right; the comment now carries the measurement instead of the reasoning. A clean
+auto-merge is not evidence, and neither is a plausible argument about the cascade.
+
+⚠️⚠️ **A HARNESS REPORTED A CORRECT PAGE AS UNSTYLED, FOR THE THIRD TIME IN THIS REPO.** The type
+measurement first came back with every element at **16px** and `--pd-ink` empty — because the harness
+served the page over `http` while linking `dashboard.css` over `file://`, which the browser refuses.
+The same run also matched a `<style>` opener **inside an HTML comment**, so CSS error recovery ate the
+first real rule. Assert a token before believing a single number; both faults are fixed in the
+generator rather than worked around in the numbers.
+
+**Verified:** `test-sap` **114/0** (new), `test-actsetup` **142/0**, `test-actdnd` **62/0**,
+`test-lsm` **684/0** — and every other project-schedule suite green on the merged tree, **1,843
+assertions across twenty suites, 0 failing**, including main's own new `test-phasecard` **85/0**,
+which this session had never run. ⚠️ `test-lsm` was **retargeted, not weakened**: reverting the
+off-chart lookup in a throwaway copy takes it to 683/1, naming the assertion. `wiring-check` 139/0 ·
+`dead-hooks` 9, the documented baseline · `dark-remap` 0 · `toolbar-order` 15/0 · `loc-key-agree`
+clean · `selectall-key` 100 safe / 0 broken · the inline block parses (3.83MB) · CSS braces 2535/2535
+· 0 NUL bytes in every file this change touches.
+
+⚠️ **Fixed in passing, found by measuring rather than reported:** the Activities grid's off-chart
+mark resolved through the **item-only** `ccByCode` while the banner beside it used `ccLevelOf`, so on
+a healthy build **every `+ Library` row — a level-2 group code — rendered red and was counted as
+off-chart.** `offChartCount` had been corrected for exactly this on 2026-09-10 and the per-cell mark
+was left behind; the two duplicate warnings are now one banner, and both now-callerless counters are
+deleted rather than left to be wired back up.
+
+⚠️ **Reported, NOT fixed — two pre-existing NUL bytes in files this change does not touch**, both a
+unicode-zero sentinel written as the raw byte rather than its six-character escape:
+`tools/dark-remap.js` (offset 5602) and `modules/project-schedule/test-wbsfile.js` (offset 8138), both
+present on `HEAD` before this branch, and both making `grep` treat the whole file as binary. Fifth
+recurrence of a trap this log already records. A two-character repair that does not belong in a commit
+about the Activities step.
+
+⚠️ **Not verified signed in, and the migration has not been run** — no merged activity has been pushed
+and read back, and `class_codes` has never reached a real BOQ match.
+
+⚠️ **Merged `origin/main` (15 commits) before shipping** — the Project Phases twelve-item pass, the
+Schedule Setup rail pass and three 360°-stitcher commits, **758 lines of the same file**. Two
+conflicts, both resolved on the merits rather than by taking a side: main's rail block ships and this
+branch's single declaration composes into it (above), and the off-chart hunk resolves to **this
+branch's empty string**, because main's side calls `offChartCount()` — a function this branch deleted
+in the same pass that folded the duplicate warnings, so taking main's side would have been a
+ReferenceError on every render of the step. `modules/progress-photos/` and `supabase/` are
+byte-identical to main; its suite's 5 failures are main's own pre-existing ones, unchanged.
+
+`MODULE_V` → `20260918i`, re-derived from what the merged tree actually carries **after** integrating
+(main had reached `20260918h`) and sort-checked as a plain string past every `20260918*` token in the
+tree. No shared asset changed.
+
 ### 2026-09-18 (h) — Twelve items on Project Phases, and the two that were geometry rather than taste
 
 Owner, twelve items on Schedule Setup → Project Phases — the per-phase Gantt shipped in `(c)`: shrink

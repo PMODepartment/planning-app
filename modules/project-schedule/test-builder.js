@@ -92,10 +92,13 @@ function sliceVar(name) {
     ok(typeof m2.done === 'string' && m2.done.length > 10, 'manual: "' + t + '" says when it is done');
   });
   /* ⚠️ The two steps where getting it wrong is expensive must carry a warning, not just a how-to. */
-  /* ⚠ RETARGETED, not dropped: 'Repetition' split into Location Sequence and Activity Sequence
-     on 2026-09-17, and 'Towers' is new. Every step where getting it wrong is expensive still has
-     to carry a warning, so the list follows the rail rather than being shortened to suit it. */
-  ['Towers', 'Floors & Zones', 'Location Sequence', 'Activity Sequence', 'Generate', 'Review & import'].forEach(function (t) {
+  /* ⚠ RETARGETED TWICE, never dropped: 'Repetition' split into Location Sequence and Activity
+     Sequence on 2026-09-17, and on 2026-09-18 'Scope per zone' left that step to become 'Zone
+     scoping' while the step itself went to sentence case. Every step where getting it wrong is
+     expensive still has to carry a warning, so the list FOLLOWS the rail rather than being
+     shortened to suit it — and Zone scoping is added rather than inherited, because unticking an
+     activity there removes it from the programme entirely. */
+  ['Towers', 'Floors & Zones', 'Location Sequence', 'Activity sequence', 'Zone scoping', 'Generate', 'Review & import'].forEach(function (t) {
     ok(manual[t] && manual[t].watch && manual[t].watch.length, 'manual: "' + t + '" carries a watch-out');
   });
   /* ⚠️⚠️ Auto-trace REPLACES every link, and a planner who learns that afterwards has lost work. */
@@ -305,7 +308,9 @@ function lagOf(links, from, to) { const k = links.find(x => x.from === from && x
      fixture cannot drift from the rail. */
   const newBlock = src.slice(src.indexOf('var STEPS_NEW = ['), src.indexOf('var STEPS_IMP = ['));
   const titles = [...newBlock.matchAll(/\{ t: '((?:[^'\\]|\\.)*)'/g)].map(m => m[1].replace(/\\'/g, "'"));
-  ok(titles.length === 8, 'gating: the new-path rail has 8 steps after Start (' + titles.length + ')');
+  /* ⚠ 8 → 9 on 2026-09-18: Zone scoping is its own step. The number is asserted rather than
+     derived because the rail's LENGTH is the thing a merge silently changes. */
+  ok(titles.length === 9, 'gating: the new-path rail has 9 steps after Start (' + titles.length + ')');
   const STEPS = [{ t: 'Start', s: '' }].concat(titles.map(x => ({ t: x, s: '' })));
 
   const GROUPS_SRC = src.match(/var GROUPS = \[[^\]]*\];/)[0];
@@ -334,7 +339,7 @@ function lagOf(links, from, to) { const k = links.find(x => x.from === from && x
   /* ---- no activities: everything downstream of Activities is unanswerable ---------------- */
   {
     const r = run('new', { activities: [], zoning: {} });
-    ['Floors & Zones', 'Location Sequence', 'Activity Sequence', 'Generate'].forEach(function (s2) {
+    ['Floors & Zones', 'Location Sequence', 'Activity sequence', 'Zone scoping', 'Generate'].forEach(function (s2) {
       ok(/Activities first\./.test(r.ready(s2)), 'gating: "' + s2 + '" is blocked with no activities');
     });
     ['Calendars', 'Project phases', 'Activities', 'Towers'].forEach(function (s2) {
@@ -342,7 +347,7 @@ function lagOf(links, from, to) { const k = links.find(x => x.from === from && x
     });
     ok(/step \d/.test(r.ready('Generate')),
        'gating: the reason names a step NUMBER, resolved through _stepNo rather than hard-coded');
-    eq(r.firstBlocked(8), 5, 'gating: the first blocked step is Floors & Zones (index 5)');
+    eq(r.firstBlocked(titles.length), 5, 'gating: the first blocked step is Floors & Zones (index 5)');
     eq(r.firstBlocked(4), -1, 'gating: nothing before Floors & Zones is blocked');
   }
 
@@ -351,7 +356,7 @@ function lagOf(links, from, to) { const k = links.find(x => x.from === from && x
     const r = run('new', { activities: [act('ST')], zoning: zoned('ST', 3) });
     eq(r.ready('Location Sequence'), '', 'gating: floors typed → Location Sequence is open');
     eq(r.ready('Generate'), '', 'gating: and so is Generate');
-    eq(r.firstBlocked(8), -1, 'gating: a complete setup blocks nothing');
+    eq(r.firstBlocked(titles.length), -1, 'gating: a complete setup blocks nothing');
   }
   /* ---- activities, a location-bearing trade, NO floors anywhere -------------------------- */
   {
@@ -359,7 +364,7 @@ function lagOf(links, from, to) { const k = links.find(x => x.from === from && x
     ok(/Floors & Zones first\./.test(r.ready('Location Sequence')),
        'gating: location-bearing trades with no floors → Location Sequence is blocked');
     eq(r.ready('Generate'), '', 'gating: Generate is NOT blocked by missing floors — only by no activities');
-    eq(r.firstBlocked(8), 6, 'gating: the block is Location Sequence (index 6)');
+    eq(r.firstBlocked(titles.length), 6, 'gating: the block is Location Sequence (index 6)');
   }
   /* ---- ⚠⚠ THE CASE THE WHOLE RULE TURNS ON: project-wide work only ------------------------
      General Requirements carries no tower, floor or zone (LOCLESS), so this project has no floors
@@ -369,7 +374,7 @@ function lagOf(links, from, to) { const k = links.find(x => x.from === from && x
     eq(r.ready('Location Sequence'), '',
        'gating: a project whose only trade is project-wide is NOT blocked — it can never type a floor');
     eq(r.ready('Generate'), '', 'gating: and it can still reach Generate');
-    eq(r.firstBlocked(8), -1, 'gating: nothing at all is blocked for it');
+    eq(r.firstBlocked(titles.length), -1, 'gating: nothing at all is blocked for it');
   }
   /* ---- a trade with no zoning entry at all: counted as 0 floors, never a throw ------------ */
   {
