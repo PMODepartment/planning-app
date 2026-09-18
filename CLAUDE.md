@@ -104,6 +104,96 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (al) — "There shouldn't be a no trade set": the S-Curve was reading half of what a trade is
+
+Owner: *"Can we trace the no trade set? There shouldn't be a no trade set in the s-curve"*, and
+*"Do 1"* on folding away the Manual tab's duplicate chart.
+
+⚠️ Lettered **(al)**, `MODULE_V` **`20260918zj`** — main reached `(ak)`/`20260918zi` while this was
+in flight. Sixth token re-derivation today. No shared asset changed, so nothing else is bumped.
+
+### ⚠️⚠️ TRACED, AND HE IS RIGHT — TWO SCREENS GAVE DIFFERENT ANSWERS TO "WHAT TRADE IS THIS?"
+
+Project Schedule's canonical answer, and its own comment says exactly what it means:
+
+```js
+// THE answer to "what trade is this activity?". Its own field wins; otherwise the WBS says.
+function workOf(r) { return r.work_type || _nodeTrade(r.wbs_node_id) || ''; }
+```
+
+The S-Curve's was `r.work_type || UNTRADED`. **No WBS fallback.** So an activity filed under a
+trade branch with an empty Trade column reads correctly in the schedule and lands in
+`No trade set` here — the same project, described two ways, and the planner is told to go and fix
+data that is not actually wrong.
+
+⚠️⚠️ **AND THIS MODULE'S OWN FILTER NOTE HAS BEEN PROMISING THE WBS ROUTE THE WHOLE TIME** —
+*"Set it on the activity in Project Schedule (the Trade column), **or file it under a trade branch
+of the WBS**."* It was instructing planners to do something it then refused to read. The
+instruction and the behaviour had disagreed in writing since the note was added, which is the part
+worth keeping: the contradiction was on screen and legible, and nobody read the two halves
+together.
+
+### What it took
+
+- **`wbs_node_id` was not in the projection at all** — `fetchRows`'s select list is the one place
+  both read paths share, so the column simply never arrived.
+- **`wbs_nodes` fetched per project through `PDb.selectAll`**, the shared keyset loop. ⚠️ Not a
+  plain select: PostgREST caps a read at 1000 rows server-side and a WBS runs to thousands of
+  nodes (4PH Strevi: **7,297**), so a truncated tree would resolve the shallow branches and
+  silently drop the deep ones straight back into `No trade set` — the same failure, harder to see.
+  ⚠️ A failed fetch degrades to the previous behaviour rather than refusing to draw.
+- **`nodeTrade()` ports `_nodeTrade`'s derivation** — the branch under the root is the trade, an
+  activity filed on a root is named by it, 60-step cycle guard, memo. ⚠️ Duplicated knowingly: the
+  original sits inside `modules/project-schedule/index.html` beside 58k lines this module cannot
+  load. If a third reader appears it belongs in `assets/js/scurve.js` with the curve engine.
+  ⚠️ **Indexed, not scanned** — the original walks the array with `.find()` per parent step; one
+  `id → node` map is built with the tree instead.
+
+### Measured, on the shape of the actual complaint
+
+A fixture with **8** activities carrying no `work_type`: six filed under WBS trade branches
+(`Execution Phase › Structural Works › Earthworks`, `… › MEPF Works › Rough-ins`), two filed
+nowhere at all.
+
+| | before | after |
+|---|---|---|
+| Structural Works | 8 | **11** |
+| MEPF Works | 8 | **11** |
+| No trade set | **8** | **2** |
+| total activities | 56 | 56 |
+
+The six moved to the trades their WBS already said they were — they did not vanish, and the total
+is unchanged. The two that are genuinely unfiled stay, which is correct: those are the ones the
+warning bar is for.
+
+### The live preview folds away
+
+Owner picked option 1 on the duplication measured in *(ah)*. `manChart()` calls the **same
+`renderChart()`** on the **same `computeManual()`** as the Curve tab, so it was ~400px of a chart
+he already had, sitting above the grid on every visit. It is a `<details>` now, closed by default.
+
+⚠️ **Remembered per project, and that is not a nicety**: `renderManual()` rebuilds the card's
+innerHTML whenever the Planned/Actual/Forecast selector moves, so an unremembered disclosure would
+slam shut every time the planner changed kind. Keyed `sc_manprev_<pid>`, beside the basis, mode,
+period and view.
+
+⚠️ Rendering a chart into a **closed** disclosure is safe, checked rather than assumed: the SVG is
+`viewBox` + `width:100%`, and `renderChart`'s only layout reads are inside `showTip()`, which
+cannot run on a chart nobody can hover. Verified: the SVG is present in the DOM while collapsed,
+and the sheet now starts **277px** from the top of the card.
+
+### Verified
+
+`wiring-check` **139/0** · `dark-remap` **0** · `test-portfolio-dash` **398/0** · `test-boq`
+**66/0** · inline script `node --check` clean · `<style>` braces **238/238** · 0 NUL bytes.
+⚠️ `type-scale` moved **18 → 19**, and it is **not mine**: `.sbld-schedcar` at 9px arrived with
+`1014e9b` in project-schedule — checked with `git log -S` rather than assumed, because a counter
+moving on the commit you are about to push is exactly when you assume it is yours.
+
+⚠️ **Not verified signed in.** In particular `wbs_nodes` is a new read for this module — Project
+Schedule already reads the table so the RLS policy exists, but this module's access to it has not
+been exercised against the real database.
+
 ### 2026-09-18 (ak) — A door hidden behind one word, a red stripe nobody had looked at, and a suite that had been dark for a day
 
 Owner, two items on Schedule Setup: *"in step 1, hide first the option to allow importing of external

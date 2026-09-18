@@ -1,5 +1,22 @@
 # Module: s-curve
 
+## 2026-09-18 — A trade can come from the WBS, and the live preview folds away — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (al)).
+
+- ⚠️⚠️ **`tradeOf()` falls back to the WBS branch**, which is what Project Schedule has always
+  done (`workOf(r) = r.work_type || _nodeTrade(r.wbs_node_id)`). This module read only
+  `work_type`, so an activity filed under a trade branch with an empty Trade column appeared
+  correctly tagged in the schedule and as `No trade set` here. ⚠️ This module's own filter note
+  had been telling planners to "file it under a trade branch of the WBS" while refusing to read
+  one. Needed `wbs_node_id` in the projection (it was never selected) and a `wbs_nodes` fetch
+  through `PDb.selectAll` — a plain select caps at 1000 rows and a WBS runs to thousands.
+  Measured: 8 untagged activities became Structural 8→11, MEPF 8→11, `No trade set` 2.
+- **The Manual tab's live preview is a `<details>`, closed by default, remembered per project**
+  (`sc_manprev_<pid>`). It is the same `renderChart` on the same `computeManual` as the Curve tab.
+  ⚠️ Remembered because `renderManual()` rebuilds the card on every kind switch, so an
+  unremembered disclosure would close itself constantly.
+
 ## 2026-09-18 — Trades in construction order, and the "No trade set" row explained — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (ah)).
