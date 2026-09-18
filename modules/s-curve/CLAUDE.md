@@ -774,7 +774,12 @@ clicked in a real browser against fixtures (both dimensions' totals matched the 
 
 ---
 
-## The manual matrix takes PDGrid's SKIN, not only its keys (2026-09-18 q) — fmlozano
+## The manual matrix takes PDGrid's SKIN, not only its keys (2026-09-18 y) — fmlozano
+
+⚠️ Re-lettered `(q)` → `(x)` → `(y)` across two catch-up merges with `origin/main`, and the
+`MODULE_V` token re-derived with it: this branch had picked `20260918q` while main had already
+reached `20260918x`, which sorts LATER — so shipping `q` would have put these bytes behind a token
+browsers already hold. See the root log's own entry for the full note.
 
 Owner: *"Let's fix the s-curve manual data table. We already have an excel type build let's adopt
 this."*
@@ -816,4 +821,4 @@ rows, line and ink both remapping across the theme flip. Every key re-tested aft
 column, Enter a row, Shift+↓ selects 3, Ctrl+D fills 3, a `1\t2\t3\t4` paste spills four months.
 
 ⚠️ **Not verified signed in** — no real project's manual curve has been typed into.
-`MODULE_V` → `20260918q`; no shared asset changed.
+`MODULE_V` → `20260918y`; no shared asset changed.
