@@ -2255,8 +2255,17 @@ html.pd-js .pd-tabsrc { display: none; }
   box-shadow: var(--pd-shadow-lg); overflow: hidden;
 }
 .pd-tabsdrop-menu.open { display: block; }
+/* ⚠️⚠️ `font: inherit` FIRST, and it is the whole reason this rule is not one line
+   shorter. A <button> does NOT inherit the page font: left alone it renders in the UA's
+   Arial, and this rule sets a SIZE without a family, which is the exact shape
+   `tools/type-scale.js` says it cannot see ("the defect is an ABSENT declaration").
+   `.pd-tabsdrop-btn` above already does this; the menu it opens did not, so the trigger
+   was Gotham 700 and every item in its list was Arial - one control, two fonts, one click
+   apart. Measured on S-Curve 2026-09-18, live in the twelve modules that call
+   `UI.tabsToDropdown()`. It must stay ahead of `font-size` below, which it would reset. */
 .pd-tabsdrop-menu button {
   display: block; width: 100%; text-align: left; border: none; background: none;
+  font: inherit;
   padding: 9px 14px; cursor: pointer; color: var(--pd-ink); font-size: var(--pd-fs-base); border-bottom: 1px solid var(--pd-line);
 }
 .pd-tabsdrop-menu button:last-child { border-bottom: none; }

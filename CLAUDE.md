@@ -104,7 +104,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-18 (za) — Location Sequence becomes one page, and a merge resolution that would have thrown on every render
+### 2026-09-18 (ag) — Location Sequence becomes one page, and a merge resolution that would have thrown on every render
 
 Owner, six items on the Location Sequence step of Schedule Setup — rename it throughout; merge tower
 sequence and zone sequence into one screen with no view options and no zoom; always draw floors,
@@ -112,7 +112,7 @@ zones and units; make the resulting schedule a real Gantt grouped tower → floo
 auto-trace ask four numbers and resolve the rest; and replace the inspect/link-by-hand split with a
 drag from one bar's start or finish point onto another's. Module work — the full entry, every ⚠️
 decision and the verification are in
-[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(y)`. Logged here
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(z)`. Logged here
 for the `MODULE_V` bump and the five things that are not facts about one module:
 
 ⚠️⚠️ **A CONFLICT THAT AUTO-MERGES CLEANLY ON ONE SIDE CAN STILL BE A ReferenceError, AND TAKING A
@@ -171,11 +171,673 @@ inline block parses at 3.86MB, CSS braces 2575/2575, **0 NUL bytes** — ⚠️ 
 ⚠️ **Not verified signed in** — no setup saved and re-read, no link dragged against a real project's
 activities, and auto-trace has never resolved against real data.
 
-⚠️⚠️ **`MODULE_V` → `20260918za`, re-derived from what the tree carries AFTER integrating** (main had
-reached `20260918z`) and sort-checked as a plain string past all **25** `20260918*` tokens on both
-refs. ⚠️ The **fallback literal in `modules-grid.js` had drifted to `20260918k`** while the two pages
+⚠️⚠️ **`MODULE_V` → `20260918zf`, re-derived from what the remote actually carries AFTER integrating —
+and it had to be done TWICE.** The first pass took `20260918za` past main's then-current `20260918z`.
+⚠️⚠️ **Main's own `(aa)` entry had independently chosen the identical `20260918za`** — the silent
+collision this log keeps recording, where two sides write the same string, git reports no conflict on
+that line at all, and one cache token ends up covering two different builds. Main has since reached
+`20260918ze`, and `za` sorts **earlier** as a plain string, so shipping it would have put these bytes
+behind a token browsers already hold — worse than a collision, because the new bytes simply never
+arrive. Re-derived past both and sort-checked against every `20260918*` token on both refs.
+⚠️ The **fallback literal in `modules-grid.js` had drifted to `20260918k`** while the two pages
 carried `z` — eleven tokens behind, and read only by a page that omits the query string, which is
 exactly why the drift was invisible. Brought current with them.
+
+⚠️ **Re-lettered `(za)` → `(ag)` on merging `origin/main` (15 commits).** Main continued past `(z)`
+with `(aa)`…`(af)` while this branch took `(za)`; both schemes have precedent in this file, so the
+entry merging in is the one that moves rather than either side being rewritten. The module entry moves
+with it — `(y)` → `(z)`, where main had independently used `(y)` for its own baseline-lock entry.
+⚠️ **`modules/project-schedule/index.html` auto-merged with no conflict, and that is not evidence** —
+main rewrote the LSM bar's trade painting while this branch rewrote the Location Sequence step, so
+both sides were checked present afterwards and the whole battery re-run on the merged tree.
+⚠️⚠️ **And the resolver script aborted on its own marker check, for the reason 2026-09-09 (f) records:**
+this file quotes `=======` and `<<<<<<<` in PROSE, in the very entries that warn about them, so a
+substring test reports markers in a clean resolution. The test has to be line-anchored.
+
+### 2026-09-18 (af) — The manual sheet drags to select, drops the trade %, loses its prose, and folds its shortcuts under the grid
+
+Four owner asks in one pass, all on the S-Curve's Manual data tab, all measured.
+
+⚠️ Lettered **(af)**, `MODULE_V` **`20260918ze`**, `xlgrid.js` **`20260918b`** — `origin/main`
+reached `(ae)` during this. Fourth token re-derivation today.
+
+### 1. The trade % is off the sheet — and the weighting behind it is untouched
+
+Owner, after asking what the number meant: *"Disable the % from showing first."* Each trade name
+carried **`x% of the project`**. Answered first, because it is worth recording what it was: the
+trade's share of the schedule's **total activity duration**, or of **loaded cost** when the toolbar
+is on Cost ₱. It reads as a share of value, which is not what it is. The six shares summed to
+exactly 100%, so the allocation was never wrong — the label was.
+
+⚠️ **`tradeWeights()` is untouched.** It still drives the `Project (weighted)` footer and the
+curve. This is a display change and nothing else, so it can be put back or re-worded without
+touching any arithmetic. It still shows on the Curve tab's period breakdown (`.sc-bd`), a
+different surface that was not part of the ask.
+
+⚠️⚠️ **And the question turned up something worse, which is REPORTED, not fixed.** Measured on a
+trade whose activities carry no dates — `Allied Services`, 0% in the owner's own screenshot: the
+row offers **20 editable cells, none disabled**. Typing 50 into one moves the row's own Total to
+**50%** and leaves the `Project (weighted)` footer **completely unchanged**, with **no warning
+anywhere on screen**. A planner can fill that row, watch it reach 100%, save it, and move the
+curve by nothing. The module's own note says a zero-weight trade should be *"REPORTED rather than
+dropped"* — but the only reporting that exists covers trades in a **saved sheet** that no longer
+match the schedule, not a schedule trade that weighs nothing. Awaiting the owner's call on the
+shape of the fix.
+
+### ⚠️⚠️ 2. CLICK AND DRAG SELECTS A RANGE
+
+Owner: *"The multi-select via mousedrag is not working. I want the grid to be like an excel as
+much as possible."* Shift+arrow and shift-click landed earlier the same day; the gesture people
+reach for first had not.
+
+⚠️ **A plain press is not treated as a drag until the pointer reaches a DIFFERENT cell**, and that
+is what keeps an ordinary click working — nothing is `preventDefault()`ed until a second cell is
+entered, so a click still focuses the input and places the caret where you clicked. Only then is
+the anchor planted. Measured: press-and-hold paints **1** cell and sets no `pdg-dragging` class;
+dragging to the third row and third column paints **9**.
+
+⚠️⚠️ **DOM focus is moved to the end cell on DROP, and leaving that out would have killed the
+feature silently.** `onKey` reads the cell under the caret and, finding it is not `focus`, resets
+`focus` to it — so without this the range would collapse at the exact moment Ctrl+C or Delete was
+pressed on it. The drag deliberately does **not** move DOM focus cell by cell (that would scroll
+the sheet under the pointer); it is set once, at the end. Verified: after the drop the class is
+gone, DOM focus is the end cell, and a copy fires `prevented` with all **9** still painted.
+
+⚠️ Dragging to the edge **auto-scrolls**, because a 20-month sheet is wider than the window and a
+range you cannot extend past the edge is not much of a range. The scroll container is found by
+walking up from `root` and testing for real overflow — a host hands this layer the TABLE, and the
+thing with the scrollbars is a wrapper above it (`.sc-matrixwrap`, `.cc-tablewrap`), so this file
+does not have to know any module's class names.
+
+⚠️ `.pdg-dragging` sets `user-select:none` on the cells: without it the pointer crossing a dozen
+`<input>`s selects their TEXT, which is a blue smear over the range and a value replaced by the
+next keystroke.
+
+### 3. The two explanatory paragraphs are deleted
+
+Owner, quoting them back: *"let's just delete this"* — the one about a cell being the trade's own
+share rather than the project's, and the one about the sheet always being monthly.
+
+⚠️ **The orphaned-trade warning that shared that block is NOT prose and stays.** It reports that
+rows the planner has already **saved** no longer match any trade in the schedule, so they carry no
+weight and are not on the curve — a fact about their data, not an explanation of the screen, and
+the only place it is said. It renders on its own now, so the block is absent entirely when nothing
+is orphaned, which is the ordinary case.
+
+### 4. The shortcuts fold away under the grid
+
+Owner: *"Move the keyboard shortcuts tooltip below the grid… and make it collapsible. make sure
+that the wrapping follows the UI sweep principle."* The hint ran along the row **above** the
+sheet, beside the Planned/Actual/Forecast selector, where a nine-item line of key chips was the
+widest thing in the header and competed with the one control a planner actually presses.
+
+⚠️ **`.sc-why` is the module's own disclosure, not a new one** — the same element, caret and focus
+ring as *"How to read this chart"* on the Curve tab. A second collapsible idiom on one screen is
+the thing this file keeps recording as a defect. Closed by default; the id is unchanged, so the
+`getElementById('sc-manhint')` that fills it still finds it.
+
+⚠️ **The wrapping is the part that was asked for, so it is the part that was measured.**
+`hintHTML()` now emits each shortcut inside a nowrap `.pdg-hk`, so a line break lands **between**
+shortcuts and never inside one — no more `Ctrl+C /` on one line and `Ctrl+V` on the next:
+
+| width | 1500 | 1200 | 900 | 700 | 520 | 390 |
+|---|---|---|---|---|---|---|
+| lines | 1 | 2 | 2 | 2 | 3 | 4 |
+| shortcuts split across lines | 0 | 0 | 0 | 0 | 0 | 0 |
+| hint overflow / page h-scroll | 0 | 0 | 0 | 0 | 0 | 0 |
+
+### ⚠️ The split-chunk check was wrong twice before it was right
+
+The first version counted `getClientRects().length > 1` and reported **seven of nine** shortcuts
+split — on a line where `white-space` measured `nowrap`. The second counted distinct rect tops and
+reported the same seven. Both were reading the `<kbd>` element's own border box: the two rects sat
+at **966 and 967**, one pixel apart. A real wrap moves a fragment by a whole line — 20.3px here —
+so the test is a tolerance against the line height, not an equality. ⚠️ Same family as the
+`CSSRuleList`-is-truthy miscount earlier today: a checker confidently describing something it was
+not looking at, and in both directions this week it has invented a defect rather than hidden one.
+
+### Verified
+
+Browser-measured on a fixture shaped to OPW101 — its six trades and weights, its Nov '25 → Jun '27
+span, an **empty** sheet, and one trade deliberately left undated so the zero-weight row is real:
+
+- the sheet's trade cells carry the name only, **0** `<small>`, and no *"% of the project"*
+  anywhere in the matrix; both deleted paragraphs absent; the note block gone entirely;
+- the card's children in order end `…sc-kindbar, sc-matrixwrap, details.sc-manhelp` — the
+  disclosure is the LAST thing in the card, below the sheet, and closed on arrival;
+- drag, drop, copy-after-drag and the press-only case as above.
+
+`test-boq` **66/0** · `test-actsetup` **142/0** · `test-portfolio-dash` **398/0** ·
+`wiring-check` **139/0** · `dark-remap` **0** · `type-scale` **18** (unchanged) · `xlgrid.js` and
+the s-curve inline script `node --check` clean · `<style>` braces **234/234** · 0 NUL bytes.
+
+⚠️ **Not verified signed in**, and the clipboard is still exercised through dispatched events
+rather than a real Ctrl+C; the drag is synthetic `mousedown`/`mousemove`/`mouseup`, not a real
+pointer. ⚠️ Harness and probes lived under `**/*harness*` and were deleted before committing.
+
+`xlgrid.js` → **`20260918b`** (3 refs) · `MODULE_V` → **`20260918ze`**, fallback literal in step.
+Both sort-checked past every token in the tree and on `origin/main`.
+
+### 2026-09-18 (ae) — A baseline is captured, not typed: the read-only field that has to be read-only in six places
+
+Owner: *"The baseline dates are editable which shouldn't be"*. Project Schedule only. The full
+reasoning, surface by surface, is in `modules/project-schedule/CLAUDE.md` (y); what follows is the
+part that generalises to every module.
+
+⚠️ **This was a correctness fix, not a permissions one.** `bl_start` / `bl_finish` are a **mirror**
+of whichever saved baseline was last *Set primary* — not independent fields. A date typed into them
+disagrees with the baseline it claims to come from, is silently overwritten by the next Capture /
+Import / Set primary, and until then every variance, Planned %, slip and S-curve on the screen is
+measured against a number nobody captured. The rule to carry: **a field that mirrors a captured
+record must not offer an edit affordance**, however harmless the widget looks.
+
+### ⚠️⚠️ "MAKE IT READ-ONLY" MEANS SIX SURFACES IN THIS APP, AND FIVE OF THEM ARE NOT THE ONE YOU WERE SHOWN
+
+The owner pointed at a grid cell. A field in a schedule-style module is typable from, at least:
+the **grid cell** (dblclick and type-to-edit), **paste**, **cut**, **Ctrl+D fill-down**, the
+**right-click** *Fill … down* item, the **detail panel**, the **New/Edit modal** (and whatever its
+`save()` puts in the payload), and **Global Change**. Fixing only the cell leaves a field that is
+read-only to the mouse and wide open to Ctrl+V. Enumerate the list before claiming a field is
+locked.
+
+⚠️ **Several of those share a gate, so they close together — check before writing a second fix.**
+In Project Schedule the right-click *Fill down* item and the dblclick handler both derive their
+field from `closest('.ps-editable')`, not from `data-field`, so dropping that one class closed all
+three gestures at once. I had recorded fill-down as a remaining gap on the opposite assumption and
+was **wrong**; reading the handler is what settled it. ⚠️ The same coupling has a **cost**:
+*Format cell…* is gated on the same value and disappears from those columns too. Say so in the log
+rather than let it be found later.
+
+### ⚠️⚠️ THE DURABLE HALF IS A GUARD AT THE WRITE CHOKE POINT, NOT SIX DISABLED WIDGETS
+
+Removing the affordances makes an edit *un-offered*; a guard in the single function every write
+funnels through (`persist()` here) makes it **structurally true** — an edit surface added next year
+inherits it without knowing it exists. Three constraints that guard has to respect, all of which
+apply to any module with undo:
+
+- ⚠️⚠️ **Clone the patch before deleting keys.** Undo replays `before` / `after` **by reference**;
+  mutating the caller's object corrupts the history of the very save you are guarding.
+- ⚠️⚠️ **Strip and REPORT, never strip silently** — a toast naming where the field *is* set. A
+  save that quietly drops part of what the caller asked for is the failure this repo keeps warning
+  about. A hard reject is worse still: it breaks undo of edits made *before* the lock existed.
+- ⚠️ **Check what does NOT come through the choke point.** Bulk editors are the usual exception —
+  Global Change writes with batched `sb().update()` and then `resetUndo()`, so it needs its own
+  removal from `GC_FIELDS`, and the legitimate lifecycle writers (Capture, Set primary, Import,
+  Clear) bypass `persist()` entirely, which is exactly why the guard is safe to add.
+
+⚠️ **Scope held: `bl_cost` was left editable in Global Change.** The owner said *dates*. The
+asymmetry is named in the code comment so it reads as a decision, not an oversight.
+
+### ⚠️ Verified — and one thing not verified
+
+The inline `<script>` parses (1 block, 0 failures, 4.48 MB), 0 NUL bytes, all six surfaces confirmed
+by grep against the committed file. ⚠️ **Not verified signed in:** no baseline date has been typed
+at, pasted into or Global-Changed against a real project, and the warn toast has never been seen.
+
+### ⚠️⚠️ THE CODE SHIPPED INSIDE ANOTHER SESSION'S COMMIT — THE CONCURRENT-SESSION HAZARD FROM THE OTHER SIDE
+
+All six edits were sitting in the working tree when a concurrent session committed
+`modules/project-schedule/index.html` **whole** for its own LSM work, so this change reached
+`origin/main` inside commit `02a24e4`, under a message about overlap bands. Nothing is lost and
+`MODULE_V` moved forward with it (`20260918zc`, and `origin/main` has since reached `20260918zd`
+for the grid work in (ad)), so the cache-bust is covered — but the code landed with **no record of
+why**, which is what these two entries repair, and they land in a commit of their own afterwards.
+The standing rule *stage explicit paths* protects **your** commit from sweeping in someone else's
+work; it does nothing to stop **theirs** sweeping in yours. Markdown only here, so no cache-bust is
+owed.
+
+⚠️ **This entry is (ae), not (ad):** the letter I had reserved was taken by the same session while
+these notes were being written, and the three commits it pushed touch
+`modules/project-schedule/index.html`. All six surfaces were **re-verified by grep after the
+fast-forward**, not assumed to have survived it. Read the letter off `origin/main` at the moment
+you write, not at the moment you start.
+
+### 2026-09-18 (ad) — The spreadsheet layer gets a rectangle, a working Ctrl+C, and the Manual tab stops opening on the Curve
+
+Owner, on the S-Curve's Manual data tab: *"UI excel grid should work properly. Bugs are occurring.
+Excel multiselect ctrl c ctrlv keyboard shortcuts as well"*, and, with a screenshot, *"manual data
+tab but shows s-curve page"*. Four defects, three of them in the shared layer.
+
+⚠️ Lettered **(ad)**, `MODULE_V` **`20260918zd`**, `xlgrid.js` **`20260918a`**. `origin/main`
+published `(ab)`→`(ac)` and moved `MODULE_V` to `20260918zc` during this; re-derived and
+sort-checked after integrating, which is now the third round of this in one day.
+
+### ⚠️⚠️ 1. THE TAB SAID "MANUAL DATA" AND THE CURVE WAS WHAT SHOWED
+
+`switchView()` is the only thing in the module that toggles the two panes, and it is called from
+**exactly one place**: the tab's own click handler. `render()` separately synced the `.active`
+CLASS from `view`. So the label and the pane were two half-syncs of one piece of state, and every
+route into the tab that is not a click set the label and left the Curve showing:
+
+| route | what happened |
+|---|---|
+| the remembered view (`sc_view_<pid>`) | reopen the module → "Manual data" selected, S-curve underneath |
+| `?scView=manual` | the portfolio register's "open this project's sheet" link → the Curve |
+
+⚠️ The second is the worse one: that deep link was added on 2026-09-16 **so the portfolio Manual-
+data register could open a project's sheet**, and it has never once landed on it.
+
+⚠️ Fixed as one `applyView()` called from both `switchView()` (immediately, before the lazy fetch
+that can `return` into a round trip) and `render()`. It also carries the `aria-selected` that
+render()'s copy was missing. Verified both routes: pane shown, matrix rendered, `aria` correct.
+
+### ⚠️⚠️ 2. THE SELECTION COULD NOT DESCRIBE ANYTHING ON A TRADES × MONTHS SHEET
+
+`xlgrid.js` said so in its own words — *"The selection is a COLUMN RUN, not a rectangle, and that
+is deliberate… the operations a planner actually wants here are vertical."* That is true of the BOQ
+pricing grid the layer was built for. The S-Curve's manual sheet is **trades × months**, and the
+ordinary operations there — copy one trade's year, paste a block back out of Excel — are exactly
+the ones a column run cannot express.
+
+⚠️ It is a rectangle now: `{r1, r2, c1, c2}`, Shift+arrow extending in all four directions, and
+shift-click extending to the clicked cell. ⚠️⚠️ **A one-column rectangle is byte-for-byte the old
+behaviour**, which is what makes this safe for the three grids built against the column run —
+`r1`/`r2` still mean what they meant and `selectedIds()` still spans the rows. `test-boq` **66/0**
+and `test-actsetup` **142/0** on the changed file.
+
+### ⚠️⚠️ 3. Ctrl+C PUT AN EMPTY STRING ON THE CLIPBOARD
+
+`onCopy` opened with `if (!R || R.r1 === R.r2) return;` and the comment *"a single cell copies
+natively, as text"*. That is true only when the caret has **selected** the text. A cell reached
+with Tab or an arrow has focus and no selection, so the native copy took nothing — measured, an
+empty string against a cell reading **10**.
+
+⚠️ Copy now writes TSV for whatever the rectangle covers, single cell included: rows joined by a
+newline, columns by a tab, which is the format Excel reads back. Measured on a 3×3:
+`11⇥12⇥13 / 21⇥22⇥23 / 31⇥32⇥33`. Paste already understood a 2D block — it now **clamps** at the
+sheet edge and says how many cells fell outside instead of dropping them in silence (*"Pasted 1
+cell — 5 fell outside the sheet and were not pasted."*). Ctrl+D and the fill handle carry each
+column's own top value down; Delete clears the rectangle.
+
+### ⚠️ 4. THE STRAY GREY CELL IN THE SCREENSHOT WAS A SELECTION THAT NEVER CLEARED
+
+`onFocusIn` ended `if (!anchor) paint();`. So once a Shift+arrow had set an anchor, every later
+click moved the focus and **left the old selection painted** in a row and column the planner was
+no longer near. That is the lone grey cell in Site Works / August sitting under a focus ring in
+MEPF Works / May, with nothing on screen to explain it. Arriving at a cell collapses the selection
+now; a shift-extend is the one case that does not, which is what the new `extending` flag marks.
+
+### ⚠️⚠️ THE HARNESS COULD NOT SEE THE FIX, AND SAID SO AS A FAILURE
+
+The stray-paint check reported the old selection still painted after `el.focus()` — and it was
+wrong. **`focusin` never fires in this pane**: `document.hasFocus()` is `false`, so `activeElement`
+moves and no focus event is dispatched. Proved by counting listener hits: **0** across the whole
+sequence. The same root cause as the recorded `:focus` trap, one step further out — it voids focus
+*events*, not just `:focus` matching. Re-measured by dispatching the `focusin` the browser would
+have: selection collapses to the one cell, shift-extend still extends. ⚠️ A harness reporting a
+correct fix as broken is the expensive direction; I nearly reverted a good change.
+
+### Found and NOT changed
+
+- **The Notes button covers the sheet's last sentence.** Real, and app-wide by design: `.pd-nb`
+  is `position: fixed; right:18px; bottom:18px`, draggable *because* the owner asked for it to be
+  *"movable anywhere in the page as the user desires"*. `.pd-main` already reserves **48px** at the
+  document end; the overlap in the screenshot is **mid-scroll**, which no padding can fix — a
+  fixed button crosses content while the page moves under it. Moving it is the escape hatch that
+  already exists.
+- **Arrow ←/→ still move the caret, not the cell.** Tab covers horizontal movement, and hijacking
+  the two keys people type corrections with, across four modules, is a wider blast radius than
+  this asks for. Shift+←/→ *is* hijacked, matching the choice this file already made for Shift+↓.
+- **Ctrl+A is still the browser's** (select the cell's text). Excel would select the sheet; doing
+  that would take away the only way to select a value for retyping.
+
+### Verified
+
+A browser harness on a fixture shaped to the owner's own project — OPW101's six trades and weights,
+its Nov '25 → Jun '27 span, and an **empty** sheet, which is the state his screenshot shows and the
+state my earlier fixtures never hit:
+
+- the grid: 3×3 rectangle painted, copied as TSV, `Delete` clears all four cells of a 2×2, `Ctrl+Z`
+  restores them, `Ctrl+D` fills **99/99/99** and **88/88/88** down their own columns, shift-click
+  paints 9, an overflowing paste warns about 5 dropped cells;
+- both routes onto the tab land on the sheet, with the matrix rendered and `aria-selected` right;
+- no page horizontal scroll; no clipped text on the tab; the theme flip moves **all five** sampled
+  properties, so these readings are from the real cascade.
+
+`test-boq` **66/0** · `test-actsetup` **142/0** · `test-syntax` **4/4** · `wiring-check` **139/0** ·
+`dark-remap` **0** · `xlgrid.js` and the s-curve inline script both `node --check` clean · 0 NUL
+bytes. ⚠️ Harness and probes lived under `**/*harness*` and were deleted before committing.
+
+⚠️ **Not verified signed in** — fixtures, not a real project, and the clipboard was exercised
+through dispatched events rather than a real Ctrl+C.
+
+`xlgrid.js` → **`20260918a`** (3 refs: s-curve, project-schedule, contracts-claims) ·
+`MODULE_V` → **`20260918zd`**, fallback literal in step. Both sort-checked past every token in the
+tree and on `origin/main`.
+
+### 2026-09-18 (ac) — A shared stretch splits instead of being awarded, and the merge branch I wrote was unreachable
+
+Owner, on the version that shipped an hour earlier: *"I want to see the overlap of different
+activities."* The first cut gave the contested days to whoever arrived first and clipped the other
+trade away — so a trade whose whole run sat inside another's drew **nothing at all**, which the
+entry above admitted and this one removes.
+
+### `_lsmOwnRuns` (claim and clip) becomes `_lsmSliceRuns` (cut and report)
+
+The bar is cut at every boundary — each run's start and each run's **finish + 1**, the only points
+where the set of trades on the floor can change — and each slice reports **who** is on it. A slice
+held by *N* trades draws *N* bands stacked at `100/N`% height, in **lane order**, so identical data
+cannot stack two different ways between renders.
+
+| trades on the stretch | what the bar does |
+|---|---|
+| 1 | one band, the full 6px |
+| 2 | two 3px bands — `PS_LANE_MIN`, the same floor the branch strip uses |
+| 3+ | still **all** drawn (2px each at three) |
+| 0 | the slice is skipped — that is the notch, and it still means the floor stood empty |
+
+⚠️ Three or more on the same days go **below** the legibility floor, and they are drawn anyway:
+dropping one is precisely what the owner rejected. The clash strip above the chart names the
+pair-wise overlaps in words, so the count is readable even where the bands are not.
+
+⚠️ A shared band **says so in its title** — *"sharing this stretch with Exterior Masonry"* — because
+at 3px a band is a colour and not a label. It also carries `.ps-lsmseg-share`, which gives it the
+inset hairline every `.ps-sum-seg` has: two 3px bands with no edge between them read as one thicker
+band of a muddled colour.
+
+### ⚠️⚠️ THE SLICE-MERGING BRANCH I WROTE WAS UNREACHABLE, AND THE MUTATION RUN IS WHAT SAID SO
+
+The first cut folded neighbouring slices holding the same set of trades, so a trade nobody
+overlapped would not be chopped at every neighbour's boundary. Deleting that branch as a mutant
+**failed nothing**. It cannot fire: every boundary is some run's start or some run's finish+1, so
+crossing one always adds or removes a trade and two adjacent slices can never hold the same set —
+and same-trade adjacency cannot arise either, because `_lsmAgg` has already folded one trade's
+contiguous runs into one. The shorter function ships, with the reasoning kept where the branch was.
+
+### Verified
+
+`test-lsm` **732/0**. **Six mutants, each caught by a named assertion:**
+
+| mutant | the assertion that caught it |
+|---|---|
+| the slice awarded to one trade again | *an overlapping pair draws FOUR bands over three stretches* |
+| bands overlaid instead of stacked | *the two share the bar's height, top half and bottom half* |
+| stacked in bucket order, not lane order | *the lower LANE takes the top half* |
+| the boundary off by a day | *the shared stretch is the days they are BOTH on it* |
+| the share class never emitted | *and exactly two of them are marked as sharing* |
+| the band stops naming who it shares with | *the shared band says who it is sharing with* |
+
+⚠️ **Two further candidates were dropped rather than counted**, because they are semantic no-ops
+and counting them would have inflated the evidence: an *intersection* test in place of the
+*containment* test is the same test once the slices are cut at every boundary, and the merge branch
+above is dead.
+
+⚠️ **The contrast against the previous commit cannot be run**, and that is stated rather than
+quietly skipped: the internal function was **renamed**, so the old file's `_lsmSegsHTML` calls a
+name the suite no longer slices and the harness dies on it. The mutation run is the evidence for
+this change; the pinned base `4d82fd4` is still **27/0** and still loud.
+
+A **real browser render of the shipped output**, all three cases in one bar: solo stretches 6px full
+height, a two-trade stretch as two 3px bands at top 0 and 3, a three-trade stretch as three 2px
+bands at 0 / 1.98 / 4 — every trade present, none clipped.
+
+`test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings.
+`modules-grid.js` `?v=` → `20260918zc`, sorted forward of main's `20260918zb`.
+
+⚠️ **Still unexplained: the owner's own project draws no bands at all.** On OPW101 with LSM rows on,
+every floor row shows one plain bar. Either each floor group row carries a single keyed trade —
+in which case `_lsmSegsHTML` correctly returns `''` and the expectation, not the code, is what needs
+answering — or the buckets are there and something upstream is dropping them. Chrome is not
+connected to this session, so it is a console reading from him rather than a measurement from here,
+and **no claim is made about which** until that comes back.
+
+
+### 2026-09-18 (ab) — S-Curve UI sweep: a menu in Arial, a button that named the wrong control, a private copy of a shared control, and a heading that always said "monthly"
+
+Owner: *"Let's do a UI sweep for the S-curve module this time."* Four defects, every one measured
+against the shipped markup in a browser rather than read off a screenshot — and two of them are
+**not this module's**: they were found here and they ship everywhere.
+
+⚠️ Lettered **(ab)**, `MODULE_V` **`20260918zb`** — and it took two rounds. `origin/main` was at
+`(z)`/`20260918z` when this started; a second session pushed `(aa)`/`20260918za` while it was being
+written, and had **independently picked the very same `20260918za` I had already chosen**.
+⚠⚠ **That collision merges cleanly and git reports nothing**, because the two edits are
+byte-identical — one side's bump simply disappears into the other's, and every returning browser
+keeps the cached module pages. Nothing but reading the remote's token and sorting it against mine
+would have caught it. Re-derived to `zb`, which sorts after `za` as a plain string; picking "the
+next letter" could not have detected it, since the letter was already correct.
+
+### ⚠️⚠️ 1. THE TAB DROPDOWN'S TRIGGER IS GOTHAM AND THE LIST IT OPENS IS ARIAL — IN TWELVE MODULES
+
+`.pd-tabsdrop-btn` carries `font: inherit`. `.pd-tabsdrop-menu button`, eleven lines below it in the
+same file, sets `font-size` and `color` and **no family** — and a `<button>` does not inherit the
+page font. Measured: trigger **Gotham 15px/700**, every item in the menu it opens **Arial 13px**.
+One control, two typefaces, one click apart.
+
+⚠️ **This is the third of the same shape in eight days** — *(r)* was `.ps-menu button { width:100% }`
+eating the colour pane, *(v)* was `.ps-menu button` rendering every menu item in Arial. Same cause
+every time: a rule that sets a size without a family. And `tools/type-scale.js` says in its own
+header that it cannot see this class of defect — *"the defect is an ABSENT declaration"* — so no
+checker in the repo was ever going to report it. It took a browser reading `fontFamily` off every
+control on the page.
+
+⚠️ Fixed as `font: inherit` placed **first** in the block, ahead of the `font-size` it would
+otherwise reset. After: both items **Gotham 13px**, `.cur` still 700 against the other's 400, both
+colours unchanged. Live in the **twelve** modules that call `UI.tabsToDropdown()`, so this is a
+`dashboard.css` bump, not an S-Curve one.
+
+### ⚠️⚠️ 2. THE PROJECT FILTER SAID "ALL PROJECTS" OVER AN EMPTY CHART TELLING YOU TO PRESS "SELECT PROJECTS"
+
+The S-Curve's portfolio face opens with nothing selected — it is the **only** view that does
+(`def("scurve", { emptyMeansNone: true })`, added 2026-09-17 because a per-project roll-up across 21
+projects is the most expensive possible default). Its empty state says *"Choose the projects to roll
+up — use **Select projects** in the toolbar above."* The toolbar button read **"All projects"**.
+There was no control on screen called "Select projects".
+
+⚠️ `projFilterHTML()` writes the literal string `All projects` into the label span. Every path that
+*changes* the selection then rewrites it through `pfLabel()` — which is why this is invisible on the
+other ten views, where `pfLabel()` would have said "All projects" anyway. Measured on the live page:
+the rendered button said `All projects` while the module's own `_pfState()` said `Select projects…`.
+
+⚠️⚠️ **And `pfLabel()`'s own comment describes precisely the state that was shipping**: *"The button
+is the only thing on screen that says which mode this view is in. Reading 'All projects' over an
+empty chart would look like a failed load rather than a prompt."* The guard was written; the first
+paint went around it.
+
+⚠️ **The obvious fix is wrong, and the file says why.** `pfLabel()` cannot be called inside
+`projFilterHTML()`: `buildBar()` runs **before** `mount()`, and `mount()` is what sets
+`pfEmptyMeansAll` from the view — so the label would be computed from the **previous view's** flag,
+which is the exact leak `mount()`'s own comment exists to prevent. Synced in `takeOver` *after*
+`mount()` returns, where the flag is finally this view's. On the ten "empty means all" views it
+writes back the identical words. After: button `Select projects…`, `_pfState()` agrees, and the
+empty state now names a control that is on screen; ticking a project still relabels to its name.
+
+### ⚠️ 3. A PRIVATE COPY OF THE SEGMENTED CONTROL, IN WHICH NOTHING LOOKED UNSELECTED
+
+`.sc-seg` painted its resting text `var(--pd-ink)`; the shared `.pd-seg` uses `var(--pd-muted)`. So
+everywhere else in the app an unselected option recedes and the chosen one carries the red — here
+**both** options sat at full ink and "Automatic | Manual" read as two live buttons rather than one
+choice of two.
+
+⚠️⚠️ **Deleting the copy is not a new decision — `dashboard.css` names this module in the rule's own
+header.** `.pd-seg` was promoted on 2026-09-08 *because* the control "already existed three times
+over — `.sc-seg` in the S-Curve module, an identical `.pd-seg` in dashboard.html's own inline
+`<style>`, and the `.pd-viewtoggle`/`.pd-vt` pair". dashboard.html's copy was deleted in that
+commit. This one was not. The module named in the consolidation is the one that never joined it,
+and it had already cost a defect: the copy never inherited the 44px phone tap target, which had to
+be re-declared by hand in this module's own mobile block.
+
+⚠️ **Geometry measured before the switch, not after.** In the topbar nothing moves —
+`.pd-modulebar .pd-seg { min-height:34px }` already pins it, and the group measured **34px / 32px
+button either way**, with all three neighbouring controls still 34. In the filter bar the group goes
+**34px → 26px**: that row carried **four** different control heights (16 / 24 / 28 / 34) and has lost
+its tallest outlier, landing beside the 28px chips. At 390px the buttons are **44px** from the
+shared rule, so the hand-rolled workaround went with the copy. Five call sites, `role="radiogroup"`
+added with the class. Verified still wired: Duration→Cost retitles the card to *"Cost S-Curve —
+Planned Value vs Earned Value"* and the note to *"Cost-weighted · ₱97.2M"*; Month→Quarter re-buckets.
+
+### ⚠️⚠️ 4. THE HEADING SAID "MONTHLY" OVER TWELVE BARS LABELLED "Q1 2025"
+
+The Period control re-buckets the chart correctly — 34 monthly bars, **12** quarterly, **3** yearly,
+with the axis relabelled `Q1 2025` and all. The card heading above it was hardcoded:
+
+```js
+var shapeTxt = chartMode === 'per' ? 'monthly %' : … : 'cumulative % + monthly';
+```
+
+⚠️ **The heading is the one element in this module explicitly charged with not overstating** — its
+own comment reads *"THE HEADING NAMES THE FILTER. A curve of one trade under a heading reading
+'Project S-Curve' is the mistake this module's notes keep recording in other forms: a screen that
+states more than it is showing. Screenshots of this card end up in reports."* It was doing exactly
+that about the grain.
+
+⚠️ And the right derivation was **already in the file**, 400 lines away in `renderFilters()`:
+`period === 'year' ? 'year' : period === 'quarter' ? 'quarter' : 'month'`, used for the tooltips.
+Two copies, one kept in step. Now one `periodWord()` read by both. Verified across all **nine**
+period × shape combinations: 12 bars → *"cumulative % + quarterly"*, 3 bars → *"yearly"*,
+`Periodic` → *"quarterly %"* / *"yearly %"*.
+
+### Found and NOT changed, with the measurement
+
+- **`.sc-matrix th.mo small` is 9px, and the scale has no rung below 10.** Rendered both ways: at
+  `--pd-fs-micro` the sticky header row grows **34px → 36px** and the year suffix goes from **0.86**
+  to **0.95** of its parent — a subordinate label the same size as the thing it is subordinate to.
+  It stays 9px, and `tools/type-scale.js` keeps reporting it rather than being taught to look away.
+- **The module's name is not on screen at any width.** `.pd-title-hasdrop` hides `.sc-title-txt`
+  because *"the trigger already names the screen"* — but every one of the eleven callers labels its
+  tabs with SUB-VIEWS ("Curve", "Overview", "Register", "Monitoring"), never the module, so the bar
+  reads `📈 Curve ▾`. Uniform across eleven modules and deliberate; changing it is an app-wide call.
+- **The chart keeps a 560px minimum below 700px and its card scrolls.** Measured 560px inside a
+  321px box at 390px wide — and the stylesheet says in place *"Do not 'fix' this by dropping the
+  min-width — that restores the unreadable version."* Left alone.
+- **The `.sc-table` 132px first-column cap is now measured**, which its own note said it was not
+  (*"NOT measured live: this table sits behind a view I could not reach signed in"*). At ≤700px
+  "Planned this month" needs 156px and "Actual this month" 143px against 132 — both ellipsise, and
+  both stay distinguishable on their first word. The cap does what it was written to do.
+
+### Verified
+
+Measured in a browser at **1400 / 1200 / 1000 / 860 / 700 / 520 / 390px**, inside an iframe so the
+media queries evaluate against a real viewport, against the shipped `dashboard.css` and the module's
+own `<style>` and inline script **sliced from `index.html`, never re-typed** — only `auth.js` and the
+supabase client are stubbed:
+
+- stylesheets asserted present in the cascade by name and rule count, not by a colour alone
+  (`dashboard.css:495`, `portfolio-dash.css:340`, inline `215`), Gotham resolving;
+- the theme flip as the proof of cascade — 9 of 10 sampled properties change across `html.pd-dark`
+  and the one that does not is the brand-red active fill, correctly;
+- **no page horizontal scroll at any of the seven widths**, no overlap and no escape among topbar,
+  module bar or tool-cluster children at any of them;
+- every focusable control covered by a focus rule — resolved **from the cascade**, since `:focus`
+  cannot be measured in an automated pane. ⚠️ The first version of that walker reported **0 focus
+  rules across 1,224**: an empty `CSSRuleList` on a plain style rule is **truthy**, so every rule
+  was treated as a group and skipped. A checker that says "all clear" because it looked at nothing,
+  for the second time this month;
+- the frozen corner under simultaneous vertical and horizontal scroll: `elementFromPoint` over the
+  Trade header returns **`th.k`** and over the footer **`td.k`**, on the ladder *(y)* set
+  (10 / 8 / 7 / 5), so the skin still loses to it;
+- the tooltip at the first, middle and **last** period at three widths: clamped **4px** inside the
+  chart and 21px inside the card, never past the viewport.
+
+`wiring-check` **139/0** · `dark-remap` **0 findings** · `test-portfolio-dash` **398/0** ·
+`type-scale` **18** (unchanged — the one S-Curve finding is the 9px above, reported by decision) ·
+`portfolio-dash.js` and the s-curve inline script both `node --check` clean · `<style>` braces
+**232/232** · 0 NUL bytes.
+
+⚠️ The harness and its probes lived in `modules/s-curve/` under `**/*harness*` and were **deleted
+before committing** — this repo has shipped harness files to production twice.
+
+⚠️ **Not verified signed in.** Measured against the shipped stylesheets with the real shell, grid
+and portfolio layers attached, on fixtures — not against a real project.
+
+`dashboard.css` → **`20260918c`** (31 refs) · `portfolio-dash.js` → **`20260918a`** (11 refs) ·
+`MODULE_V` → **`20260918zb`** in `dashboard.html` + `modules.html` with the fallback literal brought
+back into step (it had drifted to `20260918k`, which is the silent split that note warns about).
+All three sort-checked as plain strings past every token in the tree **and** on `origin/main`.
+
+### 2026-09-18 (aa) — The trades are painted inside the one LSM bar, and one of them loses the pixels
+
+Owner: *"Let's queue the LSM rows the single bar row is correct but I don't see the activities
+rolling up to the wbs. I would want to see a Gantt bar showing different kinds of bars referring to
+the activities that is within the wbs."* Built first as a strip of trade lanes **under** the bar and
+shown to him, he chose the other shape: *"I think the one bar option is the best rather than a strip
+like this."* The strip was discarded unshipped; this is the second build, not a revision of the
+first.
+
+### ⚠️⚠️ THIS IS THE OPPOSITE CALL FROM THE ONE THE WBS BRACKET GOT, AND DELIBERATELY SO
+
+On a WBS branch the same treatment is a **reported defect**: *"the varying colour within the same
+bar is causing confusion — under Earthworks it shows grey then green"*, and the fix (2026-08-17) was
+to move the bands out of the bracket into `.ps-sum-strip`. That stands, and **`_sumSegsHTML` is not
+touched** — its `_dkind === 'group'` guard still returns `''` for every group row.
+
+What differs is what the bar **means**. A bracket is one branch's span, so colour changing along it
+reads as *the branch* changing category — which is false. An LSM row **is a storey**, so colour
+changing along it reads as the floor being handed from trade to trade, which is the line-of-balance
+chart's entire subject. Same pixels, opposite sentence.
+
+### ⚠️⚠️ WHEN TWO TRADES HOLD THE SAME DAYS, ONE OF THEM OWNS THE PIXELS
+
+This is the real cost of the shape, and it is stated here rather than discovered later. The rule is
+**first on the floor keeps it**: runs are claimed in start order, ties broken by lane (the declared
+construction sequence, so identical data cannot draw two different pictures), and a later trade is
+clipped to what is left. A trade whose whole run sits **inside** another's therefore draws no
+segment at all.
+
+Nothing is lost from the row, and that is why the rule is affordable:
+
+| the overlap is still reported by | |
+|---|---|
+| `.ps-lsmclash` | the hatched overlay, drawn **over** these segments, on exactly that stretch |
+| the bar's own tooltip | already lists every trade on the storey, enveloped ones included |
+| the clash strip | the worst-first chip list above the chart, unchanged |
+
+⚠️ `cuts` and `_cl` are emitted **after** `_segs` for that reason, and a mutant that reorders them
+fails a named assertion. A hatch under the segments would be invisible, and the hatch is the only
+mark that says two trades were on a stretch one of them had to be given.
+
+### One segment per RUN, not per trade
+
+A trade that works a floor, leaves and comes back is two stretches. One segment from its first start
+to its last finish would claim it held the floor across the very gap the notch exists to show. On
+the suite's fixture the four trades are **five** segments.
+
+### Each segment carries its own trade's progress
+
+Pale trade colour (`catTint`) with the solid fill (`catStyle`) over it — the treatment the per-trade
+bars had before they merged, laid end to end instead of stacked. It **replaces** the single
+duration-weighted fill, which averaged every trade into a number describing none of them: on the
+fixture Structural is finished and Windows has not started, and the bar drew one middling stripe for
+both. The storey's roll-up % is still in the grid's own cell for the row.
+
+⚠️ A **one-trade** storey is byte-for-byte unchanged — the bar already *is* that trade. The folded
+overflow bucket keeps the neutral cross-hatch its own bar has, so a stretch nobody named can never
+read as a trade.
+
+⚠️ **The row does not grow.** `_lsmRowH()` is untouched at `PAD + H + GAP`, and the suite asserts it,
+because the owner has already rejected LSM widening the rows once.
+
+### Verified
+
+`test-lsm` **723/0** on the merged tree (up 26 from this change). **14 of the new assertions bite**
+against the pre-change file — and because the other twelve are negative controls that must pass on
+both builds, the evidence is the mutation run instead: **eight mutants, every one caught by a named
+assertion.**
+
+| mutant | the assertion that caught it |
+|---|---|
+| one segment per trade, not per run | *one segment per STRETCH, not one per trade* |
+| ownership by lane instead of by start | *the earlier START wins the shared stretch* |
+| no clipping at all | *the two segments do not overlap* |
+| the clipped piece starts a day early | *the second one starts the day after* |
+| segments placed from the dates again | *the first stretch starts at the bar's own left edge* |
+| notches drawn under the segments | *the idle notches are emitted after every segment* |
+| the overflow bucket given a trade colour | *carrying no trade colour of any kind* |
+| the storey average kept per segment | *the finished trade's segment is filled to 100%* |
+
+⚠️ Two of those checks were **wrong first and the mutants said so**: the overflow one tested for a
+hex, and the bucket's colour is `null`, so `catTint(null)` → `background:null-tint` sailed through
+it; and the placement one had no anchor to the bar's own x at all. Both are corrected here.
+
+A **real browser render of the shipped output** (throwaway harness, deleted): 5 segments, each the
+full 6px bar height, all inside the bar, **zero overlapping pairs**, the clipped trade 59px wide
+where its unclipped neighbours are 80, fills at 100/70/30%, and the pale/solid pair reading correctly
+in both themes.
+
+Pinned base `4d82fd4` still **27/0** and still loud (`20/55 fns, 7/21 vars`). `test-syntax` 4/4 ·
+`wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · every other
+project-schedule suite green on the merged tree. CSS brace balance identical to the pre-change file.
+`modules-grid.js` `?v=` → `20260918za`, sorted forward of main's `20260918z`.
 
 ### 2026-09-18 (z) — The grouping button gets a short FACE, and the toolbar comes back to one row
 

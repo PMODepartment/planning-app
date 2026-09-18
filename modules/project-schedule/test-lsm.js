@@ -137,6 +137,11 @@ const REAL_FNS = ['pd', 'dstr', 'dayDiff', 'addDays', 'isWbs', 'isMile', 'catVal
                   'makeAxis',
                   '_lsmLanes', '_lsmLaneCount', '_lsmLaneIndex', '_lsmRowH', '_lsmIdleGap',
                   '_lsmAgg', '_lsmBarsHTML', '_baseRowH', 'rowHFor',
+                  /* ⚠️ The trades painted inside the merged bar, and the ownership sweep behind
+                     them. Sliced BY NAME rather than left to the on-demand link pass, which only
+                     reaches a name the PROBE executes - a one-trade probe row draws no segments,
+                     so the pass would link nothing and the failure would land inside an assertion. */
+                  '_lsmSegsHTML', '_lsmSliceRuns',
                   /* slice 2 */
                   '_lsmDecl', '_lsmRankOf', '_lsmRankBasis', '_lsmFit', '_lsmRate',
                   '_lsmRateHTML', '_clearLsmRateMemo', '_clearLsmDeclMemo',
@@ -270,6 +275,7 @@ const EXPORTS = `
     rowH: typeof _lsmRowH === 'function' ? _lsmRowH : null,
     agg: typeof _lsmAgg === 'function' ? _lsmAgg : null,
     bars: typeof _lsmBarsHTML === 'function' ? _lsmBarsHTML : null,
+    segs: _mustFn('_lsmSegsHTML', typeof _lsmSegsHTML === 'function' ? _lsmSegsHTML : null),
     setCats: function (l) { __CATS = l; },
     setLsm: function (on) { _lsmRows = on; },
     setTopFirst: function (on) { _lsmTopFirst = on; },
@@ -685,6 +691,170 @@ eq(agg.length, 4, 'while the per-trade buckets behind it are untouched');
 eq((html.match(/class="ps-lsmbar-gap"/g) || []).length, 2,
    'the notches are the STOREY going quiet, not one trade leaving');
 ok(/class="ps-lsmbl"/.test(html), 'the per-lane baseline rail is emitted when a baseline exists');
+
+/* ================ WHAT THE ONE BAR IS MADE OF ==================================================
+   Owner: "the single bar row is correct but I don't see the activities rolling up to the wbs. I
+   would want to see a Gantt bar showing different kinds of bars referring to the activities that
+   is within the wbs" — then, shown a strip of trade lanes under the bar, "I think the one bar
+   option is the best rather than a strip like this". So the trades are painted INSIDE the bar.
+   ⚠️⚠️ EVERY ASSERTION BELOW PARSES `_lsmBarsHTML`'s OWN OUTPUT, never `_lsmSegsHTML` called on
+   its own. The defect the owner reported was that the data was all there and nothing was drawn —
+   a check that calls the composer directly would have passed on that build. */
+function segsOf(h) { return h.match(/<span class="ps-lsmseg[^"]*"[^>]*>(?:<span[^>]*><\/span>)?<\/span>/g) || []; }
+/* ⚠️ DEFENSIVE ON PURPOSE. A mutant that drops the segments entirely made these helpers THROW,
+   which reports a stack trace where the suite should be reporting a named failure. */
+function segBox(d) { const g = d && /left:(-?\d+)px;width:(\d+)px/.exec(d); return g ? { x: +g[1], w: +g[2] } : { x: NaN, w: NaN }; }
+function segWho(d) { const g = d && /title="([^"]*)"/.exec(d); return g ? g[1].split(' — ')[0] : '(no segment)'; }
+function segSpan(d) { const g = d && /title="[^"]*: ([\d-]+) → ([\d-]+),/.exec(d); return g ? g[1] + '..' + g[2] : '(no segment)'; }
+
+(function () {
+  const segs = segsOf(html);
+  ok(segs.length > 0, 'the merged bar is painted in trade segments');
+  /* ⚠️ ONE SEGMENT PER STRETCH, NOT PER TRADE. Plastering works this floor, leaves for a
+     fortnight and comes back; one segment from its first start to its last finish would claim it
+     held the floor across the gap the notch exists to show. */
+  let runs = 0; row._glsm.forEach(function (b) { runs += b.runs.length; });
+  eq(runs, 5, 'the four trades on this floor are five separate stretches');
+  eq(segs.length, runs, 'one segment per STRETCH, not one per trade');
+  /* Still ONE bar and still one lane tall - the shape the owner chose is not being undone. */
+  eq((html.match(/class="ps-lsmbar"/g) || []).length, 1, 'and it is still exactly one bar');
+  eq(M.rowH(), C.PAD + C.H + C.GAP, 'the row still gets ONE lane of height, not a lane per trade');
+
+  /* Every segment inside the bar it is painted in: `_lsmBarsHTML` hands its own x/w down rather
+     than letting the composer re-derive them, so a segment outside the bar means they have
+     drifted apart. */
+  const B = /<div class="ps-lsmbar"[^>]*style="left:(-?\d+)px;width:(\d+)px;/.exec(html);
+  ok(B !== null, 'the merged bar itself is measurable');
+  const bw = +B[2];
+  eq(segs.filter(function (d) { const s2 = segBox(d); return s2.x < 0 || s2.x + s2.w > bw; }).length, 0,
+     'every segment lies inside the bar');
+  /* ⚠️⚠️ AND IT IS THE BAR'S OWN LEFT EDGE, not the timeline's origin. The earliest stretch on
+     the storey IS where the merged bar starts, so its segment must begin at x=0 — the one
+     property that fails the moment the segments are placed from the dates a second time rather
+     than from the x the bar was drawn at. */
+  const _first = segs.map(segBox).sort(function (p, q) { return p.x - q.x; })[0];
+  eq(_first ? _first.x : -1, 0, 'the first stretch starts at the bar’s own left edge');
+
+  /* ⚠️ THE TRADE'S OWN PROGRESS, not the storey's. The single duration-weighted fill this
+     replaces averaged four trades into a number describing none of them - Structural is finished
+     and Windows has not started, and the bar used to show one middling red stripe for both. */
+  const done = segs.filter(function (d) { return segWho(d) === 'Structural'; })[0];
+  const notStarted = segs.filter(function (d) { return segWho(d) === 'Windows'; })[0];
+  ok(/<span style="width:100%;/.test(done), 'the finished trade’s segment is filled to 100%');
+  ok(!/<span style="width:/.test(notStarted), 'and the unstarted one carries no fill at all');
+  /* The harness's catTint marks what it was handed ('#c10-tint'), so this asserts the segment's
+     style came from catTint WITH THE TRADE'S OWN COLOUR rather than from some default. */
+  eq(segs.filter(function (d) { return /background:#c\d+-tint;/.test(d); }).length, segs.length,
+     'every segment carries its own trade colour, through catTint');
+
+  /* ⚠️ THE NOTCH AND THE CLASH HATCH DRAW OVER THE SEGMENTS, never under them: the hatch is the
+     only thing that says two trades hold a stretch that had to be given to one of them. */
+  ok(html.indexOf('ps-lsmbar-gap') > html.lastIndexOf('ps-lsmseg'),
+     'the idle notches are emitted after every segment, so they paint over them');
+})();
+
+/* ⚠️⚠️ A STRETCH TWO TRADES SHARE IS SPLIT, NOT AWARDED. The first cut gave the contested days to
+   whoever arrived first and clipped the other away; the owner's answer was "I want to see the
+   overlap of different activities", so nothing is clipped. The bar is cut at every boundary and a
+   slice held by N trades draws N bands stacked at 100/N% — the overlap reads as the bar striping
+   rather than as one colour winning. Asserted from four sides because it is the whole point. */
+(function () {
+  const mk = function (a, b2) {
+    const r3 = { _dkind: 'group', activity_name: '5th Floor', _graw: '5th Floor',
+                 _glsm: M.agg([a, b2], 'name', IDX4) };
+    return segsOf(M.bars(r3, M.pd('2026-01-01'), 4.2, 340));
+  };
+  const lane = function (d) { const g = /top:([\d.]+)%;height:([\d.]+)%/.exec(d); return g ? g[1] + '/' + g[2] : '?'; };
+
+  /* The ordinary handoff with a shared week: Structural 5-16, Masonry 12-20, together 12-16. */
+  let s3 = mk(act('Structural', '2026-01-05', '2026-01-16', 0),
+              act('Exterior Masonry', '2026-01-12', '2026-01-20', 0));
+  /* Three stretches - Structural alone, both, Masonry alone - and the middle one draws twice. */
+  eq(s3.length, 4, 'an overlapping pair draws FOUR bands over three stretches');
+  eq(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); }).length, 2,
+     'and exactly two of them are marked as sharing');
+  const shared = s3.filter(function (d) { return /ps-lsmseg-share/.test(d); });
+  eq(segSpan(shared[0]), '2026-01-12..2026-01-16', 'the shared stretch is the days they are BOTH on it');
+  eq(segSpan(shared[1]), '2026-01-12..2026-01-16', 'for both of them, at the same span');
+  /* ⚠️ Stacked, not overlaid: half the bar each, in LANE order so identical data cannot stack two
+     different ways between renders. */
+  eq(shared.map(lane).join(' '), '0.000/50.000 50.000/50.000',
+     'the two share the bar’s height, top half and bottom half');
+  eq(segWho(shared[0]), 'Structural', 'the lower LANE takes the top half');
+  eq(segWho(shared[1]), 'Exterior Masonry', 'and the higher lane the bottom');
+  /* ⚠️ The unshared stretches are still FULL height - a bar that striped end to end would say the
+     two trades were together all along. */
+  const solo = s3.filter(function (d) { return !/ps-lsmseg-share/.test(d); });
+  eq(solo.map(lane).join(' '), '0.000/100.000 0.000/100.000',
+     'the stretches only one trade is on stay full height');
+  eq(solo.map(segSpan).sort().join(' | '), '2026-01-05..2026-01-11 | 2026-01-17..2026-01-20',
+     'and they are the days before and after the overlap');
+  /* ⚠️ The title is where a planner reads it, because at 3px a band is a colour and not a label. */
+  ok(/sharing this stretch with Exterior Masonry/.test(shared[0]),
+     'the shared band says who it is sharing with');
+
+  /* ⚠️⚠️ AND THE CASE THE OLD RULE SILENTLY DROPPED: a trade whose whole run sits INSIDE
+     another's. Under "first on the floor keeps it" it drew nothing at all; it now draws, which is
+     exactly what the owner asked to see. */
+  s3 = mk(act('Structural', '2026-01-05', '2026-01-23', 0),
+          act('Exterior Masonry', '2026-01-12', '2026-01-16', 0));
+  eq(s3.length, 4, 'an ENVELOPED trade is drawn, not swallowed');
+  ok(s3.some(function (d) { return segWho(d) === 'Exterior Masonry'; }),
+     'and it is there by name');
+  eq(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); }).length, 2,
+     'as one half of the stretch they share');
+  eq(s3.filter(function (d) { return !/ps-lsmseg-share/.test(d); }).map(segSpan).sort().join(' | '),
+     '2026-01-05..2026-01-11 | 2026-01-17..2026-01-23',
+     'with the enveloping trade full height on either side of it');
+
+  /* Out of sequence is the same picture from the other side - the rule reads the CALENDAR, and
+     there is no winner to pick any more. */
+  s3 = mk(act('Structural', '2026-01-12', '2026-01-23', 0),
+          act('Exterior Masonry', '2026-01-05', '2026-01-16', 0));
+  eq(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); }).length, 2,
+     'a successor that started first still shares its overlap');
+  eq(segSpan(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); })[0]),
+     '2026-01-12..2026-01-16', 'over the days they are actually both there');
+
+  /* ⚠️⚠️ AND NOTHING IS CHOPPED FOR NOTHING. Two trades that never meet must draw ONE band each,
+     not one per boundary of the other - slices with an identical trade set are merged back. */
+  s3 = mk(act('Structural', '2026-01-05', '2026-01-16', 0),
+          act('Exterior Masonry', '2026-01-19', '2026-01-30', 0));
+  eq(s3.length, 2, 'two trades that never overlap are two bands, not four');
+  eq(s3.filter(function (d) { return /ps-lsmseg-share/.test(d); }).length, 0, 'and neither shares');
+})();
+
+/* One trade on the storey: the bar IS that trade, and it keeps the plain fill it always had. */
+(function () {
+  const r1 = { _dkind: 'group', activity_name: '3rd Floor', _graw: '3rd Floor',
+               _glsm: M.agg([act('Structural', '2026-01-05', '2026-01-16', 60)], 'name', IDX4) };
+  const h1 = M.bars(r1, min, 4.2, 340);
+  eq(segsOf(h1).length, 0, 'a one-trade storey draws no segments — there is nothing to decompose');
+  ok(/<i style="width:60%;/.test(h1), 'and it keeps the single %-complete fill it always had');
+})();
+
+/* ⚠️ THE FOLDED TRADES KEEP THEIR OWN TREATMENT. Past the lane roster's cap `_lsmAgg` returns one
+   nameless overflow bucket; painted as a trade colour it would claim to be a trade nobody named. */
+(function () {
+  M.setCats(MANY);
+  const idx = M.laneIndex();
+  /* T14 and T15 run back to back on purpose: the fold is ONE bucket, and its two activities
+     are one contiguous stretch, so the overflow must paint as ONE hatched segment. */
+  const acts = [act('T00', '2026-01-01', '2026-01-10', 0),
+                act('T14', '2026-02-02', '2026-02-10', 0),
+                act('T15', '2026-02-11', '2026-02-20', 0)];
+  const r4 = { _dkind: 'group', activity_name: '6th Floor', _graw: '6th Floor',
+               _glsm: M.agg(acts, 'name', idx) };
+  const h4 = M.bars(r4, M.pd('2026-01-01'), 4.2, 340);
+  const more = segsOf(h4).filter(function (d) { return /ps-lsmseg-more/.test(d); });
+  eq(more.length, 1, 'the folded trades paint as ONE cross-hatched stretch');
+  /* ⚠️ NO BACKGROUND AT ALL, not merely no hex: the overflow bucket's colour is null, so a build
+     that called catTint on it anyway emits 'background:null-tint' and a check for a hex passes.
+     The mutant run caught exactly that, and this is the corrected check. */
+  ok(!/background:/.test(more[0]), 'carrying no trade colour of any kind');
+  ok(/\+2 more key trades/.test(more[0]), 'and saying how many it stands for');
+  M.setCats(TRADES.map(function (t) { return cat(t); }));   // leave the roster as it was
+})();
 
 /* LANE CONSTANCY - the property that makes a trade read as a diagonal. Same trade, three floors,
    three different sets of neighbours: its lane must not move. */

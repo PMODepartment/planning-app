@@ -1,5 +1,87 @@
 # Module: s-curve
 
+## 2026-09-18 — The manual sheet: drag to select, no trade %, no prose, shortcuts folded away — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (af)) — read that entry for the
+measurements. Four owner asks on this tab:
+
+- **The `x% of the project` under each trade name is gone.** It was that trade's share of total
+  activity DURATION (or of loaded cost on the Cost basis) and read as a share of value.
+  ⚠️ `tradeWeights()` is untouched — it still drives the `Project (weighted)` footer and the
+  curve — so this is a display change and nothing else. Still shown on the Curve tab's period
+  breakdown, which was not part of the ask.
+- ⚠️⚠️ **Reported, not fixed: a zero-weight trade's row is editable and inert.** Measured on a
+  trade whose activities carry no dates: 20 editable cells, none disabled; typing 50 takes the
+  row's own Total to 50% and leaves the `Project (weighted)` footer unchanged, with no warning
+  anywhere. The existing orphaned-trade warning does not cover it — that one is about trades in a
+  SAVED sheet that no longer match the schedule, not a schedule trade that weighs nothing.
+- **The two explanatory paragraphs under the sheet are deleted.** The orphaned-trade warning that
+  shared that block stays and now renders on its own, so the block is absent entirely when
+  nothing is orphaned.
+- **The keyboard hint moved below the sheet into a `<details>`**, using this module's own
+  `.sc-why` disclosure rather than a second collapsible idiom. Closed by default; the
+  `#sc-manhint` id is unchanged so the code that fills it still finds it. Wrapping measured at
+  six widths: 1/2/2/2/3/4 lines with zero shortcuts split across a line break.
+
+**Click-and-drag range selection** landed in the shared `assets/js/xlgrid.js` this round (with
+edge auto-scroll), which is what this sheet's `PDGrid.attach` picks up. See the root entry.
+
+## 2026-09-18 — The Manual data tab opens on the Manual data tab, and its sheet behaves like a spreadsheet — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (ad)) — read that entry for the
+measurements. What lands in this module:
+
+- ⚠️⚠️ **`applyView()` — the one place `view` becomes DOM.** `switchView()` was the only thing that
+  toggled `#sc-pane-curve` / `#sc-pane-manual`, and it only ever ran from the tab's click handler,
+  while `render()` synced just the `.active` class. Two half-syncs of one piece of state, so both
+  routes that reach this tab without a click set the LABEL and left the Curve showing: the
+  remembered `sc_view_<pid>`, and **`?scView=manual`** — the deep link the portfolio Manual-data
+  register uses to open a project's sheet, which had therefore never once landed on it. Owner:
+  *"manual data tab but shows s-curve page"*. `applyView()` is called from both now, and carries
+  the `aria-selected` that `render()`'s copy was missing.
+- **The sheet's keyboard layer is the shared `xlgrid.js`, and it changed underneath this module** —
+  the selection is a rectangle rather than a column run, Ctrl+C writes TSV (including for a single
+  cell, where it used to put an empty string on the clipboard), paste clamps at the sheet edge and
+  reports what fell outside, and a click no longer leaves the previous selection painted in a row
+  you have left. The hint line under the sheet is `PDGrid.hintHTML()` and now names those keys.
+  ⚠️ This module is what drove the change: it is the first genuinely two-dimensional grid to use
+  the layer, and *"copy this trade's year"* is not expressible as a column run.
+
+⚠️ Measured on a fixture shaped to OPW101 — its six trades and weights, its Nov '25 → Jun '27
+span, and an **empty** sheet, which is the state the tab actually opens in on a new project and
+the one earlier fixtures here never covered. Not verified signed in.
+
+## 2026-09-18 — UI sweep: the shared segmented control, the heading's grain, and two shell defects found here — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (za)) — read that entry for the full
+measurements. What lands in this module:
+
+- **`.sc-seg` is gone; the topbar, the filter bar and the Manual sheet's kind selector all use the
+  shared `.pd-seg`.** The copy painted its resting text `var(--pd-ink)` where the shared control
+  uses `var(--pd-muted)`, so an unselected option looked as live as the selected one. This was not
+  a new decision: `dashboard.css`'s `.pd-seg` header says the control was promoted on 2026-09-08
+  *because* `.sc-seg` was one of three copies, and dashboard.html's copy was deleted then. Five
+  call sites, `role="radiogroup"` added with the class, and the hand-rolled 44px phone tap target
+  deleted because `.pd-seg > button` already carries it. ⚠️ Topbar geometry is unchanged (34px
+  group / 32px button, measured either way); the filter bar's segments go 34px → 26px, which drops
+  that row from four distinct control heights to three.
+- **`periodWord()` — one derivation of the Period control's adjective.** The card heading was
+  hardcoded to "monthly" and said so over 12 bars labelled `Q1 2025` and over 3 yearly bars;
+  `renderFilters()` had the correct derivation all along for its tooltips. Both read it now.
+  Verified across all nine period × shape combinations.
+- ⚠️ **`.sc-matrix th.mo small` stays at 9px** and stays on `tools/type-scale.js`'s report. Measured
+  at the 10px rung: the sticky header row grows 34px → 36px and the year suffix reaches 0.95 of its
+  parent's size, which is not a suffix any more. The scale has no rung below 10px; this is a
+  decision, not an oversight.
+
+Two defects found while sweeping this module are **not in this folder** and are fixed in the shared
+layer — the tab dropdown's menu rendering in Arial (`dashboard.css`, live in twelve modules), and
+the portfolio project-filter button reading "All projects" on the one view that opens with nothing
+selected (`portfolio-dash.js`, and `scurve` is that view). Both are written up in the root entry.
+
+⚠️ Measured at seven widths in an iframe against the shipped stylesheets, with the module's own
+`<style>` and inline script sliced from `index.html` rather than re-typed. Not verified signed in.
+
 ## 2026-09-16 — The portfolio Manual data tab does something, and the curve gets a project filter — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
