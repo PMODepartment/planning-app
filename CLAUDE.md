@@ -104,6 +104,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ad) — The Presentations tab still counted its records in "PPR"
+
+Owner: *"in progress photos, presentations tab, it says 5 of 5 PPR. this should be 5 of 5
+Presentations. please make minor revision."* Right, and it is the tail of a rename this module has
+already made: the tab, the primary action, the modal header and the list column all say
+**Presentation** — and `modules/progress-photos/test.js` block `[3]` asserts each of them — while the
+count line under the toolbar still read `Showing 5 of 5 PPRs`. Full entry:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
+⚠️ **Three occurrences, not one.** Stripping `//` comments finds the generic noun in the count line,
+in the transient `Loading PPRs…` line and in the offline-export dialog — where it **contradicted
+itself**, since that dialog's own header reads *"Preparing offline copy"* and the guard above it
+toasts *"This presentation has no slides to export"*.
+
+⚠️⚠️ **FOUR MORE ARE LEFT, AND THAT IS THE JUDGEMENT RATHER THAN AN OMISSION.** `'PPR Meeting'` is a
+**report TYPE**, the counterpart of `'Client Coordination Meeting'`, and telling those two apart is
+the entire reason the `report_type` column exists; the description placeholder's
+`e.g. PPR ftm of June 2026 / Client Presentation` shows the same distinction as an example. Both are
+proper nouns naming a meeting, not the generic noun counting records. The other two are `console.warn`
+strings no planner sees.
+
+**Verified:** `node --check`; the module suite **978 passed, 5 failed** — ⚠️ the same **5**
+pre-existing failures, confirmed by running it against a clean `git archive HEAD` tree (**976/5**)
+rather than assumed. ⚠️⚠️ **Both new assertions bite**: the same `test.js` run against the
+**pre-change** `ppr.js` reports **7 failed**, naming exactly the two. `wiring-check` **139/0**, every
+asset on one version; 0 NUL bytes.
+⚠️ **Not verified signed in** — the count line is asserted against the shipped source, never read off
+a real project's list.
+
+⚠️ **Merged `origin/main` (43 commits) before shipping**, and the token re-derived **after**
+integrating rather than guessed beforehand: this branch sat at `20260918g` while main had reached
+`20260918zc`, and `g` sorts *earlier* — a browser holding main's token would never have fetched these
+bytes. `ppr.js` and `MODULE_V` → `20260918zd`, sort-checked as a plain string against all 33 tokens in
+the merged tree. ⚠️ `modules-grid.js`'s own fallback literal had drifted to `20260918zb` on main and is
+brought current with it.
+
 ### 2026-09-18 (ac) — A shared stretch splits instead of being awarded, and the merge branch I wrote was unreachable
 
 Owner, on the version that shipped an hour earlier: *"I want to see the overlap of different

@@ -238,7 +238,7 @@ window.PPR = (function () {
   async function load() {
     var host = $('ppr-view');
     if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project.</div>'; return; }
-    host.innerHTML = '<div class="pp-empty">Loading PPRs…</div>';
+    host.innerHTML = '<div class="pp-empty">Loading presentations…</div>';
 
     // ⚠️ All three reads are keyset-paginated. The photo library in particular routinely exceeds
     // PostgREST's 1000-row server cap — module.js's own load() has paginated for exactly that reason
@@ -546,7 +546,7 @@ window.PPR = (function () {
     var count = $('ppr-count');
     if (count) {
       count.textContent = pprs.length
-        ? 'Showing ' + list.length + ' of ' + scope.length + ' PPR' + (scope.length === 1 ? '' : 's') +
+        ? 'Showing ' + list.length + ' of ' + scope.length + ' Presentation' + (scope.length === 1 ? '' : 's') +
           (filters.archived ? ' (archived)' : '')
         : '';
     }
@@ -2316,7 +2316,7 @@ window.PPR = (function () {
       '<div class="pd-modal-header"><h3>Preparing offline copy</h3></div>' +
       '<div class="pp-form"><p id="ppr-x-msg">Embedding images…</p>' +
       '<p class="pp-hint">Every photo is embedded in the file so it opens without a network ' +
-      'connection. Large PPRs take a moment.</p></div>', 480);
+      'connection. Large presentations take a moment.</p></div>', 480);
     var msg = $('ppr-x-msg');
 
     var res = await collectSlideImages(s, function (i, total) {
