@@ -104,7 +104,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-18 (ag) — The Presentations tab still counted its records in "PPR"
+### 2026-09-18 (ah) — The Presentations tab still counted its records in "PPR"
 
 Owner: *"in progress photos, presentations tab, it says 5 of 5 PPR. this should be 5 of 5
 Presentations. please make minor revision."* Right, and it is the tail of a rename this module has
@@ -144,9 +144,12 @@ brought current with it.
 JUST RESOLVED.** Main published `20260918ze` while this branch held `zd`, so `zd` was behind again
 before it had shipped at all — re-derived to **`20260918zf`**, past every `20260918*` token
 enumerated on **both** refs before resolving (`a b c f ze`), and sort-checked as a plain string.
-⚠️ And main independently published its own **`2026-09-18 (ad)`** — plus `(ae)` and `(af)` — so this
-entry is re-lettered **(ad) → (ag)**. Both sides' entries are kept whole and the one merging in is
-the one that moves, per this file's own header rule. ⚠️ The merge was checked by arithmetic rather
+⚠️⚠️ **AND THE LETTER COLLIDED THREE TIMES RUNNING.** Main published its own **`(ad)`**, plus
+`(ae)` and `(af)`, so this entry moved **(ad) → (ag)** — and while that resolution was being checked
+main published an **`(ag)`** of its own, so it moved again to **(ah)**. Both sides' entries are kept
+whole every time and the one merging in is the one that moves, per this file's own header rule.
+⚠️ Picking "the next free letter" is not a defence against this on a busy day; re-reading the remote
+and re-deriving **after** integrating is, which is why it was caught rather than pushed. ⚠️ The merge was checked by arithmetic rather
 than by eye: base **21,434** + this side's **36** + main's **311** = **21,781**, which is what the
 file now measures, with **344 dated headings, 344 distinct** — nothing lost and nothing doubled.
 ⚠️ A one-line shortfall on the first count was a **missing blank line at the seam**, where this
@@ -155,6 +158,29 @@ entry's last line ran straight into main's `(af)` heading — found by the count
 7 surviving "conflict markers" across `modules-grid.js` and `dashboard.html`, every one a decorative
 `// ======` comment banner — the trap this log already records for a conflict script that searches
 for a marker the file also uses as decoration.
+
+### 2026-09-18 (ag) — A mirrored record can only be as precise as its source: procurement packages become a day, not a bar
+
+⚠️ Lettered **(ag)** — `origin/main` reached `(af)` while this was in flight.
+
+Owner: *"Obtain only the planned award as the start and finish of the work packages"*. Project
+Schedule only; the detail is in `modules/project-schedule/CLAUDE.md` (z).
+
+`syncProcurement()` drew each mirrored work package from its **planned award** to the **latest of its
+target delivery / installation / completion** dates. Both ends are now the planned award, so the row
+is a one-day mark.
+
+⚠️ **The rule to carry: a synced row may only assert dates its source actually scheduled.** The
+target dates are procurement's *envelope*, not a planned duration — turning them into a bar invented
+months of work nobody had scheduled, and it double-counted against the construction activities that
+consume the package and already sit in those months. When a mirror has exactly one real date, the
+honest shape is a point.
+
+⚠️ **Self-migration over backfill, again.** `end_date` was already in the sync's `patchFields`, so
+the diff loop sees the stored target date differ from the award date and rewrites every existing row
+on the next **Sync Procurement**. Same pattern as the `activity_type` change before it: put the new
+value in the patch builder, make sure the field is in the projection the diff compares against, and
+no migration is needed.
 
 ### 2026-09-18 (af) — The manual sheet drags to select, drops the trade %, loses its prose, and folds its shortcuts under the grid
 
