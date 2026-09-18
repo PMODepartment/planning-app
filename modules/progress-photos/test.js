@@ -519,6 +519,16 @@ ok('list column header is Presentation Date', /<div>Presentation Date<\/div>/.te
 const pjsCode = pjs.replace(/^\s*\/\/.*$/gm, '');
 ok('no user-facing "New PPR" left', !/\+ New PPR/.test(html + pjsCode));
 ok('no user-facing "PPR list" left', !/>PPR list</.test(html) && !/'PPR list'/.test(pjsCode));
+// The rename had left the abbreviation in three places the planner reads:
+// the list count line ("5 of 5 PPR"), the transient loading line, and the
+// offline-export dialog. "PPR Meeting" (a report TYPE, the counterpart of
+// "Client Coordination Meeting") and the description placeholder's own
+// "e.g. PPR ftm of June 2026" are genuine proper nouns and deliberately stay.
+ok('the list count line says Presentation(s), not PPR(s)',
+   /' of ' \+ scope\.length \+ ' Presentation' \+ \(scope\.length === 1 \? '' : 's'\)/.test(pjsCode));
+ok('no generic "PPR"/"PPRs" noun left in user-facing copy (report-type and placeholder proper nouns aside)',
+   !/Loading PPRs/.test(pjsCode) && !/Large PPRs/.test(pjsCode) &&
+   !/ PPR' \+/.test(pjsCode) && !/>\s*PPRs?\s*</.test(html));
 
 console.log('\n[4] After creating a meeting, go to its editor');
 ok('openPpr called after insert', /if \(isNew && newId\) openPpr\(newId\)/.test(pjs));

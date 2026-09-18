@@ -104,6 +104,88 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (aj) — The Presentations tab still counted its records in "PPR"
+
+Owner: *"in progress photos, presentations tab, it says 5 of 5 PPR. this should be 5 of 5
+Presentations. please make minor revision."* Right, and it is the tail of a rename this module has
+already made: the tab, the primary action, the modal header and the list column all say
+**Presentation** — and `modules/progress-photos/test.js` block `[3]` asserts each of them — while the
+count line under the toolbar still read `Showing 5 of 5 PPRs`. Full entry:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
+⚠️ **Three occurrences, not one.** Stripping `//` comments finds the generic noun in the count line,
+in the transient `Loading PPRs…` line and in the offline-export dialog — where it **contradicted
+itself**, since that dialog's own header reads *"Preparing offline copy"* and the guard above it
+toasts *"This presentation has no slides to export"*.
+
+⚠️⚠️ **FOUR MORE ARE LEFT, AND THAT IS THE JUDGEMENT RATHER THAN AN OMISSION.** `'PPR Meeting'` is a
+**report TYPE**, the counterpart of `'Client Coordination Meeting'`, and telling those two apart is
+the entire reason the `report_type` column exists; the description placeholder's
+`e.g. PPR ftm of June 2026 / Client Presentation` shows the same distinction as an example. Both are
+proper nouns naming a meeting, not the generic noun counting records. The other two are `console.warn`
+strings no planner sees.
+
+**Verified:** `node --check`; the module suite **978 passed, 5 failed** — ⚠️ the same **5**
+pre-existing failures, confirmed by running it against a clean `git archive HEAD` tree (**976/5**)
+rather than assumed. ⚠️⚠️ **Both new assertions bite**: the same `test.js` run against the
+**pre-change** `ppr.js` reports **7 failed**, naming exactly the two. `wiring-check` **139/0**, every
+asset on one version; 0 NUL bytes.
+⚠️ **Not verified signed in** — the count line is asserted against the shipped source, never read off
+a real project's list.
+
+⚠️ **Merged `origin/main` TWICE before shipping — 43 commits, then 7 more — and the token was
+re-derived after each**, from what the remote actually carries rather than guessed beforehand. The
+first pass: this branch sat at `20260918g` while main had reached `20260918zc`, and `g` sorts
+*earlier* — a browser holding main's token would never have fetched these bytes; re-derived to
+`20260918zd`. ⚠️ `modules-grid.js`'s own fallback literal had drifted to `20260918zb` on main and is
+brought current with it.
+
+⚠️⚠️ **THE SECOND MERGE COLLIDED ON BOTH HALVES AT ONCE, WHICH IS WHY IT IS RECORDED HERE AND NOT
+JUST RESOLVED.** Main published `20260918ze` while this branch held `zd`, so `zd` was behind again
+before it had shipped at all — re-derived to **`20260918zf`**, past every `20260918*` token
+enumerated on **both** refs before resolving (`a b c f ze`), and sort-checked as a plain string.
+
+⚠️⚠️ **AND THE LETTER COLLIDED FIVE TIMES RUNNING** — `(ad)` → `(ag)` → `(ah)` → `(ai)` → **`(aj)`**,
+main having independently published its own entry under every one of those letters as this branch
+reached it.
+Both sides' entries are kept whole every time and the one merging in is the one that moves, per
+this file's own header rule. ⚠️ Picking "the next free letter" is not a defence against this on a
+busy day; re-reading the remote and re-deriving **after** integrating is, which is why it was
+caught rather than pushed.
+
+⚠️⚠️ **AND THE FOURTH PASS IS THE ONE THAT PROVES WHY THE TOKEN IS RE-READ RATHER THAN TRUSTED:
+MAIN INDEPENDENTLY PUBLISHED `20260918zf` — THE EXACT TOKEN THIS BRANCH HAD JUST DERIVED — AND GIT
+REPORTED NO CONFLICT ON IT AT ALL.** Both sides wrote the identical string, so there was nothing to
+conflict on; the merge reported only `CLAUDE.md`, and the three token carriers merged **silently**,
+leaving one cache token over two different builds. A browser holding main's `zf` would never have
+fetched these bytes. Caught only by enumerating every `20260918*` token on **both** refs before
+resolving — `a b c f zf` on each — and re-derived to `20260918zg`, sort-checked as a plain string.
+
+⚠️⚠️ **AND IT HAPPENED AGAIN ON THE FIFTH PASS, TO `20260918zg`.** Main took that one independently
+too — its own commit message for the round reads *"the SAME cache token, chosen independently,
+merged in silence"*, so a second session hit the identical trap in parallel. Re-derived to
+**`20260918zh`**. **Five token derivations, two of them silently collided**, and neither would have
+been visible in a diff: an identical string on both sides is not a conflict, so the only thing that
+finds it is enumerating the tokens on **both refs before resolving**, every single time. Picking
+"the next letter" is not a defence — that is precisely what produces the collision when two sessions
+do it from the same base.
+
+⚠️⚠️ **AND A RECOVERY WORTH RECORDING: `git checkout --merge CLAUDE.md`, RUN MID-MERGE TO
+RECONSTRUCT THE PRE-EDIT MERGE RESULT, RE-CREATED THE CONFLICT MARKERS AND DESTROYED THE
+RESOLUTION.** It is the same family as the `git stash` hazard this log already records for a shared
+clone: a command reached for to *inspect* state, which rewrites it. Nothing was lost — the
+resolution is a deterministic script and was simply re-run, and the token bumps live in other files
+and were untouched — but the honest lesson is to measure a merge by counting the resolved file, not
+by trying to rebuild an earlier version of it in place. ⚠️ The merge was checked by arithmetic rather
+than by eye: base **21,434** + this side's **36** + main's **311** = **21,781**, which is what the
+file now measures, with **344 dated headings, 344 distinct** — nothing lost and nothing doubled.
+⚠️ A one-line shortfall on the first count was a **missing blank line at the seam**, where this
+entry's last line ran straight into main's `(af)` heading — found by the count, not by reading.
+⚠️⚠️ And the resolver's own marker check had to be **anchored** (`^=======$`): a loose grep reports
+7 surviving "conflict markers" across `modules-grid.js` and `dashboard.html`, every one a decorative
+`// ======` comment banner — the trap this log already records for a conflict script that searches
+for a marker the file also uses as decoration.
+
 ### 2026-09-18 (ai) — Location Sequence becomes one page, and a merge resolution that would have thrown on every render
 
 Owner, six items on the Location Sequence step of Schedule Setup — rename it throughout; merge tower
