@@ -28086,9 +28086,18 @@
              storey's own category is used where it is known, so "start together on the basements"
              does not excuse an overlap on a typical floor. */
           if (_declaredParallel(A.value, B.value, _lsmDecl().kind[locNormKey(row.r._graw || row.r.activity_name || '')] || '')) continue;
-          /* B is supposed to follow A on this storey. It clashes if it starts before A finishes. */
+          /* B is supposed to follow A on this storey. It clashes if the two are on it together. */
           if (+B.s > +A.f) continue;
-          var s = B.s, f = (+A.f < +B.f) ? A.f : B.f;
+          /* ⚠️⚠️ THE SHARED STRETCH IS THE INTERSECTION, AND IT STARTS AT THE LATER OF THE TWO
+             STARTS. It read `B.s` unconditionally, which is right only while B starts after A --
+             and the whole point of this pass is the case where it does NOT. An out-of-sequence B
+             starting ten days before A then had those ten days counted as overlap, so the chip
+             said 10 wd where the two were on the storey for 5, the hatched mark was drawn across
+             days A was not there at all, and the worst-first sort put the inflated storey ahead of
+             a real, longer one. A pair whose spans do not meet at all is now no overlap: it is out
+             of sequence, which this pass has no words for and does not pretend to measure. */
+          var s = (+B.s > +A.s) ? B.s : A.s, f = (+A.f < +B.f) ? A.f : B.f;
+          if (+f < +s) continue;
           var ax = _lsmAxOf(A.cal || B.cal, min, max);
           if (ax && ax.wd) out.wd = true;
           /* Inclusive span, in the axis's own days - the same `span` the CPM uses to turn a

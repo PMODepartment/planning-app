@@ -1,3 +1,75 @@
+## 2026-09-18 (p) — The clash strip counted days the two trades were never on the storey together
+
+Owner: *"Let's do a dedicated check for the clash detection in the schedule"*. A probe, not a
+feature — and it found one line.
+
+### ⚠️⚠️ THE SHARED STRETCH STARTED AT B'S START, WHICH IS ONLY RIGHT WHILE B STARTS LAST
+
+    var s = B.s, f = (+A.f < +B.f) ? A.f : B.f;
+
+The intersection of two spans starts at the **later** of the two starts. This took B's start
+unconditionally — correct for the ordinary case, where the successor arrives partway through the
+predecessor's work, and wrong for the exact case this pass exists to catch: **the successor that
+started first.** Every day B was on the storey *alone*, before A ever arrived, was then counted as
+overlap.
+
+The suite's own *"violated the other way round"* fixture was carrying it: Masonry 5–16 Jan,
+Structural 12–23 Jan, together Mon 12 → Fri 16 and nowhere else. The chip said **10 wd**. The
+suite asserted the pair was **found** and that Structural was **named first**, and never asked how
+many days it claimed — a count nobody checks is a count that can drift.
+
+### Three things the planner saw, all from that one expression
+- **The number.** *"10 working days of overlap"* where there were five. The tooltip prints the
+  stretch too, so the dates on screen disagreed with the building.
+- **The hatched mark**, drawn across days A was not on the floor at all — the mark is the evidence
+  for the claim, and it was pointing at the wrong days.
+- ⚠️⚠️ **The sort, which is the strip's whole editorial claim.** Worst-first is how eight chips
+  stand in for all of them. A two-day problem whose successor started early read as **twelve** and
+  led the strip ahead of a genuine **six**-day overlap — and once eight inflated chips are in
+  front of it, a real one is off the strip entirely. Asserted with two storeys, because a wrong
+  number is a nuisance and a wrong ORDER is a wrong answer to *"what should I look at first?"*.
+
+### ⚠️ AND ONE CASE STOPS BEING REPORTED — deliberately, on the owner's call
+A pair that is out of sequence but never shares a day (Masonry off the storey on the 9th,
+Structural not there until the 19th) was reported as *"5 working days of overlap"*. There is no
+overlap to count, no stretch to hatch, and nothing this strip's wording could truthfully say about
+it. It is now silent. **Out of sequence is a different finding from overlapping**, and it would
+need its own words the way the declared-handoff pass has its own — it is not smuggled in under
+this one. Offered as a third finding kind; the owner chose to drop it.
+
+### Verified
+**695 assertions against the working tree, 27 against the pinned base, 0 failing** — up 11, and
+⚠️ **9 of the 11 bite**: run against the pre-change file they fail with 10 for 5, the stretch
+starting on the 5th, both marks on the wrong span, 1 for 0, and *"2nd Floor"* leading a strip that
+should open with the 1st. The two that pass either way are the guards (the pair is still found;
+the stretch still ends at the earlier finish), kept so a future change cannot satisfy the new
+assertions by simply reporting nothing.
+
+The edges were probed before anything was touched, and the ones that were already right are now
+assertions too: the threshold from both sides (two shared working days report as **2**, one is a
+handoff), a shared stretch that is **all weekend** (Sat+Sun → no working-day clash), three trades
+on one storey → **3 pairs, 3 marked bars**, a **non-adjacent** pair in the sequence (lanes three
+apart), identical spans, and two one-day activities on the same day.
+
+⚠️ The **declared-handoff** half of the detector was not touched and needs no correction: its
+measure is *"how many days early B started against A's target storey"*, which is what it prints,
+and the suite already cuts that block out of the shipped source and runs it against a fabricated
+tower (`runPass`), with `autoTrace`'s clamp arithmetic proved over 3,720 cases in the 09-12 entry.
+
+⚠️ **Not verified in a browser, and not verified signed in.** The model's spans are measured; the
+geometry that draws them was last rendered at z3 and the renderer is unchanged. **What to check on
+OPW101:** the screenshot taken with this prompt shows *"7 clashes (4 vs declared handoff)"* — the
+three same-storey ones (`B2 MEPF before Architectural 5 wd`, `B3 4 wd`, `B1 4 wd`) are the rows
+this fix can move. If MEPF starts before Architectural on those basements, those numbers should
+**fall**, or the finding should disappear if the two never share a day.
+
+⚠️ **Pre-existing and not this change's:** `test-cpm` crashes with *"window is not defined"* on
+`if (!calCpmOn || !window.PDCal)` — identically on the pre-change file, so somebody gave `allAxis`
+a `window` read without giving that suite a window. `test-critwbs` 26/26, `test-health` 30/30,
+`test-autotrace` 32/32, `test-zoneoverlap` 57/57, `test-towerseq` 48/48, `test-syntax` 4/4.
+
+`MODULE_V` → `20260918p`, sort-checked against `20260918o` in dashboard.html and modules.html.
+
 ## 2026-09-18 (i) — Activity sequence, Zone scoping as its own step, and one label treatment for every selector group
 
 Owner, three items on the Activity Sequence step:
