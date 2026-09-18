@@ -1,3 +1,193 @@
+## 2026-09-18 (i) — Activity sequence, Zone scoping as its own step, and one label treatment for every selector group
+
+Owner, three items on the Activity Sequence step:
+
+> 1. in activity sequence, name the title of the step as Activity sequence
+> 2. throughout the steps in schedule set-up, when providing button choices whether for trades,
+>    floors, or activities, place them in a holder group with a label
+> 3. separate Scope per zone as a separate Step 9 before Generate. title this step Zone scoping.
+>    in the table shown, group these also per floor, per zone, and per unit for easier readability
+
+### ⚠️⚠️ ITEMS 1 AND 3 ARE ONE CHANGE, AND THE DOUBLED HEADING FIXES ITSELF
+
+The step printed **"7 · Activity Sequence — Trade sequence"** — the step's own number and title, then
+the tab's. Renaming it to sentence case does nothing about that; what does is item 3. Once Scope per
+zone leaves, the step has **one** view, and this file's own rule above `stPillStep` says a strip of
+one button *"is a control that cannot do anything"*. So `'Activity Sequence'` comes **out of
+`STEP_TABS` entirely**, `stActSeq` renders `stTradeSeq` directly, and the heading is the step's own
+title and nothing else. `stepTabs` answers `STEP_TABS[title] || null`, and every consumer already
+guards on that null — checked at all seven call sites rather than assumed.
+
+⚠️ `stPillStep` is **kept parameterised** rather than inlined into `stLocSeq`, its only caller left.
+The split that produced a second caller could produce a third, and this is the second time in two
+days that this shell has gained or lost one.
+
+### ⚠️⚠️ A TITLE IS ALSO A LOOKUP KEY, SO ONE WORD ON SCREEN IS SEVEN EDITS
+
+This module addresses its steps **by title, never by index** — `_stepNo(title)` renumbers every
+"see step N" in the file — and `_stepNo` answers the **empty string** for a title it cannot find.
+A blank where a step number belongs reads as a broken app, not as a missing step. So the rename
+touches `STEPS_NEW`, `SB_MANUAL`'s key, `_stepReady`'s gate, **both** alias tables, and every
+`_stepNo('…')` call site.
+
+⚠️⚠️ **Two alias tables, and only one of them is `STEP_ALIAS`.** `gotoStep` reads a private `_al`
+map of its own and does **not** consult `STEP_ALIAS` — the drift this file recorded on 2026-09-17
+(zzt) and deliberately did not converge. Both are updated: `'Activity Sequence'`, `'Trade sequence'`
+and `'Scope per zone'` all still resolve, the first two to step 8 and the third to **its own step 9**.
+⚠️ Neither names a **tab** any more; a `setStepTabQuiet` against a step with no strip is a silent
+no-op, which is the shape a deep link fails in without anyone noticing.
+
+The rail is ten entries: `Start → Calendars → Project phases → Activities → Towers → Floors & Zones
+→ Location Sequence → Activity sequence → Zone scoping → Generate`. **Zone scoping is step 9 and
+Generate is step 10**, which is what the owner asked for in as many words.
+
+⚠️ **`stScope` itself did not move.** It already sat between `stTradeSeq` and `stGenerate`, so item 3
+is a `STEPS_NEW` entry, a `STEP_TABS` removal and the alias/manual updates — no code was relocated,
+and the diff says so.
+
+### ⚠️⚠️ THE SCOPE TABLE IS GROUPED, AND EVERY RUNG IS DERIVED RATHER THAN ASSUMED
+
+A tower of twenty floors × four zones × six units is **480 rows every one of which reads
+`<floor> · <zone> · <unit>`** — the shared prefix repeated 480 times, and the single token that tells
+two neighbouring rows apart is the hardest thing on the row to find. Grouped, each row carries only
+what the headings above it have **not** already said: the unit, or the zone on a unitless zone, or
+the floor on a zoneless floor. The `title` still carries the whole address, so the toggle it names is
+unchanged and the full location is one hover away.
+
+- ⚠️⚠️ **A heading is emitted only where the leaf is genuinely DEEPER than that rung.**
+  `leavesOfFloor` stops at the floor when a floor has no zones and at the zone when a zone has no
+  units, and `cfg.locLevel` can flatten the whole project to one leaf per floor. Emitting a heading
+  anyway would print a *"5th Floor"* heading directly above a row whose own label is *"5th Floor"*.
+  Both mixed cases are asserted, because a trade can carry a zoned floor and a zoneless one at once.
+- ⚠️⚠️ **THE TOWER RUNG IS NOT COSMETIC.** `locList` clones a type's floors once per instance and
+  `locLabel` carries no tower — so on a three-tower project the same `5th Floor · Z1` appeared three
+  times, identical, with only the hidden `uid` telling them apart. It is emitted only when the trade's
+  leaves really span more than one tower, per `program.js`'s own rule that a heading above a single
+  group invents a hierarchy that is not there.
+- ⚠️ **This REGROUPS and never re-sorts.** The rows stay in the order `locList` produced them, which
+  is the setup's own floor/zone/unit order; a row that moved because it was grouped would be this
+  change rewriting the planner's sequence. Asserted on a deliberately non-alphabetical fixture.
+- ⚠️ **Group rows carry no handler.** The column and row toggles are the controls on this screen, and
+  a third bulk toggle sitting where a heading belongs is a mis-click away from clearing a whole
+  storey. They also carry no `cursor:pointer`, measured — a heading that looks clickable beside row
+  labels that really are is the same mistake in CSS.
+
+### ⚠️⚠️ ITEM 2 IS ADOPTION OF A PRECEDENT, AND IT FOUND A FOURTH COPY OF ONE LABEL
+
+`.sbld-chiplab` and the `.sbld-seqkind` / `.sbld-towerbar` holder shapes already existed; what the
+chip rows had was a **bare flex row**, so on a step carrying two of them (tower chips above trade
+chips, in Location Sequence and in Generate) the two runs read as one long strip of buttons with
+nothing saying which question either half answered. `.sbld-tradechips` is a bordered holder now and
+all **eight** emit sites carry a `.sbld-chiplab`, verified mechanically rather than by eye.
+⚠️ **No red left rail**, unlike `.sbld-seqkind` directly below it on the same step: that bar is a
+single state line and earns the emphasis; stacked selector rows each wearing a brand rail would make
+a step of selectors look like a step of warnings.
+
+⚠️⚠️ **And the job was written FOUR times, not three.** `.sbld-chiplab` (micro/700/.04em),
+`.sbld-towerbar-l` (xs/700/.05em), `.sbld-seqkind-l` (xs/**800**) and `.sbld-locbar-l` (xs/**800**).
+The weight half is not a fact about the stylesheet: **`stTradeSeq` draws "TRADE" (700) directly above
+"LEVEL TYPE" (800)** and **`stLevels` draws "LOCATION BREAKDOWN" (800) directly above "TRADE" (700)**
+— two weights, one screen, inches apart. One declaration, three selectors, at 700 (this app's own
+uppercase micro label — `.pd-kpi-label`, `.pd-table th` — where 800 is what it reserves for a KPI
+value). `.sbld-towerbar-l` is **deleted** rather than aliased, because a rule that matches nothing
+reads as working styling to everyone who finds it; `.sbld-seqkind-l` and `.sbld-locbar-l` keep their
+**names** (five emit sites, and a rename is churn with no pixel behind it) and simply stop carrying a
+declaration of their own to drift.
+
+⚠️ **Deliberately NOT given a holder: `.sbld-checkchips`** (the import path's data-quality filter
+row). Those chips carry their own full names and counts and are not a trade/floor/activity choice;
+boxing them would be widening the ask into a step the owner did not name. Reported rather than done.
+
+### Verified
+
+**New `modules/project-schedule/test-zonescope.js` — 57 assertions, 0 failing**, every function
+sliced out of the shipped file **by name** through the repo's own `test-slice.js`. The footer's Next
+walk is **driven end to end** and reads `… → Location Sequence · Tower Sequence → Location Sequence ·
+Zone sequence → Activity sequence → Zone scoping → Generate`; ⚠️ `_stepReady` and `_stepNo` are
+**sliced, never stubbed** — `_stepReady` is one of the functions this change edits, and a stub of a
+rule is a second copy of that rule. It also proves the properties whose failure looks like a working
+screen: every `_stepNo` call site in the file resolves on one of the two rails, every `gotoStep`
+target is a real step, and every rail title has a manual page.
+
+⚠️⚠️ **The contrast is PINNED to a checkout, never defaulted to `HEAD`** — which becomes
+self-comparison the moment this commits. Against `origin/main` it is **24 passed, 33 failed**, and
+the failures name the change rather than merely dying: the walk reads `Activity Sequence · Trade
+sequence → Activity Sequence · Scope per zone → Generate`, Zone scoping resolves to a blank, and the
+table emits no group rows at all.
+
+**Measured in a browser** against the shipped stylesheets, with the CSS extracted from the file
+rather than retyped: **indents 10 / 24 / 38 / 52px**, headings 700 on a real (non-transparent)
+background, no heading with `cursor:pointer` and every data row keeping it, 0 page errors, no
+sideways page scroll.
+
+⚠️⚠️ **A DEFECT FOUND BY RENDERING, NOT BY READING: the heading rule used the `padding`
+shorthand.** `table.sbld-tbl tr.sbld-scope-grp > td` is **(0,2,3)** against the indent's
+`table.sbld-tbl td[data-d="N"]` at **(0,2,2)** — so the shorthand set `padding-left` too and won,
+flattening **every heading to one indent** while the rows beneath them stayed stepped. Reverting that
+one line reproduces it: 2 assertions red and the measurement prints **10 / 10 / 10** where it should
+read 10 / 24 / 38. The same specificity trap this file already records for the locked BOQ cell.
+
+⚠️⚠️ **And two defects in my own harness, each of which reported the opposite of the truth.** A naive
+brace counter read the apostrophe in *"a floor's leaves"* — inside a `/* */` comment — as a string
+opener and returned an unparseable fragment; the repo's own slicer blanks comments through
+`tools/scan.js` for exactly that reason, and the suite now uses it. Then the rendered table showed the
+zone heading repeating **above every single unit**: the fixture built a fresh zone object per leaf
+while `locList` shares one, so an identity comparison was right for today's data and one shallow clone
+away from being wrong. The run-tracking keys on **ids** now.
+
+⚠️ **`test-builder` retargeted, not weakened** — three assertions named the old title and the old rail
+length. Each still asserts the property it existed for, under the new names, and `Zone scoping` is
+**added** to the two lists rather than inherited, because unticking an activity there removes it from
+the programme entirely. **156 passed, 0 failed** (was 151/3).
+
+**Every other suite green on the merged tree:** `lsm` 684/0, `builder` 156/0, `actsetup` 142/0,
+`phasenet` 135/0, `sap` 114/0, `towertypes` 102/0, `phasecard` 85/0, `actdnd` 62/0, `zoneoverlap`
+57/0, `zoneplan` 50/0, `towerseq` 48/0, `quicksetup` 46/0, `shapeedit` 36/0, `autotrace` 32/0,
+`sitefit` 31/0, `health` 30/0, `cpm` 28/0, `wbsfile` 28/0, `critwbs` 26/0, `calendar-editor` 23/0,
+`syntax` 4/0, plus `tools/test-calendar` 71/0. `wiring-check` **139/0**, `dark-remap` 0 findings,
+`scan` self-test 10/10. The 3.8MB inline block parses, CSS braces **+2/+2** against `origin/main`,
+0 functions lost.
+
+⚠️ **Fixed in passing: two NUL bytes, both pre-existing on `origin/main`.**
+`modules/project-schedule/test-wbsfile.js` and `tools/dark-remap.js` each wrote the `\u0000`
+separator as a **raw byte**, so `grep` classified both as binary and answered *"Binary file matches"*
+instead of the matching line — including for `dark-remap.js`, which is a checker this repo runs on
+every pass. The runtime strings are unchanged (`'\u0000'` is the same character) and both still pass.
+**Zero NUL bytes across all 404 tracked files now**, measured.
+⚠️⚠️ **AND WRITING THIS PARAGRAPH REPRODUCED IT — for the sixth time, in the sentence describing
+it.** The two characters above went into this changelog as **two raw NUL bytes**, because the editor
+wrote the escape as the character it denotes; the file `grep` would then have called binary is the
+changelog itself. Caught by re-scanning the bytes after prepending, which is the only reason it is
+not in this commit. **Never type that escape into prose and trust the write — build it from char
+codes and check the bytes**, which is what this file's own 2026-09-09 entry already says.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so no real setup has been opened and no
+scope answer has been written. What is proved is the shipped code executed and the shipped CSS
+measured.
+
+### ⚠️ Merged `origin/main` (6 commits) before shipping — and the tower-bar hunk had to be rewritten, not chosen
+
+`modules/project-schedule/index.html` conflicted in **three** places, all of the same shape: main
+rewrote the surrounding code substantively (the Activities disclosure, `_towerBar`'s developments,
+the per-category quick setup) and this branch had changed only a step title inside it. **Main's
+content wins on the merits** in all three, with this branch's rename re-applied on top — resolved
+hunk by hunk, never with `--ours`/`--theirs`, which take a whole file and drop your own
+non-conflicting edits in it.
+
+⚠️⚠️ **One of those re-applications is load-bearing rather than cosmetic.** Main's `_towerBar` emits
+`<span class="sbld-towerbar-l">`, and that class **no longer exists in the stylesheet** — this branch
+deleted it once every call site had moved. Taking main's copy verbatim would have left that label with
+no rule at all: a clean-looking hunk that quietly unstyles a control, which is exactly the shape this
+log keeps recording as "a clean auto-merge is not a correct one".
+
+⚠️ **And main's own rewrite carried three `_stepNo` call sites this branch's rename had never seen**,
+because they did not exist on the base it was cut from. Found by re-sweeping the **merged** file
+rather than trusting the resolution: `_stepNo('Activity Sequence')` and `_stepNo('Trade sequence')`
+now return **0 occurrences**.
+
+⚠️ `MODULE_V` → `20260918k`, re-derived from what `origin/main` actually carries **after**
+integrating (`20260918j`) rather than guessed beforehand, and sort-checked as a plain string.
+
 ## 2026-09-18 (h) — A development is a row, the ± count goes, and the quick setup asks per category
 
 Owner, on the Towers step: *"replace the buttons on top with Add Type, Add Development … for this

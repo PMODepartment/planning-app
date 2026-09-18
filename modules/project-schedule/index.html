@@ -3762,7 +3762,23 @@
     .sbld-pushbar-txt { min-width:0; }
     .sbld-pushbar-txt b { display:block; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
     .sbld-pushbar-txt span { display:block; margin-top:2px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
-    .sbld-chiplab { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
+    /* ⚠️⚠️ ONE LABEL TREATMENT FOR EVERY SELECTOR GROUP IN THE SETUP, AND IT USED TO BE FOUR.
+       One job — naming what a row of controls is choosing — written four times, hundreds of lines
+       apart, each a little different: `.sbld-chiplab` (micro/700/.04em), `.sbld-towerbar-l`
+       (xs/700/.05em), `.sbld-seqkind-l` (xs/800) and `.sbld-locbar-l` (xs/800).
+       ⚠️⚠️ THE WEIGHT HALF WAS VISIBLE ON TWO STEPS, not merely untidy in the stylesheet:
+       `stTradeSeq` draws "TRADE" (700) directly above "LEVEL TYPE" (800), and `stLevels` draws
+       "LOCATION BREAKDOWN" (800) directly above "TRADE" (700). 700 wins — it is this app's own
+       uppercase micro label (`.pd-kpi-label`, `.pd-table th`), and 800 is what the app reserves
+       for a KPI value.
+       ⚠️ `.sbld-towerbar-l` is DELETED rather than kept as an alias: with every call site moved
+       onto `.sbld-chiplab` it emits nowhere, and a rule that matches nothing reads as working
+       styling to everyone who finds it — which is how the duplicate arose in the first place.
+       ⚠️ `.sbld-seqkind-l` and `.sbld-locbar-l` keep their NAMES and join this selector instead:
+       they are emitted from five places, and a rename is churn with no pixel behind it. What they
+       no longer have is a declaration of their own to drift away from this one. */
+    .sbld-chiplab, .sbld-seqkind-l, .sbld-locbar-l {
+      font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
       letter-spacing:.04em; color:var(--pd-muted); margin-right:2px; }
     .sbld-list { display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
     .sbld-row { display:flex; gap:8px; align-items:center; }
@@ -3828,7 +3844,6 @@
     /* step 2 — the project's Location Breakdown, stated before any floors are typed in */
     .sbld-locbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
       border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
-    .sbld-locbar-l { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .sbld-locbar .sbld-hint { margin:0; flex:1 1 260px; min-width:0; }
     /* The activity level, off its own band and onto this bar — see `_locBreakdownBar`'s
        `opts.level`. ⚠️ `width:auto`, NOT a fixed width: the longest option is
@@ -3839,11 +3854,21 @@
     .sbld-loclvl select { height:30px; width:auto; max-width:230px; }
     .sbld-seqkind { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
       border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
-    .sbld-seqkind-l { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .sbld-seqkind .sbld-hint { margin:0; }
     .sbld-scbtn b.own { font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pd-red); margin-left:4px; }
-    /* step 2 — trade chips + tower */
-    .sbld-tradechips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+    /* step 2 — trade chips + tower
+       ⚠️⚠️ A HOLDER WITH A LABEL, NOT A BARE ROW OF BUTTONS — owner 2026-09-18: *"throughout the
+       steps in schedule set-up, when providing button choices whether for trades, floors, or
+       activities, place them in a holder group with a label."* It was a naked flex row, so on a
+       step carrying two of them (tower chips above trade chips, in Location Sequence and in
+       Generate) the two runs read as one long strip of buttons and nothing said which question
+       either half answered. The box is the grouping and the label is the question.
+       ⚠️ NO RED LEFT RAIL, unlike `.sbld-seqkind` directly below it on this same step: that bar
+       is a single state line and earns the emphasis; two or three stacked selector rows each
+       wearing a brand rail would make a step of selectors look like a step of warnings. */
+    .sbld-tradechips { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:14px;
+      padding:8px 11px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      background:var(--pd-bg); }
     .sbld-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); background:var(--pd-card); cursor:pointer; font:inherit; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
     .sbld-chip:hover { background:var(--pd-bg); }
     .sbld-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); font-weight:700; }
@@ -4407,6 +4432,25 @@
        cannot avoid, and which the page never inherits. */
     table.sbld-tbl th.sbld-scope-col { white-space:normal; max-width:112px; vertical-align:bottom; line-height:1.25; }
     .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }
+    /* The grouping rows added on 2026-09-18 (see `tocs`). ⚠️ They are NOT `.sbld-scope-row` and
+       carry no cursor or hover: a heading that looks clickable on a screen whose row labels really
+       are clickable is a mis-click away from clearing a storey. ⚠️ The indent is driven by
+       `data-d` rather than a class per depth, because the rung a heading sits on is computed from
+       the data (a single-tower project has one rung fewer) and a fixed class set cannot express
+       that. `table.sbld-tbl td` is (0,1,2) and `table.sbld-tbl td[data-d]` is (0,2,2), so the
+       indent beats the table's own padding.
+       ⚠️⚠️ AND THE HEADING RULE MUST NOT USE THE `padding` SHORTHAND. `table.sbld-tbl
+       tr.sbld-scope-grp > td` is (0,2,3) — HIGHER than the `[data-d]` rules below it — so a
+       shorthand here would set `padding-left` too and win, flattening every heading to one
+       indent while the rows beneath them stayed stepped. Top and bottom only; the left is the
+       indent's to own. The same specificity trap this file records for the locked BOQ cell. */
+    table.sbld-tbl tr.sbld-scope-grp > td { background:var(--pd-bg); font-weight:700;
+      font-size:var(--pd-fs-xs); color:var(--pd-muted); letter-spacing:.02em;
+      padding-top:5px; padding-bottom:5px; }
+    table.sbld-tbl td[data-d="1"] { padding-left:10px; }
+    table.sbld-tbl td[data-d="2"] { padding-left:24px; }
+    table.sbld-tbl td[data-d="3"] { padding-left:38px; }
+    table.sbld-tbl td[data-d="4"] { padding-left:52px; }
     /* step — the borrowed WBS tree. The group keeps the toolbar's own look (it IS the WBS Manager's
        toolbar), but it is laid out here as a wrapping row inside the step panel rather than as part
        of a full-width bar. */
@@ -5247,8 +5291,12 @@
        it ten lines later. It rendered only because CSS nesting is supported and the note really is
        inside the bar — in a browser without nesting every `.sbld-towerbar-note` rule was dropped
        and the drift warning lost its styling. Written out flat. */
+    /* ⚠️ Same holder as `.sbld-tradechips` — this bar was already a labelled box and the chip rows
+       have joined it, so the two agree by construction rather than by eye. The radius was a literal
+       `9px` against the chip row's `--pd-radius-md` (8px): one pixel, invisible alone, and the two
+       now sit as siblings on the same step where "nearly the same" reads as a mistake. */
     .sbld-towerbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:2px 0 10px;
-      padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
+      padding:8px 10px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
     /* What the step DETECTED about the towers. ⚠️ Its own row, wrapping under the chips: on a
        four-tower job the drift message is a sentence, and squeezed into the chip row it would push
        the controls onto a second line every time it appeared. */
@@ -5256,7 +5304,9 @@
       margin-top:2px; line-height:1.5; }
     .sbld-towerbar-note.warn { color:var(--pd-warn-text); background:var(--pd-warn-bg);
       border-radius:var(--pd-radius-md); padding:5px 9px; }
-    .sbld-towerbar-l { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); font-weight:700; margin-right:2px; }
+    /* ⚠️ `.sbld-towerbar-l` lived here and is gone — it was `.sbld-chiplab` written a second time,
+       and being LATER in source it was the copy that actually applied while the earlier declaration
+       had never once reached the screen. Every label in the Setup now uses `.sbld-chiplab`. */
     /* ⚠️⚠️ NOT `.sbld-mini`, WHICH IS `width:62px` — sized for the two-character number inputs it
        was written for. It is the third control in this step to be caught by that class: on
        "Site plan 1/8" it wrapped the label onto two lines inside a 30px-tall button, so the one
@@ -37505,14 +37555,21 @@
                 '⚠️⚠️ <b>Auto-trace replaces every link</b> in Zone sequence. Run it FIRST, then adjust by hand — not the other way round.'],
         done: 'The vertical stacking on the Generate step climbs the building the way you would describe it out loud.'
       },
-      'Activity Sequence': {
-        why: 'What order the work happens in once it is inside a place — how the class codes run through one location, and which of them apply where.',
-        how: ['<b>Trade sequence</b> — how the class codes run inside one location. <b>Auto-chain</b> links a trade’s codes back-to-back with the relationship in the dropdown beside it.',
-              '<b>Scope per zone</b> — tick which activities apply to each location. Everything applies everywhere until you say otherwise.',
-              '<b>Next</b> walks both views before it leaves the step.'],
+      'Activity sequence': {
+        why: 'What order the work happens in once it is inside a place — how one trade’s class codes run through a single location.',
+        how: ['Pick a trade, then drag its codes into the order they are built in.',
+              '<b>Auto-chain</b> links them back-to-back with the relationship in the dropdown beside it.'],
         watch: ['The sequence <b>and</b> the durations are per <b>level type</b> (basement / podium / typical / roof deck) — a duration typed while a category is selected applies to that category only.',
                 '<b>Linking by hand</b> works exactly as it does in Location Sequence: sources → right-click → destinations → right-click → relationship and lag.'],
-        done: 'Each trade’s codes run in the order they are actually built, and nothing is scheduled somewhere it does not happen.'
+        done: 'Each trade’s codes run in the order they are actually built.'
+      },
+      'Zone scoping': {
+        why: 'Which activities happen where. Everything applies everywhere until you say otherwise, so this step is about the exceptions.',
+        how: ['Untick an activity where that trade does not do it.',
+              'Click a <b>column header</b> to toggle that activity everywhere in the trade; click a <b>row label</b> to toggle every activity at that location.'],
+        watch: ['⚠️ An unticked activity is not generated at that location at all — it does not appear in the preview and carries no duration there.',
+                'The table is grouped by floor, then zone, then unit, so a whole storey can be read down one block.'],
+        done: 'Nothing is scheduled somewhere it does not happen.'
       },
       'Project phases': {
         why: 'The lifecycle either side of construction — Initiation, Planning, Close-out — as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.',
@@ -39204,7 +39261,11 @@
                        'Repetition': 'Location Sequence',
                        'Tower Sequence': 'Location Sequence', 'Tower links': 'Location Sequence',
                        'Zone sequence': 'Location Sequence',
-                       'Trade sequence': 'Activity Sequence', 'Scope per zone': 'Activity Sequence',
+                       /* ⚠️ 'Activity Sequence' (capital S) was the step's own title until
+                          2026-09-18; it is aliased so every "see step N" written against it still
+                          prints a number rather than a blank. */
+                       'Activity Sequence': 'Activity sequence',
+                       'Trade sequence': 'Activity sequence', 'Scope per zone': 'Zone scoping',
                        'Structure': 'Project phases', '5PMLC': 'Project phases',
                        'Construction Library': 'Activities',
                        'Stacking': 'Generate' };
@@ -39239,6 +39300,11 @@
            sequence and Scope per zone — the first two are about WHERE the work goes next, the
            last two about WHAT ORDER the work happens in inside a place. Location Sequence and
            Activity Sequence.
+       ⚠️⚠️ TEN STEPS SINCE 2026-09-18, and the tenth is the same argument once more: the owner
+       split **Scope per zone** out of Activity sequence into its own **Zone scoping** step before
+       Generate. "What order do this trade's codes run in" is asked per trade; "which activities
+       happen here" is asked over every location on the project. Two questions, two steps — and
+       Activity sequence is left with one view, so it is no longer in `STEP_TABS` at all.
        ⚠️ Nothing indexes these by number: `_stepNo(title)` looks them up by TITLE and every
        cross-reference in the module goes through it, so all the "see step 7" text renumbers
        itself. `STEP_ALIAS` keeps every retired or renamed title resolving to a real number. */
@@ -39268,7 +39334,13 @@
          places rather than beside the activities: a zone sequence with no zones is an empty screen
          and a scope-per-zone grid with no zones has no columns. */
       { t: 'Location Sequence', s: 'Tower and zone sequence', fn: stLocSeq },
-      { t: 'Activity Sequence', s: 'Trade sequence and scope', fn: stActSeq },
+      { t: 'Activity sequence', s: 'How the class codes run inside one place', fn: stActSeq },
+      /* ⚠️ SCOPE PER ZONE IS ITS OWN STEP (owner 2026-09-18), and it belongs after the sequence
+         rather than inside it: "what order do these codes run in" and "which of them happen here"
+         are two questions, and the second is asked over every location on the project at once
+         while the first is asked per trade. The renderer is unchanged — only where it is reached
+         from — and `STEP_ALIAS` keeps the old "Scope per zone" title resolving to this step. */
+      { t: 'Zone scoping', s: 'Which activities apply where', fn: stScope },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
     /* The import path. ⚠️ THE ORDER IS THE DATA-CHECKING ORDER, and it is not arbitrary:
@@ -39312,7 +39384,7 @@
          sequence — and it cannot strand the project-wide-only case, which HAS activities and is
          let through by the floors test below. */
       if (title === 'Floors & Zones' || title === 'Location Sequence' ||
-          title === 'Activity Sequence' || title === 'Generate') {
+          title === 'Activity sequence' || title === 'Zone scoping' || title === 'Generate') {
         if (!nAct) return 'Add at least one activity in step ' + _stepNo('Activities') + ' · Activities first.';
       }
       if (title === 'Location Sequence') {
@@ -39447,11 +39519,14 @@
       'Location Sequence': [
         { k: 'towers', t: 'Tower Sequence', fn: function (h) { return stTowerLinks(h); } },
         { k: 'zones',  t: 'Zone sequence',  fn: function (h) { return stSequence(h); } }
-      ],
-      'Activity Sequence': [
-        { k: 'trades', t: 'Trade sequence', fn: function (h) { return stTradeSeq(h); } },
-        { k: 'scope',  t: 'Scope per zone', fn: function (h) { return stScope(h); } }
       ]
+      /* ⚠️⚠️ ACTIVITY SEQUENCE IS NOT IN HERE ANY MORE, AND IT MUST NOT COME BACK AS A ONE-TAB
+         ENTRY. Owner 2026-09-18: *"separate Scope per zone as a separate Step 9 before Generate"*.
+         With Scope per zone gone this step has ONE view, and this file's own rule above says a
+         strip of one button "is a control that cannot do anything". `stepTabs` answers null for a
+         title it does not carry, so removing the key is all that is needed — `stActSeq` renders
+         its one renderer directly. It also removes the doubled heading the step used to print
+         ("7 · Activity Sequence — Trade sequence"), which is the other half of the owner's item 1. */
     };
     var _stepTabSel = {};
     function stepTabs(title) { return STEP_TABS[title] || null; }
@@ -39536,12 +39611,13 @@
        ⚠ The view is remembered across reloads now (`stepTabKey` persists it), which the pills
        never did. That matches Activities, and coming back to the step you left is the behaviour
        a multi-view step wants. */
-    /* ⚠⚠ ONE PILL STRIP, TWO STEPS. `Repetition` held four views — Tower Sequence, Zone
+    /* ⚠⚠ ONE PILL STRIP, NOW ONE STEP. `Repetition` held four views — Tower Sequence, Zone
        sequence, Trade sequence, Scope per zone — and the owner split them on 2026-09-17 into
        **Location Sequence** (where the work goes next) and **Activity Sequence** (what order the
-       work happens in inside a place). They are two different questions and were answered on one
-       screen; what they share is the shape of the control, so this takes the step TITLE rather
-       than being copied twice.
+       work happens in inside a place), then on 2026-09-18 split Scope per zone out again as its
+       own **Zone scoping** step. So Location Sequence is the only caller left; the shell stays
+       parameterised by step TITLE rather than being inlined, because the split that produced a
+       second caller could produce a third.
        ⚠ Each sub-view still renders its OWN heading, opening with `_stepNo(<its own title>)`,
        which `STEP_ALIAS` resolves to whichever step now contains it — so a heading never prints
        a blank where a number belongs. Nothing inside the four views was rewritten. */
@@ -39561,7 +39637,7 @@
       cur.fn(host.querySelector('#sbld-repbody'));
     }
     function stLocSeq(host) { stPillStep(host, 'Location Sequence'); }
-    function stActSeq(host) { stPillStep(host, 'Activity Sequence'); }
+    function stActSeq(host) { stTradeSeq(host); }
     /* ==========================================================================================
        THE LIBRARY — the project's places on the left, its activity groupings on the right.
 
@@ -40281,7 +40357,7 @@
         _sbldHow('<b>Ctrl+D</b> fills down, <b>Ctrl+C / Ctrl+V</b> copies and pastes, <b>Delete</b> clears — and a block pastes straight from Excel.' +
           '<ul><li><b>&larr;</b> loads ticked SAP activities into the build; <b>&rarr;</b> sends selected rows back out.</li>' +
           '<li><b>&#9656;</b> on a group shows the level-3 items it carries. Dragging a group — or a level-1 heading — brings them all in as one merged activity.</li>' +
-          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
+          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project; refine it in step ' + _stepNo('Activity sequence') + '.</li>' +
           '<li><b>Trade</b> accepts the name or the code: General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT.</li></ul>') +
         /* ⚠️⚠️ FOUR CONTROLS REMOVED HERE, and two of them had never worked.
            Owner 2026-09-17: *"no need for the delete selected rows button. user will just use the
@@ -40348,7 +40424,7 @@
            cheap place to hang a title. Corrected rather than left claiming a thing that is not
            there. What stays in the body is the one fact about the ROWS rather than a single cell. */
         '<p class="sbld-hint">Row order is the fallback sequence; fine-tune in step ' +
-        _stepNo('Trade sequence') + '.</p>' +
+        _stepNo('Activity sequence') + '.</p>' +
         /* ⚠️⚠️ THIS LINE USED TO ACCUSE EVERY `+ Library` ROW. It counted anything that was not a
            Level-3 code, which is the whole group chart — so a perfectly good build lit a warning.
            Group codes are valid (the resolver learned both levels on 2026-09-10); what is left is a
@@ -40763,14 +40839,14 @@
     function stTradeSeq(host) {
       var used = usedGroups();
       if (!used.length) {
-        host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
+        host.innerHTML = '<h2>' + _stepNo('Activity sequence') + ' · Activity sequence — connect the class codes, per level type</h2>' +
           '<div class="sbld-empty">No trades yet — add activities in step ' + _stepNo('Activities') + ' and assign each one a trade. The trades you use there will show up here to sequence.</div>';
         return;
       }
       if (used.indexOf(uiTrade) < 0) uiTrade = used[0];
       var tr = uiTrade, acts = tradeActs(tr);
       var svg = tradeView === 'gantt' ? actGanttSVG(acts, actDayStarts(tr, tradeBasis), tradeBasis) : actSchedSVG(acts, actStartsUnit(tr));
-      var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
+      var chips = '<div class="sbld-tradechips"><span class="sbld-chiplab">Trade</span>' + used.map(function (g) {
         var n = tradeActs(g).length;
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
@@ -40817,7 +40893,7 @@
         : (actLinkPhase === 'dst' && pendActDst.length)
           ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
-      host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Activity sequence') + ' · Activity sequence — connect the class codes, per level type</h2>' +
         '<p class="sbld-lede">How a trade’s class codes run <b>inside one zone</b> — their order and their durations, per <b>level type</b>.</p>' +
         /* ⚠ The WHY (a basement is not built like a typical floor) and the inheritance rule are
            mechanics, so they join the mechanics that were already in here. */
@@ -41257,7 +41333,7 @@
       var m = UI.modal('<div style="width:100%;max-height:84vh;display:flex;flex-direction:column;">' +
         '<h2 style="margin:0 0 4px;">Adopt the location breakdown from the WBS</h2>' +
         '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 8px;">Your schedule’s WBS already contains the building. These are the <strong>places</strong> it names — towers, floors and zones — with the ones this setup already defines marked. Adopting them creates the floors and zones for you instead of typing them, which is the whole job once for a <strong>migrated schedule</strong>. ' +
-        '<strong>Nothing is deleted, renamed or reordered</strong> — this only adds what is missing, and you still have to press <strong>Save</strong> afterwards. Floors are defined <em>per trade</em>, so choose who gets them; a trade can always differ afterwards in <em>Scope per zone</em>.</p>' +
+        '<strong>Nothing is deleted, renamed or reordered</strong> — this only adds what is missing, and you still have to press <strong>Save</strong> afterwards. Floors are defined <em>per trade</em>, so choose who gets them; a trade can always differ afterwards in <em>Zone scoping</em>.</p>' +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">' +
           '<span style="font-size:12px;color:var(--pd-muted);">Create the floors for</span>' +
           '<select class="pd-input" id="ad-trade" style="flex:0 0 260px;">' + tradeOptions() + '</select>' +
@@ -41483,7 +41559,7 @@
     function _towerBar() {
       var owners = layoutOwners(), actOwner = ownerOfTower(activeTower());
       return '<div class="sbld-towerbar">' +
-        '<span class="sbld-towerbar-l">' + (owners.length > 1 ? 'Layout' : 'Tower') + '</span>' +
+        '<span class="sbld-chiplab">' + (owners.length > 1 ? 'Layout' : 'Tower') + '</span>' +
         owners.map(function (o) {
           var n = o.towers.length;
           return '<button class="sbld-chip' + (actOwner && actOwner.id === o.id ? ' on' : '') +
@@ -45656,7 +45732,7 @@
       // zones + units, Zone level ignores units. Otherwise the editor shows level-4 (unit) controls
       // that have no effect, which reads as a bug when scheduling at level 3.
       var lvl = cfg.locLevel || 'auto', showZones = lvl !== 'floor', showUnits = (lvl === 'auto' || lvl === 'unit');
-      var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
+      var chips = '<div class="sbld-tradechips"><span class="sbld-chiplab">Trade</span>' + used.map(function (g) {
         // Per TOWER: a count of the whole project beside a list showing one tower reads as a bug.
         var n = floorsOfTower(g, _twAct).reduce(function (t, f) { return t + (leavesOfFloor(g, f).length || 0); }, 0);
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
@@ -46161,7 +46237,7 @@
         function zc(k, v) { return { k: k, type: 'number', value: v, min: 1, max: 20, after: ZL + 's' }; }
         function row(label, cells, hint) { return { type: 'row', label: label, cells: cells, hint: hint }; }
         /* ⚠️⚠️ THE CATEGORIES ARE THE STEP'S OWN `KIND_LABEL`, not words retyped here. The floor
-           list's per-row select, the per-category cross-trade handoff in Activity Sequence and the
+           list's per-row select, the per-category cross-trade handoff in Activity sequence and the
            LSM's own wording all read that one map; a fifth spelling of "Podium / Commercial" would
            be a fifth thing to keep in step. */
         var flds = [
@@ -46172,7 +46248,7 @@
           row(KIND_LABEL.podium,
             [{ k: 'P', type: 'number', value: qd.P, min: 0, max: 30, after: 'floors' }]
               .concat(showZones ? [{ text: '×', x: true }, zc('PZ', qd.PZ)] : []),
-            'The lowest above-grade floors. Their category is what lets step ' + _stepNo('Activity Sequence') +
+            'The lowest above-grade floors. Their category is what lets step ' + _stepNo('Activity sequence') +
             ' hand trades over differently here than on a typical floor.'),
           row(KIND_LABEL.typical,
             [{ k: 'F', type: 'number', value: qd.F, min: 0, max: 80, after: 'floors' }]
@@ -46454,7 +46530,7 @@
          or four. Each chip carries that tower's own internal link count, so "which of these have I
          sequenced" is answerable without clicking through them. */
       var towerChips = _twMulti ? '<div class="sbld-tradechips sbld-seqtw">' +
-        '<span class="sbld-towerbar-l">Tower</span>' +
+        '<span class="sbld-chiplab">Tower</span>' +
         '<button class="sbld-chip' + (seqTower === 'ALL' ? ' on' : '') + '" data-seqtw="ALL" title="Show every tower at once — the only way to draw a link from one tower to another.">All towers</button>' +
         towerList().map(function (t) {
           var n = twSeqCount(t.id), nf = 0;
@@ -46465,8 +46541,11 @@
             e2(t.name || t.code || 'Tower') + (n ? ' <b>' + n + '</b>' : '') + '</button>';
         }).join('') +
         '</div>' : '';
+      /* ⚠️ The label is unconditional now. It used to appear only on a multi-tower project — i.e.
+         only when there was a tower row above it to be told apart from — so on the ordinary
+         single-tower project this row was the one selector in the step with nothing naming it. */
       var tradeChips = present.length ? '<div class="sbld-tradechips">' +
-        (_twMulti ? '<span class="sbld-towerbar-l">Trade</span>' : '') +
+        '<span class="sbld-chiplab">Trade</span>' +
         '<button class="sbld-chip' + (seqTradeFilter === 'ALL' ? ' on' : '') + '" data-seqtr="ALL">All trades</button>' +
         present.map(function (g) { return '<button class="sbld-chip' + (seqTradeFilter === g ? ' on' : '') + '" data-seqtr="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + '</button>'; }).join('') +
         '</div>' : '';
@@ -46857,7 +46936,7 @@
 
     function stScope(host) {
       var locs = locList();
-      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2><div class="sbld-empty">Add activities (step ' + _stepNo('Activities') + ') and per-trade floors/zones (step ' + _stepNo('Floors & Zones') + ') first.</div>'; return; }
+      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>' + _stepNo('Zone scoping') + ' · Zone scoping</h2><div class="sbld-empty">Add activities (step ' + _stepNo('Activities') + ') and per-trade floors/zones (step ' + _stepNo('Floors & Zones') + ') first.</div>'; return; }
       var sections = '';
       usedGroups().forEach(function (tr) {
         var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
@@ -46876,9 +46955,59 @@
         var body = tocs(tlocs, acts);
         sections += '<h3 class="sbld-sech"><span class="sbld-dot" style="background:' + gc(tr) + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
       });
-      function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td class="sbld-scope-row" data-tr="' + l.trade + '" data-uid="' + l.uid + '" title="Click to toggle every activity at ' + e2(locLabel(l)) + '">' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
-      host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2>' +
-        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations.</p>' +
+      /* ⚠️⚠️ THE ROWS ARE GROUPED, NOT FLATTENED. Owner 2026-09-18: *“in the table shown, group
+         these also per floor, per zone, and per unit for easier readability”*. A tower of twenty
+         floors × four zones × six units is 480 rows every one of which reads
+         “<floor> · <zone> · <unit>” — so the shared prefix is repeated 480 times and the single
+         token that tells two neighbouring rows apart is the hardest thing on the row to find.
+         ⚠️⚠️ EVERY RUNG IS DERIVED FROM THE DATA, never assumed to be there. `leavesOfFloor`
+         stops at the floor when a floor has no zones and at the zone when a zone has no units, and
+         `cfg.locLevel` can flatten the whole project to one leaf per floor — so a heading is
+         emitted only where the leaf is genuinely DEEPER than that rung. Emitting one anyway would
+         print a “5th Floor” heading directly above a row whose own label is “5th Floor”.
+         ⚠️⚠️ AND THE TOWER RUNG IS NOT COSMETIC. `locList` clones a type's floors once per
+         instance, and `locLabel` carries no tower — so on a three-tower project the same
+         “5th Floor · Z1” appeared three times, identical, with only the hidden uid telling them
+         apart. It is emitted only when this trade's leaves really span more than one tower, per
+         `program.js`'s own rule that a heading above a single group invents a hierarchy.
+         ⚠️ This REGROUPS and never re-sorts: the rows stay in the order `locList` produced them,
+         which is the setup's own floor/zone/unit order, so a row does not move because it was
+         grouped. Group rows carry no handler — the column and row toggles are the controls on this
+         screen, and a third bulk toggle sitting where a heading belongs is a mis-click away from
+         clearing a whole storey nobody meant to touch. */
+      function tocs(tlocs, acts) {
+        var span = acts.length + 1, out = '';
+        var twSeen = {}; tlocs.forEach(function (l) { if (l.towerId != null) twSeen[l.towerId] = 1; });
+        var multiTw = Object.keys(twSeen).length > 1, d0 = multiTw ? 1 : 0;
+        /* ⚠️⚠️ THE RUN IS TRACKED BY ID, NOT BY OBJECT IDENTITY. `locList` currently shares the
+           floor and zone OBJECTS across a floor's leaves, so `l.zone !== prev` would work today —
+           and it is one shallow clone away from not working, which renders as the zone heading
+           repeating above every single unit. Found by rendering it, not by reading it. */
+        var pTw = null, pFl = null, pZn = null;
+        var idOf = function (o) { return o ? (o.id != null ? o.id : o) : null; };
+        function grp(depth, label) {
+          return '<tr class="sbld-scope-grp"><td colspan="' + span + '" data-d="' + depth + '">' + e2(label) + '</td></tr>';
+        }
+        tlocs.forEach(function (l) {
+          var fLab = l.floor.code || l.floor.name || 'Flr';
+          var zLab = l.zone ? (l.zone.code || l.zone.name || 'Zn') : null;
+          if (multiTw && l.towerId !== pTw) { out += grp(1, l.tower || 'Tower'); pTw = l.towerId; pFl = null; pZn = null; }
+          if (idOf(l.floor) !== pFl) { if (l.zone) out += grp(d0 + 1, fLab); pFl = idOf(l.floor); pZn = null; }
+          if (l.zone && idOf(l.zone) !== pZn) { if (l.unit) out += grp(d0 + 2, zLab); pZn = idOf(l.zone); }
+          /* ⚠️ The row label is whatever the headings above it have NOT already said — the unit,
+             or the zone on a unitless zone, or the floor on a zoneless floor. The `title` still
+             carries the whole address, so the full location is one hover away and the toggle it
+             names is unchanged. */
+          var rowLab = l.unit ? (l.unit.code || l.unit.name || 'Un') : (zLab || fLab);
+          out += '<tr><td class="sbld-scope-row" data-tr="' + l.trade + '" data-uid="' + l.uid +
+            '" data-d="' + (l.unit ? d0 + 3 : (l.zone ? d0 + 2 : d0 + 1)) +
+            '" title="Click to toggle every activity at ' + e2(locLabel(l)) + '">' + e2(rowLab) + '</td>' +
+            acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>';
+        });
+        return out;
+      }
+      host.innerHTML = '<h2>' + _stepNo('Zone scoping') + ' · Zone scoping</h2>' +
+        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations. The table is grouped by floor, then zone, then unit.</p>' +
         /* ⚠ The column header is the activity NAME now, so the two sentences that name the
            control had to follow it — “activity header” said nothing about what is in it, and the
            class code has nowhere else to be announced now that it is on hover. */
@@ -47492,12 +47621,12 @@
         /* ⚠ Named by the STEP, not by a view inside it: a title the alias has to rescue is a
            reference waiting to read as a blank.
            ⚠️ 'Repetition' WAS exactly that. It stopped being a step when it was split into
-           Towers / Floors & Zones / Location Sequence / Activity Sequence, and `STEP_ALIAS` kept it
+           Towers / Floors & Zones / Location Sequence / Activity sequence, and `STEP_ALIAS` kept it
            resolving — to `Location Sequence`, which is the number of the FIRST of the four, not the
            last. So the range read "4–7" for work that is defined as far as step 8. The alias did its
            job (a number rather than a blank) and the sentence was still wrong; naming the real end
            of the range is the fix. */
-        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Activity Sequence') + '</span></div>' +
+        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Zone scoping') + '</span></div>' +
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
           ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
         phWbsBlock('construction') + '</div>';
@@ -48722,7 +48851,7 @@
         rep.notes.push('No relationship in the programme crosses from one tower to another, so the towers are left starting together on the Tower Sequence step.');
       }
 
-      /* ---- Scope per zone ----------------------------------------------------------------------
+      /* ---- Zone scoping ------------------------------------------------------------------------
          Which of the trade's activities actually run in each location. ⚠️ `scopeOff` is a map of the
          pairs that are OFF, so a faithful read of a real programme is (leaves x activities) MINUS
          what occurred — which on a project of this size is a six-figure object that would be
@@ -48759,13 +48888,13 @@
             if (!onPairs[k]) out.scopeOff[k] = true;
           });
         });
-        rep.notes.push('Scope per zone read from the programme: ' + nOn.toLocaleString() + ' location/activity combinations are ON, ' +
+        rep.notes.push('Zone scoping read from the programme: ' + nOn.toLocaleString() + ' location/activity combinations are ON, ' +
           offCount.toLocaleString() + ' are switched off because that activity never occurs in that location.');
       } else if (!offCount && nOn) {
-        rep.notes.push('Scope per zone read from the programme: every one of the ' + nOn.toLocaleString() +
+        rep.notes.push('Zone scoping read from the programme: every one of the ' + nOn.toLocaleString() +
           ' location/activity combinations occurs, so nothing is switched off.');
       } else if (offCount) {
-        rep.notes.push('Scope per zone was left at "everything on": a faithful read needs ' + offCount.toLocaleString() +
+        rep.notes.push('Zone scoping was left at "everything on": a faithful read needs ' + offCount.toLocaleString() +
           ' exclusion flags (' + allLeaves.length.toLocaleString() + ' locations × the activities of their trade), which is too large to store in a saved setup. ' +
           'Use the step’s own row/column toggles to switch off what does not apply — or narrow the activity list on the Activities step first, which is usually the real answer.');
       }
@@ -50316,13 +50445,14 @@
        revived without a ReferenceError — `stackBasis` above is kept for exactly that reason.
        ========================================================================================== */
     function stStacking(host) {
-      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps ' + _stepNo('Activities') + '–' + _stepNo('Scope per zone') + ' first (activities + per-trade floors/zones + scope).</div>'; return; }
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps ' + _stepNo('Activities') + '–' + _stepNo('Zone scoping') + ' first (activities + per-trade floors/zones + scope).</div>'; return; }
       var g = generate(stackBasis);
       var finBy = {}; g.perZone.forEach(function (z) { finBy[z.loc.uid] = z.finish; });
       var used = usedGroups();
       if (stackTrade !== 'ALL' && used.indexOf(stackTrade) < 0) stackTrade = 'ALL';
       var showTr = used.filter(function (tr) { return stackTrade === 'ALL' || tr === stackTrade; });
       var tradeChips = used.length ? '<div class="sbld-tradechips">' +
+        '<span class="sbld-chiplab">Trade</span>' +
         '<button class="sbld-chip' + (stackTrade === 'ALL' ? ' on' : '') + '" data-stktr="ALL">All trades</button>' +
         used.map(function (tr) { return '<button class="sbld-chip' + (stackTrade === tr ? ' on' : '') + '" data-stktr="' + tr + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</button>'; }).join('') +
         '</div>' : '';
@@ -50330,6 +50460,7 @@
       // sees the step exactly as it is today.
       if (stackTower !== 'ALL' && !towerById(stackTower)) stackTower = 'ALL';
       var towerChips = multiTower() ? '<div class="sbld-tradechips">' +
+        '<span class="sbld-chiplab">Tower</span>' +
         '<button class="sbld-chip' + (stackTower === 'ALL' ? ' on' : '') + '" data-stktw="ALL">All towers</button>' +
         towerList().map(function (t) {
           var n = 0; used.forEach(function (tr) { n += floorsOfTower(tr, t.id).length; });
@@ -50679,7 +50810,7 @@
         (locRows[r.loc.uid] = locRows[r.loc.uid] || []).push(r);
       });
       function lagStr(l) { return l ? (l > 0 ? '+' + l : '' + l) : ''; }
-      // intra-zone predecessors: use the trade's class-code links (step ' + _stepNo('Trade sequence') + ') when it has any; otherwise
+      // intra-zone predecessors: use the trade's class-code links (step ' + _stepNo('Activity sequence') + ') when it has any; otherwise
       // fall back to a plain FS chain in the step-1 order.
       Object.keys(locRows).forEach(function (uid) {
         var arr = locRows[uid], byAct = {}; arr.forEach(function (r) { byAct[r.act.id] = r; });
@@ -51898,8 +52029,11 @@
                     'Tower links':    { st: 'Location Sequence', tab: 'towers' },
                     'Tower Sequence': { st: 'Location Sequence', tab: 'towers' },
                     'Zone sequence':  { st: 'Location Sequence', tab: 'zones' },
-                    'Trade sequence': { st: 'Activity Sequence', tab: 'trades' },
-                    'Scope per zone': { st: 'Activity Sequence', tab: 'scope' } };
+                    /* ⚠️ Neither names a tab any more: Activity sequence has one view since
+                       2026-09-18 and Scope per zone became its own step, Zone scoping. */
+                    'Activity Sequence': { st: 'Activity sequence' },
+                    'Trade sequence': { st: 'Activity sequence' },
+                    'Scope per zone': { st: 'Zone scoping' } };
         if (_al[title]) {
           if (_al[title].tab) setStepTabQuiet(_al[title].st, _al[title].tab);
           title = _al[title].st;

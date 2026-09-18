@@ -104,6 +104,85 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (k) — Zone scoping becomes step 9, and a label written four times becomes one declaration
+
+Owner, three items on Schedule Setup → Activity Sequence: *"in activity sequence, name the title of
+the step as Activity sequence"*, *"throughout the steps in schedule set-up, when providing button
+choices whether for trades, floors, or activities, place them in a holder group with a label"*, and
+*"separate Scope per zone as a separate Step 9 before Generate. title this step Zone scoping. in the
+table shown, group these also per floor, per zone, and per unit for easier readability"*. Module work
+— the full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(i)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **THE DOUBLED HEADING THE OWNER'S ITEM 1 IS REALLY ABOUT IS FIXED BY ITEM 3, NOT BY THE
+RENAME.** The step printed *"7 · Activity Sequence — Trade sequence"* — its own number and title,
+then the tab's. Sentence case does nothing about that. What does is that once **Scope per zone**
+leaves, the step has **one** view — and that file's own rule says a strip of one button *"is a
+control that cannot do anything"*. So the step comes out of the tab table entirely and its renderer
+is called directly. A rename and a split that look like two asks were one change, and doing only the
+visible half would have left the thing being complained about on screen.
+
+⚠️⚠️ **A DISPLAY NAME THAT IS ALSO A LOOKUP KEY CANNOT BE RENAMED IN ONE PLACE — and this log has
+now recorded that four times on this module alone.** Steps are addressed **by title, never by
+index**, and the resolver answers the **empty string** for a title it cannot find, so a missed call
+site prints a blank where a step number belongs. Seven edits for one word: the rail, the How-to
+manual's key, the prerequisite gate, **two separate alias tables** (the deep-link router reads a
+private map of its own and does not consult the shared one), and every cross-reference. ⚠️ Both
+retired titles still resolve — *"Scope per zone"* now to **its own step 9** rather than to the step
+it used to be a view of.
+
+⚠️⚠️ **THE ONE DEFECT WORTH CARRYING PAST THIS MODULE IS A `padding` SHORTHAND WINNING A
+SPECIFICITY TIE IT SHOULD NEVER HAVE BEEN IN.** The grouped table indents its headings with
+`table.sbld-tbl td[data-d="N"]` at **(0,2,2)**, and the heading rule above it —
+`table.sbld-tbl tr.sbld-scope-grp > td` — is **(0,2,3)**. Written with the `padding` **shorthand**,
+that rule therefore set `padding-left` too and won, flattening **every heading to one indent** while
+the rows beneath them stayed stepped: a grouped table whose groups all look like the same rung.
+Found by **rendering it**, not by reading it, and reverting the one line reproduces it — the
+measurement prints **10 / 10 / 10** where it must read 10 / 24 / 38. **A longhand property loses to
+a shorthand at higher specificity, so a rule that is only meant to own one edge must not use the
+shorthand for the others.** Fourth specificity trap this log has recorded in a month.
+
+⚠️⚠️ **AND TWO NUL BYTES WERE FIXED IN PASSING, ONE OF THEM IN A CHECKER THIS REPO RUNS ON EVERY
+PASS.** `tools/dark-remap.js` and `modules/project-schedule/test-wbsfile.js` each wrote the
+`\u0000` separator as a **raw byte**, so `grep` classified both as binary and answered *"Binary file
+matches"* instead of the matching line. Both are pre-existing on `origin/main`; the runtime strings
+are unchanged and both still pass. **Zero NUL bytes across all 404 tracked files now**, measured.
+⚠️⚠️ **And writing the paragraph about it reproduced it, for the sixth time** — the two characters
+went into the module changelog as two raw NUL bytes, so the file `grep` would have called binary was
+the log entry describing the trap. Caught by re-scanning the bytes after prepending. **Never type
+that escape into prose and trust the write; build it from char codes and check the bytes.**
+
+**Verified:** new `modules/project-schedule/test-zonescope.js` **57/0**, every function sliced out of
+the shipped file by name through the repo's own `test-slice.js`, with the footer's Next walk **driven
+end to end** (`… → Activity sequence → Zone scoping → Generate`) and the contrast **pinned to a
+checkout rather than `HEAD`** — where it is **24 passed, 33 failed** and the failures name the change
+rather than merely dying. The grouped table measured in a browser against the shipped stylesheets
+(indents 10/24/38/52, no heading dressed as a control, 0 page errors, no sideways page scroll).
+Twenty-one other project-schedule suites green on the merged tree — `lsm` 684/0, `builder` 156/0
+(⚠️ three assertions **retargeted, not weakened**, and `Zone scoping` added to two lists rather than
+inherited), `actsetup` 142/0, `phasenet` 135/0, `sap` 114/0, `towertypes` 102/0 — plus
+`tools/test-calendar` 71/0, `wiring-check` **139/0**, `dark-remap` 0 findings, `scan` self-test
+10/10. The inline block parses, CSS braces **+2/+2** against `origin/main`, 0 functions lost.
+
+⚠️ **Not verified signed in** — no real setup has been opened and no scope answer written.
+
+⚠️⚠️ **Merged `origin/main` (6 commits) before shipping, and a clean-looking resolution would have
+unstyled a control.** Three conflicts in `modules/project-schedule/index.html`, all the same shape:
+main rewrote the surrounding code substantively while this branch had changed only a step title
+inside it. Main's content wins on the merits in all three, resolved **hunk by hunk** with this
+branch's rename re-applied on top — never with `--ours`/`--theirs`, which take a whole file and drop
+your own non-conflicting edits in it. ⚠️ One of those re-applications is **load-bearing**: main's
+copy emits a label class this branch had **deleted** once every call site moved off it, so taking
+main's hunk verbatim would have left that label with no rule at all. ⚠️ And main's own rewrite
+carried **three cross-reference call sites this branch's rename had never seen**, because they did
+not exist on the base it was cut from — found by re-sweeping the **merged** file rather than trusting
+the resolution.
+
+`MODULE_V` → `20260918k`, re-derived from what `origin/main` actually carries **after** integrating
+(`20260918j`) rather than guessed beforehand, and sort-checked as a plain string. No shared asset
+changed.
+
 ### 2026-09-18 (j) — Schedule Setup: a development is a row, and the quick setup asks per category
 
 Owner, on the Towers step: *"replace the buttons on top with Add Type, Add Development … for this
