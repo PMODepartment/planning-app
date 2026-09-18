@@ -4300,7 +4300,22 @@
     .zpw-kinds { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:8px 0 0; }
     .zpw-kindbtn { padding:3px 9px; font-size:var(--pd-fs-xs); }
     .zpw-kindbtn b { font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:700; }
+    .sbld-lvlwrap { container-type:inline-size; }
     .sbld-lvlgrid { display:grid; grid-template-columns:minmax(0,1fr) minmax(400px,460px); gap:22px; align-items:start; margin-top:6px; }
+    /* ⚠️⚠️ THE STACKING GOES UNDER THE LIST ON A NARROW PANE. Owner 2026-09-18: *"if narrow
+       width window, move stacking to bottom."* At 900px the right column is still asking for its
+       400px minimum, so the floor row on the left is squeezed to about 480 — below the ~620 at
+       which `.sbld-flr-h` starts wrapping, i.e. every floor row goes to two lines to keep a drawing
+       beside it. Stacked, both get the whole width.
+       ⚠️ The drawing loses `position:sticky` with it: pinned at the BOTTOM of a single column it
+       would hold still while the list it belongs to scrolled past under it, which reads as a stuck
+       element rather than a helpful one.
+       ⚠️ A browser with no container-query support keeps the two columns at every width — exactly
+       today's behaviour, so this adds a case rather than changing one. */
+    @container (max-width:900px) {
+      .sbld-lvlgrid { grid-template-columns:minmax(0,1fr); }
+      .sbld-lvlgrid .sbld-tower { position:static; }
+    }
     .sbld-flr { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); margin-bottom:10px; overflow:hidden; }
     .sbld-flr-sub { border-style:dashed; }
     .sbld-flr-sub .sbld-flr-h { background:var(--pd-red-light); }
@@ -4968,12 +4983,28 @@
     .sbld-mini { width:62px; height:30px; padding:2px 6px; font-size:var(--pd-fs-sm); font-weight:700; }
     /* ⚠️ NOT `.sbld-mini`, which is `width:62px` — written for the two-character number inputs and
        four times too wide for a one-character stepper. */
-    .sbld-cntb { width:28px; height:28px; padding:0; font-size:var(--pd-fs-sm); font-weight:700; line-height:1; }
-    .sbld-tycnt { white-space:nowrap; }
-    .sbld-cntn { display:inline-block; min-width:2ch; text-align:center; margin:0 6px; }
+    /* ==== THE TOWERS TABLE — A TYPE IS A GROUPING, A DEVELOPMENT IS A ROW ==============
+       ⚠️ The ± count control's rules (`.sbld-cntb/.sbld-tycnt/.sbld-cntn/.sbld-cntnames`) went with
+       the control — a rule matching nothing is indistinguishable from a rule that works. */
+    table.sbld-twtbl td { vertical-align:middle; }
+    table.sbld-twtbl td:first-child { white-space:normal; }
+    /* ⚠️ `width:auto` is not wanted here: a table cell gives the input a column to fill, which is
+       what makes the three columns line up down the table. */
+    .sbld-twin { width:100%; min-width:80px; height:30px; }
+    table.sbld-twtbl tr.grp .sbld-twin { font-weight:700; }
+    /* The rung, said in a word, because indentation alone cannot say WHICH level a row is on when
+       a standalone development sits flush beside a type. */
+    .sbld-twkind { display:inline-block; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em;
+      color:var(--pd-muted); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:1px 5px; margin-right:6px; }
+    .sbld-twkind.solo { color:var(--pd-red); border-color:var(--pd-red-mid); }
+    .sbld-twind { display:inline-block; width:22px; }
+    .sbld-twfl { display:block; margin-top:2px; white-space:normal; }
+    .sbld-twact { width:1%; white-space:nowrap; text-align:right; }
+    .sbld-twmini { padding:2px 7px; font-size:var(--pd-fs-xs); }
+    table.sbld-twtbl tr.sbld-twr-own.on td { box-shadow:inset 3px 0 0 var(--pd-red); }
+    table.sbld-twtbl tr.sbld-twr-dev td { background:var(--pd-card); }
     /* ⚠️ The tower names sit on their own line: they can run long, and pushed onto the stepper's
        line they would drag the − and + apart by however many towers the type happens to have. */
-    .sbld-cntnames { display:block; margin-top:2px; white-space:normal; }
     .sbld-twn { opacity:.75; font-weight:700; }
     /* ⚠⚠ THE SIBLING OF `.sbld-mini` FOR A CONTROL WHOSE LABEL IS A SENTENCE. `.sbld-mini` is
        62px — correct for the two-character FS/SS/FF/SF picker it was built for, and 211px short
@@ -5118,24 +5149,10 @@
        row read as three more primary actions beside the two that ARE primary — adding a tower, and
        the site plan. ⚠️ A <details>, so the ids inside are in the DOM at all times and every
        handler stays wired exactly as it was. */
-    .sbld-twmore { position:relative; flex:0 0 auto; }
-    /* ⚠️⚠️ A WORD, NOT A GLYPH. Owner 2026-09-17, with a screenshot of this 30×30 box: *"why is
-       there a symbol in the dropdown here."* It held `⋯` and nothing else — three dots, turning
-       red on hover because that is what this rule below does, which reads as a warning badge
-       rather than a menu. Nothing on the bar said what it opened, so the one route to Rename,
-       Copy-from and Delete was a symbol the planner had to press to find out about.
-       ⚠️ Sized like `.sbld-twbtn` beside it (height 30, padding 2/10) rather than a square, because
-       it is now the same kind of thing: a labelled button on the tower bar. */
-    .sbld-twmore > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center;
-      justify-content:center; height:30px; padding:2px 10px; border:1px solid var(--pd-line);
-      border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-muted);
-      font-size:var(--pd-fs-sm); font-weight:700; white-space:nowrap; line-height:1; }
-    .sbld-twmore > summary::-webkit-details-marker { display:none; }
-    .sbld-twmore[open] > summary, .sbld-twmore > summary:hover { border-color:var(--pd-red); color:var(--pd-red); }
-    .sbld-twmenu { position:absolute; z-index:40; top:calc(100% + 5px); left:0; display:flex;
-      flex-direction:column; gap:5px; min-width:178px; padding:7px; border:1px solid var(--pd-line);
-      border-radius:9px; background:var(--pd-card); box-shadow:0 6px 18px rgba(0,0,0,.22); }
-    .sbld-twmenu .pd-btn { width:100%; justify-content:flex-start; white-space:nowrap; }
+    /* ⚠️⚠️ THE `Type options` ⋯ MENU IS GONE, AND SO ARE ITS RULES. Owner 2026-09-18 moved
+       rename, copy-floors and delete onto the Towers table's own rows, so `.sbld-twmore` /
+       `.sbld-twmenu` matched nothing — which is indistinguishable from styling that works, and is
+       exactly what a later reader restores a button for. */
     /* ⚠️⚠️ THE FOLD IS GONE, AND SO IS THE PANEL INSIDE IT. Owner 2026-09-18: Quick setup is
        *"processed by letting the user use the quick setup but in a pop-up window"*. What is left
        here is one row — the button that opens it, and the copy-from control beside it — so the
@@ -5253,6 +5270,21 @@
     .psask-chk { display:flex; align-items:flex-start; gap:8px; font-size:var(--pd-fs-sm); cursor:pointer; }
     .psask-chk input { margin-top:2px; }
     .psask-static { font-size:var(--pd-fs-sm); line-height:1.5; }
+    /* ⚠️⚠️ A ROW OF CELLS — SEVERAL FIELDS READ AS ONE SENTENCE. Owner 2026-09-18, on the
+       Floors & Zones quick setup: *"Basement - ____ floors x ____ zones"*. A question shaped like a
+       sentence has to be ASKED like one; stacked as four separate labelled fields it becomes four
+       questions and the × between them — which is what says these two numbers multiply — cannot
+       be written at all. See `_psAskField`'s `row` branch.
+       ⚠️ `min-width:0` on a cell, and `width:auto` overriding `.psask-row .pd-input`'s 100%: in a
+       flex row that default makes every box demand the whole line and shrink in lockstep. */
+    .psask-cells { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .psask-cells .pd-input { width:auto; min-width:0; }
+    .psask-num { width:62px; text-align:center; font-variant-numeric:tabular-nums; }
+    .psask-cellt { font-size:var(--pd-fs-sm); color:var(--pd-muted); white-space:nowrap; }
+    .psask-cellx { font-size:var(--pd-fs-sm); color:var(--pd-muted); font-weight:700; }
+    .psask-cellchk { display:inline-flex; align-items:center; gap:5px; font-size:var(--pd-fs-sm);
+      color:var(--pd-ink); cursor:pointer; white-space:nowrap; }
+    .psask-cells .pd-input:disabled { opacity:.5; cursor:not-allowed; }
     /* A field-by-field list inside the dialog's own prose — used by the audit revert, which has to
        show old → new for every field it is about to write. ⚠️ Monospaced numerals so a column of
        dates lines up; a revert is read by comparing two values, not by reading a sentence. */
@@ -11001,6 +11033,28 @@
         '<input type="checkbox" id="' + id + '" data-k="' + esc(f.k) + '"' + (f.value ? ' checked' : '') + '>' +
         '<span>' + esc(f.label || '') + '</span></label>' +
         (f.hint ? '<p class="psask-hint">' + f.hint + '</p>' : '') + '</div>';
+    } else if (f.type === 'row') {
+      /* ⚠️⚠️ EVERY CELL CARRIES ITS OWN `data-k`, so `values()` and any live preview read the
+         same attribute they read on an ordinary field — a row is a LAYOUT, not a second way of
+         naming an answer. Ids are `psask-f<i>c<j>` so a cell is still individually focusable.
+         ⚠️ A cell with no `k` is furniture (the ×, a unit word) and is never read back. */
+      return '<div class="psask-row psask-row-cells">' + (f.label ? lab : '') +
+        '<div class="psask-cells">' + (f.cells || []).filter(Boolean).map(function (c, j) {
+          var cid = id + 'c' + j;
+          if (!c.k) return '<span class="' + (c.x ? 'psask-cellx' : 'psask-cellt') + '">' + esc(c.text || '') + '</span>';
+          if (c.type === 'checkbox') {
+            return '<label class="psask-cellchk"><input type="checkbox" id="' + cid + '" data-k="' + esc(c.k) + '"' +
+              (c.value ? ' checked' : '') + '>' + (c.label ? '<span>' + esc(c.label) + '</span>' : '') + '</label>';
+          }
+          return '<input class="pd-input psask-num" id="' + cid + '" data-k="' + esc(c.k) + '" type="' +
+            (c.type === 'number' ? 'number' : 'text') + '"' +
+            (c.type === 'number' && c.min != null ? ' min="' + esc(c.min) + '"' : '') +
+            (c.type === 'number' && c.max != null ? ' max="' + esc(c.max) + '"' : '') +
+            (c.disabled ? ' disabled' : '') +
+            ' value="' + esc(c.value == null ? '' : c.value) + '">' +
+            (c.after ? '<span class="psask-cellt">' + esc(c.after) + '</span>' : '');
+        }).join('') + '</div>' +
+        (f.hint ? '<p class="psask-hint">' + f.hint + '</p>' : '') + '</div>';
     } else if (f.type === 'static') {
       return '<div class="psask-row psask-row-static">' + (f.label ? lab : '') +
         '<div class="psask-static">' + (f.html || esc(f.value == null ? '' : f.value)) + '</div>' +
@@ -11048,6 +11102,18 @@
       var out = {};
       fields.forEach(function (f, i) {
         if (f.type === 'static') return;
+        /* ⚠️ A `row` has no value of its own — its CELLS do, each under its own key, so the caller
+           gets `{ B: 3, BZ: 2 }` and never has to know the two were drawn on one line. */
+        if (f.type === 'row') {
+          (f.cells || []).filter(Boolean).forEach(function (c, j) {
+            if (!c.k) return;
+            var ce = wrap.querySelector('#psask-f' + i + 'c' + j);
+            if (!ce) return;
+            out[c.k] = (c.type === 'checkbox') ? !!ce.checked
+                     : (c.type === 'number' ? (ce.value === '' ? null : +ce.value) : ce.value);
+          });
+          return;
+        }
         var el = wrap.querySelector('#psask-f' + i);
         if (!el) return;
         out[f.k] = (f.type === 'checkbox') ? !!el.checked
@@ -11068,7 +11134,7 @@
          and says which field, which is what a form is for. */
       for (var i = 0; i < fields.length; i++) {
         var f = fields[i];
-        if (f.required && f.type !== 'checkbox' && f.type !== 'static' &&
+        if (f.required && f.type !== 'checkbox' && f.type !== 'static' && f.type !== 'row' &&
             String(v[f.k] == null ? '' : v[f.k]).trim() === '') {
           fail((f.label || 'This field') + ' is required.', i); return;
         }
@@ -36248,20 +36314,43 @@
         .map(function (k) { return { from: k.from, to: k.to, fromFloorId: k.fromFloorId || null,
           type: (['FS', 'SS', 'FF', 'SF'].indexOf(k.type) >= 0 ? k.type : 'FS'),
           lag: (typeof k.lag === 'number' ? k.lag : (parseInt(k.lag, 10) || 0)) }; });
+      /* ⚠️ `remarks` IS ON THIS WHITELIST OR IT DOES NOT EXIST. normalize() rebuilds `d` from
+         blank() field by field, so a key it does not name is silently dropped on the next save —
+         the column would work all session and be empty tomorrow. See the `w` note further down,
+         which is the same field forgotten once already. */
+      function _rmk(v) { return String(v == null ? '' : v).trim().slice(0, 300); }
       d.towers = (Array.isArray(c.towers) && c.towers.length)
-        ? c.towers.map(function (t, i) { return { id: t.id || uidv(), code: String(t.code || ('T' + (i + 1))).trim(), name: String(t.name || ('Tower ' + (i + 1))).trim(), typeId: String(t.typeId || '') }; })
+        ? c.towers.map(function (t, i) { return { id: t.id || uidv(), code: String(t.code || ('T' + (i + 1))).trim(), name: String(t.name || ('Tower ' + (i + 1))).trim(), typeId: String(t.typeId || ''), remarks: _rmk(t.remarks) }; })
         : blankTowers();
       /* ⚠️⚠️ THE MIGRATION, AND IT IS WHAT MAKES EVERY SAVED SETUP BEHAVE EXACTLY AS BEFORE.
          A config written before types existed has towers and no typeId, so each tower is given a
          type of ITS OWN, named after it — one tower, one type, one layout, which is precisely the
-         pre-types behaviour. Nothing is copied, nothing is merged, and no floor moves. */
-      d.towerTypes = (Array.isArray(c.towerTypes) && c.towerTypes.length)
-        ? c.towerTypes.map(function (t, i) { return { id: t.id || uidv(), code: String(t.code || ('T' + (i + 1))).trim(), name: String(t.name || ('Type ' + (i + 1))).trim() }; })
+         pre-types behaviour. Nothing is copied, nothing is merged, and no floor moves.
+
+         ⚠️⚠️ AND IT RUNS ONLY ON A PRE-TYPES CONFIG, which is the whole reason `_hadTypes`
+         exists. Owner 2026-09-18: *"developments can be inside a type or beside it"* — a
+         development BESIDE a type is a tower with NO typeId, which `typeOfTower`/`repTowerOfTower`
+         already read as "its own type, its own floors". Run unconditionally, this loop would take
+         every one of those and invent a type for it on the next load, so a standalone development
+         would silently become a one-instance type. A config written before types existed has no
+         `towerTypes` KEY AT ALL, and one written since always saves the array (empty when every
+         development is standalone) — so the presence of the key is the migration flag, and no new
+         field is needed to carry it. */
+      var _hadTypes = Array.isArray(c.towerTypes);
+      d.towerTypes = (_hadTypes && c.towerTypes.length)
+        ? c.towerTypes.map(function (t, i) { return { id: t.id || uidv(), code: String(t.code || ('T' + (i + 1))).trim(), name: String(t.name || ('Type ' + (i + 1))).trim(), remarks: _rmk(t.remarks) }; })
         : [];
-      d.towers.forEach(function (t, i) {
+      if (!_hadTypes) d.towers.forEach(function (t, i) {
         if (d.towerTypes.some(function (x) { return x.id === t.typeId; })) return;
-        var ty = { id: uidv(), code: t.code || ('T' + (i + 1)), name: t.name || ('Type ' + (i + 1)) };
+        var ty = { id: uidv(), code: t.code || ('T' + (i + 1)), name: t.name || ('Type ' + (i + 1)), remarks: '' };
         d.towerTypes.push(ty); t.typeId = ty.id;
+      });
+      /* ⚠️ A typeId naming a type that is no longer there becomes STANDALONE rather than being
+         left dangling: the tower would otherwise answer `typeOfTower` with an id nothing resolves,
+         `repTowerOf` would return '' and `repTowerOfTower` would fall back to the tower itself —
+         i.e. it would behave as standalone while still reading as typed on every screen. */
+      else d.towers.forEach(function (t) {
+        if (t.typeId && !d.towerTypes.some(function (x) { return x.id === t.typeId; })) t.typeId = '';
       });
       /* ⚠️ A type nothing points at is dropped. Its floors hang off a representative that no
          longer exists, so they are unreachable either way — leaving the type would show a count of
@@ -37471,6 +37560,72 @@
        control adds and removes at the END and never touches the first. */
     function repTowerOf(typeId) { var l = towersOfType(typeId); return l.length ? l[0].id : ''; }
     function repTowerOfTower(towerId) { return repTowerOf(typeOfTower(towerId)) || towerId; }
+    /* ==== WHAT OWNS A LAYOUT =========================================================
+       ⚠️⚠️ ONE LIST FOR THE TOWER TABLE, THE SELECTOR CHIPS AND Floors & Zones. A TYPE owns
+       one set of floors and every development built from it shares them; a STANDALONE development
+       (no typeId) owns its own. Both are "a thing that can be laid out", and every screen that
+       iterated `typeList()` has to iterate this instead — a standalone development is invisible to
+       `typeList()` by construction, so it would vanish from the chips the moment it existed.
+       ⚠️ Ordered by the TOWER list, not by the type list, so the table reads in the order the
+       planner added things rather than types-then-strays. */
+    function layoutOwners() {
+      var out = [], seen = {};
+      towerList().forEach(function (t) {
+        var key = t.typeId || t.id;
+        if (seen[key]) return;
+        seen[key] = 1;
+        if (t.typeId) {
+          var ty = typeById(t.typeId); if (!ty) return;
+          var inst = towersOfType(ty.id); if (!inst.length) return;
+          out.push({ kind: 'type', id: ty.id, rep: inst[0].id, ty: ty, towers: inst,
+                     label: ty.name || ty.code || 'Type', code: ty.code || '', remarks: ty.remarks || '' });
+        } else {
+          out.push({ kind: 'solo', id: t.id, rep: t.id, ty: null, towers: [t],
+                     label: t.name || t.code || 'Development', code: t.code || '', remarks: t.remarks || '' });
+        }
+      });
+      return out;
+    }
+    function ownerOfTower(towerId) {
+      var t = towerById(towerId); if (!t) return null;
+      var key = t.typeId || t.id;
+      return layoutOwners().filter(function (o) { return o.id === key; })[0] || null;
+    }
+    /* ⚠️⚠️ DELETING THE FIRST DEVELOPMENT OF A TYPE MOVES ITS FLOORS, IT DOES NOT DROP THEM.
+       A type's floors are stored against its FIRST instance (`repTowerOf`), so removing that one and
+       leaving the rest would orphan the entire layout — `floorsOfTower` would resolve to whichever
+       instance sorted first afterwards and find nothing under it. Re-stamping `towerId` is safe
+       because nothing else keys on it: the zone plan keys on FLOOR ids and `cfg.links` on leaf uids,
+       and neither changes here.
+       ⚠️ The floors are resolved BEFORE the tower list shrinks: `towerIdOf` falls back to
+       `towerList()[0]` for a floor naming no tower, so reading them afterwards would gather a
+       different set. */
+    function _twRemoveTower(id) {
+      var t = towerById(id); if (!t) return false;
+      if (towerList().length < 2) return false;      // the last development in the project stays
+      var sibs = t.typeId ? towersOfType(t.typeId) : [t];
+      var wasRep = !!(sibs[0] && sibs[0].id === id);
+      var rest = sibs.filter(function (x) { return x.id !== id; });
+      var mine = {};
+      GROUPS.forEach(function (g) { mine[g] = floorsOf(g).filter(function (f) { return towerIdOf(f) === id; }); });
+      cfg.towers = towerList().filter(function (x) { return x.id !== id; });
+      if (t.typeId && !rest.length) cfg.towerTypes = typeList().filter(function (x) { return x.id !== t.typeId; });
+      if (rest.length) {
+        if (wasRep) GROUPS.forEach(function (g) { mine[g].forEach(function (f) { f.towerId = rest[0].id; }); });
+      } else {
+        // Nothing is left to own them, so they go with it rather than resolving to another tower.
+        GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return mine[g].indexOf(f) < 0; }); });
+      }
+      cfg.towerLinks = towerLinks().filter(function (k) { return k.from !== id && k.to !== id; });
+      if (!towerById(uiTower)) uiTower = towerList()[0].id;
+      pruneLinks();
+      return true;
+    }
+    /* How many floors a layout owner holds, across every trade that HAS a location. */
+    function _twFloorCount(rep) {
+      var n = 0; GROUPS.forEach(function (g) { if (!locless(g)) n += floorsOfTower(g, rep).length; });
+      return n;
+    }
     // A trade's floors WITHIN one tower, in listed (bottom-up) order.
     function floorsOfTower(tr, towerId) {
       /* ⚠️ Every instance of a type reads the SAME floors — the ones stored against that type's
@@ -40382,7 +40537,7 @@
     // first place — a caller that forgets it silently draws every tower's floors as one building.
     function towerSVG(tr, towerId) {
       var floors = floorsOfTower(tr, towerId || activeTower());
-      if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(towerId || activeTower())) + '. Add floors or basements on the left.</div>';
+      if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(towerId || activeTower())) + '. Use <b>Quick setup…</b> on the left.</div>';
       /* ⚠️⚠️ THE LABEL GUTTER IS MEASURED, and that is the *"h Floor"* bug.
          Owner 2026-09-03: *"See Floors and Zones screenshot: it shows 'h Floor' what does that
          mean?"* — it means "5th Floor" with its first 22 pixels cut off. The floor label is drawn
@@ -40490,341 +40645,90 @@
       }
       return { id: uidv(), code: cd, name: nm, typeId: ty.id };
     }
-    /* How many towers of this type the project has — the whole question step 'Towers' asks.
-       ⚠️ MINIMUM ONE: the type's floors hang off its first instance, so a type with no instances
-       has no representative and its entire layout becomes unreachable. Removing the last tower of a
-       type is therefore deleting the type, which is a different control with a different warning. */
-    function _twSetCount(typeId, want) {
-      var ty = typeById(typeId); if (!ty) return false;
-      var have = towersOfType(typeId);
-      want = Math.max(1, Math.min(60, want | 0));
-      if (want === have.length) return false;
-      if (want > have.length) {
-        /* ⚠️⚠️ ADDED ONE AT A TIME, AND THE ORDER IS THE POINT. `_twNewInstance` reads
-           `towerList()` to find a name and code nothing is using, so each new tower must be IN the
-           list before the next one is named. Building all of them first and appending afterwards
-           names them all against the same list — measured: raising a two-tower type to four
-           produced “Tower 3” twice, and two towers with one name is exactly what makes an area
-           traced on the site development plan ambiguous. */
-        for (var i = have.length; i < want; i++) cfg.towers = towerList().concat([_twNewInstance(ty)]);
-      } else {
-        /* ⚠️⚠️ REMOVED FROM THE END, NEVER THE FIRST. The first instance is the representative
-           and every floor of this type hangs off it — dropping it would orphan the whole layout the
-           planner has built, silently, because floorsOfTower would then resolve to whichever instance
-           happened to sort first afterwards. */
-        var drop = {}; have.slice(want).forEach(function (t) { drop[t.id] = 1; });
-        cfg.towers = towerList().filter(function (t) { return !drop[t.id]; });
-        /* ⚠️ A tower relationship naming a tower that no longer exists cannot be expressed, so it
-           goes with it rather than being left to resolve to nothing at push time. */
-        cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return !drop[k.from] && !drop[k.to]; });
-      }
-      return true;
-    }
-    function _towerBar(opts) {
-      var manage = !!(opts && opts.manage);
-      var list = towerList(), act = activeTower(), types = typeList();
-      /* ⚠️⚠️ THE STEP DETECTS, IT DOES NOT ASSUME. Owner 2026-09-12: *"the schedule setup should
-         detect, if the project has multiple towers or not."* `towerList()` alone cannot answer
-         that — on a setup nobody has opened it returns `blankTowers()`, one invented "Tower 1",
-         which reads identically to a planner who genuinely has one. `towerReality()` asks the
-         SCHEDULE as well, and everything on this bar that depends on the answer reads it. */
-      var TR = towerReality();
+    /* ==== THE TOWER BAR — A SELECTOR, AND ONLY THAT ===================================
+       ⚠️⚠️ `manage` IS GONE, AND SO ARE THE CONTROLS IT DREW. Owner 2026-09-18, on the Towers
+       step: *"instead of buttons on top of the table, let's keep it simple and flow the same
+       process as adding WBS and activities"*. Adding a type, renaming one, copying its floors and
+       deleting it are all ROW actions on that step's own table now — which is where the planner is
+       already looking — so this bar is back to the one job Floors & Zones always wanted from it:
+       saying whose floors are on screen.
+       ⚠️⚠️ AND THE CHIPS ARE LAYOUT OWNERS, NOT TYPES. A standalone development (no typeId)
+       owns its own floors and is invisible to `typeList()`, so a bar built from types alone would
+       drop it from the selector the moment it was created — leaving no way to reach its floors at
+       all. `layoutOwners()` is the one list both screens read.
+       ⚠️ Each chip still carries a TOWER id in `data-twsel` — the owner's representative, which is
+       exactly what `uiTower` has always held — so `activeTower()` and every reader of the active
+       tower are untouched by this. */
+    function _towerBar() {
+      var owners = layoutOwners(), actOwner = ownerOfTower(activeTower());
       return '<div class="sbld-towerbar">' +
-        /* ⚠️⚠️ THE CHIPS ARE TYPES, NOT TOWERS. Owner 2026-09-18: floors are defined once per
-           TYPE — *"Type 1 Tower has 16F and same footprints, number of zones, same sizing etc"* — so
-           the thing being picked here is the type whose layout is on screen. Three chips for three
-           identical Type 1 towers would be three ways of asking one question, and the two of them
-           the planner did not edit would look like they had been forgotten.
-           ⚠️ Each chip carries its type's REPRESENTATIVE tower id in `data-twsel`, which is exactly
-           what `uiTower` has always held — so `_twBarWire`, `activeTower()` and every reader of the
-           active tower are untouched by this. */
-        '<span class="sbld-towerbar-l">' + (types.length > 1 || list.length > 1 ? 'Tower type' : 'Tower') + '</span>' +
-        types.map(function (ty) {
-          var rep = repTowerOf(ty.id), n = towersOfType(ty.id).length || 1;
-          return '<button class="sbld-chip' + (rep === act ? ' on' : '') + '" data-twsel="' + e2(rep) + '" title="' +
-            e2((ty.code ? ty.code + ' — ' : '') + (ty.name || '') +
-               (n > 1 ? ' · ' + n + ' towers are built from this type' : '')) + '">' +
-            e2(ty.name || ty.code || 'Type') + (n > 1 ? ' <span class="sbld-twn">×' + n + '</span>' : '') + '</button>';
+        '<span class="sbld-towerbar-l">' + (owners.length > 1 ? 'Layout' : 'Tower') + '</span>' +
+        owners.map(function (o) {
+          var n = o.towers.length;
+          return '<button class="sbld-chip' + (actOwner && actOwner.id === o.id ? ' on' : '') +
+            '" data-twsel="' + e2(o.rep) + '" title="' +
+            e2((o.code ? o.code + ' \u2014 ' : '') + o.label +
+               (o.kind === 'type'
+                 ? (n > 1 ? ' \u00b7 ' + n + ' developments are built from this type' : ' \u00b7 a tower type')
+                 : ' \u00b7 a development of its own, laid out on its own')) + '">' +
+            e2(o.label) + (n > 1 ? ' <span class="sbld-twn">\u00d7' + n + '</span>' : '') + '</button>';
         }).join('') +
-        (manage ? '<button class="pd-btn sbld-twbtn" id="b-tyadd" title="Add another tower type — a building that is laid out differently">+ Type</button>' : '') +
-        /* ==== WHERE THE SITE PLAN IS DEFINED ==============================================
-           ⚠️⚠️ ON THE TOWER BAR, and that is the answer to the owner's *"propose how and where
-           you would define the plan"*. This bar is the only place in the app that enumerates the
-           project's towers, and the site plan is a statement ABOUT that list — where each of
-           those towers stands and which way it faces. Put anywhere else it would be orphaned
-           from the names it has to use.
-           ⚠️ NOT on a floor row, which is where a floor plan lives: a floor plan is per trade and
-           per floor, a site plan is one drawing for the whole project. Filing it beside the
-           towers is what makes that difference visible rather than something to be explained.
-           ⚠️⚠️ AND ONLY ON A MULTI-TOWER PROJECT. A "master site development plan showing all
-           towers" on a single-tower job is a drawing of one building, which the floor plans
-           already describe — and the Vertical Stacking's Site view is hidden there for the same
-           reason (the site IS the tower). An offered control that leads nowhere useful is the
-           looks-live-does-nothing failure this module keeps recording, so it is absent and the
-           line beside it says what was detected.
-           ⚠️ The button counts what is traced against the towers that exist, so a project that
-           has grown a fourth tower reads "3/4" without anyone opening it. */
-        (manage && TR.multi ? (function () {
-          var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
-          /* ⚠️ Counted against EVERY tower the project has — the ones named here and the ones only
-             the schedule knows about. Counting against `towerList()` alone would report "1/1 traced"
-             on the very project whose site plan names nothing the stacking can find. */
-          var _all = list.map(function (t) { return t.name || t.code || ''; })
-                         .concat(TR.unnamed).filter(Boolean);
-          var _seen = {}, _tw = 0;
-          _all.forEach(function (nm) { var k = zpNormCode(nm); if (k && !_seen[k]) { _seen[k] = 1; _tw++; } });
-          if (!_tw) _tw = 1;
-          var _hit = _sp ? zpCodesOf(_sp).filter(function (c) {
-            if (zpIsAll(c)) return false;
-            return !!_seen[zpNormCode(c)];
-          }).length : 0;
-          return '<button class="pd-btn sbld-twbtn sbld-sitebtn' + (_sp ? ' has' : '') + '" id="b-siteplan" title="' +
-            e2(_sp ? ('Site development plan · ' + _hit + ' of ' + _tw + ' tower' + (_tw === 1 ? '' : 's') +
-                      ' traced' + (_sp.img ? ' · drawing attached' : ' · no drawing attached') +
-                      ' — the Vertical Stacking’s Site view is built from it')
-                    : 'Draw the master site development plan — one area per tower, on the site drawing. The Vertical Stacking then shows every tower where it actually stands.') + '">' +
-            /* ⚠️ NO GLYPH. `compass` is a circle with a needle in it, and at 14px the needle is
-               three pixels — what lands on the bar is a circle with a mark through it, which is
-               the universal "not allowed" sign sitting in front of a button that is allowed.
-               The button says "Site plan"; the icon was adding a second, wrong, reading. */
-            (_sp ? 'Site plan ' + _hit + '/' + _tw : 'Site plan…') + '</button>';
-        })() : '') +
-        /* ⚠️ ONE control for the three things you can do TO the active tower — see .sbld-twmore.
-           The ids are unchanged, so every handler is wired exactly as it was.
-           ⚠️ Delete names the tower in the label, because it is the destructive one and a menu row
-           reading just "Delete" is a row that does not say what it will take with it. */
-        /* ⚠️ Every row here acts on the active TYPE, because that is what the chips select. Delete
-           names the type in the label and says how many buildings go with it — a menu row reading
-           just "Delete" is a row that does not say what it will take. */
-        (manage ? (function () {
-          var _ty = typeById(typeOfTower(act)), _tyN = _ty ? (towersOfType(_ty.id).length || 1) : 1;
-          var _tyL = _ty ? (_ty.name || _ty.code || 'this type') : towerLabel(act);
-          return '<details class="sbld-twmore"><summary title="' + e2('Rename, copy into or delete ' + _tyL) + '">Type options</summary>' +
-          '<div class="sbld-twmenu">' +
-            '<button class="pd-btn" id="b-twren" title="Rename the active tower type">Rename…</button>' +
-            (types.length > 1 ? '<button class="pd-btn" id="b-twcopy" title="Copy another type\'s floors, zones, units and sequencing into this one">Copy floors from another type…</button>' : '') +
-            (types.length > 1 ? '<button class="pd-btn sbld-del" id="b-twdel" title="Delete this tower type, its floors and the ' + _tyN + ' tower' + (_tyN === 1 ? '' : 's') + ' built from it">' +
-              e2('Delete ' + _tyL + (_tyN > 1 ? ' and its ' + _tyN + ' towers' : '')) + '</button>' : '') +
-          '</div>' +
-        '</details>';
-        })() : '') +
-        /* ==== WHAT WAS DETECTED, SAID OUT LOUD ============================================
-           ⚠️⚠️ THE DRIFT CASE IS THE ONE WORTH INTERRUPTING FOR. A schedule carrying towers this
-           setup has never named is the exact state in which the site plan's name join fails — the
-           planner traces "Tower 1" because that is the only chip on the bar, and the Vertical
-           Stacking, which knows the schedule's own "Tower A".."Tower D", finds nothing. It is
-           invisible until the Site view comes up empty, so it is reported here with the names.
-           ⚠️ The single-tower line is a STATEMENT, not a warning: one tower is a perfectly ordinary
-           project, and it exists only so the missing Site plan button is explained rather than
-           merely absent. */
-        (!manage
-          ? '<span class="sbld-towerbar-note">Which tower <b>type</b>’s floors are on screen — every tower built from a type shares them. Types, how many towers each has and the site plan are in step <b>' + _stepNo('Towers') + ' · Towers</b>.</span>'
-          : TR.drift
-          ? '<span class="sbld-towerbar-note warn" title="These are the values the schedule’s activities carry on the tower level of the Location Breakdown.">' +
-            '⚠️ The schedule carries <b>' + TR.inSchedule.length + ' tower' + (TR.inSchedule.length === 1 ? '' : 's') +
-            '</b>, and <b>' + TR.unnamed.length + '</b> ' + (TR.unnamed.length === 1 ? 'is' : 'are') + ' not named here: <b>' +
-            e2(TR.unnamed.slice(0, 4).join(', ')) + (TR.unnamed.length > 4 ? '…' : '') + '</b>. ' +
-            'Add them with <b>+ Type</b>, or raise a type’s count, so the names match — the site plan and the Vertical Stacking join on them.</span>'
-          : (!TR.multi
-            ? '<span class="sbld-towerbar-note">Single-tower project' +
-              (TR.inSchedule.length === 1 ? ' — the schedule carries one tower' : '') +
-              '. A site development plan needs more than one, so it is not offered here.</span>'
-            : (TR.nNamed <= 1 && TR.inSchedule.length > 1
-              ? '<span class="sbld-towerbar-note">Detected <b>' + TR.inSchedule.length +
-                ' towers</b> in the schedule.</span>'
-              : ''))) +
-        '</div>';
+        '<span class="sbld-towerbar-note">Whose floors are on screen — every development built from a tower ' +
+          '<b>type</b> shares them. Types, developments and how many there are of each are in step <b>' +
+          _stepNo('Towers') + ' \u00b7 Towers</b>.</span>' +
+      '</div>';
     }
-    /* ==== THE TOWER BAR'S HANDLERS — SHARED BY TWO STEPS ==============================
-       ⚠⚠ EXTRACTED, NOT COPIED. Owner 2026-09-17 split the location work into a Towers step
-       (how many towers there are, and the site plan) and a Floors & Zones step (what is inside
-       one). Both draw `_towerBar`, so both need its wiring — and two copies of it is exactly how
-       one of them ends up with a dead + Tower button. The Towers step passes `manage:true` and
-       gets every control; Floors & Zones passes nothing and gets the selector chips alone, so the
-       handlers below simply find no element for what was not drawn (every one is guarded).
-       ⚠ `ctx.tr` is the ACTIVE TRADE and is null on the Towers step, which has none — so the
-       copy dialog offers “Every trade” only there rather than naming a trade nobody chose. */
-    function _twBarWire(host, ctx) {
-      ctx = ctx || {};
-      var _twAct = ctx.act || activeTower();
-      var tr = ctx.tr || null;
+    /* ⚠️ ALL THAT IS LEFT TO WIRE. The bar draws one kind of control now, so its wiring is one
+       loop — see the note above for where the rest went. */
+    function _twBarWire(host) {
       host.querySelectorAll('[data-twsel]').forEach(function (b) { b.onclick = function () { uiTower = b.dataset.twsel; render(); }; });
-      /* ⚠️ A <details> stays open until something shuts it. Every action inside this one re-renders
-         the step — except walking away from it, so a menu opened by mistake would hang over the
-         floor list for the rest of the session. The next press outside closes it.
-         ⚠️ The listener removes ITSELF once the step has re-rendered and its element is detached,
-         rather than being left to accumulate one dead handler per render. */
-      var _twMore = host.querySelector('.sbld-twmore');
-      if (_twMore) {
-        var _twOut = function (ev) {
-          if (!document.body.contains(_twMore)) { document.removeEventListener('pointerdown', _twOut); return; }
-          if (!_twMore.open || _twMore.contains(ev.target)) return;
-          _twMore.open = false;
-        };
-        document.addEventListener('pointerdown', _twOut);
-      }
-      /* ==== THE TOWER, ASKED FOR IN ONE FORM ===========================================
-         ⚠️⚠️ TWO `prompt()`s BECAME ONE DIALOG. Owner 2026-09-17: *"when adding towers, floors,
-         UI usually gives browser pop-up. instead of browser pop-up create an app pop-up window
-         where user can input the fields."* Adding a tower asked for the name, closed, then asked
-         for the code in a second box whose only clue about what a code is for was the sentence
-         it was titled with. The two fields belong to one object and are now asked as one.
-         ⚠️ The code is REQUIRED here, where it was silently defaulted before: it is what every
-         generated activity id and every location label is built from, so a blank one produced
-         codes with a hole in them and nobody found out until the push. */
-      function _twFields(t, n) {
-        return [
-          { k: 'name', label: 'Tower name', value: (t && t.name) || ('Tower ' + n), required: true,
-            placeholder: 'Tower ' + n, hint: 'What the planners call it — shown on the tower bar, in the stacking and on the site plan.' },
-          { k: 'code', label: 'Short code', value: (t && t.code) || ('T' + n), required: true,
-            placeholder: 'T' + n, hint: 'Two or three characters. It is built into generated activity codes and location labels, so keep it short and unique.' }
-        ];
-      }
-      /* ⚠️ The TYPE's own two fields. Kept apart from `_twFields` rather than parameterised: the
-         hints are the whole difference between the two dialogs, and a hint that has to be true of
-         both ends up saying nothing about either. */
-      function _tyFields(ty, n) {
-        return [
-          { k: 'name', label: 'Type name', value: (ty && ty.name) || ('Type ' + n), required: true,
-            placeholder: 'Type ' + n, hint: 'What this building design is called — “Type 1”, “Podium block”, “Low-rise”. It labels the chips on the tower bar; it is not a tower name.' },
-          { k: 'code', label: 'Short code', value: (ty && ty.code) || ('T' + n), required: true,
-            placeholder: 'T' + n, hint: 'Two or three characters, used where the full name will not fit.' }
-        ];
-      }
-      /* ⚠️⚠️ ADDING A TYPE ADDS ITS FIRST TOWER TOO. A type with no instances has no
-         representative to hang floors off, so it would be a row the planner could not lay out — and
-         the count control cannot rescue it, because it counts from one. The tower is named globally
-         ("Tower 3"), not after the type: the site plan joins on tower NAMES. */
-      var _tyAdd = host.querySelector('#b-tyadd');
-      if (_tyAdd) _tyAdd.onclick = function () {
-        var n = typeList().length + 1;
-        psAsk({ title: 'Add a tower type', ok: 'Add type',
-          text: 'A type is one building design. Every tower built from it has the same floors, the same zones and the same sizing — you lay it out once, then say how many of them the project has.',
-          note: 'Add a <b>second type</b> only for a building that is laid out <b>differently</b>. If it repeats one you already have, raise that type’s count instead.',
-          fields: _tyFields(null, n),
-          validate: function (v) {
-            var k = String(v.code).trim().toLowerCase();
-            return typeList().some(function (t) { return String(t.code || '').trim().toLowerCase() === k; })
-              ? 'Another tower type already uses the code “' + String(v.code).trim() + '”.' : '';
-          }
-        }, function (v) {
-          var ty = { id: uidv(), code: String(v.code).trim(), name: String(v.name).trim() };
-          cfg.towerTypes = typeList().concat([ty]);
-          var t = _twNewInstance(ty);
-          cfg.towers = towerList().concat([t]);
-          uiTower = t.id; markDirty(); render();
-        });
-      };
-      var _twRen = host.querySelector('#b-twren');
-      if (_twRen) _twRen.onclick = function () {
-        var ty = typeById(typeOfTower(_twAct)); if (!ty) return;
-        var inst = towersOfType(ty.id), solo = inst.length === 1;
-        psAsk({ title: 'Rename ' + (ty.name || ty.code || 'this type'), ok: 'Rename',
-          /* ⚠️⚠️ WITH ONE INSTANCE, THE TYPE AND THE TOWER ARE THE SAME THING to the planner —
-             and on every project written before types existed that is the only case there is. So the
-             single tower is renamed with its type, which is byte-for-byte what this button did
-             before. With SEVERAL instances it renames the type ALONE: the towers have their own
-             names by then, the site development plan joins its traced areas to those names, and
-             silently renaming four of them would empty the Vertical Stacking's Site view. */
-          note: solo ? '' : 'The <b>' + inst.length + ' towers</b> built from this type keep their own names — the site plan joins on those, so they are not touched.',
-          fields: _tyFields(ty, typeList().length),
-          validate: function (v) {
-            var k = String(v.code).trim().toLowerCase();
-            return typeList().some(function (o) { return o.id !== ty.id && String(o.code || '').trim().toLowerCase() === k; })
-              ? 'Another tower type already uses the code “' + String(v.code).trim() + '”.' : '';
-          }
-        }, function (v) {
-          ty.name = String(v.name).trim() || ty.name; ty.code = String(v.code).trim() || ty.code;
-          if (solo && inst[0]) { inst[0].name = ty.name; inst[0].code = ty.code; }
-          markDirty(); render();
-        });
-      };
-      function _twCopyDlg() {
-        /* ⚠️ OTHER TYPES, not other towers: two towers of one type already hold the same floors,
-           so offering one of them as a source would be an operation with no effect. Each entry is
-           its type's representative — the tower the floors are actually stored against — so
-           `copyTower` below is unchanged. */
-        var others = typeList().filter(function (ty) { return ty.id !== typeOfTower(_twAct); })
-          .map(function (ty) { return towerById(repTowerOf(ty.id)); }).filter(Boolean);
-        if (!others.length) return;
-        /* ⚠️⚠️ A LIST TO PICK FROM, NOT A NUMBER TO TYPE. This was a `prompt()` holding a
-           hand-numbered menu — "1) Tower A / 2) Tower B … Type a number:" — which is a <select>
-           rendered in text, with a typo for every way of getting it wrong and no way to tell the
-           planner what each tower actually holds. The counts are on the options now.
-           ⚠️ AND THE WARNING IS IN THE SAME DIALOG. It used to be a SECOND browser box after the
-           number was typed; the thing it warns about (this replaces everything here) is the whole
-           reason the planner is being asked, so it belongs beside the question. */
-        var _trHas = GROUPS.filter(function (g) { return !locless(g) && floorsOfTower(g, others[0].id).length; });
-        psAsk({ title: 'Copy another tower into ' + towerLabel(_twAct),
-          wide: true,
-          ok: 'Copy and replace', danger: true,
-          text: 'The floors, zones and units of the tower you pick are copied in with fresh ids, so the two towers are independent afterwards.',
-          note: '⚠️ This <b>REPLACES</b> what is currently under <b>' + e2(towerLabel(_twAct)) +
-            '</b> for the trades you copy. It cannot be undone. A trade you do <b>not</b> copy is left exactly as it is.',
-          fields: [
-            { k: 'src', label: 'Copy from', type: 'select', value: others[0].id,
-              options: others.map(function (t) {
-                var n = 0, ntr = 0;
-                GROUPS.forEach(function (g) {
-                  if (locless(g)) return;
-                  var c = floorsOfTower(g, t.id).length; if (c) { ntr++; n += c; }
-                });
-                return [t.id, (t.name || t.code) + ' — ' + n + ' floor' + (n === 1 ? '' : 's') +
-                  ' across ' + ntr + ' trade' + (ntr === 1 ? '' : 's')];
-              }),
-              hint: 'The floor count is every trade\u2019s floors added together — most towers are laid out the same for all of them, so it is usually the storey count times the number of trades.' },
-            { k: 'what', label: 'Which trades', type: 'select', value: 'all',
-              options: [['all', 'Every trade — the whole tower']].concat(tr ? [[tr, 'Only ' + GLABEL[tr]]] : []),
-              hint: 'Every trade is the usual answer: a tower that repeats another repeats it for all of them. One trade is for filling in the trade you are working on without touching the rest.' },
-            { k: 'seq', label: 'Bring the zone sequence with it', type: 'checkbox', value: true,
-              hint: 'The links between the copied zones are rebuilt against the copies, so the new tower flows the way the old one does. Turn it off to copy the places and sequence them yourself.' }
-          ]
-        }, function (v) {
-          var s2 = others.filter(function (t) { return t.id === v.src; })[0];
-          if (!s2) { UI.toast('No tower picked.', 'warn'); return; }
-          var r = copyTower(s2.id, _twAct, { groups: (v.what === 'all' ? null : [v.what]), links: !!v.seq });
-          /* ⚠️ pruneLinks, which this handler never called: the destination tower's own floors are
-             REPLACED, so every link that pointed at one of them now points at a leaf that no longer
-             exists. They were left in cfg.links to be discovered at Generate. */
-          pruneLinks(); markDirty(); render();
-          UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') +
-            (v.what === 'all' ? '' : ' of ' + GLABEL[v.what]) +
-            (v.seq ? ' and ' + r.links + ' zone link' + (r.links === 1 ? '' : 's') : '') +
-            ' from ' + (s2.name || s2.code) + '.', 'success');
-        });
-      }
-      var _twCopy = host.querySelector('#b-twcopy');
-      if (_twCopy) _twCopy.onclick = _twCopyDlg;
-      var _twCopy2 = host.querySelector('#b-twcopy2');
-      if (_twCopy2) _twCopy2.onclick = _twCopyDlg;
-      var _twDel = host.querySelector('#b-twdel');
-      if (_twDel) _twDel.onclick = function () {
-        if (typeList().length < 2) return;
-        var _ty = typeById(typeOfTower(_twAct)); if (!_ty) return;
-        var _inst = towersOfType(_ty.id), _rep = repTowerOf(_ty.id);
-        var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, _rep).length; });
-        var _lab = _ty.name || _ty.code || 'this type';
-        psConfirm('Delete ' + _lab + ', its ' + n + ' floor' + (n === 1 ? '' : 's') + ' and the ' +
-          _inst.length + ' tower' + (_inst.length === 1 ? '' : 's') + ' built from it?', function () {
-          /* ⚠️⚠️ EVERY INSTANCE GOES, NOT JUST THE REPRESENTATIVE. Deleting the representative
-             alone would leave N towers pointing at a type that no longer exists — typeOfTower would
-             still answer, towersOfType would not, and the towers would vanish from the bar while
-             still being generated into the schedule. */
-          var drop = {}; _inst.forEach(function (t) { drop[t.id] = 1; });
-          GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return !drop[towerIdOf(f)]; }); });
-          cfg.towers = towerList().filter(function (t) { return !drop[t.id]; });
-          cfg.towerTypes = typeList().filter(function (x) { return x.id !== _ty.id; });
-          cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return !drop[k.from] && !drop[k.to]; });
-          uiTower = towerList()[0].id;
-          pruneLinks(); markDirty(); render();
-        }, { title: 'Delete this tower type?', ok: 'Delete the type',
-             note: 'This cannot be undone. Every trade’s floors under this type go with it, and so does every tower built from it.' });
-      };
-
-      /* ⚠ The site plan opens from this bar too, so its handler belongs with the bar rather
-         than with whichever step happened to draw it first. */
-      var _sb = host.querySelector('#b-siteplan');
-      if (_sb) _sb.onclick = function () { openSitePlan(); };
+    }
+    /* ==== TAKING ANOTHER LAYOUT WHOLE ================================================
+       ⚠️⚠️ OFF THE ⋯ MENU AND ONTO THE ROW. This was the third entry of a pop-out menu on the
+       tower bar, which is the last place a planner looks when the answer to "this type is empty" is
+       the row above it. On the Towers table it sits on the thing it copies INTO.
+       ⚠️ The sources are other layout OWNERS, never other developments: two developments of one
+       type already hold the same floors, so offering one of them would be an operation with no
+       effect. Each entry is its owner's representative — the tower the floors are actually stored
+       against — so `copyTower` below is unchanged.
+       ⚠️ EVERY TRADE, and the per-trade copy is deliberately not offered here: this step has no
+       active trade to name, and the one-trade case is what Floors & Zones' own *take a layout from*
+       control is for. */
+    function _copyLayoutDlg(destRep) {
+      var others = layoutOwners().filter(function (o) { return o.rep !== destRep; });
+      if (!others.length) { UI.toast('There is nothing else to copy from yet.', 'warn'); return; }
+      var destLab = towerLabel(destRep);
+      psAsk({ title: 'Copy another layout into ' + destLab,
+        wide: true, ok: 'Copy and replace', danger: true,
+        text: 'The floors, zones and units of the layout you pick are copied in with fresh ids, so the two are independent afterwards.',
+        note: '\u26a0\ufe0f This <b>REPLACES</b> every floor currently under <b>' + e2(destLab) +
+          '</b>, for every trade. It cannot be undone.',
+        fields: [
+          { k: 'src', label: 'Copy from', type: 'select', value: others[0].rep,
+            options: others.map(function (o) {
+              var n = 0, ntr = 0;
+              GROUPS.forEach(function (g) {
+                if (locless(g)) return;
+                var c2 = floorsOfTower(g, o.rep).length; if (c2) { ntr++; n += c2; }
+              });
+              return [o.rep, o.label + ' \u2014 ' + n + ' floor' + (n === 1 ? '' : 's') +
+                ' across ' + ntr + ' trade' + (ntr === 1 ? '' : 's')];
+            }),
+            hint: 'The floor count adds every trade\u2019s floors together \u2014 most buildings are laid out the same for all of them, so it is usually the storey count times the number of trades.' },
+          { k: 'seq', label: 'Bring the zone sequence with it', type: 'checkbox', value: true,
+            hint: 'The links between the copied zones are rebuilt against the copies, so the new layout flows the way the old one does. Turn it off to copy the places and sequence them yourself.' }
+        ]
+      }, function (v) {
+        var src = others.filter(function (o) { return o.rep === v.src; })[0];
+        if (!src) { UI.toast('Nothing picked.', 'warn'); return; }
+        var r = copyTower(src.rep, destRep, { groups: null, links: !!v.seq });
+        /* ⚠️ pruneLinks: the destination's own floors are REPLACED, so every link that pointed at
+           one of them now points at a leaf that no longer exists. */
+        pruneLinks(); markDirty(); render();
+        UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') +
+          (v.seq ? ' and ' + r.links + ' zone link' + (r.links === 1 ? '' : 's') : '') +
+          ' from ' + src.label + '.', 'success');
+      });
     }
     // Copy one tower's LOCATIONS and its SEQUENCING into another (owner request). Floors/zones/units
     // are deep-copied with fresh ids via cloneFloors, so the two towers are independent afterwards.
@@ -44550,124 +44454,333 @@
       loadImg();
     }
     /* ==========================================================================================
-       TOWERS — how many buildings, and where each one stands.
+       TOWERS — what kinds of building this project has, and how many of each.
        Owner 2026-09-17: *"Step 5: Towers — Definition of towers (Identification of how many type of
-       towers there are and how many towers per type), include here also definition of site
-       development if applicable"*.
-       ⚠️⚠️ IT WAS A BAR ON TOP OF THE FLOORS STEP, and that is why it needed its own. Adding a
-       tower, renaming one, copying one into another and drawing the site plan are all statements
-       about the PROJECT; laying out floors and zones is a statement about ONE tower. They were on
-       one screen, so the tower controls read as chrome above the thing the planner was actually
-       doing — and the site plan, which is the whole site, sat in the corner of a step titled after
-       a single building.
-       ⚠️ THERE IS NO "TOWER TYPE" FIELD, and inventing one would be a schema change with a
-       migration behind it. What the model has is a flat list plus "Copy floors from another
-       tower…", which is how a repeated tower is expressed today: name it, then take the layout
-       from the one it repeats. The How panel says so rather than leaving it to be discovered.
-       ⚠️ The bar is drawn with manage:true — see _towerBar. Floors & Zones draws the same bar
-       without it and gets the selector chips alone, so there is one tower list and one step that
-       owns it. */
+       towers there are and how many towers per type)"*.
+
+       ⚠️⚠️ IT IS A TWO-LEVEL TABLE NOW, NOT A BAR OVER A READ-OUT. Owner 2026-09-18: *"instead of
+       buttons on top of the table, let's keep it simple and flow the same process as adding WBS and
+       activities mapped to Tower Type and Towers respectively … when add type is clicked, a grouping
+       (similar to WBS) is added. when development is clicked, a row is added inside the WBS … strict
+       only to two levels. developments can be inside a type or beside it. columns should include
+       Name, Code, Remarks."*
+
+       So: a TYPE is a grouping row and a DEVELOPMENT is a row, exactly as a WBS branch is a grouping
+       and an activity is a row — and everything that used to live on the bar above the table (add,
+       rename, copy, delete) is a row action, because the row is what names the thing being acted on.
+       ⚠️ The ± count control went with them. Three developments of one type are three ROWS now, so a
+       number beside the type would be a second, disagreeable statement of the same fact.
+
+       ⚠️⚠️ AND THE STEP ONCE ARGUED THE OPPOSITE, WHICH IS KEPT ON RECORD RATHER THAN DELETED.
+       Its help text used to read *“identical towers are just several towers carrying the same
+       floors — that is how a tower ‘type’ is expressed; there is no separate type field.”* Types
+       arrived on 2026-09-18 and that sentence went; this is the note that says it once said the
+       opposite, because a reversal with no record is one that gets reversed back.
+
+       ⚠️⚠️ "BESIDE IT" IS A TOWER WITH NO `typeId`, AND THE MODEL ALREADY MEANT THAT. `typeOfTower`
+       answers '' for such a tower and `repTowerOfTower` then falls back to the tower itself — i.e.
+       it is its own type with its own floors, which is precisely what a development laid out on its
+       own is. Nothing new is stored; what changed is that `normalize` stopped inventing a type for
+       it on reload (see `_hadTypes`) and that `layoutOwners()` makes it visible.
+
+       ⚠️⚠️ THE SITE PLAN IS HIDDEN, NOT DELETED. Owner, same prompt: *"Hide first option to add site
+       plans"*. `SITE_PLAN_UI` is the one word that brings it back; the editor, `openSitePlan` and the
+       Vertical Stacking's Site view are all untouched, so nothing here has to be re-derived. What is
+       true while it is off, and is worth knowing: this was the ONLY way into the site-plan editor, so
+       a site plan cannot be authored until it comes back. */
+    var SITE_PLAN_UI = false;
     function stTowers(host) {
-      var TR = towerReality(), list = towerList(), act = activeTower(), types = typeList();
-      var loc = locGroups();
-      /* Floors already laid out under a tower, across every trade that HAS a location — locless
-         trades (General Requirements) are project-wide and carry no tower, so counting them here
-         would report floors that can never exist. */
-      function nFloors(id) {
-        var n = 0; loc.forEach(function (g) { n += floorsOfTower(g, id).length; }); return n;
-      }
+      var TR = towerReality(), owners = layoutOwners(), act = activeTower();
+      var actOwner = ownerOfTower(act);
+      var types = typeList();
       var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
-      /* ⚠️⚠️ ONE ROW PER TYPE, NOT PER TOWER. Owner 2026-09-18: *"users are to define the types
-         of towers there are. Meaning Type 1 Tower has 16F and same footprints, number of zones, same
-         sizing etc… and users are to define how many type 1 towers there are in the project."* So the
-         floor count is the TYPE's, stated once, and the count beside it says how many buildings are
-         built from it — the two numbers the step exists to collect.
-         ⚠️ The towers themselves are still named, in the third column: they are what the site plan
-         and the Vertical Stacking join on, and a step that never showed them would leave the planner
-         tracing an area under a name they had never been told. */
-      var body = types.map(function (ty) {
-        var rep = repTowerOf(ty.id), n = nFloors(rep), inst = towersOfType(ty.id);
-        var cnt = inst.length || 1;
-        return '<tr' + (rep === act ? ' class="on"' : '') + '>' +
-          '<td><b>' + e2(ty.name || ty.code || 'Type') + '</b>' +
-            (rep === act ? ' <span class="sbld-hint">· selected</span>' : '') + '</td>' +
-          '<td>' + e2(ty.code || '—') + '</td>' +
-          '<td class="sbld-tycnt">' +
-            '<button class="pd-btn sbld-cntb" data-tyd="-1" data-ty="' + e2(ty.id) + '"' +
-              (cnt <= 1 ? ' disabled title="A type always has at least one tower — use Type options › Delete to remove it altogether"'
-                        : ' title="One fewer tower of this type"') + '>−</button>' +
-            '<b class="sbld-cntn">' + cnt + '</b>' +
-            '<button class="pd-btn sbld-cntb" data-tyd="1" data-ty="' + e2(ty.id) + '" title="One more tower of this type">+</button>' +
-            '<span class="sbld-hint sbld-cntnames">' +
-              e2(inst.slice(0, 4).map(function (t) { return t.name || t.code || ''; }).filter(Boolean).join(', ')) +
-              (inst.length > 4 ? '…' : '') + '</span>' +
+
+      /* ⚠️ One cell builder for both levels: a type's three fields and a development's three fields
+         are the same three questions, and two builders is how one of them ends up without the
+         remarks box. `kk`/`ik` are the data attributes the wiring reads. */
+      function cell(kk, ik, id, val, ph) {
+        return '<input class="pd-input sbld-twin" ' + kk + '="' + ik + '" data-id="' + e2(id) +
+          '" value="' + e2(val || '') + '" placeholder="' + e2(ph) + '">';
+      }
+      function ownerRow(o) {
+        var n = _twFloorCount(o.rep), sel = !!(actOwner && actOwner.id === o.id);
+        var isType = o.kind === 'type';
+        var kk = isType ? 'data-tyk' : 'data-twk', id = o.id;
+        return '<tr class="' + (isType ? 'grp ' : '') + 'sbld-twr-own' + (sel ? ' on' : '') +
+            '" data-own="' + e2(o.rep) + '">' +
+          '<td>' + (isType ? '<span class="sbld-twkind">TYPE</span>' : '<span class="sbld-twkind solo">DEV</span>') +
+            cell(kk, 'name', id, o.label, isType ? 'Type name' : 'Development name') +
+            '<span class="sbld-hint sbld-twfl">' +
+              (n ? n + ' floor' + (n === 1 ? '' : 's') + ' laid out' : 'nothing laid out yet') +
+              (isType && o.towers.length > 1 ? ' · shared by ' + o.towers.length + ' developments' : '') +
+            '</span></td>' +
+          '<td>' + cell(kk, 'code', id, o.code, isType ? 'T1' : 'D1') + '</td>' +
+          '<td>' + cell(kk, 'remarks', id, o.remarks, 'Remarks') + '</td>' +
+          '<td class="sbld-twact">' +
+            '<button class="pd-btn sbld-twmini" data-copy="' + e2(o.rep) + '" title="' +
+              e2('Copy another layout into ' + o.label + ' — replaces its floors') + '">Copy…</button>' +
+            (owners.length > 1 || o.towers.length > 1
+              ? '<button class="pd-btn sbld-del sbld-twmini" ' +
+                  (isType ? 'data-delty="' + e2(o.id) + '"' : 'data-deltw="' + e2(o.id) + '"') +
+                  ' title="' + e2(isType
+                    ? ('Delete ' + o.label + ', its floors and the ' + o.towers.length + ' development' + (o.towers.length === 1 ? '' : 's') + ' built from it')
+                    : ('Delete ' + o.label + ' and its floors')) + '"><span data-ico="trash" data-ico-size="13"></span></button>'
+              : '') +
           '</td>' +
-          '<td>' + (n ? n + ' floor' + (n === 1 ? '' : 's') + ' laid out'
-                      : '<span class="sbld-hint">nothing laid out yet</span>') + '</td>' +
         '</tr>';
+      }
+      function devRow(t, o, i) {
+        return '<tr class="sbld-twr-dev" data-own="' + e2(o.rep) + '">' +
+          '<td><span class="sbld-twind" aria-hidden="true"></span>' +
+            cell('data-twk', 'name', t.id, t.name, 'Development ' + (i + 1)) + '</td>' +
+          '<td>' + cell('data-twk', 'code', t.id, t.code, 'D' + (i + 1)) + '</td>' +
+          '<td>' + cell('data-twk', 'remarks', t.id, t.remarks, 'Remarks') + '</td>' +
+          '<td class="sbld-twact">' +
+            (towerList().length > 1
+              ? '<button class="pd-btn sbld-del sbld-twmini" data-deltw="' + e2(t.id) + '" title="' +
+                e2('Remove ' + (t.name || t.code || 'this development') +
+                   (o.towers.length > 1 ? '' : ' — its type and floors go with it')) +
+                '"><span data-ico="trash" data-ico-size="13"></span></button>'
+              : '') +
+          '</td>' +
+        '</tr>';
+      }
+      /* ⚠️ A TYPE'S DEVELOPMENTS ARE LISTED UNDER IT; A STANDALONE ONE IS THE ROW. Listing a
+         standalone development twice — once as its own grouping and again as its only child — is a
+         tree that says the same thing on two lines, which is exactly the doubled reading the ±
+         count control had. */
+      var body = owners.map(function (o) {
+        return ownerRow(o) + (o.kind === 'type' ? o.towers.map(function (t, i) { return devRow(t, o, i); }).join('') : '');
       }).join('');
+
       host.innerHTML = '<h2>' + _stepNo('Towers') + ' · Towers</h2>' +
-        '<p class="sbld-lede">What kinds of building this project has, how many of each — and, where ' +
-        'there is more than one, where they stand.</p>' +
-        /* ⚠️⚠️ THIS TEXT ONCE SAID THE OPPOSITE: *“that is how a tower ‘type’ is expressed;
-           there is no separate type field.”* There is one now — owner 2026-09-18 — and it is the
-           unit the whole step is built on, so the old sentence is gone rather than softened. */
-        _sbldHow('<p>A <b>type</b> is one building design: same floors, same zones, same sizing. Press ' +
-          '<b>+ Type</b> once per <b>design</b>, not once per building — then use <b>−</b> and <b>+</b> ' +
-          'in the <b>How many</b> column to say how many towers of that design the project has.</p>' +
-          '<p>Four identical towers are therefore <b>one type with a count of 4</b>: you lay the floors ' +
-          'out once, in step <b>' + _stepNo('Floors & Zones') + '</b>, and all four are built from them. ' +
-          'A building laid out <b>differently</b> is a second type.</p>' +
-          '<p>The <b>short code</b> is built into every generated activity id and location label, so ' +
-          'keep it short and unique.</p>' +
-          '<p>With more than one tower, <b>Site plan…</b> is where you trace one area per tower on the ' +
-          'site drawing. The Vertical Stacking’s Site view is built from it, and it joins on the ' +
-          'tower NAMES — so an area traced under a name no tower carries draws nothing.</p>') +
-        _towerBar({ manage: true }) +
-        '<div class="sbld-tablewrap"><table class="sbld-tbl">' +
-          '<thead><tr><th>Tower type</th><th>Short code</th><th>How many towers</th><th>Floors (laid out once, per type)</th></tr></thead>' +
+        '<p class="sbld-lede">What kinds of building this project has, and how many of each.</p>' +
+        _sbldHow('<p>A <b>type</b> is one building design: same floors, same zones, same sizing. ' +
+          'Press <b>+ Add Type</b> once per <b>design</b>, then <b>+ Add Development</b> once per ' +
+          '<b>building</b> — four identical towers are <b>one type with four developments</b>, and you ' +
+          'lay the floors out once, in step <b>' + _stepNo('Floors & Zones') + '</b>.</p>' +
+          '<p>A development that repeats nothing does not need a type. <b>+ Add Development</b> can put ' +
+          'it <b>beside</b> the types instead, and it then carries floors of its own.</p>' +
+          '<p>The <b>code</b> is built into every generated activity id and location label, so keep it ' +
+          'short and unique. <b>Remarks</b> are for you — nothing downstream reads them.</p>') +
+        '<div class="sbld-sec-actions">' +
+          '<button class="pd-btn pd-btn-primary" id="b-tyadd">+ Add Type</button>' +
+          '<button class="pd-btn" id="b-twadd">+ Add Development</button>' +
+          '<span class="sbld-hint">' +
+            (actOwner
+              ? (actOwner.kind === 'type'
+                  ? 'A new development goes inside <b>' + e2(actOwner.label) + '</b> unless you say otherwise.'
+                  : 'A new development goes <b>beside</b> the types unless you say otherwise.')
+              : '') +
+          '</span>' +
+        '</div>' +
+        /* ⚠️⚠️ THE DRIFT CASE IS THE ONE WORTH INTERRUPTING FOR, and it moved here off the tower
+           bar with everything else. A schedule carrying towers this setup has never named is the
+           state in which every name join downstream quietly finds nothing — invisible until the
+           Vertical Stacking comes up empty, so it is reported with the names. */
+        (TR.drift
+          ? '<p class="sbld-note sbld-note-warn">⚠️ The schedule carries <b>' + TR.inSchedule.length +
+            ' tower' + (TR.inSchedule.length === 1 ? '' : 's') + '</b>, and <b>' + TR.unnamed.length + '</b> ' +
+            (TR.unnamed.length === 1 ? 'is' : 'are') + ' not named here: <b>' +
+            e2(TR.unnamed.slice(0, 6).join(', ')) + (TR.unnamed.length > 6 ? '…' : '') + '</b>. ' +
+            'Add them with <b>+ Add Development</b> so the names match — the Vertical Stacking joins on them.</p>'
+          : '') +
+        '<div class="sbld-tablewrap"><table class="sbld-tbl sbld-twtbl">' +
+          '<thead><tr><th>Name</th><th>Code</th><th>Remarks</th><th class="sbld-twact"></th></tr></thead>' +
           '<tbody>' + body + '</tbody>' +
         '</table></div>' +
         '<p class="sbld-hint">' +
-          (list.length === 1
-            ? 'One tower, of one type. Everything in step ' + _stepNo('Floors & Zones') + ' applies to it, and no site plan is needed — the site is the tower.'
-            : list.length + ' towers, from ' + types.length + ' type' + (types.length === 1 ? '' : 's') +
-              '. Each TYPE keeps its own floors, zones and zone sequencing, and every tower built from it is identical; pick a type above and lay it out in step ' + _stepNo('Floors & Zones') + '.') +
+          (towerList().length === 1
+            ? 'One development. Everything in step ' + _stepNo('Floors & Zones') + ' applies to it.'
+            : towerList().length + ' developments, from ' + owners.length + ' layout' +
+              (owners.length === 1 ? '' : 's') + '. Each layout keeps its own floors, zones and zone ' +
+              'sequencing, and every development built from a type is identical; pick one above and lay ' +
+              'it out in step ' + _stepNo('Floors & Zones') + '.') +
         '</p>' +
-        /* ⚠️ The site-plan panel is drawn only where a site plan MEANS something. On a single-tower
-           project it would be a drawing of one building, which the floor plans already are — the
-           same reason the button itself is withheld and the Vertical Stacking hides its Site view. */
-        (TR.multi
+        (SITE_PLAN_UI && TR.multi
           ? '<h3 class="sbld-sech">Site development plan</h3>' +
             '<p class="sbld-hint">' +
-              (_sp
-                ? 'Traced' + (_sp.img ? ' over an attached drawing' : ', with no drawing attached') +
-                  '. Re-open it with <b>Site plan</b> on the bar above.'
-                : 'Not traced yet. <b>Site plan…</b> on the bar above opens the editor: attach the site drawing, then trace one area per tower and name it after that tower.') +
-            '</p>'
+              (_sp ? 'Traced' + (_sp.img ? ' over an attached drawing' : ', with no drawing attached') + '.'
+                   : 'Not traced yet.') +
+              ' <button class="pd-btn sbld-twbtn sbld-sitebtn' + (_sp ? ' has' : '') + '" id="b-siteplan">' +
+              (_sp ? 'Site plan' : 'Site plan…') + '</button></p>'
           : '');
-      /* ⚠️ Selecting a tower from the table as well as from the chips: the table is the thing a
-         planner is reading on this step, and a row that names a tower and cannot select it reads
-         as broken. Bound by POSITION against the same list the rows were built from. */
-      host.querySelectorAll('.sbld-tbl tbody tr').forEach(function (tr2, i) {
-        var ty = types[i]; if (!ty) return;
+
+      /* ⚠️ Selecting a layout from the table as well as from the chips next door: the table is what
+         a planner is reading on this step, and a row that names a building and cannot be picked
+         reads as broken. `data-own` carries the owner's REPRESENTATIVE, which is exactly what
+         `uiTower` holds, so every reader of the active tower is untouched.
+         ⚠️ A click that landed on a control inside the row is that control's, not the row's —
+         otherwise typing into a name box would also re-select and re-render mid-edit. */
+      host.querySelectorAll('[data-own]').forEach(function (tr2) {
         tr2.style.cursor = 'pointer';
-        tr2.title = 'Select ' + (ty.name || ty.code || 'this type');
-        /* ⚠️ The row selects the type by selecting its REPRESENTATIVE — the tower whose floors the
-           next step edits, and exactly what the chips put in `uiTower`. */
-        tr2.onclick = function () { uiTower = repTowerOf(ty.id); render(); };
-      });
-      /* ⚠️ The count buttons live INSIDE a row that is itself clickable, so they stop the event —
-           otherwise every press would also re-select, which is harmless here and would not be the
-           day someone makes the row do something else. */
-      host.querySelectorAll('[data-tyd]').forEach(function (b) {
-        b.onclick = function (ev) {
-          ev.stopPropagation();
-          var id = b.dataset.ty, d = +b.dataset.tyd;
-          if (_twSetCount(id, towersOfType(id).length + d)) { markDirty(); render(); }
+        tr2.onclick = function (ev) {
+          if (ev.target && ev.target.closest && ev.target.closest('input,button,select,textarea')) return;
+          uiTower = tr2.dataset.own; render();
         };
       });
-      _twBarWire(host, { act: act, tr: null });
+
+      /* ==== EDITING IN PLACE, WITH THE TWO UNIQUENESS RULES THAT MATTER =================
+         ⚠️⚠️ A DEVELOPMENT'S NAME AND CODE MUST BE UNIQUE ACROSS THE WHOLE PROJECT, not within its
+         type. The Vertical Stacking (and the site plan, when it comes back) join their areas to
+         developments BY NAME, so two carrying one name makes an area ambiguous and one of them is
+         drawn twice. The code is unique for the same reason — it is built into every generated
+         activity id.
+         ⚠️ A refused edit is PUT BACK and said out loud. Leaving the typed value on screen while the
+         model kept the old one is the shape where a planner believes they renamed something. */
+      function _dupTower(id, key, val) {
+        var k = key === 'name' ? zpNormCode(val) : String(val).trim().toLowerCase();
+        return towerList().some(function (t) {
+          if (t.id === id) return false;
+          var o = key === 'name' ? zpNormCode(t.name) : String(t.code || '').trim().toLowerCase();
+          return !!k && o === k;
+        });
+      }
+      host.querySelectorAll('[data-twk]').forEach(function (inp) {
+        inp.onchange = function () {
+          var t = towerById(inp.dataset.id); if (!t) return;
+          var key = inp.dataset.twk, val = String(inp.value || '').trim();
+          if (key !== 'remarks' && !val) { UI.toast('A development needs a ' + key + '.', 'warn'); render(); return; }
+          if (key !== 'remarks' && _dupTower(t.id, key, val)) {
+            UI.toast('Another development already uses the ' + key + ' “' + val + '”.', 'warn'); render(); return;
+          }
+          t[key] = key === 'remarks' ? val.slice(0, 300) : val;
+          markDirty(); render();
+        };
+      });
+      host.querySelectorAll('[data-tyk]').forEach(function (inp) {
+        inp.onchange = function () {
+          var ty = typeById(inp.dataset.id); if (!ty) return;
+          var key = inp.dataset.tyk, val = String(inp.value || '').trim();
+          if (key !== 'remarks' && !val) { UI.toast('A type needs a ' + key + '.', 'warn'); render(); return; }
+          if (key === 'code' && typeList().some(function (o) { return o.id !== ty.id && String(o.code || '').trim().toLowerCase() === val.toLowerCase(); })) {
+            UI.toast('Another tower type already uses the code “' + val + '”.', 'warn'); render(); return;
+          }
+          ty[key] = key === 'remarks' ? val.slice(0, 300) : val;
+          markDirty(); render();
+        };
+      });
+
+      /* ⚠️⚠️ ADDING A TYPE ADDS ITS FIRST DEVELOPMENT TOO. A type with no instances has no
+         representative to hang floors off, so it would be a grouping the planner could not lay out.
+         The development is named GLOBALLY ("Tower 3"), not after the type: names have to be unique
+         across the project, not within one. */
+      host.querySelector('#b-tyadd').onclick = function () {
+        var n = typeList().length + 1;
+        psAsk({ title: 'Add a tower type', ok: 'Add type',
+          text: 'A type is one building design. Every development built from it has the same floors, the same zones and the same sizing — you lay it out once, then add a development for each building.',
+          note: 'Add a <b>second type</b> only for a building that is laid out <b>differently</b>. If it repeats one you already have, add a <b>development</b> inside that type instead.',
+          fields: [
+            { k: 'name', label: 'Type name', value: 'Type ' + n, required: true, placeholder: 'Type ' + n,
+              hint: 'What this building design is called — “Type 1”, “Podium block”, “Low-rise”. It is not a development name.' },
+            { k: 'code', label: 'Code', value: 'T' + n, required: true, placeholder: 'T' + n,
+              hint: 'Two or three characters, used where the full name will not fit.' },
+            { k: 'remarks', label: 'Remarks', value: '', placeholder: 'Optional',
+              hint: 'For you. Nothing downstream reads it.' }
+          ],
+          validate: function (v) {
+            var k = String(v.code).trim().toLowerCase();
+            return typeList().some(function (t) { return String(t.code || '').trim().toLowerCase() === k; })
+              ? 'Another tower type already uses the code “' + String(v.code).trim() + '”.' : '';
+          }
+        }, function (v) {
+          var ty = { id: uidv(), code: String(v.code).trim(), name: String(v.name).trim(), remarks: String(v.remarks || '').trim().slice(0, 300) };
+          cfg.towerTypes = typeList().concat([ty]);
+          var t = _twNewInstance(ty);
+          cfg.towers = towerList().concat([t]);
+          uiTower = t.id; markDirty(); render();
+        });
+      };
+
+      /* ⚠️⚠️ "INSIDE A TYPE OR BESIDE IT" IS ASKED, NOT INFERRED. Defaulting silently to whatever
+         row happens to be selected would make the one structural decision on this step invisible —
+         and it is the decision that says whether this building shares somebody else's floors or
+         gets its own. The default follows the selection; the control says what it will do. */
+      host.querySelector('#b-twadd').onclick = function () {
+        var dflt = (actOwner && actOwner.kind === 'type') ? actOwner.id : '';
+        var draft = _twNewInstance({ id: dflt });
+        psAsk({ title: 'Add a development', ok: 'Add development',
+          text: 'One building. Put it inside a type to share that type’s floors, or beside the types to lay it out on its own.',
+          fields: [
+            { k: 'belongs', label: 'Belongs to', type: 'select', value: dflt,
+              options: types.map(function (ty) { return [ty.id, 'Inside ' + (ty.name || ty.code) + ' — shares its floors']; })
+                .concat([['', 'Beside them — its own floors']]),
+              hint: 'Inside a type, it is identical to every other development of that type and needs no layout of its own. Beside them, step ' + _stepNo('Floors & Zones') + ' gives it floors.' },
+            { k: 'name', label: 'Development name', value: draft.name, required: true, placeholder: draft.name,
+              hint: 'What the planners call it. The Vertical Stacking joins on this, so it has to be unique across the project.' },
+            { k: 'code', label: 'Code', value: draft.code, required: true, placeholder: draft.code,
+              hint: 'Two or three characters. It is built into generated activity codes and location labels.' },
+            { k: 'remarks', label: 'Remarks', value: '', placeholder: 'Optional',
+              hint: 'For you. Nothing downstream reads it.' }
+          ],
+          validate: function (v) {
+            if (_dupTower('', 'name', String(v.name).trim())) return 'Another development is already called “' + String(v.name).trim() + '”.';
+            if (_dupTower('', 'code', String(v.code).trim())) return 'Another development already uses the code “' + String(v.code).trim() + '”.';
+            return '';
+          }
+        }, function (v) {
+          var t = { id: uidv(), code: String(v.code).trim(), name: String(v.name).trim(),
+                    typeId: String(v.belongs || ''), remarks: String(v.remarks || '').trim().slice(0, 300) };
+          cfg.towers = towerList().concat([t]);
+          uiTower = t.id; markDirty(); render();
+        });
+      };
+
+      host.querySelectorAll('[data-copy]').forEach(function (b) {
+        b.onclick = function (ev) { ev.stopPropagation(); _copyLayoutDlg(b.dataset.copy); };
+      });
+
+      /* ⚠️ Deleting a DEVELOPMENT: `_twRemoveTower` carries the rule that makes it safe — the
+         floors move to the next development of the type when the representative goes, and go with
+         it when there is nothing left to own them. The confirm says which of the two is about to
+         happen rather than leaving it to be discovered. */
+      host.querySelectorAll('[data-deltw]').forEach(function (b) {
+        b.onclick = function (ev) {
+          ev.stopPropagation();
+          var t = towerById(b.dataset.deltw); if (!t) return;
+          var sibs = t.typeId ? towersOfType(t.typeId) : [t];
+          var last = sibs.length < 2, wasRep = sibs[0] && sibs[0].id === t.id;
+          var n = last ? _twFloorCount(t.id) : 0;
+          psConfirm('Remove ' + (t.name || t.code || 'this development') + '?', function () {
+            if (_twRemoveTower(t.id)) { markDirty(); render(); }
+          }, { title: 'Remove this development?', ok: 'Remove it',
+               note: last
+                 ? 'It is the last one of its ' + (t.typeId ? 'type' : 'kind') + ', so the ' +
+                   (t.typeId ? 'type and its ' : '') + n + ' floor' + (n === 1 ? '' : 's') + ' go with it. This cannot be undone.'
+                 : (wasRep
+                     ? 'The floors stay — they move to <b>' + e2(sibs[1].name || sibs[1].code) + '</b>, which becomes the one this type is laid out on.'
+                     : 'The other developments of this type keep their floors.') });
+        };
+      });
+
+      /* ⚠️ Deleting a TYPE takes every development built from it, because they have no floors of
+         their own — they are that type. Named in the confirm with both counts. */
+      host.querySelectorAll('[data-delty]').forEach(function (b) {
+        b.onclick = function (ev) {
+          ev.stopPropagation();
+          var ty = typeById(b.dataset.delty); if (!ty) return;
+          var inst = towersOfType(ty.id), rep = repTowerOf(ty.id);
+          if (towerList().length - inst.length < 1) { UI.toast('This is the only layout in the project — add another before deleting it.', 'warn'); return; }
+          var n = _twFloorCount(rep), lab = ty.name || ty.code || 'this type';
+          psConfirm('Delete ' + lab + ', its ' + n + ' floor' + (n === 1 ? '' : 's') + ' and the ' +
+            inst.length + ' development' + (inst.length === 1 ? '' : 's') + ' built from it?', function () {
+            /* ⚠️⚠️ EVERY INSTANCE GOES, NOT JUST THE REPRESENTATIVE. Deleting the representative
+               alone would leave N developments pointing at a type that no longer exists — they would
+               vanish from the table while still being generated into the schedule. */
+            var drop = {}; inst.forEach(function (t) { drop[t.id] = 1; });
+            GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return !drop[towerIdOf(f)]; }); });
+            cfg.towers = towerList().filter(function (t) { return !drop[t.id]; });
+            cfg.towerTypes = typeList().filter(function (x) { return x.id !== ty.id; });
+            cfg.towerLinks = towerLinks().filter(function (k) { return !drop[k.from] && !drop[k.to]; });
+            if (!towerById(uiTower)) uiTower = towerList()[0].id;
+            pruneLinks(); markDirty(); render();
+          }, { title: 'Delete this tower type?', ok: 'Delete the type',
+               note: 'This cannot be undone. Every trade’s floors under this type go with it, and so does every development built from it.' });
+        };
+      });
+
+      var _sb = host.querySelector('#b-siteplan');
+      if (_sb) _sb.onclick = function () { openSitePlan(); };
     }
     function stLevels(host) {
       /* ⚠️⚠️ THE TRADES THAT HAVE A LOCATION, not every trade in use — see LOCLESS. Owner
@@ -44855,8 +44968,8 @@
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
           (showZones ? '<div class="sbld-znwrap">' + zonesHtml + '</div>' : '<div class="sbld-znwrap"><div class="sbld-znhint">Floor level — zones &amp; units are ignored. Switch <b>Activity level</b> to Zone/Unit to split this floor.</div></div>') + '</div>';
       }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(_twAct)) +
-        ' yet. Use <b>+ Add floor</b> for one at a time, or <b>Quick setup…</b> above to state the whole building — basements, podium, typical floors and roof deck — in one press.' +
-        (multiTower() ? ' If this tower repeats one you have already typed, <b>Copy from another tower…</b> takes its trades, floors, zones and units in one press.' : '') + '</div>';
+        ' yet. <b>Quick setup…</b> above states the whole building in one press — basements, podium, typical floors and a roof deck, each with its own zones.' +
+        (_srcs.length ? ' If it repeats a layout you have already typed, <b>take a layout from</b> beside that button copies one in.' : '') + '</div>';
       // Quick-generate inputs keep the counts the planner last generated with for THIS trade, so a
       // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
       /* ==== STATING THE BUILDING, IN A POP-UP ===========================================
@@ -44879,14 +44992,20 @@
          instead of "basements and floors", with the categories then set one row at a time.
 
          ⚠️ The fold, `_qsf`, the four `#q-*` boxes and `qv()` all went with it: they were the
-         inline form, and a second form for the same question is how the two stop agreeing. */
+         inline form, and a second form for the same question is how the two stop agreeing.
+
+         ⚠️⚠️ AND IT IS NOW THE ONLY WAY TO CREATE FLOORS. Owner 2026-09-18 removed *+ Add floor*
+         and *+ Basement* — *"since quick setup should do"* — so this dialog REPLACES rather than
+         appends, and a tower that already has floors cannot be added to one storey at a time. The
+         button's own hint says so before it is pressed, and the note inside the dialog says it
+         again with the count. */
       var fillCtrl = '<div class="sbld-fillrow">' +
         '<button class="pd-btn pd-btn-primary" id="b-quick">Quick setup…</button>' +
         '<span class="sbld-hint">' +
           (_twFloors.length
             ? 'States the whole building at once — it <b>replaces</b> the ' + _twFloors.length + ' floor' +
-              (_twFloors.length === 1 ? '' : 's') + ' below.'
-            : 'States the whole building at once: basements, podium, typical floors and roof deck.') +
+              (_twFloors.length === 1 ? '' : 's') + ' below. Edit a single storey on its own row instead.'
+            : 'States the whole building at once: basements, podium, typical floors and a roof deck, each with its own zones.') +
         '</span>' +
         copyInner +
       '</div>';
@@ -45014,19 +45133,32 @@
            above (see `_locBreakdownBar`'s `opts.level`), which is where it belongs; the wiring
            below is UNCHANGED, because `#b-loclevel` is still emitted into this same host. */
         chips +
-        '<div class="sbld-lvlgrid">' +
-        '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add ' + e2(dimLabelOf('floor').toLowerCase()) + '</button>' +
-          '<button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
-          /* ⚠️⚠️ NO "Change every floor…" BUTTON — see the note where `_bulkDlg` used to be.
-             ⚠️⚠️ THE TOWER COPY COMES OUT OF THE Tower options MENU AND ONTO THE ROW. Owner 2026-09-17:
-             *"when users select another tower, there is an option wherein users are able to copy
-             the trades from another tower and the number of floors etc."* The capability existed
-             — but it was the third row of a ⋯ menu on the tower bar, which is the last place a
-             planner looks when the answer to "this tower is empty" is sitting in the tower next to
-             it. Here it is beside the two buttons it is an alternative to, and only when there is
-             more than one tower to copy from. The ⋯ entry stays: it is where you go to act on the
-             tower itself, and both open the same dialog. */
-          (towerList().length > 1 ? '<button class="pd-btn" id="b-twcopy2" title="Take another tower\u2019s trades, floors, zones and units">Copy from another tower…</button>' : '') +
+        /* ⚠️⚠️ A CONTAINER, NOT A VIEWPORT MEDIA QUERY. Owner 2026-09-18: *"improve also layout.
+           if narrow width window, move stacking to bottom."* What decides whether the two columns
+           fit is the width of the STEP PANEL, and that is the viewport minus the sidebar (240px,
+           or 64 collapsed) minus the step rail (230px, or a horizontal strip below 820px) minus
+           padding — four terms, two of which the planner changes at will. A viewport breakpoint
+           would therefore be wrong on the same screen depending on whether the sidebar is open.
+           ⚠️ The container is a WRAPPER, never `.sbld-panel`: `container-type` applies
+           `contain: layout`, which makes the element a containing block for fixed-position
+           descendants — and `.sbld-linkdlg` (the Location Sequence step's link pop-up) is
+           `position:fixed` inside that panel. Scoping it here keeps it away from anything that
+           positions itself against the viewport. */
+        '<div class="sbld-lvlwrap"><div class="sbld-lvlgrid">' +
+        /* ==== NO ADD-FLOOR, NO ADD-BASEMENT, NO COPY-FROM-ANOTHER-TOWER ==================
+           ⚠️⚠️ Owner 2026-09-18: *"remove already the add floor and basement buttons since quick
+           setup should do. remove also copy from another tower."* Quick setup states the whole
+           building in one press and the list below adjusts it, so three more ways into the same list
+           were three more things to read before the list itself.
+           ⚠️ `_addFloorDlg` went WITH the two buttons rather than being left wired to nothing — a
+           live dialog function with no emitter is exactly what a later reader restores a button for.
+           ⚠️⚠️ AND WHAT IT COSTS IS SAID RATHER THAN DISCOVERED: there is now no way to add ONE
+           storey to a tower that already has floors — Quick setup REPLACES. Both the empty state and
+           the Quick setup note say so.
+           ⚠️ The *take a layout from* control below is NOT the one that was removed: that was
+           `Copy from another tower…`, which took every trade at once. This one is per (trade, tower)
+           and is the only surviving route to a layout somebody has already typed. */
+        '<div><div class="sbld-sec-actions">' +
         /* ==== WHAT THIS TOWER AND TRADE ACTUALLY HOLD =====================================
            ⚠️ Four numbers the planner would otherwise get by counting rows, and one they could
            not get at all: LOCATIONS is what the schedule is generated against — leavesOfFloor's
@@ -45059,7 +45191,7 @@
         floorsHtml + '<p class="sbld-hint">Drag the grip at the left of a row to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
           (multiTower() ? ' <span style="font-weight:700;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
-        '</div>' +
+        '</div></div>' +
         // ⚠️ AFTER the floors and the tower drawing, because it is a layout OF the zones typed
         // above it: put first, it would be an empty grid on a project with no floors yet.
         '';
@@ -45122,105 +45254,66 @@
       // ⚠️ Counts and codes are per TOWER, so adding F1 to Tower B does not become F21 because Tower
       // A already has twenty floors.
       _twBarWire(host, { act: _twAct, tr: tr });
-      /* ==== ADDING A STOREY, AS A FORM =================================================
-         ⚠️⚠️ Owner 2026-09-17: *"when adding towers, floors … create an app pop-up window where
-         user can input the fields"*, and the same prompt's *"improve the process flow of defining
-         the floor plans per floor and type"*. "+ Add floor" appended ONE blank row with an
-         auto-code and the default category, and everything that actually distinguishes a storey —
-         its name, whether it is a roof or a podium or a typical floor, how many zones are on it —
-         had to be typed into the row afterwards, once per floor. A tower is built ten floors at a
-         time, and the count is the field that was missing: `How many` turns ten gestures into one.
-         ⚠️ THE DEFAULTS REPRODUCE THE OLD BUTTON EXACTLY — one floor, the next auto code, no name,
-         Typical, no zones — so pressing Enter the moment the dialog opens is the gesture that was
-         there before, and nothing about the fast path got slower.
-         ⚠️ The CATEGORY is asked here rather than left to the row, because it is what the zone
-         sequence branches on (a basement is not sequenced like a typical floor) and it is the
-         "type" half of the owner's "per floor and type". Choosing it at birth is also what lets
-         the plan step below offer the right plate to share.
-         ⚠️ `_fkind` defaults the copy for the two buttons: the basement one is the same form with
-         the substructure answers pre-filled, not a second dialog to keep in step. */
-      function _addFloorDlg(sub) {
-        var sibs = floorsOfTower(tr, _twAct).filter(function (f) { return !!f.sub === !!sub; });
-        var pre = sub ? 'B' : 'F', from = sibs.length + 1;
-        psAsk({
-          title: sub ? 'Add basement levels' : 'Add floors',
-          text: (multiTower() ? towerLabel(_twAct) + ' · ' : '') + GLABEL[tr] +
-            (sub ? ' — substructure, built deepest first.' : ' — superstructure, built bottom-up.'),
-          ok: 'Add',
-          fields: [
-            { k: 'n', label: 'How many', type: 'number', value: 1, min: 1, max: 60,
-              hint: 'More than one and the codes run on from the first — ' + pre + from + ', ' + pre + (from + 1) + ', …' },
-            { k: 'code', label: 'Code of the first one', value: pre + from, required: true,
-              hint: 'Short, and what the WBS and every generated activity code is built from. A trailing number counts up.' },
-            { k: 'name', label: 'Name (optional)', value: '',
-              placeholder: sub ? 'Lower basement' : 'Ground floor',
-              hint: 'The readable name. Where one is given it — not the code — names the floor’s WBS branch.' },
-            { k: 'kind', label: 'Category', type: 'select', value: sub ? 'basement' : 'typical',
-              options: KIND_ORDER.map(function (k) { return [k, KIND_LABEL[k]]; }),
-              hint: 'What kind of storey this is. The zone sequence can be set separately per category, and the floor plan can be shared across every floor of one category.' },
-            (showZones ? { k: 'z', label: 'Zones on each', type: 'number', value: 0, min: 0, max: 20,
-              hint: 'Leave at 0 for a floor that is scheduled as one location. Zones are named Z1, Z2… and can be renamed in the list.' } : null)
-          ]
-        }, function (v) {
-          var n = Math.max(1, Math.min(60, +v.n || 1));
-          var z = Math.max(0, Math.min(20, +v.z || 0));
-          /* ⚠️ The number is taken off the END of the typed code and counted up from there, so
-             "B2" gives B2, B3, B4 and "PODIUM" gives PODIUM, PODIUM 2 — a code with no number in
-             it must not silently become "PODIUM1" for the first one. */
-          var mm = /^(.*?)(\d+)$/.exec(String(v.code).trim());
-          var stem = mm ? mm[1] : (String(v.code).trim() + ' '), num = mm ? +mm[2] : 1;
-          var made = [];
-          for (var i = 0; i < n; i++) {
-            var zs = [];
-            for (var j = 1; j <= z; j++) zs.push({ id: uidv(), code: 'Z' + j, units: [] });
-            made.push({ id: uidv(), code: mm ? (stem + (num + i)) : (i ? (stem + (num + i)) : String(v.code).trim()),
-                        name: (n === 1 ? String(v.name || '').trim() : ''), kind: v.kind,
-                        sub: (v.kind === 'basement'), towerId: _twAct, zones: zs });
-          }
-          /* ⚠️ Basements are INSERTED at index 0 and in reverse, because the list runs bottom-up
-             and a basement is built deepest first — the same rule the old two buttons encoded, in
-             one place now that one form makes both. */
-          if (made[0].sub) zn.floors = made.slice().reverse().concat(zn.floors);
-          else zn.floors = zn.floors.concat(made);
-          markDirty(); render();
-        });
+      /* ==== QUICK SETUP — ONE ROW PER CATEGORY =========================================
+         ⚠️⚠️ Owner 2026-09-18: *"in quick set-up simplify the inputs: Basement - ____ floors x
+         ____ zones, Podium - ____ floors x ____ zones, Typical - ____ floors x ____ zones x
+         (checkbox * ____ units if checked), RD - checkbox (*____ zones if checked)."*
+
+         Two real changes underneath the layout, and both of them are model changes rather than
+         cosmetics:
+           • ZONES ARE PER CATEGORY. One number for the whole building was a guess that is wrong on
+             most of them — a podium is split into three or four zones and the typical floors above
+             it into two, and stating one figure meant generating the building and then editing
+             every row of one of the two.
+           • UNITS ARE TYPICAL-ONLY, behind a tick. They are the rung almost nobody uses, and asking
+             for them on a basement is asking for a number that is always 0.
+           • A ROOF DECK IS A TICK, not a count, because it is one level or none. `R` is still a
+             COUNT in the model (0 or 1) so nothing downstream had to learn a third shape.
+
+         ⚠️⚠️ AND THE MINIMUM FOR A ZONE AND A UNIT IS 1, NOT 0 — owner: *"for zones and units,
+         minimum is always 1."* The consequence, which is not obvious: a floor with NO zones is a
+         floor-level leaf (see leavesOfFloor), so this dialog can no longer generate one. The floor
+         list's own − stepper still can, one row at a time, and on a project whose Activity level is
+         Floor the zone questions are not asked at all — so nothing is unreachable.
+
+         ⚠️ `_qsNorm` is the ONE clamp both the live sentence and the generator read, so what the
+         dialog says it will create and what it creates cannot disagree. That property is why the
+         preview is rebuilt rather than dropped; it is the whole reason it exists. */
+      function _qsNorm(raw) {
+        var zz = function (v) { return showZones ? _clampN(v == null ? 1 : v, 1, 20) : 0; };
+        return {
+          B: _clampN(raw.B, 0, 20), P: _clampN(raw.P, 0, 30), F: _clampN(raw.F, 0, 80),
+          R: raw.R ? 1 : 0,
+          z: { basement: zz(raw.BZ), podium: zz(raw.PZ), typical: zz(raw.FZ), roof: zz(raw.RZ) },
+          /* ⚠️ Units hang off the TYPICAL floors only, so `u` is one number rather than a map —
+             a per-category unit count would be three boxes that can only ever hold 0. */
+          u: (showUnits && raw.HU) ? _clampN(raw.U == null ? 1 : raw.U, 1, 20) : 0
+        };
       }
-      host.querySelector('#b-addfloor').onclick = function () { _addFloorDlg(false); };
-      // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
-      /* A BASEMENT BELONGS TO THE SELECTED TOWER, LIKE EVERY OTHER FLOOR.
-         Owner 2026-09-04: *"the adding of basement is not working, meaning when i click add basement,
-         it always adds to tower 1 even if i selected another tower."*
-         Exactly so, and the line above shows why: "+ Add floor" writes towerId: _twAct, and this one
-         wrote no towerId at all. towerIdOf() falls back to the FIRST tower for a floor that names
-         none (which is right for a legacy config), so every basement silently became Tower 1s.
-         The count was wrong for the same reason: it counted basements across ALL towers, so adding
-         B1 to Tower 3 while Tower 1 already had two produced "B3". "+ Add floor" already scopes its
-         count with floorsOfTower; this now matches it.
-         Basements build bottom-up (deepest first), so a new one is still INSERTED at index 0.
-         ⚠️ 2026-09-17: both buttons are now ONE form — see _addFloorDlg. The rule above still
-         holds and is implemented there; this button only pre-fills the substructure answers. */
-      host.querySelector('#b-addbsmt').onclick = function () { _addFloorDlg(true); };
-      /* ==== THE LIVE ANSWER, INSIDE THE DIALOG THAT WOULD PRODUCE IT ====================
-         ⚠️ The sentence and the action read the SAME six numbers off the SAME six fields — `_qsN`
-         below is the only reader of either — so they cannot drift, which is the property the
-         inline version had through `qv()` and the reason it is rebuilt rather than dropped.
-         ⚠️ It states the LOCATION count, not just the storeys: that is the number every later
-         step is sized by, and it follows leavesOfFloor's own rule — no zones means the FLOOR is the
+      function _qsPer(q) { return { basement: q.B, podium: q.P, typical: q.F, roof: q.R }; }
+      /* ⚠️ The LOCATION count follows leavesOfFloor's own rule — no zones means the FLOOR is the
          leaf, no units means the zone is. Anything else here would be a second opinion about what a
-         location is. */
-      function _qsSentence(B, P, Fl, R, Z, U) {
-        var st = B + P + Fl + R, nz = st * Z, nu = nz * U;
-        var nl = Z ? (U ? nu : nz) : st;
-        var parts = [];
-        if (B) parts.push(B + ' basement' + (B === 1 ? '' : 's'));
-        if (P) parts.push(P + ' podium');
-        if (Fl) parts.push(Fl + ' typical');
-        if (R) parts.push(R + ' roof deck');
-        return 'Creates <b>' + st + '</b> storey' + (st === 1 ? '' : 's') +
+         location is, and it is the number every later step is sized by. */
+      function _qsCalc(q) {
+        var per = _qsPer(q), st = 0, nz = 0, nu = 0, nl = 0;
+        KIND_ORDER.forEach(function (k) {
+          var c = per[k] || 0, z = q.z[k] || 0, u = (k === 'typical' ? q.u : 0);
+          st += c; nz += c * z; nu += c * z * u;
+          nl += c * (z ? (u ? z * u : z) : 1);
+        });
+        return { st: st, nz: nz, nu: nu, nl: nl };
+      }
+      function _qsSentence(q) {
+        var n = _qsCalc(q), per = _qsPer(q), parts = [];
+        KIND_ORDER.forEach(function (k) {
+          var c = per[k] || 0; if (!c) return;
+          parts.push(c + ' ' + KIND_LABEL[k].toLowerCase() + (q.z[k] ? ' × ' + q.z[k] : ''));
+        });
+        return 'Creates <b>' + n.st + '</b> storey' + (n.st === 1 ? '' : 's') +
           (parts.length ? ' (' + e2(parts.join(', ')) + ')' : '') +
-          (Z ? ', <b>' + nz + '</b> ' + e2(dimLabelOf('zone').toLowerCase()) + (nz === 1 ? '' : 's') : ', no zones') +
-          (U ? ', <b>' + nu + '</b> ' + e2(dimLabelOf('unit').toLowerCase()) + (nu === 1 ? '' : 's') : '') +
-          ' — <b>' + nl + '</b> location' + (nl === 1 ? '' : 's') + ' to schedule.' +
+          (n.nz ? ', <b>' + n.nz + '</b> ' + e2(dimLabelOf('zone').toLowerCase()) + (n.nz === 1 ? '' : 's') : ', no zones') +
+          (n.nu ? ', <b>' + n.nu + '</b> ' + e2(dimLabelOf('unit').toLowerCase()) + (n.nu === 1 ? '' : 's') : '') +
+          ' — <b>' + n.nl + '</b> location' + (n.nl === 1 ? '' : 's') + ' to schedule.' +
           (_twFloors.length
             ? ' <b class="sbld-qsprev-warn">Replaces the ' + _twFloors.length + ' floor' +
               (_twFloors.length === 1 ? '' : 's') + ' already under ' + e2(GLABEL[tr]) +
@@ -45228,31 +45321,39 @@
             : '');
       }
       host.querySelector('#b-quick').onclick = function () {
-        var qd = quickN[tr] || { B: 0, P: 0, F: 5, R: 0, Z: 2, U: 0 };
-        /* ⚠️⚠️ THE CATEGORIES ARE THE STEP'S OWN `KIND_LABEL`, not words retyped here. The
-           floor list's per-row select, the per-category cross-trade handoff in Activity Sequence and
-           the LSM's own wording all read that one map; a fifth spelling of "Podium / Commercial"
-           would be a fifth thing to keep in step. */
+        var qd = quickN[tr] || { B: 0, P: 0, F: 5, R: false, BZ: 1, PZ: 1, FZ: 2, RZ: 1, HU: false, U: 1 };
+        var ZL = dimLabelOf('zone').toLowerCase(), UL = dimLabelOf('unit').toLowerCase();
+        /* ⚠️ A zone cell, built once: four rows ask the identical question and four hand-written
+           copies is how one of them ends up with a different minimum. */
+        function zc(k, v) { return { k: k, type: 'number', value: v, min: 1, max: 20, after: ZL + 's' }; }
+        function row(label, cells, hint) { return { type: 'row', label: label, cells: cells, hint: hint }; }
+        /* ⚠️⚠️ THE CATEGORIES ARE THE STEP'S OWN `KIND_LABEL`, not words retyped here. The floor
+           list's per-row select, the per-category cross-trade handoff in Activity Sequence and the
+           LSM's own wording all read that one map; a fifth spelling of "Podium / Commercial" would
+           be a fifth thing to keep in step. */
         var flds = [
-          { k: 'B', label: KIND_LABEL.basement + 's', type: 'number', value: qd.B, min: 0, max: 20,
-            hint: 'Numbered B1 at grade and downward, deepest first. 0 for a building with none.' },
-          { k: 'P', label: KIND_LABEL.podium + ' floors', type: 'number', value: qd.P, min: 0, max: 30,
-            hint: 'The lowest above-grade floors. Their category is what lets step ' + _stepNo('Activity Sequence') +
-                  ' hand trades over differently here than on a typical floor.' },
-          { k: 'F', label: KIND_LABEL.typical + ' floors', type: 'number', value: qd.F, min: 0, max: 80,
-            hint: 'The repeating floors above the podium — the bulk of the tower, and the ones the LSM reads as one run.' },
-          { k: 'R', label: KIND_LABEL.roof + ' levels', type: 'number', value: qd.R, min: 0, max: 5,
-            hint: 'The topmost levels. 0 if the roof is not scheduled as a floor of its own.' }
+          row(KIND_LABEL.basement,
+            [{ k: 'B', type: 'number', value: qd.B, min: 0, max: 20, after: 'floors' }]
+              .concat(showZones ? [{ text: '×', x: true }, zc('BZ', qd.BZ)] : []),
+            'Numbered B1 at grade and downward, deepest first. 0 for a building with none.'),
+          row(KIND_LABEL.podium,
+            [{ k: 'P', type: 'number', value: qd.P, min: 0, max: 30, after: 'floors' }]
+              .concat(showZones ? [{ text: '×', x: true }, zc('PZ', qd.PZ)] : []),
+            'The lowest above-grade floors. Their category is what lets step ' + _stepNo('Activity Sequence') +
+            ' hand trades over differently here than on a typical floor.'),
+          row(KIND_LABEL.typical,
+            [{ k: 'F', type: 'number', value: qd.F, min: 0, max: 80, after: 'floors' }]
+              .concat(showZones ? [{ text: '×', x: true }, zc('FZ', qd.FZ)] : [])
+              .concat(showUnits ? [{ text: '×', x: true },
+                { k: 'HU', type: 'checkbox', value: !!qd.HU },
+                { k: 'U', type: 'number', value: qd.U, min: 1, max: 20, after: UL + 's', disabled: !qd.HU }] : []),
+            'The repeating floors above the podium — the bulk of the tower, and the ones the LSM reads as one run.' +
+            (showUnits ? ' Tick to split each ' + e2(ZL) + ' into ' + e2(UL) + 's; they are the deepest rung and most buildings do not use them.' : '')),
+          row(KIND_LABEL.roof,
+            [{ k: 'R', type: 'checkbox', value: !!qd.R, label: 'Include one' }]
+              .concat(showZones ? [{ text: '×', x: true }, zc('RZ', qd.RZ)] : []),
+            'One level or none — tick it if the roof is scheduled as a floor of its own.')
         ];
-        /* ⚠️⚠️ AND HERE THE LEVEL-IGNORED FIELDS CAN GENUINELY BE LEFT OUT, which the inline
-           strip could not do: `qv()` read every box by id with no null guard and threw the moment
-           one was missing. `psAsk` only returns keys for fields it drew, and `_qsN` below answers 0
-           for a field that is not there — so a question the current Activity level ignores is not
-           asked at all, instead of being asked and labelled “ignored”. */
-        if (showZones) flds.push({ k: 'Z', label: dimLabelOf('zone') + 's on each floor', type: 'number', value: qd.Z, min: 0, max: 20,
-          hint: '0 for none — the floor is then the location the schedule carries.' });
-        if (showUnits) flds.push({ k: 'U', label: dimLabelOf('unit') + 's per ' + dimLabelOf('zone').toLowerCase(), type: 'number', value: qd.U, min: 0, max: 20,
-          hint: '0 for none — the zone is then the location.' });
         flds.push({ k: '_prev', type: 'static', label: 'This will create', html: '' });
         var _m = psAsk({
           title: 'Quick setup — ' + GLABEL[tr] + (multiTower() ? ' · ' + towerLabel(_twAct) : ''),
@@ -45260,78 +45361,96 @@
           ok: _twFloors.length ? 'Replace the floors' : 'Generate the floors',
           danger: !!_twFloors.length,
           text: 'State the building once and every floor is created with its category already set. Adjust anything afterwards on the floor list below — this dialog is the starting point, not the only way in.',
-          /* ⚠️⚠️ ONE DIALOG, NOT A DIALOG AND THEN A CONFIRM. The old handler opened a second
-             box to warn about replacement — and it counted `zn.floors.length`, which is EVERY
-             tower's floors for this trade, while the generator only ever replaced this one's. So it
-             warned about the wrong number, in a second window, about a thing the live sentence
-             right above the button already says. */
+          /* ⚠️⚠️ ONE DIALOG, NOT A DIALOG AND THEN A CONFIRM. The old handler opened a second box to
+             warn about replacement — and it counted `zn.floors.length`, which is EVERY tower's floors
+             for this trade, while the generator only ever replaced this one's. So it warned about the
+             wrong number, in a second window, about a thing the live sentence right above the button
+             already says. */
           note: _twFloors.length
             ? '⚠️ This <b>replaces</b> the ' + _twFloors.length + ' floor' + (_twFloors.length === 1 ? '' : 's') +
               ' already under <b>' + e2(GLABEL[tr]) + '</b>' + (multiTower() ? ' in <b>' + e2(towerLabel(_twAct)) + '</b>' : '') +
-              ', and everything typed on them — names, zones, units. Other towers and other trades are untouched. ' +
-              'Use <b>+ Add floor</b> instead to add to what is there.'
+              ', and everything typed on them — names, zones, units. Other towers and other trades are untouched.'
             : '',
           fields: flds,
           validate: function (v) {
-            var n = (v.B | 0) + (v.P | 0) + (v.F | 0) + (v.R | 0);
-            return n >= 1 ? '' : 'A building needs at least one storey — put a number against one of the four categories.';
+            return _qsCalc(_qsNorm(v)).st >= 1
+              ? '' : 'A building needs at least one storey — put a number against one of the categories, or tick the roof deck.';
           }
         }, function (v) {
-          var B = _clampN(v.B, 0, 20), P = _clampN(v.P, 0, 30), Fl = _clampN(v.F, 0, 80), R = _clampN(v.R, 0, 5);
-          var Z = showZones ? _clampN(v.Z, 0, 20) : 0, U = showUnits ? _clampN(v.U, 0, 20) : 0;
-          quickN[tr] = { B: B, P: P, F: Fl, R: R, Z: Z, U: U };
-          function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
+          var q = _qsNorm(v);
+          quickN[tr] = { B: q.B, P: q.P, F: q.F, R: !!q.R,
+                         BZ: v.BZ, PZ: v.PZ, FZ: v.FZ, RZ: v.RZ, HU: !!v.HU, U: v.U };
+          /* ⚠️ The zones a floor gets are ITS CATEGORY'S, and units only ever hang off a typical
+             floor — the one place this reads `q.u` at all. */
+          function mkZones(kind) {
+            var zs = [], z = q.z[kind] || 0, u = (kind === 'typical' ? q.u : 0);
+            for (var j = 1; j <= z; j++) {
+              var us = [];
+              for (var k2 = 1; k2 <= u; k2++) us.push({ id: uidv(), code: 'U' + k2 });
+              zs.push({ id: uidv(), code: 'Z' + j, units: us });
+            }
+            return zs;
+          }
           // ⚠️ Replace only THIS tower's floors. This was `zn.floors = []`, which wiped every other
           // tower's floors too — generating Tower 2 destroyed Tower 1.
           var _kept = zn.floors.filter(function (f) { return towerIdOf(f) !== _twAct; });
           var _gen = [];
-          for (var bi = B; bi >= 1; bi--) _gen.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', towerId: _twAct, zones: mkZones() });   // deepest (B{B}) first
-          /* ⚠️⚠️ ONE ABOVE-GRADE NUMBERING SEQUENCE, NOT THREE. A four-storey podium under
-             twelve typical floors under a roof deck is F1…F17 — the categories say what each floor
-             IS, they do not restart the count. Numbering them P1…P4, F1…F12, R1 would put two
-             different floors called “F1” in the same tower the moment anyone renamed a category, and
-             every location label and generated activity id is built from that code. */
+          for (var bi = q.B; bi >= 1; bi--) _gen.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', towerId: _twAct, zones: mkZones('basement') });   // deepest (B{B}) first
+          /* ⚠️⚠️ ONE ABOVE-GRADE NUMBERING SEQUENCE, NOT THREE. A four-storey podium under twelve
+             typical floors under a roof deck is F1…F17 — the categories say what each floor IS, they
+             do not restart the count. Numbering them P1…P4, F1…F12, R1 would put two different floors
+             called “F1” in the same tower the moment anyone renamed a category, and every location
+             label and generated activity id is built from that code. */
           var _kinds = [];
-          for (var pi = 0; pi < P; pi++) _kinds.push('podium');
-          for (var ti = 0; ti < Fl; ti++) _kinds.push('typical');
-          for (var ri = 0; ri < R; ri++) _kinds.push('roof');
+          for (var pi = 0; pi < q.P; pi++) _kinds.push('podium');
+          for (var ti = 0; ti < q.F; ti++) _kinds.push('typical');
+          for (var ri = 0; ri < q.R; ri++) _kinds.push('roof');
           _kinds.forEach(function (k, ix) {
-            _gen.push({ id: uidv(), code: 'F' + (ix + 1), name: '', kind: k, towerId: _twAct, zones: mkZones() });
+            _gen.push({ id: uidv(), code: 'F' + (ix + 1), name: '', kind: k, towerId: _twAct, zones: mkZones(k) });
           });
           zn.floors = _kept.concat(_gen);
           // Only the regenerated tower's links are stale; the other towers' stay valid.
           pruneLinks(); markDirty(); render();
           UI.toast('Created ' + _gen.length + ' floor' + (_gen.length === 1 ? '' : 's') + ' for ' + GLABEL[tr] + '.', 'success');
         });
-        /* ⚠️⚠️ THE LIVE SENTENCE, WIRED AFTER THE DIALOG EXISTS. `psAsk` returns the modal, so
-           the static field can be rewritten in place as the numbers are typed — `on input`, not
-           `change`, because the point is to answer WHILE the number is being typed.
-           ⚠️ Read by `data-k`, never by field index: two of the six fields are conditional, so an
-           index is a different question depending on the Activity level. */
+        /* ==== THE LIVE SENTENCE, WIRED AFTER THE DIALOG EXISTS ===========================
+           ⚠️ `psAsk` returns the modal, so the static field can be rewritten in place as the numbers
+           are typed — `on input`, not `change`, because the point is to answer WHILE the number is
+           being typed.
+           ⚠️ Read by `data-k`, never by position: half the cells are conditional on the Activity
+           level, so an index is a different question depending on the project. */
         if (!_m || !_m.el) return;
         var _box = _m.el.querySelector('.psask-static');
-        function _qsN(k, mn, mx) {
-          var el = _m.el.querySelector('.psask-fields [data-k="' + k + '"]');
-          if (!el) return 0;
-          var v = +el.value; if (isNaN(v)) v = 0;
-          return Math.max(mn, Math.min(mx, v));
+        function _qsEl(k) { return _m.el.querySelector('.psask-fields [data-k="' + k + '"]'); }
+        function _qsRaw() {
+          function num(k) { var el = _qsEl(k); if (!el) return null; var v = +el.value; return isNaN(v) ? null : v; }
+          function chk(k) { var el = _qsEl(k); return !!(el && el.checked); }
+          return { B: num('B'), P: num('P'), F: num('F'), R: chk('R'),
+                   BZ: num('BZ'), PZ: num('PZ'), FZ: num('FZ'), RZ: num('RZ'),
+                   HU: chk('HU'), U: num('U') };
         }
-        function _qsPrev() {
-          if (!_box) return;
-          _box.innerHTML = _qsSentence(_qsN('B', 0, 20), _qsN('P', 0, 30), _qsN('F', 0, 80),
-                                       _qsN('R', 0, 5), _qsN('Z', 0, 20), _qsN('U', 0, 20));
+        /* ⚠️⚠️ A NUMBER THAT IS NOT BEING ASKED IS DISABLED, NOT MERELY IGNORED. The roof's zone
+           count and the typical floors' unit count only mean something when their tick is on, and a
+           live-looking box whose value changes nothing is the looks-wired-does-nothing failure this
+           module keeps recording. `_qsNorm` zeroes them either way, so the two cannot disagree. */
+        function _qsGate() {
+          var rz = _qsEl('RZ'), u = _qsEl('U');
+          if (rz) rz.disabled = !(_qsEl('R') && _qsEl('R').checked);
+          if (u) u.disabled = !(_qsEl('HU') && _qsEl('HU').checked);
         }
-        _m.el.querySelectorAll('.psask-fields input[type="number"]').forEach(function (el) {
+        function _qsPrev() { _qsGate(); if (_box) _box.innerHTML = _qsSentence(_qsNorm(_qsRaw())); }
+        _m.el.querySelectorAll('.psask-fields input').forEach(function (el) {
           el.addEventListener('input', _qsPrev);
+          el.addEventListener('change', _qsPrev);
         });
         _qsPrev();
       };
       /* ==== "CHANGE EVERY FLOOR" IS GONE, AND SO IS `_bulkDlg` ==========================
          ⚠️⚠️ Owner 2026-09-17: *"remove the button of change every floor. what is the point of
          that."* None that this step does not already answer twice over. It set the CATEGORY or
-         the ZONE COUNT on every floor of the tower at once — but the category is asked for at
-         birth in the Add floors dialog and changed on each row's own select, and the zone count
-         is a − N + stepper on every row plus a field in Quick setup, which states the whole
+         the ZONE COUNT on every floor of the tower at once — but the category is set per category
+         in Quick setup and changed on each row's own select, and the zone count is a − N + stepper
+         on every row plus a per-category field in Quick setup, which states the whole
          building in one press. A third way to do two things, behind a modal — and its zone half
          REPLACED the zones it touched, throwing away names and units that neither of the two
          controls it duplicated ever touches.

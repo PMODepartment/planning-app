@@ -57,7 +57,14 @@ const FNS = [
   'blankTowers', 'blankTowerTypes',
   'typeList', 'typeById', 'typeLabel', 'typeOfTower', 'towersOfType', 'repTowerOf', 'repTowerOfTower',
   'floorsOfTower', 'locless', 'leavesOfFloor', 'locList',
-  '_twNewInstance', '_twSetCount', '_clampN'
+  '_twNewInstance', '_twRemoveTower', '_clampN',
+  /* ⚠️⚠️ THE 2026-09-18 RESHAPE. The ± count control (`_twSetCount`) is gone — owner:
+     *"when add type is clicked, a grouping is added. when development is clicked, a row is added
+     inside"* — so developments are now added and removed one row at a time. The property that
+     control protected (never drop the representative, whose floors the whole type reads) did NOT
+     go with it: it moved into `_twRemoveTower`, which moves the floors instead of refusing, and
+     section 5 asserts that rather than the arithmetic of a control nobody presses any more. */
+  'layoutOwners', 'ownerOfTower', 'towerLinks', 'pruneLinks', 'START', 'END'
 ];
 const VARS = ['GROUPS', 'GLABEL', 'LOCLESS'];
 
@@ -66,10 +73,15 @@ const VARS = ['GROUPS', 'GLABEL', 'LOCLESS'];
    — but re-implementing the migration here would make the suite agree with itself rather than
    with the file. So the SHIPPED lines are cut out by their own anchors and executed as-is: if the
    block is edited into a different shape the cut fails and the suite stops, which is the point. */
+/* ⚠️ The cut now STARTS at `var _hadTypes`, because that guard is the migration: it is what
+   decides whether an untyped tower is a pre-types config to migrate or a standalone development to
+   leave alone, and a slice that began below it would test the loop without the question. */
 function sliceMigration(src) {
-  const m = src.match(/\n(\s*)d\.towerTypes = \(Array\.isArray\(c\.towerTypes\)[\s\S]*?d\.towerTypes = d\.towerTypes\.filter\(function \(ty\) \{[^\n]*\n/);
+  const m = src.match(/\n(\s*)var _hadTypes = Array\.isArray\(c\.towerTypes\);[\s\S]*?d\.towerTypes = d\.towerTypes\.filter\(function \(ty\) \{[^\n]*\n/);
   if (!m) return null;
-  return 'function migrateTypes(d, c) {\n' + m[0] + '\nreturn d;\n}\n';
+  return 'function migrateTypes(d, c) {\n' +
+    'function _rmk(v) { return String(v == null ? "" : v).trim().slice(0, 300); }\n' +
+    m[0] + '\nreturn d;\n}\n';
 }
 
 function build(src, opts) {
@@ -87,9 +99,12 @@ function build(src, opts) {
   /* ⚠️ `cfg` and `uidv` are the ONLY things provided: `cfg` is the document under edit (the
      fixture IS the document) and `uidv` is a random-id source a deterministic test must control.
      Every rule being tested is sliced. */
-  const pre = 'var cfg = null;\nvar _seq = 0;\nfunction uidv() { return "u" + (++_seq); }\n';
+  /* ⚠️ `uiTower` is module state `_twRemoveTower` repoints when the active development goes —
+     supplied, like `cfg`, because it IS the document's UI state rather than a rule under test. */
+  const pre = 'var cfg = null;\nvar uiTower = null;\nvar _seq = 0;\nfunction uidv() { return "u" + (++_seq); }\n';
   const post = '\nreturn { ' + have.map(function (n) { return n + ': ' + n; }).join(', ') +
     ', setCfg: function (c) { cfg = c; }, getCfg: function () { return cfg; },' +
+    ' setUiTower: function (v) { uiTower = v; }, getUiTower: function () { return uiTower; },' +
     ' resetIds: function () { _seq = 0; } };';
   return new Function(pre + bodies.join('\n') + post)();
 }
@@ -131,6 +146,7 @@ function mkTypedCfg(n) {
     towerTypes: [{ id: 'ty1', code: 'T1', name: 'Type 1' }],
     towers: towers,
     towerLinks: [],
+    links: [],
     activities: [{ id: 'a1', group: 'ST' }],
     zoning: {
       GR: { floors: [] }, SW: { floors: [] },
@@ -198,8 +214,9 @@ console.log('tower types — the shipped functions, executed\n');
     '3.5  …with that tower’s own LABEL, which is what the stacking and the site plan join on');
   /* Raising the count must not touch the floors. */
   const before = M.floorsOf('ST').length;
-  M._twSetCount('ty1', 5);
-  ok(M.floorsOf('ST').length === before, '3.6  ⚠️⚠️ adding two more towers adds NO floors — nothing is copied', M.floorsOf('ST').length);
+  c.towers.push(M._twNewInstance(M.typeById('ty1')));
+  c.towers.push(M._twNewInstance(M.typeById('ty1')));
+  ok(M.floorsOf('ST').length === before, '3.6  ⚠️⚠️ adding two more developments adds NO floors — nothing is copied', M.floorsOf('ST').length);
   ok(M.locList().length === 25, '3.7  …but the push now carries 5 × 5', M.locList().length);
 }
 
@@ -226,34 +243,75 @@ console.log('tower types — the shipped functions, executed\n');
     '4.5  …and still starts with its trade, which every reader of a uid splits on', second[0]);
 }
 
-/* ================= 5 · the count control ================================================= */
+/* ================= 5 · adding and removing developments ================================= */
+/* ⚠️⚠️ THIS SECTION USED TO TEST THE ± COUNT CONTROL, AND IT IS RETARGETED RATHER THAN WEAKENED.
+   Owner 2026-09-18 made a development a ROW, so the count control went — but the property it
+   existed to protect is unchanged and is now STRICTER: a type's floors hang off its FIRST
+   instance, so the old control simply refused to touch that one (it removed from the end).
+   `_twRemoveTower` lets you remove any row and MOVES the floors to the next instance instead,
+   which is the case the old control could not express at all. */
 {
-  const c = mkTypedCfg(2); M.setCfg(c);
-  const repBefore = M.repTowerOf('ty1');
-  ok(M._twSetCount('ty1', 4) === true, '5.1  raising the count reports that it changed');
-  ok(M.towersOfType('ty1').length === 4, '5.2  …and there are four towers of the type', M.towersOfType('ty1').length);
+  const c = mkTypedCfg(2); M.setCfg(c); M.setUiTower('tw1');
+  const t3 = M._twNewInstance(M.typeById('ty1')); c.towers.push(t3);
+  const t4 = M._twNewInstance(M.typeById('ty1')); c.towers.push(t4);
   const names = M.towersOfType('ty1').map(function (t) { return t.name; });
-  ok(new Set(names).size === 4, '5.3  ⚠️ each has a DISTINCT name — the site plan joins areas to towers by name', names);
+  ok(new Set(names).size === 4, '5.1  ⚠️ each development has a DISTINCT name — the stacking joins areas to developments by name', names);
   const codes = M.towersOfType('ty1').map(function (t) { return t.code; });
-  ok(new Set(codes).size === 4, '5.4  …and a distinct code, which is built into every generated activity id', codes);
-  ok(M._twSetCount('ty1', 4) === false, '5.5  setting it to what it already is changes nothing');
+  ok(new Set(codes).size === 4, '5.2  …and a distinct code, which is built into every generated activity id', codes);
+
+  const repBefore = M.repTowerOf('ty1');
+  c.towerLinks = [{ from: 'tw1', to: t4.id, type: 'FS', lag: 0 }];
+  ok(M._twRemoveTower(t4.id) === true, '5.3  removing a development reports that it changed');
+  ok(M.towersOfType('ty1').length === 3, '5.4  …and three are left', M.towersOfType('ty1').length);
+  ok(M.repTowerOf('ty1') === repBefore, '5.5  removing a NON-representative leaves the representative alone', [M.repTowerOf('ty1'), repBefore]);
+  ok(c.towerLinks.length === 0, '5.6  …and a tower relationship naming one that no longer exists goes with it', c.towerLinks);
 
   /* ⚠️⚠️ THE ONE THAT PROTECTS THE LAYOUT. */
-  c.towerLinks = [{ from: 'tw1', to: M.towersOfType('ty1')[3].id, type: 'FS', lag: 0 }];
-  M._twSetCount('ty1', 2);
-  ok(M.repTowerOf('ty1') === repBefore,
-    '5.6  ⚠️⚠️ LOWERING THE COUNT REMOVES FROM THE END — the representative, which holds every floor, is untouched',
-    [M.repTowerOf('ty1'), repBefore]);
-  ok(M.floorsOfTower('ST', repBefore).length === 3, '5.7  …so the layout is still reachable', M.floorsOfTower('ST', repBefore).length);
-  ok(c.towerLinks.length === 0, '5.8  …and a tower relationship naming a tower that no longer exists goes with it', c.towerLinks);
+  ok(M.floorsOfTower('ST', repBefore).length === 3, '5.7  precondition: the representative holds the type’s three floors', M.floorsOfTower('ST', repBefore).length);
+  const next = M.towersOfType('ty1')[1].id;
+  M._twRemoveTower(repBefore);
+  ok(M.repTowerOf('ty1') === next, '5.8  removing the representative promotes the next instance', [M.repTowerOf('ty1'), next]);
+  ok(M.floorsOfTower('ST', next).length === 3,
+    '5.9  ⚠️⚠️ AND THE FLOORS MOVED WITH IT — the layout is still reachable, which is the whole reason the old control refused this',
+    M.floorsOfTower('ST', next).length);
+  ok(M.floorsOf('ST').length === 3, '5.10  …without copying anything: still three rows', M.floorsOf('ST').length);
+  ok(M.getUiTower() !== repBefore, '5.11  …and the active development is no longer one that was deleted', M.getUiTower());
 
-  M._twSetCount('ty1', 0);
-  ok(M.towersOfType('ty1').length === 1,
-    '5.9  ⚠️ a type NEVER drops below one tower — with no instance it has no representative and its floors are unreachable',
-    M.towersOfType('ty1').length);
-  M._twSetCount('ty1', 999);
-  ok(M.towersOfType('ty1').length === 60, '5.10  …and is bounded at the top', M.towersOfType('ty1').length);
-  ok(M._twSetCount('nosuchtype', 3) === false, '5.11  a type that does not exist cannot be counted');
+  /* The last development of a type takes the type — and the floors, which nothing is left to own. */
+  M._twRemoveTower(M.towersOfType('ty1')[1].id);
+  c.towers.push({ id: 'solo1', code: 'CH', name: 'Clubhouse', typeId: '' });
+  const last = M.towersOfType('ty1')[0].id;
+  M._twRemoveTower(last);
+  ok(M.typeById('ty1') === null, '5.12  the last development of a type takes the TYPE with it — a type with no instance has no representative');
+  ok(M.floorsOf('ST').length === 0, '5.13  …and its floors, because nothing is left to own them', M.floorsOf('ST').length);
+
+  ok(M._twRemoveTower('solo1') === false,
+    '5.14  ⚠️ the ONLY development in the project cannot be removed — the step would have nothing to hang a layout off');
+  ok(M.towerList().length === 1, '5.15  …so it is still there', M.towerList().length);
+}
+
+/* ================= 5b · layout owners ==================================================== */
+/* ⚠️⚠️ A DEVELOPMENT "BESIDE" THE TYPES IS INVISIBLE TO `typeList()`, which is the reason this
+   helper exists at all: the selector bar and the Towers table both used to iterate types, so a
+   standalone development would have vanished from the chips the moment it was created — leaving
+   no way to reach its floors. */
+{
+  const c = mkTypedCfg(2);
+  c.towers.push({ id: 'solo1', code: 'CH', name: 'Clubhouse', typeId: '' });
+  c.zoning.ST.floors = c.zoning.ST.floors.concat(mkFloors('solo1', [['F1', 'typical', 1, 0]]));
+  M.setCfg(c);
+  const O = M.layoutOwners();
+  ok(O.length === 2, '5b.1  two owners — one type, one standalone development', O.length);
+  ok(O[0].kind === 'type' && O[0].towers.length === 2 && O[0].rep === 'tw1',
+    '5b.2  the type owns both of its developments, and its representative is the first', [O[0].kind, O[0].towers.length, O[0].rep]);
+  ok(O[1].kind === 'solo' && O[1].rep === 'solo1',
+    '5b.3  ⚠️⚠️ …and the standalone one is its OWN owner', [O[1].kind, O[1].rep]);
+  ok(M.ownerOfTower('tw2').id === 'ty1', '5b.4  every development resolves to the owner whose floors it reads', M.ownerOfTower('tw2').id);
+  ok(M.ownerOfTower('solo1').id === 'solo1', '5b.5  …and a standalone one to itself');
+  ok(M.floorsOfTower('ST', 'solo1').length === 1 && M.floorsOfTower('ST', 'tw1').length === 3,
+    '5b.6  …and the two read different floors, which is what "beside it" has to mean',
+    [M.floorsOfTower('ST', 'solo1').length, M.floorsOfTower('ST', 'tw1').length]);
+  ok(M.locList().length === 11, '5b.7  …so the push carries 5 × 2 plus the standalone’s 1', M.locList().length);
 }
 
 /* ================= 6 · naming a new instance ============================================= */
@@ -314,7 +372,45 @@ console.log('tower types — the shipped functions, executed\n');
     M.migrateTypes(d3, { towerTypes: [{ id: 'ty1', code: 'T1', name: 'Type 1' }] });
     ok(d3.towerTypes.length === 1, '7.7  ⚠️⚠️ and re-running it on an ALREADY typed config invents nothing — normalize runs on every load', d3.towerTypes.length);
     ok(d3.towers[0].typeId === 'ty1' && d3.towers[1].typeId === 'ty1', '7.8  …both towers still share their one type');
+
+    /* ⚠️⚠️ THE 2026-09-18 CASE, AND IT IS THE ONE THE MIGRATION COULD SILENTLY UNDO. A
+       development BESIDE the types is a tower with NO typeId — the very shape the pre-types
+       migration was written to convert. Run unconditionally it would invent a type for it on every
+       load, so "beside" would quietly become "a one-instance type" and its row would move under a
+       grouping the planner never created. The guard is the presence of the `towerTypes` KEY. */
+    const d4 = { towers: [{ id: 'tw1', code: 'T1', name: 'Tower 1', typeId: 'ty1' },
+                          { id: 'ch', code: 'CH', name: 'Clubhouse', typeId: '' }] };
+    M.migrateTypes(d4, { towerTypes: [{ id: 'ty1', code: 'T1', name: 'Type 1' }] });
+    ok(d4.towers[1].typeId === '',
+      '7.9  ⚠️⚠️ A STANDALONE DEVELOPMENT SURVIVES THE RELOAD — no type is invented for it',
+      d4.towers[1].typeId);
+    ok(d4.towerTypes.length === 1, '7.10  …and the type list is not grown by it', d4.towerTypes.length);
+
+    /* ⚠️ A typeId naming a type that is no longer there becomes standalone rather than dangling:
+       it would otherwise BEHAVE as standalone (repTowerOfTower falls back to the tower) while
+       still reading as typed on every screen. */
+    const d5 = { towers: [{ id: 'tw1', code: 'T1', name: 'Tower 1', typeId: 'ty1' },
+                          { id: 'tw2', code: 'T2', name: 'Tower 2', typeId: 'gone' }] };
+    M.migrateTypes(d5, { towerTypes: [{ id: 'ty1', code: 'T1', name: 'Type 1' }] });
+    ok(d5.towers[1].typeId === '', '7.11  a typeId pointing at a type that no longer exists is cleared, not left dangling', d5.towers[1].typeId);
+
+    /* And `remarks` has to be on normalize()'s whitelist or the column empties on the next load. */
+    const d6 = { towers: [{ id: 'tw1', code: 'T1', name: 'Tower 1', typeId: 'ty1', remarks: 'north block' }] };
+    M.migrateTypes(d6, { towerTypes: [{ id: 'ty1', code: 'T1', name: 'Type 1', remarks: '16F' }] });
+    ok(d6.towerTypes[0].remarks === '16F',
+      '7.12  ⚠️⚠️ `remarks` SURVIVES normalisation — a key this whitelist does not name is dropped on the next save',
+      d6.towerTypes[0].remarks);
   }
+}
+
+/* ⚠️ The tower half of the same whitelist, read straight out of the shipped normalize(): the
+   migration slice above starts below `d.towers = …`, so it cannot cover it. */
+{
+  ok(/remarks: _rmk\(t\.remarks\)/.test(SRC),
+    '7.13  …and so does a DEVELOPMENT’s, on the same whitelist one line above');
+  ok((SRC.match(/remarks: _rmk\(t\.remarks\)/g) || []).length === 2,
+    '7.14  …on both, which is what stops one of the two columns emptying on reload',
+    (SRC.match(/remarks: _rmk\(t\.remarks\)/g) || []).length);
 }
 
 /* ================= 8 · the number clamp ================================================== */
@@ -329,10 +425,23 @@ console.log('tower types — the shipped functions, executed\n');
 /* ⚠️ These four are the only READ assertions in the suite, and they cover the things that live in
    a render function this harness cannot execute. Each names one owner requirement. */
 {
-  ok(/one row per type, not per tower/i.test(SRC) && /var body = types\.map\(/.test(SRC),
-    '9.1  the Towers step lists TYPES, one row each');
-  ok(/data-tyd="-1"/.test(SRC) && /data-tyd="1"/.test(SRC),
-    '9.2  …with a − / + count control on the row — *"how many type 1 towers there are"*');
+  /* ⚠️⚠️ RETARGETED 2026-09-18, NOT WEAKENED. Owner: *"replace the buttons on top with Add
+     Type, Add Development … for this table, strict only to two levels … columns should include
+     Name, Code, Remarks."* So the table lists both rungs and the ± count is gone; each assertion
+     below names the clause it holds. */
+  ok(/\+ Add Type</.test(SRC) && /\+ Add Development</.test(SRC),
+    '9.1  the two buttons above the table are Add Type and Add Development');
+  ok(/<th>Name<\/th><th>Code<\/th><th>Remarks<\/th>/.test(SRC),
+    '9.2a …and the columns are Name, Code, Remarks');
+  ok(/\[data-tyk\]/.test(SRC) && /\[data-twk\]/.test(SRC) &&
+     /'data-tyk'/.test(SRC) && /'data-twk'/.test(SRC),
+    '9.2b …emitted AND wired on BOTH rungs — a type is a grouping row, a development is a row inside it');
+  ok(!/data-tyd/.test(SRC_NC),
+    '9.2c ⚠️ and the ± count control is GONE, not hidden — three developments are three rows now, so a number beside the type would state the same fact twice');
+  ok(/var SITE_PLAN_UI = false/.test(SRC),
+    '9.2d ⚠️ the site-plan option is hidden behind one flag — *"Hide first option to add site plans"*');
+  ok(/SITE_PLAN_UI && TR\.multi/.test(SRC),
+    '9.2e …and the markup is gated on it rather than deleted, so bringing it back is one word');
   ok(/id=\\?"b-tyadd\\?"/.test(SRC) || /id="b-tyadd"/.test(SRC),
     '9.3  …and the bar adds a TYPE, not a tower');
   ok(!/there is no separate type field/.test(SRC_NC),
@@ -364,14 +473,15 @@ console.log('tower types — the shipped functions, executed\n');
 
   if (base) {
     ['blankTowerTypes', 'typeList', 'typeOfTower', 'towersOfType', 'repTowerOf', 'repTowerOfTower',
-     '_twNewInstance', '_twSetCount'].forEach(function (n) {
+     '_twNewInstance', 'layoutOwners', 'ownerOfTower', '_twRemoveTower'].forEach(function (n) {
       ok(base.indexOf('function ' + n + '(') < 0, '10.x  base ' + BASE_SHA + ' has no ' + n);
     });
     ok(base.indexOf('towerTypes') < 0, '10.9  …and no towerTypes anywhere in it');
     ok(sliceMigration(base) === null, '10.10  …and normalize() has no migration to run');
     /* Executed, not read: the base CANNOT express three towers of one type. */
     const B = build(base, { optional: ['blankTowerTypes', 'typeList', 'typeById', 'typeLabel', 'typeOfTower',
-      'towersOfType', 'repTowerOf', 'repTowerOfTower', '_twNewInstance', '_twSetCount', '_clampN'] });
+      'towersOfType', 'repTowerOf', 'repTowerOfTower', '_twNewInstance', '_twRemoveTower', '_clampN',
+      'layoutOwners', 'ownerOfTower', 'towerLinks'] });
     const c = mkTypedCfg(3); B.setCfg(c);
     ok(B.floorsOfTower('ST', 'tw2').length === 0,
       '10.11  ⚠️⚠️ BASE: the second tower of a type reads NO floors — the defect this ships to fix',
