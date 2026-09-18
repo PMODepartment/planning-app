@@ -182,6 +182,26 @@
        behaviour a bulk control must never have. */
     var SEL = {};
     function selCount() { return Object.keys(SEL).filter(function (k) { return SEL[k]; }).length; }
+    /* ⚠ The shift-click ANCHOR — the id of the last checkbox ticked by hand, and the other end of
+       the next range. Page-scope beside SEL for the same reason SEL is: the table's innerHTML is
+       replaced on every render, so an anchor held in the DOM would not survive the re-render that
+       each selection triggers. Cleared by anything that is not a single hand-picked row (Clear,
+       select-all, a group header), because a range measured from a checkbox the user never
+       clicked is a range they cannot predict. */
+    var SEL_ANCHOR = null;
+    /* ⚠⚠ PAGE-SCOPE, AND IT HAS TO BE. The rows a checkbox is offered on, recomputed by every
+       render. It was a `var` local to the render function, read from inside the change listener
+       that is bound ONCE — so the listener closed over the FIRST render's array and kept it for
+       the life of the page. The select-all therefore ticked whoever was shown when the table
+       first drew, which after a search is precisely the people the filter is hiding: the exact
+       behaviour the comment above that listener promises it will never have. Found while adding
+       the group boxes below, which read the same list. */
+    var SELECTABLE = [];
+    /* ⚠ `change` does not carry `shiftKey` — the modifier has to be read from a real mouse event.
+       `mousedown` is the only one guaranteed to precede both `click` and `change` in every engine,
+       so the flag is latched there and CONSUMED (read once, then cleared) in the change handler:
+       a stale true would turn the next keyboard Space into a range selection. */
+    var SHIFT_PICK = false;
     /* ⚠ Matches name, email AND department, which is what the placeholder says. Department is
        in there because the table is now grouped by it — typing "PMO" and getting nothing would
        be the obvious thing to try and the obvious thing to get wrong. */
@@ -398,7 +418,12 @@
           return '<tr' + (attr || '') + (SEL[u.id] ? ' class="pd-rowsel"' : '') + '>' +
             '<td class="pd-ckcol">' + (pickable
               ? '<input type="checkbox" data-pick="' + u.id + '"' + (SEL[u.id] ? ' checked' : '') +
-                ' aria-label="Select ' + Fmt.esc(u.name || u.email) + '">'
+                ' aria-label="Select ' + Fmt.esc(u.name || u.email) + '"' +
+                /* ⚠ The range gesture is discoverable ONLY from here. Shift-click is standard in
+                   every mail client and file manager, which is exactly why nobody announces it —
+                   but it is invisible, and an admin ticking twenty boxes one at a time has no way
+                   to find out it exists. A title costs nothing and no new chrome. */
+                ' title="Shift-click to select every row between this one and the last one you clicked">'
               : '<span class="pd-ckoff" title="' + (u.id === ME.id ? 'This is you'
                   : 'Only a super_admin can change a super_admin\u2019s account') + '">\u2014</span>') +
             '</td>' +
@@ -466,6 +491,16 @@
          change calls `setUser`, which reloads and re-renders, and a fold that sprang open on each
          save would be worse than no fold at all. */
       var GRP_COLS = 9;
+      /* ⚠ A group key goes into a SELECTOR, and `d:Engineering` is not a valid one on its own —
+         the colon reads as the start of a pseudo-class. `CSS.escape` is the same call the group
+         toggle at the foot of this function already makes; named once here so the two cannot
+         drift apart. The DOM is the right source for "the rows of this group": it already knows,
+         via `data-ingrp`, and it knows about the COLLAPSED ones too — a folded heading that says
+         "9 people" must still select nine. */
+      function grpBoxes(k) {
+        return t.querySelectorAll('tr[data-ingrp="' +
+          (window.CSS && CSS.escape ? CSS.escape(k) : k) + '"] input[data-pick]');
+      }
       function userGroups(list) {
         var pend = [], rej = [], byDept = {}, NO_DEPT = 'No department';
         list.forEach(function (u) {
@@ -484,14 +519,36 @@
         if (rej.length) out.push({ key: 'rejected', label: 'Rejected', rows: rej });
         return out;
       }
-      function groupedBody(list) {
+      /* \u26a0\u26a0 THE GROUP HEADING CARRIES ITS OWN SELECT-ALL, and it is the answer to the owner's
+         *"I need to click on the checkboxes manually each"*. The header's select-all is one row
+         at the very top of a table that scrolls for pages \u2014 by the time you are looking at
+         Operations it is long gone off screen, so in practice the only control within reach was
+         the per-row box. A checkbox on every heading puts "all of these" wherever you happen to
+         be, which is also the unit an admin actually thinks in: a department, or the pending
+         queue.
+         \u26a0 It sits in its OWN `pd-ckcol` cell with the heading's colspan reduced by one, so it
+         lands in the same 34px column as the header box and every row box. Drawn inside the
+         spanning cell it would float a few pixels off the column it controls \u2014 a checkbox that
+         does not line up with the checkboxes it ticks reads as a different control.
+         \u26a0 It counts only the SELECTABLE rows in the group (`selOk`), the same list the row
+         checkboxes are drawn from, so a department made entirely of super_admins this admin
+         cannot write offers no box at all rather than one that ticks nothing. */
+      function groupedBody(list, selOk) {
         return userGroups(list).map(function (g) {
           var shut = !!GRP_SHUT[g.key];
           var n = g.rows.length;
+          var pick = g.rows.filter(function (u) { return selOk[u.id]; });
+          var allOn = pick.length > 0 && pick.every(function (u) { return SEL[u.id]; });
           var count = g.act
             ? '<span class="pd-pill pd-pill-warn">' + n + ' awaiting</span>'
             : '<span class="pd-grpn">' + n + (n === 1 ? ' person' : ' people') + '</span>';
-          return '<tr class="pd-grp"><td colspan="' + GRP_COLS + '">' +
+          return '<tr class="pd-grp">' +
+            '<td class="pd-ckcol">' + (pick.length
+              ? '<input type="checkbox" data-grpall="' + Fmt.esc(g.key) + '"' + (allOn ? ' checked' : '') +
+                ' aria-label="Select all ' + pick.length + ' in ' + Fmt.esc(g.label) + '"' +
+                ' title="Select all ' + pick.length + ' in ' + Fmt.esc(g.label) + '">'
+              : '') + '</td>' +
+            '<td colspan="' + (GRP_COLS - 1) + '">' +
               '<button type="button" class="pd-grptog" data-grp="' + Fmt.esc(g.key) + '"' +
                 ' aria-expanded="' + (shut ? 'false' : 'true') + '"' +
                 ' title="' + (shut ? 'Show' : 'Hide') + ' these rows">' +
@@ -510,22 +567,48 @@
       /* The rows a checkbox is offered on — the same `locked` rule the row uses, evaluated once
          here so the header's select-all and the row cells cannot disagree about it. */
       var meSuper = ME.role === 'super_admin';
-      var selectable = shown.filter(function (u) {
+      SELECTABLE = shown.filter(function (u) {
         return !(u.role === 'super_admin' && !meSuper) && u.id !== ME.id;
       });
+      /* ⚠⚠ SEL IS PRUNED TO WHAT IS SELECTABLE RIGHT NOW, on every render. The selection now
+         SURVIVES a bulk edit (see `bulkApply`), so an id can outlive the row it pointed at — a
+         user deleted from another tab, or one promoted to super_admin by the very edit that just
+         ran, which this admin may no longer touch. Left alone the bar would read "21 selected"
+         above twenty rows and every confirmation would name a count it cannot deliver.
+         Pruning here, against the same list the checkboxes are drawn from, is the one place the
+         two cannot disagree. */
+      var selOk = {};
+      SELECTABLE.forEach(function (u) { selOk[u.id] = 1; });
+      Object.keys(SEL).forEach(function (k) { if (!selOk[k]) delete SEL[k]; });
       /* ⚠⚠ THE STATUS COLUMN IS GONE, AND GROUPING IS WHY. Pending and Rejected are their
          own headings now, so every remaining row said "approved" — a column of one repeated word.
          Dropping it pays for the select column almost exactly, which is how a table that had just
          been made to fit stays fitting. The status is still on screen for the two cases where it
          varies: the heading above the row. */
-      var allBox = selectable.length
+      var allBox = SELECTABLE.length
         ? '<input type="checkbox" id="users-all" aria-label="Select all shown"' +
-          (selectable.length && selectable.every(function (u) { return SEL[u.id]; }) ? ' checked' : '') + '>'
+          (SELECTABLE.length && SELECTABLE.every(function (u) { return SEL[u.id]; }) ? ' checked' : '') +
+          ' title="Select all ' + SELECTABLE.length + ' shown — search first to narrow what that means">'
         : '';
       t.innerHTML = '<thead><tr><th class="pd-ckcol">' + allBox + '</th><th>User</th><th>Role</th><th>Department</th><th>Projects</th><th>Modules</th><th>Activity</th><th>Registered</th><th>Actions</th></tr></thead><tbody>' + (shown.length
-        ? groupedBody(shown)
+        ? groupedBody(shown, selOk)
         : '<tr><td colspan="' + GRP_COLS + '" class="pd-nomatch">No user matches \u201c' +
           Fmt.esc(USER_Q) + '\u201d.</td></tr>') + '</tbody>';
+
+      /* \u26a0\u26a0 `indeterminate` IS A PROPERTY, NOT AN ATTRIBUTE \u2014 it cannot be written into the
+         markup above and has to be set after the parse, on every render. It is not decoration:
+         without it a group with three of nine ticked draws an EMPTY box, which says "nothing
+         here is selected" while three of the rows below it are highlighted red. Two controls
+         disagreeing about the same fact is worse than the missing affordance this whole change
+         is about. */
+      var allEl = document.getElementById('users-all');
+      if (allEl) allEl.indeterminate = !allEl.checked &&
+        SELECTABLE.some(function (u) { return SEL[u.id]; });
+      t.querySelectorAll('[data-grpall]').forEach(function (b) {
+        var boxes = grpBoxes(b.dataset.grpall), on = 0;
+        boxes.forEach(function (x) { if (SEL[x.dataset.pick]) on++; });
+        b.indeterminate = on > 0 && on < boxes.length;
+      });
 
       /* ⚠ ONE delegated listener, bound ONCE. `t` survives every render (only its innerHTML is
          replaced), so binding here without the guard would stack a fresh copy per reload — the
@@ -556,10 +639,21 @@
           try { await PDb.updateUser(targets[i].id, patch); okd++; }
           catch (e) { bad.push((targets[i].name || targets[i].email) + ' (' + (e.message || e) + ')'); }
         }
-        SEL = {};
+        /* \u26a0\u26a0 THE SELECTION SURVIVES THE EDIT \u2014 it used to be cleared here. Owner 2026-09-18:
+           *"clicking on set role/department closes the multiple select"*. Role and department are
+           two controls on one bar, and the whole reason both are on it is that you set them for
+           the SAME twenty-one people; dropping the selection after the first made the second a
+           complete re-pick. Worse, the bar hides at zero, so the controls themselves vanished
+           mid-task and it read as the page rejecting the action rather than finishing it.
+           \u26a0 Safe because nothing here is silent: every bulk action confirms first and names its
+           count, `Clear` is one click away on the bar, and the render prunes SEL to what is
+           still selectable (see `selOk`) so the count cannot outlive the rows.
+           \u26a0 The refused rows stay selected too, deliberately \u2014 they are exactly the set you
+           would want to look at or retry, and the toast has just named them. */
         UI.toast(bad.length
           ? okd + ' updated \u00b7 ' + bad.length + ' refused: ' + bad.join('; ')
-          : verb + ' ' + okd + ' user' + (okd === 1 ? '' : 's'), bad.length ? 'error' : 'ok');
+          : verb + ' ' + okd + ' user' + (okd === 1 ? '' : 's') + ' \u00b7 still selected',
+          bad.length ? 'error' : 'ok');
         loadUsers();
       }
       function bulkConfirm(msg, run) {
@@ -596,7 +690,7 @@
           var b = e.target.closest && e.target.closest('[data-bulk]');
           if (!b) return;
           var n = selCount();
-          if (b.dataset.bulk === 'clear') { SEL = {}; loadUsers(true); return; }
+          if (b.dataset.bulk === 'clear') { SEL = {}; SEL_ANCHOR = null; loadUsers(true); return; }
           if (!n) return;
           var act = b.dataset.bulk === 'approve' ? 'Approve' : 'Reject';
           bulkConfirm(act + ' ' + n + ' user' + (n === 1 ? '' : 's') + '?', function () {
@@ -625,17 +719,84 @@
          super_admin this admin cannot write. */
       if (!t._pickWired) {
         t._pickWired = true;
+        /* ⚠ `mousedown`, not `click` or `change`: it is the only event guaranteed to fire before
+           both, and `change` on a checkbox carries no `shiftKey` at all. */
+        t.addEventListener('mousedown', function (e) {
+          var b = e.target.closest && e.target.closest('input[data-pick]');
+          SHIFT_PICK = !!(b && e.shiftKey);
+        });
         t.addEventListener('change', function (e) {
           var el = e.target;
           if (el.id === 'users-all') {
-            selectable.forEach(function (u) { if (el.checked) SEL[u.id] = true; else delete SEL[u.id]; });
+            SELECTABLE.forEach(function (u) { if (el.checked) SEL[u.id] = true; else delete SEL[u.id]; });
+            SEL_ANCHOR = null;
+            loadUsers(true); return;
+          }
+          /* The heading's own box. Reads its rows from the DOM rather than from `SELECTABLE`,
+             because only the DOM knows which group a row landed in — and it covers a COLLAPSED
+             group correctly, which is the case that matters when you fold everything except the
+             department you are working on. */
+          if (el.dataset && el.dataset.grpall) {
+            grpBoxes(el.dataset.grpall).forEach(function (b) {
+              if (el.checked) SEL[b.dataset.pick] = true; else delete SEL[b.dataset.pick];
+            });
+            SEL_ANCHOR = null;
             loadUsers(true); return;
           }
           if (el.dataset && el.dataset.pick) {
-            if (el.checked) SEL[el.dataset.pick] = true; else delete SEL[el.dataset.pick];
-            var tr = el.closest('tr'); if (tr) tr.classList.toggle('pd-rowsel', el.checked);
+            var id = el.dataset.pick, on = el.checked;
+            var shifted = SHIFT_PICK; SHIFT_PICK = false;   /* consumed, never left latched */
+            /* ⚠⚠ THE RANGE. Everything between the anchor and this row takes THIS box's new
+               state — ticking extends the selection, unticking clears the run — which is the
+               behaviour every mail client has and the one nobody has to be taught.
+               ⚠ VISIBLE rows only: a collapsed group between the two ends is not on screen, and
+               silently sweeping in rows the user cannot see is the same fault as acting on what
+               the search has hidden, which this page already refuses to do.
+               ⚠ Falls through to the plain toggle when the anchor is gone (folded away, filtered
+               out, or never set) rather than guessing an end point. */
+            if (shifted && SEL_ANCHOR && SEL_ANCHOR !== id) {
+              var boxes = Array.prototype.filter.call(t.querySelectorAll('input[data-pick]'),
+                function (b) {
+                  var r = b.closest('tr'); return r && !r.classList.contains('pd-collapsed');
+                });
+              var a = -1, z = -1;
+              boxes.forEach(function (b, i) {
+                if (b.dataset.pick === SEL_ANCHOR) a = i;
+                if (b === el) z = i;
+              });
+              if (a >= 0 && z >= 0) {
+                for (var i = Math.min(a, z); i <= Math.max(a, z); i++) {
+                  if (on) SEL[boxes[i].dataset.pick] = true; else delete SEL[boxes[i].dataset.pick];
+                }
+                SEL_ANCHOR = id;
+                /* ⚠ Shift-clicking drags a text selection across every row it crossed. Dropping
+                   it here is cosmetic but not optional: a blue smear over twenty rows hides the
+                   red highlight that is the actual feedback for what was just selected. */
+                if (window.getSelection) { var g = window.getSelection(); if (g) g.removeAllRanges(); }
+                loadUsers(true);   /* from cache — a range repaints too many rows to patch by hand */
+                return;
+              }
+            }
+            if (on) SEL[id] = true; else delete SEL[id];
+            SEL_ANCHOR = id;
+            var tr = el.closest('tr'); if (tr) tr.classList.toggle('pd-rowsel', on);
+            /* ⚠ A single tick still repaints by hand rather than re-rendering — typing-speed
+               feedback on the common case. The group heading above it has to be brought along,
+               though, or it reports a state one click out of date. */
             var all = document.getElementById('users-all');
-            if (all) all.checked = selectable.length > 0 && selectable.every(function (u) { return SEL[u.id]; });
+            if (all) {
+              all.checked = SELECTABLE.length > 0 && SELECTABLE.every(function (u) { return SEL[u.id]; });
+              all.indeterminate = !all.checked && SELECTABLE.some(function (u) { return SEL[u.id]; });
+            }
+            var grpKey = tr && tr.dataset ? tr.dataset.ingrp : null;
+            var gb = grpKey ? t.querySelector('[data-grpall="' +
+              (window.CSS && CSS.escape ? CSS.escape(grpKey) : grpKey) + '"]') : null;
+            if (gb) {
+              var gboxes = grpBoxes(grpKey), gon = 0;
+              gboxes.forEach(function (x) { if (SEL[x.dataset.pick]) gon++; });
+              gb.checked = gboxes.length > 0 && gon === gboxes.length;
+              gb.indeterminate = gon > 0 && gon < gboxes.length;
+            }
             paintBar();
           }
         });
@@ -649,7 +810,7 @@
         q._wired = true;
         q.addEventListener('input', function () {
           USER_Q = q.value;
-          SEL = {};            /* ⚠ see the note on SEL: never act on what the filter hid */
+          SEL = {}; SEL_ANCHOR = null;   /* ⚠ see the note on SEL: never act on what the filter hid */
           loadUsers(true);
         });
       }

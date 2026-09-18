@@ -104,6 +104,105 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ao) — Users: a checkbox on every group heading, shift-click ranges, and the selection stops evaporating between the two controls that need it
+
+Owner, with twenty-one people ticked one at a time: *"the users I need to click on the checkboxes
+manually each. I need an easier way to do this additionally clicking on set role/department closes
+the multiple select"*. Two complaints, and the second is the one that made the first unbearable —
+having finally picked twenty-one people, setting their role threw the selection away and department
+had to start over.
+
+### The selection survives a bulk edit
+
+`bulkApply` cleared `SEL` on the way out. Role and department are two controls on **one bar**, and
+the entire reason both are on it is that you set them for the **same** people. The bar also hides
+at zero, so the controls themselves vanished mid-task — it read as the page rejecting the second
+action rather than having finished the first.
+
+⚠️ Safe because nothing about a bulk action is silent: each one confirms first and names its count,
+`Clear` is one click away on the bar, and the toast now ends *"· still selected"* so the new
+behaviour announces itself once. ⚠️ Refused rows stay selected **deliberately** — they are exactly
+the set you would want to retry, and the toast has just named them.
+
+### A select-all on every group heading
+
+The header's select-all is one row at the top of a table that scrolls for pages; by the time you
+are looking at Operations it is long gone, so in practice the only control in reach was the per-row
+box. Every `tr.pd-grp` heading now carries its own, and a department (or the pending queue) is the
+unit an admin actually thinks in.
+
+⚠️ It sits in its **own** `pd-ckcol` cell with the heading's colspan dropped to `GRP_COLS - 1`, so
+it lands in the same 34px column as the header box and every row box — measured at the same centre
+x, not eyeballed. Drawn inside the spanning cell it would float a few pixels off the column it
+controls, and a checkbox that does not line up with the boxes it ticks reads as a different control.
+⚠️ Offered only where the group has rows this admin may actually write, so an all-super_admin
+department (PMO, for a plain admin) gets no box rather than one that ticks nothing.
+⚠️ It reads its rows from `data-ingrp` in the DOM, which means a **collapsed** group still selects
+all nine when its heading says nine.
+
+### Shift-click ranges
+
+Standard gesture, and the one an admin reaches for first. ⚠️⚠️ `change` does not carry `shiftKey`
+— the modifier has to be latched on `mousedown`, the only event guaranteed to precede both `click`
+and `change`, and **consumed** on read or a stale `true` turns the next keyboard Space into a range.
+⚠️ The range covers **visible** rows only: a folded group between the two ends is skipped, because
+sweeping in rows the user cannot see is the same fault as acting on what the search has hidden,
+which this page already refuses to do. ⚠️ It clears the text selection the shift-drag leaves behind
+— cosmetic, but a blue smear over twenty rows hides the red highlight that is the actual feedback.
+
+### ⚠️⚠️ `indeterminate` IS A PROPERTY, SO IT HAS TO BE SET AFTER EVERY RENDER
+
+It cannot be written into the markup the way `checked` can. Without it a group with three of nine
+ticked draws an **empty** box — saying "nothing here is selected" directly above three rows
+highlighted red. Two controls disagreeing about the same fact is worse than the missing affordance
+this whole change is about.
+
+### ⚠️⚠️ AND A LIVE BUG FELL OUT OF IT: THE SELECT-ALL WAS CLOSED OVER THE FIRST RENDER'S ROW LIST
+
+`selectable` was a `var` local to the render function, read from inside the change listener that is
+bound **once** (`t._pickWired`). So the listener captured the **first** render's array and kept it
+for the life of the page: after a search, select-all ticked whoever was on screen when the table
+first drew — *precisely the people the filter is hiding*, which is the one behaviour the comment
+directly above that listener promises the control will never have. Found only because the new group
+boxes read the same list. It is now page-scope `SELECTABLE`, reassigned every render.
+
+⚠️ And `SEL` is **pruned to what is selectable** on every render. Now that the selection outlives a
+bulk edit, an id can outlive the row it pointed at — someone deleted in another tab, or promoted to
+super_admin by the very edit that just ran. Left alone the bar would read "21 selected" above twenty
+rows and every confirmation would name a count it cannot deliver.
+
+### Verified — 25 assertions against the real page code, in a browser
+
+A throwaway harness (`_scratch-users-harness.html`, gitignored by `**/_scratch*`) fetches
+`admin.html`, replaces **only** `AppAuth.requireAdmin` and the `PDb` calls with fixtures, and drives
+the shipped render and listeners with real `mousedown`/`click` events. Re-implementing the logic
+would only have tested the copy — the thing this repo has already been caught doing.
+
+⚠️ Signed in as an **admin**, not a super_admin, so the "may not touch a super_admin" rule is live:
+a harness signed in as super_admin skips that whole branch. 25/25, twice.
+
+| | |
+|---|---|
+| who gets a box | 8 of 10 — never me, never a super_admin; no group box on an all-super_admin group |
+| group heading | takes its own group only, and takes a **collapsed** group whole |
+| partial group | `checked` false, `indeterminate` **true** |
+| shift-click | selects the run; skips a folded group between the ends |
+| search then select-all | takes **only** the filtered rows (the stale-closure fix) |
+| bulk edit | 5 written, 5 **still selected**, bar still up and still reading "5 selected" |
+| pruning | a row promoted to super_admin behind the page's back drops out, bar reads "4 selected" |
+
+Alignment measured, not eyeballed: header, group and row checkboxes all centre on the same x, and
+the heading row is 2 cells with `colspan="8"` against a 9-column header.
+
+⚠️ **Not verified against the real database.** The harness stubs `PDb`, so no bulk write has gone to
+Supabase through this code path, and `users_admin_update` refusing a row mid-batch has been
+exercised only as a fixture. The refusal path itself is untouched.
+⚠️ **Light mode not re-checked, and nothing to check:** no new CSS. The group box is a native
+checkbox in the existing `.pd-ckcol` cell, which already ships in both themes.
+
+⚠️ `admin.html` only — no shared asset changed, so **no cache-bust is owed**. Every past
+`admin.html` commit that bumped tokens did so because it also touched `dashboard.css` or `auth.js`.
+
 ### 2026-09-18 (an) — Design Development joins Procurement: the curve stops counting other apps' records
 
 Owner: *"Let's not consider the design development as part of the s-curve."* — the adjacent case
