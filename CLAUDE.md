@@ -104,6 +104,337 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ai) — Location Sequence becomes one page, and a merge resolution that would have thrown on every render
+
+Owner, six items on the Location Sequence step of Schedule Setup — rename it throughout; merge tower
+sequence and zone sequence into one screen with no view options and no zoom; always draw floors,
+zones and units; make the resulting schedule a real Gantt grouped tower → floor → zone → unit; let
+auto-trace ask four numbers and resolve the rest; and replace the inspect/link-by-hand split with a
+drag from one bar's start or finish point onto another's. Module work — the full entry, every ⚠️
+decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(aa)`. Logged here
+for the `MODULE_V` bump and the five things that are not facts about one module:
+
+⚠️⚠️ **A CONFLICT THAT AUTO-MERGES CLEANLY ON ONE SIDE CAN STILL BE A ReferenceError, AND TAKING A
+SIDE IS NOT A RESOLUTION.** Main's side of the `STEP_TABS` hunk restores
+`'Location Sequence': [ … stTowerLinks, … stSequence ]` — **two functions this branch deleted** when
+the two tabs became one page — so `--theirs` there throws on every render of the step, which is the
+*"below is not defined"* shape this log has now recorded five times and which `node --check` cannot
+see. But *"take mine"* is equally wrong: main **also** removed `'Activity Sequence'` from that map,
+because Scope per zone was promoted to its own step 9. Each side removed a **different** key, so the
+honest merged answer is **neither** — the object is empty and both removal notes are kept, since each
+records a different decision. Five conflicts, all resolved on the merits; one more would have taken
+the module down.
+
+⚠️⚠️ **A PARSE FAILURE IN THIS MODULE IS THE WHOLE PAGE, AND A BISECT IS THE WRONG TOOL FOR IT.**
+`stTradeSeq` held a **48-line block duplicated byte for byte**, plus a 4-line fragment of an
+empty-state assignment whose `if` opener had gone. The module is one inline `<script>` of ~3.8MB, so
+that is a `SyntaxError` that blanks the entire page. This log already records that a bisect there is
+O(n²) and times out; what found it in seconds was a **bracket-depth tracker** — compute the per-line
+brace depth on this tree and on `HEAD`, key both by enclosing function name, and print the first
+function where the two disagree. One function, one range.
+
+⚠️⚠️ **A TEST THAT STUBS THE RULE IT IS TESTING IS MEASURING THE STUB, AND THIS ONE WAS WRONG
+BESIDES.** `test-builder.js` stubbed `cellKey` as `l.zone ? l.zone.code : '_'` — **ignoring the
+unit** — so every assertion about the location merge key agreed with a hand-written second opinion
+rather than with the app. It slices the real `locCellKey` now. Fifth instance of that shape this repo
+has recorded, and the reason `test-slice.js` **throws** rather than returning null when a slice
+fails.
+
+⚠️⚠️ **WHEN THIS CHANGE BROKE FOUR OF MAIN'S OWN ASSERTIONS, THE DECISIVE TEST WAS RUNNING THEM
+AGAINST MAIN'S OWN TREE.** `test-zonescope.js` is **57/0** on `origin/main` in a throwaway worktree
+and **53/4** here, so those four are mine. They pinned *"exactly one step still has tabs, and it is
+Location Sequence, with two views"*. Retargeted to the **stricter** claim — no step carries a strip at
+all, and no entry in the footer's Next walk carries a tab suffix — which fails the moment somebody
+re-adds a one-view strip. 57 → **58**. ⚠️ `test-cpm.js` throws `window is not defined` on the merged
+tree and **throws identically on `origin/main`**, so it is main's own and is named rather than quietly
+passed over. ⚠️ And a worktree, never `git stash` — this repo's own rule is *"do not stash in a shared
+clone at all"*.
+
+⚠️ **THE LAYOUT IS THE FLEX ROW'S ANSWER TO THE WINDOW, NOT A CONTROL.** The owner asked that layout
+*"depend on window width"*, and the honest way to do that is to stop asking — the view options, the
+layout segment and both zoom pairs are gone, and the row wraps. Measured in Chromium at 1440 / 1100 /
+820 against the shipped stylesheets: **side-by-side, side-by-side, stacked**, with no horizontal page
+scroll at any width and 0 zoom/layout/view/tab controls left. ⚠️ Each pane states a real `min-width`,
+because a flex item's default `min-width:auto` resolves to its content and forces a scrollbar instead
+of a second row. ⚠️ Scoped to this row: the Activity Sequence's own `.sbld-seq2` keeps the grip and
+remembered width a wrap on the base class would have silently overridden.
+
+**Verified:** **22 suites, 2,059 assertions, 0 failing** on the merged tree, including main's own
+suites this branch had never run; **six negative builds, all biting and all FAILING rather than
+crashing**, with the file restoring byte-identically each time. `wiring-check` **139/0** ·
+`dead-hooks` **9, findings byte-identical to main's** (only the census moves) · `dark-remap` 0 ·
+`loc-key-agree` clean · `selectall-key` 102 sites, 100 safe / 0 broken · `toolbar-order` 15/0. The
+inline block parses at 3.86MB, CSS braces 2575/2575, **0 NUL bytes** — ⚠️ counted as bytes, because
+`grep -c $'\x00'` degenerates to an empty pattern and reports every line as a hit.
+
+⚠️ **Not verified signed in** — no setup saved and re-read, no link dragged against a real project's
+activities, and auto-trace has never resolved against real data.
+
+⚠️⚠️ **`MODULE_V` → `20260918zg`, re-derived from what the remote actually carries AFTER integrating —
+and it had to be done TWICE.** The first pass took `20260918za` past main's then-current `20260918z`.
+⚠️⚠️ **Main's own `(aa)` entry had independently chosen the identical `20260918za`** — the silent
+collision this log keeps recording, where two sides write the same string, git reports no conflict on
+that line at all, and one cache token ends up covering two different builds. Main has since reached
+`20260918ze`, and `za` sorts **earlier** as a plain string, so shipping it would have put these bytes
+behind a token browsers already hold — worse than a collision, because the new bytes simply never
+arrive. Re-derived past both and sort-checked against every `20260918*` token on both refs.
+⚠️ The **fallback literal in `modules-grid.js` had drifted to `20260918k`** while the two pages
+carried `z` — eleven tokens behind, and read only by a page that omits the query string, which is
+exactly why the drift was invisible. Brought current with them.
+
+⚠️ **Re-lettered `(za)` → `(ag)` on merging `origin/main` (15 commits).** Main continued past `(z)`
+with `(aa)`…`(af)` while this branch took `(za)`; both schemes have precedent in this file, so the
+entry merging in is the one that moves rather than either side being rewritten. The module entry moves
+with it — `(y)` → `(z)`, where main had independently used `(y)` for its own baseline-lock entry.
+⚠️ **`modules/project-schedule/index.html` auto-merged with no conflict, and that is not evidence** —
+main rewrote the LSM bar's trade painting while this branch rewrote the Location Sequence step, so
+both sides were checked present afterwards and the whole battery re-run on the merged tree.
+⚠️⚠️ **And the resolver script aborted on its own marker check, for the reason 2026-09-09 (f) records:**
+this file quotes `=======` and `<<<<<<<` in PROSE, in the very entries that warn about them, so a
+substring test reports markers in a clean resolution. The test has to be line-anchored.
+
+⚠️⚠️ **AND IT HAPPENED A SECOND AND A THIRD TIME IN ONE SITTING — main moved again mid-merge and took
+`20260918zf`, the identical token this branch had just derived, from the identical base `ze`.** Its
+commit is titled *"Log (ah), and MODULE_V forward of main's 20260918ze"*: two sides, the same
+arithmetic, the same answer. ⚠️ **Git reported NO conflict on any of the three token lines** — both
+sides wrote the same characters, so there was nothing to flag, and the silent merge would have shipped
+these bytes under a token main had already published. Found only by re-reading the remote's token
+**after** integrating rather than trusting the merge to complain. Re-derived again to `20260918zg`.
+⚠️ The letters collided in the same pass: main took `(ag)` **and** `(ah)` in this log and `(z)` in the
+module's, so this entry moves `(ag)` → `(ai)` and the module entry `(z)` → `(aa)`. **The rule that
+keeps working is not "pick an unusual letter" — it is to re-derive BOTH the letter and the token from
+what the remote actually carries after every integration, and to look for a token collision by reading
+it rather than by waiting for git to report one.**
+
+### 2026-09-18 (ah) — The trades come out in construction order, and "No trade set" finally says what it is
+
+Owner: *"Let's rearrange the trades in the ff order: 1. General Requirements 2. Site Works
+3. Structural Works 4. Architectural Works 5. MEPF Works 6. Allied Services"*, and, seeing a row
+he did not put there, *"Why is there a no trade set? Let's fix"*.
+
+⚠️ Lettered **(ah)**, `MODULE_V` **`20260918zf`** — `origin/main` reached `(ag)` mid-flight. Fifth
+token re-derivation today. No shared asset changed, so nothing else is bumped.
+
+### 1. A construction sequence, not the import order
+
+`tradesIn()` returned trades in the order the import happened to push them, defended in a comment
+as *"the builder's order… a sequence of works"*. It is not — it is whatever the file contained, so
+the same six trades came out differently on every project. They now sort into the owner's
+sequence, and the Curve tab's filter chips follow automatically because they read the same
+function.
+
+⚠️⚠️ **Matched by KEYWORD, not by exact string**, for the reason `isGR()` two lines above already
+gives: a trade arrives spelled a dozen ways across projects, and an exact list would quietly drop
+`MEP Works` to the bottom on the project that does not spell it `MEPF Works`.
+
+⚠️ **A trade the list does not name keeps its first-seen position, after the six.** The sort is
+stable, which is what preserves the schedule's own order *within* a rank — so a project with a
+trade of its own never loses it and never has it shuffled against its peers. `No trade set` sorts
+**last of all**: it is not a trade, it is the absence of one.
+
+### ⚠️⚠️ 2. "No trade set" is a data fact, and the row must NOT be deleted
+
+It is the bucket `tradeOf()` puts an activity in when the schedule's **Trade column is empty**.
+The Curve tab has explained this since it was built, in its filter note — *"N activities carry no
+Trade, so they are in neither General Requirements nor Measured Works"*. The **sheet did not**, so
+the same fact was legible on one tab and a mystery on the other, and the planner meets it as a row
+asking for a monthly POC against a trade that does not exist.
+
+⚠️⚠️ **Deleting the row would be the wrong fix, and quietly so.** Those activities carry real
+duration, so they hold real weight in `tradeWeights()`. Dropping the row takes their scope out of
+the sheet while leaving it in the denominator — every other trade's share then stops summing to
+100%, and the error is invisible because nothing on screen would name what went missing. The row
+is kept; a bar above the sheet names the count and points at the actual fix, which is upstream:
+set the Trade in **Project Schedule**. The row then disappears on its own.
+
+⚠️ **Amber, not brand red.** `.sc-lockbar`'s red left edge means "this is the state of the planned
+curve", a fact about the plan. This is a data problem in the schedule the planner can go and fix,
+and it should not read as the same kind of thing.
+
+### ⚠️⚠️ The icon was `alert`, which does not exist — caught by checking, not by looking
+
+The first cut of that bar asked for `data-ico="alert"`. **There is no `alert` key in
+`assets/js/icons.js`**, and `Icons.hydrate` leaves an unknown key as an **empty span** — a 15px
+hole where an icon should be, invisible in a diff and invisible in a brace check. That is the
+exact failure the `lockBar` comment three lines below warns about (*"THERE ARE NO LOCK ICONS…"*),
+and I wrote the bug directly underneath the note describing it. `risk` is the caution triangle and
+it does exist; verified by hydrating it and measuring **127 characters of SVG path**, not by
+looking at a screenshot.
+
+### Verified
+
+On a fixture whose import order is deliberately scrambled — Structural, MEPF, Allied,
+Architectural, GR, Site — plus four activities with `work_type` null:
+
+- the sheet's rows **and** the Curve tab's chips both come out
+  **General Requirements · Site Works · Structural Works · Architectural Works · MEPF Works ·
+  Allied Services · No trade set**;
+- the bar reads *"4 activities have no Trade set"*, its icon hydrates to 127 chars of SVG, and its
+  left border measures **rgb(201, 162, 39)** against the lockbar's brand red.
+
+`wiring-check` **139/0** · `dark-remap` **0** · `type-scale` **18** (unchanged) ·
+`test-portfolio-dash` **398/0** · `test-boq` **66/0** · inline script `node --check` clean ·
+`<style>` braces **235/235** · 0 NUL bytes. ⚠️ Harness deleted before committing.
+
+### ⚠️ Reported, not changed: the Curve tab and the Manual tab draw the same chart
+
+Owner: *"The curve tab in the s-curve module seem to be a duplicate if we the planner opts for
+manual data."* Measured, and half right — `manChart()` calls the **same `renderChart()`** on the
+**same `computeManual()`**, so in Manual mode the two charts are the same picture. What only the
+Curve tab has: **4 KPI cards**, **3 filter groups** plus the trade chips, the **data table**, the
+click-through **period breakdown**, and the untagged-trade note. The Manual tab's copy is a
+compact preview that redraws as you type. So the chart duplicates; the tab does not. Left alone
+pending the owner's call — the cheap options are to fold the preview into a `<details>` (it pushes
+the sheet below the fold on every visit) or to drop it and let the Curve tab own the picture.
+
+### 2026-09-18 (ag) — A mirrored record can only be as precise as its source: procurement packages become a day, not a bar
+
+⚠️ Lettered **(ag)** — `origin/main` reached `(af)` while this was in flight.
+
+Owner: *"Obtain only the planned award as the start and finish of the work packages"*. Project
+Schedule only; the detail is in `modules/project-schedule/CLAUDE.md` (z).
+
+`syncProcurement()` drew each mirrored work package from its **planned award** to the **latest of its
+target delivery / installation / completion** dates. Both ends are now the planned award, so the row
+is a one-day mark.
+
+⚠️ **The rule to carry: a synced row may only assert dates its source actually scheduled.** The
+target dates are procurement's *envelope*, not a planned duration — turning them into a bar invented
+months of work nobody had scheduled, and it double-counted against the construction activities that
+consume the package and already sit in those months. When a mirror has exactly one real date, the
+honest shape is a point.
+
+⚠️ **Self-migration over backfill, again.** `end_date` was already in the sync's `patchFields`, so
+the diff loop sees the stored target date differ from the award date and rewrites every existing row
+on the next **Sync Procurement**. Same pattern as the `activity_type` change before it: put the new
+value in the patch builder, make sure the field is in the projection the diff compares against, and
+no migration is needed.
+
+### 2026-09-18 (af) — The manual sheet drags to select, drops the trade %, loses its prose, and folds its shortcuts under the grid
+
+Four owner asks in one pass, all on the S-Curve's Manual data tab, all measured.
+
+⚠️ Lettered **(af)**, `MODULE_V` **`20260918ze`**, `xlgrid.js` **`20260918b`** — `origin/main`
+reached `(ae)` during this. Fourth token re-derivation today.
+
+### 1. The trade % is off the sheet — and the weighting behind it is untouched
+
+Owner, after asking what the number meant: *"Disable the % from showing first."* Each trade name
+carried **`x% of the project`**. Answered first, because it is worth recording what it was: the
+trade's share of the schedule's **total activity duration**, or of **loaded cost** when the toolbar
+is on Cost ₱. It reads as a share of value, which is not what it is. The six shares summed to
+exactly 100%, so the allocation was never wrong — the label was.
+
+⚠️ **`tradeWeights()` is untouched.** It still drives the `Project (weighted)` footer and the
+curve. This is a display change and nothing else, so it can be put back or re-worded without
+touching any arithmetic. It still shows on the Curve tab's period breakdown (`.sc-bd`), a
+different surface that was not part of the ask.
+
+⚠️⚠️ **And the question turned up something worse, which is REPORTED, not fixed.** Measured on a
+trade whose activities carry no dates — `Allied Services`, 0% in the owner's own screenshot: the
+row offers **20 editable cells, none disabled**. Typing 50 into one moves the row's own Total to
+**50%** and leaves the `Project (weighted)` footer **completely unchanged**, with **no warning
+anywhere on screen**. A planner can fill that row, watch it reach 100%, save it, and move the
+curve by nothing. The module's own note says a zero-weight trade should be *"REPORTED rather than
+dropped"* — but the only reporting that exists covers trades in a **saved sheet** that no longer
+match the schedule, not a schedule trade that weighs nothing. Awaiting the owner's call on the
+shape of the fix.
+
+### ⚠️⚠️ 2. CLICK AND DRAG SELECTS A RANGE
+
+Owner: *"The multi-select via mousedrag is not working. I want the grid to be like an excel as
+much as possible."* Shift+arrow and shift-click landed earlier the same day; the gesture people
+reach for first had not.
+
+⚠️ **A plain press is not treated as a drag until the pointer reaches a DIFFERENT cell**, and that
+is what keeps an ordinary click working — nothing is `preventDefault()`ed until a second cell is
+entered, so a click still focuses the input and places the caret where you clicked. Only then is
+the anchor planted. Measured: press-and-hold paints **1** cell and sets no `pdg-dragging` class;
+dragging to the third row and third column paints **9**.
+
+⚠️⚠️ **DOM focus is moved to the end cell on DROP, and leaving that out would have killed the
+feature silently.** `onKey` reads the cell under the caret and, finding it is not `focus`, resets
+`focus` to it — so without this the range would collapse at the exact moment Ctrl+C or Delete was
+pressed on it. The drag deliberately does **not** move DOM focus cell by cell (that would scroll
+the sheet under the pointer); it is set once, at the end. Verified: after the drop the class is
+gone, DOM focus is the end cell, and a copy fires `prevented` with all **9** still painted.
+
+⚠️ Dragging to the edge **auto-scrolls**, because a 20-month sheet is wider than the window and a
+range you cannot extend past the edge is not much of a range. The scroll container is found by
+walking up from `root` and testing for real overflow — a host hands this layer the TABLE, and the
+thing with the scrollbars is a wrapper above it (`.sc-matrixwrap`, `.cc-tablewrap`), so this file
+does not have to know any module's class names.
+
+⚠️ `.pdg-dragging` sets `user-select:none` on the cells: without it the pointer crossing a dozen
+`<input>`s selects their TEXT, which is a blue smear over the range and a value replaced by the
+next keystroke.
+
+### 3. The two explanatory paragraphs are deleted
+
+Owner, quoting them back: *"let's just delete this"* — the one about a cell being the trade's own
+share rather than the project's, and the one about the sheet always being monthly.
+
+⚠️ **The orphaned-trade warning that shared that block is NOT prose and stays.** It reports that
+rows the planner has already **saved** no longer match any trade in the schedule, so they carry no
+weight and are not on the curve — a fact about their data, not an explanation of the screen, and
+the only place it is said. It renders on its own now, so the block is absent entirely when nothing
+is orphaned, which is the ordinary case.
+
+### 4. The shortcuts fold away under the grid
+
+Owner: *"Move the keyboard shortcuts tooltip below the grid… and make it collapsible. make sure
+that the wrapping follows the UI sweep principle."* The hint ran along the row **above** the
+sheet, beside the Planned/Actual/Forecast selector, where a nine-item line of key chips was the
+widest thing in the header and competed with the one control a planner actually presses.
+
+⚠️ **`.sc-why` is the module's own disclosure, not a new one** — the same element, caret and focus
+ring as *"How to read this chart"* on the Curve tab. A second collapsible idiom on one screen is
+the thing this file keeps recording as a defect. Closed by default; the id is unchanged, so the
+`getElementById('sc-manhint')` that fills it still finds it.
+
+⚠️ **The wrapping is the part that was asked for, so it is the part that was measured.**
+`hintHTML()` now emits each shortcut inside a nowrap `.pdg-hk`, so a line break lands **between**
+shortcuts and never inside one — no more `Ctrl+C /` on one line and `Ctrl+V` on the next:
+
+| width | 1500 | 1200 | 900 | 700 | 520 | 390 |
+|---|---|---|---|---|---|---|
+| lines | 1 | 2 | 2 | 2 | 3 | 4 |
+| shortcuts split across lines | 0 | 0 | 0 | 0 | 0 | 0 |
+| hint overflow / page h-scroll | 0 | 0 | 0 | 0 | 0 | 0 |
+
+### ⚠️ The split-chunk check was wrong twice before it was right
+
+The first version counted `getClientRects().length > 1` and reported **seven of nine** shortcuts
+split — on a line where `white-space` measured `nowrap`. The second counted distinct rect tops and
+reported the same seven. Both were reading the `<kbd>` element's own border box: the two rects sat
+at **966 and 967**, one pixel apart. A real wrap moves a fragment by a whole line — 20.3px here —
+so the test is a tolerance against the line height, not an equality. ⚠️ Same family as the
+`CSSRuleList`-is-truthy miscount earlier today: a checker confidently describing something it was
+not looking at, and in both directions this week it has invented a defect rather than hidden one.
+
+### Verified
+
+Browser-measured on a fixture shaped to OPW101 — its six trades and weights, its Nov '25 → Jun '27
+span, an **empty** sheet, and one trade deliberately left undated so the zero-weight row is real:
+
+- the sheet's trade cells carry the name only, **0** `<small>`, and no *"% of the project"*
+  anywhere in the matrix; both deleted paragraphs absent; the note block gone entirely;
+- the card's children in order end `…sc-kindbar, sc-matrixwrap, details.sc-manhelp` — the
+  disclosure is the LAST thing in the card, below the sheet, and closed on arrival;
+- drag, drop, copy-after-drag and the press-only case as above.
+
+`test-boq` **66/0** · `test-actsetup` **142/0** · `test-portfolio-dash` **398/0** ·
+`wiring-check` **139/0** · `dark-remap` **0** · `type-scale` **18** (unchanged) · `xlgrid.js` and
+the s-curve inline script `node --check` clean · `<style>` braces **234/234** · 0 NUL bytes.
+
+⚠️ **Not verified signed in**, and the clipboard is still exercised through dispatched events
+rather than a real Ctrl+C; the drag is synthetic `mousedown`/`mousemove`/`mouseup`, not a real
+pointer. ⚠️ Harness and probes lived under `**/*harness*` and were deleted before committing.
+
+`xlgrid.js` → **`20260918b`** (3 refs) · `MODULE_V` → **`20260918ze`**, fallback literal in step.
+Both sort-checked past every token in the tree and on `origin/main`.
+
 ### 2026-09-18 (ae) — A baseline is captured, not typed: the read-only field that has to be read-only in six places
 
 Owner: *"The baseline dates are editable which shouldn't be"*. Project Schedule only. The full

@@ -179,7 +179,17 @@ window.PDGrid = (function () {
       /* the shortcut legend */
       '.pdg-grid .cc-mini{font-size:9.5px;opacity:.7;margin-top:1px}' +
       '.pdg-grid .cc-desc{max-width:340px}' +
-      '.pdg-hint{font-size:11px;color:var(--pd-muted,#8a8a8a)}' +
+      '.pdg-hint{font-size:11px;color:var(--pd-muted,#8a8a8a);line-height:1.8}' +
+      /* ⚠️ ONE SHORTCUT IS ONE UNBREAKABLE UNIT. The hint is a single run of inline text, so
+         at a narrow width it used to wrap wherever it happened to land - between a key and its
+         plus sign, or between "Ctrl+C" and the words that say what it does. Each item is a
+         nowrap span now, so the line breaks BETWEEN shortcuts and never inside one. */
+      '.pdg-hk{white-space:nowrap}' +
+      /* ⚠️ While a range is being dragged the pointer crosses a dozen <input>s, and without
+         this the browser selects their TEXT instead - a blue smear over the range highlight,
+         and a drag that ends by replacing a value the moment the next key is pressed. */
+      '.pdg-dragging,.pdg-dragging input,.pdg-dragging td{user-select:none;-webkit-user-select:none}' +
+      '.pdg-dragging input{cursor:cell}' +
       '.pdg-hint kbd{font:inherit;font-weight:700;padding:0 3px;border:1px solid var(--pd-line,#333);' +
       'border-radius:3px;background:rgba(128,128,128,.12)}';
     document.head.appendChild(s);
@@ -756,18 +766,101 @@ window.PDGrid = (function () {
       paint();
     }
 
-    /* Shift+click extends to the clicked cell, which is the other half of "multiselect" and the
-       one a planner reaches for on a wide sheet rather than holding an arrow key down. */
+    /* The nearest ancestor that actually scrolls. ⚠️ NOT `root`: a host hands this layer the
+       TABLE, and the thing with the scrollbars is a wrapper above it (`.sc-matrixwrap`,
+       `.cc-tablewrap`). Walking up and testing for real overflow finds it without this file
+       having to know any module's class names. */
+    function scroller() {
+      var n = root;
+      while (n && n !== document.body) {
+        var st = window.getComputedStyle(n);
+        if (/(auto|scroll)/.test(st.overflowX + ' ' + st.overflowY) &&
+            (n.scrollWidth > n.clientWidth || n.scrollHeight > n.clientHeight)) return n;
+        n = n.parentElement;
+      }
+      return null;
+    }
+
+    function cellFromPoint(x, y) {
+      var el = document.elementFromPoint(x, y);
+      if (!el) return null;
+      var c = cellOf(el);
+      if (c) return c;
+      var td = el.closest && el.closest('td');
+      if (td) { var inp = td.querySelector(sel); if (inp) return cellOf(inp); }
+      return null;
+    }
+
+    /* Dragging to the edge scrolls the sheet, because a 20-month grid is wider than the window
+       and a selection you cannot extend past the edge is not much of a selection. */
+    function autoScroll(ev) {
+      var wrap = scroller();
+      if (!wrap) return;
+      var b = wrap.getBoundingClientRect(), pad = 30, step = 20;
+      if (ev.clientX > b.right - pad) wrap.scrollLeft += step;
+      else if (ev.clientX < b.left + pad) wrap.scrollLeft -= step;
+      if (ev.clientY > b.bottom - pad) wrap.scrollTop += step;
+      else if (ev.clientY < b.top + pad) wrap.scrollTop -= step;
+    }
+
+    var dragFrom = null, dragging = false;
+
+    /* ⚠️⚠️ CLICK AND DRAG SELECTS A RANGE, and shift+click extends one. Owner, 2026-09-18:
+       *"The multi-select via mousedrag is not working. I want the grid to be like an excel as
+       much as possible."* Shift+click and Shift+arrow had landed earlier that day; the mouse
+       gesture people actually reach for first had not.
+       ⚠️ A PLAIN PRESS IS NOT TREATED AS A DRAG UNTIL THE POINTER REACHES A DIFFERENT CELL.
+       That is what keeps an ordinary click working: it still focuses the input and places the
+       caret where you clicked, because nothing is preventDefault()ed until a second cell is
+       entered. Only then does the anchor get planted and the range begin. */
     function onMouseDown(e) {
-      if (!e.shiftKey) return;
       index();
       var cell = cellOf(e.target);
-      if (!cell || !focus) return;
-      e.preventDefault();
-      if (!anchor) anchor = { r: focus.r, c: focus.c };
-      focus = { r: cell.r, c: cell.c };
-      extending = true; cell.el.focus(); extending = false;
+      if (!cell) return;
+      if (e.shiftKey) {
+        if (!focus) return;
+        e.preventDefault();
+        if (!anchor) anchor = { r: focus.r, c: focus.c };
+        focus = { r: cell.r, c: cell.c };
+        extending = true; cell.el.focus(); extending = false;
+        paint();
+        return;
+      }
+      dragFrom = { r: cell.r, c: cell.c };
+      document.addEventListener('mousemove', onDragMove);
+      document.addEventListener('mouseup', onDragUp);
+    }
+
+    function onDragMove(ev) {
+      if (!dragFrom) return;
+      var c = cellFromPoint(ev.clientX, ev.clientY);
+      if (!c) { if (dragging) autoScroll(ev); return; }
+      if (!dragging) {
+        if (c.r === dragFrom.r && c.c === dragFrom.c) return;   // still the cell we pressed on
+        dragging = true;
+        root.classList.add('pdg-dragging');
+        anchor = { r: dragFrom.r, c: dragFrom.c };
+      }
+      ev.preventDefault();
+      focus = { r: c.r, c: c.c };
       paint();
+      autoScroll(ev);
+    }
+
+    function onDragUp() {
+      document.removeEventListener('mousemove', onDragMove);
+      document.removeEventListener('mouseup', onDragUp);
+      if (dragging) {
+        root.classList.remove('pdg-dragging');
+        /* ⚠️⚠️ DOM FOCUS MUST END ON THE CELL PDGrid CALLS `focus`, or the selection dies on
+           the next keystroke: `onKey` reads the cell under the caret and, finding it is not
+           `focus`, resets `focus` to it - collapsing the range just as Ctrl+C or Delete is
+           pressed on it. The drag itself deliberately does NOT move DOM focus cell by cell
+           (that would scroll the sheet under the pointer); it is set once, here, at the end. */
+        var f = focus && at(focus.r, focus.c);
+        if (f) { extending = true; f.el.focus(); extending = false; }
+      }
+      dragFrom = null; dragging = false;
     }
 
     /* WARNING RE-RUN ON EVERY REFRESH, because the host re-renders the whole table on a filter, a
@@ -824,12 +917,21 @@ window.PDGrid = (function () {
   }
 
   function hintHTML() {
-    return '<span class="pdg-hint">' +
-      '<kbd>Tab</kbd> next field · <kbd>Enter</kbd> next row · ' +
-      '<kbd>Shift</kbd>+arrows or shift-click select · ' +
-      '<kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> copy &amp; paste a block · ' +
-      '<kbd>Ctrl</kbd>+<kbd>D</kbd> fill down · <kbd>Del</kbd> clear · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo' +
-      '</span>';
+    var items = [
+      '<kbd>Tab</kbd> next field',
+      '<kbd>Enter</kbd> next row',
+      '<kbd>Shift</kbd>+arrows select',
+      'click and drag to select',
+      'shift-click to extend',
+      '<kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> copy &amp; paste a block',
+      '<kbd>Ctrl</kbd>+<kbd>D</kbd> fill down',
+      '<kbd>Del</kbd> clear',
+      '<kbd>Ctrl</kbd>+<kbd>Z</kbd> undo'
+    ];
+    return '<span class="pdg-hint">' + items.map(function (t, i) {
+      return '<span class="pdg-hk">' + t + '</span>' +
+             (i < items.length - 1 ? ' \u00b7 ' : '');
+    }).join('') + '</span>';
   }
 
   return { attach: attach, hintHTML: hintHTML };
