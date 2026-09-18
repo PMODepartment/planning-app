@@ -1,3 +1,193 @@
+## 2026-09-18 (aa) — Location Sequence becomes one page, a real Gantt, and a drag that links
+
+Owner, six items on the Location Sequence step. Every one is implemented; what follows is the four
+decisions that were not obvious, the parse failure this pass had to repair first, and the merge
+resolution that would have taken the module down.
+
+### ⚠️⚠️ FIRST, A PARSE FAILURE — AND IN THIS FILE THAT IS THE WHOLE MODULE, NOT ONE STEP
+
+`stTradeSeq` held a **48-line block duplicated byte for byte**, plus a 4-line fragment of an
+empty-state `host.innerHTML` assignment whose `if (!used.length) {` opener had gone. The module is
+one inline `<script>` of ~3.8MB, so that is not a broken function — it is a `SyntaxError` that
+blanks the entire page, the shape this log already records from `(c)`.
+
+⚠️ **A bisect was the wrong tool and the log says so** — it is O(n²) over a 3MB block and times out.
+What found it in seconds was a **bracket-depth tracker**: compute the per-line brace depth on this
+tree and on `HEAD`, key both by enclosing function name, and print the first function where the two
+disagree. The answer was one function and one range. Deleted with asserted anchors; the block parses
+at **3,859,713 bytes**.
+
+### ⚠️⚠️ AND EVERY `actMode`-FAMILY REFERENCE WITH IT, EACH ONE A LATENT ReferenceError
+
+`actMode`, `actLinkPhase`, `pendActSet`, `pendActDst`, `inPendAct`, `inActDst`, `actSelect` and
+`actConfirm` all lost their **declarations** when the link modes were retired, and eight reads of
+them survived — in `t4GridHTML`'s cell class, in the confirm button, in three handlers and in a
+comment offering them as a live analogy. `node --check` parses every one of those happily, which is
+this module's own z6 lesson. A name-resolution sweep now reports all eight `declared=false
+referenced=false`, and every new name `declared=true referenced=true`.
+
+### The six items
+
+**1 · The step is Location Sequence throughout** — rail, headings, the How-to manual, and the
+deep-link aliases. ⚠️ `STEP_ALIAS` and `gotoStep` still resolve *Tower links*, *Tower Sequence* and
+*Zone sequence*, because `_stepNo` answers `''` for a title it cannot find and a blank where a step
+number belongs reads as a broken app.
+
+**2 · Tower sequence and zone sequence become ONE page.** The view options, the layout segment and
+both zoom pairs are gone; `stTowerLinks` and `stSequence` are **deleted**, not left unreferenced.
+⚠️ `VS_TL_TYPES` and `_tlWord` are **kept** — `openTowerLinkDlg` reads both, and deleting a renderer
+is not licence to delete what its dialog still needs.
+
+⚠️⚠️ **THE LAYOUT IS THE FLEX ROW'S OWN ANSWER TO THE WINDOW, NOT A CONTROL.** The owner asked for
+*"layout should depend on window width"*, and the honest way to do that is to stop asking: a new
+`.sbld-seq2-wrap` modifier wraps, and each pane states a real `min-width` so it wraps rather than
+overflowing — a flex item's default `min-width:auto` resolves to its content and forces a scrollbar
+instead of a second row. ⚠️ **Scoped to this row.** The Activity Sequence's own `.sbld-seq2` keeps
+its grip and its remembered width, which a wrap on the base class would have silently overridden.
+
+**3 · The building view draws floors, zones AND units.** It skipped a rung whenever the level below
+it had one child, so a single-zone floor lost its zone and a single-unit zone lost its unit — which
+is exactly the case where a planner most needs to see that the rung exists at all.
+
+**4 · The resulting schedule is a real Gantt** — units grouped by zone, zones by floor, floors by
+tower, every rung foldable with its own summary bar and a count. ⚠️⚠️ **The rung order is the
+MAXIMUM index a value is seen at across every trade, never the first.** First-seen is right only
+while the first trade to mention a floor happens to be the one that orders them correctly; a sparse
+trade earlier in `GROUPS` than a complete one then decides the whole building's storey order. The
+negative build for this is the one that matters most, and it fails naming the exact signature.
+
+**5 · Auto-trace asks four numbers** — towers, floors, zones and units simultaneous — and resolves
+the rest from the defaults. The zigzag and next-floor questions are retired, at the owner's word.
+
+**6 · Inspect and link-by-hand become one mode.** Every bar carries a **start point and a finish
+point**; drag one onto another and **the pair of points IS the relationship** — finish→start is FS,
+start→start SS, finish→finish FF, start→finish SF. ⚠️ The points are visible at rest (`opacity:.38`)
+rather than on hover: this gesture replaced a mode switch and a four-step flow, and a hover-only
+affordance is a gesture nobody finds. ⚠️ **One binder, two steps** — `bindLinkDrag` takes the write
+function, so the Location Sequence passes `addLink` and the Activity Sequence passes `addActLink`,
+which keeps the per-level-type link set the zone links do not have. Two copies of the gesture is how
+the two steps come to behave differently at the one thing the owner asked to make identical.
+
+### ⚠️⚠️ THE MERGE: ONE RESOLUTION WOULD HAVE THROWN ON EVERY RENDER OF THE STEP
+
+Merged `origin/main` (25 commits) before shipping — five conflicts in this file, every one resolved
+on the merits rather than by taking a side.
+
+The sharp one is `STEP_TABS`. Main's side restores `'Location Sequence': [ … stTowerLinks, …
+stSequence ]` — **two functions this branch deleted** — so `--theirs` there is a `ReferenceError` on
+every render, the *"below is not defined"* shape this log has now recorded five times and which
+`node --check` cannot see. ⚠️ And the resolution is not simply "take mine" either: main **also**
+removed `'Activity Sequence'` from that map (Scope per zone is its own step 9 now). Each side removed
+a different key, so the honest merged answer is **neither** — the object is empty, and both removal
+notes are kept because each records a different decision.
+
+The other four: the manual's linking sentence goes this branch's way (main's describes the retired
+right-click flow, and a comment that confidently describes the opposite of the code is worse than
+none) while main's whole new *Zone scoping* entry is kept; the duplicate `stLocSeq` **stub** is
+dropped rather than kept beside the real renderer; `stActSeq` takes **main's** body; and the step
+heading takes **main's** title, because main renamed the step to *Activity sequence* and this
+function is now its only renderer — `_stepNo` still answers for *Trade sequence* through the alias.
+
+⚠️ `_al`'s three Location-Sequence aliases carry **no `tab:`** any more. Passing one is worse than
+useless: `setStepTabQuiet` would write a key into `localStorage` for a step that has no strip.
+
+### ⚠️ `stPillStep` NOW HAS ZERO CALLERS, AND IT IS PARKED RATHER THAN DELETED
+
+With `STEP_TABS` empty the whole tab shell is unreachable. ⚠️ This is **not** the `#pk-boq` shape —
+that was a handler bound to an id nothing emits, which *throws*; this is a generic mechanism driven
+entirely by that object, which comes back the instant a step gains a second view. Deleting a
+mechanism main had just shipped comments for, inside a merge resolution, would be a product decision
+smuggled into a resolution. `test-zonescope.js` asserts the caller count is **0**, so the parked
+state is a fact a reader can see rather than a surprise.
+
+### Two suites retargeted, neither weakened
+
+⚠️⚠️ **`test-builder.js` STUBBED `cellKey` — a re-implementation of the rule under test, and a WRONG
+one**: it read `l.zone ? l.zone.code : '_'` and **ignored the unit**, so every assertion about the
+merge key was measuring the stub. It slices the real `locCellKey` now, plus `towerSimulOf` and
+`floorSimulOf`. Section 4's dialog assertions move from the three retired questions to the four new
+rungs — asserted on the `row('tower',` **call sites**, because the `data-atkind` attribute is
+templated and the literal never appears in the source.
+
+⚠️ **`test-zonescope.js` is MAIN's suite and this change broke four of its assertions**, established
+by running it against main's own tree in a throwaway worktree: **57/0 there, 53/4 here**. They pinned
+*"exactly one step still has tabs, and it is Location Sequence, with two views"*. Retargeted to the
+**stricter** claim — no step carries a strip at all, no walk entry carries a tab suffix — which fails
+the moment somebody re-adds a one-view strip. 57 → **58**, one assertion more than main's.
+
+⚠️ `test-autotrace.js` slices `locCellKey` **by either name**, so it still builds on its pinned base
+where the function is still called `cellKey`.
+
+### Verified
+
+**22 suites, 2,059 assertions, 0 failing** on the merged tree — `test-locseq.js` new at 94,
+`test-lsm` 697, `test-builder` 159, `test-actsetup` 142, `test-phasenet` 135, `test-sap` 114,
+`test-towertypes` 102, `test-zonescope` 58, `test-autotrace` 32 — including **main's own suites this
+branch had never run**.
+
+⚠️ **`test-cpm.js` throws `window is not defined`, and it is MAIN'S, not this change's** — verified by
+running it against `origin/main`'s own tree in a worktree, where it throws identically. Named rather
+than quietly passed over.
+
+**Six negative builds, all biting and all FAILING rather than crashing** — a suite that dies mid-run
+reports nothing about its other assertions, so every index read in an assertion is guarded. Re-run on
+the merged tree: rung order max-index → first-seen fails **2**; every drag deriving FS fails **3**;
+the unit rung removed fails **4**; and the file restores byte-identically each time.
+
+**Measured in Chromium at 1440 / 1100 / 820** against the shipped stylesheets, with the fixture
+injected as JSON and every rule and style **sliced out of the shipped file** — ⚠️ `Fmt.esc` is sliced
+out of the shared `assets/js/db.js` too, because it is an escaping rule and a retyped one is a second
+opinion about what the app escapes:
+
+| | 1440 | 1100 | 820 |
+|---|---|---|---|
+| panes | side-by-side | side-by-side | **stacked** |
+| page scrolls sideways | no | no | no |
+| zoom / layout / view / tab controls | 0 | 0 | 0 |
+| auto-trace · links · tower links | all present | all present | all present |
+
+That stacked column **is** item 2: the layout follows the window with no control to set it. The Gantt
+reconciles exactly with the fixture (2 towers × 3 floors × 2 zones × 2 units × 2 trades): **20 group
+rows** = 2 + 6 + 12, with 20 carets and 20 summary bars; **48 leaves**; **50 bar groups** = 48 + 2
+bookends; **100 drag points** = 50 × 2. Labels read `Start · ▾Tower 1 (24) · ▾F1 (8) · ▾Z1 (4) ·
+U1 · Structural …` and the group indents step 6 → 19 → 32. **0 page errors at every width.**
+
+`wiring-check` **139/0** · `dead-hooks` **9 findings, byte-identical to main's own** (only the census
+moves, 476/103 → 474/104, which is the two retired mode-class queries going and the new suite
+arriving) · `dark-remap` 0 · `loc-key-agree` clean · `selectall-key` 102 sites, 100 safe / 0 broken ·
+`toolbar-order` 15 bars / 0 out of order. CSS braces **2575/2575**, **0 NUL bytes** and 0 CR bytes in
+every file this change touches.
+
+⚠️ `grep -c $'\x00'` **degenerates to an empty pattern and reports every line as a hit** — the trap
+this log already records. The NUL count above is a byte count.
+
+⚠️ **Not verified signed in.** No setup has been saved and re-read, no link has been dragged against a
+real project's activities, and auto-trace has never resolved against real data. What is proven is the
+shipped code executed against fixtures and the shipped CSS measured in a browser.
+
+⚠️⚠️ **Re-lettered `(y)` → `(z)` on merging `origin/main` (15 commits): BOTH SIDES INDEPENDENTLY USED
+`## 2026-09-18 (y)`** — a literal duplicate heading, not merely a scheme that diverged. Main's `(y)` is
+the baseline-lock entry below; both are kept whole and the entry merging in is the one that moves, per
+the root log's own header rule. The root entry moves with it, `(za)` → `(ag)`, and `MODULE_V` is
+re-derived to `20260918zf` — ⚠️⚠️ **main's `(aa)` entry had independently taken the identical
+`20260918za` this branch had chosen**, which git merges without reporting a conflict at all, leaving
+one cache token over two different builds.
+
+⚠️⚠️ **`index.html` auto-merged with NO conflict, and this file's own history says that is not
+evidence.** Main rewrote the LSM bar's trade painting (`(aa)`, `(ac)`) in the same file this branch
+rewrote the Location Sequence step in. Both sides were asserted present on the merged tree by name and
+the whole battery re-run on it, including main's own new `test-lsm` assertions, which this branch had
+never run.
+
+⚠️⚠️ **Re-lettered a SECOND time, `(z)` → `(aa)`, and for the second time it was a literal duplicate:**
+main moved again mid-merge and its own new entry took `## 2026-09-18 (z)` — the letter this entry had
+moved to only minutes earlier to get clear of main's `(y)`. The root entry moves with it, `(ag)` →
+`(ai)`, past main's `(ag)` and `(ah)`. ⚠️⚠️ **`MODULE_V` collided the same way and in silence:** main
+derived `20260918zf` from `20260918ze` while this branch derived the identical string from the
+identical base, and because both sides wrote the same characters **git reported no conflict on those
+three lines at all**. Re-derived to `20260918zg` by reading the remote's token after integrating,
+which is the only thing that finds this shape.
+
 ## 2026-09-18 (z) — A mirrored work package is the planned award DAY, not a bar from award to target completion
 
 Owner: *"For sync procurement in the schedule. Obtain only the planned award as the start and finish

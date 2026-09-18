@@ -59,7 +59,7 @@ string, and this file has been bitten by a checker measuring its own explanation
 ⚠️ **Not verified signed in.** No live project's presentation list has been rendered; the count line
 is asserted against the shipped source, not read off a screen.
 
-`ppr.js` → `?v=20260918zg`; `MODULE_V` → `20260918zg` — re-derived past main's `20260918ze` on a second merge, and this entry re-lettered `(ad)` → `(ag)` because main independently published its own `(ad)`.
+`ppr.js` → `?v=20260918zh`; `MODULE_V` → `20260918zh` — re-derived past main's `20260918ze` on a second merge, and this entry re-lettered `(ad)` → `(ag)` because main independently published its own `(ad)`.
 
 ## "Still a few streaks": the gain clamp was bounding the SCENE, not the bias (2026-09-17, third pass)
 
