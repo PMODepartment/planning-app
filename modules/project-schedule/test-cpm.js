@@ -57,7 +57,22 @@ function build(src) {
     'var rows = [], dataDate = null, _cpmDirty = true;\n' +
     'function wallToday(){ return new Date(2026, 0, 1); }\n' +
     'function cpmCalOf(){ return null; }\n' +
-    'function PDCalStub(){}\n' +
+    /* ⚠️⚠️ THIS SUITE WAS DARK FROM b311c7b4 UNTIL 2026-09-18 AND NOBODY SAW IT, because a
+       ReferenceError kills the file before a single assertion prints — there is no failing count
+       to notice, only an absent one. `axisFor` gained `if (!calCpmOn || !window.PDCal) return
+       ALLAX;`, and `calCpmOn` is SLICED from the shipped file, where it reads localStorage inside
+       a try/catch that returns TRUE on a throw — which is what node does. So the flag came up on,
+       the second operand was evaluated, and `window` does not exist here.
+       ⚠️⚠️ `{}` — DELIBERATELY WITHOUT `PDCal`, AND THAT IS NOT A STUB DODGE. It is a state the
+       browser is really in: `calCpmOn` on with the calendar library not loaded, which the shipped
+       code answers by falling back to ALLAX. That fallback IS the day axis these 28 assertions
+       were written against, so the suite tests what it always tested.
+       ⚠️ Standing in a PDCal here would be the forbidden move: the calendar axis would then be
+       measured against the stub rather than against PDCal, and the suite would go green on
+       arithmetic no shipped code performs. The working-calendar axis is therefore NOT covered by
+       this suite — it is covered by nothing, and that gap is real. `PDCalStub` (unreferenced since
+       it was written) is removed rather than left as an invitation to close the gap the wrong way. */
+    'var window = {};\n' +
     body +
     'return function (rs, dd) {\n' +
     '  rows = rs; dataDate = dd || null;\n' +

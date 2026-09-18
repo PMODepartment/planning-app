@@ -57,6 +57,10 @@ const FNS = [
   'blankTowers', 'blankTowerTypes',
   'typeList', 'typeById', 'typeLabel', 'typeOfTower', 'towersOfType', 'repTowerOf', 'repTowerOfTower',
   'floorsOfTower', 'locless', 'leavesOfFloor', 'locList',
+  /* ⚠️ The two read-outs the Towers step prints beside each row. `_twLocCount` is the one that
+     matters: it answers "what does this row become downstream", and it has to answer it with
+     `locList`'s own rule or the step and the steps that use it disagree in public. */
+  '_twFloorCount', '_twLocCount',
   '_twNewInstance', '_twRemoveTower', '_clampN',
   /* ⚠️⚠️ THE 2026-09-18 RESHAPE. The ± count control (`_twSetCount`) is gone — owner:
      *"when add type is clicked, a grouping is added. when development is clicked, a row is added
@@ -481,7 +485,7 @@ console.log('tower types — the shipped functions, executed\n');
     /* Executed, not read: the base CANNOT express three towers of one type. */
     const B = build(base, { optional: ['blankTowerTypes', 'typeList', 'typeById', 'typeLabel', 'typeOfTower',
       'towersOfType', 'repTowerOf', 'repTowerOfTower', '_twNewInstance', '_twRemoveTower', '_clampN',
-      'layoutOwners', 'ownerOfTower', 'towerLinks'] });
+      'layoutOwners', 'ownerOfTower', 'towerLinks', '_twFloorCount', '_twLocCount'] });
     const c = mkTypedCfg(3); B.setCfg(c);
     ok(B.floorsOfTower('ST', 'tw2').length === 0,
       '10.11  ⚠️⚠️ BASE: the second tower of a type reads NO floors — the defect this ships to fix',
@@ -489,6 +493,121 @@ console.log('tower types — the shipped functions, executed\n');
     ok(B.locList().length === 5,
       '10.12  …so the base pushes ONE tower’s locations for a three-tower project', B.locList().length);
   }
+}
+
+/* ================= 11 · the two rungs, and what a row says it becomes ===================== */
+/* Owner 2026-09-18: *"the black rows, these pertain to types while for the white rows, these
+   pertain to the locations or actual towers as locations to be then defined also in the later
+   steps."*
+   ⚠️⚠️ `ownerRow`, `devRow` and `cell` LIVE INSIDE `stTowers` AND ARE SLICED BY NAME ANYWAY —
+   `sliceFn` walks braces, so a nested builder is as reachable as a top-level one. That matters:
+   the alternative is asserting on a regex over the render function, which is how a suite ends up
+   agreeing with the source's spelling rather than with what the source PRODUCES. Everything below
+   is HTML the shipped builders emitted.
+   ⚠️ `_twFloorCount`, `_twLocCount` and `e2` are supplied as INPUTS here, not stubs of the thing
+   under test: the thing under test is the markup, and the two counters are asserted for real in
+   the block above this one. */
+{
+  const S = makeSlicer(SRC);
+  let R = null;
+  try {
+    R = new Function(
+      '"use strict";\n' +
+      'var _floors = {}, _locs = {}, _towers = [], owners = [];\n' +
+      'function e2(s){ return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }\n' +
+      'function _twFloorCount(rep){ return _floors[rep] || 0; }\n' +
+      'function _twLocCount(rep){ return _locs[rep] || 0; }\n' +
+      'function towerList(){ return _towers; }\n' +
+      S.sliceFn('cell') + '\n' + S.sliceFn('ownerRow') + '\n' + S.sliceFn('devRow') + '\n' +
+      'return { set: function (f, l, t, o) { _floors = f; _locs = l; _towers = t; owners = o; },' +
+      '         ownerRow: ownerRow, devRow: devRow };'
+    )();
+  } catch (e) { ok(false, '11.0  the row builders slice and parse — ' + e.message); }
+
+  if (R) {
+    const tw = function (id, nm, cd, ty) { return { id: id, name: nm, code: cd, typeId: ty, remarks: '' }; };
+    const a = tw('a', 'Tower 1', 'T1', 'ty1'), b = tw('b', 'Tower 4', 'T4', 'ty1');
+    const s = tw('s', 'Clubhouse', 'CH', '');
+    const four = { kind: 'type', id: 'ty1', rep: 'a', towers: [a, b], label: '5F Buildings', code: '5F', remarks: '' };
+    const one = { kind: 'type', id: 'ty2', rep: 'a', towers: [a], label: 'Solo type', code: 'ST', remarks: '' };
+    const solo = { kind: 'solo', id: 's', rep: 's', towers: [s], label: 'Clubhouse', code: 'CH', remarks: '' };
+    R.set({ a: 14, s: 0 }, { a: 42, s: 0 }, [a, b, s], [four, solo]);
+
+    const TY = R.ownerRow(four, true), DEV = R.devRow(b, four, 1, true);
+    const TY1 = R.ownerRow(one, false), SOLO = R.ownerRow(solo, false);
+    const DEVOFF = R.devRow(b, four, 1, false);
+
+    /* ⚠️ `.sbld-twin` is `width:100%`. Before the wrapper, a badge in front of it pushed the input
+       onto its own line — which is why the TYPE chip sat stranded ABOVE the name box. */
+    ok(/<td class="sbld-twnm"><span class="sbld-twrow">/.test(TY) && /<td class="sbld-twnm"><span class="sbld-twrow">/.test(DEV),
+      '11.1  both rungs put the badge and the name box in ONE flex row, so a full-width input cannot wrap the badge off it');
+    ok(/class="sbld-twkind"[^>]*>TYPE</.test(TY), '11.2  a type row says TYPE');
+    ok(/class="sbld-twcnt"[^>]*>×2</.test(TY), '11.3  …and carries how many buildings are built to it');
+    /* ⚠️⚠️ THE RUNG THE TABLE NEVER NAMED. The type row said TYPE and a standalone said DEV; the
+       rows that ARE the buildings — the ones the owner is describing — said nothing at all. */
+    ok(/class="sbld-twkind dev"[^>]*>DEV</.test(DEV),
+      '11.4  ⚠️ a development row says DEV — it carried no badge of any kind before');
+    ok(/class="sbld-twkind solo"[^>]*>DEV</.test(SOLO) && !/sbld-twkind solo/.test(DEV),
+      '11.5  …and the red `solo` variant stays reserved for a development laid out BESIDE the types');
+    ok(/<span class="sbld-twind" aria-hidden="true"><\/span>/.test(DEV),
+      '11.6  the elbow is drawn, and hidden from a screen reader — the row order already says the nesting');
+    /* ⚠️⚠️ WHAT IS SELECTED IS A LAYOUT, NOT A ROW. The floors live on the first development, so a
+       rail on the type alone left a planner clicking one row and watching a different one light up. */
+    ok(/class="sbld-twr-dev on"/.test(DEV) && !/ on"/.test(DEVOFF),
+      '11.7  ⚠️ selecting a layout marks its DEVELOPMENTS too, and only when it is selected');
+    ok(!/shared by/.test(TY),
+      '11.8  …and "· shared by N developments" is gone from the hint — the rows below it ARE those N, and the chip counts them once');
+    ok(/42 locations each/.test(TY),
+      '11.9  ⚠️ the hint says what ONE row becomes downstream — *"the locations … to be then defined also in the later steps"*');
+    ok(/42 locations</.test(TY1) && !/each/.test(TY1),
+      '11.10  …and drops "each" when there is only one development, where it would be a distinction with nothing on the other side');
+    ok(/nothing laid out yet<\/span>/.test(SOLO),
+      '11.11  ⚠️ a layout with no floors claims NO locations — "0 locations" reads as a fault rather than as a step not taken');
+    /* The wiring reads these attributes; a markup rewrite that dropped one is silent. */
+    ok(/data-tyk="name"/.test(TY) && /data-tyk="code"/.test(TY) && /data-tyk="remarks"/.test(TY),
+      '11.12  the type rung still emits all three data-tyk fields the editor binds to');
+    ok(/data-twk="name"/.test(DEV) && /data-twk="code"/.test(DEV) && /data-twk="remarks"/.test(DEV),
+      '11.13  …and the development rung all three data-twk fields');
+    ok(/data-own="a"/.test(TY) && /data-own="a"/.test(DEV),
+      '11.14  ⚠️ both rungs carry the owner’s REPRESENTATIVE in data-own — which is what uiTower holds, so every reader of the active tower is untouched');
+  }
+
+  /* ---- the counter, executed against the fixture ---- */
+  {
+    const c = mkTypedCfg(3); M.setCfg(c);
+    const per = M._twLocCount('tw1');
+    ok(per === 5, '11.15  _twLocCount is per DEVELOPMENT — B1(1 zone) + F1(2) + F2(2)', per);
+    /* ⚠️⚠️ THE ONE THAT MATTERS: the step’s figure and the list every later step walks are the
+       same arithmetic. Recomputed here as floors × zones it would agree with itself and drift
+       from locList the first time `cfg.locLevel` remapped the leaf level. */
+    ok(per * 3 === M.locList().length,
+      '11.16  ⚠️⚠️ …and it times the instances IS locList() — one rule for what counts as a location',
+      [per * 3, M.locList().length]);
+    ok(M.locless('GR') === true, '11.17  general requirements has no location — the rule the gate below depends on');
+    c.zoning.GR.floors = mkFloors('tw1', SHAPE); M.setCfg(c);
+    ok(M._twLocCount('tw1') === per,
+      '11.18  ⚠️ …so floors typed under a loc-less trade do NOT inflate the count, exactly as locList ignores them',
+      M._twLocCount('tw1'));
+    const empty = mkTypedCfg(1); empty.zoning.ST.floors = []; M.setCfg(empty);
+    ok(M._twLocCount('tw1') === 0, '11.19  nothing laid out is zero, not a throw', M._twLocCount('tw1'));
+  }
+
+  /* ---- and the rules that only exist in the stylesheet ---- */
+  /* ⚠️⚠️ A DEFECT THAT WAS ON SCREEN THE WHOLE TIME. `tr.sbld-twr-own.on td` put an inset 3px red
+     bar down the left edge of EVERY cell, so a selected type read as four red stripes across the
+     row rather than one marker beside it. Visible in the owner’s own screenshot. */
+  ok(/tr\.sbld-twr-own\.on td:first-child/.test(SRC),
+    '11.20  ⚠️ the selection rail is on the FIRST cell…');
+  ok(!/tr\.sbld-twr-own\.on td \{/.test(SRC_NC),
+    '11.21  …and not on every cell, which is what drew four red stripes across a selected row');
+  ok(/tr\.sbld-twr-dev\.on td:first-child/.test(SRC),
+    '11.22  …and it runs the development rows too, so the rail marks the whole LAYOUT');
+  ok(/_twLocCount\(rep\)[\s\S]{0,400}leavesOfFloor\(g, f\)\.length/.test(SRC_NC),
+    '11.23  ⚠️⚠️ _twLocCount counts through leavesOfFloor — locList’s own rule, not a second one');
+  ok(/var _locN = locList\(\)\.length;/.test(SRC_NC),
+    '11.24  …and the step’s total is that same list’s length rather than arithmetic of its own');
+  ok(/class="sbld-twlegend"/.test(SRC),
+    '11.25  the legend naming the two rungs is on the screen, not inside the collapsed How block');
 }
 
 console.log((fail ? 'FAIL' : 'PASS') + ': ' + pass + ' passed, ' + fail + ' failed');

@@ -3403,6 +3403,8 @@
     .ps-ck-kpi.warn .v { color:var(--pd-red); }
     .ps-ck-kpi.good .v { color:#2D9B6F; }
     .ps-ck-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    /* ⚠️ One card is a column, not half a row. See stStart. */
+    .ps-ck-grid.one { grid-template-columns:1fr; max-width:560px; }
     @media (max-width:900px) { .ps-ck-grid { grid-template-columns:1fr; } }
     .ps-ck-card { padding:0; overflow:hidden; }
     .ps-ck-h { display:flex; align-items:center; gap:8px; padding:11px 14px; font-weight:700; font-size:var(--pd-fs-base);
@@ -5297,17 +5299,65 @@
        what makes the three columns line up down the table. */
     .sbld-twin { width:100%; min-width:80px; height:30px; }
     table.sbld-twtbl tr.grp .sbld-twin { font-weight:700; }
-    /* The rung, said in a word, because indentation alone cannot say WHICH level a row is on when
-       a standalone development sits flush beside a type. */
-    .sbld-twkind { display:inline-block; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em;
-      color:var(--pd-muted); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:1px 5px; margin-right:6px; }
+    /* ⚠️⚠️ THE TWO RUNGS HAVE TO READ AS TWO RUNGS AT A GLANCE. Owner 2026-09-18: *"the black
+       rows, these pertain to types while for the white rows, these pertain to the locations or
+       actual towers as locations to be then defined also in the later steps."* The background was
+       carrying that on its own, and a table of alternating darks says "banded rows" long before it
+       says "a grouping and its children". So the level is now said three ways that agree: a badge
+       on BOTH rungs (the child rows carried none at all), an elbow that draws the nesting, and a
+       rule between groups.
+       ⚠️ The name cell is a FLEX ROW rather than inline content. `.sbld-twin` is `width:100%`, so a
+       badge in front of it wrapped the input onto its own line — which is why the TYPE chip sat
+       stranded above the name box. Nothing about that was designed. */
+    .sbld-twnm { white-space:normal; }
+    .sbld-twrow { display:flex; align-items:center; gap:6px; }
+    .sbld-twrow .sbld-twin { flex:1 1 auto; width:auto; min-width:0; }
+    .sbld-twkind { flex:0 0 auto; display:inline-block; font-size:var(--pd-fs-micro); font-weight:800;
+      letter-spacing:.05em; color:var(--pd-muted); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); padding:1px 5px; }
     .sbld-twkind.solo { color:var(--pd-red); border-color:var(--pd-red-mid); }
-    .sbld-twind { display:inline-block; width:22px; }
-    .sbld-twfl { display:block; margin-top:2px; white-space:normal; }
+    /* ⚠️ The child badge is quieter than the type's ON PURPOSE. Four of them stack under one type,
+       and four badges at full strength out-shout the grouping row they belong to — which is the
+       opposite of what labelling the rungs is for. */
+    .sbld-twkind.dev { font-weight:700; opacity:.7; }
+    /* How many buildings this design is built as, beside the design's own name. ⚠️ This REPLACES
+       the "· shared by 4 developments" clause in the hint below it: the rows under it already are
+       those four, so the sentence was the table's third statement of one fact. */
+    .sbld-twcnt { flex:0 0 auto; font-size:var(--pd-fs-micro); font-weight:800; color:var(--pd-muted);
+      border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; white-space:nowrap; }
+    /* The elbow. ⚠️ `aria-hidden` in the markup — it is a picture of nesting the row order already
+       states, and read aloud it is noise. `align-self` + the top margin land its corner on the
+       name box's centre line rather than wherever a 30px row happens to put it. */
+    /* ⚠️ `--pd-muted` at half strength, NOT `--pd-line`. Looked at on the rendered page, a border
+       colour is a hairline meant to sit between two filled cells — rgba(255,255,255,.12) on dark —
+       and a 15px elbow drawn in it reads as a smudge rather than as a rung. ⚠️ And the height is
+       the name box's half-height, so the corner lands on its centre line in both themes rather
+       than wherever a 30px row happens to put it. */
+    .sbld-twind { flex:0 0 auto; width:15px; height:15px; margin:0 2px 0 6px; align-self:flex-start;
+      border-left:1px solid var(--pd-muted); border-bottom:1px solid var(--pd-muted);
+      border-bottom-left-radius:5px; opacity:.5; }
+    .sbld-twfl { display:block; margin-top:3px; white-space:normal; }
     .sbld-twact { width:1%; white-space:nowrap; text-align:right; }
     .sbld-twmini { padding:2px 7px; font-size:var(--pd-fs-xs); }
-    table.sbld-twtbl tr.sbld-twr-own.on td { box-shadow:inset 3px 0 0 var(--pd-red); }
+    /* The legend. ⚠️ ON THE SCREEN, NOT INSIDE THE COLLAPSED How BLOCK: "there are two kinds of row
+       in this table" is the one thing about this step that cannot be worked out from the rows. */
+    .sbld-twlegend { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; margin:0 0 8px;
+      font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    .sbld-twlegend > span { display:inline-flex; align-items:center; gap:6px; }
+    /* ⚠️ A GROUP IS SEPARATED BY A RULE, not by hoping the reader notices the background change.
+       `border-collapse:collapse` puts this between the last development of one type and the next
+       type's row, which is the boundary that matters. */
+    table.sbld-twtbl tr.sbld-twr-own td { border-top:2px solid var(--pd-line); }
     table.sbld-twtbl tr.sbld-twr-dev td { background:var(--pd-card); }
+    table.sbld-twtbl tr[data-own]:hover td { background:rgba(127,127,127,.07); }
+    /* ⚠️⚠️ THE SELECTION RAIL WAS ON EVERY CELL. `tr.sbld-twr-own.on td` drew an inset 3px red bar
+       down the left edge of Name, Code, Remarks AND the actions cell, so a selected type read as
+       four red stripes across the row instead of one marker beside it. First cell only.
+       ⚠️⚠️ AND IT RUNS THE WHOLE GROUP NOW, because what is selected is a LAYOUT — the type and
+       every development built from it — not a row. The floors live on the first development, so a
+       rail on the type alone left a planner clicking one row and watching a different one light up. */
+    table.sbld-twtbl tr.sbld-twr-own.on td:first-child,
+    table.sbld-twtbl tr.sbld-twr-dev.on td:first-child { box-shadow:inset 3px 0 0 var(--pd-red); }
     /* ⚠️ The tower names sit on their own line: they can run long, and pushed onto the stepper's
        line they would drag the − and + apart by however many towers the type happens to have. */
     .sbld-twn { opacity:.75; font-weight:700; }
@@ -38600,6 +38650,23 @@
       pruneLinks();
       return true;
     }
+    /* How many LOCATIONS one development of this layout becomes downstream.
+       ⚠️⚠️ COMPUTED THROUGH `leavesOfFloor`, THE FUNCTION `locList` ITSELF PUSHES THROUGH. A second
+       rule for "what counts as a location" is exactly how the number on this step and the number
+       the later steps work from end up disagreeing — and `cfg.locLevel` can remap the leaf level
+       for the whole project, so the rule is not a constant.
+       ⚠️ PER DEVELOPMENT, not per type: every instance of a type builds all of these, so the type's
+       own total is this times the number of developments under it.
+       ⚠️ The `locless` gate is the one `locList` applies. Without it a trade that has no location at
+       all (general requirements) would inflate every count on the step. */
+    function _twLocCount(rep) {
+      var n = 0;
+      GROUPS.forEach(function (g) {
+        if (locless(g)) return;
+        floorsOfTower(g, rep).forEach(function (f) { n += leavesOfFloor(g, f).length; });
+      });
+      return n;
+    }
     /* How many floors a layout owner holds, across every trade that HAS a location. */
     function _twFloorCount(rep) {
       var n = 0; GROUPS.forEach(function (g) { if (!locless(g)) n += floorsOfTower(g, rep).length; });
@@ -39670,8 +39737,22 @@
        as it did; only its CONTENTS depend on the source mode now. Reassigning it would work too, but
        `_stepNo` and the rail capture it at call time and a `var STEPS` rebound mid-render is the kind
        of thing that reads fine and breaks one caller. */
+    /* ⚠️⚠️ THE IMPORT DOOR ON STEP 1 IS HIDDEN, NOT DELETED. Owner 2026-09-18: *"in step 1,
+       hide first the option to allow importing of external schedules first. Don't delete the
+       codes for that but just hide it visually."* `IMPORT_UI` is the one word that brings it
+       back: the card is still BUILT, its `#b-impfile` handler is still wired, `STEPS_IMP` and
+       every checking step behind it are untouched, and the only thing this decides is whether
+       the card is put into the grid.
+       ⚠️⚠️ AND IT IS NOT THE ONLY WAY IN, WHICH IS WHY THE STAGED-IMPORT CARD BELOW IGNORES IT.
+       The module's own toolbar Import (`#ps-import`) parses a file, calls
+       `ScheduleBuilder.stageImport` and lands the planner on these same checking steps. So an
+       import can still be staged while this is off, and hiding the card that says so would leave
+       a staged file unreachable and lost on the next reload — session-only work, thrown away by
+       a flag that was only ever meant to tidy a screen. */
+    var IMPORT_UI = false;
     var STEPS = [];
-    var STEP_START = { t: 'Start', s: 'Import, or build new', fn: stStart };
+    /* ⚠️ The subtitle is a fact about the step, and "Import" stopped being one. */
+    var STEP_START = { t: 'Start', s: IMPORT_UI ? 'Import, or build new' : 'Where the schedule comes from', fn: stStart };
     /* ⚠️⚠️ NINE STEPS, AND THE SHAPE IS THE OWNER'S OWN (2026-09-17). Two changes, each
        undoing a merge that had put two different questions on one screen:
          • TOWERS came OUT of Floors & Zones. "How many buildings are there, and where do they
@@ -39709,7 +39790,10 @@
       /* ⚠️ THE TOWERS BEFORE WHAT IS IN THEM. A floor is laid out per (trade, tower), so the tower
          list is the prerequisite for the next step rather than a control on top of it — which is
          exactly what `_stepReady` enforces. */
-      { t: 'Towers', s: 'How many, and the site plan', fn: stTowers },
+      /* ⚠️ "and the site plan" named a control that is behind `SITE_PLAN_UI`, which is off — a
+         rail entry promising something the step does not show. What the step is FOR is the
+         better subtitle in any case, and it survives the flag coming back. */
+      { t: 'Towers', s: 'Types, and how many of each', fn: stTowers },
       { t: 'Floors & Zones', s: 'Floors, zones and units', fn: stLevels },
       /* ⚠️ Both sequence steps need somewhere for the work to be, which is why they sit after the
          places rather than beside the activities: a zone sequence with no zones is an empty screen
@@ -45769,6 +45853,7 @@
     var SITE_PLAN_UI = false;
     function stTowers(host) {
       var TR = towerReality(), owners = layoutOwners(), act = activeTower();
+      var _locN = locList().length;
       var actOwner = ownerOfTower(act);
       var types = typeList();
       var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
@@ -45780,17 +45865,33 @@
         return '<input class="pd-input sbld-twin" ' + kk + '="' + ik + '" data-id="' + e2(id) +
           '" value="' + e2(val || '') + '" placeholder="' + e2(ph) + '">';
       }
-      function ownerRow(o) {
-        var n = _twFloorCount(o.rep), sel = !!(actOwner && actOwner.id === o.id);
+      function ownerRow(o, sel) {
+        var n = _twFloorCount(o.rep);
         var isType = o.kind === 'type';
         var kk = isType ? 'data-tyk' : 'data-twk', id = o.id;
+        /* ⚠️ Only counted when there are floors to count. `_twLocCount` walks every trade's floor
+           list, and on a type nobody has laid out yet the answer is known to be 0 already. */
+        var loc = n ? _twLocCount(o.rep) : 0;
         return '<tr class="' + (isType ? 'grp ' : '') + 'sbld-twr-own' + (sel ? ' on' : '') +
             '" data-own="' + e2(o.rep) + '">' +
-          '<td>' + (isType ? '<span class="sbld-twkind">TYPE</span>' : '<span class="sbld-twkind solo">DEV</span>') +
+          '<td class="sbld-twnm"><span class="sbld-twrow">' +
+            (isType
+              ? '<span class="sbld-twkind" title="' + e2('A building design. It is laid out once, and every development under it is identical to it.') + '">TYPE</span>'
+              : '<span class="sbld-twkind solo" title="' + e2('A building that repeats nothing — it sits beside the types and carries floors of its own.') + '">DEV</span>') +
             cell(kk, 'name', id, o.label, isType ? 'Type name' : 'Development name') +
+            (isType
+              ? '<span class="sbld-twcnt" title="' + e2('How many buildings are built to this design. Each one is a row below.') + '">×' +
+                  o.towers.length + '</span>'
+              : '') +
+          '</span>' +
             '<span class="sbld-hint sbld-twfl">' +
               (n ? n + ' floor' + (n === 1 ? '' : 's') + ' laid out' : 'nothing laid out yet') +
-              (isType && o.towers.length > 1 ? ' · shared by ' + o.towers.length + ' developments' : '') +
+              /* ⚠️ WHAT THE ROW BECOMES DOWNSTREAM, said here rather than discovered two steps
+                 later. Owner: the white rows *"pertain to the locations … to be then defined also
+                 in the later steps"* — so the figure quoted is per DEVELOPMENT, which is what one
+                 white row is worth, and "each" says so whenever there is more than one of them. */
+              (loc ? ' · ' + loc.toLocaleString() + ' location' + (loc === 1 ? '' : 's') +
+                     (isType && o.towers.length > 1 ? ' each' : '') : '') +
             '</span></td>' +
           '<td>' + cell(kk, 'code', id, o.code, isType ? 'T1' : 'D1') + '</td>' +
           '<td>' + cell(kk, 'remarks', id, o.remarks, 'Remarks') + '</td>' +
@@ -45807,10 +45908,15 @@
           '</td>' +
         '</tr>';
       }
-      function devRow(t, o, i) {
-        return '<tr class="sbld-twr-dev" data-own="' + e2(o.rep) + '">' +
-          '<td><span class="sbld-twind" aria-hidden="true"></span>' +
-            cell('data-twk', 'name', t.id, t.name, 'Development ' + (i + 1)) + '</td>' +
+      function devRow(t, o, i, sel) {
+        /* ⚠️ THE CHILD ROWS CARRIED NO BADGE AT ALL — the type row said TYPE, a standalone said
+           DEV, and the rows that ARE the buildings said nothing, which left the most important
+           rung on the step as the one the table never named. */
+        return '<tr class="sbld-twr-dev' + (sel ? ' on' : '') + '" data-own="' + e2(o.rep) + '">' +
+          '<td class="sbld-twnm"><span class="sbld-twrow">' +
+            '<span class="sbld-twind" aria-hidden="true"></span>' +
+            '<span class="sbld-twkind dev" title="' + e2('One building of this type. It becomes locations of its own in the later steps.') + '">DEV</span>' +
+            cell('data-twk', 'name', t.id, t.name, 'Development ' + (i + 1)) + '</span></td>' +
           '<td>' + cell('data-twk', 'code', t.id, t.code, 'D' + (i + 1)) + '</td>' +
           '<td>' + cell('data-twk', 'remarks', t.id, t.remarks, 'Remarks') + '</td>' +
           '<td class="sbld-twact">' +
@@ -45828,7 +45934,11 @@
          tree that says the same thing on two lines, which is exactly the doubled reading the ±
          count control had. */
       var body = owners.map(function (o) {
-        return ownerRow(o) + (o.kind === 'type' ? o.towers.map(function (t, i) { return devRow(t, o, i); }).join('') : '');
+        /* ⚠️ ONE SELECTION TEST, HANDED TO BOTH RUNGS. Selecting a layout selects the type AND its
+           developments — they are one thing — so the rail has to be drawn from one answer rather
+           than recomputed per row and risk the two disagreeing. */
+        var sel = !!(actOwner && actOwner.id === o.id);
+        return ownerRow(o, sel) + (o.kind === 'type' ? o.towers.map(function (t, i) { return devRow(t, o, i, sel); }).join('') : '');
       }).join('');
 
       host.innerHTML = '<h2>' + _stepNo('Towers') + ' · Towers</h2>' +
@@ -45863,6 +45973,17 @@
             e2(TR.unnamed.slice(0, 6).join(', ')) + (TR.unnamed.length > 6 ? '…' : '') + '</b>. ' +
             'Add them with <b>+ Add Development</b> so the names match — the Vertical Stacking joins on them.</p>'
           : '') +
+        /* ⚠️ THE LEGEND IS THE OWNER'S OWN SENTENCE, put on the screen rather than in the collapsed
+           How block: *"the black rows, these pertain to types while for the white rows, these
+           pertain to the locations or actual towers as locations to be then defined also in the
+           later steps."* It names where each rung is answered next, because "and then what" is the
+           question a two-level table raises. */
+        '<p class="sbld-twlegend">' +
+          '<span><span class="sbld-twkind">TYPE</span> a building <b>design</b> — laid out once, in step ' +
+            _stepNo('Floors & Zones') + '</span>' +
+          '<span><span class="sbld-twkind dev">DEV</span> an <b>actual building</b> — each becomes locations of its own, from step ' +
+            _stepNo('Location Sequence') + ' on</span>' +
+        '</p>' +
         '<div class="sbld-tablewrap"><table class="sbld-tbl sbld-twtbl">' +
           '<thead><tr><th>Name</th><th>Code</th><th>Remarks</th><th class="sbld-twact"></th></tr></thead>' +
           '<tbody>' + body + '</tbody>' +
@@ -45882,6 +46003,13 @@
               (owners.length === 1 ? '' : 's') + '. Each layout keeps its own floors, zones and zone ' +
               'sequencing, and every development built from a type is identical; pick one above and lay ' +
               'it out in step ' + _stepNo('Floors & Zones') + '.') +
+          /* ⚠️⚠️ THE TOTAL IS `locList().length`, NOT ARITHMETIC OF ITS OWN. That is the exact array
+             every later step walks, so this figure and the one those steps work from cannot drift
+             apart — recomputing it here as floors × zones × developments is precisely how they
+             would. ⚠️ Silent at zero: "0 locations" on a project nobody has laid out yet reads as
+             a fault rather than as a step not taken. */
+          (_locN ? ' In all, <b>' + _locN.toLocaleString() + '</b> location' + (_locN === 1 ? '' : 's') +
+            ' for step ' + _stepNo('Location Sequence') + ' onward.' : '') +
         '</p>' +
         (SITE_PLAN_UI && TR.multi
           ? '<h3 class="sbld-sech">Site development plan</h3>' +
@@ -49475,7 +49603,10 @@
       var liveActs = (typeof rows !== 'undefined' && rows) ? rows.filter(function (r) { return !isWbs(r); }).length : 0;
       var setupActs = (cfg && cfg.activities) ? cfg.activities.length : 0;
       var state = liveActs
-        ? '<p class="sbld-lede">This project already has <b>' + liveActs.toLocaleString() + '</b> activities. An import can replace them or land alongside them — you choose on the last step.</p>'
+        /* ⚠️ THE IMPORT CLAUSE GOES WITH THE IMPORT CARD. A lede naming a door that is not on
+           the screen is worse than a short lede — it sends a planner hunting for a button. */
+        ? '<p class="sbld-lede">This project already has <b>' + liveActs.toLocaleString() + '</b> activities.' +
+          (IMPORT_UI ? ' An import can replace them or land alongside them — you choose on the last step.' : '') + '</p>'
         /* ⚠ The three cards directly below ARE the options — naming them here as well is the
            screen explaining its own buttons. */
         : '<p class="sbld-lede">This project has <b>no schedule yet</b>.</p>';
@@ -49507,6 +49638,10 @@
         '<button class="pd-btn pd-btn-primary" id="b-modenew">' + (setupActs ? 'Continue building →' : 'Build a new schedule →') + '</button>' +
         '</div></div>';
 
+      /* ⚠️ BUILT WHATEVER `IMPORT_UI` SAYS, and gated once, where the grid is assembled. Building
+         it unconditionally is what keeps it from rotting while it is off: it is still parsed, still
+         read by `wiring-check`, and still names `#b-impfile` — whose handler below is already
+         null-safe, which is why no second flag is needed down there. */
       var impCard = '<div class="pd-card ps-ck-card">' +
         '<div class="ps-ck-h"><span data-ico="box" data-ico-size="15"></span> Import an existing programme</div>' +
         '<div class="ps-ck-txt">' +
@@ -49535,10 +49670,16 @@
         '</div></div>' : '';
 
       host.innerHTML = '<h2>' + _stepNo('Start') + ' · Where does this schedule come from?</h2>' + state + staged +
-        '<div class="ps-ck-grid">' + readCard + impCard + newCard + '</div>' +
-        /* ⚠️ Cut: nothing on the screen changes as a result of reading it. The three paths are
-           each labelled with what they do, and "they all end in the same place" is only reassuring
-           to someone already worried — which the labels are there to prevent. */
+        /* ⚠️ THE GRID IS TWO COLUMNS, so a LONE card sits at half width beside a hole — which is
+           exactly what a fresh project looks like with the import door off and no schedule to read
+           back. `.one` collapses it rather than leaving the layout to explain itself. */
+        (function () {
+          var cards = [readCard, IMPORT_UI ? impCard : '', newCard].filter(function (c) { return !!c; });
+          return '<div class="ps-ck-grid' + (cards.length === 1 ? ' one' : '') + '">' + cards.join('') + '</div>';
+        })() +
+        /* ⚠️ Cut: nothing on the screen changes as a result of reading it. Each path is labelled
+           with what it does, and "they all end in the same place" is only reassuring to someone
+           already worried — which the labels are there to prevent. */
         '';
 
       var gb = host.querySelector('#b-impgo'); if (gb) gb.onclick = function () { mode = 'import'; step = 1; render(); };
