@@ -175,7 +175,6 @@ function autoTraceSandbox(cfg, opts) {
     towerList: function () { return [{ id: 'T1' }]; },
     towerIdOf: function () { return 'T1'; },
     floorIndexOf: function (l) { return FLOORS.indexOf(l.floor.id); },
-    cellKey: function (l) { return l.zone ? l.zone.code : '_'; },
     leavesOfFloor: function (tr, f) { return leaves.filter(function (l) { return l.floor.id === f.id; }); },
     floorKind: function () { return 'typical'; },
     parallelKind: function () { return false; },
@@ -187,9 +186,16 @@ function autoTraceSandbox(cfg, opts) {
     reaches: function () { return false; }
   };
   const names = Object.keys(env);
+  /* ⚠⚠ `locCellKey` IS SLICED, NOT STUBBED. It used to be a one-line fake in the env above, which
+     is a second opinion about the rule this suite exists to check — and it was wrong in the one way
+     that matters: it ignored the unit, so a project with units keyed every unit of a zone the same.
+     ⚠️ Renamed from `cellKey` on 2026-09-18 because this file declared two functions of that name.
+     ⚠ `towerSimulOf` / `floorSimulOf` are the auto-trace windows added the same day; autoTrace calls
+     both, so a suite that does not slice them fails at run time rather than proving anything. */
   const body = sliceFn('tryLink') + '\n' + sliceFn('zoneGroupsOfFloor') + '\n' +
-    sliceFn('floorGateOf') + '\n' + sliceFn('floorLagOf') + '\n' + sliceFn('autoTrace') +
-    '\nreturn autoTrace;';
+    sliceFn('floorGateOf') + '\n' + sliceFn('floorLagOf') + '\n' +
+    sliceFn('locCellKey') + '\n' + sliceFn('towerSimulOf') + '\n' + sliceFn('floorSimulOf') + '\n' +
+    sliceFn('autoTrace') + '\nreturn autoTrace;';
   const run = new Function(names.join(','), body).apply(null, names.map(n => env[n]));
   run();
   return { links: cfg.links, leaves: leaves };
@@ -258,26 +264,39 @@ function lagOf(links, from, to) { const k = links.find(x => x.from === from && x
   ok(r.leaves.every(l => hasOut[l.uid]), 'every location has a successor');
 }
 
-/* ======================================== 4 · the dialog asks the two new questions, in words */
+/* ======================================== 4 · the dialog asks FOUR numbers, one per rung
+   ⚠⚠ RETARGETED, NOT WEAKENED (2026-09-18). This block used to assert the gate fork, the zig-zag
+   question and the cure-lag box — owner: *"no need to ask if zigzag and about next floor, just use
+   default settings."* Asserting that a retired control is still on screen would have kept a suite
+   green on a dialog nobody ships. What it asserts instead is the STRICTER pair: the four rungs are
+   asked for, AND the retired questions are still HONOURED from `cfg` (section 3 above proves the
+   gate, the zig-zag and the lag still change the links) — so a planner who answered the old dialog
+   keeps their answers even though the boxes are gone. */
 {
   const dlg = sliceFn('openAutoTraceDialog');
-  ok(/data-atkind="gate"/.test(dlg), 'dialog: it asks what gates the floor above');
-  ok(/whole floor below/.test(dlg), 'dialog: in words a planner uses, not as a mode number');
-  ok(/data-atkind="zig"/.test(dlg), 'dialog: it asks whether the crew walks back');
-  ok(/data-atkind="lag"/.test(dlg), 'dialog: and how long the wait before the floor above is');
-  /* ⚠️ The readback is what makes six controls across four trades checkable. */
+  /* ⚠️ On the ROW CALLS, not on `data-atkind="tower"` — the attribute is templated
+     (`data-atkind="' + kind + '"`), so the literal appears nowhere and a regex for it would pass
+     only by accident on some future rewrite. */
+  ok(/row\('tower',/.test(dlg), 'dialog: it asks how many towers run at once');
+  ok(/row\('floor',/.test(dlg), 'dialog: how many floors of one tower');
+  ok(/row\('zone',/.test(dlg), 'dialog: how many zones of one floor');
+  ok(/row\('unit',/.test(dlg), 'dialog: and how many units of one zone');
+  /* ⚠️ The three retired questions are gone from the SCREEN. Comments are stripped first — the
+     note recording the reversal names all three, and a checker that reads its own explanation and
+     reports it as a finding is a trap this repo has fallen into before. */
+  const dlgCode = scan.clean('x.js', dlg);
+  ok(!/row\('gate',/.test(dlgCode) && !/'gate'/.test(dlgCode), 'dialog: the gate fork is no longer asked');
+  ok(!/'zig'/.test(dlgCode), 'dialog: nor whether the crew walks back');
+  ok(!/'lag'/.test(dlgCode), 'dialog: nor the cure lag');
+  /* ⚠️ The readback is what makes four numbers across four trades checkable. */
   ok(/data-atsay/.test(dlg) && /function sbAtSay/.test(dlg), 'dialog: it says the flow back as a sentence');
   ok(/one zone at a time/.test(dlg), 'dialog: and the sentence is plain language');
-  /* ⚠️⚠️ THE FALSE CLAIM THAT IS GONE. The old blurb promised "vertical progression with the cure
-     lag" over an autoTrace that passed lag 0 — the lag existed in cfg and was never read.
-     ⚠️ COMMENTS ARE STRIPPED FIRST, and this assertion failed until they were: the only place
-     that phrase survives is the note explaining that it was removed. A checker that reads its
-     own explanation and reports it as a finding is a trap this repo has fallen into before. */
-  const dlgCode = scan.clean('x.js', dlg);
   ok(!/vertical progression with the cure lag/.test(dlgCode),
      'dialog: it no longer claims a cure lag it did not apply');
-  ok(/if \(kind === 'gate'\) \{ if \(inp\.checked\)/.test(dlg),
-     'dialog: only the CHECKED radio is read — the unchecked sibling cannot overwrite the answer');
+  /* ⚠⚠ THE BOXES ARE SEEDED FROM THE HELPERS THE TRACER READS, never from a literal — which is
+     the one thing that stops the dialog stating a plan different from the one the button builds. */
+  ok(/towerSimulOf\(tr\)/.test(dlg) && /floorSimulOf\(tr\)/.test(dlg),
+     'dialog: the tower and floor boxes read the tracer\'s own helpers');
 }
 
 /* =================================================== 5 · the fields survive a save/load round trip
