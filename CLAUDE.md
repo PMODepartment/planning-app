@@ -104,6 +104,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (x) — `tools/type-scale.js`: the exemptions become machine-readable
+
+Owner: *"Let's build the type-scale checker."* The sweep in *(w)* re-derived four documented
+exemptions by hand because only two were named; this is the half a machine can read.
+
+### What it enforces, and what it refuses to guess
+
+⚠ **The rungs are READ FROM `dashboard.css`, not listed.** A checker carrying its own copy of the
+scale is one that can enforce a scale the app no longer uses — the single failure that would make
+it worse than nothing.
+
+⚠⚠ **Both exemptions are ENCODED, not baselined, because a baseline forgets the reason.**
+
+| exemption | how it is tested |
+|---|---|
+| SVG `<text>` — user units, not pixels | the rule paints with `fill:`, and/or the class is emitted on a `<text>` anywhere in the repo. **Both signals are printed**, so a one-signal case is visible rather than swallowed. |
+| print/export sheets built as strings | the `<style>` sits inside a `<script>`. A naive `<style>` regex cannot tell — project-schedule has three matches and two are JS strings. |
+
+It also flags `font-weight: 600`: Gotham has no Semibold, so 600 is synthesised on some platforms
+and snapped to 500 or 700 on others — the one weight guaranteed to differ machine to machine.
+
+⚠ A `font:` **shorthand** is read for both, because `font: 600 11.5px/1 inherit` carries an
+off-scale size *and* a 600 weight, and reading only `font-size:` misses both. It fired on real
+code: `.pp-mk-textedit` in progress-photos.
+
+### ⚠⚠ THE SELF-TEST EARNED ITS KEEP IMMEDIATELY
+
+Two of fourteen cases failed on the first run, and one of the two was **passing for the wrong
+reason**, which is worse than failing.
+
+`sizesIn` and `weight600` anchored on `(^|;)` — a declaration begins at the body’s start or
+after a semicolon. **Or after a comment**, and this codebase is made of them. `/* note */`
+`font-size: 9px` matched neither anchor and was skipped outright.
+
+The font-weight case then *passed*: it asserted “no 600 here” and got none — because it had found
+**nothing at all**, the commented 600 and the real 700 alike. A green tick from a parser that read
+nothing. Both now read the **masked** body, so the anchors mean what they say.
+
+(The other failure was mine in the test, not the tool: the selector is `.str::after`, and I
+asserted `.str`.)
+
+### The baseline, reported rather than fixed
+
+1,788 `font-size` declarations across 26 stylesheets:
+
+| | |
+|---|---|
+| use a `--pd-fs-*` token | **1,586** — the goal |
+| a literal px landing on a rung | 36 |
+| relative or inherited (`em` / `%` / `inherit`) | 124 |
+| exempt for a stated reason | 24 |
+| **off the scale** | **18** |
+
+⚠ The first summary read *“1,788 declarations, 36 on a rung”*, which makes 1,752 look broken when
+they are the ones doing it right. The counters are split now — a number that reads as an
+accusation of the wrong thing is a reporting bug.
+
+**The 18 are pre-existing and none is touched here**: `assets/css/person.css` (10 — that file was
+never normalised), `contracts-claims/module.css` (3), plus `.pd-lb-x`, `.pp-mk-textedit` and
+two more. Some are **glyph sizes rather than type** — `.pd-lb-x` at 26px is a `×`, the same shape
+as `.sbld-gmirror` in *(w)* — so each wants a judgement, not a sweep. `project-schedule` reports
+**0 off-scale**.
+
+⚠ Exits **1** on findings, as `dark-remap` does, so today’s honest state is a red run rather than a
+green one bought by a baseline file.
+
+**Verified:** self-tests 14/14 · output byte-identical across two runs · `test-lsm` 684/684 ·
+`test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0.
+New file only — no shipped asset changed, so no cache-bust.
+
 ### 2026-09-18 (w) — Four of the five off-scale sizes were already exempt, by name, in the stylesheet
 
 Owner: *"proceed with the five off-scale"* — the sizes *(u)* reported under `--pd-fs-micro`.
