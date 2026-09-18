@@ -104,6 +104,75 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (n) — The calendars were wired, complete, and inert
+
+Owner: *"Let's also check how the calendars affect the schedule. It should be able to affect the
+schedule."* **They did not.** Three separate reasons, each fixed:
+
+### ⚠⚠ 1. THE SETUP'S GENERATOR NEVER ASKED A CALENDAR ANYTHING
+
+`generate()` laid every date with `addD(d, n) { x.setDate(x.getDate() + n); }` — raw calendar
+arithmetic. There was **not one `PDCal.` call in the entire 14,000-line builder**. Step 2 of the
+very same wizard asks which days are workable, and the preview it feeds ran straight through
+Sundays and Christmas.
+
+The offsets it works in (`starts`, `actOffsets`, `nodeDays`) were **already working days** — they
+come from durations a planner typed. They were simply laid onto the wrong axis.
+
+⚠⚠ **An axis, not a walk per row.** `PDCal.addWorkingDays` steps one day at a time, and
+`generate('int')` runs on **every render** to paint the pending count — a per-row walk would pay
+that on every keystroke on every row. This is one pass over the project window and then O(1)
+lookups, the same shape (and the same stated reasoning) as `makeAxis` in the CPM.
+
+**Measured**, by executing the shipped axis against the shipped `calendar.js`:
+
+| calendar | case | result | calendar days spanned |
+|---|---|---|---|
+| PH 6-day | 5 days from Fri 2 Jan | → Wed 7 Jan | **6** (one Sunday out) |
+| PH 6-day | 12 days from Fri 2 Jan | → Thu 15 Jan | **14** (two Sundays) |
+| PH 6-day | **6 days from Mon 30 Mar** | → Tue 7 Apr | **9** — Sunday **plus Maundy Thursday and Good Friday** |
+| 5-day week | 5 days from Fri 2 Jan | → Thu 8 Jan | **7** (Sat + Sun out) |
+| **no calendar** | 5 days from Fri 2 Jan | → Tue 6 Jan | **5** — *provably the old engine* |
+
+That last row is the control: with no calendar the axis is the identity and the result is
+byte-for-byte the previous behaviour, so the fallback is a fallback and not a second guess.
+
+### ⚠⚠ 2. THE WORKING-DAY CPM DEFAULTED **OFF**
+
+The live schedule has a complete and careful working-day engine — per-activity `calendar_id` →
+project default → PH standard, a precomputed axis per calendar, float counted in working days. And:
+
+```js
+var calCpmOn = localStorage.getItem('ps_calcpm') === '1';   // miss -> false
+if (!calCpmOn || !window.PDCal) return ALLAX;               // every day workable
+```
+
+So it did nothing until somebody found *“Schedule on working calendars”* in the Schedule dialog —
+and because the answer lives in `localStorage`, it was **per browser**, not per project: the same
+schedule read differently on a second machine, or for a second planner.
+
+Now `!== '0'`: an absent key means **on**, and only an **explicit** stored `'0'` turns it off, so a
+planner who deliberately unticked it keeps calendar days. ⚠ This **moves dates** the first time an
+existing project is opened. Nothing is written until Reschedule is pressed — the CPM computes in
+memory — so the change is visible before it is saved.
+
+### 3. The push never said which calendar it had planned against
+
+`taskPayload` set eighteen columns and not `calendar_id`, so every pushed activity carried `null`
+and fell back to the project default. That is the right **fallback** and the wrong **record**: the
+dates were computed on one specific calendar, and changing the project default later would have
+silently rescheduled them against a calendar they were never planned on. ⚠ It is read back off
+`generate()`'s own result rather than re-derived at the call site — two derivations of one fact is
+how they drift.
+
+⚠ One harness display bug, caught and corrected before it reached this entry: the first run
+printed dates through `toISOString()` while reading the weekday from `getDay()`, so in UTC+8 every
+date read one day early while its weekday was right. The numbers above are local on both.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · the axis executed against the real `calendar.js`, including the identity control.
+`modules-grid.js` `?v=` → `20260918n`.
+
 ### 2026-09-18 (m) — The Close button, fixed at the wrong altitude the first time; and Floors & Zones measured rather than swept
 
 Owner, reporting it a **second** time: *"The close button is still not working let's fix queue this"*,

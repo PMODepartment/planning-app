@@ -39201,18 +39201,59 @@
       });
       var days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l, basis); });
       var starts = computeStarts(locs, days), start = pdd(startOverride) || pdd(cfg.startDate) || new Date();
+      var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
+      /* ==========================================================================================
+         ⚠⚠ THESE OFFSETS ARE WORKING DAYS, AND UNTIL NOW THEY WERE LAID ON CALENDAR DAYS.
+         Owner: *"Let's also check how the calendars affect the schedule. It should be able to
+         affect the schedule."* It could not. `addD` is `x.setDate(x.getDate() + n)` — raw calendar
+         arithmetic — and there was not one `PDCal.` call anywhere in this builder. Step 2 of this
+         very wizard asks which days are workable and the preview it feeds ran straight through
+         Sundays and Christmas. A five-day activity starting Friday finished Tuesday.
+         ⚠⚠ AN AXIS, NOT A WALK PER ROW. `PDCal.addWorkingDays` steps one day at a time, and
+         `generate('int')` is called on EVERY render to paint the pending count — so a per-row walk
+         would pay that on every keystroke, on every row. This is one pass over the project window,
+         then O(1) lookups, which is the same reasoning (and the same shape) as `makeAxis` in the
+         CPM. `WD[k]` is the calendar-day offset of the (k+1)th working day from `start`.
+         ⚠ THE PROJECT DEFAULT CALENDAR, because the builder does not assign per-activity ones —
+         it is the same fallback chain `cpmCalOf` uses, minus the per-activity step it has no
+         answer for. If PDCal or the calendar is missing the axis is the identity, which is exactly
+         the old behaviour rather than a guess. */
+      var _gcal = (function () {
+        try { return (CALS || []).filter(function (c) { return c.is_default; })[0] ||
+                     (window.PDCal ? PDCal.defaultCalendar() : null); } catch (e) { return null; }
+      })();
+      var WD = (function () {
+        if (!window.PDCal || !_gcal) return null;
+        var need = Math.max(1, total) + 2, list = [], o = 0, guard = 0;
+        /* ⚠ The guard is 20 years of calendar days. A calendar with every day unticked would
+           otherwise spin here; it returns short, and `wdAt` clamps, so a mis-configured calendar
+           degrades to a pile-up on the last workable day rather than hanging the page. */
+        while (list.length < need && guard++ < 7300) {
+          if (PDCal.isWorkDay(_gcal, addD(start, o))) list.push(o);
+          o++;
+        }
+        return list.length ? list : null;
+      })();
+      // k working days after `start`, k = 0 being the first workable day on or after it
+      function wdAt(k) {
+        if (!WD) return addD(start, k);
+        var i = k < 0 ? 0 : (k >= WD.length ? WD.length - 1 : k);
+        return addD(start, WD[i]);
+      }
       var rows = [], perZone = [];
       locs.slice().sort(function (a, b) { return (starts[a.uid] - starts[b.uid]) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); }).forEach(function (loc) {
         var off = starts[loc.uid] || 0, ao = actOffsets(loc.trade, loc, basis);
         tradeActs(loc.trade).forEach(function (a) {
           if (!included(loc.uid, a.id)) return; var dur = effDur(a, basis, loc); if (dur <= 0) return;
-          var aS = addD(start, off + (ao.off[a.id] || 0)), aF = addD(aS, dur - 1);
+          var _k = off + (ao.off[a.id] || 0);
+          /* ⚠ The finish counts `dur` working days INCLUSIVE of the start, so it is k + dur - 1,
+             not k + dur. That is the same convention `addWorkingDays(cal, start, dur)` uses. */
+          var aS = wdAt(_k), aF = wdAt(_k + dur - 1);
           rows.push({ loc: loc, act: a, dur: dur, start: aS, finish: aF, group: a.group });
         });
         var d = days[loc.uid] || 0;
-        perZone.push({ loc: loc, days: d, start: addD(start, off), finish: addD(start, off + Math.max(0, d) - 1) });
+        perZone.push({ loc: loc, days: d, start: wdAt(off), finish: wdAt(off + Math.max(0, d) - 1) });
       });
-      var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
       // ⚠️ DIAGNOSTIC — why a trade might be silently absent from the push. A row is dropped above when
       // effDur() is 0, i.e. the activity has NO duration for the CHOSEN BASIS (Internal vs External).
       // So a planner who filled only the Internal column, then pushed "External", gets an empty push —
@@ -39229,7 +39270,9 @@
       // every activity's duration — in a takt plan zones/trades overlap, so summing durations wildly
       // overstates it (e.g. 12,820 d for an ~981-day Nov-25→Jul-28 span). `total` already drives the
       // finish date, so totalDays === dayDiff(start, finish) + 1 and the KPI stays consistent with it.
-      return { rows: rows, perZone: perZone, totalDays: Math.max(0, total), start: start, finish: addD(start, Math.max(0, total - 1)), starts: starts, days: days, locs: locs, basis: basis, missingTrades: missingTrades, zeroDurByTrade: zeroDurByTrade };
+      /* ⚠ `start` is snapped to the first WORKABLE day too. Left raw it could sit on a Sunday
+         while every activity under it starts on the Monday, and the span would read one day long. */
+      return { rows: rows, perZone: perZone, totalDays: Math.max(0, total), start: wdAt(0), finish: wdAt(Math.max(0, total - 1)), starts: starts, days: days, locs: locs, basis: basis, missingTrades: missingTrades, zeroDurByTrade: zeroDurByTrade, calendar: _gcal };
     }
 
     // ---- drag reorder ----
@@ -50901,6 +50944,15 @@
            belongs to cannot be mis-read later if the tree above it is re-parented.
            ⚠️ Orthogonal to scope_type on purpose: the row above may be a change order AND
            this package. Neither column is derived from the other. */
+        /* ⚠⚠ THE CALENDAR THE SETUP SCHEDULED THESE DATES ON, stamped onto the activity. It was
+           never set, so every pushed activity carried `calendar_id: null` and fell back to the
+           project default in `cpmCalOf` — which is the right FALLBACK but the wrong RECORD: the
+           dates above were computed on a specific calendar, and if the project default is changed
+           later the CPM would silently reschedule them on a calendar they were never planned
+           against. Stating it makes the two agree by construction.
+           ⚠ `_gcal` is resolved inside `generate`, so it is read back off the result rather than
+           re-derived here — two derivations of one fact is how they drift. */
+        calendar_id: (g && g.calendar && g.calendar.id) || null,
         package_id: usePkg || null }; }
       // A lifecycle-phase activity's row. Deliberately NOT taskPayload: that one reads a generated
       // row (trade, location, class code, zone predecessors, contract scope), and none of those are
@@ -54005,7 +54057,16 @@
   // minus(o, n). ⚠️ In the identity axis those are exactly o + n and o - n, which
   // is why the mode being OFF is provably the old engine and not a re-derivation
   // of it.
-  var calCpmOn = (function () { try { return localStorage.getItem('ps_calcpm') === '1'; } catch (e) { return false; } })();
+  /* ⚠⚠ DEFAULTS ON. It defaulted OFF, which meant the whole working-day engine below — the
+     per-activity calendar, the axis, float in working days — did nothing until somebody found a
+     checkbox in the Schedule dialog. Owner: *"It should be able to affect the schedule."*
+     ⚠ An EXPLICIT opt-out is still honoured: only a stored '0' turns it off, so a planner who
+     deliberately unticked it keeps calendar days. An absent key is the new default, not a
+     preference anybody expressed.
+     ⚠ This MOVES DATES the first time an existing project is opened — durations that were
+     counted through weekends now skip them. Nothing is written until the planner presses
+     Reschedule; the CPM computes in memory, so the change is visible before it is saved. */
+  var calCpmOn = (function () { try { return localStorage.getItem('ps_calcpm') !== '0'; } catch (e) { return true; } })();
 
   // Calendar-day axis: every day is workable. Used whenever working-day CPM is
   // off, so cpmLogic has ONE code path rather than two that can drift.
