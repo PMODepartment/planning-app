@@ -104,6 +104,79 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (q) — The S-curve's manual sheet takes the app's own spreadsheet SKIN, not just its keys
+
+Owner: *"Let's fix the s-curve manual data table. We already have an excel type build let's adopt
+this."* — and the excel build is `assets/js/xlgrid.js` (`PDGrid`), which this module has loaded
+since 2026-09-10.
+
+### ⚠️⚠️ THE KEYS WERE ADOPTED AND THE LOOK WAS NOT, AND `xlgrid.js` PREDICTS EXACTLY WHAT THAT LOOKS LIKE
+
+The matrix already had Tab/Enter/arrows, Shift+arrow selection, Ctrl+D fill-down, Ctrl+Z and an
+Excel paste — the hint line in the owner's screenshot is `PDGrid.hintHTML()` — but the table carried
+no `pdg-grid` class, so **none of the skin applied**. `xlgrid.js`'s own note says what is left when
+only the keys are ported: *"the module's card-table styling (roomy padding, a rounded bordered input
+inside every cell) reads as a form"*. That is the screenshot, line for line: 16 rounded boxes per row
+with 6px of padding round each.
+
+`.sc-matrix` now carries `pdg-grid`, **in the markup rather than added by `attach()`** — so the
+lattice survives `xlgrid.js` failing to load.
+
+### ⚠️⚠️ THE Z-INDEX LADDER IS THE LOAD-BEARING HALF, AND ADOPTING THE SKIN IS WHAT BREAKS IT
+
+`xlgrid.js` injects its stylesheet into `<head>` **at attach time**, so it lands after this module's
+own `<style>` and wins every equal-specificity tie. Two of its rules are hostile to a frozen corner:
+
+| the skin | this table had | consequence if left |
+|---|---|---|
+| `.pdg-grid thead th { z-index: 6 }` | `thead .k { z-index: 3 }` | scrolling month headers paint **over** the frozen Trade header |
+| `.pdg-grid tbody tr:nth-child(even) td { background: rgba(128,128,128,.055) }` (0,2,2) | `.sc-matrix .k { background: var(--pd-card) }` (0,2,0) | the frozen column goes **translucent** and the months slide visibly under it |
+
+So every sticky rule and every sticky **background** is restated at (0,3,x) to outrank the skin,
+on one stated ladder: body frozen **5** · tfoot **6** · tfoot frozen **7** · thead **8** · thead
+frozen **10**. ⚠️ The `now` column marker needed the same treatment — at (0,2,1) it lost to the
+zebra, so the data-date column would have lost its tint on every **even** row only, which reads as
+a rendering fault rather than a specificity one.
+
+### The cell IS the input
+
+The month cells give up their padding to the control inside them, so the lattice is drawn by the
+table and the hover tint and PDGrid's selection overlay fill the cell edge to edge instead of
+leaving a gap all round. ⚠️ `size="4"` on the input is load-bearing, not decoration: `width:100%`
+is not a usable intrinsic size, so an auto-layout table falls back to an `<input>`'s 20-character
+default and every month column blows out to ~170px. ⚠️ The focus ring is left to the **cell** —
+PDGrid outlines the `<td>`, and `.sc-in:focus`'s own inset ring would have drawn a second one
+inside it.
+
+### Verified
+
+Measured in a browser against the shipped `dashboard.css`, the module's **own `<style>` block pulled
+in by fetch** (never re-typed) and the real `xlgrid.js`, with `PDGrid.attach` actually called:
+
+- skin in the cascade, asserted on a **colour and a behaviour** rather than on geometry —
+  `td { cursor: cell }`, header **10.5px uppercase**, line `rgb(220,219,219)` → `rgba(255,255,255,.12)`
+  and ink `rgb(35,31,32)` → `rgb(240,239,239)` across the theme flip;
+- the input: radius **0**, background and border **transparent**, **51px in a 52px cell** (98% fill),
+  24px tall, month column **52px** — not 170;
+- the ladder: body frozen 5 / tfoot 6 / tfoot frozen 7 / thead 8 / thead frozen 10, every frozen
+  background **opaque in both themes** (`#fff` / `#2B2C2B`);
+- **the relationship that matters**: after scrolling the wrapper right, `elementFromPoint` over the
+  trade column returns **`TD.k`** — the frozen cell owns its own pixels rather than being painted
+  over — with the Trade header and the Total column still pinned at 1px from their edges;
+- the zebra is present **and** the data-date tint survives it on odd *and* even rows;
+- **every PDGrid key still works after the skin**: Tab moves a column, Enter a row, Shift+↓ selects
+  3, Ctrl+D fills 3, and a `1\t2\t3\t4` paste spills across four months.
+
+`wiring-check` **139/0**, `dark-remap` **0 findings**, inline script parses, `<style>` braces
+**239/239**, 0 NUL bytes. ⚠️ The harness lived in the gitignored `_scratch-harness/` and was
+**deleted before committing** — this repo has shipped harness files to production twice.
+
+⚠️ **Not verified signed in** — the sheet is measured against the shipped stylesheets with the real
+grid layer attached, not against a real project's manual curve.
+
+`MODULE_V` → `20260918q`, sort-checked past every `20260918*` token in the tree. No shared asset
+changed — `xlgrid.js` and `dashboard.css` are untouched, so neither is bumped.
+
 ### 2026-09-18 (o) — Floors & Zones: a deliberate two-line row, chosen because one line is impossible
 
 Owner: *"Let's do the two-line layout."* — picking between three ways of giving the row less to
