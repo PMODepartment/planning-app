@@ -1755,7 +1755,15 @@ function grpRow(name, anc, acts, idx, field) {
      'same dims, layout OFF  ->  the face keeps the dimension path');
   eq(faceFor(['act', 'loc:tower', 'loc:level'], false, PATH), 'Activity \u203a Location',
      'the renamed preset is named too');
-  eq(faceFor(['wbs'], false, PATH), 'WBS tree (default)', 'and so is the default');
+  /* ⚠⚠ THE BUTTON FACE AND THE MENU NAME ARE DIFFERENT ON PURPOSE. Owner, 2026-09-18: *“I want
+     the toolbars to be squeezed into one row … reducing the text of the WBS tree (default) to just
+     ‘WBS’.”* Measured with the shipped `_tbFit`: that face is 117px, and dropping it to 31px moves
+     the width at which the toolbar sheds NOTHING from 1418px to 1332px.
+     ⚠ BOTH HALVES ARE ASSERTED. Relaxing the first alone would let a later change shorten the
+     MENU too, and he named these himself on 2026-09-11 — the long name is the deliberate half. */
+  eq(faceFor(['wbs'], false, PATH), 'WBS', 'the default preset shows its SHORT face on the button');
+  eq(byName['WBS tree (default)'].face, 'WBS', 'the short face is declared on that preset');
+  ok(!byName['WBS'], 'and the MENU still names it in full - the face never replaced the name');
   eq(faceFor(['status', 'loc:tower'], false, PATH), PATH,
      'a grouping that is NOT a preset keeps its path');
 })();

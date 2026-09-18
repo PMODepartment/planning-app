@@ -12978,7 +12978,7 @@
       for (var _pi = 0; _pi < _gp.length; _pi++) {
         if (JSON.stringify(_gp[_pi].dims) !== _gj) continue;
         if (_gp[_pi].lsm && !_lsmRows) continue;
-        _pname = _gp[_pi].name; break;
+        _pname = _gp[_pi].face || _gp[_pi].name; break;   // ⚠ face for the button, name for the menu
       }
     } catch (e) { _pname = null; }
     if (_pname) _face = _pname;
@@ -13134,8 +13134,22 @@
       var _setupDims = [];
       try { _setupDims = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.setupGroupDims) ? ScheduleBuilder.setupGroupDims() : []; } catch (e) { _setupDims = []; }
       var presets = [
-        { name: 'Schedule Setup structure', dims: _setupDims },
-        { name: 'WBS tree (default)', dims: ['wbs'] },
+        /* ⚠⚠ `face` IS THE TOOLBAR BUTTON, `name` IS THE MENU. Owner: *“I want the toolbars to be
+           squeezed into one row in this resolution. One thing that can help is by reducing the
+           text of the WBS tree (default) to just ‘WBS’.”* Measured with the shipped `_tbFit` on the
+           shipped markup: the face goes 117px → 31px, and the width at which the toolbar sheds
+           NOTHING moves 1418px → 1332px — 86px reclaimed, exactly the face saving. At the width
+           that reproduces his screenshot (1414px, `?` and Outline shed and nothing else) that is
+           the difference between two shed controls and none.
+           ⚠ THE MENU KEEPS THE LONG NAME. He named these himself on 2026-09-11 — *“WBS tree
+           (default) · LSM · By Activity”* — and a menu of four choices has room to say what they
+           are; a toolbar face 117px wide does not. Shortening both would have quietly overwritten
+           his naming to solve a layout problem.
+           ⚠ `Schedule Setup structure` gets one too, for the same reason: at 150px it puts the
+           toolbar straight back onto two rows the moment a planner picks it, and fixing only the
+           default would have fixed only the screenshot. */
+        { name: 'Schedule Setup structure', face: 'Setup', dims: _setupDims },
+        { name: 'WBS tree (default)', face: 'WBS', dims: ['wbs'] },
         // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
         // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
         // underneath them was pure duplication in this view (owner's call after seeing it live).

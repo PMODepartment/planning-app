@@ -104,6 +104,64 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (z) — The grouping button gets a short FACE, and the toolbar comes back to one row
+
+Owner: *"I want the toolbars to be squeezed into one row in this resolution. One thing that can
+help is by reducing the text of the WBS tree (default) to just ‘WBS’."* He was right, and the
+measurement says **exactly** right.
+
+### The toolbar was already doing its job — it just ran out of room
+
+`_tbFit` compacts first (labels → icons, ~105px) and only then sheds, lowest priority first, into
+the `⋯` row. The two controls on his second row are `ps-help-btn` and `ps-outlinebtn` — the first
+two entries of `_TB_SHED`. Nothing was broken; the row simply could not fit, so the ask is to buy
+back enough width that it sheds **nothing**.
+
+### Measured on the shipped algorithm, at his own width
+
+The harness slices **both** the `.ps-tb-row` markup and `_tbFit` itself, so what is measured is the
+shipped shed order rather than a model of it. His width was **calibrated, not guessed**: the
+harness width that reproduces his screenshot exactly — `?` and Outline shed and nothing else — is
+**1414px**.
+
+| face | width | shed at 1414px |
+|---|---|---|
+| `WBS tree (default)` | 117px | **2** |
+| **`WBS`** | 31px | **0** |
+| `Schedule Setup structure` | 162px | **3** |
+| **`Setup`** | 38px | **0** |
+| `LSM` / `By Activity` / `Activity › Location` | 27–113px | 0 — already fitted |
+
+The width at which the toolbar sheds nothing moves **1418px → 1332px**: 86px reclaimed, exactly the
+face saving.
+
+⚠ `Schedule Setup structure` is shortened too, and that is the difference between fixing the
+screenshot and fixing the toolbar: at 162px it puts the row straight back to two the moment a
+planner picks that preset.
+
+### ⚠⚠ `face` FOR THE BUTTON, `name` FOR THE MENU
+
+The presets gain a `face`, and `_pname` prefers it — `_gp[_pi].face || _gp[_pi].name`. A preset
+without one is untouched.
+
+**The menu keeps the long name.** He named these himself on 2026-09-11 — *“WBS tree (default) · LSM
+· By Activity”* — and a menu of five choices has room to say what they are; a 117px toolbar face
+does not. Shortening both would have quietly overwritten his naming to solve a layout problem.
+
+### ⚠ The test caught it, and was strengthened rather than relaxed
+
+`test-lsm` slices the real face-selection source and **executes** it, so it failed the moment the
+face changed: *expected “WBS tree (default)”, got “WBS”*. Exactly what it is for.
+
+Relaxing that one assertion would have left the MENU unguarded, so it now asserts **both halves**:
+the button shows `WBS`, the preset declares that face, and `byName['WBS']` does **not** exist — the
+face never replaced the name. 695 → **697** assertions.
+
+**Verified:** `test-lsm` 697/697 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 · `type-scale` unchanged at 18 (none in project-schedule) · the
+face/name split executed against the shipped preset list, 6/6. `modules-grid.js` `?v=` →
+`20260918z`.
+
 ### 2026-09-18 (y) — The S-curve's manual sheet takes the app's own spreadsheet SKIN, not just its keys
 
 Owner: *"Let's fix the s-curve manual data table. We already have an excel type build let's adopt
