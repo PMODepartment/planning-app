@@ -104,6 +104,61 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (o) — Floors & Zones: a deliberate two-line row, chosen because one line is impossible
+
+Owner: *"Let's do the two-line layout."* — picking between three ways of giving the row less to
+carry, after *(m)* measured that it could not be fixed by tuning anything.
+
+**The row now breaks on purpose:** identity on line one (grab · BSMT · code · name), controls on line
+two (trade · Zones stepper · plan · delete).
+
+### ⚠⚠ A CONTAINER QUERY, NOT A MEDIA QUERY
+
+This step puts the 3D preview **beside** the floor list, so a row's width is roughly half the
+viewport — and a different half depending on whether the preview is open. A `@media` threshold
+would fire at the wrong moment, and at a different wrong moment in each state. The row asks its own
+container how wide it is.
+
+⚠ The break itself is an empty `<i class="sbld-flr-br">`, `display:none` by default and
+`flex:0 0 100%` inside the query. **A flex item is what forces a wrap** — there is no property
+that says “break here” in a flex row — and `display:none` removes it from layout entirely, so a
+wide row is exactly the single line it has always been.
+
+### ⚠ 692px, and the odd number is the whole point
+
+Found by **bisection with the break disabled**, not chosen:
+
+| row | narrowest container that still fits one line |
+|---|---|
+| basement (carries the extra `BSMT` tag) | **693px** — the constraint |
+| a plain floor | 610px |
+
+The threshold follows the **widest** row so the whole list switches together. Three basements on
+two lines above fourteen floors on one reads as a broken list, not a responsive one — which is why
+the cheaper per-row threshold was rejected.
+
+**Swept every width from 440 to 900px in 4px steps: the ragged wrap is now reachable at NO width.**
+Previously it appeared below 693px and orphaned the plan and delete buttons on a line of their own.
+
+| container | before | after |
+|---|---|---|
+| ≥ 693px | one line, 51px | one line, 51px (unchanged) |
+| < 693px | **ragged**, 91px | **deliberate two lines**, 95px |
+
+⚠ **The tidy row is 4px TALLER than the ragged one it replaces** (95 vs 91), and that is the trade
+being made rather than an oversight: the ragged version put the trade selector, the stepper and two
+buttons wherever they happened to land. Against the 51px single line it is still nearly double, but
+below 693px there is no single line to be had — the controls demand ~530px before the name field
+gets a pixel.
+
+⚠ The 693px was measured in a harness whose fallback font is **wider** than Gotham, so in
+production the query fires a handful of pixels early. That is the safe direction: early means tidy,
+late means the ragged wrap this rule exists to prevent.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · 116 widths swept, 0 ragged · controls asserted alongside
+(Gotham resolved, `container-type:inline-size` applied). `modules-grid.js` `?v=` → `20260918o`.
+
 ### 2026-09-18 (n) — The calendars were wired, complete, and inert
 
 Owner: *"Let's also check how the calendars affect the schedule. It should be able to affect the

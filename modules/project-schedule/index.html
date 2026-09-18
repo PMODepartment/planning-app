@@ -4397,6 +4397,41 @@
        narrower name box beside it. */
     .sbld-flr-h .sbld-kind { flex:0 0 auto; width:auto; }
     .sbld-flr-h .pd-input { height:32px; font-size:var(--pd-fs-base); }
+    /* ==========================================================================================
+       ⚠⚠ A DELIBERATE TWO-LINE ROW WHEN THE PANEL IS NARROW. Owner, after a second report on this
+       step: *“Let's do the two-line layout.”*
+       Measured first, because the row was NOT broken at full width: at 1398px it is one clean line
+       and the deployed CSS is byte-identical to local. The screenshot was a HiDPI capture — the row
+       is ~514 CSS px, not the ~771 image px it appears. At 514px every row wrapped RAGGEDLY, 51px
+       → 91px, which on a 17-storey list is ~680px of extra scrolling for no gain.
+       ⚠⚠ IT CANNOT BE FIXED BY TUNING A `flex-basis`. The controls demand ~530px before the name
+       field gets a single pixel (code 88 + trade 99 + “Zones” 33 + two steppers 56 + count 22 +
+       plan 61 + delete 30 + grab 11 + BSMT 44, plus ten 8px gaps). One line at 514px is
+       geometrically impossible, so the row is given LESS to carry per line instead: identity on
+       line one (code + name), the controls on line two.
+       ⚠ A CONTAINER QUERY, NOT A MEDIA QUERY. This step puts the 3D preview beside the floor list,
+       so the row's width is roughly HALF the viewport and a `@media` threshold would fire at the
+       wrong moment — and at the wrong moment differently depending on whether the preview is open.
+       The row asks its own container how wide it is. */
+    .sbld-flr { container-type:inline-size; }
+    .sbld-flr-br { display:none; }
+    /* ⚠ 692px, AND THE ODD NUMBER IS THE POINT. Measured by bisection with the break
+       disabled: the BASEMENT row — the widest, because of its BSMT tag — stops fitting one line at
+       693px; a plain floor row survives to 610px. The threshold follows the WIDEST row so the
+       whole list switches together: three basements on two lines above fourteen floors on one
+       reads as a broken list, not a responsive one.
+       ⚠ Measured in the harness, whose fallback font is WIDER than Gotham, so in production this
+       fires a handful of pixels early. That is the safe direction — early means tidy, late means
+       the ragged wrap this rule exists to prevent. */
+    @container (max-width:692px) {
+      .sbld-flr-h .sbld-flr-br { display:block; flex:0 0 100%; width:100%; height:0; margin:0; }
+      /* ⚠ A tighter row-gap than the 8px column gap: two lines of one row must still read as ONE
+         row, and 8px vertically made the halves look like two separate floors. */
+      .sbld-flr-h { row-gap:6px; }
+      /* Line two is the controls; nudging it in under the name field shows it belongs to the row
+         above rather than starting a new one. */
+      .sbld-flr-h .sbld-kind { margin-left:19px; }
+    }
     .sbld-addzone { flex:none; font-size:var(--pd-fs-sm); height:30px; }
     .sbld-znwrap { padding:6px 10px 8px; display:flex; flex-direction:column; gap:6px; }
     .sbld-znrow { display:flex; align-items:center; gap:6px; }
@@ -45876,6 +45911,11 @@
           (f.sub ? '<span class="sbld-subtag" title="Basement / substructure">BSMT</span>' : '') +
           '<input class="pd-input" data-fk="code" data-f="' + i + '" value="' + e2(f.code) + '" placeholder="' + (f.sub ? 'B1' : 'Floor') + '" style="width:88px;" />' +
           '<input class="pd-input grow" data-fk="name" data-f="' + i + '" value="' + e2(f.name) + '" placeholder="Floor name" />' +
+          /* ⚠ The deliberate line break. `display:none` by default, so a wide row is exactly the
+             single line it has always been; the container query below turns it into a full-width
+             flex item, which pushes everything after it onto a second line. A flex item is what
+             forces a wrap — there is no CSS property that says “break here” in a flex row. */
+          '<i class="sbld-flr-br" aria-hidden="true"></i>' +
           '<select class="pd-select sbld-kind" data-kf="' + i + '" title="Floor category — drives how trades hand off on this kind of level in step ' + _stepNo('Zone sequence') + '" style="height:34px;">' +
             KIND_ORDER.map(function (k) { return '<option value="' + k + '"' + (floorKind(f) === k ? ' selected' : '') + '>' + e2(KIND_LABEL[k]) + '</option>'; }).join('') + '</select>' +
           /* ⚠️ A STEPPER, NOT A "+ Zone" BUTTON. Units on the row below have had − N + since they
