@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260918b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260918c" />
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
@@ -58,12 +58,28 @@
     .sc-forecast { fill:none; stroke:var(--pd-red); stroke-width:2; stroke-dasharray:7 5; }
     /* Weighting switch — what an activity is WORTH on the curve: its duration, or the money the
        Project Schedule's Cost Loading put on it. */
-    .sc-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
-    .sc-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm);
-      font-weight:700; padding:0 10px; height:32px; cursor:pointer; }
-    .sc-seg button + button { border-left:1px solid var(--pd-line); }
-    .sc-seg button:hover { background:var(--pd-bg); }
-    .sc-seg button.on { background:var(--pd-red); color:#fff; }
+    /* ⚠️⚠️ `.sc-seg` IS GONE - THIS MODULE USES THE SHARED `.pd-seg` NOW, AND THAT IS NOT A
+       NEW DECISION. dashboard.css's own `.pd-seg` header says it was promoted on 2026-09-08
+       precisely because the control "already existed three times over - `.sc-seg` in the
+       S-Curve module, an identical `.pd-seg` in dashboard.html's own inline <style>, and the
+       `.pd-viewtoggle`/`.pd-vt` pair". dashboard.html's copy was deleted in that commit. This
+       one was not, so the module named in the consolidation is the one that never joined it.
+       ⚠️⚠️ THE COPY WAS NOT COSMETIC - IT SAID THE WRONG THING. `.sc-seg button` painted the
+       resting colour `var(--pd-ink)`, where the shared control uses `var(--pd-muted)`. So on
+       every other screen in the app an unselected option RECEDES and the chosen one carries the
+       red; here both options were at full ink and the control read as two live buttons rather
+       than one choice among two. Measured 2026-09-18: off-state rgb(240,239,239) -> rgb(185,183,183)
+       on the dark theme.
+       ⚠️ The copy had already cost one defect: it never inherited the 44px phone tap target
+       dashboard.css gives `.pd-seg > button`, which had to be re-declared by hand below - and
+       that workaround goes with it, because the shared rule covers it.
+       ⚠️ Geometry checked before switching, not after: in the topbar nothing moves, because
+       `.pd-modulebar .pd-seg { min-height: 34px }` already pins it (measured 34px group / 32px
+       button, identical either way). In the filter bar the group goes 34px -> 26px, which is a
+       row that carried FOUR different control heights (16 / 24 / 28 / 34) losing its tallest
+       outlier and landing beside the 28px chips. */
+    #sc-mankind button i { font-style:normal; font-size:var(--pd-fs-micro); font-weight:800;
+      opacity:.7; margin-left:3px; }
     .sw-forecast { width:18px; height:0; border-top:2px dashed var(--pd-red); }
     .sc-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .sc-lg { display:inline-flex; align-items:center; }
@@ -410,9 +426,8 @@
     .sc-matrix .sc-ro { display:block; min-width:0; height:24px; line-height:24px; padding:0 5px;
       text-align:right; }
     .sc-kindbar { margin:12px 0 10px; }
-    /* The kind selector carries a count of what is entered under it. */
-    .sc-seg button i { font-style:normal; font-size:var(--pd-fs-micro); font-weight:800;
-      opacity:.7; margin-left:3px; }
+    /* The kind selector's count badge is declared with the segmented-control note above,
+       beside the reason `.sc-seg` no longer exists. */
     /* ---- The live preview above the sheet ------------------------------------------------------
        ⚠️ Given its own bordered block rather than dropped straight into the card: it is the same
        chart the Curve tab shows, and without a frame around it the sheet below reads as part of
@@ -482,10 +497,10 @@
          min-width — that restores the unreadable version.
          ------------------------------------------------------------------ */
       @media (max-width: 700px) {
-        /* ⚠️ `.sc-seg` is this module's own copy of the segmented control, so it never
-           inherited the 44px that dashboard.css gives `.pd-seg > button` at this width.
-           Measured at 390px: 32px. A tap target is not a per-module decision. */
-        .sc-seg button { min-height: var(--pd-tap); }
+        /* ⚠️ The 44px phone tap target that used to be re-declared here is gone with
+           `.sc-seg` itself: dashboard.css's own `@media (max-width:700px)` block gives
+           `.pd-seg > button { min-height: var(--pd-tap) }`, which is where it always
+           belonged. Verified at 390px after the switch. */
         .sc-card { overflow-x: auto; }
         .sc-svg { min-width: 560px; }
         .sc-table { min-width: 520px; }
@@ -542,12 +557,12 @@
       <div class="sc-topbar-tools">
         <!-- ⚠️ THE MODE LEADS, before the weighting: it decides where the numbers come from at all,
              and the weighting only decides what each activity is worth once they do. -->
-        <span class="sc-seg" id="sc-mode" title="Where the curve's numbers come from">
+        <span class="pd-seg" id="sc-mode" role="radiogroup" title="Where the curve's numbers come from">
           <button data-m="auto" class="on" title="Derived from the schedule — each trade's declared accomplishment, rolled up by weight">Automatic</button>
           <button data-m="manual" title="The planner's own monthly POC per trade, entered by hand">Manual</button>
         </span>
         <span class="sc-tb-sep"></span>
-        <span class="sc-seg" id="sc-weight" title="What each activity is worth on the curve">
+        <span class="pd-seg" id="sc-weight" role="radiogroup" title="What each activity is worth on the curve">
           <button data-w="dur" class="on">Duration</button><button data-w="cost">Cost ₱</button>
         </span>
         <span class="sc-tb-sep"></span>
@@ -601,7 +616,7 @@
 <script src="../../assets/js/ui.js?v=20260917zg"></script>
 <script src="../../assets/js/notebook.js?v=20260918a"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
-<script src="../../assets/js/portfolio-dash.js?v=20260917zg"></script>
+<script src="../../assets/js/portfolio-dash.js?v=20260918a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <!-- ⚠️ The app's own spreadsheet layer (Tab/Enter/arrows, Ctrl+D, Excel paste). The manual matrix
@@ -651,6 +666,11 @@
      way Progress Photos matches its own trade vocabulary onto this column. */
   function isGR(t) { return /general\s*requirement/i.test(String(t || '')); }
   function tradeOf(r) { var t = String((r && r.work_type) || '').trim(); return t || UNTRADED; }
+  /* The Period control's own adjective. ⚠️ ONE derivation, read by both the chart heading and
+     the filter tooltips: they had a copy each, and only one of them was kept in step - the
+     heading said "monthly" over quarterly and yearly bars (found in the 2026-09-18 UI sweep,
+     measured at 12 bars labelled "Q1 2025" under a heading reading "+ monthly"). */
+  function periodWord() { return period === 'year' ? 'year' : period === 'quarter' ? 'quarter' : 'month'; }
   // Every trade present, in the schedule's own first-seen order — which is the builder's order,
   // since a push walks the trades in sequence. ⚠️ Not alphabetical: "Architectural" before
   // "Site Works" reads as a sort, not as a sequence of works.
@@ -1502,7 +1522,7 @@
   function renderFilters() {
     var host = document.getElementById('sc-filters'); if (!host) return;
     var seg = function (id, opts, cur) {
-      return '<span class="sc-seg" id="' + id + '">' + opts.map(function (o) {
+      return '<span class="pd-seg" role="radiogroup" id="' + id + '">' + opts.map(function (o) {
         return '<button data-v="' + o[0] + '"' + (o[0] === cur ? ' class="on"' : '') +
           ' title="' + esc(o[2] || o[1]) + '">' + esc(o[1]) + '</button>';
       }).join('') + '</span>';
@@ -1514,7 +1534,7 @@
       ['quarter', 'Quarterly', 'Three months to a point — the cumulative reads at the quarter end, the bar is the quarter\'s own work'],
       ['year', 'Yearly', 'Twelve months to a point — the cumulative reads at the year end, the bar is the year\'s own work']
     ], period);
-    var pw = (period === 'year' ? 'year' : period === 'quarter' ? 'quarter' : 'month');
+    var pw = periodWord();
     var shape = '<span class="sc-fl">Chart</span>' + seg('sc-shape', [
       ['both', 'Both', 'The cumulative curves with the ' + pw + 'ly bars behind them'],
       ['cum', 'Cumulative', 'Where the project stands at each ' + pw],
@@ -1862,7 +1882,7 @@
       '</div>';
 
     // ---- which kind is being entered ---------------------------------------------------------
-    var kindSeg = '<span class="sc-fl">Entering</span><span class="sc-seg" id="sc-mankind">' +
+    var kindSeg = '<span class="sc-fl">Entering</span><span class="pd-seg" role="radiogroup" id="sc-mankind">' +
       KINDS.map(function (k) {
         var n = manEffective().filter(function (r) { return r.kind === k[0] && (+r.pct || 0) > 0; }).length;
         return '<button data-k="' + k[0] + '"' + (manKind === k[0] ? ' class="on"' : '') +
@@ -2083,7 +2103,13 @@
       var scopeTxt = trSel.length
         ? (trSel.length === 1 ? trSel[0] : trSel.length + ' trades')
         : (trScope === 'gr' ? 'General Requirements' : trScope === 'mw' ? 'Measured Works' : '');
-      var shapeTxt = chartMode === 'per' ? 'monthly %' : chartMode === 'cum' ? 'cumulative %' : 'cumulative % + monthly';
+      /* ⚠️ THE GRAIN COMES FROM THE PERIOD CONTROL, not from the word "month". This line read
+         'monthly' in both branches, so switching Period to Quarterly redrew the bars as quarters,
+         relabelled the axis "Q1 2025" - and left a heading underneath the planner's own screenshot
+         still claiming monthly. The comment above is the one that matters here: a heading that
+         states more than the chart is showing. */
+      var grain = periodWord() + 'ly';
+      var shapeTxt = chartMode === 'per' ? grain + ' %' : chartMode === 'cum' ? 'cumulative %' : 'cumulative % + ' + grain;
       h.textContent = what + (scopeTxt ? ' · ' + scopeTxt : '') + ' (' + shapeTxt + ')';
     }
     document.querySelectorAll('#sc-weight [data-w]').forEach(function (b) { b.classList.toggle('on', b.dataset.w === basis); });

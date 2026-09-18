@@ -1,5 +1,36 @@
 # Module: s-curve
 
+## 2026-09-18 — UI sweep: the shared segmented control, the heading's grain, and two shell defects found here — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (za)) — read that entry for the full
+measurements. What lands in this module:
+
+- **`.sc-seg` is gone; the topbar, the filter bar and the Manual sheet's kind selector all use the
+  shared `.pd-seg`.** The copy painted its resting text `var(--pd-ink)` where the shared control
+  uses `var(--pd-muted)`, so an unselected option looked as live as the selected one. This was not
+  a new decision: `dashboard.css`'s `.pd-seg` header says the control was promoted on 2026-09-08
+  *because* `.sc-seg` was one of three copies, and dashboard.html's copy was deleted then. Five
+  call sites, `role="radiogroup"` added with the class, and the hand-rolled 44px phone tap target
+  deleted because `.pd-seg > button` already carries it. ⚠️ Topbar geometry is unchanged (34px
+  group / 32px button, measured either way); the filter bar's segments go 34px → 26px, which drops
+  that row from four distinct control heights to three.
+- **`periodWord()` — one derivation of the Period control's adjective.** The card heading was
+  hardcoded to "monthly" and said so over 12 bars labelled `Q1 2025` and over 3 yearly bars;
+  `renderFilters()` had the correct derivation all along for its tooltips. Both read it now.
+  Verified across all nine period × shape combinations.
+- ⚠️ **`.sc-matrix th.mo small` stays at 9px** and stays on `tools/type-scale.js`'s report. Measured
+  at the 10px rung: the sticky header row grows 34px → 36px and the year suffix reaches 0.95 of its
+  parent's size, which is not a suffix any more. The scale has no rung below 10px; this is a
+  decision, not an oversight.
+
+Two defects found while sweeping this module are **not in this folder** and are fixed in the shared
+layer — the tab dropdown's menu rendering in Arial (`dashboard.css`, live in twelve modules), and
+the portfolio project-filter button reading "All projects" on the one view that opens with nothing
+selected (`portfolio-dash.js`, and `scurve` is that view). Both are written up in the root entry.
+
+⚠️ Measured at seven widths in an iframe against the shipped stylesheets, with the module's own
+`<style>` and inline script sliced from `index.html` rather than re-typed. Not verified signed in.
+
 ## 2026-09-16 — The portfolio Manual data tab does something, and the curve gets a project filter — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-16 (t)) — read that entry for the
