@@ -1,3 +1,690 @@
+## 2026-09-18 (h) — A development is a row, the ± count goes, and the quick setup asks per category
+
+Owner, on the Towers step: *"replace the buttons on top with Add Type, Add Development … for this
+table, strict only to two levels … columns should include Name, Code, Remarks"*, *"when add type is
+clicked, a grouping is added. when development is clicked, a row is added inside"*, and *"Hide first
+option to add site plans"*. Then, on Floors & Zones: *"in quick set-up simplify the inputs: Basement -
+____ floors x ____ zones, Podium - ____ floors x ____ zones, Typical - ____ floors x ____ zones x
+(checkbox * ____ units if checked), RD - checkbox (*____ zones if checked)"*, and *"for zones and
+units, minimum is always 1."*
+
+### ⚠️⚠️ THE ± COUNT CONTROL GOES, AND THE PROPERTY IT PROTECTED DOES NOT GO WITH IT
+
+A development is a ROW now, so `_twSetCount` is gone — three developments are three rows, and a
+number beside the type would state the same fact twice. But that control existed to protect
+something real, and the easy mistake here is to delete both. **A type's floors hang off its FIRST
+instance** (`repTowerOf` → `floorsOfTower`), so the old control only ever removed from the END and
+the representative was untouched by construction.
+
+`_twRemoveTower` lets you remove **any** row, and **moves the floors to the next instance** rather
+than refusing — which is the case the old control could not express at all. ⚠️ Section 5 of the
+suite is **retargeted, not weakened**: it used to assert the arithmetic of a control nobody presses
+any more, and now asserts the stricter property, including that the active development is
+re-pointed when the one being deleted is the one on screen.
+
+⚠️ **The last development of a type takes the type with it**, and its floors with that — a type with
+no instance has no representative, so nothing is left to own them. ⚠️ And the **only** development in
+the project cannot be removed: the step would have nothing to hang a layout off.
+
+### ⚠️⚠️ A DEVELOPMENT "BESIDE" THE TYPES IS INVISIBLE TO `typeList()`
+
+Which is the whole reason `layoutOwners()` exists. The selector bar and the Towers table both used
+to iterate **types**, so a standalone development would have vanished from the chips the moment it
+was created — leaving no way to reach its floors at all. An owner is either a type (with its
+representative and its instances) or a **solo** development that is its own owner, and
+`ownerOfTower` resolves any development to the owner whose floors it reads.
+
+⚠️ **And the migration could silently have undone it.** A development beside the types is a tower
+with **no `typeId`** — the very shape the pre-types migration was written to convert. Run
+unconditionally it would invent a type for it on **every load**, so *"beside"* would quietly become
+*"a one-instance type"* and its row would move under a grouping the planner never created. The guard
+is the presence of the `towerTypes` **key** (`_hadTypes`), and assertion 7.9 fails without it.
+⚠️ The suite's migration slice now starts **at that guard** rather than below it, because the guard
+*is* the migration — a slice beginning under it would test the loop without the question.
+
+⚠️ A `typeId` naming a type that is no longer there is **cleared, not left dangling**: it would
+otherwise BEHAVE as standalone (`repTowerOfTower` falls back to the tower) while still reading as
+typed on every screen.
+
+⚠️ `remarks` had to go on **both halves** of `normalize()`'s whitelist — the type's and the
+development's. A key that function does not name is silently stripped on save and on load, so a
+column that looks fine all session empties on reload; 7.13/7.14 assert both.
+
+### The quick setup: zones per category, units typical-only
+
+⚠️⚠️ **ZONES ARE PER CATEGORY, and that is a model change rather than a layout one.** One figure for
+the whole building is wrong on most of them — a podium is split three or four ways and the typical
+floors above it two — so stating one number meant generating the building and then editing every row
+of one of the two.
+
+⚠️ **Units hang off the TYPICAL floors only, behind a tick.** They are the rung almost nobody uses,
+and asking for them on a basement is asking for a number that is always 0. `q.u` is therefore one
+number rather than a map: a per-category unit count would be three boxes that can only ever hold 0.
+
+⚠️ **A roof deck is a tick**, stored as a **count of 0 or 1**, so nothing downstream had to learn a
+third shape.
+
+⚠️⚠️ **The minimum for a zone and a unit is 1, and the consequence is not obvious:** a floor with NO
+zones is a floor-level leaf (`leavesOfFloor`), so this dialog can no longer generate one. The floor
+list's own − stepper still can, one row at a time, and on a project whose Activity level is Floor the
+zone questions are not asked at all — so nothing is unreachable. ⚠️ The minimum applies to a number
+being **asked for**: with the unit tick off, units are 0, not 1.
+
+⚠️ **A number that is not being asked is DISABLED, not merely ignored** (`_qsGate`). A live-looking
+box whose value changes nothing is the looks-wired-does-nothing failure this module keeps recording;
+`_qsNorm` zeroes them either way, so the two cannot disagree.
+
+⚠️⚠️ **ONE above-grade numbering sequence, not three.** A four-storey podium under twelve typical
+floors under a roof deck is F1…F17 — the categories say what each floor IS, they do not restart the
+count. Numbering them P1…P4, F1…F12, R1 would put two different floors called *"F1"* in the same
+tower the moment anyone renamed a category, and every location label and generated activity id is
+built from that code.
+
+### Verified
+
+**New `modules/project-schedule/test-quicksetup.js` — 46 assertions, 0 failing**, and the one it
+exists for is block 4: ⚠️⚠️ **the sentence and the generator AGREE.** The dialog's
+*"… N locations to schedule"* is computed by `_qsCalc`, and the floors are built by a **different
+block a hundred lines below it** — those two can disagree, and if they do the planner reads a number
+that is not what they get. Both are sliced out of the shipped file and **run**, and the count is
+compared against the shipped `leavesOfFloor` over the rows the generator actually produced, across
+five shapes (115 locations on the big one, 0 on the empty one). ⚠️ The generator slice starts at
+`var q = _qsNorm(v);` rather than at `mkZones`, so the **clamp is inside the executed block** — which
+is what proves it builds from the normalised numbers and not from the raw boxes.
+
+⚠️ Block 6 pins the fix this module already paid for once: **another tower's floors survive** a
+regenerate. This was `zn.floors = []`, so generating Tower 2 destroyed Tower 1.
+
+**`test-towertypes` 67 → 102**, section 5 retargeted as above. ⚠️⚠️ **Both suites ABORT against the
+pinned base rather than comparing nothing** — `test-towertypes` reports *"SLICE FAILED:
+_twRemoveTower"* and `test-quicksetup` *"SLICE FAILED: _qsNorm"*, each naming the function, because a
+suite that silently compares nothing is the failure worth naming.
+
+**Every project-schedule suite green on the merged tree — 21 suites, 1,912 assertions, 0 failing**,
+including **main's own two new suites, which this branch had never run** (`test-sap` 114/0,
+`test-phasecard` 85/0). `wiring-check` **139/0**, `dead-hooks` **9** with its findings
+**byte-identical to the base** (only the census moves, 474 → 472, which is the removed control's
+classes), `dark-remap` 0, `loc-key-agree` clean, `selectall-key` 100 safe / 0 broken,
+`toolbar-order` 15/0. The 3.76MB inline block parses, CSS braces 2548/2548, 0 NUL bytes.
+
+**Rendered and measured in Chromium at 1440 and 820** against the shipped stylesheets: the Towers
+table is **2 type rows and 5 development rows in ONE table at depth 1** — strictly two levels, and
+no row carries both rungs — headed **Name / Code / Remarks**, **0** count controls, **0** site-plan
+buttons, and the standalone development rendering as its own owner rather than a grouping. Floors &
+Zones is a two-column grid with a **sticky** tower at 1440 and **one static column** at 820, its
+selector reading *"Residential Tower ×3 / Office Tower / Central Podium"* — the ×3 being what makes
+*"edit once, applies to three"* legible. **No page or panel horizontal scroll and no clipping at
+either width, 0 page errors.**
+
+⚠️⚠️ **THE FIRST CUT OF THAT HARNESS RENDERED A PAGE THE APP DOES NOT SHIP, AND IT LOOKED
+DELIBERATE.** It typed the trade vocabulary by hand in **lower case** (`'st'`, `'ar'`) where the
+shipped keys are **upper** (`ST`, `AR`), so `locGroups()` matched nothing and Floors & Zones rendered
+an empty step. `GROUPS` / `GLABEL` / `LOCLESS` / `KIND_ORDER` / `KIND_LABEL` / `DIM_LABEL` are
+**sliced** now, and so are the **step titles** and `SITE_PLAN_UI`'s own value — a retyped constant is
+a second opinion about what the shipped one says, and `_stepNo` in particular would have let the
+harness disagree with the rail about which number a step is.
+
+⚠️ **The duplicate-id scan reports one new hit and it is a false positive**, established by
+**executing** the builder rather than by reading it: `id="' + cid + '"` occurs twice because the
+checkbox and the number branches of one `if` each emit it, and `cid = id + 'c' + j` makes every cell
+unique. Run over the quick setup's own four-cell row it emits **4 distinct ids for 4 answerable
+cells**, with the `×` furniture carrying neither an id nor a `data-k`. Same class as the
+pre-existing `' + id + '` hit; 20 duplicates before, 20 after.
+
+⚠️ **Not verified signed in** — no setup has been saved and re-read, so the migration's guard and the
+`remarks` whitelist are proved by execution against fixtures rather than against a real row.
+
+### ⚠️ Merged `origin/main` (14 commits) before shipping — and both conflicts had to go my way on more than taste
+
+`modules/project-schedule/index.html` conflicted in **two** hunks, both prose inside `stTowers`, and
+main's side of the first one reads `list.length` — **`list` is not a name this function has any
+more**, so taking it would have been a `ReferenceError` on every render of the step: the
+*"below is not defined"* shape this file has paid for five times. It is also the **wrong count**
+besides, since `types.length` cannot see a standalone development. The second names a **Site plan**
+button in the tower bar that main moved there and my rewritten `_towerBar` does not emit — so main's
+wording would name a control that is not on the page. Both placements are defensible and the whole
+block sits behind `SITE_PLAN_UI`, which is off; the resolution is **recorded in the file** so
+whoever turns it back on picks one deliberately rather than discovers it.
+
+⚠️ A clean auto-merge is not evidence, so both sides were checked present by name afterwards and the
+**whole battery re-run on the merged tree**, main's two new suites included.
+
+`MODULE_V` → `20260918j`, re-derived from what the tree carries **after** integrating (main had
+reached `20260918i`) rather than guessed beforehand, and sort-checked as a plain string. ⚠️ Every
+`20260918*` token was listed on **both refs before resolving** rather than after — which is the only
+thing that finds the collision this log has now recorded nine times, because two sides writing the
+**same** string merge silently.
+
+## 2026-09-18 (g) — The Activities step reads SAP levels 1–3, and a merged activity carries every code it covers
+
+Owner, six items on Schedule Setup ▸ Activities, with `Book2.xlsx` attached: *"1. reduce font sizes
+and reduce words/descriptions/instructions. make page minimalist. 2. the SAP activities are listed in
+this excel file from level 1 to level 3 … by default the SAP activities list should only show up to
+level 2. but for each level 2, provide collapse button to show level 3. 3. if level 2 is dragged to
+the selection, this activity carries level 3 activities inside it as a merged activity. if level 1 is
+dragged … it carries all the level 3 activities as a merged activity. 4. when merging activities from
+different trades, although it does not push thru, provide error notif. 5. if an activity is a merged
+activity, it should carry multiple class codes to schedule. 6. please review also the schedule module.
+in narrow width, when scrolling down, the sticky tab for the steps overlaps."*
+
+### ⚠️⚠️ THE WORKBOOK IS THE REFERENCE FOR LEVEL 3 ONLY, AND COMPARING IT ROW BY ROW IS WHAT SETTLED THAT
+
+The obvious reading of item 2 is *"re-seed the list from the file"*. Parsed and diffed against
+`CLASS_CODE_DB` with every code padded to five characters, that would have silently undone two
+decisions this log already records:
+
+| | |
+|---|---|
+| in the chart, not in the workbook | **0** |
+| in the workbook, not in the chart | **7** — `39100 39150 39200 39250 39300 39350 39400` |
+| name disagreements | 7 |
+| trade disagreements | **0** |
+
+The seven are the **LD sub-works the owner retired on 2026-09-17**, and two of the seven name
+disagreements (`25200`, `25550`) are this module's own **deliberate corrections** of a chart
+copy-down error, recorded under `(d)`. A re-seed would have reinstated all nine, in a diff that reads
+as an ordinary data refresh. So level 2 keeps its names, trades and membership exactly as the module
+has them, and the workbook supplies **level 3 and the level-1 grouping** — the two things the module
+did not have. 466 level-3 rows, 197 level-2, 39 level-1, 7 trades; every L3 code unique and none
+colliding with an L2 code, both asserted.
+
+**`SAP_L1` and `SAP_L3` are literals beside `CLASS_CODE_DB`**, not a table: they are the *chart*, the
+same kind of thing the 190 level-2 entries already are, and a fetch would make an offline setup step
+worse at the one job it has. ⚠️ Codes are **strings throughout** — `'01050'` must never become
+`'1050'`, because the de-zeroed space is not unique (`015051` collides with `15051`) and
+`docs/boq-and-pmi.md` forbids the transformation outright.
+
+### Item 2 — level 2 shows, level 3 folds
+
+Each level-2 row gains a caret (`.sbld-hold-tog`) and a `+N` badge naming how many level-3 items it
+holds; opening it draws them as `.sbld-hold-kid` rows. ⚠️ A level 2 with **no** children gets a
+`.is-leaf` **spacer of the same width**, not a missing button — a ragged left edge across 190 rows
+reads as a rendering fault, and an inert caret reads as a broken control.
+
+⚠️ **A level-1 heading is drawn only where it holds more than one level 2.** `PDProgram.labelOf`'s
+own rule is that a heading above a single item invents a hierarchy that is not there; 21 of the 39
+level-1 groups hold more than one level 2 and **18 hold exactly one**, so nearly half the list would
+otherwise have gained a heading saying the same thing as the row under it.
+
+⚠️ **The search reaches level 3 even when it is folded.** `_holdHit` matches a level-2 row when the
+query hits any of its children's code or name — otherwise typing a level-3 name would return nothing
+while the item sits one caret away.
+
+⚠️ **`holdExp` is module scope and is cleared on a project switch**, beside `holdQ` and `holdCol`.
+A fold must outlive a render (every tick repaints the pane) and must not outlive the session: a list
+still folded tomorrow hides codes nobody chose to hide.
+
+### Item 3 — dragging a group carries what is inside it
+
+`sapMergeKids(code, group)` turns a level-2 code into the flat `{code,name,group}` kid array the merge
+model already uses, and a level-1 heading is draggable too, resolving to every level-2 under it.
+
+⚠️⚠️ **THE KIDS ARE ATTACHED IN `_catLoad`, THE ONE MOVER, AND THAT IS THE WHOLE OF WHY `←` AND DROP
+CANNOT DISAGREE.** That function's own note says it is the single place a catalogue row becomes a
+build row; attaching kids at the drop handler instead would have given a dragged group its level 3
+and a ticked-and-`←`'d group nothing, from the same list, with nothing on screen to say why.
+
+⚠️ A level-1 drag then merges what it loaded (`opts.mergeAll`) and **rolls the selection back if the
+merge is refused** — a half-loaded selection left behind by a refusal is worse than nothing arriving.
+
+### ⚠️⚠️ Item 3 also exposed a latent bug in `mergeActs`, lossy only in the case this pass creates
+
+The flatten read *"if the row is merged take its kids, else take its own code"*. Harmless while a
+merged row's own `code` was always its first kid's — which it was, because merging was only ever
+reachable from hand-picked rows. An SAP group arrives carrying a code that is **not** among its
+children, so that branch would have dropped it. `mergeActs` now unions the row's own code **and** its
+kids, deduped. ⚠️ A blank code is deliberately **not** deduped: two custom activities both carrying no
+code are two activities, and folding them would delete one.
+
+### Item 4 — the refusal says which trades
+
+Merging across trades was already impossible; it was impossible *silently*, because the button's own
+enable test was `sel.length > 1 && !!tr` and `tr` is null for a mixed selection. So the control simply
+stayed dead and the planner had no way to learn why. The button is enabled on `sel.length > 1` and
+`mergeActs` refuses with a toast naming the count and **every trade in the selection**.
+
+### Item 5 — a merged activity pushes every code it covers
+
+**Run `migrations/2026-09-18-schedule-class-codes.sql`.** New `project_schedule.class_codes text[]`,
+additive, with a GIN index.
+
+⚠️⚠️ **NOT a delimited `class_code`, and the reason is that every consumer matches on EXACT equality**
+— `scheduleSeedPlan` buckets on it, `boq_allocations` gates on it, `ccByCode`/`ccLevelOf` resolve it
+against the Finance chart, the grid's Class Code cell is an enum editor over it, and the `cc1`/`cc2`/
+`cc3` grouping dims use it as a bucket key. `"01050, 01100"` resolves to **nothing** in all of them,
+and would read on screen as an off-chart code: a merged activity would go from matching one code to
+matching none, silently.
+⚠️⚠️ **And NOT `activity_codes`**, which is a jsonb map of `code_type_id → code_value_id` — **one**
+value per type, read as `r.activity_codes[typeId]` by ~10 callers. An array under a type key breaks
+every one.
+⚠️ `class_code` is **unchanged** and stays canonical (the first code); `class_codes` is the full set
+with its first element equal to it, so every existing reader keeps working untouched.
+⚠️ **No backfill, deliberately.** A row written before today carries one code and a null array, and
+every reader in this repo falls back to `class_code` when the array is null or empty — so null means
+*"this row has one code"*, not *"unknown"*. Backfilling 150k rows to restate the adjacent column is
+churn with a lock attached.
+⚠️ **The push degrades** rather than failing: a database without the column refuses the insert, the
+error is matched on the column name **and** a `column|schema cache` test (matching the bare word
+`class_codes` also matches the Finance chart **table**, which is how a loose regex would swallow an
+unrelated refusal), the key is dropped once per session and the summary names the migration file.
+`modules/contracts-claims/boq.js` reads the array the same way, with the same guarded fallback, so a
+bill line can match on any element.
+
+### Item 6 — the step rail stops painting over the panel
+
+⚠️⚠️ **`origin/main`'s own rail pass landed the same day and does NOT fix this, which only measuring
+showed.** Main rebuilt the narrow-width strip properly — grid areas so the markup order stays the
+reading order, left/right arrows in place of a scrollbar, the toggle pinned above rather than centred,
+the chevron rotated to point up — and never clears the base rule's `position:sticky; top:12px;
+max-height; overflow-y:auto`. Measured on the **merged** tree at `scrollY 900`:
+
+| viewport | before | after |
+|---|---|---|
+| 1400px | 0 overlap (two columns, correct) | 0 |
+| 760px | **736 × 105**, `position:sticky`, rail at `top:12` over a panel at `-765` | **0** |
+| 420px | **396 × 105** | **0** |
+
+with `elementFromPoint` at the rail's own centre returning a **step** before the fix and nothing
+after. Four declarations go **into** main's block rather than replacing it, and main's grid areas,
+arrows and no-horizontal-scroll were re-measured intact afterwards.
+⚠️ `max-height` and `overflow` travel with `position`: capping to the viewport is what makes a **tall
+sticky column** reachable at its bottom, and on a static single-row strip it can only clip the toggle
+above it and give a one-column page a second scrollbar.
+⚠️⚠️ **I had written the opposite into the resolution comment** — reasoning that a sticky grid *item*
+cannot travel outside its own grid area — and shipped that reasoning as a claim before running the
+harness. The harness disagreed and the harness is right; the comment now carries the measurement.
+
+### Item 1 — 8 words where there were 18, and the type ramp one rung down
+
+The prose half: the lede cut **18 → 8 words**, the heading lost *"& required duration"* (the grid's
+own column headers said it), `_sbldHow` compressed, and **the two duplicate off-chart warnings folded
+into one** — measured **285 → 201 visible words, −29%** against the branch point, while *adding* a
+sentence documenting the new `▸` / level-1-drag gesture.
+
+The type half, measured in a browser against the shipped stylesheet with `--pd-ink` asserted present
+(the first run reported everything at 16px because the harness linked `dashboard.css` over `file://`
+from an `http` page and served an **unstyled** document — the third harness in this repo to report a
+correct page as broken):
+
+| | before | after |
+|---|---|---|
+| step heading | 16 (`--pd-fs-lg`) | **15** (`--pd-fs-md`) |
+| lede | 13 (`--pd-fs-base`) | **12.5** (`--pd-fs-sm`) |
+| hint | 12.5 | **11** (`--pd-fs-xs`) |
+| SAP row box | **14** (`--pd-fs-body`, from a bare `font:inherit`) | **12.5** |
+| header block (h2 + lede) | 46px | 44px |
+| panel height @1440 / @1100 | 851 / 914 | 847 / 910 |
+
+⚠️ **Stated plainly: the type change buys 4px, not a screenful.** The step was already on the scale
+and already tight — the space the owner asked for came from the prose, and the type change is a
+consistency change. `--pd-fs-lg` is the token block's own *"largest heading in the app"*, which a
+wizard step under a module bar that already names the module is not; `--pd-fs-sm` is its *"secondary
+body"*, which is what a muted purpose line is.
+⚠️ **The lede, hint and empty-state classes are shared by all six Setup steps and Cost Loading's
+four**, so this is a wizard-wide change, not a page-local one. Said here rather than discovered.
+⚠️ The `font:inherit` on the SAP row left the row **box** at 14px — the largest type box in a pane
+whose trade headings are 11 and whose name span is 12.5. Nothing rendered at 14; it only sized the
+flex line box. ⚠️ Row height is unchanged at 25px: it is padding-bound, not font-bound.
+
+### ⚠️⚠️ A live bug found by measuring rather than reported: every `+ Library` row was marked off-chart
+
+`_seedCodeUnknown` — which paints the Class Code cell red and drives the banner under the grid —
+resolved through the **item-only** `ccByCode`, while `offChartCount` beside it used `ccLevelOf`. Every
+`+ Library` row carries a **level-2 group** code, so on a healthy build all of them rendered red and
+were counted as off-chart. `offChartCount` had been corrected for exactly this on 2026-09-10 and the
+per-cell mark was left behind. Now `!ccLevelOf(k)`, and the two duplicate warnings are one banner.
+⚠️ `offChartCount` and `groupLevelCount` are **deleted, not left unreferenced** — both had zero callers
+afterwards, and a renderer nothing calls is the one the next editor wires back up beside the real
+thing.
+⚠️ The chart-not-loaded guard survives: with the chart empty `ccLevelOf` answers null for everything,
+and an unguarded test would accuse a perfectly good programme.
+
+### Verified
+
+**Three suites, all slicing the shipped functions out of the file by name and executing them**, with
+contrasts pinned to SHAs rather than `HEAD`:
+
+| | |
+|---|---|
+| `test-sap` (new) | **114 / 0** — the reference tables (39 / 190 / 447), the padding rule, the seven retired codes absent, the 21-vs-18 level-1 split, `25200`/`25550` names preserved, `sapKids`/`sapMergeKids`, level-2 arrival, merging and the cross-trade refusal, the push payload, the pane markup |
+| `test-actsetup` | **142 / 0** (was 133) — the real `SAP_L1`/`SAP_L3`/`SAP_L1_OF` in the sandbox, an honest `ccLevelOf` stub, and a new section for the group-code mark |
+| `test-actdnd` | **62 / 0** (was 48) — level-2 arrival and level-1 outright merge, executed |
+
+⚠️ **`test-lsm` was RETARGETED, not weakened, and the retarget is proved to bite.** It injected
+`ccByCode` into `_seedCodeUnknown`'s sandbox and aborted the moment that function moved onto
+`ccLevelOf`. It now injects **both**, so a build reverting to the item-only lookup still *runs* and
+fails by name: reverting `!ccLevelOf(k)` to `!ccByCode(k)` in a throwaway copy gives **683 passed,
+1 failed** — the new *"a GROUP code is not flagged either"* assertion — against **684 / 0** shipped.
+
+Every project-schedule suite green on the merged tree: `test-lsm` 684, `test-phasenet` 135,
+`test-phasecard` **85** (main's own new suite, which this session had never run), `test-builder` 149,
+`test-towertypes` 79, `test-zoneoverlap` 57, `test-zoneplan` 50, `test-shapeedit` 36, `test-sitefit`
+31, `test-autotrace` 32, `test-towerseq` 48, `test-cpm` 28, `test-wbsfile` 28, `test-critwbs` 26,
+`test-health` 30, `test-calendar-editor` 23, `test-syntax` 4 — **0 failing.**
+
+`wiring-check` 139/0 · `dead-hooks` **9**, the documented baseline · `dark-remap` 0 findings ·
+`toolbar-order` 15 bars / 0 out of order · `loc-key-agree` clean · `selectall-key` **100 safe /
+0 broken** · the inline `<script>` parses (**3.83MB**) · CSS braces **2535/2535**, comments 636/636 ·
+`boq.js` parses · **0 NUL bytes in every file this change touches.**
+
+⚠️ **`selectall-key` reports one advisory that is mine and is not a defect:** `boq.js:793` builds its
+cols as `COLS + ',class_codes'`, which the resolver cannot read. `COLS` is resolved at the sibling
+call site on the next line and **starts with `id,`**, so the keyset cursor is present. Named rather
+than left in an unreadable list where a fixed site and a broken one look alike.
+
+⚠️ **Reported, NOT fixed — two pre-existing NUL bytes in files this change does not touch:**
+`tools/dark-remap.js` at offset 5602 and `modules/project-schedule/test-wbsfile.js` at offset 8138,
+both a unicode-zero sentinel written as the raw byte rather than as its six-character escape, and both
+present on `HEAD` before this branch. `grep` classifies both files as binary. It is a two-character
+repair, and it does not belong in a commit about the Activities step.
+
+⚠️ **NOT VERIFIED SIGNED IN**, and that gap is specific here: the migration has not been run, so no
+merged activity has been pushed and read back, and `class_codes` has never reached a real BOQ match.
+Everything above is the shipped code executed against fixtures, plus browser measurements against the
+shipped stylesheet.
+
+## 2026-09-18 (f) — Project Phases: twelve items on the card shipped yesterday, and the two that were geometry rather than taste
+
+Owner, twelve items on Schedule Setup ▸ Project Phases — the per-phase Gantt from `(c)`:
+*"reduce size of gantt chart in initiation phase"* · *"gantt chart arrows are not clean. when a link
+refers to start it should point to the left of the bar. if link refers finish, it should point to
+right of the bar. provide arrows heads but still make minimalist"* · *"remove the default activities
+in each phase"* · *"reduce font sizes of activities and WBS to maintain minimalist look"* · *"in
+left, add column headers to identify activities and duration"* · *"improve dragging functionality of
+WBS and activities. When WBS is dragged outside, it should go to the outermost level"* · *"when
+adding activity, it should be on the same level as selected activity/WBS"* · *"remove the whole
+program indication on this page"* · *"lessen words/descriptions/instructions"* · *"for the milestones
+group, follow the same workflow for the other phases. but this should always be required"* · *"when
+window width is narrow, the tiles of phases overflow. please allow adjustable/flexible widths"* ·
+*"for each phase, add also button to autotrace logic. by default, this button adds an FS relationship
+to all activities one after the other without lag."*
+
+### ⚠️⚠️ ITEM 11 WAS ONE DECLARATION, AND IT IS THE FLEX/GRID `min-width:auto` TRAP AGAIN
+
+*"the tiles of phases overflow"* was not a breakpoint problem. `.sbld-phcard` is a **grid item**, and
+a grid item's default `min-width` is `auto` — which resolves to its content's **min-content** size,
+not to zero. The Gantt inside it has a tree column plus a plot, so the card could not shrink below
+that however narrow the window got: measured at a 1100px viewport, the card came out **1018px inside
+an 828px panel**, and the page scrolled sideways. `min-width: 0` on `.sbld-phcard`, on `.sbld-gantt`
+and on the two flex children inside it is the whole of the fix.
+
+**Measured before and after at five widths** — 1440 / 1100 / 900 / 760 / 420:
+
+| | before | after |
+|---|---|---|
+| card past its panel | 211–445px at every width | **0px** |
+| horizontal page scroll | yes | **no** |
+
+⚠️ This repo has now paid for `min-width: auto` **four** times — the grid-item overflow in the 360°
+form (2026-09-12), `.ps-search`'s own note, the holding list's input, and this. The shape is always
+the same: an explicit `width:100%` or `max-width` **inside** an item that cannot itself shrink.
+
+### ⚠️⚠️ ITEMS 1 AND 4: ONE NUMBER HAD TO DRIVE BOTH PANES, BECAUSE THE PHONE FLOOR IS NOT NEGOTIABLE
+
+Shrinking the chart is arithmetic — `dayW` went from `min(26, 620/days)` to `min(14, 430/days)`, the
+row pitch **26 → 20px**, the bar **16 → 11px**, and the name and duration cells onto `--pd-fs-xs`.
+What made it more than arithmetic is `dashboard.css`'s ≤700px block, which forces
+`font-size: var(--pd-fs-tap)` (16px, `!important`) and `min-height: var(--pd-tap)` (44px) onto
+**every bare `<input>`** — and its own comment calls that *"the one place a module does not get a
+vote"*, because under 16px iOS Safari zooms the page on focus. So a 20px row on a phone would have
+been a 44px input overlapping its neighbours.
+
+The row pitch therefore reads the **same 700px breakpoint the stylesheet uses**
+(`matchMedia('(max-width:700px)')`) and the bar height is derived from it — `ROW` 48 / `BAR` 14 at
+phone width, 20 / 11 above it. ⚠️ **The bar carries its height inline rather than in CSS**: the first
+cut left `height` on `.sbld-gbar` and the JS computed `BAR`, so the two disagreed and the bar stayed
+11px at ≤700px while the row grew to 48. Two sources for one number is how a chart draws itself
+wrong; the CSS declaration is deleted, not overridden.
+
+⚠️ **And `matchMedia` is read at render time, so it can go stale.** A `change` listener on that one
+query re-renders when a card is on screen — bound **once**, module-scope, beside `_phCollapsed`,
+because the card is rebuilt on every repaint and an unguarded listener would stack a copy per render.
+
+### ⚠️⚠️ ITEM 2: THE ARROWS WERE CLIPPED AT BOTH ENDS, AND EACH END WAS A DIFFERENT BUG
+
+The old route was a flat `H mx V y2 H ex L x2,y2` with `marker-end: url(#none)` — a marker **nothing
+in the file defines**, so no arrowhead had ever drawn. Each link now leaves its source edge on a 6px
+stub, travels in the inter-row lane, and arrives **horizontally** into the edge its type names: FS
+and SS arrive rightwards into the successor's **start**, FF and SF leftwards into its **finish**.
+That direction is what `orient="auto"` needs; without a horizontal final run the head points
+wherever the last segment happened to go.
+
+Two clipping faults, both found by rendering rather than by reading:
+- ⚠️ **An SS from a day-0 activity left the plot.** Its stub is drawn *before* the bar, so the route
+  began `M0,10 H-6` — and `.sbld-gantt` is `overflow:hidden`, so the whole arrow vanished. Every
+  coordinate is clamped to `[0, drawW]`.
+- ⚠️⚠️ **Clamping alone then collapsed the final segment.** A link arriving at the plot's right edge
+  gave `… V90 H429` with `x2` also 429 — a zero-length run, so `orient="auto"` had nothing to orient
+  by and the head pointed **down**. The SVG and the body are widened by `PAD_R = STUB + 4`, so there
+  is always somewhere for the last run to come from.
+
+⚠️ The head is a marker **defined per card** (`phah-<phase>`), not shared: a card renders into its own
+subtree and a document-wide id would be defined as many times as there are phases.
+⚠️ `--gw` went with the rewrite — nothing read it.
+
+### Items 3, 8 and 9: what was deleted, and the one thing that was kept
+
+`SB_PH_DEF` and `sbPhAct` are **gone**, so a phase opens with an empty list rather than three invented
+activities. ⚠️ The seed table is deleted rather than emptied: a `{}` left behind is the thing the next
+editor fills back in. The *"Whole programme"* total line and its CSS went with item 8, the step lede
+is cut from 30 words to one sentence, and the two stale hints below the tree are removed.
+
+⚠️ **Kept, deliberately:** the one line saying the planned list is *created by* **7 · Push**. That is
+the distinction between a plan and a record this card has had to state twice already, and an empty
+tree with no explanation reads as a screen that failed to load.
+
+### ⚠️⚠️ ITEM 6: `wbsMove(id, 'outdent')` COULD HAVE BROKEN THE FOUR-PHASE RULE
+
+The obvious implementation of *"dragged outside goes to the outermost level"* is the outdent this
+module already has. It is wrong here: on a **direct child of a phase branch** it sets
+`parent_id = null`, which creates a **fifth top-level branch** — exactly what `(c)` spent an entire
+pass making impossible by construction. New `_phPromote(v, id, levels)` walks the node's own ancestor
+chain **up to but not past its phase branch** and floors there; a branch already at the outermost
+level of its phase is refused with the reason, and a branch belonging to another phase is not this
+card's to move at all.
+
+⚠️ A locked (skeleton) heading is refused before anything is written — those are the phase roots.
+⚠️ Dragging past the tree column's left edge promotes **all the way**; a shorter leftward drag
+promotes one rung per 14px, so the gesture is continuous rather than binary.
+
+### Item 7: the new activity lands beside what is selected
+
+`_phAddActTarget(v)` answers in the order a planner would: a **WBS branch** selected inside this
+phase → the new activity goes under it; otherwise the selected **activity**'s own branch, spliced
+directly after it; otherwise the phase branch. ⚠️ The WBS selection is **global** — one node
+app-wide, which is what lets one toolbar act unambiguously — so a branch selected on *another*
+card correctly falls back rather than filing the activity into a different phase.
+
+### Item 12: Autotrace
+
+One button per phase, shown once a phase has more than one activity. It chains **FS+0 in display
+order** — the order `_phTreeRows` draws, not `cfg` insertion order, because the tree is what the
+planner is looking at. ⚠️ It **clears** every existing predecessor rather than appending, and
+therefore asks first when any activity already carries one: a silent merge would produce a network
+nobody authored. It sets `ph.net = true`, the marker `(c)` added so *"deliberately none"* stays
+distinguishable from *"never converted"*.
+
+### ⚠️⚠️ ITEM 10: MILESTONES IS A CARD CODE, NOT A DATABASE PHASE — AND THAT IS THE WHOLE DESIGN
+
+*"follow the same workflow for the other phases"* is a five-line change until you reach the database:
+`project_schedule.phase` carries a **4-value CHECK** (`initiation` / `planning` / `construction` /
+`closeout`), and a rejected value does not fail one row — `_dropScope()` strips `phase` from **every
+payload in the push**. So a fifth code would silently un-phase the whole programme.
+
+`MS_CODE = 'milestones'` is therefore known to exactly **three read helpers** —
+`_phaseBranchAt`, `_phaseBranchName` and `_phTaskNode` — which resolve it to the Milestones **root
+node** rather than to a phase, and to **nothing that writes**. `phaseTaskPayload` sends
+`phase: null`, and the two WBS-Summary payloads gained a third state (`noPhase`) so a milestones
+branch is written with `phase: null, scope_type: null` instead of defaulting to `construction`.
+
+⚠️⚠️ **`phaseFromName()` IS DELIBERATELY UNTOUCHED.** It is kept in step with a migration, and
+teaching it a fifth code is the one edit that would reach the CHECK. The Milestones branch is found
+by `_wbsMilestonesRootId()` — the skeleton's own root — never by name-matching a phase.
+⚠️ `always: true` in `SB_PHASE_DEFS` forces `on` through `normalize()`, so the card has **no
+checkbox** and the *"always pushed"* claim cannot be contradicted by a saved setup. ⚠️ `normalize()`
+is a whitelist and the round trip was proved by executing it against the five stubs it needs
+(`blankTowers`, `sortCatalog`, `GROUPS`, `KIND_ORDER`, `zpNormAll`), not asserted.
+
+### Verified
+
+**New `modules/project-schedule/test-phasecard.js` — 95 assertions across ten blocks, 0 failing**,
+every one executing functions sliced out of the shipped file by name, with the contrast pinned to a
+**SHA** (`4989bd6`, the pre-change copy) rather than `HEAD`. The contrast **bites**: run as the
+subject it aborts at the first slice it cannot find, and block 10 executes that copy's own seeder to
+show it really did seed three Initiation activities.
+
+`test-phasenet.js` **262/0** against its own pre-Gantt base, and every other suite green on the
+changed tree — `lsm` 683/0, `builder` 149/0, `towertypes` 79/0, `zoneoverlap` 57/0, `actsetup` 50/0,
+`zoneplan` 50/0, `towerseq` 48/0, `actdnd` 47/0, `shapeedit` 36/0, `sitefit` 31/0, `health` 30/0,
+`cpm` 28/0, `wbsfile` 28/0, `critwbs` 26/0, `calendar-editor` 23/0, `syntax` 4/0, plus
+`tools/test-calendar` 71/0. `wiring-check` **139/0**, `dark-remap` 0 findings, `dead-hooks` 9 (the
+documented baseline). The inline block parses; CSS braces **2571/2570**, which is **the same +1
+delta HEAD carries** (2566/2565) — this change is balanced at +5/+5.
+
+⚠️⚠️ **Three defects in my own suite, each of which reported the opposite of the truth**, recorded
+because two of them are shapes this repo keeps meeting:
+- **`marker-end="` ENDS IN `d="`.** Matching the tag greedily and then running `exec(/d="([^"]+)"/)`
+  over the match returns the **first** `d="`, which is inside `marker-end` — so every arrow's route
+  read as `url(#phah-planning)` and eleven assertions failed against correct code. Anchored on
+  whitespace and captured in one pass.
+- **The contrast build threw before asserting anything.** The sandbox's export map was a flat
+  literal naming every function, so a **partial** build over the pre-change file referenced a name
+  that copy does not define. It is derived from the slice list now.
+- ⚠️ **One assertion was simply wrong:** I counted the FS+0 route as five tokens where it is six —
+  the `M` counts. The code was right; the expectation was not.
+
+⚠️⚠️ **Re-lettered `(d)` → `(f)` on merging `origin/main`**, which had meanwhile published the
+Activities-step restructure as `(d)` and the Schedule Setup rail pass as `(e)`. Both are kept whole
+and this one moves past them. `modules/project-schedule/index.html` **auto-merged with no conflicts**
+— main rewrote the Activities step and the rail while this branch rewrote Project Phases — but a
+clean auto-merge is not evidence, so every function from both sides was asserted present by name
+afterwards and the whole battery re-run on the merged tree, **including main's own rewritten
+`test-actsetup.js` (133/0, up from 50) and `test-actdnd.js` (48/0)**. CSS braces on the merged tree
+are **2530/2529** against `origin/main`'s **2525/2524** — the same off-by-one on both sides, so this
+change is balanced at +5/+5.
+
+⚠️ **Not verified signed in.** The card was rendered and read in Chromium — headers reading
+*ACTIVITIES / DAYS*, all four relationship types drawing with clean heads, the FS+0 elbow a tight Z
+in the inter-row lane with no overlap, 0 bars off their rows at either breakpoint — but no real
+project's phases have been pushed through this, and the `phase: null` milestones payload has never
+reached the database.
+
+
+## 2026-09-18 (e) — The step rail at narrow width, and 179 words off the Setup's pages
+
+Owner items 9 and 10 of ten. Items 1–8 (the Calendars editor) shipped in `011a2f1`.
+
+> *"for the overall schedule setup, if window is narrow, the steps go to the top, the minimize button
+> should just remove the labels but stay on top, not move to the left. the arrow of the minimize
+> button should also point up. if not minimized in narrow width, use left right arrows instead of the
+> horizontal scroll bar."* · *"for the overall schedule setup, reduce the
+> words/description/instructions throughout the pages"*
+
+### ⚠️⚠️ MINIMISING PUT THE STRIP BACK IN A LEFT COLUMN, AND THAT WAS A SPECIFICITY LOSS
+
+`.sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr }` is **(0,2,0)**; the `@media
+(max-width:820px)` block's `.sbld-wrap { grid-template-columns:1fr }` is **(0,1,0)**. A media query
+adds no specificity, so the minimised rule won everywhere and collapsing the steps at phone width
+threw them back into a 46px column. **Measured on the base at both narrow widths: `railW=46`.**
+
+⚠️ Restated at **equal** specificity, later in source, so it wins on **order**. Raising specificity
+instead would have to be raised again the next time that rule gains a class — which is how this pair
+got out of step in the first place.
+
+### ⚠️⚠️ THE ARROW POINTS UP, DERIVED RATHER THAN CHOSEN
+
+`sbldMinSync` already emits `chevronLeft` expanded and `chevronRight` collapsed. `+90°` turns ◄ into
+▲ and ► into ▼, so **one rule gives both states the right direction** and the JS needs no notion of
+the viewport at all. A second place deciding a direction is a second place to get it wrong.
+
+⚠️ `chevronUp` is **not** in the shared set, and `icons.js` is not a module's to edit — rotating the
+glyph that is already there also means no shared asset to bump across 21 pages for a two-state
+problem.
+
+### Left/right arrows instead of the scrollbar
+
+- ⚠️ **Siblings of the rail, never children** — the rail is rebuilt by `innerHTML` on every render and
+  would throw them away, the same reason the minimise toggle already sits outside it.
+- ⚠️ **Grid AREAS rather than `order`** on the flex children: the markup order (toggle, rail, arrows)
+  is the reading order for the keyboard and for a screen reader, and an `order` list is a second
+  thing to keep in step with it.
+- ⚠️⚠️ **Whether to show them is MEASURED, never inferred from the step count.** Six steps fit on a
+  phone and twelve do not, the count changes per mode, and an arrow that can scroll nothing is a
+  control that does nothing. `sbldRailArrows` is called from `sbldMinSync` — which **both** rails
+  already run after every rebuild — so it re-measures at exactly the moments the list can change
+  length, rather than from a second set of call sites that would drift from the first. The two rails
+  have different renderers; that is precisely the drift this avoids.
+- ⚠️ The toggle stops **centring** as well as stretching: `align-self:center` is right for a 46px
+  column and parks a 34px button in the middle of the page in a full-width row.
+
+### ⚠️⚠️ A GAP MEASURING FOUND: A MINIMISED STRIP COULD HAVE HAD NEITHER
+
+The arrows are hidden when minimised (the owner asked for them in the *not*-minimised case). Gating
+the scrollbar suppression on `.sbld-hasarw` alone would therefore leave a minimised strip that
+overflows with **no scrollbar and no arrows** — steps that cannot be reached at all. **12 minimised
+steps fit at 390px today**, so it would have shipped working and broken on the first 16-step mode.
+Both suppression rules carry `:not(.sbld-railmin)`, and the harness forces the case at 200px.
+
+### Item 10 — the prose
+
+**1,347 → 1,168 words across the always-visible `.sbld-lede` / `.sbld-hint` / `.sbld-note` blocks**,
+measured against `origin/main` with `tools/scan.js` (which self-tests on ten shapes) rather than a
+regex of my own. **79 blocks before and after** — every block was tightened, none deleted.
+
+The rule is this file's own, from the `(aa)` / `(a4)` / `(a5)` passes: a sentence stating a
+**consequence the planner acts on** stays; a sentence explaining **why the design is that way**, or
+restating a control that is on screen and labelled, goes.
+
+⚠️⚠️ **The import-relationships lede lost its gesture sentence because it was on screen TWICE.**
+`.sbld-focuslegend`, a few dozen pixels below it, already reads *"Drag a bar onto another to connect.
+Click a line to edit or unlink it."* — and it is the **better** of the two, because it says something
+different in View mode. *"switch to **View** to see what drives what"* was a **third** copy:
+`#b-impmode`'s own label is *"◉ View mode — click to Edit"*. The counts, which nothing else on the
+step states, stay.
+
+⚠️⚠️ **KEPT WHOLE, DELIBERATELY: every destructive-path warning.** *"Replace on this path clears the
+whole project, not one package"*, *"Replace then clears only that package"*, *"This replaces the
+current links"*, *"pressing Import is the first and only thing that changes the schedule"*. Those are
+the sentences the `(a6)` pass protected, and the reason it refused to cut this step by word count.
+The longest block left is 27 words and it is one of them.
+
+### Verified
+
+- The rail **driven in a real browser** at 1440 / 760 / 390, expanded and minimised, against the
+  shipped CSS and the shipped markup with `sbldRailArrows` **sliced out of the file and executed** —
+  **48 assertions, 0 failed**. The arrow really scrolls (0 → 238) and the far arrow goes live when it
+  does.
+- ⚠️ **Contrast pinned to the SHA `437e765`, never `HEAD`: it BITES 6/6**, reporting `railW=46` at
+  both narrow widths — the reported defect reproduced — plus no rotation and no arrows.
+- Eleven module suites green on the merged tree: `lsm` 683/0, `calendar-editor` 23/0, `builder`
+  149/0, `syntax` 4/0, `actsetup` 133/0, `towertypes` 79/0, `phasenet` 135/0, `autotrace` 32/0,
+  `towerseq` 48/0, `shapeedit` 36/0, `actdnd` 48/0. `wiring-check` **139/0**; `dead-hooks` 9 (the
+  documented baseline); `dark-remap` 0; `toolbar-order` 15 bars / 0 out of order. Inline script
+  parses; CSS braces **+15/+15** against `origin/main`'s own recorded off-by-one; 0 NUL bytes.
+
+### ⚠️⚠️ Two faults of my own, recorded rather than smoothed over
+
+1. **I wrote `'Drag a row's grip'` into a SINGLE-QUOTED JS string.** That is the 2026-09-10 `(v6)`
+   outage exactly — the apostrophe terminates the literal, and a syntax error anywhere in this
+   ~3.4MB inline block kills the whole module. The parse check caught it; every added line was then
+   swept for the same shape. **Anything with an apostrophe goes in as `’`, which needs no escape.**
+2. **A `git stash` inside a verification command SWALLOWED THE ENTIRE CHANGE**, and the suites that
+   ran after it in the same command reported the **base's** numbers as mine. This log records that
+   failure twice, in bold, and says *"do not stash in a shared clone at all"*. Recovered from
+   `stash@{0}` and every check re-run against the real tree. ⚠️ The tell was `git diff --stat` coming
+   back **empty**, not the commands' own output — which is the same reading that caught it the last
+   two times.
+
+⚠️ **Three harness faults, each of which reported a defect that does not exist:** a non-greedy
+`</div>` regex truncated the railcol at the rail and **dropped the arrows**, so the first run measured
+a page that had none; a **stale `mod.css`** survived a source edit and reported a fixed rule as still
+broken (this repo's stale-`?v=` trap in miniature — it is re-sliced from the final file every run
+now); and **`inline-flex` on a GRID ITEM blockifies to `flex`**, so asserting the literal reported
+shown arrows as hidden.
+
+⚠️ **Not verified signed in** — no real project has been loaded, so the rail is proved against the
+shipped CSS with a 12-step fixture rather than a live setup.
+
 ## 2026-09-18 (d) — The Activities step: SAP Activities, one heading per trade, and an activity that can be several
 
 Owner's nine numbered items on Schedule Setup ▸ Activities: *"instead of Holding List, name this

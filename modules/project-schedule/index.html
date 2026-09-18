@@ -3631,6 +3631,19 @@
     /* ⚠️ The icon must not be squeezed by the label's flex share, and it should not inherit
        the label's colour transition on hover as a separate step. */
     .sbld-mintog svg { flex:none; display:block; }
+    /* ⚠️⚠️ THE STEP STRIP'S OWN ARROWS, AND THEY EXIST ONLY AT NARROW WIDTH. Owner 2026-09-17:
+       *"if not minimized in narrow width, use left right arrows instead of the horizontal scroll
+       bar."* `display:none` here is the whole desktop story — the sticky column never sees them, so
+       nothing about the wide layout changes. The 820px block turns them on, and only when the strip
+       genuinely overflows: an arrow that can scroll nothing is a control that does nothing, so the
+       overflow is MEASURED per render rather than inferred from the step count. */
+    .sbld-railarw { display:none; flex:none; width:28px; min-height:30px; align-items:center;
+      justify-content:center; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      background:var(--pd-card); color:var(--pd-muted); cursor:pointer; padding:0; }
+    .sbld-railarw:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); border-color:var(--pd-muted); }
+    .sbld-railarw:disabled { opacity:.4; cursor:default; }
+    .sbld-railarw:focus-visible { outline:2px solid var(--pd-focus); outline-offset:1px; }
+    .sbld-railarw svg { display:block; }
     .sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr; gap:12px; }
     /* Collapsed: a square icon button, the shape this app uses for every icon-only control,
        rather than a shrunken pill. 34px is the same target as the module-bar buttons. */
@@ -3641,9 +3654,12 @@
     .sbld-wrap.sbld-railmin .sbld-step > span:not(.sbld-step-n) { display:none; }
     .sbld-wrap.sbld-railmin .sbld-step-t, .sbld-wrap.sbld-railmin .sbld-step-s,
     .sbld-wrap.sbld-railmin .sbld-step2ct { display:none; }
-    /* Same cap for the rail when it is the sticky element itself (Cost Loading's `#ps-cl-rail`
-       is not wrapped in a `.sbld-railcol`). ⚠️ Nested inside one, the rule above already scrolls
-       and this one is made `position:static` a few lines up — so the two never both scroll. */
+    /* Same cap for a rail that is the sticky element ITSELF. ⚠️ A CORRECTION: this note used to
+       read *"Cost Loading's `#ps-cl-rail` is not wrapped in a `.sbld-railcol`"*, and that is false —
+       both `.sbld-wrap` instances in this file wrap their rail in one. So today every rail is
+       nested, the rule below is made `position:static` a few lines up, and the two can never both
+       scroll. Kept rather than deleted, because a rail dropped into a page WITHOUT the wrapper
+       still needs the cap, and a rule that silently stops applying is worse than one that says so. */
     .sbld-rail { position:sticky; top:12px; display:flex; flex-direction:column; gap:4px;
       max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
     .sbld-railcol > .sbld-rail { max-height:none; overflow-y:visible; }
@@ -3673,7 +3689,12 @@
        and was unreachable. With min-width:0 the track stays bounded and each inner scroll container
        (.sbld-canvaswrap / .sbld-xlwrap) handles its own overflow. */
     .sbld-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:20px; min-height:55vh; min-width:0; }
-    .sbld-panel h2 { margin:0 0 4px; font-size:var(--pd-fs-lg); }
+    /* ⚠ ONE RUNG DOWN, AND IT IS WIZARD-WIDE (all six Setup steps + Cost Loading's four).
+       Owner 2026-09-18: *"reduce font sizes ... make page minimalist"*. `--pd-fs-lg` is
+       documented in the token block as "the largest heading in the app" — a step heading inside
+       a panel, under a module bar that already names the module, is not that. The prose tier
+       below it steps down with it so the ramp keeps its shape rather than flattening. */
+    .sbld-panel h2 { margin:0 0 4px; font-size:var(--pd-fs-md); }
     /* ⚠⚠ NO CAP, FOR THE SAME REASON `.sbld-how` HAS NONE. This was `max-width:70ch` (602px),
        which fills **43%** of the owner's 1398px panel — visibly narrower than everything around it,
        and the other half of the “unnecessary wrapping” he reported on the step screenshots.
@@ -3685,7 +3706,9 @@
        four rules cap in `ch`, and the other three stay. `.ps-smy-note` and `.ps-smy-vs` belong to
        the schedule SUMMARY view (emitted by `sect`/`card`/`smyMsStrip`), not to the Setup;
        `.ps-cal-holname` is the holiday chip's deliberate 22ch truncation, which carries a title. */
-    .sbld-panel .sbld-lede { margin:0 0 10px; color:var(--pd-muted); font-size:var(--pd-fs-base); }
+    /* ⚠ `--pd-fs-sm` is the token block's own "secondary body" rung, which is what a muted
+       one-sentence purpose line is. Wizard-wide, like the heading above. */
+    .sbld-panel .sbld-lede { margin:0 0 10px; color:var(--pd-muted); font-size:var(--pd-fs-sm); }
     /* ---- "How to use this step" (the disclosure) -------------------------------------------
        Owner 2026-09-03: *"on the schedule setup, please make the instructions more direct and
        concise. the text takes too much space."* Step 8's lede alone ran to ~150 words and pushed
@@ -3779,12 +3802,14 @@
     .sbld-seqname { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--pd-fs-base); }
     .sbld-seqdur { flex:none; font-size:var(--pd-fs-xs); color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     .sbld-tag { display:inline-block; font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
-    .sbld-hint { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin:6px 0 0; }
+    /* ⚠ A hint under a control is a caption, and `--pd-fs-xs` is the caption rung this module
+       already uses for the trade headings in the SAP Activities pane. Wizard-wide. */
+    .sbld-hint { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin:6px 0 0; }
     /* A section heading inside a step — the Setup had no <h3> treatment, so one <h3> carried
        `font-size:13px` inline. 13px IS --pd-fs-base; on the scale by luck, and invisible to any
        stylesheet sweep while it lived in a JS string. */
     .sbld-sech { font-size:var(--pd-fs-base); font-weight:700; margin:14px 0 6px; }
-    .sbld-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:22px; text-align:center; border:1px dashed var(--pd-line); border-radius:var(--pd-radius-md); }
+    .sbld-empty { color:var(--pd-muted); font-size:var(--pd-fs-sm); padding:22px; text-align:center; border:1px dashed var(--pd-line); border-radius:var(--pd-radius-md); }
     .sbld-save-state { font-size:var(--pd-fs-sm); color:var(--pd-muted); white-space:nowrap; }
     .sbld-tablewrap { overflow:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); }
     table.sbld-tbl { border-collapse:collapse; width:100%; font-size:var(--pd-fs-sm); }
@@ -4480,7 +4505,15 @@
     .sbld-note b { color:var(--pd-ink); }
     .sbld-note-warn { border-left-color:var(--pd-warn, #C77700); }
     .sbld-phgrid { display:grid; gap:12px; margin-top:10px; }
-    .sbld-phcard { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); padding:11px 13px 12px; }
+    /* ⚠️⚠️ `min-width:0` IS THE WHOLE OF THE NARROW-WINDOW FIX, owner 2026-09-18: *"when window
+       width is narrow, the tiles of phases overflow."* A GRID ITEM defaults to `min-width:auto`, so
+       it refuses to shrink below its own min-content — and this card's min-content includes the
+       Gantt's non-shrinkable tree column plus the plot's full day scale. Measured before: at a
+       1100px window the card rendered 1018px wide inside an 828px panel and the PAGE scrolled
+       sideways; at 420px it was 820px inside 396px. Nothing about the Gantt was wrong — the card
+       was simply never allowed to be as narrow as the room it had. */
+    .sbld-phcard { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card);
+      padding:11px 13px 12px; min-width:0; }
     .sbld-phcard.on { border-color:var(--pd-red-mid, var(--pd-red)); box-shadow:var(--pd-shadow); }
     /* The Execution Phase card is a STATEMENT, not a control — it is what the other steps built, so
        it carries no tick and cannot be edited here. The tint is what says so at a glance. */
@@ -4498,10 +4531,21 @@
        plot's tick strip is paid for by an equal pad on the tree. A mismatch here reads as bars
        belonging to the wrong activity, which is the one thing a Gantt may not do. */
     .sbld-gantt { display:flex; align-items:stretch; margin-top:9px; border:1px solid var(--pd-line);
-      border-radius:var(--pd-radius-md); background:var(--pd-card); overflow:hidden; }
-    .sbld-gtree { flex:0 0 clamp(210px, 34%, 320px); border-right:1px solid var(--pd-line);
-      padding:22px 0 6px; min-width:0; }
+      border-radius:var(--pd-radius-md); background:var(--pd-card); overflow:hidden; min-width:0; }
+    /* ⚠️ The tree's share is a percentage of whatever the card ended up with, floored at 140px —
+       below that a name is six characters and a name clipped to six characters is not a name. The
+       PLOT is what gives way, because it can: it scrolls on its own. */
+    .sbld-gtree { flex:0 0 clamp(140px, 32%, 280px); border-right:1px solid var(--pd-line);
+      padding:0 0 6px; min-width:0; }
     .sbld-gplot { flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:6px; }
+    /* The tree's column headers. ⚠️ Its height and box-sizing must match `.sbld-gticks` exactly —
+       the two panes' rows are in step only because these two strips are. */
+    .sbld-ghead { display:flex; align-items:center; gap:5px; height:22px; box-sizing:border-box;
+      padding:0 6px; font-size:var(--pd-fs-micro); font-weight:700; letter-spacing:.04em;
+      text-transform:uppercase; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); }
+    .sbld-ghead-n { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sbld-ghead-d { flex:0 0 46px; text-align:right; }
+    .sbld-ghead-x { flex:0 0 20px; }
     .sbld-gticks { position:relative; height:22px; }
     .sbld-gtick { position:absolute; top:0; bottom:0; border-left:1px dashed rgba(128,128,128,.28); }
     .sbld-gtick span { position:absolute; left:3px; top:4px; font-size:var(--pd-fs-micro);
@@ -4510,29 +4554,37 @@
     .sbld-gsvg { position:absolute; inset:0; overflow:visible; pointer-events:none; }
     /* ⚠️ The arrow is drawn thin and hit with a fat transparent twin — see the wiring. Both carry
        `pointer-events` explicitly because the svg above turns them off for the layer. */
-    .sbld-garrow { fill:none; stroke:var(--pd-muted); stroke-width:1.4; marker-end:url(#none); }
+    /* ⚠️ `marker-end` is an ATTRIBUTE on the path now, naming this card's own marker — it used to
+       be `url(#none)` here, a reference to a marker nothing defines, i.e. no head at all. */
+    .sbld-garrow { fill:none; stroke:var(--pd-muted); stroke-width:1.2; }
+    /* ⚠️ A marker's contents inherit from where the <marker> SITS, not from the path that
+       references it — it is inside this card's own <svg>, so `--pd-muted` resolves and the head
+       follows the theme like the line it belongs to. */
+    .sbld-gah { fill:var(--pd-muted); }
     .sbld-ghit { fill:none; stroke:transparent; stroke-width:11; pointer-events:stroke; cursor:context-menu; }
     .sbld-ghit:hover + .sbld-glab, .sbld-garrow:hover { stroke:var(--pd-red); }
     .sbld-glab { font-size:9.5px; fill:var(--pd-muted); text-anchor:middle; pointer-events:all; cursor:context-menu;
       paint-order:stroke; stroke:var(--pd-card); stroke-width:3px; }
-    .sbld-gbar { position:absolute; height:16px; border-radius:3px; background:var(--pd-red-mid);
+    /* ⚠️ 16px → 11px, in step with `.sbld-gr`'s 26 → 20 and the renderer's own ROW/BAR/BAR_T.
+       The three numbers are one set; see the note on them. */
+    .sbld-gbar { position:absolute; border-radius:2px; background:var(--pd-red-mid);
       box-shadow:inset 0 0 0 1px rgba(128,128,128,.35); cursor:default; }
     .sbld-gbar.is-cycle { background:var(--pd-warn-bg); box-shadow:inset 0 0 0 1px var(--pd-warn-line); }
     /* The link handle. ⚠️ It sits just OUTSIDE the bar's right edge so a short bar still has one:
        inside, a 4px bar would have no room for it and the shortest activities — the ones most
        likely to be a hand-off — would be the ones you could not link from. */
-    .sbld-ghandle { position:absolute; right:-5px; top:3px; width:10px; height:10px; border-radius:50%;
+    .sbld-ghandle { position:absolute; right:-5px; top:50%; margin-top:-4.5px; width:9px; height:9px; border-radius:50%;
       background:var(--pd-card); box-shadow:0 0 0 1.5px var(--pd-red); cursor:crosshair; opacity:0; transition:opacity .12s; }
     .sbld-gbar:hover .sbld-ghandle, .sbld-ghandle:active { opacity:1; }
     .sbld-grub { position:absolute; border:1px dashed var(--pd-red); border-radius:2px; pointer-events:none; }
     /* tree rows */
-    .sbld-gr { display:flex; align-items:center; gap:5px; height:26px; padding-right:6px; }
+    .sbld-gr { display:flex; align-items:center; gap:5px; height:20px; padding-right:6px; min-width:0; }
     .sbld-gr.is-sel { background:rgba(128,128,128,.14); }
     .sbld-gr.is-drop { box-shadow:inset 0 0 0 2px var(--pd-red); border-radius:3px; }
     .sbld-gr-wbs .sbld-gname-wbs { font-weight:700; }
     .sbld-gr-wbs.is-mirror .sbld-gname-wbs { color:var(--pd-muted); }
-    .sbld-gcar { flex:0 0 12px; text-align:center; color:var(--pd-muted); cursor:pointer;
-      font-size:var(--pd-fs-xs); user-select:none; }
+    .sbld-gcar { flex:0 0 11px; text-align:center; color:var(--pd-muted); cursor:pointer;
+      font-size:var(--pd-fs-micro); user-select:none; }
     .sbld-ggrip { flex:0 0 10px; cursor:grab; color:var(--pd-muted); font-size:var(--pd-fs-xs);
       line-height:1; letter-spacing:-2px; user-select:none; }
     .sbld-ggrip:active { cursor:grabbing; }
@@ -4543,13 +4595,26 @@
       mid-word with nothing saying so, which reads as a different (shorter) name rather than as a
       clipped one. The full value is still one click away, and the row carries no title because the
       input's own value is what a planner would copy. */
+    /* ⚠️ `font:inherit` took the panel's own 14px body size, which on a 20px row is the single
+       heaviest thing in the card. Owner 2026-09-18: *"reduce font sizes of activities and WBS to
+       maintain minimalist look."* The FAMILY still inherits — only the size is stated. */
+    /* ⚠️⚠️ THE BOX IS BOUNDED AND THE FONT IS NOT, AND THAT IS DELIBERATE. Below 700px
+       `dashboard.css` pins EVERY input at `--pd-fs-tap` (16px) with `!important`, because iOS zooms
+       the page on a focused field under 16px — its own comment calls that "the one place a module
+       does not get a vote", and it is right. So the phone cannot have 11px names. What it can have
+       is a row that still fits: a border-box 18px tall with a 16px line box sits inside the 20px
+       row at either size, so the tree's rows and the plot's bars stay in step at every width. The
+       alternative — a taller row below 700px — would desync the two panes, because the plot's row
+       pitch is a JS constant and a media query cannot reach it. */
     .sbld-gname { flex:1 1 auto; min-width:0; border:1px solid transparent; background:none;
-      font:inherit; color:var(--pd-ink); padding:2px 4px; border-radius:3px; text-overflow:ellipsis; }
+      font:inherit; font-size:var(--pd-fs-xs); color:var(--pd-ink); padding:0 4px; border-radius:3px;
+      box-sizing:border-box; height:18px; line-height:16px; text-overflow:ellipsis; }
     .sbld-gname:focus { border-color:var(--pd-line); background:var(--pd-bg); outline:none; }
     .sbld-gdur { flex:0 0 46px; text-align:right; font-variant-numeric:tabular-nums; border:1px solid transparent;
-      background:none; font:inherit; color:var(--pd-muted); padding:2px 2px; border-radius:3px; }
+      background:none; font:inherit; font-size:var(--pd-fs-xs); color:var(--pd-muted); padding:0 2px; border-radius:3px;
+      box-sizing:border-box; height:18px; line-height:16px; }
     .sbld-gdur:focus { border-color:var(--pd-line); background:var(--pd-bg); color:var(--pd-ink); outline:none; }
-    .sbld-gdel { flex:0 0 auto; padding:0 4px; height:20px; background:none; border:0; color:var(--pd-muted); opacity:0; }
+    .sbld-gdel { flex:0 0 auto; padding:0 4px; height:18px; background:none; border:0; color:var(--pd-muted); opacity:0; }
     .sbld-gr:hover .sbld-gdel, .sbld-gr.is-sel .sbld-gdel { opacity:1; }
     .sbld-gdel:hover { color:var(--pd-red); }
     .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:9px; }
@@ -4568,8 +4633,18 @@
     /* ⚠️ On a phone the tree gives up its share first: a bar you cannot read is still a bar, and a
        name clipped to six characters is not a name. Below this the plot scrolls on its own. */
     @media (max-width:720px) {
-      .sbld-gtree { flex-basis:160px; }
-      .sbld-gdur { flex-basis:38px; }
+      /* ⚠️ The flex-basis is a clamp on the card's own width now, so it already gives way — what
+         is left to do here is the duration column, whose 46px is three digits and a caret. */
+      .sbld-gdur, .sbld-ghead-d { flex-basis:38px; }
+    }
+    /* ⚠️⚠️ 700px, NOT 720 — this block must fire on exactly the breakpoint `dashboard.css`
+       raises every input to `--pd-tap` on, and on exactly the one `_gNarrow` reads. Three numbers
+       that have to agree, so they are all written as 700. The height is the 44px control plus its
+       own border and the row's breathing space; `--gh` lets the two inputs fill it rather than
+       sitting as a 44px island in a 48px row. */
+    @media (max-width:700px) {
+      .sbld-gr { height:48px; }
+      .sbld-gname, .sbld-gdur { height:44px; line-height:20px; }
     }
     /* ⚠️ THE IMPORT TREE HAS ITS OWN ROW, and it must: it was borrowing `.sbld-phrow`, whose grid is
        `14px 1fr 74px 168px 34px` for a PHASE ACTIVITY (grip, name, duration, window, delete). An
@@ -4649,8 +4724,6 @@
       .sbld-improw { grid-template-columns:26px minmax(0,1fr); row-gap:4px; }
       .sbld-improw .pd-select, .sbld-improw-x, .sbld-improw-inh { grid-column:2; }
     }
-    .sbld-phtotal { margin:12px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
-    .sbld-phtotal b { color:var(--pd-ink); font-variant-numeric:tabular-nums; }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
     .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:var(--pd-radius-lg); background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
@@ -4792,7 +4865,10 @@
        button-header rules this pass brought with it are deleted rather than left matching nothing —
        and the duplicate group-name / group-count rules they came with went too, since the copies
        further down the sheet are the ones that were winning on source order anyway. */
-    .sbld-hold-item { width:100%; display:flex; align-items:baseline; gap:8px; text-align:left; border:0; background:none; color:var(--pd-ink); font:inherit; cursor:pointer; padding:4px 8px 4px 18px; }
+    /* ⚠ `font:inherit` alone left the row box at `--pd-fs-body` (14px) — the largest type box
+       in a pane whose trade headings are 11 and whose name span is 12.5. Nothing rendered at 14;
+       it only sized the flex line box, i.e. row height this pane does not need. */
+    .sbld-hold-item { width:100%; display:flex; align-items:baseline; gap:8px; text-align:left; border:0; background:none; color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm); cursor:pointer; padding:4px 8px 4px 18px; }
     .sbld-hold-item:hover { background:var(--pd-bg); }
     /* ⚠ An INSET ring, not `outline` + `outline-offset`: the rows are flush now, so an offset
        outline bleeds over the row above and below it. */
@@ -4827,14 +4903,55 @@
     .sbld-hold-grp[open] > summary::before { transform:rotate(90deg); }
     .sbld-hold-grp > summary:hover { background:var(--pd-card); }
     .sbld-hold-gname { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .sbld-hold-gn { flex:0 0 auto; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-hold-gn, .sbld-hold-l1c { flex:0 0 auto; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     .sbld-hold-gsel { flex:0 0 auto; font-size:var(--pd-fs-micro); color:var(--pd-red); }
     /* ⚠ `.sbld-hold-list` is a flex column with `gap:4px`, which spaces the GROUPS. The codes
        inside a group are block children of <details> and that gap never reaches them. */
     /* ⚠ No per-row margin: `.sbld-hold-list`'s own gap spaces the GROUPS, and the rows inside a
        group are flush by design — a 4px margin per row puts back most of the height this pass
        took out (43px → 25px). */
-    .sbld-hold-grp > .sbld-hold-item { width:100%; margin:0; }
+    /* ⚠⚠ RETARGETED, NOT DELETED. This was `.sbld-hold-grp > .sbld-hold-item` — a DIRECT-child
+       selector — and the 2026-09-18 L3 pass put every row inside a `.sbld-hold-row` wrapper so the
+       caret could be a sibling button rather than a button nested inside one. A direct-child rule
+       that silently stops matching is the shape this file has been bitten by before (`.ps-legend`
+       hid nothing for four weeks); the wrapper is named here so it cannot happen again. */
+    .sbld-hold-row > .sbld-hold-item { width:100%; margin:0; }
+    /* ---- L1 / L2 / L3 inside the SAP Activities pane -------------------------------------------
+       Owner 2026-09-18: *"by default the SAP activities list should only show up to level 2. but
+       for each level 2, provide collapse button to show level 3"*, and *"if level 1 is dragged from
+       SAP activities list to selection, it carries all the level 3 activities as a merged
+       activity."* */
+    .sbld-hold-row { display:flex; align-items:stretch; }
+    /* ⚠ The caret is a FIXED-WIDTH gutter and a leaf gets an empty one of the same width, so every
+       row's name starts on the same x whether or not it has children — a ragged left edge on a
+       190-row list reads as a rendering fault. */
+    .sbld-hold-tog { flex:0 0 16px; width:16px; display:flex; align-items:center; justify-content:center;
+      border:0; background:none; padding:0; cursor:pointer; color:var(--pd-muted);
+      font-size:var(--pd-fs-micro); line-height:1; }
+    .sbld-hold-tog.is-leaf { cursor:default; }
+    .sbld-hold-tog:hover { color:var(--pd-ink); }
+    .sbld-hold-tog:focus-visible { outline:2px solid var(--pd-focus); outline-offset:-2px; }
+    /* ⚠ `padding-left` drops to 2px: the 16px caret gutter beside it already supplies the indent
+       the 18px was providing, and keeping both would push every name 16px further right. */
+    .sbld-hold-row > .sbld-hold-item { padding-left:2px; }
+    /* The L1 rung. Quieter than the trade summary above it (no border, no fill) — it is a label on
+       a run, not a container you can fold. */
+    .sbld-hold-l1 { display:flex; align-items:center; gap:6px; padding:3px 7px 3px 6px; margin:2px 0 0;
+      font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+      color:var(--pd-muted); cursor:grab; }
+    .sbld-hold-l1:hover { color:var(--pd-ink); background:var(--pd-bg); }
+    .sbld-hold-l1.dragging { opacity:.45; cursor:grabbing; }
+    .sbld-hold-l1n { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* The `+N` on a group row: how many L3 items it will bring in. ⚠ INK ON THE RED TINT, never
+       `color:var(--pd-red)` — brand red as 10px text measures 4.12 light / 3.40 dark against the
+       ground it actually paints on, under AA both ways. Same answer `.ps-vs-chip.on` arrived at. */
+    .sbld-hold-kn { flex:none; font-size:var(--pd-fs-micro); font-weight:700; color:var(--pd-ink);
+      background:rgba(238,49,36,.14); border-radius:999px; padding:0 5px; line-height:1.5; }
+    /* An L3 row: read-only, not pickable, indented past the caret gutter so it reads as beneath. */
+    .sbld-hold-kid { display:flex; align-items:baseline; gap:8px; padding:2px 8px 2px 34px;
+      font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    .sbld-hold-kcode { flex:none; font-variant-numeric:tabular-nums; }
+    .sbld-hold-kname { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     @media (max-width:900px) { .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
     .sbld-scbtn { padding:4px 9px; font-size:var(--pd-fs-xs); }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
@@ -4968,7 +5085,9 @@
        same colour, it just draws within the cell it belongs to. */
     table.sbld-xl input:focus-visible, table.sbld-xl select:focus-visible { outline-offset:-2px; }
     /* step-4 grid: link-select button + pending/focus row states (don't fight the cell selection tint) */
-    table.sbld-xl .t4-link { width:26px; height:24px; padding:0; font-size:var(--pd-fs-base); line-height:1; justify-content:center; }
+    /* ⚠ A glyph in a 26×24 box is a control, not body copy — `--pd-fs-base` was a rung above
+       every other control in this grid. */
+    table.sbld-xl .t4-link { width:26px; height:24px; padding:0; font-size:var(--pd-fs-sm); line-height:1; justify-content:center; }
     table.sbld-xl tr.pend .t4-link { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     table.sbld-xl tr.pend-dst .t4-link { background:#2f6fed; color:#fff; border-color:#2f6fed; }
     table.sbld-xl tr.sbld-focus > td.xl-rn { color:var(--pd-red); font-weight:800; }
@@ -5193,7 +5312,68 @@
     .sbld-ld-t.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .sbld-ld-row input[type=number] { font:inherit; padding:4px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
     @media (max-width:900px) { .sbld-seq2 { grid-template-columns:1fr; } }
-    @media (max-width:820px) { .sbld-wrap { grid-template-columns:1fr; } .sbld-rail { position:static; flex-direction:row; overflow-x:auto; } .sbld-step-s { display:none; } }
+    /* ⚠⚠ origin/main's ANSWER TO THE SAME OWNER REPORT WINS HERE, AND IT IS THE FULLER ONE.
+       This branch answered *"in narrow width, when scrolling down, the sticky tab for the steps
+       overlaps"* with the minimum: drop `.sbld-railcol` to `position:static` at one column. main
+       (2026-09-18, the rail pass) rebuilt the whole strip -- grid areas so the markup order stays
+       the reading order, left/right arrows in place of a scrollbar, the minimise toggle pinned
+       above rather than centred, and the chevron rotated so it points up. That is a superset of
+       one declaration, so it ships and the narrower rule goes.
+       ⚠⚠ BUT IT DOES NOT ANSWER ITEM 6, AND ONLY MEASURING SAID SO. main's block restyles the
+       strip and never clears the BASE rule's `position:sticky; top:12px; max-height; overflow-y`,
+       so on the merged tree the overlap reproduces exactly as reported -- measured at scrollY 900,
+       `position:sticky`, rail pinned at `top:12` with the panel at -765, overlapping **736 x 105**
+       at 760px and **396 x 105** at 420px, and `elementFromPoint` at the rail's own centre
+       returning a step. (I had written the opposite here, reasoning that a sticky grid ITEM cannot
+       travel outside its own grid area. The harness disagreed; the harness is right.) So the one
+       declaration this branch added rides ON TOP of main's block rather than being replaced by it.
+       ⚠ `max-height` / `overflow` go with `position`: capping to the viewport is what makes a TALL
+       sticky COLUMN reachable at its bottom (see the note upstream); on a static, single-row strip
+       it can only clip the toggle above it and give a one-column page a second scrollbar. */
+    /* ==== NARROW WIDTH: THE STEPS ARE A STRIP ON TOP ================================
+       Owner 2026-09-17: *"if window is narrow, the steps go to the top, the minimize button should
+       just remove the labels but stay on top, not move to the left. the arrow of the minimize button
+       should also point up. if not minimized in narrow width, use left right arrows instead of the
+       horizontal scroll bar."*
+       ⚠️⚠️ MINIMISING PUT THE RAIL BACK IN A COLUMN, and that was a specificity loss rather than an
+       oversight: `.sbld-wrap.sbld-railmin { grid-template-columns:46px 1fr }` is (0,2,0) and beat the
+       (0,1,0) `.sbld-wrap` that used to sit here, so collapsing the steps at phone width threw them
+       back to a 46px left column — the reported defect. Restated at EQUAL specificity and later in
+       source, so it wins on order; raising specificity instead would have had to be re-raised the
+       next time that rule gains a class. */
+    @media (max-width:820px){
+      .sbld-wrap, .sbld-wrap.sbld-railmin { grid-template-columns:1fr; }
+      .sbld-step-s { display:none; }
+      /* Grid AREAS rather than reordering flex children: the markup order (toggle, rail, arrows) is
+         the reading order for a screen reader and for the keyboard, and an `order` list is a second
+         thing to keep in step with it. The toggle keeps a full line above the strip. */
+      .sbld-railcol { position:static; top:auto; max-height:none; overflow:visible;
+        display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+        grid-template-areas:"tog tog tog" "lt rail rt"; align-items:center; gap:6px; }
+      .sbld-railcol > .sbld-mintog { grid-area:tog; }
+      .sbld-railcol > .sbld-rail { grid-area:rail; position:static; flex-direction:row; overflow-x:auto; }
+      .sbld-railcol > .sbld-railarw[data-railarw="-1"] { grid-area:lt; }
+      .sbld-railcol > .sbld-railarw[data-railarw="1"] { grid-area:rt; }
+      /* ⚠️ The toggle stops stretching AND stops centring. `align-self:center` is right for a 46px
+         column and wrong for a full-width row, where it parks a 34px button in the middle of the
+         page with nothing either side of it. */
+      .sbld-wrap.sbld-railmin .sbld-mintog { align-self:start; justify-self:start; }
+      /* ⚠️⚠️ THE ARROW POINTS UP, DERIVED RATHER THAN CHOSEN. The JS already emits `chevronLeft`
+         expanded and `chevronRight` collapsed, and +90° turns ◄ into ▲ and ► into ▼ — so both states
+         stay correct with no second place deciding a direction, and the JS needs no notion of the
+         viewport at all. ⚠️ `chevronUp` is not in the shared set and `icons.js` is not a module's to
+         edit; rotating the one that is there costs nothing and adds no shared asset to bump. */
+      .sbld-mintog svg { transform:rotate(90deg); }
+      /* ⚠️⚠️ THE SCROLLBAR GOES ONLY WHERE THE ARROWS REPLACE IT, AND `:not(.sbld-railmin)` IS WHAT
+         MAKES THAT TRUE. The arrows are hidden when minimised (the owner asked for them in the
+         not-minimised case), so suppressing the scrollbar on `.sbld-hasarw` alone would have left a
+         minimised strip that overflows with NEITHER — no scrollbar and no arrows, i.e. steps that
+         cannot be reached at all. Measured: 12 minimised steps fit at 390px today, so this is the
+         case that would have shipped working and broken on the first 16-step mode. */
+      .sbld-wrap:not(.sbld-railmin) .sbld-railcol.sbld-hasarw > .sbld-rail { scrollbar-width:none; }
+      .sbld-wrap:not(.sbld-railmin) .sbld-railcol.sbld-hasarw > .sbld-rail::-webkit-scrollbar { display:none; }
+      .sbld-wrap:not(.sbld-railmin) .sbld-railcol.sbld-hasarw > .sbld-railarw { display:inline-flex; }
+    }
     /* ==== DRAWING A LINK BY HAND, AS A PANEL =========================================
        Owner 2026-09-17: *"there are way too many buttons and allow the manual intervention of
        linking to be more seen."* Both sequencing steps put their linking flow here instead of
@@ -5784,6 +5964,11 @@
           <div class="sbld-railcol">
             <button class="sbld-mintog" data-sbldmin="1" type="button" title="Minimise the step list"></button>
             <div class="sbld-rail" id="ps-bld-rail"></div>
+            <!-- ⚠️ Siblings of the rail, never children: the rail is rebuilt by innerHTML on
+                 every render and would throw them away — the same reason the minimise toggle sits
+                 out here. Hidden outright above 820px. -->
+            <button class="sbld-railarw" data-railarw="-1" type="button" aria-label="Show earlier steps" title="Show earlier steps"></button>
+            <button class="sbld-railarw" data-railarw="1" type="button" aria-label="Show later steps" title="Show later steps"></button>
           </div>
           <div class="sbld-panel" id="ps-bld-panel"></div>
         </div>
@@ -5814,6 +5999,11 @@
           <div class="sbld-railcol">
             <button class="sbld-mintog" data-sbldmin="1" type="button" title="Minimise the step list"></button>
             <div class="sbld-rail" id="ps-cl-rail"></div>
+            <!-- ⚠️ Siblings of the rail, never children: the rail is rebuilt by innerHTML on
+                 every render and would throw them away — the same reason the minimise toggle sits
+                 out here. Hidden outright above 820px. -->
+            <button class="sbld-railarw" data-railarw="-1" type="button" aria-label="Show earlier steps" title="Show earlier steps"></button>
+            <button class="sbld-railarw" data-railarw="1" type="button" aria-label="Show later steps" title="Show later steps"></button>
           </div>
           <div class="sbld-panel" id="ps-cl-panel"></div>
         </div>
@@ -6548,8 +6738,27 @@
   // the Execution Phase branch out from under the activities that had just been filed there.
   // `phaseFromName` already tolerates every spelling; the stored `phase` wins over it, exactly as
   // _nodePhase resolves.
+  /* ⚠️⚠️ `milestones` IS A CARD CODE, NOT A DATABASE PHASE, and keeping those two apart is
+     what makes owner item 10 of 2026-09-18 — *"for the milestones group, follow the same workflow
+     for the other phases. but this should always be required"* — safe to build at all.
+     `project_schedule.phase` carries a FOUR-VALUE CHECK, and `phaseFromName('Milestones')` answers
+     null by design (see its own note). So Milestones gets the phase WORKFLOW — a planned list, a
+     Gantt, + Add WBS / + Add activity, Autotrace — while every row it pushes carries `phase: null`.
+     ⚠️ Three read helpers learn the code, and `phaseFromName` deliberately does NOT: that one is
+     kept in step with the migration that seeds the column, and teaching it a fifth value would put
+     'milestones' into a WBS-Summary payload the insert rejects — which `_dropScope` would then
+     answer by stripping `phase` off EVERY row in the push. */
+  var MS_CODE = 'milestones';
   function _phaseBranchAt(parentId, code) {
     if (!code) return null;
+    /* ⚠️ Matched by the root the tree actually has, never by name at an arbitrary depth: the
+       Milestones card is the top-level skeleton root, and a sub-branch a planner happened to call
+       "Milestones" is not it. */
+    if (code === MS_CODE) {
+      if (parentId) return null;
+      var msid = _wbsMilestonesRootId();
+      return msid ? wbsById(msid) : null;
+    }
     var kids = (WBS_NODES || []).filter(function (n) { return (n.parent_id || null) === (parentId || null); })
       .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); });
     for (var i = 0; i < kids.length; i++) {
@@ -6561,6 +6770,8 @@
   // may be re-worded; the skeleton is what every other project already carries, and the next push,
   // the import placement picker and the dedupe healer all have to find the same branch.
   function _phaseBranchName(code) {
+    // ⚠️ The skeleton's own spelling, as for every other phase — `phaseFromName` cannot find it.
+    if (code === MS_CODE) return 'Milestones';
     var hit = (WBS_SKELETON || []).filter(function (n) { return phaseFromName(n.name) === code; })[0];
     return (hit && hit.name) || PHASE_LABELS[code] || code;
   }
@@ -6624,9 +6835,12 @@
     if (!w) return null;
     var n = wbsById(w);
     if (!n || n.source_kind) return null;
+    // ⚠️ Milestones is identified by the ROOT ID, because it has no phase code to match on.
+    var msid = (phaseCode === MS_CODE) ? _wbsMilestonesRootId() : null;
+    if (phaseCode === MS_CODE && !msid) return null;
     var a = n, guard = 0;
     while (a && guard++ < 64) {
-      if ((a.phase || phaseFromName(a.name)) === phaseCode) return w;
+      if (msid ? (a.id === msid) : ((a.phase || phaseFromName(a.name)) === phaseCode)) return w;
       a = a.parent_id ? wbsById(a.parent_id) : null;
     }
     return null;
@@ -16878,7 +17092,59 @@
         };
       }
     });
+    sbldRailArrows();
   }
+  /* ⚠️⚠️ CALLED FROM sbldMinSync, WHICH BOTH RAILS ALREADY RUN AFTER EVERY REBUILD — so the
+     arrows are re-measured at exactly the moments the step list can have changed length, rather
+     than from a second set of call sites that would have to be kept in step with the first. (The
+     Schedule Setup rail and the Cost Loading rail have different renderers; that is precisely the
+     drift this avoids.)
+     ⚠️ Whether to show them is MEASURED (`scrollWidth > clientWidth`), never inferred from the step
+     count: six steps fit on a phone and twelve do not, the count changes per mode, and an arrow that
+     can scroll nothing is a control that does nothing. It is also what decides whether the native
+     scrollbar is suppressed, so a strip can never end up with neither.
+     ⚠️ Above 820px the arrows are `display:none` and this still runs — it costs two layout reads and
+     keeps the state honest the instant the window crosses the breakpoint. */
+  function sbldRailArrows() {
+    document.querySelectorAll('.sbld-railcol').forEach(function (col) {
+      var rail = col.querySelector('.sbld-rail');
+      var arws = col.querySelectorAll('.sbld-railarw');
+      if (!rail || !arws.length) return;
+      var over = rail.scrollWidth > rail.clientWidth + 1;
+      col.classList.toggle('sbld-hasarw', over);
+      var x = rail.scrollLeft, max = rail.scrollWidth - rail.clientWidth;
+      arws.forEach(function (b) {
+        var dir = +b.dataset.railarw;
+        // Disabled at the end it points at, so the pair says where you are in the strip.
+        b.disabled = !over || (dir < 0 ? x <= 1 : x >= max - 1);
+        if (b.dataset.wired !== '1') {
+          b.dataset.wired = '1';
+          b.innerHTML = (window.Icons && Icons.svg)
+            ? Icons.svg(dir < 0 ? 'chevronLeft' : 'chevronRight', 14)
+            : (dir < 0 ? '\u2039' : '\u203A');
+          b.onclick = function () {
+            /* 80% of a screenful, not a whole one: the step you were reading stays on screen as an
+               anchor, which is what makes a second press land somewhere you can place. */
+            rail.scrollBy({ left: dir * Math.max(60, rail.clientWidth * 0.8), behavior: 'smooth' });
+          };
+        }
+      });
+      if (rail.dataset.arwwired !== '1') {
+        rail.dataset.arwwired = '1';
+        // ⚠️ The rail ELEMENT survives its own innerHTML rewrites, so one listener is enough and a
+        // repaint cannot stack a second copy of it.
+        rail.addEventListener('scroll', function () { sbldRailArrows(); }, { passive: true });
+      }
+    });
+  }
+  /* ⚠️ Its own listener rather than a line in the grid's resize handler above: crossing 820px
+     changes whether the strip overflows at all, and that is a different question from crossing the
+     phone breakpoint — folding it in would tie the arrows to a renderAll nobody needs here. */
+  var _sbldArwT = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(_sbldArwT);
+    _sbldArwT = setTimeout(sbldRailArrows, 150);
+  });
   function renderAll() {
     // At phone width the entire desktop UI is hidden by CSS and only the
     // read-only #ps-mobile list shows, so building the grid/Gantt/cost/details
@@ -35297,10 +35563,15 @@
        class codes of all its child activities. activity merging is only allowed within the same
        trade."*
        ⚠⚠ A MERGED ROW IS ONE ACTIVITY, NOT A CONTAINER OF ACTIVITIES. `generate()` walks
-       `cfg.activities` and `taskPayload` writes ONE `class_code` per pushed row, so a merge that
-       kept its children as real activities would push them all and merge nothing. The children are
-       carried as plain records on `kids` — code, name and trade — which is what makes the merged
-       row able to state every code it covers while still pushing as a single activity. */
+       `cfg.activities` and `taskPayload` writes ONE ROW per activity, so a merge that kept its
+       children as real activities would push them all and merge nothing. The children are carried
+       as plain records on `kids` — code, name and trade — which is what makes the merged row able to
+       state every code it covers while still pushing as a single activity.
+       ⚠ A CORRECTION: this note used to say the push writes ONE `class_code` per row and that this
+       is why the children cannot be activities. The second half stands; the first stopped being
+       true on 2026-09-18, when `project_schedule.class_codes` landed and the push began writing the
+       whole set beside the scalar. The reason a merged row is one activity is that it IS one piece
+       of work, not that the schema could only hold one code. */
     function actIsMerged(a) { return !!(a && a.kids && a.kids.length); }
     /* Every class code an activity carries: its own, then its children's, deduped, blanks dropped.
        ⚠ This is what `+ Library` and `+ From BOQ` must dedupe against — a code swallowed by a merge
@@ -35355,14 +35626,36 @@
     function mergeActs(name) {
       var sel = actSelActs(), tr = actSelTrade();
       if (sel.length < 2 || !tr) {
-        UI.toast(sel.length < 2 ? 'Tick two or more activities to merge.'
-          : 'Those activities are in different trades. Merging is only allowed inside one trade.', 'warn');
+        if (sel.length < 2) { UI.toast('Tick two or more activities to merge.', 'warn'); return false; }
+        /* ⚠⚠ THE REFUSAL NAMES THE TRADES, and that is the whole of the owner's item. *"Those
+           activities are in different trades"* tells a planner looking at ticks spread down a
+           grouped grid nothing they can act on; the trades themselves tell them exactly which ticks
+           to drop. ⚠ `error`, not `warn`: nothing happened, and a warn toast in this app reads as
+           "it went through, with a caveat". */
+        var _tr = [], _seen = {};
+        sel.forEach(function (a) { var g = a.group || 'ST'; if (!_seen[g]) { _seen[g] = 1; _tr.push(GLABEL[g] || g); } });
+        UI.toast('Cannot merge: these ' + sel.length + ' activities span ' + _tr.length + ' trades (' +
+          _tr.join(', ') + '). Merging is only allowed inside one trade, because the merged activity ' +
+          'has to sit in one. Untick everything outside the trade you want.', 'error');
         return false;
       }
-      var kids = [];
+      /* ⚠⚠ THE ROW'S OWN CODE IS PUSHED AS WELL AS ITS CHILDREN'S, AND THAT IS A CORRECTION.
+         This used to read *"if merged, take its kids; else take its own code"* — which was right
+         only while `kids` could come from nowhere but `mergeActs` itself, where `merged.code` IS
+         `kids[0].code` and so taking the kids already carried it. The 2026-09-18 L3 pass breaks
+         that: an SAP group arrives with `code:'01050'` and `kids:[01051, 01052]`, its own code NOT
+         among them, so the old branch would have dropped the GROUP code every time two groups were
+         merged — silently, with the row still looking correct. Union of both, deduped. */
+      var kids = [], _kseen = {};
+      function _pushKid(code, name, group) {
+        var c = String(code == null ? '' : code).trim();
+        if (c && _kseen[c]) return;                 // ⚠ blanks are NOT deduped: two custom rows are two rows
+        if (c) _kseen[c] = 1;
+        kids.push({ code: c, name: String(name == null ? '' : name).trim(), group: group || tr });
+      }
       sel.forEach(function (a) {
-        if (actIsMerged(a)) { a.kids.forEach(function (k) { kids.push({ code: k.code, name: k.name, group: k.group }); }); }
-        else kids.push({ code: String(a.code || '').trim(), name: String(a.name || '').trim(), group: a.group || tr });
+        _pushKid(a.code, a.name, a.group);
+        (a.kids || []).forEach(function (k) { _pushKid(k.code, k.name, k.group || a.group); });
       });
       kids = normKids(kids) || [];
       var ids = {}; sel.forEach(function (a) { ids[String(a.id)] = 1; });
@@ -35393,6 +35686,7 @@
     var holdW = 420;    // step-1: the SAP Activities pane's BASIS (it grows past this; drag its left edge to resize)
     var holdQ = '';     // step-1 SAP Activities pane: the search box's text (code / name / trade)
     var holdCol = {};   // step-1 SAP Activities pane: trade code -> true when that group is folded shut
+    var holdExp = {};   // step-1 SAP Activities pane: L2 code -> true while its L3 items are shown
     var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Internal (d)', w: 98, num: true }, { k: 'durExt', label: 'External (d)', w: 98, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Contract scope (main contract vs change order), carried from step 1 straight onto every
@@ -35632,6 +35926,301 @@
       ['38050','Horizontal Housing','OT'],
       ['39050','LD Roadworks','OT']
     ];
+
+    /* ---- SAP L1 / L2 / L3 -----------------------------------------------------------------------
+       Owner 2026-09-18, with `Book2.xlsx`: *"the SAP activities are listed in this excel file from
+       level 1 to level 3. use this as updated reference especially for Level 2 to Level 3. by
+       default the SAP activities list should only show up to level 2. but for each level 2, provide
+       collapse button to show level 3."*
+
+       ⚠️⚠️ THE WORKBOOK IS THE REFERENCE FOR **L3 ONLY**, AND CHECKING THAT FIRST IS WHAT SAVED THIS.
+       Padded to five characters, its 197 L2 codes reproduce `CLASS_CODE_DB` EXACTLY — 0 codes in the
+       table that the file lacks, 0 trade disagreements, and every L1 resolving to exactly one trade.
+       What it carries ON TOP is (a) the seven LD sub-works `39100..39400` that the owner RETIRED on
+       2026-09-17, and (b) the two `desc_l2` copy-down errors this file already refuses to adopt
+       (`25200` / `25550` — see the note above). Re-seeding L2 from it would have silently undone
+       both decisions in a commit that looks like a data refresh. So the L2 names, trades and
+       membership stay exactly as they are; only the children below them are new.
+       ⚠️ `SAP_L3` is therefore emitted in `CLASS_CODE_DB`'s own order and keyed on codes it holds —
+       190 of 190 covered, **447 items** (466 in the file, less the 19 under the seven retired codes).
+
+       ⚠️⚠️ PADDED, LIKE EVERYTHING ELSE HERE. 43 of the L2 codes and 129 of the L3 codes arrive
+       de-zeroed ('1051' for '01051') from the same template column that did it to `CLASS_CODE_DB`.
+       That is the one transformation `docs/boq-and-pmi.md` forbids, because the de-zeroed space is
+       not unique. Padded on generation and asserted afterwards: 466 codes, 466 distinct, and no L3
+       code collides with an L2 one. **Never strip a leading zero from a code in this table.**
+
+       ⚠️ L1 IS A RUNG BETWEEN THE TRADE AND THE GROUP, not the trade itself — 39 of them against 7
+       trades, each mapping to exactly one trade. 21 hold more than one L2; the other 18 hold exactly
+       one, and the pane does NOT draw a heading for those, on this repo's own standing rule that a
+       heading above a single row invents a hierarchy that is not there (`PDProgram.labelOf`). */
+
+    var SAP_L1 = [
+      ['General Requirement','GR',['01050','01100','01150','01200','01250','01300','01350','01400','01450','01500','01550','01600','01650','01700','01750','01800','01850']],
+      ['Site Works','SW',['02050','02100','02150','02200']],
+      ['Rebar','ST',['03050']],
+      ['Formworks','ST',['04050']],
+      ['Concrete','ST',['05050']],
+      ['Precast Works','ST',['06050']],
+      ['Structural Steel','ST',['07050']],
+      ['Masonry','AR',['08050','08100','08150','08200','08250','08300','08350','08400','08450','08500','08550','08600','08650','08700']],
+      ['Stoneworks','AR',['09050','09100','09150']],
+      ['Tiling Works','AR',['10050','10100','10150','10200','10250','10300','10350','10400','10450','10500','10550']],
+      ['Drywall & Ceiling Works','AR',['11050','11100','11150']],
+      ['Thermal & Moisture Protection','AR',['12050','12100','12150','12200','12250','12300','12350','12400','12450']],
+      ['Door And Jamb','AR',['13050','13100','13150','13200','13250','13300','13350','13400']],
+      ['Hardwares','AR',['14050','14100','14150']],
+      ['Metal Works','AR',['15050','15060','15100','15150','15200','15250','15300','15350','15400','15450','15500','15550','15600','15650']],
+      ['Painting Works','AR',['16050','16100','16150','16200','16250','16300','16350','16400']],
+      ['Aluminum Glass & Glazing Works','AR',['17050','17100','17150','17200','17250','17300','17350','17400','17450','17500']],
+      ['Cabinetry','AR',['18050','18100','18150','18200']],
+      ['Landscape & Amenities','AR',['19050','19100','19150','19200']],
+      ['Specialties','AR',['20050','20100','20150','20200','20250','20300']],
+      ['Laminates & Plastic Finishes','AR',['21050']],
+      ['Roof Sheeting & Insulation','AR',['22050']],
+      ['Architectural Miscellaneous Works','AR',['23050']],
+      ['Mill Works','AR',['24050']],
+      ['Mechanical Equipment','MEPF',['25050','25100','25150','25200','25210','25250','25300','25350','25400','25450','25500','25550','25600','25610','25650']],
+      ['Electrical Works','MEPF',['26050','26100','26150','26200','26250','26300','26350','26400','26450','26500','26550','26600','26650','26700','26750','26800','26850']],
+      ['Plumbing Works','MEPF',['27050','27100','27150','27200','27250','27300','27350','27400']],
+      ['Fire Protection Works','MEPF',['28050','28100','28150','28200','28250','28300']],
+      ['Other Allied Services','ALLIED',['29050','29100','29150','29200','29250']],
+      ['Site Developments Works (Outside Bldg)','OT',['30050']],
+      ['Defect Liability Period','OT',['31050']],
+      ['Rectification Works','OT',['32050','32100','32150']],
+      ['Change Order','OT',['33050']],
+      ['Contingency','OT',['34050']],
+      ['Buyback','OT',['35050']],
+      ['Advances','OT',['36050']],
+      ['Infrastructure Works','OT',['37050']],
+      ['Horizontal Housing Works','OT',['38050']],
+      ['Land Development Works','OT',['39050']],
+    ];
+    var SAP_L3 = {
+      '01050':[['01051','Mobilization'],['01052','Demobilization']],
+      '01100':[['01101','Office'],['01102','Barracks'],['01103','Staging Area'],['01104','Fence & Gate'],['01105','Toilet & Utilities']],
+      '01150':[['01151','Temp Facil - Office MEP'],['01152','Temp Facil - Building (MEP)']],
+      '01200':[['01201','Office Equipment & Furniture'],['01202','Office Supplies']],
+      '01250':[['01251','Site Management']],
+      '01300':[['01301','House Keeping'],['01302','Maintenance Crew'],['01303','QRT for Punchlist'],['01304','QRT for DLP']],
+      '01350':[['01351','Power'],['01352','Water'],['01353','Communication'],['01354','Utilities Miscellaneous']],
+      '01400':[['01401','Security Services - 4N/S and 4D/S']],
+      '01450':[['01451','Fogging / Misting / Pest Control'],['01452','Garbage Disposal'],['01453','Cleaning Consumables'],['01454','Declogging and Siphoning Works']],
+      '01500':[['01501','Vertical Equipment (Rental)'],['01502','Concrete Pumps'],['01503','Light Equipment'],['01504','Transport Truck'],['01505','Earthmoving'],['01506','Mobile Crane'],['01507','Construction Methodology Plan & 3rd Party Certification'],['01508','Service Vehicles']],
+      '01550':[['01551','Fuel and Oil']],
+      '01600':[['01601','Falsework'],['01602','Personal Protective Equipment and First Aid Support']],
+      '01650':[['01651','Structural Design'],['01652','Structural Design for Tower Crane Foundation'],['01653','Architectural Design'],['01654','Plumbing / Sanitary Design'],['01655','Fire Protection Design'],['01656','Mechanical Design'],['01657','Design Coordination Services'],['01658','Electrical Design'],['01659','In-house Drawing and Services (As Built, Shop Drawing, Cutting List, Sign and Sealed)'],['01660','3rd Party Design Certification']],
+      '01700':[['01701','Performance Bond'],['01702','Surety Bond'],['01703','Guarantee Bond'],['01704','Building Permits'],['01705','Contractors Tax'],['01706','Occupancy Permit'],['01707','CARI'],['01708','Permit to Operate Tower Crane'],['01709','Contractor\'s Employees Accident Insurance and CGLI'],['01710','Excavation Permit'],['01711','Safety Permit'],['01712','Barangay Representation Expense'],['01713','Municipal Representation Expense'],['01714','Design Permit'],['01715','Miscellaneous LGU and Estate Permits'],['01716','Delivery and Hauling Permits']],
+      '01750':[['01751','Rebar Testing'],['01752','Concrete Testing'],['01753','CHB Testing'],['01754','Field Density Test'],['01755','Geotechnical Study / Testing']],
+      '01800':[['01801','Property Damage']],
+      '01850':[['01851','LEED Services'],['01852','Other Client\'s Requirements Stated in the Contract']],
+      '02050':[['02051','Excavation'],['02052','Hauling-out Debris'],['02053','De-watering'],['02054','Backfill Hauling'],['02055','Backfilling and Compaction'],['02056','Gravel Bedding'],['02057','Lean Concrete'],['02058','Trimming'],['02059','Earthworks Cut'],['02060','Earthworks Clearing and Grubbing']],
+      '02100':[['02101','Bored Pile'],['02102','Micro-Pile'],['02103','Driven Pile Concrete Square Pile'],['02104','Driven Pile Concrete Sheet Pile'],['02105','Sheet Pile Steel'],['02106','Secant Pile'],['02107','Screw Piles'],['02108','Helical Piles']],
+      '02150':[['02151','Soil Nailing w/ Shotcreting'],['02152','Soil Nailing w/ Shotcreting & Rock Anchoring (Post-tensioning)'],['02153','Jet Grouting for Vertical Protection w/ Reinforcement'],['02154','Jet Grouting for Hor. Bulk-head w/ Anchoring Reinforcement & Walling Supp.']],
+      '02200':[['02201','Soil Poisoning / Termite Control, Anti-Termite Reticulation System'],['02202','Chemical Treatment Bentonite Solution']],
+      '03050':[['03051','Rebar Works'],['03052','Rebar Consumables']],
+      '04050':[['04051','Formworks'],['04052','Formworks Consumables']],
+      '05050':[['05051','Ready Mix Concrete'],['05052','Concrete Consumables']],
+      '06050':[['06051','PC Beams'],['06052','PC Slab'],['06053','PC Stairs'],['06054','PC Columns'],['06055','Precast Consumables'],['06056','PC Shearwall'],['06057','PC Girder'],['06058','PC Ledge / Balcony'],['06059','PC Retaining Wall']],
+      '07050':[['07051','Wide Flange Beam'],['07052','Steel Decking'],['07053','Roof Steel Member']],
+      '08050':[['08051','Block Works']],
+      '08100':[['08101','Spraycrete Wall']],
+      '08150':[['08151','PC Exterior Walls']],
+      '08200':[['08201','PC Interior Walls']],
+      '08250':[['08251','Sealant Works - Backer Rod and Sealant']],
+      '08300':[['08301','Straight To Finish w/ Concrete Hardener and Sealer']],
+      '08350':[['08351','Concrete Topping']],
+      '08400':[['08401','Plastering Window and Door Opening']],
+      '08450':[['08451','Skimcoating Works']],
+      '08500':[['08501','Grinding, Sanding, and Mortar Jointing to Slab Soffit for Cast in Situ (Termination Only)']],
+      '08550':[['08551','Mortar Jointing to Exposed PC Half Slab Soffit (Termination Only)']],
+      '08600':[['08601','Masonry Concrete']],
+      '08650':[['08651','Masonry Consumables']],
+      '08700':[['08701','PC Toilet']],
+      '09050':[['09051','Marble Stone']],
+      '09100':[['09101','Granite Stone']],
+      '09150':[['09151','Stone Works Consumables']],
+      '10050':[['10051','Homogenous Tiles']],
+      '10100':[['10101','Ceramic Tiles']],
+      '10150':[['10151','Rustic Tiles']],
+      '10200':[['10201','Paver Tiles']],
+      '10250':[['10251','Urra Tiles']],
+      '10300':[['10301','Porcelain Tiles']],
+      '10350':[['10351','Vinyl Tiles']],
+      '10400':[['10401','Carpet Tiles']],
+      '10450':[['10451','Rubber Tiles']],
+      '10500':[['10501','Non-skid Concrete Tiles']],
+      '10550':[['10551','Tile Works Consumables']],
+      '11050':[['11051','Drywall Partition']],
+      '11100':[['11101','Board Ceiling']],
+      '11150':[['11151','Special Ceiling']],
+      '12050':[['12051','Damproofing and Waterproofing']],
+      '12100':[['12101','Cementitious Waterproof']],
+      '12150':[['12151','Epoxy Tank Lining']],
+      '12200':[['12201','Flexible Cementitious']],
+      '12250':[['12251','PU Waterproof']],
+      '12300':[['12301','Floor Hardener']],
+      '12350':[['12351','HDPE Geotextile Dimple Sheet Membrane']],
+      '12400':[['12401','Waterstop (Structural Joint)']],
+      '12450':[['12451','Integral Waterproofing Works']],
+      '13050':[['13051','Fire Rated Metal Doors w/ Jamb']],
+      '13100':[['13101','Metal Doors & Jamb']],
+      '13150':[['13151','Wooden Panel Door & Jamb']],
+      '13200':[['13201','PVC Door']],
+      '13250':[['13251','Laminated Fire Rated Door & Jamb']],
+      '13300':[['13301','Laminated Door & Jamb']],
+      '13350':[['13351','Wooden Flush Door & Jamb']],
+      '13400':[['13401','Doors and Jamb Consumables']],
+      '14050':[['14051','Metal Door Hardware']],
+      '14100':[['14101','Wooden Door Hardware']],
+      '14150':[['14151','PVC Door Hardware']],
+      '15050':[['15051','Railings'],['15052','Steel Grab Bar']],
+      '15060':[['15061','Steel Grilles']],
+      '15100':[['15101','Ladder Rung']],
+      '15150':[['15151','ACU Cover/ Ledge']],
+      '15200':[['15201','Manhole Cover']],
+      '15250':[['15251','Trench Drain']],
+      '15300':[['15301','Column Guard']],
+      '15350':[['15351','Bollard']],
+      '15400':[['15401','Water Tank']],
+      '15450':[['15451','Elevator Separator Beam']],
+      '15500':[['15501','Stair Nosing']],
+      '15550':[['15551','Steel Skirting']],
+      '15600':[['15601','Metal Sheet']],
+      '15650':[['15651','Steel Hoisting Beam']],
+      '16050':[['16051','Latex Paint']],
+      '16100':[['16101','Elastomeric Paint']],
+      '16150':[['16151','Epoxy Paint']],
+      '16200':[['16201','Acrytex Paint']],
+      '16250':[['16251','QDE']],
+      '16300':[['16301','Automotive Paint']],
+      '16350':[['16351','Varnish']],
+      '16400':[['16401','Painting Works Miscellaneous']],
+      '17050':[['17051','Curtain Wall']],
+      '17100':[['17101','Aluminum Punch Windows']],
+      '17150':[['17151','Aluminum Swing Windows']],
+      '17200':[['17201','Aluminum Sliding Windows']],
+      '17250':[['17251','Aluminum Doors']],
+      '17300':[['17301','Louvers & Vents']],
+      '17350':[['17351','Aluminum Cladding Panel']],
+      '17400':[['17401','Glass Door and Window']],
+      '17450':[['17451','Glass Railing']],
+      '17500':[['17501','Wall Glass / Mirror Finish']],
+      '18050':[['18051','Kitchen Cabinet']],
+      '18100':[['18101','Kitchen Countertop']],
+      '18150':[['18151','Bedroom Closet']],
+      '18200':[['18201','Reception Counter']],
+      '19050':[['19051','Hardscape']],
+      '19100':[['19101','Softscape']],
+      '19150':[['19151','Swimming Pool']],
+      '19200':[['19201','Water Features']],
+      '20050':[['20051','Signage'],['20052','Bulletin Board']],
+      '20100':[['20101','Cubicle Partition']],
+      '20150':[['20151','Equipment and Appliances']],
+      '20200':[['20201','Wall Paper Finishes']],
+      '20250':[['20251','Lockers and Mailbox']],
+      '20300':[['20301','Prefabricated Toilet']],
+      '21050':[['21051','Wall Laminate Wood Finish']],
+      '22050':[['22051','Roofing Materials']],
+      '23050':[['23051','Scaffolding works (Rental)'],['23052','Fitout Works']],
+      '24050':[['24051','Carpentry Works']],
+      '25050':[['25051','ME Air Handling Units (AHU)'],['25052','ME Primary Air Handling Units (PAHU)'],['25053','ME Fan Coil Units (FCU)'],['25054','ME Air Cooled Condensing Units (ACCU)'],['25055','ME Window Airconditioning Units (WAC)'],['25056','ME Exhaust Fan (EF)'],['25057','ME Fresh Air Fan (FAF)'],['25058','ME Pressurization Fan (PF)'],['25059','ME Jet Fan (JF)'],['25060','ME Refrigerant Gas'],['25061','ME Carbon Monoxide Monitoring System'],['25062','ME Cooling Tower'],['25063','ME Water Chiller'],['25064','ME Electrostatic Precipitator'],['25065','ME Air Ionizer / Smoke Purifier']],
+      '25100':[['25101','Refrigerant Pipe, Fittings, and Insulation'],['25102','Electrical Works - FCU'],['25103','Electrical Works - ACCU'],['25104','Refrigerant Drain and Accessories']],
+      '25150':[['25151','Chilled Water Condenser Riser'],['25152','Chilled Water Condenser Branch'],['25153','Chilled Water Evaporator Riser'],['25154','Chilled Water Evaporator Branch'],['25155','Chilled Water Valves and Accessories'],['25156','Chilled Water Evaporator Pumps and Accessories'],['25157','Chilled Water Condenser Pumps and Accessories'],['25158','Chilled Water Expansion Tank'],['25159','Chilled Chemical Treatment']],
+      '25200':[['25201','Fresh Air Duct Riser'],['25202','Fresh Air Duct Branch'],['25203','Fresh Air Duct Miscellaneous and Accessories']],
+      '25210':[['25211','Smoke Extraction Duct Riser'],['25212','Smoke Extraction Branch'],['25213','Smoke Extraction Miscellaneous and Accessories']],
+      '25250':[['25251','Exhaust Air Duct Riser'],['25252','Exhaust Air Duct Branch'],['25253','Exhaust Air Duct Miscellaneous and Accessories']],
+      '25300':[['25301','Toilet Exhaust Air Duct Riser'],['25302','Toilet Exhaust Air Duct Branch'],['25303','Toilet Exhaust Air Duct Miscellaneous and Accessories']],
+      '25350':[['25351','AC Ducting Riser'],['25352','AC Ducting Branch'],['25353','AC Duct Miscellaneous and Accessories']],
+      '25400':[['25401','Air Duct Return Riser'],['25402','Air Duct Return Branch'],['25403','Air Duct Miscellaneous and Accessories']],
+      '25450':[['25451','Pre Cooled Duct Riser'],['25452','Pre Cooled Duct Branch'],['25453','Pre Cooled Duct Miscellaneous and Accessories']],
+      '25500':[['25501','Stair Pressurization Duct Riser'],['25502','Stair Pressurization Duct Branch'],['25503','Stair Pressurization Miscellaneous and Accessories'],['25504','Pressurization Sensor']],
+      '25550':[['25551','Kitchen Exhaust Air Duct Riser'],['25552','Kitchen Exhaust Air Duct Branch'],['25553','Kitchen Exhaust Air Duct Miscellaneous and Accessories']],
+      '25600':[['25601','Generator Equipment'],['25602','Generator Fuel Piping Works'],['25603','Generator Fuel Storage Tank Works'],['25604','Generator Level Controller and Accessories Works'],['25605','Generator Fuel Pumps']],
+      '25610':[['25611','LPG System Main Pipe'],['25612','LPG System Pipe Branches'],['25613','LPG System Miscellaneous and Accessories']],
+      '25650':[['25651','Mechanical Works Miscellaneous'],['25652','Mechanical Works Preliminaries']],
+      '26050':[['26051','Power System Conduits Works'],['26052','Power System Boxes'],['26053','Power System Feeder and Sub Feeder Line'],['26054','Power System Grounding Works']],
+      '26100':[['26101','Power System Utilities, Hallways, Lobby, Wiring, Wiring Devices, Lighting Works']],
+      '26150':[['26151','Power System Panel Board'],['26152','Power System Emergency Panel Board'],['26153','Power System Car Lift Power Panel Board'],['26154','Power System Lighting Panel Board'],['26155','Power System Main Distribution Panelboard'],['26156','Power System Low Voltage Switch Gear (LVSG)'],['26157','Power System Automatic Transfer Switch (ATS)'],['26158','Power System Manual Transfer Switch (MTS)'],['26159','Power System Enclosed Circuit Breaker (ECB)'],['26160','Power System Uninterruptible Power Supply'],['26161','Power System Synchronizing Panel']],
+      '26200':[['26201','Power System Meter Center']],
+      '26250':[['26251','Power System Bus Way'],['26252','Power System Bus Way Accessories']],
+      '26300':[['26301','Small Power Roughing-ins, Wires, Wiring Devices, Panel Board, ECB, Lighting Works']],
+      '26350':[['26351','Lighting System Outdoor Conduit Works'],['26352','Lighting System Outdoor Boxes'],['26353','Lighting System Outdoor Wires and Cable'],['26354','Lighting System Outdoor Wiring Devices'],['26355','Lighting System Outdoor Fixtures']],
+      '26400':[['26401','Telephone System Conduits, Boxes, and Raceway'],['26402','Telephone System Wires and Cables'],['26403','Telephone System Wiring Devices and Equipment']],
+      '26450':[['26451','Cable Antenna Television System Conduits, Boxes and Raceway'],['26452','Cable Antenna Television System Wires and Cables'],['26453','Cable Antenna Television System Wiring Devices and Equipment']],
+      '26500':[['26501','Closed Circuit Television System Conduits, Boxes and Raceway'],['26502','Closed Circuit Television System Wires and Cables'],['26503','Closed Circuit Television System Wiring Devices and Equipment']],
+      '26550':[['26551','Intercommunication System Conduits, Boxes and Raceway'],['26552','Intercommunication System Wires and Cables'],['26553','Intercommunication System Wiring Devices and Equipment']],
+      '26600':[['26601','Entry Phone System Conduits, Boxes and Raceway'],['26602','Entry Phone System Wires and Cables'],['26603','Entry Phone System Wiring Devices and Equipment']],
+      '26650':[['26651','Internet System Conduits, Boxes and Raceway'],['26652','Internet System Wires and Cables'],['26653','Internet System Wiring Devices and Equipment']],
+      '26700':[['26701','Public Address and Background Music Conduits, Boxes'],['26702','Public Address and Background Music Wires and Cables'],['26703','Public Address and Background Music Wiring Devices and Equipment']],
+      '26750':[['26751','Fire Detection and Alarm System Conduits, Boxes and Raceway'],['26752','Fire Detection and Alarm System Wires and Cables'],['26753','Fire Detection and Alarm System Wiring Devices and Equipment']],
+      '26800':[['26801','Building Management System Miscellaneous Works'],['26802','Building Management System Software / Program']],
+      '26850':[['26851','Electrical Works Miscellaneous'],['26852','Electrical Works Preliminaries']],
+      '27050':[['27051','Plumbing Fixtures - Type 1'],['27052','Plumbing Fixtures - Type 2'],['27053','Plumbing Fixtures - Type 3'],['27054','Plumbing Fixtures - Type 4'],['27055','Plumbing Fixtures - Type 5']],
+      '27100':[['27103','Cold Water Line Downfeed'],['27104','Cold Water Line Branches - Hallway'],['27105','Cold water line branches - Utilities'],['27106','Cold Water Line Valves'],['27107','Cold Water Line Accessories'],['27108','Cold Water Line Pumps']],
+      '27150':[['27151','Soil Stack'],['27152','Soil Pipe'],['27153','Waste Pipe'],['27154','Waste Stack']],
+      '27200':[['27201','Downspout'],['27202','Drain Pipe'],['27203','Drain and Accessories']],
+      '27250':[['27251','Vent Stack'],['27252','Vent Branches']],
+      '27300':[['27301','Pipe Sleeving / Blockouts'],['27302','Concrete Plinth and Pad'],['27303','Trench Drain and Grating'],['27304','Hangers, Support, and Thrust Blocks'],['27305','Plumbing Consumables'],['27306','Excavation, Backfilling, and Compaction'],['27307','Sand / Gravel Bedding'],['27308','Plumbing Works Testing / Flushing / Commissioning'],['27309','Plumbing Works Preliminaries']],
+      '27350':[['27351','STP Mechanical Equipment and Works'],['27352','STP Electrical Equipment and Works'],['27353','STP Plumbing and Sanitary Works']],
+      '27400':[['27401','Overhead Water Tank (OHP)'],['27402','Plumbing Pump and Accessories'],['27403','Plumbing Controllers']],
+      '28050':[['28051','Fire Protection Wet Stand Pipe Riser'],['28052','Fire Protection Wet Stand Valves and Accessories']],
+      '28100':[['28101','Fire Protection Feedmain'],['28102','Fire Protection Feedmain Valve and Assembly'],['28103','Fire Protection Cross Main'],['28104','Fire Protection Branch Line']],
+      '28150':[['28151','Fire Protection Drain Pipe Riser']],
+      '28200':[['28201','Fire Protection Dry Stand Pipe Riser']],
+      '28250':[['28251','Fire Protection Sprinkler Head'],['28252','Fire Protection and Cabinet Works'],['28253','Fire Protection Pumps and Accessories']],
+      '28300':[['28301','Fire Suppression Hanger and Support'],['28302','Fire Suppression Pipe Sleeving / Blockouts'],['28303','Fire Suppression Excavation, Backfilling, and Compaction'],['28304','Fire Suppression Sand / Gravel Bedding'],['28305','Fire Suppression Testing and Commissioning'],['28306','Fire Protection Preliminaries'],['28307','Fire Protection Firefighting Agent']],
+      '29050':[['29051','Passenger Elevator'],['29052','Service Elevator']],
+      '29100':[['29101','BMU and Accessories']],
+      '29150':[['29151','Transformer Equipment and accessories']],
+      '29200':[['29201','Escalator']],
+      '29250':[['29251','Other Allied Miscellaneous Works']],
+      '30050':[['30051','Site Development Works - Outside Building'],['30052','Site Development Works - Lot Benching']],
+      '31050':[['31051','Defect Liability Period']],
+      '32050':[['32051','Structural Rectification']],
+      '32100':[['32101','Architectural Rectification']],
+      '32150':[['32151','MEPF Rectification']],
+      '33050':[['33051','Change Order General Requirements'],['33052','Change Order Siteworks'],['33053','Change Order Structural Works'],['33054','Change Order Architectural Works'],['33055','Change Order Mechanical Works'],['33056','Change Order Electrical Works'],['33057','Change Order Plumbing Works'],['33058','Change Order Fire Protection Works'],['33059','Change Order Materials Escalation'],['33060','Change Order Labor Escalation']],
+      '34050':[['34051','Contingency']],
+      '35050':[['35051','Buyback']],
+      '36050':[['36051','Advance to Subcon'],['36052','Advance to Employee'],['36053','Advance to Client']],
+      '37050':[['37051','SF Roadworks'],['37052','Construction of Guard House'],['37053','Construction of Guard Post'],['37054','Construction of Materials Recovery Facility'],['37055','Construction of Warehouse'],['37056','SF Maintenance and Other Services'],['37057','Solar Mounting Structures'],['37058','Photovoltaic Modules'],['37059','SF String Inverters'],['37060','SF Medium Voltages Stations'],['37061','SF Low Voltages Stations'],['37062','SF Weather Stations'],['37063','SF String Cables'],['37064','SF MVAC Cables'],['37065','SF LVAC Cables'],['37066','SF FO Cables'],['37067','SF Instrument Cables'],['37068','SF Testing and Commissioning'],['37069','SF Spares'],['37070','SF Cable Trenching'],['37071','SF Inverter Foundation'],['37072','Weather Foundation'],['37073','SF Drainage Works'],['37074','SF Bridge Works'],['37075','SF Culvert Works']],
+      '38050':[['38051','Labor Works Horizontal Housing']],
+      '39050':[['39051','LD Roadworks'],['39052','LD Curb and Gutter'],['39053','LD Cut and Fill Works'],['39054','LD Sub-base and Base Coarse'],['39055','LD Concreting Works'],['39056','LD Asphalting Works']],
+    };
+    /* Group code -> its `CLASS_CODE_DB` row, so a group sent back to the pane by `→` is named and
+       traded from the SAME table `+ Library` fills it from. Reading the name off the merged row's
+       own `kids` instead would name a GROUP after one of its ITEMS. */
+    var CC_BY_CODE = (function () { var m = {}; CLASS_CODE_DB.forEach(function (r) { m[r[0]] = r; }); return m; })();
+    /* L2 code -> the L1 that owns it. Derived from `SAP_L1` rather than written out a second
+       time: a hand-kept inverse of a 190-entry table is a table that drifts. */
+    var SAP_L1_OF = (function () {
+      var m = {};
+      SAP_L1.forEach(function (g, i) { (g[2] || []).forEach(function (c) { m[c] = { i: i, name: g[0], trade: g[1] }; }); });
+      return m;
+    })();
+    /* The L3 items an L2 group covers, or null. ⚠️ A code that is NOT an L2 group — a custom row,
+       or an item code loaded by `+ From BOQ`, which works at L3 — answers null and gets no caret,
+       which is correct rather than an omission: it has no level below it. */
+    function sapKids(code) { var k = SAP_L3[String(code == null ? '' : code).trim()]; return (k && k.length) ? k : null; }
+    /* ⚠⚠ THE L2-LEVEL CODES AN ACTIVITY COVERS, which is what `→` sends back to the pane and what
+       makes an arrival reversible. A row that covers no L2 at all (a custom merge, a BOQ item row)
+       answers empty and the caller falls back to splitting into `kids`, which is the pre-existing
+       behaviour — so nothing that used to round-trip stops doing so. */
+    function actL2Codes(a) {
+      var out = [], seen = {};
+      actCodes(a).forEach(function (c) { if (SAP_L3[c] && !seen[c]) { seen[c] = 1; out.push(c); } });
+      return out;
+    }
+    /* An L2 group as it arrives in the build: the group is the ACTIVITY and its L3 items are the
+       codes it carries. Owner 2026-09-18: *"if level 2 is dragged to the selection, this activity
+       carries level 3 activities inside it as a merged activity."*
+       ⚠⚠ `kids` NEVER INCLUDES THE GROUP'S OWN CODE. `actCodes` already prepends `a.code`, so
+       adding it here would make the `+N` badge and the pushed code list count it twice. */
+    function sapMergeKids(code, group) {
+      var kids = sapKids(code); if (!kids) return null;
+      return kids.map(function (k) { return { code: k[0], name: k[1], group: group || null }; });
+    }
     // Seed cfg.catalog (the step-1 SAP Activities pane on the right) from the master library.
     // Skips codes already present in the build or the list so re-loading never duplicates.
     function loadClassCodeLibrary() {
@@ -35801,29 +36390,17 @@
       }
     }
 
-    /* How many of the build's codes resolve at NEITHER level of the Finance chart — i.e. would push
-       a `project_schedule.class_code` that means nothing at all.
-       ⚠️⚠️ THIS USED TO COUNT EVERY GROUP CODE, which was every row the `+ Library` list supplies —
-       so it lit a warning on a perfectly good build. A group code is valid (`ccLevelOf` → 'group');
-       it is simply coarser than a bill line. What remains genuinely unresolvable is a hand-typed
-       code, one from an older template, or a de-zeroed code predating the 2026-09-10 padding.
-       ⚠️ Returns 0 while the chart has not loaded: calling every code unknown because the lookup
-       table is empty is the "[] is truthy" family of false alarm this repo keeps recording. */
-    function offChartCount() {
-      if (!CLASS_CODES || !CLASS_CODES.length) return 0;
-      return (cfg.activities || []).filter(function (a) {
-        var k = String(a.code == null ? '' : a.code).trim();
-        return k && !ccLevelOf(k);
-      }).length;
-    }
-    // How many sit at GROUP level — valid, and worth stating because it decides how the BOQ can
-    // match them (a whole group, not one bill item).
-    function groupLevelCount() {
-      if (!CLASS_CODES || !CLASS_CODES.length) return 0;
-      return (cfg.activities || []).filter(function (a) {
-        return ccLevelOf(String(a.code == null ? '' : a.code).trim()) === 'group';
-      }).length;
-    }
+    /* ⚠⚠ `offChartCount` AND `groupLevelCount` ARE DELETED, NOT LEFT UNREFERENCED. The 2026-09-18
+       minimalist pass folded this step's two off-chart warnings into one — they measured the same
+       rows once `_seedCodeUnknown` moved onto `ccLevelOf`, so the second was the first restated
+       200px lower — and that left `offChartCount` with no caller. `groupLevelCount` had none
+       already. A live function with no emitter is what a later reader wires back up beside the real
+       thing, which is the `#pk-boq` shape this repo has shipped once; the surviving banner counts
+       through `_seedCodeUnknown`, which is the same rule and is the one the per-cell mark uses, so
+       the count and the marks cannot disagree.
+       ⚠️ Both returned 0 while the chart had not loaded — calling every code unknown because the
+       lookup table is empty is the "[] is truthy" family of false alarm this repo keeps recording.
+       `_seedCodeUnknown` keeps that guard, which is why deleting these two loses nothing. */
     function scopeLabel(s) { var o = SCOPE_OPTS.filter(function (x) { return x[0] === (s || 'zone'); })[0]; return o ? o[1] : 'Per zone'; }
     function parseScope(text) {
       var t = String(text == null ? '' : text).trim().toLowerCase();
@@ -36448,10 +37025,15 @@
       // ⚠️⚠️ THIS CLAUSE IS LOAD-BEARING. normalize() builds `d` from blank() and copies only the keys
       // it knows about, so an un-normalised key does not survive a save/load round trip: without this
       // the phases a planner ticked would work for the rest of the session and be gone tomorrow.
-      // ⚠️ Only the three NON-execution codes are accepted, and only ones the database's phase CHECK
-      // allows (see SB_PHASE_DEFS) — a stale or hand-edited key cannot introduce a phase the insert
-      // would reject. 'construction' is never stored here: the Execution Phase is generated, not
-      // listed, and a config carrying it would offer a second, hand-typed construction phase.
+      // ⚠️ Only the codes SB_PHASE_DEFS names are accepted — a stale or hand-edited key cannot
+      // introduce a phase this step does not know about. 'construction' is never stored here: the
+      // Execution Phase is generated, not listed, and a config carrying it would offer a second,
+      // hand-typed construction phase.
+      // ⚠️⚠️ `milestones` IS ON THIS LIST AND IS **NOT** A DATABASE PHASE CODE. It is the fifth
+      // card (2026-09-18 item 10); the `project_schedule.phase` CHECK still has four values, and
+      // `phaseTaskPayload` writes null for it. Whitelisting it here is what makes its planned list
+      // survive a save — this normaliser is the whitelist, and a key it does not name is silently
+      // stripped, which is the trap `w` fell into on 2026-09-18 (c).
       d.phases = {};
       var _srcPh = (c.phases && typeof c.phases === 'object') ? c.phases : {};
       SB_PHASE_DEFS.forEach(function (pd2) {
@@ -36515,7 +37097,9 @@
            `par`. It has to survive the round trip for the same reason `par` does: without it a
            converted phase re-reads as a legacy chain on the next load and every link a planner drew
            is silently ignored. */
-        d.phases[pd2.v] = { on: !!src.on, net: !!src.net, acts: _acts };
+        // ⚠️ A required phase stores `on: true` whatever arrived — `sbPhases()` forces it on read
+        //    anyway, and a stored `false` that the reader ignores is a lie in the saved file.
+        d.phases[pd2.v] = { on: pd2.always ? true : !!src.on, net: !!src.net, acts: _acts };
       });
       return d;
     }
@@ -36779,8 +37363,8 @@
       });
       html += '<h4 style="margin:18px 0 4px;font-size:13px;">Push history</h4>';
       if (!pushes.length) {
-        html += '<p class="sbld-hint" style="margin:0;">Nothing pushed yet. Every push records the setup exactly as ' +
-          'it was at that moment, so you can come back to it after a bad edit.</p>';
+        html += '<p class="sbld-hint" style="margin:0;">Nothing pushed yet. Every push records the setup as it was, ' +
+          'so you can come back to it.</p>';
       } else {
         html += '<table class="cc-table" style="width:100%;font-size:12.5px;"><thead><tr>' +
           '<th>When</th><th>Setup</th><th>Package</th><th style="text-align:right;">Activities</th><th></th>' +
@@ -37043,7 +37627,7 @@
            project has no codes" — a filter that HIDES is worse to leave behind than one that
            merely sorts. (`catSel` is deliberately left: its ids cannot match another project's
            catalog, so it is inert rather than misleading.) */
-        holdQ = ''; holdCol = {};
+        holdQ = ''; holdCol = {}; holdExp = {};
         curPid = projectId; step = imp ? 1 : 0; await loadCfg();
         // ⚠️ The schedule grid's DEFAULT grouping follows this setup — see _adoptSetupGrouping. The
         // Project Schedule may already be open behind this tab with the plain WBS tree, because the
@@ -37745,20 +38329,39 @@
     // value would silently strip the phase off every row in the push. Adding one is a migration,
     // not a list edit.
     // ⚠️ 'construction' IS the execution phase — the stored code never changed, only the label.
-    var SB_PH_DEF = {
-      initiation: ['Project charter & scope sign-off:5', 'Contract award & notice to proceed:10', 'Permits & regulatory clearances:20'],
-      planning:   ['Design development & IFC drawings:30', 'Baseline schedule & method statements:15', 'Procurement & subcontractor packages:25'],
-      closeout:   ['Testing & commissioning:20', 'Punchlisting & rectification:20', 'As-built drawings & O&M manuals:15', 'Turnover & handover:10']
-    };
+    /* ⚠️⚠️ NOTHING IS SEEDED ANY MORE — owner 2026-09-18: *"remove the default activities in
+       each phase."* `SB_PH_DEF` held three to four invented activities per phase ('Project charter &
+       scope sign-off:5', 'Testing & commissioning:20', …) and `sbPhases()` wrote them into any phase
+       that had none, so ticking a phase on filled it with somebody else's programme. The planner
+       then had to delete work they never entered before entering their own, and — worse — a phase
+       ticked and never read would PUSH those invented rows into a real schedule.
+       ⚠️ It is DELETED, not emptied and kept: a seed table with no reader is what the next editor
+       wires back up. The 'Reset to the typical set' button that used to restore it went on
+       2026-09-17 for the same reason, so nothing else referenced it either — checked, not assumed.
+       ⚠️ A phase saved BEFORE today keeps every activity it already has: `sbPhases()` only fills in
+       when `acts` is absent, so this changes the empty case and nothing else. */
     // ⚠️ ORDER IS THE LIFECYCLE, and the two 'before' phases are back-scheduled as a block onto the
     // execution start while 'after' runs off the execution finish — see sbPhasePlan.
+    /* ⚠️⚠️ MILESTONES IS FIRST AND IS `when:'ms'`, WHICH IS NEITHER BEFORE NOR AFTER. It is
+       skeleton root #1 and its card already led the step; what it did not have was the workflow —
+       owner 2026-09-18: *"for the milestones group, follow the same workflow for the other phases.
+       but this should always be required."* So it gets one, with two differences that fall out of
+       what a milestone IS:
+         • `always: true` — no on/off tick. "Always required" means the card cannot be switched off,
+           and a checkbox that cannot be unticked is worse than no checkbox.
+         • `when:'ms'` — it is not scheduled either side of Execution. Milestones mark the whole
+           programme, so the block is anchored at the PROGRAMME start (the earliest before-phase, or
+           the execution start when there is none) and runs forwards. Anything else would be an
+           invented claim about when a project's markers fall.
+       ⚠️ It carries NO database phase code — see the note on `_phaseBranchAt`. */
     var SB_PHASE_DEFS = [
+      { v: MS_CODE, when: 'ms', always: true },
       { v: 'initiation', when: 'before' },
       { v: 'planning', when: 'before' },
       { v: 'construction', when: 'exec' },
       { v: 'closeout', when: 'after' }
     ];
-    function sbPhAct(spec) { var i = spec.lastIndexOf(':'); return { id: uidv(), n: spec.slice(0, i), d: +spec.slice(i + 1), par: false }; }
+    function sbPhTitle(v) { return PHASE_LABELS[v] || _phaseBranchName(v); }
     // The stored shape, with defaults filled in. ⚠️ A setup saved before today has no `phases` key at
     // all, and must open with every extra phase OFF — turning three phases on inside somebody's saved
     // recipe, which they would then push without noticing, is not a default anyone asked for.
@@ -37768,8 +38371,11 @@
         if (d.when === 'exec') return;
         var cur = cfg.phases[d.v];
         if (!cur || typeof cur !== 'object') cur = cfg.phases[d.v] = { on: false, acts: null };
-        if (!Array.isArray(cur.acts)) cur.acts = (SB_PH_DEF[d.v] || []).map(sbPhAct);
-        cur.on = !!cur.on;
+        // ⚠️ Empty, never seeded — see the note where SB_PH_DEF used to be.
+        if (!Array.isArray(cur.acts)) cur.acts = [];
+        /* ⚠️ `always` wins over whatever is stored: Milestones is required, so a setup saved with
+           it off — or saved before it existed — still opens with it on. */
+        cur.on = d.always ? true : !!cur.on;
       });
       return cfg.phases;
     }
@@ -37935,10 +38541,10 @@
     // lifecycle read as one continuous programme instead of three blocks with gaps nobody chose.
     function sbPhasePlan(g) {
       if (!g || !g.start) return [];
-      var out = [], before = [], after = [];
+      var out = [], before = [], after = [], ms = [];
       SB_PHASE_DEFS.forEach(function (d) {
         if (d.when === 'exec' || !sbPhOn(d.v)) return;
-        (d.when === 'before' ? before : after).push(d);
+        (d.when === 'ms' ? ms : d.when === 'before' ? before : after).push(d);
       });
       /* ⚠️⚠️ ACTIVITIES ARE GROUPED, NOT BLINDLY CHAINED, and the difference is the reason
          this was reported. A phase used to be one end-to-end chain: activity 2 starts the day
@@ -37998,6 +38604,18 @@
         var pp = _phWindow(d, cursor, false);
         if (pp.finish) cursor = addD(pp.finish, 1);
         out.push(pp);
+      });
+      /* ⚠️⚠️ MILESTONES IS ANCHORED AT THE PROGRAMME START AND RUNS FORWARD — never chained to
+         a neighbour, because it is not "before" or "after" anything. The programme start is the
+         earliest of the before-block (computed above, so it is already known) or the execution
+         start when nothing sits before it. ⚠️ It is UNSHIFTED so the plan's order matches the
+         cards', and so nothing reading `plan[0]` for the before-block's start can pick it up by
+         accident — that reader was removed with the "whole programme" line, and this keeps the
+         order honest for the next one. */
+      ms.forEach(function (d) {
+        var pstart = g.start;
+        out.forEach(function (x) { if (x.when === 'before' && x.start && x.start < pstart) pstart = x.start; });
+        out.unshift(_phWindow(d, pstart, false));
       });
       return out;
     }
@@ -38398,7 +39016,7 @@
       if (!sections) sections = '<p class="sbld-hint">Nothing to configure — add more floors/zones/units (step 2) or a second trade to shape the takt flow. Auto-trace will just chain the floors vertically.</p>';
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
       ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace — how does the work flow?</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
-        '<div style="padding:16px;max-height:72vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">Each trade is asked only what applies to how <b>it</b> flows through the building. The <b>So:</b> line under each trade is the flow your answers describe \u2014 read that, not the boxes. <b>This replaces the current links.</b></p>' +
+        '<div style="padding:16px;max-height:72vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">The <b>So:</b> line under each trade is the flow your answers describe \u2014 read that, not the boxes. <b>This replaces the current links.</b></p>' +
         sections + '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbld-at-go">Generate logic</button></div></div>';
       document.body.appendChild(ov);
@@ -38861,21 +39479,26 @@
       /* ⚠ ONE heading, emitted here. Both sub-renderers are called with `noHead`, because each
          used to own a step and still writes its own <h2> — which is what produced the doubled
          title in the owner’s screenshot. */
+      /* ⚠️ 30 WORDS BECAME 10 — owner 2026-09-18: *"lessen words/descriptions/instructions."*
+         What the sentence said and where it is said instead: "what sits either side of construction"
+         is the Execution card, which sits between the before- and after-phase cards and is labelled
+         as built by the other steps; "and the tree those phases produce" is the tree, drawn; "no
+         locations here, and nothing repeats per zone" is a fact about a screen that shows neither. */
       host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · Project Phases</h2>' +
-        '<p class="sbld-lede">The lifecycle around <b>Execution</b>: what sits either side of ' +
-        'construction, and the tree those phases produce. No locations here, and nothing repeats per zone.</p>' +
+        '<p class="sbld-lede">The lifecycle around <b>Execution</b>.</p>' +
         /* ⚠️ Shown only when it is TRUE, and it is the one thing a full-looking tree cannot
            explain about itself: every branch reads 0 because nothing has ever been pushed. */
         (function () {
           var _live = 0, _gen = 0;
           try { _live = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
           try { _gen = generate('int').rows.length; } catch (e) {}
+          /* ⚠️ The WARN stays: a generated programme sitting over a tree that reads 0 is the one
+             thing a full-looking screen cannot explain about itself. The "near-empty tree is normal"
+             hint goes — each card already says *"This phase has no branch yet · N · Push creates
+             it"*, on the phase it is true of, which is where it can be acted on. */
           return (_gen && !_live)
             ? '<p class="sbld-note sbld-note-warn">Every branch reads <b>0</b> because nothing has been pushed yet.</p>'
-            : (_sbldWbsCount() <= 5
-              ? '<p class="sbld-hint">A near-empty tree is normal — <b>' + _stepNo('Generate') +
-                ' · Push</b> creates the branches.</p>'
-              : '');
+            : '';
         })() +
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
         '<div id="sbld-ph-a"></div>';
@@ -39367,7 +39990,15 @@
         var k = String(code == null ? '' : code).trim();
         if (!k) return false;
         if (!CLASS_CODES || !CLASS_CODES.length) return false;
-        return !ccByCode(k);
+        /* ⚠⚠ `ccLevelOf`, NOT `ccByCode` — AND THIS IS A BUG FIX, NOT A TIDY-UP. `ccByCode` resolves
+           the LEVEL-3 ITEM index only, so every GROUP code read as unknown: `+ Library` loads
+           Finance's level-2 group chart, which means the standard way of filling this grid marked
+           all 190 of its own rows red and counted them in the caution above it, on a build with
+           nothing wrong. `offChartCount` at the foot of this step was corrected for exactly this on
+           2026-09-10 — *"THIS LINE USED TO ACCUSE EVERY `+ Library` ROW"* — and the per-cell mark
+           and its banner were left on the old lookup. They agree now, which is also what lets the
+           two warnings below collapse into one. */
+        return !ccLevelOf(k);
       }
       var _badCodeN = cfg.activities.filter(function (a) { return _seedCodeUnknown(a.code); }).length;
       /* ⚠⚠ ONE ROW BUILDER, called from inside the trade grouping below. `r` stays the row's
@@ -39411,12 +40042,21 @@
             return '<td class="xl-cell' + (c.num ? ' xl-num' : '') + (_bad ? ' sbld-badcode' : '') +
               (_extra ? ' sbld-xlcodecell' : '') + '" data-r="' + r +
               '" data-c="' + ci + '"' +
-              (_bad ? ' title="' + e2('This code is not in the class-code chart, so a BOQ line can never'
-                + ' match it. Pick one from the library, or read the codes off the project BOQ.') + '"' : '') +
+              /* ⚠ Worded like the banner above the grid, because they are now the same test — both
+                 go through `_seedCodeUnknown`, which resolves BOTH chart levels. Two sentences for
+                 one condition is how a planner comes to think they are two conditions. */
+              (_bad ? ' title="' + e2('This code is in the Finance chart at neither level, so a BOQ line'
+                + ' can never match it. Pick one from + Library, or read the codes off the project BOQ.') + '"' : '') +
               '>' + xlCellCtl(a, c, _txt) +
+              /* ⚠ A CORRECTION: this tooltip used to end *"Only the first is pushed as the
+                 activity's class_code — the schedule stores one per activity."* That stopped being
+                 true on 2026-09-18, when the push gained `project_schedule.class_codes` and started
+                 writing the whole set. A tooltip that confidently describes the opposite of the code
+                 is worse than none — this file has had to make that correction before. */
               (_extra ? '<span class="sbld-xlmore" title="' + e2('This activity carries ' + actCodes(a).length +
-                ' class codes: ' + actCodes(a).join(', ') + '. Only the first is pushed as the activity’s'
-                + ' class_code — the schedule stores one per activity.') + '">' + e2(_extra) + '</span>' : '') +
+                ' class codes: ' + actCodes(a).join(', ') + '. All of them are pushed — ' + actCodes(a)[0] +
+                ' as the activity’s class_code and the full set beside it, so a BOQ line priced under'
+                + ' any of them can match this activity.') + '">' + e2(_extra) + '</span>' : '') +
               '</td>';
           }).join('') +
           '</tr>' +
@@ -39460,18 +40100,24 @@
             '</td></tr>' +
           items.map(function (a) { return _actRow(a, _rowIx[a.id]); }).join('');
       }).join('');
-      /* ⚠⚠ SEARCHED AND GROUPED BY TRADE. Owner, at 172 parked codes: *"I need a search filter
-         in the holding list (172) as well so its easier to select. Additionally can we have a
-         collapsible header based on trade as well to make it easier to navigate"*. A flat 172-item
-         scroll is not a list you pick from, it is one you give up on.
-         ⚠ MATCHES CODE **AND** NAME **AND** TRADE, for the reason `ccSearchText` already states
-         upstream: matching the code alone makes it unsearchable by the only handle most people
-         have for it. Trade is in there because the groups are now visible, so typing one is the
-         obvious thing to try. */
+      /* ⚠⚠ SEARCHED, GROUPED BY TRADE, AND NOW BY L1 INSIDE IT. Owner, at 172 parked codes: *"I
+         need a search filter in the holding list (172) as well so its easier to select. Additionally
+         can we have a collapsible header based on trade as well to make it easier to navigate"*; and
+         2026-09-18: *"by default the SAP activities list should only show up to level 2. but for
+         each level 2, provide collapse button to show level 3."*
+         ⚠ MATCHES CODE **AND** NAME **AND** TRADE **AND THE L3 ITEMS UNDER A GROUP**, for the reason
+         `ccSearchText` already states upstream: matching the code alone makes it unsearchable by the
+         only handle most people have for it. L3 is in there because an item name ("Demobilization")
+         is the MOST specific handle a planner has, and a search that could not reach the level this
+         pass just added would be a list you can see into and not search into. */
       var _hq = holdQ.trim().toLowerCase();
-      var _holdShown = !_hq ? cfg.catalog : cfg.catalog.filter(function (a) {
-        return ((a.code || '') + ' ' + (a.name || '') + ' ' + (GLABEL[a.group] || '')).toLowerCase().indexOf(_hq) >= 0;
-      });
+      function _holdHit(a) {
+        if (!_hq) return true;
+        if (((a.code || '') + ' ' + (a.name || '') + ' ' + (GLABEL[a.group] || '')).toLowerCase().indexOf(_hq) >= 0) return true;
+        var k = sapKids(a.code);
+        return !!(k && k.some(function (x) { return (x[0] + ' ' + x[1]).toLowerCase().indexOf(_hq) >= 0; }));
+      }
+      var _holdShown = !_hq ? cfg.catalog : cfg.catalog.filter(_holdHit);
       /* ⚠ GROUPS order, not first-appearance order — the trades sit in the same sequence here as
          in the grid's Trade column and everywhere else in the setup, so the pane does not reshuffle
          itself as codes are loaded. The trailing '' is the bucket for a catalog row whose `group`
@@ -39485,30 +40131,88 @@
            matches inside it reads as "nothing found", which is the wrong answer to the question
            being asked. The fold state itself is kept, so clearing the box restores it. */
         var open = _hq ? true : !holdCol[g];
-        return '<details class="sbld-hold-grp"' + (open ? ' open' : '') + ' data-grp="' + e2(g) + '" style="--zc:' + gc(g) + '">' +
-          '<summary title="' + e2((g ? GLABEL[g] : 'Codes with no trade set') + ' — click to fold this trade away') + '">' +
-          '<span class="sbld-hold-gname">' + e2(g ? GLABEL[g] : 'Unclassified') + '</span>' +
-          (nSel ? '<span class="sbld-hold-gsel">' + nSel + ' ticked</span>' : '') +
-          '<span class="sbld-hold-gn">' + items.length + '</span></summary>' +
-          items.map(function (a) {
+        /* ---- L1, the rung between the trade and the group ------------------------------------
+           ⚠⚠ DRAWN ONLY WHERE IT HOLDS MORE THAN ONE ROW. 18 of the chart's 39 L1 groups own
+           exactly one L2, so an unconditional heading would put "Rebar" above a single row called
+           "Rebar" eighteen times. This repo's own rule, from `PDProgram.labelOf`: a heading above a
+           single item invents a hierarchy that is not there.
+           ⚠ `~` is the bucket for a row no L1 claims — a custom row, or an item code from
+           `+ From BOQ`, which works at L3. It sorts last and is never dropped silently. */
+        var byL1 = {}, l1keys = [];
+        items.forEach(function (a) {
+          var o = SAP_L1_OF[String(a.code || '').trim()];
+          var key = o ? String(o.i) : '~';
+          if (!byL1[key]) { byL1[key] = { name: o ? o.name : '', items: [] }; l1keys.push(key); }
+          byL1[key].items.push(a);
+        });
+        l1keys.sort(function (x, y) { return x === '~' ? 1 : y === '~' ? -1 : (+x) - (+y); });
+        var rows = l1keys.map(function (key) {
+          var grp = byL1[key];
+          /* ⚠ The L1 heading is DRAGGABLE and carries `data-sapl1`, because that is the whole of
+             the owner's *"if level 1 is dragged from SAP activities list to selection, it carries
+             all the level 3 activities as a merged activity."* It is not a fold: the trade
+             `<details>` above it already folds, and a second collapsible rung in a 420px pane buys
+             nothing the eye cannot already do. */
+          var head = (key !== '~' && grp.items.length > 1)
+            ? '<div class="sbld-hold-l1" data-sapl1="' + e2(key) + '" draggable="true" title="' +
+              e2(grp.name + ' — ' + grp.items.length + ' groups. Drag it onto the grid to bring all of'
+                + ' them in as ONE merged activity carrying every class code beneath it.') + '">' +
+              '<span class="sbld-hold-l1n">' + e2(grp.name) + '</span>' +
+              /* ⚠⚠ ITS OWN CLASS, NOT `.sbld-hold-gn`. The first cut reused the trade heading's
+                 count class here and a suite caught it: one class then meant two different things
+                 (codes in a TRADE, groups in an L1), so every selector-based read of the trade
+                 counts silently swept up the L1 ones too — `2,1,3` became `2,2,1,3`. It takes the
+                 same look from the rule below; what it does not take is the same NAME. */
+              '<span class="sbld-hold-l1c">' + grp.items.length + '</span></div>'
+            : '';
+          return head + grp.items.map(function (a) {
+            var kids = sapKids(a.code);
+            /* ⚠ A query that matched inside this group opens it, for the same reason the trade fold
+               opens: a hit you cannot see reads as no hit. Otherwise the planner's own fold wins. */
+            var kidHit = !!(_hq && kids && ((a.code || '') + ' ' + (a.name || '')).toLowerCase().indexOf(_hq) < 0);
+            var kopen = kids && (kidHit || !!holdExp[a.code]);
+            /* ⚠⚠ THE ROW IS A WRAPPER NOW, NOT ONE BUTTON — a caret button nested inside the row
+               button would be invalid HTML and the browser would hoist it out, which is exactly the
+               kind of thing that renders fine and then drops a click handler. `[data-cat]` is still
+               on the row itself, so every existing handler (tick, drag) is untouched. */
             /* ⚠ draggable, so a code can be dragged onto the grid as an ALTERNATIVE to ← —
                never a replacement: the button stays the discoverable, keyboard-reachable one. */
-            /* ⚠ No `--zc` on the ROW any more. It fed a 4px trade-coloured rail that this pass
-               moved onto the trade heading — with the rail gone no rule reads it here, and a
-               custom property set on 197 rows that nothing paints is the kind of leftover the
-               next reader spends an afternoon tracing. The heading still carries it. */
-            return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" draggable="true">' +
+            return '<div class="sbld-hold-row' + (kids ? ' has-kids' : '') + '">' +
+              (kids ? '<button type="button" class="sbld-hold-tog" data-sapexp="' + e2(a.code) + '"' +
+                ' aria-expanded="' + (kopen ? 'true' : 'false') + '" title="' +
+                e2((kopen ? 'Hide' : 'Show') + ' the ' + kids.length + ' level-3 item' + (kids.length === 1 ? '' : 's')
+                  + ' under this group') + '">' + (kopen ? '▾' : '▸') + '</button>'
+                : '<span class="sbld-hold-tog is-leaf"></span>') +
+              '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" draggable="true"' +
+              (kids ? ' title="' + e2(a.name + ' — carries ' + kids.length + ' level-3 class code'
+                + (kids.length === 1 ? '' : 's') + '. It arrives in the build as one merged activity.') + '"' : '') + '>' +
               '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
               /* ⚠ The per-row TRADE label is gone: the row now sits under a trade heading that
                  already names it, so printing it again on all 197 rows is the heading restated
                  197 times. The search still matches on trade — it reads the data, not this span. */
+              (kids ? '<span class="sbld-hold-kn" title="' + e2('This group covers ' + kids.length +
+                ' level-3 items') + '">+' + kids.length + '</span>' : '') +
               /* ⚠ A blank code reads `custom`, not an em dash. The owner defined the word on this
                  very step — *"activities without class code are identified as custom activities"* —
                  and the grid's own Code cell already shows it as a placeholder, so a code-less row
                  sent back here with → keeps the name it was given instead of becoming a dash that
                  reads as missing data. */
-              '<span class="sbld-hold-code">' + e2(a.code || 'custom') + '</span></button>';
-          }).join('') + '</details>';
+              '<span class="sbld-hold-code">' + e2(a.code || 'custom') + '</span></button></div>' +
+              /* ⚠⚠ AN L3 ROW IS NOT PICKABLE, and that is the model rather than an omission. It is a
+                 reference item, not a catalog entry: it has no id, `←` could not move it and
+                 `[data-cat]` must not match it. It comes in as part of its GROUP, which is what the
+                 owner asked for. Read-only by construction, exactly as `.sbld-xlkid` is in the grid. */
+              (kopen ? kids.map(function (x) {
+                return '<div class="sbld-hold-kid"><span class="sbld-hold-kcode">' + e2(x[0]) + '</span>' +
+                  '<span class="sbld-hold-kname">' + e2(x[1]) + '</span></div>';
+              }).join('') : '');
+          }).join('');
+        }).join('');
+        return '<details class="sbld-hold-grp"' + (open ? ' open' : '') + ' data-grp="' + e2(g) + '" style="--zc:' + gc(g) + '">' +
+          '<summary title="' + e2((g ? GLABEL[g] : 'Codes with no trade set') + ' — click to fold this trade away') + '">' +
+          '<span class="sbld-hold-gname">' + e2(g ? GLABEL[g] : 'Unclassified') + '</span>' +
+          (nSel ? '<span class="sbld-hold-gsel">' + nSel + ' ticked</span>' : '') +
+          '<span class="sbld-hold-gn">' + items.length + '</span></summary>' + rows + '</details>';
       }).join('');
       /* ⚠ The box appears at 9 codes, and STAYS while a query is live however few survive it —
          otherwise filtering down to 3 removes the control holding the filter, with no way back to
@@ -39542,17 +40246,42 @@
          internal/external duration” — which is the grid's own column headers, read out in prose
          directly above the grid. Kept when this view is opened on its own. */
       host.innerHTML = (noHead ? '' :
-        '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
-        '<p class="sbld-lede">The class codes this programme is built from, as a spreadsheet, beside the SAP activities available to it.</p>') +
+        '<h2>' + _stepNo('Activities') + ' · Activities</h2>' +
+        /* ⚠ 18 words → 8. Owner 2026-09-18: *"reduce words/descriptions/instructions. make page
+           minimalist."* The old lede described the SCREEN — *"as a spreadsheet, beside the SAP
+           activities available to it"* — which is the two things visibly on it. What is left is the
+           one fact the screen cannot show: these are what the programme gets built from. The
+           heading loses "& required duration" for the same reason: the grid's own Internal (d) /
+           External (d) columns say it, in the place it is typed. */
+        '<p class="sbld-lede">The class codes this programme is built from.</p>') +
         /* ⚠️ Counted, not implied. A per-cell mark alone is easy to scroll past; the number
            is what tells the planner whether this is one typo or the whole programme. */
+        /* ⚠⚠ ONE WARNING, NOT TWO. This step used to state the same fact at BOTH ends of the
+           screen — a counted caution here and a second paragraph under the grid — and with
+           `_seedCodeUnknown` now on the same lookup as `offChartCount` they measure exactly the
+           same rows, so the second was the first restated 200px lower. Kept HERE, where it is read
+           before the grid rather than after it, carrying the remedy the lower one had and this one
+           lacked. */
         (_badCodeN ? '<p class="pd-caution" style="margin:0 0 8px;"><b>' + _badCodeN +
-          '</b> of these codes ' + (_badCodeN === 1 ? 'is' : 'are') + ' not in the class-code chart, so a BOQ line'
-          + ' can never match ' + (_badCodeN === 1 ? 'it' : 'them') + '. Marked in the Code column.</p>' : '') +
-        _sbldHow('The grid works like Excel: <b>click</b> a cell, <b>drag</b> or <b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste one cell into a selection to fill it), <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear — or paste a block straight from Excel.' +
-          '<ul><li><b>&larr;</b> loads ticked codes from <b>SAP Activities</b> into the build; <b>&rarr;</b> sends selected grid rows back out.</li>' +
-          '<li><b>+ Library</b> loads the standard class-code library into <b>SAP Activities</b>, skipping any code the build already carries.</li>' +
-          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project. Anything coarser than a zone is auto-split down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
+          '</b> of ' + cfg.activities.length + ' codes ' + (_badCodeN === 1 ? 'is' : 'are') +
+          ' not in the Finance chart at either level, so a BOQ line can never match ' +
+          (_badCodeN === 1 ? 'it' : 'them') + '. Marked in the Code column — re-pick from <b>+ Library</b>' +
+          ' or <b>+ From BOQ</b>.</p>' : '') +
+        /* ⚠⚠ THE DISCLOSURE IS TRIMMED, NOT EMPTIED, and the rule is this file's own (entries a4/a5):
+           a sentence stating a CONSEQUENCE the planner acts on stays; a sentence explaining why the
+           design is that way goes to the code comment, where the next developer reads it.
+           What went: the Excel key's narration of gestures the grid answers anyway (`drag or
+           Shift-click to select a range`, `double-click or type to edit` — both discovered on the
+           first click), `+ Library`'s skip rule (the button's own title says it, and a skipped code
+           is visible by not appearing), and Scope's auto-split mechanism (the CONSEQUENCE — refine
+           it in the sequence step — is kept, the arithmetic is not).
+           What stays: the two shortcuts nothing on screen suggests (Ctrl+D, paste from Excel), what
+           ← and → do, and the accepted Trade spellings — a reference list read while typing, which
+           is the one thing here a planner cannot derive from the screen. */
+        _sbldHow('<b>Ctrl+D</b> fills down, <b>Ctrl+C / Ctrl+V</b> copies and pastes, <b>Delete</b> clears — and a block pastes straight from Excel.' +
+          '<ul><li><b>&larr;</b> loads ticked SAP activities into the build; <b>&rarr;</b> sends selected rows back out.</li>' +
+          '<li><b>&#9656;</b> on a group shows the level-3 items it carries. Dragging a group — or a level-1 heading — brings them all in as one merged activity.</li>' +
+          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
           '<li><b>Trade</b> accepts the name or the code: General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT.</li></ul>') +
         /* ⚠️⚠️ FOUR CONTROLS REMOVED HERE, and two of them had never worked.
            Owner 2026-09-17: *"no need for the delete selected rows button. user will just use the
@@ -39591,12 +40320,22 @@
            as a toast for anyone who reaches it another way. */
         (function () {
           var sel = actSelActs(), tr = actSelTrade();
-          var okMerge = sel.length > 1 && !!tr;
+          /* ⚠⚠ ENABLED WHENEVER TWO OR MORE ARE TICKED, EVEN ACROSS TRADES — A DELIBERATE REVERSAL.
+             Owner 2026-09-18: *"when merging activities from different trades, although it does not
+             push thru, provide error notif."* It used to be disabled in that case, with the reason
+             in the `title`. The note above still holds for the EMPTY case and is kept, but a tooltip
+             is the wrong carrier for a refusal: it never appears on a touch device, it needs a hover
+             the planner has no reason to make, and a greyed button with nothing else on screen is
+             the "nothing happened" this control was built to avoid. So the refusal is now something
+             the app SAYS, on the click, naming the trades involved.
+             ⚠ Still disabled below two ticks: there is no merge to refuse there, so there would be
+             nothing to say — the label already reads Merge with no count. */
+          var okMerge = sel.length > 1;
           var why = !sel.length ? 'Tick two or more activities in the same trade to merge them into one.'
             : sel.length === 1 ? 'Tick at least one more activity — a merge needs two.'
             : 'Those ' + sel.length + ' activities are in different trades. Merging is only allowed inside one trade, because the merged activity has to sit in one.';
           return '<button class="pd-btn" id="b-merge"' + (okMerge ? '' : ' disabled') +
-            ' title="' + e2(okMerge
+            ' title="' + e2(okMerge && tr
               ? 'Merge the ' + sel.length + ' selected ' + (GLABEL[tr] || tr) + ' activities into one that carries all of their class codes.'
               : why) + '">Merge' + (sel.length > 1 ? ' ' + sel.length : '') + '</button>' +
             (actSel.length ? '<button class="pd-btn" id="b-aclear" title="Clear the row selection">Clear</button>' : '');
@@ -39615,14 +40354,14 @@
            Group codes are valid (the resolver learned both levels on 2026-09-10); what is left is a
            code that resolves at NEITHER level, which is a real defect worth naming. Stated only
            when there is one, and it names the fix rather than only the problem. */
-        (function () {
-          var n = offChartCount(); if (!n) return '';
-          return '<p class="sbld-hint" style="color:var(--pd-warn-text,var(--pd-warn));">' + n +
-            ' of ' + cfg.activities.length + ' row(s) carry a code the Finance chart does not hold ' +
-            '<b>at either level</b> — hand-typed, from an older template, or missing a leading zero. ' +
-            'A pushed activity will show it as unrecognised and the BOQ cannot match on it. ' +
-            'Re-pick from <b>+ Library</b> (group level) or <b>+ From BOQ</b> (item level).</p>';
-        })();
+        /* ⚠⚠ RESOLVED TO THE EMPTY STRING, AND THAT IS A UNION RATHER THAN A REVERT.
+           origin/main's side of this hunk calls `offChartCount()`, which this branch DELETED in the
+           same pass that folded the two duplicate off-chart warnings into one -- the banner ~100
+           lines above, built from `_badCodeN`, says exactly what main's copy says and is built from
+           `_seedCodeUnknown`, i.e. the same `ccLevelOf` lookup the per-cell mark uses. Taking main's
+           side here would be a ReferenceError on every render of this step. */
+        '';
+
       // toolbar
       /* ⚠ The NAME cell, not the first cell. This was `+ Add row` and focused `[data-i=<id>]` —
          the first match, which is the Code cell — and a custom activity's code is deliberately
@@ -39744,22 +40483,63 @@
       host.querySelectorAll('details.sbld-hold-grp').forEach(function (d) {
         d.ontoggle = function () { var g = d.dataset.grp; if (d.open) delete holdCol[g]; else holdCol[g] = true; };
       });
+      /* ⚠⚠ THE L3 CARET DOES RE-RENDER, unlike the trade `<details>` above it. That one is a real
+         disclosure element the browser opens by itself, so a render would be redoing work already
+         done; this is a plain button whose state only exists in `holdExp`, so nothing appears
+         unless the pane is rebuilt. Two controls that look alike and are not — hence the note. */
+      host.querySelectorAll('[data-sapexp]').forEach(function (b) {
+        b.onclick = function () {
+          var c = b.dataset.sapexp;
+          if (holdExp[c]) delete holdExp[c]; else holdExp[c] = true;
+          render();
+        };
+      });
       /* ⚠⚠ ONE MOVER FOR BOTH GESTURES. ← and a drop have to land the same rows in the same
          order and drop the same ticks; two copies of this is how the button and the drag come to
          disagree about what a selection is. `ids` is the set to move — the button passes the
          ticked ones, the drop passes what was dragged. */
-      function _catLoad(ids) {
+      function _catLoad(ids, opts) {
         if (!ids || !ids.length) return false;
+        opts = opts || {};
         var take = {}; ids.forEach(function (id) { take[String(id)] = 1; });
         /* Filtered out of `cfg.catalog` rather than mapped from `ids`, so the rows keep the
            LIST's own order however the drag was assembled — which is the order ← already gives. */
         var moved = (cfg.catalog || []).filter(function (a) { return take[String(a.id)]; });
         if (!moved.length) return false;
+        /* ⚠⚠ AN SAP GROUP ARRIVES CARRYING ITS LEVEL-3 ITEMS. Owner 2026-09-18: *"if level 2 is
+           dragged to the selection, this activity carries level 3 activities inside it as a merged
+           activity."*
+           ⚠⚠ IT IS DONE HERE, IN THE ONE MOVER, NOT IN THE DRAG HANDLER — so ← and a drop cannot
+           disagree about what an L2 row is. Carrying the children is a property of the ACTIVITY (an
+           L2 group genuinely covers its L3 items), not of the gesture that brought it in; making the
+           drag special would have given one control a different answer from the other, which is the
+           exact thing the note above this function exists to prevent.
+           ⚠ `sapMergeKids` answers null for anything that is not a known L2 — a custom row, or an
+           item code from `+ From BOQ`, which already works at L3 — so those arrive exactly as
+           before. Nothing that used to be a plain row becomes a merged one by accident. */
+        moved.forEach(function (a) {
+          if (actIsMerged(a)) return;                       // already carries codes; leave it alone
+          var k = sapMergeKids(a.code, a.group);
+          if (k) a.kids = k;
+        });
         cfg.catalog = cfg.catalog.filter(function (a) { return !take[String(a.id)]; });
         cfg.activities = cfg.activities.concat(moved);
         catSel = catSel.filter(function (id) { return !take[String(id)]; });
         sortActivities();          // the build is grouped by trade, so an arrival lands in its run
         markDirty(); render();
+        /* ⚠⚠ AN L1 DRAG MERGES OUTRIGHT AND DOES NOT ASK. Owner 2026-09-18: *"if level 1 is dragged
+           from SAP activities list to selection, it carries all the level 3 activities as a merged
+           activity."* That is a statement about what the gesture MEANS, not an offer — so unlike the
+           multi-row case below it goes straight through `mergeActs`, which is still the ONE merge
+           path (it flattens, sums the durations, reports what it assumed and re-sorts).
+           ⚠ An L1 maps to exactly one trade in the chart — measured over all 39 — so this can never
+           be the cross-trade refusal; if a future chart revision broke that, `mergeActs` refuses
+           loudly rather than merging across trades behind the planner's back. */
+        if (opts.mergeAll && moved.length > 1) {
+          actSel = moved.map(function (a) { return a.id; });
+          if (!mergeActs(opts.name)) { actSel = []; render(); }
+          return true;
+        }
         /* ⚠⚠ THE OFFER COMES AFTER THE MOVE, NOT INSTEAD OF IT. Owner 2026-09-17: *"when multiple
            activities are selected from the holding list and moved to the selection table, ask if
            user wants to merge these activities into one."* Moving first means Cancel leaves the
@@ -39802,15 +40582,36 @@
          ⚠ Dragging a TICKED row carries the whole ticked set; dragging an un-ticked one carries
          only itself. Anything else surprises: a planner who ticked six and dragged one of them
          means the six, and one who dragged a row they never ticked means that row. */
-      var _dragIds = null;
+      var _dragIds = null, _dragMerge = null;
+      /* ⚠⚠ DRAGGING AN L1 CARRIES EVERY GROUP UNDER IT, AS ONE ACTIVITY. Owner 2026-09-18: *"if
+         level 1 is dragged from SAP activities list to selection, it carries all the level 3
+         activities as a merged activity."*
+         ⚠ The ids are resolved from `cfg.catalog` AT DRAG TIME rather than written into the markup,
+         so a group loaded or sent back between two renders cannot leave the drag pointing at a row
+         that is no longer there. `_dragMerge` carries the L1's NAME, which is what the merged
+         activity is called — "Electrical Works", not the first group's own name. */
+      host.querySelectorAll('[data-sapl1]').forEach(function (h) {
+        h.addEventListener('dragstart', function (ev) {
+          var g = SAP_L1[+h.dataset.sapl1]; if (!g) return;
+          var want = {}; (g[2] || []).forEach(function (c) { want[c] = 1; });
+          var ids = (cfg.catalog || []).filter(function (a) { return want[String(a.code || '').trim()]; })
+            .map(function (a) { return a.id; });
+          if (!ids.length) return;
+          _dragIds = ids; _dragMerge = g[0];
+          h.classList.add('dragging');
+          try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', g[0]); } catch (e) {}
+        });
+        h.addEventListener('dragend', function () { h.classList.remove('dragging'); _dragIds = null; _dragMerge = null; });
+      });
       host.querySelectorAll('[data-cat]').forEach(function (b) {
         b.addEventListener('dragstart', function (ev) {
           var id = b.dataset.cat;
           _dragIds = (catSel.indexOf(id) >= 0) ? catSel.slice() : [id];
+          _dragMerge = null;      // ⚠ a code drag is never an L1 drag — clear a stale flag outright
           b.classList.add('dragging');
           try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', id); } catch (e) {}
         });
-        b.addEventListener('dragend', function () { b.classList.remove('dragging'); _dragIds = null; });
+        b.addEventListener('dragend', function () { b.classList.remove('dragging'); _dragIds = null; _dragMerge = null; });
       });
       var _xlDrop = host.querySelector('#b-xl');
       if (_xlDrop) {
@@ -39831,8 +40632,8 @@
           if (!_dragIds) return;
           ev.preventDefault();
           _xlDrop.classList.remove('sbld-dropok');
-          var ids = _dragIds.slice(); _dragIds = null;
-          _catLoad(ids);
+          var ids = _dragIds.slice(), mg = _dragMerge; _dragIds = null; _dragMerge = null;
+          _catLoad(ids, mg ? { mergeAll: true, name: mg } : null);
         });
       }
       host.querySelector('#b-unload').onclick = function () {
@@ -39856,9 +40657,29 @@
            carrying five codes, which neither the search, the trade grouping nor `←` can reason
            about, and `+ Library` would then re-offer four of the five as missing. Its children go
            back as the separate codes they were. */
+        /* ⚠⚠ A MERGED ROW GOES BACK AS THE GROUPS IT COVERS, NOT AS ITS LEVEL-3 ITEMS — and this
+           is a generalisation of the old rule rather than a replacement for it. Before the
+           2026-09-18 L3 pass a merged row's `kids` WERE the codes that had been ticked, so
+           splitting into them returned exactly what went in. Now an SAP group arrives carrying its
+           L3 items, so splitting naively would park `01051 Mobilization` and `01052 Demobilization`
+           in a pane whose rows are GROUPS — and `+ Library` would then re-offer `01050`, which is
+           already in the build, as missing.
+           So: send back one row per distinct L2-LEVEL code the activity covers, named from
+           `CLASS_CODE_DB` (the authoritative group table). ⚠ A row covering NO L2 at all — a merge
+           of custom rows, or item codes from `+ From BOQ` — falls through to the pre-existing split,
+           so nothing that used to round-trip stops doing so. */
         var back = [];
         moved.forEach(function (a) {
           if (!actIsMerged(a)) { back.push(a); return; }
+          var l2 = actL2Codes(a);
+          if (l2.length) {
+            l2.forEach(function (c) {
+              var row = CC_BY_CODE[c];
+              back.push({ id: uidv(), code: c, name: (row && row[1]) || c, group: (row && row[2]) || a.group,
+                          durInt: null, durExt: null, scope: 'zone' });
+            });
+            return;
+          }
           a.kids.forEach(function (k) {
             back.push({ id: uidv(), code: k.code, name: k.name || k.code, group: k.group || a.group,
                         durInt: null, durExt: null, scope: 'zone' });
@@ -40972,7 +41793,7 @@
           '<label>lag <input class="pd-input" id="b-tllag" type="number" step="1" value="0" title="Days (negative = lead)"> d</label>' +
           '<button class="pd-btn pd-btn-primary" id="b-tladd">Add relationship</button>' +
         '</div>' +
-        '<p class="sbld-hint">Relationships are applied when the schedule is traced, so re-zoning a tower keeps them pointing at the right place. A relationship that would create a loop is refused.</p>';
+        '<p class="sbld-hint">Relationships are applied when the schedule is traced, so re-zoning a tower keeps them pointing at the right place. A loop is refused.</p>';
 
       function fillAnchors() {
         var fromId = host.querySelector('#b-tlfrom').value;
@@ -43438,7 +44259,7 @@
                   (hasOwn ? '<em title="This floor already has a plan of its own. Ticking it replaces that.">has its own</em>' : '') +
                   '</label>';
               }).join('') + '</div>' +
-              (others.length ? '' : '<p class="sbld-hint" style="margin:6px 0 0;">' + (multiTower() ? ('<b>' + e2(towerLabel(SUBJ.towerId)) + '</b> has no other floor of this trade to share with. The list is scoped to this tower on purpose — another tower’s floors are another building.') : 'This trade has no other floor to share with.') + '</p>') +
+              (others.length ? '' : '<p class="sbld-hint" style="margin:6px 0 0;">' + (multiTower() ? ('<b>' + e2(towerLabel(SUBJ.towerId)) + '</b> has no other floor of this trade to share with.') : 'This trade has no other floor to share with.') + '</p>') +
               '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-draw it once and everything ticked follows.</p>' +
             '</details>') +
           '</div>';
@@ -44590,6 +45411,14 @@
           '<tbody>' + body + '</tbody>' +
         '</table></div>' +
         '<p class="sbld-hint">' +
+          /* ⚠⚠ RESOLVED AGAINST main's own copy of this line, AND ON MORE THAN TASTE. main
+             still counted `list.length` towers "from " + `types.length` types — `list` is not a
+             name this function has any more (a ReferenceError on every render of the step, the
+             `below is not defined` shape this file has paid for five times), and `types.length`
+             is the WRONG COUNT besides: a development beside the types is invisible to
+             typeList(), so a project with one would have been reported as fewer layouts than it
+             has. `owners.length` is the number of things that own a set of floors, which is what
+             the sentence is about. */
           (towerList().length === 1
             ? 'One development. Everything in step ' + _stepNo('Floors & Zones') + ' applies to it.'
             : towerList().length + ' developments, from ' + owners.length + ' layout' +
@@ -44600,6 +45429,12 @@
         (SITE_PLAN_UI && TR.multi
           ? '<h3 class="sbld-sech">Site development plan</h3>' +
             '<p class="sbld-hint">' +
+              /* ⚠ main moved this button up into the tower BAR and rewrote this hint to point
+                 at it there. Mine is kept because my `_towerBar` — which won the auto-merge, being
+                 a rewrite — emits no such button, so main's wording would name a control that is
+                 not on the page. Both placements are defensible and the whole block is behind
+                 SITE_PLAN_UI, which is off; whoever turns it back on should pick one deliberately
+                 rather than discover this. */
               (_sp ? 'Traced' + (_sp.img ? ' over an attached drawing' : ', with no drawing attached') + '.'
                    : 'Not traced yet.') +
               ' <button class="pd-btn sbld-twbtn sbld-sitebtn' + (_sp ? ' has' : '') + '" id="b-siteplan">' +
@@ -45101,10 +45936,8 @@
             /* ⚠️ It now says where to PRESS, because this panel no longer has a button of its own
                and a read-out that does not hand the planner on is a dead end. The sentence it
                replaced described the button inside the plan window and nothing else. */
-            '<p class="sbld-hint" style="margin:2px 0 0;">Open the storey named above from its own ' +
-            '<b>Plan…</b> button in the list below. Draw <b>one plan per category</b> and share it: ' +
-            'inside that window, <b>All floors of one category</b> points every storey of that type ' +
-            'at the same drawing, so re-tracing it once moves all of them. A storey that is ' +
+            '<p class="sbld-hint" style="margin:2px 0 0;">Draw <b>one plan per category</b> and share it with ' +
+            '<b>All floors of one category</b> — re-tracing then moves all of them. A storey that is ' +
             'genuinely different gets its own.</p>' +
           '</div></details>';
       })();
@@ -45188,7 +46021,7 @@
         '</div>' +
         fillCtrl +
         _planPanel +
-        floorsHtml + '<p class="sbld-hint">Drag the grip at the left of a row to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
+        floorsHtml + '<p class="sbld-hint">Drag a row’s grip to reorder. Floors F1, F2…; basements B1, B2… (<b>B1 = topmost</b>); zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
           (multiTower() ? ' <span style="font-weight:700;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
         '</div></div>' +
@@ -46128,6 +46961,65 @@
       if (act) return { parent: _phTaskNode(code, act.w) || pb.id, after: null };
       return { parent: pb.id, after: null };
     }
+    /* ⚠️⚠️ PROMOTE A BRANCH INSIDE ITS PHASE, AND NEVER OUT OF IT — owner 2026-09-18:
+       *"improve dragging functionality of WBS and activities. When WBS is dragged outside, it
+       should go to the outermost level."*
+
+       ⚠️⚠️ AND THE CONTROL IT REPLACES COULD BREAK THE FOUR-PHASE RULE. The drag used to call
+       `wbsMove(id, 'outdent')`, which sets `parent_id = parent.parent_id` — so a branch that is
+       already a DIRECT CHILD of the phase branch was promoted to `null`, i.e. to a fifth TOP-LEVEL
+       branch beside Initiation / Planning / Execution / Close-out. That is the one thing the whole
+       *"no other WBS is allowed aside from initiation, planning, execution, close-out"* rule
+       forbids, and `+ Add WBS` goes to some lengths to prevent it while the drag beside it could
+       do it in one gesture. `pb` is the floor here, by construction.
+
+       `levels` is how many rungs to climb; anything at or past the top lands as a direct child of
+       the phase branch, which is what "the outermost level" means on a card that IS one phase.
+       ⚠️ ONE write, not N: `wbsMove` is a round trip per level, and a three-level promotion would
+       be three sequential requests with three repaints. ⚠️ The guard on the ancestor walk is the
+       same one `_phTreeAncestor` carries — a malformed tree must not hang the browser. */
+    function _phPromote(v, id, levels) {
+      var pb = _phaseBranchAt(null, v), n = wbsById(id);
+      if (!pb || !n) return null;
+      if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\u2019t be moved.', 'warn'); return null; }
+      var chain = [], p = n.parent_id ? wbsById(n.parent_id) : null, guard = 0;
+      while (p && p.id !== pb.id && guard++ < 64) { chain.push(p); p = p.parent_id ? wbsById(p.parent_id) : null; }
+      if (!p) return null;                 // not inside this phase at all — nothing to promote within
+      if (!chain.length) {
+        /* ⚠️ Says so rather than doing nothing: a gesture that silently no-ops reads as broken.
+           It is also the case the old outdent got WRONG, so the message is worth being explicit. */
+        UI.toast('Already at the outermost level of this phase.', 'warn');
+        return null;
+      }
+      var steps = Math.max(1, Math.min(levels || 1, chain.length));
+      var np = chain[steps] || pb;
+      n.parent_id = np.id;
+      // Immediately after the ancestor it came out of, which is where an outdent has always put it.
+      n.sort_order = (chain[steps - 1].sort_order || 0) + 0.5;
+      delete _wbsCollapsed[np.id]; delete _phCollapsed[np.id];
+      return _wbsNormalizeAndPersist([n.id]).then(function () { return _wbsCommit(); });
+    }
+    /* ⚠️⚠️ WHERE `+ Add activity` PUTS THE NEW ROW — owner 2026-09-18: *"when adding activity,
+       it should be on the same level as selected activity/WBS."* It used to `push` onto the end of
+       the list with no branch at all, so on a phase with any structure the new row appeared at the
+       top of the card, outside every branch, however deep in the tree the planner was working.
+       The three cases mirror `_phAddWbsTarget` exactly, because "beside what is selected" has to
+       mean the same thing for both buttons:
+         • a BRANCH selected in this phase  → inside it (the branch IS the level);
+         • an ACTIVITY selected in this phase → the same branch that activity is filed in, and
+           inserted directly after it, so "the same level" is true of the order as well as the tree;
+         • nothing selected, or the phase root → directly on the phase, appended.
+       ⚠️ Re-validated through `_phTaskNode`, so a selection on another card — the selection is
+       global and the button is per card — falls back to this phase rather than filing a row under
+       a branch this card is not showing. */
+    function _phAddActTarget(v) {
+      var pb = _phaseBranchAt(null, v);
+      var selNode = _wbsSel ? wbsById(_wbsSel) : null;
+      if (selNode && (!pb || selNode.id !== pb.id) && _phTaskNode(v, selNode.id)) return { w: selNode.id, after: null };
+      var act = _phSelAct(v);
+      if (act) return { w: act.w || null, after: act.id };
+      return { w: null, after: null };
+    }
     /* The branches a planned activity may be filed under: the phase branch itself (the default,
        and what every existing setup already does) plus every branch beneath it.
        ⚠️ A mirrored branch (`source_kind`) is NOT offered — its contents come from another
@@ -46159,9 +47051,10 @@
        same thing was asked twice (see the card body below) — a table with no label at all puts that
        question straight back. A line under a control strip is not a second pane. */
     function phWbsBlock(code, label, extra, noTree) {
-      var b = (code === 'other') ? null
-            : (code === 'milestones') ? (function () { var id = _wbsMilestonesRootId(); return id ? wbsById(id) : null; })()
-            : _phaseBranchAt(null, code);
+      // ⚠️ `_phaseBranchAt` resolves the Milestones root itself now, so this no longer carries a
+      //    second copy of that lookup — two resolvers for one branch is how the card and the push
+      //    come to disagree about which node they mean.
+      var b = (code === 'other') ? null : _phaseBranchAt(null, code);
       var n = (code === 'other') ? _wbsOtherRootIds().length : (b ? wbsChildren(b.id).length : 0);
       /* ⚠️⚠️ THE BRANCH'S OWN ACTIVITIES, AND THIS WAS A REAL HOLE. Owner 2026-09-17:
          *"When I tick the checkbox it adds activities under the ticked phase ... but at the bottom
@@ -46209,6 +47102,43 @@
       var n = wbsById(id), guard = 0;
       while (n && guard++ < 64) { if (n.id === anc) return true; n = n.parent_id ? wbsById(n.parent_id) : null; }
       return false;
+    }
+    /* ⚠️⚠️ AUTOTRACE — owner 2026-09-18: *"for each phase, add also button to autotrace logic.
+       by default, this button adds an FS relationship to all activities one after the other without
+       lag."* One press turns a phase's list into a plain chain, which is the sequence most phases
+       actually have and which drawing by hand costs one drag per activity.
+
+       ⚠️⚠️ "ONE AFTER THE OTHER" IS THE ORDER ON SCREEN, not the order in the array, and the
+       two genuinely differ: `_phTreeRows` walks the WBS depth-first and files each activity under
+       its own branch, so a row added early but filed into the last branch is drawn last. Chaining
+       the array would draw a network whose arrows leapt up and down the card for no reason a reader
+       could see. This is the one place the display order IS the answer.
+
+       ⚠️ It REPLACES the whole network rather than filling in the gaps, and says so before it
+       runs when there is something to lose: half a hand-drawn network plus half a generated chain
+       is a sequence nobody stated. ⚠️ `ph.net` is set even when the chain comes out empty (a
+       one-activity phase), because without it `sbPhLinks` falls back to the pre-Gantt implicit
+       chain and the phase silently un-converts — the same `absent` vs `deliberately none` trap
+       `sbPhLinks`'s own note records. ⚠️ A chain over distinct ids cannot close a loop, so there
+       is nothing to refuse here. */
+    function _phAutotrace(v) {
+      var ph = sbPhases()[v], acts = sbPhActs(v);
+      if (!ph || acts.length < 2) return;
+      var order = _phTreeRows(v).filter(function (r) { return r.kind === 'act'; }).map(function (r) { return r.act; });
+      var drawn = acts.filter(function (a) { return a.preds && a.preds.length; }).length;
+      function run() {
+        acts.forEach(function (a) { delete a.preds; });
+        order.forEach(function (a, i) { if (i) a.preds = [{ id: order[i - 1].id, type: 'FS', lag: 0 }]; });
+        ph.net = true;
+        markDirty(); render();
+        UI.toast('Traced ' + (order.length - 1) + ' link' + (order.length === 2 ? '' : 's') +
+          ' — every activity now follows the one above it, FS with no lag.', 'ok');
+      }
+      if (!drawn) { run(); return; }
+      psConfirm('This replaces every relationship on ' + sbPhTitle(v) +
+        ' with a plain chain: each activity follows the one above it, FS with no lag.',
+        run, { title: 'Autotrace this phase?', ok: 'Replace the links', note: drawn + ' activit' +
+          (drawn === 1 ? 'y has' : 'ies have') + ' a relationship drawn on ' + (drawn === 1 ? 'it' : 'them') + ' today.' });
     }
     /* Draw a relationship. ⚠️ Refused, with the reason, when it would close a loop: a cycle has
        no schedule, and accepting the link and then flattening the phase would be a silent wrong
@@ -46345,6 +47275,19 @@
        click that changed nothing, which is how a "you have unsaved changes" prompt stops meaning
        anything. Same call `_wbsCollapsed` already makes for the live tree. */
     var _phCollapsed = {};
+    /* ⚠️⚠️ THE ONE MOMENT `_gNarrow` CAN GO STALE IS A WINDOW CROSSING 700px, so that is the
+       one thing this listens for — not `resize`, which fires continuously and would repaint the
+       whole wizard on every drag of a window edge. Bound once for the life of the page.
+       ⚠️ Guarded on the panel being on screen: the listener outlives any one render, and calling
+       `render()` while the planner is on another tab would rebuild a step nobody is looking at. */
+    var _phMqBound = false;
+    function _phWatchNarrow() {
+      if (_phMqBound || typeof matchMedia !== 'function') return;
+      _phMqBound = true;
+      var mq = matchMedia('(max-width:700px)');
+      var fn = function () { if (document.querySelector('[data-gantt]')) render(); };
+      if (mq.addEventListener) mq.addEventListener('change', fn); else if (mq.addListener) mq.addListener(fn);
+    }
 
     /* The Gantt for one phase. Left: the tree above. Right: a bar per activity on a day scale,
        with the drawn relationships as arrows between them. */
@@ -46354,9 +47297,29 @@
       var days = Math.max(1, sc.days);
       /* ⚠️ The day width is derived from the SPAN so the whole phase fits the card without a
          horizontal scrollbar at ordinary sizes, and clamped at both ends: under ~3px a bar is a
-         smudge, over ~26px a three-week phase wastes half the card. A very long phase scrolls. */
-      var dayW = Math.max(3, Math.min(26, Math.round(620 / days)));
-      var plotW = days * dayW, ROW = 26, TOP = 0;
+         smudge, over ~14px a three-week phase wastes half the card. A very long phase scrolls.
+         ⚠️⚠️ THE CEILING AND THE TARGET WIDTH BOTH CAME DOWN (26→14, 620→430) on the
+         owner's *"reduce size of gantt chart in initiation phase"*. Initiation is the shortest
+         phase, so it was the one the old 620px target stretched hardest: a 35-day phase drew at
+         18px a day and 630px of plot to say three bars. The chart is a shape, not a ruler — the
+         dates are on each bar's own tooltip — so the smaller scale costs nothing a planner reads.
+         ⚠️ The floor stays 3: below that a bar stops being a bar. */
+      var dayW = Math.max(3, Math.min(14, Math.round(430 / days)));
+      /* ⚠️⚠️ ROW, BAR AND THE BAR'S TOP OFFSET ARE ONE SET OF NUMBERS AND MUST MOVE
+         TOGETHER. The tree's row height is `.sbld-gr`'s in CSS and the plot's is this constant; a
+         mismatch reads as bars belonging to the wrong activity, which is the one thing a Gantt may
+         not do. BAR_T is the centring pad, ROW-BAR over two. */
+      /* ⚠️⚠️ THE ROW PITCH READS THE SAME BREAKPOINT THE STYLESHEET USES, and it has to.
+         Below 700px `dashboard.css` gives every `<input>` `min-height: var(--pd-tap)` — 44px, a
+         TOUCH TARGET, whose own comment calls it "the one place a module does not get a vote". A
+         20px row cannot hold a 44px control: the name fields would overlap their neighbours and
+         every bar would line up with nothing. That floor is not ours to override, so the row
+         follows it. ⚠️ A media query cannot reach a JS constant, so the constant reads the media
+         query — and `stPhases` listens for the crossing, which is the only moment it can go stale.
+         ⚠️ ONE number drives both panes at both widths, which is what keeps a bar on its own row. */
+      var _gNarrow = (typeof matchMedia === 'function') && matchMedia('(max-width:700px)').matches;
+      var plotW = days * dayW, ROW = _gNarrow ? 48 : 20, BAR = _gNarrow ? 14 : 11;
+      var BAR_T = Math.round((ROW - BAR) / 2);
       var yOf = {}, n = 0;
       rows.forEach(function (r) { yOf[r.id] = n * ROW; n++; });
       var H = Math.max(ROW, n * ROW);
@@ -46369,7 +47332,7 @@
           return '<div class="sbld-gr sbld-gr-wbs' + mirror + (_wbsSel === r.node.id ? ' is-sel' : '') + '" data-gwbs="' + e2(r.node.id) + '" data-v="' + v + '" style="padding-left:' + pad + 'px">' +
             '<span class="sbld-gcar" data-gfold="' + e2(r.node.id) + '" title="' + (r.collapsed ? 'Expand' : 'Collapse') + '">' +
               (r.kids ? (r.collapsed ? '▸' : '▾') : '') + '</span>' +
-            '<span class="sbld-ggrip" draggable="true" data-gdragwbs="' + e2(r.node.id) + '" data-v="' + v + '" title="Drag left to promote this branch a level, right to file it under the branch above.">⋮⋮</span>' +
+            '<span class="sbld-ggrip" draggable="true" data-gdragwbs="' + e2(r.node.id) + '" data-v="' + v + '" title="Drag left to promote this branch — clear of the tree takes it to the outermost level. Drag right, or onto a branch, to file it under one.">⋮⋮</span>' +
             '<input class="sbld-gname sbld-gname-wbs" data-gwbsname="' + e2(r.node.id) + '" value="' + e2(r.node.name || 'WBS') + '" title="Rename this branch">' +
             (r.node.source_kind ? '<span class="sbld-gmirror" title="Mirrored from another app — read-only here">●</span>'
               : '<button class="pd-btn sbld-gdel" data-gwbsdel="' + e2(r.node.id) + '" title="Delete this branch"><span data-ico="trash" data-ico-size="12"></span></button>') +
@@ -46394,7 +47357,10 @@
         var when = w ? (fmtD(w.start) + ' → ' + fmtD(w.finish)) : (d + ' days');
         var bad = sc.cycle.indexOf(a.id) >= 0;
         return '<div class="sbld-gbar' + (bad ? ' is-cycle' : '') + '" data-gbar="' + e2(a.id) + '" data-v="' + v + '" ' +
-          'style="left:' + (es * dayW) + 'px;top:' + (yOf[a.id] + 5) + 'px;width:' + Math.max(4, d * dayW) + 'px" ' +
+          /* ⚠️ The HEIGHT is inline too, not in the stylesheet: it is the third member of the
+             ROW/BAR/BAR_T set, and a CSS copy of it would need its own media query to follow the
+             row pitch — two numbers for one fact, which is how a bar drifts off its row. */
+          'style="left:' + (es * dayW) + 'px;top:' + (yOf[a.id] + BAR_T) + 'px;height:' + BAR + 'px;width:' + Math.max(4, d * dayW) + 'px" ' +
           'title="' + e2((a.n || 'Activity') + ' · ' + d + ' day' + (d === 1 ? '' : 's') + ' · ' + when) + '">' +
           '<span class="sbld-ghandle" data-glink="' + e2(a.id) + '" data-v="' + v + '" title="Drag onto another activity to make it follow this one"></span>' +
           '</div>';
@@ -46405,24 +47371,74 @@
          only thing that makes four types readable on one chart: FS leaves the predecessor's FINISH
          and arrives at the successor's START, SS leaves its start, FF arrives at its finish, SF does
          both. An arrow drawn corner-to-corner regardless of type would make SS and FS look
-         identical and the type would only exist in a menu. */
+         identical and the type would only exist in a menu.
+
+         ⚠️⚠️ AND THE HEAD IS WHAT MAKES THAT VISIBLE — owner 2026-09-18: *"gantt chart arrows
+         are not clean. when a link refers to start it should point to the left of the bar. if link
+         refers finish, it should point to right of the bar. provide arrows heads but still make
+         minimalist."* Both halves were missing:
+           • the CSS said `marker-end:url(#none)` — a reference to a marker that DOES NOT EXIST, so
+             every arrow was a bare line and which end was the head was left to the reader;
+           • the old route ran `H mx V y2 H ex L x2,y2`, i.e. it dropped to the target row and then
+             ran BACKWARDS ALONG y2 past the bar and forwards again into it. On the commonest link
+             of all — FS+0, where the successor starts the day the predecessor finishes and the two
+             x's are equal — that is an 18px run left with a 9px run right drawn on top of it. That
+             overlap is the "not clean".
+         The final segment is now always HORIZONTAL and always travels INTO the named edge, so an
+         `orient="auto"` head lands pointing right at a start and left at a finish, by construction
+         rather than by a second rule. When the route has to double back it does so in the lane
+         BETWEEN the two rows, where nothing else is drawn, instead of on top of itself.
+         ⚠️ STUB is small on purpose: the head is the signal, and a long approach run on a 20px
+         row reads as a second bar. */
+      /* ⚠️ A right gutter, because an arrow ARRIVING at a finish on the phase's last day needs
+         its approach run to the RIGHT of that day — clamping it to the plot instead collapsed the
+         final segment to zero length, and a zero-length segment gives `orient="auto"` nothing to
+         orient by, so the head pointed DOWN off the end of the chart. Found by dumping the paths:
+         `... V90 H429` with x2 also 429. */
+      var MIDY = Math.round(ROW / 2), STUB = 6, PAD_R = STUB + 4, MK = 'phah-' + v;
+      var drawW = plotW + PAD_R;
       var arrows = sc.links.map(function (l, i) {
         if (sc.es[l.from] == null || sc.es[l.to] == null || yOf[l.from] == null || yOf[l.to] == null) return '';
         var fromStart = (l.type === 'SS' || l.type === 'SF');
         var toFinish  = (l.type === 'FF' || l.type === 'SF');
         var x1 = (fromStart ? sc.es[l.from] : sc.ef[l.from] + 1) * dayW;
         var x2 = (toFinish  ? sc.ef[l.to] + 1 : sc.es[l.to]) * dayW;
-        var y1 = yOf[l.from] + 13, y2 = yOf[l.to] + 13;
-        var mx = fromStart ? (x1 - 9) : (x1 + 9);
-        var ex = toFinish ? (x2 + 9) : (x2 - 9);
-        var d2 = 'M' + x1 + ',' + y1 + ' H' + mx + ' V' + y2 + ' H' + ex + ' L' + x2 + ',' + y2;
+        var y1 = yOf[l.from] + MIDY, y2 = yOf[l.to] + MIDY;
+        /* `ld` is the direction the line LEAVES in, `ad` the direction it ARRIVES in. `ad` is the
+           whole of the owner's rule: +1 arrives travelling rightwards, so the head sits on the
+           target's LEFT edge (a start); -1 arrives travelling leftwards, on its RIGHT edge. */
+        var ld = fromStart ? -1 : 1, ad = toFinish ? -1 : 1;
+        /* ⚠️⚠️ THE STUBS ARE CLAMPED TO THE PLOT, and without it the commonest SS link on any
+           phase leaves the chart. An SS leaves the predecessor's START, and the first activity
+           starts at day 0 — so its stub lands at x = -6, outside `.sbld-gantt`'s own
+           `overflow:hidden`, and the elbow is simply cut off. Caught by dumping the paths rather
+           than by reading them: `M0,10 H-6 V70 H26`. A clamped stub degenerates into a plain
+           vertical at the edge, which is a correct arrow, not a truncated one. */
+        var sx = Math.max(0, Math.min(drawW, x1 + ld * STUB));
+        var ex = Math.max(0, Math.min(drawW, x2 - ad * STUB));
+        var ym = (y1 + y2) / 2, lx, ly, d2;
+        if (ad * (x2 - sx) > 0) {
+          // The plain step: out, down, in. The run at y2 already travels in the arrival direction.
+          d2 = 'M' + x1 + ',' + y1 + ' H' + sx + ' V' + y2 + ' H' + x2;
+          lx = (sx + x2) / 2; ly = y2 - 3;
+        } else {
+          // Doubling back — done in the gap between the rows, never along the target's own row.
+          d2 = 'M' + x1 + ',' + y1 + ' H' + sx + ' V' + ym + ' H' + ex + ' V' + y2 + ' H' + x2;
+          lx = (sx + ex) / 2; ly = ym - 2;
+        }
         var lab = l.type + (l.lag ? (l.lag > 0 ? '+' : '') + l.lag : '');
-        return '<path class="sbld-garrow" d="' + d2 + '" data-gl="' + i + '" data-v="' + v + '"></path>' +
+        return '<path class="sbld-garrow" marker-end="url(#' + MK + ')" d="' + d2 + '" data-gl="' + i + '" data-v="' + v + '"></path>' +
                '<path class="sbld-ghit" d="' + d2 + '" data-gl="' + i + '" data-v="' + v + '"><title>' + e2(lab + ' — right-click to change') + '</title></path>' +
                (l.type !== 'FS' || l.lag
-                 ? '<text class="sbld-glab" x="' + ((mx + ex) / 2) + '" y="' + ((y1 + y2) / 2 - 3) + '" data-gl="' + i + '" data-v="' + v + '">' + e2(lab) + '</text>'
+                 ? '<text class="sbld-glab" x="' + lx + '" y="' + ly + '" data-gl="' + i + '" data-v="' + v + '">' + e2(lab) + '</text>'
                  : '');
       }).join('');
+      /* ⚠️ ONE MARKER PER PHASE, id'd by the phase code, because a card draws its own <svg> and a
+         `url(#…)` resolves document-wide: one shared id across five cards would be five definitions
+         of one name. ⚠️ `refX` sits at the tip so the point lands exactly on the path's end
+         rather than a marker-width short of the bar it is aiming at. */
+      var defs = '<defs><marker id="' + MK + '" viewBox="0 0 6 6" refX="5.6" refY="3" ' +
+        'markerWidth="5" markerHeight="5" orient="auto"><path class="sbld-gah" d="M0.4,0.7 L5.6,3 L0.4,5.3 Z"></path></marker></defs>';
 
       // ---- the day scale ---------------------------------------------------------------------
       /* Ticks every week where a week is wide enough to label, otherwise every four. A phase is
@@ -46434,12 +47450,24 @@
         ticks += '<div class="sbld-gtick" style="left:' + (t * dayW) + 'px"><span>' + (t ? 'd' + t : 'd0') + '</span></div>';
       }
 
-      return '<div class="sbld-gantt" data-gantt="' + v + '" style="--gw:' + plotW + 'px">' +
-        '<div class="sbld-gtree" data-gtree="' + v + '">' + tree + '</div>' +
+      /* ⚠️ COLUMN HEADERS — owner 2026-09-18: *"in left, add column headers to identify
+         activities and duration."* The table this Gantt replaced had a header row and lost it in the
+         move, so a column of bare numbers was back to being the thing the 2026-09-03 round already
+         had to answer once (*"What does the fields mean? Are these activities then days?"*).
+         ⚠️⚠️ IT IS EXACTLY AS TALL AS THE PLOT'S TICK STRIP (22px, both `box-sizing:border-box`),
+         because it REPLACES the 22px of dead top padding the tree column used to pay to stay in
+         vertical step with it. A header one pixel out of step shifts every bar off its own row. */
+      /* ⚠️ `--gw` used to be set here and read by nothing — a custom property with no consumer
+         reads as live styling to the next person. The plot's width is the body's own, below. */
+      return '<div class="sbld-gantt" data-gantt="' + v + '">' +
+        '<div class="sbld-gtree" data-gtree="' + v + '">' +
+          '<div class="sbld-ghead"><span class="sbld-ghead-n">Activities</span>' +
+          '<span class="sbld-ghead-d" title="Duration in calendar days">Days</span>' +
+          '<span class="sbld-ghead-x"></span></div>' + tree + '</div>' +
         '<div class="sbld-gplot" data-gplot="' + v + '">' +
           '<div class="sbld-gticks">' + ticks + '</div>' +
-          '<div class="sbld-gbody" style="height:' + H + 'px;width:' + plotW + 'px">' +
-            '<svg class="sbld-gsvg" width="' + plotW + '" height="' + H + '">' + arrows + '</svg>' +
+          '<div class="sbld-gbody" style="height:' + H + 'px;width:' + drawW + 'px">' +
+            '<svg class="sbld-gsvg" width="' + drawW + '" height="' + H + '">' + defs + arrows + '</svg>' +
             bars +
             '<div class="sbld-grub" hidden></div>' +
           '</div>' +
@@ -46449,6 +47477,7 @@
     }
 
     function stPhases(host, noHead) {
+      _phWatchNarrow();
       /* ⚠️ Built ONCE per render and shared by the six cards. `phWbsBlock` needs the per-node
          activity count and `_wbsBuildIndex` walks the whole tree; six calls would walk it six
          times for one number each. */
@@ -46472,14 +47501,15 @@
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
           ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
         phWbsBlock('construction') + '</div>';
-      /* ⚠️ Only when the root exists. A project whose skeleton predates Milestones has
-         nothing to show, and an empty card for a branch that is not there would be a claim. */
-      var msCard = _wbsMilestonesRootId()
-        ? '<div class="sbld-phcard sbld-phcard-ms">' +
-            '<div class="sbld-phhead"><span class="sbld-phname">Milestones</span>' +
-            '<span class="sbld-phlock">the first branch in the schedule</span></div>' +
-            phWbsBlock('milestones') + '</div>'
-        : '';
+      /* ⚠️⚠️ THE STANDALONE MILESTONES CARD IS GONE AND THE GENERIC PATH DRAWS IT — owner
+         2026-09-18: *"for the milestones group, follow the same workflow for the other phases."* It
+         used to be a hand-built card carrying a rail and a live tree and nothing else: no planned
+         list, no Gantt, no way to add an activity. It is `SB_PHASE_DEFS[0]` now, so every control
+         the other phases have it has, by construction rather than by being kept in step.
+         ⚠️ The old gate — render it only when the root exists — is gone WITH it, and that is a
+         gain: the card now says *"This phase has no branch yet · N · Push creates it"*, which is
+         true, where before a project whose skeleton predates Milestones simply had no card at all
+         and no way to author one. */
       var cards = SB_PHASE_DEFS.map(function (d) {
         if (d.when === 'exec') return execRow;
         var ph = sbPhases()[d.v], pl = planBy[d.v], on = !!ph.on;
@@ -46497,17 +47527,29 @@
            ⚠️ The ‖ column went with it. `par` is still READ as the implicit network of a phase
            nobody has drawn on — see `sbPhLinks` — but it is no longer written, because SS+0 says
            the same thing and says it in the same vocabulary as the other three types. */
-        return '<div class="sbld-phcard' + (on ? ' on' : '') + '">' +
-          '<div class="sbld-phhead">' +
-            '<label class="sbld-phname"><input type="checkbox" data-phon="' + d.v + '"' + (on ? ' checked' : '') + '> ' + e2(PHASE_LABELS[d.v]) + '</label>' +
-            '<span class="sbld-phlock">' + (d.when === 'before' ? 'ends before the Execution Phase starts' : 'starts after the Execution Phase finishes') + '</span>' +
+        /* ⚠️ A REQUIRED PHASE GETS NO TICK BOX, it does not get a ticked one that cannot be
+           unticked: a disabled checkbox is a control that refuses, and "always required" is not a
+           refusal, it is simply not a question. */
+        var head = d.always
+          ? '<span class="sbld-phname">' + e2(sbPhTitle(d.v)) + '</span>'
+          : '<label class="sbld-phname"><input type="checkbox" data-phon="' + d.v + '"' + (on ? ' checked' : '') + '> ' + e2(sbPhTitle(d.v)) + '</label>';
+        var sub2 = d.when === 'ms' ? 'the first branch in the schedule · always pushed'
+                 : d.when === 'before' ? 'ends before the Execution Phase starts'
+                 : 'starts after the Execution Phase finishes';
+        return '<div class="sbld-phcard' + (on ? ' on' : '') + (d.always ? ' sbld-phcard-ms' : '') + '">' +
+          '<div class="sbld-phhead">' + head +
+            '<span class="sbld-phlock">' + sub2 + '</span>' +
           '</div>' +
           // ⚠️ Each number says what it IS. "200 activities · 8508 days" left the reader to guess
           // whether 8508 was a total, a span or a sum — and it was the sum, which was the bug.
-          '<p class="sbld-phmeta">' + (on
-            ? '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · spans <b>' + sbPhDays(d.v) + '</b> calendar days · ' +
-              (pl ? e2(win(pl.start, pl.finish)) : '—')
-            : 'Off — nothing is pushed for this phase.') + '</p>' +
+          /* ⚠️ A required phase with nothing in it says what to do rather than reporting "0
+             activities · spans 0 calendar days", which reads as a broken figure rather than an
+             empty list. */
+          '<p class="sbld-phmeta">' + (!on ? 'Off — nothing is pushed for this phase.'
+            : !ph.acts.length ? (d.always ? 'No milestones yet — <b>+ Add activity</b> starts the list.'
+                                          : 'No activities yet — <b>+ Add activity</b> starts the list.')
+            : '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · spans <b>' + sbPhDays(d.v) + '</b> calendar days · ' +
+              (pl ? e2(win(pl.start, pl.finish)) : '—')) + '</p>' +
           /* ⚠️⚠️ THE BRANCHES COME FIRST, AND THAT IS A SEQUENCE ARGUMENT, NOT A LAYOUT ONE.
              Owner 2026-09-17: *"it should be clear that the branches should come first before the
              activity in terms of sequence. By defining the sub-branches/sub-WBS the planner would be
@@ -46526,13 +47568,20 @@
              is what makes the four-phase rule hold by construction rather than by convention.
              ⚠️ `Reset to the typical set` went as asked. It was the one control on this card that
              could destroy a planner's own typed list in a single click, and its confirm said so. */
+          /* ⚠️ Autotrace is offered only with something to chain: on a one-activity phase it
+             would be a control that cannot do anything, which is worse than an absent one. */
           phWbsBlock(d.v, null, on
             ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phwbsadd="' + d.v + '">+ Add WBS</button>' +
-              '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phadd="' + d.v + '">+ Add activity</button>'
+              '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phadd="' + d.v + '">+ Add activity</button>' +
+              (ph.acts.length > 1 ? '<button type="button" class="pd-btn pd-btn-sm sbld-phwbs-add" data-phtrace="' + d.v +
+                '" title="Chain every activity FS with no lag, in the order shown — replaces any relationships already drawn on this phase">Autotrace</button>' : '')
             : '', on) +
-          (on ? '<p class="sbld-phplanline"><b>Planned</b> \u00b7 created under this phase when you <b>' +
+          /* ⚠️ Shortened, not deleted. This one line is what stops the Gantt above being read as
+             the project's own schedule: the activities on it do not exist until the push. It is the
+             same distinction the card's two blocks are ordered by. */
+          (on ? '<p class="sbld-phplanline"><b>Planned</b> \u00b7 created by <b>' +
                   _stepNo('Generate') + ' \u00b7 Push</b>' +
-                  '<span class="sbld-phdrop" data-gdrop-root="' + d.v + '" title="Drag an activity here to take it out of every branch and file it directly on the phase">directly on the phase</span></p>' +
+                  '<span class="sbld-phdrop" data-gdrop-root="' + d.v + '" title="Drop an activity or a branch here to take it out of every sub-branch and put it directly on the phase">directly on the phase</span></p>' +
                 _phGanttHTML(d.v, pl) : '') +
           /* ⚠️ THE SUBTREE IS SHOWN WHETHER THE PHASE IS ON OR OFF. The activity list above is
              what the next push WILL create; the tree below is what the project HAS. A branch with
@@ -46545,19 +47594,15 @@
          be on no card at all: invisible, un-editable, and still renumbering their siblings' dotted
          codes. It is rendered even when empty, so "there is nothing outside the phases" is a
          statement the screen makes rather than something the reader has to infer from absence. */
-      cards = msCard + cards;
       cards += '<div class="sbld-phcard sbld-phcard-other">' +
         '<div class="sbld-phhead"><span class="sbld-phname">Other branches</span>' +
         '<span class="sbld-phlock">outside the lifecycle phases</span></div>' +
         phWbsBlock('other') + '</div>';
-      var span = (function () {
-        if (!g.start) return '';
-        var a = (plan.length && plan[0].when === 'before' && plan[0].start) ? plan[0].start : g.start;
-        var last = plan.filter(function (x) { return x.when === 'after' && x.finish; }).pop();
-        var b = last ? last.finish : g.finish;
-        return '<p class="sbld-phtotal">Whole programme: <b>' + fmtD(a) + ' → ' + fmtD(b) + '</b> · ' +
-          (Math.round((+b - +a) / 86400000) + 1) + ' calendar days</p>';
-      })();
+      /* ⚠️ THE "Whole programme: … · N calendar days" LINE IS GONE — owner 2026-09-18: *"remove
+         the whole program indication on this page."* It summed the lifecycle around the Execution
+         window, which is a statement about the SCHEDULE, on a step that authors the phases either
+         side of it; every card already states its own span, and the programme's own window is what
+         the Generate step and the schedule itself report. */
       /* ⚠ `noHead` when the Project Phases step is drawing both halves on one page — it emits
          the one heading, and this used to add a second one directly under the first (the doubled
          title in the owner’s screenshot). Still emitted when something opens this renderer on
@@ -46576,15 +47621,31 @@
                to the moment someone tries to add a fifth, not to every visit. */
         '<p class="sbld-lede">The lifecycle around <b>Execution</b>. No locations here, and nothing ' +
         'repeats per zone.</p>') +
-        '<p class="sbld-hint">Dates are <em>computed</em>: each row follows the one above, so ' +
-        'dragging a row moves everything below it. Tick <b>‖</b> to run alongside instead.</p>' +
-        '<div class="sbld-phgrid">' + cards + '</div>' + span;
+        /* ⚠️⚠️ THIS HINT WAS REMOVED BECAUSE IT HAD BECOME FALSE, not only because it was long.
+           It read *"each row follows the one above, so dragging a row moves everything below it.
+           Tick ‖ to run alongside instead."* — and the ‖ column went with the table on 2026-09-17,
+           while the drag handle now FILES a row into a branch rather than reordering it. So it named
+           a control that does not exist and described a gesture that does something else. The one
+           fact worth keeping — that the dates are computed rather than typed — is what the bars are.
+           ⚠️ A stale instruction is worse than a long one: it teaches the reader the wrong model. */
+        '<div class="sbld-phgrid">' + cards + '</div>';
 
       host.querySelectorAll('[data-phon]').forEach(function (c) {
         c.onchange = function () { sbPhases()[c.dataset.phon].on = c.checked; markDirty(); render(); };
       });
       host.querySelectorAll('[data-phadd]').forEach(function (b) {
-        b.onclick = function () { sbPhActs(b.dataset.phadd).push({ id: uidv(), n: '', d: 5 }); markDirty(); render(); };
+        b.onclick = function () {
+          var v = b.dataset.phadd, acts = sbPhActs(v), t = _phAddActTarget(v);
+          var a = { id: uidv(), n: '', d: 5 };
+          if (t.w) a.w = t.w;
+          var at = t.after ? acts.map(function (x) { return x.id; }).indexOf(t.after) : -1;
+          if (at >= 0) acts.splice(at + 1, 0, a); else acts.push(a);
+          /* ⚠️ The new row becomes the selection, so a second press adds beside IT rather than
+             beside whatever was selected three rows ago — and `+ Add WBS` reads the same selection,
+             so the two buttons agree about where the planner is working. */
+          _phSel = { v: v, id: a.id }; _wbsSel = null;
+          markDirty(); render();
+        };
       });
       /* ⚠️ The parent is resolved AT CLICK TIME, never captured at render: a push between the
          two creates the phase branch, and a null captured earlier would silently add a new TOP-LEVEL
@@ -46604,6 +47665,9 @@
          ⚠️ The parent is resolved at click time too, never captured at render: a push between
          the two creates the phase branch, and a null captured earlier would silently add a new
          TOP-LEVEL branch instead of a child — which renumbers every sibling's dotted code. */
+      host.querySelectorAll('[data-phtrace]').forEach(function (b) {
+        b.onclick = function (e) { e.preventDefault(); e.stopPropagation(); _phAutotrace(b.dataset.phtrace); };
+      });
       host.querySelectorAll('[data-phwbsadd]').forEach(function (b) {
         b.onclick = function (e) {
           e.preventDefault(); e.stopPropagation();
@@ -46731,9 +47795,19 @@
           /* ⚠️ A LEVEL IS 14px OF INDENT, SO THE THRESHOLD IS ONE LEVEL'S WORTH. Anything
              smaller and a shaky drop re-parents a branch nobody meant to move; anything larger and
              the gesture stops being discoverable. Dropping on a branch is handled below and wins —
-             this only fires when the drop went nowhere in particular. */
+             this only fires when the drop went nowhere in particular.
+             ⚠️⚠️ HOW FAR LEFT IS HOW MANY LEVELS, and dragging clear of the tree's own left
+             edge takes it all the way out — owner 2026-09-18: *"When WBS is dragged outside, it
+             should go to the outermost level."* Before this, one drag was one level however far it
+             travelled, so a branch four deep needed four separate drags.
+             ⚠️⚠️ AND IT GOES THROUGH `_phPromote`, NOT `wbsMove('outdent')`, because that one
+             promotes a direct child of the phase branch to a fifth TOP-LEVEL branch — out of the
+             lifecycle entirely. See the note on `_phPromote`. */
           var dx = e.clientX - d.x;
-          if (dx <= -14) wbsMove(d.id, 'outdent').then(render);
+          var treeEl = host.querySelector('[data-gtree="' + d.v + '"]');
+          var outside = treeEl && e.clientX < treeEl.getBoundingClientRect().left;
+          if (outside) { var pr = _phPromote(d.v, d.id, 99); if (pr) pr.then(render); }
+          else if (dx <= -14) { var pr2 = _phPromote(d.v, d.id, Math.floor(-dx / 14)); if (pr2) pr2.then(render); }
           else if (dx >= 14) wbsMove(d.id, 'indent').then(render);
         };
       });
@@ -46770,14 +47844,18 @@
       });
       /* "directly on the phase" — the way back OUT of every branch, which a tree with no such
          target cannot express: dropping an activity on empty space does nothing, so without this
-         an activity filed into a branch could never be taken out again. */
+         an activity filed into a branch could never be taken out again.
+         ⚠️ IT TAKES A BRANCH TOO NOW. Aiming a drag at nothing in particular is how a gesture
+         becomes a guess; this is the same "out of everything" answer for both kinds of row, stated
+         by a target rather than by how far the cursor travelled. */
       host.querySelectorAll('[data-gdrop-root]').forEach(function (z) {
         var v = z.dataset.gdropRoot;
-        _gAllow(z, function (d) { return d.kind === 'act' && d.v === v; });
+        _gAllow(z, function (d) { return d.v === v; });
         z.ondrop = function (e) {
           e.preventDefault(); z.classList.remove('is-drop');
           var d = _gDrag; _gDrag = null;
-          if (!d || d.kind !== 'act' || d.v !== v) return;
+          if (!d || d.v !== v) return;
+          if (d.kind === 'wbs') { var pr = _phPromote(v, d.id, 99); if (pr) pr.then(render); return; }
           var a = _phActById(v, d.id); if (!a) return;
           delete a.w; markDirty(); render();
         };
@@ -47715,6 +48793,14 @@
       var phCodes = {};
       rows.forEach(function (r) {
         if (!isWbs(r) || !r.wbs) return;
+        /* ⚠️ Milestones has no phase code and `phaseFromName` answers null for it by design, so
+           the derive finds its branch by NAME — which is how every other reader of that root finds
+           it too (`_wbsMilestonesRootId`). Without this the fifth card would be the one phase the
+           "read the live schedule" route could not round-trip. */
+        if (String(r.activity_name || '').trim().toLowerCase() === 'milestones') {
+          (phCodes[MS_CODE] = phCodes[MS_CODE] || []).push(String(r.wbs));
+          return;
+        }
         var v = (typeof phaseFromName === 'function') ? phaseFromName(r.activity_name) : null;
         if (!v || v === EXEC_PHASE) return;
         (phCodes[v] = phCodes[v] || []).push(String(r.wbs));
@@ -47748,8 +48834,8 @@
           return { id: uidv(), n: String(r.activity_name || '').slice(0, 200), d: Math.max(1, Math.min(999, sbDurOf(r))), par: par };
         }) };
         var nPar = out.phases[d.v].acts.filter(function (a) { return a.par; }).length;
-        rep.phases.push(PHASE_LABELS[d.v] + ' (' + out.phases[d.v].acts.length + (nPar ? ', ' + nPar + ' concurrent' : '') + ')');
-        if (mine.length > 200) rep.notes.push(PHASE_LABELS[d.v] + ' had ' + mine.length + ' activities; the first 200 were read (the step is a hand-edited list, not a generator).');
+        rep.phases.push(sbPhTitle(d.v) + ' (' + out.phases[d.v].acts.length + (nPar ? ', ' + nPar + ' concurrent' : '') + ')');
+        if (mine.length > 200) rep.notes.push(sbPhTitle(d.v) + ' had ' + mine.length + ' activities; the first 200 were read (the step is a hand-edited list, not a generator).');
       });
 
       /* ⚠️ NAMED ONE BY ONE NOW, instead of one blanket sentence. The old note said the tower
@@ -48137,7 +49223,7 @@
       host.innerHTML = '<h2>' + _stepNo('Activities & phases') + ' · What came in, and which phase it belongs to</h2>' +
         '<p class="sbld-lede">From <b>' + e2(imp.fname) + '</b> — <b>' + leaves.toLocaleString() + '</b> activities under <b>' +
           impBranches().length.toLocaleString() + '</b> WBS branches' + (dropped.length ? ', with the file’s own project-root wrapper dropped' : '') + '. ' +
-          'File each branch under one of this project’s standard phases — that <b>is</b> the phase, because an imported activity takes its phase from the branch it sits under. Anything you do not want in the schedule at all, tick <b>exclude</b>.</p>' +
+          '.</p>' +
         /* ⚠️ The first half described behaviour the planner discovers by using the control (a
            nested branch inherits until you override it). The second half is a CONSEQUENCE they
            cannot discover — getting it wrong makes the next step find no locations — so it stays,
@@ -48218,7 +49304,7 @@
         'this file.</p>' +
         _locBreakdownBar() +
         (sources.length
-          ? '<p class="sbld-hint">Map each level onto a source from the file. Leave a level on <b>— skip —</b> to import without it; the preview underneath lists the actual values each mapping would produce, which is how you catch a <b>Tower</b> rule that also swept up “Tower Handover”.</p>' +
+          ? '<p class="sbld-hint">The preview below is how you catch a <b>Tower</b> rule that also swept up “Tower Handover”.</p>' +
             '<div class="pd-card ps-ck-card" style="padding:12px 14px;">' +
             (LOC_LEVELS.length ? '' : '<p class="sbld-hint" style="margin-top:0;">This project has no levels yet — <b>+ Add a location level</b> below creates them as part of the import.</p>') +
             '<div id="imp-locmap">' + '</div>' +
@@ -48623,11 +49709,13 @@
              orientation for somebody who has used the OTHER path. A planner importing a file has
              not, and the gestures are spelled out immediately after it anyway. */
           '. ' +
-          /* ⚠️ CAPITALISED BECAUSE THE CLAUSE BEFORE IT WAS CUT. This used to follow "…work on the
-             build path:" — a colon, so lowercase was right. Removing that clause left ". drag one
-             bar", a sentence starting mid-word, which is only visible on the rendered page and was
-             caught by walking a real file through the wizard. */
-          '<b>Drag one bar onto another to connect them</b>, click a line to change its type or lag, and switch to <b>View</b> to see what drives what.</p>' +
+          /* ⚠️⚠️ THE GESTURE SENTENCE IS GONE BECAUSE IT WAS ON SCREEN TWICE. `.sbld-focuslegend`,
+             a few dozen pixels below this, already reads "Drag a bar onto another to connect. Click
+             a line to edit or unlink it." — and it is the BETTER of the two, because it follows the
+             mode (it says something different in View). "switch to View to see what drives what" was
+             a third copy: `#b-impmode`'s own label is "◉ View mode — click to Edit".
+             ⚠️ What is left is the counts, which nothing else on the step states. */
+          '.</p>' +
         '<div class="sbld-relmodes">' + modes + '</div>' +
         '<div class="sbld-sec-actions">' +
           '<button class="pd-btn' + (impEditing ? ' pd-btn-primary' : '') + '" id="b-impmode" title="' +
@@ -48659,7 +49747,7 @@
             '<div class="sbld-canvaswrap" id="b-impcanvas">' + svg + '</div>' +
           '</div>' +
         '</div>' +
-        '<p class="sbld-hint">Relationships are stored as the predecessor text on each activity — the same field the Project Schedule’s own link editor writes — so anything kept here stays editable there afterwards.</p>';
+        '<p class="sbld-hint">Relationships land as predecessor text, so anything kept here stays editable in the schedule afterwards.</p>';
 
       // ---- wiring ------------------------------------------------------------------------------
       host.querySelectorAll('input[name="imp-relmode"]').forEach(function (r) {
@@ -49353,7 +50441,7 @@
            external plan is the contract, so it is what the live schedule holds; the internal plan
            is the target, which is exactly what a what-if scenario is for. Asking made the planner
            pick one and lose the other. */
-        '<p class="sbld-hint" style="margin:0 0 12px;"><b>External (contract)</b> goes into the live schedule. <b>Internal (target)</b> is captured beside it as a <b>what-if scenario</b>, so you can switch the dates to the target plan from <b>Open ▾ · What-if scenarios</b> without pushing twice.</p>' +
+        '<p class="sbld-hint" style="margin:0 0 12px;"><b>External (contract)</b> goes into the live schedule; <b>Internal (target)</b> beside it as a <b>what-if scenario</b> (<b>Open ▾ · What-if scenarios</b>).</p>' +
         pkgBlock +
         startBlock +
         // ⚠️ The "Assign under WBS" picker is gone (owner 2026-08-18: it was always set to Execution
@@ -49632,6 +50720,14 @@
       // The activity's CLASS CODE, resolved to an activity-code value id once the dictionaries
       // below have been ensured. Left off entirely when there is no code or no dictionary — an
       // empty map is what the column defaults to anyway.
+      /* The full code set for `class_codes`, or null when there is nothing a single `class_code`
+         does not already say. ⚠️ Reads `actCodes`, the SAME function the grid's `+N` badge and its
+         tooltip read — so what the planner is told the row carries and what is written cannot
+         disagree. */
+      function _ccsOf(r) {
+        var list = (r && r.act) ? actCodes(r.act) : [];
+        return list.length > 1 ? list : null;
+      }
       function classCodesOf(r) {
         var cc = r && r.act && r.act.code ? String(r.act.code).trim() : '';
         if (!cc || !_ccTypeId || !_ccValueId[cc.toLowerCase()]) return null;
@@ -49643,7 +50739,20 @@
         // mirror above. The column is the canonical value (org-wide chart, hierarchy, shared with
         // the Procurement app's cost_code); the activity-code mirror is per-project and flat. Two
         // representations of one fact is a drift risk -- see this module's CLAUDE.md.
-        class_code: (r.act && r.act.code) ? String(r.act.code).trim() : null, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null,
+        class_code: (r.act && r.act.code) ? String(r.act.code).trim() : null,
+        /* ⚠⚠ EVERY CODE A MERGED ACTIVITY COVERS, NOT ONLY THE FIRST. Owner 2026-09-18: *"if an
+           activity is a merged activity, it should carry multiple class codes to schedule."* Until
+           today a merged row pushed `kids[0].code` and the rest lived only in the setup's own
+           `schedule_builder` row — so a BOQ line priced under any of the others could never match
+           the activity that actually covers it.
+           ⚠ `class_code` above is UNCHANGED and still the canonical single value; this is additive,
+           with element 0 equal to it. Every exact-match reader (the BOQ allocator, `ccByCode`, the
+           cc1/cc2/cc3 grouping dims, the grid's own enum cell) keeps working untouched — which is
+           precisely why the list could not just be delimited into `class_code`.
+           ⚠ `null` for a single-code activity, never a 1-element array: null means "the one column
+           beside me is the whole answer", which is what every reader falls back to, and writing
+           150k one-element arrays to say that would be noise with an index attached. */
+        class_codes: _ccsOf(r), percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null,
         /* ⚠️ STATED ON THE ACTIVITY, not left to inheritance — the same rule phase and
            scope_type already follow here. An activity that says which contract lot it
            belongs to cannot be mis-read later if the tree above it is re-parented.
@@ -49714,10 +50823,16 @@
         });
         return {
           project_id: pid, created_by: UID,
-          activity_id: id, activity_name: String(t.r.act.n || '').trim() || ((PHASE_LABELS[t.v] || 'Phase') + ' activity ' + (t.i + 1)),
+          activity_id: id, activity_name: String(t.r.act.n || '').trim() || (sbPhTitle(t.v) + ' activity ' + (t.i + 1)),
           activity_type: 'Task', status: 'Not Started',
           start_date: iso2(t.r.start), end_date: iso2(t.r.finish), duration_days: t.r.dur,
-          percent_complete: 0, phase: t.v, seq_order: t.i,
+          /* ⚠️⚠️ NULL FOR MILESTONES, AND THIS IS THE LINE THE WHOLE FIFTH CARD TURNS ON.
+             `project_schedule.phase` carries a four-value CHECK; sending 'milestones' would make
+             PostgREST reject the batch, `_dropScope` would answer by stripping `phase` from EVERY
+             payload in the push, and the whole schedule would land with no lifecycle phase at all
+             — a fifth card costing four phases. The rows still land under the Milestones branch,
+             which is what says what they are. */
+          percent_complete: 0, phase: (t.v === MS_CODE ? null : t.v), seq_order: t.i,
           predecessors: rels.length ? serializeRels(rels) : null,
           package_id: usePkg || null
         };
@@ -50034,7 +51149,11 @@
             var pkey = 'PH_' + pp.v;
             ensureNode(pkey, '__phaseparent__', _phaseBranchName(pp.v), null, null);
             nodeByKey[pkey].findPhase = pp.v;
-            nodeByKey[pkey].phase = pp.v;
+            /* ⚠️⚠️ THE MILESTONES BRANCH CARRIES **NO** PHASE, AND `nd.phase` CANNOT EXPRESS
+               THAT — the two WBS-Summary payloads below both read `nd.phase || 'construction'`, so
+               leaving it undefined would tag the Milestones branch as EXECUTION, and setting it to
+               'milestones' would be rejected by the CHECK. A third state is needed, so it has one. */
+            if (pp.v === MS_CODE) nodeByKey[pkey].noPhase = true; else nodeByKey[pkey].phase = pp.v;
             // ⚠️ The push files these beside branches it does not own — see _nodeOrderPlan.
             nodeByKey[pkey].keepOrder = true;
             pp.rows.forEach(function (r, i) { phaseTasks.push({ k: pkey, v: pp.v, r: r, i: i }); });
@@ -50304,7 +51423,7 @@
           function _hasSummaryRow(nid) {
             return !!nid && rows.some(function (r) { return isWbs(r) && r.wbs_node_id === nid; });
           }
-          nodeDescs.forEach(function (nd) { var _nid = keyToNodeId[nd.key]; if (reused[nd.key] && _hasSummaryRow(_nid)) return; var nidn = _nid; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var _nid = keyToNodeId[nd.key]; if (reused[nd.key] && _hasSummaryRow(_nid)) return; var nidn = _nid; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: nd.noPhase ? null : (nd.phase || 'construction'), scope_type: (nd.noPhase || (nd.phase && nd.phase !== 'construction')) ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
           /* ⚠️⚠️ THE ACTIVITY'S OWN BRANCH WINS, WHEN IT IS STILL A VALID ONE. `t.r.act.w`
              is what the planner picked in the PLANNED list; `_phTaskNode` re-checks at push time
@@ -50335,13 +51454,13 @@
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
           var codeByKey = {}, so2 = {};
           function childCode(pk) { var pc = pk === '__base__' ? base : codeByKey[pk]; if (so2[pk] == null) so2[pk] = nextChildIndex(pc); return code(pc, so2[pk]++); }
-          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: nd.noPhase ? null : (nd.phase || 'construction'), scope_type: (nd.noPhase || (nd.phase && nd.phase !== 'construction')) ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; p.wbs = childCode(t.k); payloads.push(p); });
           phaseTasks.forEach(function (t) { var p2 = phaseTaskPayload(t); p2.wbs = childCode(t.k); payloads.push(p2); });
         }
       }
 
-      var CH = 500, ok = true, msg = '', scopeDropped = false, codesDropped = false;
+      var CH = 500, ok = true, msg = '', scopeDropped = false, codesDropped = false, ccSetDropped = false;
       // ⚠ The two contract-scope columns are the newest thing on this payload. If the project's
       // database has not had 2026-08-19-schedule-contract-scope.sql run yet, PostgREST rejects the
       // WHOLE insert for an unknown column — which would turn a missing migration into a total push
@@ -50357,6 +51476,15 @@
         codesDropped = true;
         payloads.forEach(function (pl) { delete pl.activity_codes; });
       }
+      /* ⚠️ And the same for `class_codes`: a database that has not had
+         2026-09-18-schedule-class-codes.sql run has no such column, and PostgREST rejects the WHOLE
+         insert for one unknown field. A merged activity still pushes its FIRST code in `class_code`,
+         so the schedule is correct-but-narrower rather than missing — which is the right trade
+         against losing 2,600 activities, and the summary says which it was. */
+      function _dropCcSet() {
+        ccSetDropped = true;
+        payloads.forEach(function (pl) { delete pl.class_codes; });
+      }
       for (var i = 0; i < payloads.length; i += CH) {
         if (typeof showLoading === 'function') showLoading('Pushing to the project schedule… (' + Math.min(i + CH, payloads.length) + ' of ' + payloads.length + ' rows)');
         var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
@@ -50366,6 +51494,17 @@
         }
         if (res.error && !codesDropped && /activity_codes/.test(res.error.message || '')) {
           _dropCodes();
+          res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
+        }
+        /* ⚠⚠ TESTED AFTER `activity_codes`, ON THE PLURAL SPELLING, AND ONLY FOR AN UNKNOWN-COLUMN
+           MESSAGE. Two traps here, both real: `/class_code/` would also match a complaint about the
+           SCALAR column and hide the real cause behind a half-fix; and `class_codes` is ALSO the
+           name of the Finance chart TABLE this module reads, so a bare match could drop the set on
+           an error that has nothing to do with this column. PostgREST's unknown-column message names
+           the column and the schema cache, so both words are required. */
+        if (res.error && !ccSetDropped && /class_codes/.test(res.error.message || '')
+            && /column|schema cache/i.test(res.error.message || '')) {
+          _dropCcSet();
           res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
         }
         if (res.error) { ok = false; msg = res.error.message; break; }
@@ -50424,6 +51563,7 @@
             .concat(_clearedExecOnly ? ['The <b>Execution Phase only</b> view filter was ON, which hides every lifecycle phase. It has been switched off so the work just pushed is visible — turn it back on from <b>Group ▾</b> when you want the construction-only view.'] : [])
             .concat(scopeDropped ? ['Contract scope (Main Contract / Change Order) was NOT written — this project database is missing those columns. Run migrations/2026-08-19-schedule-contract-scope.sql in Supabase, then re-tag from the schedule grid Scope column.'] : [])
             .concat(codesDropped ? ['Class codes were NOT written — this project database has no project_schedule.activity_codes column. Run migrations/2026-07-07-activity-codes.sql in Supabase and push again.'] : [])
+            .concat(ccSetDropped ? ['A merged activity pushed only its FIRST class code — this project database has no project_schedule.class_codes column. Run migrations/2026-09-18-schedule-class-codes.sql in Supabase and push again.'] : [])
             .concat((_ccMsg && !codesDropped) ? ['Class codes were NOT written — the activity-code dictionaries could not be created. Reason: ' + _ccMsg + '. Run migrations/2026-07-07-activity-codes.sql in Supabase and push again.'] : [])
             .concat(wbsMsg ? ['WBS Manager not updated, so this push filed under dotted WBS codes instead of WBS-Manager branches. Reason: ' + wbsMsg] : [])
             .concat(Object.keys(wbsUnnamed || {}).length

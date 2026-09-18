@@ -781,8 +781,25 @@ window.BOQ = (function () {
          reliable ancestry on this table: `2026-09-01-wbs-link-rpc.sql` measured `wbs_node_id`
          NULL on 16,393 of 16,393 activities after an import, and the schedule's own grid never
          noticed because `rebuild()` splits the code instead. Never read `wbs_node_id` here. */
-      var rows = await PDb.selectAll('project_schedule', function (q) { return q.eq('project_id', pid); },
-        'id,activity_id,activity_name,class_code,location,work_type,duration_days,activity_type,scope_type,wbs');
+      /* ⚠️⚠️ `class_codes` (PLURAL) IS ASKED FOR SEPARATELY, AND ITS ABSENCE MUST NOT COST THE READ.
+         A Schedule Setup merge pushes every code the activity covers into that text[] as well as
+         the first one into `class_code` (2026-09-18) — but PostgREST rejects the WHOLE select for
+         one unknown column, so a project whose database has not had
+         migrations/2026-09-18-schedule-class-codes.sql run would get NO activities at all and the
+         matcher would report every line as unscheduled. Tried once with it, once without. */
+      var COLS = 'id,activity_id,activity_name,class_code,location,work_type,duration_days,activity_type,scope_type,wbs';
+      var rows;
+      try {
+        rows = await PDb.selectAll('project_schedule', function (q) { return q.eq('project_id', pid); }, COLS + ',class_codes');
+      } catch (eCc) {
+        /* ⚠️ NARROWED TO THE COLUMN, not "any failure". A blanket retry would turn a transient
+           network error into a silent, permanent downgrade to the scalar — the read would appear to
+           work and quietly stop finding merged activities. Anything else is re-thrown to the outer
+           handler, which is what already reports a failed activity read. */
+        var _m = (eCc && eCc.message) || '';
+        if (!/class_codes/.test(_m) || !/column|schema cache/i.test(_m)) throw eCc;
+        rows = await PDb.selectAll('project_schedule', function (q) { return q.eq('project_id', pid); }, COLS);
+      }
       /* ⚠️⚠️ THE `WBS Summary` ROWS ARE KEPT, AS A CODE→NAME MAP ONLY. They are the only place a
          branch's NAME is stored, so discarding them (as this function did) left the WBS rung with
          codes and no words to match against. `affected.js`'s own loader had to make exactly this
@@ -2983,15 +3000,20 @@ window.BOQ = (function () {
      and the planner unticks what they do not want. */
   function scheduleSeedPlan(acts, items, cmap, codeOf) {
     var by = {}, order = [];
+    /* ⚠️⚠️ ONE ACTIVITY CAN SEED SEVERAL LINES. A merged Schedule Setup activity covers every code
+       in `class_codes`, so bucketing it by its scalar `class_code` alone would offer a bill line for
+       the first code and silently none for the rest — on a programme built from SAP groups that is
+       most of the bill. Deduped per bucket, so an activity listed under two codes is counted once
+       in each and never twice in one. */
     (acts || []).forEach(function (a) {
-      var code = String((a && a.class_code) || '').trim();
-      if (!code) return;
-      var e = by[code];
-      if (!e) { e = by[code] = { code: code, acts: [], onBill: false, chart: null }; order.push(e); }
-      /* ⚠️ DEDUPED ON activity_id, never on the row uuid. An import reinserts every row, so the
-         uuid changes and the activity_id does not — the rule `schedule-document-links` records and
-         the one `boq_allocations.activity_id` is typed `text` for. */
-      if (a.activity_id && e.acts.indexOf(a.activity_id) < 0) e.acts.push(a.activity_id);
+      actCodesOf(a).forEach(function (code) {
+        var e = by[code];
+        if (!e) { e = by[code] = { code: code, acts: [], onBill: false, chart: null }; order.push(e); }
+        /* ⚠️ DEDUPED ON activity_id, never on the row uuid. An import reinserts every row, so the
+           uuid changes and the activity_id does not — the rule `schedule-document-links` records and
+           the one `boq_allocations.activity_id` is typed `text` for. */
+        if (a.activity_id && e.acts.indexOf(a.activity_id) < 0) e.acts.push(a.activity_id);
+      });
     });
     /* Already on the bill = some line on this revision is MAPPED to that code. Checked through the
        class map rather than by matching item_no, because an imported line's item_no is the client's
@@ -4540,10 +4562,25 @@ window.BOQ = (function () {
     var g = c && c.code_l2 != null ? String(c.code_l2).trim() : '';
     return g || null;
   }
+  /* ⚠️⚠️ EVERY CODE AN ACTIVITY COVERS, not only its `class_code`. A merged Schedule Setup
+     activity — an SAP group carrying its level-3 items, or several groups rolled into one — pushes
+     the whole set into `class_codes` with `class_code` as element 0. Reading the scalar alone meant
+     a line priced under any of the OTHER codes could never find the activity that actually covers
+     it, which is the defect the column was added for.
+     ⚠️ Falls back to the scalar when the array is null/empty — which is every row written before
+     that migration, and every single-code activity, where the scalar genuinely IS the whole answer.
+     So this is additive: it can only ever find MORE, never fewer. */
+  function actCodesOf(a) {
+    var out = [], seen = {};
+    function add(c) { c = String(c == null ? '' : c).trim(); if (c && !seen[c]) { seen[c] = 1; out.push(c); } }
+    if (a) { add(a.class_code); if (Array.isArray(a.class_codes)) a.class_codes.forEach(add); }
+    return out;
+  }
+  function actHasCode(a, code) { return actCodesOf(a).indexOf(code) >= 0; }
   function candidatesFor(r) {
     var cf = codeFor(r);
     if (!cf || !ACTS) return [];
-    var exact = ACTS.filter(function (a) { return a.class_code === cf.class_code; });
+    var exact = ACTS.filter(function (a) { return actHasCode(a, cf.class_code); });
     if (exact.length) return exact;
     var grp = groupOfCode(cf.class_code);
     if (!grp) return [];
@@ -4551,8 +4588,7 @@ window.BOQ = (function () {
        item code — four of the 205 groups double as an L3 item, and there the activity means the
        item, not the whole group. `codeRow` answering tells them apart. */
     return ACTS.filter(function (a) {
-      var k = String(a.class_code || '').trim();
-      return k && k === grp && !codeRow(k);
+      return actCodesOf(a).some(function (k) { return k === grp && !codeRow(k); });
     });
   }
   /* ⚠️ The haystack is the leaf's text PLUS its heading chain. On three of the four OPW101
