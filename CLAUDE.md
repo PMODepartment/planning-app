@@ -104,6 +104,114 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (l) — The two schedule panes fought each other while scrolling, and the notes button learned to move
+
+### ⚠⚠ THE SCROLL LOCK NEVER LOCKED ANYTHING
+
+Owner: *"Scrolling through the grid of the schedule module bugs. It scrolls difficult and shows up
+and down repeatedly until the downscroll wins over time."*
+
+The grid↔gantt sync read:
+
+```js
+if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; }
+```
+
+**Writing `scrollTop` does not dispatch its scroll event synchronously.** Measured in the browser:
+set `scrollTop`, then read a flag that a `{ once: true }` scroll listener sets — the flag is still
+`false`. The event arrives at the next rendering tick, by which time `lock` is back to `false`. The
+re-entrancy guard was decorative, and every sync was echoed straight back by the other pane.
+
+⚠⚠ **The echo is only VISIBLE because the two panes have different maxima.** Measured with the
+shipped stylesheet: the gantt scrolls sideways over the timeline and so carries a **horizontal
+scrollbar**, which costs it 15px of `clientHeight`.
+
+| pane | scrollHeight | clientHeight | max scrollTop |
+|---|---|---|---|
+| `#ps-grid-scroll` | 32400 | 362 | **32038** |
+| `#ps-gantt-scroll` | 32400 | 347 (h-scrollbar) | **32053** |
+
+Drag the gantt to the bottom: it writes 32053 into the grid, the grid clamps to 32038, and the
+grid’s echo writes 32038 back into the gantt — **dragging it 15px back up**. One snap-back per wheel
+tick, which is both the up-and-down the owner describes and why it still inches downward.
+
+⚠ **The guard is the echo’s VALUE, not a timer.** A 120ms “who is leading” window was written first
+and thrown away: it desynced the panes for 120ms if you grabbed the other scrollbar mid-gesture,
+and the number was a guess. The shipped guard records what the follower *actually became* after the
+possibly-clamped write and ignores exactly one event carrying that value — no timer, and a real
+scroll is never swallowed. `_vEcho` is **cleared** rather than set when the write changed nothing,
+because no event is coming to consume it and a stale one would eat the next gesture.
+
+**Measured**, by running the shipped handlers against both facts: before, the gantt was dragged back
+15px (`gz=32053 → gs=32038 → gz=32038`); after, it stays put (`gz=32053 → gs=32038`, settled).
+
+⚠ **Not changed, and named here as the remaining suspect:** `renderWindow` also writes `scr.scrollTop`
+from inside a scroll-driven rAF (line ~25781). It is inert while `DL.length * ROWH` matches the
+spacer’s real height, and I could not reach the live grid to prove it ever does not. If the fight
+survives this fix, that line is where to look next.
+
+### The notes button is draggable — and two defects in my own first cut
+
+Owner: *"I want the notes/notebook button to be movable by drag. Movable anywhere in the page as
+the user desires."* The FAB drags the whole `.pd-nb` root, panel included.
+
+**The hard part is not the drag, it is where the panel opens afterwards.** Both of these were mine,
+and both were caught by measuring rather than by reading:
+
+1. ⚠⚠ **Flipping on “which half of the screen” is wrong in the middle.** At the centre of a
+   1006×910 window the button sat at y=455, the half-test said “not the top half”, the panel opened
+   upwards and its top landed at **-73px**. The flip now picks the side with more **room** — and
+   since at the centre *neither* side fits a 520px panel (447 above, 417 below), the panel is also
+   **capped** to the room via `--pd-nb-room`. It shrinks rather than clipping, and a drag back to a
+   corner restores the full 520px.
+2. ⚠ **`cursor: grab` never applied.** The rule sat *before* `.pd-nb-fab`’s own `cursor: pointer` at
+   equal specificity, so the later rule won — measured value `pointer`. It is now left out **on
+   purpose**: this button’s primary action is a click that opens the notebook, and a grab cursor
+   advertises the secondary one. `grabbing` is (0,2,0) and appears only mid-drag.
+
+⚠ **A 4px threshold is what keeps the button clickable.** Without it every click is a one-pixel
+drag whose click is then suppressed, and the notebook could never be opened again — the feature
+would have eaten the only control it was attached to.
+
+| case | result |
+|---|---|
+| nine positions (4 corners, 3 near centre, 2 off-screen) | panel **and** button fully on screen at every one |
+| plain click | reaches the handler, button does not move |
+| 3px twitch | still a click, still does not move |
+| 200×300 drag | moves exactly 200×300, click suppressed |
+| the click after a drag | works again — the suppression does not stick |
+
+⚠ Position is stored as a **fraction of the viewport**, not pixels: saved on a 2560px monitor and
+restored on a laptop it would strand the only control that opens the notebook off screen. Below
+700px the stylesheet lays the notebook out full-width, so a phone keeps its corner and the stored
+position is reapplied when the window grows back.
+
+### A read-only scenario audit, and why it is SQL rather than a result
+
+Owner: *"Let's check if there are existing internal scenarios in the database."*
+`migrations/2026-09-17-scenario-audit.sql` lists every scenario with how many of its activities are
+**dates-only** — the shape that `restoreScenario` used to write nulls back over, fixed in *(ap)*.
+Nothing in it writes. ⚠ The Supabase CLI on this machine is logged in but the project is **not
+linked** and there are no DB credentials here, so this runs in the SQL editor the way the class-code
+migration did — rather than my guessing at an answer I cannot read.
+
+⚠ `count(e.key)`, not `count(*)`, over the `LEFT JOIN LATERAL`: a scenario with an empty
+`activities` object expands to one all-null row, and `count(*)` would have scored it as one
+dates-only activity. The lateral is LEFT so such a scenario still appears at all.
+
+### ⚠ A stale rebase directory, and why it was not deleted blind
+
+This worktree was **69 commits behind** and `git pull --rebase` refused: a `rebase-merge` directory
+from yesterday. It was **empty** — no `head-name`, `onto`, `orig-head` or `msgnum`, i.e. none of
+the state a live rebase needs — so it was cleared with `rmdir`, which refuses a non-empty
+directory, rather than `rm -rf`. The rebase then applied cleanly and the scroll fix survived it.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · `notebook.js` parses · `sql-struct` balanced — all after
+the rebase, not before it. Cache tokens, each sort-checked against what `origin/main` serves:
+`dashboard.css` → `20260918a` (31 files) · `notebook.js` → `20260918a` (23) ·
+`modules-grid.js` → `20260918l` (2).
+
 ### 2026-09-18 (k) — Zone scoping becomes step 9, and a label written four times becomes one declaration
 
 Owner, three items on Schedule Setup → Activity Sequence: *"in activity sequence, name the title of
