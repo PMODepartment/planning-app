@@ -122,6 +122,11 @@
       border:1px solid var(--pd-line); border-radius:999px; background:var(--pd-bg); }
     .sc-nf i { font-style:normal; color:var(--pd-muted); }
     .sc-why { margin-top:8px; }
+    /* The keyboard hint's body. ⚠️ No width cap and no columns, unlike `.sc-whybody`: this is
+       a run of short key chips, not prose, so it wants to fill the row and wrap between items
+       (`.pdg-hk` in xlgrid.js keeps each shortcut whole). */
+    .sc-manhelp { margin-top:10px; }
+    .sc-manhint { margin-top:6px; }
     /* ⚠ `list-style:none` AND the WebKit pseudo-element: Safari/older Chrome ignore the first
        and would draw a second triangle beside the one drawn below. */
     .sc-why > summary { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
@@ -1921,7 +1926,6 @@
       '<th class="tot" title="This trade\'s ' + esc(kindLabel.toLowerCase()) + ' months added up. A trade\'s PLANNED months should reach 100% of that trade.">Total</th></tr>';
 
     var body = all.map(function (t) {
-      var sh = W.tot ? Math.round((W.w[t] || 0) / W.tot * 1000) / 10 : 0;
       var rowSum = 0;
       var cells = months.map(function (m, i) {
         var mk = monthKey(m), v = manValue(t, mk, manKind);
@@ -1952,7 +1956,17 @@
           '</td>';
       }).join('');
       return '<tr><td class="k"><span class="dot"' + (isGR(t) ? ' style="background:#C9A227"' : '') + '></span>' +
-        esc(t) + '<small>' + sh + '% of the project</small></td>' + cells +
+        /* ⚠️⚠️ NO "x% of the project" UNDER THE TRADE NAME. Owner, 2026-09-18, after asking
+           what the number meant: *"Disable the % from showing first."* It was that trade's share
+           of total activity DURATION (or of loaded cost on the Cost basis), and it was reading as
+           a share of value, which is not what it is.
+           ⚠️ THE WEIGHT ITSELF IS UNTOUCHED - `tradeWeights()` still drives the `Project
+           (weighted)` footer and the curve, exactly as before. Only the label is gone. That is
+           deliberately a display change and nothing else, so it can be put back or re-worded
+           without touching any arithmetic.
+           ⚠️ It still shows on the Curve tab's period breakdown (`.sc-bd`), which is a different
+           surface and was not part of the ask. */
+        esc(t) + '</td>' + cells +
         '<td class="tot" data-rowtot="' + esc(t) + '">' + (Math.round(rowSum * 10) / 10) + '%</td></tr>';
     }).join('');
 
@@ -2015,24 +2029,35 @@
         '<div id="sc-manchart"></div><div class="sc-note" id="sc-mannote"></div></div>' +
       '<div class="sc-srcbar">' + srcLine + '</div>' +
       lockBar +
-      '<div class="sc-filterbar sc-kindbar">' + kindSeg +
-        '<span class="sc-note" id="sc-manhint" style="margin:0;"></span></div>' +
+      '<div class="sc-filterbar sc-kindbar">' + kindSeg + '</div>' +
       sheet +
-      '<div class="sc-man-note">' +
-        'Every cell is <b>that month\'s own share of that trade</b>, not of the project — so a ' +
-        'trade\'s <b>Planned</b> row should add up to <b>100%</b> in the Total column. ' +
-        'The <b>Project (weighted)</b> footer is each month weighted by its trades\' share of the ' +
-        'schedule, which is the height of that month\'s bar on the chart above.' +
-        '<br>\u26a0\ufe0f The sheet is always <b>monthly</b> — that is the grain the figures are stored at. ' +
-        'The Period control changes the CHART only; entering a quarter would mean splitting it back ' +
-        'across three months, and there is no honest way to choose that split.' +
-        (d.manUnmatched && d.manUnmatched.length
-          ? '<br>\u26a0\ufe0f <b>' + d.manUnmatched.length + ' trade' + (d.manUnmatched.length === 1 ? '' : 's') +
-            ' in the saved sheet no longer match the schedule</b> (' + esc(d.manUnmatched.join(', ')) +
-            ') \u2014 they carry no weight and are not on the curve. A trade renamed in the schedule keeps ' +
-            'its entries here; re-enter them under the new name, or rename it back.'
-          : '') +
-      '</div>';
+      /* ⚠️⚠️ THE KEYBOARD HINT IS BELOW THE SHEET AND FOLDED AWAY. Owner, 2026-09-18:
+         *"Move the keyboard shortcuts tooltip below the grid... and make it collapsible."*
+         It used to run along the row ABOVE the sheet, beside the Planned/Actual/Forecast
+         selector, where a nine-item line of key chips was the widest thing in the header and
+         competed with the one control a planner actually presses.
+         ⚠️ `.sc-why` IS THE MODULE'S OWN DISCLOSURE, not a new one - the same element, summary
+         caret and focus ring as "How to read this chart" on the Curve tab. A second collapsible
+         idiom on one screen is the thing this file keeps recording as a defect.
+         ⚠️ The id is unchanged, so the `getElementById('sc-manhint')` that fills it still
+         finds it; only where it sits in the markup moved. */
+      '<details class="sc-why sc-manhelp"><summary>Keyboard shortcuts</summary>' +
+        '<div class="sc-manhint" id="sc-manhint"></div></details>' +
+      /* ⚠️⚠️ THE TWO EXPLANATORY PARAGRAPHS THAT SAT HERE ARE GONE. Owner, 2026-09-18, quoting
+         them back: *"let's just delete this"* - the one about a cell being the trade's own share
+         rather than the project's, and the one about the sheet always being monthly.
+         ⚠️ THE ORPHANED-TRADE WARNING IS NOT PROSE AND STAYS. It reports that rows the planner
+         has already SAVED no longer match any trade in the schedule, so they carry no weight and
+         are not on the curve - a fact about their data, not an explanation of the screen, and the
+         only place it is said. It now renders on its own, so the note block is absent entirely on
+         the ordinary case where nothing is orphaned. */
+      ((d.manUnmatched && d.manUnmatched.length)
+        ? '<div class="sc-man-note">\u26a0\ufe0f <b>' + d.manUnmatched.length + ' trade' +
+          (d.manUnmatched.length === 1 ? '' : 's') +
+          ' in the saved sheet no longer match the schedule</b> (' + esc(d.manUnmatched.join(', ')) +
+          ') \u2014 they carry no weight and are not on the curve. A trade renamed in the schedule ' +
+          'keeps its entries here; re-enter them under the new name, or rename it back.</div>'
+        : '');
 
     // ---- the live chart ----------------------------------------------------------------------
     manChart();
