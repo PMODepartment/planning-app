@@ -104,6 +104,119 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ad) — The spreadsheet layer gets a rectangle, a working Ctrl+C, and the Manual tab stops opening on the Curve
+
+Owner, on the S-Curve's Manual data tab: *"UI excel grid should work properly. Bugs are occurring.
+Excel multiselect ctrl c ctrlv keyboard shortcuts as well"*, and, with a screenshot, *"manual data
+tab but shows s-curve page"*. Four defects, three of them in the shared layer.
+
+⚠️ Lettered **(ad)**, `MODULE_V` **`20260918zd`**, `xlgrid.js` **`20260918a`**. `origin/main`
+published `(ab)`→`(ac)` and moved `MODULE_V` to `20260918zc` during this; re-derived and
+sort-checked after integrating, which is now the third round of this in one day.
+
+### ⚠️⚠️ 1. THE TAB SAID "MANUAL DATA" AND THE CURVE WAS WHAT SHOWED
+
+`switchView()` is the only thing in the module that toggles the two panes, and it is called from
+**exactly one place**: the tab's own click handler. `render()` separately synced the `.active`
+CLASS from `view`. So the label and the pane were two half-syncs of one piece of state, and every
+route into the tab that is not a click set the label and left the Curve showing:
+
+| route | what happened |
+|---|---|
+| the remembered view (`sc_view_<pid>`) | reopen the module → "Manual data" selected, S-curve underneath |
+| `?scView=manual` | the portfolio register's "open this project's sheet" link → the Curve |
+
+⚠️ The second is the worse one: that deep link was added on 2026-09-16 **so the portfolio Manual-
+data register could open a project's sheet**, and it has never once landed on it.
+
+⚠️ Fixed as one `applyView()` called from both `switchView()` (immediately, before the lazy fetch
+that can `return` into a round trip) and `render()`. It also carries the `aria-selected` that
+render()'s copy was missing. Verified both routes: pane shown, matrix rendered, `aria` correct.
+
+### ⚠️⚠️ 2. THE SELECTION COULD NOT DESCRIBE ANYTHING ON A TRADES × MONTHS SHEET
+
+`xlgrid.js` said so in its own words — *"The selection is a COLUMN RUN, not a rectangle, and that
+is deliberate… the operations a planner actually wants here are vertical."* That is true of the BOQ
+pricing grid the layer was built for. The S-Curve's manual sheet is **trades × months**, and the
+ordinary operations there — copy one trade's year, paste a block back out of Excel — are exactly
+the ones a column run cannot express.
+
+⚠️ It is a rectangle now: `{r1, r2, c1, c2}`, Shift+arrow extending in all four directions, and
+shift-click extending to the clicked cell. ⚠️⚠️ **A one-column rectangle is byte-for-byte the old
+behaviour**, which is what makes this safe for the three grids built against the column run —
+`r1`/`r2` still mean what they meant and `selectedIds()` still spans the rows. `test-boq` **66/0**
+and `test-actsetup` **142/0** on the changed file.
+
+### ⚠️⚠️ 3. Ctrl+C PUT AN EMPTY STRING ON THE CLIPBOARD
+
+`onCopy` opened with `if (!R || R.r1 === R.r2) return;` and the comment *"a single cell copies
+natively, as text"*. That is true only when the caret has **selected** the text. A cell reached
+with Tab or an arrow has focus and no selection, so the native copy took nothing — measured, an
+empty string against a cell reading **10**.
+
+⚠️ Copy now writes TSV for whatever the rectangle covers, single cell included: rows joined by a
+newline, columns by a tab, which is the format Excel reads back. Measured on a 3×3:
+`11⇥12⇥13 / 21⇥22⇥23 / 31⇥32⇥33`. Paste already understood a 2D block — it now **clamps** at the
+sheet edge and says how many cells fell outside instead of dropping them in silence (*"Pasted 1
+cell — 5 fell outside the sheet and were not pasted."*). Ctrl+D and the fill handle carry each
+column's own top value down; Delete clears the rectangle.
+
+### ⚠️ 4. THE STRAY GREY CELL IN THE SCREENSHOT WAS A SELECTION THAT NEVER CLEARED
+
+`onFocusIn` ended `if (!anchor) paint();`. So once a Shift+arrow had set an anchor, every later
+click moved the focus and **left the old selection painted** in a row and column the planner was
+no longer near. That is the lone grey cell in Site Works / August sitting under a focus ring in
+MEPF Works / May, with nothing on screen to explain it. Arriving at a cell collapses the selection
+now; a shift-extend is the one case that does not, which is what the new `extending` flag marks.
+
+### ⚠️⚠️ THE HARNESS COULD NOT SEE THE FIX, AND SAID SO AS A FAILURE
+
+The stray-paint check reported the old selection still painted after `el.focus()` — and it was
+wrong. **`focusin` never fires in this pane**: `document.hasFocus()` is `false`, so `activeElement`
+moves and no focus event is dispatched. Proved by counting listener hits: **0** across the whole
+sequence. The same root cause as the recorded `:focus` trap, one step further out — it voids focus
+*events*, not just `:focus` matching. Re-measured by dispatching the `focusin` the browser would
+have: selection collapses to the one cell, shift-extend still extends. ⚠️ A harness reporting a
+correct fix as broken is the expensive direction; I nearly reverted a good change.
+
+### Found and NOT changed
+
+- **The Notes button covers the sheet's last sentence.** Real, and app-wide by design: `.pd-nb`
+  is `position: fixed; right:18px; bottom:18px`, draggable *because* the owner asked for it to be
+  *"movable anywhere in the page as the user desires"*. `.pd-main` already reserves **48px** at the
+  document end; the overlap in the screenshot is **mid-scroll**, which no padding can fix — a
+  fixed button crosses content while the page moves under it. Moving it is the escape hatch that
+  already exists.
+- **Arrow ←/→ still move the caret, not the cell.** Tab covers horizontal movement, and hijacking
+  the two keys people type corrections with, across four modules, is a wider blast radius than
+  this asks for. Shift+←/→ *is* hijacked, matching the choice this file already made for Shift+↓.
+- **Ctrl+A is still the browser's** (select the cell's text). Excel would select the sheet; doing
+  that would take away the only way to select a value for retyping.
+
+### Verified
+
+A browser harness on a fixture shaped to the owner's own project — OPW101's six trades and weights,
+its Nov '25 → Jun '27 span, and an **empty** sheet, which is the state his screenshot shows and the
+state my earlier fixtures never hit:
+
+- the grid: 3×3 rectangle painted, copied as TSV, `Delete` clears all four cells of a 2×2, `Ctrl+Z`
+  restores them, `Ctrl+D` fills **99/99/99** and **88/88/88** down their own columns, shift-click
+  paints 9, an overflowing paste warns about 5 dropped cells;
+- both routes onto the tab land on the sheet, with the matrix rendered and `aria-selected` right;
+- no page horizontal scroll; no clipped text on the tab; the theme flip moves **all five** sampled
+  properties, so these readings are from the real cascade.
+
+`test-boq` **66/0** · `test-actsetup` **142/0** · `test-syntax` **4/4** · `wiring-check` **139/0** ·
+`dark-remap` **0** · `xlgrid.js` and the s-curve inline script both `node --check` clean · 0 NUL
+bytes. ⚠️ Harness and probes lived under `**/*harness*` and were deleted before committing.
+
+⚠️ **Not verified signed in** — fixtures, not a real project, and the clipboard was exercised
+through dispatched events rather than a real Ctrl+C.
+
+`xlgrid.js` → **`20260918a`** (3 refs: s-curve, project-schedule, contracts-claims) ·
+`MODULE_V` → **`20260918zd`**, fallback literal in step. Both sort-checked past every token in the
+tree and on `origin/main`.
+
 ### 2026-09-18 (ac) — A shared stretch splits instead of being awarded, and the merge branch I wrote was unreachable
 
 Owner, on the version that shipped an hour earlier: *"I want to see the overlap of different
