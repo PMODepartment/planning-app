@@ -1352,6 +1352,17 @@
     .ps-lsmbar { position:absolute; height:6px; border-radius:2px; z-index:3; overflow:hidden;
       box-shadow:0 0 0 .5px rgba(0,0,0,.22) inset; cursor:pointer; }
     .ps-lsmbar > i { position:absolute; left:0; top:0; bottom:0; display:block; }
+    /* The trades INSIDE the merged bar — one span per stretch, in that trade’s pale colour with
+       its own progress solid over it: the same treatment the per-trade bars carried before they
+       merged, laid end to end instead of stacked. `left`/`width` arrive inline in BAR-LOCAL
+       pixels, which is why there is no side offset here — see `_lsmSegsHTML`. */
+    .ps-lsmseg { position:absolute; top:0; bottom:0; display:block; overflow:hidden; }
+    .ps-lsmseg > span { position:absolute; left:0; top:0; bottom:0; display:block; }
+    /* The folded trades keep the treatment their own bar has: no trade colour and a dense
+       neutral cross-hatch, so a stretch nobody named can never be mistaken for a trade. */
+    .ps-lsmseg-more { background:var(--ps-track);
+      background-image:repeating-linear-gradient(45deg,var(--ps-trackln) 0 1px,transparent 1px 3px),
+                       repeating-linear-gradient(-45deg,var(--ps-trackln) 0 1px,transparent 1px 3px); }
     /* The idle gap, drawn exactly like .ps-bar-cut: a notch in the card colour with a dotted
        midline — the P6 suspended-activity convention, which says the pieces are ONE trade's
        work on this floor rather than two unrelated bars. */
@@ -28608,9 +28619,18 @@
           }
         }
       }
+      /* ⚠️ THE TRADES INSIDE THE BAR, from the bar's OWN `x`/`w` and its own start, never
+         re-derived from the dates. Only on the MERGED bar: an unmerged lane already IS one
+         trade and has nothing left to decompose. */
+      var _segs = b.merged ? _lsmSegsHTML(r, min, dayw, b.s, x, w) : '';
       out += '<div class="ps-lsmbar' + (_cl ? ' ps-lsmbar-clash' : '') + '" data-lsmcat="' + esc(b.value) + '" title="' + esc(tip) +
         '" style="left:' + x + 'px;width:' + w + 'px;top:' + ly + 'px;' + catTint(b.color) + '">' +
-        ((b.pct > 0) ? '<i style="width:' + b.pct + '%;' + catStyle(b.color, b.tex) + '"></i>' : '') +
+        /* ⚠️ The segments REPLACE the single duration-weighted fill whenever the storey holds
+           more than one trade — that fill averaged every trade into a number describing none of
+           them. With one trade the bar IS that trade and keeps the fill it always had.
+           ⚠️ `cuts` and `_cl` stay LAST so a notch and a clash hatch draw OVER the segments:
+           the hatch is what says two trades hold a stretch one of them had to be given. */
+        (_segs || ((b.pct > 0) ? '<i style="width:' + b.pct + '%;' + catStyle(b.color, b.tex) + '"></i>' : '')) +
         cuts + _cl + '</div>';
       if (showBl && b.bs && b.bf) {
         var bx = Math.round(dayDiff(min, b.bs) * dayw);
@@ -28619,6 +28639,93 @@
           Fmt.date(dstr(b.bs)) + ' \u2192 ' + Fmt.date(dstr(b.bf))) +
           '" style="left:' + bx + 'px;width:' + bw + 'px;top:' + (ly + LSM_LANE_H - 2) + 'px;"></div>';
       }
+    }
+    return out;
+  }
+  /* ---- WHAT THE ONE BAR IS MADE OF -------------------------------------------------------------
+     Owner: *"the single bar row is correct but I don't see the activities rolling up to the wbs.
+     I would want to see a Gantt bar showing different kinds of bars referring to the activities
+     that is within the wbs."* Shown a strip of trade lanes UNDER the bar, he chose the other
+     shape: *"I think the one bar option is the best rather than a strip like this."* So the
+     composition goes INSIDE the bar — it stays exactly one mark on the row, and reads left to
+     right as the sequence of trades that built the storey.
+     ⚠️⚠️ THIS IS THE OPPOSITE CALL FROM THE ONE THE WBS BRACKET GOT, DELIBERATELY. On a WBS
+     branch the owner reported the same treatment as confusing — *"the varying colour within the
+     same bar is causing confusion — under Earthworks it shows grey then green"* — and the fix
+     (2026-08-17) was to move the bands OUT of the bracket into `.ps-sum-strip`. That stands, and
+     `_sumSegsHTML` is untouched. The difference is what the bar MEANS: a bracket is one branch's
+     span, so colour changing along it reads as the branch changing category; an LSM row IS a
+     storey, and colour changing along it reads as the floor being handed from trade to trade,
+     which is the line-of-balance chart's entire subject.
+     ⚠️⚠️ WHEN TWO TRADES HOLD THE SAME DAYS, ONE OF THEM OWNS THE PIXELS, and that is the real
+     cost of this shape — stated here rather than discovered later. The rule is FIRST ON THE FLOOR
+     KEEPS IT: runs are claimed in start order, ties broken by lane (the declared construction
+     sequence), and a later trade is clipped to what is left. Nothing is lost from the row,
+     because the overlap is exactly what the clash engine already marks: the hatched
+     `.ps-lsmclash` overlay is drawn over that same stretch, on top of these segments. So a
+     contested stretch shows as one trade's colour under a clash hatch, which is a truer picture
+     than half-height lanes nobody can resolve at 6px.
+     ⚠️ ONE SEGMENT PER RUN, NOT PER TRADE. A trade that works a floor, leaves and comes back is
+     two stretches; painting `s -> f` as one would claim it held the floor across the gap the
+     notch is there to show. */
+  function _lsmOwnRuns(agg) {
+    var runs = [], i, j;
+    for (i = 0; i < agg.length; i++) {
+      var b = agg[i];
+      for (j = 0; j < b.runs.length; j++) runs.push({ b: b, s: b.runs[j][0], f: b.runs[j][1] });
+    }
+    /* Earliest start first; ties to the lower LANE, which is the roster's construction order, so
+       the picture cannot change between two renders of identical data. */
+    runs.sort(function (p, q) { return p.s - q.s || p.b.lane - q.b.lane || p.f - q.f; });
+    var claimed = [], out = [];
+    for (i = 0; i < runs.length; i++) {
+      var pieces = [[runs[i].s, runs[i].f]];
+      for (j = 0; j < claimed.length; j++) {
+        var next = [], c = claimed[j];
+        for (var k = 0; k < pieces.length; k++) {
+          var a = pieces[k][0], z = pieces[k][1];
+          if (c[1] < a || c[0] > z) { next.push([a, z]); continue; }
+          /* The claimed stretch is inclusive of both ends, so what survives stops the DAY before
+             it starts and resumes the DAY after it ends. */
+          if (c[0] > a) { var e1 = +addDays(new Date(c[0]), -1); if (e1 >= a) next.push([a, e1]); }
+          if (c[1] < z) { var s1 = +addDays(new Date(c[1]), 1); if (s1 <= z) next.push([s1, z]); }
+        }
+        pieces = next;
+      }
+      for (j = 0; j < pieces.length; j++) out.push({ b: runs[i].b, s: pieces[j][0], f: pieces[j][1] });
+      claimed.push([runs[i].s, runs[i].f]);
+    }
+    return out;
+  }
+  /* The segments themselves, in BAR-LOCAL pixels like the gap notches and the clash marks — the
+     bar's own `x`/`w` are passed in rather than re-derived from the dates, which is the `zh` rule:
+     a mark positioned by a second expression over the same inputs is a mark that will drift.
+     ⚠️ Each segment carries its trade's OWN progress, in the same pale-track-plus-solid-fill
+     treatment the per-trade bars had before the merge. That is strictly more than the one
+     duration-weighted fill it replaces, which averaged four trades into a number describing none
+     of them; the storey's roll-up % is still in the grid's own cell for the row. */
+  function _lsmSegsHTML(r, min, dayw, barS, barX, barW) {
+    var agg = r._glsm;
+    if (!agg || agg.length < 2) return '';          /* one trade: the bar already IS that trade */
+    var own = _lsmOwnRuns(agg), out = '', loc = r._graw || r.activity_name || '';
+    for (var i = 0; i < own.length; i++) {
+      var p = own[i], b = p.b, ps = new Date(p.s), pf = new Date(p.f);
+      var sx = Math.round(dayDiff(barS, ps) * dayw);
+      /* MIN 2px: a two-day trade on a year-long storey is otherwise sub-pixel and does not paint
+         at all — the same floor `_sumSegsHTML` states for the branch strip. */
+      var sw = Math.max(Math.round((dayDiff(ps, pf) + 1) * dayw), 2);
+      if (sx + sw <= 0 || sx >= barW) continue;
+      if (sx < 0) { sw += sx; sx = 0; }
+      if (sx + sw > barW) sw = barW - sx;
+      if (sw <= 0) continue;
+      var who = b.over ? ('+' + (b.overCount || 0) + ' more key trades') : b.value;
+      out += '<span class="ps-lsmseg' + (b.over ? ' ps-lsmseg-more' : '') + '" title="' +
+        esc(who + ' — ' + loc + ': ' + Fmt.date(dstr(ps)) + ' → ' + Fmt.date(dstr(pf)) +
+            ', ' + b.pct + '%') +
+        '" style="left:' + sx + 'px;width:' + sw + 'px;' +
+        (b.over ? '' : catTint(b.color)) + '">' +
+        ((!b.over && b.pct > 0) ? '<span style="width:' + b.pct + '%;' + catStyle(b.color, b.tex) + '"></span>' : '') +
+        '</span>';
     }
     return out;
   }
