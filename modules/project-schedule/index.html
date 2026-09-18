@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260918a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260918b" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
@@ -3070,6 +3070,50 @@
          the bottom by 7px — a cap has to budget for where the menu starts, not just how tall the
          window is. `max()` keeps it usable if the chrome ever grows past the viewport. */
       max-height:max(220px, calc(100vh - 230px)); overflow-y:auto; overflow-x:hidden; }
+    /* ⚠⚠ AFTER `.ps-menu`, DELIBERATELY. `.ps-colors-menu { min-width:250px }` sits ~170 lines
+       EARLIER at the same (0,1,0) specificity, so `.ps-menu { min-width:180px }` won on source
+       order and this pane opened at **180px** — 70px narrower than the rule written for it.
+       Measured, not inferred: that is what crushed the WBS select to **22px** for a label needing
+       **92px**, which is the clipping the owner reported. Adding a wider rule without removing the
+       one that beats it would have changed nothing. */
+    .ps-menu.ps-colors-menu { min-width:300px; }
+    /* ⚠ The WBS add row gives the SELECT ITS OWN LINE. It used to share one line with a colour
+       swatch and an Add button under `flex:1` (basis 0) + `min-width:0`, so the select shrank to
+       whatever the other two left it — 22px — and a branch name rendered straight out of its box.
+       A wider pane alone would only have postponed that; the row has to stop competing. */
+    .ps-colors-add { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:5px 0; }
+    .ps-colors-add .pd-select { flex:1 1 100%; min-width:0; max-width:none; }
+    /* ⚠⚠ `.ps-menu button { width:100% }` IS WHAT BROKE THESE ROWS, and it is not this pane's
+       rule — it exists so a menu's LIST items fill their menu. Every inline control here is a
+       <button> inside a `.ps-menu`, so it inherited it: measured, the ✕ on an override row has a
+       max-content width of **38px** and was rendering at **208px**, which left the branch label
+       beside it **0px wide** for 33px of text. It is also why `Key trades…` and `Reset colours`
+       stacked instead of sitting side by side, and why `Add` was the widest thing on its row.
+       ⚠ Scoped to this pane's three row types rather than weakened globally: the list-style menus
+       elsewhere still want their full-width buttons. */
+    /* ⚠ FORM CONTROLS DO NOT INHERIT FONT, so every checkbox and colour swatch in this pane was
+       rendering at the UA default — measured, 13.3px Arial against the pane’s 13px Gotham. None of
+       them shows text today, so it is invisible rather than ugly; it is fixed because it is the
+       exact defect `.pd-btn` carried app-wide until 2026-09-17, and an input that later gains a
+       label would inherit the wrong font silently. The colour swatches carry explicit width/height
+       just above, so nothing resizes. */
+    .ps-colors-row input, .ps-colors-add input, .ps-colors-cby input,
+    .ps-colors-row select, .ps-colors-add select, .ps-colors-cby select { font: inherit; }
+    .ps-colors-row .pd-btn, .ps-colors-add .pd-btn, .ps-colors-cby .pd-btn { width:auto; }
+    .ps-colors-row .pd-btn { flex:0 0 auto; }
+    /* ⚠ A FLOOR ON THE LABEL, so it can never be starved to nothing again. `flex:1` is a basis of
+       0, which means it only ever gets LEFTOVER space — exactly the state above. */
+    .ps-colors-row > span:first-child { flex:1 1 60px; min-width:40px; }
+    /* ⚠ The swatch and Add FILL the second line instead of hugging its right edge. Right-aligning
+       them under a full-width select left 142px of dead space, which the owner marked. */
+    .ps-colors-add .ps-colors-addctl { display:flex; align-items:center; gap:8px; flex:1 1 auto; }
+    .ps-colors-add .ps-colors-addctl .pd-btn { flex:1 1 auto; }
+    /* The colour-by block moved in from the legend; its controls stack rather than compete. */
+    .ps-colors-cby { display:flex; flex-direction:column; gap:7px; }
+    .ps-colors-cby label { display:inline-flex; align-items:center; gap:7px; font-size:var(--pd-fs-base); }
+    .ps-colors-cby .pd-select { width:100%; min-width:0; }
+    .ps-colors-cby .ps-colors-cbybtns { display:flex; gap:8px; flex-wrap:wrap; }
+    .ps-colors-cby .ps-colors-cbybtns .pd-btn { flex:1 1 auto; min-height:32px; font-size:var(--pd-fs-sm); }
     /* The section labels these menus group by. Sticky, so the heading of the group you are reading
        stays visible once the list scrolls. */
     .ps-menu-h { position:sticky; top:0; z-index:1; background:var(--pd-card);
@@ -3094,6 +3138,11 @@
       width:24px; min-width:24px; height:24px; padding:0; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius); font-size:var(--pd-fs-xs); font-variant-numeric:tabular-nums; }
     .ps-lm-lyt { display:flex; align-items:center; }
+    /* ⚠ SIZE STATED, not inherited. These two set no font-size, so they kept the UA's own
+       13.333px — off the scale, and visibly out of step with the 13px items above them. Letting
+       them inherit the menu instead would have made them 14px: LARGER than the items they sit
+       under, which is worse than the bug. A saved layout is a menu row like any other. */
+    .ps-menu .ps-lm-lyt button { font-size:var(--pd-fs-base); }
     .ps-menu .ps-lm-lyt button:first-child { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-menu .ps-lm-lyt button:last-child { flex:0 0 30px; width:30px; padding:8px 0; text-align:center; color:var(--pd-muted); }
     .ps-lm-none { padding:8px 14px; color:var(--pd-muted); font-size:var(--pd-fs-sm); }
@@ -3133,11 +3182,46 @@
     .ps-layout-menu { max-height:78vh; overflow-y:auto; overflow-x:hidden; }
     /* ⚠️ --pd-danger-text, not --pd-red. Brand red on card is 3.74:1 — under AA for 13px text.
        Sixth instance of that defect in this repo; the old Layouts menu shipped it. */
-    .ps-menu button.ps-lm-save { color:var(--pd-danger-text); font-weight:700; border-top:1px solid var(--pd-line); }
-    .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
+    .ps-menu > button.ps-lm-save { color:var(--pd-danger-text); font-weight:700; border-top:1px solid var(--pd-line); }
+    /* ==========================================================================================
+       ⚠⚠ `>` — DIRECT CHILDREN ONLY. This is the menu-ROW style: full width, left aligned,
+       borderless. As a descendant selector it also hit every button NESTED in a menu, which is a
+       different animal entirely — an inline control in a row. It had been worked around SIX times
+       (`ps-cols-foot`, `ps-lm-lvls`, `ps-lm-lyt`, `ps-lm-chips`, the `ps-gm-x` note below, and the
+       colours pane) and still caused two defects this week: a ✕ rendering 208px wide where its
+       max-content is 38, and a 34px icon button rendering at 336.
+       ⚠ A MENU ITEM IS ALWAYS A DIRECT CHILD; AN INLINE CONTROL NEVER IS. Checked all six menus
+       before changing this: File's four items, Group's presets, Filter's `#ps-f-adv`, Layout's
+       `.ps-lm-save` are direct children and keep this style. Everything nested — `.ps-gm-row`,
+       `.ps-lm-chips`, `.ps-rz-row`, `.ps-filter-foot`, `.ps-cols-foot`, `.ps-lm-lyt` — already
+       carries its own rule, so nothing is left unstyled.
+       ⚠ IT ALSO FIXES TWO LIVE ONES NOBODY HAD REPORTED: the Row-height stepper (− / value / +
+       / reset) and the Filter menu's Clear / Apply were both being stretched to 100%, which is
+       why `.ps-filter-foot`'s `justify-content:space-between` had nothing to distribute. */
+    /* ⚠⚠ `font-family: inherit` — WITHOUT IT EVERY MENU ITEM IN THIS MODULE IS ARIAL. A bare
+       <button> carries the UA stylesheet's own `font: 400 13.333px Arial`, and this rule sets a
+       font-SIZE without a font-FAMILY, so the size came from the token and the typeface came from
+       the browser. `.pd-btn` was fixed for exactly this app-wide on 2026-09-17 — these are not
+       `.pd-btn`s, so they never got it, and File / Group / Layout / Filter have been rendering
+       their items in Arial ever since. Found by a harness CONTROL assertion, not by looking:
+       the check that was meant to prove the stylesheet had loaded reported the font as Arial. */
+    /* ⚠⚠ A DESCENDANT SELECTOR HERE, DELIBERATELY, AND IT IS THE ONE PROPERTY THAT WANTS ONE.
+       The geometry above is a menu-ROW style and had to stop at direct children; the TYPEFACE is
+       the opposite — every button in a menu should be Gotham, nested or not. Measured before
+       fixing: the four File items, Group's presets and Layout's Save were Arial, and so were the
+       ten nested ones (`.ps-gm-x` arrows, layout chips, saved-layout rows, the Columns foot).
+       A bare <button> carries the UA `font: 400 13.333px Arial`; these rules set a font-SIZE but
+       no font-FAMILY, so the size came from the token and the typeface from the browser.
+       `.pd-btn` was fixed for exactly this app-wide on 2026-09-17 — these are not `.pd-btn`s, so
+       they never got it. (The zoom stepper and Filter's Clear/Apply ARE `.pd-btn` and were always
+       fine, which is why the defect stayed invisible: some buttons in the same menu looked right.)
+       ⚠ Found by a harness CONTROL assertion rather than by looking — the check that was there to
+       prove the stylesheet had loaded came back “Arial”. */
+    .ps-menu button { font-family:inherit; }
+    .ps-menu > button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:var(--pd-fs-base); }
-    .ps-menu button:hover { background:var(--pd-red-light); }
-    .ps-menu button.ps-menu-danger { color:var(--pd-bad-text); }
+    .ps-menu > button:hover { background:var(--pd-red-light); }
+    .ps-menu > button.ps-menu-danger { color:var(--pd-bad-text); }
 
     /* ---- Schedule Health panel (DCMA-14-style quality checklist, OPC-inspired) ---- */
     .ps-health-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
@@ -4696,7 +4780,15 @@
     .sbld-gdel { flex:0 0 auto; padding:0 4px; height:18px; background:none; border:0; color:var(--pd-muted); opacity:0; }
     .sbld-gr:hover .sbld-gdel, .sbld-gr.is-sel .sbld-gdel { opacity:1; }
     .sbld-gdel:hover { color:var(--pd-red); }
-    .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:9px; }
+    /* ⚠ THE ONLY ONE OF THE FIVE THAT WAS ACTUALLY OFF THE SCALE. A sweep flagged five sizes
+       below `--pd-fs-micro` in this module; four are SVG <text> and the shared stylesheet's own
+       type-scale note already exempts them BY NAME — *“`font-size` on an SVG <text> is in USER
+       UNITS, not pixels — project-schedule's 8px dependency tags are correct as they are”*. This
+       one is an HTML <span>, so the rule applies and 9px was a fresh literal.
+       ⚠ It holds a single ●, so this font-size is really a DOT DIAMETER. Moved to the rung rather
+       than re-built as a sized box: 9→10px on one glyph is invisible, and turning it into a CSS
+       shape would be a bigger change than the defect. */
+    .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:var(--pd-fs-micro); }
     /* the "take it out of every branch" target, which lives on the Planned line */
     .sbld-phdrop { margin-left:8px; padding:1px 7px; border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
       font-size:var(--pd-fs-micro); color:var(--pd-muted); text-transform:none; letter-spacing:0; }
@@ -56723,11 +56815,15 @@
     host.innerHTML =
       '<div class="ps-actlegend-head">' +
         '<span class="ps-alg-sum"><strong>Legend</strong>' + (cfg.on ? ' \u00b7 ' + esc(_fieldLabel) : ' \u00b7 off') + '</span>' +
-        '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
-        '<select class="pd-select ps-alg-field" id="ps-alg-field">' + opts + '</select>' +
-        (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-keys" style="min-height:32px;font-size:12px;" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '…') + '</button>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
+        /* ⚠⚠ THE COLOUR CONTROLS MOVED TO THE BAR COLORS PANE. Owner: *“it should be unified in
+           one location with the gantt bar colors.”* `Colour activities by`, the field select,
+           `Textures`, `Key trades…` and `Reset colours` are emitted by `renderColorsMenu` now —
+           one pane answers what colour anything on this chart is, broadest rule to narrowest:
+           global bar colours, then the category colouring, then per-WBS overrides.
+           ⚠ THIS BUTTON IS THE ROUTE BACK, NOT A SECOND COPY OF THE CONTROLS: it opens that pane
+           rather than setting anything, so every value still has exactly one editor. The legend
+           keeps saying WHAT the colours mean; the pane is where they are CHANGED.
+           ⚠ The LSM toggles below stay put — they change the chart's LAYOUT, not its colours. */
         /* ⚠️ The LSM toggle lives HERE, beside "Key trades...", because that button is
            already the lane roster editor — the two controls are one subject. A direct control
            rather than another nested menu, which is the owner's stated preference. */
@@ -56739,6 +56835,13 @@
         // it sat next to. Both behaviours it described are already discoverable (a bar and a month
         // header both carry a cursor + title), so the words bought nothing but clutter.
         '' +
+        /* ⚠ AT THE TRAILING EDGE, beside the fold chevron, NOT where the on/off checkbox used to
+           be. Second-in-the-row is the slot a primary control occupies, and a lone button standing
+           there read as an orphan once the four controls around it moved out (owner: *“out of
+           place”*). Chrome for the strip belongs with the strip's other chrome.
+           ⚠ `--pd-fs-sm`, not `12px`. The inline 12px was inherited from the controls this
+           replaced and is off the `--pd-fs-*` scale entirely — the scale has no 12. */
+        '<button class="pd-btn" id="ps-alg-open" style="min-height:32px;font-size:var(--pd-fs-sm);" title="Bar colors — every bar colour on this chart, the category colouring, and per-WBS overrides, in one pane.">Colours…</button>' +
         '<button type="button" class="ps-alg-fold" title="Collapse the legend"><span data-ico="chevronDown" data-ico-size="16"></span></button>' +
       '</div>' +
       // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
@@ -56771,7 +56874,25 @@
       b.onclick = function () { setLsmClashShow(b.dataset.lsmclash === '1'); };
     });
     applyLegendFold();
-    host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    /* ⚠ GUARDED NOW, and it has to be. This read `host.querySelector('#ps-alg-on').onchange`
+       with no null check; the control has moved to the Bar colors pane, so an unguarded read
+       throws on every legend render and takes the whole strip down with it. */
+    var _algOn = host.querySelector('#ps-alg-on');
+    if (_algOn) _algOn.onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    /* ⚠⚠ `e.stopPropagation()` IS THE WHOLE FIX, AND WITHOUT IT THIS BUTTON OPENED THE PANE AND
+       SHUT IT IN THE SAME TICK. `document.addEventListener('click', closeMenus)` closes every menu
+       on any click that reaches the document, which is why EVERY toolbar trigger in this file
+       stops its own event. Forwarding with `b.click()` does not inherit that: the synthetic click
+       runs the palette handler (which stops the SYNTHETIC event, not this one), the pane opens —
+       and then this real click carries on bubbling to the document and `closeMenus` shuts it.
+       The owner reported it as “not functioning properly”, which is exactly right: it worked and
+       then undid itself too fast to see. */
+    var _algOpen = host.querySelector('#ps-alg-open');
+    if (_algOpen) _algOpen.onclick = function (e) {
+      e.stopPropagation();
+      var b = document.getElementById('ps-colorsbtn');
+      if (b) b.click();
+    };
     var _lsmChk = host.querySelector('#ps-alg-lsmrows');
     if (_lsmChk) _lsmChk.onchange = function () { setLsmRows(this.checked); };
     var _lsmTopB = host.querySelector('#ps-alg-lsmtop'), _lsmBotB = host.querySelector('#ps-alg-lsmbot');
@@ -56812,7 +56933,8 @@
         });
       };
     });
-    host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    var _algFld = host.querySelector('#ps-alg-field');   // ⚠ same reason as #ps-alg-on above
+    if (_algFld) _algFld.onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var tex = host.querySelector('#ps-alg-tex');
     if (tex) tex.onchange = function () { var c = catCfg(); c.tex = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var rst = host.querySelector('#ps-alg-reset');
@@ -58304,14 +58426,41 @@
     var html = '<h4>Global bar colors</h4>';
     COLORDEFS.forEach(function (d) { html += '<div class="ps-colors-row"><span>' + d.label + '</span><input type="color" data-ck="' + d.k + '" value="' + (c[d.k] || d.def) + '"></div>'; });
     html += '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="ps-colors-reset">Reset to brand</button></div>';
+    /* ==========================================================================================
+       ⚠⚠ COLOUR ACTIVITIES BY — MOVED HERE FROM THE LEGEND. Owner: *“we can also unify the
+       functions of changing the color activities by to this chart as well … it should be unified
+       in one location with the gantt bar colors.”* One pane now answers “what colour is anything
+       on this chart”: the global bar colours, the per-category colouring, and the per-WBS
+       overrides, in that order — broadest rule first, narrowest last, which is also the order
+       they override each other in.
+       ⚠ THE LSM CONTROLS DID NOT COME WITH THEM, and that is the line drawn here: `LSM rows`,
+       `Roof first` and `Status at the line` change the LAYOUT of the chart, not its colours. They
+       stay in the legend with the chips they rearrange. Moving them because they happened to sit
+       beside `Key trades…` would have traded one mixed-up pane for another.
+       ⚠ The legend keeps a `Colours…` button that opens this pane, so the controls are reachable
+       from where they used to live — moved, not hidden. */
+    var _cc = catCfg();
+    var _cbyOpts = catFieldOptions().map(function (o) {
+      return '<option value="' + esc(o[0]) + '"' + (_cc.field === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+    }).join('');
+    html += '<h4 style="margin-top:14px;">Colour activities by</h4>' +
+      '<div class="ps-colors-cby">' +
+        '<label><input type="checkbox" id="ps-alg-on"' + (_cc.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
+        '<select class="pd-select" id="ps-alg-field">' + _cbyOpts + '</select>' +
+        (_cc.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (_cc.tex ? ' checked' : '') + '> Textures</label>' : '') +
+        (_cc.on ? '<div class="ps-colors-cbybtns">' +
+            '<button class="pd-btn" id="ps-alg-keys" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '\u2026') + '</button>' +
+            '<button class="pd-btn" id="ps-alg-reset">Reset colours</button>' +
+          '</div>' : '') +
+      '</div>';
     // per-WBS overrides
     html += '<h4 style="margin-top:14px;">By WBS branch</h4><p style="font-size:11px;color:var(--pd-muted);margin:0 0 6px;">A WBS color cascades to its activities (nearest branch wins).</p>';
     var wbsList = rows.filter(function (r) { return isWbs(r) && r.wbs; }).sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     if (!wbsList.length) { html += '<p style="font-size:12px;color:var(--pd-muted);">Load a schedule to color WBS branches.</p>'; }
     else {
-      html += '<div class="ps-colors-row"><select class="pd-select" id="ps-wbc-sel" style="flex:1;min-width:0;max-width:160px;">' +
+      html += '<div class="ps-colors-add"><select class="pd-select" id="ps-wbc-sel">' +
         wbsList.map(function (w) { return '<option value="' + esc(w.wbs) + '">' + esc(w.wbs) + ' — ' + esc((w.activity_name || '').slice(0, 28)) + '</option>'; }).join('') +
-        '</select><input type="color" id="ps-wbc-clr" value="#EE3124"><button class="pd-btn" id="ps-wbc-add">Add</button></div>';
+        '</select><span class="ps-colors-addctl"><input type="color" id="ps-wbc-clr" value="#EE3124"><button class="pd-btn" id="ps-wbc-add">Add</button></span></div>';
       var wm = wbsColorMap(); var codes = Object.keys(wm).sort(cmpCodeStr);
       codes.forEach(function (code) {
         html += '<div class="ps-colors-row"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:' + wm[code] + ';vertical-align:middle;margin-right:6px;"></span>' + esc(code) + '</span><input type="color" class="ps-wbc-edit" data-code="' + esc(code) + '" value="' + wm[code] + '"><button class="pd-btn ps-wbc-rm" data-code="' + esc(code) + '">✕</button></div>';
@@ -58320,6 +58469,19 @@
     m.innerHTML = html;
     m.querySelectorAll('input[data-ck]').forEach(function (inp) { inp.oninput = function () { var cc = loadColors(); cc[inp.dataset.ck] = inp.value; try { localStorage.setItem('ps_colors', JSON.stringify(cc)); } catch (e) {} applyColors(); }; });
     m.querySelector('#ps-colors-reset').onclick = function () { try { localStorage.removeItem('ps_colors'); } catch (e) {} applyColors(); renderColorsMenu(); };
+    /* ⚠ Each of these re-renders THIS pane as well as the legend and the chart: turning the
+       colouring on reveals Textures / Key trades / Reset, which are emitted conditionally above,
+       so a pane that did not redraw would keep offering the controls of the previous state. */
+    var _on = m.querySelector('#ps-alg-on');
+    if (_on) _on.onchange = function () { var c2 = catCfg(); c2.on = this.checked; saveCatCfg(c2); renderActLegend(); renderGantt(); renderColorsMenu(); };
+    var _fld = m.querySelector('#ps-alg-field');
+    if (_fld) _fld.onchange = function () { var c2 = catCfg(); c2.field = this.value; c2.colors = {}; saveCatCfg(c2); renderActLegend(); renderGantt(); renderColorsMenu(); };
+    var _tex = m.querySelector('#ps-alg-tex');
+    if (_tex) _tex.onchange = function () { var c2 = catCfg(); c2.tex = this.checked; saveCatCfg(c2); renderActLegend(); renderGantt(); };
+    var _rst = m.querySelector('#ps-alg-reset');
+    if (_rst) _rst.onclick = function () { var c2 = catCfg(); c2.colors = {}; saveCatCfg(c2); renderActLegend(); renderGantt(); };
+    var _kys = m.querySelector('#ps-alg-keys');
+    if (_kys) _kys.onclick = function () { openKeyTrades(); };
     var addBtn = m.querySelector('#ps-wbc-add');
     if (addBtn) addBtn.onclick = function () { var code = m.querySelector('#ps-wbc-sel').value, clr = m.querySelector('#ps-wbc-clr').value; if (!code) return; saveWbsColor(code, clr); _wcCacheKey = null; renderGantt(); renderColorsMenu(); };
     m.querySelectorAll('.ps-wbc-edit').forEach(function (inp) { inp.oninput = function () { saveWbsColor(inp.dataset.code, inp.value); _wcCacheKey = null; renderGantt(); }; });

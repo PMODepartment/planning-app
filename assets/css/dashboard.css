@@ -193,7 +193,18 @@
      opinions: (1) `font-size` on an SVG <text> is in USER UNITS, not pixels —
      progress-photos' 3.2px plan label and project-schedule's 8px dependency
      tags are correct as they are; (2) the print/export stylesheets emitted as
-     strings (cash-flow, project-schedule) are laid out for paper. */
+     strings (cash-flow, project-schedule) are laid out for paper.
+
+     ⚠ THE SVG LIST IS NOW COMPLETE, because an incomplete one costs a sweep every
+     time. A 2026-09-18 audit of project-schedule flagged five sizes under
+     --pd-fs-micro; four were SVG <text> and already covered by (1) in spirit, but
+     only the dependency tags were named, so each had to be re-derived by hand.
+     The full set in project-schedule: `.ps-deptype` / `.ps-deplag` 8px (link type
+     and lag), `.ps-smy-gt` 9px (summary axis), `.sbld-glab` 9.5px (grouping label).
+     ⚠ The fifth, `.sbld-gmirror` 9px, was NOT exempt — an HTML <span> holding one
+     ● — and moved to --pd-fs-micro. Test the MEDIUM, not the size: a rule that
+     declares `fill:` and is emitted as <text> is SVG; one that declares `color:`
+     on a <span> is not. */
   --pd-fs-micro: 10px;    /* UPPERCASE label, caption, count badge */
   --pd-fs-xs:    11px;    /* pill, chip, tag, table sub-text, legend */
   --pd-fs-sm:  12.5px;    /* button, input, select, secondary body */
@@ -1915,7 +1926,16 @@ body { overflow-x: clip; }
 }
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-select,
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-psel,
-.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; max-width: none; }
+/* ⚠⚠ `:not(.pd-icon-btn)` — THIS RULE WAS SIZING A DESTRUCTIVE ICON BUTTON TO 336px. It exists
+   so a module whose project picker IS a button fills its slot. Pormac's `-projctx` carries two
+   children, a `<select>` picker AND an icon-only “clear this conversation” button, and the bare
+   `> button` caught the second one: measured 336×34 where its own `.pmc-clearbtn { width:34px }`
+   asks for 34 — the shell selector is (0,4,1) against that rule's (0,1,0), so it won by a mile.
+   The 16px trash glyph then centred itself in a 336px invisible box, which is the “icon floating
+   loose in the middle of the bar” the owner reported. It was never mis-positioned.
+   ⚠ An icon button is never a project picker, so the exemption is safe app-wide; checked every
+   `-projctx` wrapper in the repo and Pormac's is the only `.pd-icon-btn` among them. */
+.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button:not(.pd-icon-btn) { width: 100%; max-width: none; }
 .pd-topbar.pd-tb-split .pd-tb-main #pd-theme-toggle { margin-left: auto; }
 /* ⚠️ #user-bar carries `margin-left:auto` of its own (line ~173, for the pages that are NOT
    topbar-split). Inside the split topbar that made TWO auto margins in one flex row, and two

@@ -104,11 +104,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-18 (q) — The S-curve's manual sheet takes the app's own spreadsheet SKIN, not just its keys
+### 2026-09-18 (y) — The S-curve's manual sheet takes the app's own spreadsheet SKIN, not just its keys
 
 Owner: *"Let's fix the s-curve manual data table. We already have an excel type build let's adopt
 this."* — and the excel build is `assets/js/xlgrid.js` (`PDGrid`), which this module has loaded
 since 2026-09-10.
+
+⚠️ **Re-lettered `(q)` → `(x)` → `(y)` across two catch-up merges, and both halves of the usual
+collision fired.** Main independently published its own `2026-09-18 (q)` while this was in flight,
+so both sides prepended a different entry under one letter — and by the time the first resolution
+was checked, main had published an `(x)` of its own too. Every entry is kept whole and the one
+merging in is the one that moves, per this file's own header rule. ⚠️⚠️ **And the `MODULE_V` half is the
+dangerous one: this branch had derived `20260918q` and main has since reached `20260918x`, which
+sorts LATER — so shipping `q` would have put these bytes behind a token browsers already hold and
+they would simply never have arrived.** Re-derived to `20260918y` **after** integrating, and
+sort-checked as a plain string past every `20260918*` token on both refs.
 
 ### ⚠️⚠️ THE KEYS WERE ADOPTED AND THE LOOK WAS NOT, AND `xlgrid.js` PREDICTS EXACTLY WHAT THAT LOOKS LIKE
 
@@ -174,8 +184,479 @@ in by fetch** (never re-typed) and the real `xlgrid.js`, with `PDGrid.attach` ac
 ⚠️ **Not verified signed in** — the sheet is measured against the shipped stylesheets with the real
 grid layer attached, not against a real project's manual curve.
 
-`MODULE_V` → `20260918q`, sort-checked past every `20260918*` token in the tree. No shared asset
+`MODULE_V` → `20260918y`, sort-checked past every `20260918*` token in the tree. No shared asset
 changed — `xlgrid.js` and `dashboard.css` are untouched, so neither is bumped.
+### 2026-09-18 (w) — Four of the five off-scale sizes were already exempt, by name, in the stylesheet
+
+Owner: *"proceed with the five off-scale"* — the sizes *(u)* reported under `--pd-fs-micro`.
+
+### ⚠⚠ THE ANSWER WAS ALREADY WRITTEN DOWN, AND I NEARLY SHIPPED OVER IT
+
+The shared stylesheet’s own type-scale note lists **two legitimate exemptions**, and the first is:
+
+> `font-size` on an SVG `<text>` is in USER UNITS, not pixels — progress-photos’ 3.2px plan label
+> and **project-schedule’s 8px dependency tags are correct as they are**
+
+Four of the five are SVG `<text>`, and the two 8px ones are the example the note cites. They are
+**deliberate and documented**; the sweep flagged them only because it compared `font-size` values
+against the scale without knowing which MEDIUM each rule targets.
+
+| rule | px | medium | verdict |
+|---|---|---|---|
+| `.ps-deptype` | 8 | SVG `<text>` | exempt — **named in the note** |
+| `.ps-deplag` | 8 | SVG `<text>` | exempt — **named in the note** |
+| `.ps-smy-gt` | 9 | SVG `<text>` | exempt |
+| `.sbld-glab` | 9.5 | SVG `<text>` | exempt |
+| `.sbld-gmirror` | 9 | **HTML `<span>`** | **real deviation — fixed** |
+
+Classified on **two independent signals**, not one: the rule declares `fill:` (SVG) versus `color:`
+(HTML), **and** the element is emitted as `<text>` versus `<span>`. Both agree on all five.
+
+⚠ A first pass got `.sbld-glab` **wrong** — a single-line `grep -o ".cls {[^}]*}"` found nothing,
+because that rule spans lines, and an empty match has no `fill:` in it, so it was classified HTML.
+A checker that answers from a failed read is the fourth flattering result this week.
+
+### The one real one, and why it is a dot rather than text
+
+`.sbld-gmirror` is an HTML `<span>` holding a single `●` — the *“mirrored from another app”*
+marker — so its `font-size` is really a **dot diameter**. Moved to `--pd-fs-micro` rather than
+rebuilt as a sized CSS shape: 9→10px on one glyph is invisible, and the rebuild would be a bigger
+change than the defect.
+
+### ⚠ What I did NOT do, and the measurement that stopped me
+
+Before reading the note I had measured the cost of putting the SVG labels on the scale, in Gotham:
+
+| move | worst-case label growth |
+|---|---|
+| 8px → 9px | +3.51px (`SF+14d`: 28.2 → 31.7) |
+| 8px → 10px (`--pd-fs-micro`) | **+7.24px** (28.2 → 35.4, **+26%**) |
+
+and was about to add a `--pd-fs-nano: 9px` rung to split the difference. The note forbids exactly
+that — *“never split a rung”* — and exempts the labels anyway. **A new token would have been a
+fudge dressed as a design decision**, and +26% on free-floating labels sitting on dependency lines
+was a collision risk on a surface I cannot render without data.
+
+### The exemption list is now complete
+
+Only the dependency tags were named, so the other three had to be re-derived by hand — which is a
+sweep’s worth of work every time somebody audits this. All four are now listed, with the rule for
+deciding: **test the MEDIUM, not the size.**
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · the audit now reports **4 off-scale, all SVG-exempt**.
+`modules-grid.js` `?v=` → `20260918w`. ⚠ No `dashboard.css` bump: its change is a comment,
+so a stale copy is byte-different and behaviour-identical.
+
+### 2026-09-18 (v) — `.ps-menu button` becomes `.ps-menu > button`, and every menu item stops being Arial
+
+Owner: *"Let's do the .ps-menu button inversion."* The rule had been worked around **six** times
+and caused two defects this week; *(u)* reported it and left the call to him.
+
+### ⚠⚠ `>` RATHER THAN A CLASS, AND THAT IS THE WHOLE POINT
+
+The obvious inversion — style menu ITEMS by a new class — means adding that class at every
+menu-building call site across six menus, and **silently unstyling any one missed**. It turns out
+not to be needed: **a menu item is always a direct child; an inline control never is.** All six
+menus were read before the change, not after:
+
+| menu | direct-child items (keep the row style) | nested controls (own rules) |
+|---|---|---|
+| File | 4 items, static markup | — |
+| Group | the presets | `.ps-gm-row` ▲ ▼ ✕ |
+| Layout | `.ps-lm-save` | `.ps-lm-chips`, `.ps-rz-row`, `.ps-lm-lyt` |
+| Filter | `#ps-f-adv` (carries its own inline width) | `.ps-filter-foot` |
+| Columns | items are `<label>`, not buttons | `.ps-cols-foot` |
+| Colours | — | the rows from *(q)* / *(r)* |
+
+**Measured on a harness — File sliced verbatim, the others modelled on the shape read off each
+renderer:** 23 buttons, **8/8 direct items keep the row style**, 11 nested controls back to their
+natural width, 4 still filling because `flex:1` asks them to (`.ps-cols-foot`, `.ps-lm-lyt`).
+
+⚠ **It fixed two live defects nobody had reported.** The Row-height stepper (− / value / + / Reset)
+and the Filter menu’s Clear / Apply were both stretched to 100% — which is why `.ps-filter-foot`’s
+`justify-content:space-between` had nothing left to distribute. Now 27 / 27 / 56px and 54 / 59px.
+
+### ⚠⚠ AND EVERY MENU ITEM IN THIS MODULE WAS ARIAL
+
+Found by a harness **control assertion**, not by looking: the check that existed to prove the
+stylesheet had loaded came back `Arial`.
+
+`.ps-menu button` set a font-**size** and no font-**family**, so the size came from the token and the
+typeface from the browser’s `font: 400 13.333px Arial`. `.pd-btn` was fixed for exactly this
+app-wide on 2026-09-17 — **these are not `.pd-btn`s**, so they never got it. File, Group, Layout
+and Filter have been rendering their items in Arial ever since.
+
+⚠ It stayed invisible because the zoom stepper and Clear/Apply **are** `.pd-btn` and were always
+right: some buttons in the same menu looked correct.
+
+⚠ `font-family` gets a **descendant** selector, deliberately — the opposite of the geometry above.
+Row styling must stop at direct children; the typeface should reach every button in a menu.
+
+⚠ Two `.ps-lm-lyt` buttons were left at the UA’s **13.333px**. Letting them inherit the menu would
+have made them **14px — larger than the 13px items above them**, which is worse than the bug, so
+the size is stated instead.
+
+| after | |
+|---|---|
+| buttons in menus | 23 |
+| non-Gotham | **0** |
+| off the `--pd-fs-*` scale | **0** (11 / 12.5 / 13 only) |
+| direct items keeping the row style | **8/8** |
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings. `modules-grid.js` `?v=` → `20260918v`.
+
+### 2026-09-18 (u) — The `Colours…` button opened the pane and shut it in the same tick
+
+Owner selected it on the page: *"Check this is out of place and not functioning properly"*. Both
+halves were right, and the second was a defect I shipped in *(q)*.
+
+### ⚠⚠ IT WORKED, THEN UNDID ITSELF TOO FAST TO SEE
+
+`document.addEventListener('click', closeMenus)` (line 59239) closes every menu on any click that
+reaches the document — which is why **every** toolbar trigger in this file stops its own event.
+Forwarding with `b.click()` does **not** inherit that:
+
+1. the handler fires and calls `b.click()`;
+2. the palette handler stops the **synthetic** event, not this one;
+3. the pane opens;
+4. the handler returns and the **real** click carries on bubbling to `document`;
+5. `closeMenus()` shuts it.
+
+**Proven by execution**, not by reading: a harness with the document listener, a palette trigger
+shaped like the file’s others, and the shipped handler **sliced from source** so the test cannot
+drift from the code.
+
+| handler | pane still open after a real click? |
+|---|---|
+| palette button itself *(control)* | **yes** — the rig works |
+| as shipped in *(q)* | **no** |
+| with `e.stopPropagation()` | **yes** |
+
+### “Out of place” was also right, twice over
+
+It sat **second in the row**, the slot the on/off checkbox used to hold — a primary position for
+what is now chrome, and a lone button standing there read as an orphan once the four controls
+around it moved out. It is at the trailing edge now, beside the fold chevron.
+
+⚠ And its `font-size:12px` was **off the scale entirely** — `--pd-fs-*` has no 12. Inherited
+verbatim from the controls it replaced, so the mistake was older than the button; now `--pd-fs-sm`.
+⚠ My *(r)* font audit would not have caught it: that one read **computed styles in a rendered
+pane**, and this is an **inline style on markup** the audit never rendered.
+
+### The stylesheet sweep: one systemic finding, reported not changed
+
+5,590 lines, 2,570 balanced braces, 2,526 rules — extracted with the guards this file has earned
+(three `<style>` matches, two inside JS strings; an older scanner hardcoded a bound and missed
+319 lines; and the brace count reads **unbalanced** until comments are stripped, because the prose
+quotes `function () {`).
+
+| check | result |
+|---|---|
+| `font-weight: 600` (Gotham has no Semibold) | **0** |
+| `flex:1` + `min-width:0` that could starve to 0 | 3, all with ellipsis guards or no text |
+| `font-size` off the `--pd-fs-*` scale | **5** |
+| bare-type selectors forcing geometry | 35 |
+
+⚠ The 5 off-scale sizes are 8–9.5px and **four of them are SVG** (`fill:`, not `color:`) — Gantt
+link type/lag labels, a summary axis, a stacking label. Chart annotation is a different typographic
+context from UI chrome and 10px may not fit where they sit, so they are **reported, not bumped**:
+changing them blind risks clipping on a surface I cannot render without data. `.sbld-gmirror` at
+9px is the one that is ordinary HTML.
+
+⚠⚠ **`.ps-menu button { width:100% }` has now been worked around SIX times** — `ps-cols-foot`,
+`ps-lm-lvls`, `ps-lm-lyt`, `ps-lm-chips`, the `ps-gm-x` note at line 3456, and mine in *(r)*.
+Two of this week’s defects came from it. The systemic fix is to invert it — style menu ITEMS by a
+class and let a bare `<button>` keep its natural size — but the items carry no shared class, so
+that means touching every menu-building call site across six menus. **Not attempted here**: it is a
+wide blast radius on surfaces I cannot render, and it is the owner’s call whether it is worth it.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0.
+`modules-grid.js` `?v=` → `20260918u`.
+
+### 2026-09-18 (t) — A Pages deploy that failed and recovered, and a live audit for harness artefacts
+
+Owner, with a screenshot of run **#1379** on `0067234`: *"Can we check this first?"*, then *"Check
+live if there are any harness artifacts"*.
+
+### The deploy failure did not stick
+
+`build` and `report-build-status` passed; `deploy` failed with *“Ensure GITHUB_TOKEN has
+permission id-token: write”*. That is GitHub’s own generated `pages-build-deployment` workflow (this
+repo has only `deploy-edge-functions.yml` of its own), so there is no workflow file here to change.
+
+⚠ **It was two commits old and later runs succeeded**, which is the part worth recording: a
+persistent permissions problem fails every run, so this was transient. Verified by content rather
+than by trusting a green tick — the live module page hashes **identically** to `origin/main`:
+
+| check | result |
+|---|---|
+| live `modules/project-schedule/index.html` vs `origin/main` | same blob, `9b10a9a` |
+| `dashboard.css` / `modules-grid.js` tokens | `20260918b` / `20260918r`, both current |
+| Pormac sweep markers | `body class="pmc-page"` and module `?v=20260918a` live |
+| colour-pane markers | `#ps-alg-open`, the moved section, both width fixes live |
+
+If it recurs on consecutive runs it is a settings problem, not a flake — Settings → Actions →
+Workflow permissions is where the token’s scope is set.
+
+### The artefact audit found nothing live, and the guard is working
+
+⚠⚠ **Scanned by BEHAVIOUR, not by filename.** The 2026-09-01 incident was a publicly reachable page
+rendering fixtures with the auth layer stubbed out — it would have passed any name check, which is
+exactly why `.gitignore` says *“match the WORD, not one filename”*. Every tracked `.html` was
+read for whether it gates on `AppAuth` and whether it ships fixtures:
+
+| finding | verdict |
+|---|---|
+| 31 tracked pages, 24 gate on `AppAuth` | — |
+| `admin.html` “ungated” | **false positive** — it uses `requireAdmin`, which my pattern missed |
+| drawing-register / material-submittal ungated | **not findings** — redirect stubs to the Engineering App; they render nothing |
+| 12 `fixture` hits in two modules | **false positives** — comments, plus the class code `'Plumbing Fixtures'` |
+| tracked files with scratch-ish names | **0** |
+| 13 harness URLs probed live | **404**, every one |
+
+⚠ Three harness files **do** sit in the owner’s clone — `cca-tap-harness.html`, `nm-harness.html`,
+`uic-harness.html`, ~226KB each, another session’s. All three are **untracked**, caught by
+`**/*harness*`, absent from `origin/main` and **404 live**. The rule added after the 2026-09-01
+escape is doing precisely the job it was added for.
+
+⚠ The scan’s first run reported **0 files, 0 findings** — `git ls-files -- '*.html'` passed its
+quotes through literally on this shell and matched nothing. A checker that says “all clear” because
+it looked at nothing is the third flattering zero this week; it now aborts when the file list is
+empty rather than reporting success.
+
+**Verified:** read-only — no code changed, no cache-bust.
+
+### 2026-09-18 (s) — Pormac: a 34px button rendering at 336, a toast on the disclaimer, and 606px of nothing
+
+Owner: *"Let's do a UI sweep in pormac module as well."* Three defects, each measured against the
+shipped markup rather than read off the screenshot.
+
+### ⚠⚠ 1. THE “FLOATING” TRASH ICON WAS NEVER MIS-POSITIONED — IT WAS 336px WIDE
+
+The shared shell rule
+
+```css
+.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; }
+```
+
+exists so a module whose project picker **is** a button fills its slot. Pormac’s `-projctx` carries
+**two** children — a `<select>` picker **and** an icon-only “clear this conversation” button — and
+the bare `> button` caught the second one. Measured **336×34** where its own
+`.pmc-clearbtn { width:34px }` asks for 34: the shell selector is **(0,4,1)** against that rule’s
+**(0,1,0)**, so it won by a mile. The 16px glyph then centred itself in a 336px invisible box —
+which is the “icon floating loose in the middle of the bar”, and it was a width problem all along.
+
+⚠ Fixed as `> button:not(.pd-icon-btn)`: an icon button is never a project picker. Checked every
+`-projctx` wrapper in the repo before touching a rule twelve modules share — Pormac’s is the only
+`.pd-icon-btn` among them. After: **34×34**, inside its parent, 10px clear of the user bar.
+
+⚠ This is the **second** defect in two days from a broad selector catching a control it was not
+written for — *(r)* was `.ps-menu button { width:100% }` eating the colour pane. Same shape, same
+fix: exempt the control, do not weaken the rule.
+
+### 2. The toast sat on the one line that must never be covered
+
+`.pd-toast` is `position:fixed; bottom:24px`, which is fine on every page whose content ends above
+the fold. This one docks a composer **and** a standing disclaimer to the bottom of the viewport, so
+they share a band: measured, the toast overlapped `.pmc-hint` by **7×296px** — a transient message
+covering a permanent *“it can still be wrong”*.
+
+⚠ `--pmc-dock` IS MEASURED, NOT ASSUMED. The footer is **92px** with an empty composer, but the
+textarea grows to 160px as you type — a hardcoded offset would have come back the moment anyone
+wrote a long question. `module.js` writes the real height on every `input` and on resize; the CSS
+falls back to 92px only before the first keystroke. After: toast at **766–810**, hint at **884–902**,
+**no overlap with either the hint or the composer**, 13px clearance.
+
+### 3. 606px of nothing under a 39px bubble
+
+An empty conversation is one system bubble at the top of a full-height thread. Measured: a **39px**
+bubble above **606px** of dead space.
+
+⚠ `.pmc-thread > .pmc-msg:only-child { margin-block: auto; }` — `:only-child` means this reverts
+the instant a real message arrives, with **no JS and no state to keep in sync**. From the second
+message on the thread is top-aligned and scrolls normally, which is what a transcript wants. After:
+315px above / 307px below (the 8px is the thread’s own 16/8 padding, not a defect).
+
+### ⚠ Found and NOT changed: Pormac carries a second project picker
+
+Owner selected it on the page mid-sweep. It is real, and it is not the harness artefact it first
+looked like: `loadProjects` fills `#pmc-project` with every project and `setPortfolioAll` hides
+it **only in portfolio scope** — so in project scope, which is how he opens it, the topbar renders
+the shell switcher **and** Pormac own picker side by side, both naming the same project.
+
+⚠ Left alone deliberately, because the two are not quite duplicates: the shell switcher NAVIGATES
+between projects, while this one swaps the conversation in place and offers a “General (no project
+selected)” option the switcher has no equivalent for. Deleting it would quietly remove the only
+way to ask Pormac something that is not about a project. That is the owner call, so it is measured
+and reported rather than swept.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings ·
+`module.js` parses · all three measured on a harness built from the shipped `index.html` body with
+the real `UI.initShell()` doing the topbar split. `dashboard.css` → `20260918b` (31 files) ·
+pormac `module.css` / `module.js` → `20260918a`.
+
+### 2026-09-18 (r) — `.ps-menu button { width:100% }` was eating the colour pane, and the fonts it hid
+
+Owner, annotating the pane *(q)* had just shipped, circling the WBS rows; then: *"Can you also
+check the consistency of the font styles?"*
+
+### ⚠⚠ A RULE THAT IS NOT THIS PANE’S WAS SIZING EVERY CONTROL IN IT
+
+`.ps-menu button { width:100% }` exists so a **list-style** menu’s items fill their menu. Every
+inline control in the colour pane is a `<button>` inside a `.ps-menu`, so it inherited it:
+
+| control | max-content | rendered | effect |
+|---|---|---|---|
+| `✕` on a WBS override row | **38px** | **208px** | ate the row |
+| the branch label beside it | needs 33px | **0px** | *invisible* — what the owner circled |
+| `Key trades…` / `Reset colours` | — | 100% each | **stacked** instead of side by side |
+| `Add` | — | widest thing on its row | — |
+
+⚠ *(q)* widened the pane and called the clipping fixed. It was not: widening it just gave this rule
+more to take. **The label read 0px in the same measurement pass that reported “0 clipped”** — the
+check skipped zero-width elements, so the one genuinely broken control was the one it could not
+see. That is the second time today a check has been wrong in the flattering direction.
+
+Scoped to the pane’s three row types rather than weakened globally; the list menus elsewhere still
+want their full-width buttons. Measured after: `✕` **39px**, label **162px** for 162px of text,
+the two buttons **side by side**, **0px** dead space on the add row, **0** clipped elements.
+
+⚠ A floor on the label as well — `flex:1 1 60px; min-width:40px` rather than `flex:1`, which is a
+basis of **0** and therefore only ever gets LEFTOVER space. That is precisely how it reached zero.
+
+### The font audit: clean except for the controls that show no text
+
+Every visible style in the pane was already on the scale and on brand — **0** weight-600 (Gotham has
+no Semibold), **0** off-scale, all Gotham. One real inconsistency:
+
+**12 `<input>` elements rendered at 13.3px Arial.** Form controls **do not inherit font**, which is
+the exact defect `.pd-btn` carried app-wide until *(u)* on 2026-09-17. They are all checkboxes and
+colour swatches, so nothing shows text and it was invisible rather than ugly — fixed anyway,
+because an input that later gains a label would inherit the wrong font silently.
+
+| after | |
+|---|---|
+| off-scale sizes | **0** |
+| non-Gotham | **0** |
+| weight 600 | **0** |
+| control sizes | unchanged — checkbox 13×13, swatch 34×24 (explicit width/height held) |
+
+⚠ The comment explaining that fix had to be repaired: it was written through a double-quoted bash
+string and the shell **command-substituted `.pd-btn` out of it**. Same trap as *(am)*, and a file
+named `fixcomment.js` already existed in the scratch dir from repairing the identical damage
+earlier. Written through the Write tool this time.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · the pane re-measured from its shipped markup builder.
+`modules-grid.js` `?v=` → `20260918r`.
+
+### 2026-09-18 (q) — One pane for every colour on the Gantt, and the 70px that crushed a select to 22
+
+Owner: *"There is a bar colors button that changes the colors of the gantt bars … we can also unify
+the functions of changing the color activities by to this chart as well. Currently I can change via
+the legend pane below — it should be unified in one location with the gantt bar colors. Besides the
+current build of the global bar colors pane is clipping."*
+
+### The pane now reads broadest rule to narrowest
+
+| section | what it sets |
+|---|---|
+| **Global bar colors** | task / border / progress / summary / baseline / milestone / links / data date |
+| **Colour activities by** *(moved in from the legend)* | the toggle, the field, Textures, Key trades…, Reset colours |
+| **By WBS branch** | per-branch overrides, nearest branch wins |
+
+That is also the order they override one another in, which is the reason for it.
+
+⚠⚠ **THE LSM CONTROLS DID NOT COME WITH THEM, and that is the line drawn.** `LSM rows`, `Roof first`
+and `Status at the line` change the chart’s **layout**, not its colours; they stay in the legend
+with the chips they rearrange. They sat beside `Key trades…` only because that button doubles as
+the lane roster — moving them on that basis would have traded one mixed-up pane for another.
+
+⚠ The legend keeps a **`Colours…`** button that **opens** the pane rather than setting anything, so
+the controls are reachable from where they used to live and every value still has exactly one
+editor. The legend says *what* the colours mean; the pane is where they are *changed*. Verified:
+each of the five ids is emitted **exactly once** in the whole module.
+
+### ⚠⚠ THE CLIPPING WAS A 70px WIDTH THAT A LATER RULE HAD BEEN QUIETLY WINNING
+
+`.ps-colors-menu { min-width:250px }` sits ~170 lines **earlier** than `.ps-menu { min-width:180px }`,
+at the **same (0,1,0) specificity** — so the generic rule won on source order and the pane opened at
+**180px**, 70px narrower than the rule written for it. Measured, not inferred:
+
+| | before | after |
+|---|---|---|
+| pane width | **180px** | **300px** |
+| WBS select | **22px** for a label needing **92px** | **255px** for **253px** |
+| elements clipped anywhere in the pane | the select | **0** |
+
+⚠ **A wider rule alone would have changed nothing** — it had to be placed *after* the rule beating
+it. And width alone was not the whole fault: the add row ran `flex:1` (basis 0) + `min-width:0` on
+the select while a swatch and an Add button shared its line, so the select took whatever they left.
+It now has **its own line**, with the swatch and Add right-aligned beneath it — measured at an **8px
+gap, no overlap**.
+
+⚠ Two handler bindings had to be guarded in the same change: `host.querySelector('#ps-alg-on')`
+and `'#ps-alg-field'` were read **without a null check**. With those controls moved out, an
+unguarded read throws on every legend render and takes the whole strip down with it.
+
+⚠ One process note: the first attempt matched the five control lines as a single exact string and
+**matched 0** — the `Key trades…` line carries a literal ellipsis character, not the `\u2026` escape
+it appeared to have in an earlier dump. The script aborted without writing anything; the retry
+replaced them by line range with a per-line content assertion.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · the pane re-measured from its shipped markup builder: 3
+sections in order, 0 clipped elements, 0 spilling past the right edge, Gotham resolved as the
+control. `modules-grid.js` `?v=` → `20260918q`.
+
+### 2026-09-18 (p) — Fifteen changelog labels that named two entries each
+
+Owner: *"Let's fix the duplicate (p) entries in the changelog."*
+
+⚠⚠ **It was not one duplicate, it was fourteen labels covering fifteen surplus entries.** 293
+entries, **278** distinct labels. Two sessions lettered 2026-09-17 in parallel and each ran
+`p`…`y`; *(t)* named **three** different entries. 2026-09-15 and 2026-09-03 had two collisions
+each.
+
+### Which occurrence is the wrong one, decided rather than picked
+
+The log is newest-first, so a date’s suffixes should read strictly **descending** down the file.
+The fix keeps each date’s **longest strictly-descending run** — the coherent backbone — and
+re-letters only entries that are **both** off that run **and** duplicated.
+
+⚠ **The first attempt re-lettered 28 entries and was thrown away.** It flagged anything outranked
+by something below it, which swept in `ah`–`ap` (nine entries from today, heavily cross-referenced)
+purely because a stray `aq` sits below them. Renaming a unique label is pure churn that breaks
+citations, and the ask was duplicates. The constrained plan touches **15**.
+
+| date | duplicated | re-lettered | left alone though out of order |
+|---|---|---|---|
+| 2026-09-17 | p q r s t u v w x y | 11 → `ay`–`bi` | `aq`, `z` |
+| 2026-09-15 | w x | 2 → `aa`, `ab` | `zc`, `s` |
+| 2026-09-03 | b c | 2 → `aa`, `ab` | — |
+
+### ⚠⚠ The cross-references were the real hazard
+
+Entries cite each other as *(x)*, and **a citation to a duplicated letter never resolved in the
+first place** — three `(t)` entries meant *“see (t)”* pointed at nothing in particular. 18 citations
+touched the affected letters; **6** pointed at an entry that moved and were rewritten with it.
+
+⚠ A citation resolves to the **nearest entry below it**, because this log is newest-first and an
+entry can only cite something already written. Checked against the strongest available case: one
+line cites *(t)*, *(u)* and *(v)* together and the rule lands them on lines 3239 / 3156 / 3109 —
+three consecutive entries of one run. A wrong rule would have scattered them.
+
+⚠⚠ **And the rule is scoped to the citing entry’s own date, which the first pass got wrong.** It
+matched the bare letter anywhere and resolved line 17813 — `| before today | after (w) | after (x) |`
+— which lives inside **2026-09-09 (x)** and cites its own day, a date with no duplicates at all.
+The script **aborted** rather than rewrite it; out-of-scope citations are now counted and left.
+
+**Verified:** 293 entries before and after · **278 → 293 distinct labels, 0 duplicates** · line count
+unchanged at 20,418, so nothing was added or dropped · the rewritten ranges still read as ranges
+(*“Entries (bd) through (bg)”* remains four contiguous entries). Documentation only — no shipped
+asset changed, so no cache-bust.
 
 ### 2026-09-18 (o) — Floors & Zones: a deliberate two-line row, chosen because one line is impossible
 
@@ -3366,7 +3847,7 @@ read *"4 branches empty"* rather than *"hidden"*.
 
 `MODULE_V` → `20260917zw`.
 
-### 2026-09-17 (t) — Overlapping zones become a measurable error in the Floors & Zones step
+### 2026-09-17 (bi) — Overlapping zones become a measurable error in the Floors & Zones step
 
 Owner: *"for the UI for the floors & zones, please improve the overall UI, starting from defining the
 number of floors, zones, units etc."*, *"in the defining the plan layout of floors with no specified
@@ -3735,7 +4216,7 @@ Measured in the browser against the shipped stylesheet, with a chip carrying the
 | lost | `n — Cavite` |
 | tooltip said | `21 Aug 2026 — click to rename` |
 
-⚠️ This is mine, from entry *(t)*: the labels feature added the name to the chip and left the tooltip
+⚠️ This is mine, from entry *(bc)*: the labels feature added the name to the chip and left the tooltip
 as it was. The title now leads with the name when there is one, then the date — because the chip that
 shows a NAME is precisely the chip whose DATE is no longer on screen, and the cut half has to live
 somewhere. Both still come from `PDCal`, so the tooltip cannot disagree with the text.
@@ -3752,7 +4233,7 @@ working week from that."*
 
 ### ⚠️ A CORRECTION: THIS SCANNER HAS BEEN COUNTING THE WRONG COMPONENTS
 
-Entries *(u)* through *(x)* reported Setup figures — *"7 mixed 700/800 families"*, *"14 truncating
+Entries *(bd)* through *(bg)* reported Setup figures — *"7 mixed 700/800 families"*, *"14 truncating
 rules"* — from a scanner whose scope regex was `.sbld-|.pscl-|.calwiz-|.zpw-|.pph-`. **`.pscl-*` is
 `curveSpark`, a cost sparkline, and `.pph-*` is the print head. Neither is in the Setup wizard.** The
 Setup's actual second family is `.ps-cal-*`, the calendar editor embedded by this very step, and it
@@ -3766,7 +4247,7 @@ was missing. Corrected scope, corrected figures:
 
 Four of the seven "mixed families" I had been carrying as an open question were `.pscl-*` — a
 component on a different screen. The three that remain are real and still belong to pages not yet
-reviewed. ⚠️ The `.pscl-tbl th` at 800 that *(x)* recorded as a possible third table-header treatment
+reviewed. ⚠️ The `.pscl-tbl th` at 800 that *(bg)* recorded as a possible third table-header treatment
 in the Setup **is not in the Setup**; that observation is withdrawn.
 
 ### Sound as it stands
@@ -3785,7 +4266,7 @@ shipped class, which tests the rule, and the tooltip change is a source-level fi
 cannot exercise. Said plainly rather than implied. `modules-grid.js` `?v=` → `20260917zp`, past the
 `zo` a concurrent session had just taken.
 
-### 2026-09-17 (y) — The Project Schedule stops using the browser's own dialogs, in all 104 places
+### 2026-09-17 (bh) — The Project Schedule stops using the browser's own dialogs, in all 104 places
 
 ⚠️ Re-lettered from `(w)` to `(x)` to `(y)` across two merges: two concurrent sessions each
 landed a 2026-09-17 entry while this one was in flight, and `(u)` / `(v)` had already been
@@ -3851,7 +4332,7 @@ was removed upstream without a suite update); the failure sets were diffed and t
 `MODULE_V` → `20260917zo`, re-derived from what the live site actually serves after merging 32
 incoming commits.
 
-### 2026-09-17 (x) — The Activities step still had the doubled heading from the owner's screenshot
+### 2026-09-17 (bg) — The Activities step still had the doubled heading from the owner's screenshot
 
 Owner: *"continue with activities"* — page three of the 4.1 pass.
 
@@ -3889,7 +4370,7 @@ read at the moment it can be acted on.
 
 ### ⚠️ Two off-scale sizes the previous pass reported as zero
 
-*(t)* and *(u)* both claimed the Setup was entirely on the type scale. That was true of its **CSS
+*(bc)* and *(bd)* both claimed the Setup was entirely on the type scale. That was true of its **CSS
 rules** and the scan that produced it only read rules. These two were `style=` attributes inside JS
 strings — `font-size:10.5px` on the holding list's "N ticked" count and `font-size:11.5px` on its
 empty state. Both are a rung missed by a single pixel (`--pd-fs-micro` is 10, `--pd-fs-xs` is 11),
@@ -3934,7 +4415,7 @@ shipped renderers and the shipped `STEP_TABS`: Activities is **one** `<h2>` (`3 
 Arial**; **0 elements with text cut** (`overflow:hidden` and wider than its box — the grid's own
 horizontal scroller is excluded, it is a scroller by design). `modules-grid.js` `?v=` → `20260917zn`.
 
-### 2026-09-17 (w) — Project Phases printed its own lede twice, and that one was mine
+### 2026-09-17 (bf) — Project Phases printed its own lede twice, and that one was mine
 
 ⚠️ Re-lettered from `(v)` on rebase: a concurrent session landed its own 2026-09-17 `(v)` (below)
 first — itself already re-lettered from `(u)` for the same reason. Both entries kept in full; this one
@@ -4008,7 +4489,7 @@ published under the previous commit, leaving changed content behind an already-s
 holding `zh` would never fetch the new rules. Caught on the rebase by diffing the token against the
 file’s content rather than against the previous token.
 
-### 2026-09-17 (v) — supabase-build.sql / VERIFY-schema.sql regenerated, and a real bug found in the checker doing it
+### 2026-09-17 (be) — supabase-build.sql / VERIFY-schema.sql regenerated, and a real bug found in the checker doing it
 
 ⚠️ Re-lettered from `(u)` on merge: a concurrent session independently landed its own 2026-09-17 `(u)`
 entry (below) first. Both entries kept in full; this one bumped past it rather than guessed at before
@@ -4065,7 +4546,7 @@ are regenerated **from the migrations already in the repo**; the actual "push" i
 `supabase-build.sql` (fresh install) or running `migrations/VERIFY-schema.sql` first (existing
 database, to see what's actually missing) into the Supabase SQL editor.
 
-### 2026-09-17 (u) — Every button in the app was Arial; the Start step stops explaining its own labels
+### 2026-09-17 (bd) — Every button in the app was Arial; the Start step stops explaining its own labels
 
 Owner: *"Let's do 4.1 now let's do it per page in the schedule set-up one by one full check per page"*,
 then, quoting six paragraphs of the Start step back: *"Most of these texts are already been explained
@@ -4159,7 +4640,7 @@ Library, Floors & Zones, and Repetition's five views), and the 700-vs-800 questi
 two bolds in seven component families, of which `.pscl-tbl` (header 800 / body 700 / empty 400) is a
 deliberate three-level hierarchy and the rest are not yet judged.
 
-### 2026-09-17 (t) — Named non-working dates, groupings that can exist before their work, and Project Phases becomes one page
+### 2026-09-17 (bc) — Named non-working dates, groupings that can exist before their work, and Project Phases becomes one page
 
 Owner, picking the order off his own Schedule Setup list: *"Let's do 1.1 and 2.3 first before 4.1"* —
 **1.1** *"For Calendar, when adding one-off dates, provide option to add label"* and **2.3** *"add
@@ -4263,7 +4744,7 @@ Next walk simulated against the real `STEP_TABS` extracted from the file. `calen
 remote serves). ⚠️ **The migration has not been run** — the owner runs those himself, and until he does,
 "Add yearly day" stays broken exactly as it is today.
 
-### 2026-09-17 (s) — The Schedule Setup grids become PDGrid, and two copies of one engine go
+### 2026-09-17 (bb) — The Schedule Setup grids become PDGrid, and two copies of one engine go
 
 Owner: *"Tables should be more readable. Cleanup and follow consistency especially having the excel
 feature"*, then, asked whether that meant adopting the shared grid layer: *"Let's adopt PDGrid for the
@@ -4361,7 +4842,7 @@ one is the path that would have silently taken row 0.
 
 `xlgrid.js` → `?v=20260917zj` across all 3 referencing pages; `MODULE_V` → `20260917zj`,
 sort-checked past `20260917zh`.
-### 2026-09-17 (r) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
+### 2026-09-17 (ba) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
 
 ⚠️ **Re-lettered `(h)` → `(q)` → `(r)`, TWICE on merge.** First a concurrent session independently
 used `(h)` on 2026-09-17 for its own, unrelated entry (*"Planners get every module"*, which widened
@@ -4414,7 +4895,7 @@ real `user`/`admin` account's sidebar.
 `auth.js?v=` token this day's cascade of entries reached. No `MODULE_V` bump — no module
 `index.html` changed structurally; `admin.html` is fetched at its own URL and is not a module page.
 
-### 2026-09-17 (q) — Schedule Setup: the Structure step splits in two, Next walks the tabs, Generate ends with the push, and the Flowline goes
+### 2026-09-17 (az) — Schedule Setup: the Structure step splits in two, Next walks the tabs, Generate ends with the push, and the Flowline goes
 
 Owner, a twelve-item list across Schedule Setup, the schedule UI and the LSM, then three clarifications
 in flight. This entry covers the seven that are done; the rest are named at the bottom rather than
@@ -4583,7 +5064,7 @@ excel feature" needs a decision on whether the setup tables adopt `PDGrid`).
 
 `MODULE_V` → `20260917zh`, sort-checked past `20260917zg`.
 
-### 2026-09-17 (p) — The personal sandbox: one function change isolates all 16 modules, and a checker that had never read its own subject
+### 2026-09-17 (ay) — The personal sandbox: one function change isolates all 16 modules, and a checker that had never read its own subject
 
 **Run `migrations/2026-09-17-sandbox-project.sql`.** Owner: *"I need a sandbox project. This will be
 the training ground for tomorrow's cascade of the app. This sandbox project will be personal to the
@@ -8739,7 +9220,7 @@ either side started, and main had already continued past `z` with `za`/`zb`. It 
 work is unchanged. ⚠️ Main's `## 2026-09-15 (x)` heading is `##` where this file's convention is
 `###`; pre-existing on `origin/main`, left alone rather than folded into a merge commit.
 
-### 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
+### 2026-09-15 (ab) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
 
 Owner, with the Portfolio Dashboard's view dropdown open: *"there is a dashboard module, and there is
 a dropdown that links to each module. that is wrong. The idea of each dashboard (e.g. s-curve, risk
@@ -8819,7 +9300,7 @@ New `assets/js/portfolio-dash.js` + `assets/css/portfolio-dash.css` at `?v=20260
 `MODULE_V` → `20260915x`.
 
 
-### 2026-09-15 (w) — A 3D card framed for a shape its canvas no longer had
+### 2026-09-15 (aa) — A 3D card framed for a shape its canvas no longer had
 
 Owner: *"The presets view also do not view properly and I cannot see the ground"*, with the
 Vertical Stacking on `Right` showing a slab at the bottom of a mostly empty card. Detail:
@@ -20328,7 +20809,7 @@ worth watching on the first real use. `MODULE_V` → `20260903c`.
 ### 2026-09-03 (b) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
 <!-- both sides prepended a 2026-09-03 entry; both kept whole, seam here -->
 
-### 2026-09-03 (b) — Super-admin-only modules, module-logo dropdowns, bold Portfolio, view toggles repositioned
+### 2026-09-03 (ab) — Super-admin-only modules, module-logo dropdowns, bold Portfolio, view toggles repositioned
 
 Six items in one owner turn, two of them mid-turn follow-ups on the earlier five.
 
@@ -20421,7 +20902,7 @@ the CSS *class*, never the id). All six items visually confirmed via Playwright 
 1400px and 400px against the shipped CSS with the real app markup (auth/DB stubbed — this
 environment has no live Supabase login). ⚠️ **Not verified signed in.**
 
-### 2026-09-03 (c) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
+### 2026-09-03 (aa) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
 
 Owner, off a screenshot of *Match the WBS to your location breakdown*: filter by WBS level, use the
 space, put a location tree on the right — plus two questions worth answering in the UI rather than in

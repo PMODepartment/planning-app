@@ -1,4 +1,4 @@
-## 2026-09-18 (p) — The clash strip counted days the two trades were never on the storey together
+## 2026-09-18 (x) — The clash strip counted days the two trades were never on the storey together
 
 Owner: *"Let's do a dedicated check for the clash detection in the schedule"*. A probe, not a
 feature — and it found one line.
@@ -68,7 +68,13 @@ this fix can move. If MEPF starts before Architectural on those basements, those
 a `window` read without giving that suite a window. `test-critwbs` 26/26, `test-health` 30/30,
 `test-autotrace` 32/32, `test-zoneoverlap` 57/57, `test-towerseq` 48/48, `test-syntax` 4/4.
 
-`MODULE_V` → `20260918p`, sort-checked against `20260918o` in dashboard.html and modules.html.
+`MODULE_V` → `20260918x`, sort-checked against `20260918w` in dashboard.html and modules.html.
+⚠️ **Integrated across 8 incoming commits** (the colour pane, the Pormac UI sweep, the `.ps-menu`
+button rules). Two conflict hunks, both the cache token, and both resolved FORWARD: this branch had
+bumped `o`→`p` while `origin/main` had reached `w`, so keeping `p` would have shipped the module
+behind a token browsers already hold. Nothing in `modules/project-schedule/index.html` conflicted —
+their work there is the colour pane at ~56,800 and the CSS above it, nowhere near the clash pass.
+`test-lsm` re-run on the MERGED tree, not only on the pre-merge one.
 
 ## 2026-09-18 (i) — Activity sequence, Zone scoping as its own step, and one label treatment for every selector group
 
