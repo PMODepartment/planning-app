@@ -104,6 +104,75 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (s) — Pormac: a 34px button rendering at 336, a toast on the disclaimer, and 606px of nothing
+
+Owner: *"Let's do a UI sweep in pormac module as well."* Three defects, each measured against the
+shipped markup rather than read off the screenshot.
+
+### ⚠⚠ 1. THE “FLOATING” TRASH ICON WAS NEVER MIS-POSITIONED — IT WAS 336px WIDE
+
+The shared shell rule
+
+```css
+.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; }
+```
+
+exists so a module whose project picker **is** a button fills its slot. Pormac’s `-projctx` carries
+**two** children — a `<select>` picker **and** an icon-only “clear this conversation” button — and
+the bare `> button` caught the second one. Measured **336×34** where its own
+`.pmc-clearbtn { width:34px }` asks for 34: the shell selector is **(0,4,1)** against that rule’s
+**(0,1,0)**, so it won by a mile. The 16px glyph then centred itself in a 336px invisible box —
+which is the “icon floating loose in the middle of the bar”, and it was a width problem all along.
+
+⚠ Fixed as `> button:not(.pd-icon-btn)`: an icon button is never a project picker. Checked every
+`-projctx` wrapper in the repo before touching a rule twelve modules share — Pormac’s is the only
+`.pd-icon-btn` among them. After: **34×34**, inside its parent, 10px clear of the user bar.
+
+⚠ This is the **second** defect in two days from a broad selector catching a control it was not
+written for — *(r)* was `.ps-menu button { width:100% }` eating the colour pane. Same shape, same
+fix: exempt the control, do not weaken the rule.
+
+### 2. The toast sat on the one line that must never be covered
+
+`.pd-toast` is `position:fixed; bottom:24px`, which is fine on every page whose content ends above
+the fold. This one docks a composer **and** a standing disclaimer to the bottom of the viewport, so
+they share a band: measured, the toast overlapped `.pmc-hint` by **7×296px** — a transient message
+covering a permanent *“it can still be wrong”*.
+
+⚠ `--pmc-dock` IS MEASURED, NOT ASSUMED. The footer is **92px** with an empty composer, but the
+textarea grows to 160px as you type — a hardcoded offset would have come back the moment anyone
+wrote a long question. `module.js` writes the real height on every `input` and on resize; the CSS
+falls back to 92px only before the first keystroke. After: toast at **766–810**, hint at **884–902**,
+**no overlap with either the hint or the composer**, 13px clearance.
+
+### 3. 606px of nothing under a 39px bubble
+
+An empty conversation is one system bubble at the top of a full-height thread. Measured: a **39px**
+bubble above **606px** of dead space.
+
+⚠ `.pmc-thread > .pmc-msg:only-child { margin-block: auto; }` — `:only-child` means this reverts
+the instant a real message arrives, with **no JS and no state to keep in sync**. From the second
+message on the thread is top-aligned and scrolls normally, which is what a transcript wants. After:
+315px above / 307px below (the 8px is the thread’s own 16/8 padding, not a defect).
+
+### ⚠ Found and NOT changed: Pormac carries a second project picker
+
+Owner selected it on the page mid-sweep. It is real, and it is not the harness artefact it first
+looked like: `loadProjects` fills `#pmc-project` with every project and `setPortfolioAll` hides
+it **only in portfolio scope** — so in project scope, which is how he opens it, the topbar renders
+the shell switcher **and** Pormac own picker side by side, both naming the same project.
+
+⚠ Left alone deliberately, because the two are not quite duplicates: the shell switcher NAVIGATES
+between projects, while this one swaps the conversation in place and offers a “General (no project
+selected)” option the switcher has no equivalent for. Deleting it would quietly remove the only
+way to ask Pormac something that is not about a project. That is the owner call, so it is measured
+and reported rather than swept.
+
+**Verified:** `wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings ·
+`module.js` parses · all three measured on a harness built from the shipped `index.html` body with
+the real `UI.initShell()` doing the topbar split. `dashboard.css` → `20260918b` (31 files) ·
+pormac `module.css` / `module.js` → `20260918a`.
+
 ### 2026-09-18 (r) — `.ps-menu button { width:100% }` was eating the colour pane, and the fonts it hid
 
 Owner, annotating the pane *(q)* had just shipped, circling the WBS rows; then: *"Can you also

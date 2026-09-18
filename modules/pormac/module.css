@@ -77,6 +77,12 @@
   flex: 1; min-height: 0; overflow-y: auto; padding: 16px 2px 8px;
   display: flex; flex-direction: column; gap: 14px;
 }
+/* ⚠ A LONE MESSAGE CENTRES ITSELF. An empty conversation is one system bubble at the top of a
+   thread that is the full height of the pane — measured, a 39px bubble above **606px** of nothing,
+   which is the dead space the owner reported. `:only-child` means this reverts the instant a real
+   message arrives, with no JS and no state to keep in sync: from the second message on, the thread
+   is top-aligned and scrolls normally, which is what a transcript wants. */
+.pmc-thread > .pmc-msg:only-child { margin-block: auto; }
 .pmc-msg { max-width: 86%; display: flex; flex-direction: column; gap: 4px; }
 .pmc-msg.user { align-self: flex-end; align-items: flex-end; }
 /* Assistant messages carry the Pormac avatar, so that row is a ROW (avatar +
@@ -107,6 +113,18 @@
 .pmc-composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px 2px; border-top: 1px solid var(--pd-line); }
 .pmc-input { flex: 1; min-height: 40px; max-height: 160px; resize: none; }
 .pmc-hint { font-size: var(--pd-fs-micro, 10px); color: var(--pd-muted); padding: 0 2px 4px; text-align: center; }
+
+/* ---- The toast has to clear the docked footer ----
+   ⚠⚠ `.pd-toast` is `position:fixed; bottom:24px`, which is fine on every page whose content
+   ends well above the fold. This one docks a composer AND a standing disclaimer to the bottom of
+   the viewport, so the two occupy the same band: measured, the toast overlapped `.pmc-hint` by
+   **7×296px** — a transient message covering a permanent “it can still be wrong” line, which is
+   the worst possible thing for it to cover.
+   ⚠ `--pmc-dock` IS MEASURED, NOT ASSUMED. The footer is 92px with an empty composer, but the
+   textarea grows to 160px as you type, so a hardcoded offset would come back the moment anyone
+   wrote a long question. module.js writes the real height on every input event; 92px is only the
+   value before the first keystroke. */
+body.pmc-page .pd-toast { bottom: calc(var(--pmc-dock, 92px) + 12px); }
 
 @media (max-width: 700px) {
   .pmc-msg { max-width: 94%; }

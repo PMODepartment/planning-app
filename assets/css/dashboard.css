@@ -1915,7 +1915,16 @@ body { overflow-x: clip; }
 }
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-select,
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-psel,
-.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; max-width: none; }
+/* ⚠⚠ `:not(.pd-icon-btn)` — THIS RULE WAS SIZING A DESTRUCTIVE ICON BUTTON TO 336px. It exists
+   so a module whose project picker IS a button fills its slot. Pormac's `-projctx` carries two
+   children, a `<select>` picker AND an icon-only “clear this conversation” button, and the bare
+   `> button` caught the second one: measured 336×34 where its own `.pmc-clearbtn { width:34px }`
+   asks for 34 — the shell selector is (0,4,1) against that rule's (0,1,0), so it won by a mile.
+   The 16px trash glyph then centred itself in a 336px invisible box, which is the “icon floating
+   loose in the middle of the bar” the owner reported. It was never mis-positioned.
+   ⚠ An icon button is never a project picker, so the exemption is safe app-wide; checked every
+   `-projctx` wrapper in the repo and Pormac's is the only `.pd-icon-btn` among them. */
+.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button:not(.pd-icon-btn) { width: 100%; max-width: none; }
 .pd-topbar.pd-tb-split .pd-tb-main #pd-theme-toggle { margin-left: auto; }
 /* ⚠️ #user-bar carries `margin-left:auto` of its own (line ~173, for the pages that are NOT
    topbar-split). Inside the split topbar that made TWO auto margins in one flex row, and two

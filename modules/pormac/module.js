@@ -48,6 +48,16 @@ window.Pormac = (function () {
   // ==========================================================================
   // Init
   // ==========================================================================
+  /* The height of everything docked below the thread — composer + disclaimer. Read from the DOM
+     rather than counted up from paddings, so it stays right if either ever changes. */
+  function syncDockHeight() {
+    var inp = $('pmc-input');
+    var comp = inp && inp.closest ? inp.closest('.pmc-composer') : null;
+    if (!comp) return;
+    var h = Math.round(window.innerHeight - comp.getBoundingClientRect().top);
+    if (h > 0 && h < window.innerHeight) document.documentElement.style.setProperty('--pmc-dock', h + 'px');
+  }
+
   async function init(user, prof) {
     profile = prof;
 
@@ -69,7 +79,15 @@ window.Pormac = (function () {
     $('pmc-input').addEventListener('input', function () {
       this.style.height = 'auto';
       this.style.height = Math.min(160, this.scrollHeight) + 'px';
+      syncDockHeight();
     });
+    /* ⚠ The composer and the disclaimer are docked to the bottom of the viewport, and
+       `.pd-toast` is `position:fixed; bottom:24px` — so a toast landed ON the disclaimer
+       (measured: 7×296px of overlap). The stylesheet lifts it by `--pmc-dock`, and this keeps
+       that value honest as the textarea grows from 40px to 160px; a constant would have been
+       right only until somebody typed a long question. */
+    syncDockHeight();
+    window.addEventListener('resize', syncDockHeight);
     // ⚠️ Wired here, not inside the `loadProjects()` try block below, for the
     // same reason the composer handlers are: it needs `pid`/`portfolioAll`
     // and `profile`, none of which depend on the project list ever loading,
