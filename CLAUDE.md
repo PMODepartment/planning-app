@@ -104,6 +104,53 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (p) — Fifteen changelog labels that named two entries each
+
+Owner: *"Let's fix the duplicate (p) entries in the changelog."*
+
+⚠⚠ **It was not one duplicate, it was fourteen labels covering fifteen surplus entries.** 293
+entries, **278** distinct labels. Two sessions lettered 2026-09-17 in parallel and each ran
+`p`…`y`; *(t)* named **three** different entries. 2026-09-15 and 2026-09-03 had two collisions
+each.
+
+### Which occurrence is the wrong one, decided rather than picked
+
+The log is newest-first, so a date’s suffixes should read strictly **descending** down the file.
+The fix keeps each date’s **longest strictly-descending run** — the coherent backbone — and
+re-letters only entries that are **both** off that run **and** duplicated.
+
+⚠ **The first attempt re-lettered 28 entries and was thrown away.** It flagged anything outranked
+by something below it, which swept in `ah`–`ap` (nine entries from today, heavily cross-referenced)
+purely because a stray `aq` sits below them. Renaming a unique label is pure churn that breaks
+citations, and the ask was duplicates. The constrained plan touches **15**.
+
+| date | duplicated | re-lettered | left alone though out of order |
+|---|---|---|---|
+| 2026-09-17 | p q r s t u v w x y | 11 → `ay`–`bi` | `aq`, `z` |
+| 2026-09-15 | w x | 2 → `aa`, `ab` | `zc`, `s` |
+| 2026-09-03 | b c | 2 → `aa`, `ab` | — |
+
+### ⚠⚠ The cross-references were the real hazard
+
+Entries cite each other as *(x)*, and **a citation to a duplicated letter never resolved in the
+first place** — three `(t)` entries meant *“see (t)”* pointed at nothing in particular. 18 citations
+touched the affected letters; **6** pointed at an entry that moved and were rewritten with it.
+
+⚠ A citation resolves to the **nearest entry below it**, because this log is newest-first and an
+entry can only cite something already written. Checked against the strongest available case: one
+line cites *(t)*, *(u)* and *(v)* together and the rule lands them on lines 3239 / 3156 / 3109 —
+three consecutive entries of one run. A wrong rule would have scattered them.
+
+⚠⚠ **And the rule is scoped to the citing entry’s own date, which the first pass got wrong.** It
+matched the bare letter anywhere and resolved line 17813 — `| before today | after (w) | after (x) |`
+— which lives inside **2026-09-09 (x)** and cites its own day, a date with no duplicates at all.
+The script **aborted** rather than rewrite it; out-of-scope citations are now counted and left.
+
+**Verified:** 293 entries before and after · **278 → 293 distinct labels, 0 duplicates** · line count
+unchanged at 20,418, so nothing was added or dropped · the rewritten ranges still read as ranges
+(*“Entries (bd) through (bg)”* remains four contiguous entries). Documentation only — no shipped
+asset changed, so no cache-bust.
+
 ### 2026-09-18 (o) — Floors & Zones: a deliberate two-line row, chosen because one line is impossible
 
 Owner: *"Let's do the two-line layout."* — picking between three ways of giving the row less to
@@ -3293,7 +3340,7 @@ read *"4 branches empty"* rather than *"hidden"*.
 
 `MODULE_V` → `20260917zw`.
 
-### 2026-09-17 (t) — Overlapping zones become a measurable error in the Floors & Zones step
+### 2026-09-17 (bi) — Overlapping zones become a measurable error in the Floors & Zones step
 
 Owner: *"for the UI for the floors & zones, please improve the overall UI, starting from defining the
 number of floors, zones, units etc."*, *"in the defining the plan layout of floors with no specified
@@ -3662,7 +3709,7 @@ Measured in the browser against the shipped stylesheet, with a chip carrying the
 | lost | `n — Cavite` |
 | tooltip said | `21 Aug 2026 — click to rename` |
 
-⚠️ This is mine, from entry *(t)*: the labels feature added the name to the chip and left the tooltip
+⚠️ This is mine, from entry *(bc)*: the labels feature added the name to the chip and left the tooltip
 as it was. The title now leads with the name when there is one, then the date — because the chip that
 shows a NAME is precisely the chip whose DATE is no longer on screen, and the cut half has to live
 somewhere. Both still come from `PDCal`, so the tooltip cannot disagree with the text.
@@ -3679,7 +3726,7 @@ working week from that."*
 
 ### ⚠️ A CORRECTION: THIS SCANNER HAS BEEN COUNTING THE WRONG COMPONENTS
 
-Entries *(u)* through *(x)* reported Setup figures — *"7 mixed 700/800 families"*, *"14 truncating
+Entries *(bd)* through *(bg)* reported Setup figures — *"7 mixed 700/800 families"*, *"14 truncating
 rules"* — from a scanner whose scope regex was `.sbld-|.pscl-|.calwiz-|.zpw-|.pph-`. **`.pscl-*` is
 `curveSpark`, a cost sparkline, and `.pph-*` is the print head. Neither is in the Setup wizard.** The
 Setup's actual second family is `.ps-cal-*`, the calendar editor embedded by this very step, and it
@@ -3693,7 +3740,7 @@ was missing. Corrected scope, corrected figures:
 
 Four of the seven "mixed families" I had been carrying as an open question were `.pscl-*` — a
 component on a different screen. The three that remain are real and still belong to pages not yet
-reviewed. ⚠️ The `.pscl-tbl th` at 800 that *(x)* recorded as a possible third table-header treatment
+reviewed. ⚠️ The `.pscl-tbl th` at 800 that *(bg)* recorded as a possible third table-header treatment
 in the Setup **is not in the Setup**; that observation is withdrawn.
 
 ### Sound as it stands
@@ -3712,7 +3759,7 @@ shipped class, which tests the rule, and the tooltip change is a source-level fi
 cannot exercise. Said plainly rather than implied. `modules-grid.js` `?v=` → `20260917zp`, past the
 `zo` a concurrent session had just taken.
 
-### 2026-09-17 (y) — The Project Schedule stops using the browser's own dialogs, in all 104 places
+### 2026-09-17 (bh) — The Project Schedule stops using the browser's own dialogs, in all 104 places
 
 ⚠️ Re-lettered from `(w)` to `(x)` to `(y)` across two merges: two concurrent sessions each
 landed a 2026-09-17 entry while this one was in flight, and `(u)` / `(v)` had already been
@@ -3778,7 +3825,7 @@ was removed upstream without a suite update); the failure sets were diffed and t
 `MODULE_V` → `20260917zo`, re-derived from what the live site actually serves after merging 32
 incoming commits.
 
-### 2026-09-17 (x) — The Activities step still had the doubled heading from the owner's screenshot
+### 2026-09-17 (bg) — The Activities step still had the doubled heading from the owner's screenshot
 
 Owner: *"continue with activities"* — page three of the 4.1 pass.
 
@@ -3816,7 +3863,7 @@ read at the moment it can be acted on.
 
 ### ⚠️ Two off-scale sizes the previous pass reported as zero
 
-*(t)* and *(u)* both claimed the Setup was entirely on the type scale. That was true of its **CSS
+*(bc)* and *(bd)* both claimed the Setup was entirely on the type scale. That was true of its **CSS
 rules** and the scan that produced it only read rules. These two were `style=` attributes inside JS
 strings — `font-size:10.5px` on the holding list's "N ticked" count and `font-size:11.5px` on its
 empty state. Both are a rung missed by a single pixel (`--pd-fs-micro` is 10, `--pd-fs-xs` is 11),
@@ -3861,7 +3908,7 @@ shipped renderers and the shipped `STEP_TABS`: Activities is **one** `<h2>` (`3 
 Arial**; **0 elements with text cut** (`overflow:hidden` and wider than its box — the grid's own
 horizontal scroller is excluded, it is a scroller by design). `modules-grid.js` `?v=` → `20260917zn`.
 
-### 2026-09-17 (w) — Project Phases printed its own lede twice, and that one was mine
+### 2026-09-17 (bf) — Project Phases printed its own lede twice, and that one was mine
 
 ⚠️ Re-lettered from `(v)` on rebase: a concurrent session landed its own 2026-09-17 `(v)` (below)
 first — itself already re-lettered from `(u)` for the same reason. Both entries kept in full; this one
@@ -3935,7 +3982,7 @@ published under the previous commit, leaving changed content behind an already-s
 holding `zh` would never fetch the new rules. Caught on the rebase by diffing the token against the
 file’s content rather than against the previous token.
 
-### 2026-09-17 (v) — supabase-build.sql / VERIFY-schema.sql regenerated, and a real bug found in the checker doing it
+### 2026-09-17 (be) — supabase-build.sql / VERIFY-schema.sql regenerated, and a real bug found in the checker doing it
 
 ⚠️ Re-lettered from `(u)` on merge: a concurrent session independently landed its own 2026-09-17 `(u)`
 entry (below) first. Both entries kept in full; this one bumped past it rather than guessed at before
@@ -3992,7 +4039,7 @@ are regenerated **from the migrations already in the repo**; the actual "push" i
 `supabase-build.sql` (fresh install) or running `migrations/VERIFY-schema.sql` first (existing
 database, to see what's actually missing) into the Supabase SQL editor.
 
-### 2026-09-17 (u) — Every button in the app was Arial; the Start step stops explaining its own labels
+### 2026-09-17 (bd) — Every button in the app was Arial; the Start step stops explaining its own labels
 
 Owner: *"Let's do 4.1 now let's do it per page in the schedule set-up one by one full check per page"*,
 then, quoting six paragraphs of the Start step back: *"Most of these texts are already been explained
@@ -4086,7 +4133,7 @@ Library, Floors & Zones, and Repetition's five views), and the 700-vs-800 questi
 two bolds in seven component families, of which `.pscl-tbl` (header 800 / body 700 / empty 400) is a
 deliberate three-level hierarchy and the rest are not yet judged.
 
-### 2026-09-17 (t) — Named non-working dates, groupings that can exist before their work, and Project Phases becomes one page
+### 2026-09-17 (bc) — Named non-working dates, groupings that can exist before their work, and Project Phases becomes one page
 
 Owner, picking the order off his own Schedule Setup list: *"Let's do 1.1 and 2.3 first before 4.1"* —
 **1.1** *"For Calendar, when adding one-off dates, provide option to add label"* and **2.3** *"add
@@ -4190,7 +4237,7 @@ Next walk simulated against the real `STEP_TABS` extracted from the file. `calen
 remote serves). ⚠️ **The migration has not been run** — the owner runs those himself, and until he does,
 "Add yearly day" stays broken exactly as it is today.
 
-### 2026-09-17 (s) — The Schedule Setup grids become PDGrid, and two copies of one engine go
+### 2026-09-17 (bb) — The Schedule Setup grids become PDGrid, and two copies of one engine go
 
 Owner: *"Tables should be more readable. Cleanup and follow consistency especially having the excel
 feature"*, then, asked whether that meant adopting the shared grid layer: *"Let's adopt PDGrid for the
@@ -4288,7 +4335,7 @@ one is the path that would have silently taken row 0.
 
 `xlgrid.js` → `?v=20260917zj` across all 3 referencing pages; `MODULE_V` → `20260917zj`,
 sort-checked past `20260917zh`.
-### 2026-09-17 (r) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
+### 2026-09-17 (ba) — `user` and `admin` see eight modules; Users' Actions column drops the dropdown
 
 ⚠️ **Re-lettered `(h)` → `(q)` → `(r)`, TWICE on merge.** First a concurrent session independently
 used `(h)` on 2026-09-17 for its own, unrelated entry (*"Planners get every module"*, which widened
@@ -4341,7 +4388,7 @@ real `user`/`admin` account's sidebar.
 `auth.js?v=` token this day's cascade of entries reached. No `MODULE_V` bump — no module
 `index.html` changed structurally; `admin.html` is fetched at its own URL and is not a module page.
 
-### 2026-09-17 (q) — Schedule Setup: the Structure step splits in two, Next walks the tabs, Generate ends with the push, and the Flowline goes
+### 2026-09-17 (az) — Schedule Setup: the Structure step splits in two, Next walks the tabs, Generate ends with the push, and the Flowline goes
 
 Owner, a twelve-item list across Schedule Setup, the schedule UI and the LSM, then three clarifications
 in flight. This entry covers the seven that are done; the rest are named at the bottom rather than
@@ -4510,7 +4557,7 @@ excel feature" needs a decision on whether the setup tables adopt `PDGrid`).
 
 `MODULE_V` → `20260917zh`, sort-checked past `20260917zg`.
 
-### 2026-09-17 (p) — The personal sandbox: one function change isolates all 16 modules, and a checker that had never read its own subject
+### 2026-09-17 (ay) — The personal sandbox: one function change isolates all 16 modules, and a checker that had never read its own subject
 
 **Run `migrations/2026-09-17-sandbox-project.sql`.** Owner: *"I need a sandbox project. This will be
 the training ground for tomorrow's cascade of the app. This sandbox project will be personal to the
@@ -8666,7 +8713,7 @@ either side started, and main had already continued past `z` with `za`/`zb`. It 
 work is unchanged. ⚠️ Main's `## 2026-09-15 (x)` heading is `##` where this file's convention is
 `###`; pre-existing on `origin/main`, left alone rather than folded into a merge commit.
 
-### 2026-09-15 (x) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
+### 2026-09-15 (ab) — Six portfolio dashboards move out of the Dashboard module and into the modules they describe
 
 Owner, with the Portfolio Dashboard's view dropdown open: *"there is a dashboard module, and there is
 a dropdown that links to each module. that is wrong. The idea of each dashboard (e.g. s-curve, risk
@@ -8746,7 +8793,7 @@ New `assets/js/portfolio-dash.js` + `assets/css/portfolio-dash.css` at `?v=20260
 `MODULE_V` → `20260915x`.
 
 
-### 2026-09-15 (w) — A 3D card framed for a shape its canvas no longer had
+### 2026-09-15 (aa) — A 3D card framed for a shape its canvas no longer had
 
 Owner: *"The presets view also do not view properly and I cannot see the ground"*, with the
 Vertical Stacking on `Right` showing a slab at the bottom of a mostly empty card. Detail:
@@ -20255,7 +20302,7 @@ worth watching on the first real use. `MODULE_V` → `20260903c`.
 ### 2026-09-03 (b) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
 <!-- both sides prepended a 2026-09-03 entry; both kept whole, seam here -->
 
-### 2026-09-03 (b) — Super-admin-only modules, module-logo dropdowns, bold Portfolio, view toggles repositioned
+### 2026-09-03 (ab) — Super-admin-only modules, module-logo dropdowns, bold Portfolio, view toggles repositioned
 
 Six items in one owner turn, two of them mid-turn follow-ups on the earlier five.
 
@@ -20348,7 +20395,7 @@ the CSS *class*, never the id). All six items visually confirmed via Playwright 
 1400px and 400px against the shipped CSS with the real app markup (auth/DB stubbed — this
 environment has no live Supabase login). ⚠️ **Not verified signed in.**
 
-### 2026-09-03 (c) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
+### 2026-09-03 (aa) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
 
 Owner, off a screenshot of *Match the WBS to your location breakdown*: filter by WBS level, use the
 space, put a location tree on the right — plus two questions worth answering in the UI rather than in
