@@ -104,6 +104,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (w) — Four of the five off-scale sizes were already exempt, by name, in the stylesheet
+
+Owner: *"proceed with the five off-scale"* — the sizes *(u)* reported under `--pd-fs-micro`.
+
+### ⚠⚠ THE ANSWER WAS ALREADY WRITTEN DOWN, AND I NEARLY SHIPPED OVER IT
+
+The shared stylesheet’s own type-scale note lists **two legitimate exemptions**, and the first is:
+
+> `font-size` on an SVG `<text>` is in USER UNITS, not pixels — progress-photos’ 3.2px plan label
+> and **project-schedule’s 8px dependency tags are correct as they are**
+
+Four of the five are SVG `<text>`, and the two 8px ones are the example the note cites. They are
+**deliberate and documented**; the sweep flagged them only because it compared `font-size` values
+against the scale without knowing which MEDIUM each rule targets.
+
+| rule | px | medium | verdict |
+|---|---|---|---|
+| `.ps-deptype` | 8 | SVG `<text>` | exempt — **named in the note** |
+| `.ps-deplag` | 8 | SVG `<text>` | exempt — **named in the note** |
+| `.ps-smy-gt` | 9 | SVG `<text>` | exempt |
+| `.sbld-glab` | 9.5 | SVG `<text>` | exempt |
+| `.sbld-gmirror` | 9 | **HTML `<span>`** | **real deviation — fixed** |
+
+Classified on **two independent signals**, not one: the rule declares `fill:` (SVG) versus `color:`
+(HTML), **and** the element is emitted as `<text>` versus `<span>`. Both agree on all five.
+
+⚠ A first pass got `.sbld-glab` **wrong** — a single-line `grep -o ".cls {[^}]*}"` found nothing,
+because that rule spans lines, and an empty match has no `fill:` in it, so it was classified HTML.
+A checker that answers from a failed read is the fourth flattering result this week.
+
+### The one real one, and why it is a dot rather than text
+
+`.sbld-gmirror` is an HTML `<span>` holding a single `●` — the *“mirrored from another app”*
+marker — so its `font-size` is really a **dot diameter**. Moved to `--pd-fs-micro` rather than
+rebuilt as a sized CSS shape: 9→10px on one glyph is invisible, and the rebuild would be a bigger
+change than the defect.
+
+### ⚠ What I did NOT do, and the measurement that stopped me
+
+Before reading the note I had measured the cost of putting the SVG labels on the scale, in Gotham:
+
+| move | worst-case label growth |
+|---|---|
+| 8px → 9px | +3.51px (`SF+14d`: 28.2 → 31.7) |
+| 8px → 10px (`--pd-fs-micro`) | **+7.24px** (28.2 → 35.4, **+26%**) |
+
+and was about to add a `--pd-fs-nano: 9px` rung to split the difference. The note forbids exactly
+that — *“never split a rung”* — and exempts the labels anyway. **A new token would have been a
+fudge dressed as a design decision**, and +26% on free-floating labels sitting on dependency lines
+was a collision risk on a surface I cannot render without data.
+
+### The exemption list is now complete
+
+Only the dependency tags were named, so the other three had to be re-derived by hand — which is a
+sweep’s worth of work every time somebody audits this. All four are now listed, with the rule for
+deciding: **test the MEDIUM, not the size.**
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · the audit now reports **4 off-scale, all SVG-exempt**.
+`modules-grid.js` `?v=` → `20260918w`. ⚠ No `dashboard.css` bump: its change is a comment,
+so a stale copy is byte-different and behaviour-identical.
+
 ### 2026-09-18 (v) — `.ps-menu button` becomes `.ps-menu > button`, and every menu item stops being Arial
 
 Owner: *"Let's do the .ps-menu button inversion."* The rule had been worked around **six** times

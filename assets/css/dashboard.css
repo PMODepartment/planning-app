@@ -193,7 +193,18 @@
      opinions: (1) `font-size` on an SVG <text> is in USER UNITS, not pixels —
      progress-photos' 3.2px plan label and project-schedule's 8px dependency
      tags are correct as they are; (2) the print/export stylesheets emitted as
-     strings (cash-flow, project-schedule) are laid out for paper. */
+     strings (cash-flow, project-schedule) are laid out for paper.
+
+     ⚠ THE SVG LIST IS NOW COMPLETE, because an incomplete one costs a sweep every
+     time. A 2026-09-18 audit of project-schedule flagged five sizes under
+     --pd-fs-micro; four were SVG <text> and already covered by (1) in spirit, but
+     only the dependency tags were named, so each had to be re-derived by hand.
+     The full set in project-schedule: `.ps-deptype` / `.ps-deplag` 8px (link type
+     and lag), `.ps-smy-gt` 9px (summary axis), `.sbld-glab` 9.5px (grouping label).
+     ⚠ The fifth, `.sbld-gmirror` 9px, was NOT exempt — an HTML <span> holding one
+     ● — and moved to --pd-fs-micro. Test the MEDIUM, not the size: a rule that
+     declares `fill:` and is emitted as <text> is SVG; one that declares `color:`
+     on a <span> is not. */
   --pd-fs-micro: 10px;    /* UPPERCASE label, caption, count badge */
   --pd-fs-xs:    11px;    /* pill, chip, tag, table sub-text, legend */
   --pd-fs-sm:  12.5px;    /* button, input, select, secondary body */

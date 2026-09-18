@@ -4780,7 +4780,15 @@
     .sbld-gdel { flex:0 0 auto; padding:0 4px; height:18px; background:none; border:0; color:var(--pd-muted); opacity:0; }
     .sbld-gr:hover .sbld-gdel, .sbld-gr.is-sel .sbld-gdel { opacity:1; }
     .sbld-gdel:hover { color:var(--pd-red); }
-    .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:9px; }
+    /* ⚠ THE ONLY ONE OF THE FIVE THAT WAS ACTUALLY OFF THE SCALE. A sweep flagged five sizes
+       below `--pd-fs-micro` in this module; four are SVG <text> and the shared stylesheet's own
+       type-scale note already exempts them BY NAME — *“`font-size` on an SVG <text> is in USER
+       UNITS, not pixels — project-schedule's 8px dependency tags are correct as they are”*. This
+       one is an HTML <span>, so the rule applies and 9px was a fresh literal.
+       ⚠ It holds a single ●, so this font-size is really a DOT DIAMETER. Moved to the rung rather
+       than re-built as a sized box: 9→10px on one glyph is invisible, and turning it into a CSS
+       shape would be a bigger change than the defect. */
+    .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:var(--pd-fs-micro); }
     /* the "take it out of every branch" target, which lives on the Planned line */
     .sbld-phdrop { margin-left:8px; padding:1px 7px; border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
       font-size:var(--pd-fs-micro); color:var(--pd-muted); text-transform:none; letter-spacing:0; }
