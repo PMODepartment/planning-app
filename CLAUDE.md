@@ -104,7 +104,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-18 (ah) — The Presentations tab still counted its records in "PPR"
+### 2026-09-18 (ai) — The Presentations tab still counted its records in "PPR"
 
 Owner: *"in progress photos, presentations tab, it says 5 of 5 PPR. this should be 5 of 5
 Presentations. please make minor revision."* Right, and it is the tail of a rename this module has
@@ -144,12 +144,31 @@ brought current with it.
 JUST RESOLVED.** Main published `20260918ze` while this branch held `zd`, so `zd` was behind again
 before it had shipped at all — re-derived to **`20260918zf`**, past every `20260918*` token
 enumerated on **both** refs before resolving (`a b c f ze`), and sort-checked as a plain string.
-⚠️⚠️ **AND THE LETTER COLLIDED THREE TIMES RUNNING.** Main published its own **`(ad)`**, plus
-`(ae)` and `(af)`, so this entry moved **(ad) → (ag)** — and while that resolution was being checked
-main published an **`(ag)`** of its own, so it moved again to **(ah)**. Both sides' entries are kept
-whole every time and the one merging in is the one that moves, per this file's own header rule.
-⚠️ Picking "the next free letter" is not a defence against this on a busy day; re-reading the remote
-and re-deriving **after** integrating is, which is why it was caught rather than pushed. ⚠️ The merge was checked by arithmetic rather
+
+⚠️⚠️ **AND THE LETTER COLLIDED FOUR TIMES RUNNING.** Main published its own **`(ad)`**, plus
+`(ae)` and `(af)`, so this entry moved **(ad) → (ag)**; main then published an **`(ag)`** of its
+own, so it moved to **(ah)**; and main then published an **`(ah)`** as well, so it is **(ai)**.
+Both sides' entries are kept whole every time and the one merging in is the one that moves, per
+this file's own header rule. ⚠️ Picking "the next free letter" is not a defence against this on a
+busy day; re-reading the remote and re-deriving **after** integrating is, which is why it was
+caught rather than pushed.
+
+⚠️⚠️ **AND THE FOURTH PASS IS THE ONE THAT PROVES WHY THE TOKEN IS RE-READ RATHER THAN TRUSTED:
+MAIN INDEPENDENTLY PUBLISHED `20260918zf` — THE EXACT TOKEN THIS BRANCH HAD JUST DERIVED — AND GIT
+REPORTED NO CONFLICT ON IT AT ALL.** Both sides wrote the identical string, so there was nothing to
+conflict on; the merge reported only `CLAUDE.md`, and the three token carriers merged **silently**,
+leaving one cache token over two different builds. A browser holding main's `zf` would never have
+fetched these bytes. Caught only by enumerating every `20260918*` token on **both** refs before
+resolving — `a b c f zf` on each — and re-derived to **`20260918zg`**, sort-checked as a plain
+string. This is the shape this log has now recorded repeatedly, and it is invisible in a diff.
+
+⚠️⚠️ **AND A RECOVERY WORTH RECORDING: `git checkout --merge CLAUDE.md`, RUN MID-MERGE TO
+RECONSTRUCT THE PRE-EDIT MERGE RESULT, RE-CREATED THE CONFLICT MARKERS AND DESTROYED THE
+RESOLUTION.** It is the same family as the `git stash` hazard this log already records for a shared
+clone: a command reached for to *inspect* state, which rewrites it. Nothing was lost — the
+resolution is a deterministic script and was simply re-run, and the token bumps live in other files
+and were untouched — but the honest lesson is to measure a merge by counting the resolved file, not
+by trying to rebuild an earlier version of it in place. ⚠️ The merge was checked by arithmetic rather
 than by eye: base **21,434** + this side's **36** + main's **311** = **21,781**, which is what the
 file now measures, with **344 dated headings, 344 distinct** — nothing lost and nothing doubled.
 ⚠️ A one-line shortfall on the first count was a **missing blank line at the seam**, where this
@@ -158,6 +177,87 @@ entry's last line ran straight into main's `(af)` heading — found by the count
 7 surviving "conflict markers" across `modules-grid.js` and `dashboard.html`, every one a decorative
 `// ======` comment banner — the trap this log already records for a conflict script that searches
 for a marker the file also uses as decoration.
+
+### 2026-09-18 (ah) — The trades come out in construction order, and "No trade set" finally says what it is
+
+Owner: *"Let's rearrange the trades in the ff order: 1. General Requirements 2. Site Works
+3. Structural Works 4. Architectural Works 5. MEPF Works 6. Allied Services"*, and, seeing a row
+he did not put there, *"Why is there a no trade set? Let's fix"*.
+
+⚠️ Lettered **(ah)**, `MODULE_V` **`20260918zf`** — `origin/main` reached `(ag)` mid-flight. Fifth
+token re-derivation today. No shared asset changed, so nothing else is bumped.
+
+### 1. A construction sequence, not the import order
+
+`tradesIn()` returned trades in the order the import happened to push them, defended in a comment
+as *"the builder's order… a sequence of works"*. It is not — it is whatever the file contained, so
+the same six trades came out differently on every project. They now sort into the owner's
+sequence, and the Curve tab's filter chips follow automatically because they read the same
+function.
+
+⚠️⚠️ **Matched by KEYWORD, not by exact string**, for the reason `isGR()` two lines above already
+gives: a trade arrives spelled a dozen ways across projects, and an exact list would quietly drop
+`MEP Works` to the bottom on the project that does not spell it `MEPF Works`.
+
+⚠️ **A trade the list does not name keeps its first-seen position, after the six.** The sort is
+stable, which is what preserves the schedule's own order *within* a rank — so a project with a
+trade of its own never loses it and never has it shuffled against its peers. `No trade set` sorts
+**last of all**: it is not a trade, it is the absence of one.
+
+### ⚠️⚠️ 2. "No trade set" is a data fact, and the row must NOT be deleted
+
+It is the bucket `tradeOf()` puts an activity in when the schedule's **Trade column is empty**.
+The Curve tab has explained this since it was built, in its filter note — *"N activities carry no
+Trade, so they are in neither General Requirements nor Measured Works"*. The **sheet did not**, so
+the same fact was legible on one tab and a mystery on the other, and the planner meets it as a row
+asking for a monthly POC against a trade that does not exist.
+
+⚠️⚠️ **Deleting the row would be the wrong fix, and quietly so.** Those activities carry real
+duration, so they hold real weight in `tradeWeights()`. Dropping the row takes their scope out of
+the sheet while leaving it in the denominator — every other trade's share then stops summing to
+100%, and the error is invisible because nothing on screen would name what went missing. The row
+is kept; a bar above the sheet names the count and points at the actual fix, which is upstream:
+set the Trade in **Project Schedule**. The row then disappears on its own.
+
+⚠️ **Amber, not brand red.** `.sc-lockbar`'s red left edge means "this is the state of the planned
+curve", a fact about the plan. This is a data problem in the schedule the planner can go and fix,
+and it should not read as the same kind of thing.
+
+### ⚠️⚠️ The icon was `alert`, which does not exist — caught by checking, not by looking
+
+The first cut of that bar asked for `data-ico="alert"`. **There is no `alert` key in
+`assets/js/icons.js`**, and `Icons.hydrate` leaves an unknown key as an **empty span** — a 15px
+hole where an icon should be, invisible in a diff and invisible in a brace check. That is the
+exact failure the `lockBar` comment three lines below warns about (*"THERE ARE NO LOCK ICONS…"*),
+and I wrote the bug directly underneath the note describing it. `risk` is the caution triangle and
+it does exist; verified by hydrating it and measuring **127 characters of SVG path**, not by
+looking at a screenshot.
+
+### Verified
+
+On a fixture whose import order is deliberately scrambled — Structural, MEPF, Allied,
+Architectural, GR, Site — plus four activities with `work_type` null:
+
+- the sheet's rows **and** the Curve tab's chips both come out
+  **General Requirements · Site Works · Structural Works · Architectural Works · MEPF Works ·
+  Allied Services · No trade set**;
+- the bar reads *"4 activities have no Trade set"*, its icon hydrates to 127 chars of SVG, and its
+  left border measures **rgb(201, 162, 39)** against the lockbar's brand red.
+
+`wiring-check` **139/0** · `dark-remap` **0** · `type-scale` **18** (unchanged) ·
+`test-portfolio-dash` **398/0** · `test-boq` **66/0** · inline script `node --check` clean ·
+`<style>` braces **235/235** · 0 NUL bytes. ⚠️ Harness deleted before committing.
+
+### ⚠️ Reported, not changed: the Curve tab and the Manual tab draw the same chart
+
+Owner: *"The curve tab in the s-curve module seem to be a duplicate if we the planner opts for
+manual data."* Measured, and half right — `manChart()` calls the **same `renderChart()`** on the
+**same `computeManual()`**, so in Manual mode the two charts are the same picture. What only the
+Curve tab has: **4 KPI cards**, **3 filter groups** plus the trade chips, the **data table**, the
+click-through **period breakdown**, and the untagged-trade note. The Manual tab's copy is a
+compact preview that redraws as you type. So the chart duplicates; the tab does not. Left alone
+pending the owner's call — the cheap options are to fold the preview into a `<details>` (it pushes
+the sheet below the fold on every visit) or to drop it and let the Curve tab own the picture.
 
 ### 2026-09-18 (ag) — A mirrored record can only be as precise as its source: procurement packages become a day, not a bar
 

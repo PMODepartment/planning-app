@@ -1,5 +1,24 @@
 # Module: s-curve
 
+## 2026-09-18 — Trades in construction order, and the "No trade set" row explained — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (ah)).
+
+- **`tradesIn()` sorts into a canonical sequence** — General Requirements, Site Works, Structural
+  Works, Architectural Works, MEPF Works, Allied Services — instead of returning the schedule's
+  import order. ⚠️ Keyword-matched, not an exact-string list, so `MEP Works` does not fall to the
+  bottom on a project that spells it differently; an unnamed trade keeps its first-seen position
+  after the six (stable sort); `No trade set` is always last. The Curve tab's chips follow, since
+  they read the same function.
+- ⚠️⚠️ **`No trade set` is explained on the sheet now, and deliberately NOT removed.** It is the
+  bucket `tradeOf()` uses when the schedule's Trade column is empty. Those activities carry real
+  duration and therefore real weight, so deleting the row would take their scope out of the sheet
+  while leaving it in the denominator and every other trade's share would stop summing to 100%.
+  A bar above the sheet names the count and points upstream: set the Trade in Project Schedule.
+- ⚠️ The bar's icon is `risk`, verified against `icons.js`. The first cut used `alert`, which is
+  not a key — `Icons.hydrate` would have left an empty span, the failure the `lockBar` comment
+  immediately below it warns about.
+
 ## 2026-09-18 — The manual sheet: drag to select, no trade %, no prose, shortcuts folded away — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (af)) — read that entry for the
