@@ -104,15 +104,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-18 (za) — S-Curve UI sweep: a menu in Arial, a button that named the wrong control, a private copy of a shared control, and a heading that always said "monthly"
+### 2026-09-18 (ab) — S-Curve UI sweep: a menu in Arial, a button that named the wrong control, a private copy of a shared control, and a heading that always said "monthly"
 
 Owner: *"Let's do a UI sweep for the S-curve module this time."* Four defects, every one measured
 against the shipped markup in a browser rather than read off a screenshot — and two of them are
 **not this module's**: they were found here and they ship everywhere.
 
-⚠️ Lettered **(za)** and `MODULE_V` **`20260918za`** — `origin/main` reached `(z)` / `20260918z`
-while this was in flight. `za` sorts after `z` as a plain string, which is the check that matters;
-picking "the next letter" would have produced nothing, since `z` was the last one.
+⚠️ Lettered **(ab)**, `MODULE_V` **`20260918zb`** — and it took two rounds. `origin/main` was at
+`(z)`/`20260918z` when this started; a second session pushed `(aa)`/`20260918za` while it was being
+written, and had **independently picked the very same `20260918za` I had already chosen**.
+⚠⚠ **That collision merges cleanly and git reports nothing**, because the two edits are
+byte-identical — one side's bump simply disappears into the other's, and every returning browser
+keeps the cached module pages. Nothing but reading the remote's token and sorting it against mine
+would have caught it. Re-derived to `zb`, which sorts after `za` as a plain string; picking "the
+next letter" could not have detected it, since the letter was already correct.
 
 ### ⚠️⚠️ 1. THE TAB DROPDOWN'S TRIGGER IS GOTHAM AND THE LIST IT OPENS IS ARIAL — IN TWELVE MODULES
 
@@ -258,9 +263,103 @@ before committing** — this repo has shipped harness files to production twice.
 and portfolio layers attached, on fixtures — not against a real project.
 
 `dashboard.css` → **`20260918c`** (31 refs) · `portfolio-dash.js` → **`20260918a`** (11 refs) ·
-`MODULE_V` → **`20260918za`** in `dashboard.html` + `modules.html` with the fallback literal brought
+`MODULE_V` → **`20260918zb`** in `dashboard.html` + `modules.html` with the fallback literal brought
 back into step (it had drifted to `20260918k`, which is the silent split that note warns about).
 All three sort-checked as plain strings past every token in the tree **and** on `origin/main`.
+
+### 2026-09-18 (aa) — The trades are painted inside the one LSM bar, and one of them loses the pixels
+
+Owner: *"Let's queue the LSM rows the single bar row is correct but I don't see the activities
+rolling up to the wbs. I would want to see a Gantt bar showing different kinds of bars referring to
+the activities that is within the wbs."* Built first as a strip of trade lanes **under** the bar and
+shown to him, he chose the other shape: *"I think the one bar option is the best rather than a strip
+like this."* The strip was discarded unshipped; this is the second build, not a revision of the
+first.
+
+### ⚠️⚠️ THIS IS THE OPPOSITE CALL FROM THE ONE THE WBS BRACKET GOT, AND DELIBERATELY SO
+
+On a WBS branch the same treatment is a **reported defect**: *"the varying colour within the same
+bar is causing confusion — under Earthworks it shows grey then green"*, and the fix (2026-08-17) was
+to move the bands out of the bracket into `.ps-sum-strip`. That stands, and **`_sumSegsHTML` is not
+touched** — its `_dkind === 'group'` guard still returns `''` for every group row.
+
+What differs is what the bar **means**. A bracket is one branch's span, so colour changing along it
+reads as *the branch* changing category — which is false. An LSM row **is a storey**, so colour
+changing along it reads as the floor being handed from trade to trade, which is the line-of-balance
+chart's entire subject. Same pixels, opposite sentence.
+
+### ⚠️⚠️ WHEN TWO TRADES HOLD THE SAME DAYS, ONE OF THEM OWNS THE PIXELS
+
+This is the real cost of the shape, and it is stated here rather than discovered later. The rule is
+**first on the floor keeps it**: runs are claimed in start order, ties broken by lane (the declared
+construction sequence, so identical data cannot draw two different pictures), and a later trade is
+clipped to what is left. A trade whose whole run sits **inside** another's therefore draws no
+segment at all.
+
+Nothing is lost from the row, and that is why the rule is affordable:
+
+| the overlap is still reported by | |
+|---|---|
+| `.ps-lsmclash` | the hatched overlay, drawn **over** these segments, on exactly that stretch |
+| the bar's own tooltip | already lists every trade on the storey, enveloped ones included |
+| the clash strip | the worst-first chip list above the chart, unchanged |
+
+⚠️ `cuts` and `_cl` are emitted **after** `_segs` for that reason, and a mutant that reorders them
+fails a named assertion. A hatch under the segments would be invisible, and the hatch is the only
+mark that says two trades were on a stretch one of them had to be given.
+
+### One segment per RUN, not per trade
+
+A trade that works a floor, leaves and comes back is two stretches. One segment from its first start
+to its last finish would claim it held the floor across the very gap the notch exists to show. On
+the suite's fixture the four trades are **five** segments.
+
+### Each segment carries its own trade's progress
+
+Pale trade colour (`catTint`) with the solid fill (`catStyle`) over it — the treatment the per-trade
+bars had before they merged, laid end to end instead of stacked. It **replaces** the single
+duration-weighted fill, which averaged every trade into a number describing none of them: on the
+fixture Structural is finished and Windows has not started, and the bar drew one middling stripe for
+both. The storey's roll-up % is still in the grid's own cell for the row.
+
+⚠️ A **one-trade** storey is byte-for-byte unchanged — the bar already *is* that trade. The folded
+overflow bucket keeps the neutral cross-hatch its own bar has, so a stretch nobody named can never
+read as a trade.
+
+⚠️ **The row does not grow.** `_lsmRowH()` is untouched at `PAD + H + GAP`, and the suite asserts it,
+because the owner has already rejected LSM widening the rows once.
+
+### Verified
+
+`test-lsm` **723/0** on the merged tree (up 26 from this change). **14 of the new assertions bite**
+against the pre-change file — and because the other twelve are negative controls that must pass on
+both builds, the evidence is the mutation run instead: **eight mutants, every one caught by a named
+assertion.**
+
+| mutant | the assertion that caught it |
+|---|---|
+| one segment per trade, not per run | *one segment per STRETCH, not one per trade* |
+| ownership by lane instead of by start | *the earlier START wins the shared stretch* |
+| no clipping at all | *the two segments do not overlap* |
+| the clipped piece starts a day early | *the second one starts the day after* |
+| segments placed from the dates again | *the first stretch starts at the bar's own left edge* |
+| notches drawn under the segments | *the idle notches are emitted after every segment* |
+| the overflow bucket given a trade colour | *carrying no trade colour of any kind* |
+| the storey average kept per segment | *the finished trade's segment is filled to 100%* |
+
+⚠️ Two of those checks were **wrong first and the mutants said so**: the overflow one tested for a
+hex, and the bucket's colour is `null`, so `catTint(null)` → `background:null-tint` sailed through
+it; and the placement one had no anchor to the bar's own x at all. Both are corrected here.
+
+A **real browser render of the shipped output** (throwaway harness, deleted): 5 segments, each the
+full 6px bar height, all inside the bar, **zero overlapping pairs**, the clipped trade 59px wide
+where its unclipped neighbours are 80, fills at 100/70/30%, and the pale/solid pair reading correctly
+in both themes.
+
+Pinned base `4d82fd4` still **27/0** and still loud (`20/55 fns, 7/21 vars`). `test-syntax` 4/4 ·
+`wiring-check` 139/0 · `dead-hooks` 9 (baseline) · `dark-remap` 0 findings · every other
+project-schedule suite green on the merged tree. CSS brace balance identical to the pre-change file.
+`modules-grid.js` `?v=` → `20260918za`, sorted forward of main's `20260918z`.
 
 ### 2026-09-18 (z) — The grouping button gets a short FACE, and the toolbar comes back to one row
 
