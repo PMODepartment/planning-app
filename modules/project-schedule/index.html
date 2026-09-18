@@ -3083,7 +3083,31 @@
        A wider pane alone would only have postponed that; the row has to stop competing. */
     .ps-colors-add { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:5px 0; }
     .ps-colors-add .pd-select { flex:1 1 100%; min-width:0; max-width:none; }
-    .ps-colors-add .ps-colors-addctl { display:flex; align-items:center; gap:8px; margin-left:auto; }
+    /* ⚠⚠ `.ps-menu button { width:100% }` IS WHAT BROKE THESE ROWS, and it is not this pane's
+       rule — it exists so a menu's LIST items fill their menu. Every inline control here is a
+       <button> inside a `.ps-menu`, so it inherited it: measured, the ✕ on an override row has a
+       max-content width of **38px** and was rendering at **208px**, which left the branch label
+       beside it **0px wide** for 33px of text. It is also why `Key trades…` and `Reset colours`
+       stacked instead of sitting side by side, and why `Add` was the widest thing on its row.
+       ⚠ Scoped to this pane's three row types rather than weakened globally: the list-style menus
+       elsewhere still want their full-width buttons. */
+    /* ⚠ FORM CONTROLS DO NOT INHERIT FONT, so every checkbox and colour swatch in this pane was
+       rendering at the UA default — measured, 13.3px Arial against the pane’s 13px Gotham. None of
+       them shows text today, so it is invisible rather than ugly; it is fixed because it is the
+       exact defect `.pd-btn` carried app-wide until 2026-09-17, and an input that later gains a
+       label would inherit the wrong font silently. The colour swatches carry explicit width/height
+       just above, so nothing resizes. */
+    .ps-colors-row input, .ps-colors-add input, .ps-colors-cby input,
+    .ps-colors-row select, .ps-colors-add select, .ps-colors-cby select { font: inherit; }
+    .ps-colors-row .pd-btn, .ps-colors-add .pd-btn, .ps-colors-cby .pd-btn { width:auto; }
+    .ps-colors-row .pd-btn { flex:0 0 auto; }
+    /* ⚠ A FLOOR ON THE LABEL, so it can never be starved to nothing again. `flex:1` is a basis of
+       0, which means it only ever gets LEFTOVER space — exactly the state above. */
+    .ps-colors-row > span:first-child { flex:1 1 60px; min-width:40px; }
+    /* ⚠ The swatch and Add FILL the second line instead of hugging its right edge. Right-aligning
+       them under a full-width select left 142px of dead space, which the owner marked. */
+    .ps-colors-add .ps-colors-addctl { display:flex; align-items:center; gap:8px; flex:1 1 auto; }
+    .ps-colors-add .ps-colors-addctl .pd-btn { flex:1 1 auto; }
     /* The colour-by block moved in from the legend; its controls stack rather than compete. */
     .ps-colors-cby { display:flex; flex-direction:column; gap:7px; }
     .ps-colors-cby label { display:inline-flex; align-items:center; gap:7px; font-size:var(--pd-fs-base); }

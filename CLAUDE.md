@@ -104,6 +104,61 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (r) — `.ps-menu button { width:100% }` was eating the colour pane, and the fonts it hid
+
+Owner, annotating the pane *(q)* had just shipped, circling the WBS rows; then: *"Can you also
+check the consistency of the font styles?"*
+
+### ⚠⚠ A RULE THAT IS NOT THIS PANE’S WAS SIZING EVERY CONTROL IN IT
+
+`.ps-menu button { width:100% }` exists so a **list-style** menu’s items fill their menu. Every
+inline control in the colour pane is a `<button>` inside a `.ps-menu`, so it inherited it:
+
+| control | max-content | rendered | effect |
+|---|---|---|---|
+| `✕` on a WBS override row | **38px** | **208px** | ate the row |
+| the branch label beside it | needs 33px | **0px** | *invisible* — what the owner circled |
+| `Key trades…` / `Reset colours` | — | 100% each | **stacked** instead of side by side |
+| `Add` | — | widest thing on its row | — |
+
+⚠ *(q)* widened the pane and called the clipping fixed. It was not: widening it just gave this rule
+more to take. **The label read 0px in the same measurement pass that reported “0 clipped”** — the
+check skipped zero-width elements, so the one genuinely broken control was the one it could not
+see. That is the second time today a check has been wrong in the flattering direction.
+
+Scoped to the pane’s three row types rather than weakened globally; the list menus elsewhere still
+want their full-width buttons. Measured after: `✕` **39px**, label **162px** for 162px of text,
+the two buttons **side by side**, **0px** dead space on the add row, **0** clipped elements.
+
+⚠ A floor on the label as well — `flex:1 1 60px; min-width:40px` rather than `flex:1`, which is a
+basis of **0** and therefore only ever gets LEFTOVER space. That is precisely how it reached zero.
+
+### The font audit: clean except for the controls that show no text
+
+Every visible style in the pane was already on the scale and on brand — **0** weight-600 (Gotham has
+no Semibold), **0** off-scale, all Gotham. One real inconsistency:
+
+**12 `<input>` elements rendered at 13.3px Arial.** Form controls **do not inherit font**, which is
+the exact defect `.pd-btn` carried app-wide until *(u)* on 2026-09-17. They are all checkboxes and
+colour swatches, so nothing shows text and it was invisible rather than ugly — fixed anyway,
+because an input that later gains a label would inherit the wrong font silently.
+
+| after | |
+|---|---|
+| off-scale sizes | **0** |
+| non-Gotham | **0** |
+| weight 600 | **0** |
+| control sizes | unchanged — checkbox 13×13, swatch 34×24 (explicit width/height held) |
+
+⚠ The comment explaining that fix had to be repaired: it was written through a double-quoted bash
+string and the shell **command-substituted `.pd-btn` out of it**. Same trap as *(am)*, and a file
+named `fixcomment.js` already existed in the scratch dir from repairing the identical damage
+earlier. Written through the Write tool this time.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · the pane re-measured from its shipped markup builder.
+`modules-grid.js` `?v=` → `20260918r`.
+
 ### 2026-09-18 (q) — One pane for every colour on the Gantt, and the 70px that crushed a select to 22
 
 Owner: *"There is a bar colors button that changes the colors of the gantt bars … we can also unify
