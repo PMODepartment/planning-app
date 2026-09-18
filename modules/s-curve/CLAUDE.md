@@ -771,3 +771,54 @@ rule. `assets/js/portfolio-dash.js`; the root log has the detail.
 Verified: `tools/test-portfolio-dash.js` **252/252**, mutation-checked three ways, and rendered and
 clicked in a real browser against fixtures (both dimensions' totals matched the header exactly).
 ⚠️ **Not verified against real data** — the new SQL has not been executed from here.
+
+---
+
+## The manual matrix takes PDGrid's SKIN, not only its keys (2026-09-18 y) — fmlozano
+
+⚠️ Re-lettered `(q)` → `(x)` → `(y)` across two catch-up merges with `origin/main`, and the
+`MODULE_V` token re-derived with it: this branch had picked `20260918q` while main had already
+reached `20260918x`, which sorts LATER — so shipping `q` would have put these bytes behind a token
+browsers already hold. See the root log's own entry for the full note.
+
+Owner: *"Let's fix the s-curve manual data table. We already have an excel type build let's adopt
+this."*
+
+⚠️⚠️ **THE KEYS WERE ADOPTED ON 2026-09-10 AND THE LOOK WAS NOT.** The matrix had Tab/Enter/arrows,
+Shift+arrow selection, Ctrl+D, Ctrl+Z and the Excel paste — the hint strip in the owner's screenshot
+is literally `PDGrid.hintHTML()` — but the table carried no `pdg-grid` class, so not one rule of the
+skin applied. `assets/js/xlgrid.js`'s own note names the result: *"the module's card-table styling
+(roomy padding, a rounded bordered input inside every cell) reads as a form"*. Sixteen rounded boxes
+per row, 6px of padding around each, which is exactly what was photographed.
+
+- The class is written in the **markup**, not added by `attach()`, so if `xlgrid.js` fails to load
+  the module's own rules still draw a lattice rather than leaving the sheet half-skinned.
+- ⚠️⚠️ **The skin is injected into `<head>` AT ATTACH TIME**, so it lands after this module's
+  `<style>` and wins every equal-specificity tie. Two of its rules are hostile to the frozen corner:
+  `thead th` at `z-index: 6` (against the corner's 3) would paint the scrolling month headers over
+  the frozen Trade header, and its zebra at (0,2,2) beats `.sc-matrix .k`'s background at (0,2,0),
+  turning the frozen column translucent so the months slide visibly beneath it. Every sticky rule
+  and every sticky background is restated at (0,3,x) on one stated ladder — body frozen **5** ·
+  tfoot **6** · tfoot frozen **7** · thead **8** · thead frozen **10**.
+- ⚠️ The `now` column marker needed the same raise. At (0,2,1) it lost to the zebra, so the
+  data-date tint would have disappeared on **even rows only** — which reads as a rendering fault,
+  not as a cascade problem.
+- ⚠️ **`size="4"` on the cell is load-bearing.** The month cells give up their padding to the input
+  so the hover tint and PDGrid's selection overlay fill the cell edge to edge — but `width:100%` is
+  not a usable intrinsic size, and an auto-layout table falls back to an `<input>`'s 20-character
+  default, blowing every month column out to ~170px.
+- ⚠️ The focus ring is left to the **cell**. PDGrid outlines the `<td>`; `.sc-in:focus`'s own inset
+  ring would have drawn a second one inside it, which is the exact "box with a gap all round it"
+  `xlgrid.js` records being told about.
+
+**Measured** against the shipped `dashboard.css`, this module's own `<style>` block **fetched rather
+than re-typed**, and the real `xlgrid.js` with `PDGrid.attach` actually called: `cursor: cell`,
+header 10.5px uppercase, input radius 0 / transparent / **51px in a 52px cell**, month column 52px,
+the ladder as above with every frozen background opaque in both themes, and — the relationship that
+matters — `elementFromPoint` over the trade column after a horizontal scroll returns **`TD.k`**, so
+the frozen cell owns its own pixels. Zebra present, data-date tint surviving it on odd and even
+rows, line and ink both remapping across the theme flip. Every key re-tested after the skin: Tab a
+column, Enter a row, Shift+↓ selects 3, Ctrl+D fills 3, a `1\t2\t3\t4` paste spills four months.
+
+⚠️ **Not verified signed in** — no real project's manual curve has been typed into.
+`MODULE_V` → `20260918y`; no shared asset changed.

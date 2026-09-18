@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zi" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260918b" />
   <!-- Portfolio scope mounts this module's cross-project Gantt from portfolio-dash.js,
        and a module cannot reach a <style> block inside another page. -->
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
@@ -3070,6 +3070,50 @@
          the bottom by 7px — a cap has to budget for where the menu starts, not just how tall the
          window is. `max()` keeps it usable if the chrome ever grows past the viewport. */
       max-height:max(220px, calc(100vh - 230px)); overflow-y:auto; overflow-x:hidden; }
+    /* ⚠⚠ AFTER `.ps-menu`, DELIBERATELY. `.ps-colors-menu { min-width:250px }` sits ~170 lines
+       EARLIER at the same (0,1,0) specificity, so `.ps-menu { min-width:180px }` won on source
+       order and this pane opened at **180px** — 70px narrower than the rule written for it.
+       Measured, not inferred: that is what crushed the WBS select to **22px** for a label needing
+       **92px**, which is the clipping the owner reported. Adding a wider rule without removing the
+       one that beats it would have changed nothing. */
+    .ps-menu.ps-colors-menu { min-width:300px; }
+    /* ⚠ The WBS add row gives the SELECT ITS OWN LINE. It used to share one line with a colour
+       swatch and an Add button under `flex:1` (basis 0) + `min-width:0`, so the select shrank to
+       whatever the other two left it — 22px — and a branch name rendered straight out of its box.
+       A wider pane alone would only have postponed that; the row has to stop competing. */
+    .ps-colors-add { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:5px 0; }
+    .ps-colors-add .pd-select { flex:1 1 100%; min-width:0; max-width:none; }
+    /* ⚠⚠ `.ps-menu button { width:100% }` IS WHAT BROKE THESE ROWS, and it is not this pane's
+       rule — it exists so a menu's LIST items fill their menu. Every inline control here is a
+       <button> inside a `.ps-menu`, so it inherited it: measured, the ✕ on an override row has a
+       max-content width of **38px** and was rendering at **208px**, which left the branch label
+       beside it **0px wide** for 33px of text. It is also why `Key trades…` and `Reset colours`
+       stacked instead of sitting side by side, and why `Add` was the widest thing on its row.
+       ⚠ Scoped to this pane's three row types rather than weakened globally: the list-style menus
+       elsewhere still want their full-width buttons. */
+    /* ⚠ FORM CONTROLS DO NOT INHERIT FONT, so every checkbox and colour swatch in this pane was
+       rendering at the UA default — measured, 13.3px Arial against the pane’s 13px Gotham. None of
+       them shows text today, so it is invisible rather than ugly; it is fixed because it is the
+       exact defect `.pd-btn` carried app-wide until 2026-09-17, and an input that later gains a
+       label would inherit the wrong font silently. The colour swatches carry explicit width/height
+       just above, so nothing resizes. */
+    .ps-colors-row input, .ps-colors-add input, .ps-colors-cby input,
+    .ps-colors-row select, .ps-colors-add select, .ps-colors-cby select { font: inherit; }
+    .ps-colors-row .pd-btn, .ps-colors-add .pd-btn, .ps-colors-cby .pd-btn { width:auto; }
+    .ps-colors-row .pd-btn { flex:0 0 auto; }
+    /* ⚠ A FLOOR ON THE LABEL, so it can never be starved to nothing again. `flex:1` is a basis of
+       0, which means it only ever gets LEFTOVER space — exactly the state above. */
+    .ps-colors-row > span:first-child { flex:1 1 60px; min-width:40px; }
+    /* ⚠ The swatch and Add FILL the second line instead of hugging its right edge. Right-aligning
+       them under a full-width select left 142px of dead space, which the owner marked. */
+    .ps-colors-add .ps-colors-addctl { display:flex; align-items:center; gap:8px; flex:1 1 auto; }
+    .ps-colors-add .ps-colors-addctl .pd-btn { flex:1 1 auto; }
+    /* The colour-by block moved in from the legend; its controls stack rather than compete. */
+    .ps-colors-cby { display:flex; flex-direction:column; gap:7px; }
+    .ps-colors-cby label { display:inline-flex; align-items:center; gap:7px; font-size:var(--pd-fs-base); }
+    .ps-colors-cby .pd-select { width:100%; min-width:0; }
+    .ps-colors-cby .ps-colors-cbybtns { display:flex; gap:8px; flex-wrap:wrap; }
+    .ps-colors-cby .ps-colors-cbybtns .pd-btn { flex:1 1 auto; min-height:32px; font-size:var(--pd-fs-sm); }
     /* The section labels these menus group by. Sticky, so the heading of the group you are reading
        stays visible once the list scrolls. */
     .ps-menu-h { position:sticky; top:0; z-index:1; background:var(--pd-card);
@@ -3094,6 +3138,11 @@
       width:24px; min-width:24px; height:24px; padding:0; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius); font-size:var(--pd-fs-xs); font-variant-numeric:tabular-nums; }
     .ps-lm-lyt { display:flex; align-items:center; }
+    /* ⚠ SIZE STATED, not inherited. These two set no font-size, so they kept the UA's own
+       13.333px — off the scale, and visibly out of step with the 13px items above them. Letting
+       them inherit the menu instead would have made them 14px: LARGER than the items they sit
+       under, which is worse than the bug. A saved layout is a menu row like any other. */
+    .ps-menu .ps-lm-lyt button { font-size:var(--pd-fs-base); }
     .ps-menu .ps-lm-lyt button:first-child { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-menu .ps-lm-lyt button:last-child { flex:0 0 30px; width:30px; padding:8px 0; text-align:center; color:var(--pd-muted); }
     .ps-lm-none { padding:8px 14px; color:var(--pd-muted); font-size:var(--pd-fs-sm); }
@@ -3133,11 +3182,46 @@
     .ps-layout-menu { max-height:78vh; overflow-y:auto; overflow-x:hidden; }
     /* ⚠️ --pd-danger-text, not --pd-red. Brand red on card is 3.74:1 — under AA for 13px text.
        Sixth instance of that defect in this repo; the old Layouts menu shipped it. */
-    .ps-menu button.ps-lm-save { color:var(--pd-danger-text); font-weight:700; border-top:1px solid var(--pd-line); }
-    .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
+    .ps-menu > button.ps-lm-save { color:var(--pd-danger-text); font-weight:700; border-top:1px solid var(--pd-line); }
+    /* ==========================================================================================
+       ⚠⚠ `>` — DIRECT CHILDREN ONLY. This is the menu-ROW style: full width, left aligned,
+       borderless. As a descendant selector it also hit every button NESTED in a menu, which is a
+       different animal entirely — an inline control in a row. It had been worked around SIX times
+       (`ps-cols-foot`, `ps-lm-lvls`, `ps-lm-lyt`, `ps-lm-chips`, the `ps-gm-x` note below, and the
+       colours pane) and still caused two defects this week: a ✕ rendering 208px wide where its
+       max-content is 38, and a 34px icon button rendering at 336.
+       ⚠ A MENU ITEM IS ALWAYS A DIRECT CHILD; AN INLINE CONTROL NEVER IS. Checked all six menus
+       before changing this: File's four items, Group's presets, Filter's `#ps-f-adv`, Layout's
+       `.ps-lm-save` are direct children and keep this style. Everything nested — `.ps-gm-row`,
+       `.ps-lm-chips`, `.ps-rz-row`, `.ps-filter-foot`, `.ps-cols-foot`, `.ps-lm-lyt` — already
+       carries its own rule, so nothing is left unstyled.
+       ⚠ IT ALSO FIXES TWO LIVE ONES NOBODY HAD REPORTED: the Row-height stepper (− / value / +
+       / reset) and the Filter menu's Clear / Apply were both being stretched to 100%, which is
+       why `.ps-filter-foot`'s `justify-content:space-between` had nothing to distribute. */
+    /* ⚠⚠ `font-family: inherit` — WITHOUT IT EVERY MENU ITEM IN THIS MODULE IS ARIAL. A bare
+       <button> carries the UA stylesheet's own `font: 400 13.333px Arial`, and this rule sets a
+       font-SIZE without a font-FAMILY, so the size came from the token and the typeface came from
+       the browser. `.pd-btn` was fixed for exactly this app-wide on 2026-09-17 — these are not
+       `.pd-btn`s, so they never got it, and File / Group / Layout / Filter have been rendering
+       their items in Arial ever since. Found by a harness CONTROL assertion, not by looking:
+       the check that was meant to prove the stylesheet had loaded reported the font as Arial. */
+    /* ⚠⚠ A DESCENDANT SELECTOR HERE, DELIBERATELY, AND IT IS THE ONE PROPERTY THAT WANTS ONE.
+       The geometry above is a menu-ROW style and had to stop at direct children; the TYPEFACE is
+       the opposite — every button in a menu should be Gotham, nested or not. Measured before
+       fixing: the four File items, Group's presets and Layout's Save were Arial, and so were the
+       ten nested ones (`.ps-gm-x` arrows, layout chips, saved-layout rows, the Columns foot).
+       A bare <button> carries the UA `font: 400 13.333px Arial`; these rules set a font-SIZE but
+       no font-FAMILY, so the size came from the token and the typeface from the browser.
+       `.pd-btn` was fixed for exactly this app-wide on 2026-09-17 — these are not `.pd-btn`s, so
+       they never got it. (The zoom stepper and Filter's Clear/Apply ARE `.pd-btn` and were always
+       fine, which is why the defect stayed invisible: some buttons in the same menu looked right.)
+       ⚠ Found by a harness CONTROL assertion rather than by looking — the check that was there to
+       prove the stylesheet had loaded came back “Arial”. */
+    .ps-menu button { font-family:inherit; }
+    .ps-menu > button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:var(--pd-fs-base); }
-    .ps-menu button:hover { background:var(--pd-red-light); }
-    .ps-menu button.ps-menu-danger { color:var(--pd-bad-text); }
+    .ps-menu > button:hover { background:var(--pd-red-light); }
+    .ps-menu > button.ps-menu-danger { color:var(--pd-bad-text); }
 
     /* ---- Schedule Health panel (DCMA-14-style quality checklist, OPC-inspired) ---- */
     .ps-health-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
@@ -3762,7 +3846,23 @@
     .sbld-pushbar-txt { min-width:0; }
     .sbld-pushbar-txt b { display:block; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
     .sbld-pushbar-txt span { display:block; margin-top:2px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
-    .sbld-chiplab { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
+    /* ⚠️⚠️ ONE LABEL TREATMENT FOR EVERY SELECTOR GROUP IN THE SETUP, AND IT USED TO BE FOUR.
+       One job — naming what a row of controls is choosing — written four times, hundreds of lines
+       apart, each a little different: `.sbld-chiplab` (micro/700/.04em), `.sbld-towerbar-l`
+       (xs/700/.05em), `.sbld-seqkind-l` (xs/800) and `.sbld-locbar-l` (xs/800).
+       ⚠️⚠️ THE WEIGHT HALF WAS VISIBLE ON TWO STEPS, not merely untidy in the stylesheet:
+       `stTradeSeq` draws "TRADE" (700) directly above "LEVEL TYPE" (800), and `stLevels` draws
+       "LOCATION BREAKDOWN" (800) directly above "TRADE" (700). 700 wins — it is this app's own
+       uppercase micro label (`.pd-kpi-label`, `.pd-table th`), and 800 is what the app reserves
+       for a KPI value.
+       ⚠️ `.sbld-towerbar-l` is DELETED rather than kept as an alias: with every call site moved
+       onto `.sbld-chiplab` it emits nowhere, and a rule that matches nothing reads as working
+       styling to everyone who finds it — which is how the duplicate arose in the first place.
+       ⚠️ `.sbld-seqkind-l` and `.sbld-locbar-l` keep their NAMES and join this selector instead:
+       they are emitted from five places, and a rename is churn with no pixel behind it. What they
+       no longer have is a declaration of their own to drift away from this one. */
+    .sbld-chiplab, .sbld-seqkind-l, .sbld-locbar-l {
+      font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
       letter-spacing:.04em; color:var(--pd-muted); margin-right:2px; }
     .sbld-list { display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
     .sbld-row { display:flex; gap:8px; align-items:center; }
@@ -3828,7 +3928,6 @@
     /* step 2 — the project's Location Breakdown, stated before any floors are typed in */
     .sbld-locbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
       border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
-    .sbld-locbar-l { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .sbld-locbar .sbld-hint { margin:0; flex:1 1 260px; min-width:0; }
     /* The activity level, off its own band and onto this bar — see `_locBreakdownBar`'s
        `opts.level`. ⚠️ `width:auto`, NOT a fixed width: the longest option is
@@ -3839,11 +3938,21 @@
     .sbld-loclvl select { height:30px; width:auto; max-width:230px; }
     .sbld-seqkind { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
       border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
-    .sbld-seqkind-l { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .sbld-seqkind .sbld-hint { margin:0; }
     .sbld-scbtn b.own { font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pd-red); margin-left:4px; }
-    /* step 2 — trade chips + tower */
-    .sbld-tradechips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+    /* step 2 — trade chips + tower
+       ⚠️⚠️ A HOLDER WITH A LABEL, NOT A BARE ROW OF BUTTONS — owner 2026-09-18: *"throughout the
+       steps in schedule set-up, when providing button choices whether for trades, floors, or
+       activities, place them in a holder group with a label."* It was a naked flex row, so on a
+       step carrying two of them (tower chips above trade chips, in Location Sequence and in
+       Generate) the two runs read as one long strip of buttons and nothing said which question
+       either half answered. The box is the grouping and the label is the question.
+       ⚠️ NO RED LEFT RAIL, unlike `.sbld-seqkind` directly below it on this same step: that bar
+       is a single state line and earns the emphasis; two or three stacked selector rows each
+       wearing a brand rail would make a step of selectors look like a step of warnings. */
+    .sbld-tradechips { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:14px;
+      padding:8px 11px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      background:var(--pd-bg); }
     .sbld-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); background:var(--pd-card); cursor:pointer; font:inherit; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
     .sbld-chip:hover { background:var(--pd-bg); }
     .sbld-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); font-weight:700; }
@@ -4372,6 +4481,41 @@
        narrower name box beside it. */
     .sbld-flr-h .sbld-kind { flex:0 0 auto; width:auto; }
     .sbld-flr-h .pd-input { height:32px; font-size:var(--pd-fs-base); }
+    /* ==========================================================================================
+       ⚠⚠ A DELIBERATE TWO-LINE ROW WHEN THE PANEL IS NARROW. Owner, after a second report on this
+       step: *“Let's do the two-line layout.”*
+       Measured first, because the row was NOT broken at full width: at 1398px it is one clean line
+       and the deployed CSS is byte-identical to local. The screenshot was a HiDPI capture — the row
+       is ~514 CSS px, not the ~771 image px it appears. At 514px every row wrapped RAGGEDLY, 51px
+       → 91px, which on a 17-storey list is ~680px of extra scrolling for no gain.
+       ⚠⚠ IT CANNOT BE FIXED BY TUNING A `flex-basis`. The controls demand ~530px before the name
+       field gets a single pixel (code 88 + trade 99 + “Zones” 33 + two steppers 56 + count 22 +
+       plan 61 + delete 30 + grab 11 + BSMT 44, plus ten 8px gaps). One line at 514px is
+       geometrically impossible, so the row is given LESS to carry per line instead: identity on
+       line one (code + name), the controls on line two.
+       ⚠ A CONTAINER QUERY, NOT A MEDIA QUERY. This step puts the 3D preview beside the floor list,
+       so the row's width is roughly HALF the viewport and a `@media` threshold would fire at the
+       wrong moment — and at the wrong moment differently depending on whether the preview is open.
+       The row asks its own container how wide it is. */
+    .sbld-flr { container-type:inline-size; }
+    .sbld-flr-br { display:none; }
+    /* ⚠ 692px, AND THE ODD NUMBER IS THE POINT. Measured by bisection with the break
+       disabled: the BASEMENT row — the widest, because of its BSMT tag — stops fitting one line at
+       693px; a plain floor row survives to 610px. The threshold follows the WIDEST row so the
+       whole list switches together: three basements on two lines above fourteen floors on one
+       reads as a broken list, not a responsive one.
+       ⚠ Measured in the harness, whose fallback font is WIDER than Gotham, so in production this
+       fires a handful of pixels early. That is the safe direction — early means tidy, late means
+       the ragged wrap this rule exists to prevent. */
+    @container (max-width:692px) {
+      .sbld-flr-h .sbld-flr-br { display:block; flex:0 0 100%; width:100%; height:0; margin:0; }
+      /* ⚠ A tighter row-gap than the 8px column gap: two lines of one row must still read as ONE
+         row, and 8px vertically made the halves look like two separate floors. */
+      .sbld-flr-h { row-gap:6px; }
+      /* Line two is the controls; nudging it in under the name field shows it belongs to the row
+         above rather than starting a new one. */
+      .sbld-flr-h .sbld-kind { margin-left:19px; }
+    }
     .sbld-addzone { flex:none; font-size:var(--pd-fs-sm); height:30px; }
     .sbld-znwrap { padding:6px 10px 8px; display:flex; flex-direction:column; gap:6px; }
     .sbld-znrow { display:flex; align-items:center; gap:6px; }
@@ -4407,6 +4551,25 @@
        cannot avoid, and which the page never inherits. */
     table.sbld-tbl th.sbld-scope-col { white-space:normal; max-width:112px; vertical-align:bottom; line-height:1.25; }
     .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }
+    /* The grouping rows added on 2026-09-18 (see `tocs`). ⚠️ They are NOT `.sbld-scope-row` and
+       carry no cursor or hover: a heading that looks clickable on a screen whose row labels really
+       are clickable is a mis-click away from clearing a storey. ⚠️ The indent is driven by
+       `data-d` rather than a class per depth, because the rung a heading sits on is computed from
+       the data (a single-tower project has one rung fewer) and a fixed class set cannot express
+       that. `table.sbld-tbl td` is (0,1,2) and `table.sbld-tbl td[data-d]` is (0,2,2), so the
+       indent beats the table's own padding.
+       ⚠️⚠️ AND THE HEADING RULE MUST NOT USE THE `padding` SHORTHAND. `table.sbld-tbl
+       tr.sbld-scope-grp > td` is (0,2,3) — HIGHER than the `[data-d]` rules below it — so a
+       shorthand here would set `padding-left` too and win, flattening every heading to one
+       indent while the rows beneath them stayed stepped. Top and bottom only; the left is the
+       indent's to own. The same specificity trap this file records for the locked BOQ cell. */
+    table.sbld-tbl tr.sbld-scope-grp > td { background:var(--pd-bg); font-weight:700;
+      font-size:var(--pd-fs-xs); color:var(--pd-muted); letter-spacing:.02em;
+      padding-top:5px; padding-bottom:5px; }
+    table.sbld-tbl td[data-d="1"] { padding-left:10px; }
+    table.sbld-tbl td[data-d="2"] { padding-left:24px; }
+    table.sbld-tbl td[data-d="3"] { padding-left:38px; }
+    table.sbld-tbl td[data-d="4"] { padding-left:52px; }
     /* step — the borrowed WBS tree. The group keeps the toolbar's own look (it IS the WBS Manager's
        toolbar), but it is laid out here as a wrapping row inside the step panel rather than as part
        of a full-width bar. */
@@ -4617,7 +4780,15 @@
     .sbld-gdel { flex:0 0 auto; padding:0 4px; height:18px; background:none; border:0; color:var(--pd-muted); opacity:0; }
     .sbld-gr:hover .sbld-gdel, .sbld-gr.is-sel .sbld-gdel { opacity:1; }
     .sbld-gdel:hover { color:var(--pd-red); }
-    .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:9px; }
+    /* ⚠ THE ONLY ONE OF THE FIVE THAT WAS ACTUALLY OFF THE SCALE. A sweep flagged five sizes
+       below `--pd-fs-micro` in this module; four are SVG <text> and the shared stylesheet's own
+       type-scale note already exempts them BY NAME — *“`font-size` on an SVG <text> is in USER
+       UNITS, not pixels — project-schedule's 8px dependency tags are correct as they are”*. This
+       one is an HTML <span>, so the rule applies and 9px was a fresh literal.
+       ⚠ It holds a single ●, so this font-size is really a DOT DIAMETER. Moved to the rung rather
+       than re-built as a sized box: 9→10px on one glyph is invisible, and turning it into a CSS
+       shape would be a bigger change than the defect. */
+    .sbld-gmirror { flex:0 0 auto; color:var(--pd-muted); font-size:var(--pd-fs-micro); }
     /* the "take it out of every branch" target, which lives on the Planned line */
     .sbld-phdrop { margin-left:8px; padding:1px 7px; border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
       font-size:var(--pd-fs-micro); color:var(--pd-muted); text-transform:none; letter-spacing:0; }
@@ -5296,8 +5467,12 @@
        it ten lines later. It rendered only because CSS nesting is supported and the note really is
        inside the bar — in a browser without nesting every `.sbld-towerbar-note` rule was dropped
        and the drift warning lost its styling. Written out flat. */
+    /* ⚠️ Same holder as `.sbld-tradechips` — this bar was already a labelled box and the chip rows
+       have joined it, so the two agree by construction rather than by eye. The radius was a literal
+       `9px` against the chip row's `--pd-radius-md` (8px): one pixel, invisible alone, and the two
+       now sit as siblings on the same step where "nearly the same" reads as a mistake. */
     .sbld-towerbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:2px 0 10px;
-      padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
+      padding:8px 10px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
     /* What the step DETECTED about the towers. ⚠️ Its own row, wrapping under the chips: on a
        four-tower job the drift message is a sentence, and squeezed into the chip row it would push
        the controls onto a second line every time it appeared. */
@@ -5305,7 +5480,9 @@
       margin-top:2px; line-height:1.5; }
     .sbld-towerbar-note.warn { color:var(--pd-warn-text); background:var(--pd-warn-bg);
       border-radius:var(--pd-radius-md); padding:5px 9px; }
-    .sbld-towerbar-l { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); font-weight:700; margin-right:2px; }
+    /* ⚠️ `.sbld-towerbar-l` lived here and is gone — it was `.sbld-chiplab` written a second time,
+       and being LATER in source it was the copy that actually applied while the earlier declaration
+       had never once reached the screen. Every label in the Setup now uses `.sbld-chiplab`. */
     /* ⚠️⚠️ NOT `.sbld-mini`, WHICH IS `width:62px` — sized for the two-character number inputs it
        was written for. It is the third control in this step to be caught by that class: on
        "Site plan 1/8" it wrapped the label onto two lines inside a 30px-tall button, so the one
@@ -6441,7 +6618,7 @@
   <script src="../../assets/js/scurve.js?v=20260917a"></script>
   <script src="../../assets/js/portfolio-dash.js?v=20260917zg"></script>
 <script src="../../assets/js/ui.js?v=20260917zg"></script>
-<script src="../../assets/js/notebook.js?v=20260915d"></script>
+<script src="../../assets/js/notebook.js?v=20260918a"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/calendar.js?v=20260918a"></script>
 <script src="../../assets/js/xlgrid.js?v=20260917zj"></script>
@@ -7465,7 +7642,19 @@
   // different containers — a second copy would drift the moment either was touched.
   function renderCalendarsInto(host, opts) {
     opts = opts || {};
-    var m = { el: host, close: opts.close || function () {} };
+    /* ⚠⚠ THE CLOSE BUTTON NOW EXISTS ONLY IF IT CAN ACTUALLY CLOSE SOMETHING. Owner, reporting
+       it for the SECOND time: *"The close button is still not working."*
+       Entry *(ak)* fixed this per CALL SITE — the Schedule Setup started passing
+       `{ showClose: false }` because its editor is inline and there is nothing to close. That was
+       correct and it is deployed (confirmed by fetching the live page and grepping the call), but
+       it is the wrong SHAPE of fix: it asks every caller to remember a flag, and the default when
+       they forget is a button that renders and does nothing, because `close` fell back to
+       `function () {}` — a no-op that is indistinguishable from a working handler.
+       ⚠ The invariant is now structural: no `opts.close` → no button. A caller that forgets the
+       flag gets no Close instead of a dead one, and `showClose: false` still suppresses it for a
+       caller that DOES have a close but wants the editor bare. The dead state is unreachable. */
+    var _canClose = typeof opts.close === 'function';
+    var m = { el: host, close: _canClose ? opts.close : function () {} };
     var draft = null, calFilter = '', _calShown = CALS;
     function applyCalFilter() {
       var q = calFilter.trim().toLowerCase();
@@ -7544,7 +7733,7 @@
           }).join('') : '<div class="pd-empty" style="padding:16px;">' + (CALS.length ? 'No calendar matches that filter.' : 'No calendars on this project yet.') + '</div>') +
           '</div>' +
         '</div><div class="ps-cal-edit">' + (draft ? editHTML() : '<div class="pd-empty" style="padding:24px;">Pick a calendar to edit, or create one.</div>') + '</div></div>' +
-        (opts.showClose === false ? '' : '<div style="margin-top:12px;text-align:right;"><button class="pd-btn" id="ps-cal-close">Close</button></div>');
+        ((opts.showClose === false || !_canClose) ? '' : '<div style="margin-top:12px;text-align:right;"><button class="pd-btn" id="ps-cal-close">Close</button></div>');
     }
 
     var _MO_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -12826,7 +13015,7 @@
       for (var _pi = 0; _pi < _gp.length; _pi++) {
         if (JSON.stringify(_gp[_pi].dims) !== _gj) continue;
         if (_gp[_pi].lsm && !_lsmRows) continue;
-        _pname = _gp[_pi].name; break;
+        _pname = _gp[_pi].face || _gp[_pi].name; break;   // ⚠ face for the button, name for the menu
       }
     } catch (e) { _pname = null; }
     if (_pname) _face = _pname;
@@ -12982,8 +13171,22 @@
       var _setupDims = [];
       try { _setupDims = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.setupGroupDims) ? ScheduleBuilder.setupGroupDims() : []; } catch (e) { _setupDims = []; }
       var presets = [
-        { name: 'Schedule Setup structure', dims: _setupDims },
-        { name: 'WBS tree (default)', dims: ['wbs'] },
+        /* ⚠⚠ `face` IS THE TOOLBAR BUTTON, `name` IS THE MENU. Owner: *“I want the toolbars to be
+           squeezed into one row in this resolution. One thing that can help is by reducing the
+           text of the WBS tree (default) to just ‘WBS’.”* Measured with the shipped `_tbFit` on the
+           shipped markup: the face goes 117px → 31px, and the width at which the toolbar sheds
+           NOTHING moves 1418px → 1332px — 86px reclaimed, exactly the face saving. At the width
+           that reproduces his screenshot (1414px, `?` and Outline shed and nothing else) that is
+           the difference between two shed controls and none.
+           ⚠ THE MENU KEEPS THE LONG NAME. He named these himself on 2026-09-11 — *“WBS tree
+           (default) · LSM · By Activity”* — and a menu of four choices has room to say what they
+           are; a toolbar face 117px wide does not. Shortening both would have quietly overwritten
+           his naming to solve a layout problem.
+           ⚠ `Schedule Setup structure` gets one too, for the same reason: at 150px it puts the
+           toolbar straight back onto two rows the moment a planner picks it, and fixing only the
+           default would have fixed only the screenshot. */
+        { name: 'Schedule Setup structure', face: 'Setup', dims: _setupDims },
+        { name: 'WBS tree (default)', face: 'WBS', dims: ['wbs'] },
         // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
         // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
         // underneath them was pure duplication in this view (owner's call after seeing it live).
@@ -28026,9 +28229,18 @@
              storey's own category is used where it is known, so "start together on the basements"
              does not excuse an overlap on a typical floor. */
           if (_declaredParallel(A.value, B.value, _lsmDecl().kind[locNormKey(row.r._graw || row.r.activity_name || '')] || '')) continue;
-          /* B is supposed to follow A on this storey. It clashes if it starts before A finishes. */
+          /* B is supposed to follow A on this storey. It clashes if the two are on it together. */
           if (+B.s > +A.f) continue;
-          var s = B.s, f = (+A.f < +B.f) ? A.f : B.f;
+          /* ⚠️⚠️ THE SHARED STRETCH IS THE INTERSECTION, AND IT STARTS AT THE LATER OF THE TWO
+             STARTS. It read `B.s` unconditionally, which is right only while B starts after A --
+             and the whole point of this pass is the case where it does NOT. An out-of-sequence B
+             starting ten days before A then had those ten days counted as overlap, so the chip
+             said 10 wd where the two were on the storey for 5, the hatched mark was drawn across
+             days A was not there at all, and the worst-first sort put the inflated storey ahead of
+             a real, longer one. A pair whose spans do not meet at all is now no overlap: it is out
+             of sequence, which this pass has no words for and does not pretend to measure. */
+          var s = (+B.s > +A.s) ? B.s : A.s, f = (+A.f < +B.f) ? A.f : B.f;
+          if (+f < +s) continue;
           var ax = _lsmAxOf(A.cal || B.cal, min, max);
           if (ax && ax.wd) out.wd = true;
           /* Inclusive span, in the axis's own days - the same `span` the CPM uses to turn a
@@ -37560,14 +37772,21 @@
                 '⚠️⚠️ <b>Auto-trace replaces every link</b>. Run it FIRST, then adjust by hand — not the other way round.'],
         done: 'The vertical stacking on the Generate step climbs the building the way you would describe it out loud.'
       },
-      'Activity Sequence': {
-        why: 'What order the work happens in once it is inside a place — how the class codes run through one location, and which of them apply where.',
-        how: ['<b>Trade sequence</b> — how the class codes run inside one location. <b>Auto-chain</b> links a trade’s codes back-to-back with the relationship in the dropdown beside it.',
-              '<b>Scope per zone</b> — tick which activities apply to each location. Everything applies everywhere until you say otherwise.',
-              '<b>Next</b> walks both views before it leaves the step.'],
+      'Activity sequence': {
+        why: 'What order the work happens in once it is inside a place — how one trade’s class codes run through a single location.',
+        how: ['Pick a trade, then drag its codes into the order they are built in.',
+              '<b>Auto-chain</b> links them back-to-back with the relationship in the dropdown beside it.'],
         watch: ['The sequence <b>and</b> the durations are per <b>level type</b> (basement / podium / typical / roof deck) — a duration typed while a category is selected applies to that category only.',
                 '<b>Linking by hand</b> works exactly as it does in Location Sequence — drag from one bar’s start or finish point onto another’s, and the two ends choose FS / SS / FF / SF.'],
-        done: 'Each trade’s codes run in the order they are actually built, and nothing is scheduled somewhere it does not happen.'
+        done: 'Each trade’s codes run in the order they are actually built.'
+      },
+      'Zone scoping': {
+        why: 'Which activities happen where. Everything applies everywhere until you say otherwise, so this step is about the exceptions.',
+        how: ['Untick an activity where that trade does not do it.',
+              'Click a <b>column header</b> to toggle that activity everywhere in the trade; click a <b>row label</b> to toggle every activity at that location.'],
+        watch: ['⚠️ An unticked activity is not generated at that location at all — it does not appear in the preview and carries no duration there.',
+                'The table is grouped by floor, then zone, then unit, so a whole storey can be read down one block.'],
+        done: 'Nothing is scheduled somewhere it does not happen.'
       },
       'Project phases': {
         why: 'The lifecycle either side of construction — Initiation, Planning, Close-out — as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.',
@@ -39229,18 +39448,59 @@
       });
       var days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l, basis); });
       var starts = computeStarts(locs, days), start = pdd(startOverride) || pdd(cfg.startDate) || new Date();
+      var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
+      /* ==========================================================================================
+         ⚠⚠ THESE OFFSETS ARE WORKING DAYS, AND UNTIL NOW THEY WERE LAID ON CALENDAR DAYS.
+         Owner: *"Let's also check how the calendars affect the schedule. It should be able to
+         affect the schedule."* It could not. `addD` is `x.setDate(x.getDate() + n)` — raw calendar
+         arithmetic — and there was not one `PDCal.` call anywhere in this builder. Step 2 of this
+         very wizard asks which days are workable and the preview it feeds ran straight through
+         Sundays and Christmas. A five-day activity starting Friday finished Tuesday.
+         ⚠⚠ AN AXIS, NOT A WALK PER ROW. `PDCal.addWorkingDays` steps one day at a time, and
+         `generate('int')` is called on EVERY render to paint the pending count — so a per-row walk
+         would pay that on every keystroke, on every row. This is one pass over the project window,
+         then O(1) lookups, which is the same reasoning (and the same shape) as `makeAxis` in the
+         CPM. `WD[k]` is the calendar-day offset of the (k+1)th working day from `start`.
+         ⚠ THE PROJECT DEFAULT CALENDAR, because the builder does not assign per-activity ones —
+         it is the same fallback chain `cpmCalOf` uses, minus the per-activity step it has no
+         answer for. If PDCal or the calendar is missing the axis is the identity, which is exactly
+         the old behaviour rather than a guess. */
+      var _gcal = (function () {
+        try { return (CALS || []).filter(function (c) { return c.is_default; })[0] ||
+                     (window.PDCal ? PDCal.defaultCalendar() : null); } catch (e) { return null; }
+      })();
+      var WD = (function () {
+        if (!window.PDCal || !_gcal) return null;
+        var need = Math.max(1, total) + 2, list = [], o = 0, guard = 0;
+        /* ⚠ The guard is 20 years of calendar days. A calendar with every day unticked would
+           otherwise spin here; it returns short, and `wdAt` clamps, so a mis-configured calendar
+           degrades to a pile-up on the last workable day rather than hanging the page. */
+        while (list.length < need && guard++ < 7300) {
+          if (PDCal.isWorkDay(_gcal, addD(start, o))) list.push(o);
+          o++;
+        }
+        return list.length ? list : null;
+      })();
+      // k working days after `start`, k = 0 being the first workable day on or after it
+      function wdAt(k) {
+        if (!WD) return addD(start, k);
+        var i = k < 0 ? 0 : (k >= WD.length ? WD.length - 1 : k);
+        return addD(start, WD[i]);
+      }
       var rows = [], perZone = [];
       locs.slice().sort(function (a, b) { return (starts[a.uid] - starts[b.uid]) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); }).forEach(function (loc) {
         var off = starts[loc.uid] || 0, ao = actOffsets(loc.trade, loc, basis);
         tradeActs(loc.trade).forEach(function (a) {
           if (!included(loc.uid, a.id)) return; var dur = effDur(a, basis, loc); if (dur <= 0) return;
-          var aS = addD(start, off + (ao.off[a.id] || 0)), aF = addD(aS, dur - 1);
+          var _k = off + (ao.off[a.id] || 0);
+          /* ⚠ The finish counts `dur` working days INCLUSIVE of the start, so it is k + dur - 1,
+             not k + dur. That is the same convention `addWorkingDays(cal, start, dur)` uses. */
+          var aS = wdAt(_k), aF = wdAt(_k + dur - 1);
           rows.push({ loc: loc, act: a, dur: dur, start: aS, finish: aF, group: a.group });
         });
         var d = days[loc.uid] || 0;
-        perZone.push({ loc: loc, days: d, start: addD(start, off), finish: addD(start, off + Math.max(0, d) - 1) });
+        perZone.push({ loc: loc, days: d, start: wdAt(off), finish: wdAt(off + Math.max(0, d) - 1) });
       });
-      var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
       // ⚠️ DIAGNOSTIC — why a trade might be silently absent from the push. A row is dropped above when
       // effDur() is 0, i.e. the activity has NO duration for the CHOSEN BASIS (Internal vs External).
       // So a planner who filled only the Internal column, then pushed "External", gets an empty push —
@@ -39257,7 +39517,9 @@
       // every activity's duration — in a takt plan zones/trades overlap, so summing durations wildly
       // overstates it (e.g. 12,820 d for an ~981-day Nov-25→Jul-28 span). `total` already drives the
       // finish date, so totalDays === dayDiff(start, finish) + 1 and the KPI stays consistent with it.
-      return { rows: rows, perZone: perZone, totalDays: Math.max(0, total), start: start, finish: addD(start, Math.max(0, total - 1)), starts: starts, days: days, locs: locs, basis: basis, missingTrades: missingTrades, zeroDurByTrade: zeroDurByTrade };
+      /* ⚠ `start` is snapped to the first WORKABLE day too. Left raw it could sit on a Sunday
+         while every activity under it starts on the Monday, and the span would read one day long. */
+      return { rows: rows, perZone: perZone, totalDays: Math.max(0, total), start: wdAt(0), finish: wdAt(Math.max(0, total - 1)), starts: starts, days: days, locs: locs, basis: basis, missingTrades: missingTrades, zeroDurByTrade: zeroDurByTrade, calendar: _gcal };
     }
 
     // ---- drag reorder ----
@@ -39301,7 +39563,11 @@
                        'Repetition': 'Location Sequence',
                        'Tower Sequence': 'Location Sequence', 'Tower links': 'Location Sequence',
                        'Zone sequence': 'Location Sequence',
-                       'Trade sequence': 'Activity Sequence', 'Scope per zone': 'Activity Sequence',
+                       /* ⚠️ 'Activity Sequence' (capital S) was the step's own title until
+                          2026-09-18; it is aliased so every "see step N" written against it still
+                          prints a number rather than a blank. */
+                       'Activity Sequence': 'Activity sequence',
+                       'Trade sequence': 'Activity sequence', 'Scope per zone': 'Zone scoping',
                        'Structure': 'Project phases', '5PMLC': 'Project phases',
                        'Construction Library': 'Activities',
                        'Stacking': 'Generate' };
@@ -39336,6 +39602,11 @@
            sequence and Scope per zone — the first two are about WHERE the work goes next, the
            last two about WHAT ORDER the work happens in inside a place. Location Sequence and
            Activity Sequence.
+       ⚠️⚠️ TEN STEPS SINCE 2026-09-18, and the tenth is the same argument once more: the owner
+       split **Scope per zone** out of Activity sequence into its own **Zone scoping** step before
+       Generate. "What order do this trade's codes run in" is asked per trade; "which activities
+       happen here" is asked over every location on the project. Two questions, two steps — and
+       Activity sequence is left with one view, so it is no longer in `STEP_TABS` at all.
        ⚠️ Nothing indexes these by number: `_stepNo(title)` looks them up by TITLE and every
        cross-reference in the module goes through it, so all the "see step 7" text renumbers
        itself. `STEP_ALIAS` keeps every retired or renamed title resolving to a real number. */
@@ -39365,7 +39636,13 @@
          places rather than beside the activities: a zone sequence with no zones is an empty screen
          and a scope-per-zone grid with no zones has no columns. */
       { t: 'Location Sequence', s: 'Tower and zone sequence', fn: stLocSeq },
-      { t: 'Activity Sequence', s: 'Trade sequence and scope', fn: stActSeq },
+      { t: 'Activity sequence', s: 'How the class codes run inside one place', fn: stActSeq },
+      /* ⚠️ SCOPE PER ZONE IS ITS OWN STEP (owner 2026-09-18), and it belongs after the sequence
+         rather than inside it: "what order do these codes run in" and "which of them happen here"
+         are two questions, and the second is asked over every location on the project at once
+         while the first is asked per trade. The renderer is unchanged — only where it is reached
+         from — and `STEP_ALIAS` keeps the old "Scope per zone" title resolving to this step. */
+      { t: 'Zone scoping', s: 'Which activities apply where', fn: stScope },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
     /* The import path. ⚠️ THE ORDER IS THE DATA-CHECKING ORDER, and it is not arbitrary:
@@ -39409,7 +39686,7 @@
          sequence — and it cannot strand the project-wide-only case, which HAS activities and is
          let through by the floors test below. */
       if (title === 'Floors & Zones' || title === 'Location Sequence' ||
-          title === 'Activity Sequence' || title === 'Generate') {
+          title === 'Activity sequence' || title === 'Zone scoping' || title === 'Generate') {
         if (!nAct) return 'Add at least one activity in step ' + _stepNo('Activities') + ' · Activities first.';
       }
       if (title === 'Location Sequence') {
@@ -39538,15 +39815,25 @@
          above `stStacking` itself; the suite asserts it stays out of this list.
          ⚠ A browser that remembers `stack` in `ps_steptab_Repetition` is safe: `stepTabKey`
          validates the stored key against this list and falls back to the first tab. */
-      /* ⚠⚠ 'Location Sequence' IS NOT IN HERE, AND THAT IS THE CHANGE. It held two tabs — Tower
-         Sequence and Zone sequence — and owner 2026-09-18 asked for one screen: *"no need to separate
-         tower sequence and zone sequence."* The tower relationships moved into a dialog off that one
-         page (`openTowerLinkDlg`); `STEP_ALIAS` and `gotoStep` still resolve all three old titles, so
-         nothing that says “Tower links” prints a blank where a step number belongs. */
-      'Activity Sequence': [
-        { k: 'trades', t: 'Trade sequence', fn: function (h) { return stTradeSeq(h); } },
-        { k: 'scope',  t: 'Scope per zone', fn: function (h) { return stScope(h); } }
-      ]
+      /* ⚠⚠ 'Location Sequence' IS NOT IN HERE EITHER, AND THAT IS THE OTHER HALF OF THIS MERGE.
+         It held two tabs — Tower Sequence and Zone sequence — and owner 2026-09-18 asked for one
+         screen: *"no need to separate tower sequence and zone sequence."* The tower relationships
+         moved into a dialog off that one page (`openTowerLinkDlg`); `STEP_ALIAS` and `gotoStep`
+         still resolve all three old titles, so nothing that says “Tower links” prints a blank
+         where a step number belongs.
+         ⚠⚠ TAKING MAIN'S SIDE HERE WOULD HAVE BEEN A ReferenceError ON EVERY RENDER OF THE STEP.
+         Its entry names `stTowerLinks` and `stSequence`, and this branch DELETED both when the two
+         tabs became one page — the *“below is not defined”* shape this log has recorded five times,
+         and one `node --check` cannot see. Resolved as the union of the two REMOVALS rather than by
+         taking a side: main took `Activity Sequence` out (Scope per zone is its own step 9 now) and
+         this branch took `Location Sequence` out, so the honest merged answer is neither. */
+      /* ⚠️⚠️ ACTIVITY SEQUENCE IS NOT IN HERE ANY MORE, AND IT MUST NOT COME BACK AS A ONE-TAB
+         ENTRY. Owner 2026-09-18: *"separate Scope per zone as a separate Step 9 before Generate"*.
+         With Scope per zone gone this step has ONE view, and this file's own rule above says a
+         strip of one button "is a control that cannot do anything". `stepTabs` answers null for a
+         title it does not carry, so removing the key is all that is needed — `stActSeq` renders
+         its one renderer directly. It also removes the doubled heading the step used to print
+         ("7 · Activity Sequence — Trade sequence"), which is the other half of the owner's item 1. */
     };
     var _stepTabSel = {};
     function stepTabs(title) { return STEP_TABS[title] || null; }
@@ -39631,12 +39918,13 @@
        ⚠ The view is remembered across reloads now (`stepTabKey` persists it), which the pills
        never did. That matches Activities, and coming back to the step you left is the behaviour
        a multi-view step wants. */
-    /* ⚠⚠ ONE PILL STRIP, TWO STEPS. `Repetition` held four views — Tower Sequence, Zone
+    /* ⚠⚠ ONE PILL STRIP, NOW ONE STEP. `Repetition` held four views — Tower Sequence, Zone
        sequence, Trade sequence, Scope per zone — and the owner split them on 2026-09-17 into
        **Location Sequence** (where the work goes next) and **Activity Sequence** (what order the
-       work happens in inside a place). They are two different questions and were answered on one
-       screen; what they share is the shape of the control, so this takes the step TITLE rather
-       than being copied twice.
+       work happens in inside a place), then on 2026-09-18 split Scope per zone out again as its
+       own **Zone scoping** step. So Location Sequence is the only caller left; the shell stays
+       parameterised by step TITLE rather than being inlined, because the split that produced a
+       second caller could produce a third.
        ⚠ Each sub-view still renders its OWN heading, opening with `_stepNo(<its own title>)`,
        which `STEP_ALIAS` resolves to whichever step now contains it — so a heading never prints
        a blank where a number belongs. Nothing inside the four views was rewritten. */
@@ -39655,7 +39943,15 @@
       });
       cur.fn(host.querySelector('#sbld-repbody'));
     }
-    function stActSeq(host) { stPillStep(host, 'Activity Sequence'); }
+    /* ⚠⚠ THERE IS NO `stLocSeq` STUB HERE ANY MORE, AND ITS ABSENCE IS DELIBERATE. The merged
+       Location Sequence renderer is declared further down this file, and a second declaration of
+       the same name silently WINS or LOSES by source order with nothing on screen to say which —
+       the pair of declarations this module has already been bitten by once. Main's side of this
+       hunk was the stub; it is dropped rather than kept beside the real one.
+       ⚠ `stActSeq` takes MAIN's body: with Scope per zone promoted to its own step 9 the step has
+       one view, so `stPillStep` would draw a tab shell over a `STEP_TABS` entry that no longer
+       exists. */
+    function stActSeq(host) { stTradeSeq(host); }
     /* ==========================================================================================
        THE LIBRARY — the project's places on the left, its activity groupings on the right.
 
@@ -40375,7 +40671,7 @@
         _sbldHow('<b>Ctrl+D</b> fills down, <b>Ctrl+C / Ctrl+V</b> copies and pastes, <b>Delete</b> clears — and a block pastes straight from Excel.' +
           '<ul><li><b>&larr;</b> loads ticked SAP activities into the build; <b>&rarr;</b> sends selected rows back out.</li>' +
           '<li><b>&#9656;</b> on a group shows the level-3 items it carries. Dragging a group — or a level-1 heading — brings them all in as one merged activity.</li>' +
-          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
+          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project; refine it in step ' + _stepNo('Activity sequence') + '.</li>' +
           '<li><b>Trade</b> accepts the name or the code: General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT.</li></ul>') +
         /* ⚠️⚠️ FOUR CONTROLS REMOVED HERE, and two of them had never worked.
            Owner 2026-09-17: *"no need for the delete selected rows button. user will just use the
@@ -40442,7 +40738,7 @@
            cheap place to hang a title. Corrected rather than left claiming a thing that is not
            there. What stays in the body is the one fact about the ROWS rather than a single cell. */
         '<p class="sbld-hint">Row order is the fallback sequence; fine-tune in step ' +
-        _stepNo('Trade sequence') + '.</p>' +
+        _stepNo('Activity sequence') + '.</p>' +
         /* ⚠️⚠️ THIS LINE USED TO ACCUSE EVERY `+ Library` ROW. It counted anything that was not a
            Level-3 code, which is the whole group chart — so a perfectly good build lit a warning.
            Group codes are valid (the resolver learned both levels on 2026-09-10); what is left is a
@@ -40857,14 +41153,14 @@
     function stTradeSeq(host) {
       var used = usedGroups();
       if (!used.length) {
-        host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
+        host.innerHTML = '<h2>' + _stepNo('Activity sequence') + ' · Activity sequence — connect the class codes, per level type</h2>' +
           '<div class="sbld-empty">No trades yet — add activities in step ' + _stepNo('Activities') + ' and assign each one a trade. The trades you use there will show up here to sequence.</div>';
         return;
       }
       if (used.indexOf(uiTrade) < 0) uiTrade = used[0];
       var tr = uiTrade, acts = tradeActs(tr);
       var svg = tradeView === 'gantt' ? actGanttSVG(acts, actDayStarts(tr, tradeBasis), tradeBasis) : actSchedSVG(acts, actStartsUnit(tr));
-      var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
+      var chips = '<div class="sbld-tradechips"><span class="sbld-chiplab">Trade</span>' + used.map(function (g) {
         var n = tradeActs(g).length;
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
@@ -40905,7 +41201,15 @@
       // done on the schedule BARS on the right via the View/Edit toggle (mirrors step 3) — the old
       // per-row ▸ column is gone.
       var list = t4GridHTML(acts, tr);
-      host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
+      /* ⚠⚠ THE `aEditing` / `aConfirmBtn` PAIR IS GONE, AND EVERY NAME IT READ WITH IT. It built
+         the two-phase confirm button for the retired link MODE — `actMode`, `actLinkPhase`,
+         `pendActSet`, `pendActDst` all lost their declarations when the drag replaced the mode, so
+         each of those reads was a latent ReferenceError that `node --check` cannot see.
+         ⚠ The HEADING is MAIN's, not this branch's: main renamed the step to *Activity sequence*
+         and this function is now its only renderer, so the `<h2>` must name the STEP. `_stepNo`
+         still answers for the old 'Trade sequence' title through `STEP_ALIAS`, so nothing that
+         says “see step N · Trade sequence” prints a blank. */
+      host.innerHTML = '<h2>' + _stepNo('Activity sequence') + ' · Activity sequence — connect the class codes, per level type</h2>' +
         '<p class="sbld-lede">How a trade’s class codes run <b>inside one zone</b> — their order and their durations, per <b>level type</b>.</p>' +
         /* ⚠ The WHY (a basement is not built like a typical floor) and the inheritance rule are
            mechanics, so they join the mechanics that were already in here. */
@@ -41319,7 +41623,7 @@
       var m = UI.modal('<div style="width:100%;max-height:84vh;display:flex;flex-direction:column;">' +
         '<h2 style="margin:0 0 4px;">Adopt the location breakdown from the WBS</h2>' +
         '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 8px;">Your schedule’s WBS already contains the building. These are the <strong>places</strong> it names — towers, floors and zones — with the ones this setup already defines marked. Adopting them creates the floors and zones for you instead of typing them, which is the whole job once for a <strong>migrated schedule</strong>. ' +
-        '<strong>Nothing is deleted, renamed or reordered</strong> — this only adds what is missing, and you still have to press <strong>Save</strong> afterwards. Floors are defined <em>per trade</em>, so choose who gets them; a trade can always differ afterwards in <em>Scope per zone</em>.</p>' +
+        '<strong>Nothing is deleted, renamed or reordered</strong> — this only adds what is missing, and you still have to press <strong>Save</strong> afterwards. Floors are defined <em>per trade</em>, so choose who gets them; a trade can always differ afterwards in <em>Zone scoping</em>.</p>' +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">' +
           '<span style="font-size:12px;color:var(--pd-muted);">Create the floors for</span>' +
           '<select class="pd-input" id="ad-trade" style="flex:0 0 260px;">' + tradeOptions() + '</select>' +
@@ -41545,7 +41849,7 @@
     function _towerBar() {
       var owners = layoutOwners(), actOwner = ownerOfTower(activeTower());
       return '<div class="sbld-towerbar">' +
-        '<span class="sbld-towerbar-l">' + (owners.length > 1 ? 'Layout' : 'Tower') + '</span>' +
+        '<span class="sbld-chiplab">' + (owners.length > 1 ? 'Layout' : 'Tower') + '</span>' +
         owners.map(function (o) {
           var n = o.towers.length;
           return '<button class="sbld-chip' + (actOwner && actOwner.id === o.id ? ' on' : '') +
@@ -45642,7 +45946,7 @@
       // zones + units, Zone level ignores units. Otherwise the editor shows level-4 (unit) controls
       // that have no effect, which reads as a bug when scheduling at level 3.
       var lvl = cfg.locLevel || 'auto', showZones = lvl !== 'floor', showUnits = (lvl === 'auto' || lvl === 'unit');
-      var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
+      var chips = '<div class="sbld-tradechips"><span class="sbld-chiplab">Trade</span>' + used.map(function (g) {
         // Per TOWER: a count of the whole project beside a list showing one tower reads as a bug.
         var n = floorsOfTower(g, _twAct).reduce(function (t, f) { return t + (leavesOfFloor(g, f).length || 0); }, 0);
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
@@ -45731,6 +46035,11 @@
           (f.sub ? '<span class="sbld-subtag" title="Basement / substructure">BSMT</span>' : '') +
           '<input class="pd-input" data-fk="code" data-f="' + i + '" value="' + e2(f.code) + '" placeholder="' + (f.sub ? 'B1' : 'Floor') + '" style="width:88px;" />' +
           '<input class="pd-input grow" data-fk="name" data-f="' + i + '" value="' + e2(f.name) + '" placeholder="Floor name" />' +
+          /* ⚠ The deliberate line break. `display:none` by default, so a wide row is exactly the
+             single line it has always been; the container query below turns it into a full-width
+             flex item, which pushes everything after it onto a second line. A flex item is what
+             forces a wrap — there is no CSS property that says “break here” in a flex row. */
+          '<i class="sbld-flr-br" aria-hidden="true"></i>' +
           '<select class="pd-select sbld-kind" data-kf="' + i + '" title="Floor category — drives how trades hand off on this kind of level in step ' + _stepNo('Zone sequence') + '" style="height:34px;">' +
             KIND_ORDER.map(function (k) { return '<option value="' + k + '"' + (floorKind(f) === k ? ' selected' : '') + '>' + e2(KIND_LABEL[k]) + '</option>'; }).join('') + '</select>' +
           /* ⚠️ A STEPPER, NOT A "+ Zone" BUTTON. Units on the row below have had − N + since they
@@ -46147,7 +46456,7 @@
         function zc(k, v) { return { k: k, type: 'number', value: v, min: 1, max: 20, after: ZL + 's' }; }
         function row(label, cells, hint) { return { type: 'row', label: label, cells: cells, hint: hint }; }
         /* ⚠️⚠️ THE CATEGORIES ARE THE STEP'S OWN `KIND_LABEL`, not words retyped here. The floor
-           list's per-row select, the per-category cross-trade handoff in Activity Sequence and the
+           list's per-row select, the per-category cross-trade handoff in Activity sequence and the
            LSM's own wording all read that one map; a fifth spelling of "Podium / Commercial" would
            be a fifth thing to keep in step. */
         var flds = [
@@ -46158,7 +46467,7 @@
           row(KIND_LABEL.podium,
             [{ k: 'P', type: 'number', value: qd.P, min: 0, max: 30, after: 'floors' }]
               .concat(showZones ? [{ text: '×', x: true }, zc('PZ', qd.PZ)] : []),
-            'The lowest above-grade floors. Their category is what lets step ' + _stepNo('Activity Sequence') +
+            'The lowest above-grade floors. Their category is what lets step ' + _stepNo('Activity sequence') +
             ' hand trades over differently here than on a typical floor.'),
           row(KIND_LABEL.typical,
             [{ k: 'F', type: 'number', value: qd.F, min: 0, max: 80, after: 'floors' }]
@@ -46591,7 +46900,7 @@
          carries that tower's own internal link count, so "which of these have I sequenced" is
          answerable without clicking through them. */
       var towerChips = _twMulti ? '<div class="sbld-tradechips sbld-seqtw">' +
-        '<span class="sbld-towerbar-l">Tower</span>' +
+        '<span class="sbld-chiplab">Tower</span>' +
         '<button class="sbld-chip' + (seqTower === 'ALL' ? ' on' : '') + '" data-seqtw="ALL" title="Show every tower at once — the only way to draw a link from one tower to another.">All towers</button>' +
         towerList().map(function (t) {
           var n = twSeqCount(t.id), nf = 0;
@@ -46602,8 +46911,11 @@
             e2(t.name || t.code || 'Tower') + (n ? ' <b>' + n + '</b>' : '') + '</button>';
         }).join('') +
         '</div>' : '';
+      /* ⚠️ The label is unconditional now. It used to appear only on a multi-tower project — i.e.
+         only when there was a tower row above it to be told apart from — so on the ordinary
+         single-tower project this row was the one selector in the step with nothing naming it. */
       var tradeChips = present.length ? '<div class="sbld-tradechips">' +
-        (_twMulti ? '<span class="sbld-towerbar-l">Trade</span>' : '') +
+        '<span class="sbld-chiplab">Trade</span>' +
         '<button class="sbld-chip' + (seqTradeFilter === 'ALL' ? ' on' : '') + '" data-seqtr="ALL">All trades</button>' +
         present.map(function (g) { return '<button class="sbld-chip' + (seqTradeFilter === g ? ' on' : '') + '" data-seqtr="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + '</button>'; }).join('') +
         '</div>' : '';
@@ -46948,7 +47260,7 @@
 
     function stScope(host) {
       var locs = locList();
-      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2><div class="sbld-empty">Add activities (step ' + _stepNo('Activities') + ') and per-trade floors/zones (step ' + _stepNo('Floors & Zones') + ') first.</div>'; return; }
+      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>' + _stepNo('Zone scoping') + ' · Zone scoping</h2><div class="sbld-empty">Add activities (step ' + _stepNo('Activities') + ') and per-trade floors/zones (step ' + _stepNo('Floors & Zones') + ') first.</div>'; return; }
       var sections = '';
       usedGroups().forEach(function (tr) {
         var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
@@ -46967,9 +47279,59 @@
         var body = tocs(tlocs, acts);
         sections += '<h3 class="sbld-sech"><span class="sbld-dot" style="background:' + gc(tr) + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
       });
-      function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td class="sbld-scope-row" data-tr="' + l.trade + '" data-uid="' + l.uid + '" title="Click to toggle every activity at ' + e2(locLabel(l)) + '">' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
-      host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2>' +
-        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations.</p>' +
+      /* ⚠️⚠️ THE ROWS ARE GROUPED, NOT FLATTENED. Owner 2026-09-18: *“in the table shown, group
+         these also per floor, per zone, and per unit for easier readability”*. A tower of twenty
+         floors × four zones × six units is 480 rows every one of which reads
+         “<floor> · <zone> · <unit>” — so the shared prefix is repeated 480 times and the single
+         token that tells two neighbouring rows apart is the hardest thing on the row to find.
+         ⚠️⚠️ EVERY RUNG IS DERIVED FROM THE DATA, never assumed to be there. `leavesOfFloor`
+         stops at the floor when a floor has no zones and at the zone when a zone has no units, and
+         `cfg.locLevel` can flatten the whole project to one leaf per floor — so a heading is
+         emitted only where the leaf is genuinely DEEPER than that rung. Emitting one anyway would
+         print a “5th Floor” heading directly above a row whose own label is “5th Floor”.
+         ⚠️⚠️ AND THE TOWER RUNG IS NOT COSMETIC. `locList` clones a type's floors once per
+         instance, and `locLabel` carries no tower — so on a three-tower project the same
+         “5th Floor · Z1” appeared three times, identical, with only the hidden uid telling them
+         apart. It is emitted only when this trade's leaves really span more than one tower, per
+         `program.js`'s own rule that a heading above a single group invents a hierarchy.
+         ⚠️ This REGROUPS and never re-sorts: the rows stay in the order `locList` produced them,
+         which is the setup's own floor/zone/unit order, so a row does not move because it was
+         grouped. Group rows carry no handler — the column and row toggles are the controls on this
+         screen, and a third bulk toggle sitting where a heading belongs is a mis-click away from
+         clearing a whole storey nobody meant to touch. */
+      function tocs(tlocs, acts) {
+        var span = acts.length + 1, out = '';
+        var twSeen = {}; tlocs.forEach(function (l) { if (l.towerId != null) twSeen[l.towerId] = 1; });
+        var multiTw = Object.keys(twSeen).length > 1, d0 = multiTw ? 1 : 0;
+        /* ⚠️⚠️ THE RUN IS TRACKED BY ID, NOT BY OBJECT IDENTITY. `locList` currently shares the
+           floor and zone OBJECTS across a floor's leaves, so `l.zone !== prev` would work today —
+           and it is one shallow clone away from not working, which renders as the zone heading
+           repeating above every single unit. Found by rendering it, not by reading it. */
+        var pTw = null, pFl = null, pZn = null;
+        var idOf = function (o) { return o ? (o.id != null ? o.id : o) : null; };
+        function grp(depth, label) {
+          return '<tr class="sbld-scope-grp"><td colspan="' + span + '" data-d="' + depth + '">' + e2(label) + '</td></tr>';
+        }
+        tlocs.forEach(function (l) {
+          var fLab = l.floor.code || l.floor.name || 'Flr';
+          var zLab = l.zone ? (l.zone.code || l.zone.name || 'Zn') : null;
+          if (multiTw && l.towerId !== pTw) { out += grp(1, l.tower || 'Tower'); pTw = l.towerId; pFl = null; pZn = null; }
+          if (idOf(l.floor) !== pFl) { if (l.zone) out += grp(d0 + 1, fLab); pFl = idOf(l.floor); pZn = null; }
+          if (l.zone && idOf(l.zone) !== pZn) { if (l.unit) out += grp(d0 + 2, zLab); pZn = idOf(l.zone); }
+          /* ⚠️ The row label is whatever the headings above it have NOT already said — the unit,
+             or the zone on a unitless zone, or the floor on a zoneless floor. The `title` still
+             carries the whole address, so the full location is one hover away and the toggle it
+             names is unchanged. */
+          var rowLab = l.unit ? (l.unit.code || l.unit.name || 'Un') : (zLab || fLab);
+          out += '<tr><td class="sbld-scope-row" data-tr="' + l.trade + '" data-uid="' + l.uid +
+            '" data-d="' + (l.unit ? d0 + 3 : (l.zone ? d0 + 2 : d0 + 1)) +
+            '" title="Click to toggle every activity at ' + e2(locLabel(l)) + '">' + e2(rowLab) + '</td>' +
+            acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>';
+        });
+        return out;
+      }
+      host.innerHTML = '<h2>' + _stepNo('Zone scoping') + ' · Zone scoping</h2>' +
+        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations. The table is grouped by floor, then zone, then unit.</p>' +
         /* ⚠ The column header is the activity NAME now, so the two sentences that name the
            control had to follow it — “activity header” said nothing about what is in it, and the
            class code has nowhere else to be announced now that it is on hover. */
@@ -47583,12 +47945,12 @@
         /* ⚠ Named by the STEP, not by a view inside it: a title the alias has to rescue is a
            reference waiting to read as a blank.
            ⚠️ 'Repetition' WAS exactly that. It stopped being a step when it was split into
-           Towers / Floors & Zones / Location Sequence / Activity Sequence, and `STEP_ALIAS` kept it
+           Towers / Floors & Zones / Location Sequence / Activity sequence, and `STEP_ALIAS` kept it
            resolving — to `Location Sequence`, which is the number of the FIRST of the four, not the
            last. So the range read "4–7" for work that is defined as far as step 8. The alias did its
            job (a number rather than a blank) and the sentence was still wrong; naming the real end
            of the range is the fix. */
-        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Activity Sequence') + '</span></div>' +
+        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Zone scoping') + '</span></div>' +
         '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
           ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p>' +
         phWbsBlock('construction') + '</div>';
@@ -48813,7 +49175,7 @@
         rep.notes.push('No relationship in the programme crosses from one tower to another, so the towers are left starting together on the Tower Sequence step.');
       }
 
-      /* ---- Scope per zone ----------------------------------------------------------------------
+      /* ---- Zone scoping ------------------------------------------------------------------------
          Which of the trade's activities actually run in each location. ⚠️ `scopeOff` is a map of the
          pairs that are OFF, so a faithful read of a real programme is (leaves x activities) MINUS
          what occurred — which on a project of this size is a six-figure object that would be
@@ -48850,13 +49212,13 @@
             if (!onPairs[k]) out.scopeOff[k] = true;
           });
         });
-        rep.notes.push('Scope per zone read from the programme: ' + nOn.toLocaleString() + ' location/activity combinations are ON, ' +
+        rep.notes.push('Zone scoping read from the programme: ' + nOn.toLocaleString() + ' location/activity combinations are ON, ' +
           offCount.toLocaleString() + ' are switched off because that activity never occurs in that location.');
       } else if (!offCount && nOn) {
-        rep.notes.push('Scope per zone read from the programme: every one of the ' + nOn.toLocaleString() +
+        rep.notes.push('Zone scoping read from the programme: every one of the ' + nOn.toLocaleString() +
           ' location/activity combinations occurs, so nothing is switched off.');
       } else if (offCount) {
-        rep.notes.push('Scope per zone was left at "everything on": a faithful read needs ' + offCount.toLocaleString() +
+        rep.notes.push('Zone scoping was left at "everything on": a faithful read needs ' + offCount.toLocaleString() +
           ' exclusion flags (' + allLeaves.length.toLocaleString() + ' locations × the activities of their trade), which is too large to store in a saved setup. ' +
           'Use the step’s own row/column toggles to switch off what does not apply — or narrow the activity list on the Activities step first, which is usually the real answer.');
       }
@@ -50410,13 +50772,14 @@
        revived without a ReferenceError — `stackBasis` above is kept for exactly that reason.
        ========================================================================================== */
     function stStacking(host) {
-      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps ' + _stepNo('Activities') + '–' + _stepNo('Scope per zone') + ' first (activities + per-trade floors/zones + scope).</div>'; return; }
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps ' + _stepNo('Activities') + '–' + _stepNo('Zone scoping') + ' first (activities + per-trade floors/zones + scope).</div>'; return; }
       var g = generate(stackBasis);
       var finBy = {}; g.perZone.forEach(function (z) { finBy[z.loc.uid] = z.finish; });
       var used = usedGroups();
       if (stackTrade !== 'ALL' && used.indexOf(stackTrade) < 0) stackTrade = 'ALL';
       var showTr = used.filter(function (tr) { return stackTrade === 'ALL' || tr === stackTrade; });
       var tradeChips = used.length ? '<div class="sbld-tradechips">' +
+        '<span class="sbld-chiplab">Trade</span>' +
         '<button class="sbld-chip' + (stackTrade === 'ALL' ? ' on' : '') + '" data-stktr="ALL">All trades</button>' +
         used.map(function (tr) { return '<button class="sbld-chip' + (stackTrade === tr ? ' on' : '') + '" data-stktr="' + tr + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</button>'; }).join('') +
         '</div>' : '';
@@ -50424,6 +50787,7 @@
       // sees the step exactly as it is today.
       if (stackTower !== 'ALL' && !towerById(stackTower)) stackTower = 'ALL';
       var towerChips = multiTower() ? '<div class="sbld-tradechips">' +
+        '<span class="sbld-chiplab">Tower</span>' +
         '<button class="sbld-chip' + (stackTower === 'ALL' ? ' on' : '') + '" data-stktw="ALL">All towers</button>' +
         towerList().map(function (t) {
           var n = 0; used.forEach(function (tr) { n += floorsOfTower(tr, t.id).length; });
@@ -50773,7 +51137,7 @@
         (locRows[r.loc.uid] = locRows[r.loc.uid] || []).push(r);
       });
       function lagStr(l) { return l ? (l > 0 ? '+' + l : '' + l) : ''; }
-      // intra-zone predecessors: use the trade's class-code links (step ' + _stepNo('Trade sequence') + ') when it has any; otherwise
+      // intra-zone predecessors: use the trade's class-code links (step ' + _stepNo('Activity sequence') + ') when it has any; otherwise
       // fall back to a plain FS chain in the step-1 order.
       Object.keys(locRows).forEach(function (uid) {
         var arr = locRows[uid], byAct = {}; arr.forEach(function (r) { byAct[r.act.id] = r; });
@@ -50852,6 +51216,15 @@
            belongs to cannot be mis-read later if the tree above it is re-parented.
            ⚠️ Orthogonal to scope_type on purpose: the row above may be a change order AND
            this package. Neither column is derived from the other. */
+        /* ⚠⚠ THE CALENDAR THE SETUP SCHEDULED THESE DATES ON, stamped onto the activity. It was
+           never set, so every pushed activity carried `calendar_id: null` and fell back to the
+           project default in `cpmCalOf` — which is the right FALLBACK but the wrong RECORD: the
+           dates above were computed on a specific calendar, and if the project default is changed
+           later the CPM would silently reschedule them on a calendar they were never planned
+           against. Stating it makes the two agree by construction.
+           ⚠ `_gcal` is resolved inside `generate`, so it is read back off the result rather than
+           re-derived here — two derivations of one fact is how they drift. */
+        calendar_id: (g && g.calendar && g.calendar.id) || null,
         package_id: usePkg || null }; }
       // A lifecycle-phase activity's row. Deliberately NOT taskPayload: that one reads a generated
       // row (trade, location, class code, zone predecessors, contract scope), and none of those are
@@ -51994,11 +52367,19 @@
                     'Construction Library': { st: 'Activities' },
                     'Working calendars': { st: 'Calendars' },
                     'Repetition':     { st: 'Location Sequence' },
+                    /* ⚠⚠ NOT ONE OF THESE NAMES A TAB ANY MORE, and passing one would be worse
+                       than useless: `setStepTabQuiet` writes the key into `_stepTabSel` and
+                       `localStorage`, and `STEP_TABS` no longer carries EITHER step — Location
+                       Sequence became one page (2026-09-18) and Activity sequence has one view
+                       since Scope per zone was promoted to its own step, Zone scoping. Every old
+                       title still RESOLVES, which is the point: `_stepNo` answers '' for a title it
+                       cannot find, and a blank where a step number belongs reads as a broken app. */
                     'Tower links':    { st: 'Location Sequence' },
                     'Tower Sequence': { st: 'Location Sequence' },
                     'Zone sequence':  { st: 'Location Sequence' },
-                    'Trade sequence': { st: 'Activity Sequence', tab: 'trades' },
-                    'Scope per zone': { st: 'Activity Sequence', tab: 'scope' } };
+                    'Activity Sequence': { st: 'Activity sequence' },
+                    'Trade sequence': { st: 'Activity sequence' },
+                    'Scope per zone': { st: 'Zone scoping' } };
         if (_al[title]) {
           if (_al[title].tab) setStepTabQuiet(_al[title].st, _al[title].tab);
           title = _al[title].st;
@@ -53958,7 +54339,16 @@
   // minus(o, n). ⚠️ In the identity axis those are exactly o + n and o - n, which
   // is why the mode being OFF is provably the old engine and not a re-derivation
   // of it.
-  var calCpmOn = (function () { try { return localStorage.getItem('ps_calcpm') === '1'; } catch (e) { return false; } })();
+  /* ⚠⚠ DEFAULTS ON. It defaulted OFF, which meant the whole working-day engine below — the
+     per-activity calendar, the axis, float in working days — did nothing until somebody found a
+     checkbox in the Schedule dialog. Owner: *"It should be able to affect the schedule."*
+     ⚠ An EXPLICIT opt-out is still honoured: only a stored '0' turns it off, so a planner who
+     deliberately unticked it keeps calendar days. An absent key is the new default, not a
+     preference anybody expressed.
+     ⚠ This MOVES DATES the first time an existing project is opened — durations that were
+     counted through weekends now skip them. Nothing is written until the planner presses
+     Reschedule; the CPM computes in memory, so the change is visible before it is saved. */
+  var calCpmOn = (function () { try { return localStorage.getItem('ps_calcpm') !== '0'; } catch (e) { return true; } })();
 
   // Calendar-day axis: every day is workable. Used whenever working-day CPM is
   // off, so cpmLogic has ONE code path rather than two that can drift.
@@ -56566,11 +56956,15 @@
     host.innerHTML =
       '<div class="ps-actlegend-head">' +
         '<span class="ps-alg-sum"><strong>Legend</strong>' + (cfg.on ? ' \u00b7 ' + esc(_fieldLabel) : ' \u00b7 off') + '</span>' +
-        '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
-        '<select class="pd-select ps-alg-field" id="ps-alg-field">' + opts + '</select>' +
-        (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-keys" style="min-height:32px;font-size:12px;" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '…') + '</button>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
+        /* ⚠⚠ THE COLOUR CONTROLS MOVED TO THE BAR COLORS PANE. Owner: *“it should be unified in
+           one location with the gantt bar colors.”* `Colour activities by`, the field select,
+           `Textures`, `Key trades…` and `Reset colours` are emitted by `renderColorsMenu` now —
+           one pane answers what colour anything on this chart is, broadest rule to narrowest:
+           global bar colours, then the category colouring, then per-WBS overrides.
+           ⚠ THIS BUTTON IS THE ROUTE BACK, NOT A SECOND COPY OF THE CONTROLS: it opens that pane
+           rather than setting anything, so every value still has exactly one editor. The legend
+           keeps saying WHAT the colours mean; the pane is where they are CHANGED.
+           ⚠ The LSM toggles below stay put — they change the chart's LAYOUT, not its colours. */
         /* ⚠️ The LSM toggle lives HERE, beside "Key trades...", because that button is
            already the lane roster editor — the two controls are one subject. A direct control
            rather than another nested menu, which is the owner's stated preference. */
@@ -56582,6 +56976,13 @@
         // it sat next to. Both behaviours it described are already discoverable (a bar and a month
         // header both carry a cursor + title), so the words bought nothing but clutter.
         '' +
+        /* ⚠ AT THE TRAILING EDGE, beside the fold chevron, NOT where the on/off checkbox used to
+           be. Second-in-the-row is the slot a primary control occupies, and a lone button standing
+           there read as an orphan once the four controls around it moved out (owner: *“out of
+           place”*). Chrome for the strip belongs with the strip's other chrome.
+           ⚠ `--pd-fs-sm`, not `12px`. The inline 12px was inherited from the controls this
+           replaced and is off the `--pd-fs-*` scale entirely — the scale has no 12. */
+        '<button class="pd-btn" id="ps-alg-open" style="min-height:32px;font-size:var(--pd-fs-sm);" title="Bar colors — every bar colour on this chart, the category colouring, and per-WBS overrides, in one pane.">Colours…</button>' +
         '<button type="button" class="ps-alg-fold" title="Collapse the legend"><span data-ico="chevronDown" data-ico-size="16"></span></button>' +
       '</div>' +
       // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
@@ -56614,7 +57015,25 @@
       b.onclick = function () { setLsmClashShow(b.dataset.lsmclash === '1'); };
     });
     applyLegendFold();
-    host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    /* ⚠ GUARDED NOW, and it has to be. This read `host.querySelector('#ps-alg-on').onchange`
+       with no null check; the control has moved to the Bar colors pane, so an unguarded read
+       throws on every legend render and takes the whole strip down with it. */
+    var _algOn = host.querySelector('#ps-alg-on');
+    if (_algOn) _algOn.onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    /* ⚠⚠ `e.stopPropagation()` IS THE WHOLE FIX, AND WITHOUT IT THIS BUTTON OPENED THE PANE AND
+       SHUT IT IN THE SAME TICK. `document.addEventListener('click', closeMenus)` closes every menu
+       on any click that reaches the document, which is why EVERY toolbar trigger in this file
+       stops its own event. Forwarding with `b.click()` does not inherit that: the synthetic click
+       runs the palette handler (which stops the SYNTHETIC event, not this one), the pane opens —
+       and then this real click carries on bubbling to the document and `closeMenus` shuts it.
+       The owner reported it as “not functioning properly”, which is exactly right: it worked and
+       then undid itself too fast to see. */
+    var _algOpen = host.querySelector('#ps-alg-open');
+    if (_algOpen) _algOpen.onclick = function (e) {
+      e.stopPropagation();
+      var b = document.getElementById('ps-colorsbtn');
+      if (b) b.click();
+    };
     var _lsmChk = host.querySelector('#ps-alg-lsmrows');
     if (_lsmChk) _lsmChk.onchange = function () { setLsmRows(this.checked); };
     var _lsmTopB = host.querySelector('#ps-alg-lsmtop'), _lsmBotB = host.querySelector('#ps-alg-lsmbot');
@@ -56655,7 +57074,8 @@
         });
       };
     });
-    host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    var _algFld = host.querySelector('#ps-alg-field');   // ⚠ same reason as #ps-alg-on above
+    if (_algFld) _algFld.onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var tex = host.querySelector('#ps-alg-tex');
     if (tex) tex.onchange = function () { var c = catCfg(); c.tex = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var rst = host.querySelector('#ps-alg-reset');
@@ -58147,14 +58567,41 @@
     var html = '<h4>Global bar colors</h4>';
     COLORDEFS.forEach(function (d) { html += '<div class="ps-colors-row"><span>' + d.label + '</span><input type="color" data-ck="' + d.k + '" value="' + (c[d.k] || d.def) + '"></div>'; });
     html += '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="ps-colors-reset">Reset to brand</button></div>';
+    /* ==========================================================================================
+       ⚠⚠ COLOUR ACTIVITIES BY — MOVED HERE FROM THE LEGEND. Owner: *“we can also unify the
+       functions of changing the color activities by to this chart as well … it should be unified
+       in one location with the gantt bar colors.”* One pane now answers “what colour is anything
+       on this chart”: the global bar colours, the per-category colouring, and the per-WBS
+       overrides, in that order — broadest rule first, narrowest last, which is also the order
+       they override each other in.
+       ⚠ THE LSM CONTROLS DID NOT COME WITH THEM, and that is the line drawn here: `LSM rows`,
+       `Roof first` and `Status at the line` change the LAYOUT of the chart, not its colours. They
+       stay in the legend with the chips they rearrange. Moving them because they happened to sit
+       beside `Key trades…` would have traded one mixed-up pane for another.
+       ⚠ The legend keeps a `Colours…` button that opens this pane, so the controls are reachable
+       from where they used to live — moved, not hidden. */
+    var _cc = catCfg();
+    var _cbyOpts = catFieldOptions().map(function (o) {
+      return '<option value="' + esc(o[0]) + '"' + (_cc.field === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+    }).join('');
+    html += '<h4 style="margin-top:14px;">Colour activities by</h4>' +
+      '<div class="ps-colors-cby">' +
+        '<label><input type="checkbox" id="ps-alg-on"' + (_cc.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
+        '<select class="pd-select" id="ps-alg-field">' + _cbyOpts + '</select>' +
+        (_cc.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (_cc.tex ? ' checked' : '') + '> Textures</label>' : '') +
+        (_cc.on ? '<div class="ps-colors-cbybtns">' +
+            '<button class="pd-btn" id="ps-alg-keys" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '\u2026') + '</button>' +
+            '<button class="pd-btn" id="ps-alg-reset">Reset colours</button>' +
+          '</div>' : '') +
+      '</div>';
     // per-WBS overrides
     html += '<h4 style="margin-top:14px;">By WBS branch</h4><p style="font-size:11px;color:var(--pd-muted);margin:0 0 6px;">A WBS color cascades to its activities (nearest branch wins).</p>';
     var wbsList = rows.filter(function (r) { return isWbs(r) && r.wbs; }).sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     if (!wbsList.length) { html += '<p style="font-size:12px;color:var(--pd-muted);">Load a schedule to color WBS branches.</p>'; }
     else {
-      html += '<div class="ps-colors-row"><select class="pd-select" id="ps-wbc-sel" style="flex:1;min-width:0;max-width:160px;">' +
+      html += '<div class="ps-colors-add"><select class="pd-select" id="ps-wbc-sel">' +
         wbsList.map(function (w) { return '<option value="' + esc(w.wbs) + '">' + esc(w.wbs) + ' — ' + esc((w.activity_name || '').slice(0, 28)) + '</option>'; }).join('') +
-        '</select><input type="color" id="ps-wbc-clr" value="#EE3124"><button class="pd-btn" id="ps-wbc-add">Add</button></div>';
+        '</select><span class="ps-colors-addctl"><input type="color" id="ps-wbc-clr" value="#EE3124"><button class="pd-btn" id="ps-wbc-add">Add</button></span></div>';
       var wm = wbsColorMap(); var codes = Object.keys(wm).sort(cmpCodeStr);
       codes.forEach(function (code) {
         html += '<div class="ps-colors-row"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:' + wm[code] + ';vertical-align:middle;margin-right:6px;"></span>' + esc(code) + '</span><input type="color" class="ps-wbc-edit" data-code="' + esc(code) + '" value="' + wm[code] + '"><button class="pd-btn ps-wbc-rm" data-code="' + esc(code) + '">✕</button></div>';
@@ -58163,6 +58610,19 @@
     m.innerHTML = html;
     m.querySelectorAll('input[data-ck]').forEach(function (inp) { inp.oninput = function () { var cc = loadColors(); cc[inp.dataset.ck] = inp.value; try { localStorage.setItem('ps_colors', JSON.stringify(cc)); } catch (e) {} applyColors(); }; });
     m.querySelector('#ps-colors-reset').onclick = function () { try { localStorage.removeItem('ps_colors'); } catch (e) {} applyColors(); renderColorsMenu(); };
+    /* ⚠ Each of these re-renders THIS pane as well as the legend and the chart: turning the
+       colouring on reveals Textures / Key trades / Reset, which are emitted conditionally above,
+       so a pane that did not redraw would keep offering the controls of the previous state. */
+    var _on = m.querySelector('#ps-alg-on');
+    if (_on) _on.onchange = function () { var c2 = catCfg(); c2.on = this.checked; saveCatCfg(c2); renderActLegend(); renderGantt(); renderColorsMenu(); };
+    var _fld = m.querySelector('#ps-alg-field');
+    if (_fld) _fld.onchange = function () { var c2 = catCfg(); c2.field = this.value; c2.colors = {}; saveCatCfg(c2); renderActLegend(); renderGantt(); renderColorsMenu(); };
+    var _tex = m.querySelector('#ps-alg-tex');
+    if (_tex) _tex.onchange = function () { var c2 = catCfg(); c2.tex = this.checked; saveCatCfg(c2); renderActLegend(); renderGantt(); };
+    var _rst = m.querySelector('#ps-alg-reset');
+    if (_rst) _rst.onclick = function () { var c2 = catCfg(); c2.colors = {}; saveCatCfg(c2); renderActLegend(); renderGantt(); };
+    var _kys = m.querySelector('#ps-alg-keys');
+    if (_kys) _kys.onclick = function () { openKeyTrades(); };
     var addBtn = m.querySelector('#ps-wbc-add');
     if (addBtn) addBtn.onclick = function () { var code = m.querySelector('#ps-wbc-sel').value, clr = m.querySelector('#ps-wbc-clr').value; if (!code) return; saveWbsColor(code, clr); _wcCacheKey = null; renderGantt(); renderColorsMenu(); };
     m.querySelectorAll('.ps-wbc-edit').forEach(function (inp) { inp.oninput = function () { saveWbsColor(inp.dataset.code, inp.value); _wcCacheKey = null; renderGantt(); }; });
@@ -59343,10 +59803,41 @@
 
     // scroll sync (vertical grid<->gantt, horizontal head<->body)
     var gs = document.getElementById('ps-grid-scroll'), gz = document.getElementById('ps-gantt-scroll'), gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');
-    var lock = false, winRaf = false;
+    var winRaf = false;
     function onVScroll() { if (winRaf) return; winRaf = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { winRaf = false; renderWindow(); }); }
-    gs.addEventListener('scroll', function () { if (gHead) gHead.scrollLeft = gs.scrollLeft; if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; } onVScroll(); });
-    gz.addEventListener('scroll', function () { if (!lock) { lock = true; gs.scrollTop = gz.scrollTop; lock = false; } gh.scrollLeft = gz.scrollLeft; onVScroll(); });
+    /* ==== THE TWO PANES FOUGHT EACH OTHER WHILE SCROLLING ===================================
+       Owner: *“Scrolling through the grid of the schedule module bugs. It scrolls difficult and
+       shows up and down repeatedly until the downscroll wins over time.”*
+       ⚠⚠ THE OLD `lock` GUARD NEVER GUARDED ANYTHING. It read
+         `if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; }`
+       and **writing `scrollTop` does not dispatch its scroll event synchronously** — measured in
+       the browser: set `scrollTop`, then read a flag a `once` scroll listener sets, and the flag
+       is still false. The event arrives at the next rendering tick, by which time `lock` is back
+       to `false`. So every sync was echoed straight back by the other pane.
+       ⚠⚠ THE ECHO IS ONLY VISIBLE BECAUSE THE TWO PANES HAVE DIFFERENT MAXIMA. Measured with
+       the shipped stylesheet: the gantt scrolls sideways over the timeline and so carries a
+       HORIZONTAL SCROLLBAR, which costs it 15px of `clientHeight` — `gz` max scrollTop 32053,
+       `gs` max 32038. Drag the gantt to the bottom and it wrote 32053 into the grid, the grid
+       clamped to 32038, and the grid's echo wrote 32038 back into the gantt, **dragging it 15px
+       back up**. One snap-back per wheel tick, all the way down: exactly what the owner sees, and
+       why it inches downward instead of getting stuck.
+       ⚠ THE GUARD IS THE ECHO'S VALUE, NOT A TIMER. A 120ms “who is leading” window was written
+       first and thrown away: it desynced the panes for 120ms if you grabbed the other scrollbar
+       mid-gesture, and the number was a guess. This records what the follower ACTUALLY became
+       after the (possibly clamped) write, and ignores exactly one event carrying that value —
+       no timer, no magic number, and a real scroll by the user is never swallowed.
+       ⚠ `_vEcho` is cleared rather than set when the write changed nothing, because no scroll
+       event is coming to consume it and a stale one would swallow the user's next gesture. */
+    var _vEcho = null;
+    function _vSync(from, to) {
+      if (_vEcho && _vEcho.el === from && _vEcho.top === from.scrollTop) { _vEcho = null; return; }
+      if (to.scrollTop === from.scrollTop) return;
+      var before = to.scrollTop;
+      to.scrollTop = from.scrollTop;
+      _vEcho = (to.scrollTop !== before) ? { el: to, top: to.scrollTop } : null;
+    }
+    gs.addEventListener('scroll', function () { if (gHead) gHead.scrollLeft = gs.scrollLeft; _vSync(gs, gz); onVScroll(); });
+    gz.addEventListener('scroll', function () { _vSync(gz, gs); gh.scrollLeft = gz.scrollLeft; onVScroll(); });
 
     /* ==== RIGHT-CLICK ON A BAR, NOT JUST ON ITS ROW =========================================
        Owner 2026-09-17: *"should we allow to right click in the schedule?"* It already was — on the

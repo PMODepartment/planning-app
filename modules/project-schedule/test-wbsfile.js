@@ -145,7 +145,7 @@ const R = readSrc(src);
   eq(ec(null, 'Z2').id, 'n3', 'existingChild: a null parent is the top level, not a wildcard');
   /* ⚠️ The push's in-batch key must collide wherever this does, or the dedupe would let through a
      pair the database will then hold as two branches. */
-  const dk = (p, n) => String(p || '') + ' ' + String(n == null ? '' : n).trim().toLowerCase();
+  const dk = (p, n) => String(p || '') + '\u0000' + String(n == null ? '' : n).trim().toLowerCase();
   eq(dk('p', 'Z2'), dk('p', ' z2 '), 'the in-batch key collides on the same two spellings');
   ok(dk('p', 'Z2') !== dk(null, 'Z2'), 'and never across parents');
 }

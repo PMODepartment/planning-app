@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260917zi" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260918b" />
   <link rel="stylesheet" href="../../assets/css/portfolio-dash.css?v=20260917a" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
@@ -338,12 +338,28 @@
        ------------------------------------------------------------------------------------------ */
     .sc-matrixwrap { max-height:min(58vh, 520px); overflow:auto; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius-md); background:var(--pd-card); }
+    /* ⚠️⚠️ THE MATRIX CARRIES PDGrid's SKIN (`pdg-grid`), NOT ONLY ITS KEYS. The keyboard layer was
+       adopted on 2026-09-10 and the LOOK was not, so 36 columns of rounded, bordered, roomy inputs
+       read as a form rather than as a spreadsheet — which is exactly what `assets/js/xlgrid.js`'s
+       own note predicts of a module's card-table styling ("roomy padding, a rounded bordered input
+       inside every cell"). The class is in the MARKUP, not added by the script, so if xlgrid fails
+       to load the rules below still stand and the table is still a lattice.
+       ⚠️⚠️ AND THE Z-INDEX LADDER IS RAISED ABOVE THE SKIN'S, which is the load-bearing half.
+       xlgrid injects its stylesheet into <head> at attach time, so it lands AFTER this block and
+       wins every equal-specificity tie — and it puts `thead th` at 6 and a focused cell at 4, both
+       above the 1..4 this table used. A frozen cell that loses to a scrolling one is painted over
+       the instant you scroll sideways. Every sticky rule here is therefore written at (0,3,x) to
+       outrank the skin, and so is every sticky BACKGROUND: the skin's zebra is (0,2,2) and would
+       otherwise make the frozen trade column translucent, showing the months sliding under it.
+       The ladder: body frozen 5 · tfoot 6 · tfoot frozen 7 · thead 8 · thead frozen 10.
+       ------------------------------------------------------------------------------------------ */
     .sc-matrix { border-collapse:separate; border-spacing:0; font-size:var(--pd-fs-sm); }
     .sc-matrix th, .sc-matrix td { padding:3px 6px; border-bottom:1px solid var(--pd-line);
       border-right:1px solid var(--pd-line); white-space:nowrap; text-align:right; }
     .sc-matrix thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg);
       font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
       letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
+    .sc-matrix.pdg-grid thead th { z-index:8; background:var(--pd-bg); }
     .sc-matrix th.mo { min-width:52px; text-align:center; line-height:1.15; }
     .sc-matrix th.mo small { display:block; font-size:9px; font-weight:500; opacity:.75; }
     /* The trade column: sticky left, and the corner sticky in both axes. */
@@ -352,26 +368,47 @@
       border-right:2px solid var(--pd-line); overflow:hidden; text-overflow:ellipsis; }
     .sc-matrix thead .k { z-index:3; background:var(--pd-bg); }
     .sc-matrix tfoot .k { z-index:3; }
+    .sc-matrix.pdg-grid tbody td.k { z-index:5; background:var(--pd-card); }
+    .sc-matrix.pdg-grid tfoot td.k { z-index:7; background:var(--pd-card); }
+    .sc-matrix.pdg-grid thead th.k { z-index:10; background:var(--pd-bg); }
     .sc-matrix .k .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
       background:var(--pd-red); margin-right:7px; }
     .sc-matrix .k small { display:block; margin-left:15px; font-size:var(--pd-fs-micro);
       color:var(--pd-muted); font-weight:500; }
-    /* The month the data date falls in, marked once down the whole column. */
+    /* The month the data date falls in, marked once down the whole column. ⚠️ Raised past the
+       skin's zebra (0,2,2), or every even row would lose its marker. */
     .sc-matrix th.now, .sc-matrix td.now { background:var(--pd-red-light); }
+    .sc-matrix.pdg-grid th.now, .sc-matrix.pdg-grid td.now { background:var(--pd-red-light); }
     .sc-matrix tbody tr:hover td:not(.k) { background:var(--pd-bg); }
     .sc-matrix .tot { position:sticky; right:0; z-index:1; background:var(--pd-card);
       font-weight:800; border-left:2px solid var(--pd-line); min-width:62px; }
     .sc-matrix thead .tot { z-index:3; background:var(--pd-bg); }
+    .sc-matrix.pdg-grid tbody td.tot { z-index:5; }
+    .sc-matrix.pdg-grid tfoot td.tot { z-index:7; }
+    .sc-matrix.pdg-grid thead th.tot { z-index:10; background:var(--pd-bg); }
     /* ⚠️ The footer is the project figure, so it is sticky at the BOTTOM: on a six-trade sheet it
        is on screen anyway, but it is the cross-check against the chart and a planner scrolling a
        long trade list should not lose it. */
     .sc-matrix tfoot td { position:sticky; bottom:0; z-index:2; background:var(--pd-card);
       font-weight:800; border-top:2px solid var(--pd-line); border-bottom:0; }
     .sc-matrix tfoot .tot { z-index:4; }
-    /* A cell in the matrix is tighter than the per-trade sheet's: 36 of them to a row. */
-    .sc-matrix .sc-in { width:52px; height:26px; padding:0 4px; text-align:right;
-      font-size:var(--pd-fs-sm); }
-    .sc-matrix .sc-ro { min-width:52px; padding:0 4px; text-align:right; }
+    .sc-matrix.pdg-grid tfoot td { z-index:6; background:var(--pd-card); }
+    /* ⚠️⚠️ THE CELL **IS** THE INPUT, which is the whole of the spreadsheet reading. The month cells
+       give up their padding to the control inside them, so the lattice is drawn by the table and
+       the hover tint and PDGrid's selection overlay fill the cell edge to edge rather than leaving
+       a gap all round. ⚠️ `size="4"` on the input is what keeps the column narrow: a percentage
+       width is not a usable intrinsic size, so an auto-layout table would otherwise size every
+       month column to an <input>'s 20-character default. */
+    .sc-matrix.pdg-grid tbody td:not(.k):not(.tot) { padding:0; }
+    .sc-matrix .sc-in { width:100%; height:24px; padding:2px 5px; text-align:right;
+      font-size:var(--pd-fs-sm); border-radius:0; border-color:transparent; background:transparent; }
+    .sc-matrix .sc-in:hover { background:rgba(128,128,128,.10); }
+    /* ⚠️ The focus ring belongs to the CELL, not the control — that is PDGrid's own rule, and its
+       `td:focus-within` outline would otherwise be drawn around a second, inset ring of ours. */
+    .sc-matrix .sc-in:focus { outline:none; border-color:transparent; box-shadow:none;
+      background:transparent; }
+    .sc-matrix .sc-ro { display:block; min-width:0; height:24px; line-height:24px; padding:0 5px;
+      text-align:right; }
     .sc-kindbar { margin:12px 0 10px; }
     /* The kind selector carries a count of what is entered under it. */
     .sc-seg button i { font-style:normal; font-size:var(--pd-fs-micro); font-weight:800;
@@ -562,7 +599,7 @@
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/scurve.js?v=20260917a"></script>
 <script src="../../assets/js/ui.js?v=20260917zg"></script>
-<script src="../../assets/js/notebook.js?v=20260915d"></script>
+<script src="../../assets/js/notebook.js?v=20260918a"></script>
 <script src="../../assets/js/icons.js?v=20260915f"></script>
 <script src="../../assets/js/portfolio-dash.js?v=20260917zg"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -1864,7 +1901,10 @@
              ⚠️ `min`/`max`/`step` are dropped with it — they do nothing on a text input, and leaving
              them would read as validation that is not happening. The range IS enforced, in setCell,
              which is the one path every edit and every paste goes through. */
-          ? '<input class="sc-in sc-mcell" type="text" inputmode="decimal" ' +
+          /* ⚠️ `size="4"` is load-bearing, not decoration: the cell fills its td with width:100%,
+             and a percentage is not an intrinsic size — an auto-layout table would fall back to an
+             <input>'s 20-character default and blow every month column out to ~170px. */
+          ? '<input class="sc-in sc-mcell" type="text" inputmode="decimal" size="4" ' +
             'data-i="' + esc(t) + '" data-f="' + mk + '" value="' + (v == null ? '' : v) + '" ' +
             'aria-label="' + esc(t + ' — ' + manKind + ' % for ' + _MABBR[m.getMonth()] + ' ' + m.getFullYear()) + '">'
           : '<span class="sc-ro" title="' + esc(cellWhyNot(i)) + '">' + (v == null ? '\u2014' : v) + '</span>') +
@@ -1895,7 +1935,9 @@
       }).join('') +
       '<td class="tot" data-grandtot="1">' + (Math.round(months.reduce(function (acc, m) { return acc + colTotal(monthKey(m)); }, 0) * 10) / 10) + '%</td></tr>';
 
-    var sheet = '<div class="sc-matrixwrap"><table class="sc-matrix" id="sc-matrix">' +
+    /* ⚠️ `pdg-grid` is PDGrid's SKIN class and it is written HERE rather than added by attach(),
+       so the lattice survives xlgrid.js failing to load — see the note on .sc-matrix in <style>. */
+    var sheet = '<div class="sc-matrixwrap"><table class="sc-matrix pdg-grid" id="sc-matrix">' +
       '<thead>' + head + '</thead><tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
 
     /* ⚠️ THE SHEET SAYS WHETHER THE CURVE IS ACTUALLY READING IT. With the tab and the mode

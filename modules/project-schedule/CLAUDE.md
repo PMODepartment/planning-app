@@ -1,3 +1,438 @@
+## 2026-09-18 (y) — Location Sequence becomes one page, a real Gantt, and a drag that links
+
+Owner, six items on the Location Sequence step. Every one is implemented; what follows is the four
+decisions that were not obvious, the parse failure this pass had to repair first, and the merge
+resolution that would have taken the module down.
+
+### ⚠️⚠️ FIRST, A PARSE FAILURE — AND IN THIS FILE THAT IS THE WHOLE MODULE, NOT ONE STEP
+
+`stTradeSeq` held a **48-line block duplicated byte for byte**, plus a 4-line fragment of an
+empty-state `host.innerHTML` assignment whose `if (!used.length) {` opener had gone. The module is
+one inline `<script>` of ~3.8MB, so that is not a broken function — it is a `SyntaxError` that
+blanks the entire page, the shape this log already records from `(c)`.
+
+⚠️ **A bisect was the wrong tool and the log says so** — it is O(n²) over a 3MB block and times out.
+What found it in seconds was a **bracket-depth tracker**: compute the per-line brace depth on this
+tree and on `HEAD`, key both by enclosing function name, and print the first function where the two
+disagree. The answer was one function and one range. Deleted with asserted anchors; the block parses
+at **3,859,713 bytes**.
+
+### ⚠️⚠️ AND EVERY `actMode`-FAMILY REFERENCE WITH IT, EACH ONE A LATENT ReferenceError
+
+`actMode`, `actLinkPhase`, `pendActSet`, `pendActDst`, `inPendAct`, `inActDst`, `actSelect` and
+`actConfirm` all lost their **declarations** when the link modes were retired, and eight reads of
+them survived — in `t4GridHTML`'s cell class, in the confirm button, in three handlers and in a
+comment offering them as a live analogy. `node --check` parses every one of those happily, which is
+this module's own z6 lesson. A name-resolution sweep now reports all eight `declared=false
+referenced=false`, and every new name `declared=true referenced=true`.
+
+### The six items
+
+**1 · The step is Location Sequence throughout** — rail, headings, the How-to manual, and the
+deep-link aliases. ⚠️ `STEP_ALIAS` and `gotoStep` still resolve *Tower links*, *Tower Sequence* and
+*Zone sequence*, because `_stepNo` answers `''` for a title it cannot find and a blank where a step
+number belongs reads as a broken app.
+
+**2 · Tower sequence and zone sequence become ONE page.** The view options, the layout segment and
+both zoom pairs are gone; `stTowerLinks` and `stSequence` are **deleted**, not left unreferenced.
+⚠️ `VS_TL_TYPES` and `_tlWord` are **kept** — `openTowerLinkDlg` reads both, and deleting a renderer
+is not licence to delete what its dialog still needs.
+
+⚠️⚠️ **THE LAYOUT IS THE FLEX ROW'S OWN ANSWER TO THE WINDOW, NOT A CONTROL.** The owner asked for
+*"layout should depend on window width"*, and the honest way to do that is to stop asking: a new
+`.sbld-seq2-wrap` modifier wraps, and each pane states a real `min-width` so it wraps rather than
+overflowing — a flex item's default `min-width:auto` resolves to its content and forces a scrollbar
+instead of a second row. ⚠️ **Scoped to this row.** The Activity Sequence's own `.sbld-seq2` keeps
+its grip and its remembered width, which a wrap on the base class would have silently overridden.
+
+**3 · The building view draws floors, zones AND units.** It skipped a rung whenever the level below
+it had one child, so a single-zone floor lost its zone and a single-unit zone lost its unit — which
+is exactly the case where a planner most needs to see that the rung exists at all.
+
+**4 · The resulting schedule is a real Gantt** — units grouped by zone, zones by floor, floors by
+tower, every rung foldable with its own summary bar and a count. ⚠️⚠️ **The rung order is the
+MAXIMUM index a value is seen at across every trade, never the first.** First-seen is right only
+while the first trade to mention a floor happens to be the one that orders them correctly; a sparse
+trade earlier in `GROUPS` than a complete one then decides the whole building's storey order. The
+negative build for this is the one that matters most, and it fails naming the exact signature.
+
+**5 · Auto-trace asks four numbers** — towers, floors, zones and units simultaneous — and resolves
+the rest from the defaults. The zigzag and next-floor questions are retired, at the owner's word.
+
+**6 · Inspect and link-by-hand become one mode.** Every bar carries a **start point and a finish
+point**; drag one onto another and **the pair of points IS the relationship** — finish→start is FS,
+start→start SS, finish→finish FF, start→finish SF. ⚠️ The points are visible at rest (`opacity:.38`)
+rather than on hover: this gesture replaced a mode switch and a four-step flow, and a hover-only
+affordance is a gesture nobody finds. ⚠️ **One binder, two steps** — `bindLinkDrag` takes the write
+function, so the Location Sequence passes `addLink` and the Activity Sequence passes `addActLink`,
+which keeps the per-level-type link set the zone links do not have. Two copies of the gesture is how
+the two steps come to behave differently at the one thing the owner asked to make identical.
+
+### ⚠️⚠️ THE MERGE: ONE RESOLUTION WOULD HAVE THROWN ON EVERY RENDER OF THE STEP
+
+Merged `origin/main` (25 commits) before shipping — five conflicts in this file, every one resolved
+on the merits rather than by taking a side.
+
+The sharp one is `STEP_TABS`. Main's side restores `'Location Sequence': [ … stTowerLinks, …
+stSequence ]` — **two functions this branch deleted** — so `--theirs` there is a `ReferenceError` on
+every render, the *"below is not defined"* shape this log has now recorded five times and which
+`node --check` cannot see. ⚠️ And the resolution is not simply "take mine" either: main **also**
+removed `'Activity Sequence'` from that map (Scope per zone is its own step 9 now). Each side removed
+a different key, so the honest merged answer is **neither** — the object is empty, and both removal
+notes are kept because each records a different decision.
+
+The other four: the manual's linking sentence goes this branch's way (main's describes the retired
+right-click flow, and a comment that confidently describes the opposite of the code is worse than
+none) while main's whole new *Zone scoping* entry is kept; the duplicate `stLocSeq` **stub** is
+dropped rather than kept beside the real renderer; `stActSeq` takes **main's** body; and the step
+heading takes **main's** title, because main renamed the step to *Activity sequence* and this
+function is now its only renderer — `_stepNo` still answers for *Trade sequence* through the alias.
+
+⚠️ `_al`'s three Location-Sequence aliases carry **no `tab:`** any more. Passing one is worse than
+useless: `setStepTabQuiet` would write a key into `localStorage` for a step that has no strip.
+
+### ⚠️ `stPillStep` NOW HAS ZERO CALLERS, AND IT IS PARKED RATHER THAN DELETED
+
+With `STEP_TABS` empty the whole tab shell is unreachable. ⚠️ This is **not** the `#pk-boq` shape —
+that was a handler bound to an id nothing emits, which *throws*; this is a generic mechanism driven
+entirely by that object, which comes back the instant a step gains a second view. Deleting a
+mechanism main had just shipped comments for, inside a merge resolution, would be a product decision
+smuggled into a resolution. `test-zonescope.js` asserts the caller count is **0**, so the parked
+state is a fact a reader can see rather than a surprise.
+
+### Two suites retargeted, neither weakened
+
+⚠️⚠️ **`test-builder.js` STUBBED `cellKey` — a re-implementation of the rule under test, and a WRONG
+one**: it read `l.zone ? l.zone.code : '_'` and **ignored the unit**, so every assertion about the
+merge key was measuring the stub. It slices the real `locCellKey` now, plus `towerSimulOf` and
+`floorSimulOf`. Section 4's dialog assertions move from the three retired questions to the four new
+rungs — asserted on the `row('tower',` **call sites**, because the `data-atkind` attribute is
+templated and the literal never appears in the source.
+
+⚠️ **`test-zonescope.js` is MAIN's suite and this change broke four of its assertions**, established
+by running it against main's own tree in a throwaway worktree: **57/0 there, 53/4 here**. They pinned
+*"exactly one step still has tabs, and it is Location Sequence, with two views"*. Retargeted to the
+**stricter** claim — no step carries a strip at all, no walk entry carries a tab suffix — which fails
+the moment somebody re-adds a one-view strip. 57 → **58**, one assertion more than main's.
+
+⚠️ `test-autotrace.js` slices `locCellKey` **by either name**, so it still builds on its pinned base
+where the function is still called `cellKey`.
+
+### Verified
+
+**22 suites, 2,059 assertions, 0 failing** on the merged tree — `test-locseq.js` new at 94,
+`test-lsm` 697, `test-builder` 159, `test-actsetup` 142, `test-phasenet` 135, `test-sap` 114,
+`test-towertypes` 102, `test-zonescope` 58, `test-autotrace` 32 — including **main's own suites this
+branch had never run**.
+
+⚠️ **`test-cpm.js` throws `window is not defined`, and it is MAIN'S, not this change's** — verified by
+running it against `origin/main`'s own tree in a worktree, where it throws identically. Named rather
+than quietly passed over.
+
+**Six negative builds, all biting and all FAILING rather than crashing** — a suite that dies mid-run
+reports nothing about its other assertions, so every index read in an assertion is guarded. Re-run on
+the merged tree: rung order max-index → first-seen fails **2**; every drag deriving FS fails **3**;
+the unit rung removed fails **4**; and the file restores byte-identically each time.
+
+**Measured in Chromium at 1440 / 1100 / 820** against the shipped stylesheets, with the fixture
+injected as JSON and every rule and style **sliced out of the shipped file** — ⚠️ `Fmt.esc` is sliced
+out of the shared `assets/js/db.js` too, because it is an escaping rule and a retyped one is a second
+opinion about what the app escapes:
+
+| | 1440 | 1100 | 820 |
+|---|---|---|---|
+| panes | side-by-side | side-by-side | **stacked** |
+| page scrolls sideways | no | no | no |
+| zoom / layout / view / tab controls | 0 | 0 | 0 |
+| auto-trace · links · tower links | all present | all present | all present |
+
+That stacked column **is** item 2: the layout follows the window with no control to set it. The Gantt
+reconciles exactly with the fixture (2 towers × 3 floors × 2 zones × 2 units × 2 trades): **20 group
+rows** = 2 + 6 + 12, with 20 carets and 20 summary bars; **48 leaves**; **50 bar groups** = 48 + 2
+bookends; **100 drag points** = 50 × 2. Labels read `Start · ▾Tower 1 (24) · ▾F1 (8) · ▾Z1 (4) ·
+U1 · Structural …` and the group indents step 6 → 19 → 32. **0 page errors at every width.**
+
+`wiring-check` **139/0** · `dead-hooks` **9 findings, byte-identical to main's own** (only the census
+moves, 476/103 → 474/104, which is the two retired mode-class queries going and the new suite
+arriving) · `dark-remap` 0 · `loc-key-agree` clean · `selectall-key` 102 sites, 100 safe / 0 broken ·
+`toolbar-order` 15 bars / 0 out of order. CSS braces **2575/2575**, **0 NUL bytes** and 0 CR bytes in
+every file this change touches.
+
+⚠️ `grep -c $'\x00'` **degenerates to an empty pattern and reports every line as a hit** — the trap
+this log already records. The NUL count above is a byte count.
+
+⚠️ **Not verified signed in.** No setup has been saved and re-read, no link has been dragged against a
+real project's activities, and auto-trace has never resolved against real data. What is proven is the
+shipped code executed against fixtures and the shipped CSS measured in a browser.
+
+## 2026-09-18 (x) — The clash strip counted days the two trades were never on the storey together
+
+Owner: *"Let's do a dedicated check for the clash detection in the schedule"*. A probe, not a
+feature — and it found one line.
+
+### ⚠️⚠️ THE SHARED STRETCH STARTED AT B'S START, WHICH IS ONLY RIGHT WHILE B STARTS LAST
+
+    var s = B.s, f = (+A.f < +B.f) ? A.f : B.f;
+
+The intersection of two spans starts at the **later** of the two starts. This took B's start
+unconditionally — correct for the ordinary case, where the successor arrives partway through the
+predecessor's work, and wrong for the exact case this pass exists to catch: **the successor that
+started first.** Every day B was on the storey *alone*, before A ever arrived, was then counted as
+overlap.
+
+The suite's own *"violated the other way round"* fixture was carrying it: Masonry 5–16 Jan,
+Structural 12–23 Jan, together Mon 12 → Fri 16 and nowhere else. The chip said **10 wd**. The
+suite asserted the pair was **found** and that Structural was **named first**, and never asked how
+many days it claimed — a count nobody checks is a count that can drift.
+
+### Three things the planner saw, all from that one expression
+- **The number.** *"10 working days of overlap"* where there were five. The tooltip prints the
+  stretch too, so the dates on screen disagreed with the building.
+- **The hatched mark**, drawn across days A was not on the floor at all — the mark is the evidence
+  for the claim, and it was pointing at the wrong days.
+- ⚠️⚠️ **The sort, which is the strip's whole editorial claim.** Worst-first is how eight chips
+  stand in for all of them. A two-day problem whose successor started early read as **twelve** and
+  led the strip ahead of a genuine **six**-day overlap — and once eight inflated chips are in
+  front of it, a real one is off the strip entirely. Asserted with two storeys, because a wrong
+  number is a nuisance and a wrong ORDER is a wrong answer to *"what should I look at first?"*.
+
+### ⚠️ AND ONE CASE STOPS BEING REPORTED — deliberately, on the owner's call
+A pair that is out of sequence but never shares a day (Masonry off the storey on the 9th,
+Structural not there until the 19th) was reported as *"5 working days of overlap"*. There is no
+overlap to count, no stretch to hatch, and nothing this strip's wording could truthfully say about
+it. It is now silent. **Out of sequence is a different finding from overlapping**, and it would
+need its own words the way the declared-handoff pass has its own — it is not smuggled in under
+this one. Offered as a third finding kind; the owner chose to drop it.
+
+### Verified
+**695 assertions against the working tree, 27 against the pinned base, 0 failing** — up 11, and
+⚠️ **9 of the 11 bite**: run against the pre-change file they fail with 10 for 5, the stretch
+starting on the 5th, both marks on the wrong span, 1 for 0, and *"2nd Floor"* leading a strip that
+should open with the 1st. The two that pass either way are the guards (the pair is still found;
+the stretch still ends at the earlier finish), kept so a future change cannot satisfy the new
+assertions by simply reporting nothing.
+
+The edges were probed before anything was touched, and the ones that were already right are now
+assertions too: the threshold from both sides (two shared working days report as **2**, one is a
+handoff), a shared stretch that is **all weekend** (Sat+Sun → no working-day clash), three trades
+on one storey → **3 pairs, 3 marked bars**, a **non-adjacent** pair in the sequence (lanes three
+apart), identical spans, and two one-day activities on the same day.
+
+⚠️ The **declared-handoff** half of the detector was not touched and needs no correction: its
+measure is *"how many days early B started against A's target storey"*, which is what it prints,
+and the suite already cuts that block out of the shipped source and runs it against a fabricated
+tower (`runPass`), with `autoTrace`'s clamp arithmetic proved over 3,720 cases in the 09-12 entry.
+
+⚠️ **Not verified in a browser, and not verified signed in.** The model's spans are measured; the
+geometry that draws them was last rendered at z3 and the renderer is unchanged. **What to check on
+OPW101:** the screenshot taken with this prompt shows *"7 clashes (4 vs declared handoff)"* — the
+three same-storey ones (`B2 MEPF before Architectural 5 wd`, `B3 4 wd`, `B1 4 wd`) are the rows
+this fix can move. If MEPF starts before Architectural on those basements, those numbers should
+**fall**, or the finding should disappear if the two never share a day.
+
+⚠️ **Pre-existing and not this change's:** `test-cpm` crashes with *"window is not defined"* on
+`if (!calCpmOn || !window.PDCal)` — identically on the pre-change file, so somebody gave `allAxis`
+a `window` read without giving that suite a window. `test-critwbs` 26/26, `test-health` 30/30,
+`test-autotrace` 32/32, `test-zoneoverlap` 57/57, `test-towerseq` 48/48, `test-syntax` 4/4.
+
+`MODULE_V` → `20260918x`, sort-checked against `20260918w` in dashboard.html and modules.html.
+⚠️ **Integrated across 8 incoming commits** (the colour pane, the Pormac UI sweep, the `.ps-menu`
+button rules). Two conflict hunks, both the cache token, and both resolved FORWARD: this branch had
+bumped `o`→`p` while `origin/main` had reached `w`, so keeping `p` would have shipped the module
+behind a token browsers already hold. Nothing in `modules/project-schedule/index.html` conflicted —
+their work there is the colour pane at ~56,800 and the CSS above it, nowhere near the clash pass.
+`test-lsm` re-run on the MERGED tree, not only on the pre-merge one.
+
+## 2026-09-18 (i) — Activity sequence, Zone scoping as its own step, and one label treatment for every selector group
+
+Owner, three items on the Activity Sequence step:
+
+> 1. in activity sequence, name the title of the step as Activity sequence
+> 2. throughout the steps in schedule set-up, when providing button choices whether for trades,
+>    floors, or activities, place them in a holder group with a label
+> 3. separate Scope per zone as a separate Step 9 before Generate. title this step Zone scoping.
+>    in the table shown, group these also per floor, per zone, and per unit for easier readability
+
+### ⚠️⚠️ ITEMS 1 AND 3 ARE ONE CHANGE, AND THE DOUBLED HEADING FIXES ITSELF
+
+The step printed **"7 · Activity Sequence — Trade sequence"** — the step's own number and title, then
+the tab's. Renaming it to sentence case does nothing about that; what does is item 3. Once Scope per
+zone leaves, the step has **one** view, and this file's own rule above `stPillStep` says a strip of
+one button *"is a control that cannot do anything"*. So `'Activity Sequence'` comes **out of
+`STEP_TABS` entirely**, `stActSeq` renders `stTradeSeq` directly, and the heading is the step's own
+title and nothing else. `stepTabs` answers `STEP_TABS[title] || null`, and every consumer already
+guards on that null — checked at all seven call sites rather than assumed.
+
+⚠️ `stPillStep` is **kept parameterised** rather than inlined into `stLocSeq`, its only caller left.
+The split that produced a second caller could produce a third, and this is the second time in two
+days that this shell has gained or lost one.
+
+### ⚠️⚠️ A TITLE IS ALSO A LOOKUP KEY, SO ONE WORD ON SCREEN IS SEVEN EDITS
+
+This module addresses its steps **by title, never by index** — `_stepNo(title)` renumbers every
+"see step N" in the file — and `_stepNo` answers the **empty string** for a title it cannot find.
+A blank where a step number belongs reads as a broken app, not as a missing step. So the rename
+touches `STEPS_NEW`, `SB_MANUAL`'s key, `_stepReady`'s gate, **both** alias tables, and every
+`_stepNo('…')` call site.
+
+⚠️⚠️ **Two alias tables, and only one of them is `STEP_ALIAS`.** `gotoStep` reads a private `_al`
+map of its own and does **not** consult `STEP_ALIAS` — the drift this file recorded on 2026-09-17
+(zzt) and deliberately did not converge. Both are updated: `'Activity Sequence'`, `'Trade sequence'`
+and `'Scope per zone'` all still resolve, the first two to step 8 and the third to **its own step 9**.
+⚠️ Neither names a **tab** any more; a `setStepTabQuiet` against a step with no strip is a silent
+no-op, which is the shape a deep link fails in without anyone noticing.
+
+The rail is ten entries: `Start → Calendars → Project phases → Activities → Towers → Floors & Zones
+→ Location Sequence → Activity sequence → Zone scoping → Generate`. **Zone scoping is step 9 and
+Generate is step 10**, which is what the owner asked for in as many words.
+
+⚠️ **`stScope` itself did not move.** It already sat between `stTradeSeq` and `stGenerate`, so item 3
+is a `STEPS_NEW` entry, a `STEP_TABS` removal and the alias/manual updates — no code was relocated,
+and the diff says so.
+
+### ⚠️⚠️ THE SCOPE TABLE IS GROUPED, AND EVERY RUNG IS DERIVED RATHER THAN ASSUMED
+
+A tower of twenty floors × four zones × six units is **480 rows every one of which reads
+`<floor> · <zone> · <unit>`** — the shared prefix repeated 480 times, and the single token that tells
+two neighbouring rows apart is the hardest thing on the row to find. Grouped, each row carries only
+what the headings above it have **not** already said: the unit, or the zone on a unitless zone, or
+the floor on a zoneless floor. The `title` still carries the whole address, so the toggle it names is
+unchanged and the full location is one hover away.
+
+- ⚠️⚠️ **A heading is emitted only where the leaf is genuinely DEEPER than that rung.**
+  `leavesOfFloor` stops at the floor when a floor has no zones and at the zone when a zone has no
+  units, and `cfg.locLevel` can flatten the whole project to one leaf per floor. Emitting a heading
+  anyway would print a *"5th Floor"* heading directly above a row whose own label is *"5th Floor"*.
+  Both mixed cases are asserted, because a trade can carry a zoned floor and a zoneless one at once.
+- ⚠️⚠️ **THE TOWER RUNG IS NOT COSMETIC.** `locList` clones a type's floors once per instance and
+  `locLabel` carries no tower — so on a three-tower project the same `5th Floor · Z1` appeared three
+  times, identical, with only the hidden `uid` telling them apart. It is emitted only when the trade's
+  leaves really span more than one tower, per `program.js`'s own rule that a heading above a single
+  group invents a hierarchy that is not there.
+- ⚠️ **This REGROUPS and never re-sorts.** The rows stay in the order `locList` produced them, which
+  is the setup's own floor/zone/unit order; a row that moved because it was grouped would be this
+  change rewriting the planner's sequence. Asserted on a deliberately non-alphabetical fixture.
+- ⚠️ **Group rows carry no handler.** The column and row toggles are the controls on this screen, and
+  a third bulk toggle sitting where a heading belongs is a mis-click away from clearing a whole
+  storey. They also carry no `cursor:pointer`, measured — a heading that looks clickable beside row
+  labels that really are is the same mistake in CSS.
+
+### ⚠️⚠️ ITEM 2 IS ADOPTION OF A PRECEDENT, AND IT FOUND A FOURTH COPY OF ONE LABEL
+
+`.sbld-chiplab` and the `.sbld-seqkind` / `.sbld-towerbar` holder shapes already existed; what the
+chip rows had was a **bare flex row**, so on a step carrying two of them (tower chips above trade
+chips, in Location Sequence and in Generate) the two runs read as one long strip of buttons with
+nothing saying which question either half answered. `.sbld-tradechips` is a bordered holder now and
+all **eight** emit sites carry a `.sbld-chiplab`, verified mechanically rather than by eye.
+⚠️ **No red left rail**, unlike `.sbld-seqkind` directly below it on the same step: that bar is a
+single state line and earns the emphasis; stacked selector rows each wearing a brand rail would make
+a step of selectors look like a step of warnings.
+
+⚠️⚠️ **And the job was written FOUR times, not three.** `.sbld-chiplab` (micro/700/.04em),
+`.sbld-towerbar-l` (xs/700/.05em), `.sbld-seqkind-l` (xs/**800**) and `.sbld-locbar-l` (xs/**800**).
+The weight half is not a fact about the stylesheet: **`stTradeSeq` draws "TRADE" (700) directly above
+"LEVEL TYPE" (800)** and **`stLevels` draws "LOCATION BREAKDOWN" (800) directly above "TRADE" (700)**
+— two weights, one screen, inches apart. One declaration, three selectors, at 700 (this app's own
+uppercase micro label — `.pd-kpi-label`, `.pd-table th` — where 800 is what it reserves for a KPI
+value). `.sbld-towerbar-l` is **deleted** rather than aliased, because a rule that matches nothing
+reads as working styling to everyone who finds it; `.sbld-seqkind-l` and `.sbld-locbar-l` keep their
+**names** (five emit sites, and a rename is churn with no pixel behind it) and simply stop carrying a
+declaration of their own to drift.
+
+⚠️ **Deliberately NOT given a holder: `.sbld-checkchips`** (the import path's data-quality filter
+row). Those chips carry their own full names and counts and are not a trade/floor/activity choice;
+boxing them would be widening the ask into a step the owner did not name. Reported rather than done.
+
+### Verified
+
+**New `modules/project-schedule/test-zonescope.js` — 57 assertions, 0 failing**, every function
+sliced out of the shipped file **by name** through the repo's own `test-slice.js`. The footer's Next
+walk is **driven end to end** and reads `… → Location Sequence · Tower Sequence → Location Sequence ·
+Zone sequence → Activity sequence → Zone scoping → Generate`; ⚠️ `_stepReady` and `_stepNo` are
+**sliced, never stubbed** — `_stepReady` is one of the functions this change edits, and a stub of a
+rule is a second copy of that rule. It also proves the properties whose failure looks like a working
+screen: every `_stepNo` call site in the file resolves on one of the two rails, every `gotoStep`
+target is a real step, and every rail title has a manual page.
+
+⚠️⚠️ **The contrast is PINNED to a checkout, never defaulted to `HEAD`** — which becomes
+self-comparison the moment this commits. Against `origin/main` it is **24 passed, 33 failed**, and
+the failures name the change rather than merely dying: the walk reads `Activity Sequence · Trade
+sequence → Activity Sequence · Scope per zone → Generate`, Zone scoping resolves to a blank, and the
+table emits no group rows at all.
+
+**Measured in a browser** against the shipped stylesheets, with the CSS extracted from the file
+rather than retyped: **indents 10 / 24 / 38 / 52px**, headings 700 on a real (non-transparent)
+background, no heading with `cursor:pointer` and every data row keeping it, 0 page errors, no
+sideways page scroll.
+
+⚠️⚠️ **A DEFECT FOUND BY RENDERING, NOT BY READING: the heading rule used the `padding`
+shorthand.** `table.sbld-tbl tr.sbld-scope-grp > td` is **(0,2,3)** against the indent's
+`table.sbld-tbl td[data-d="N"]` at **(0,2,2)** — so the shorthand set `padding-left` too and won,
+flattening **every heading to one indent** while the rows beneath them stayed stepped. Reverting that
+one line reproduces it: 2 assertions red and the measurement prints **10 / 10 / 10** where it should
+read 10 / 24 / 38. The same specificity trap this file already records for the locked BOQ cell.
+
+⚠️⚠️ **And two defects in my own harness, each of which reported the opposite of the truth.** A naive
+brace counter read the apostrophe in *"a floor's leaves"* — inside a `/* */` comment — as a string
+opener and returned an unparseable fragment; the repo's own slicer blanks comments through
+`tools/scan.js` for exactly that reason, and the suite now uses it. Then the rendered table showed the
+zone heading repeating **above every single unit**: the fixture built a fresh zone object per leaf
+while `locList` shares one, so an identity comparison was right for today's data and one shallow clone
+away from being wrong. The run-tracking keys on **ids** now.
+
+⚠️ **`test-builder` retargeted, not weakened** — three assertions named the old title and the old rail
+length. Each still asserts the property it existed for, under the new names, and `Zone scoping` is
+**added** to the two lists rather than inherited, because unticking an activity there removes it from
+the programme entirely. **156 passed, 0 failed** (was 151/3).
+
+**Every other suite green on the merged tree:** `lsm` 684/0, `builder` 156/0, `actsetup` 142/0,
+`phasenet` 135/0, `sap` 114/0, `towertypes` 102/0, `phasecard` 85/0, `actdnd` 62/0, `zoneoverlap`
+57/0, `zoneplan` 50/0, `towerseq` 48/0, `quicksetup` 46/0, `shapeedit` 36/0, `autotrace` 32/0,
+`sitefit` 31/0, `health` 30/0, `cpm` 28/0, `wbsfile` 28/0, `critwbs` 26/0, `calendar-editor` 23/0,
+`syntax` 4/0, plus `tools/test-calendar` 71/0. `wiring-check` **139/0**, `dark-remap` 0 findings,
+`scan` self-test 10/10. The 3.8MB inline block parses, CSS braces **+2/+2** against `origin/main`,
+0 functions lost.
+
+⚠️ **Fixed in passing: two NUL bytes, both pre-existing on `origin/main`.**
+`modules/project-schedule/test-wbsfile.js` and `tools/dark-remap.js` each wrote the `\u0000`
+separator as a **raw byte**, so `grep` classified both as binary and answered *"Binary file matches"*
+instead of the matching line — including for `dark-remap.js`, which is a checker this repo runs on
+every pass. The runtime strings are unchanged (`'\u0000'` is the same character) and both still pass.
+**Zero NUL bytes across all 404 tracked files now**, measured.
+⚠️⚠️ **AND WRITING THIS PARAGRAPH REPRODUCED IT — for the sixth time, in the sentence describing
+it.** The two characters above went into this changelog as **two raw NUL bytes**, because the editor
+wrote the escape as the character it denotes; the file `grep` would then have called binary is the
+changelog itself. Caught by re-scanning the bytes after prepending, which is the only reason it is
+not in this commit. **Never type that escape into prose and trust the write — build it from char
+codes and check the bytes**, which is what this file's own 2026-09-09 entry already says.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so no real setup has been opened and no
+scope answer has been written. What is proved is the shipped code executed and the shipped CSS
+measured.
+
+### ⚠️ Merged `origin/main` (6 commits) before shipping — and the tower-bar hunk had to be rewritten, not chosen
+
+`modules/project-schedule/index.html` conflicted in **three** places, all of the same shape: main
+rewrote the surrounding code substantively (the Activities disclosure, `_towerBar`'s developments,
+the per-category quick setup) and this branch had changed only a step title inside it. **Main's
+content wins on the merits** in all three, with this branch's rename re-applied on top — resolved
+hunk by hunk, never with `--ours`/`--theirs`, which take a whole file and drop your own
+non-conflicting edits in it.
+
+⚠️⚠️ **One of those re-applications is load-bearing rather than cosmetic.** Main's `_towerBar` emits
+`<span class="sbld-towerbar-l">`, and that class **no longer exists in the stylesheet** — this branch
+deleted it once every call site had moved. Taking main's copy verbatim would have left that label with
+no rule at all: a clean-looking hunk that quietly unstyles a control, which is exactly the shape this
+log keeps recording as "a clean auto-merge is not a correct one".
+
+⚠️ **And main's own rewrite carried three `_stepNo` call sites this branch's rename had never seen**,
+because they did not exist on the base it was cut from. Found by re-sweeping the **merged** file
+rather than trusting the resolution: `_stepNo('Activity Sequence')` and `_stepNo('Trade sequence')`
+now return **0 occurrences**.
+
+⚠️ `MODULE_V` → `20260918k`, re-derived from what `origin/main` actually carries **after**
+integrating (`20260918j`) rather than guessed beforehand, and sort-checked as a plain string.
+
 ## 2026-09-18 (h) — A development is a row, the ± count goes, and the quick setup asks per category
 
 Owner, on the Towers step: *"replace the buttons on top with Add Type, Add Development … for this

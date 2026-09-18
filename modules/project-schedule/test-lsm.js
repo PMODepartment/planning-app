@@ -1194,6 +1194,67 @@ function grpRow(name, anc, acts, idx, field) {
   ], IDX)]);
   eq(M.clash().n, 0, 'a clean gap is no clash');
 
+  /* ⚠️⚠️ THE SHARED STRETCH IS THE INTERSECTION, AND THE SUITE USED TO STOP AT THE COUNT.
+     The "violated the other way round" pair above was asserted to be FOUND and to name Structural
+     first, and nothing asked how many days it claimed. It claimed ten: the stretch was taken as
+     `B.s -> min(A.f, B.f)`, so every day B was on the storey ALONE, before A ever arrived, was
+     counted as overlap and hatched onto both bars. Here the two are together Mon 12 - Fri 16 and
+     nowhere else. */
+  M.setDL([grpRow('1st Floor', ['exec'], [
+    act('Exterior Masonry', '2026-01-05', '2026-01-16', 0),
+    act('Structural', '2026-01-12', '2026-01-23', 0)
+  ], IDX)]);
+  const Cr = M.clash();
+  eq(Cr.n, 1, 'the out-of-sequence pair is still found');
+  eq(Cr.list[0].days, 5, 'and counts only the days the two are ACTUALLY both on the storey');
+  eq(M.dstr(Cr.list[0].s), '2026-01-12', 'the stretch starts at the LATER of the two starts');
+  eq(M.dstr(Cr.list[0].f), '2026-01-16', 'and ends at the earlier of the two finishes');
+  /* ⚠️ The mark is that same stretch on both bars - a hatch over days the other trade was not
+     there reads as evidence of an overlap that did not happen. */
+  const mk = [];
+  Object.keys(Cr.marks).forEach(function (k2) {
+    Cr.marks[k2].forEach(function (m2) { mk.push(M.dstr(m2.s) + '..' + M.dstr(m2.f)); });
+  });
+  eq(mk.join('|'), '2026-01-12..2026-01-16|2026-01-12..2026-01-16',
+     'both marks cover the shared stretch and nothing else');
+
+  /* ⚠️ The successor ENVELOPING the predecessor is the same arithmetic from the other side: the
+     shared stretch is the enveloped bar's own span, not the enveloping one's. */
+  M.setDL([grpRow('1st Floor', ['exec'], [
+    act('Exterior Masonry', '2026-01-05', '2026-01-23', 0),
+    act('Structural', '2026-01-12', '2026-01-16', 0)
+  ], IDX)]);
+  eq(M.clash().list[0].days, 5, 'an enveloped predecessor shares only its own span');
+
+  /* ⚠️⚠️ OUT OF SEQUENCE IS NOT THE SAME THING AS OVERLAPPING, AND THIS PASS ONLY REPORTS THE
+     SECOND. Masonry is off the storey on the 9th and Structural does not arrive until the 19th:
+     the two are never there together, so there is no overlap to count, no stretch to hatch and
+     nothing this strip's wording ("N working days of overlap") could truthfully say. It used to
+     report five. Reporting the sequence violation itself would be a different finding in
+     different words - the way the declared-handoff pass below is - and is deliberately not
+     smuggled in under this one. */
+  M.setDL([grpRow('1st Floor', ['exec'], [
+    act('Exterior Masonry', '2026-01-05', '2026-01-09', 0),
+    act('Structural', '2026-01-19', '2026-01-23', 0)
+  ], IDX)]);
+  eq(M.clash().n, 0, 'a pair that never shares a day is not an overlap');
+  ok(M.clashHTML() === '', 'and the strip says nothing rather than claiming days of overlap');
+
+  /* ⚠️⚠️ WHAT THE INFLATED COUNT COST THE PLANNER: the sort. Worst-first is the strip's whole
+     editorial claim, and with the old measure a two-day problem whose successor started early
+     read as twelve and pushed a genuine six-day overlap down the strip - off it entirely, once
+     eight chips are in front of it. */
+  M.setDL([
+    grpRow('1st Floor', ['exec'], [act('Structural', '2026-01-05', '2026-01-16', 0),
+                                   act('Exterior Masonry', '2026-01-09', '2026-01-30', 0)], IDX),
+    grpRow('2nd Floor', ['exec'], [act('Exterior Masonry', '2026-01-05', '2026-01-20', 0),
+                                   act('Structural', '2026-01-19', '2026-01-30', 0)], IDX)
+  ]);
+  const Cs = M.clash();
+  eq(Cs.list[0].loc, '1st Floor', 'the storey with the longer REAL overlap leads the strip');
+  eq(Cs.list[0].days, 6, 'six days');
+  eq(Cs.list[1].days, 2, 'ahead of the two-day one that used to read as twelve');
+
   /* ⚠️ DIFFERENT STOREYS ARE NOT A CLASH - that is the whole point of the chart. Two trades
      overlapping in time on DIFFERENT floors is exactly how a takt programme is supposed to run. */
   M.setDL([grpRow('1st Floor', ['exec'], [act('Structural', '2026-01-05', '2026-01-16', 0)], IDX),
@@ -1694,7 +1755,15 @@ function grpRow(name, anc, acts, idx, field) {
      'same dims, layout OFF  ->  the face keeps the dimension path');
   eq(faceFor(['act', 'loc:tower', 'loc:level'], false, PATH), 'Activity \u203a Location',
      'the renamed preset is named too');
-  eq(faceFor(['wbs'], false, PATH), 'WBS tree (default)', 'and so is the default');
+  /* ⚠⚠ THE BUTTON FACE AND THE MENU NAME ARE DIFFERENT ON PURPOSE. Owner, 2026-09-18: *“I want
+     the toolbars to be squeezed into one row … reducing the text of the WBS tree (default) to just
+     ‘WBS’.”* Measured with the shipped `_tbFit`: that face is 117px, and dropping it to 31px moves
+     the width at which the toolbar sheds NOTHING from 1418px to 1332px.
+     ⚠ BOTH HALVES ARE ASSERTED. Relaxing the first alone would let a later change shorten the
+     MENU too, and he named these himself on 2026-09-11 — the long name is the deliberate half. */
+  eq(faceFor(['wbs'], false, PATH), 'WBS', 'the default preset shows its SHORT face on the button');
+  eq(byName['WBS tree (default)'].face, 'WBS', 'the short face is declared on that preset');
+  ok(!byName['WBS'], 'and the MENU still names it in full - the face never replaced the name');
   eq(faceFor(['status', 'loc:tower'], false, PATH), PATH,
      'a grouping that is NOT a preset keeps its path');
 })();
