@@ -104,6 +104,80 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (ae) — A baseline is captured, not typed: the read-only field that has to be read-only in six places
+
+Owner: *"The baseline dates are editable which shouldn't be"*. Project Schedule only. The full
+reasoning, surface by surface, is in `modules/project-schedule/CLAUDE.md` (y); what follows is the
+part that generalises to every module.
+
+⚠️ **This was a correctness fix, not a permissions one.** `bl_start` / `bl_finish` are a **mirror**
+of whichever saved baseline was last *Set primary* — not independent fields. A date typed into them
+disagrees with the baseline it claims to come from, is silently overwritten by the next Capture /
+Import / Set primary, and until then every variance, Planned %, slip and S-curve on the screen is
+measured against a number nobody captured. The rule to carry: **a field that mirrors a captured
+record must not offer an edit affordance**, however harmless the widget looks.
+
+### ⚠️⚠️ "MAKE IT READ-ONLY" MEANS SIX SURFACES IN THIS APP, AND FIVE OF THEM ARE NOT THE ONE YOU WERE SHOWN
+
+The owner pointed at a grid cell. A field in a schedule-style module is typable from, at least:
+the **grid cell** (dblclick and type-to-edit), **paste**, **cut**, **Ctrl+D fill-down**, the
+**right-click** *Fill … down* item, the **detail panel**, the **New/Edit modal** (and whatever its
+`save()` puts in the payload), and **Global Change**. Fixing only the cell leaves a field that is
+read-only to the mouse and wide open to Ctrl+V. Enumerate the list before claiming a field is
+locked.
+
+⚠️ **Several of those share a gate, so they close together — check before writing a second fix.**
+In Project Schedule the right-click *Fill down* item and the dblclick handler both derive their
+field from `closest('.ps-editable')`, not from `data-field`, so dropping that one class closed all
+three gestures at once. I had recorded fill-down as a remaining gap on the opposite assumption and
+was **wrong**; reading the handler is what settled it. ⚠️ The same coupling has a **cost**:
+*Format cell…* is gated on the same value and disappears from those columns too. Say so in the log
+rather than let it be found later.
+
+### ⚠️⚠️ THE DURABLE HALF IS A GUARD AT THE WRITE CHOKE POINT, NOT SIX DISABLED WIDGETS
+
+Removing the affordances makes an edit *un-offered*; a guard in the single function every write
+funnels through (`persist()` here) makes it **structurally true** — an edit surface added next year
+inherits it without knowing it exists. Three constraints that guard has to respect, all of which
+apply to any module with undo:
+
+- ⚠️⚠️ **Clone the patch before deleting keys.** Undo replays `before` / `after` **by reference**;
+  mutating the caller's object corrupts the history of the very save you are guarding.
+- ⚠️⚠️ **Strip and REPORT, never strip silently** — a toast naming where the field *is* set. A
+  save that quietly drops part of what the caller asked for is the failure this repo keeps warning
+  about. A hard reject is worse still: it breaks undo of edits made *before* the lock existed.
+- ⚠️ **Check what does NOT come through the choke point.** Bulk editors are the usual exception —
+  Global Change writes with batched `sb().update()` and then `resetUndo()`, so it needs its own
+  removal from `GC_FIELDS`, and the legitimate lifecycle writers (Capture, Set primary, Import,
+  Clear) bypass `persist()` entirely, which is exactly why the guard is safe to add.
+
+⚠️ **Scope held: `bl_cost` was left editable in Global Change.** The owner said *dates*. The
+asymmetry is named in the code comment so it reads as a decision, not an oversight.
+
+### ⚠️ Verified — and one thing not verified
+
+The inline `<script>` parses (1 block, 0 failures, 4.48 MB), 0 NUL bytes, all six surfaces confirmed
+by grep against the committed file. ⚠️ **Not verified signed in:** no baseline date has been typed
+at, pasted into or Global-Changed against a real project, and the warn toast has never been seen.
+
+### ⚠️⚠️ THE CODE SHIPPED INSIDE ANOTHER SESSION'S COMMIT — THE CONCURRENT-SESSION HAZARD FROM THE OTHER SIDE
+
+All six edits were sitting in the working tree when a concurrent session committed
+`modules/project-schedule/index.html` **whole** for its own LSM work, so this change reached
+`origin/main` inside commit `02a24e4`, under a message about overlap bands. Nothing is lost and
+`MODULE_V` moved forward with it (`20260918zc`, and `origin/main` has since reached `20260918zd`
+for the grid work in (ad)), so the cache-bust is covered — but the code landed with **no record of
+why**, which is what these two entries repair, and they land in a commit of their own afterwards.
+The standing rule *stage explicit paths* protects **your** commit from sweeping in someone else's
+work; it does nothing to stop **theirs** sweeping in yours. Markdown only here, so no cache-bust is
+owed.
+
+⚠️ **This entry is (ae), not (ad):** the letter I had reserved was taken by the same session while
+these notes were being written, and the three commits it pushed touch
+`modules/project-schedule/index.html`. All six surfaces were **re-verified by grep after the
+fast-forward**, not assumed to have survived it. Read the letter off `origin/main` at the moment
+you write, not at the moment you start.
+
 ### 2026-09-18 (ad) — The spreadsheet layer gets a rectangle, a working Ctrl+C, and the Manual tab stops opening on the Curve
 
 Owner, on the S-Curve's Manual data tab: *"UI excel grid should work properly. Bugs are occurring.
