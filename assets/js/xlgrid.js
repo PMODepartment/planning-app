@@ -179,7 +179,17 @@ window.PDGrid = (function () {
       /* the shortcut legend */
       '.pdg-grid .cc-mini{font-size:9.5px;opacity:.7;margin-top:1px}' +
       '.pdg-grid .cc-desc{max-width:340px}' +
-      '.pdg-hint{font-size:11px;color:var(--pd-muted,#8a8a8a)}' +
+      '.pdg-hint{font-size:11px;color:var(--pd-muted,#8a8a8a);line-height:1.8}' +
+      /* ⚠️ ONE SHORTCUT IS ONE UNBREAKABLE UNIT. The hint is a single run of inline text, so
+         at a narrow width it used to wrap wherever it happened to land - between a key and its
+         plus sign, or between "Ctrl+C" and the words that say what it does. Each item is a
+         nowrap span now, so the line breaks BETWEEN shortcuts and never inside one. */
+      '.pdg-hk{white-space:nowrap}' +
+      /* ⚠️ While a range is being dragged the pointer crosses a dozen <input>s, and without
+         this the browser selects their TEXT instead - a blue smear over the range highlight,
+         and a drag that ends by replacing a value the moment the next key is pressed. */
+      '.pdg-dragging,.pdg-dragging input,.pdg-dragging td{user-select:none;-webkit-user-select:none}' +
+      '.pdg-dragging input{cursor:cell}' +
       '.pdg-hint kbd{font:inherit;font-weight:700;padding:0 3px;border:1px solid var(--pd-line,#333);' +
       'border-radius:3px;background:rgba(128,128,128,.12)}';
     document.head.appendChild(s);
@@ -437,19 +447,45 @@ window.PDGrid = (function () {
        planner actually wants here are "put this rate down the rest of the trade" and "clear this
        column" — both vertical. A rectangular model would cost range maths in every operation to
        serve a case (multi-column fill) that a paste already covers better. */
+    /* ⚠️⚠️ THE SELECTION IS A RECTANGLE. It was a COLUMN RUN until 2026-09-18, on the reasoning
+       that "the operations a planner actually wants here are vertical" - true of the BOQ pricing
+       grid this layer was built for, and false of the first genuinely two-dimensional sheet to
+       use it. The S-Curve's manual sheet is trades x MONTHS: copying one trade's year, or pasting
+       a block back out of Excel, is the ordinary case there, and a column run cannot express it.
+       Owner, 2026-09-18: *"Excel multiselect ctrl c ctrlv keyboard shortcuts as well."*
+       ⚠️ A one-column rectangle is byte-for-byte the old behaviour, which is what makes this
+       safe for the three grids that were built against the column run (BOQ, and the schedule's
+       two): `r1`/`r2` still mean what they meant, and `selectedIds()` still spans the rows. */
     function range() {
       if (!focus) return null;
       var a = anchor || focus;
-      return { c: focus.c, r1: Math.min(a.r, focus.r), r2: Math.max(a.r, focus.r) };
+      return { r1: Math.min(a.r, focus.r), r2: Math.max(a.r, focus.r),
+               c1: Math.min(a.c, focus.c), c2: Math.max(a.c, focus.c) };
+    }
+
+    // Every existing cell inside the rectangle, row-major - the order the clipboard wants.
+    function inRange() {
+      var R = range(), out = [];
+      if (!R) return out;
+      for (var r = R.r1; r <= R.r2; r++) {
+        for (var c = R.c1; c <= R.c2; c++) {
+          var x = at(r, c);
+          if (x) out.push(x);
+        }
+      }
+      return out;
     }
 
     function paint() {
       clearPaint();
       var R = range();
       if (!R) { syncFill(); return; }
+      var single = (R.r1 === R.r2 && R.c1 === R.c2);
       for (var r = R.r1; r <= R.r2; r++) {
-        var x = at(r, R.c);
-        if (x) x.el.classList.add(R.r1 === R.r2 ? 'pdg-anchor' : 'pdg-sel');
+        for (var c = R.c1; c <= R.c2; c++) {
+          var x = at(r, c);
+          if (x) x.el.classList.add(single ? 'pdg-anchor' : 'pdg-sel');
+        }
       }
       syncFill();
     }
@@ -459,11 +495,15 @@ window.PDGrid = (function () {
        It is positioned against the LAST cell of the current selection, in the scroll container's
        coordinates, so it tracks horizontal scroll instead of drifting off the cell it belongs to. */
     var fillFrom = null, fillTo = null;
+    /* Set only while a shift-extend is moving focus. `onFocusIn` reads it to tell an EXTEND
+       ("keep the anchor") from an ordinary arrival ("collapse to this cell"). */
+    var extending = false;
 
     function syncFill() {
       var h = root.querySelector('.pdg-fill');
       var R = range();
-      var last = R && at(R.r2, R.c);
+      // the handle hangs off the BOTTOM-RIGHT cell of the rectangle, as in Excel
+      var last = R && at(R.r2, R.c2);
       if (!last || !SPEC) { if (h) h.style.display = 'none'; return; }
       var wrap = root.querySelector('.cc-tablewrap') || root;
       if (!h) {
@@ -484,8 +524,10 @@ window.PDGrid = (function () {
       root.querySelectorAll('.pdg-fillprev').forEach(function (el) { el.classList.remove('pdg-fillprev'); });
       if (fillTo == null || !fillFrom) return;
       for (var r = fillFrom.r2 + 1; r <= fillTo; r++) {
-        var x = at(r, fillFrom.c);
-        if (x) x.el.classList.add('pdg-fillprev');
+        for (var c = fillFrom.c1; c <= fillFrom.c2; c++) {
+          var x = at(r, c);
+          if (x) x.el.classList.add('pdg-fillprev');
+        }
       }
     }
 
@@ -498,15 +540,19 @@ window.PDGrid = (function () {
         var el = document.elementFromPoint(ev.clientX, ev.clientY);
         var c = el && cellOf(el.closest && el.closest(sel) ? el.closest(sel) : el);
         if (!c) { var td = el && el.closest && el.closest('td'); if (td) c = cellOf(td.querySelector(sel)); }
-        if (c && c.c === fillFrom.c && c.r > fillFrom.r2) { fillTo = c.r; paintFillPreview(); }
+        if (c && c.c >= fillFrom.c1 && c.c <= fillFrom.c2 && c.r > fillFrom.r2) { fillTo = c.r; paintFillPreview(); }
       }
       function up() {
         document.removeEventListener('mousemove', move);
         document.removeEventListener('mouseup', up);
         if (fillTo != null) {
-          var src = at(fillFrom.r1, fillFrom.c);
           var b = [];
-          if (src) for (var r = fillFrom.r2 + 1; r <= fillTo; r++) setCell(at(r, fillFrom.c), src.el.value, b);
+          // each column carries its OWN top value down, which is what a multi-column drag means
+          for (var c = fillFrom.c1; c <= fillFrom.c2; c++) {
+            var src = at(fillFrom.r1, c);
+            if (!src) continue;
+            for (var r = fillFrom.r2 + 1; r <= fillTo; r++) setCell(at(r, c), src.el.value, b);
+          }
           commit(b);
         }
         fillFrom = null; fillTo = null;
@@ -573,8 +619,6 @@ window.PDGrid = (function () {
         e.preventDefault();
         var R = range();
         if (!R) return;
-        var src = at(R.r1, R.c);
-        if (!src) return;
         var b = [];
         // A single cell means "fill from here to the end of the column" is NOT assumed —
         // that would be a very large accident. With no selection, Ctrl+D copies the cell ABOVE,
@@ -583,9 +627,30 @@ window.PDGrid = (function () {
           var above = seek(cell.r, cell.c, -1);
           if (above) setCell(cell, above.el.value, b);
         } else {
-          for (var r = R.r1 + 1; r <= R.r2; r++) setCell(at(r, R.c), src.el.value, b);
+          // every column of the rectangle carries its own top row down
+          for (var c = R.c1; c <= R.c2; c++) {
+            var src = at(R.r1, c);
+            if (!src) continue;
+            for (var r = R.r1 + 1; r <= R.r2; r++) setCell(at(r, c), src.el.value, b);
+          }
         }
         commit(b);
+        return;
+      }
+
+      /* ⚠️⚠️ SHIFT+ARROW EXTENDS THE RECTANGLE, IN ALL FOUR DIRECTIONS. Only up/down existed
+         before, because the selection could only be a column. Left/right cost the ability to
+         shift-select TEXT inside a cell horizontally - the same trade this file already made
+         vertically, and the cheaper one here: these cells hold a number a few characters wide,
+         and arriving at a cell already selects its whole value (see `go`). */
+      if (e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+        e.preventDefault();
+        if (!anchor) anchor = { r: cell.r, c: cell.c };
+        var dc = (k === 'ArrowLeft') ? -1 : 1;
+        var nc = at(focus.r, focus.c + dc);
+        // step over a hole rather than stopping on it, the way seek() does vertically
+        for (var ci = focus.c + dc; !nc && ci >= 0 && ci < cols.length; ci += dc) nc = at(focus.r, ci);
+        if (nc) { focus = { r: nc.r, c: nc.c }; extending = true; nc.el.focus(); extending = false; paint(); }
         return;
       }
 
@@ -594,8 +659,8 @@ window.PDGrid = (function () {
         if (e.shiftKey && k !== 'Enter') {
           e.preventDefault();
           if (!anchor) anchor = { r: cell.r, c: cell.c };
-          var nxt = seek(cell.r, cell.c, dir);
-          if (nxt) { focus = { r: nxt.r, c: nxt.c }; nxt.el.focus(); paint(); }
+          var nxt = seek(focus.r, focus.c, dir);
+          if (nxt) { focus = { r: nxt.r, c: nxt.c }; extending = true; nxt.el.focus(); extending = false; paint(); }
           return;
         }
         e.preventDefault();
@@ -609,10 +674,10 @@ window.PDGrid = (function () {
         var Rd = range();
         // Only hijack Delete for a MULTI-cell selection. On a single cell it must keep deleting
         // one character, or the key becomes unusable for ordinary typing corrections.
-        if (Rd && Rd.r1 !== Rd.r2) {
+        if (Rd && (Rd.r1 !== Rd.r2 || Rd.c1 !== Rd.c2)) {
           e.preventDefault();
           var bd = [];
-          for (var rr = Rd.r1; rr <= Rd.r2; rr++) setCell(at(rr, Rd.c), '', bd);
+          inRange().forEach(function (x) { setCell(x, '', bd); });
           commit(bd);
         }
         return;
@@ -621,18 +686,30 @@ window.PDGrid = (function () {
       if (k === 'Escape') { anchor = null; paint(); return; }
     }
 
+    /* ⚠️⚠️ COPY WRITES TSV, AND IT NO LONGER SKIPS A SINGLE CELL. The old rule was "a single
+       cell copies natively, as text" - which is true only when the caret has SELECTED that text.
+       A cell reached with Tab or an arrow has focus and no selection, so Ctrl+C put NOTHING on
+       the clipboard: measured 2026-09-18, an empty string against a cell reading 10. Excel copies
+       the cell. So does this now.
+       ⚠️ Rows are joined with a newline and columns with a TAB, which is the format Excel reads
+       back - so a rectangle copied here pastes into Excel as a block, and a block copied in Excel
+       pastes back in through `onPaste` below. That round trip is the whole point. */
     function onCopy(e) {
       var cell = cellOf(e.target);
       if (!cell) return;
-      var R = range();
-      if (!R || R.r1 === R.r2) return;     // a single cell copies natively, as text
       index();
-      var out = [];
+      var R = range();
+      if (!R) return;
+      var lines = [];
       for (var r = R.r1; r <= R.r2; r++) {
-        var x = at(r, R.c);
-        out.push(x ? x.el.value : '');
+        var row = [];
+        for (var c = R.c1; c <= R.c2; c++) {
+          var x = at(r, c);
+          row.push(x ? x.el.value : '');
+        }
+        lines.push(row.join(String.fromCharCode(9)));
       }
-      e.clipboardData.setData('text/plain', out.join(String.fromCharCode(10)));
+      e.clipboardData.setData('text/plain', lines.join(String.fromCharCode(10)));
       e.preventDefault();
     }
 
@@ -650,25 +727,140 @@ window.PDGrid = (function () {
       if (lines.length === 1 && lines[0].indexOf(String.fromCharCode(9)) < 0) return;
       e.preventDefault();
       index();
-      var b = [];
+      var b = [], dropped = 0;
       for (var i = 0; i < lines.length; i++) {
         var parts = lines[i].split(String.fromCharCode(9));
         for (var j = 0; j < parts.length; j++) {
           var target = at(cell.r + i, cell.c + j);
           if (target) setCell(target, parts[j].trim(), b);
+          else dropped++;
         }
       }
       commit(b);
-      try { UI.toast('Pasted ' + b.length + ' cell' + (b.length === 1 ? '' : 's') + '.', 'success'); }
-      catch (e2) {}
+      /* ⚠️ A block pasted near the right or bottom edge used to lose its overflow in silence -
+         `at()` returns null past the grid and the loop simply moved on. Excel refuses the paste
+         outright; refusing a planner's 200-row column because the last two rows do not fit would
+         be worse, so it lands what fits and SAYS what did not. */
+      try {
+        if (dropped) UI.toast('Pasted ' + b.length + ' cell' + (b.length === 1 ? '' : 's') +
+          ' \u2014 ' + dropped + ' fell outside the sheet and were not pasted.', 'warn');
+        else UI.toast('Pasted ' + b.length + ' cell' + (b.length === 1 ? '' : 's') + '.', 'success');
+      } catch (e2) {}
     }
 
+    /* ⚠️⚠️ ARRIVING AT A CELL COLLAPSES THE SELECTION, AND NOT DOING SO IS A VISIBLE BUG.
+       This used to read `if (!anchor) paint()` - so once a Shift+arrow had set an anchor, every
+       later click or Tab moved the focus and left the OLD selection painted where it was, in a
+       row and column the planner was no longer anywhere near. Owner's screenshot, 2026-09-18:
+       one cell ringed for focus in MEPF Works / May, and a stray grey cell sitting in Site Works
+       / August with nothing to explain it. Reproduced exactly: focus moved, `anchor` survived,
+       `paint()` never ran.
+       ⚠️ `extending` is the one case that must NOT collapse - a shift-extend moves focus on
+       purpose and the anchor is the thing it is measuring from. */
     function onFocusIn(e) {
       var cell = cellOf(e.target);
       if (!cell) { index(); cell = cellOf(e.target); }
       if (!cell) return;
       focus = { r: cell.r, c: cell.c };
-      if (!anchor) paint();
+      if (!extending) anchor = null;
+      paint();
+    }
+
+    /* The nearest ancestor that actually scrolls. ⚠️ NOT `root`: a host hands this layer the
+       TABLE, and the thing with the scrollbars is a wrapper above it (`.sc-matrixwrap`,
+       `.cc-tablewrap`). Walking up and testing for real overflow finds it without this file
+       having to know any module's class names. */
+    function scroller() {
+      var n = root;
+      while (n && n !== document.body) {
+        var st = window.getComputedStyle(n);
+        if (/(auto|scroll)/.test(st.overflowX + ' ' + st.overflowY) &&
+            (n.scrollWidth > n.clientWidth || n.scrollHeight > n.clientHeight)) return n;
+        n = n.parentElement;
+      }
+      return null;
+    }
+
+    function cellFromPoint(x, y) {
+      var el = document.elementFromPoint(x, y);
+      if (!el) return null;
+      var c = cellOf(el);
+      if (c) return c;
+      var td = el.closest && el.closest('td');
+      if (td) { var inp = td.querySelector(sel); if (inp) return cellOf(inp); }
+      return null;
+    }
+
+    /* Dragging to the edge scrolls the sheet, because a 20-month grid is wider than the window
+       and a selection you cannot extend past the edge is not much of a selection. */
+    function autoScroll(ev) {
+      var wrap = scroller();
+      if (!wrap) return;
+      var b = wrap.getBoundingClientRect(), pad = 30, step = 20;
+      if (ev.clientX > b.right - pad) wrap.scrollLeft += step;
+      else if (ev.clientX < b.left + pad) wrap.scrollLeft -= step;
+      if (ev.clientY > b.bottom - pad) wrap.scrollTop += step;
+      else if (ev.clientY < b.top + pad) wrap.scrollTop -= step;
+    }
+
+    var dragFrom = null, dragging = false;
+
+    /* ⚠️⚠️ CLICK AND DRAG SELECTS A RANGE, and shift+click extends one. Owner, 2026-09-18:
+       *"The multi-select via mousedrag is not working. I want the grid to be like an excel as
+       much as possible."* Shift+click and Shift+arrow had landed earlier that day; the mouse
+       gesture people actually reach for first had not.
+       ⚠️ A PLAIN PRESS IS NOT TREATED AS A DRAG UNTIL THE POINTER REACHES A DIFFERENT CELL.
+       That is what keeps an ordinary click working: it still focuses the input and places the
+       caret where you clicked, because nothing is preventDefault()ed until a second cell is
+       entered. Only then does the anchor get planted and the range begin. */
+    function onMouseDown(e) {
+      index();
+      var cell = cellOf(e.target);
+      if (!cell) return;
+      if (e.shiftKey) {
+        if (!focus) return;
+        e.preventDefault();
+        if (!anchor) anchor = { r: focus.r, c: focus.c };
+        focus = { r: cell.r, c: cell.c };
+        extending = true; cell.el.focus(); extending = false;
+        paint();
+        return;
+      }
+      dragFrom = { r: cell.r, c: cell.c };
+      document.addEventListener('mousemove', onDragMove);
+      document.addEventListener('mouseup', onDragUp);
+    }
+
+    function onDragMove(ev) {
+      if (!dragFrom) return;
+      var c = cellFromPoint(ev.clientX, ev.clientY);
+      if (!c) { if (dragging) autoScroll(ev); return; }
+      if (!dragging) {
+        if (c.r === dragFrom.r && c.c === dragFrom.c) return;   // still the cell we pressed on
+        dragging = true;
+        root.classList.add('pdg-dragging');
+        anchor = { r: dragFrom.r, c: dragFrom.c };
+      }
+      ev.preventDefault();
+      focus = { r: c.r, c: c.c };
+      paint();
+      autoScroll(ev);
+    }
+
+    function onDragUp() {
+      document.removeEventListener('mousemove', onDragMove);
+      document.removeEventListener('mouseup', onDragUp);
+      if (dragging) {
+        root.classList.remove('pdg-dragging');
+        /* ⚠️⚠️ DOM FOCUS MUST END ON THE CELL PDGrid CALLS `focus`, or the selection dies on
+           the next keystroke: `onKey` reads the cell under the caret and, finding it is not
+           `focus`, resets `focus` to it - collapsing the range just as Ctrl+C or Delete is
+           pressed on it. The drag itself deliberately does NOT move DOM focus cell by cell
+           (that would scroll the sheet under the pointer); it is set once, here, at the end. */
+        var f = focus && at(focus.r, focus.c);
+        if (f) { extending = true; f.el.focus(); extending = false; }
+      }
+      dragFrom = null; dragging = false;
     }
 
     /* WARNING RE-RUN ON EVERY REFRESH, because the host re-renders the whole table on a filter, a
@@ -689,6 +881,7 @@ window.PDGrid = (function () {
     root.addEventListener('copy', onCopy);
     root.addEventListener('paste', onPaste);
     root.addEventListener('focusin', onFocusIn);
+    root.addEventListener('mousedown', onMouseDown);
 
     return {
       detach: function () {
@@ -696,6 +889,7 @@ window.PDGrid = (function () {
         root.removeEventListener('copy', onCopy);
         root.removeEventListener('paste', onPaste);
         root.removeEventListener('focusin', onFocusIn);
+        root.removeEventListener('mousedown', onMouseDown);
         clearPaint();
       },
       refresh: layout,
@@ -723,10 +917,21 @@ window.PDGrid = (function () {
   }
 
   function hintHTML() {
-    return '<span class="pdg-hint">' +
-      '<kbd>Tab</kbd> next field · <kbd>Enter</kbd> next row · <kbd>Shift</kbd>+<kbd>&darr;</kbd> select · ' +
-      '<kbd>Ctrl</kbd>+<kbd>D</kbd> fill down · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · paste a column from Excel' +
-      '</span>';
+    var items = [
+      '<kbd>Tab</kbd> next field',
+      '<kbd>Enter</kbd> next row',
+      '<kbd>Shift</kbd>+arrows select',
+      'click and drag to select',
+      'shift-click to extend',
+      '<kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> copy &amp; paste a block',
+      '<kbd>Ctrl</kbd>+<kbd>D</kbd> fill down',
+      '<kbd>Del</kbd> clear',
+      '<kbd>Ctrl</kbd>+<kbd>Z</kbd> undo'
+    ];
+    return '<span class="pdg-hint">' + items.map(function (t, i) {
+      return '<span class="pdg-hk">' + t + '</span>' +
+             (i < items.length - 1 ? ' \u00b7 ' : '');
+    }).join('') + '</span>';
   }
 
   return { attach: attach, hintHTML: hintHTML };

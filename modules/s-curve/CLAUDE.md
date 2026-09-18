@@ -1,5 +1,56 @@
 # Module: s-curve
 
+## 2026-09-18 — The manual sheet: drag to select, no trade %, no prose, shortcuts folded away — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (af)) — read that entry for the
+measurements. Four owner asks on this tab:
+
+- **The `x% of the project` under each trade name is gone.** It was that trade's share of total
+  activity DURATION (or of loaded cost on the Cost basis) and read as a share of value.
+  ⚠️ `tradeWeights()` is untouched — it still drives the `Project (weighted)` footer and the
+  curve — so this is a display change and nothing else. Still shown on the Curve tab's period
+  breakdown, which was not part of the ask.
+- ⚠️⚠️ **Reported, not fixed: a zero-weight trade's row is editable and inert.** Measured on a
+  trade whose activities carry no dates: 20 editable cells, none disabled; typing 50 takes the
+  row's own Total to 50% and leaves the `Project (weighted)` footer unchanged, with no warning
+  anywhere. The existing orphaned-trade warning does not cover it — that one is about trades in a
+  SAVED sheet that no longer match the schedule, not a schedule trade that weighs nothing.
+- **The two explanatory paragraphs under the sheet are deleted.** The orphaned-trade warning that
+  shared that block stays and now renders on its own, so the block is absent entirely when
+  nothing is orphaned.
+- **The keyboard hint moved below the sheet into a `<details>`**, using this module's own
+  `.sc-why` disclosure rather than a second collapsible idiom. Closed by default; the
+  `#sc-manhint` id is unchanged so the code that fills it still finds it. Wrapping measured at
+  six widths: 1/2/2/2/3/4 lines with zero shortcuts split across a line break.
+
+**Click-and-drag range selection** landed in the shared `assets/js/xlgrid.js` this round (with
+edge auto-scroll), which is what this sheet's `PDGrid.attach` picks up. See the root entry.
+
+## 2026-09-18 — The Manual data tab opens on the Manual data tab, and its sheet behaves like a spreadsheet — fmlozano
+
+Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (ad)) — read that entry for the
+measurements. What lands in this module:
+
+- ⚠️⚠️ **`applyView()` — the one place `view` becomes DOM.** `switchView()` was the only thing that
+  toggled `#sc-pane-curve` / `#sc-pane-manual`, and it only ever ran from the tab's click handler,
+  while `render()` synced just the `.active` class. Two half-syncs of one piece of state, so both
+  routes that reach this tab without a click set the LABEL and left the Curve showing: the
+  remembered `sc_view_<pid>`, and **`?scView=manual`** — the deep link the portfolio Manual-data
+  register uses to open a project's sheet, which had therefore never once landed on it. Owner:
+  *"manual data tab but shows s-curve page"*. `applyView()` is called from both now, and carries
+  the `aria-selected` that `render()`'s copy was missing.
+- **The sheet's keyboard layer is the shared `xlgrid.js`, and it changed underneath this module** —
+  the selection is a rectangle rather than a column run, Ctrl+C writes TSV (including for a single
+  cell, where it used to put an empty string on the clipboard), paste clamps at the sheet edge and
+  reports what fell outside, and a click no longer leaves the previous selection painted in a row
+  you have left. The hint line under the sheet is `PDGrid.hintHTML()` and now names those keys.
+  ⚠️ This module is what drove the change: it is the first genuinely two-dimensional grid to use
+  the layer, and *"copy this trade's year"* is not expressible as a column run.
+
+⚠️ Measured on a fixture shaped to OPW101 — its six trades and weights, its Nov '25 → Jun '27
+span, and an **empty** sheet, which is the state the tab actually opens in on a new project and
+the one earlier fixtures here never covered. Not verified signed in.
+
 ## 2026-09-18 — UI sweep: the shared segmented control, the heading's grain, and two shell defects found here — fmlozano
 
 Part of the app-wide pass in the root `CLAUDE.md` (2026-09-18 (za)) — read that entry for the full

@@ -104,7 +104,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-18 (ad) — The Presentations tab still counted its records in "PPR"
+### 2026-09-18 (ag) — The Presentations tab still counted its records in "PPR"
 
 Owner: *"in progress photos, presentations tab, it says 5 of 5 PPR. this should be 5 of 5
 Presentations. please make minor revision."* Right, and it is the tail of a rename this module has
@@ -133,12 +133,339 @@ asset on one version; 0 NUL bytes.
 ⚠️ **Not verified signed in** — the count line is asserted against the shipped source, never read off
 a real project's list.
 
-⚠️ **Merged `origin/main` (43 commits) before shipping**, and the token re-derived **after**
-integrating rather than guessed beforehand: this branch sat at `20260918g` while main had reached
-`20260918zc`, and `g` sorts *earlier* — a browser holding main's token would never have fetched these
-bytes. `ppr.js` and `MODULE_V` → `20260918zd`, sort-checked as a plain string against all 33 tokens in
-the merged tree. ⚠️ `modules-grid.js`'s own fallback literal had drifted to `20260918zb` on main and is
+⚠️ **Merged `origin/main` TWICE before shipping — 43 commits, then 7 more — and the token was
+re-derived after each**, from what the remote actually carries rather than guessed beforehand. The
+first pass: this branch sat at `20260918g` while main had reached `20260918zc`, and `g` sorts
+*earlier* — a browser holding main's token would never have fetched these bytes; re-derived to
+`20260918zd`. ⚠️ `modules-grid.js`'s own fallback literal had drifted to `20260918zb` on main and is
 brought current with it.
+
+⚠️⚠️ **THE SECOND MERGE COLLIDED ON BOTH HALVES AT ONCE, WHICH IS WHY IT IS RECORDED HERE AND NOT
+JUST RESOLVED.** Main published `20260918ze` while this branch held `zd`, so `zd` was behind again
+before it had shipped at all — re-derived to **`20260918zf`**, past every `20260918*` token
+enumerated on **both** refs before resolving (`a b c f ze`), and sort-checked as a plain string.
+⚠️ And main independently published its own **`2026-09-18 (ad)`** — plus `(ae)` and `(af)` — so this
+entry is re-lettered **(ad) → (ag)**. Both sides' entries are kept whole and the one merging in is
+the one that moves, per this file's own header rule. ⚠️ The merge was checked by arithmetic rather
+than by eye: base **21,434** + this side's **36** + main's **311** = **21,781**, which is what the
+file now measures, with **344 dated headings, 344 distinct** — nothing lost and nothing doubled.
+⚠️ A one-line shortfall on the first count was a **missing blank line at the seam**, where this
+entry's last line ran straight into main's `(af)` heading — found by the count, not by reading.
+⚠️⚠️ And the resolver's own marker check had to be **anchored** (`^=======$`): a loose grep reports
+7 surviving "conflict markers" across `modules-grid.js` and `dashboard.html`, every one a decorative
+`// ======` comment banner — the trap this log already records for a conflict script that searches
+for a marker the file also uses as decoration.
+
+### 2026-09-18 (af) — The manual sheet drags to select, drops the trade %, loses its prose, and folds its shortcuts under the grid
+
+Four owner asks in one pass, all on the S-Curve's Manual data tab, all measured.
+
+⚠️ Lettered **(af)**, `MODULE_V` **`20260918ze`**, `xlgrid.js` **`20260918b`** — `origin/main`
+reached `(ae)` during this. Fourth token re-derivation today.
+
+### 1. The trade % is off the sheet — and the weighting behind it is untouched
+
+Owner, after asking what the number meant: *"Disable the % from showing first."* Each trade name
+carried **`x% of the project`**. Answered first, because it is worth recording what it was: the
+trade's share of the schedule's **total activity duration**, or of **loaded cost** when the toolbar
+is on Cost ₱. It reads as a share of value, which is not what it is. The six shares summed to
+exactly 100%, so the allocation was never wrong — the label was.
+
+⚠️ **`tradeWeights()` is untouched.** It still drives the `Project (weighted)` footer and the
+curve. This is a display change and nothing else, so it can be put back or re-worded without
+touching any arithmetic. It still shows on the Curve tab's period breakdown (`.sc-bd`), a
+different surface that was not part of the ask.
+
+⚠️⚠️ **And the question turned up something worse, which is REPORTED, not fixed.** Measured on a
+trade whose activities carry no dates — `Allied Services`, 0% in the owner's own screenshot: the
+row offers **20 editable cells, none disabled**. Typing 50 into one moves the row's own Total to
+**50%** and leaves the `Project (weighted)` footer **completely unchanged**, with **no warning
+anywhere on screen**. A planner can fill that row, watch it reach 100%, save it, and move the
+curve by nothing. The module's own note says a zero-weight trade should be *"REPORTED rather than
+dropped"* — but the only reporting that exists covers trades in a **saved sheet** that no longer
+match the schedule, not a schedule trade that weighs nothing. Awaiting the owner's call on the
+shape of the fix.
+
+### ⚠️⚠️ 2. CLICK AND DRAG SELECTS A RANGE
+
+Owner: *"The multi-select via mousedrag is not working. I want the grid to be like an excel as
+much as possible."* Shift+arrow and shift-click landed earlier the same day; the gesture people
+reach for first had not.
+
+⚠️ **A plain press is not treated as a drag until the pointer reaches a DIFFERENT cell**, and that
+is what keeps an ordinary click working — nothing is `preventDefault()`ed until a second cell is
+entered, so a click still focuses the input and places the caret where you clicked. Only then is
+the anchor planted. Measured: press-and-hold paints **1** cell and sets no `pdg-dragging` class;
+dragging to the third row and third column paints **9**.
+
+⚠️⚠️ **DOM focus is moved to the end cell on DROP, and leaving that out would have killed the
+feature silently.** `onKey` reads the cell under the caret and, finding it is not `focus`, resets
+`focus` to it — so without this the range would collapse at the exact moment Ctrl+C or Delete was
+pressed on it. The drag deliberately does **not** move DOM focus cell by cell (that would scroll
+the sheet under the pointer); it is set once, at the end. Verified: after the drop the class is
+gone, DOM focus is the end cell, and a copy fires `prevented` with all **9** still painted.
+
+⚠️ Dragging to the edge **auto-scrolls**, because a 20-month sheet is wider than the window and a
+range you cannot extend past the edge is not much of a range. The scroll container is found by
+walking up from `root` and testing for real overflow — a host hands this layer the TABLE, and the
+thing with the scrollbars is a wrapper above it (`.sc-matrixwrap`, `.cc-tablewrap`), so this file
+does not have to know any module's class names.
+
+⚠️ `.pdg-dragging` sets `user-select:none` on the cells: without it the pointer crossing a dozen
+`<input>`s selects their TEXT, which is a blue smear over the range and a value replaced by the
+next keystroke.
+
+### 3. The two explanatory paragraphs are deleted
+
+Owner, quoting them back: *"let's just delete this"* — the one about a cell being the trade's own
+share rather than the project's, and the one about the sheet always being monthly.
+
+⚠️ **The orphaned-trade warning that shared that block is NOT prose and stays.** It reports that
+rows the planner has already **saved** no longer match any trade in the schedule, so they carry no
+weight and are not on the curve — a fact about their data, not an explanation of the screen, and
+the only place it is said. It renders on its own now, so the block is absent entirely when nothing
+is orphaned, which is the ordinary case.
+
+### 4. The shortcuts fold away under the grid
+
+Owner: *"Move the keyboard shortcuts tooltip below the grid… and make it collapsible. make sure
+that the wrapping follows the UI sweep principle."* The hint ran along the row **above** the
+sheet, beside the Planned/Actual/Forecast selector, where a nine-item line of key chips was the
+widest thing in the header and competed with the one control a planner actually presses.
+
+⚠️ **`.sc-why` is the module's own disclosure, not a new one** — the same element, caret and focus
+ring as *"How to read this chart"* on the Curve tab. A second collapsible idiom on one screen is
+the thing this file keeps recording as a defect. Closed by default; the id is unchanged, so the
+`getElementById('sc-manhint')` that fills it still finds it.
+
+⚠️ **The wrapping is the part that was asked for, so it is the part that was measured.**
+`hintHTML()` now emits each shortcut inside a nowrap `.pdg-hk`, so a line break lands **between**
+shortcuts and never inside one — no more `Ctrl+C /` on one line and `Ctrl+V` on the next:
+
+| width | 1500 | 1200 | 900 | 700 | 520 | 390 |
+|---|---|---|---|---|---|---|
+| lines | 1 | 2 | 2 | 2 | 3 | 4 |
+| shortcuts split across lines | 0 | 0 | 0 | 0 | 0 | 0 |
+| hint overflow / page h-scroll | 0 | 0 | 0 | 0 | 0 | 0 |
+
+### ⚠️ The split-chunk check was wrong twice before it was right
+
+The first version counted `getClientRects().length > 1` and reported **seven of nine** shortcuts
+split — on a line where `white-space` measured `nowrap`. The second counted distinct rect tops and
+reported the same seven. Both were reading the `<kbd>` element's own border box: the two rects sat
+at **966 and 967**, one pixel apart. A real wrap moves a fragment by a whole line — 20.3px here —
+so the test is a tolerance against the line height, not an equality. ⚠️ Same family as the
+`CSSRuleList`-is-truthy miscount earlier today: a checker confidently describing something it was
+not looking at, and in both directions this week it has invented a defect rather than hidden one.
+
+### Verified
+
+Browser-measured on a fixture shaped to OPW101 — its six trades and weights, its Nov '25 → Jun '27
+span, an **empty** sheet, and one trade deliberately left undated so the zero-weight row is real:
+
+- the sheet's trade cells carry the name only, **0** `<small>`, and no *"% of the project"*
+  anywhere in the matrix; both deleted paragraphs absent; the note block gone entirely;
+- the card's children in order end `…sc-kindbar, sc-matrixwrap, details.sc-manhelp` — the
+  disclosure is the LAST thing in the card, below the sheet, and closed on arrival;
+- drag, drop, copy-after-drag and the press-only case as above.
+
+`test-boq` **66/0** · `test-actsetup` **142/0** · `test-portfolio-dash` **398/0** ·
+`wiring-check` **139/0** · `dark-remap` **0** · `type-scale` **18** (unchanged) · `xlgrid.js` and
+the s-curve inline script `node --check` clean · `<style>` braces **234/234** · 0 NUL bytes.
+
+⚠️ **Not verified signed in**, and the clipboard is still exercised through dispatched events
+rather than a real Ctrl+C; the drag is synthetic `mousedown`/`mousemove`/`mouseup`, not a real
+pointer. ⚠️ Harness and probes lived under `**/*harness*` and were deleted before committing.
+
+`xlgrid.js` → **`20260918b`** (3 refs) · `MODULE_V` → **`20260918ze`**, fallback literal in step.
+Both sort-checked past every token in the tree and on `origin/main`.
+
+### 2026-09-18 (ae) — A baseline is captured, not typed: the read-only field that has to be read-only in six places
+
+Owner: *"The baseline dates are editable which shouldn't be"*. Project Schedule only. The full
+reasoning, surface by surface, is in `modules/project-schedule/CLAUDE.md` (y); what follows is the
+part that generalises to every module.
+
+⚠️ **This was a correctness fix, not a permissions one.** `bl_start` / `bl_finish` are a **mirror**
+of whichever saved baseline was last *Set primary* — not independent fields. A date typed into them
+disagrees with the baseline it claims to come from, is silently overwritten by the next Capture /
+Import / Set primary, and until then every variance, Planned %, slip and S-curve on the screen is
+measured against a number nobody captured. The rule to carry: **a field that mirrors a captured
+record must not offer an edit affordance**, however harmless the widget looks.
+
+### ⚠️⚠️ "MAKE IT READ-ONLY" MEANS SIX SURFACES IN THIS APP, AND FIVE OF THEM ARE NOT THE ONE YOU WERE SHOWN
+
+The owner pointed at a grid cell. A field in a schedule-style module is typable from, at least:
+the **grid cell** (dblclick and type-to-edit), **paste**, **cut**, **Ctrl+D fill-down**, the
+**right-click** *Fill … down* item, the **detail panel**, the **New/Edit modal** (and whatever its
+`save()` puts in the payload), and **Global Change**. Fixing only the cell leaves a field that is
+read-only to the mouse and wide open to Ctrl+V. Enumerate the list before claiming a field is
+locked.
+
+⚠️ **Several of those share a gate, so they close together — check before writing a second fix.**
+In Project Schedule the right-click *Fill down* item and the dblclick handler both derive their
+field from `closest('.ps-editable')`, not from `data-field`, so dropping that one class closed all
+three gestures at once. I had recorded fill-down as a remaining gap on the opposite assumption and
+was **wrong**; reading the handler is what settled it. ⚠️ The same coupling has a **cost**:
+*Format cell…* is gated on the same value and disappears from those columns too. Say so in the log
+rather than let it be found later.
+
+### ⚠️⚠️ THE DURABLE HALF IS A GUARD AT THE WRITE CHOKE POINT, NOT SIX DISABLED WIDGETS
+
+Removing the affordances makes an edit *un-offered*; a guard in the single function every write
+funnels through (`persist()` here) makes it **structurally true** — an edit surface added next year
+inherits it without knowing it exists. Three constraints that guard has to respect, all of which
+apply to any module with undo:
+
+- ⚠️⚠️ **Clone the patch before deleting keys.** Undo replays `before` / `after` **by reference**;
+  mutating the caller's object corrupts the history of the very save you are guarding.
+- ⚠️⚠️ **Strip and REPORT, never strip silently** — a toast naming where the field *is* set. A
+  save that quietly drops part of what the caller asked for is the failure this repo keeps warning
+  about. A hard reject is worse still: it breaks undo of edits made *before* the lock existed.
+- ⚠️ **Check what does NOT come through the choke point.** Bulk editors are the usual exception —
+  Global Change writes with batched `sb().update()` and then `resetUndo()`, so it needs its own
+  removal from `GC_FIELDS`, and the legitimate lifecycle writers (Capture, Set primary, Import,
+  Clear) bypass `persist()` entirely, which is exactly why the guard is safe to add.
+
+⚠️ **Scope held: `bl_cost` was left editable in Global Change.** The owner said *dates*. The
+asymmetry is named in the code comment so it reads as a decision, not an oversight.
+
+### ⚠️ Verified — and one thing not verified
+
+The inline `<script>` parses (1 block, 0 failures, 4.48 MB), 0 NUL bytes, all six surfaces confirmed
+by grep against the committed file. ⚠️ **Not verified signed in:** no baseline date has been typed
+at, pasted into or Global-Changed against a real project, and the warn toast has never been seen.
+
+### ⚠️⚠️ THE CODE SHIPPED INSIDE ANOTHER SESSION'S COMMIT — THE CONCURRENT-SESSION HAZARD FROM THE OTHER SIDE
+
+All six edits were sitting in the working tree when a concurrent session committed
+`modules/project-schedule/index.html` **whole** for its own LSM work, so this change reached
+`origin/main` inside commit `02a24e4`, under a message about overlap bands. Nothing is lost and
+`MODULE_V` moved forward with it (`20260918zc`, and `origin/main` has since reached `20260918zd`
+for the grid work in (ad)), so the cache-bust is covered — but the code landed with **no record of
+why**, which is what these two entries repair, and they land in a commit of their own afterwards.
+The standing rule *stage explicit paths* protects **your** commit from sweeping in someone else's
+work; it does nothing to stop **theirs** sweeping in yours. Markdown only here, so no cache-bust is
+owed.
+
+⚠️ **This entry is (ae), not (ad):** the letter I had reserved was taken by the same session while
+these notes were being written, and the three commits it pushed touch
+`modules/project-schedule/index.html`. All six surfaces were **re-verified by grep after the
+fast-forward**, not assumed to have survived it. Read the letter off `origin/main` at the moment
+you write, not at the moment you start.
+
+### 2026-09-18 (ad) — The spreadsheet layer gets a rectangle, a working Ctrl+C, and the Manual tab stops opening on the Curve
+
+Owner, on the S-Curve's Manual data tab: *"UI excel grid should work properly. Bugs are occurring.
+Excel multiselect ctrl c ctrlv keyboard shortcuts as well"*, and, with a screenshot, *"manual data
+tab but shows s-curve page"*. Four defects, three of them in the shared layer.
+
+⚠️ Lettered **(ad)**, `MODULE_V` **`20260918zd`**, `xlgrid.js` **`20260918a`**. `origin/main`
+published `(ab)`→`(ac)` and moved `MODULE_V` to `20260918zc` during this; re-derived and
+sort-checked after integrating, which is now the third round of this in one day.
+
+### ⚠️⚠️ 1. THE TAB SAID "MANUAL DATA" AND THE CURVE WAS WHAT SHOWED
+
+`switchView()` is the only thing in the module that toggles the two panes, and it is called from
+**exactly one place**: the tab's own click handler. `render()` separately synced the `.active`
+CLASS from `view`. So the label and the pane were two half-syncs of one piece of state, and every
+route into the tab that is not a click set the label and left the Curve showing:
+
+| route | what happened |
+|---|---|
+| the remembered view (`sc_view_<pid>`) | reopen the module → "Manual data" selected, S-curve underneath |
+| `?scView=manual` | the portfolio register's "open this project's sheet" link → the Curve |
+
+⚠️ The second is the worse one: that deep link was added on 2026-09-16 **so the portfolio Manual-
+data register could open a project's sheet**, and it has never once landed on it.
+
+⚠️ Fixed as one `applyView()` called from both `switchView()` (immediately, before the lazy fetch
+that can `return` into a round trip) and `render()`. It also carries the `aria-selected` that
+render()'s copy was missing. Verified both routes: pane shown, matrix rendered, `aria` correct.
+
+### ⚠️⚠️ 2. THE SELECTION COULD NOT DESCRIBE ANYTHING ON A TRADES × MONTHS SHEET
+
+`xlgrid.js` said so in its own words — *"The selection is a COLUMN RUN, not a rectangle, and that
+is deliberate… the operations a planner actually wants here are vertical."* That is true of the BOQ
+pricing grid the layer was built for. The S-Curve's manual sheet is **trades × months**, and the
+ordinary operations there — copy one trade's year, paste a block back out of Excel — are exactly
+the ones a column run cannot express.
+
+⚠️ It is a rectangle now: `{r1, r2, c1, c2}`, Shift+arrow extending in all four directions, and
+shift-click extending to the clicked cell. ⚠️⚠️ **A one-column rectangle is byte-for-byte the old
+behaviour**, which is what makes this safe for the three grids built against the column run —
+`r1`/`r2` still mean what they meant and `selectedIds()` still spans the rows. `test-boq` **66/0**
+and `test-actsetup` **142/0** on the changed file.
+
+### ⚠️⚠️ 3. Ctrl+C PUT AN EMPTY STRING ON THE CLIPBOARD
+
+`onCopy` opened with `if (!R || R.r1 === R.r2) return;` and the comment *"a single cell copies
+natively, as text"*. That is true only when the caret has **selected** the text. A cell reached
+with Tab or an arrow has focus and no selection, so the native copy took nothing — measured, an
+empty string against a cell reading **10**.
+
+⚠️ Copy now writes TSV for whatever the rectangle covers, single cell included: rows joined by a
+newline, columns by a tab, which is the format Excel reads back. Measured on a 3×3:
+`11⇥12⇥13 / 21⇥22⇥23 / 31⇥32⇥33`. Paste already understood a 2D block — it now **clamps** at the
+sheet edge and says how many cells fell outside instead of dropping them in silence (*"Pasted 1
+cell — 5 fell outside the sheet and were not pasted."*). Ctrl+D and the fill handle carry each
+column's own top value down; Delete clears the rectangle.
+
+### ⚠️ 4. THE STRAY GREY CELL IN THE SCREENSHOT WAS A SELECTION THAT NEVER CLEARED
+
+`onFocusIn` ended `if (!anchor) paint();`. So once a Shift+arrow had set an anchor, every later
+click moved the focus and **left the old selection painted** in a row and column the planner was
+no longer near. That is the lone grey cell in Site Works / August sitting under a focus ring in
+MEPF Works / May, with nothing on screen to explain it. Arriving at a cell collapses the selection
+now; a shift-extend is the one case that does not, which is what the new `extending` flag marks.
+
+### ⚠️⚠️ THE HARNESS COULD NOT SEE THE FIX, AND SAID SO AS A FAILURE
+
+The stray-paint check reported the old selection still painted after `el.focus()` — and it was
+wrong. **`focusin` never fires in this pane**: `document.hasFocus()` is `false`, so `activeElement`
+moves and no focus event is dispatched. Proved by counting listener hits: **0** across the whole
+sequence. The same root cause as the recorded `:focus` trap, one step further out — it voids focus
+*events*, not just `:focus` matching. Re-measured by dispatching the `focusin` the browser would
+have: selection collapses to the one cell, shift-extend still extends. ⚠️ A harness reporting a
+correct fix as broken is the expensive direction; I nearly reverted a good change.
+
+### Found and NOT changed
+
+- **The Notes button covers the sheet's last sentence.** Real, and app-wide by design: `.pd-nb`
+  is `position: fixed; right:18px; bottom:18px`, draggable *because* the owner asked for it to be
+  *"movable anywhere in the page as the user desires"*. `.pd-main` already reserves **48px** at the
+  document end; the overlap in the screenshot is **mid-scroll**, which no padding can fix — a
+  fixed button crosses content while the page moves under it. Moving it is the escape hatch that
+  already exists.
+- **Arrow ←/→ still move the caret, not the cell.** Tab covers horizontal movement, and hijacking
+  the two keys people type corrections with, across four modules, is a wider blast radius than
+  this asks for. Shift+←/→ *is* hijacked, matching the choice this file already made for Shift+↓.
+- **Ctrl+A is still the browser's** (select the cell's text). Excel would select the sheet; doing
+  that would take away the only way to select a value for retyping.
+
+### Verified
+
+A browser harness on a fixture shaped to the owner's own project — OPW101's six trades and weights,
+its Nov '25 → Jun '27 span, and an **empty** sheet, which is the state his screenshot shows and the
+state my earlier fixtures never hit:
+
+- the grid: 3×3 rectangle painted, copied as TSV, `Delete` clears all four cells of a 2×2, `Ctrl+Z`
+  restores them, `Ctrl+D` fills **99/99/99** and **88/88/88** down their own columns, shift-click
+  paints 9, an overflowing paste warns about 5 dropped cells;
+- both routes onto the tab land on the sheet, with the matrix rendered and `aria-selected` right;
+- no page horizontal scroll; no clipped text on the tab; the theme flip moves **all five** sampled
+  properties, so these readings are from the real cascade.
+
+`test-boq` **66/0** · `test-actsetup` **142/0** · `test-syntax` **4/4** · `wiring-check` **139/0** ·
+`dark-remap` **0** · `xlgrid.js` and the s-curve inline script both `node --check` clean · 0 NUL
+bytes. ⚠️ Harness and probes lived under `**/*harness*` and were deleted before committing.
+
+⚠️ **Not verified signed in** — fixtures, not a real project, and the clipboard was exercised
+through dispatched events rather than a real Ctrl+C.
+
+`xlgrid.js` → **`20260918a`** (3 refs: s-curve, project-schedule, contracts-claims) ·
+`MODULE_V` → **`20260918zd`**, fallback literal in step. Both sort-checked past every token in the
+tree and on `origin/main`.
 
 ### 2026-09-18 (ac) — A shared stretch splits instead of being awarded, and the merge branch I wrote was unreachable
 

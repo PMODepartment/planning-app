@@ -1,3 +1,121 @@
+## 2026-09-18 (y) — A baseline is captured, not typed: five edit surfaces closed, and one that closed itself
+
+Owner: *"The baseline dates are editable which shouldn't be"*. No scope qualifier, so the deliverable
+was taken to be **every direct-typing write path**, not only the grid cell they happened to be
+looking at.
+
+### ⚠️⚠️ WHY THIS IS A CORRECTNESS FIX AND NOT A PERMISSIONS ONE
+
+`bl_start` / `bl_finish` are **a mirror of whichever saved baseline was last "Set primary"**
+(`BL_PRIMARY`, ~line 6863) — not independent fields. So a date typed into them is divergent from the
+saved baseline the columns claim to come from, and the next **Capture current / Import baseline /
+Set primary** overwrites it **without warning**. In the meantime every variance, Planned %, slip and
+S-curve on the screen is measured against a number nobody captured. The lifecycle lives in
+**Actions › Baselines**, and it is untouched.
+
+### The five surfaces
+
+| # | surface | how it is closed |
+|---|---|---|
+| 1 | the grid cell (dblclick, type-to-edit) | `ps-editable` removed; `data-field` **kept** |
+| 2 | paste, cut, Ctrl+D fill-down | `edit: 0` in `_CELL_META_BY_LABEL` |
+| 3 | the detail panel's *Dates* group | `_gf` / `_gfDate` replaced with `_gro` |
+| 4 | the New/Edit activity modal | `readonly` inputs, and `save()` omits both keys |
+| 5 | Global Change | `bl_start` / `bl_finish` absent from `GC_FIELDS` |
+
+⚠️ **`data-field` is deliberately retained on the grid cell**, so copy, the live-collab cell-address
+broadcast and `_AUDIT_LBL` still resolve the column. Only the edit affordance goes — which also
+removes the `:hover` tint, and that tint *is* the visual signal that a cell can be typed into.
+
+### ⚠️⚠️ AND SURFACE 1 CLOSES TWO MORE GESTURES BY CONSTRUCTION, WHICH I HAD WRONGLY FLAGGED AS A GAP
+
+I recorded mid-work that the right-click **Fill BL Start down (N)** item was still reachable, on the
+reasoning that it derives its field from `data-field` and edit 1 keeps that attribute. **That is
+wrong.** The grid's `contextmenu` handler reads:
+
+```js
+// Which editable cell was clicked (drives "Fill down" for that field).
+var cell = e.target && e.target.closest ? e.target.closest('.ps-editable') : null;
+openRowMenu(e, sr || { id: id }, cell ? cell.dataset.field : null);
+```
+
+So `cellField` is derived from **`.ps-editable`**, not from `data-field`. With the class gone,
+`closest` returns null on a BL cell, `cellField` is null, and the `if (cellField && …)` guard on the
+menu item never fires. The **dblclick-to-edit** handler nine lines below does the same
+(`closest('.ps-editable')`), so the primary edit gesture is closed by the same one-word change.
+⚠️ Copy is unaffected: `_setCellFromClick` uses `closest('.ps-cell')`, which the BL cells keep.
+
+⚠️ **The cost, stated rather than discovered later:** `Format cell…` is gated on the same
+`cellField`, so it also disappears from the right-click menu on those two columns. A small,
+unrequested loss of conditional-formatting reach — arguably right (the cell is no longer an editable
+cell in any sense) but it is a behaviour change nobody asked for.
+⚠️ The *Actualize dates* menu items read `cellField` only to decide whether to show the
+Start-specific or Finish-specific action; with it null they fall to the `!cellField` branch and show
+**both**, which is the correct default.
+
+### ⚠️⚠️ THE `persist()` GUARD IS THE STRUCTURAL HALF, AND TWO TRAPS WERE AVOIDED IN WRITING IT
+
+`persist(id, patch, skipUndo, quiet)` is the choke point every inline grid edit, detail-panel field,
+paste, fill-down, right-click action and form save funnels through. One guard there makes *a
+baseline is captured, not typed* **structurally true** rather than merely un-offered: an edit surface
+added later inherits it without having to know it exists.
+
+- ⚠️⚠️ **It CLONES the patch before deleting keys.** `undo()` replays `a.before` / `a.after` **by
+  reference**, so mutating the caller's object would corrupt the undo stack — a save that also
+  quietly edits the history of the thing it saved.
+- ⚠️⚠️ **Strip and REPORT, never a hard reject.** A hard reject would break undo of any baseline
+  edit made before this change. Stripping silently is the exact failure this file keeps warning
+  about, so a warn toast names Actions › Baselines, and a patch left with nothing to write returns
+  `true` early rather than issuing an empty update.
+- ⚠️ **The lifecycle does NOT come through here**, which is what makes the guard safe: **Capture
+  current**, **Set primary**, **Import baseline (Excel)** and **Clear baseline from activities** each
+  write `bl_start`/`bl_finish` with their own `sb().from(TABLE).update()` (~29935, ~29958), and the
+  XER and Excel importers carry them in the **inserted** row (~15919, ~16489). Those four remain the
+  only writers.
+
+### ⚠️ `save()`'s payload, and why dropping the keys is safe on both branches
+
+The form wrote `bl_start: v('ps-f-bls') || null` on **every** save, re-asserting a value it had only
+ever read — and a **new** activity created after a baseline was captured correctly has none. Both
+keys are gone from the payload: the **edit** branch diffs `payload` against `cur`, so an absent key
+produces no patch, and the **insert** branch lets the database default to null. `openForm` still
+populates both inputs for display.
+
+### ⚠️ Global Change had to be handled separately, because it bypasses the choke point
+
+`gcApply` writes straight through with batched `sb().update()` and then `resetUndo()`. So a
+*"Shift by (days)"* down `bl_start` would move the whole committed baseline on thousands of rows
+**with nothing to undo it**. The two entries are removed from `GC_FIELDS` with the reasoning left in
+place beside them.
+⚠️ **`bl_cost` stays in `GC_FIELDS`** — the owner said *dates*, and widening the ask to a column
+nobody mentioned is not mine to do. It is named in that comment so the asymmetry reads as a decision
+rather than an oversight.
+
+### Verified
+
+The inline `<script>` **parses** (1 block, 0 failures, 4.48 MB) — the check that matters in this
+file, which dies whole on one syntax error and which brace-balance cannot see. **0 NUL bytes.** All
+six surfaces confirmed present by grep against the committed file: the two grid cells without
+`ps-editable`, `edit: 0` on both meta entries, both `_gro` calls, both `readonly` inputs, the
+`_BL_LOCKED` guard, and **0** matches for `k: 'bl_start'` / `k: 'bl_finish'` in `GC_FIELDS`.
+
+⚠️ **Not verified signed in.** No baseline date has been typed at, pasted into, filled down or
+Global-Changed against a real project, and the warn toast has never been seen. The first things to
+try: double-click a BL cell (nothing should happen), right-click one (no *Fill … down*, and no
+*Format cell…* — see above), and run **Actions › Baselines › Capture current** to confirm the
+lifecycle still writes.
+
+### ⚠️⚠️ AND THE CODE SHIPPED INSIDE ANOTHER SESSION'S COMMIT
+
+All six edits were in the working tree when a concurrent session committed
+`modules/project-schedule/index.html` **whole** for its own LSM overlap work (`02a24e4`), so this
+change is in that commit and on `origin/main` under a message about something else. Nothing is lost
+and `MODULE_V` moved forward with it (`20260918zc`), so the cache-bust is covered — but the code
+reached main with **no record of why it was made**, which is what this entry repairs. It is the
+concurrent-session hazard this repo already records, seen from the other side: staging explicit
+paths protects your own commit from sweeping in somebody else's work, and does nothing to stop
+theirs sweeping in yours.
+
 ## 2026-09-18 (x) — The clash strip counted days the two trades were never on the storey together
 
 Owner: *"Let's do a dedicated check for the clash detection in the schedule"*. A probe, not a
