@@ -104,6 +104,80 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (aq) — The Notes button walked off the screen every time the panel opened, and it now shrinks to a puck
+
+Owner: *"The notebook clips when i closed out at the edge of the browser. Let's fix"*, then *"Can we
+add an easy collapse/expand"*. `assets/js/notebook.js` + the `.pd-nb` block in
+`assets/css/dashboard.css`; tokens `notebook.js?v=20260918b` (23 pages) and
+`dashboard.css?v=20260918d` (31 pages).
+
+⚠️⚠️ **IT WAS WORSE THAN CLIPPING, AND IT WAS THE OPEN THAT DID IT.** `nbPlace` pins the BUTTON at
+a point by positioning the ROOT to suit — and it ran on drag, on restore and on resize, but never
+when the panel opened or shut. Opening changes the root's size underneath a fixed `left`/`top`, so
+the button slid out from under it. Measured at 1280×820, button dragged to the default
+bottom-right corner, then opened: **the button landed at (1488, 1270)** — 208px past the right
+edge and 450px below the bottom, with most of the panel off screen too. The displacements are
+exactly the root's growth: the panel's height (500px) downwards, and `380 - 84 = 296px` sideways
+wherever `align-items: flex-end` right-aligns the button inside a now-380px-wide root. ⚠️ Not a
+clamping bug — every individual placement was correctly clamped **for the state it was computed
+in**, and then the state changed. ⚠️ The same fault fires on a plain page load with the notebook
+left open in a dragged position, which is most of a planner's navigations.
+
+⚠️ **THE FIX ANCHORS ON THE BUTTON, READ BEFORE THE TOGGLE.** The button is what the planner
+positioned and the only control that brings the panel back, so it is what must stay put; the panel
+moves around it, which is what the `pd-nb-below` / `pd-nb-atleft` flips and `--pd-nb-room` already
+exist for — re-running nbPlace re-decides all three for the layout the notebook is about to be in.
+⚠️ Only when JS already owns the position (`pd-nb-moved`) and only when the state really changed: a
+notebook that has never been dragged is anchored by the stylesheet's `right/bottom` corner, where
+growing the root cannot move the button at all, and calling nbPlace there would take that corner
+over for no reason.
+
+**Collapse/expand — the owner picked "shrink the button itself"** from four options (dock-to-edge
+peek, panel-to-title-bar and a keyboard shortcut were the others). The `✎ Notes` pill collapses to
+a 34px `✎` puck and back, one click, remembered in `pd_notes_mini`.
+⚠️ **A THIRD STATE AND A THIRD KEY**, like `sideHidden` before it: "keep the button small" is a
+standing preference about the furniture, not something re-decided each time the drawer opens.
+⚠️ **THE CONTROL IS A SIBLING OF THE FAB, NOT A CHILD** — a `<button>` inside a `<button>` is
+invalid and gets reparented, which would have put it outside the drag handle at random.
+⚠️⚠️ **AND IT IS ALWAYS ON THE INWARD SIDE** (written before the FAB, flipped by `row-reverse` under
+`pd-nb-atleft`). nbPlace clamps the FAB, so anything outboard of it hangs off the very edge the
+planner parked against — this feature would otherwise have shipped clipping its own new control,
+at the edge, which is the bug it was asked for alongside.
+⚠️ **Hidden by `opacity`, never `display:none`.** Removing it from layout on un-hover would change
+the row's width under the cursor and slide the FAB sideways mid-click; it keeps its 20px either
+way (measured: dock 58px hovered and un-hovered). `:focus-within` as well as `:hover`, and pinned
+visible under `hover: none` — a touch tablet above 700px gets the floating layout and has no hover
+to reveal the one way out of the collapsed state.
+⚠️ **Neutralised below 700px in CSS, not guarded in JS, so the preference SURVIVES**: the phone
+layout is full-width where the button is a row, and a 44px puck with no label is a worse target,
+not a tidier one. The class and the key stay, so growing the window brings the puck back.
+⚠️ `align-self: flex-end` moved from the FAB to its new row — the FAB is no longer a child of the
+root, and the root is what stretches its children on a phone.
+
+**Verified** against the shipped `notebook.js` and `dashboard.css` in a browser, through a rig that
+drives the real `.pd-nb-mini` control and the real drag handler with pointer events.
+⚠️ Two sanity gates earned their keep. First run: `innerWidth` was **577**, below the 700px
+breakpoint where `nbPlace` returns early — the whole suite would have measured the phone layout.
+Second: the rig drove open/close with `fab.click()`, which **nbDrag's capture-phase handler
+swallows** after a synthetic drag (`moved` is only reset by the next pointerdown), so the panel
+never opened and it reported "the button did not move" for all six corners — a clean pass proving
+nothing. It now calls `PDNotes.open()/close()` and **asserts the class actually toggled**.
+- All six placements (4 corners + both mid-edges) at 1280×820: button moves **0px** on open and on
+  close, never clipped in either state, panel fully on screen. Was 296px/500px adrift before.
+- Collapse and expand at all six: pill 84px → puck 34px, edge-facing side held to **0px** drift,
+  neither puck nor row clipped, glyph and title mirroring correctly at left and right edges.
+- Page load with the notebook left open at the bottom-right: button back at exactly its dragged
+  spot, panel fully on screen.
+- Below 700px with the preference ON: label restored, control `display:none`, 44px tap target,
+  row right-aligned to the 12px gutter, inline `left`/`top` stripped, nothing off screen.
+- Reveal measured, not assumed: mini opacity `0` pointer-away, `1` on hover, dock 58px both ways.
+
+⚠️ **NOT VERIFIED: a real signed-in shell page.** The rig mounts the widget on a bare `.pd-app`, and
+the planner session used earlier in the day had ended, so the notebook was not re-checked inside
+`dashboard.html`'s actual layout. Nothing outside `notebook.js` references `.pd-nb-fab`, and every
+`.pd-nb` selector in the stylesheet is descendant-based (no `>`), so the new wrapper cannot be
+orphaned by one — checked, not assumed. ⚠️ No `MODULE_V` bump: no module `index.html` changed.
+
 ### 2026-09-18 (ap) — The sandbox could not be created by anyone it was written for: a security trigger and a cosmetic write, in one transaction
 
 Owner: *"Look into the sandbox of the users. Planners have difficulty in creating the sandbox."*

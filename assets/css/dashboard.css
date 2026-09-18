@@ -2634,11 +2634,41 @@ html.pd-portfolio [data-project-only] { display: none !important; }
    mid-drag must not start selecting text in it. */
 .pd-nb-dragging .pd-nb-panel { pointer-events: none; user-select: none; }
 
+/* ⚠️ The button and its shrink control share a row. `row-reverse` at the left edge keeps the
+   control on the INWARD side — see the note in notebook.js's build(): nbPlace clamps the FAB,
+   so anything outboard of it hangs off the screen edge. */
+.pd-nb-dock { display: flex; align-items: center; gap: 4px; }
+.pd-nb-atleft .pd-nb-dock { flex-direction: row-reverse; }
+
+/* ⚠️⚠️ HIDDEN BY `opacity`, NEVER BY `display:none`. The control sits next to the button the
+   planner is reaching for; removing it from layout on un-hover would change the row's width
+   under the cursor and slide the FAB sideways mid-click. It keeps its 20px either way — nothing
+   is drawn there, and the collapsed notebook still reads as just the puck.
+   ⚠️ `:focus-within` as well as `:hover`, or the control is unreachable by keyboard; and
+   `hover: none` pins it visible, because a touch tablet above 700px gets the floating layout
+   and has no hover to reveal it with — the one way to leave the collapsed state. */
+.pd-nb-mini { opacity: 0; transition: opacity .12s ease;
+  flex: none; width: 20px; height: 20px; padding: 0; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; cursor: pointer;
+  background: var(--pd-card); color: var(--pd-muted);
+  border: 1px solid var(--pd-line); font-size: var(--pd-fs-xs); }
+.pd-nb-dock:hover .pd-nb-mini,
+.pd-nb-dock:focus-within .pd-nb-mini { opacity: 1; }
+.pd-nb-mini:hover { color: var(--pd-ink); border-color: var(--pd-muted); }
+@media (hover: none) { .pd-nb-mini { opacity: 1; } }
+
 .pd-nb-fab { display: inline-flex; align-items: center; gap: 7px;
   padding: 9px 14px; border-radius: var(--pd-radius-pill);
   background: var(--pd-card); color: var(--pd-ink);
   border: 1px solid var(--pd-line); box-shadow: var(--pd-shadow-md);
   font-size: var(--pd-fs-sm); font-weight: 500; cursor: pointer; }
+
+/* Collapsed: the label goes and the pill becomes a puck. ⚠️ Equal padding on all four sides is
+   what makes `border-radius: pill` a circle — a fixed width/height here would fight the icon's
+   own line-height and go oval at the larger type scales. */
+.pd-nb.mini .pd-nb-fab { padding: 9px; gap: 0; }
+.pd-nb.mini .pd-nb-fab-txt { display: none; }
 .pd-nb-fab:hover { border-color: var(--pd-muted); }
 .pd-nb.open .pd-nb-fab { border-color: var(--pd-red); }
 .pd-nb-fab-ico { font-size: var(--pd-fs-md); line-height: 1; }
@@ -2721,7 +2751,19 @@ html.pd-portfolio [data-project-only] { display: none !important; }
 @media (max-width: 700px) {
   .pd-nb { right: 12px; bottom: 12px; left: 12px; align-items: stretch; }
   .pd-nb-panel { width: auto; max-width: none; height: min(70vh, 560px); }
-  .pd-nb-fab { align-self: flex-end; min-height: var(--pd-tap); }
+  /* ⚠️ `align-self` moved from the FAB to its ROW. The root stretches its children here, and
+     the FAB is no longer a child of the root — it sits inside `.pd-nb-dock`, where a
+     `flex-end` would align it against a row that is itself already full width. */
+  .pd-nb-dock { align-self: flex-end; }
+  .pd-nb-fab { min-height: var(--pd-tap); }
+  /* ⚠️⚠️ THE COLLAPSED BUTTON IS A DESKTOP-ONLY STATE, and it is neutralised here rather than
+     guarded in JS so the preference SURVIVES. A phone gets the full-width layout where the
+     button is a row rather than a floating target, and a `--pd-tap`-high puck with no label in
+     it is a worse target, not a tidier one. The class stays on the root and the key stays in
+     localStorage, so growing the window brings the puck back exactly as it was left. */
+  .pd-nb-mini { display: none; }
+  .pd-nb.mini .pd-nb-fab { padding: 9px 14px; gap: 7px; }
+  .pd-nb.mini .pd-nb-fab-txt { display: inline; }
   /* A 132px list beside an editor is unusable on a phone; the list gets its own
      row across the top instead of a column that squeezes the writing area. */
   .pd-nb-body { flex-direction: column; }

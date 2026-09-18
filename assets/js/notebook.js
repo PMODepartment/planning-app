@@ -28,6 +28,7 @@ window.PDNotes = (function () {
   var TABLE = 'user_notes';
   var MIGRATION = 'migrations/2026-09-15-user-notes.sql';
   var K_OPEN = 'pd_notes_open', K_SEL = 'pd_notes_sel', K_SIDE = 'pd_notes_side', K_POS = 'pd_notes_pos';
+  var K_MINI = 'pd_notes_mini';
   var SAVE_MS = 700;
 
   var notes = [], selId = null, loaded = false, err = null, busy = false;
@@ -251,6 +252,23 @@ window.PDNotes = (function () {
     root.style.bottom = 'auto';
     if (save) lsSet(K_POS, (x / Math.max(1, window.innerWidth)) + ',' + (y / Math.max(1, window.innerHeight)));
   }
+  /* Put the button back where it was after something changed the root's LAYOUT under it —
+     the panel opening or shutting, or the button collapsing to a puck. `prev` is the button's
+     box read BEFORE the change.
+
+     ⚠️⚠️ THE EDGE-FACING SIDE IS WHAT IS PINNED, NOT ALWAYS THE LEFT. The button also changes
+     WIDTH when it collapses (84px pill → 35px puck), and anchoring a shrinking box by its left
+     edge at the right-hand side of the screen walks it ~50px inward, leaving it floating off
+     the edge it was deliberately parked against. Which side to hold is already decided and
+     already stored: `pd-nb-atleft` is nbPlace's own answer to which half the button is in.
+     ⚠️ For the open/close case the width does not change, so both branches reduce to
+     `prev.left` — one helper, no second code path to keep in step. */
+  function nbReanchor(prev) {
+    if (!prev || !root || !root.classList.contains('pd-nb-moved')) return;
+    var now = nbFabBox(); if (!now) return;
+    var atleft = root.classList.contains('pd-nb-atleft');
+    nbPlace(atleft ? prev.left : (prev.right - now.width), prev.top, false);
+  }
   function nbRestore() {
     var v = lsGet(K_POS); if (!v) return;          // never moved: the stylesheet's corner stands
     var a = String(v).split(','), fx = parseFloat(a[0]), fy = parseFloat(a[1]);
@@ -313,6 +331,21 @@ window.PDNotes = (function () {
   function sideHidden() { return lsGet(K_SIDE) === '1'; }
   function setSideHidden(v) { lsSet(K_SIDE, v ? '1' : '0'); paint(); }
 
+  /* The BUTTON itself collapses to an icon-only puck — owner 2026-09-18: *"can we add an easy
+     collapse/expand"*, asked about a notebook that was getting in the way at the edge of the
+     window.
+
+     ⚠️ A THIRD STATE AND A THIRD KEY, for the same reason `sideHidden` is separate from `open`:
+     "keep the button small" is a standing preference about the furniture, not a thing you
+     re-decide every time you open the drawer. Folding it into `open` would mean the size you
+     chose is forgotten the moment you read a note.
+     ⚠️ It is NOT applied below 700px. There the stylesheet lays the notebook out full-width and
+     the button is a row in that layout rather than a floating target, so shrinking it to a puck
+     would be a change to a layout nobody asked about. The preference is remembered and takes
+     effect again when the window grows. */
+  function isMini() { return lsGet(K_MINI) === '1'; }
+  function setMini(v) { lsSet(K_MINI, v ? '1' : '0'); paint(); }
+
   /* ⚠️⚠️ "THE TABLE IS NOT THERE" AND "THE READ FAILED" ARE DIFFERENT PROBLEMS WITH
      DIFFERENT OWNERS, and the first cut said the same vague thing for both. A planner whose
      migration has not been run needs the FILENAME and nothing else; the generic
@@ -346,11 +379,51 @@ window.PDNotes = (function () {
   function paint() {
     if (!root) return;
     var open = isOpen();
+    /* ⚠️⚠️ OPENING AND CLOSING RESIZE THE ROOT, AND THE ROOT IS WHAT `left`/`top` PIN — so
+       without this the BUTTON slides out from under the position it was dragged to. Measured
+       at 1280×820 with the button dragged to the default bottom-right corner and then opened:
+       the button landed at (1488, 1270), i.e. 208px past the right edge and 450px below the
+       bottom, with most of the panel off screen too. The two displacements are exactly the
+       root's growth — the panel's height (500px) downwards, and `380 - 84 = 296px` sideways
+       wherever `align-items: flex-end` right-aligns the button inside a now-380px-wide root.
+       ⚠️ nbPlace is called on drag, restore and resize; the open state was the one thing that
+       changed the layout and never re-ran it. It is not a clamping bug — every individual
+       placement was correctly clamped for the state it was computed in, and then the state
+       changed underneath it.
+       ⚠️ ANCHOR ON THE BUTTON, READ BEFORE THE TOGGLE. The button is the thing the planner
+       positioned and the only control that can bring the panel back, so it is what must stay
+       put; the panel moves around it, which is what the `pd-nb-below` / `pd-nb-atleft` flips
+       and `--pd-nb-room` are already for — re-running nbPlace re-decides all three for the
+       layout the notebook is actually about to be in.
+       ⚠️ ONLY when JS already owns the position (`pd-nb-moved`) and only when the state really
+       changed. A notebook that has never been dragged is anchored by the stylesheet's
+       `right/bottom` corner, where growing the root cannot move the button at all — calling
+       nbPlace there would add `pd-nb-moved` and take that corner over for no reason. */
+    var mini = isMini();
+    var layoutChanged = root.classList.contains('open') !== open ||
+                        root.classList.contains('mini') !== mini;
+    var anchor = (root.classList.contains('pd-nb-moved') && layoutChanged) ? nbFabBox() : null;
     root.classList.toggle('open', open);
+    root.classList.toggle('mini', mini);
     var fab = root.querySelector('.pd-nb-fab');
     if (fab) fab.setAttribute('aria-expanded', open ? 'true' : 'false');
     var panel = root.querySelector('.pd-nb-panel');
     if (panel) panel.hidden = !open;
+    /* ⚠️ After `panel.hidden` and the class flips, not before: nbReanchor measures, and
+       measuring across a layout change that has not been applied yet reads the box the
+       notebook is leaving. */
+    nbReanchor(anchor);
+    /* ⚠️ The glyph POINTS: outward (toward the edge the button is parked against) to shrink,
+       inward to bring the label back — so it reads the same whichever side of the screen the
+       planner has dragged it to. `pd-nb-atleft` is what nbPlace already decided about that. */
+    var msh = root.querySelector('.pd-nb-mini');
+    if (msh) {
+      var atleft = root.classList.contains('pd-nb-atleft');
+      msh.firstChild.textContent = (mini === atleft) ? '›' : '‹';
+      msh.title = mini ? 'Show the Notes label' : 'Shrink the Notes button';
+      msh.setAttribute('aria-label', msh.title);
+      msh.setAttribute('aria-pressed', mini ? 'true' : 'false');
+    }
 
     var sideOff = sideHidden();
     root.classList.toggle('sidehid', sideOff);
@@ -458,9 +531,23 @@ window.PDNotes = (function () {
         '</div>' +
         '<p class="pd-nb-foot">Private to you. Saves as you type.</p>' +
       '</div>' +
-      '<button type="button" class="pd-nb-fab" aria-expanded="false" aria-controls="pd-notes" title="Notebook — click to open, drag to move it">' +
-        '<span class="pd-nb-fab-ico" aria-hidden="true">✎</span><span class="pd-nb-fab-txt">Notes</span>' +
-      '</button>';
+      /* ⚠️⚠️ THE SHRINK CONTROL IS A SIBLING OF THE FAB, NOT A CHILD OF IT. A <button> inside a
+         <button> is invalid and browsers reparent it, which would have put the shrink control
+         outside the drag handle at random. The two sit in a row, and the row — never the
+         control — is what `align-items` places.
+         ⚠️ THE SHRINK CONTROL IS ALWAYS ON THE INWARD SIDE. It is written before the FAB and
+         flipped to `row-reverse` by `pd-nb-atleft`, so it is left of the button at the right
+         edge and right of it at the left edge. That is not cosmetic: nbPlace clamps the FAB to
+         the viewport, so anything sitting OUTSIDE the FAB would hang off the very edge the
+         planner parked it against — this feature would have shipped clipping the control it
+         added, at the edge, which is the bug it was asked for alongside. */
+      '<div class="pd-nb-dock">' +
+        '<button type="button" class="pd-nb-mini" aria-pressed="false" title="Shrink the Notes button">' +
+          '<span aria-hidden="true">›</span></button>' +
+        '<button type="button" class="pd-nb-fab" aria-expanded="false" aria-controls="pd-notes" title="Notebook — click to open, drag to move it">' +
+          '<span class="pd-nb-fab-ico" aria-hidden="true">✎</span><span class="pd-nb-fab-txt">Notes</span>' +
+        '</button>' +
+      '</div>';
     document.body.appendChild(root);
 
     var _fab = root.querySelector('.pd-nb-fab');
@@ -468,6 +555,12 @@ window.PDNotes = (function () {
     /* ⚠ `nbDrag` binds in the CAPTURE phase for click, so it must be installed before anything
        downstream can act on a click that was really the end of a drag. */
     nbDrag(_fab);
+    /* ⚠️ `stopPropagation` so shrinking never also opens the drawer: the control sits inside the
+       widget the FAB's own handlers live on, and a planner reaching for a 20px target next to a
+       button expects one thing to happen. */
+    root.querySelector('.pd-nb-mini').onclick = function (e) {
+      e.stopPropagation(); setMini(!isMini());
+    };
     nbRestore();
     /* ⚠ A window the user shrinks must not strand the button off screen — the same reason the
        stored position is a fraction rather than a pixel count. */
