@@ -3070,6 +3070,26 @@
          the bottom by 7px — a cap has to budget for where the menu starts, not just how tall the
          window is. `max()` keeps it usable if the chrome ever grows past the viewport. */
       max-height:max(220px, calc(100vh - 230px)); overflow-y:auto; overflow-x:hidden; }
+    /* ⚠⚠ AFTER `.ps-menu`, DELIBERATELY. `.ps-colors-menu { min-width:250px }` sits ~170 lines
+       EARLIER at the same (0,1,0) specificity, so `.ps-menu { min-width:180px }` won on source
+       order and this pane opened at **180px** — 70px narrower than the rule written for it.
+       Measured, not inferred: that is what crushed the WBS select to **22px** for a label needing
+       **92px**, which is the clipping the owner reported. Adding a wider rule without removing the
+       one that beats it would have changed nothing. */
+    .ps-menu.ps-colors-menu { min-width:300px; }
+    /* ⚠ The WBS add row gives the SELECT ITS OWN LINE. It used to share one line with a colour
+       swatch and an Add button under `flex:1` (basis 0) + `min-width:0`, so the select shrank to
+       whatever the other two left it — 22px — and a branch name rendered straight out of its box.
+       A wider pane alone would only have postponed that; the row has to stop competing. */
+    .ps-colors-add { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:5px 0; }
+    .ps-colors-add .pd-select { flex:1 1 100%; min-width:0; max-width:none; }
+    .ps-colors-add .ps-colors-addctl { display:flex; align-items:center; gap:8px; margin-left:auto; }
+    /* The colour-by block moved in from the legend; its controls stack rather than compete. */
+    .ps-colors-cby { display:flex; flex-direction:column; gap:7px; }
+    .ps-colors-cby label { display:inline-flex; align-items:center; gap:7px; font-size:var(--pd-fs-base); }
+    .ps-colors-cby .pd-select { width:100%; min-width:0; }
+    .ps-colors-cby .ps-colors-cbybtns { display:flex; gap:8px; flex-wrap:wrap; }
+    .ps-colors-cby .ps-colors-cbybtns .pd-btn { flex:1 1 auto; min-height:32px; font-size:var(--pd-fs-sm); }
     /* The section labels these menus group by. Sticky, so the heading of the group you are reading
        stays visible once the list scrolls. */
     .ps-menu-h { position:sticky; top:0; z-index:1; background:var(--pd-card);
@@ -56714,11 +56734,16 @@
     host.innerHTML =
       '<div class="ps-actlegend-head">' +
         '<span class="ps-alg-sum"><strong>Legend</strong>' + (cfg.on ? ' \u00b7 ' + esc(_fieldLabel) : ' \u00b7 off') + '</span>' +
-        '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
-        '<select class="pd-select ps-alg-field" id="ps-alg-field">' + opts + '</select>' +
-        (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-keys" style="min-height:32px;font-size:12px;" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '…') + '</button>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
+        /* ⚠⚠ THE COLOUR CONTROLS MOVED TO THE BAR COLORS PANE. Owner: *“it should be unified in
+           one location with the gantt bar colors.”* `Colour activities by`, the field select,
+           `Textures`, `Key trades…` and `Reset colours` are emitted by `renderColorsMenu` now —
+           one pane answers what colour anything on this chart is, broadest rule to narrowest:
+           global bar colours, then the category colouring, then per-WBS overrides.
+           ⚠ THIS BUTTON IS THE ROUTE BACK, NOT A SECOND COPY OF THE CONTROLS: it opens that pane
+           rather than setting anything, so every value still has exactly one editor. The legend
+           keeps saying WHAT the colours mean; the pane is where they are CHANGED.
+           ⚠ The LSM toggles below stay put — they change the chart's LAYOUT, not its colours. */
+        '<button class="pd-btn" id="ps-alg-open" style="min-height:32px;font-size:12px;" title="Bar colors — every bar colour on this chart, the category colouring, and per-WBS overrides, in one pane.">Colours…</button>' +
         /* ⚠️ The LSM toggle lives HERE, beside "Key trades...", because that button is
            already the lane roster editor — the two controls are one subject. A direct control
            rather than another nested menu, which is the owner's stated preference. */
@@ -56762,7 +56787,13 @@
       b.onclick = function () { setLsmClashShow(b.dataset.lsmclash === '1'); };
     });
     applyLegendFold();
-    host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    /* ⚠ GUARDED NOW, and it has to be. This read `host.querySelector('#ps-alg-on').onchange`
+       with no null check; the control has moved to the Bar colors pane, so an unguarded read
+       throws on every legend render and takes the whole strip down with it. */
+    var _algOn = host.querySelector('#ps-alg-on');
+    if (_algOn) _algOn.onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    var _algOpen = host.querySelector('#ps-alg-open');
+    if (_algOpen) _algOpen.onclick = function () { var b = document.getElementById('ps-colorsbtn'); if (b) b.click(); };
     var _lsmChk = host.querySelector('#ps-alg-lsmrows');
     if (_lsmChk) _lsmChk.onchange = function () { setLsmRows(this.checked); };
     var _lsmTopB = host.querySelector('#ps-alg-lsmtop'), _lsmBotB = host.querySelector('#ps-alg-lsmbot');
@@ -56803,7 +56834,8 @@
         });
       };
     });
-    host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    var _algFld = host.querySelector('#ps-alg-field');   // ⚠ same reason as #ps-alg-on above
+    if (_algFld) _algFld.onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var tex = host.querySelector('#ps-alg-tex');
     if (tex) tex.onchange = function () { var c = catCfg(); c.tex = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var rst = host.querySelector('#ps-alg-reset');
@@ -58295,14 +58327,41 @@
     var html = '<h4>Global bar colors</h4>';
     COLORDEFS.forEach(function (d) { html += '<div class="ps-colors-row"><span>' + d.label + '</span><input type="color" data-ck="' + d.k + '" value="' + (c[d.k] || d.def) + '"></div>'; });
     html += '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="ps-colors-reset">Reset to brand</button></div>';
+    /* ==========================================================================================
+       ⚠⚠ COLOUR ACTIVITIES BY — MOVED HERE FROM THE LEGEND. Owner: *“we can also unify the
+       functions of changing the color activities by to this chart as well … it should be unified
+       in one location with the gantt bar colors.”* One pane now answers “what colour is anything
+       on this chart”: the global bar colours, the per-category colouring, and the per-WBS
+       overrides, in that order — broadest rule first, narrowest last, which is also the order
+       they override each other in.
+       ⚠ THE LSM CONTROLS DID NOT COME WITH THEM, and that is the line drawn here: `LSM rows`,
+       `Roof first` and `Status at the line` change the LAYOUT of the chart, not its colours. They
+       stay in the legend with the chips they rearrange. Moving them because they happened to sit
+       beside `Key trades…` would have traded one mixed-up pane for another.
+       ⚠ The legend keeps a `Colours…` button that opens this pane, so the controls are reachable
+       from where they used to live — moved, not hidden. */
+    var _cc = catCfg();
+    var _cbyOpts = catFieldOptions().map(function (o) {
+      return '<option value="' + esc(o[0]) + '"' + (_cc.field === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+    }).join('');
+    html += '<h4 style="margin-top:14px;">Colour activities by</h4>' +
+      '<div class="ps-colors-cby">' +
+        '<label><input type="checkbox" id="ps-alg-on"' + (_cc.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
+        '<select class="pd-select" id="ps-alg-field">' + _cbyOpts + '</select>' +
+        (_cc.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (_cc.tex ? ' checked' : '') + '> Textures</label>' : '') +
+        (_cc.on ? '<div class="ps-colors-cbybtns">' +
+            '<button class="pd-btn" id="ps-alg-keys" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '\u2026') + '</button>' +
+            '<button class="pd-btn" id="ps-alg-reset">Reset colours</button>' +
+          '</div>' : '') +
+      '</div>';
     // per-WBS overrides
     html += '<h4 style="margin-top:14px;">By WBS branch</h4><p style="font-size:11px;color:var(--pd-muted);margin:0 0 6px;">A WBS color cascades to its activities (nearest branch wins).</p>';
     var wbsList = rows.filter(function (r) { return isWbs(r) && r.wbs; }).sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     if (!wbsList.length) { html += '<p style="font-size:12px;color:var(--pd-muted);">Load a schedule to color WBS branches.</p>'; }
     else {
-      html += '<div class="ps-colors-row"><select class="pd-select" id="ps-wbc-sel" style="flex:1;min-width:0;max-width:160px;">' +
+      html += '<div class="ps-colors-add"><select class="pd-select" id="ps-wbc-sel">' +
         wbsList.map(function (w) { return '<option value="' + esc(w.wbs) + '">' + esc(w.wbs) + ' — ' + esc((w.activity_name || '').slice(0, 28)) + '</option>'; }).join('') +
-        '</select><input type="color" id="ps-wbc-clr" value="#EE3124"><button class="pd-btn" id="ps-wbc-add">Add</button></div>';
+        '</select><span class="ps-colors-addctl"><input type="color" id="ps-wbc-clr" value="#EE3124"><button class="pd-btn" id="ps-wbc-add">Add</button></span></div>';
       var wm = wbsColorMap(); var codes = Object.keys(wm).sort(cmpCodeStr);
       codes.forEach(function (code) {
         html += '<div class="ps-colors-row"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:' + wm[code] + ';vertical-align:middle;margin-right:6px;"></span>' + esc(code) + '</span><input type="color" class="ps-wbc-edit" data-code="' + esc(code) + '" value="' + wm[code] + '"><button class="pd-btn ps-wbc-rm" data-code="' + esc(code) + '">✕</button></div>';
@@ -58311,6 +58370,19 @@
     m.innerHTML = html;
     m.querySelectorAll('input[data-ck]').forEach(function (inp) { inp.oninput = function () { var cc = loadColors(); cc[inp.dataset.ck] = inp.value; try { localStorage.setItem('ps_colors', JSON.stringify(cc)); } catch (e) {} applyColors(); }; });
     m.querySelector('#ps-colors-reset').onclick = function () { try { localStorage.removeItem('ps_colors'); } catch (e) {} applyColors(); renderColorsMenu(); };
+    /* ⚠ Each of these re-renders THIS pane as well as the legend and the chart: turning the
+       colouring on reveals Textures / Key trades / Reset, which are emitted conditionally above,
+       so a pane that did not redraw would keep offering the controls of the previous state. */
+    var _on = m.querySelector('#ps-alg-on');
+    if (_on) _on.onchange = function () { var c2 = catCfg(); c2.on = this.checked; saveCatCfg(c2); renderActLegend(); renderGantt(); renderColorsMenu(); };
+    var _fld = m.querySelector('#ps-alg-field');
+    if (_fld) _fld.onchange = function () { var c2 = catCfg(); c2.field = this.value; c2.colors = {}; saveCatCfg(c2); renderActLegend(); renderGantt(); renderColorsMenu(); };
+    var _tex = m.querySelector('#ps-alg-tex');
+    if (_tex) _tex.onchange = function () { var c2 = catCfg(); c2.tex = this.checked; saveCatCfg(c2); renderActLegend(); renderGantt(); };
+    var _rst = m.querySelector('#ps-alg-reset');
+    if (_rst) _rst.onclick = function () { var c2 = catCfg(); c2.colors = {}; saveCatCfg(c2); renderActLegend(); renderGantt(); };
+    var _kys = m.querySelector('#ps-alg-keys');
+    if (_kys) _kys.onclick = function () { openKeyTrades(); };
     var addBtn = m.querySelector('#ps-wbc-add');
     if (addBtn) addBtn.onclick = function () { var code = m.querySelector('#ps-wbc-sel').value, clr = m.querySelector('#ps-wbc-clr').value; if (!code) return; saveWbsColor(code, clr); _wcCacheKey = null; renderGantt(); renderColorsMenu(); };
     m.querySelectorAll('.ps-wbc-edit').forEach(function (inp) { inp.oninput = function () { saveWbsColor(inp.dataset.code, inp.value); _wcCacheKey = null; renderGantt(); }; });

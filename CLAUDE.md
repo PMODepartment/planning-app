@@ -104,6 +104,65 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-18 (q) — One pane for every colour on the Gantt, and the 70px that crushed a select to 22
+
+Owner: *"There is a bar colors button that changes the colors of the gantt bars … we can also unify
+the functions of changing the color activities by to this chart as well. Currently I can change via
+the legend pane below — it should be unified in one location with the gantt bar colors. Besides the
+current build of the global bar colors pane is clipping."*
+
+### The pane now reads broadest rule to narrowest
+
+| section | what it sets |
+|---|---|
+| **Global bar colors** | task / border / progress / summary / baseline / milestone / links / data date |
+| **Colour activities by** *(moved in from the legend)* | the toggle, the field, Textures, Key trades…, Reset colours |
+| **By WBS branch** | per-branch overrides, nearest branch wins |
+
+That is also the order they override one another in, which is the reason for it.
+
+⚠⚠ **THE LSM CONTROLS DID NOT COME WITH THEM, and that is the line drawn.** `LSM rows`, `Roof first`
+and `Status at the line` change the chart’s **layout**, not its colours; they stay in the legend
+with the chips they rearrange. They sat beside `Key trades…` only because that button doubles as
+the lane roster — moving them on that basis would have traded one mixed-up pane for another.
+
+⚠ The legend keeps a **`Colours…`** button that **opens** the pane rather than setting anything, so
+the controls are reachable from where they used to live and every value still has exactly one
+editor. The legend says *what* the colours mean; the pane is where they are *changed*. Verified:
+each of the five ids is emitted **exactly once** in the whole module.
+
+### ⚠⚠ THE CLIPPING WAS A 70px WIDTH THAT A LATER RULE HAD BEEN QUIETLY WINNING
+
+`.ps-colors-menu { min-width:250px }` sits ~170 lines **earlier** than `.ps-menu { min-width:180px }`,
+at the **same (0,1,0) specificity** — so the generic rule won on source order and the pane opened at
+**180px**, 70px narrower than the rule written for it. Measured, not inferred:
+
+| | before | after |
+|---|---|---|
+| pane width | **180px** | **300px** |
+| WBS select | **22px** for a label needing **92px** | **255px** for **253px** |
+| elements clipped anywhere in the pane | the select | **0** |
+
+⚠ **A wider rule alone would have changed nothing** — it had to be placed *after* the rule beating
+it. And width alone was not the whole fault: the add row ran `flex:1` (basis 0) + `min-width:0` on
+the select while a swatch and an Add button shared its line, so the select took whatever they left.
+It now has **its own line**, with the swatch and Add right-aligned beneath it — measured at an **8px
+gap, no overlap**.
+
+⚠ Two handler bindings had to be guarded in the same change: `host.querySelector('#ps-alg-on')`
+and `'#ps-alg-field'` were read **without a null check**. With those controls moved out, an
+unguarded read throws on every legend render and takes the whole strip down with it.
+
+⚠ One process note: the first attempt matched the five control lines as a single exact string and
+**matched 0** — the `Key trades…` line carries a literal ellipsis character, not the `\u2026` escape
+it appeared to have in an earlier dump. The script aborted without writing anything; the retry
+replaced them by line range with a per-line content assertion.
+
+**Verified:** `test-lsm` 684/684 · `test-syntax` 4/4 · `wiring-check` 139/0 · `dead-hooks` 9
+(baseline) · `dark-remap` 0 findings · the pane re-measured from its shipped markup builder: 3
+sections in order, 0 clipped elements, 0 spilling past the right edge, Gotham resolved as the
+control. `modules-grid.js` `?v=` → `20260918q`.
+
 ### 2026-09-18 (p) — Fifteen changelog labels that named two entries each
 
 Owner: *"Let's fix the duplicate (p) entries in the changelog."*
