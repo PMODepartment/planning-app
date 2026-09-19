@@ -194,10 +194,17 @@ function autoTraceSandbox(cfg, opts) {
      that matters: it ignored the unit, so a project with units keyed every unit of a zone the same.
      ⚠️ Renamed from `cellKey` on 2026-09-18 because this file declared two functions of that name.
      ⚠ `towerSimulOf` / `floorSimulOf` are the auto-trace windows added the same day; autoTrace calls
-     both, so a suite that does not slice them fails at run time rather than proving anything. */
+     both, so a suite that does not slice them fails at run time rather than proving anything.
+     ⚠⚠ `tradeFlowOf` AND ITS OWN DEPENDENCIES join them for exactly that reason (2026-09-18, the
+     declared cross-trade hand-off): autoTrace's cross-trade pass resolves the predecessor through
+     it now, so leaving it out is a `ReferenceError` at run time rather than a proof of anything.
+     It is SLICED, never stubbed — a fake of the resolver is a second opinion about the rule this
+     sandbox exists to exercise, which is the mistake the `locCellKey` note above records. */
   const body = sliceFn('tryLink') + '\n' + sliceFn('zoneGroupsOfFloor') + '\n' +
     sliceFn('floorGateOf') + '\n' + sliceFn('floorLagOf') + '\n' +
     sliceFn('locCellKey') + '\n' + sliceFn('towerSimulOf') + '\n' + sliceFn('floorSimulOf') + '\n' +
+    sliceFn('declaredBatchOf') + '\n' + sliceFn('declaredBatch') + '\n' + sliceFn('batchKind') + '\n' +
+    sliceFn('parallelKindOf') + '\n' + sliceFn('parallelKind') + '\n' + sliceFn('tradeFlowOf') + '\n' +
     sliceFn('autoTrace') + '\nreturn autoTrace;';
   const run = new Function(names.join(','), body).apply(null, names.map(n => env[n]));
   run();
@@ -207,7 +214,7 @@ function baseCfg(over) {
   return Object.assign({
     links: [], zoneSimul: { ST: 1 }, unitSimul: {}, zoneOrder: { ST: ['A', 'B', 'C'] },
     zoneZigzag: {}, floorGate: {}, floorLag: {}, tradeParallel: {}, tradeBatch: {},
-    tradeBatchKind: {}, tradeParallelKind: {}, floorLead: 4
+    tradeBatchKind: {}, tradeParallelKind: {}, tradeFlow: {}, floorLead: 4
   }, over || {});
 }
 function has(links, from, to) { return links.some(k => k.from === from && k.to === to); }

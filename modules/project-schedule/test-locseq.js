@@ -90,7 +90,11 @@ const FNS = [
   'locCellKey', 'tradeActs', 'usedGroups',
   'linkOf', 'reaches', 'tryLink', 'removeLink', 'START', 'END',
   'declaredBatchOf', 'declaredBatch', 'batchKind', 'parallelKindOf', 'parallelKind',
-  'zoneGroupsOfFloor', 'floorGateOf', 'floorLagOf', 'towerSimulOf', 'floorSimulOf', 'autoTrace',
+  'zoneGroupsOfFloor', 'floorGateOf', 'floorLagOf', 'towerSimulOf', 'floorSimulOf',
+  /* ⚠⚠ `tradeFlowOf` is a REAL DEPENDENCY of autoTrace since 2026-09-18 (the declared cross-trade
+     hand-off), not a convenience: the cross-trade pass resolves each follower's predecessor
+     through it. A suite that does not slice it fails at run time instead of proving anything. */
+  'tradeFlowOf', 'autoTrace',
   /* items 3 and 4 — the building view's rungs, and the grouped Gantt's own model. */
   'towerNodesFor', '_gRanks', '_gPath', '_gLeafLabel', 'schedRows', 'schedVisible'
 ];

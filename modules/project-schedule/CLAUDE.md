@@ -1,3 +1,156 @@
+## 2026-09-19 (a) — The cross-trade hand-off had no asker: `autoTrace` read four settings nothing could write
+
+Owner: *"In the step wherein the zone sequence are defined, please streamline the questions to be asked.
+Wherein the interphasing and the sequencing or timing/start of one trade can be defined with another
+trade. Fix those questions, which would allow the logic to determine the most efficient
+relationship-linking in between the zones."*
+
+### ⚠️⚠️ THE QUESTIONS WERE NOT BADLY WORDED — THEY HAD BEEN DELETED, AND THE READER STAYED
+
+`autoTrace`'s cross-trade pass has always decided two things per trade: **who it follows**, and **how
+far behind**. It read them from `cfg.tradeBatchKind` / `tradeBatch` (the lead) and
+`cfg.tradeParallelKind` / `tradeParallel` (start together), through `batchKind()` and
+`parallelKind()`. The 2026-09-18 *"auto-trace asks four numbers"* trim removed **every control that
+writes those four keys** — correctly, as a density decision — and left the reader in place.
+
+So on any setup made after that date the pass fell through to its own defaults, and **both halves of
+the hand-off were decided by the file rather than by the planner**:
+
+| the question | what actually answered it |
+|---|---|
+| *which trade does this one follow?* | `present[t - 1]` — **position in `GROUPS`**, the file's own construction order |
+| *how many levels behind?* | `cfg.floorLead \|\| 4` — a `blank()` default nobody chose |
+
+The owner's *"interphasing … of one trade with another"* was therefore not expressible at all: the
+planner could say how many floors ONE trade runs at once, and could not say a word about the
+hand-over between two of them. That is the defect; the wording was a symptom.
+
+### The shape: two controls per trade, keyed by the FOLLOWER
+
+New `cfg.tradeFlow`, one entry per trade: `{ after, lead }`.
+
+⚠️⚠️ **Keyed by the follower, never by the leader, and that is what makes the new question sayable.**
+The retired `tradeBatch`/`tradeParallel` were keyed by the **leading** trade, so a leader handing over
+to two different followers could carry only one lead. *"MEPF follows Structural by 2, Architectural
+follows Structural by 4"* could not be written down in the old shape at any wording. It can now.
+
+⚠️ **Two controls, not the six the trim removed.** The trim was right that a per-floor-category lead
+(basement / podium / typical / roof) is four questions where planners want one. So this asks
+**who** and **how far**, and nothing else — the per-category machinery is untouched underneath and is
+still what a **legacy** setup resolves through.
+
+### ⚠️⚠️ "MOST EFFICIENT" IS DERIVED, NOT GUESSED — the balanced option
+
+The owner asked the logic to *determine* the efficient linking. So the lead selector's **default is
+`balanced`**, which carries no number at all: the follower starts as soon as the leader is off the
+floor, derived as `floorSimulOf(leader)` — the leader's own sliding window. One floor at a time → the
+follower is 1 level behind; three at a time → 3. That is the tightest hand-over that never puts two
+trades on one storey, and it **follows the leader's own answer** rather than restating it as a second
+number that can drift from it.
+
+| leader runs | balanced lead, by floor category (1/2/3/4) |
+|---|---|
+| 1 floor at once | 1 / 2 / 3 / 4 |
+| 2 at once | 2 / 3 / 4 / 4 |
+| 3 at once | 3 / 4 / 4 / 4 |
+
+⚠️ The tracer's own per-category clamp still applies on top, which is why the deeper categories
+saturate — this adds a source for the number, it does not change the arithmetic that consumes it.
+⚠️ The **follower's** own window deliberately does not move it: what decides when the floor is free is
+how fast the trade currently on it is leaving.
+
+### ⚠️ Nothing legacy is cleared, migrated or overruled
+
+`tradeFlowOf(tr, present, ti)` is the one resolver, and it degrades in a fixed order: an explicit
+`after` wins; `after: ''` is a real answer meaning **leads nothing** (distinguished from absent);
+`lead` wins over balanced; and with `tradeFlow` empty the whole pass answers **byte-identically to
+the base** — `present[ti - 1]` for the predecessor and `batchKind` / `parallelKind` for the number.
+So a setup saved before today traces exactly as it did, and its old per-category answers are still
+read rather than thrown away.
+
+⚠️ `normalize()` is a **whitelist**, so `tradeFlow` had to be named there or it would be silently
+stripped on save and on load — the trap this module's log already records twice. The sanitiser
+validates `after` against `GROUPS`, refuses a self-reference, clamps `lead` to 0..40, and preserves
+`null` as *balanced* rather than collapsing it to 0 (which would mean **start together**, the opposite).
+
+### ⚠️⚠️ A CYCLE IS NOT OFFERABLE, RATHER THAN REFUSED AFTER THE FACT
+
+*Architectural follows MEPF* while *MEPF follows Architectural* is a hand-over with no start. The
+dialog runs `_flowCycle` over the live map and **omits** any predecessor that would close a loop, so
+the state cannot be entered. ⚠️ `tryLink`'s own `reaches()` guard is still the backstop for a cycle
+already stored, and the suite asserts a deliberately circular `cfg` still produces a link set with no
+cycle in it — the two defences are independent on purpose.
+
+### The clash detector reads the declaration
+
+`handoffFrom` exports `tradeFlow` into the LSM's `{ pair, lead, any }`, so a declared hand-over is
+what the clash strip measures against instead of a heuristic.
+
+⚠️ **Lead 0 IS exported** (`>= 0`, not `> 0`): *"they start together"* is a statement, and without it
+the detector would fall back to a stale per-lead record and report a clash the planner has explicitly
+allowed. ⚠️ **Balanced is NOT exported** — the clash side has no floor list to derive it from, and a
+second derivation there is a second reading of one declaration. ⚠️ **Legacy `tradeLeads` still wins**:
+the new block is inserted **before** it, so a project that hand-set a pair keeps it.
+
+### The dialog
+
+*Hand-off between trades* renders **first**, above the rungs, because it is the question the rest of
+the dialog's answers feed: one row per trade — name · follows · predecessor · lead. The leading trade
+renders *"leads — nothing to follow"* rather than an empty control.
+
+⚠️ Changing a predecessor rebuilds **only** `#sbld-at-horows`, so the uncommitted rung inputs below it
+survive; changing a lead repaints nothing at all. ⚠️ `.sbld-at-sel` is `width:auto`, explicitly **not**
+`.sbld-mini` — that class is `width:62px` and clips a `<select>`, which this module has already paid
+for twice.
+
+### ⚠️⚠️ A DEFECT FOUND BY RENDERING IT, NOT BY READING IT
+
+The first cut opened on **"4 levels behind"** on a brand-new setup — `cfg.floorLead`'s own `blank()`
+default, presented as though somebody had chosen it. An undeclared trade now seeds **balanced**, gated
+on `declaredBatchOf(...) != null || cfg.tradeParallel[after] || parallelKindOf(...)` — the same test
+`handoffFrom` uses to decide whether anybody declared anything, so the dialog and the export cannot
+disagree about what counts as an answer. Re-rendered: *"Structural follows Site Works by 1 level
+(balanced) · Architectural follows Structural by 2 levels (balanced) · MEPF follows Architectural by 1
+level (balanced)"*.
+
+### Verified
+
+**New `test-tradeflow.js` — 45 assertions, 0 failing**, executing `tradeFlowOf` / `autoTrace` /
+`handoffFrom` / `normalize` sliced out of the shipped file by name, with the contrast pinned to the
+**SHA `fb2bf73`** rather than `HEAD` (which becomes self-comparison the moment this commits). Ten
+blocks: an un-answered setup traces byte-identically to the base; *"MEPF follows Structural"* works
+here and is **ignored on the base**; the lead is counted with the tracer's own clamp; lead 0 draws no
+trailing link; `after: ''` is an answer; balanced derives from the **leader's** window and not the
+follower's; every resolver fallback; the legacy per-category answers untouched; a circular declaration
+producing no link cycle; and the export keyed by GWORK / GLABEL / code with lead 0 in, balanced out,
+and legacy winning.
+
+⚠️⚠️ **Three negative builds, all biting** — reverting the loop header to `present[t - 1]`, dropping
+the `flow.lead(k)` call, and removing the balanced branch each fail only the assertions written for
+them. ⚠️ **Driven end to end in a real browser** against the shipped file: the dialog opens, the rows
+render, a predecessor change rebuilds only its own block, **0 page errors**, **52 links drawn**, and
+`cfg.tradeFlow` written as declared.
+
+⚠️⚠️ **A REGRESSION OF MINE THAT TWO OTHER SUITES CAUGHT:** `test-builder.js` and `test-locseq.js`
+slice `autoTrace` by name and had no idea it had gained a dependency, so both died with
+`ReferenceError: tradeFlowOf is not defined`. That is the slice harness working exactly as intended —
+a new dependency is a failure, not a silent stub. Both slice lists extended; **159/0** and **94/0**.
+
+**Full sweep, 23 suites: 2,145 assertions, 0 failing** — `actdnd` 62 · `actsetup` 142 · `builder`
+**159** · `calendar-editor` 23 · `critwbs` 26 · `health` 30 · `locseq` **94** · `lsm` 732 ·
+`phasecard` 85 · `phasenet` 135 · `quicksetup` 46 · `sap` 114 · `shapeedit` 36 · `sitefit` 27 ·
+`startdoor` 25 · `syntax` 4 · `towerseq` 48 · `towertypes` 127 · `tradeflow` **45** · `wbsfile` 28 ·
+`zoneoverlap` 57 · `zoneplan` 42 · `zonescope` 58.
+
+⚠️ **`test-autotrace.js` and `test-cpm.js` do not run here, and it is NOT this change.** Both pin
+`BASE_SHA = '56b34565'` for their contrast, and this checkout is **shallow — 204 commits, and that
+object is genuinely absent** (`git cat-file` refuses it), so they die at the contrast fetch before a
+single assertion. Confirmed identical on `HEAD`. Named rather than quietly passed over.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so no setup has been saved with a
+`tradeFlow` and read back, and no real project's zones have been traced with a declared hand-over.
+The dialog's writes are proved by execution against the shipped code, not against the database.
+
 ## 2026-09-18 (zl+) — The overlap case on B1 / B2 / B3, checked against the shipped renderer
 
 Owner: *"let's check the overlap case on B1 B2 B3"*. **No shipped file changed** — this entry records

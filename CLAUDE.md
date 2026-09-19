@@ -104,6 +104,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-19 (a) — The cross-trade hand-off had no asker: the reader survived a trim that deleted every writer
+
+Owner: *"In the step wherein the zone sequence are defined, please streamline the questions to be
+asked. Wherein the interphasing and the sequencing or timing/start of one trade can be defined with
+another trade."* Module work — the full entry, every ⚠️ decision and the verification are in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md) under `(a)`. Logged here
+for the `MODULE_V` bump and the four things that are not facts about one module:
+
+⚠️⚠️ **A TRIM THAT REMOVES A CONTROL MUST BE FOLLOWED TO THE READER, AND THIS ONE WAS NOT.** The
+2026-09-18 *"auto-trace asks four numbers"* pass deleted every control that writes
+`tradeBatchKind` / `tradeBatch` / `tradeParallelKind` / `tradeParallel` — a correct density decision —
+and `autoTrace`'s cross-trade pass went on reading all four. So on every setup made after that date
+**both halves of the trade hand-over were decided by the file**: who a trade follows came from its
+position in `GROUPS`, and how far behind came from `cfg.floorLead || 4`, a `blank()` default nobody
+chose. Nothing errored, the tracer drew links, and the screen looked finished. **A question with no
+asker still gets answered — by whatever default is nearest.** The tell is a config key with readers
+and no writers, which is a grep, not a judgement.
+
+⚠️⚠️ **KEYING A RELATIONSHIP BY THE WRONG END MAKES A WHOLE CLASS OF ANSWER UNSAYABLE, AND IT LOOKS
+LIKE A WORDING PROBLEM.** The retired keys were keyed by the **leading** trade, so a leader handing
+over to two followers could carry exactly one lead — *"MEPF follows Structural by 2, Architectural
+follows Structural by 4"* could not be written down at any wording. `tradeFlow` is keyed by the
+**follower**. The owner asked for the questions to be streamlined; what they could not express was the
+reason they read badly.
+
+⚠️⚠️ **"LET THE LOGIC DETERMINE THE MOST EFFICIENT" IS A REQUEST TO DERIVE, NOT TO GUESS A DEFAULT.**
+The lead's default carries **no number**: the follower starts as soon as the leader is off the floor,
+derived from the leader's own sliding window. That is the tightest hand-over that never puts two
+trades on one storey, and — the part worth carrying — it **follows the answer the planner already
+gave** rather than restating it as a second number that can drift from it. ⚠️ Derived from the
+**leader's** window, never the follower's: what decides when a floor is free is how fast the trade
+currently on it is leaving. ⚠️ And a derived value is deliberately **not exported** to the consumer
+that has no floor list to derive it from — one reading of one declaration, never two.
+
+⚠️⚠️ **AN IMPOSSIBLE STATE SHOULD NOT BE OFFERED, RATHER THAN REFUSED ONCE ENTERED.** *A follows B*
+while *B follows A* is a hand-over with no start, so the predecessor list omits any choice that would
+close a loop. The existing cycle guard in the link builder stays as the backstop for a cycle already
+stored, and the suite asserts a deliberately circular config still yields a link set with no cycle —
+two independent defences, on purpose.
+
+⚠️⚠️ **AND A REGRESSION OF MINE WAS CAUGHT BY TWO OTHER SUITES, WHICH IS THE SLICE HARNESS WORKING.**
+`test-builder.js` and `test-locseq.js` slice `autoTrace` **by name** and knew nothing of its new
+dependency, so both died with `ReferenceError: tradeFlowOf is not defined`. A slice that cannot
+resolve a name **fails** rather than stubbing it — which is precisely why this repo's own `test-slice.js`
+throws instead of returning null, and why a shared function gaining a dependency cannot ship quietly.
+
+**Verified:** new `modules/project-schedule/test-tradeflow.js` **45 assertions, 0 failing**, every
+function sliced out of the shipped file and executed, contrast pinned to the **SHA `fb2bf73`** rather
+than `HEAD`; **three negative builds, all biting**; and the dialog **driven end to end in a real
+browser** — 0 page errors, 52 links drawn, `cfg.tradeFlow` written as declared. Full project-schedule
+sweep **23 suites, 2,145 assertions, 0 failing**.
+
+⚠️ **`test-autotrace.js` and `test-cpm.js` do not run in this checkout, and it is not this change.**
+Both pin `BASE_SHA = '56b34565'` for their contrast and this clone is **shallow — 204 commits, that
+object genuinely absent** — so they die at the contrast fetch before one assertion. Identical on
+`HEAD`. Named rather than passed over: a suite that cannot run is not a suite that passed.
+
+⚠️⚠️ **AND A `git stash` SWALLOWED THE WHOLE CHANGE MID-VERIFICATION — the failure this log already
+records in bold from 2026-09-17 (q), *"the lesson is not 'check the diff', it is do not stash in a
+shared clone at all"*.** A stray `git stash --include-untracked` left in a diagnostic command emptied
+the working tree; `git status` came back clean with 345 lines of work gone. Recovered intact from
+`stash@{0}` within the minute, and every suite re-run against the recovered bytes rather than trusted.
+It was caught only because the command's own output was read instead of its echo.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so no setup has been saved with a
+`tradeFlow` and read back.
+
+`MODULE_V` → `20260918zm`, re-derived from what the tree actually carries (`a b d f zh zl`) and
+sort-checked as a plain string. No shared asset changed.
+
 ### 2026-09-18 (aq) — The Notes button walked off the screen every time the panel opened, and it now shrinks to a puck
 
 Owner: *"The notebook clips when i closed out at the edge of the browser. Let's fix"*, then *"Can we

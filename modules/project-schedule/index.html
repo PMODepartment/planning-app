@@ -5437,6 +5437,32 @@
                    font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
     .sbld-at-say:empty { display:none; }
     .sbld-at-say b { color:var(--pd-ink); }
+    /* ==== THE CROSS-TRADE HAND-OFF ROW ========================================================
+       One row per trade, laid out as the SENTENCE it is — "<trade> follows <trade> <how far>" —
+       for the reason `.sbld-tlform` already records for the tower relationships: five controls in
+       a line with nothing between them name nothing, and the connecting words are what make the
+       row readable at a glance instead of decodable.
+       ⚠️ It WRAPS rather than scrolling: a trade name, a predecessor name and a lead phrase can
+       genuinely exceed the dialog's 620px, and a row that scrolls sideways hides the half of the
+       answer that matters most. */
+    .sbld-at-hr { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:7px 0;
+                  border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); }
+    .sbld-at-hr:last-child { border-bottom:none; }
+    /* ⚠️ A floor, not a fixed width: the trade names line up so the rows read as a column, and a
+       long one still takes the room it needs rather than being clipped to look tidy. */
+    .sbld-at-trn { display:inline-flex; align-items:center; gap:6px; font-weight:700; min-width:132px; }
+    .sbld-at-w { color:var(--pd-muted); font-size:var(--pd-fs-sm); flex:none; }
+    .sbld-at-lead { color:var(--pd-muted); font-size:var(--pd-fs-sm); font-style:italic; }
+    /* ⚠️⚠️ NOT `.sbld-mini`, WHICH IS `width:62px`. That class is written for the two-character
+       number boxes on Floors & Zones and on a trade <select> it clips every option to its first
+       four characters — the exact failure `.sbld-tlform` documents. `width:auto` lets each control
+       size to its own longest option; the cap stops one long trade name taking the whole row. */
+    .sbld-at-sel { width:auto; max-width:250px; height:30px; padding:2px 6px; font-size:var(--pd-fs-sm); }
+    .sbld-at-sel:disabled { opacity:.5; }
+    /* ⚠️ The hand-off section leads the dialog, so it carries the accent that says which question
+       is the coarse one. Brand red as a 3px rail, never as the text — `.pd-btn-primary`'s own
+       treatment, and the rule this file already follows for `.sc-lockbar`. */
+    .sbld-at-ho { border-left:3px solid var(--pd-red); }
     .sbld-help-btn { width:30px; height:30px; padding:0; border-radius:50%; font-weight:700; font-size:var(--pd-fs-body); flex:none; justify-content:center; line-height:1; }
     .sbld-help-body h4 { margin:14px 0 6px; font-size:var(--pd-fs-base); color:var(--pd-ink); }
     .sbld-help-body p, .sbld-help-body li { font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
@@ -37327,7 +37353,7 @@
       } catch (e) {}
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerTypes: blankTowerTypes(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, towerSimul: {}, floorSimul: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, floorGate: {}, zoneZigzag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'agroup', 'agroup2', 'agroup3', 'agroup4', 'floor', 'zone', 'unit'], phases: {},
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerTypes: blankTowerTypes(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, tradeFlow: {}, towerSimul: {}, floorSimul: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, floorGate: {}, zoneZigzag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'agroup', 'agroup2', 'agroup3', 'agroup4', 'floor', 'zone', 'unit'], phases: {},
       // ⚠️ Two bags, both empty: a plate is created only when a cell is actually painted, so a
       // brand-new setup truthfully reports "no layout defined" rather than an empty 2 x 2 grid.
       /* ⚠⚠ GROUPINGS THAT EXIST BEFORE ANY ACTIVITY DOES. Owner 2026-09-17: *“add option
@@ -37488,6 +37514,34 @@
       d.tradeParallel = (c.tradeParallel && typeof c.tradeParallel === 'object') ? c.tradeParallel : {};  // per-leading-trade: the next trade may start at the same time (run in parallel)
       d.tradeBatchKind = (c.tradeBatchKind && typeof c.tradeBatchKind === 'object') ? c.tradeBatchKind : {};        // per-leading-trade, per floor-kind: levels-behind
       d.tradeParallelKind = (c.tradeParallelKind && typeof c.tradeParallelKind === 'object') ? c.tradeParallelKind : {};  // per-leading-trade, per floor-kind: start together
+      /* ⚠️⚠️ THE DECLARED CROSS-TRADE FLOW — owner 2026-09-18: *"the interphasing and the
+         sequencing or timing/start of one trade can be defined with another trade"*. One entry per
+         FOLLOWING trade: `{ after: '<trade code>'|'', lead: <int ≥ 0>|null }`.
+           after  — which trade it waits on. '' = it starts with the project.
+           lead   — levels behind. 0 = start together. null = BALANCED, derived from the leading
+                    trade's own floor window (see tradeFlowOf) rather than typed.
+         ⚠️⚠️ KEYED BY THE **FOLLOWER**, NOT THE LEADER, and that is the whole reason it is a new
+         key rather than a widening of `tradeBatch`/`tradeBatchKind`. Those are keyed by the LEADING
+         trade, which can only express a single linear chain — two trades both following Structural
+         with different leads is not sayable in that shape, and a declared predecessor makes exactly
+         that case reachable.
+         ⚠️ NOTHING LEGACY IS CLEARED OR MIGRATED. A setup that answered the old per-kind questions
+         keeps them and `tradeFlowOf` still reads them; this key wins only where it exists. Wiping
+         them would silently re-plan a project somebody had already shaped by hand. */
+      d.tradeFlow = (function () {
+        var src = (c.tradeFlow && typeof c.tradeFlow === 'object') ? c.tradeFlow : {}, out = {};
+        GROUPS.forEach(function (g) {
+          var v = src[g];
+          if (!v || typeof v !== 'object') return;
+          var after = String(v.after == null ? '' : v.after).trim();
+          if (after && GROUPS.indexOf(after) < 0) after = '';   // a trade code that no longer exists
+          if (after === g) after = '';                           // never itself
+          var lead = null;
+          if (v.lead != null && v.lead !== '') { lead = Math.round(+v.lead); if (!(lead >= 0)) lead = null; else lead = Math.min(lead, 40); }
+          out[g] = { after: after, lead: lead };
+        });
+        return out;
+      })();
       /* ⚠️⚠️ `towerSimul` / `floorSimul` ARE THE OTHER TWO RUNGS OF THE SAME QUESTION, and until
          2026-09-18 only the bottom two existed. Auto-trace has always chained the floors of a tower
          ONE AT A TIME (an unconditional link from each floor to the one below) and run every tower
@@ -39340,6 +39394,32 @@
          became per-leading-trade and it has been normalized-but-unread since; a project set up
          before 2026-08-13 still carries the planner's per-pair answers, and they are the MOST
          specific thing anybody said about these two trades, so they win over the per-trade value. */
+      /* ⚠️⚠️ THE DECLARED FLOW, PROJECTED ONTO THE PAIR EXPORT — and it goes in FIRST so the
+         legacy per-pair field below can still overwrite it on a setup that carries both. It names
+         both trades, so the clash detector applies it whatever the gap between them, which is
+         exactly what a declared predecessor means.
+         ⚠️⚠️ A LEAD OF **0** IS EXPORTED, and that is load-bearing rather than a spare value.
+         "Start together" is an ANSWER: `autoTrace` draws no trailing link for it, so reporting a
+         handoff there would be the chart contradicting the setup two screens away — the fault this
+         file already records for the whole-trade parallel flag. Exporting the 0 both fails the
+         consumer's own `L >= 1` test AND stops it falling back to a stale per-leading-trade record,
+         because that fallback is gated on the pair being absent. Silence by statement, not by luck.
+         ⚠️ BALANCED (`lead == null`) IS NOT EXPORTED. It is derived at trace time from the leading
+         trade's floor window, and this side has no floors to derive it from — so it is left to the
+         per-leading-trade record rather than guessed at with a different number than the one the
+         schedule was actually built with. Two readings of one declaration is the `_vsTowerModel`
+         fault, and one reading here is no reading, which is the safer half. */
+      var tf = (c.tradeFlow && typeof c.tradeFlow === 'object') ? c.tradeFlow : {};
+      Object.keys(tf).forEach(function (g) {
+        var f = tf[g];
+        if (!f || !f.after || f.lead == null) return;
+        var v = Math.round(+f.lead);
+        if (!(v >= 0)) return;
+        keysFor(f.after).forEach(function (ka) {
+          keysFor(g).forEach(function (kb) { out.pair[ka + '>' + kb] = v; });
+        });
+        out.any = true;
+      });
       var tl = (c.tradeLeads && typeof c.tradeLeads === 'object') ? c.tradeLeads : {};
       Object.keys(tl).forEach(function (key) {
         var p = String(key).split('>');
@@ -39354,6 +39434,62 @@
       return out;
     }
     function parallelKind(prev, k) { return parallelKindOf(cfg, prev, k); }
+    /* ==== THE DECLARED CROSS-TRADE FLOW ========================================================
+       Owner 2026-09-18: *"the interphasing and the sequencing or timing/start of one trade can be
+       defined with another trade … which would allow the logic to determine the most efficient
+       relationship-linking in between the zones."*
+
+       ⚠️⚠️ THE QUESTION HAD NO ASKER. `autoTrace`'s cross-trade pass reads `tradeBatchKind` /
+       `tradeParallelKind` / `tradeBatch` / `tradeParallel`, and the 2026-09-18 "four numbers" trim
+       removed every control that wrote them. So on any setup made after that date the pass fell
+       through to `batchKind`'s own `cfg.floorLead || 4` — a number `blank()` writes to every
+       project and nobody ever chose — and the follower's predecessor was whichever trade happened
+       to sit before it in `GROUPS` order. Both halves of the handoff were being decided by the
+       file rather than by the planner. This is the asker, and it is two controls per trade rather
+       than the six per trade the trim was right to remove.
+
+       ⚠️⚠️ `lead: null` IS "BALANCED", AND IT IS DERIVED RATHER THAN GUESSED — which is the
+       "most efficient" half of the ask. A trade working `floorSimulOf(prev)` floors of a tower at
+       once has cleared its window exactly that many levels up, so the follower can start there and
+       not before: the tightest handoff that never puts two trades on one storey. Answering it with
+       a typed number is still allowed; what is gone is having to invent one.
+       ⚠️ IT IS THE LEADER'S window, never the follower's — what gates the handoff is when the
+       floor comes FREE, which is a fact about the trade vacating it.
+
+       ⚠️⚠️ THE FALLBACK IS EXACTLY TODAY'S BEHAVIOUR, per kind, so a setup that answered the
+       retired per-kind questions is byte-for-byte unchanged: no `tradeFlow` entry means the
+       predecessor is the trade before it in `present` order and the lead is `batchKind(prev, k)`.
+       A planner has to answer the new question before anything moves.
+
+       Returns { after, lead(kind), parallel(kind), declared, balanced } — `after` is '' when the
+       trade starts with the project, which is a real answer and not an absence. */
+    function tradeFlowOf(tr, present, ti) {
+      var f = (cfg.tradeFlow || {})[tr];
+      var declared = !!(f && (f.after || f.lead != null || f.after === ''));
+      /* ⚠️ A DECLARED `after` IS ONLY HONOURED IF THAT TRADE IS ACTUALLY ON THE PROJECT. A trade
+         whose floors or activities were deleted since the answer was given would otherwise leave
+         the follower chained to nothing — silently, because `idx[prev]` would be undefined and the
+         whole cross-trade pass for that trade would throw. It falls back to the positional
+         predecessor, which is what the planner had before they answered. */
+      var after = null;
+      if (f && f.after != null && f.after !== '' && present.indexOf(f.after) >= 0 && f.after !== tr) after = f.after;
+      else if (f && f.after === '' && declared) after = '';           // "starts with the project", stated
+      else after = (ti > 0) ? present[ti - 1] : '';                    // the positional chain, as before
+      var balanced = !!(f && f.lead == null && declared && after);
+      function lead(k) {
+        if (!after) return 0;
+        if (f && f.lead != null) return Math.max(0, f.lead);
+        if (balanced) return Math.max(1, floorSimulOf(after));        // as soon as the floor is free
+        return batchKind(after, k);                                    // the legacy per-kind answer
+      }
+      function parallel(k) {
+        if (!after) return true;                                       // nothing to trail
+        if (f && f.lead != null) return f.lead === 0;
+        if (balanced) return false;
+        return !!(cfg.tradeParallel && cfg.tradeParallel[after]) || parallelKind(after, k);
+      }
+      return { after: after, lead: lead, parallel: parallel, declared: declared, balanced: balanced };
+    }
     /* ⚠️⚠️ ONE DEFINITION OF "THE ORDER THIS TRADE WORKS A FLOOR IN", read by the vertical chain,
        the intra-floor chain and the readback sentence in the dialog. It used to exist only inside
        the intra-floor loop, which is why the floor→floor link could not know which zone a crew
@@ -39486,10 +39622,17 @@
       //    that kind. So basements can be 1:1 (default) while typical floors trail by 4, roof waits for
       //    the roof below, etc. — instead of the old "basements 1:1, everything else = one global lead".
       //    Owner ask: real handoff questions for basements and non-typical levels, not just typical.
-      for (var t = 1; t < present.length; t++) {
-        var prev = present[t - 1], next = present[t];
-        // Whole-trade "start at the same time" still wins — skip every cross-trade link (bookend → START).
-        if (cfg.tradeParallel[prev]) continue;
+      /* ⚠️⚠️ WHO A TRADE FOLLOWS IS NOW DECLARED, NOT POSITIONAL. This loop used to be
+         `prev = present[t - 1]` — a trade could only ever follow whichever trade happened to sit
+         before it in `GROUPS` order, so "MEPF follows Structural" was unsayable on a project that
+         also has Architectural, and every answer about the pair was really an answer about a
+         position. `tradeFlowOf` resolves the declared predecessor and falls back to exactly that
+         positional chain where nothing has been declared. */
+      for (var t = 0; t < present.length; t++) {
+        var next = present[t], flow = tradeFlowOf(next, present, t), prev = flow.after;
+        /* ⚠️ "Starts with the project" is an ANSWER: no trailing link, and the bookend pass below
+           gives it START. Same outcome as the old whole-trade parallel skip, said deliberately. */
+        if (!prev) continue;
         /* ⚠️⚠️ PER TOWER, AS THE VERTICAL CHAIN ABOVE ALREADY IS — and this half was not, until
            today. `floorsOf` is ONE FLAT LIST across every tower, so grouping the leading trade's
            floors by KIND alone put Tower A's typical floors and Tower B's in one ladder, and the
@@ -39514,9 +39657,9 @@
         floorsOf(next).forEach(function (nf, j) {
           var tw = towerIdOf(nf), k = floorKind(nf), ok = tw + '|' + k;
           var ord = (nOrd[ok] = (nOrd[ok] || 0)); nOrd[ok]++;
-          if (parallelKind(prev, k)) return;   // this kind runs in parallel → no trailing link (bookend → START)
+          if (flow.parallel(k)) return;   // this kind runs in parallel → no trailing link (bookend → START)
           var pk = pByTK[ok] || [], si;
-          if (pk.length) { var L = batchKind(prev, k); si = pk[Math.min(ord + L - 1, pk.length - 1)]; }   // trail within the same tower + kind by that kind's lead
+          if (pk.length) { var L = flow.lead(k); si = pk[Math.min(ord + L - 1, pk.length - 1)]; }   // trail within the same tower + kind by the declared lead
           else {
             /* ⚠️ The leader has nothing of this KIND in this tower. Stay inside the tower while it
                is there at all — the same floor code, else that tower's own top floor. Only a tower
@@ -39593,10 +39736,127 @@
         return '<div class="sbld-at-sec" data-atsec="' + e2(tr) + '"><div class="sbld-at-tr" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + qs.join('') +
           '<div class="sbld-at-say" data-atsay="' + e2(tr) + '"></div></div>';
       }).filter(Boolean).join('');
-      if (!sections) sections = '<p class="sbld-hint">Nothing to configure — add more floors/zones/units (step 2) or a second trade to shape the takt flow. Auto-trace will just chain the floors vertically.</p>';
+      /* ==== HOW ONE TRADE INTERFACES WITH ANOTHER ==============================================
+         Owner 2026-09-18: *"the interphasing and the sequencing or timing/start of one trade can be
+         defined with another trade … which would allow the logic to determine the most efficient
+         relationship-linking in between the zones."*
+
+         ⚠️⚠️ THIS QUESTION HAD NO ASKER AT ALL, which is the actual defect. The four rungs above
+         are every one of them a question about a trade ON ITS OWN — how much of the building it
+         works at once. Nothing on this screen asked how two trades meet, while `autoTrace`'s
+         cross-trade pass went on reading answers whose controls were removed on 2026-09-18: a fresh
+         setup trailed every follower by `cfg.floorLead || 4`, a default `blank()` writes to every
+         project, behind whichever trade `GROUPS` order happened to put before it.
+
+         ⚠️⚠️ TWO CONTROLS PER TRADE, AND THAT BOUND IS THE POINT. The pass this replaces asked
+         six per trade — twenty-four answers before one link is drawn — and was rightly judged more
+         than the screen is worth. A handoff needs exactly two facts: **who** it waits on and **how
+         far behind**. The leading trade renders one line of prose rather than a disabled control,
+         because "nothing to follow" is not a choice anybody makes.
+
+         ⚠️⚠️ "BALANCED" IS THE DEFAULT AND IT IS DERIVED, NOT GUESSED — the "most efficient"
+         half of the ask. The leader is working `floorSimulOf` floors of a tower at once, so it has
+         cleared its window exactly that many levels up: the follower starting there is the tightest
+         handoff that never puts two trades on one storey. A typed number still overrides it; what
+         is gone is having to invent one.
+
+         ⚠️ ONE NUMBER, NOT FOUR. The retired questions asked a lead per floor CATEGORY. A single
+         lead degrades honestly on the others because the tracer clamps (`Math.min(ord + L - 1,
+         pk.length - 1)`), so a 4 against a 2-basement tower means "after that tower's basements",
+         which is what somebody answering 4 means. The per-category answers are still READ for any
+         trade whose row is left alone — see tradeFlowOf.
+
+         ⚠️ The follower's own predecessor list excludes itself and everything downstream of it, so
+         a loop cannot be expressed rather than being refused after the fact. */
+      function _flowCycle(map, from) {          // does following `map` from `from` return to it?
+        var seen = {}, cur = map[from];
+        while (cur && !seen[cur]) { if (cur === from) return true; seen[cur] = 1; cur = map[cur]; }
+        return false;
+      }
+      /* ⚠️⚠️ THE HAND-OFF ROWS ARE REPAINTED FROM `flowNow`, NOT FROM `cfg`, and they have to
+         be: changing who one trade follows changes which predecessors are still offerable to every
+         OTHER trade (a choice that would close a loop stops being offered). Reading `cfg` would
+         describe the setup as it was before the dialog opened.
+         ⚠️⚠️ AND ONLY THIS SECTION IS REPAINTED, never the whole dialog — the four rung inputs
+         live in their own sections and are uncommitted until Generate, so rebuilding the dialog
+         around them would silently discard whatever the planner had just typed. */
+      var flowNow = {};
+      present.forEach(function (tr, i) {
+        var fl = tradeFlowOf(tr, present, i);
+        var stored = (cfg.tradeFlow || {})[tr];
+        /* ⚠⚠ AN UNDECLARED TRADE OPENS ON **BALANCED**, NOT ON THE NUMBER THE TRACER WOULD USE
+           TODAY, and that is a deliberate difference from the four rung inputs beside it. Those are
+           seeded from the helper that reads them so the box can never disagree with the tracer;
+           here the number the tracer would use is `cfg.floorLead || 4` — a value `blank()` writes
+           to every project and nobody has ever chosen. Seeding it would put an arbitrary 4 in front
+           of the planner wearing the authority of a stored answer.
+           ⚠⚠ THE TEST IS `declaredBatchOf`, THE SAME ONE `handoffFrom` USES to decide whether
+           anybody has said anything about this pair — not a second reading of it. A trade carrying
+           a real per-kind or per-trade answer opens showing THAT number; a trade carrying only the
+           default opens on balanced, where the number is derived and visible in the readback before
+           Generate is pressed. */
+        var said = fl.after ? (declaredBatchOf(cfg, fl.after, 'typical') != null ||
+                               !!(cfg.tradeParallel && cfg.tradeParallel[fl.after]) ||
+                               parallelKindOf(cfg, fl.after, 'typical')) : false;
+        flowNow[tr] = {
+          after: fl.after || '',
+          /* ⚠️ Where somebody HAS answered, the row is seeded from the RESOLVER rather than from
+             `cfg` directly, so a trade on its legacy per-category answer opens showing the number
+             that answer produces for a typical floor — not a blank the planner would read as
+             "nothing is declared here". */
+          lead: (stored && stored.lead != null) ? String(stored.lead)
+              : (!fl.after || (fl.declared && fl.balanced) || !said ? 'auto'
+                 : (parallelKindOf(cfg, fl.after, 'typical') || (cfg.tradeParallel && cfg.tradeParallel[fl.after]) ? '0'
+                    : String(fl.lead('typical'))))
+        };
+      });
+      function _hoRowsHTML() {
+        return present.map(function (tr) {
+          var st = flowNow[tr];
+          var dot = '<span class="sbld-dot" style="background:' + gc(tr) + '"></span>';
+          var name = '<span class="sbld-at-trn" style="color:' + gc(tr) + '">' + dot + e2(GLABEL[tr]) + '</span>';
+          /* ⚠️ A choice that would close a loop is NOT OFFERED, rather than accepted and refused on
+             Generate. `tryLink` would drop such a link silently at trace time (it tests `reaches`),
+             so a planner could otherwise state a circular handoff, see no error, and get a flow
+             missing the links they thought they had asked for. */
+          var opts = present.filter(function (g) {
+            if (g === tr) return false;
+            var probe = {}; present.forEach(function (k2) { probe[k2] = flowNow[k2].after; });
+            probe[tr] = g;
+            return !_flowCycle(probe, tr);
+          });
+          if (!opts.length) return '<div class="sbld-at-hr">' + name +
+            '<span class="sbld-at-lead">leads — nothing to follow</span></div>';
+          var sel = '<select class="pd-select sbld-at-sel" data-atafter="' + e2(tr) + '">' +
+            '<option value=""' + (st.after ? '' : ' selected') + '>starts with the project</option>' +
+            opts.map(function (g) {
+              return '<option value="' + e2(g) + '"' + (st.after === g ? ' selected' : '') + '>' + e2(GLABEL[g]) + '</option>';
+            }).join('') + '</select>';
+          var leadSel = '<select class="pd-select sbld-at-sel" data-atlead="' + e2(tr) + '"' + (st.after ? '' : ' disabled') + '>' +
+            '<option value="auto"' + (st.lead === 'auto' ? ' selected' : '') + '>balanced — as soon as the floor is free</option>' +
+            '<option value="0"' + (st.lead === '0' ? ' selected' : '') + '>start together</option>' +
+            [1, 2, 3, 4, 5, 6, 8, 10, 12].map(function (n) {
+              return '<option value="' + n + '"' + (st.lead === String(n) ? ' selected' : '') + '>' + n + ' level' + (n === 1 ? '' : 's') + ' behind</option>';
+            }).join('') + '</select>';
+          return '<div class="sbld-at-hr">' + name +
+            '<span class="sbld-at-w">follows</span>' + sel + leadSel + '</div>';
+        }).join('');
+      }
+      var handoff = present.length > 1
+        ? '<div class="sbld-at-sec sbld-at-ho"><div class="sbld-at-tr">Hand-off between trades</div>' +
+          '<p class="sbld-hint" style="margin:0 0 8px;">Who each trade waits on, and how far behind it stays. ' +
+          '<b>Balanced</b> works it out from the leading trade’s own floor window — the tightest hand-off that never puts two trades on one storey.</p>' +
+          '<div id="sbld-at-horows">' + _hoRowsHTML() + '</div>' +
+          '<div class="sbld-at-say" data-athosay="1"></div></div>'
+        : '';
+      if (!sections && !handoff) sections = '<p class="sbld-hint">Nothing to configure — add more floors/zones/units (step 2) or a second trade to shape the takt flow. Auto-trace will just chain the floors vertically.</p>';
+      /* ⚠️ THE HAND-OFF LEADS. It is the question about the project as a whole; the four rungs
+         below it are each about one trade on its own, and a planner reading top-down should meet
+         the coarser question first. */
+      sections = handoff + sections;
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
       ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace — how does the work flow?</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
-        '<div style="padding:16px;max-height:72vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">Four numbers per trade \u2014 how much of each rung of the building runs at once. The <b>So:</b> line says the flow back. <b>This replaces the current links.</b></p>' +
+        '<div style="padding:16px;max-height:72vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">First how the trades hand over to each other, then how much of each rung of the building one trade runs at once. The <b>So:</b> lines say the flow back. <b>This replaces the current links.</b></p>' +
         sections + '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbld-at-go">Generate logic</button></div></div>';
       document.body.appendChild(ov);
@@ -39625,6 +39885,52 @@
           el.innerHTML = bits.length ? '<b>So:</b> ' + e2(bits.join(' · ')) : '';
         });
       }
+      /* ⚠⚠ THE ROWS ARE REBUILT ON EVERY `after` CHANGE, because the offerable predecessors of
+         every OTHER trade depend on it — answering "MEPF follows Architectural" has to stop
+         Architectural being offered "follows MEPF" in the row above. Only `#sbld-at-horows` is
+         replaced, so the four rung inputs (uncommitted until Generate) are untouched.
+         ⚠ A lead change repaints nothing: it changes no other row's options, and rebuilding would
+         close the <select> the planner has just used. */
+      function _hoWire() {
+        var box = ov.querySelector('#sbld-at-horows');
+        if (!box) return;
+        box.querySelectorAll('[data-atafter]').forEach(function (sel) {
+          sel.onchange = function () {
+            var tr = sel.getAttribute('data-atafter');
+            flowNow[tr].after = sel.value || '';
+            /* ⚠ A trade that now starts with the project has no lead to state, so the stored
+               answer is reset to the derived one rather than left reading "4 levels behind" beside
+               a disabled control — which would be a number describing nothing. */
+            if (!flowNow[tr].after) flowNow[tr].lead = 'auto';
+            box.innerHTML = _hoRowsHTML(); _hoWire(); sbHoSay();
+          };
+        });
+        box.querySelectorAll('[data-atlead]').forEach(function (sel) {
+          sel.onchange = function () { flowNow[sel.getAttribute('data-atlead')].lead = sel.value; sbHoSay(); };
+        });
+      }
+      /* Reads `flowNow`, so it describes what is on screen right now including answers not yet
+         saved — the same rule the per-trade readback below follows, and for the same reason: one
+         source, so the sentence cannot describe a different plan from the one the button builds. */
+      function sbHoSay() {
+        var el = ov.querySelector('[data-athosay]');
+        if (!el) return;
+        var bits = present.map(function (tr) {
+          var st = flowNow[tr];
+          if (!st.after) return e2(GLABEL[tr]) + ' starts with the project';
+          if (st.lead === '0') return e2(GLABEL[tr]) + ' starts with ' + e2(GLABEL[st.after]);
+          if (st.lead === 'auto') {
+            /* ⚠ The derived number is SHOWN, not just named. "Balanced" on its own is a promise;
+               the planner has to be able to see what it resolved to before pressing Generate. */
+            var n = Math.max(1, floorSimulOf(st.after));
+            return e2(GLABEL[tr]) + ' follows ' + e2(GLABEL[st.after]) + ' by ' + n + ' level' + (n === 1 ? '' : 's') + ' (balanced)';
+          }
+          var v = Math.max(0, Math.round(+st.lead) || 0);
+          return e2(GLABEL[tr]) + ' follows ' + e2(GLABEL[st.after]) + ' by ' + v + ' level' + (v === 1 ? '' : 's');
+        });
+        el.innerHTML = '<b>So:</b> ' + bits.join(' · ');
+      }
+      _hoWire(); sbHoSay();
       ov.addEventListener('input', sbAtSay);
       ov.addEventListener('change', sbAtSay);
       sbAtSay();
@@ -39637,11 +39943,20 @@
         }
         _atGo();
       };
-      /* ⚠️ FOUR KINDS, AND NOTHING ELSE IS TOUCHED. The keys the retired questions wrote —
-         `tradeParallelKind`, `tradeBatchKind`, `zoneZigzag`, `floorGate`, `floorLag` — are
-         deliberately left exactly as the planner last set them: this dialog stopped ASKING those
-         questions, it did not decide the answers were wrong. `autoTrace` goes on reading them. */
+      /* ⚠️ FOUR KINDS PLUS THE HAND-OFF, AND NOTHING ELSE IS TOUCHED. The keys the retired
+         questions wrote — `tradeParallelKind`, `tradeBatchKind`, `zoneZigzag`, `floorGate`,
+         `floorLag` — are deliberately left exactly as the planner last set them: this dialog
+         stopped ASKING those questions, it did not decide the answers were wrong, and `tradeFlowOf`
+         still falls back to them for any trade whose hand-off row was left alone. */
       function _atGo() {
+        /* ⚠⚠ WRITTEN FOR EVERY TRADE ON SCREEN, INCLUDING THE ONES LEFT AT THEIR DEFAULT. The row
+           is seeded from the resolver, so leaving it alone is the planner agreeing with what it
+           says — and storing that makes the answer survive a later trade being added, which would
+           otherwise silently re-order the positional chain underneath them. */
+        present.forEach(function (tr) {
+          var st = flowNow[tr];
+          cfg.tradeFlow[tr] = { after: st.after || '', lead: (st.lead === 'auto' || !st.after) ? null : Math.max(0, Math.round(+st.lead) || 0) };
+        });
         Array.prototype.forEach.call(ov.querySelectorAll('input[data-atkind]'), function (inp) {
           var kind = inp.dataset.atkind, target = inp.dataset.attr, v = Math.max(1, +inp.value || 1);
           if (kind === 'tower') cfg.towerSimul[target] = v;        // towers at once
